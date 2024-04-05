@@ -1,0 +1,12 @@
+## IDE and editor files.
+.idea/
+.vscode/
+.cache/
+
+## Build files.
+/out/
+/srcc
+/srcc.exe
+
+## Valgrind.
+callgrind.out.*
