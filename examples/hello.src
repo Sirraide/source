@@ -1,0 +1,11 @@
+program hello;
+
+import <cstdio>;
+
+proc hello {
+    puts("Hello, World!");
+}
+
+hello();
+hello();
+hello();

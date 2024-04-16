@@ -1,0 +1,504 @@
+module;
+
+#include <llvm/Support/Allocator.h>
+#include <llvm/Support/StringSaver.h>
+#include <llvm/Support/TrailingObjects.h>
+#include <srcc/Macros.hh>
+#include <utility>
+#include <deque>
+
+export module srcc.frontend.token;
+import srcc.utils;
+import srcc;
+
+using namespace srcc;
+export namespace srcc {
+enum struct Tk : u8;
+struct Token;
+class TokenStream;
+}
+
+enum struct srcc::Tk : u8 {
+    Invalid,
+    Eof,
+    Identifier,
+    CXXHeaderName,
+    Integer,
+    StringLiteral,
+
+    /// Keywords.
+    Alias,
+    And,
+    As,
+    AsBang,
+    Asm,
+    Assert,
+    Bool,
+    Break,
+    Continue,
+    CShort,
+    Defer,
+    Delete,
+    Do,
+    Dynamic,
+    Elif,
+    Else,
+    Enum,
+    Export,
+    F32,
+    F64,
+    Fallthrough,
+    False,
+    For,
+    ForReverse,
+    Goto,
+    If,
+    Import,
+    In,
+    Init,
+    Int,
+    IntegerType,
+    Is,
+    Land,
+    Lor,
+    Match,
+    NoReturn,
+    Not,
+    Or,
+    Pragma,
+    Proc,
+    Return,
+    Static,
+    Struct,
+    Then,
+    True,
+    Try,
+    Type,
+    Typeof,
+    Unreachable,
+    Val,
+    Var,
+    Variant,
+    Void,
+    While,
+    With,
+    Xor,
+
+    /// Extension keywords.
+    CChar,
+    CChar8T,
+    CChar16T,
+    CChar32T,
+    CInt,
+    CLong,
+    CLongDouble,
+    CLongLong,
+    CSizeT,
+    CWCharT,
+
+    /// Punctuation.
+    Semicolon,
+    Colon,
+    ColonColon,
+    Comma,
+    LParen,
+    RParen,
+    LBrack,
+    RBrack,
+    LBrace,
+    RBrace,
+    Ellipsis,
+    Dot,
+    LArrow,
+    RArrow,
+    RDblArrow,
+    Question,
+
+    /// Operators.
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Caret,
+    Ampersand,
+    VBar,
+    Tilde,
+    Bang,
+    Assign,
+    DotDot,
+    DotDotLess,
+    DotDotEq,
+    MinusMinus,
+    PlusPlus,
+    StarStar,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    EqEq,
+    Neq,
+    PlusEq,
+    MinusEq,
+    StarEq,
+    SlashEq,
+    PercentEq,
+    ShiftLeft,
+    ShiftRight,
+    ShiftRightLogical,
+    ShiftLeftEq,
+    ShiftRightEq,
+    ShiftRightLogicalEq,
+    StarStarEq,
+};
+
+/// A token.
+struct srcc::Token {
+    /// The type of the token.
+    Tk type = Tk::Invalid;
+
+    /// Whether this token was produced by backslash-escaping.
+    bool artificial = false;
+
+    /// Text that this token references.
+    String text{};
+
+    /// Integer value of this token.
+    APInt integer{};
+
+    /// Source location of this token.
+    Location location{};
+
+    /// Check if this is an end-of-file token.
+    [[nodiscard]] auto eof() const -> bool { return type == Tk::Eof; }
+
+    /// Get the source code spelling of this token.
+    [[nodiscard]] auto spelling() const -> String;
+
+    /// Compare two tokens for equality. This only checks if their
+    /// types and values are equal and ignores e.g. whether they are
+    /// artificial
+    [[nodiscard]] bool operator==(const Token& b);
+};
+
+/// This stores and allocates tokens.
+class srcc::TokenStream {
+    std::deque<Token> tokens;
+    llvm::UniqueStringSaver saver;
+
+public:
+    /// Construct a token stream.
+    explicit TokenStream(llvm::BumpPtrAllocator& alloc) : saver(alloc) {}
+
+    /// Allocate a token.
+    ///
+    /// This returns a stable pointer that may be retained.
+    auto allocate() -> Token* { return &tokens.emplace_back(); }
+
+    /// Get the last token.
+    [[nodiscard]] auto back() -> Token& { return tokens.back(); }
+
+    /// Get an iterator to the beginning of the token stream.
+    [[nodiscard]] auto begin() { return tokens.begin(); }
+
+    /// Get an iterator to the end of the token stream.
+    [[nodiscard]] auto end() { return tokens.end(); }
+
+    /// Save a string in the stream.
+    ///
+    /// \param str The string to store.
+    /// \return A stable reference to the stored string.
+    auto save(StringRef str) -> String {
+        return String::CreateUnsafe(saver.save(str));
+    }
+
+    /// Access a token by index.
+    auto operator[](usz idx) -> Token& {
+        Assert(idx < tokens.size(), "Token index out of bounds");
+        return tokens[idx];
+    }
+
+    /// Get the number of tokens in the stream.
+    [[nodiscard]] auto size() const -> usz { return tokens.size(); }
+};
+
+module :private;
+using namespace srcc;
+
+/// Stringify a token type.
+auto Spelling(Tk t) -> String {
+    switch (t) {
+        case Tk::Invalid: return "<invalid>";
+        case Tk::Eof: return "<eof>";
+        case Tk::Identifier: return "<identifier>";
+        case Tk::CXXHeaderName: return "<cxx header name>";
+        case Tk::StringLiteral: return "<string literal>";
+        case Tk::Integer: return "<integer>";
+        case Tk::IntegerType: return "<integer type>";
+
+        case Tk::Alias: return "alias";
+        case Tk::And: return "and";
+        case Tk::As: return "as";
+        case Tk::AsBang: return "as!";
+        case Tk::Asm: return "asm";
+        case Tk::Assert: return "assert";
+        case Tk::Bool: return "bool";
+        case Tk::Break: return "break";
+        case Tk::Defer: return "defer";
+        case Tk::Delete: return "delete";
+        case Tk::Do: return "do";
+        case Tk::Dynamic: return "dynamic";
+        case Tk::Elif: return "elif";
+        case Tk::Else: return "else";
+        case Tk::Enum: return "enum";
+        case Tk::Export: return "export";
+        case Tk::F32: return "f32";
+        case Tk::F64: return "f64";
+        case Tk::Fallthrough: return "fallthrough";
+        case Tk::False: return "false";
+        case Tk::For: return "for";
+        case Tk::ForReverse: return "for~";
+        case Tk::Goto: return "goto";
+        case Tk::If: return "if";
+        case Tk::In: return "in";
+        case Tk::Init: return "init";
+        case Tk::Int: return "int";
+        case Tk::Import: return "import";
+        case Tk::Is: return "is";
+        case Tk::Land: return "land";
+        case Tk::Lor: return "lor";
+        case Tk::Match: return "match";
+        case Tk::NoReturn: return "noreturn";
+        case Tk::Not: return "not";
+        case Tk::Or: return "or";
+        case Tk::Pragma: return "pragma";
+        case Tk::Proc: return "proc";
+        case Tk::Return: return "return";
+        case Tk::Static: return "static";
+        case Tk::Struct: return "struct";
+        case Tk::Then: return "then";
+        case Tk::True: return "true";
+        case Tk::Try: return "try";
+        case Tk::Type: return "type";
+        case Tk::Typeof: return "typeof";
+        case Tk::Unreachable: return "unreachable";
+        case Tk::Val: return "val";
+        case Tk::Var: return "var";
+        case Tk::Variant: return "variant";
+        case Tk::Void: return "void";
+        case Tk::While: return "while";
+        case Tk::With: return "with";
+        case Tk::Xor: return "xor";
+        case Tk::CChar8T: return "__srcc_ffi_char8";
+        case Tk::CChar16T: return "__srcc_ffi_char16";
+        case Tk::CChar32T: return "__srcc_ffi_char32";
+        case Tk::CChar: return "__srcc_ffi_char";
+        case Tk::CInt: return "__srcc_ffi_int";
+        case Tk::CLong: return "__srcc_ffi_long";
+        case Tk::CLongDouble: return "__srcc_ffi_longdouble";
+        case Tk::CLongLong: return "__srcc_ffi_longlong";
+        case Tk::Continue: return "continue";
+        case Tk::CShort: return "__srcc_ffi_short";
+        case Tk::CSizeT: return "__srcc_ffi_size";
+        case Tk::CWCharT: return "__srcc_ffi_wchar";
+
+        case Tk::Semicolon: return ";";
+        case Tk::Colon: return ":";
+        case Tk::ColonColon: return "::";
+        case Tk::Comma: return ",";
+        case Tk::LParen: return "(";
+        case Tk::RParen: return ")";
+        case Tk::LBrack: return "[";
+        case Tk::RBrack: return "]";
+        case Tk::LBrace: return "{";
+        case Tk::RBrace: return "}";
+        case Tk::Ellipsis: return "...";
+        case Tk::Dot: return ".";
+        case Tk::LArrow: return "<-";
+        case Tk::RArrow: return "->";
+        case Tk::RDblArrow: return "=>";
+        case Tk::Question: return "?";
+        case Tk::Plus: return "+";
+        case Tk::Minus: return "-";
+        case Tk::Star: return "*";
+        case Tk::Slash: return "/";
+        case Tk::Percent: return "%";
+        case Tk::Caret: return "^";
+        case Tk::Ampersand: return "&";
+        case Tk::VBar: return "|";
+        case Tk::Tilde: return "~";
+        case Tk::Bang: return "!";
+        case Tk::Assign: return "=";
+        case Tk::DotDot: return "..";
+        case Tk::DotDotLess: return "..<";
+        case Tk::DotDotEq: return "..=";
+        case Tk::MinusMinus: return "--";
+        case Tk::PlusPlus: return "++";
+        case Tk::StarStar: return "**";
+        case Tk::Lt: return "<";
+        case Tk::Le: return "<=";
+        case Tk::Gt: return ">";
+        case Tk::Ge: return ">=";
+        case Tk::EqEq: return "==";
+        case Tk::Neq: return "!=";
+        case Tk::PlusEq: return "+=";
+        case Tk::MinusEq: return "-=";
+        case Tk::StarEq: return "*=";
+        case Tk::SlashEq: return "/=";
+        case Tk::PercentEq: return "%=";
+        case Tk::ShiftLeft: return "<<";
+        case Tk::ShiftRight: return ">>";
+        case Tk::ShiftRightLogical: return ">>>";
+        case Tk::ShiftLeftEq: return "<<=";
+        case Tk::ShiftRightEq: return ">>=";
+        case Tk::ShiftRightLogicalEq: return ">>>=";
+        case Tk::StarStarEq: return "**=";
+    }
+
+    Unreachable();
+}
+
+/// Stringify a token type.
+auto Token::spelling() const -> String {
+    return Spelling(type);
+}
+
+bool Token::operator==(const Token& b) {
+    if (type != b.type) return false;
+    switch (type) {
+        case Tk::Identifier:
+        case Tk::StringLiteral:
+        case Tk::CXXHeaderName:
+            return text == b.text;
+
+        case Tk::Integer:
+        case Tk::IntegerType:
+            return integer == b.integer;
+
+        /// All these are trivially equal.
+        case Tk::Invalid:
+        case Tk::Eof:
+
+        case Tk::Alias:
+        case Tk::And:
+        case Tk::As:
+        case Tk::AsBang:
+        case Tk::Asm:
+        case Tk::Assert:
+        case Tk::Bool:
+        case Tk::Break:
+        case Tk::Continue:
+        case Tk::Defer:
+        case Tk::Delete:
+        case Tk::Do:
+        case Tk::Dynamic:
+        case Tk::Elif:
+        case Tk::Else:
+        case Tk::Enum:
+        case Tk::Export:
+        case Tk::F32:
+        case Tk::F64:
+        case Tk::Fallthrough:
+        case Tk::False:
+        case Tk::For:
+        case Tk::ForReverse:
+        case Tk::Goto:
+        case Tk::If:
+        case Tk::In:
+        case Tk::Init:
+        case Tk::Int:
+        case Tk::Import:
+        case Tk::Is:
+        case Tk::Land:
+        case Tk::Lor:
+        case Tk::Match:
+        case Tk::NoReturn:
+        case Tk::Not:
+        case Tk::Or:
+        case Tk::Pragma:
+        case Tk::Proc:
+        case Tk::Return:
+        case Tk::Static:
+        case Tk::Struct:
+        case Tk::Then:
+        case Tk::True:
+        case Tk::Try:
+        case Tk::Type:
+        case Tk::Typeof:
+        case Tk::Unreachable:
+        case Tk::Val:
+        case Tk::Var:
+        case Tk::Variant:
+        case Tk::Void:
+        case Tk::While:
+        case Tk::With:
+        case Tk::Xor:
+
+        case Tk::CChar:
+        case Tk::CChar8T:
+        case Tk::CChar16T:
+        case Tk::CChar32T:
+        case Tk::CWCharT:
+        case Tk::CShort:
+        case Tk::CInt:
+        case Tk::CLong:
+        case Tk::CLongLong:
+        case Tk::CLongDouble:
+        case Tk::CSizeT:
+
+        case Tk::Semicolon:
+        case Tk::Colon:
+        case Tk::ColonColon:
+        case Tk::Comma:
+        case Tk::LParen:
+        case Tk::RParen:
+        case Tk::LBrack:
+        case Tk::RBrack:
+        case Tk::LBrace:
+        case Tk::RBrace:
+        case Tk::Ellipsis:
+        case Tk::Dot:
+        case Tk::LArrow:
+        case Tk::RArrow:
+        case Tk::RDblArrow:
+        case Tk::Question:
+        case Tk::Plus:
+        case Tk::Minus:
+        case Tk::Star:
+        case Tk::Slash:
+        case Tk::Percent:
+        case Tk::Caret:
+        case Tk::Ampersand:
+        case Tk::VBar:
+        case Tk::Tilde:
+        case Tk::Bang:
+        case Tk::Assign:
+        case Tk::DotDot:
+        case Tk::DotDotLess:
+        case Tk::DotDotEq:
+        case Tk::MinusMinus:
+        case Tk::PlusPlus:
+        case Tk::StarStar:
+        case Tk::Lt:
+        case Tk::Le:
+        case Tk::Gt:
+        case Tk::Ge:
+        case Tk::EqEq:
+        case Tk::Neq:
+        case Tk::PlusEq:
+        case Tk::MinusEq:
+        case Tk::StarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeft:
+        case Tk::ShiftRight:
+        case Tk::ShiftRightLogical:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq:
+        case Tk::StarStarEq:
+            return true;
+    }
+
+    Unreachable();
+}

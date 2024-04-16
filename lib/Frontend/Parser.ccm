@@ -1,0 +1,59 @@
+module;
+
+#include <llvm/Support/Allocator.h>
+#include <srcc/Macros.hh>
+
+export module srcc.frontend.parser;
+import srcc.frontend.token;
+import srcc;
+import srcc.utils;
+
+export namespace srcc {
+class Parser;
+class ParsedModule;
+}
+
+/// Parsed representation of a single file. NOT thread-safe.
+class srcc::ParsedModule {
+    SRCC_IMMOVABLE(ParsedModule);
+    const File& file;
+    std::unique_ptr<llvm::BumpPtrAllocator> alloc = std::make_unique<llvm::BumpPtrAllocator>();
+
+public:
+    /// Create a new parse context for a file.
+    explicit ParsedModule(const File& file) : file(file) {}
+
+    /// Get the module’s allocator.
+    [[nodiscard]] auto allocator() -> llvm::BumpPtrAllocator& { return *alloc; }
+
+    /// Get the owning context.
+    [[nodiscard]] Context& context() const { return file.context(); }
+
+    /// Dump the contents of the module.
+    void dump() const;
+};
+
+class srcc::Parser {
+    SRCC_IMMOVABLE(Parser);
+    std::unique_ptr<ParsedModule> mod;
+    TokenStream stream;
+    Context& ctx;
+
+public:
+    /// Parse a file.
+    static auto Parse(const File& file) -> Result<std::unique_ptr<ParsedModule>>;
+
+private:
+    explicit Parser(const File& file)
+        : mod{std::make_unique<ParsedModule>(file)},
+          stream{mod->allocator()},
+          ctx{file.context()} {}
+
+    /// Parse the file.
+    auto ParseFile() -> Result<>;
+
+    /// Read all tokens from a file.
+    ///
+    /// Implemented in Lexer.cc.
+    void ReadTokens(const File& file);
+};

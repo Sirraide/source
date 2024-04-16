@@ -1,0 +1,327 @@
+module;
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <fmt/format.h>
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Alignment.h>
+#include <ranges>
+#include <source_location>
+#include <srcc/Macros.hh>
+#include <string>
+
+export module srcc.utils;
+
+export namespace srcc {
+using namespace std::literals;
+namespace chr = std::chrono;
+namespace rgs = std::ranges;
+namespace vws = std::views;
+namespace fs = std::filesystem;
+
+using u8 = std::uint8_t;
+using u16 = std::uint16_t;
+using u32 = std::uint32_t;
+using u64 = std::uint64_t;
+using usz = std::size_t;
+using uptr = std::uintptr_t;
+
+using i8 = std::int8_t;
+using i16 = std::int16_t;
+using i32 = std::int32_t;
+using i64 = std::int64_t;
+using isz = std::ptrdiff_t;
+using iptr = std::intptr_t;
+
+using f32 = float;
+using f64 = double;
+
+using llvm::Align;
+using llvm::APInt;
+using llvm::SmallString;
+using llvm::SmallVector;
+using llvm::StringMap;
+using llvm::StringRef;
+
+template <typename... arguments>
+void debug(fmt::format_string<arguments...> fmt, arguments&&... args) {
+    fmt::print(stderr, fmt, std::forward<arguments>(args)...);
+    fmt::print(stderr, "\n");
+}
+
+/// Used to represent the size of a type.
+///
+/// This is just a wrapper around an integer, but it requires us
+/// to be explicit as to whether we want bits or bytes, which is
+/// useful for avoiding mistakes.
+class Size {
+    usz raw;
+
+    static_assert(CHAR_BIT == 8);
+    constexpr explicit Size(usz raw) : raw{raw} {}
+
+public:
+    constexpr Size() : raw{0} {}
+    explicit Size(Align align) : raw{align.value() * 8} {}
+
+    [[nodiscard]] static constexpr Size Bits(usz bits) { return Size{bits}; }
+    [[nodiscard]] static constexpr Size Bytes(usz bytes) { return Size{bytes * 8}; }
+
+    /// Return this size aligned to a given alignment.
+    [[nodiscard]] Size aligned(Align align) const {
+        return Bytes(alignTo(bytes(), align));
+    }
+
+    /// Align this to a given alignment.
+    Size& align(Align align) {
+        *this = aligned(align);
+        return *this;
+    }
+
+    [[nodiscard]] constexpr Size aligned(Size align) const { return Size{alignTo(bytes(), Align(align.bytes()))}; }
+    [[nodiscard]] constexpr auto bits() const -> usz { return raw; }
+    [[nodiscard]] constexpr auto bytes() const -> usz { return llvm::alignToPowerOf2(raw, 8) / 8; }
+
+    constexpr Size operator+=(Size rhs) { return Size{raw += rhs.raw}; }
+    constexpr Size operator-=(Size rhs) { return Size{raw -= rhs.raw}; }
+    constexpr Size operator*=(usz rhs) { return Size{raw *= rhs}; }
+
+private:
+    /// Only provided for Size*Integer since that basically means scaling a size. Multiplying
+    /// two sizes w/ one another doesn’t make sense, so that operation is not provided.
+    [[nodiscard]] friend constexpr Size operator*(Size lhs, usz rhs) { return Size{lhs.raw * rhs}; }
+    [[nodiscard]] friend constexpr Size operator+(Size lhs, Size rhs) { return Size{lhs.raw + rhs.raw}; }
+    [[nodiscard]] friend constexpr bool operator==(Size lhs, Size rhs) = default;
+    [[nodiscard]] friend constexpr auto operator<=>(Size lhs, Size rhs) = default;
+
+    /// This needs to check for underflow.
+    [[nodiscard]] friend constexpr Size operator-(Size lhs, Size rhs) {
+        Assert(lhs.raw >= rhs.raw, "Size underflow");
+        return Size{lhs.raw - rhs.raw};
+    }
+};
+
+/// A null-terminated string that is saved somewhere.
+///
+/// This is used for strings that are guaranteed to ‘live long
+/// enough’ to be passed around without having to worry about who
+/// owns them. This typically means they are stored in a module
+/// or static storage.
+///
+/// NEVER return a String to outside a single driver invocation!
+class String {
+    StringRef val;
+
+public:
+    constexpr String() = default;
+
+    /// Construct from a string literal.
+    template <usz size>
+    consteval String(const char (&arr)[size]) : val{arr} {
+        Assert(arr[size - 1] == '\0', "Strings must be null-terminated!");
+    }
+
+    /// Construct from a string literal.
+    consteval String(llvm::StringLiteral lit) : val{lit} {}
+
+    /// Get an iterator to the beginning of the string.
+    [[nodiscard]] constexpr auto begin() const { return val.begin(); }
+
+    /// Get the data of the string.
+    [[nodiscard]] constexpr auto data() const -> const char* { return val.data(); }
+
+    /// Check if the string is empty.
+    [[nodiscard]] constexpr auto empty() const -> bool { return val.empty(); }
+
+    /// Get an iterator to the end of the string.
+    [[nodiscard]] constexpr auto end() const { return val.end(); }
+
+    /// Check if the string ends with a given suffix.
+    [[nodiscard]] constexpr auto ends_with(StringRef suffix) const -> bool {
+        return val.ends_with(suffix);
+    }
+
+    /// Get the size of the string.
+    [[nodiscard]] constexpr auto size() const -> usz { return val.size(); }
+
+    /// Check if the string starts with a given prefix.
+    [[nodiscard]] constexpr auto starts_with(StringRef prefix) const -> bool {
+        return val.starts_with(prefix);
+    }
+
+    /// Get the string value as a std::string_view.
+    [[nodiscard]] constexpr auto sv() const -> std::string_view { return val; }
+
+    /// Get the string value.
+    [[nodiscard]] constexpr auto value() const -> StringRef { return val; }
+
+    /// Get the string value, including the null terminator.
+    [[nodiscard]] constexpr auto value_with_null() const -> StringRef {
+        return StringRef{val.data(), val.size() + 1};
+    }
+
+    /// Get a character at a given index.
+    [[nodiscard]] constexpr auto operator[](usz idx) const -> char { return val[idx]; }
+
+    /// Comparison operators.
+    [[nodiscard]] friend auto operator==(String a, StringRef b) { return a.val == b; }
+    [[nodiscard]] friend auto operator==(String a, String b) { return a.value() == b.value(); }
+    [[nodiscard]] friend auto operator==(String a, const char* b) { return a.value() == b; }
+    [[nodiscard]] friend auto operator<=>(String a, String b) { return a.sv() <=> b.sv(); }
+    [[nodiscard]] friend auto operator<=>(String a, std::string_view b) { return a.val <=> b; }
+
+    /// Get the string.
+    [[nodiscard]] constexpr operator StringRef() const { return val; }
+
+    /// Create a 'String' from a 'StringRef'.
+    ///
+    /// This is an unsafe operation! The caller must ensure that the
+    /// underlying value lives as long as the string is going to be
+    /// used and that it is null-terminated. This is intended to be
+    /// used e.g. by the lexer; always prefer to obtain a 'String'
+    /// by other means.
+    [[nodiscard]] static constexpr auto CreateUnsafe(StringRef value) {
+        String s;
+        s.val = value;
+        return s;
+    }
+};
+
+/// Get the underlying value of an enumerator.
+template <typename T>
+requires std::is_enum_v<T>
+auto operator+(T t) -> std::underlying_type_t<T> { return std::to_underlying(t); }
+} // namespace srcc
+
+// Rarely used helpers go here.
+export namespace srcc::utils {
+/// ANSI Terminal colours.
+enum struct Colour {
+    Bold,
+    Reset,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    None,
+};
+
+/// RAII helper to toggle colours when printing.
+///
+/// Example:
+/// \code{.cpp}
+///     using enum Colour;
+///     Colours C{true};
+///     out += C(Red);
+///     out += fmt::format("{}foo{}", C(Green), C(Reset));
+/// \endcode
+struct Colours {
+    bool use_colours;
+    constexpr Colours(bool use_colours)
+        : use_colours{use_colours} {}
+
+    constexpr auto operator()(Colour c) -> std::string_view {
+        if (not use_colours) return "";
+        switch (c) {
+            case Colour::Reset: return "\033[m";
+            case Colour::None: return "";
+            case Colour::Red: return "\033[31m";
+            case Colour::Green: return "\033[32m";
+            case Colour::Yellow: return "\033[33m";
+            case Colour::Blue: return "\033[34m";
+            case Colour::Magenta: return "\033[35m";
+            case Colour::Cyan: return "\033[36m";
+            case Colour::White: return "\033[37m";
+            case Colour::Bold: return "\033[1m";
+        }
+        return "";
+    }
+};
+
+/// Format string that also stores the source location of the caller.
+template <typename... Args>
+struct FStringWithSrcLocImpl {
+    fmt::format_string<Args...> fmt;
+    std::source_location sloc;
+
+    consteval FStringWithSrcLocImpl(
+        std::convertible_to<std::string_view> auto fmt,
+        std::source_location sloc = std::source_location::current()
+    ) : fmt(fmt), sloc(sloc) {}
+};
+
+/// Inhibit template argument deduction.
+template <typename... Args>
+using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
+
+/// Determine the width of a number when printed.
+[[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
+
+/// Replace all occurrences of `from` with `to` in `str`.
+void ReplaceAll(
+    std::string& str,
+    StringRef from,
+    StringRef to
+);
+} // namespace srcc::utils
+
+template <>
+struct fmt::formatter<llvm::APInt> : formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(const llvm::APInt& i, FormatContext& ctx) {
+        llvm::SmallVector<char> buf;
+        i.toStringSigned(buf, 10);
+        return formatter<std::string_view>::format(std::string_view{buf.data(), buf.size()}, ctx);
+    }
+};
+
+template <>
+struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
+    template <typename FormatContext>
+    auto format(srcc::Size sz, FormatContext& ctx) {
+        return formatter<srcc::usz>::format(sz.bits(), ctx);
+    }
+};
+
+
+template <>
+struct fmt::formatter<srcc::String> : formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(srcc::String s, FormatContext& ctx) {
+        return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
+    }
+};
+
+template <>
+struct fmt::formatter<llvm::StringRef> : formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(llvm::StringRef s, FormatContext& ctx) {
+        return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
+    }
+};
+
+module:private;
+using namespace srcc;
+
+void utils::ReplaceAll(
+    std::string& str,
+    StringRef from,
+    StringRef to
+) {
+    if (from.empty()) return;
+    for (usz i = 0; i = str.find(from, i), i != std::string::npos; i += to.size())
+        str.replace(i, from.size(), to);
+}
+
+auto utils::NumberWidth(usz number, usz base) -> usz {
+    return number == 0 ? 1 : usz(std::log(number) / std::log(base) + 1);
+}

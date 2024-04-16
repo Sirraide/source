@@ -46,6 +46,7 @@ target_compile_options(options INTERFACE
     ## Disabled warnings.
     -Wno-unused-function
     -Wno-unused-local-typedefs
+    -Wno-ctad-maybe-unsupported
 
     ## NULL Errors.
     -Werror=nonnull # Passing NULL to nonnull parameter.
@@ -57,7 +58,6 @@ target_compile_options(options INTERFACE
 
     ## Return type.
     -Werror=return-type
-    -Wmissing-noreturn
 
     ## C/C++.
     -Werror=implicit-fallthrough
@@ -95,21 +95,41 @@ endif()
 ## ============================================================================
 ##  Submodules and include dirs.
 ## ============================================================================
+include(FetchContent)
+
 ## Find libfmt.
-find_package(fmt CONFIG)
-if (NOT fmt_FOUND)
-    include(FetchContent)
-	message(STATUS "Fmtlib not found, downloading ...")
-	FetchContent_Declare(fmtlib
-		GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-		GIT_TAG 10.2.1
-		SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/fmt"
-    )
-	FetchContent_MakeAvailable(fmtlib)
-endif()
+message(STATUS "Fmtlib not found, downloading ...")
+FetchContent_Declare(fmtlib
+    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+    GIT_TAG 10.2.1
+    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/fmt"
+)
+FetchContent_MakeAvailable(fmtlib)
+target_include_directories(options INTERFACE
+    "${CMAKE_CURRENT_BINARY_DIR}/libs/fmt/include")
+
+## Find clopts.
+message(STATUS "Clopts not found, downloading ...")
+FetchContent_Declare(clopts
+    GIT_REPOSITORY https://github.com/Sirraide/clopts.git
+    GIT_TAG v2.2.0
+    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/clopts"
+)
+FetchContent_MakeAvailable(clopts)
+target_include_directories(options INTERFACE
+    "${CMAKE_CURRENT_BINARY_DIR}/libs/clopts/include")
+
+## Find libassert.
+add_definitions(-DLIBASSERT_STATIC_DEFINE)
+FetchContent_Declare(
+    libassert
+    GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
+    GIT_TAG        v2.0.1
+)
+FetchContent_MakeAvailable(libassert)
 
 ## Link against libfmt.
-target_link_libraries(options INTERFACE fmt)
+target_link_libraries(options INTERFACE fmt libassert::assert)
 
 ## Add ‘include’ to the include path.
 target_include_directories(options INTERFACE "${PROJECT_SOURCE_DIR}/include")
@@ -151,14 +171,38 @@ set(SOURCE_LLVM_BUILD_DIR "${SOURCE_LLVM_ROOT}/out")
 set(SOURCE_LLVM_CMAKE_DIR "${SOURCE_LLVM_BUILD_DIR}/lib/cmake")
 set(SOURCE_LLVM_BIN_DIR "${SOURCE_LLVM_BUILD_DIR}/bin")
 set(LLVM_DIR "${SOURCE_LLVM_CMAKE_DIR}/llvm")
+set(Clang_DIR "${SOURCE_LLVM_CMAKE_DIR}/clang")
 
 find_package(LLVM REQUIRED CONFIG)
+find_package(Clang REQUIRED CONFIG)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
 
 include(TableGen)
 include(AddLLVM)
+include(AddClang)
 include(HandleLLVMOptions)
+
+## FIXME: This is a hack.
+## Use llvm-config to get all LLVM libraries.
+execute_process(
+    COMMAND "${LLVM_TOOLS_BINARY_DIR}/llvm-config" --libs
+    OUTPUT_VARIABLE SOURCE_LLVM_LIBS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
+#[[
+## Clang’s resource directory is a relative path by default; as we’re
+## building this out of tree, we need to set the path explicitly.
+execute_process(
+    COMMAND "${LLVM_BUILD_DIR}/bin/clang" -print-resource-dir
+    OUTPUT_VARIABLE SRCC_CLANG_RESOURCE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+)
+]]
 
 ## ============================================================================
 ##  Executables and libraries.
@@ -169,7 +213,7 @@ file(GLOB_RECURSE modules lib/*.ccm)
 file(GLOB_RECURSE sources src/*.cc)
 
 ## Add the executable.
-add_llvm_executable(srcc ${sources})
+add_clang_executable(srcc ${sources})
 target_sources(srcc PUBLIC
     FILE_SET HEADERS     FILES ${headers}
     FILE_SET CXX_MODULES FILES ${modules}
@@ -179,9 +223,12 @@ target_sources(srcc PUBLIC
 ##
 ## This is required as the compiler will otherwise find the headers
 ## that belong to the system LLVM, if present.
-target_include_directories(srcc SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(srcc SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
 target_link_directories(srcc PRIVATE ${LLVM_LIBRARY_DIRS})
-target_compile_definitions(srcc PRIVATE ${LLVM_DEFINITIONS})
+target_compile_definitions(srcc PRIVATE
+    ${LLVM_DEFINITIONS}
+    "SOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
+)
 
 ## Apply our options.
-target_link_libraries(srcc PRIVATE options)
+target_link_libraries(srcc PRIVATE options ${SOURCE_LLVM_LIBS} tinfo clang)

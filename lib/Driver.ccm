@@ -1,0 +1,27 @@
+module;
+
+#include <srcc/Macros.hh>
+#include <string>
+
+export module srcc.driver;
+import srcc.utils;
+
+export namespace srcc {
+class Driver;
+}
+
+class srcc::Driver {
+    SRCC_DECLARE_HIDDEN_IMPL(Driver);
+
+public:
+    /// Create a new driver with default options.
+    explicit Driver();
+
+    /// Add a file to the list of files to compile.
+    void add_file(std::string_view file_path);
+
+    /// Run compile jobs.
+    ///
+    /// \return 0 on success, non-zero on failure.
+    int compile();
+};
