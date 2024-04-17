@@ -126,7 +126,10 @@ struct Lexer {
     void SkipWhitespace();
 };
 
-void Parser::ReadTokens(const File& file) { Lexer(stream, file); }
+void Parser::ReadTokens(const File& file) {
+    Lexer(stream, file);
+    tok = stream.begin();
+}
 
 Lexer::Lexer(TokenStream& into, const File& f)
     : tokens{into},

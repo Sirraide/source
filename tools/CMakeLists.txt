@@ -1,0 +1,1 @@
+add_tablegen(srcc-tblgen SRCC "${PROJECT_SOURCE_DIR}/tools/Tablegen.cc")

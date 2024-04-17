@@ -1,1 +1,48 @@
-<file> ::= <preamble> { <stmt> }
+// This grammar defines how Source is *parsed*; it does not convey
+// any information about the semantics of the language. Operator
+// precedence is also omitted.
+
+<file> ::= <preamble> <stmts>
+
+// ============================================================================
+//  Preamble
+// ============================================================================
+//  Notes:
+//
+//   - IMPORT is a full keyword so the lexer knows the token after it is a
+//     cxx-header-name if it starts w/ '<'.
+//
+//   - "program" and "module" are not because they are literally only keywords
+//     if they’re the first token in the program.
+//
+<preamble>        ::= <header> { <import> }
+<header>          ::= "program" <module-name> ";"
+<import>          ::= IMPORT CXX-HEADER-NAME ";"
+<module-name>     ::= IDENTIFIER
+
+// ============================================================================
+//  Statements
+// ============================================================================
+<stmts> ::= { <stmt> }
+<stmt> ::= <decl> | [ <expr> ] ";"
+
+// ============================================================================
+//  Expressions
+// ============================================================================
+<expr> ::= <expr-block>
+         | <expr-call>
+         | <expr-decl-ref>
+         | <expr-lit>
+
+<expr-block>    ::= "{" { <stmt> } "}"
+<expr-call>     ::= <expr> "(" [ <call-args> ] ")"
+<expr-decl-ref> ::= IDENTIFIER
+<expr-lit>      ::= STRING-LITERAL
+
+<call-args> ::= <expr> { "," <expr> } [ "," ]
+
+// ============================================================================
+//  Declarations
+// ============================================================================
+<decl> ::= <decl-proc>
+<decl-proc> ::= PROC IDENTIFIER <expr-block>

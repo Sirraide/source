@@ -193,6 +193,22 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+include_directories(SYSTEM
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+
+add_definitions(${LLVM_DEFINITIONS})
+link_directories(${LLVM_LIBRARY_DIRS})
+
+separate_arguments(llvm_libs)
+target_link_libraries(options INTERFACE
+    ${SOURCE_LLVM_LIBS}
+    tinfo
+    clang clangTooling clangASTMatchers
+)
+
+
 #[[
 ## Clang’s resource directory is a relative path by default; as we’re
 ## building this out of tree, we need to set the path explicitly.
@@ -203,6 +219,40 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 ]]
+
+## ============================================================================
+##  Tablegen
+## ============================================================================
+## Our tablegen.
+add_subdirectory(tools)
+target_link_libraries(srcc-tblgen PRIVATE options)
+
+function(srcc_tablegen)
+  cmake_parse_arguments(CTG "" "SOURCE;TARGET" "" ${ARGN})
+
+  if (NOT CTG_SOURCE)
+    message(FATAL_ERROR "SOURCE source-file required by srcc_tablegen")
+  endif()
+
+  set(SRCC_TABLEGEN_ARGUMENTS "")
+  set(LLVM_TARGET_DEFINITIONS ${CTG_SOURCE})
+  tablegen(SRCC ${CTG_UNPARSED_ARGUMENTS} ${SRCC_TABLEGEN_ARGUMENTS})
+
+  if (CTG_TARGET)
+    add_public_tablegen_target(${CTG_TARGET})
+    set_target_properties( ${CTG_TARGET} PROPERTIES FOLDER "SRCC tablegenning")
+    set_property(GLOBAL APPEND PROPERTY SRCC_TABLEGEN_TARGETS ${CTG_TARGET})
+  endif()
+endfunction()
+
+## Generate the tablegen files.
+srcc_tablegen(include/srcc/ParseTree.inc
+    SOURCE "${PROJECT_SOURCE_DIR}/include/srcc/ParseTree.td"
+    TARGET SRCCParseTree
+)
+
+## Add the output directory to the include path.
+include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
 
 ## ============================================================================
 ##  Executables and libraries.
@@ -219,16 +269,13 @@ target_sources(srcc PUBLIC
     FILE_SET CXX_MODULES FILES ${modules}
 )
 
-## Add the LLVM include directories.
-##
-## This is required as the compiler will otherwise find the headers
-## that belong to the system LLVM, if present.
-target_include_directories(srcc SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
-target_link_directories(srcc PRIVATE ${LLVM_LIBRARY_DIRS})
+## It depends on our tablegen targets.
+get_property(SRCC_TABLEGEN_TARGETS GLOBAL PROPERTY SRCC_TABLEGEN_TARGETS)
+add_dependencies(srcc ${SRCC_TABLEGEN_TARGETS})
+
 target_compile_definitions(srcc PRIVATE
-    ${LLVM_DEFINITIONS}
     "SOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
 )
 
 ## Apply our options.
-target_link_libraries(srcc PRIVATE options ${SOURCE_LLVM_LIBS} tinfo clang)
+target_link_libraries(srcc PRIVATE options)

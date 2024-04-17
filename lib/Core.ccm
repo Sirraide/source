@@ -6,11 +6,11 @@ module;
 #include <fmt/format.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <mutex>
 #include <source_location>
 #include <srcc/Macros.hh>
 #include <string>
 #include <string_view>
-#include <mutex>
 
 export module srcc;
 import srcc.utils;
@@ -362,7 +362,6 @@ public:
         std::terminate(); /// Should never be reached.
     }
 
-
     /// Enable coloured output by default. This is overriden by the corresponding
     /// setting in the context.
     static void EnableColours(bool enable);
@@ -402,6 +401,14 @@ public:
     /// Create a result that contains a diagnostic.
     Result(Diag d) : data(std::move(d)) {}
 
+    /// Create a result from another result.
+    template <std::convertible_to<Ty> U>
+    requires (not is<Ty, U>)
+    Result(Result<U> other) {
+        if (not other) data = other.error();
+        else data = std::move(*other);
+    }
+
     /// Access the error; this automatically moves to simplify propagating errors.
     [[nodiscard]] auto error() -> Diag&& {
         Assert(std::holds_alternative<Diag>(data), "Result must hold a error");
@@ -431,6 +438,13 @@ public:
 
     /// Check whether this contains a value.
     [[nodiscard]] explicit operator bool() { return std::holds_alternative<Ty>(data); }
+
+    /// Create a nullptr result.
+    static auto UnsafeNull() -> Result
+    requires std::is_pointer_v<Ty>
+    {
+        return Result{static_cast<Ty>(nullptr)};
+    }
 };
 
 template <>
@@ -453,6 +467,14 @@ public:
 
     /// Create a result that contains a diagnostic.
     Result(Diag d) : diag(std::move(d)) {}
+
+    /// Create a result from another result.
+    template <typename U>
+    requires (not is<U, void>)
+    Result(Result<U> other) {
+        if (not other) diag = other.error();
+        else diag = Diag();
+    }
 
     /// Transform an LLVM error to a diagnostic.
     template <typename Formatter>

@@ -6,11 +6,15 @@ module;
 #include <filesystem>
 #include <fmt/format.h>
 #include <llvm/ADT/APInt.h>
-#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Alignment.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/TrailingObjects.h>
 #include <ranges>
 #include <source_location>
 #include <srcc/Macros.hh>
@@ -42,18 +46,30 @@ using iptr = std::intptr_t;
 using f32 = float;
 using f64 = double;
 
+using llvm::cast;
+using llvm::cast_if_present;
+using llvm::dyn_cast;
+using llvm::dyn_cast_if_present;
+using llvm::isa;
+
 using llvm::Align;
 using llvm::APInt;
+using llvm::ArrayRef;
+using llvm::MutableArrayRef;
 using llvm::SmallString;
 using llvm::SmallVector;
 using llvm::StringMap;
 using llvm::StringRef;
+using llvm::TrailingObjects;
 
 template <typename... arguments>
 void debug(fmt::format_string<arguments...> fmt, arguments&&... args) {
     fmt::print(stderr, fmt, std::forward<arguments>(args)...);
     fmt::print(stderr, "\n");
 }
+
+template <typename T, typename... Us>
+concept is = (std::is_same_v<std::remove_cvref_t<T>, std::remove_cvref_t<Us>> or ...);
 
 /// Used to represent the size of a type.
 ///
@@ -247,6 +263,9 @@ struct Colours {
     }
 };
 
+/// Escape non-printable characters in a string.
+auto Escape(StringRef str) -> std::string;
+
 /// Format string that also stores the source location of the caller.
 template <typename... Args>
 struct FStringWithSrcLocImpl {
@@ -292,7 +311,6 @@ struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
     }
 };
 
-
 template <>
 struct fmt::formatter<srcc::String> : formatter<std::string_view> {
     template <typename FormatContext>
@@ -309,8 +327,15 @@ struct fmt::formatter<llvm::StringRef> : formatter<std::string_view> {
     }
 };
 
-module:private;
+module :private;
 using namespace srcc;
+
+auto utils::Escape(StringRef str) -> std::string {
+    std::string s;
+    llvm::raw_string_ostream os{s};
+    os.write_escaped(str, true);
+    return s;
+}
 
 void utils::ReplaceAll(
     std::string& str,

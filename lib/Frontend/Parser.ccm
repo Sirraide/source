@@ -1,6 +1,8 @@
 module;
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/TrailingObjects.h>
 #include <srcc/Macros.hh>
 
 export module srcc.frontend.parser;
@@ -11,13 +13,40 @@ import srcc.utils;
 export namespace srcc {
 class Parser;
 class ParsedModule;
-}
+class ParsedExpr;
+class ParsedProc;
+enum class ParsedExprKind : u8;
+#define SRCC_PARSE_TREE_FWD
+#include "srcc/ParseTree.inc"
+} // namespace srcc
+
+enum class srcc::ParsedExprKind : srcc::u8 {
+#define SRCC_PARSE_TREE_ENUMERATORS
+#include "srcc/ParseTree.inc"
+
+};
 
 /// Parsed representation of a single file. NOT thread-safe.
 class srcc::ParsedModule {
     SRCC_IMMOVABLE(ParsedModule);
+    friend Parser;
     const File& file;
     std::unique_ptr<llvm::BumpPtrAllocator> alloc = std::make_unique<llvm::BumpPtrAllocator>();
+
+    /// Top-level statements.
+    std::vector<ParsedExpr*> top_level;
+
+    /// The name of this program or module.
+    Location name_loc;
+    String name;
+
+    /// Whether this is a program or module.
+    Location program_or_module_loc;
+    bool is_module = false;
+
+    /// Imported modules.
+    using Import = std::pair<String, Location>;
+    std::vector<Import> imports;
 
 public:
     /// Create a new parse context for a file.
@@ -33,15 +62,37 @@ public:
     void dump() const;
 };
 
+class srcc::ParsedExpr {
+public:
+    using Kind = ParsedExprKind;
+
+    const Kind kind;
+    Location loc;
+
+protected:
+    ParsedExpr(Kind kind, Location loc) : kind{kind}, loc{loc} {}
+
+public:
+    void dump(bool use_colour = false);
+    void dumpColor() { dump(true); }
+};
+
+#define SRCC_PARSE_TREE_CLASSES
+#include "srcc/ParseTree.inc"
+
 class srcc::Parser {
     SRCC_IMMOVABLE(Parser);
     std::unique_ptr<ParsedModule> mod;
     TokenStream stream;
+    TokenStream::iterator tok;
     Context& ctx;
 
 public:
     /// Parse a file.
     static auto Parse(const File& file) -> Result<std::unique_ptr<ParsedModule>>;
+
+    /// Allocate data.
+    void* Allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
 
 private:
     explicit Parser(const File& file)
@@ -49,11 +100,49 @@ private:
           stream{mod->allocator()},
           ctx{file.context()} {}
 
-    /// Parse the file.
-    auto ParseFile() -> Result<>;
+    /// Each of these corresponds to a production in the grammar.
+    auto ParseBlock() -> Result<ParsedBlockExpr*>;
+    auto ParseExpr() -> Result<ParsedExpr*>;
+    void ParseFile();
+    void ParseHeader();
+    void ParseImport();
+    void ParsePreamble();
+    auto ParseStmt() -> Result<ParsedExpr*>;
+    auto ParseProcDecl() -> Result<ParsedProc*>;
+
+    template <typename... Args>
+    Diag Error(Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+        return Diag::Error(ctx, where, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    Diag Error(fmt::format_string<Args...> fmt, Args&&... args) {
+        return Diag::Error(ctx, tok->location, fmt, std::forward<Args>(args)...);
+    }
+
+    /// Consume a token or issue an error.
+    bool ConsumeOrError(Tk tk);
 
     /// Read all tokens from a file.
     ///
     /// Implemented in Lexer.cc.
     void ReadTokens(const File& file);
+
+    /// Skip to and past a token.
+    void SkipTo(std::same_as<Tk> auto... tks) {
+        while (not At(tks..., Tk::Eof)) ++tok;
+        if (not At(Tk::Eof)) ++tok;
+    }
+
+    /// Check if we’re at a token.
+    [[nodiscard]] bool At(std::same_as<Tk> auto... tks) {
+        return ((tok->type == tks) or ...);
+    }
+
+    /// Consume a token if it is present.
+    [[nodiscard]] bool Consume(Tk tk);
+    [[nodiscard]] bool Consume(Location& into, Tk tk);
+
+    /// Consume a contextual keyword.
+    [[nodiscard]] bool ConsumeContextual(Location& into, StringRef keyword);
 };

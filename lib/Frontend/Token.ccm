@@ -16,6 +16,7 @@ export namespace srcc {
 enum struct Tk : u8;
 struct Token;
 class TokenStream;
+auto Spelling(Tk t) -> String;
 }
 
 enum struct srcc::Tk : u8 {
@@ -187,6 +188,8 @@ class srcc::TokenStream {
     llvm::UniqueStringSaver saver;
 
 public:
+    using iterator = decltype(tokens)::iterator;
+
     /// Construct a token stream.
     explicit TokenStream(llvm::BumpPtrAllocator& alloc) : saver(alloc) {}
 
@@ -222,11 +225,19 @@ public:
     [[nodiscard]] auto size() const -> usz { return tokens.size(); }
 };
 
+template <>
+struct fmt::formatter<Tk> : formatter<String> {
+    template <typename FormatContext>
+    auto format(Tk tk, FormatContext& ctx) {
+        return formatter<String>::format(Spelling(tk), ctx);
+    }
+};
+
 module :private;
 using namespace srcc;
 
 /// Stringify a token type.
-auto Spelling(Tk t) -> String {
+auto srcc::Spelling(Tk t) -> String {
     switch (t) {
         case Tk::Invalid: return "<invalid>";
         case Tk::Eof: return "<eof>";
