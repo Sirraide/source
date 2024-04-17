@@ -9,7 +9,8 @@
 // Some invariants:
 //
 //   - All public members of 'Driver' are thread-safe and must lock the
-//     driver mutex upon entry.
+//     driver mutex upon entry, unless they only access 'impl->ctx' or
+//     atomic variables.
 //
 //   - Members of 'Driver' MUST NOT be called by other members.
 //
@@ -102,4 +103,8 @@ void Driver::add_file(std::string_view file_path) {
 int Driver::compile() {
     std::unique_lock _{impl->mutex};
     return impl->compile();
+}
+
+void Driver::enable_colours(bool enable) {
+    impl->ctx.enable_colours(enable);
 }

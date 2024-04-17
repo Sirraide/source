@@ -24,4 +24,7 @@ public:
     ///
     /// \return 0 on success, non-zero on failure.
     int compile();
+
+    /// Enable colours.
+    void enable_colours(bool enable);
 };

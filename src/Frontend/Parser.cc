@@ -46,8 +46,11 @@ struct Printer {
 };
 
 void ParsedModule::dump() const {
+    using enum utils::Colour;
     bool c = context().use_colours();
-    fmt::print("{} {}:\n", is_module ? "Module" : "Program", name);
+    utils::Colours C{c};
+    fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
+    for (auto i : imports) fmt::print("{}Import {}<{}>\n", C(Red), C(Blue), i.first);
     for (auto s : top_level) s->dump(c);
 }
 
