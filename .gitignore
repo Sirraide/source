@@ -7,8 +7,8 @@
 /out/
 /srcc
 /srcc.exe
-/srcc-tblgen
-/srcc-tblgen.exe
+/srcc-astgen
+/srcc-astgen.exe
 
 ## Valgrind.
 callgrind.out.*

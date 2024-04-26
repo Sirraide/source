@@ -17,13 +17,12 @@ class ParsedExpr;
 class ParsedProc;
 enum class ParsedExprKind : u8;
 #define SRCC_PARSE_TREE_FWD
-#include "srcc/ParseTree.inc"
+#include "srcc/astgen/ParseTree.inc"
 } // namespace srcc
 
 enum class srcc::ParsedExprKind : srcc::u8 {
 #define SRCC_PARSE_TREE_ENUMERATORS
-#include "srcc/ParseTree.inc"
-
+#include "srcc/astgen/ParseTree.inc"
 };
 
 /// Parsed representation of a single file. NOT thread-safe.
@@ -78,7 +77,7 @@ public:
 };
 
 #define SRCC_PARSE_TREE_CLASSES
-#include "srcc/ParseTree.inc"
+#include "srcc/astgen/ParseTree.inc"
 
 class srcc::Parser {
     SRCC_IMMOVABLE(Parser);

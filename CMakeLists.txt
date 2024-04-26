@@ -209,6 +209,12 @@ target_link_libraries(options INTERFACE
 )
 
 
+## Add ASTGen output directory to the include path.
+include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+
+## Global definitions.
+add_definitions("-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\"")
+
 #[[
 ## Clang’s resource directory is a relative path by default; as we’re
 ## building this out of tree, we need to set the path explicitly.
@@ -221,61 +227,99 @@ execute_process(
 ]]
 
 ## ============================================================================
-##  Tablegen
+##  Helper Functions
 ## ============================================================================
-## Our tablegen.
-add_subdirectory(tools)
-target_link_libraries(srcc-tblgen PRIVATE options)
+## Run the AST generator.
+function(astgen input)
+    get_filename_component(filename "${input}" NAME_WLE)
+    set(output_file "${CMAKE_CURRENT_BINARY_DIR}/include/srcc/astgen/${filename}.inc")
+    add_custom_command(
+        OUTPUT "${output_file}"
+        COMMAND srcc-astgen
+            "${PROJECT_SOURCE_DIR}/${input}"
+            -o "${output_file}"
+        COMMENT "Generating AST definitions from ${input}."
+        DEPENDS srcc-astgen
+        VERBATIM
+    )
 
-function(srcc_tablegen)
-  cmake_parse_arguments(CTG "" "SOURCE;TARGET" "" ${ARGN})
+    set(target_name astgen_${input})
+    string(REPLACE "/" "_" target_name ${target_name})
+    add_custom_target("${target_name}" DEPENDS "${output_file}")
 
-  if (NOT CTG_SOURCE)
-    message(FATAL_ERROR "SOURCE source-file required by srcc_tablegen")
-  endif()
+    list(APPEND SRCC_ASTGEN_TARGETS "${target_name}")
+    set_property(GLOBAL PROPERTY SRCC_ASTGEN_TARGETS ${SRCC_ASTGEN_TARGETS})
 
-  set(SRCC_TABLEGEN_ARGUMENTS "")
-  set(LLVM_TARGET_DEFINITIONS ${CTG_SOURCE})
-  tablegen(SRCC ${CTG_UNPARSED_ARGUMENTS} ${SRCC_TABLEGEN_ARGUMENTS})
-
-  if (CTG_TARGET)
-    add_public_tablegen_target(${CTG_TARGET})
-    set_target_properties( ${CTG_TARGET} PROPERTIES FOLDER "SRCC tablegenning")
-    set_property(GLOBAL APPEND PROPERTY SRCC_TABLEGEN_TARGETS ${CTG_TARGET})
-  endif()
+    ## Create a dummy file at configure time to make the dependency scanner happy.
+    if (NOT EXISTS output_file)
+        file(WRITE output_file "")
+    endif()
 endfunction()
 
-## Generate the tablegen files.
-srcc_tablegen(include/srcc/ParseTree.inc
-    SOURCE "${PROJECT_SOURCE_DIR}/include/srcc/ParseTree.td"
-    TARGET SRCCParseTree
+## Add a library.
+function (add_srcc_library name path_name)
+    file(GLOB_RECURSE _modules_${name} lib/${path_name}/*.ccm)
+    file(GLOB_RECURSE _sources_${name} src/${path_name}/*.cc)
+    add_library(srcc-${name} STATIC ${_sources_${name}})
+    target_sources(srcc-${name} PUBLIC
+        FILE_SET CXX_MODULES FILES ${_modules_${name}}
+    )
+
+    ## Link to options and core library.
+    target_link_libraries(srcc-${name} PRIVATE options srcc-core)
+
+    ## ASTGen may be required for this.
+    get_property(SRCC_ASTGEN_TARGETS GLOBAL PROPERTY SRCC_ASTGEN_TARGETS)
+    add_dependencies(srcc-${name} ${SRCC_ASTGEN_TARGETS})
+
+    ## Add other dependencies.
+    set(multiValueArgs LINK)
+    cmake_parse_arguments(ARG "" "" "${multiValueArgs}" ${ARGN})
+    target_link_libraries(srcc-${name} PRIVATE ${ARG_LINK})
+endfunction()
+
+## ============================================================================
+##  Core library and code generation
+## ============================================================================
+## Core library; this is what everything else depends on so
+## we handle it separately since it must be built first.
+file(GLOB_RECURSE _headers_core include/*.hh)
+file(GLOB_RECURSE _modules_core lib/Core/*.ccm)
+file(GLOB_RECURSE _sources_core src/Core/*.cc)
+add_library(srcc-core STATIC ${_sources_core})
+target_sources(srcc-core PUBLIC
+    FILE_SET HEADERS     FILES ${_headers_core}
+    FILE_SET CXX_MODULES FILES ${_modules_core}
 )
 
-## Add the output directory to the include path.
-include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
+target_link_libraries(srcc-core PRIVATE options)
+
+## ASTGen executable. This is needed to build libraries other than Core.
+add_executable(srcc-astgen tools/ASTGen.cc)
+target_link_libraries(srcc-astgen PRIVATE options srcc-core)
+
+## Run the code generator.
+astgen(include/srcc/ParseTree.ast)
 
 ## ============================================================================
-##  Executables and libraries.
+##  Other libraries
 ## ============================================================================
-## Modules interfaces go in ‘lib’, implementation files in ‘src’.
-file(GLOB_RECURSE headers include/*.hh)
-file(GLOB_RECURSE modules lib/*.ccm)
-file(GLOB_RECURSE sources src/*.cc)
+add_srcc_library(frontend Frontend)
+add_srcc_library(driver Driver LINK srcc-frontend)
+
+## ============================================================================
+##  Compiler executable
+## ============================================================================
+## Do NOT recurse here; only top-level files are part of the main driver
+## executable only.
+file(GLOB _driver_modules lib/*.ccm)
+file(GLOB _driver_sources src/*.cc)
 
 ## Add the executable.
-add_clang_executable(srcc ${sources})
+add_clang_executable(srcc ${_driver_sources})
 target_sources(srcc PUBLIC
-    FILE_SET HEADERS     FILES ${headers}
-    FILE_SET CXX_MODULES FILES ${modules}
+    FILE_SET CXX_MODULES FILES ${_driver_modules}
 )
 
-## It depends on our tablegen targets.
-get_property(SRCC_TABLEGEN_TARGETS GLOBAL PROPERTY SRCC_TABLEGEN_TARGETS)
-add_dependencies(srcc ${SRCC_TABLEGEN_TARGETS})
-
-target_compile_definitions(srcc PRIVATE
-    "SOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
-)
-
-## Apply our options.
-target_link_libraries(srcc PRIVATE options)
+## Link everything together.
+target_link_libraries(srcc PRIVATE options srcc-core srcc-driver)

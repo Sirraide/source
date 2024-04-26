@@ -59,7 +59,7 @@ void ParsedExpr::dump(bool use_colour) {
 }
 
 #define SRCC_PARSE_TREE_IMPL
-#include "srcc/ParseTree.inc"
+#include "srcc/astgen/ParseTree.inc"
 // ============================================================================
 //  Parser Helpers
 // ============================================================================

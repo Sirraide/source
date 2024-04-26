@@ -355,6 +355,22 @@ public:
     /// isn’t accessible to the user.
     template <typename... Args>
     [[noreturn]] static void Fatal(
+        const Context& ctx,
+        Location where,
+        fmt::format_string<Args...> fmt,
+        Args&&... args
+    ) {
+        Diag{ctx, Kind::Fatal, where, fmt::format(fmt, std::forward<Args>(args)...)};
+        std::terminate(); /// Should never be reached.
+    }
+
+    /// Raise a fatal error and exit.
+    ///
+    /// This is NOT an ICE; instead it is an error that is probably caused by
+    /// the underlying system, such as attempting to output to a directory that
+    /// isn’t accessible to the user.
+    template <typename... Args>
+    [[noreturn]] static void Fatal(
         utils::FStringWithSrcLoc<Args...> fmt,
         Args&&... args
     ) {

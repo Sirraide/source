@@ -1,4 +1,4 @@
-#include <clopts.hh>
+#include <../out/libs/clopts/include/clopts.hh>
 
 import srcc;
 import srcc.utils;
@@ -8,7 +8,8 @@ namespace detail {
 using namespace command_line_options;
 using options = clopts< // clang-format off
     positional<"file", "The file to compile">,
-    option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>
+    option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
+    help<>
 >; // clang-format on
 }
 
