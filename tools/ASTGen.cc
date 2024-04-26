@@ -1,11 +1,11 @@
 #include <clopts.hh>
+#include <filesystem>
 #include <fmt/core.h>
 #include <fmt/std.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <ranges>
-#include <filesystem>
 #include <srcc/Macros.hh>
 
 import srcc;
@@ -60,26 +60,131 @@ struct fmt::formatter<Tk> : formatter<std::string_view> {
 };
 
 struct Field {
-    std::string type;
-    std::string name;
-    Location loc;
+    std::string type;          ///< C++ type of the field.
+    std::string name;          ///< C++ name of the field.
+    std::string default_value; ///< Default parameter value.
+    bool final;                ///< Put this at the very end in the factory function and ctor.
+    bool trailing;             ///< Trailing array data using `llvm::TrailingObjects`.
+    Location loc;              ///< Location in the .ast file.
+
+    /// The type to use in declarations.
+    auto decl_type() const -> std::string {
+        return trailing ? fmt::format("ArrayRef<{}>", type) : type;
+    }
 };
 
 struct Class {
+    SRCC_IMMOVABLE(Class);
+
     Class* base; // May be null if this is the root.
     std::string name;
     std::string decorated_name;
     std::string extra_printout;
+    SmallVector<std::string> friends;
     SmallVector<Class*> children;
-    SmallVector<Field, 10> trailing_arrays;
     SmallVector<Field, 10> fields;
+    DenseMap<const Field*, std::string> default_init_fields;
 
-    SRCC_IMMOVABLE(Class);
     Class(StringRef prefix, std::string name, Class* base)
-        : base(base), name(std::move(name)), decorated_name(std::string(prefix) + this->name) {}
+        : base(base),
+          name(std::move(name)),
+          decorated_name(std::string(prefix) + this->name) {
+        if (base) default_init_fields = base->default_init_fields;
+    }
+
+    /// Check if a field is defaulted in this class.
+    bool defaulted(const Field& f) {
+        return not f.default_value.empty() or default_init_fields.contains(&f);
+    }
+
+    /// Get the default value of a field in this class.
+    auto default_value(const Field& f) -> std::string_view {
+        auto it = default_init_fields.find(&f);
+        if (it != default_init_fields.end()) return it->second;
+        return f.default_value;
+    }
+
+    /// Get all final fields.
+    auto final() {
+        return fields | std::views::filter([](const Field& f) { return f.final; });
+    }
 
     /// Check whether this has any derived classes.
-    [[nodiscard]] bool is_base() const { return not children.empty(); }
+    bool is_base() const { return not children.empty(); }
+
+    /// Get all fields that aren’t final.
+    auto non_final() {
+        return fields | std::views::filter([](const Field& f) { return not f.final; });
+    }
+
+    /// Get all non-trailing fields.
+    auto non_trailing() {
+        return fields | std::views::filter([](const Field& f) { return not f.trailing; });
+    }
+
+    /// Get all trailing fields.
+    auto trailing() {
+        return fields | std::views::filter([](const Field& f) { return f.trailing; });
+    }
+};
+
+enum struct KindPolicy : u8 {
+    Never,
+    IfBase,
+    Always,
+};
+
+enum struct ParameterOrder : u8 {
+    Regular,
+    Defaulted,
+};
+
+struct PrintingPolicy {
+    bool default_val;     ///< Emit default value.
+    bool type;            ///< Emit type.
+    bool trailing_comma;  ///< Emit trailing comma.
+    KindPolicy kind;      ///< Emit kind.
+    ParameterOrder order; ///< Order of parameters.
+};
+
+constexpr PrintingPolicy CtorParams{
+    .default_val = false,
+    .type = true,
+    .trailing_comma = false,
+    .kind = KindPolicy::IfBase,
+    .order = ParameterOrder::Regular,
+};
+
+constexpr PrintingPolicy CtorInitBase{
+    .default_val = false,
+    .type = false,
+    .trailing_comma = true,
+    .kind = KindPolicy::Never,
+    .order = ParameterOrder::Regular,
+};
+
+constexpr PrintingPolicy CtorCall{
+    .default_val = false,
+    .type = false,
+    .trailing_comma = true,
+    .kind = KindPolicy::IfBase,
+    .order = ParameterOrder::Regular,
+};
+
+constexpr PrintingPolicy FactoryDecl{
+    .default_val = true,
+    .type = true,
+    .trailing_comma = false,
+    .kind = KindPolicy::Never,
+    .order = ParameterOrder::Defaulted,
+};
+
+constexpr PrintingPolicy FactoryDef{
+    .default_val = false,
+    .type = true,
+    .trailing_comma = false,
+    .kind = KindPolicy::Never,
+    .order = ParameterOrder::Defaulted,
 };
 
 // ============================================================================
@@ -105,6 +210,8 @@ class Generator {
     std::vector<std::unique_ptr<Class>> classes;
     std::vector<std::string> undefs;
     std::string out;
+
+    DenseMap<const Field*, std::string>* field_overrides = nullptr;
 
 public:
     explicit Generator(std::string_view in_path, std::string out_path, bool debug)
@@ -135,24 +242,25 @@ private:
     template <typename... Args>
     void W(usz indent, fmt::format_string<Args...> fmt, Args&&... args);
 
-    [[nodiscard]] bool At(std::same_as<Tk> auto... tks);
-    [[nodiscard]] bool Consume(std::same_as<Tk> auto... tks);
+    bool At(std::same_as<Tk> auto... tks);
+    bool Consume(std::same_as<Tk> auto... tks);
     void DoExpect(std::same_as<Tk> auto... tks);
     void ExpectAndConsume(Tk t);
-    [[nodiscard]] auto ExpectText() -> std::string;
-    [[nodiscard]] auto GetClass(std::string_view name) -> Class&;
-    [[nodiscard]] auto Here() -> Location;
-    [[nodiscard]] bool Kw(std::string_view text);
-
-    [[nodiscard]] auto root() -> Class& { return *classes.front(); }
+    auto ExpectText() -> std::string;
+    auto GetClass(std::string_view name) -> Class&;
+    auto Here() -> Location;
+    bool Kw(std::string_view text);
+    auto Root() -> Class& { return *classes.front(); }
 
     // Lexer/Parser.
     void AddConstant(Class& cls, std::string_view name, std::string_view value);
+    void AddDefaultInit(Class& cls, std::string name, std::string value);
     void Debug();
     void Next();
     void NextChar();
     void Parse();
     void ParseClass();
+    void ParseClassBody(Class& cls);
     void ParseClassMember(Class& cls);
     void ParseProperty(std::string& prop, std::string_view name);
     void SkipLine();
@@ -161,12 +269,11 @@ private:
     void Emit();
     void EmitClassDef(Class& cls);
     void EmitClassImpl(Class& cls);
-    void EmitCtorParams(Class& cls, usz indent, bool include_kind = true);
     void EmitForwardDecl(Class& cls);
     void EmitGuarded(std::string_view GuardName, auto cb);
-    void EmitKind(Class& cls);
-    void EmitOwnCtorArgs(Class& cls, usz indent);
-    void EmitOwnCtorParams(Class& cls, usz indent);
+    void EmitEnumerator(Class& cls);
+    void EmitParams(Class& cls, usz indent, PrintingPolicy pp);
+    void EmitParamsImpl(Class& most_derived, Class& cls, usz indent, PrintingPolicy pp, auto filter);
     void EmitPrint();
     void EmitPrintCase(Class& cls);
     void PushUndef(StringRef undef);
@@ -280,7 +387,23 @@ void Generator::AddConstant(Class& cls, std::string_view name, std::string_view 
         return;
     }
 
+    if (name == "$friend") {
+        cls.friends.push_back(std::string{value});
+        return;
+    }
+
     Error("Unknown constant field: '{}'", name);
+}
+
+void Generator::AddDefaultInit(Class& cls, std::string name, std::string value) {
+    for (Class* base = cls.base; base; base = base->base) {
+        auto it = std::ranges::find(base->fields, name, &Field::name);
+        if (it == base->fields.end()) continue;
+        cls.default_init_fields[&*it] = std::move(value);
+        return;
+    }
+
+    Error("No field named '{}' in any of '{}'’s bases!", name, cls.name);
 }
 
 void Generator::Debug() {
@@ -297,7 +420,7 @@ void Generator::Debug() {
         return fmt::format("\"{}\"", sv);
     };
 
-    fmt::print("root {}\n", N(root().name));
+    fmt::print("root {}\n", N(Root().name));
     if (not class_prefix.empty()) fmt::print("prefix {}\n", N(class_prefix));
     if (not guard_prefix.empty()) fmt::print("guard {}\n", N(guard_prefix));
     if (not namespace_.empty()) fmt::print("namespace {}\n", N(namespace_));
@@ -305,8 +428,12 @@ void Generator::Debug() {
         fmt::print("\nclass {}", N(c->name));
         if (c->base) fmt::print(" : {}", N(c->base->name));
         fmt::print(" {{\n");
-        for (auto& f : c->fields) fmt::print("    {} {}\n", N(f.type), N(f.name));
-        for (auto& f : c->trailing_arrays) fmt::print("    {}[] {}\n", N(f.type), N(f.name));
+        for (auto& f : c->fields) {
+            fmt::print("    {}{} {}", N(f.type), f.trailing ? "[]" : "", N(f.name));
+            if (not f.default_value.empty()) fmt::print(" = [{{ {} }}]", N(f.default_value));
+            fmt::print("\n");
+        }
+
         if (not c->extra_printout.empty()) fmt::print("    $print = [{{ {} }}]\n", c->extra_printout);
         fmt::print("}}\n");
     }
@@ -443,37 +570,55 @@ void Generator::Parse() {
     ParseProperty(guard_prefix, "guard");
     ParseProperty(namespace_, "namespace");
     ParseProperty(context_name, "context");
-    if (not Kw("root")) Error("Expected 'root' directive");
+    if (not Kw("root")) Error("Expected 'root' class");
     classes.push_back(std::make_unique<Class>(class_prefix, ExpectText(), nullptr));
-
+    if (At(Tk::LBrace)) ParseClassBody(Root());
     while (Kw("class")) ParseClass();
     if (not At(Tk::Eof)) Error("Expected 'class'");
 }
 
 void Generator::ParseClass() {
     auto name = ExpectText();
-    auto& base = Consume(Tk::Colon) ? GetClass(ExpectText()) : root();
+    auto& base = Consume(Tk::Colon) ? GetClass(ExpectText()) : Root();
     auto& cls = *classes.emplace_back(std::make_unique<Class>(class_prefix, name, &base));
     base.children.push_back(&cls);
+    ParseClassBody(cls);
+}
+
+void Generator::ParseClassBody(Class& cls) {
     ExpectAndConsume(Tk::LBrace);
     while (not At(Tk::RBrace, Tk::Eof)) ParseClassMember(cls);
     ExpectAndConsume(Tk::RBrace);
 }
 
 void Generator::ParseClassMember(Class& cls) {
+    auto final = Kw("final");
     auto loc = Here();
-    auto first = ExpectText();
+    auto type_or_key = ExpectText();
 
     // Constant field.
-    if (Consume(Tk::Equals)) {
-        AddConstant(cls, first, ExpectText());
+    if (Consume(Tk::Colon)) {
+        AddConstant(cls, type_or_key, ExpectText());
         return;
     }
 
-    // Member.
-    (Consume(Tk::Trailing) ? cls.trailing_arrays : cls.fields).emplace_back( //
-        std::move(first),
-        ExpectText(),
+    // Default initialiser.
+    if (Consume(Tk::Equals)) {
+        AddDefaultInit(cls, type_or_key, ExpectText());
+        return;
+    }
+
+    // Regular member, optionally with a default value.
+    auto trailing = Consume(Tk::Trailing);
+    std::string name = ExpectText();
+    std::string default_value;
+    if (Consume(Tk::Equals)) default_value = ExpectText();
+    cls.fields.emplace_back(
+        std::move(type_or_key),
+        std::move(name),
+        std::move(default_value),
+        final,
+        trailing,
         loc
     );
 }
@@ -481,7 +626,6 @@ void Generator::ParseClassMember(Class& cls) {
 void Generator::ParseProperty(std::string& prop, std::string_view name) {
     if (Kw(name)) prop = ExpectText();
 }
-
 
 // ============================================================================
 //  Emitter.
@@ -501,22 +645,22 @@ void Generator::Emit() {
 
     // Forward-declare all classes.
     EmitGuarded("FWD", [&] {
-        for (auto c : root().children) EmitForwardDecl(*c);
+        for (auto c : Root().children) EmitForwardDecl(*c);
     });
 
     // Emit Kind enum.
     EmitGuarded("ENUMERATORS", [&] {
-        for (auto& c : root().children) EmitKind(*c);
+        for (auto& c : Root().children) EmitEnumerator(*c);
     });
 
     // Emit all classes.
     EmitGuarded("CLASSES", [&] {
-        for (auto& c : root().children) EmitClassDef(*c);
+        for (auto& c : Root().children) EmitClassDef(*c);
     });
 
     // Emit the implementation of all classes.
     EmitGuarded("IMPL", [&] {
-        for (auto& c : root().children) EmitClassImpl(*c);
+        for (auto& c : Root().children) EmitClassImpl(*c);
         EmitPrint();
     });
 
@@ -534,10 +678,13 @@ void Generator::Emit() {
 }
 
 void Generator::EmitClassDef(Class& cls) {
+    field_overrides = &cls.default_init_fields;
+
     // Trailing data is not allowed in a base class because it would collide
     // with the data of any derived class.
-    if (cls.is_base() and not cls.trailing_arrays.empty())
-        Error(cls.trailing_arrays.front().loc, "Base class may not have trailing data!");
+    const bool trailing = not cls.trailing().empty();
+    if (cls.is_base() and trailing)
+        Error(cls.trailing().begin()->loc, "Base class may not have trailing data!");
 
     // Write class header.
     Inline(
@@ -549,34 +696,38 @@ void Generator::EmitClassDef(Class& cls) {
     );
 
     // Add trailing objects here.
-    if (not cls.trailing_arrays.empty()) {
+    if (trailing) {
         Inline(", llvm::TrailingObjects<{}", cls.decorated_name);
-        for (auto& f : cls.trailing_arrays) Inline(",\n    {}", f.type);
+        for (auto& f : cls.trailing()) Inline(",\n    {}", f.type);
         Inline("\n>");
     }
 
     W(" {{");
-    if (not cls.trailing_arrays.empty()) W(4, "friend TrailingObjects;\n");
+    if (trailing or not cls.friends.empty()) {
+        if (trailing) W(4, "friend TrailingObjects;");
+        for (auto& f : cls.friends) W(4, "friend {};", f);
+        W("");
+    }
 
     // Emit fields.
-    if (not cls.fields.empty()) {
+    if (not cls.non_trailing().empty()) {
         W("public:");
-        for (auto& f : cls.fields) W(4, "{} {};", f.type, f.name);
+        for (auto& f : cls.non_trailing()) W(4, "{} {};", f.type, f.name);
 
         // Don’t emit an extra 'private' if we have no trailing objects and we’re a base.
-        if (not cls.trailing_arrays.empty() or not cls.is_base())
+        if (trailing or not cls.is_base())
             W("\nprivate:");
     }
 
     // Emit trailing object helpers.
-    if (not cls.trailing_arrays.empty()) {
-        for (auto& f : cls.trailing_arrays) W(4, "const u32 num_{};", f.name);
+    if (trailing) {
+        for (auto& f : cls.trailing()) W(4, "const u32 num_{};", f.name);
         W("");
-        for (auto& [type, name, _] : cls.trailing_arrays) W(
+        for (auto& f : cls.trailing()) W(
             4,
             "auto numTrailingObjects(OverloadToken<{}>) -> usz {{ return num_{}; }}",
-            type,
-            name
+            f.type,
+            f.name
         );
         W("");
     }
@@ -584,7 +735,7 @@ void Generator::EmitClassDef(Class& cls) {
     // Emit constructor. The constructor of a base class should be protected.
     if (cls.is_base()) W("\nprotected:");
     W(4, "{}(", cls.decorated_name);
-    EmitCtorParams(cls, 8);
+    EmitParams(cls, 8, CtorParams);
     W(4, ");");
     W("");
 
@@ -593,21 +744,21 @@ void Generator::EmitClassDef(Class& cls) {
         W("public:");
         W(4, "static auto Create(");
         W(8, "{}& $,", context_name);
-        EmitCtorParams(cls, 8, false);
+        EmitParams(cls, 8, FactoryDecl);
         W(4, ") -> {}*;", cls.decorated_name);
         W("");
 
         // Trailing object accessors. These only exist if the class is not a base.
-        for (auto& [type, name, _] : cls.trailing_arrays) W(
+        for (auto& f : cls.trailing()) W(
             4,
             "[[nodiscard]] auto {}() -> ArrayRef<{}> {{ return {{getTrailingObjects<{}>(), num_{}}}; }}",
-            name,
-            type,
-            type,
-            name
+            f.name,
+            f.type,
+            f.type,
+            f.name
         );
 
-        if (not cls.trailing_arrays.empty()) W("");
+        if (not cls.trailing().empty()) W("");
     }
 
     // Emit classof.
@@ -626,14 +777,14 @@ void Generator::EmitClassDef(Class& cls) {
 
         W("public:");
         if (first == last) {
-            W(4, "static bool classof(const {}* e) {{ return e->kind == Kind::{}; }}", root().decorated_name, first);
+            W(4, "static bool classof(const {}* e) {{ return e->kind() == Kind::{}; }}", Root().decorated_name, first);
         } else {
-            W(4, "static bool classof(const {}* e) {{", root().decorated_name);
-            W(8, " return e->kind >= Kind::{} and e->kind <= Kind::{};", first, last);
+            W(4, "static bool classof(const {}* e) {{", Root().decorated_name);
+            W(8, " return e->kind() >= Kind::{} and e->kind() <= Kind::{};", first, last);
             W(4, "}}");
         }
     } else {
-        W(4, "static bool classof(const {}* e) {{ return e->kind == Kind::{}; }}", root().decorated_name, cls.name);
+        W(4, "static bool classof(const {}* e) {{ return e->kind() == Kind::{}; }}", Root().decorated_name, cls.name);
     }
     W("}};");
     W("");
@@ -643,35 +794,29 @@ void Generator::EmitClassDef(Class& cls) {
 }
 
 void Generator::EmitClassImpl(Class& cls) {
+    field_overrides = &cls.default_init_fields;
+
     // Emit ctor.
     W("srcc::{}::{}(", cls.decorated_name, cls.decorated_name);
-    EmitCtorParams(cls, 4);
+    EmitParams(cls, 4, CtorParams);
     W(") : {} {{", cls.base->decorated_name);
-
-    // Pass along the kind we got from our child, or ours if we’re not a base.
-    if (cls.is_base()) W(8, "kind,");
-    else W(8, "Kind::{},", cls.name);
-
-    // Pass along the arguments to our bases and emit our arguments.
-    EmitOwnCtorArgs(*cls.base, 8);
-
-    // Finally, add the location.
-    W(8, "loc,");
+    W(8, "{},", cls.is_base() ? "kind" : fmt::format("Kind::{}", cls.name));
+    EmitParams(*cls.base, 8, CtorInitBase);
     Inline("    }}");
 
     // Initialise our fields.
-    for (auto& [_, name, _] : cls.fields) Inline("\n  , {}{{{}}}", name, name);
-    for (auto& [_, name, _] : cls.trailing_arrays) Inline("\n  , num_{}{{u32({}.size())}}", name, name);
+    for (auto& f : cls.non_trailing()) Inline("\n  , {}{{{}}}", f.name, f.name);
+    for (auto& f : cls.trailing()) Inline("\n  , num_{}{{u32({}.size())}}", f.name, f.name);
 
     // Emit ctor body.
     W(" {{");
     W(4, "static_assert(std::is_trivially_destructible_v<decltype(*this)>);");
-    for (auto& [type, name, _] : cls.trailing_arrays) W(
+    for (auto& f : cls.trailing()) W(
         4,
         "std::uninitialized_copy_n({}.begin(), {}.size(), getTrailingObjects<{}>());",
-        name,
-        name,
-        type
+        f.name,
+        f.name,
+        f.type
     );
     W("}}");
     W("");
@@ -680,21 +825,21 @@ void Generator::EmitClassImpl(Class& cls) {
     if (not cls.is_base()) {
         W("auto srcc::{}::Create(", cls.decorated_name);
         W(4, "{}& $,", context_name);
-        EmitCtorParams(cls, 4, false);
+        EmitParams(cls, 4, FactoryDef);
         W(") -> {}* {{", cls.decorated_name);
 
         // Calculate size to allocate.
-        if (not cls.trailing_arrays.empty()) {
+        if (not cls.trailing().empty()) {
             W(4, "const auto $size = totalSizeToAlloc<");
             bool first = true;
-            for (auto& f : cls.trailing_arrays) {
+            for (auto& f : cls.trailing()) {
                 if (first) first = false;
                 else Inline(",\n");
                 W(8, "{}", f.type);
             }
             W("    >(");
             first = true;
-            for (auto& f : cls.trailing_arrays) {
+            for (auto& f : cls.trailing()) {
                 if (first) first = false;
                 else W(",\n");
                 W(8, "{}.size()", f.name);
@@ -706,14 +851,13 @@ void Generator::EmitClassImpl(Class& cls) {
         W(
             4,
             "auto $mem = $.Allocate({}, alignof({}));",
-            cls.trailing_arrays.empty() ? fmt::format("sizeof({})", cls.decorated_name) : "$size",
+            cls.trailing().empty() ? fmt::format("sizeof({})", cls.decorated_name) : "$size",
             cls.decorated_name
         );
 
         // Construct.
         W(4, "return new ($mem) {}({}", cls.decorated_name, cls.is_base() ? "kind, " : "");
-        EmitOwnCtorArgs(cls, 8);
-        W(8, "loc");
+        EmitParams(cls, 8, CtorCall);
         W(4, ");");
         W("}}");
         W("");
@@ -723,12 +867,6 @@ void Generator::EmitClassImpl(Class& cls) {
     for (auto ch : cls.children) EmitClassImpl(*ch);
 }
 
-void Generator::EmitCtorParams(Class& cls, usz indent, bool include_kind) {
-    // We need to accept the kind from any child classes.
-    if (include_kind and cls.is_base()) W(indent, "Kind kind,");
-    EmitOwnCtorParams(cls, indent);
-    W(indent, "Location loc");
-}
 
 void Generator::EmitForwardDecl(Class& cls) {
     W("class {};", cls.decorated_name);
@@ -742,29 +880,91 @@ void Generator::EmitGuarded(std::string_view GuardName, auto cb) {
     W("#endif // {}_{}", guard_prefix, GuardName);
     W("");
 }
-void Generator::EmitKind(Class& cls) {
+void Generator::EmitEnumerator(Class& cls) {
     if (not cls.is_base()) W("{},", cls.name);
-    for (auto& ch : cls.children) EmitKind(*ch);
+    for (auto& ch : cls.children) EmitEnumerator(*ch);
 }
 
-void Generator::EmitOwnCtorArgs(Class& cls, usz indent) {
-    if (cls.base) EmitOwnCtorArgs(*cls.base, indent);
-    for (auto& [_, name, _] : cls.fields) W(indent, "{},", name);
-    for (auto& [_, name, _] : cls.trailing_arrays) W(indent, "{},", name);
+void Generator::EmitParamsImpl(Class& most_derived, Class& cls, usz indent, PrintingPolicy pp, auto filter) {
+    if (cls.base) EmitParamsImpl(most_derived, *cls.base, indent, pp, filter);
+    for (Field& f : std::invoke(filter, cls)) {
+        out.append(indent, ' ');
+        if (pp.type) Inline("{} ", f.decl_type());
+        out += f.name;
+        if (pp.default_val) {
+            auto d = most_derived.default_value(f);
+            if (not d.empty()) Inline(" = {}", d);
+        }
+        out += ",\n";
+    }
 }
 
-void Generator::EmitOwnCtorParams(Class& cls, usz indent) {
-    if (cls.base) EmitOwnCtorParams(*cls.base, indent);
-    for (auto [type, name, _] : cls.fields) W(indent, "{} {},", type, name);
-    for (auto [type, name, _] : cls.trailing_arrays) W(indent, "ArrayRef<{}> {},", type, name);
+void Generator::EmitParams(Class& cls, usz indent, PrintingPolicy pp) {
+    // There are 2 parameter orders: *defaulted* parameter order and
+    // *regular* parameter order. Note: *declaration order* of fields
+    // is different still, but it’s much simpler so we don’t have to
+    // take that into account here.
+    //
+    // *Defaulted* parameter order goes as follows:
+    //
+    //   0. Kind.
+    //   1. Non-defaulted non-final fields.
+    //   2. Non-defaulted final fields.
+    //   3. Defaulted non-final fields.
+    //   4. Defaulted final fields.
+    //
+    // Note that, even if a parameter wasn’t defined with a default
+    // value, it can acquire one by supplying a default value in a
+    // derived class; such parameters must be treated as defaulted
+    // in any derived class where they have a default parameter.
+    //
+    // By contrast, *regular* parameter order goes as follows:
+    //
+    //   0. Kind.
+    //   1. Non-final fields.
+    //   2. Final fields.
+    //
+    // We need to maintain the parameter order irrespective of whether
+    // we’re actually printing the default parameters or not.
+    using std::views::filter;
+    static const auto DefaultedIn = [](Class& cls) { return [&cls](Field& f) { return cls.defaulted(f); }; };
+    auto Emit = [&](auto cb) { EmitParamsImpl(cls, cls, indent, pp, cb); };
+
+    // Kind always goes first.
+    if (pp.kind == KindPolicy::Always or (pp.kind == KindPolicy::IfBase and cls.is_base())) {
+        if (cls.is_base()) {
+            out.append(indent, ' ');
+            if (pp.type) out.append("Kind ");
+            W("kind,");
+        } else {
+            W("Kind::{},", cls.name);
+        }
+    }
+
+    // Then the parameters, in order.
+    if (pp.order == ParameterOrder::Defaulted) {
+        Emit([&cls](Class& c) { return c.non_final() | filter(utils::Not(DefaultedIn(cls))); });
+        Emit([&cls](Class& c) { return c.final() | filter(utils::Not(DefaultedIn(cls))); });
+        Emit([&cls](Class& c) { return c.non_final() | filter(DefaultedIn(cls)); });
+        Emit([&cls](Class& c) { return c.final() | filter(DefaultedIn(cls)); });
+    } else {
+        Emit(&Class::non_final);
+        Emit(&Class::final);
+    }
+
+    // Yeet the trailing comma if we don’t want it.
+    if (out.ends_with(",\n") and not pp.trailing_comma) {
+        out.resize(out.size() - 2);
+        out += '\n';
+    }
 }
 
 void Generator::EmitPrint() {
-    W("void Printer::Print({}* e) {{", root().decorated_name);
-    W(4, "switch (e->kind) {{");
+    W("void Printer::Print({}* e) {{", Root().decorated_name);
+    W(4, "switch (e->kind()) {{");
     W(8, "using enum utils::Colour;");
-    W(8, "using Kind = {}::{}::Kind;", namespace_, root().decorated_name);
-    EmitPrintCase(root());
+    W(8, "using Kind = {}::{}::Kind;", namespace_, Root().decorated_name);
+    EmitPrintCase(Root());
     W(4, "}}");
     W("}}");
 }
@@ -799,20 +999,20 @@ void Generator::EmitPrintCase(Class& c) {
     // Print its children, if any.
     SmallVector<StringRef> fields;
     SmallVector<StringRef> arrays;
-    auto AddFields = [&] (SmallVector<StringRef>& out, ArrayRef<Field> fields) {
-        for (const auto& [type, name, _] : fields) {
-            if (type.starts_with(class_prefix) and type.ends_with("*") and not type.ends_with("**"))
-                out.emplace_back(name);
+    auto AddFields = [&](SmallVector<StringRef>& out, auto fields) {
+        for (const auto& f : fields) {
+            if (f.type.starts_with(class_prefix) and f.type.ends_with("*") and not f.type.ends_with("**"))
+                out.emplace_back(f.name);
         }
     };
 
-    AddFields(fields, c.fields);
-    AddFields(arrays, c.trailing_arrays);
+    AddFields(fields, c.non_trailing());
+    AddFields(arrays, c.trailing());
 
     // Print all fields.
     if (not fields.empty() or not arrays.empty()) {
         W("");
-        W(12, "SmallVector<{}*, 10> fields;", root().decorated_name);
+        W(12, "SmallVector<{}*, 10> fields;", Root().decorated_name);
         for (auto f : fields) W(12, "if (x.{}) fields.push_back(x.{});", f, f);
         for (auto a : arrays) W(12, "if (auto a = x.{}(); not a.empty()) fields.append(a.begin(), a.end());", a);
         W(12, "PrintChildren(fields);");

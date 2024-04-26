@@ -213,7 +213,10 @@ target_link_libraries(options INTERFACE
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
 
 ## Global definitions.
-add_definitions("-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\"")
+add_definitions(
+    "-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
+    "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_BUILD_DIR}/bin/clang\""
+)
 
 #[[
 ## Clang’s resource directory is a relative path by default; as we’re
@@ -239,6 +242,7 @@ function(astgen input)
             "${PROJECT_SOURCE_DIR}/${input}"
             -o "${output_file}"
         COMMENT "Generating AST definitions from ${input}."
+        MAIN_DEPENDENCY "${PROJECT_SOURCE_DIR}/${input}"
         DEPENDS srcc-astgen
         VERBATIM
     )
@@ -300,6 +304,7 @@ target_link_libraries(srcc-astgen PRIVATE options srcc-core)
 
 ## Run the code generator.
 astgen(include/srcc/ParseTree.ast)
+astgen(include/srcc/AST.ast)
 
 ## ============================================================================
 ##  Other libraries
