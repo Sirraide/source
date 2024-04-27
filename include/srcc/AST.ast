@@ -23,7 +23,7 @@ class CallExpr : TypedExpr {
 
 class ProcRefExpr : TypedExpr {
     "ProcDecl*" decl
-    $print : [{ " {}{}", C(Reset), x.name }]
+    $print : [{ " {}{}", C(Reset), x.decl->name }]
 }
 
 class StrLitExpr : TypedExpr {
@@ -38,12 +38,14 @@ class Decl : TypedExpr { String name }
 
 class ObjectDecl : Decl {
     Linkage linkage
+    Mangling mangling
 }
 
 class ProcDecl : ObjectDecl {
     /// The parent function, or nullptr if this is *a* top-level function.
     "ProcDecl*" parent
     "Expr*" body
+    $factory : [{ $.procs.push_back(this) }]
 }
 
 // ============================================================================

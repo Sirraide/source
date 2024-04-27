@@ -80,6 +80,7 @@ struct Class {
     std::string name;
     std::string decorated_name;
     std::string extra_printout;
+    std::string extra_ctor;
     SmallVector<std::string> friends;
     SmallVector<Class*> children;
     SmallVector<Field, 10> fields;
@@ -389,6 +390,11 @@ void Generator::AddConstant(Class& cls, std::string_view name, std::string_view 
 
     if (name == "$friend") {
         cls.friends.push_back(std::string{value});
+        return;
+    }
+
+    if (name == "$ctor") {
+        cls.extra_ctor += value;
         return;
     }
 
@@ -818,6 +824,12 @@ void Generator::EmitClassImpl(Class& cls) {
         f.name,
         f.type
     );
+
+    if (not cls.extra_ctor.empty()) {
+        W("");
+        W(4, "{}", cls.extra_ctor);
+    }
+
     W("}}");
     W("");
 
@@ -856,9 +868,9 @@ void Generator::EmitClassImpl(Class& cls) {
         );
 
         // Construct.
-        W(4, "return new ($mem) {}({}", cls.decorated_name, cls.is_base() ? "kind, " : "");
+        W(4, "return new ($mem) {} {{{}", cls.decorated_name, cls.is_base() ? "kind, " : "");
         EmitParams(cls, 8, CtorCall);
-        W(4, ");");
+        W(4, "}};");
         W("}}");
         W("");
     }
@@ -960,12 +972,24 @@ void Generator::EmitParams(Class& cls, usz indent, PrintingPolicy pp) {
 }
 
 void Generator::EmitPrint() {
-    W("void Printer::Print({}* e) {{", Root().decorated_name);
+    std::string_view root = Root().decorated_name;
+    W("struct {}::{}::Printer : PrinterBase<{}> {{", namespace_, root,  root);
+    W(4, "Printer(bool use_colour, {}* E) : PrinterBase{{use_colour}} {{ Print(E); }}", root);
+    W(4, "void Print({}* E);", root);
+    W("}};");
+    W("");
+
+    W("void {}::{}::Printer::Print({}* e) {{", namespace_, root, root);
     W(4, "switch (e->kind()) {{");
     W(8, "using enum utils::Colour;");
-    W(8, "using Kind = {}::{}::Kind;", namespace_, Root().decorated_name);
+    W(8, "using Kind = {}::{}::Kind;", namespace_, root);
     EmitPrintCase(Root());
     W(4, "}}");
+    W("}}");
+    W("");
+
+    W("void {}::{}::dump(bool use_colour) const {{", namespace_, root);
+    W(4, "Printer(use_colour, const_cast<{}*>(this));", root);
     W("}}");
 }
 
@@ -978,7 +1002,7 @@ void Generator::EmitPrintCase(Class& c) {
 
     W("");
     W(8, "case Kind::{}: {{", c.name);
-    W(12, "[[maybe_unused]] auto& x = static_cast<{}&>(*e);", c.decorated_name);
+    W(12, "[[maybe_unused]] auto& x = *cast<{}>(e);", c.decorated_name);
     W("");
 
     // Print the node itself.
