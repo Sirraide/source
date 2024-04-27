@@ -14,23 +14,29 @@ export namespace srcc {
 class Parser;
 class ParsedModule;
 class ParsedExpr;
-class ParsedProc;
-enum class ParsedExprKind : u8;
-#define SRCC_PARSE_TREE_FWD
-#include "srcc/astgen/ParseTree.inc"
-} // namespace srcc
+struct ImportedModule;
 
-enum class srcc::ParsedExprKind : srcc::u8 {
-#define SRCC_PARSE_TREE_ENUMERATORS
-#include "srcc/astgen/ParseTree.inc"
-};
+#define PARSE_TREE_NODE(node) class SRCC_CAT(Parsed, node);
+#include "srcc/ParseTree.inc"
+} // namespace srcc
 
 /// Parsed representation of a single file. NOT thread-safe.
 class srcc::ParsedModule {
     SRCC_IMMOVABLE(ParsedModule);
     friend Parser;
     const File& file;
-    std::unique_ptr<llvm::BumpPtrAllocator> alloc = std::make_unique<llvm::BumpPtrAllocator>();
+
+    /// Allocator used for allocating the parse tree.
+    ///
+    /// While strings need to stick around for longer, this can be deleted
+    /// once we’re done building the AST.
+    llvm::BumpPtrAllocator alloc;
+
+public:
+    using Ptr = std::unique_ptr<ParsedModule>;
+
+    /// Allocator used for allocating strings.
+    std::unique_ptr<llvm::BumpPtrAllocator> string_alloc = std::make_unique<llvm::BumpPtrAllocator>();
 
     /// Top-level statements.
     std::vector<ParsedExpr*> top_level;
@@ -44,51 +50,195 @@ class srcc::ParsedModule {
     bool is_module = false;
 
     /// Imported modules.
-    using Import = std::pair<String, Location>;
+    struct Import {
+        String linkage_name; ///< The name of the module on disk and for linking.
+        String import_name;  ///< The name it is imported as.
+        Location loc;        ///< The location of the import
+    };
     std::vector<Import> imports;
 
-public:
     /// Create a new parse context for a file.
     explicit ParsedModule(const File& file) : file(file) {}
 
     /// Get the module’s allocator.
-    [[nodiscard]] auto allocator() -> llvm::BumpPtrAllocator& { return *alloc; }
+    auto allocator() -> llvm::BumpPtrAllocator& { return alloc; }
 
     /// Get the owning context.
-    [[nodiscard]] Context& context() const { return file.context(); }
+    Context& context() const { return file.context(); }
 
     /// Dump the contents of the module.
     void dump() const;
 };
 
+/// Root of the parse tree hierarchy.
 class srcc::ParsedExpr {
-public:
-    using Kind = ParsedExprKind;
+    struct Printer;
+    friend Printer;
 
-    const Kind kind;
+public:
+    enum struct Kind : u8 {
+#define PARSE_TREE_LEAF_NODE(node) node,
+#include "srcc/ParseTree.inc"
+    };
+
+    const Kind expr_kind;
     Location loc;
 
 protected:
-    ParsedExpr(Kind kind, Location loc) : kind{kind}, loc{loc} {}
+    ParsedExpr(Kind kind, Location loc) : expr_kind{kind}, loc{loc} {}
 
 public:
-    void dump(bool use_colour = false);
-    void dumpColor() { dump(true); }
+    // Only allow allocating these in the parser.
+    void* operator new(usz) = SRCC_DELETED("Use `new (parser) { ... }` instead");
+    void* operator new(usz size, Parser& parser);
+
+    auto kind() const -> Kind { return expr_kind; }
+
+    void dump(bool use_colour = false) const;
+    void dump_color() const { dump(true); }
 };
 
-#define SRCC_PARSE_TREE_CLASSES
-#include "srcc/astgen/ParseTree.inc"
+/// An syntactic block that contains other expressions.
+class srcc::ParsedBlockExpr final : public ParsedExpr
+    , TrailingObjects<ParsedBlockExpr, ParsedExpr*> {
+    friend TrailingObjects;
+
+    const u32 num_stmts;
+
+    auto numTrailingObjects(OverloadToken<ParsedExpr*>) -> usz { return num_stmts; }
+
+    ParsedBlockExpr(
+        ArrayRef<ParsedExpr*> stmts,
+        Location location
+    );
+
+public:
+    static auto Create(
+        Parser& parser,
+        ArrayRef<ParsedExpr*> stmts,
+        Location location
+    ) -> ParsedBlockExpr*;
+
+    /// Get the statements stored in this block.
+    auto stmts() -> ArrayRef<ParsedExpr*> {
+        return {getTrailingObjects<ParsedExpr*>(), num_stmts};
+    }
+
+    static bool classof(const ParsedExpr* e) {
+        return e->kind() == Kind::BlockExpr;
+    }
+};
+
+/// A call to a function, or anything that syntactically
+/// resembles one.
+class srcc::ParsedCallExpr final : public ParsedExpr
+    , TrailingObjects<ParsedCallExpr, ParsedExpr*> {
+    friend TrailingObjects;
+
+public:
+    /// The expression that is called.
+    ParsedExpr* callee;
+
+private:
+    const u32 num_args;
+
+    auto numTrailingObjects(OverloadToken<ParsedExpr*>) -> usz { return num_args; }
+
+    ParsedCallExpr(
+        ParsedExpr* callee,
+        ArrayRef<ParsedExpr*> args,
+        Location location
+    );
+
+public:
+    static auto Create(
+        Parser& parser,
+        ParsedExpr* callee,
+        ArrayRef<ParsedExpr*> args,
+        Location location
+    ) -> ParsedCallExpr*;
+
+    /// Get the arguments to the call.
+    auto args() -> ArrayRef<ParsedExpr*> {
+        return {getTrailingObjects<ParsedExpr*>(), num_args};
+    }
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::CallExpr; }
+};
+
+/// A reference to a declaration.
+class srcc::ParsedDeclRefExpr final : public ParsedExpr {
+public:
+    /// The name of the declaration.
+    String name;
+
+    ParsedDeclRefExpr(
+        String name,
+        Location location
+    ) : ParsedExpr{Kind::DeclRefExpr, location}, name{name} {}
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::DeclRefExpr; }
+};
+
+/// A string literal.
+class srcc::ParsedStrLitExpr final : public ParsedExpr {
+public:
+    String value;
+
+    ParsedStrLitExpr(
+        String value,
+        Location location
+    ) : ParsedExpr{Kind::StrLitExpr, location}, value{value} {}
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::StrLitExpr; }
+};
+
+/// Base class for declarations.
+class srcc::ParsedDecl : public ParsedExpr {
+public:
+    /// The name of the declaration; may be empty if it is
+    /// compiler-generated.
+    String name;
+
+protected:
+    ParsedDecl(
+        Kind kind,
+        String name,
+        Location location
+    ) : ParsedExpr{kind, location}, name{name} {}
+
+public:
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::ProcDecl; }
+};
+
+/// A procedure declaration.
+class srcc::ParsedProcDecl final : public ParsedDecl {
+public:
+    /// The body of the procedure.
+    ///
+    /// This is not present if the procedure is only declared,
+    /// not defined.
+    ParsedExpr* _Nullable body;
+
+    ParsedProcDecl(
+        String name,
+        ParsedExpr* body,
+        Location location
+    ) : ParsedDecl{Kind::ProcDecl, name, location}, body{body} {}
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::ProcDecl; }
+};
 
 class srcc::Parser {
     SRCC_IMMOVABLE(Parser);
-    std::unique_ptr<ParsedModule> mod;
+    ParsedModule::Ptr mod;
     TokenStream stream;
     TokenStream::iterator tok;
     Context& ctx;
 
 public:
     /// Parse a file.
-    static auto Parse(const File& file) -> Result<std::unique_ptr<ParsedModule>>;
+    static auto Parse(const File& file) -> Result<ParsedModule::Ptr>;
 
     /// Allocate data.
     void* Allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
@@ -96,7 +246,7 @@ public:
 private:
     explicit Parser(const File& file)
         : mod{std::make_unique<ParsedModule>(file)},
-          stream{mod->allocator()},
+          stream{*mod->string_alloc},
           ctx{file.context()} {}
 
     /// Each of these corresponds to a production in the grammar.
@@ -107,7 +257,7 @@ private:
     void ParseImport();
     void ParsePreamble();
     auto ParseStmt() -> Result<ParsedExpr*>;
-    auto ParseProcDecl() -> Result<ParsedProc*>;
+    auto ParseProcDecl() -> Result<ParsedProcDecl*>;
 
     template <typename... Args>
     Diag Error(Location where, fmt::format_string<Args...> fmt, Args&&... args) {
@@ -134,14 +284,22 @@ private:
     }
 
     /// Check if we’re at a token.
-    [[nodiscard]] bool At(std::same_as<Tk> auto... tks) {
+    bool At(std::same_as<Tk> auto... tks) {
         return ((tok->type == tks) or ...);
     }
 
     /// Consume a token if it is present.
-    [[nodiscard]] bool Consume(Tk tk);
-    [[nodiscard]] bool Consume(Location& into, Tk tk);
+    bool Consume(Tk tk);
+    bool Consume(Location& into, Tk tk);
 
     /// Consume a contextual keyword.
-    [[nodiscard]] bool ConsumeContextual(Location& into, StringRef keyword);
+    bool ConsumeContextual(Location& into, StringRef keyword);
+
+    /// Consume a token if we’re at it, and issue an error about it otherwise.
+    template <typename... Args>
+    bool ExpectAndConsume(Tk t, fmt::format_string<Args...> fmt, Args&&... args) {
+        if (Consume(t)) return true;
+        Error(fmt, std::forward<Args>(args)...);
+        return false;
+    }
 };

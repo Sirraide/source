@@ -1,0 +1,48 @@
+module;
+
+#include <fmt/core.h>
+#include <llvm/ADT/SmallString.h>
+
+export module srcc.ast.printer;
+import srcc.utils;
+
+export namespace srcc {
+template <typename NodeType>
+class PrinterBase;
+}
+
+template <typename NodeType>
+class srcc::PrinterBase {
+protected:
+    SmallString<128> leading;
+    utils::Colours C;
+
+    explicit PrinterBase(bool use_colour) : C{use_colour} {}
+    void PrintChildren(this auto&& This, ArrayRef<NodeType*> children) {
+        using enum utils::Colour;
+        if (children.empty()) return;
+        auto& leading = This.leading;
+        auto C = This.C;
+
+        // Print all but the last.
+        const auto size = leading.size();
+        leading += "│ ";
+        const auto current = StringRef{leading}.take_front(size);
+        for (auto c : children.drop_back(1)) {
+            fmt::print("{}{}├─", C(Red), current);
+            This.Print(c);
+        }
+
+        // Print the preheader of the last.
+        leading.resize(size);
+        fmt::print("{}{}└─", C(Red), StringRef{leading});
+
+        // Print the last one.
+        leading += "  ";
+        This.Print(children.back());
+
+        // And reset the leading text.
+        leading.resize(size);
+    }
+};
+

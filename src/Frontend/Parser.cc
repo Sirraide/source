@@ -7,59 +7,188 @@ module;
 #include <utility>
 
 module srcc.frontend.parser;
+import srcc.ast.printer;
 using namespace srcc;
 
 // ============================================================================
 //  Parse Tree
 // ============================================================================
-struct Printer {
-    SmallString<128> leading;
-    utils::Colours C;
-
-    Printer(bool use_colour, ParsedExpr* e) : C{use_colour} { Print(e); }
-
-    void Print(ParsedExpr* e);
-    void PrintChildren(ArrayRef<ParsedExpr*> children) {
-        using enum utils::Colour;
-        if (children.empty()) return;
-        const auto size = leading.size();
-
-        // Print all but the last.
-        leading += "│ ";
-        const auto current = StringRef{leading}.take_front(size);
-        for (auto c : children.drop_back(1)) {
-            fmt::print("{}{}├─", C(Red), current);
-            Print(c);
-        }
-
-        // Print the preheader of the last.
-        leading.resize(size);
-        fmt::print("{}{}└─", C(Red), StringRef{leading});
-
-        // Print the last one.
-        leading += "  ";
-        Print(children.back());
-
-        // And reset the leading text.
-        leading.resize(size);
-    }
-};
-
 void ParsedModule::dump() const {
     using enum utils::Colour;
     bool c = context().use_colours();
     utils::Colours C{c};
+
+    // Print preamble.
     fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
-    for (auto i : imports) fmt::print("{}Import {}<{}>\n", C(Red), C(Blue), i.first);
+    for (auto i : imports) fmt::print(
+        "{}Import {}<{}> {}as {}{}\n",
+        C(Red),
+        C(Blue),
+        i.linkage_name,
+        C(Red),
+        C(Blue),
+        i.import_name
+    );
+
+    // Print content.
     for (auto s : top_level) s->dump(c);
 }
 
-void ParsedExpr::dump(bool use_colour) {
-    Printer(use_colour, this);
+void* ParsedExpr::operator new(usz size, Parser& parser) {
+    return parser.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
-#define SRCC_PARSE_TREE_IMPL
-#include "srcc/astgen/ParseTree.inc"
+ParsedBlockExpr::ParsedBlockExpr(
+    ArrayRef<ParsedExpr*> stmts,
+    Location location
+) : ParsedExpr{Kind::BlockExpr, location},
+    num_stmts{u32(stmts.size())} {
+    static_assert(std::is_trivially_destructible_v<decltype(*this)>);
+    std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<ParsedExpr*>());
+}
+
+auto ParsedBlockExpr::Create(
+    Parser& parser,
+    ArrayRef<ParsedExpr*> stmts,
+    Location location
+) -> ParsedBlockExpr* {
+    const auto size = totalSizeToAlloc<ParsedExpr*>(stmts.size());
+    auto mem = parser.Allocate(size, alignof(ParsedBlockExpr));
+    return ::new (mem) ParsedBlockExpr{stmts, location};
+}
+
+ParsedCallExpr::ParsedCallExpr(
+    ParsedExpr* callee,
+    ArrayRef<ParsedExpr*> args,
+    Location location
+) : ParsedExpr{Kind::CallExpr, location},
+    callee{callee}, num_args{u32(args.size())} {
+    static_assert(std::is_trivially_destructible_v<decltype(*this)>);
+    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<ParsedExpr*>());
+}
+
+auto ParsedCallExpr::Create(
+    Parser& parser,
+    ParsedExpr* callee,
+    ArrayRef<ParsedExpr*> args,
+    Location location
+) -> ParsedCallExpr* {
+    const auto size = totalSizeToAlloc<ParsedExpr*>(args.size());
+    auto mem = parser.Allocate(size, alignof(ParsedCallExpr));
+    return ::new (mem) ParsedCallExpr{callee, args, location};
+}
+
+struct ParsedExpr::Printer : PrinterBase<ParsedExpr> {
+    Printer(bool use_colour, ParsedExpr* E) : PrinterBase{use_colour} { Print(E); }
+    void Print(ParsedExpr* E);
+};
+
+void ParsedExpr::Printer::Print(ParsedExpr* e) {
+    switch (e->kind()) {
+        using enum utils::Colour;
+        case Kind::BlockExpr: {
+            [[maybe_unused]] auto& x = *cast<ParsedBlockExpr>(e);
+
+            fmt::print(
+                "{}BlockExpr {}{} {}<{}>",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos
+            );
+
+            fmt::print("\n{}", C(Reset));
+
+            SmallVector<ParsedExpr*, 10> fields;
+            if (auto a = x.stmts(); not a.empty()) fields.append(a.begin(), a.end());
+            PrintChildren(fields);
+        } break;
+
+        case Kind::CallExpr: {
+            [[maybe_unused]] auto& x = *cast<ParsedCallExpr>(e);
+
+            fmt::print(
+                "{}CallExpr {}{} {}<{}>",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos
+            );
+
+            fmt::print("\n{}", C(Reset));
+
+            SmallVector<ParsedExpr*, 10> fields;
+            if (x.callee) fields.push_back(x.callee);
+            if (auto a = x.args(); not a.empty()) fields.append(a.begin(), a.end());
+            PrintChildren(fields);
+        } break;
+
+        case Kind::DeclRefExpr: {
+            [[maybe_unused]] auto& x = *cast<ParsedDeclRefExpr>(e);
+
+            fmt::print(
+                "{}DeclRefExpr {}{} {}<{}>",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos
+            );
+
+            fmt::print(" {}{}", C(Reset), x.name);
+            fmt::print("\n{}", C(Reset));
+        } break;
+
+        case Kind::StrLitExpr: {
+            [[maybe_unused]] auto& x = *cast<ParsedStrLitExpr>(e);
+
+            fmt::print(
+                "{}StrLitExpr {}{} {}<{}>",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos
+            );
+
+            fmt::print(" {}\"{}\"", C(Yellow), utils::Escape(x.value));
+            fmt::print("\n{}", C(Reset));
+        } break;
+
+        case Kind::ProcDecl: {
+            [[maybe_unused]] auto& x = *cast<ParsedProcDecl>(e);
+
+            fmt::print(
+                "{}ProcDecl {}{} {}<{}>",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos
+            );
+
+            fmt::print("\n{}", C(Reset));
+
+            SmallVector<ParsedExpr*, 10> fields;
+            if (x.body) fields.push_back(x.body);
+            PrintChildren(fields);
+        } break;
+    }
+}
+
+void ParsedExpr::dump(bool use_colour) const {
+    Printer(use_colour, const_cast<ParsedExpr*>(this));
+}
+
+#define PARSE_TREE_NODE(node) \
+    static_assert(alignof(SRCC_CAT(Parsed, node)) < __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Alignment to large"); \
+    static_assert(__is_trivially_destructible(SRCC_CAT(Parsed, node)), "Parse tree nodes must be trivially destructible");
+
+PARSE_TREE_NODE(Expr);
+#include "srcc/ParseTree.inc"
+
 // ============================================================================
 //  Parser Helpers
 // ============================================================================
@@ -142,7 +271,7 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
 
             auto body = ParseBlock();
             if (not body) return body.error();
-            lhs = ParsedProcDecl::Create(*this, name, *body, loc);
+            lhs = new (*this) ParsedProcDecl{name, *body, loc};
         } break;
 
         // <expr-block> ::= "{" { <stmt> } "}"
@@ -152,13 +281,13 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
 
         // <expr-decl-ref> ::= IDENTIFIER
         case Tk::Identifier: {
-            lhs = ParsedDeclRefExpr::Create(*this, tok->text, tok->location);
+            lhs = new (*this) ParsedDeclRefExpr{tok->text, tok->location};
             ++tok;
         } break;
 
         // <expr-lit> ::= STRING-LITERAL
         case Tk::StringLiteral: {
-            lhs = ParsedStrLitExpr::Create(*this, tok->text, tok->location);
+            lhs = new (*this) ParsedStrLitExpr{tok->text, tok->location};
             ++tok;
         } break;
     }
@@ -213,7 +342,7 @@ void Parser::ParseHeader() {
     ConsumeOrError(Tk::Semicolon);
 }
 
-// <import> ::= IMPORT CXX-HEADER-NAME ";"
+// <import> ::= IMPORT CXX-HEADER-NAME AS IDENTIFIER ";"
 void Parser::ParseImport() {
     Location import_loc;
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
@@ -223,16 +352,28 @@ void Parser::ParseImport() {
         return;
     }
 
+    // Save name for later.
+    auto linkage_name = tok->text;
+    ++tok;
+
+    // Read import name.
+    ExpectAndConsume(Tk::As, "Syntax for header imports is `import <header> as name`");
+    if (not At(Tk::Identifier)) {
+        Error("Expected identifier after 'as' in import directive");
+        return;
+    }
+
     // Warn about duplicate imports.
+    auto FindExisting = [&](auto& i) { return i.linkage_name == linkage_name and i.import_name == tok->text; };
     Location loc = {import_loc, tok->location};
     if (
-        auto it = rgs::find(mod->imports, tok->text, &ParsedModule::Import::first);
+        auto it = rgs::find_if(mod->imports, FindExisting);
         it != mod->imports.end()
     ) {
         Diag::Warning(ctx, loc, "Duplicate import ignored");
-        Diag::Note(ctx, it->second, "Previous import was here");
+        Diag::Note(ctx, it->loc, "Previous import was here");
     } else {
-        mod->imports.emplace_back(tok->text, loc);
+        mod->imports.emplace_back(linkage_name, tok->text, loc);
     }
 
     ++tok;

@@ -7,6 +7,8 @@ module;
 #include <fmt/format.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
@@ -14,6 +16,7 @@ module;
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
 #include <ranges>
 #include <source_location>
@@ -55,6 +58,10 @@ using llvm::isa;
 using llvm::Align;
 using llvm::APInt;
 using llvm::ArrayRef;
+using llvm::DenseMap;
+using llvm::FoldingSet;
+using llvm::FoldingSetNode;
+using llvm::FoldingSetNodeID;
 using llvm::MutableArrayRef;
 using llvm::SmallString;
 using llvm::SmallVector;
@@ -88,6 +95,16 @@ public:
 
     [[nodiscard]] static constexpr Size Bits(usz bits) { return Size{bits}; }
     [[nodiscard]] static constexpr Size Bytes(usz bytes) { return Size{bytes * 8}; }
+
+    [[nodiscard]] static constexpr Size Bits(isz bits) {
+        Assert(bits >= 0, "Size cannot be negative");
+        return Size{usz(bits)};
+    }
+
+    [[nodiscard]] static constexpr Size Bytes(isz bytes) {
+        Assert(bytes >= 0, "Size cannot be negative");
+        return Size{usz(bytes) * 8};
+    }
 
     /// Return this size aligned to a given alignment.
     [[nodiscard]] Size aligned(Align align) const {
@@ -207,6 +224,15 @@ public:
         s.val = value;
         return s;
     }
+
+    /// Save it in a string save; this is how you’re supposed to create these.
+    [[nodiscard]] static auto Save(llvm::StringSaver& ss, StringRef s) {
+        return CreateUnsafe(ss.save(s));
+    }
+
+    [[nodiscard]] static auto Save(llvm::UniqueStringSaver& ss, StringRef s) {
+        return CreateUnsafe(ss.save(s));
+    }
 };
 
 /// Get the underlying value of an enumerator.
@@ -281,6 +307,13 @@ struct FStringWithSrcLocImpl {
 /// Inhibit template argument deduction.
 template <typename... Args>
 using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
+
+/// Negate a predicate.
+[[nodiscard]] auto Not(auto Predicate) {
+    return [Predicate = std::move(Predicate)] <typename ...Args>(Args&&... args) {
+        return not std::invoke(Predicate, std::forward<Args>(args)...);
+    };
+}
 
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;

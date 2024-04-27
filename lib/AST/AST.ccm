@@ -1,0 +1,121 @@
+module;
+
+#include <llvm/ADT/TinyPtrVector.h>
+#include <llvm/Support/Allocator.h>
+#include <llvm/Support/StringSaver.h>
+#include <llvm/Support/TrailingObjects.h>
+#include <srcc/Macros.hh>
+
+export module srcc.ast;
+export import :enums;
+export import :stmt;
+export import :type;
+import srcc;
+import srcc.constants;
+import srcc.ast.printer;
+
+export namespace srcc {
+class Module;
+}
+
+/// Representation of a single program or module. NOT thread-safe.
+class srcc::Module {
+    SRCC_IMMOVABLE(Module);
+
+public:
+    using Ptr = std::unique_ptr<Module>;
+
+private:
+    /// Context that owns this module.
+    Context& ctx;
+
+    /// Files that make up this module.
+    SmallVector<const File*> files;
+
+    /// Allocators that store strings used by this module.
+    ///
+    /// These result from the fact that we parse files in parallel; once we’re
+    /// done w/ that, files that are part of a single module get merged into a
+    /// module, which is then processed all at once. At that point, we don’t need
+    /// separate allocators anymore, so we just use the first of these here, but
+    /// we need to hold on to all of them as they store the strings that we use
+    /// while compiling the module.
+    SmallVector<std::unique_ptr<llvm::BumpPtrAllocator>> allocs;
+    llvm::BumpPtrAllocator alloc;
+
+    /// Not unique because we’ll mostly just be creating unique symbols from now on.
+    llvm::StringSaver saver{alloc};
+
+    /// Module initialiser.
+    ProcDecl* initialiser_proc{};
+    BlockExpr* file_scope_block{};
+
+    /// The name of this program or module.
+    const String name;
+
+    /// Whether this is a program or module.
+    const bool is_module;
+
+    explicit Module(Context& ctx, String name, bool is_module);
+
+public:
+    /// All procedures in the module.
+    SmallVector<ProcDecl*> procs;
+
+    /// Declarations exported from this module.
+    StringMap<llvm::TinyPtrVector<Decl*>> exports;
+
+    /// Builtin types.
+    Type* VoidTy;
+    Type* NoReturnTy;
+    Type* BoolTy;
+    Type* FFIBoolTy;
+    Type* FFICharTy;
+    Type* FFIShortTy;
+    Type* FFIIntTy;
+    Type* FFILongTy;
+    Type* FFILongLongTy;
+    Type* FFISizeTy;
+
+    /// Cached because they’re used often.
+    Type* I8Ty;
+    Type* I16Ty;
+    Type* I32Ty;
+    Type* I64Ty;
+    Type* I128Ty;
+    Type* StrLitTy;
+
+    /// Type caches.
+    FoldingSet<ArrayType> array_types;
+    FoldingSet<IntType> int_types;
+    FoldingSet<ReferenceType> reference_types;
+    FoldingSet<ProcType> proc_types;
+    FoldingSet<SliceType> slice_types;
+
+    /// Create a new module.
+    static auto Create(Context& ctx, String name, bool is_module) -> Ptr {
+        return std::unique_ptr<Module>(new Module{ctx, name, is_module});
+    }
+
+    /// Allocate data.
+    void* Allocate(usz size, usz align) { return allocator().Allocate(size, align); }
+
+    /// Get the module’s allocator.
+    [[nodiscard]] auto allocator() -> llvm::BumpPtrAllocator& { return alloc; }
+
+    /// Get the owning context.
+    [[nodiscard]] Context& context() const { return ctx; }
+
+    /// Add an allocator to the module.
+    void add_allocator(std::unique_ptr<llvm::BumpPtrAllocator> alloc) { allocs.push_back(std::move(alloc)); }
+
+    /// Add a file to the module.
+    void add_file(const File& file) { files.push_back(&file); }
+
+    /// Dump the contents of the module.
+    void dump() const;
+
+    /// Save a string in the module.
+    auto save(StringRef s) -> String { return String::Save(saver, s); }
+};
+

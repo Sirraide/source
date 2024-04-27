@@ -1,0 +1,89 @@
+export module srcc.ast:enums;
+import srcc.utils;
+
+export namespace srcc {
+class Module;
+enum class BuiltinKind : u8;
+enum class CallingConvention : u8;
+enum class Dependence : u8;
+enum class ExprKind : u8;
+enum class Linkage : u8;
+enum class Mangling : u8;
+} // namespace srcc
+
+/// Expression dependence.
+///
+/// An expression is *dependent* if it references a template
+/// parameter or contains a dependent subexpression; this has
+/// two main ramifications.
+///
+/// We may not be able to fully analyse the expression until
+/// we instantiate it; this means we can’t check its type (or
+/// use its value if it’s a constant expression) until then.
+///
+/// We have to create a copy of the expression to instantiate
+/// any dependent subexpressions, even if the expression itself
+/// is neither type nor value dependent.
+///
+/// Lastly, because error recovery is pretty similar to dependence,
+/// i.e. we don’t want to try and typecheck an expression if we
+/// know that determining its type caused an error, we also model
+/// it as dependence. Unlike other forms of dependence, error
+/// dependence is never resolved once set.
+enum class srcc::Dependence : srcc::u8 {
+    /// This expression is not dependent.
+    None = 0,
+
+    /// This expression is dependent in some way.
+    ///
+    /// If only this bit is set, then this expression contains
+    /// dependent code that needs to be instantiated during
+    /// template instantiation.
+    Instantiation = 1,
+
+    /// The value of this expression is dependent.
+    Value = 1 << 1 | Instantiation,
+
+    /// The type of this expression is dependent.
+    Type = 1 << 2 | Instantiation,
+
+    /// Combination of value and type dependence.
+    ValueAndType = Value | Type,
+
+    /// This expression contains an error.
+    Error = 1 << 7 | Instantiation,
+};
+
+/// Builtin types.
+enum class srcc::BuiltinKind : srcc::u8 {
+    Void,
+    NoReturn,
+    Bool,
+};
+
+export namespace srcc {
+constexpr auto operator|(Dependence a, Dependence b) -> Dependence { return Dependence(u8(a) | u8(b)); }
+constexpr bool operator&(Dependence a, Dependence b) { return u8(a) & u8(b); }
+} // namespace srcc
+
+/// Linkage of a global entity.
+enum class srcc::Linkage : srcc::u8 {
+    Internal,   ///< Not accessible outside this module.
+    Exported,   ///< Exported from the module.
+    Imported,   ///< Imported from another module.
+    Reexported, ///< Imported and exported.
+    Merge,      ///< Merge definitions of this entity across modules.
+};
+
+/// Mangling scheme of a global entity.
+enum class srcc::Mangling : srcc::u8 {
+    None,   ///< Do not mangle this at all.
+    Source, ///< Mangling this using our language rules.
+    CXX,    ///< Use C++’s name mangling rules.
+};
+
+/// Calling convention of a function.
+enum class srcc::CallingConvention : srcc::u8 {
+    Source, ///< Default calling convention.
+    Native, ///< Native calling convention for C and C++ interop.
+};

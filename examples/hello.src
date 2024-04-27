@@ -1,9 +1,9 @@
 program hello;
 
-import <cstdio>;
+import <cstdio> as stdio;
 
 proc hello {
-    puts("Hello, World!");
+    //stdio::puts("Hello, World!");
 }
 
 hello();

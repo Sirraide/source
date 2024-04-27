@@ -31,6 +31,7 @@ add_library(options INTERFACE)
 
 ## Compile flags.
 target_compile_options(options INTERFACE
+    -fnew-infallible
     -fno-exceptions
     -fno-rtti
     -fwrapv
@@ -50,6 +51,7 @@ target_compile_options(options INTERFACE
 
     ## NULL Errors.
     -Werror=nonnull # Passing NULL to nonnull parameter.
+    -Wnullable-to-nonnull-conversion
 
     ## Memory Errors.
     -Werror=address              # Suspicious use of addresses.
@@ -208,10 +210,6 @@ target_link_libraries(options INTERFACE
     clang clangTooling clangASTMatchers
 )
 
-
-## Add ASTGen output directory to the include path.
-include_directories("${CMAKE_CURRENT_BINARY_DIR}/include/")
-
 ## Global definitions.
 add_definitions(
     "-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
@@ -232,34 +230,6 @@ execute_process(
 ## ============================================================================
 ##  Helper Functions
 ## ============================================================================
-## Run the AST generator.
-function(astgen input)
-    get_filename_component(filename "${input}" NAME_WLE)
-    set(output_file "${CMAKE_CURRENT_BINARY_DIR}/include/srcc/astgen/${filename}.inc")
-    add_custom_command(
-        OUTPUT "${output_file}"
-        COMMAND srcc-astgen
-            "${PROJECT_SOURCE_DIR}/${input}"
-            -o "${output_file}"
-        COMMENT "Generating AST definitions from ${input}."
-        MAIN_DEPENDENCY "${PROJECT_SOURCE_DIR}/${input}"
-        DEPENDS srcc-astgen
-        VERBATIM
-    )
-
-    set(target_name astgen_${input})
-    string(REPLACE "/" "_" target_name ${target_name})
-    add_custom_target("${target_name}" DEPENDS "${output_file}")
-
-    list(APPEND SRCC_ASTGEN_TARGETS "${target_name}")
-    set_property(GLOBAL PROPERTY SRCC_ASTGEN_TARGETS ${SRCC_ASTGEN_TARGETS})
-
-    ## Create a dummy file at configure time to make the dependency scanner happy.
-    if (NOT EXISTS output_file)
-        file(WRITE output_file "")
-    endif()
-endfunction()
-
 ## Add a library.
 function (add_srcc_library name path_name)
     file(GLOB_RECURSE _modules_${name} lib/${path_name}/*.ccm)
@@ -272,10 +242,6 @@ function (add_srcc_library name path_name)
     ## Link to options and core library.
     target_link_libraries(srcc-${name} PRIVATE options srcc-core)
 
-    ## ASTGen may be required for this.
-    get_property(SRCC_ASTGEN_TARGETS GLOBAL PROPERTY SRCC_ASTGEN_TARGETS)
-    add_dependencies(srcc-${name} ${SRCC_ASTGEN_TARGETS})
-
     ## Add other dependencies.
     set(multiValueArgs LINK)
     cmake_parse_arguments(ARG "" "" "${multiValueArgs}" ${ARGN})
@@ -283,10 +249,10 @@ function (add_srcc_library name path_name)
 endfunction()
 
 ## ============================================================================
-##  Core library and code generation
+##  Core library
 ## ============================================================================
-## Core library; this is what everything else depends on so
-## we handle it separately since it must be built first.
+## This is what everything else depends on so we handle it separately
+## since it must be built first.
 file(GLOB_RECURSE _headers_core include/*.hh)
 file(GLOB_RECURSE _modules_core lib/Core/*.ccm)
 file(GLOB_RECURSE _sources_core src/Core/*.cc)
@@ -298,19 +264,12 @@ target_sources(srcc-core PUBLIC
 
 target_link_libraries(srcc-core PRIVATE options)
 
-## ASTGen executable. This is needed to build libraries other than Core.
-add_executable(srcc-astgen tools/ASTGen.cc)
-target_link_libraries(srcc-astgen PRIVATE options srcc-core)
-
-## Run the code generator.
-astgen(include/srcc/ParseTree.ast)
-astgen(include/srcc/AST.ast)
-
 ## ============================================================================
 ##  Other libraries
 ## ============================================================================
-add_srcc_library(frontend Frontend)
-add_srcc_library(driver Driver LINK srcc-frontend)
+add_srcc_library(ast AST)
+add_srcc_library(frontend Frontend LINK srcc-ast)
+add_srcc_library(driver Driver LINK srcc-ast srcc-frontend)
 
 ## ============================================================================
 ##  Compiler executable

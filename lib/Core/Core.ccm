@@ -13,7 +13,7 @@ module;
 #include <string_view>
 
 export module srcc;
-import srcc.utils;
+export import srcc.utils;
 
 export namespace srcc {
 class Context;
@@ -389,7 +389,7 @@ public:
 
 /// Represents the result of a computation, or an error.
 template <srcc::detail::ValidResultType Ty = void>
-class srcc::Result {
+class [[nodiscard]] srcc::Result {
 public:
     using ValueType = Ty;
 

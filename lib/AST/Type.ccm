@@ -1,0 +1,194 @@
+module;
+
+#include <srcc/Macros.hh>
+
+export module srcc.ast:type;
+import srcc;
+import :enums;
+
+export namespace srcc {
+class Module;
+#define AST_TYPE(node) class node;
+#include "srcc/AST.inc"
+}
+
+/// Type of an expression or declaration.
+///
+/// Types are immutable, so it’s fine to pass them by non-`const`
+/// reference or pointer in most cases.
+class srcc::Type {
+    SRCC_IMMOVABLE(Type);
+
+public:
+    enum struct Kind : u8 {
+#define AST_TYPE_LEAF(node) node,
+#include "srcc/AST.inc"
+
+    };
+
+    const Kind type_kind;
+
+protected:
+    explicit Type(Kind kind) : type_kind{kind} {}
+
+public:
+    // Only allow allocating these in the module.
+    void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
+    void* operator new(usz size, Module& mod);
+
+    /// Get the kind of this type.
+    auto kind() const -> Kind { return type_kind; }
+
+    /// Check if this type is the builtin 'void' type.
+    bool is_void() const;
+
+    /// Print a type.
+    auto print(bool use_colour) const -> std::string;
+};
+
+class srcc::SingleElementTypeBase : public Type {
+    Type* element_type;
+
+protected:
+    SingleElementTypeBase(Kind kind, Type* elem) : Type{kind}, element_type{elem} {}
+
+public:
+    /// Get the element type of this type, e.g. `int` for `int[3]`.
+    auto elem() const -> Type* { return element_type; }
+
+    static bool classof(const Type* e) {
+        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::ReferenceType;
+    }
+};
+
+class srcc::ArrayType final : public SingleElementTypeBase
+    , public FoldingSetNode {
+    i64 elems;
+
+    ArrayType(
+        Type* elem,
+        i64 size
+    ) : SingleElementTypeBase{Kind::ArrayType, elem}, elems{size} {
+        Assert(size >= 0, "Negative array size?");
+    }
+
+public:
+    /// Get the number of elements in this array.
+    auto dimension() const -> i64 { return elems; }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), elems); }
+    static auto Get(Module& mod, Type* elem, i64 size) -> ArrayType*;
+    static void Profile(FoldingSetNodeID& ID, Type* elem, i64 size);
+    static bool classof(const Type* e) { return e->kind() == Kind::ArrayType; }
+};
+
+class srcc::BuiltinType final : public Type {
+    // The module creates all instances of these.
+    friend Module;
+    const BuiltinKind b_kind;
+
+    explicit BuiltinType(BuiltinKind kind) : Type{Kind::BuiltinType}, b_kind{kind} {}
+
+public:
+    /// Get the kind of this builtin type.
+    auto builtin_kind() const -> BuiltinKind { return b_kind; }
+
+    static auto Get(Module& mod, BuiltinKind kind) = SRCC_DELETED("Use Module.VoidTy and friends instead");
+    static bool classof(const Type* e) { return e->kind() == Kind::BuiltinType; }
+};
+
+class srcc::IntType final : public Type
+    , public FoldingSetNode {
+    i64 bits;
+
+    explicit IntType(i64 bit_width) : Type{Kind::IntType}, bits{bit_width} {
+        Assert(bits >= 0, "Negative bit width?");
+    }
+
+public:
+    /// Get the bit width of this integer type.
+    auto bit_width() const -> Size { return Size::Bits(bits); }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, bits); }
+    static auto Get(Module& mod, i64 bit_width) -> IntType*;
+    static auto Get(Module& mod, Size size) -> IntType* { return Get(mod, i64(size.bits())); }
+    static void Profile(FoldingSetNodeID& ID, i64 bit_width);
+    static bool classof(const Type* e) { return e->kind() == Kind::IntType; }
+};
+
+class srcc::ReferenceType final : public SingleElementTypeBase
+    , public FoldingSetNode {
+    explicit ReferenceType(Type* elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
+
+public:
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
+    static auto Get(Module& mod, Type* elem) -> ReferenceType*;
+    static void Profile(FoldingSetNodeID& ID, Type* elem);
+    static bool classof(const Type* e) { return e->kind() == Kind::ReferenceType; }
+};
+
+class srcc::ProcType final : public Type
+    , public FoldingSetNode
+    , TrailingObjects<ProcType, Type*> {
+    friend TrailingObjects;
+
+    CallingConvention cc;
+    bool is_variadic;
+    const u32 num_param_types;
+    Type* return_type;
+
+    auto numTrailingObjects(OverloadToken<Type*>) -> usz { return num_param_types; }
+
+    ProcType(
+        CallingConvention cconv,
+        bool variadic,
+        Type* return_type,
+        ArrayRef<Type*> param_types
+    );
+
+public:
+    /// Get the calling convention of this procedure type.
+    auto cconv() const -> CallingConvention { return cc; }
+
+    /// Get the parameter types of this procedure type.
+    auto params() const -> ArrayRef<Type*> { return {getTrailingObjects<Type*>(), num_param_types}; }
+
+    /// Get the return type of this procedure type.
+    auto ret() const -> Type* { return return_type; }
+
+    /// Get whether this procedure type is variadic.
+    auto variadic() const -> bool { return is_variadic; }
+
+    void Profile(FoldingSetNodeID& ID) const {
+        Profile(ID, return_type, params(), cc, is_variadic);
+    }
+
+    static auto Get(
+        Module& mod,
+        Type* return_type,
+        ArrayRef<Type*> param_types = {},
+        CallingConvention cconv = CallingConvention::Source,
+        bool variadic = false
+    ) -> ProcType*;
+
+    static void Profile(
+        FoldingSetNodeID& ID,
+        Type* return_type,
+        ArrayRef<Type*> param_types,
+        CallingConvention cconv,
+        bool variadic
+    );
+
+    static bool classof(const Type* e) { return e->kind() == Kind::ProcType; }
+};
+
+class srcc::SliceType final : public SingleElementTypeBase
+    , public FoldingSetNode {
+    explicit SliceType(Type* elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
+
+public:
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
+    static auto Get(Module& mod, Type* elem) -> SliceType*;
+    static void Profile(FoldingSetNodeID& ID, Type* elem);
+    static bool classof(const Type* e) { return e->kind() == Kind::SliceType; }
+};

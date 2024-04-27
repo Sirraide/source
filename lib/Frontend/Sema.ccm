@@ -1,3 +1,66 @@
 module;
 
+#include <llvm/ADT/ArrayRef.h>
+#include <srcc/Macros.hh>
+
 export module srcc.frontend.sema;
+import srcc;
+import srcc.utils;
+import srcc.ast;
+import srcc.frontend.parser;
+
+export namespace srcc {
+class Sema;
+}
+
+class srcc::Sema {
+    SRCC_IMMOVABLE(Sema);
+    Context& ctx;
+    Module::Ptr mod;
+    ArrayRef<ParsedModule::Ptr> parsed_modules;
+    bool has_error = false;
+
+    explicit Sema(Context& ctx) : ctx(ctx) {}
+
+public:
+    /// Analyse a set of parsed modules and combine them into a single module.
+    ///
+    /// @return The combined module, or `nullptr` if there was an error.
+    [[nodiscard]] static auto Analyse(
+        ArrayRef<ParsedModule::Ptr> modules
+    ) -> Module::Ptr;
+
+    /// Get the context.
+    [[nodiscard]] auto Context() const -> Context& { return ctx; }
+
+private:
+    /// Entry point.
+    void Analyse();
+
+    /// Helpers.
+    template <typename ...Args>
+    void Error(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        has_error = true;
+        Diag::Error(ctx, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename ...Args>
+    void Note(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        Diag::Note(ctx, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename ...Args>
+    void Warn(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        Diag::Warning(ctx, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    /// Analysis.
+    auto AnalyseBlock(ParsedBlockExpr* e) -> Result<BlockExpr*>;
+    auto AnalyseCall(ParsedCallExpr* e) -> Result<CallExpr*>;
+    auto AnalyseDeclRef(ParsedDeclRefExpr* e) -> Result<Expr*>;
+    auto AnalyseStrLit(ParsedStrLitExpr* e) -> Result<StrLitExpr*>;
+    auto AnalyseProcDecl(ParsedProcDecl* e) -> Result<ProcDecl*>;
+
+    /// Helpers.
+    auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
+};

@@ -212,7 +212,7 @@ public:
     /// \param str The string to store.
     /// \return A stable reference to the stored string.
     auto save(StringRef str) -> String {
-        return String::CreateUnsafe(saver.save(str));
+        return String::Save(saver, str);
     }
 
     /// Access a token by index.

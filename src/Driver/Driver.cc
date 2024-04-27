@@ -34,6 +34,7 @@ module;
 module srcc.driver;
 import srcc;
 import srcc.frontend.parser;
+import srcc.frontend.sema;
 
 using namespace srcc;
 
@@ -78,8 +79,10 @@ int Driver::Impl::compile() {
         parsed_modules.emplace_back(ptr);
     }
 
-    // Dump them for now.
-    for (const auto& m : parsed_modules) m->dump();
+    // Combine parsed modules that belong to the same module.
+    // TODO: topological sort, group, and schedule.
+    auto module = Sema::Analyse(parsed_modules);
+    if (module) module->dump();
     return 42;
 }
 
