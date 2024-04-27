@@ -310,7 +310,7 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
 /// Negate a predicate.
 [[nodiscard]] auto Not(auto Predicate) {
-    return [Predicate = std::move(Predicate)] <typename ...Args>(Args&&... args) {
+    return [Predicate = std::move(Predicate)]<typename... Args>(Args&&... args) {
         return not std::invoke(Predicate, std::forward<Args>(args)...);
     };
 }
@@ -329,7 +329,7 @@ void ReplaceAll(
 template <>
 struct fmt::formatter<llvm::APInt> : formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(const llvm::APInt& i, FormatContext& ctx) {
+    auto format(const llvm::APInt& i, FormatContext& ctx) const {
         llvm::SmallVector<char> buf;
         i.toStringSigned(buf, 10);
         return formatter<std::string_view>::format(std::string_view{buf.data(), buf.size()}, ctx);
@@ -339,7 +339,7 @@ struct fmt::formatter<llvm::APInt> : formatter<std::string_view> {
 template <>
 struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
     template <typename FormatContext>
-    auto format(srcc::Size sz, FormatContext& ctx) {
+    auto format(srcc::Size sz, FormatContext& ctx) const {
         return formatter<srcc::usz>::format(sz.bits(), ctx);
     }
 };
@@ -347,7 +347,7 @@ struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
 template <>
 struct fmt::formatter<srcc::String> : formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(srcc::String s, FormatContext& ctx) {
+    auto format(srcc::String s, FormatContext& ctx) const {
         return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
     }
 };
@@ -355,7 +355,7 @@ struct fmt::formatter<srcc::String> : formatter<std::string_view> {
 template <>
 struct fmt::formatter<llvm::StringRef> : formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(llvm::StringRef s, FormatContext& ctx) {
+    auto format(llvm::StringRef s, FormatContext& ctx) const {
         return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
     }
 };

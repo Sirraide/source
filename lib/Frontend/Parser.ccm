@@ -79,6 +79,7 @@ public:
     enum struct Kind : u8 {
 #define PARSE_TREE_LEAF_NODE(node) node,
 #include "srcc/ParseTree.inc"
+
     };
 
     const Kind expr_kind;
@@ -167,15 +168,27 @@ public:
 };
 
 /// A reference to a declaration.
-class srcc::ParsedDeclRefExpr final : public ParsedExpr {
-public:
-    /// The name of the declaration.
-    String name;
+class srcc::ParsedDeclRefExpr final : public ParsedExpr
+    , TrailingObjects<ParsedDeclRefExpr, String> {
+    friend TrailingObjects;
+
+    u32 num_parts;
+    auto numTrailingObjects(OverloadToken<String>) -> usz { return num_parts; }
 
     ParsedDeclRefExpr(
-        String name,
+        ArrayRef<String> names,
         Location location
-    ) : ParsedExpr{Kind::DeclRefExpr, location}, name{name} {}
+    );
+
+public:
+    static auto Create(
+        Parser& parser,
+        ArrayRef<String> names,
+        Location location
+    ) -> ParsedDeclRefExpr*;
+
+    /// Get the parts of the declaration reference.
+    auto names() -> ArrayRef<String> { return {getTrailingObjects<String>(), num_parts}; }
 
     static bool classof(const ParsedExpr* e) { return e->kind() == Kind::DeclRefExpr; }
 };

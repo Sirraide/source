@@ -86,8 +86,6 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     auto FPT = D->getType()->getAs<clang::FunctionProtoType>();
     Assert(FPT, "No prototype in C++?");
 
-    std::string s = D->getNameAsString();
-
     // If the return type hasn’t been deduced yet, we can’t import it.
     if (D->getReturnType()->getAs<clang::AutoType>()) return;
 

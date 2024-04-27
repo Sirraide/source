@@ -3,7 +3,7 @@ program hello;
 import <cstdio> as stdio;
 
 proc hello {
-    //stdio::puts("Hello, World!");
+    stdio::puts("Hello, World!");
 }
 
 hello();

@@ -36,7 +36,7 @@
 
 <expr-block>    ::= "{" <stmts>  "}"
 <expr-call>     ::= <expr> "(" [ <call-args> ] ")"
-<expr-decl-ref> ::= IDENTIFIER
+<expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-lit>      ::= STRING-LITERAL
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]

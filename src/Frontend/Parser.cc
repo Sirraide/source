@@ -43,7 +43,6 @@ ParsedBlockExpr::ParsedBlockExpr(
     Location location
 ) : ParsedExpr{Kind::BlockExpr, location},
     num_stmts{u32(stmts.size())} {
-    static_assert(std::is_trivially_destructible_v<decltype(*this)>);
     std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<ParsedExpr*>());
 }
 
@@ -63,7 +62,6 @@ ParsedCallExpr::ParsedCallExpr(
     Location location
 ) : ParsedExpr{Kind::CallExpr, location},
     callee{callee}, num_args{u32(args.size())} {
-    static_assert(std::is_trivially_destructible_v<decltype(*this)>);
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<ParsedExpr*>());
 }
 
@@ -76,6 +74,21 @@ auto ParsedCallExpr::Create(
     const auto size = totalSizeToAlloc<ParsedExpr*>(args.size());
     auto mem = parser.Allocate(size, alignof(ParsedCallExpr));
     return ::new (mem) ParsedCallExpr{callee, args, location};
+}
+
+ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<String> names, Location location)
+    : ParsedExpr(Kind::DeclRefExpr, location), num_parts(u32(names.size())) {
+    std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects<String>());
+}
+
+auto ParsedDeclRefExpr::Create(
+    Parser& parser,
+    ArrayRef<String> names,
+    Location location
+) -> ParsedDeclRefExpr* {
+    const auto size = totalSizeToAlloc<String>(names.size());
+    auto mem = parser.Allocate(size, alignof(ParsedDeclRefExpr));
+    return ::new (mem) ParsedDeclRefExpr{names, location};
 }
 
 struct ParsedExpr::Printer : PrinterBase<ParsedExpr> {
@@ -137,7 +150,7 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
                 e->loc.pos
             );
 
-            fmt::print(" {}{}", C(Reset), x.name);
+            fmt::print(" {}{}", C(Reset), fmt::join(x.names(), "::"));
             fmt::print("\n{}", C(Reset));
         } break;
 
@@ -182,7 +195,7 @@ void ParsedExpr::dump(bool use_colour) const {
     Printer(use_colour, const_cast<ParsedExpr*>(this));
 }
 
-#define PARSE_TREE_NODE(node) \
+#define PARSE_TREE_NODE(node)                                                                                \
     static_assert(alignof(SRCC_CAT(Parsed, node)) < __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Alignment to large"); \
     static_assert(__is_trivially_destructible(SRCC_CAT(Parsed, node)), "Parse tree nodes must be trivially destructible");
 
@@ -279,10 +292,20 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
             lhs = ParseBlock();
             break;
 
-        // <expr-decl-ref> ::= IDENTIFIER
+        // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
         case Tk::Identifier: {
-            lhs = new (*this) ParsedDeclRefExpr{tok->text, tok->location};
-            ++tok;
+            SmallVector<String> strings;
+            do {
+                if (not At(Tk::Identifier)) {
+                    Error("Expected identifier after '::'");
+                    SkipTo(Tk::Semicolon);
+                    break;
+                }
+
+                strings.push_back(tok->text);
+                ++tok;
+            } while (Consume(Tk::ColonColon));
+            lhs = ParsedDeclRefExpr::Create(*this, strings, tok->location);
         } break;
 
         // <expr-lit> ::= STRING-LITERAL
