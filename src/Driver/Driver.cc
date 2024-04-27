@@ -48,12 +48,12 @@ struct Driver::Impl {
     std::mutex mutex;
     bool compiled = false;
 
-    int compile();
+    int run_job(Action action);
 
     auto ParseFile(const File::Path& path) -> ParsedModule*;
 };
 
-int Driver::Impl::compile() {
+int Driver::Impl::run_job(Action action) {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
 
@@ -77,6 +77,12 @@ int Driver::Impl::compile() {
         auto ptr = f.get();
         if (not ptr) return 1;
         parsed_modules.emplace_back(ptr);
+    }
+
+    // Dump modules if we should only do parsing.
+    if (action == Action::Parse) {
+        for (auto& m : parsed_modules) m->dump();
+        return 0;
     }
 
     // Combine parsed modules that belong to the same module.
@@ -103,9 +109,9 @@ void Driver::add_file(std::string_view file_path) {
     impl->files.push_back(File::Path(file_path));
 }
 
-int Driver::compile() {
+int Driver::run_job(Action action) {
     std::unique_lock _{impl->mutex};
-    return impl->compile();
+    return impl->run_job(action);
 }
 
 void Driver::enable_colours(bool enable) {

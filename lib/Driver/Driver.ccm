@@ -8,7 +8,17 @@ import srcc.utils;
 
 export namespace srcc {
 class Driver;
+enum struct Action : u8;
 }
+
+enum struct srcc::Action : srcc::u8 {
+    /// Does what you’d expect: compile all input files to
+    /// executables and modules and save them to disk.
+    Compile,
+
+    /// Print parse tree only and exit.
+    Parse,
+};
 
 class srcc::Driver {
     SRCC_DECLARE_HIDDEN_IMPL(Driver);
@@ -23,7 +33,7 @@ public:
     /// Run compile jobs.
     ///
     /// \return 0 on success, non-zero on failure.
-    int compile();
+    int run_job(Action action = Action::Compile);
 
     /// Enable colours.
     void enable_colours(bool enable);
