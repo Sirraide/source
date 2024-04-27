@@ -56,15 +56,15 @@ auto Type::print(bool use_colour) const -> std::string {
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Bool: return fmt::format("{}bool", C(Red));
-                case BuiltinKind::Void: return fmt::format("{}void", C(Red));
-                case BuiltinKind::NoReturn: return fmt::format("{}noreturn", C(Red));
+                case BuiltinKind::Bool: return fmt::format("{}bool", C(Cyan));
+                case BuiltinKind::Void: return fmt::format("{}void", C(Cyan));
+                case BuiltinKind::NoReturn: return fmt::format("{}noreturn", C(Cyan));
             }
         }
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            return fmt::format("{}i{}", C(Red), int_ty->bit_width());
+            return fmt::format("{}i{}", C(Cyan), int_ty->bit_width());
         }
 
         case Kind::ProcType: {
@@ -74,10 +74,12 @@ auto Type::print(bool use_colour) const -> std::string {
             // Add params.
             auto params = proc->params();
             if (not params.empty()) {
-                ret += fmt::format("{}(", C(Red));
+                ret += fmt::format("{} (", C(Red));
+                bool first = true;
                 for (auto p : params) {
+                    if (first) first = false;
+                    else ret += fmt::format("{}, ", C(Red));
                     ret += p->print(use_colour);
-                    if (p != params.back()) ret += fmt::format("{}, ", C(Red));
                 }
                 ret += fmt::format("{})", C(Red));
             }

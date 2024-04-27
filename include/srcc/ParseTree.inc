@@ -1,4 +1,4 @@
-#ifndef PARSE_TREE_LEAF_NODE(node)
+#ifndef PARSE_TREE_LEAF_NODE
 #    define PARSE_TREE_LEAF_NODE(node) PARSE_TREE_NODE(node)
 #endif
 

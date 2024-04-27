@@ -21,6 +21,7 @@ class srcc::Importer {
     Sema& S;
     clang::ASTUnit& AST;
     Module::Ptr Mod;
+    llvm::DenseSet<clang::Decl*> imported_decls;
 
 public:
     explicit Importer(Sema& S, clang::ASTUnit& AST) : S(S), AST(AST) {}
@@ -35,12 +36,14 @@ public:
 
 auto Importer::Import(String name) -> Module::Ptr {
     Mod = Module::Create(S.Context(), name, true);
-    auto *TU = AST.getASTContext().getTranslationUnitDecl();
+    auto* TU = AST.getASTContext().getTranslationUnitDecl();
     for (auto D : TU->decls()) ImportDecl(D);
     return std::move(Mod);
 }
 
 void Importer::ImportDecl(clang::Decl* D) {
+    if (imported_decls.contains(D->getCanonicalDecl())) return;
+    imported_decls.insert(D->getCanonicalDecl());
     if (D->isInvalidDecl()) return;
     switch (D->getKind()) {
         using K = clang::Decl::Kind;
@@ -83,6 +86,8 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     auto FPT = D->getType()->getAs<clang::FunctionProtoType>();
     Assert(FPT, "No prototype in C++?");
 
+    std::string s = D->getNameAsString();
+
     // If the return type hasn’t been deduced yet, we can’t import it.
     if (D->getReturnType()->getAs<clang::AutoType>()) return;
 
@@ -95,12 +100,15 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     // builtins as well, but those count as ‘library builtins’.
     switch (clang::Builtin::ID(D->getBuiltinID())) {
         // Ignore everything we don’t know what to do with.
-        default: return;
+        default:
+            return;
 
-        // Import library builtins only.
+            // Import library builtins only.
 #define BUILTIN(ID, ...)
 #define LIBBUILTIN(ID, ...) case clang::Builtin::BI##ID:
 #include "clang/Basic/Builtins.inc"
+
+        case clang::Builtin::NotBuiltin:
             break;
     }
 
@@ -129,7 +137,7 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     Mod->exports[Proc->name].push_back(Proc);
 }
 
-auto Importer::ImportType(const clang::Type* Ty) -> Type*{
+auto Importer::ImportType(const clang::Type* Ty) -> Type* {
     // Handle known type sugar first.
     if (
         auto TD = Ty->getAs<clang::TypedefType>();
@@ -151,6 +159,8 @@ auto Importer::ImportType(const clang::Type* Ty) -> Type*{
 
                 case K::SChar:
                 case K::UChar:
+                case K::Char_S:
+                case K::Char_U:
                     return Mod->FFICharTy;
 
                 case K::Short:
@@ -244,7 +254,7 @@ auto Sema::ImportCXXHeader(String name) -> Result<Module::Ptr> {
     //
     // TODO: This path may not exist if we ever ship srcc
     // on its own; we may have to ship Clang’s resource dir w/ it.
-    std::array args {
+    std::array args{
         SOURCE_CLANG_EXE,
         "-x",
         "c++",
