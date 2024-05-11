@@ -57,13 +57,15 @@ enum class srcc::Dependence : srcc::u8 {
 /// Builtin types.
 enum class srcc::BuiltinKind : srcc::u8 {
     Void,
+    Dependent,
     NoReturn,
     Bool,
 };
 
 export namespace srcc {
 constexpr auto operator|(Dependence a, Dependence b) -> Dependence { return Dependence(u8(a) | u8(b)); }
-constexpr bool operator&(Dependence a, Dependence b) { return u8(a) & u8(b); }
+constexpr auto operator|= (Dependence& a, Dependence b) -> Dependence& { return a = a | b; }
+constexpr auto operator&(Dependence a, Dependence b) -> Dependence { return Dependence(u8(a) & u8(b)); }
 } // namespace srcc
 
 /// Linkage of a global entity.

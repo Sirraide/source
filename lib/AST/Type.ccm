@@ -27,14 +27,18 @@ public:
     };
 
     const Kind type_kind;
+    Dependence dep = Dependence::None;
 
 protected:
-    explicit Type(Kind kind) : type_kind{kind} {}
+    explicit Type(Kind kind, Dependence dep = Dependence::None) : type_kind{kind}, dep{dep} {}
 
 public:
     // Only allow allocating these in the module.
     void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
     void* operator new(usz size, Module& mod);
+
+    /// Get the dependence of this type.
+    auto dependence() const -> Dependence { return dep; }
 
     /// Get the kind of this type.
     auto kind() const -> Kind { return type_kind; }

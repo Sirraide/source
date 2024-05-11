@@ -46,19 +46,19 @@ private:
     /// Not unique because we’ll mostly just be creating unique symbols from now on.
     llvm::StringSaver saver{alloc};
 
-    /// Module initialiser.
-    ProcDecl* initialiser_proc{};
-    BlockExpr* file_scope_block{};
+    explicit Module(Context& ctx, String name, bool is_module);
 
+public:
     /// The name of this program or module.
     const String name;
 
     /// Whether this is a program or module.
     const bool is_module;
 
-    explicit Module(Context& ctx, String name, bool is_module);
+    /// Module initialiser.
+    ProcDecl* initialiser_proc{};
+    BlockExpr* file_scope_block{};
 
-public:
     /// All procedures in the module.
     SmallVector<ProcDecl*> procs;
 
@@ -67,6 +67,7 @@ public:
 
     /// Builtin types.
     Type* VoidTy;
+    Type* DependentTy;
     Type* NoReturnTy;
     Type* BoolTy;
     Type* FFIBoolTy;
@@ -99,6 +100,13 @@ public:
 
     /// Allocate data.
     void* Allocate(usz size, usz align) { return allocator().Allocate(size, align); }
+
+    /// Allocate an object.
+    template<typename T, typename... Args>
+    auto AllocateAndConstruct(Args&&... args) -> T* {
+        static_assert(std::is_trivially_destructible_v<T>, "Type must be trivially destructible");
+        return new (Allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
+    }
 
     /// Get the module’s allocator.
     [[nodiscard]] auto allocator() -> llvm::BumpPtrAllocator& { return alloc; }

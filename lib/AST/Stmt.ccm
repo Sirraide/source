@@ -1,8 +1,9 @@
 module;
 
+#include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/Support/TrailingObjects.h>
-#include <srcc/Macros.hh>
 #include <memory>
+#include <srcc/Macros.hh>
 
 export module srcc.ast:stmt;
 import srcc;
@@ -10,9 +11,48 @@ import :enums;
 import :type;
 
 export namespace srcc {
+class Scope;
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 }
+
+/// Scope that stores declarations.
+///
+/// These need to be allocated separately because we usually need
+/// to be able to look up declarations in one before we create the
+/// node that contains it.
+///
+/// Note that these are only valid during sema and should not be
+/// referenced after that.
+class srcc::Scope {
+    SRCC_IMMOVABLE(Scope);
+
+    /// The parent scope.
+    Scope* parent_scope;
+
+
+    /// Whether this is a procedure scope.
+    const bool proc_scope;
+
+public:
+    /// Declarations in this scope.
+    StringMap<llvm::TinyPtrVector<Decl*>> decls;
+
+    explicit Scope(Scope* parent, bool proc_scope = false)
+        : parent_scope{parent},
+          proc_scope{proc_scope} {}
+
+    /// Add a declaration to this scope.
+    void add(Decl* d);
+
+    /// Check if this is a procedure scope.
+    bool is_proc_scope() const { return proc_scope; }
+
+    /// Get the parent scope.
+    ///
+    /// This returns null if this is the global scope.
+    auto parent() -> Scope* { return parent_scope; }
+};
 
 /// Root of the AST inheritance hierarchy.
 class srcc::Stmt {
@@ -38,7 +78,7 @@ private:
     Location loc;
 
 protected:
-    explicit Stmt(Kind kind, Location loc) : stmt_kind{kind}, loc{loc} {}
+    explicit Stmt(Kind kind, Location loc) : stmt_kind{kind}, loc{loc} { }
 
 public:
     // Only allow allocating these in the module.
@@ -46,23 +86,33 @@ public:
     void* operator new(usz size, Module& mod);
 
     /// Get whether this statement is dependent.
-    [[nodiscard]] bool dependent() const { return dependence() & Dependence::Instantiation; }
+    bool dependent() const { return (dependence() & Dependence::Instantiation) != Dependence::None; }
 
     /// Get the dependence of this statement.
-    [[nodiscard]] auto dependence() const -> Dependence { return dep; }
+    auto dependence() const -> Dependence { return dep; }
 
-    /// Get the kind of this statement.
-    [[nodiscard]] Kind kind() const { return stmt_kind; }
-
-    /// Get the source location of this statement.
-    [[nodiscard]] auto location() const -> Location { return loc; }
+    /// Check if this statement contains an error.
+    bool errored() const { return (dependence() & Dependence::Error) == Dependence::Error; }
 
     /// Dump the statement.
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
 
+    /// Get the kind of this statement.
+    Kind kind() const { return stmt_kind; }
+
+    /// Get the source location of this statement.
+    auto location() const -> Location { return loc; }
+
     /// Set the dependence of this statement.
     void set_dependence(Dependence d) { dep = d; }
+
+    /// Mark this node as errored.
+    void set_errored() { dep |= Dependence::Error; }
+
+protected:
+    /// Compute the dependence of this expression.
+    void ComputeDependence();
 };
 
 // ============================================================================
@@ -102,25 +152,45 @@ class srcc::BlockExpr final : public Expr
     , TrailingObjects<BlockExpr, Stmt*> {
     friend TrailingObjects;
 
+public:
+    /// Index used to indicate that there is no return statement.
+    static constexpr u32 NoExprIndex = ~0u;
+
+private:
     const u32 num_stmts;
+
+    /// Index of the expression whose value is returned, if any. If the type
+    /// of this is void, then nothing is returned and this is invalid.
+    u32 return_expr_index;
+
 
     auto numTrailingObjects(OverloadToken<Stmt*>) -> usz { return num_stmts; }
 
     BlockExpr(
+        Scope* parent_scope,
         Type* type,
         ArrayRef<Stmt*> stmts,
+        u32 idx,
         Location location
     );
 
 public:
+    /// Scope associated with this block.
+    Scope* scope;
+
     static auto Create(
         Module& mod,
-        Type* type,
+        Scope* parent_scope,
         ArrayRef<Stmt*> stmts,
+        u32 return_expr_index,
         Location location
     ) -> BlockExpr*;
 
-    [[nodiscard]] auto stmts() -> ArrayRef<Stmt*> { return {getTrailingObjects<Stmt*>(), num_stmts}; }
+    /// Get the statements in this block.
+    auto stmts() -> ArrayRef<Stmt*> { return {getTrailingObjects<Stmt*>(), num_stmts}; }
+
+    /// Get the expression whose value is returned from this block, if any.
+    auto return_expr() -> Expr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BlockExpr; }
 };
@@ -162,13 +232,13 @@ class srcc::ProcRefExpr final : public Expr {
 public:
     ProcDecl* decl;
 
-private:
     ProcRefExpr(
         ProcDecl* decl,
         Location location
     );
 
-public:
+    auto return_type() const -> Type*;
+
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
 };
 
@@ -178,12 +248,14 @@ public:
 
 private:
     StrLitExpr(
-        Module* mod,
+        Type* ty,
         String value,
         Location location
-    );
+    ) : Expr{Kind::StrLitExpr, ty, location}, value{value} {}
 
 public:
+    static auto Create(Module& mod, String value, Location location) -> StrLitExpr*;
+
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
 };
 
@@ -235,7 +307,10 @@ public:
     ProcDecl* parent;
 
     /// Not set if this is e.g. external.
-    Expr* body;
+    Stmt* body;
+
+    /// Scope associated with this procedure, if any.
+    Scope* scope = nullptr;
 
     ProcDecl(
         Type* type,
@@ -243,11 +318,17 @@ public:
         Linkage linkage,
         Mangling mangling,
         ProcDecl* parent,
-        Expr* body,
+        Stmt* body,
         Location location
     ) : ObjectDecl{Kind::ProcDecl, type, name, linkage, mangling, location},
         parent{parent},
-        body{body} {}
+        body{body} { ComputeDependence(); }
+
+    /// Get the procedure's return type.
+    auto return_type() -> Type*;
+
+    /// Get the procedure type.
+    auto proc_type() const -> ProcType*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };

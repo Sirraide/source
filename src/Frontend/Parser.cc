@@ -294,6 +294,7 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
 
         // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
         case Tk::Identifier: {
+            auto loc = tok->location;
             SmallVector<String> strings;
             do {
                 if (not At(Tk::Identifier)) {
@@ -303,9 +304,10 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
                 }
 
                 strings.push_back(tok->text);
+                loc = {loc, tok->location};
                 ++tok;
             } while (Consume(Tk::ColonColon));
-            lhs = ParsedDeclRefExpr::Create(*this, strings, tok->location);
+            lhs = ParsedDeclRefExpr::Create(*this, strings, loc);
         } break;
 
         // <expr-lit> ::= STRING-LITERAL

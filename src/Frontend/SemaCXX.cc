@@ -2,6 +2,7 @@ module;
 
 #include <clang/Basic/FileManager.h>
 #include <clang/Frontend/ASTUnit.h>
+#include <clang/Tooling/Tooling.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <fmt/core.h>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
@@ -35,7 +36,7 @@ public:
 };
 
 auto Importer::Import(String name) -> Module::Ptr {
-    Mod = Module::Create(S.Context(), name, true);
+    Mod = Module::Create(S.context(), name, true);
     auto* TU = AST.getASTContext().getTranslationUnitDecl();
     for (auto D : TU->decls()) ImportDecl(D);
     return std::move(Mod);
@@ -225,6 +226,7 @@ auto Importer::ImportType(const clang::Type* Ty) -> Type* {
 }
 
 auto Sema::ImportCXXHeader(String name) -> Result<Module::Ptr> {
+    // TODO: Try using `clang::tooling::buildASTFromCodeWithArgs()`.
     llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> overlay;
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> mem;
 

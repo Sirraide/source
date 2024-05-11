@@ -87,7 +87,7 @@ int Driver::Impl::run_job(Action action) {
 
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
-    auto module = Sema::Analyse(parsed_modules);
+    auto module = Sema::Translate(parsed_modules);
     if (module) module->dump();
     return 42;
 }

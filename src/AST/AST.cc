@@ -13,6 +13,7 @@ Module::Module(Context& ctx, String name, bool is_module)
       name{name},
       is_module{is_module},
       VoidTy{new(*this) BuiltinType(BuiltinKind::Void)},
+      DependentTy{new(*this) BuiltinType(BuiltinKind::Dependent)},
       NoReturnTy{new(*this) BuiltinType(BuiltinKind::NoReturn)},
       BoolTy{new(*this) BuiltinType(BuiltinKind::Bool)} {
     // Initialise FFI and cached types.

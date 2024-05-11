@@ -16,9 +16,21 @@ class Sema;
 class srcc::Sema {
     SRCC_IMMOVABLE(Sema);
     Context& ctx;
-    Module::Ptr mod;
+    Module::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
     bool has_error = false;
+
+    /// All scopes that have been created.
+    std::vector<std::unique_ptr<Scope>> all_scopes;
+
+    /// Stack of active procedures.
+    SmallVector<ProcDecl*> proc_stack;
+
+    /// Stack of active scopes.
+    SmallVector<Scope*> scope_stack;
+
+    /// Map from parsed procedures to their declarations.
+    DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
 
     explicit Sema(Context& ctx) : ctx(ctx) {}
 
@@ -26,41 +38,169 @@ public:
     /// Analyse a set of parsed modules and combine them into a single module.
     ///
     /// @return The combined module, or `nullptr` if there was an error.
-    [[nodiscard]] static auto Analyse(
-        ArrayRef<ParsedModule::Ptr> modules
-    ) -> Module::Ptr;
+    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> Module::Ptr;
 
     /// Get the context.
-    [[nodiscard]] auto Context() const -> Context& { return ctx; }
+    auto context() const -> Context& { return ctx; }
+
+    /// Get the current procedure.
+    auto curr_proc() -> ProcDecl* { return proc_stack.empty() ? nullptr : proc_stack.back(); }
+
+    /// Get the current scope.
+    auto curr_scope() -> Scope* { return scope_stack.back(); }
+
+    /// Get the global scope.
+    auto global_scope() -> Scope* { return scope_stack.front(); }
 
 private:
+    /// RAII Object to push and pop a scope.
+    class [[nodiscard]] ScopeRAII {
+        Sema& S;
+        Scope* scope;
+
+    public:
+        ScopeRAII(Sema& S, bool proc_scope = false)
+            : S{S} {
+            auto sc = std::make_unique<Scope>(S.curr_scope(), proc_scope);
+            scope = sc.get();
+            S.scope_stack.push_back(scope);
+            S.all_scopes.push_back(std::move(sc));
+        }
+
+        /// Pop the scope if it is still active.
+        ~ScopeRAII() {
+            if (scope) S.scope_stack.pop_back();
+        }
+
+        /// Not copyable since copying scopes is nonsense.
+        ScopeRAII(const ScopeRAII&) = delete;
+        const ScopeRAII& operator=(const ScopeRAII&) = delete;
+
+        /// However, we may want to pass these to functions in some cases
+        /// to open a new scope or indicate that they do so.
+        ScopeRAII(ScopeRAII&& other) : S{other.S}, scope{std::exchange(other.scope, nullptr)} {}
+        ScopeRAII& operator=(ScopeRAII&& other) {
+            Assert(&S == &other.S, "Cannot move scope between semas");
+            scope = std::exchange(other.scope, nullptr);
+            return *this;
+        }
+
+        /// Get the scope.
+        auto get() -> Scope* {
+            Assert(scope, "Accessing scope after it has been moved");
+            return scope;
+        }
+    };
+
     /// Entry point.
-    void Analyse();
+    void Translate();
 
     /// Helpers.
-    template <typename ...Args>
-    void Error(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+    template <typename... Args>
+    auto Error(Location loc, fmt::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         has_error = true;
         Diag::Error(ctx, loc, fmt, std::forward<Args>(args)...);
+        return nullptr;
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     void Note(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
         Diag::Note(ctx, loc, fmt, std::forward<Args>(args)...);
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     void Warn(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
         Diag::Warning(ctx, loc, fmt, std::forward<Args>(args)...);
     }
 
-    /// Analysis.
-    auto AnalyseBlock(ParsedBlockExpr* e) -> Result<BlockExpr*>;
-    auto AnalyseCall(ParsedCallExpr* e) -> Result<CallExpr*>;
-    auto AnalyseDeclRef(ParsedDeclRefExpr* e) -> Result<Expr*>;
-    auto AnalyseStrLit(ParsedStrLitExpr* e) -> Result<StrLitExpr*>;
-    auto AnalyseProcDecl(ParsedProcDecl* e) -> Result<ProcDecl*>;
+    struct LookupResult {
+        enum struct Reason : u8 {
+            /// Lookup was successful.
+            Success,
 
-    /// Helpers.
+            /// Lookup was ambiguous.
+            Ambiguous,
+
+            /// The name was not found.
+            NotFound,
+
+            /// One of the path segments did not name a scope.
+            NonScopeInPath,
+        };
+
+        /// The decl that was found, if any.
+        Decl* decl;
+
+        /// Reason for failure.
+        Reason result;
+
+        LookupResult() : decl{nullptr}, result{Reason::NotFound} {}
+        LookupResult(Decl* decl, Reason result) : decl{decl}, result{result} {}
+
+        /// Check if this lookup result is a success.
+        [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
+
+        /// Create an ambiguous lookup result.
+        static auto Ambiguous() -> LookupResult { return LookupResult{nullptr, Reason::Ambiguous}; }
+        static auto NonScopeInPath() -> LookupResult { return LookupResult{nullptr, Reason::NonScopeInPath}; }
+        static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, Reason::Success}; }
+    };
+
+    /// Create a reference to a declaration.
+    [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Expr*;
+
+    /// Extract the scope that is the body of a declaration, if it has one.
+    [[nodiscard]] auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
+
+    /// Use LookUpName() instead.
+    [[nodiscard]] auto LookUpQualifiedName(
+        Scope* in_scope,
+        ArrayRef<String> names,
+        Location loc,
+        bool complain
+    ) -> LookupResult;
+
+    /// Use LookUpName() instead.
+    [[nodiscard]] auto LookUpUnqualifiedName(
+        Scope* in_scope,
+        String name,
+        Location loc,
+        bool this_scope_only,
+        bool complain
+    ) -> LookupResult;
+
+    /// Look up a name in a scope.
+    ///
+    /// \param in_scope The scope to start searching in.
+    /// \param names The path to look up.
+    /// \param loc The location of the lookup.
+    /// \param complain Emit a diagnostic if lookup fails.
+    [[nodiscard]] auto LookUpName(
+        Scope* in_scope,
+        ArrayRef<String> names,
+        Location loc,
+        bool complain = true
+    ) -> LookupResult;
+
+    /// Building AST nodes; called after translation and template instantiation.
+    [[nodiscard]] auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
+    [[nodiscard]] auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
+
+    /// Translation from the parse tree to the AST.
+    [[nodiscard]] auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
+    [[nodiscard]] auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr>;
+    [[nodiscard]] auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
+    [[nodiscard]] auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
+    [[nodiscard]] auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
+    [[nodiscard]] auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
+    [[nodiscard]] auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    [[nodiscard]] auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
+    [[nodiscard]] auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
+    [[nodiscard]] auto TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    [[nodiscard]] auto TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt>;
+    [[nodiscard]] auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> bool;
+    [[nodiscard]] auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
+
+    /// Import a C++ header as a module.
     auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
 };

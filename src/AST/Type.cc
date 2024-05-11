@@ -56,8 +56,9 @@ auto Type::print(bool use_colour) const -> std::string {
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Bool: return fmt::format("{}bool", C(Cyan));
                 case BuiltinKind::Void: return fmt::format("{}void", C(Cyan));
+                case BuiltinKind::Dependent: return fmt::format("{}<dependent type>", C(Cyan));
+                case BuiltinKind::Bool: return fmt::format("{}bool", C(Cyan));
                 case BuiltinKind::NoReturn: return fmt::format("{}noreturn", C(Cyan));
             }
         }

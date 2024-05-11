@@ -231,7 +231,7 @@ public:
     ///
     /// This is not present if the procedure is only declared,
     /// not defined.
-    ParsedExpr* _Nullable body;
+    ParsedExpr* body;
 
     ParsedProcDecl(
         String name,
