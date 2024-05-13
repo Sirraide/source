@@ -123,12 +123,12 @@ public:
     bool is_lvalue : 1 = false;
 
     /// The type of this expression.
-    Ty type;
+    Type type;
 
 protected:
     Expr(
         Kind kind,
-        Ty type,
+        Type type,
         Location location
     ) : Stmt(kind, location), type{type} {}
 
@@ -166,7 +166,7 @@ private:
 
     BlockExpr(
         Scope* parent_scope,
-        Ty type,
+        Type type,
         ArrayRef<Stmt*> stmts,
         u32 idx,
         Location location
@@ -206,7 +206,7 @@ private:
     auto numTrailingObjects(OverloadToken<Expr*>) -> usz { return num_args; }
 
     CallExpr(
-        Ty type,
+        Type type,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -215,7 +215,7 @@ private:
 public:
     static auto Create(
         Module& mod,
-        Ty type,
+        Type type,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -235,7 +235,7 @@ public:
         Location location
     );
 
-    auto return_type() const -> Ty;
+    auto return_type() const -> Type;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
 };
@@ -246,7 +246,7 @@ public:
 
 private:
     SliceDataExpr(
-        Ty ty,
+        Type ty,
         Expr* slice,
         Location location
     ) : Expr{Kind::SliceDataExpr, ty, location}, slice{slice} {}
@@ -267,7 +267,7 @@ public:
 
 private:
     StrLitExpr(
-        Ty ty,
+        Type ty,
         String value,
         Location location
     ) : Expr{Kind::StrLitExpr, ty, location}, value{value} {}
@@ -288,7 +288,7 @@ public:
 protected:
     Decl(
         Kind kind,
-        Ty type,
+        Type type,
         String name,
         Location location
     ) : Expr{kind, type, location}, name{name} {}
@@ -306,7 +306,7 @@ public:
 protected:
     ObjectDecl(
         Kind kind,
-        Ty type,
+        Type type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -332,7 +332,7 @@ public:
     Scope* scope = nullptr;
 
     ProcDecl(
-        Ty type,
+        Type type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -344,7 +344,7 @@ public:
         body{body} { ComputeDependence(); }
 
     /// Get the procedure's return type.
-    auto return_type() -> Ty;
+    auto return_type() -> Type;
 
     /// Get the procedure type.
     auto proc_type() const -> ProcType*;

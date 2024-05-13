@@ -32,7 +32,7 @@ AST_STMT(Decl)
 AST_STMT(ObjectDecl)
 AST_STMT_LEAF(ProcDecl)
 
-AST_TYPE(Type)
+AST_TYPE(TypeBase)
 AST_TYPE(SingleElementTypeBase)
 AST_TYPE_LEAF(ArrayType)
 AST_TYPE_LEAF(SliceType)

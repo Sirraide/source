@@ -22,7 +22,7 @@ void Scope::add(Decl* d) {
 //  AST
 // ============================================================================
 CallExpr::CallExpr(
-    Ty type,
+    Type type,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
@@ -34,7 +34,7 @@ CallExpr::CallExpr(
 
 auto CallExpr::Create(
     Module& mod,
-    Ty type,
+    Type type,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
@@ -46,7 +46,7 @@ auto CallExpr::Create(
 
 BlockExpr::BlockExpr(
     Scope* parent_scope,
-    Ty type,
+    Type type,
     ArrayRef<Stmt*> stmts,
     u32 idx,
     Location location
@@ -82,7 +82,7 @@ ProcRefExpr::ProcRefExpr(
     Location location
 ) : Expr(Kind::ProcRefExpr, decl->type, location), decl{decl} { ComputeDependence(); }
 
-auto ProcRefExpr::return_type() const -> Ty {
+auto ProcRefExpr::return_type() const -> Type {
     return decl->return_type();
 }
 
@@ -103,6 +103,6 @@ auto ProcDecl::proc_type() const -> ProcType* {
     return cast<ProcType>(type).ptr();
 }
 
-auto ProcDecl::return_type() -> Ty {
+auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
 }

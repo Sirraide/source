@@ -30,26 +30,26 @@ auto FindOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* 
 // ============================================================================
 //  Type
 // ============================================================================
-void* Type::operator new(usz size, Module& mod) {
+void* TypeBase::operator new(usz size, Module& mod) {
     return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
-void Type::dump(bool use_colour) const {
+void TypeBase::dump(bool use_colour) const {
     fmt::print("{}", print(use_colour));
 }
 
-bool Type::is_void() const {
+bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
 }
 
-auto Type::print(bool use_colour) const -> std::string {
+auto TypeBase::print(bool use_colour) const -> std::string {
     utils::Colours C{use_colour};
     std::string out = print_impl(C);
     out += C(utils::Colour::Reset);
     return out;
 }
 
-auto Type::print_impl(utils::Colours C) const -> std::string {
+auto TypeBase::print_impl(utils::Colours C) const -> std::string {
     using enum utils::Colour;
     switch (kind()) {
         case Kind::ArrayType: {
@@ -123,12 +123,12 @@ auto Type::print_impl(utils::Colours C) const -> std::string {
 // ============================================================================
 //  Types
 // ============================================================================
-auto ArrayType::Get(Module& mod, Ty elem, i64 size) -> ArrayType* {
+auto ArrayType::Get(Module& mod, Type elem, i64 size) -> ArrayType* {
     auto CreateNew = [&] { return new (mod) ArrayType{elem, size}; };
     return FindOrCreateType(mod.array_types, CreateNew, elem, size);
 }
 
-void ArrayType::Profile(FoldingSetNodeID& ID, Ty elem, i64 size) {
+void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
     ID.AddPointer(elem.as_opaque_ptr());
     ID.AddInteger(size);
 }
@@ -142,24 +142,24 @@ void IntType::Profile(FoldingSetNodeID& ID, i64 bits) {
     ID.AddInteger(bits);
 }
 
-auto ReferenceType::Get(Module& mod, Ty elem) -> ReferenceType* {
+auto ReferenceType::Get(Module& mod, Type elem) -> ReferenceType* {
     auto CreateNew = [&] { return new (mod) ReferenceType{elem}; };
     return FindOrCreateType(mod.reference_types, CreateNew, elem);
 }
 
-void ReferenceType::Profile(FoldingSetNodeID& ID, Ty elem) {
+void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.as_opaque_ptr());
 }
 
 auto ProcType::Get(
     Module& mod,
-    Ty return_type,
-    ArrayRef<Ty> param_types,
+    Type return_type,
+    ArrayRef<Type> param_types,
     CallingConvention cconv,
     bool variadic
 ) -> ProcType* {
     auto CreateNew = [&] {
-        const auto size = totalSizeToAlloc<Ty>(param_types.size());
+        const auto size = totalSizeToAlloc<Type>(param_types.size());
         auto mem = mod.Allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
@@ -182,9 +182,9 @@ auto ProcType::Get(
 ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
-    Ty return_type,
-    ArrayRef<Ty> param_types
-) : Type{Kind::ProcType},
+    Type return_type,
+    ArrayRef<Type> param_types
+) : TypeBase{Kind::ProcType},
     cc{cconv},
     is_variadic{variadic},
     num_param_types{u32(param_types.size())},
@@ -192,11 +192,11 @@ ProcType::ProcType(
     std::uninitialized_copy_n(
         param_types.begin(),
         param_types.size(),
-        getTrailingObjects<Ty>()
+        getTrailingObjects<Type>()
     );
 }
 
-void ProcType::Profile(FoldingSetNodeID& ID, Ty return_type, ArrayRef<Ty> param_types, CallingConvention cc, bool is_variadic) {
+void ProcType::Profile(FoldingSetNodeID& ID, Type return_type, ArrayRef<Type> param_types, CallingConvention cc, bool is_variadic) {
     ID.AddInteger(+cc);
     ID.AddBoolean(is_variadic);
     ID.AddPointer(return_type.as_opaque_ptr());
@@ -204,11 +204,11 @@ void ProcType::Profile(FoldingSetNodeID& ID, Ty return_type, ArrayRef<Ty> param_
     for (auto t : param_types) ID.AddPointer(t.as_opaque_ptr());
 }
 
-auto SliceType::Get(Module& mod, Ty elem) -> SliceType* {
+auto SliceType::Get(Module& mod, Type elem) -> SliceType* {
     auto CreateNew = [&] { return new (mod) SliceType{elem}; };
     return FindOrCreateType(mod.slice_types, CreateNew, elem);
 }
 
-void SliceType::Profile(FoldingSetNodeID& ID, Ty elem) {
+void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.as_opaque_ptr());
 }

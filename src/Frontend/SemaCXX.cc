@@ -31,7 +31,7 @@ public:
     [[nodiscard]] auto Import(String name) -> Module::Ptr;
     void ImportDecl(clang::Decl* D);
     void ImportFunction(clang::FunctionDecl* D);
-    auto ImportType(const clang::Type* T) -> std::optional<Ty>;
+    auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
 };
 
@@ -136,7 +136,7 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     Mod->exports.add(Proc);
 }
 
-auto Importer::ImportType(const clang::Type* T) -> std::optional<Ty> {
+auto Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     // Handle known type sugar first.
     if (
         auto TD = T->getAs<clang::TypedefType>();
@@ -207,7 +207,7 @@ auto Importer::ImportType(const clang::Type* T) -> std::optional<Ty> {
             auto Ret = FPT->getExtInfo().getNoReturn() ? Mod->NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return nullptr;
 
-            SmallVector<Ty> Params;
+            SmallVector<Type> Params;
             for (auto P : FPT->param_types()) {
                 auto T = ImportType(P);
                 if (not T) return nullptr;

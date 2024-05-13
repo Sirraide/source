@@ -66,25 +66,25 @@ public:
     Scope exports{nullptr};
 
     /// Builtin types.
-    Type* VoidTy;
-    Type* DependentTy;
-    Type* NoReturnTy;
-    Type* BoolTy;
-    Type* FFIBoolTy;
-    Type* FFICharTy;
-    Type* FFIShortTy;
-    Type* FFIIntTy;
-    Type* FFILongTy;
-    Type* FFILongLongTy;
-    Type* FFISizeTy;
+    TypeBase* VoidTy;
+    TypeBase* DependentTy;
+    TypeBase* NoReturnTy;
+    TypeBase* BoolTy;
+    TypeBase* FFIBoolTy;
+    TypeBase* FFICharTy;
+    TypeBase* FFIShortTy;
+    TypeBase* FFIIntTy;
+    TypeBase* FFILongTy;
+    TypeBase* FFILongLongTy;
+    TypeBase* FFISizeTy;
 
     /// Cached because they’re used often.
-    Type* I8Ty;
-    Type* I16Ty;
-    Type* I32Ty;
-    Type* I64Ty;
-    Type* I128Ty;
-    Type* StrLitTy;
+    TypeBase* I8Ty;
+    TypeBase* I16Ty;
+    TypeBase* I32Ty;
+    TypeBase* I64Ty;
+    TypeBase* I128Ty;
+    TypeBase* StrLitTy;
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;
