@@ -31,8 +31,8 @@ public:
     [[nodiscard]] auto Import(String name) -> Module::Ptr;
     void ImportDecl(clang::Decl* D);
     void ImportFunction(clang::FunctionDecl* D);
-    auto ImportType(const clang::Type* Ty) -> Type*;
-    auto ImportType(clang::QualType Ty) { return ImportType(Ty.getTypePtr()); }
+    auto ImportType(const clang::Type* T) -> std::optional<Ty>;
+    auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
 };
 
 auto Importer::Import(String name) -> Module::Ptr {
@@ -118,12 +118,12 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     if (D->getLinkageInternal() != clang::Linkage::External) return;
 
     // Import the type.
-    auto* Ty = ImportType(FPT);
-    if (not Ty) return;
+    auto T = ImportType(FPT);
+    if (not T) return;
 
     // Create the procedure.
     auto* Proc = new (*Mod) ProcDecl(
-        Ty,
+        *T,
         Mod->save(D->getNameAsString()),
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
@@ -136,23 +136,23 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     Mod->exports.add(Proc);
 }
 
-auto Importer::ImportType(const clang::Type* Ty) -> Type* {
+auto Importer::ImportType(const clang::Type* T) -> std::optional<Ty> {
     // Handle known type sugar first.
     if (
-        auto TD = Ty->getAs<clang::TypedefType>();
+        auto TD = T->getAs<clang::TypedefType>();
         TD and TD->getDecl()->getName() == "size_t" and
-        Ty->getCanonicalTypeUnqualified() == AST.getASTContext().getSizeType()
+        T->getCanonicalTypeUnqualified() == AST.getASTContext().getSizeType()
     ) return Mod->FFISizeTy;
 
     // Only handle canonical types from here on.
-    Ty = Ty->getCanonicalTypeUnqualified().getTypePtr();
-    switch (Ty->getTypeClass()) {
+    T = T->getCanonicalTypeUnqualified().getTypePtr();
+    switch (T->getTypeClass()) {
         using K = clang::Type::TypeClass;
-        default: return nullptr;
+        default: return std::nullopt;
         case K::Builtin: {
-            switch (cast<clang::BuiltinType>(Ty)->getKind()) {
+            switch (cast<clang::BuiltinType>(T)->getKind()) {
                 using K = clang::BuiltinType::Kind;
-                default: return nullptr;
+                default: return std::nullopt;
                 case K::Void: return Mod->VoidTy;
                 case K::Bool: return Mod->FFIBoolTy;
 
@@ -183,40 +183,40 @@ auto Importer::ImportType(const clang::Type* Ty) -> Type* {
         case K::LValueReference:
         case K::RValueReference:
         case K::Pointer: {
-            auto Elem = ImportType(Ty->getPointeeType());
+            auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return nullptr;
-            return ReferenceType::Get(*Mod, Elem);
+            return ReferenceType::Get(*Mod, *Elem);
         }
 
         case K::BitInt: {
-            auto B = cast<clang::BitIntType>(Ty);
+            auto B = cast<clang::BitIntType>(T);
             return IntType::Get(*Mod, i64(B->getNumBits()));
         }
 
         case K::ConstantArray: {
-            auto C = cast<clang::ConstantArrayType>(Ty);
+            auto C = cast<clang::ConstantArrayType>(T);
             auto Elem = ImportType(C->getElementType());
             if (not Elem) return nullptr;
-            return ArrayType::Get(*Mod, Elem, i64(C->getSize().getZExtValue()));
+            return ArrayType::Get(*Mod, *Elem, i64(C->getSize().getZExtValue()));
         }
 
         case K::FunctionProto: {
-            auto FPT = cast<clang::FunctionProtoType>(Ty);
+            auto FPT = cast<clang::FunctionProtoType>(T);
             if (FPT->getCallConv() != clang::CallingConv::CC_C) return nullptr;
 
             auto Ret = FPT->getExtInfo().getNoReturn() ? Mod->NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return nullptr;
 
-            SmallVector<Type*> Params;
+            SmallVector<Ty> Params;
             for (auto P : FPT->param_types()) {
-                auto* T = ImportType(P);
+                auto T = ImportType(P);
                 if (not T) return nullptr;
-                Params.push_back(T);
+                Params.push_back(*T);
             }
 
             return ProcType::Get(
                 *Mod,
-                Ret,
+                *Ret,
                 Params,
                 CallingConvention::Native,
                 FPT->isVariadic()

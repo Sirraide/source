@@ -100,92 +100,101 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
     switch (e->kind()) {
         using enum utils::Colour;
         case Kind::BlockExpr: {
-            [[maybe_unused]] auto& x = *cast<ParsedBlockExpr>(e);
-
+            auto& b = *cast<ParsedBlockExpr>(e);
             fmt::print(
-                "{}BlockExpr {}{} {}<{}>",
+                "{}BlockExpr {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
                 fmt::ptr(e),
                 C(Magenta),
-                e->loc.pos
+                e->loc.pos,
+                C(Reset)
             );
 
-            fmt::print("\n{}", C(Reset));
-
             SmallVector<ParsedExpr*, 10> fields;
-            if (auto a = x.stmts(); not a.empty()) fields.append(a.begin(), a.end());
+            if (auto a = b.stmts(); not a.empty()) fields.append(a.begin(), a.end());
             PrintChildren(fields);
         } break;
 
         case Kind::CallExpr: {
-            [[maybe_unused]] auto& x = *cast<ParsedCallExpr>(e);
-
+            auto& c = *cast<ParsedCallExpr>(e);
             fmt::print(
-                "{}CallExpr {}{} {}<{}>",
+                "{}CallExpr {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
                 fmt::ptr(e),
                 C(Magenta),
-                e->loc.pos
+                e->loc.pos,
+                C(Reset)
             );
 
-            fmt::print("\n{}", C(Reset));
-
             SmallVector<ParsedExpr*, 10> fields;
-            if (x.callee) fields.push_back(x.callee);
-            if (auto a = x.args(); not a.empty()) fields.append(a.begin(), a.end());
+            if (c.callee) fields.push_back(c.callee);
+            if (auto a = c.args(); not a.empty()) fields.append(a.begin(), a.end());
             PrintChildren(fields);
         } break;
 
         case Kind::DeclRefExpr: {
-            [[maybe_unused]] auto& x = *cast<ParsedDeclRefExpr>(e);
-
+            auto& d = *cast<ParsedDeclRefExpr>(e);
             fmt::print(
-                "{}DeclRefExpr {}{} {}<{}>",
+                "{}DeclRefExpr {}{} {}<{}> {}{}\n{}",
                 C(Red),
                 C(Blue),
                 fmt::ptr(e),
                 C(Magenta),
-                e->loc.pos
+                e->loc.pos,
+                C(Reset),
+                fmt::join(d.names(), "::"),
+                C(Reset)
             );
-
-            fmt::print(" {}{}", C(Reset), fmt::join(x.names(), "::"));
-            fmt::print("\n{}", C(Reset));
         } break;
 
         case Kind::StrLitExpr: {
-            [[maybe_unused]] auto& x = *cast<ParsedStrLitExpr>(e);
-
+            auto& s = *cast<ParsedStrLitExpr>(e);
             fmt::print(
-                "{}StrLitExpr {}{} {}<{}>",
+                "{}StrLitExpr {}{} {}<{}> {}\"{}\"\n{}",
                 C(Red),
                 C(Blue),
                 fmt::ptr(e),
                 C(Magenta),
-                e->loc.pos
+                e->loc.pos,
+                C(Yellow),
+                utils::Escape(s.value),
+                C(Reset)
+            );
+        } break;
+
+        case Kind::MemberExpr: {
+            auto& m = *cast<ParsedMemberExpr>(e);
+            fmt::print(
+                "{}MemberExpr {}{} {}<{}> {}{}\n{}",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos,
+                C(Reset),
+                m.member,
+                C(Reset)
             );
 
-            fmt::print(" {}\"{}\"", C(Yellow), utils::Escape(x.value));
-            fmt::print("\n{}", C(Reset));
+            PrintChildren(m.base);
         } break;
 
         case Kind::ProcDecl: {
-            [[maybe_unused]] auto& x = *cast<ParsedProcDecl>(e);
-
+            auto& p = *cast<ParsedProcDecl>(e);
             fmt::print(
-                "{}ProcDecl {}{} {}<{}>",
+                "{}ProcDecl {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
                 fmt::ptr(e),
                 C(Magenta),
-                e->loc.pos
+                e->loc.pos,
+                C(Reset)
             );
 
-            fmt::print("\n{}", C(Reset));
-
             SmallVector<ParsedExpr*, 10> fields;
-            if (x.body) fields.push_back(x.body);
+            if (p.body) fields.push_back(p.body);
             PrintChildren(fields);
         } break;
     }
@@ -268,6 +277,7 @@ auto Parser::ParseBlock() -> Result<ParsedBlockExpr*> {
 //          | <expr-call>
 //          | <expr-decl-ref>
 //          | <expr-lit>
+//          | <expr-member>
 auto Parser::ParseExpr() -> Result<ParsedExpr*> {
     Result<ParsedExpr*> lhs = Diag();
     switch (tok->type) {
@@ -319,23 +329,46 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
 
     // Big operator parse loop.
     // TODO: precedence.
-    while (At(Tk::LParen)) {
-        // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
-        // <call-args> ::= <expr> { "," <expr> } [ "," ]
-        ++tok;
-        SmallVector<ParsedExpr*> args;
-        while (not At(Tk::RParen)) {
-            if (auto arg = ParseExpr()) {
-                args.push_back(*arg);
-                if (not Consume(Tk::Comma)) break;
-            } else {
-                SkipTo(Tk::RParen);
-                break;
+    while (At(Tk::LParen, Tk::Dot)) {
+        switch (tok->type) {
+            default: break;
+
+            // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
+            // <call-args> ::= <expr> { "," <expr> } [ "," ]
+            case Tk::LParen: {
+                ++tok;
+                SmallVector<ParsedExpr*> args;
+                while (not At(Tk::RParen)) {
+                    if (auto arg = ParseExpr()) {
+                        args.push_back(*arg);
+                        if (not Consume(Tk::Comma)) break;
+                    } else {
+                        SkipTo(Tk::RParen);
+                        break;
+                    }
+                }
+
+                ConsumeOrError(Tk::RParen);
+                lhs = ParsedCallExpr::Create(*this, *lhs, args, {lhs->loc});
+                continue;
+            }
+
+            // <expr-member> ::= <expr> "." IDENTIFIER
+            case Tk::Dot: {
+                ++tok;
+                if (not At(Tk::Identifier)) {
+                    Error("Expected identifier after '.'");
+                    SkipTo(Tk::Semicolon);
+                    return Diag();
+                }
+
+                lhs = new (*this) ParsedMemberExpr(*lhs, tok->text, {lhs->loc, tok->location});
+                ++tok;
+                continue;
             }
         }
 
-        ConsumeOrError(Tk::RParen);
-        lhs = ParsedCallExpr::Create(*this, *lhs, args, {lhs->loc});
+        Unreachable("Invalid operator: {}", tok->type);
     }
 
     return lhs;

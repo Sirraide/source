@@ -33,11 +33,13 @@
          | <expr-call>
          | <expr-decl-ref>
          | <expr-lit>
+         | <expr-member>
 
 <expr-block>    ::= "{" <stmts>  "}"
 <expr-call>     ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-lit>      ::= STRING-LITERAL
+<expr-member>   ::= <expr> "." IDENTIFIER
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 

@@ -123,13 +123,13 @@ auto Type::print_impl(utils::Colours C) const -> std::string {
 // ============================================================================
 //  Types
 // ============================================================================
-auto ArrayType::Get(Module& mod, Type* elem, i64 size) -> ArrayType* {
+auto ArrayType::Get(Module& mod, Ty elem, i64 size) -> ArrayType* {
     auto CreateNew = [&] { return new (mod) ArrayType{elem, size}; };
     return FindOrCreateType(mod.array_types, CreateNew, elem, size);
 }
 
-void ArrayType::Profile(FoldingSetNodeID& ID, Type* elem, i64 size) {
-    ID.AddPointer(elem);
+void ArrayType::Profile(FoldingSetNodeID& ID, Ty elem, i64 size) {
+    ID.AddPointer(elem.as_opaque_ptr());
     ID.AddInteger(size);
 }
 
@@ -142,24 +142,24 @@ void IntType::Profile(FoldingSetNodeID& ID, i64 bits) {
     ID.AddInteger(bits);
 }
 
-auto ReferenceType::Get(Module& mod, Type* elem) -> ReferenceType* {
+auto ReferenceType::Get(Module& mod, Ty elem) -> ReferenceType* {
     auto CreateNew = [&] { return new (mod) ReferenceType{elem}; };
     return FindOrCreateType(mod.reference_types, CreateNew, elem);
 }
 
-void ReferenceType::Profile(FoldingSetNodeID& ID, Type* elem) {
-    ID.AddPointer(elem);
+void ReferenceType::Profile(FoldingSetNodeID& ID, Ty elem) {
+    ID.AddPointer(elem.as_opaque_ptr());
 }
 
 auto ProcType::Get(
     Module& mod,
-    Type* return_type,
-    ArrayRef<Type*> param_types,
+    Ty return_type,
+    ArrayRef<Ty> param_types,
     CallingConvention cconv,
     bool variadic
 ) -> ProcType* {
     auto CreateNew = [&] {
-        const auto size = totalSizeToAlloc<Type*>(param_types.size());
+        const auto size = totalSizeToAlloc<Ty>(param_types.size());
         auto mem = mod.Allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
@@ -182,8 +182,8 @@ auto ProcType::Get(
 ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
-    Type* return_type,
-    ArrayRef<Type*> param_types
+    Ty return_type,
+    ArrayRef<Ty> param_types
 ) : Type{Kind::ProcType},
     cc{cconv},
     is_variadic{variadic},
@@ -192,23 +192,23 @@ ProcType::ProcType(
     std::uninitialized_copy_n(
         param_types.begin(),
         param_types.size(),
-        getTrailingObjects<Type*>()
+        getTrailingObjects<Ty>()
     );
 }
 
-void ProcType::Profile(FoldingSetNodeID& ID, Type* return_type, ArrayRef<Type*> param_types, CallingConvention cc, bool is_variadic) {
+void ProcType::Profile(FoldingSetNodeID& ID, Ty return_type, ArrayRef<Ty> param_types, CallingConvention cc, bool is_variadic) {
     ID.AddInteger(+cc);
     ID.AddBoolean(is_variadic);
-    ID.AddPointer(return_type);
+    ID.AddPointer(return_type.as_opaque_ptr());
     ID.AddInteger(param_types.size());
-    for (auto t : param_types) ID.AddPointer(t);
+    for (auto t : param_types) ID.AddPointer(t.as_opaque_ptr());
 }
 
-auto SliceType::Get(Module& mod, Type* elem) -> SliceType* {
+auto SliceType::Get(Module& mod, Ty elem) -> SliceType* {
     auto CreateNew = [&] { return new (mod) SliceType{elem}; };
     return FindOrCreateType(mod.slice_types, CreateNew, elem);
 }
 
-void SliceType::Profile(FoldingSetNodeID& ID, Type* elem) {
-    ID.AddPointer(elem);
+void SliceType::Profile(FoldingSetNodeID& ID, Ty elem) {
+    ID.AddPointer(elem.as_opaque_ptr());
 }

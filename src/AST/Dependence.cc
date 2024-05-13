@@ -39,6 +39,10 @@ void ComputeDependence(ProcDecl* d) {
     if (d->body) d->set_dependence(d->body->dependence());
 }
 
+void ComputeDependence(SliceDataExpr* s) {
+    s->set_dependence(s->slice->dependence());
+}
+
 void ComputeDependence(StrLitExpr*) {
     // Never dependent.
 }

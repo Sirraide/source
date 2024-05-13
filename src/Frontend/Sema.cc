@@ -172,8 +172,8 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
             return Error(
                 a->location(),
                 "Argument of type '{}' does not match expected type '{}'",
-                a->type->print(ctx.use_colours()),
-                p->print(ctx.use_colours())
+                a->type.print(ctx.use_colours()),
+                p.print(ctx.use_colours())
             );
         }
     }
@@ -384,6 +384,16 @@ auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
     auto stmt = Try(TranslateStmt(parsed));
     if (not isa<Expr>(stmt)) return Error(parsed->loc, "Expected expression");
     return cast<Expr>(stmt);
+}
+
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed)-> Ptr<Expr> {
+    auto base = Try(TranslateExpr(parsed->base));
+    if (isa<SliceType>(base->type)) {
+        if (parsed->member == "data") return SliceDataExpr::Create(*M, base, parsed->loc);
+        return Error(parsed->loc, "Slice has no member named '{}'", parsed->member);
+    }
+
+    return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
 }
 
 auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl> {

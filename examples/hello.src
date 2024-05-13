@@ -7,5 +7,5 @@ hello();
 hello();
 
 proc hello {
-    stdio::puts("Hello, World!");
+    stdio::puts("Hello, World!".data);
 }

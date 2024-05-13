@@ -204,6 +204,7 @@ private:
     [[nodiscard]] auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     [[nodiscard]] auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     [[nodiscard]] auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
+    [[nodiscard]] auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
     [[nodiscard]] auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     [[nodiscard]] auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
     [[nodiscard]] auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;

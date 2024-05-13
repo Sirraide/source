@@ -30,7 +30,6 @@ class srcc::Scope {
     /// The parent scope.
     Scope* parent_scope;
 
-
     /// Whether this is a procedure scope.
     const bool proc_scope;
 
@@ -78,7 +77,7 @@ private:
     Location loc;
 
 protected:
-    explicit Stmt(Kind kind, Location loc) : stmt_kind{kind}, loc{loc} { }
+    explicit Stmt(Kind kind, Location loc) : stmt_kind{kind}, loc{loc} {}
 
 public:
     // Only allow allocating these in the module.
@@ -124,12 +123,12 @@ public:
     bool is_lvalue : 1 = false;
 
     /// The type of this expression.
-    Type* type;
+    Ty type;
 
 protected:
     Expr(
         Kind kind,
-        Type* type,
+        Ty type,
         Location location
     ) : Stmt(kind, location), type{type} {}
 
@@ -163,12 +162,11 @@ private:
     /// of this is void, then nothing is returned and this is invalid.
     u32 return_expr_index;
 
-
     auto numTrailingObjects(OverloadToken<Stmt*>) -> usz { return num_stmts; }
 
     BlockExpr(
         Scope* parent_scope,
-        Type* type,
+        Ty type,
         ArrayRef<Stmt*> stmts,
         u32 idx,
         Location location
@@ -208,7 +206,7 @@ private:
     auto numTrailingObjects(OverloadToken<Expr*>) -> usz { return num_args; }
 
     CallExpr(
-        Type* type,
+        Ty type,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -217,7 +215,7 @@ private:
 public:
     static auto Create(
         Module& mod,
-        Type* type,
+        Ty type,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -237,9 +235,30 @@ public:
         Location location
     );
 
-    auto return_type() const -> Type*;
+    auto return_type() const -> Ty;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
+};
+
+class srcc::SliceDataExpr final : public Expr {
+public:
+    Expr* slice;
+
+private:
+    SliceDataExpr(
+        Ty ty,
+        Expr* slice,
+        Location location
+    ) : Expr{Kind::SliceDataExpr, ty, location}, slice{slice} {}
+
+public:
+    static auto Create(
+        Module& mod,
+        Expr* slice,
+        Location location
+    ) -> SliceDataExpr*;
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::SliceDataExpr; }
 };
 
 class srcc::StrLitExpr final : public Expr {
@@ -248,7 +267,7 @@ public:
 
 private:
     StrLitExpr(
-        Type* ty,
+        Ty ty,
         String value,
         Location location
     ) : Expr{Kind::StrLitExpr, ty, location}, value{value} {}
@@ -269,7 +288,7 @@ public:
 protected:
     Decl(
         Kind kind,
-        Type* type,
+        Ty type,
         String name,
         Location location
     ) : Expr{kind, type, location}, name{name} {}
@@ -287,7 +306,7 @@ public:
 protected:
     ObjectDecl(
         Kind kind,
-        Type* type,
+        Ty type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -313,7 +332,7 @@ public:
     Scope* scope = nullptr;
 
     ProcDecl(
-        Type* type,
+        Ty type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -325,7 +344,7 @@ public:
         body{body} { ComputeDependence(); }
 
     /// Get the procedure's return type.
-    auto return_type() -> Type*;
+    auto return_type() -> Ty;
 
     /// Get the procedure type.
     auto proc_type() const -> ProcType*;

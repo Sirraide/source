@@ -71,50 +71,46 @@ void Module::dump() const {
 //  Printer
 // ============================================================================
 struct Stmt::Printer : PrinterBase<Stmt> {
+    using enum utils::Colour;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
+    void PrintBasicHeader(Stmt* S, StringRef name);
     void Print(Stmt* E);
 };
 
+void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
+    fmt::print(
+        "{}{} {}{} {}<{}>",
+        C(Red),
+        name,
+        C(Blue),
+        fmt::ptr(s),
+        C(Magenta),
+        s->loc.pos
+    );
+
+    if (auto e = dyn_cast<Expr>(s)) fmt::print(" {}", e->type.print(C.use_colours));
+    fmt::print("\n");
+}
+
+
 void Stmt::Printer::Print(Stmt* e) {
     switch (e->kind()) {
-        using enum utils::Colour;
-
-        case Kind::BlockExpr: {
-            [[maybe_unused]] auto& x = *cast<BlockExpr>(e);
-
-            fmt::print(
-                "{}BlockExpr {}{} {}<{}>\n",
-                C(Red),
-                C(Blue),
-                fmt::ptr(e),
-                C(Magenta),
-                e->loc.pos
-            );
-
-            PrintChildren(x.stmts());
-        } break;
+        case Kind::BlockExpr:
+            PrintBasicHeader(e, "BlockExpr");
+            PrintChildren(cast<BlockExpr>(e)->stmts());
+            break;
 
         case Kind::CallExpr: {
-            [[maybe_unused]] auto& x = *cast<CallExpr>(e);
-
-            fmt::print(
-                "{}CallExpr {}{} {}<{}>\n",
-                C(Red),
-                C(Blue),
-                fmt::ptr(e),
-                C(Magenta),
-                e->loc.pos
-            );
-
+            PrintBasicHeader(e, "CallExpr");
+            auto& c = *cast<CallExpr>(e);
             SmallVector<Stmt*, 10> fields;
-            if (x.callee) fields.push_back(x.callee);
-            if (auto a = x.args(); not a.empty()) fields.append(a.begin(), a.end());
+            if (c.callee) fields.push_back(c.callee);
+            if (auto a = c.args(); not a.empty()) fields.append(a.begin(), a.end());
             PrintChildren(fields);
         } break;
 
         case Kind::ProcRefExpr: {
-            [[maybe_unused]] auto& x = *cast<ProcRefExpr>(e);
-
+            auto& p = *cast<ProcRefExpr>(e);
             fmt::print(
                 "{}ProcRefExpr {}{} {}<{}> {}{}\n",
                 C(Red),
@@ -123,11 +119,16 @@ void Stmt::Printer::Print(Stmt* e) {
                 C(Magenta),
                 e->loc.pos,
                 C(Green),
-                x.decl->name
+                p.decl->name
             );
 
-            PrintChildren(x.decl);
+            PrintChildren(p.decl);
         } break;
+
+        case Kind::SliceDataExpr:
+            PrintBasicHeader(e, "SliceDataExpr");
+            PrintChildren(cast<SliceDataExpr>(e)->slice);
+            break;
 
         case Kind::StrLitExpr: {
             fmt::print(
@@ -143,8 +144,7 @@ void Stmt::Printer::Print(Stmt* e) {
         } break;
 
         case Kind::ProcDecl: {
-            [[maybe_unused]] auto& x = *cast<ProcDecl>(e);
-
+            auto& p = *cast<ProcDecl>(e);
             fmt::print(
                 "{}ProcDecl {}{} {}<{}> {}{} {}\n",
                 C(Red),
@@ -153,13 +153,13 @@ void Stmt::Printer::Print(Stmt* e) {
                 C(Magenta),
                 e->loc.pos,
                 C(Green),
-                x.name,
-                x.type->print(C.use_colours)
+                p.name,
+                p.type.print(C.use_colours)
             );
 
             SmallVector<Stmt*, 10> fields;
-            if (x.parent) fields.push_back(x.parent);
-            if (x.body) fields.push_back(x.body);
+            if (p.parent) fields.push_back(p.parent);
+            if (p.body) fields.push_back(p.body);
             PrintChildren(fields);
         } break;
     }

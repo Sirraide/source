@@ -1,6 +1,8 @@
 module;
 
 #include <srcc/Macros.hh>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/PointerLikeTypeTraits.h>
 
 export module srcc.ast:type;
 import srcc;
@@ -10,7 +12,17 @@ export namespace srcc {
 class Module;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
-}
+
+template <typename Wrapped>
+class TypeWrapper;
+using Ty = TypeWrapper<Type>;
+
+
+/// Casting.
+template <typename To, typename From> auto cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To>;
+template <typename To, typename From> auto dyn_cast(srcc::TypeWrapper<From> from) -> std::optional<srcc::TypeWrapper<To>>;
+template <typename To, typename From> auto isa(srcc::TypeWrapper<From> from) -> bool;
+} // namespace srcc
 
 /// Type of an expression or declaration.
 ///
@@ -18,6 +30,9 @@ class Module;
 /// reference or pointer in most cases.
 class srcc::Type {
     SRCC_IMMOVABLE(Type);
+
+    template <typename Wrapped>
+    friend class TypeWrapper;
 
 public:
     enum struct Kind : u8 {
@@ -49,22 +64,61 @@ public:
     /// Check if this type is the builtin 'void' type.
     bool is_void() const;
 
-    /// Print a type.
-    auto print(bool use_colour) const -> std::string;
-
 private:
+    auto print(bool use_colour) const -> std::string;
     auto print_impl(utils::Colours C) const -> std::string;
 };
 
+/// A type together with qualifiers.
+template <typename Wrapped = srcc::Type>
+class srcc::TypeWrapper {
+public:
+    using WrappedType = Wrapped;
+
+private:
+    WrappedType* pointer;
+
+public:
+    TypeWrapper(WrappedType* t) : pointer{t} {}
+
+    template <std::derived_from<WrappedType> Derived>
+    TypeWrapper(Derived* derived) : pointer{derived} {}
+
+    template <std::derived_from<WrappedType> Derived>
+    TypeWrapper(TypeWrapper<Derived> derived) : pointer{derived.ptr()} {}
+
+    /// Get this as an opaque pointer.
+    auto as_opaque_ptr() const -> void* { return pointer; }
+
+    /// Print a type.
+    auto print(bool use_colour) const -> std::string {
+        return pointer->print(use_colour);
+    }
+
+    /// Get the type pointer.
+    auto ptr() const -> WrappedType* { return pointer; }
+
+    /// Access the type pointer.
+    auto operator->() const -> WrappedType* { return pointer; }
+
+    /// Check if two types are equal.
+    auto operator==(TypeWrapper other) const -> bool { return pointer == other.pointer; }
+
+    /// Construct a `TypeWrapper` from an opaque pointer.
+    static auto FromOpaquePointer(void* ptr) -> TypeWrapper {
+        return TypeWrapper{static_cast<WrappedType*>(ptr)};
+    }
+};
+
 class srcc::SingleElementTypeBase : public Type {
-    Type* element_type;
+    Ty element_type;
 
 protected:
-    SingleElementTypeBase(Kind kind, Type* elem) : Type{kind}, element_type{elem} {}
+    SingleElementTypeBase(Kind kind, Ty elem) : Type{kind}, element_type{elem} {}
 
 public:
     /// Get the element type of this type, e.g. `int` for `int[3]`.
-    auto elem() const -> Type* { return element_type; }
+    auto elem() const -> Ty { return element_type; }
 
     static bool classof(const Type* e) {
         return e->kind() >= Kind::ArrayType and e->kind() <= Kind::ReferenceType;
@@ -76,7 +130,7 @@ class srcc::ArrayType final : public SingleElementTypeBase
     i64 elems;
 
     ArrayType(
-        Type* elem,
+        Ty elem,
         i64 size
     ) : SingleElementTypeBase{Kind::ArrayType, elem}, elems{size} {
         Assert(size >= 0, "Negative array size?");
@@ -87,8 +141,8 @@ public:
     auto dimension() const -> i64 { return elems; }
 
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), elems); }
-    static auto Get(Module& mod, Type* elem, i64 size) -> ArrayType*;
-    static void Profile(FoldingSetNodeID& ID, Type* elem, i64 size);
+    static auto Get(Module& mod, Ty elem, i64 size) -> ArrayType*;
+    static void Profile(FoldingSetNodeID& ID, Ty elem, i64 size);
     static bool classof(const Type* e) { return e->kind() == Kind::ArrayType; }
 };
 
@@ -128,32 +182,32 @@ public:
 
 class srcc::ReferenceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit ReferenceType(Type* elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
+    explicit ReferenceType(Ty elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(Module& mod, Type* elem) -> ReferenceType*;
-    static void Profile(FoldingSetNodeID& ID, Type* elem);
+    static auto Get(Module& mod, Ty elem) -> ReferenceType*;
+    static void Profile(FoldingSetNodeID& ID, Ty elem);
     static bool classof(const Type* e) { return e->kind() == Kind::ReferenceType; }
 };
 
 class srcc::ProcType final : public Type
     , public FoldingSetNode
-    , TrailingObjects<ProcType, Type*> {
+    , TrailingObjects<ProcType, Ty> {
     friend TrailingObjects;
 
     CallingConvention cc;
     bool is_variadic;
     const u32 num_param_types;
-    Type* return_type;
+    Ty return_type;
 
-    auto numTrailingObjects(OverloadToken<Type*>) -> usz { return num_param_types; }
+    auto numTrailingObjects(OverloadToken<Ty>) -> usz { return num_param_types; }
 
     ProcType(
         CallingConvention cconv,
         bool variadic,
-        Type* return_type,
-        ArrayRef<Type*> param_types
+        Ty return_type,
+        ArrayRef<Ty> param_types
     );
 
 public:
@@ -161,10 +215,10 @@ public:
     auto cconv() const -> CallingConvention { return cc; }
 
     /// Get the parameter types of this procedure type.
-    auto params() const -> ArrayRef<Type*> { return {getTrailingObjects<Type*>(), num_param_types}; }
+    auto params() const -> ArrayRef<Ty> { return {getTrailingObjects<Ty>(), num_param_types}; }
 
     /// Get the return type of this procedure type.
-    auto ret() const -> Type* { return return_type; }
+    auto ret() const -> Ty { return return_type; }
 
     /// Get whether this procedure type is variadic.
     auto variadic() const -> bool { return is_variadic; }
@@ -175,16 +229,16 @@ public:
 
     static auto Get(
         Module& mod,
-        Type* return_type,
-        ArrayRef<Type*> param_types = {},
+        Ty return_type,
+        ArrayRef<Ty> param_types = {},
         CallingConvention cconv = CallingConvention::Source,
         bool variadic = false
     ) -> ProcType*;
 
     static void Profile(
         FoldingSetNodeID& ID,
-        Type* return_type,
-        ArrayRef<Type*> param_types,
+        Ty return_type,
+        ArrayRef<Ty> param_types,
         CallingConvention cconv,
         bool variadic
     );
@@ -194,11 +248,27 @@ public:
 
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit SliceType(Type* elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
+    explicit SliceType(Ty elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(Module& mod, Type* elem) -> SliceType*;
-    static void Profile(FoldingSetNodeID& ID, Type* elem);
+    static auto Get(Module& mod, Ty elem) -> SliceType*;
+    static void Profile(FoldingSetNodeID& ID, Ty elem);
     static bool classof(const Type* e) { return e->kind() == Kind::SliceType; }
 };
+
+template <typename To, typename From>
+auto srcc::cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To> {
+    return srcc::TypeWrapper<To>{llvm::cast<To>(from.ptr())};
+}
+
+template <typename To, typename From>
+auto srcc::dyn_cast(srcc::TypeWrapper<From> from) -> std::optional<srcc::TypeWrapper<To>> {
+    if (auto* c = llvm::dyn_cast<To>(from.ptr())) return srcc::TypeWrapper<To>{c};
+    return std::nullopt;
+}
+
+template <typename To, typename From>
+auto srcc::isa(srcc::TypeWrapper<From> from) -> bool {
+    return llvm::isa<To>(from.ptr());
+}

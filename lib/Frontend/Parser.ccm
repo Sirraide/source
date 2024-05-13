@@ -206,6 +206,21 @@ public:
     static bool classof(const ParsedExpr* e) { return e->kind() == Kind::StrLitExpr; }
 };
 
+/// A member access.
+class srcc::ParsedMemberExpr final : public ParsedExpr {
+public:
+    ParsedExpr* base;
+    String member;
+
+    ParsedMemberExpr(
+        ParsedExpr* base,
+        String member,
+        Location location
+    ) : ParsedExpr{Kind::MemberExpr, location}, base{base}, member{member} {}
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::MemberExpr; }
+};
+
 /// Base class for declarations.
 class srcc::ParsedDecl : public ParsedExpr {
 public:
