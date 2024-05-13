@@ -18,6 +18,9 @@ enum struct srcc::Action : srcc::u8 {
 
     /// Print parse tree only and exit.
     Parse,
+
+    /// Print the AST only and exit.
+    AST,
 };
 
 class srcc::Driver {
