@@ -1,6 +1,7 @@
 module;
 
 #include <fmt/format.h>
+#include <srcc/Macros.hh>
 
 module srcc.ast;
 using namespace srcc;
@@ -62,9 +63,7 @@ void Module::dump() const {
     fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
 
     // Print content.
-    for (auto& xs : exports.decls)
-        for (auto& d : xs.second)
-            d->dump(c);
+    for (auto s : file_scope_block->stmts()) s->dump(c);
 }
 
 // ============================================================================
@@ -72,6 +71,7 @@ void Module::dump() const {
 // ============================================================================
 struct Stmt::Printer : PrinterBase<Stmt> {
     using enum utils::Colour;
+    bool print_procedure_bodies = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
     void PrintBasicHeader(Stmt* S, StringRef name);
     void Print(Stmt* E);
@@ -122,6 +122,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 p.decl->name
             );
 
+            tempset print_procedure_bodies = false;
             PrintChildren(p.decl);
         } break;
 
@@ -157,10 +158,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 p.type.print(C.use_colours)
             );
 
-            SmallVector<Stmt*, 10> fields;
-            if (p.parent) fields.push_back(p.parent);
-            if (p.body) fields.push_back(p.body);
-            PrintChildren(fields);
+            if (print_procedure_bodies) PrintChildren(p.body);
         } break;
     }
 }

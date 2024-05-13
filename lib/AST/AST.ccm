@@ -49,6 +49,15 @@ private:
     explicit Module(Context& ctx, String name, bool is_module);
 
 public:
+    struct Import {
+        Module::Ptr imported_module;
+        Location import_location;
+        String import_name;
+    };
+
+    /// Modules imported by this module.
+    StringMap<Import> imports;
+
     /// The name of this program or module.
     const String name;
 

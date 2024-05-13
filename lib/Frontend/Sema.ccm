@@ -16,6 +16,8 @@ class Sema;
 
 class srcc::Sema {
     SRCC_IMMOVABLE(Sema);
+    class Importer;
+    friend Importer;
     Context& ctx;
     Module::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
@@ -161,6 +163,9 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     [[nodiscard]] auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
+    /// Import a C++ header as a module.
+    [[nodiscard]] auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
+
     /// Use LookUpName() instead.
     [[nodiscard]] auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
 
@@ -212,7 +217,4 @@ private:
     [[nodiscard]] auto TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt>;
     [[nodiscard]] auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> bool;
     [[nodiscard]] auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
-
-    /// Import a C++ header as a module.
-    [[nodiscard]] auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
 };

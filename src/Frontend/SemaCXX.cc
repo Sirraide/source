@@ -12,13 +12,9 @@ module;
 
 module srcc.frontend.sema;
 import srcc.ast;
-
 using namespace srcc;
-namespace srcc {
-class Importer;
-}
 
-class srcc::Importer {
+class Sema::Importer {
     Sema& S;
     clang::ASTUnit& AST;
     Module::Ptr Mod;
@@ -35,14 +31,14 @@ public:
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
 };
 
-auto Importer::Import(String name) -> Module::Ptr {
+auto Sema::Importer::Import(String name) -> Module::Ptr {
     Mod = Module::Create(S.context(), name, true);
     auto* TU = AST.getASTContext().getTranslationUnitDecl();
     for (auto D : TU->decls()) ImportDecl(D);
     return std::move(Mod);
 }
 
-void Importer::ImportDecl(clang::Decl* D) {
+void Sema::Importer::ImportDecl(clang::Decl* D) {
     if (imported_decls.contains(D->getCanonicalDecl())) return;
     imported_decls.insert(D->getCanonicalDecl());
     if (D->isInvalidDecl()) return;
@@ -81,7 +77,7 @@ void Importer::ImportDecl(clang::Decl* D) {
     }
 }
 
-void Importer::ImportFunction(clang::FunctionDecl* D) {
+void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
     D = D->getDefinition() ?: D->getCanonicalDecl();
     if (isa<clang::CXXMethodDecl>(D)) return;
     auto FPT = D->getType()->getAs<clang::FunctionProtoType>();
@@ -136,13 +132,17 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     Mod->exports.add(Proc);
 }
 
-auto Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
+// The types in this function are currently created in the module we’re
+// importing into because canonical types are compared by pointer; we’ll
+// have to import them into the destiation module instead when we switch
+// to processing and deduplicating imports before Sema.
+auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     // Handle known type sugar first.
     if (
         auto TD = T->getAs<clang::TypedefType>();
         TD and TD->getDecl()->getName() == "size_t" and
         T->getCanonicalTypeUnqualified() == AST.getASTContext().getSizeType()
-    ) return Mod->FFISizeTy;
+    ) return S.M->FFISizeTy;
 
     // Only handle canonical types from here on.
     T = T->getCanonicalTypeUnqualified().getTypePtr();
@@ -153,30 +153,30 @@ auto Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             switch (cast<clang::BuiltinType>(T)->getKind()) {
                 using K = clang::BuiltinType::Kind;
                 default: return std::nullopt;
-                case K::Void: return Mod->VoidTy;
-                case K::Bool: return Mod->FFIBoolTy;
+                case K::Void: return S.M->VoidTy;
+                case K::Bool: return S.M->FFIBoolTy;
 
                 case K::SChar:
                 case K::UChar:
                 case K::Char_S:
                 case K::Char_U:
-                    return Mod->FFICharTy;
+                    return S.M->FFICharTy;
 
                 case K::Short:
                 case K::UShort:
-                    return Mod->FFIShortTy;
+                    return S.M->FFIShortTy;
 
                 case K::Int:
                 case K::UInt:
-                    return Mod->FFIIntTy;
+                    return S.M->FFIIntTy;
 
                 case K::Long:
                 case K::ULong:
-                    return Mod->FFILongTy;
+                    return S.M->FFILongTy;
 
                 case K::LongLong:
                 case K::ULongLong:
-                    return Mod->FFILongLongTy;
+                    return S.M->FFILongLongTy;
             }
         }
 
@@ -185,26 +185,26 @@ auto Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::Pointer: {
             auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return nullptr;
-            return ReferenceType::Get(*Mod, *Elem);
+            return ReferenceType::Get(*S.M, *Elem);
         }
 
         case K::BitInt: {
             auto B = cast<clang::BitIntType>(T);
-            return IntType::Get(*Mod, i64(B->getNumBits()));
+            return IntType::Get(*S.M, i64(B->getNumBits()));
         }
 
         case K::ConstantArray: {
             auto C = cast<clang::ConstantArrayType>(T);
             auto Elem = ImportType(C->getElementType());
             if (not Elem) return nullptr;
-            return ArrayType::Get(*Mod, *Elem, i64(C->getSize().getZExtValue()));
+            return ArrayType::Get(*S.M, *Elem, i64(C->getSize().getZExtValue()));
         }
 
         case K::FunctionProto: {
             auto FPT = cast<clang::FunctionProtoType>(T);
             if (FPT->getCallConv() != clang::CallingConv::CC_C) return nullptr;
 
-            auto Ret = FPT->getExtInfo().getNoReturn() ? Mod->NoReturnTy : ImportType(FPT->getReturnType());
+            auto Ret = FPT->getExtInfo().getNoReturn() ? S.M->NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return nullptr;
 
             SmallVector<Type> Params;
@@ -215,7 +215,7 @@ auto Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             }
 
             return ProcType::Get(
-                *Mod,
+                *S.M,
                 *Ret,
                 Params,
                 CallingConvention::Native,

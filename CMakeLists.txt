@@ -165,7 +165,7 @@ if (NOT SOURCE_LLVM_ROOT)
     message(FATAL_ERROR "SOURCE_LLVM_ROOT is not set. See README.md for instructions.")
 endif()
 if (NOT EXISTS "${SOURCE_LLVM_ROOT}/out/bin/clang")
-    message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a valid Clang build. See README.md for instructions.")
+    message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
 endif()
 
 ## LLVM paths.

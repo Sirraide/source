@@ -236,18 +236,11 @@ void Sema::Translate() {
     scope_stack.push_back(all_scopes.back().get());
 
     // Resolve imports.
-    struct Import {
-        Module::Ptr imported_module;
-        Location import_location;
-        String import_name;
-    };
-
-    StringMap<Import> imports;
     for (auto& p : parsed_modules)
         for (auto& i : p->imports)
-            imports[i.linkage_name] = {nullptr, i.loc, i.import_name};
+            M->imports[i.linkage_name] = {nullptr, i.loc, i.import_name};
 
-    for (auto& i : imports) {
+    for (auto& i : M->imports) {
         auto res = ImportCXXHeader(M->save(i.first()));
         if (not res) continue;
         i.second.imported_module = std::move(*res);
@@ -260,6 +253,8 @@ void Sema::Translate() {
     // Collect all statements and translate them.
     SmallVector<Stmt*> top_level_stmts;
     for (auto& p : parsed_modules) has_error = TranslateStmts(top_level_stmts, p->top_level);
+    M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, BlockExpr::NoExprIndex, Location{});
+    M->initialiser_proc->body = M->file_scope_block;
 }
 
 auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> bool {
@@ -272,7 +267,7 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
     // This translation only applies to *some* decls. It is allowed to do nothing,
     // but if it does fail, then we can’t process the rest of this scope.
     llvm::MapVector<ParsedExpr*, Decl*> translated_decls;
-    bool errored = false;
+    bool ok = true;
     for (auto p : parsed) {
         if (auto d = dyn_cast<ParsedDecl>(p)) {
             auto proc = TranslateDeclInitial(d);
@@ -281,7 +276,7 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
             if (not proc.has_value()) continue;
 
             // Initial translation encountered an error.
-            if (proc->invalid()) errored = true;
+            if (proc->invalid()) ok = false;
 
             // Otherwise, store the translated decl for later.
             else translated_decls[d] = proc->get();
@@ -289,7 +284,7 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
     }
 
     // Stop if there was a problem.
-    if (errored) return true;
+    if (not ok) return false;
 
     // Having collected out-of-order symbols, now translate all statements for real.
     for (auto p : parsed) {
@@ -302,10 +297,10 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
 
         auto stmt = TranslateStmt(p);
         if (stmt.present()) stmts.push_back(stmt.get());
-        else errored = true;
+        else ok = false;
     }
 
-    return errored;
+    return ok;
 }
 
 // ============================================================================
@@ -381,9 +376,10 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
 auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
-    auto stmt = Try(TranslateStmt(parsed));
-    if (not isa<Expr>(stmt)) return Error(parsed->loc, "Expected expression");
-    return cast<Expr>(stmt);
+    auto stmt = TranslateStmt(parsed);
+    if (stmt.invalid()) return nullptr;
+    if (not isa<Expr>(stmt.get())) return Error(parsed->loc, "Expected expression");
+    return cast<Expr>(stmt.get());
 }
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed)-> Ptr<Expr> {
@@ -401,7 +397,7 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
     if (parsed->body) {
         auto res = TranslateProcBody(decl, parsed);
         if (res.invalid()) decl->set_errored();
-        decl->body = res.get();
+        else decl->body = res.get();
     }
 
     return decl;
@@ -415,8 +411,9 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     decl->scope = scope.get();
 
     // Translate body.
-    auto body = Try(TranslateExpr(parsed->body));
-    return BuildProcBody(decl, body);
+    auto body = TranslateExpr(parsed->body);
+    if (body.invalid()) return nullptr;
+    return BuildProcBody(decl, body.get());
 }
 
 /// This is only called if we’re asked to translate a procedure by the expression
