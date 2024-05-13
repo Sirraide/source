@@ -8,9 +8,10 @@ module srcc.frontend.sema;
 import srcc.utils;
 using namespace srcc;
 
-#define Try(res) ({                    \
-    if (res.invalid()) return nullptr; \
-    res.get();                         \
+#define Try(expression) ({              \
+    auto _res = expression;             \
+    if (_res.invalid()) return nullptr; \
+    _res.get();                         \
 })
 
 // ============================================================================
@@ -31,58 +32,63 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     }
 }
 
-auto Sema::LookUpQualifiedName(
-    Scope* in_scope,
-    ArrayRef<String> names,
-    Location loc,
-    bool complain
-) -> LookupResult {
+auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult {
+    Assert(names.size() > 1, "Should not be unqualified lookup");
+
+    // The first segment is looked up using unqualified lookup, but don’t
+    // complain immediately if we can’t find it because we also need to
+    // check module names. The first segment is also allowed to be empty,
+    // which means we’re looking up a name in the global scope.
+    auto first = names.front();
+    if (first.empty()) in_scope = global_scope();
+    else {
+        auto res = LookUpUnqualifiedName(in_scope, first, false);
+        switch (res.result) {
+            using enum LookupResult::Reason;
+            case Success: in_scope = GetScopeFromDecl(res.decls.front()).get(); break;
+
+            // These are a hard error here.
+            case Ambiguous:
+            case NonScopeInPath:
+                return res;
+
+            // Search module names here.
+            //
+            // This way, we don’t have to try and represent modules in the AST,
+            // and we also don’t have to deal with what happens if unqualified
+            // lookup finds a module name, because a module name alone is useless
+            // if it’s not on the lhs of `::`.
+            case NotFound: {
+                auto it = imported_modules.find(first);
+                if (it == imported_modules.end()) return res;
+                in_scope = &it->second->exports;
+            } break;
+        }
+    }
+
     // For all elements but the last, we have to look up scopes.
-    for (auto name : names.drop_back()) {
+    for (auto name : names.drop_front().drop_back()) {
         // Perform lookup.
         auto it = in_scope->decls.find(name);
-        if (it == in_scope->decls.end()) {
-            if (complain) Error(loc, "Unknown symbol '{}'", name);
-            return LookupResult();
-        }
+        if (it == in_scope->decls.end()) return LookupResult(name);
 
         // The declaration must not be ambiguous.
         Assert(not in_scope->decls.empty(), "Invalid scope entry");
-        if (it->second.size() != 1) {
-            if (complain) {
-                Error(loc, "Ambiguous symbol '{}'", name);
-                for (auto d : it->second) Note(d->location(), "Candidate here");
-            }
-
-            return LookupResult::Ambiguous();
-        }
+        if (it->second.size() != 1) return LookupResult::Ambiguous(name, it->second);
 
         // The declaration must reference a scope.
         auto scope = GetScopeFromDecl(it->second.front());
-        if (scope.invalid()) {
-            if (complain) {
-                Error(loc, "Invalid left-hand side for '::'");
-                Note(it->second.front()->location(), "'{}' does not contain to a scope", name);
-            }
-
-            return LookupResult::NonScopeInPath();
-        }
+        if (scope.invalid()) return LookupResult::NonScopeInPath(name, it->second.front());
 
         // Keep going down the path.
         in_scope = scope.get();
     }
 
     // Finally, look up the name in the last scope.
-    return LookUpUnqualifiedName(in_scope, names.back(), loc, true, complain);
+    return LookUpUnqualifiedName(in_scope, names.back(), true);
 }
 
-auto Sema::LookUpUnqualifiedName(
-    Scope* in_scope,
-    String name,
-    Location loc,
-    bool this_scope_only,
-    bool complain
-) -> LookupResult {
+auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult {
     while (in_scope) {
         // Look up the name in the this scope.
         auto it = in_scope->decls.find(name);
@@ -95,15 +101,10 @@ auto Sema::LookUpUnqualifiedName(
         // Found something.
         Assert(not in_scope->decls.empty(), "Invalid scope entry");
         if (it->second.size() == 1) return LookupResult::Success(it->second.front());
-        if (complain) {
-            Error(loc, "Ambiguous symbol '{}'", name);
-            for (auto d : it->second) Note(d->location(), "Candidate here");
-            return LookupResult::Ambiguous();
-        }
+        return LookupResult::Ambiguous(name, it->second);
     }
 
-    if (complain) Error(loc, "Unknown symbol '{}'", name);
-    return LookupResult();
+    return LookupResult(name);
 }
 
 auto Sema::LookUpName(
@@ -112,8 +113,27 @@ auto Sema::LookUpName(
     Location loc,
     bool complain
 ) -> LookupResult {
-    if (names.size() == 1) return LookUpUnqualifiedName(in_scope, names[0], loc, false, complain);
-    return LookUpQualifiedName(in_scope, names, loc, complain);
+    auto res = names.size() == 1
+        ? LookUpUnqualifiedName(in_scope, names[0], false)
+        : LookUpQualifiedName(in_scope, names);
+    if (not res.successful() and complain) ReportLookupFailure(res, loc);
+    return res;
+}
+
+void Sema::ReportLookupFailure(const LookupResult& result, Location loc){
+    switch (result.result) {
+        using enum LookupResult::Reason;
+        case Success: Unreachable("Diagnosing a successful lookup?");
+        case NotFound: Error(loc, "Unknown symbol '{}'", result.name); break;
+        case Ambiguous: {
+            Error(loc, "Ambiguous symbol '{}'", result.name);
+            for (auto d : result.decls) Note(d->location(), "Candidate here");
+        } break;
+        case NonScopeInPath: {
+            Error(loc, "Invalid left-hand side for '::'");
+            Note(result.decls.front()->location(), "'{}' does not contain to a scope", result.name);
+        } break;
+    }
 }
 
 // ============================================================================
@@ -207,28 +227,35 @@ auto Sema::Translate(ArrayRef<ParsedModule::Ptr> modules) -> Module::Ptr {
     S.M = Module::Create(first->context(), first->name, first->is_module);
     S.parsed_modules = modules;
     S.Translate();
-    return S.has_error ? nullptr : std::move(S.M);
+    return std::move(S.M);
 }
 
 void Sema::Translate() {
-    // Don’t import the same file twice.
-    StringMap<std::pair<Module::Ptr, Location>> imports;
+    // Initialise sema.
+    all_scopes.push_back(std::make_unique<Scope>(nullptr));
+    scope_stack.push_back(all_scopes.back().get());
+
+    // Resolve imports.
+    struct Import {
+        Module::Ptr imported_module;
+        Location import_location;
+        String import_name;
+    };
+
+    StringMap<Import> imports;
     for (auto& p : parsed_modules)
         for (auto& i : p->imports)
-            imports[i.linkage_name] = {nullptr, i.loc};
+            imports[i.linkage_name] = {nullptr, i.loc, i.import_name};
 
     for (auto& i : imports) {
         auto res = ImportCXXHeader(M->save(i.first()));
         if (not res) continue;
-        i.second.first = std::move(*res);
+        i.second.imported_module = std::move(*res);
+        imported_modules[i.second.import_name] = i.second.imported_module.get();
     }
 
     // Don’t attempt anything else if there was a problem.
     if (has_error) return;
-
-    // Initialise sema.
-    all_scopes.push_back(std::make_unique<Scope>(nullptr));
-    scope_stack.push_back(all_scopes.back().get());
 
     // Collect all statements and translate them.
     SmallVector<Stmt*> top_level_stmts;
@@ -328,7 +355,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr> {
 auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
     auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
     if (not res.successful()) return nullptr;
-    return CreateReference(res.decl, parsed->loc);
+    return CreateReference(res.decls.front(), parsed->loc);
 }
 
 /// Perform initial processing of a decl so it can be used by the rest
@@ -385,7 +412,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
 /// This is only called if we’re asked to translate a procedure by the expression
 /// parser; actual procedure translation is handled elsewhere; only return a reference
 /// here.
-auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>{
+auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr> {
     auto it = proc_decl_map.find(parsed);
 
     // This can happen if the procedure errored somehow.
@@ -394,7 +421,6 @@ auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>{
     // The procedure has already been created.
     return CreateReference(it->second, parsed->loc);
 }
-
 
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.

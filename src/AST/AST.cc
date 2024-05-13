@@ -62,7 +62,7 @@ void Module::dump() const {
     fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
 
     // Print content.
-    for (auto& xs : exports)
+    for (auto& xs : exports.decls)
         for (auto& d : xs.second)
             d->dump(c);
 }

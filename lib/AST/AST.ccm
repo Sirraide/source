@@ -63,7 +63,7 @@ public:
     SmallVector<ProcDecl*> procs;
 
     /// Declarations exported from this module.
-    StringMap<llvm::TinyPtrVector<Decl*>> exports;
+    Scope exports{nullptr};
 
     /// Builtin types.
     Type* VoidTy;

@@ -1,6 +1,7 @@
 module;
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/TinyPtrVector.h>
 #include <srcc/Macros.hh>
 
 export module srcc.frontend.sema;
@@ -31,6 +32,9 @@ class srcc::Sema {
 
     /// Map from parsed procedures to their declarations.
     DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
+
+    /// Map from module names to imported modules.
+    StringMap<Module*> imported_modules;
 
     explicit Sema(Context& ctx) : ctx(ctx) {}
 
@@ -118,7 +122,8 @@ private:
             /// Lookup was successful.
             Success,
 
-            /// Lookup was ambiguous.
+            /// Lookup was ambiguous. This need not be an error if we’re
+            /// looking up e.g. function overloads.
             Ambiguous,
 
             /// The name was not found.
@@ -128,22 +133,26 @@ private:
             NonScopeInPath,
         };
 
-        /// The decl that was found, if any.
-        Decl* decl;
+        /// The decl(s) that were found, if any.
+        llvm::TinyPtrVector<Decl*> decls;
+
+        /// The name we failed to look up, if any. Will be unset
+        /// if the lookup was successful.
+        String name;
 
         /// Reason for failure.
         Reason result;
 
-        LookupResult() : decl{nullptr}, result{Reason::NotFound} {}
-        LookupResult(Decl* decl, Reason result) : decl{decl}, result{result} {}
+        LookupResult(String name) : name{name}, result{Reason::NotFound} {}
+        LookupResult(ArrayRef<Decl*> decls, String name, Reason result) : decls{decls}, name{name}, result{result} {}
 
         /// Check if this lookup result is a success.
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
 
         /// Create an ambiguous lookup result.
-        static auto Ambiguous() -> LookupResult { return LookupResult{nullptr, Reason::Ambiguous}; }
-        static auto NonScopeInPath() -> LookupResult { return LookupResult{nullptr, Reason::NonScopeInPath}; }
-        static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, Reason::Success}; }
+        static auto Ambiguous(String name, ArrayRef<Decl*> decls) -> LookupResult { return LookupResult{decls, name, Reason::Ambiguous}; }
+        static auto NonScopeInPath(String name, Decl* decl) -> LookupResult { return LookupResult{decl, name, Reason::NonScopeInPath}; }
+        static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, "", Reason::Success}; }
     };
 
     /// Create a reference to a declaration.
@@ -153,23 +162,22 @@ private:
     [[nodiscard]] auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Use LookUpName() instead.
-    [[nodiscard]] auto LookUpQualifiedName(
-        Scope* in_scope,
-        ArrayRef<String> names,
-        Location loc,
-        bool complain
-    ) -> LookupResult;
+    [[nodiscard]] auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
 
     /// Use LookUpName() instead.
-    [[nodiscard]] auto LookUpUnqualifiedName(
-        Scope* in_scope,
-        String name,
-        Location loc,
-        bool this_scope_only,
-        bool complain
-    ) -> LookupResult;
+    [[nodiscard]] auto LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult;
 
     /// Look up a name in a scope.
+    ///
+    /// Name lookup differs between unqualified and qualified names: for
+    /// unqualified names, we look up the name in the scope it was encountered
+    /// in, and all of its parent scope.
+    ///
+    /// For qualified name lookup, we start by performing unqualified lookup
+    /// for the first name in the path, except that names of imported modules
+    /// are also considered if all else fails. The remaining path segments are
+    /// then looked up in the scope of the declaration found by the previous
+    /// segment only.
     ///
     /// \param in_scope The scope to start searching in.
     /// \param names The path to look up.
@@ -181,6 +189,9 @@ private:
         Location loc,
         bool complain = true
     ) -> LookupResult;
+
+    /// Issue an error about lookup failure.
+    void ReportLookupFailure(const LookupResult& result, Location loc);
 
     /// Building AST nodes; called after translation and template instantiation.
     [[nodiscard]] auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
@@ -202,5 +213,5 @@ private:
     [[nodiscard]] auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
 
     /// Import a C++ header as a module.
-    auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
+    [[nodiscard]] auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
 };

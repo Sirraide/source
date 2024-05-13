@@ -34,19 +34,29 @@ void* Type::operator new(usz size, Module& mod) {
     return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
+void Type::dump(bool use_colour) const {
+    fmt::print("{}", print(use_colour));
+}
+
 bool Type::is_void() const {
     return kind() == Kind::BuiltinType and cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
 }
 
 auto Type::print(bool use_colour) const -> std::string {
-    using enum utils::Colour;
     utils::Colours C{use_colour};
+    std::string out = print_impl(C);
+    out += C(utils::Colour::Reset);
+    return out;
+}
+
+auto Type::print_impl(utils::Colours C) const -> std::string {
+    using enum utils::Colour;
     switch (kind()) {
         case Kind::ArrayType: {
             auto* arr = cast<ArrayType>(this);
             return fmt::format(
-                "{}[{}{}{}]",
-                arr->elem()->print(use_colour),
+                "{}[{}{}{}]{}",
+                arr->elem()->print_impl(C),
                 C(Red),
                 C(Magenta),
                 arr->dimension(),
@@ -80,7 +90,7 @@ auto Type::print(bool use_colour) const -> std::string {
                 for (auto p : params) {
                     if (first) first = false;
                     else ret += fmt::format("{}, ", C(Red));
-                    ret += p->print(use_colour);
+                    ret += p->print_impl(C);
                 }
                 ret += fmt::format("{})", C(Red));
             }
@@ -91,19 +101,19 @@ auto Type::print(bool use_colour) const -> std::string {
 
             // Add return type.
             if (not proc->ret()->is_void())
-                ret += fmt::format(" {}-> {}", C(Red), proc->ret()->print(use_colour));
+                ret += fmt::format(" {}-> {}", C(Red), proc->ret()->print_impl(C));
 
             return ret;
         }
 
         case Kind::ReferenceType: {
             auto* ref = cast<ReferenceType>(this);
-            return fmt::format("{}ref {}", C(Red), ref->elem()->print(use_colour));
+            return fmt::format("{}ref {}", C(Red), ref->elem()->print_impl(C));
         }
 
         case Kind::SliceType: {
             auto* slice = cast<SliceType>(this);
-            return fmt::format("{}[]", C(Red), slice->elem()->print(use_colour));
+            return fmt::format("{}{}[]", slice->elem()->print_impl(C), C(Red));
         }
     }
 

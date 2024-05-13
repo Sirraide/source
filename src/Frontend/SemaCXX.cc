@@ -133,7 +133,7 @@ void Importer::ImportFunction(clang::FunctionDecl* D) {
     );
 
     Mod->procs.push_back(Proc);
-    Mod->exports[Proc->name].push_back(Proc);
+    Mod->exports.add(Proc);
 }
 
 auto Importer::ImportType(const clang::Type* Ty) -> Type* {

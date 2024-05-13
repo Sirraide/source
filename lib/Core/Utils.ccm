@@ -122,7 +122,10 @@ public:
         return dyn_cast<Derived>(value);
     }
 
-    auto get() -> Ty* { return value; }
+    auto get() -> Ty* {
+        Assert(value, "Value must be present!");
+        return value;
+    }
 
     auto invalid() -> bool { return not present(); }
     auto present() -> bool { return value != nullptr; }

@@ -40,6 +40,9 @@ public:
     /// Get the dependence of this type.
     auto dependence() const -> Dependence { return dep; }
 
+    /// Print a type to stdout.
+    void dump(bool use_colour = false) const;
+
     /// Get the kind of this type.
     auto kind() const -> Kind { return type_kind; }
 
@@ -48,6 +51,9 @@ public:
 
     /// Print a type.
     auto print(bool use_colour) const -> std::string;
+
+private:
+    auto print_impl(utils::Colours C) const -> std::string;
 };
 
 class srcc::SingleElementTypeBase : public Type {
