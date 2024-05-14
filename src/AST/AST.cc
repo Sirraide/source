@@ -52,6 +52,8 @@ Module::Module(Context& ctx, String name, bool is_module)
         nullptr,
         {}
     );
+
+    procs.push_back(initialiser_proc);
 }
 
 void Module::dump() const {

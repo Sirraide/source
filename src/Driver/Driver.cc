@@ -35,6 +35,7 @@ module srcc.driver;
 import srcc;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
+import srcc.codegen;
 
 using namespace srcc;
 
@@ -93,7 +94,9 @@ int Driver::Impl::run_job(Action action) {
         return 0;
     }
 
-    return 42;
+    auto ir_module = CodeGen::Emit(*module);
+    ir_module->dump();
+    std::exit(42);
 }
 
 auto Driver::Impl::ParseFile(const File::Path& path) -> ParsedModule* {

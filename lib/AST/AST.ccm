@@ -1,6 +1,7 @@
 module;
 
 #include <llvm/ADT/TinyPtrVector.h>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
@@ -73,6 +74,9 @@ public:
 
     /// Declarations exported from this module.
     Scope exports{nullptr};
+
+    /// LLVM context for this module.
+    llvm::LLVMContext llvm_context;
 
     /// Builtin types.
     TypeBase* VoidTy;

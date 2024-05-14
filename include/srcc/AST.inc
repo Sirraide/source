@@ -6,6 +6,10 @@
 #    define AST_STMT(node) AST_NODE(node)
 #endif
 
+#ifndef AST_DECL_LEAF
+#    define AST_DECL_LEAF(node) AST_STMT_LEAF(node)
+#endif
+
 #ifndef AST_TYPE_LEAF
 #    define AST_TYPE_LEAF(node) AST_TYPE(node)
 #endif
@@ -30,7 +34,7 @@ AST_STMT_LEAF(SliceDataExpr)
 AST_STMT_LEAF(StrLitExpr)
 AST_STMT(Decl)
 AST_STMT(ObjectDecl)
-AST_STMT_LEAF(ProcDecl)
+AST_DECL_LEAF(ProcDecl)
 
 AST_TYPE(TypeBase)
 AST_TYPE(SingleElementTypeBase)
@@ -48,3 +52,4 @@ AST_TYPE_LEAF(ProcType)
 #undef AST_TYPE_LEAF
 #undef AST_TYPE
 #undef AST_NODE
+#undef AST_DECL_LEAF

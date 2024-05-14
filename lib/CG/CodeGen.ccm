@@ -1,0 +1,51 @@
+module;
+
+#include <llvm/IR/Module.h>
+#include <llvm/IR/IRBuilder.h>
+
+export module srcc.codegen;
+import srcc.ast;
+
+export namespace srcc {
+class CodeGen;
+}
+
+class srcc::CodeGen {
+    Module& M;
+    std::unique_ptr<llvm::Module> llvm;
+    llvm::IRBuilder<> builder;
+    llvm::Function* curr_func{};
+
+    llvm::IntegerType* const IntTy;
+    llvm::IntegerType* const I1Ty;
+    llvm::PointerType* const PtrTy;
+    llvm::StructType* const SliceTy;
+    llvm::Type* const VoidTy;
+
+    CodeGen(Module& M);
+
+public:
+    static auto Emit(Module& M) -> std::unique_ptr<llvm::Module> {
+        CodeGen CG{M};
+        CG.Emit();
+        return std::move(CG.llvm);
+    }
+
+private:
+    auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
+    auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
+
+    template <typename Ty = llvm::Type>
+    auto ConvertType(Type ty) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty)); }
+    auto ConvertTypeImpl(Type ty) -> llvm::Type*;
+    auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
+
+    void Emit();
+    auto Emit(Stmt* stmt) -> llvm::Value*;
+    auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
+    auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
+    void EmitProcedure(ProcDecl* proc);
+    auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
+    auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
+    auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
+};
