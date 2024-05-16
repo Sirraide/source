@@ -1,20 +1,24 @@
 module;
 
 #include <llvm/ADT/StringRef.h>
+#include <fmt/format.h>
 
 export module srcc.constants;
 import srcc.utils;
 
 export namespace srcc::constants {
 constexpr String ProgramEntryPoint = "__src_main";
-constexpr String ModuleEntryPointPrefix = "__src_static_init";
+constexpr String ModuleEntryPointPrefix = "__src_static_init.";
+constexpr String ModuleSectionNamePrefix = ".__src_module_description.";
 
 auto EntryPointName(StringRef ModuleName) -> std::string;
+auto ModuleDescriptionSectionName(StringRef ModuleName) -> std::string;
 }
 
 auto srcc::constants::EntryPointName(StringRef ModuleName) -> std::string {
-    std::string name{ModuleEntryPointPrefix.sv()};
-    name += ".";
-    name += ModuleName;
-    return name;
+    return fmt::format("{}{}", ModuleEntryPointPrefix.sv(), ModuleName);
+}
+
+auto srcc::constants::ModuleDescriptionSectionName(StringRef ModuleName) -> std::string {
+    return fmt::format("{}", ModuleSectionNamePrefix.sv(), ModuleName);
 }

@@ -240,6 +240,8 @@ void Sema::Translate() {
         for (auto& i : p->imports)
             M->imports[i.linkage_name] = {nullptr, i.loc, i.import_name};
 
+    // FIXME: C++ headers should all be imported at the same time; it really
+    // doesn’t make sense to import them separately...
     for (auto& i : M->imports) {
         auto res = ImportCXXHeader(M->save(i.first()));
         if (not res) continue;

@@ -18,6 +18,7 @@ class srcc::CodeGen {
 
     llvm::IntegerType* const IntTy;
     llvm::IntegerType* const I1Ty;
+    llvm::IntegerType* const I8Ty;
     llvm::PointerType* const PtrTy;
     llvm::StructType* const SliceTy;
     llvm::Type* const VoidTy;

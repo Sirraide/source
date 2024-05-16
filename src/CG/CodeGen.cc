@@ -8,6 +8,7 @@ module;
 
 module srcc.codegen;
 import srcc;
+import srcc.constants;
 using namespace srcc;
 using llvm::Value;
 
@@ -52,7 +53,6 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
             return llvm::ArrayType::get(elem, u64(arr->dimension()));
         }
 
-
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::Dependent: Unreachable("Dependent type in codegen?");
@@ -65,7 +65,6 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
 
             Unreachable("Unknown builtin type");
         }
-
     }
 
     Unreachable("Unknown type kind");
@@ -91,19 +90,42 @@ CodeGen::CodeGen(Module& M)
       builder{M.llvm_context},
       IntTy{builder.getInt64Ty()},
       I1Ty{builder.getInt1Ty()},
+      I8Ty{builder.getInt8Ty()},
       PtrTy{builder.getPtrTy()},
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       VoidTy{builder.getVoidTy()} {}
 
 void CodeGen::Emit() {
+    // Emit procedures.
     for (auto& p : M.procs) EmitProcedure(p);
+
+    // Emit module description.
+    if (M.is_module) {
+        SmallVector<char, 0> md;
+        M.serialise(md);
+        auto name = constants::ModuleDescriptionSectionName(M.name);
+        auto data = llvm::ConstantDataArray::get(M.llvm_context, md);
+        auto var = new llvm::GlobalVariable(
+            *llvm,
+            data->getType(),
+            true,
+            llvm::GlobalValue::PrivateLinkage,
+            data,
+            name
+        );
+
+        var->setSection(name);
+        var->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::None);
+        var->setVisibility(llvm::GlobalValue::DefaultVisibility);
+    }
 }
 
 auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Assert(not stmt->dependent(), "Cannot emit dependent statement");
     switch (stmt->kind()) {
         using K = Stmt::Kind;
-#define AST_DECL_LEAF(node) case K::node: Unreachable("Cannot emit " SRCC_STR(node));
+#define AST_DECL_LEAF(node) \
+    case K::node: Unreachable("Cannot emit " SRCC_STR(node));
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Emit, node)(cast<node>(stmt));
 #include "srcc/AST.inc"

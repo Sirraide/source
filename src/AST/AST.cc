@@ -33,6 +33,11 @@ Module::Module(Context& ctx, String name, bool is_module)
     FFILongLongTy = IntType::Get(*this, 64);
     FFISizeTy = FFILongTy;
 
+    // If the name is empty, this is an imported module. Do not create
+    // an initialiser for it as we can just synthesise a call to it, and
+    // we also don’t have its name yet.
+    if (name.empty()) return;
+
     // The module entry point differs depending on whether this is
     // is an executable or a library.
     //

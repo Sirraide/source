@@ -60,7 +60,7 @@ public:
     StringMap<Import> imports;
 
     /// The name of this program or module.
-    const String name;
+    String name;
 
     /// Whether this is a program or module.
     const bool is_module;
@@ -108,8 +108,16 @@ public:
 
     /// Create a new module.
     static auto Create(Context& ctx, String name, bool is_module) -> Ptr {
+        Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
         return std::unique_ptr<Module>(new Module{ctx, name, is_module});
     }
+
+    static auto CreateEmpty(Context& ctx) -> Ptr {
+        return std::unique_ptr<Module>(new Module{ctx, "", true});
+    }
+
+    /// Deserialise a module.
+    static auto Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr;
 
     /// Allocate data.
     void* Allocate(usz size, usz align) { return allocator().Allocate(size, align); }
@@ -138,5 +146,8 @@ public:
 
     /// Save a string in the module.
     auto save(StringRef s) -> String { return String::Save(saver, s); }
+
+    /// Serialise this module to a memory buffer
+    void serialise(SmallVectorImpl<char>& buffer) const;
 };
 
