@@ -58,12 +58,19 @@ int Driver::Impl::run_job(Action action) {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
 
+    // Create diags engine.
+    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx));
+
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
     std::unordered_set<File::Path> file_uniquer;
-    for (const auto& f : files)
-        if (not file_uniquer.insert(canonical(f)).second)
-            Diag::Fatal("Duplicate file name in command-line: '{}'", canonical(f));
+    for (const auto& f : files) {
+        auto can = canonical(f);
+        if (not file_uniquer.insert(can).second) Fatal(
+            "Duplicate file name in command-line: '{}'",
+            can
+        );
+    }
 
     // Parse files in parallel.
     SmallVector<std::shared_future<ParsedModule*>> futures;
@@ -76,7 +83,6 @@ int Driver::Impl::run_job(Action action) {
     SmallVector<std::unique_ptr<ParsedModule>> parsed_modules;
     for (auto& f : futures) {
         auto ptr = f.get();
-        if (not ptr) return 1;
         parsed_modules.emplace_back(ptr);
     }
 
@@ -94,6 +100,8 @@ int Driver::Impl::run_job(Action action) {
         return 0;
     }
 
+    // Don’t try and codegen if there was an error.
+    if (ctx.diags().has_error()) return 1;
     auto ir_module = CodeGen::Emit(*module);
     ir_module->dump();
     std::exit(42);
@@ -101,8 +109,7 @@ int Driver::Impl::run_job(Action action) {
 
 auto Driver::Impl::ParseFile(const File::Path& path) -> ParsedModule* {
     auto& f = ctx.get_file(path);
-    if (auto res = Parser::Parse(f)) return res->release();
-    return nullptr;
+    return Parser::Parse(f).release();
 }
 
 // ============================================================================

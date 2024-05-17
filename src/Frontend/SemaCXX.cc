@@ -225,7 +225,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     }
 }
 
-auto Sema::ImportCXXHeader(String name) -> Result<Module::Ptr> {
+auto Sema::ImportCXXHeader(Location import_loc, String name) -> Module::Ptr {
     // TODO: Try using `clang::tooling::buildASTFromCodeWithArgs()`.
     llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> overlay;
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> mem;
@@ -239,7 +239,7 @@ auto Sema::ImportCXXHeader(String name) -> Result<Module::Ptr> {
     clang::CompilerInstance clang;
     clang.createDiagnostics();
     clang.getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
-    if (not clang.createTarget()) Diag::ICE("Failed to create target for importing '{}'", name);
+    if (not clang.createTarget()) return ICE(import_loc, "Failed to create target for importing '{}'", name);
     clang.createSourceManager(*clang.createFileManager(overlay));
     clang.createPreprocessor(clang::TU_Prefix);
     clang.createASTContext();
@@ -280,7 +280,7 @@ auto Sema::ImportCXXHeader(String name) -> Result<Module::Ptr> {
         &clang.getFileManager()
     );
 
-    if (not AST) return Diag::Error("Failed to import C++ header '{}'", name);
+    if (not AST) return Error(import_loc, "Failed to import C++ header '{}'", name);
     Importer I{*this, *AST};
     return I.Import(name);
 }

@@ -110,7 +110,7 @@ struct Lexer {
 
     template <typename ...Args>
     void Error(Location where, fmt::format_string<Args...> fmt, Args&& ...args) {
-        Diag::Error(f.context(), where, fmt, std::forward<Args>(args)...);
+        f.context().diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
     }
 
     auto CurrOffs() -> u32;

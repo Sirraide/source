@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <filesystem>
 #include <fmt/std.h>
 #include <llvm/IR/LLVMContext.h>
@@ -12,8 +13,11 @@ module;
 #include <srcc/Macros.hh>
 #include <thread>
 
-module srcc;
+#ifdef __linux__
+#   include <unistd.h>
+#endif
 
+module srcc;
 using namespace srcc;
 
 // ============================================================================
@@ -21,6 +25,9 @@ using namespace srcc;
 // ============================================================================
 struct Context::Impl {
     llvm::LLVMContext llvm;
+
+    /// Diagnostics engine.
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_engine;
 
     /// Mutex used by API functions that may mutate the context.
     std::recursive_mutex context_mutex;
@@ -42,6 +49,11 @@ struct Context::Impl {
 SRCC_DEFINE_HIDDEN_IMPL(Context);
 Context::Context() : impl(new Impl) {}
 
+auto Context::diags() const -> DiagnosticsEngine& {
+    Assert(impl->diags_engine, "Diagnostics engine not set!");
+    return *impl->diags_engine;
+}
+
 void Context::enable_colours(bool enable) {
     impl->enable_colours.store(enable, std::memory_order_release);
 }
@@ -61,7 +73,8 @@ auto Context::get_file(const File::Path& path) -> const File& {
         return *it->second;
 
     static constexpr usz MaxFiles = std::numeric_limits<u16>::max();
-    if (impl->files.size() >= MaxFiles) Diag::ICE(
+    Assert(
+        impl->files.size() < MaxFiles,
         "Sorry, that’s too many files for us! (max is {})",
         MaxFiles
     );
@@ -73,16 +86,8 @@ auto Context::get_file(const File::Path& path) -> const File& {
     return *f;
 }
 
-auto Context::has_error() const -> bool {
-    return impl->errored.load(std::memory_order_acquire);
-}
-
-auto Context::lock_diags_mutex() const -> std::unique_lock<std::recursive_mutex> {
-    return std::unique_lock{impl->diags_mutex};
-}
-
-void Context::set_error() const {
-    impl->errored.store(true, std::memory_order_release);
+void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
+    impl->diags_engine = std::move(diags);
 }
 
 bool Context::use_colours() const {
@@ -99,7 +104,7 @@ auto File::TempPath(StringRef extension) -> Path {
     auto tmp_dir = std::filesystem::temp_directory_path();
 
     // Use the pid on Linux, and another random number on Windows.
-#ifndef _WIN32
+#ifdef __linux__
     auto pid = std::to_string(u32(getpid()));
 #else
     auto pid = std::to_string(rd());
@@ -133,20 +138,25 @@ auto File::TempPath(StringRef extension) -> Path {
     return f;
 }
 
-auto File::Write(const void* data, usz size, const Path& file) -> Result<> {
+auto File::Write(const void* data, usz size, const Path& file) -> std::expected<void, std::string> {
     auto err = llvm::writeToOutput(absolute(file).string(), [=](llvm::raw_ostream& os) {
         os.write(static_cast<const char*>(data), size);
         return llvm::Error::success();
     });
 
-    return Result<>::Error(std::move(err), [&](const llvm::ErrorInfoBase& e) {
-        return fmt::format("Failed to write to file '{}': {}", file, e.message());
+    std::string text;
+    llvm::handleAllErrors(std::move(err), [&](const llvm::ErrorInfoBase& e) {
+        text += fmt::format("Failed to write to file '{}': {}", file, e.message());
     });
+    return std::unexpected(text);
 }
 
 void File::WriteOrDie(void* data, usz size, const Path& file) {
-    if (not Write(data, size, file))
-        Diag::Fatal("Failed to write to file '{}': {}", file, std::strerror(errno));
+    if (not Write(data, size, file)) Fatal(
+        "Failed to write to file '{}': {}",
+        file,
+        std::strerror(errno)
+    );
 }
 
 File::File(
@@ -168,7 +178,7 @@ auto File::LoadFileData(const Path& path) -> std::unique_ptr<llvm::MemoryBuffer>
         false
     );
 
-    if (auto ec = buf.getError()) Diag::Fatal(
+    if (auto ec = buf.getError()) Fatal(
         "Could not load file '{}': {}",
         path,
         ec.message()
@@ -259,38 +269,29 @@ auto Location::text(const Context& ctx) const -> StringRef {
 // ============================================================================
 //  Diagnostics
 // ============================================================================
-std::atomic EnableAssertColours{bool(isatty(fileno(stderr)))};
-std::atomic<llvm::raw_ostream*> DiagsStream{&llvm::errs()};
-
 /// Get the colour of a diagnostic.
-constexpr auto Colour(utils::Colours C, Diag::Kind kind) -> std::string_view {
-    using Kind = Diag::Kind;
+constexpr auto Colour(utils::Colours C, Diagnostic::Level kind) -> std::string_view {
+    using Kind = Diagnostic::Level;
     using enum utils::Colour;
     switch (kind) {
         case Kind::ICE: return C(Magenta);
         case Kind::Warning: return C(Yellow);
         case Kind::Note: return C(Green);
-
-        case Kind::Fatal:
-        case Kind::Error:
-            return C(Red);
-
-        default:
-            return C(None);
+        case Kind::Error: return C(Red);
     }
+    return C(None);
 }
 
 /// Get the name of a diagnostic.
-constexpr std::string_view Name(Diag::Kind kind) {
-    using Kind = Diag::Kind;
+constexpr auto Name(Diagnostic::Level kind) -> std::string_view {
+    using Kind = Diagnostic::Level;
     switch (kind) {
         case Kind::ICE: return "Internal Compiler Error";
-        case Kind::Fatal: return "Fatal Error";
         case Kind::Error: return "Error";
         case Kind::Warning: return "Warning";
         case Kind::Note: return "Note";
-        default: return "Diagnostic";
     }
+    return "<Invalid Diagnostic Level>";
 }
 
 /// Remove project directory from filename.
@@ -302,92 +303,30 @@ constexpr auto NormaliseFilename(std::string_view filename) -> std::string_view 
     return filename;
 }
 
-void Diag::EnableColours(bool enable) {
-    EnableAssertColours.store(enable);
-}
-
-void Diag::SetDiagsStream(llvm::raw_ostream& stream) {
-    DiagsStream.store(&stream);
-}
-
-void Diag::HandleFatalErrors() {
-    // Abort on ICE.
-    if (kind == Kind::ICE)
-        LIBASSERT_PANIC("Internal Compiler Error"); // Separate line for breakpoint.
-
-    // Exit on a fatal error. Never print a backtrace here as fatal
-    // errors are due to the underlying system misbehaving, so a stack
-    // trace won’t help because it’s not our fault.
-    if (kind == Kind::Fatal)
-        std::exit(FatalExitCode); // Separate line for breakpoint.
-}
-
-// Print a diagnostic with no (valid) location info.
-void Diag::PrintDiagWithoutLocation(utils::Colours C) {
+void StreamingDiagnosticsEngine::report_impl(const Diagnostic& diag) {
+    utils::Colours C(ctx.use_colours());
     using enum utils::Colour;
-    auto& stream = *DiagsStream.load();
 
-    // Print error location, if present.
-    if (sloc.line() != 0 and kind != Kind::Fatal) {
-        stream << fmt::format(
-            "{}{}:{}:{}: ",
-            C(Bold),
-            NormaliseFilename(sloc.file_name()),
-            sloc.line(),
-            sloc.column()
-
-        );
-    }
-
-    // Print the message.
-    stream << fmt::format("{}{}{}: {}", C(Bold), Colour(C, kind), Name(kind), C(Reset));
-    stream << fmt::format("{}{}{}\n", C(Bold), msg, C(Reset));
-    HandleFatalErrors();
-}
-
-void Diag::print() {
-    utils::Colours C(ctx ? ctx->use_colours() : EnableAssertColours.load(std::memory_order_relaxed));
-    using enum utils::Colour;
-    auto& stream = *DiagsStream.load();
-
-    // If this diagnostic is suppressed, do nothing.
-    if (kind == Kind::None) return;
-    defer {
-        // If the diagnostic is an error, set the error flag.
-        if (kind == Kind::Error and ctx)
-            ctx->set_error(); /// Separate line so we can put a breakpoint here.
-
-        // Don’t print the same diagnostic twice.
-        kind = Kind::None;
-
-        // Reset the colour when we’re done.
-        stream << fmt::format("{}", C(Reset));
-    };
-
-    // If there is no context, then there is also no location info.
-    if (not ctx) {
-        PrintDiagWithoutLocation(C);
-        return;
-    }
-
-    /// Make sure we don’t interleave diagnostics.
-    auto _ = ctx ? ctx->lock_diags_mutex() : std::unique_lock<std::recursive_mutex>{};
+    // Reset the colour when we’re done.
+    defer { stream << fmt::format("{}", C(Reset)); };
 
     /// Make sure that diagnostics don’t clump together, but also don’t insert
     /// an ugly empty line before the first diagnostic.
-    if (ctx->has_error() and kind != Kind::Note) stream << "\n";
+    if (issued_diagnostic and diag.level != Diagnostic::Level::Note) stream << "\n";
+    issued_diagnostic = true;
 
     /// If the location is invalid, either because the specified file does not
     /// exists, its position is out of bounds or 0, or its length is 0, then we
     /// skip printing the location.
-    auto l = where.seek(*ctx);
+    auto l = diag.where.seek(ctx);
     if (not l.has_value()) {
         /// Even if the location is invalid, print the file name if we can.
-        if (auto f = ctx->file(where.file_id))
+        if (auto f = ctx.file(diag.where.file_id))
             stream << fmt::format("{}{}: ", C(Bold), f->path());
 
         /// Print the message.
-        PrintDiagWithoutLocation(C);
+        stream << fmt::format("{}{}{}: {}", C(Bold), Colour(C, diag.level), Name(diag.level), C(Reset));
+        stream << fmt::format("{}{}{}\n", C(Bold), diag.msg, C(Reset));
         return;
     }
 
@@ -398,10 +337,10 @@ void Diag::print() {
     /// Split the line into everything before the range, the range itself,
     /// and everything after.
     std::string before(line_start, col_offs);
-    std::string range(line_start + col_offs, std::min<u64>(where.len, u64(line_end - (line_start + col_offs))));
-    auto after = line_start + col_offs + where.len > line_end
+    std::string range(line_start + col_offs, std::min<u64>(diag.where.len, u64(line_end - (line_start + col_offs))));
+    auto after = line_start + col_offs + diag.where.len > line_end
                    ? std::string{}
-                   : std::string(line_start + col_offs + where.len, line_end);
+                   : std::string(line_start + col_offs + diag.where.len, line_end);
 
     /// Replace tabs with spaces. We need to do this *after* splitting
     /// because this invalidates the offsets.
@@ -410,17 +349,17 @@ void Diag::print() {
     utils::ReplaceAll(after, "\t", "    ");
 
     /// Print the file name, line number, and column number.
-    const auto& file = *ctx->file(where.file_id);
+    const auto& file = *ctx.file(diag.where.file_id);
     stream << fmt::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
 
     /// Print the diagnostic name and message.
-    stream << fmt::format("{}{}: ", Colour(C, kind), Name(kind));
-    stream << fmt::format("{}{}\n", C(Reset), msg);
+    stream << fmt::format("{}{}: ", Colour(C, diag.level), Name(diag.level));
+    stream << fmt::format("{}{}\n", C(Reset), diag.msg);
 
     /// Print the line up to the start of the location, the range in the right
     /// colour, and the rest of the line.
     stream << fmt::format(" {} | {}", line, before);
-    stream << fmt::format("{}{}{}{}", C(Bold), Colour(C, kind), range, C(Reset));
+    stream << fmt::format("{}{}{}{}", C(Bold), Colour(C, diag.level), range, C(Reset));
     stream << fmt::format("{}\n", after);
 
     /// Determine the number of digits in the line number.
@@ -440,10 +379,7 @@ void Diag::print() {
         stream << " ";
 
     /// Finally, underline the range.
-    stream << fmt::format("{}{}", C(Bold), Colour(C, kind));
+    stream << fmt::format("{}{}", C(Bold), Colour(C, diag.level));
     for (usz i = 0, end = ColumnWidth(range); i < end; i++) stream << "~";
     stream << "\n";
-
-    /// Handle fatal errors.
-    HandleFatalErrors();
 }

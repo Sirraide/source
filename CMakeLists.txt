@@ -288,3 +288,16 @@ target_sources(srcc PUBLIC
 
 ## Link everything together.
 target_link_libraries(srcc PRIVATE options srcc-core srcc-driver)
+
+## Tests
+include(CTest)
+include(fchk/cmake/FCHKDiscoverTests.cmake)
+set(FCHK_EXE_PATH "${PROJECT_SOURCE_DIR}/fchk/out/fchk")
+FCHKAddAllTestsInDir(
+    IN test
+    PATTERN "*.src"
+    PREFIX  "//"
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    ARGS -P re -P nocap -P captype -l . -D "srcc=$<TARGET_FILE:srcc>"
+    RECURSIVE
+)

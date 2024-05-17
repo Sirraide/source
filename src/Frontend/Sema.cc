@@ -1,6 +1,7 @@
 module;
 
 #include <llvm/ADT/MapVector.h>
+#include <llvm/ADT/STLExtras.h>
 #include <ranges>
 #include <srcc/Macros.hh>
 
@@ -17,16 +18,16 @@ using namespace srcc;
 // ============================================================================
 //  Helpers
 // ============================================================================
-auto Sema::CreateReference(Decl* d, Location loc) -> Expr* {
+auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
-        default: Diag::ICE(ctx, d->location(), "Cannot build a reference to this declaration");
+        default: return ICE(d->location(), "Cannot build a reference to this declaration");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
     }
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     switch (d->kind()) {
-        default: return nullptr;
+        default: return {};
         case Stmt::Kind::BlockExpr: return cast<BlockExpr>(d)->scope;
         case Stmt::Kind::ProcDecl: return cast<ProcDecl>(d)->scope;
     }
@@ -242,24 +243,29 @@ void Sema::Translate() {
 
     // FIXME: C++ headers should all be imported at the same time; it really
     // doesn’t make sense to import them separately...
+    bool errored = false;
     for (auto& i : M->imports) {
-        auto res = ImportCXXHeader(M->save(i.first()));
-        if (not res) continue;
-        i.second.imported_module = std::move(*res);
+        auto res = ImportCXXHeader(i.second.import_location, M->save(i.first()));
+        if (not res) {
+            errored = true;
+            continue;
+        }
+
+        i.second.imported_module = std::move(res);
         imported_modules[i.second.import_name] = i.second.imported_module.get();
     }
 
     // Don’t attempt anything else if there was a problem.
-    if (has_error) return;
+    if (errored) return;
 
     // Collect all statements and translate them.
     SmallVector<Stmt*> top_level_stmts;
-    for (auto& p : parsed_modules) has_error = TranslateStmts(top_level_stmts, p->top_level);
+    for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, BlockExpr::NoExprIndex, Location{});
     M->initialiser_proc->body = M->file_scope_block;
 }
 
-auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> bool {
+void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) {
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
@@ -286,7 +292,7 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
     }
 
     // Stop if there was a problem.
-    if (not ok) return false;
+    if (not ok) return;
 
     // Having collected out-of-order symbols, now translate all statements for real.
     for (auto p : parsed) {
@@ -299,10 +305,7 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
 
         auto stmt = TranslateStmt(p);
         if (stmt.present()) stmts.push_back(stmt.get());
-        else ok = false;
     }
-
-    return ok;
 }
 
 // ============================================================================
@@ -311,13 +314,13 @@ auto Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
     ScopeRAII scope{*this};
     SmallVector<Stmt*> stmts;
-    if (not TranslateStmts(stmts, parsed->stmts())) return nullptr;
+    TranslateStmts(stmts, parsed->stmts());
 
     // Determine the expression that is returned from this block, if
     // any. Ignore declarations. If the last non-declaration statement
     // is an expression, we return it; if not, we return nothing.
     u32 return_index = BlockExpr::NoExprIndex;
-    for (auto [i, stmt] : stmts | vws::reverse | vws::enumerate) {
+    for (auto [i, stmt] : llvm::enumerate(stmts | vws::reverse)) {
         if (isa<Decl>(stmt)) continue;
         if (isa<Expr>(stmt)) return_index = u32(i);
         break;

@@ -30,7 +30,8 @@ private:                            \
 #define SRCC_BREAK_IF(cond) if (std::getenv("DEBUGGING") and (cond)) asm volatile("int3")
 
 #define Assert(X, ...) ASSERT(X __VA_OPT__(, ::fmt::format(__VA_ARGS__)))
-
+#define Fatal(...) PANIC(__VA_OPT__(::fmt::format(__VA_ARGS__)))
+#define Todo() PANIC("TODO")
 #define Unreachable(...) UNREACHABLE(__VA_OPT__(::fmt::format(__VA_ARGS__)))
 
 // Here until compilers support delete("message").

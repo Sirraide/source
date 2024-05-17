@@ -80,21 +80,6 @@ void debug(fmt::format_string<arguments...> fmt, arguments&&... args) {
 template <typename T, typename... Us>
 concept is = (std::is_same_v<std::remove_cvref_t<T>, std::remove_cvref_t<Us>> or ...);
 
-constexpr auto Nothing = std::nullopt;
-using NothingType = std::nullopt_t;
-
-/// std::optional with a better interface that requires you to actually
-/// check if the value exists, as well as optimised for pointer types.
-template <typename T>
-class Maybe {
-    std::optional<T> value;
-
-public:
-    Maybe() = default;
-    Maybe(NothingType) : value{} {}
-    Maybe(T&& value) : value{std::move(value)} {}
-};
-
 /// Nullable pointer.
 template <typename Ty>
 class Ptr {
@@ -127,8 +112,9 @@ public:
         return value;
     }
 
-    auto invalid() -> bool { return not present(); }
-    auto present() -> bool { return value != nullptr; }
+    auto invalid() const -> bool { return not present(); }
+    auto present() const -> bool { return value != nullptr; }
+    explicit operator bool() const { return present(); }
 };
 
 /// Used to represent the size of a type.
@@ -278,7 +264,7 @@ public:
         return s;
     }
 
-    /// Save it in a string save; this is how you’re supposed to create these.
+    /// Save it in a string saver; this is how you’re supposed to create these.
     [[nodiscard]] static auto Save(llvm::StringSaver& ss, StringRef s) {
         return CreateUnsafe(ss.save(s));
     }

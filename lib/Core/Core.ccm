@@ -2,12 +2,13 @@ module;
 
 #include <algorithm>
 #include <bit>
+#include <expected>
 #include <filesystem>
 #include <fmt/format.h>
+#include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <mutex>
-#include <source_location>
 #include <srcc/Macros.hh>
 #include <string>
 #include <string_view>
@@ -17,20 +18,17 @@ export import srcc.utils;
 
 export namespace srcc {
 class Context;
-class Diag;
+class Diagnostic;
+class DiagnosticsEngine;
 class File;
+class StreamingDiagnosticsEngine;
+
+template <typename ErrRetTy>
+class DiagsProducer;
 
 struct Location;
 struct LocInfo;
 struct LocInfoShort;
-
-namespace detail {
-template <typename T>
-concept ValidResultType = std::is_same_v<std::remove_cvref_t<T>, T> and not std::is_same_v<T, Diag>;
-}
-
-template <detail::ValidResultType ValueType>
-class Result;
 } // namespace srcc
 
 /// A decoded source location.
@@ -145,11 +143,11 @@ public:
     /// Create a new context with default options.
     explicit Context();
 
+    /// Get diagnostics engine.
+    [[nodiscard]] auto diags() const -> DiagnosticsEngine&;
+
     /// Enable or disable coloured output.
     void enable_colours(bool enable);
-
-    /// Mark that an error has occurred.
-    void set_error() const;
 
     /// Get a file by index. Returns nullptr if the index is out of bounds.
     [[nodiscard]] auto file(usz idx) const -> const File*;
@@ -159,311 +157,143 @@ public:
     /// This will load the file the first time it is requested.
     [[nodiscard]] auto get_file(const fs::path& path) -> const File&;
 
-    /// Check if an error has occurred.
-    [[nodiscard]] auto has_error() const -> bool;
-
-    /// Lock the mutex used for reporting diagnostics.
-    [[nodiscard]] auto lock_diags_mutex() const -> std::unique_lock<std::recursive_mutex>;
+    /// Set the diagnostics engine.
+    void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);
 
     /// Whether to enable coloured output.
     [[nodiscard]] bool use_colours() const;
 };
 
-/// A diagnostic. The diagnostic is issued when the destructor is called.
-class srcc::Diag {
+/// A diagnostic.
+///
+/// This holds the data associated with a diagnostic, i.e. the source
+/// location, level, and message.
+class srcc::Diagnostic {
 public:
     /// Diagnostic severity.
-    enum struct Kind : u8 {
-        None,    ///< Do not emit this diagnostic.
+    enum struct Level : u8 {
         Note,    ///< Informational note.
         Warning, ///< Warning, but no hard error.
         Error,   ///< Hard error. Program is ill-formed.
-        Fatal,   ///< Fatal (system) error. NOT a compiler bug.
-        ICE,     ///< Compiler bug.
+        ICE,     ///< Internal compiler error. Usually used for things we don’t support yet.
     };
 
-private:
-    const Context* ctx{};
-    Kind kind{Kind::None};
-    bool include_stack_trace = true;
-    Location where{};
-    std::source_location sloc{};
+    Level level;
+    Location where;
     std::string msg;
 
-    /// Handle fatal error codes.
-    void HandleFatalErrors();
+    /// Create a diagnostic.
+    Diagnostic(Level lvl, Location where, std::string msg)
+        : level(lvl),
+          where(where),
+          msg(std::move(msg)) {}
 
-    /// Print a diagnostic with no (valid) location info.
-    void PrintDiagWithoutLocation(utils::Colours);
+    /// Create a diagnostic with a format string and arguments.
+    template <typename... Args>
+    Diagnostic(
+        Level lvl,
+        Location where,
+        fmt::format_string<Args...> fmt,
+        Args&&... args
+    ) : Diagnostic{lvl, where, fmt::format(fmt, std::forward<Args>(args)...)} {}
+};
+
+/// This class handles dispatching diagnostics. Objects of this
+/// type are thread-safe.
+class srcc::DiagnosticsEngine : public llvm::RefCountedBase<DiagnosticsEngine> {
+    SRCC_IMMOVABLE(DiagnosticsEngine);
+    std::mutex mtx;
+
+protected:
+    /// The context that owns this engine.
+    const Context& ctx;
+    std::atomic<bool> error_flag = false;
 
 public:
-    static constexpr u8 ICEExitCode = 17;
-    static constexpr u8 FatalExitCode = 18;
-
-    Diag(Diag&& other)
-        : ctx(other.ctx), kind(other.kind), where(other.where), msg(std::move(other.msg)) {
-        other.kind = Kind::None;
-    }
-
-    Diag& operator=(Diag&& other) {
-        if (this == &other) return *this;
-        ctx = other.ctx;
-        kind = other.kind;
-        where = other.where;
-        msg = std::move(other.msg);
-        other.kind = Kind::None;
-        return *this;
-    }
-
-    /// Create an empty diagnostic.
-    explicit Diag() = default;
-
-    /// Disallow copying.
-    Diag(const Diag&) = delete;
-    Diag& operator=(const Diag&) = delete;
-
-    /// The destructor prints the diagnostic, if it hasn’t been moved from.
-    ~Diag() {
-        if (kind != Kind::None) print();
-    }
+    using Ptr = llvm::IntrusiveRefCntPtr<DiagnosticsEngine>;
+    virtual ~DiagnosticsEngine() = default;
+    explicit DiagnosticsEngine(const Context& ctx) : ctx(ctx) {}
 
     /// Issue a diagnostic.
-    Diag(const Context& ctx, Kind kind, Location where, std::string msg)
-        : ctx(&ctx), kind(kind), where(where), msg(std::move(msg)) {}
-
-    /// Issue a diagnostic with no location.
-    Diag(Kind _kind, std::string&& msg, std::source_location sloc = {})
-        : kind(_kind), sloc(sloc), msg(std::move(msg)) {}
-
-    /// Issue a diagnostic with a format string and arguments.
     template <typename... Args>
-    Diag(
-        const Context& ctx,
-        Kind kind,
-        Location where,
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) : Diag{ctx, kind, where, fmt::format(fmt, std::forward<Args>(args)...)} {}
-
-    /// Issue a diagnostic with a format string and arguments, but no location.
-    template <typename... Args>
-    Diag(Kind kind, fmt::format_string<Args...> fmt, Args&&... args)
-        : Diag{kind, fmt::format(fmt, std::forward<Args>(args)...)} {}
-
-    /// Check whether this diagnostic is suppressed.
-    [[nodiscard]] bool is_suppressed() const { return kind == Kind::None; }
-
-    /// Do not print a stack trace.
-    void no_trace() { include_stack_trace = false; }
-
-    /// Print this diagnostic now. This resets the diagnostic.
-    void print();
-
-    /// Suppress this diagnostic.
-    void suppress() { kind = Kind::None; }
-
-    /// Emit a note.
-    template <typename... Args>
-    static Diag Note(fmt::format_string<Args...> fmt, Args&&... args) {
-        return Diag{Kind::Note, fmt::format(fmt, std::forward<Args>(args)...)};
-    }
-
-    /// Emit a note.
-    template <typename... Args>
-    static Diag Note(
-        const Context& ctx,
+    void diag(
+        Diagnostic::Level lvl,
         Location where,
         fmt::format_string<Args...> fmt,
         Args&&... args
     ) {
-        return Diag{ctx, Kind::Note, where, fmt::format(fmt, std::forward<Args>(args)...)};
+        report(Diagnostic{lvl, where, fmt::format(fmt, std::forward<Args>(args)...)});
     }
 
-    /// Emit a warning.
-    template <typename... Args>
-    static Diag Warning(fmt::format_string<Args...> fmt, Args&&... args) {
-        return Diag{Kind::Warning, fmt::format(fmt, std::forward<Args>(args)...)};
+    /// Check whether any diagnostics have been issued.
+    [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
+
+    /// Issue a diagnostic.
+    void report(const Diagnostic& diag) {
+        if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
+            error_flag.store(true, std::memory_order_relaxed);
+
+        // Use a lock to avoid interleaving diagnostics.
+        std::unique_lock _{mtx};
+        report_impl(diag);
     }
 
-    /// Emit a warning.
-    template <typename... Args>
-    static Diag Warning(
-        const Context& ctx,
-        Location where,
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        return Diag{ctx, Kind::Warning, where, fmt::format(fmt, std::forward<Args>(args)...)};
-    }
-
-    /// Emit an error.
-    template <typename... Args>
-    static Diag Error(
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        return Diag{Kind::Error, fmt::format(fmt, std::forward<Args>(args)...)};
-    }
-
-    /// Emit an error.
-    template <typename... Args>
-    static Diag Error(
-        const Context& ctx,
-        Location where,
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        return Diag{ctx, Kind::Error, where, fmt::format(fmt, std::forward<Args>(args)...)};
-    }
-
-    /// Raise an internal compiler error and exit.
-    template <typename... Args>
-    [[noreturn]] static void ICE(
-        utils::FStringWithSrcLoc<Args...> fmt,
-        Args&&... args
-    ) {
-        Diag{Kind::ICE, fmt::format(fmt.fmt, std::forward<Args>(args)...), fmt.sloc};
-        std::terminate(); /// Should never be reached.
-    }
-
-    /// Raise an internal compiler error and exit.
-    template <typename... Args>
-    [[noreturn]] static void ICENoTrace(
-        utils::FStringWithSrcLoc<Args...> fmt,
-        Args&&... args
-    ) {
-        Diag{Kind::ICE, fmt::format(fmt.fmt, std::forward<Args>(args)...), fmt.sloc}.no_trace();
-        std::terminate(); /// Should never be reached.
-    }
-
-    /// Raise an internal compiler error at a location and exit.
-    template <typename... Args>
-    [[noreturn]] static void ICE(
-        const Context& ctx,
-        Location where,
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        Diag{ctx, Kind::ICE, where, fmt::format(fmt, std::forward<Args>(args)...)};
-        std::terminate(); /// Should never be reached.
-    }
-
-    /// Raise a fatal error and exit.
-    ///
-    /// This is NOT an ICE; instead it is an error that is probably caused by
-    /// the underlying system, such as attempting to output to a directory that
-    /// isn’t accessible to the user.
-    template <typename... Args>
-    [[noreturn]] static void Fatal(
-        const Context& ctx,
-        Location where,
-        fmt::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        Diag{ctx, Kind::Fatal, where, fmt::format(fmt, std::forward<Args>(args)...)};
-        std::terminate(); /// Should never be reached.
-    }
-
-    /// Raise a fatal error and exit.
-    ///
-    /// This is NOT an ICE; instead it is an error that is probably caused by
-    /// the underlying system, such as attempting to output to a directory that
-    /// isn’t accessible to the user.
-    template <typename... Args>
-    [[noreturn]] static void Fatal(
-        utils::FStringWithSrcLoc<Args...> fmt,
-        Args&&... args
-    ) {
-        Diag{Kind::Fatal, fmt::format(fmt.fmt, std::forward<Args>(args)...), fmt.sloc};
-        std::terminate(); /// Should never be reached.
-    }
-
-    /// Enable coloured output by default. This is overriden by the corresponding
-    /// setting in the context.
-    static void EnableColours(bool enable);
-
-    /// Set the output stream that diagnostics (excluding ICEs and Assertions)
-    /// will be issued to.
-    static void SetDiagsStream(llvm::raw_ostream& stream);
+protected:
+    /// Override this to implement the actual reporting.
+    virtual void report_impl(const Diagnostic& diag) = 0;
 };
 
-/// Represents the result of a computation, or an error.
-template <srcc::detail::ValidResultType Ty = void>
-class [[nodiscard]] srcc::Result {
+/// Diagnostics engine that outputs to a stream.
+class srcc::StreamingDiagnosticsEngine final : public DiagnosticsEngine {
+    llvm::raw_ostream& stream;
+
+    /// Used for determining whether to print an empty line between diagnostics.
+    bool issued_diagnostic = false;
+
+    StreamingDiagnosticsEngine(const Context& ctx, llvm::raw_ostream& output_stream)
+        : DiagnosticsEngine(ctx), stream(output_stream) {}
+
 public:
-    using ValueType = Ty;
+    /// Create a new diagnostic engine.
+    [[nodiscard]] static auto Create(
+        const Context& ctx,
+        llvm::raw_ostream& output_stream = llvm::errs()
+    ) -> Ptr {
+        return llvm::IntrusiveRefCntPtr(new StreamingDiagnosticsEngine(ctx, output_stream));
+    }
 
 private:
-    std::variant<Ty, Diag> data;
+    void report_impl(const Diagnostic& diag) override;
+};
 
+/// Mixin to provide helper functions to issue diagnostics.
+template <typename ErrRetTy = void>
+class srcc::DiagsProducer {
 public:
-    /// Create an result that contains a default-constructed value.
-    Result()
-    requires std::is_default_constructible_v<Ty>
-        : data(Ty()) {}
-
-    /// Disallow construction from nullptr for pointers. Use
-    /// Result::UnsafeNull() instead.
-    Result(std::nullptr_t)
-    requires std::is_pointer_v<Ty>
-    = SRCC_DELETED(
-        "Avoid creating nullptr results; "
-        "use Result::UnsafeNull() if absolutely necessary"
-    );
-
-    /// Create a result from the value type.
-    Result(Ty ty) : data(std::move(ty)) {}
-
-    /// Create a result that contains a diagnostic.
-    Result(Diag d) : data(std::move(d)) {}
-
-    /// Create a result from another result.
-    template <std::convertible_to<Ty> U>
-    requires (not is<Ty, U>)
-    Result(Result<U> other) {
-        if (not other) data = other.error();
-        else data = std::move(*other);
+    template <typename... Args>
+    auto Error(this auto& This, Location where, fmt::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
+        This.Diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        return ErrRetTy();
     }
 
-    /// Access the error; this automatically moves to simplify propagating errors.
-    [[nodiscard]] auto error() -> Diag&& {
-        Assert(std::holds_alternative<Diag>(data), "Result must hold a error");
-        return std::move(std::get<Diag>(data));
+    template <typename... Args>
+    auto ICE(this auto& This, Location where, fmt::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
+        This.Diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        return ErrRetTy();
     }
 
-    /// Access the value.
-    [[nodiscard]] auto operator*() -> Ty& {
-        Assert(std::holds_alternative<Ty>(data), "Result must hold a value");
-        return std::get<Ty>(data);
+    template <typename... Args>
+    void Note(this auto& This, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        This.Diag(Diagnostic::Level::Note, loc, fmt, std::forward<Args>(args)...);
     }
 
-    /// Access the value.
-    [[nodiscard]] auto operator->() -> Ty* requires (not std::is_pointer_v<Ty>) {
-        Assert(std::holds_alternative<Ty>(data), "Result must hold a value");
-        return std::addressof(std::get<Ty>(data));
-    }
-
-    /// Access the value.
-    [[nodiscard]] auto
-    operator->() -> Ty
-    requires std::is_pointer_v<Ty>
-    {
-        Assert(std::holds_alternative<Ty>(data), "Result must hold a value");
-        return std::get<Ty>(data);
-    }
-
-    /// Check whether this contains a value.
-    [[nodiscard]] explicit operator bool() { return std::holds_alternative<Ty>(data); }
-
-    /// Create a nullptr result.
-    static auto UnsafeNull() -> Result
-    requires std::is_pointer_v<Ty>
-    {
-        return Result{static_cast<Ty>(nullptr)};
+    template <typename... Args>
+    void Warn(this auto& This, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
     }
 };
 
-template <>
+/*template <>
 class srcc::Result<void> {
 public:
     using ValueType = void;
@@ -471,7 +301,7 @@ public:
 private:
     // Diag already has an empty state; no need to bother
     // w/ optionals here.
-    Diag diag;
+    Diagnostic diag;
 
 public:
     /// Create an result that contains an empty error.
@@ -482,14 +312,14 @@ public:
     Result& operator=(Result&&) = default;
 
     /// Create a result that contains a diagnostic.
-    Result(Diag d) : diag(std::move(d)) {}
+    Result(Diagnostic d) : diag(std::move(d)) {}
 
     /// Create a result from another result.
     template <typename U>
     requires (not is<U, void>)
     Result(Result<U> other) {
         if (not other) diag = other.error();
-        else diag = Diag();
+        else diag = Diagnostic();
     }
 
     /// Transform an LLVM error to a diagnostic.
@@ -498,21 +328,21 @@ public:
         if (e) {
             std::string Text;
             handleAllErrors(std::move(e), [&](const llvm::ErrorInfoBase& e) { Text = format(e); });
-            return Diag::Error("{}", Text);
+            return Diagnostic::Error("{}", Text);
         }
 
         return {};
     }
 
     /// Access the error; this automatically moves to simplify propagating errors.
-    [[nodiscard]] auto error() -> Diag&& {
+    [[nodiscard]] auto error() -> Diagnostic&& {
         Assert(not diag.is_suppressed(), "Result must hold a error");
         return std::move(diag);
     }
 
     /// Check whether this contains a value.
     [[nodiscard]] explicit operator bool() const { return diag.is_suppressed(); }
-};
+};*/
 
 /// A file in the context.
 class srcc::File {
@@ -567,7 +397,11 @@ public:
     [[nodiscard]] static auto TempPath(StringRef extension) -> Path;
 
     /// Write to a file on disk.
-    [[nodiscard]] static auto Write(const void* data, usz size, const Path& file) -> Result<>;
+    [[nodiscard]] static auto Write(
+        const void* data,
+        usz size,
+        const Path& file
+    ) -> std::expected<void, std::string>;
 
     /// Write to a file on disk and terminate on error.
     static void WriteOrDie(void* data, usz size, const Path& file);

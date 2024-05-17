@@ -1,7 +1,6 @@
 module;
 
 #include <srcc/Macros.hh>
-#include <string>
 
 export module srcc.driver;
 import srcc.utils;

@@ -11,8 +11,11 @@ using namespace command_line_options;
 using options = clopts< // clang-format off
     positional<"file", "The file to compile">,
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
-    flag<"--parse-tree", "Dump the parse tree">,
     flag<"--ast", "Dump the AST">,
+    flag<"--parse", "Parse only and exit">,
+    flag<"--parse-tree", "Dump the parse tree">,
+    flag<"--sema", "Run sema only and exit">,
+    flag<"--verify", "Run in verify-diagnostics mode">,
     help<>
 >; // clang-format on
 }

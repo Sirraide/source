@@ -257,8 +257,9 @@ public:
     static bool classof(const ParsedExpr* e) { return e->kind() == Kind::ProcDecl; }
 };
 
-class srcc::Parser {
+class srcc::Parser : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Parser);
+    friend DiagsProducer;
     ParsedModule::Ptr mod;
     TokenStream stream;
     TokenStream::iterator tok;
@@ -266,7 +267,7 @@ class srcc::Parser {
 
 public:
     /// Parse a file.
-    static auto Parse(const File& file) -> Result<ParsedModule::Ptr>;
+    static auto Parse(const File& file) -> ParsedModule::Ptr;
 
     /// Allocate data.
     void* Allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
@@ -278,23 +279,24 @@ private:
           ctx{file.context()} {}
 
     /// Each of these corresponds to a production in the grammar.
-    auto ParseBlock() -> Result<ParsedBlockExpr*>;
-    auto ParseExpr() -> Result<ParsedExpr*>;
+    auto ParseBlock() -> Ptr<ParsedBlockExpr>;
+    auto ParseExpr() -> Ptr<ParsedExpr>;
     void ParseFile();
     void ParseHeader();
     void ParseImport();
     void ParsePreamble();
-    auto ParseStmt() -> Result<ParsedExpr*>;
-    auto ParseProcDecl() -> Result<ParsedProcDecl*>;
+    auto ParseStmt() -> Ptr<ParsedExpr>;
+    auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
 
     template <typename... Args>
-    Diag Error(Location where, fmt::format_string<Args...> fmt, Args&&... args) {
-        return Diag::Error(ctx, where, fmt, std::forward<Args>(args)...);
+    void Diag(Diagnostic::Level lvl, Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
+    using DiagsProducer::Error;
     template <typename... Args>
-    Diag Error(fmt::format_string<Args...> fmt, Args&&... args) {
-        return Diag::Error(ctx, tok->location, fmt, std::forward<Args>(args)...);
+    auto Error(fmt::format_string<Args...> fmt, Args&&... args) -> Ptr<ParsedExpr> {
+        return Error(tok->location, fmt, std::forward<Args>(args)...);
     }
 
     /// Consume a token or issue an error.

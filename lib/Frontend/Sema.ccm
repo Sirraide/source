@@ -14,14 +14,14 @@ export namespace srcc {
 class Sema;
 }
 
-class srcc::Sema {
+class srcc::Sema : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
+    friend DiagsProducer;
     class Importer;
     friend Importer;
     Context& ctx;
     Module::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
-    bool has_error = false;
 
     /// All scopes that have been created.
     std::vector<std::unique_ptr<Scope>> all_scopes;
@@ -101,22 +101,9 @@ private:
     /// Entry point.
     void Translate();
 
-    /// Helpers.
     template <typename... Args>
-    auto Error(Location loc, fmt::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
-        has_error = true;
-        Diag::Error(ctx, loc, fmt, std::forward<Args>(args)...);
-        return nullptr;
-    }
-
-    template <typename... Args>
-    void Note(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
-        Diag::Note(ctx, loc, fmt, std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void Warn(Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
-        Diag::Warning(ctx, loc, fmt, std::forward<Args>(args)...);
+    void Diag(Diagnostic::Level lvl, Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
     struct LookupResult {
@@ -158,19 +145,19 @@ private:
     };
 
     /// Create a reference to a declaration.
-    [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Expr*;
+    auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
-    [[nodiscard]] auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
+    auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Import a C++ header as a module.
-    [[nodiscard]] auto ImportCXXHeader(String linkage_name) -> Result<Module::Ptr>;
+    auto ImportCXXHeader(Location import_loc, String linkage_name) -> Module::Ptr;
 
     /// Use LookUpName() instead.
-    [[nodiscard]] auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
+    auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
 
     /// Use LookUpName() instead.
-    [[nodiscard]] auto LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult;
+    auto LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult;
 
     /// Look up a name in a scope.
     ///
@@ -188,7 +175,7 @@ private:
     /// \param names The path to look up.
     /// \param loc The location of the lookup.
     /// \param complain Emit a diagnostic if lookup fails.
-    [[nodiscard]] auto LookUpName(
+    auto LookUpName(
         Scope* in_scope,
         ArrayRef<String> names,
         Location loc,
@@ -199,22 +186,22 @@ private:
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
     /// Building AST nodes; called after translation and template instantiation.
-    [[nodiscard]] auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
-    [[nodiscard]] auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
+    auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
+    auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
 
     /// Translation from the parse tree to the AST.
-    [[nodiscard]] auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
-    [[nodiscard]] auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr>;
-    [[nodiscard]] auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
-    [[nodiscard]] auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
-    [[nodiscard]] auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    [[nodiscard]] auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
-    [[nodiscard]] auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
-    [[nodiscard]] auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
-    [[nodiscard]] auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
-    [[nodiscard]] auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
-    [[nodiscard]] auto TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
-    [[nodiscard]] auto TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt>;
-    [[nodiscard]] auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> bool;
-    [[nodiscard]] auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
+    auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
+    auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr>;
+    auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
+    auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
+    auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
+    auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
+    auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
+    auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
+    auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
+    auto TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    auto TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt>;
+    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> void;
+    auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
 };

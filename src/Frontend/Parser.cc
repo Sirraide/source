@@ -251,15 +251,14 @@ bool Parser::ConsumeOrError(Tk tk) {
 // ============================================================================
 //  Parser
 // ============================================================================
-auto Parser::Parse(const File& file) -> Result<std::unique_ptr<ParsedModule>> {
+auto Parser::Parse(const File& file) -> std::unique_ptr<ParsedModule> {
     Parser P{file};
     P.ReadTokens(file);
     P.ParseFile();
-    if (P.ctx.has_error()) return Diag();
     return std::move(P.mod);
 }
 
-auto Parser::ParseBlock() -> Result<ParsedBlockExpr*> {
+auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     auto loc = tok->location;
     ++tok;
 
@@ -267,7 +266,7 @@ auto Parser::ParseBlock() -> Result<ParsedBlockExpr*> {
     SmallVector<ParsedExpr*> stmts;
     while (not At(Tk::Eof, Tk::RBrace))
         if (auto s = ParseStmt())
-            stmts.push_back(*s);
+            stmts.push_back(s.get());
     ConsumeOrError(Tk::RBrace);
     return ParsedBlockExpr::Create(*this, stmts, loc);
 }
@@ -278,8 +277,8 @@ auto Parser::ParseBlock() -> Result<ParsedBlockExpr*> {
 //          | <expr-decl-ref>
 //          | <expr-lit>
 //          | <expr-member>
-auto Parser::ParseExpr() -> Result<ParsedExpr*> {
-    Result<ParsedExpr*> lhs = Diag();
+auto Parser::ParseExpr() -> Ptr<ParsedExpr> {
+    Ptr<ParsedExpr> lhs;
     switch (tok->type) {
         default: return Error("Expected expression");
 
@@ -293,8 +292,8 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
             ++tok;
 
             auto body = ParseBlock();
-            if (not body) return body.error();
-            lhs = new (*this) ParsedProcDecl{name, *body, loc};
+            if (not body) return {};
+            lhs = new (*this) ParsedProcDecl{name, body.get(), loc};
         } break;
 
         // <expr-block> ::= "{" { <stmt> } "}"
@@ -340,7 +339,7 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
                 SmallVector<ParsedExpr*> args;
                 while (not At(Tk::RParen)) {
                     if (auto arg = ParseExpr()) {
-                        args.push_back(*arg);
+                        args.push_back(arg.get());
                         if (not Consume(Tk::Comma)) break;
                     } else {
                         SkipTo(Tk::RParen);
@@ -349,7 +348,7 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
                 }
 
                 ConsumeOrError(Tk::RParen);
-                lhs = ParsedCallExpr::Create(*this, *lhs, args, {lhs->loc});
+                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc});
                 continue;
             }
 
@@ -359,10 +358,10 @@ auto Parser::ParseExpr() -> Result<ParsedExpr*> {
                 if (not At(Tk::Identifier)) {
                     Error("Expected identifier after '.'");
                     SkipTo(Tk::Semicolon);
-                    return Diag();
+                    return {};
                 }
 
-                lhs = new (*this) ParsedMemberExpr(*lhs, tok->text, {lhs->loc, tok->location});
+                lhs = new (*this) ParsedMemberExpr(lhs.get(), tok->text, {lhs.get()->loc, tok->location});
                 ++tok;
                 continue;
             }
@@ -379,7 +378,7 @@ void Parser::ParseFile() {
     ParsePreamble();
     while (not At(Tk::Eof))
         if (auto stmt = ParseStmt())
-            mod->top_level.push_back(*stmt);
+            mod->top_level.push_back(stmt.get());
 }
 
 // <header> ::= "program" <module-name> ";"
@@ -428,8 +427,8 @@ void Parser::ParseImport() {
         auto it = rgs::find_if(mod->imports, FindExisting);
         it != mod->imports.end()
     ) {
-        Diag::Warning(ctx, loc, "Duplicate import ignored");
-        Diag::Note(ctx, it->loc, "Previous import was here");
+        Warn(loc, "Duplicate import ignored");
+        Note(it->loc, "Previous import was here");
     } else {
         mod->imports.emplace_back(linkage_name, tok->text, loc);
     }
@@ -445,12 +444,12 @@ void Parser::ParsePreamble() {
 }
 
 // <stmt> ::= <decl> | <expr> ";"
-auto Parser::ParseStmt() -> Result<ParsedExpr*> {
+auto Parser::ParseStmt() -> Ptr<ParsedExpr> {
     if (auto res = ParseExpr()) {
-        if (not isa<ParsedDecl>(*res)) ConsumeOrError(Tk::Semicolon);
+        if (not isa<ParsedDecl>(res.get())) ConsumeOrError(Tk::Semicolon);
         return res;
     }
 
     SkipTo(Tk::Semicolon);
-    return Diag();
+    return {};
 }
