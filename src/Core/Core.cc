@@ -1,8 +1,8 @@
 module;
 
-#include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <filesystem>
 #include <fmt/std.h>
+#include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -14,7 +14,7 @@ module;
 #include <thread>
 
 #ifdef __linux__
-#   include <unistd.h>
+#    include <unistd.h>
 #endif
 
 module srcc;
@@ -269,41 +269,7 @@ auto Location::text(const Context& ctx) const -> StringRef {
 // ============================================================================
 //  Diagnostics
 // ============================================================================
-/// Get the colour of a diagnostic.
-constexpr auto Colour(utils::Colours C, Diagnostic::Level kind) -> std::string_view {
-    using Kind = Diagnostic::Level;
-    using enum utils::Colour;
-    switch (kind) {
-        case Kind::ICE: return C(Magenta);
-        case Kind::Warning: return C(Yellow);
-        case Kind::Note: return C(Green);
-        case Kind::Error: return C(Red);
-    }
-    return C(None);
-}
-
-/// Get the name of a diagnostic.
-constexpr auto Name(Diagnostic::Level kind) -> std::string_view {
-    using Kind = Diagnostic::Level;
-    switch (kind) {
-        case Kind::ICE: return "Internal Compiler Error";
-        case Kind::Error: return "Error";
-        case Kind::Warning: return "Warning";
-        case Kind::Note: return "Note";
-    }
-    return "<Invalid Diagnostic Level>";
-}
-
-/// Remove project directory from filename.
-constexpr auto NormaliseFilename(std::string_view filename) -> std::string_view {
-    if (auto pos = filename.find(SOURCE_PROJECT_DIR_NAME); pos != std::string_view::npos) {
-        static constexpr std::string_view name{SOURCE_PROJECT_DIR_NAME};
-        filename.remove_prefix(pos + name.size() + 1);
-    }
-    return filename;
-}
-
-void StreamingDiagnosticsEngine::report_impl(const Diagnostic& diag) {
+void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     utils::Colours C(ctx.use_colours());
     using enum utils::Colour;
 
@@ -325,8 +291,16 @@ void StreamingDiagnosticsEngine::report_impl(const Diagnostic& diag) {
             stream << fmt::format("{}{}: ", C(Bold), f->path());
 
         /// Print the message.
-        stream << fmt::format("{}{}{}: {}", C(Bold), Colour(C, diag.level), Name(diag.level), C(Reset));
-        stream << fmt::format("{}{}{}\n", C(Bold), diag.msg, C(Reset));
+        stream << fmt::format(
+            "{}{}{}: {}{}{}{}\n",
+            C(Bold),
+            Diagnostic::Colour(C, diag.level),
+            Diagnostic::Name(diag.level),
+            C(Reset),
+            C(Bold),
+            diag.msg,
+            C(Reset)
+        );
         return;
     }
 
@@ -353,13 +327,13 @@ void StreamingDiagnosticsEngine::report_impl(const Diagnostic& diag) {
     stream << fmt::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
 
     /// Print the diagnostic name and message.
-    stream << fmt::format("{}{}: ", Colour(C, diag.level), Name(diag.level));
+    stream << fmt::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
     stream << fmt::format("{}{}\n", C(Reset), diag.msg);
 
     /// Print the line up to the start of the location, the range in the right
     /// colour, and the rest of the line.
     stream << fmt::format(" {} | {}", line, before);
-    stream << fmt::format("{}{}{}{}", C(Bold), Colour(C, diag.level), range, C(Reset));
+    stream << fmt::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
     stream << fmt::format("{}\n", after);
 
     /// Determine the number of digits in the line number.
@@ -379,7 +353,7 @@ void StreamingDiagnosticsEngine::report_impl(const Diagnostic& diag) {
         stream << " ";
 
     /// Finally, underline the range.
-    stream << fmt::format("{}{}", C(Bold), Colour(C, diag.level));
+    stream << fmt::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
     for (usz i = 0, end = ColumnWidth(range); i < end; i++) stream << "~";
     stream << "\n";
 }

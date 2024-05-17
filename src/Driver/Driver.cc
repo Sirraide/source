@@ -23,6 +23,7 @@ module;
 #include <filesystem>
 #include <fmt/std.h>
 #include <future>
+#include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ThreadPool.h>
 #include <mutex>
@@ -33,6 +34,7 @@ module;
 
 module srcc.driver;
 import srcc;
+import srcc.frontend.verifier;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
 import srcc.codegen;
@@ -42,24 +44,58 @@ using namespace srcc;
 // ============================================================================
 //  Internals
 // ============================================================================
+class DriverThreadPool {
+    std::optional<llvm::StdThreadPool> thread_pool;
+
+public:
+    DriverThreadPool(u32 num_threads) {
+        if (num_threads != 1) thread_pool.emplace(llvm::ThreadPoolStrategy(num_threads));
+    }
+
+    /// Run a task asynchronously.
+    template <typename Task>
+    auto run(Task task) -> std::shared_future<decltype(task())>;
+
+    /// Wait for all tasks to finish.
+    void wait();
+};
+
 struct Driver::Impl {
+    Options opts;
+    DriverThreadPool thread_pool;
     SmallVector<File::Path> files;
-    llvm::DefaultThreadPool thread_pool;
     Context ctx;
     std::mutex mutex;
     bool compiled = false;
 
-    int run_job(Action action);
+    Impl(Options opts) : opts(opts), thread_pool(opts.num_threads) {}
 
-    auto ParseFile(const File::Path& path) -> ParsedModule*;
+    int run_job();
+
+    /// Parse a file and return the parsed module.
+    auto ParseFile(const File::Path& path, bool verify) -> ParsedModule*;
 };
 
-int Driver::Impl::run_job(Action action) {
+int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
 
-    // Create diags engine.
-    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx));
+
+    // Verifier can only run in sema/parse mode.
+    if (opts.verify and opts.action != Action::Parse and opts.action != Action::Sema) {
+        StreamingDiagnosticsEngine::Create(ctx)->diag(
+            Diagnostic::Level::Error,
+            Location(),
+            "--verify requires either --sema or --parse"
+        );
+        return 1;
+    }
+
+    // Initialise.
+    ctx.set_diags(opts.verify ? VerifyDiagnosticsEngine::Create(ctx) : StreamingDiagnosticsEngine::Create(ctx));
+
+    // Disable colours in verify mode.
+    ctx.enable_colours(opts.colours and not opts.verify);
 
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
@@ -74,7 +110,7 @@ int Driver::Impl::run_job(Action action) {
 
     // Parse files in parallel.
     SmallVector<std::shared_future<ParsedModule*>> futures;
-    for (const auto& f : files) futures.push_back(thread_pool.async([&] { return ParseFile(f); }));
+    for (const auto& f : files) futures.push_back(thread_pool.run([&] { return ParseFile(f, opts.verify); }));
 
     // Wait for all modules to be parsed.
     thread_pool.wait();
@@ -86,18 +122,29 @@ int Driver::Impl::run_job(Action action) {
         parsed_modules.emplace_back(ptr);
     }
 
+    // Run the verifier.
+    const auto Verify = [&] {
+        auto& engine = static_cast<VerifyDiagnosticsEngine&>(ctx.diags());
+        return engine.verify() ? 0 : 1;
+    };
+
     // Dump modules if we should only do parsing.
-    if (action == Action::Parse) {
-        for (auto& m : parsed_modules) m->dump();
-        return 0;
+    if (opts.action == Action::Parse) {
+        if (opts.verify) return Verify();
+        if (opts.print_ast)
+            for (auto& m : parsed_modules)
+                m->dump();
+        return ctx.diags().has_error();
     }
 
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
+    if (ctx.diags().has_error()) return 1;
     auto module = Sema::Translate(parsed_modules);
-    if (action == Action::AST) {
-        module->dump();
-        return 0;
+    if (opts.action == Action::Sema) {
+        if (opts.verify) return Verify();
+        if (opts.print_ast) module->dump();
+        return ctx.diags().has_error();
     }
 
     // Don’t try and codegen if there was an error.
@@ -107,27 +154,41 @@ int Driver::Impl::run_job(Action action) {
     std::exit(42);
 }
 
-auto Driver::Impl::ParseFile(const File::Path& path) -> ParsedModule* {
+auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {
+    auto engine = verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
     auto& f = ctx.get_file(path);
-    return Parser::Parse(f).release();
+    return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr).release();
+}
+
+template <typename Task>
+auto DriverThreadPool::run(Task task) -> std::shared_future<decltype(task())> {
+    // If we’re using more than one thread, run this normally.
+    if (thread_pool.has_value()) return thread_pool->async(std::move(task));
+
+    // Otherwise, run it on the main thread.
+    using RetVal = decltype(task());
+    std::promise<RetVal> promise;
+    promise.set_value(task());
+    return promise.get_future();
+}
+
+void DriverThreadPool::wait() {
+    // No-op if we’re in single-threaded mode.
+    if (thread_pool.has_value()) thread_pool->wait();
 }
 
 // ============================================================================
 //  API
 // ============================================================================
 SRCC_DEFINE_HIDDEN_IMPL(Driver);
-Driver::Driver() : impl(new Impl) {}
+Driver::Driver(Options opts) : impl(new Impl{opts}) {}
 
 void Driver::add_file(std::string_view file_path) {
     std::unique_lock _{impl->mutex};
     impl->files.push_back(File::Path(file_path));
 }
 
-int Driver::run_job(Action action) {
+int Driver::run_job() {
     std::unique_lock _{impl->mutex};
-    return impl->run_job(action);
-}
-
-void Driver::enable_colours(bool enable) {
-    impl->ctx.enable_colours(enable);
+    return impl->run_job();
 }

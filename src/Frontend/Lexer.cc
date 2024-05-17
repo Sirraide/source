@@ -99,12 +99,13 @@ const StringMap<Tk> keywords = {
 struct Lexer {
     TokenStream& tokens;
     const File& f;
+    Parser::CommentTokenCallback comment_token_handler;
     const char* curr;
     const char* const end;
     char lastc;
     bool raw_mode = false;
 
-    Lexer(TokenStream& into, const File& f);
+    Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb);
 
     auto tok() -> Token& { return tokens.back(); }
 
@@ -115,6 +116,7 @@ struct Lexer {
 
     auto CurrOffs() -> u32;
     auto CurrLoc() -> Location;
+    void HandleCommentToken();
     void LexEscapedId();
     void LexIdentifier();
     void LexNumber();
@@ -122,18 +124,18 @@ struct Lexer {
     void Next();
     void NextChar();
     void NextImpl();
-    void SkipLine();
     void SkipWhitespace();
 };
 
-void Parser::ReadTokens(const File& file) {
-    Lexer(stream, file);
+void Parser::ReadTokens(const File& file, CommentTokenCallback cb) {
+    Lexer(stream, file, std::move(cb));
     tok = stream.begin();
 }
 
-Lexer::Lexer(TokenStream& into, const File& f)
+Lexer::Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb)
     : tokens{into},
       f{f},
+      comment_token_handler{std::move(cb)},
       curr{f.data()},
       end{curr + f.size()} {
     NextChar();
@@ -336,7 +338,8 @@ void Lexer::NextImpl() {
                 NextChar();
                 tok().type = Tk::SlashEq;
             } else if (lastc == '/') {
-                SkipLine();
+                NextChar();
+                HandleCommentToken();
                 NextImpl();
                 return;
             } else {
@@ -499,8 +502,29 @@ void Lexer::NextImpl() {
     if (curr == end and not lastc) tok().location.len++;
 }
 
-void Lexer::SkipLine() {
-    while (lastc != '\n' && lastc != 0) NextChar();
+void Lexer::HandleCommentToken() {
+    const auto KeepSkipping = [&]{ return lastc != '\n' && lastc != 0; };
+
+    // If we were asked to lex comment tokens, do so and dispatch it. To
+    // keep the parser from having to deal with these, they never enter
+    // the token stream.
+    if (comment_token_handler) {
+        Token token{Tk::Comment};
+        std::string text;
+        while (KeepSkipping()) {
+            text += lastc;
+            NextChar();
+        }
+
+        token.text = tokens.save(text);
+        token.location = tok().location;
+        token.location.len = u16(text.size()) + 2;
+        comment_token_handler(token);
+        return;
+    }
+
+    // Otherwise, just skip past the comment.
+    while (KeepSkipping()) NextChar();
 }
 
 void Lexer::SkipWhitespace() {

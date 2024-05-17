@@ -259,6 +259,12 @@ public:
 
 class srcc::Parser : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Parser);
+
+public:
+    /// Type of the callback used to handle comment tokens.
+    using CommentTokenCallback = std::function<void(const Token&)>;
+
+private:
     friend DiagsProducer;
     ParsedModule::Ptr mod;
     TokenStream stream;
@@ -267,7 +273,10 @@ class srcc::Parser : DiagsProducer<std::nullptr_t> {
 
 public:
     /// Parse a file.
-    static auto Parse(const File& file) -> ParsedModule::Ptr;
+    static auto Parse(
+        const File& file,
+        CommentTokenCallback comment_callback = {}
+    ) -> ParsedModule::Ptr;
 
     /// Allocate data.
     void* Allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
@@ -305,7 +314,7 @@ private:
     /// Read all tokens from a file.
     ///
     /// Implemented in Lexer.cc.
-    void ReadTokens(const File& file);
+    void ReadTokens(const File& file, CommentTokenCallback cb);
 
     /// Skip to and past a token.
     void SkipTo(std::same_as<Tk> auto... tks) {

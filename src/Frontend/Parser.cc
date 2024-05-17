@@ -251,9 +251,9 @@ bool Parser::ConsumeOrError(Tk tk) {
 // ============================================================================
 //  Parser
 // ============================================================================
-auto Parser::Parse(const File& file) -> std::unique_ptr<ParsedModule> {
+auto Parser::Parse(const File& file, CommentTokenCallback cb) -> std::unique_ptr<ParsedModule> {
     Parser P{file};
-    P.ReadTokens(file);
+    P.ReadTokens(file, std::move(cb));
     P.ParseFile();
     return std::move(P.mod);
 }

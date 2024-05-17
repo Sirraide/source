@@ -328,6 +328,16 @@ struct Colours {
     }
 };
 
+/// Erase an element from a container without maintaining order.
+template <typename Container, typename Iterator>
+void erase_unordered(Container& container, Iterator it) {
+    if (container.size() == 1) container.erase(it);
+    else {
+        std::iter_swap(it, container.end() - 1);
+        container.pop_back();
+    }
+}
+
 /// Escape non-printable characters in a string.
 auto Escape(StringRef str) -> std::string;
 

@@ -1,2 +1,2 @@
 // V %srcc --parse --verify %s
-program;
+program; // expected-error: Expected identifier in 'program' directive

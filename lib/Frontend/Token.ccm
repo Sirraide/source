@@ -26,6 +26,7 @@ enum struct srcc::Tk : u8 {
     CXXHeaderName,
     Integer,
     StringLiteral,
+    Comment,
 
     /// Keywords.
     Alias,
@@ -246,6 +247,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::StringLiteral: return "<string literal>";
         case Tk::Integer: return "<integer>";
         case Tk::IntegerType: return "<integer type>";
+        case Tk::Comment: return "<comment>";
 
         case Tk::Alias: return "alias";
         case Tk::And: return "and";
@@ -387,6 +389,7 @@ bool Token::operator==(const Token& b) {
             return integer == b.integer;
 
         /// All these are trivially equal.
+        case Tk::Comment:
         case Tk::Invalid:
         case Tk::Eof:
 

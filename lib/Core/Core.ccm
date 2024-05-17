@@ -196,6 +196,31 @@ public:
         fmt::format_string<Args...> fmt,
         Args&&... args
     ) : Diagnostic{lvl, where, fmt::format(fmt, std::forward<Args>(args)...)} {}
+
+    /// Get the colour of a diagnostic.
+    static constexpr auto Colour(utils::Colours C, Level kind) -> std::string_view {
+        using Kind = Level;
+        using enum utils::Colour;
+        switch (kind) {
+            case Kind::ICE: return C(Magenta);
+            case Kind::Warning: return C(Yellow);
+            case Kind::Note: return C(Green);
+            case Kind::Error: return C(Red);
+        }
+        return C(None);
+    }
+
+    /// Get the name of a diagnostic.
+    static constexpr auto Name(Level kind) -> std::string_view {
+        using Kind = Level;
+        switch (kind) {
+            case Kind::ICE: return "Internal Compiler Error";
+            case Kind::Error: return "Error";
+            case Kind::Warning: return "Warning";
+            case Kind::Note: return "Note";
+        }
+        return "<Invalid Diagnostic Level>";
+    }
 };
 
 /// This class handles dispatching diagnostics. Objects of this
@@ -229,18 +254,18 @@ public:
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
 
     /// Issue a diagnostic.
-    void report(const Diagnostic& diag) {
+    void report(Diagnostic&& diag) {
         if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
             error_flag.store(true, std::memory_order_relaxed);
 
         // Use a lock to avoid interleaving diagnostics.
         std::unique_lock _{mtx};
-        report_impl(diag);
+        report_impl(std::move(diag));
     }
 
 protected:
     /// Override this to implement the actual reporting.
-    virtual void report_impl(const Diagnostic& diag) = 0;
+    virtual void report_impl(Diagnostic&& diag) = 0;
 };
 
 /// Diagnostics engine that outputs to a stream.
@@ -263,7 +288,7 @@ public:
     }
 
 private:
-    void report_impl(const Diagnostic& diag) override;
+    void report_impl(Diagnostic&&) override;
 };
 
 /// Mixin to provide helper functions to issue diagnostics.
@@ -292,57 +317,6 @@ public:
         This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
     }
 };
-
-/*template <>
-class srcc::Result<void> {
-public:
-    using ValueType = void;
-
-private:
-    // Diag already has an empty state; no need to bother
-    // w/ optionals here.
-    Diagnostic diag;
-
-public:
-    /// Create an result that contains an empty error.
-    Result() = default;
-    Result(const Result&) = delete;
-    Result& operator=(const Result&) = delete;
-    Result(Result&&) = default;
-    Result& operator=(Result&&) = default;
-
-    /// Create a result that contains a diagnostic.
-    Result(Diagnostic d) : diag(std::move(d)) {}
-
-    /// Create a result from another result.
-    template <typename U>
-    requires (not is<U, void>)
-    Result(Result<U> other) {
-        if (not other) diag = other.error();
-        else diag = Diagnostic();
-    }
-
-    /// Transform an LLVM error to a diagnostic.
-    template <typename Formatter>
-    [[nodiscard]] static auto Error(llvm::Error&& e, Formatter format) -> Result {
-        if (e) {
-            std::string Text;
-            handleAllErrors(std::move(e), [&](const llvm::ErrorInfoBase& e) { Text = format(e); });
-            return Diagnostic::Error("{}", Text);
-        }
-
-        return {};
-    }
-
-    /// Access the error; this automatically moves to simplify propagating errors.
-    [[nodiscard]] auto error() -> Diagnostic&& {
-        Assert(not diag.is_suppressed(), "Result must hold a error");
-        return std::move(diag);
-    }
-
-    /// Check whether this contains a value.
-    [[nodiscard]] explicit operator bool() const { return diag.is_suppressed(); }
-};*/
 
 /// A file in the context.
 class srcc::File {

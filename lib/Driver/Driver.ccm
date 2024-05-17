@@ -15,19 +15,38 @@ enum struct srcc::Action : srcc::u8 {
     /// executables and modules and save them to disk.
     Compile,
 
-    /// Print parse tree only and exit.
+    /// Parse only and exit.
     Parse,
 
-    /// Print the AST only and exit.
-    AST,
+    /// Run sema only and exit.
+    Sema,
 };
 
 class srcc::Driver {
     SRCC_DECLARE_HIDDEN_IMPL(Driver);
 
 public:
-    /// Create a new driver with default options.
-    explicit Driver();
+    struct Options {
+        /// The action to perform.
+        Action action;
+
+        /// Number of threads to use for compilation.
+        u32 num_threads;
+
+        /// Whether to print the AST as part of the job. If the action
+        /// specified as Parse or Sema, this only prints the parse tree
+        /// or AST, respectively.
+        bool print_ast : 1;
+
+        /// Whether to run in verify-diagnostics mode.
+        bool verify : 1;
+
+        /// Whether to use colours in the output.
+        bool colours : 1;
+    };
+
+    /// Create a new driver.
+    explicit Driver(Options opts);
 
     /// Add a file to the list of files to compile.
     void add_file(std::string_view file_path);
@@ -35,8 +54,5 @@ public:
     /// Run compile jobs.
     ///
     /// \return 0 on success, non-zero on failure.
-    int run_job(Action action = Action::Compile);
-
-    /// Enable colours.
-    void enable_colours(bool enable);
+    int run_job();
 };

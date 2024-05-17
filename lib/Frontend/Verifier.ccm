@@ -1,0 +1,67 @@
+module;
+
+#include <functional>
+#include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <string>
+
+export module srcc.frontend.verifier;
+import srcc;
+import srcc.frontend.parser;
+import srcc.frontend.token;
+
+export namespace srcc {
+class VerifyDiagnosticsEngine;
+}
+
+// ============================================================================
+//  Diagnostic Verifier
+// ============================================================================
+class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine {
+    struct DecodedLocation {
+        const File* file;
+        usz line;
+        constexpr auto operator<=>(const DecodedLocation&) const = default;
+    };
+
+    struct ExpectedDiagnostic {
+        Diagnostic::Level level;
+        std::string text;
+        DecodedLocation loc;
+        bool seen = false;
+    };
+
+    struct SeenDiagnostic {
+        Diagnostic diag;
+        DecodedLocation loc;
+    };
+
+    SmallVector<SeenDiagnostic, 0> seen_diags;
+    SmallVector<ExpectedDiagnostic, 0> expected_diags;
+    bool expects_none = false;
+    bool enable_colours;
+
+public:
+    explicit VerifyDiagnosticsEngine(const Context& ctx);
+
+    /// Get the comment callback that should be called by the lexer
+    /// when it encounters a comment token.
+    auto comment_token_callback() -> Parser::CommentTokenCallback {
+        return [this](const Token& tok) { HandleCommentToken(tok); };
+    }
+
+    void report_impl(Diagnostic&& diags) override;
+
+    /// Run the verification step.
+    ///
+    /// \return True on success.
+    bool verify();
+
+    /// Create a new diagnostic engine.
+    [[nodiscard]] static auto Create(const Context& ctx) -> Ptr {
+        return llvm::IntrusiveRefCntPtr(new VerifyDiagnosticsEngine(ctx));
+    }
+
+private:
+    auto DecodeLocation(Location loc) -> DecodedLocation;
+    void HandleCommentToken(const Token& tok);
+};
