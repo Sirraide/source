@@ -46,12 +46,19 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
         auto res = LookUpUnqualifiedName(in_scope, first, false);
         switch (res.result) {
             using enum LookupResult::Reason;
-            case Success: in_scope = GetScopeFromDecl(res.decls.front()).get(); break;
+            case Success: {
+                auto scope = GetScopeFromDecl(res.decls.front());
+                if (scope.invalid()) return LookupResult::NonScopeInPath(first, res.decls.front());
+                in_scope = scope.get();
+            } break;
 
-            // These are a hard error here.
+            // This is a hard error here.
             case Ambiguous:
-            case NonScopeInPath:
                 return res;
+
+            // Unqualified lookup should never complain about this.
+            case NonScopeInPath:
+                Unreachable("Non-scope error in unqualified lookup?");
 
             // Search module names here.
             //
@@ -132,7 +139,7 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc){
         } break;
         case NonScopeInPath: {
             Error(loc, "Invalid left-hand side for '::'");
-            Note(result.decls.front()->location(), "'{}' does not contain to a scope", result.name);
+            Note(result.decls.front()->location(), "'{}' does not contain a scope", result.name);
         } break;
     }
 }

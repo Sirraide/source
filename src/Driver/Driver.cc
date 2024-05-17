@@ -137,9 +137,13 @@ int Driver::Impl::run_job() {
         return ctx.diags().has_error();
     }
 
+    if (ctx.diags().has_error()) {
+        Verify();
+        return 1;
+    }
+
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
-    if (ctx.diags().has_error()) return 1;
     auto module = Sema::Translate(parsed_modules);
     if (opts.action == Action::Sema) {
         if (opts.verify) return Verify();
@@ -148,6 +152,7 @@ int Driver::Impl::run_job() {
     }
 
     // Don’t try and codegen if there was an error.
+    Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
     auto ir_module = CodeGen::Emit(*module);
     ir_module->dump();
