@@ -1,0 +1,4 @@
+// V %srcc --parse --verify %s
+program test;
+
+foo() // expected-error: Expected ';'

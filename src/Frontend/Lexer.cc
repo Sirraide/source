@@ -8,9 +8,9 @@ import srcc.frontend.token;
 import srcc.utils;
 using namespace srcc;
 
-/// ===========================================================================
-///  Lexer — Helpers and Data.
-/// ===========================================================================
+// ===========================================================================
+//  Lexer — Helpers and Data.
+// ===========================================================================
 /// Check if a character is allowed at the start of an identifier.
 constexpr bool IsStart(char c) {
     return std::isalpha(static_cast<unsigned char>(c)) or c == '_' or c == '$';
@@ -26,7 +26,7 @@ constexpr bool IsDecimal(char c) { return c >= '0' and c <= '9'; }
 constexpr bool IsOctal(char c) { return c >= '0' and c <= '7'; }
 constexpr bool IsHex(char c) { return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F'); }
 
-/// All keywords.
+// All keywords.
 const StringMap<Tk> keywords = {
     {"alias", Tk::Alias},
     {"and", Tk::And},
@@ -93,9 +93,9 @@ const StringMap<Tk> keywords = {
     {"__srcc_ffi_wchar", Tk::CWCharT},
 };
 
-/// ========================================================================
-///  Main lexer implementation.
-/// ========================================================================
+// ========================================================================
+//  Main lexer implementation.
+// ========================================================================
 struct Lexer {
     TokenStream& tokens;
     const File& f;
@@ -160,22 +160,22 @@ void Lexer::NextChar() {
 
     lastc = *curr++;
 
-    /// Collapse CR LF and LF CR to a single newline,
-    /// but keep CR CR and LF LF as two newlines.
+    // Collapse CR LF and LF CR to a single newline,
+    // but keep CR CR and LF LF as two newlines.
     if (lastc == '\r' || lastc == '\n') {
-        /// Two newlines in a row.
+        // Two newlines in a row.
         if (curr != end && (*curr == '\r' || *curr == '\n')) {
             bool same = lastc == *curr;
             lastc = '\n';
 
-            /// CR CR or LF LF.
+            // CR CR or LF LF.
             if (same) return;
 
-            /// CR LF or LF CR.
+            // CR LF or LF CR.
             curr++;
         }
 
-        /// Either CR or LF followed by something else.
+        // Either CR or LF followed by something else.
         lastc = '\n';
     }
 }
@@ -183,27 +183,31 @@ void Lexer::NextChar() {
 void Lexer::NextImpl() {
     tok().location.file_id = u16(f.file_id());
 
-    /// Tokens are not artificial by default.
+    // Tokens are not artificial by default.
     tok().artificial = false;
 
-    /// Skip whitespace.
+    // Skip whitespace.
     SkipWhitespace();
 
-    /// Keep returning EOF if we're at EOF.
+    // Keep returning EOF if we're at EOF.
     if (lastc == 0) {
         tok().type = Tk::Eof;
+
+        // Fudge the location to be *something* valid.
+        tok().location.pos = u32(f.size() - 1);
+        tok().location.len = 1;
         return;
     }
 
-    /// Reset the token. We set the token type to 'invalid' here so that,
-    /// if we encounter an error, we can just issue a diagnostic and return
-    /// without setting the token type. The parser will then stop because
-    /// it encounters an invalid token.
+    // Reset the token. We set the token type to 'invalid' here so that,
+    // if we encounter an error, we can just issue a diagnostic and return
+    // without setting the token type. The parser will then stop because
+    // it encounters an invalid token.
     tok().artificial = false;
     tok().type = Tk::Invalid;
     tok().location.pos = CurrOffs();
 
-    /// Lex the token.
+    // Lex the token.
     switch (lastc) {
         case '\\':
             LexEscapedId();
@@ -403,7 +407,7 @@ void Lexer::NextImpl() {
         case '<':
             NextChar();
 
-            /// Handle C++ header names.
+            // Handle C++ header names.
             if (tokens.size() > 1 and tokens[tokens.size() - 2].type == Tk::Import) {
                 tempset raw_mode = true;
                 tok().type = Tk::CXXHeaderName;
@@ -421,7 +425,7 @@ void Lexer::NextImpl() {
 
                 tok().text = tokens.save(text);
 
-                /// Bring the lexer back into sync.
+                // Bring the lexer back into sync.
                 NextChar();
                 break;
             }
@@ -497,7 +501,7 @@ void Lexer::NextImpl() {
             }
     }
 
-    /// Set the end of the token.
+    // Set the end of the token.
     tok().location.len = u16(u64(curr - f.data()) - tok().location.pos - 1);
     if (curr == end and not lastc) tok().location.len++;
 }
@@ -540,116 +544,116 @@ void Lexer::LexIdentifier() {
     } while (IsContinue(lastc));
     tok().text = tokens.save(text);
 
-    /// Helper to parse keywords and integer types.
+    // Helper to parse keywords and integer types.
     const auto LexSpecialToken = [&] {
         if (auto k = keywords.find(tok().text); k != keywords.end()) {
             tok().type = k->second;
 
-            /// Handle "for~".
+            // Handle "for~".
             if (tok().type == Tk::For and lastc == '~') {
                 NextChar();
                 tok().type = Tk::ForReverse;
             }
         } else if (tok().text.starts_with("i")) {
-            /// Note: this returns true on error.
+            // Note: this returns true on error.
             if (not StringRef(tok().text).substr(1).getAsInteger(10, tok().integer))
                 tok().type = Tk::IntegerType;
         }
     };
 
-    /// In raw mode, special processing is disabled. This is used for
-    /// parsing the argument and expansion lists of macros, as well as
-    /// for handling __id.
+    // In raw mode, special processing is disabled. This is used for
+    // parsing the argument and expansion lists of macros, as well as
+    // for handling __id.
     if (raw_mode) return LexSpecialToken();
 
-    /// TODO: If we decide to support lexer macros, check for macro
-    /// definitions and expansions here.
+    // TODO: If we decide to support lexer macros, check for macro
+    // definitions and expansions here.
 
-    /// Check for keywords and ints.
+    // Check for keywords and ints.
     LexSpecialToken();
 }
 
 void Lexer::LexNumber() {
-    /// Helper function that actually parses a number.
+    // Helper function that actually parses a number.
     auto lex_number_impl = [this](bool pred(char), unsigned base) {
-        /// Need at least one digit.
+        // Need at least one digit.
         if (not pred(lastc)) {
             Error(CurrLoc() << 1 <<= 1, "Invalid integer literal");
             return;
         }
 
-        /// Parse the literal.
+        // Parse the literal.
         SmallString<64> buf;
         while (pred(lastc)) {
             buf += lastc;
             NextChar();
         }
 
-        /// The next character must not be a start character.
+        // The next character must not be a start character.
         if (IsStart(lastc)) {
             Error(Location{tok().location, CurrLoc()}, "Invalid character in integer literal: '{}'", lastc);
             return;
         }
 
-        /// We have a valid integer literal!
+        // We have a valid integer literal!
         tok().type = Tk::Integer;
 
-        /// Note: This returns true on error!
+        // Note: This returns true on error!
         tok().integer = APInt{};
         Assert(not buf.str().getAsInteger(base, tok().integer));
     };
 
-    /// If the first character is a 0, then this might be a non-decimal constant.
+    // If the first character is a 0, then this might be a non-decimal constant.
     if (lastc == 0) {
         NextChar();
 
-        /// Hexadecimal literal.
+        // Hexadecimal literal.
         if (lastc == 'x' or lastc == 'X') {
             NextChar();
             return lex_number_impl(IsHex, 16);
         }
 
-        /// Octal literal.
+        // Octal literal.
         if (lastc == 'o' or lastc == 'O') {
             NextChar();
             return lex_number_impl(IsOctal, 8);
         }
 
-        /// Binary literal.
+        // Binary literal.
         if (lastc == 'b' or lastc == 'B') {
             NextChar();
             return lex_number_impl(IsBinary, 2);
         }
 
-        /// Multiple leading 0’s are not permitted.
+        // Multiple leading 0’s are not permitted.
         if (std::isdigit(lastc)) {
             Error(CurrLoc() << 1, "Leading 0 in integer literal. (Hint: Use 0o/0O for octal literals)");
             return;
         }
 
-        /// Integer literal must be a literal 0.
+        // Integer literal must be a literal 0.
         if (IsStart(lastc)) {
             Error(CurrLoc() <<= 1, "Invalid character in integer literal: '{}'", lastc);
             return;
         }
 
-        /// Integer literal is 0.
+        // Integer literal is 0.
         tok().type = Tk::Integer;
         tok().integer = 0;
         return;
     }
 
-    /// If the first character is not 0, then we have a decimal literal.
+    // If the first character is not 0, then we have a decimal literal.
     return lex_number_impl(IsDecimal, 10);
 }
 
 void Lexer::LexString(char delim) {
-    /// Yeet the delimiter.
+    // Yeet the delimiter.
     SmallString<32> text;
     NextChar();
 
-    /// Lex the string. If it’s a raw string, we don’t need to
-    /// do any escaping.
+    // Lex the string. If it’s a raw string, we don’t need to
+    // do any escaping.
     if (delim == '\'') {
         while (lastc != delim && lastc != 0) {
             text += lastc;
@@ -657,7 +661,7 @@ void Lexer::LexString(char delim) {
         }
     }
 
-    /// Otherwise, we also need to replace escape sequences.
+    // Otherwise, we also need to replace escape sequences.
     else if (delim == '"') {
         while (lastc != delim && lastc != 0) {
             if (lastc == '\\') {
@@ -685,13 +689,13 @@ void Lexer::LexString(char delim) {
         }
     }
 
-    /// Other string delimiters are invalid.
+    // Other string delimiters are invalid.
     else {
         Error(CurrLoc() << 1, "Invalid delimiter: {}", delim);
         return;
     }
 
-    /// Make sure we actually have a delimiter.
+    // Make sure we actually have a delimiter.
     if (lastc != delim) {
         Error(CurrLoc() << 1, "Unterminated string literal");
         return;
@@ -700,21 +704,21 @@ void Lexer::LexString(char delim) {
     tok().text = tokens.save(text);
     NextChar();
 
-    /// This is a valid string.
+    // This is a valid string.
     tok().type = Tk::StringLiteral;
 }
 
 void Lexer::LexEscapedId() {
-    /// Yeet backslash.
+    // Yeet backslash.
     tempset raw_mode = true;
     auto start = tok().location;
     NextImpl();
 
-    /// Mark this token as ‘artificial’. This is so we can e.g. nest
-    /// macro definitions using `\expands` and `\endmacro`.
+    // Mark this token as ‘artificial’. This is so we can e.g. nest
+    // macro definitions using `\expands` and `\endmacro`.
     tok().artificial = true;
 
-    /// If the next token is anything other than "(", then it becomes the name.
+    // If the next token is anything other than "(", then it becomes the name.
     if (tok().type != Tk::LParen) {
         tok().type = Tk::Identifier;
         tok().text = tok().spelling();
@@ -722,7 +726,7 @@ void Lexer::LexEscapedId() {
         return;
     }
 
-    /// If the token is "(", then everything up to the next ")" is the name.
+    // If the token is "(", then everything up to the next ")" is the name.
     tok().type = Tk::Identifier;
     SmallString<32> text;
     while (lastc != ')' and lastc != 0) {
@@ -730,14 +734,14 @@ void Lexer::LexEscapedId() {
         NextChar();
     }
 
-    /// EOF.
+    // EOF.
     if (lastc == 0) {
         Error(start, "EOF reached while lexing \\(...");
         tok().type = Tk::Invalid;
         return;
     }
 
-    /// Skip the ")".
+    // Skip the ")".
     tokens.save(text);
     tok().location = {start, tok().location};
     NextChar();

@@ -95,6 +95,21 @@ bool VerifyDiagnosticsEngine::verify() {
         );
     }
 
+    // Conversely, also complain if we saw nothing at all.
+    if (not expects_none and expected_diags.empty()) {
+        ok = false;
+        fmt::print(
+            stderr,
+            "{}{}Error: {}{}Expected at least one 'expected-' directive. Use "
+            "'expected-no-diagnostics' if no diagnostics are expected.{}\n",
+            C(Bold),
+            C(Red),
+            C(Reset),
+            C(Bold),
+            C(Reset)
+        );
+    }
+
     // Check that we have seen every diagnostic that we expect.
     for (auto& expected : expected_diags) {
         auto it = rgs::find_if(seen_diags, [&](const SeenDiagnostic& sd) {
