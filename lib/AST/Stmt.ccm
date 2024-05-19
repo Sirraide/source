@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/Support/TrailingObjects.h>
 #include <memory>
@@ -82,7 +83,7 @@ protected:
 public:
     // Only allow allocating these in the module.
     void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
-    void* operator new(usz size, Module& mod);
+    void* operator new(usz size, TranslationUnit& mod);
 
     /// Get whether this statement is dependent.
     bool dependent() const { return (dependence() & Dependence::Instantiation) != Dependence::None; }
@@ -177,7 +178,7 @@ public:
     Scope* scope;
 
     static auto Create(
-        Module& mod,
+        TranslationUnit& mod,
         Scope* parent_scope,
         ArrayRef<Stmt*> stmts,
         u32 return_expr_index,
@@ -191,6 +192,43 @@ public:
     auto return_expr() -> Expr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BlockExpr; }
+};
+
+class srcc::BuiltinCallExpr final : public Expr
+    , TrailingObjects<BuiltinCallExpr, Expr*> {
+    friend TrailingObjects;
+
+public:
+    enum struct Builtin : u8 {
+        Print // __builtin_print
+    };
+
+    const Builtin builtin;
+
+private:
+    const u32 num_args;
+    auto numTrailingObjects(OverloadToken<Expr*>) -> usz { return num_args; }
+
+    BuiltinCallExpr(
+        Builtin kind,
+        Type return_type,
+        ArrayRef<Expr*> args,
+        Location location
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        Builtin kind,
+        Type return_type,
+        ArrayRef<Expr*> args,
+        Location location
+    ) -> BuiltinCallExpr*;
+
+    /// Get the arguments.
+    auto args() -> ArrayRef<Expr*> { return {getTrailingObjects<Expr*>(), num_args}; }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinCallExpr; }
 };
 
 class srcc::CallExpr final : public Expr
@@ -214,7 +252,7 @@ private:
 
 public:
     static auto Create(
-        Module& mod,
+        TranslationUnit& mod,
         Type type,
         Expr* callee,
         ArrayRef<Expr*> args,
@@ -253,7 +291,7 @@ private:
 
 public:
     static auto Create(
-        Module& mod,
+        TranslationUnit& mod,
         Expr* slice,
         Location location
     ) -> SliceDataExpr*;
@@ -273,7 +311,7 @@ private:
     ) : Expr{Kind::StrLitExpr, ty, location}, value{value} {}
 
 public:
-    static auto Create(Module& mod, String value, Location location) -> StrLitExpr*;
+    static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
 };

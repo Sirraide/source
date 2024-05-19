@@ -28,6 +28,7 @@
 AST_STMT(Stmt)
 AST_STMT(Expr)
 AST_STMT_LEAF(BlockExpr)
+AST_STMT_LEAF(BuiltinCallExpr)
 AST_STMT_LEAF(CallExpr)
 AST_STMT_LEAF(ProcRefExpr)
 AST_STMT_LEAF(SliceDataExpr)

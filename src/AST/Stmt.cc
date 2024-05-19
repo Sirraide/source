@@ -9,7 +9,7 @@ import :stmt;
 
 using namespace srcc;
 
-void* Stmt::operator new(usz size, Module& mod) {
+void* Stmt::operator new(usz size, TranslationUnit& mod) {
     return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
@@ -20,6 +20,28 @@ void Scope::add(Decl* d) {
 // ============================================================================
 //  AST
 // ============================================================================
+BuiltinCallExpr::BuiltinCallExpr(
+    Builtin kind,
+    Type return_type,
+    ArrayRef<Expr*> args,
+    Location location
+) : Expr{Kind::BuiltinCallExpr, return_type, location}, builtin{kind}, num_args{u32(args.size())} {
+    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<Expr*>());
+    ComputeDependence();
+}
+
+auto BuiltinCallExpr::Create(
+    TranslationUnit& tu,
+    Builtin kind,
+    Type return_type,
+    ArrayRef<Expr*> args,
+    Location location
+) -> BuiltinCallExpr* {
+    auto size = totalSizeToAlloc<Expr*>(args.size());
+    auto mem = tu.Allocate(size, alignof(BuiltinCallExpr));
+    return ::new (mem) BuiltinCallExpr{kind, return_type, args, location};
+}
+
 CallExpr::CallExpr(
     Type type,
     Expr* callee,
@@ -32,7 +54,7 @@ CallExpr::CallExpr(
 }
 
 auto CallExpr::Create(
-    Module& mod,
+    TranslationUnit& mod,
     Type type,
     Expr* callee,
     ArrayRef<Expr*> args,
@@ -59,7 +81,7 @@ BlockExpr::BlockExpr(
 }
 
 auto BlockExpr::Create(
-    Module& mod,
+    TranslationUnit& mod,
     Scope* parent_scope,
     ArrayRef<Stmt*> stmts,
     u32 idx,
@@ -85,13 +107,13 @@ auto ProcRefExpr::return_type() const -> Type {
     return decl->return_type();
 }
 
-auto SliceDataExpr::Create(Module& mod, Expr* slice, Location location) -> SliceDataExpr* {
+auto SliceDataExpr::Create(TranslationUnit& mod, Expr* slice, Location location) -> SliceDataExpr* {
     auto ty = ReferenceType::Get(mod, cast<SliceType>(slice->type)->elem());
     return new (mod) SliceDataExpr{ty, slice, location};
 }
 
 auto StrLitExpr::Create(
-    Module& mod,
+    TranslationUnit& mod,
     String value,
     Location location
 ) -> StrLitExpr* {
@@ -104,4 +126,15 @@ auto ProcDecl::proc_type() const -> ProcType* {
 
 auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
+}
+
+// ============================================================================
+//  Enum -> String
+// ============================================================================
+auto EnumToStr(BuiltinCallExpr::Builtin b) -> String {
+    switch (b) {
+        case BuiltinCallExpr::Builtin::Print: return "__builtin_print";
+    }
+
+    return "<invalid builtin>";
 }

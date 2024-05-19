@@ -17,22 +17,22 @@ using namespace srcc;
 class Sema::Importer {
     Sema& S;
     clang::ASTUnit& AST;
-    Module::Ptr Mod;
+    TranslationUnit::Ptr Mod;
     llvm::DenseSet<clang::Decl*> imported_decls;
 
 public:
     explicit Importer(Sema& S, clang::ASTUnit& AST) : S(S), AST(AST) {}
 
     /// Imports a module.
-    [[nodiscard]] auto Import(String name) -> Module::Ptr;
+    [[nodiscard]] auto Import(String name) -> TranslationUnit::Ptr;
     void ImportDecl(clang::Decl* D);
     void ImportFunction(clang::FunctionDecl* D);
     auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
 };
 
-auto Sema::Importer::Import(String name) -> Module::Ptr {
-    Mod = Module::Create(S.context(), name, true);
+auto Sema::Importer::Import(String name) -> TranslationUnit::Ptr {
+    Mod = TranslationUnit::Create(S.context(), name, true);
     auto* TU = AST.getASTContext().getTranslationUnitDecl();
     for (auto D : TU->decls()) ImportDecl(D);
     return std::move(Mod);
@@ -184,7 +184,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::RValueReference:
         case K::Pointer: {
             auto Elem = ImportType(T->getPointeeType());
-            if (not Elem) return nullptr;
+            if (not Elem) return std::nullopt;
             return ReferenceType::Get(*S.M, *Elem);
         }
 
@@ -196,21 +196,21 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::ConstantArray: {
             auto C = cast<clang::ConstantArrayType>(T);
             auto Elem = ImportType(C->getElementType());
-            if (not Elem) return nullptr;
+            if (not Elem) return std::nullopt;
             return ArrayType::Get(*S.M, *Elem, i64(C->getSize().getZExtValue()));
         }
 
         case K::FunctionProto: {
             auto FPT = cast<clang::FunctionProtoType>(T);
-            if (FPT->getCallConv() != clang::CallingConv::CC_C) return nullptr;
+            if (FPT->getCallConv() != clang::CallingConv::CC_C) return std::nullopt;
 
             auto Ret = FPT->getExtInfo().getNoReturn() ? S.M->NoReturnTy : ImportType(FPT->getReturnType());
-            if (not Ret) return nullptr;
+            if (not Ret) return std::nullopt;
 
             SmallVector<Type> Params;
             for (auto P : FPT->param_types()) {
                 auto T = ImportType(P);
-                if (not T) return nullptr;
+                if (not T) return std::nullopt;
                 Params.push_back(*T);
             }
 
@@ -225,7 +225,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     }
 }
 
-auto Sema::ImportCXXHeader(Location import_loc, String name) -> Module::Ptr {
+auto Sema::ImportCXXHeader(Location import_loc, String name) -> TranslationUnit::Ptr {
     // TODO: Try using `clang::tooling::buildASTFromCodeWithArgs()`.
     llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> overlay;
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> mem;

@@ -10,7 +10,7 @@ using namespace srcc;
 //  Serialiser
 // ============================================================================
 struct Serialiser {
-    const Module& M;
+    const TranslationUnit& M;
     SmallVectorImpl<char>& buffer;
     SmallVector<char, 0> types_buffer{};
     SmallVector<char, 0> decls_buffer{};
@@ -43,13 +43,13 @@ struct Serialiser {
         }
     };
 
-    Serialiser(const Module& M, SmallVectorImpl<char>& buffer);
+    Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer);
     void SerialiseDecl(const Decl*);
     void SerialiseProcDecl(const ProcDecl* proc);
     auto SerialiseType(Type ty) -> u64;
 };
 
-Serialiser::Serialiser(const Module& M, SmallVectorImpl<char>& buffer)
+Serialiser::Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer)
     : M{M},
       buffer{buffer} {
     for (const auto& exports : M.exports.decls)
@@ -143,7 +143,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
 // ============================================================================
 struct Deserialiser {
     Context& ctx;
-    Module::Ptr M;
+    TranslationUnit::Ptr M;
     ArrayRef<char> data;
     SmallVector<Type, 0> deserialised_types;
 
@@ -179,16 +179,16 @@ struct Deserialiser {
 
     Deserialiser(Context& ctx, ArrayRef<char> data)
         : ctx{ctx},
-          M{Module::CreateEmpty(ctx)},
+          M{TranslationUnit::CreateEmpty(ctx)},
           data{data} {}
 
-    auto Deserialise() -> Module::Ptr;
+    auto Deserialise() -> TranslationUnit::Ptr;
     void DeserialiseDecl();
     void DeserialiseProcDecl();
     void DeserialiseType();
 };
 
-auto Deserialiser::Deserialise() -> Module::Ptr {
+auto Deserialiser::Deserialise() -> TranslationUnit::Ptr {
     M->name = ReadString();
     u64 serialised_decls = ReadInt();
     u64 serialised_types = ReadInt();
@@ -275,10 +275,10 @@ void Deserialiser::DeserialiseType() {
 // ============================================================================
 //  API
 // ============================================================================
-void Module::serialise(SmallVectorImpl<char>& buffer) const {
+void TranslationUnit::serialise(SmallVectorImpl<char>& buffer) const {
     Serialiser(*this, buffer);
 }
 
-auto Module::Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr {
+auto TranslationUnit::Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr {
     return Deserialiser(ctx, data).Deserialise();
 }

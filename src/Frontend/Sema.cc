@@ -2,6 +2,7 @@ module;
 
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringSwitch.h>
 #include <ranges>
 #include <srcc/Macros.hh>
 
@@ -122,13 +123,13 @@ auto Sema::LookUpName(
     bool complain
 ) -> LookupResult {
     auto res = names.size() == 1
-        ? LookUpUnqualifiedName(in_scope, names[0], false)
-        : LookUpQualifiedName(in_scope, names);
+                 ? LookUpUnqualifiedName(in_scope, names[0], false)
+                 : LookUpQualifiedName(in_scope, names);
     if (not res.successful() and complain) ReportLookupFailure(res, loc);
     return res;
 }
 
-void Sema::ReportLookupFailure(const LookupResult& result, Location loc){
+void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
@@ -147,6 +148,30 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc){
 // ============================================================================
 //  Building nodes.
 // ============================================================================
+auto Sema::BuildBuiltinCallExpr(
+    BuiltinCallExpr::Builtin builtin,
+    ArrayRef<Expr*> args,
+    Location call_loc
+) -> Ptr<BuiltinCallExpr> {
+    switch (builtin) {
+        // __builtin_print takes a sequence of arguments and formats them.
+        // FIXME: Actually implement that; it only prints one argument for now.
+        case BuiltinCallExpr::Builtin::Print: {
+            if (args.size() != 1) return Error(call_loc, "__builtin_print takes one argument");
+            if (args.front()->dependent()) return BuiltinCallExpr::Create(*M, builtin, M->VoidTy, args, call_loc);
+            if (args.front()->type != M->StrLitTy) return Error(
+                call_loc,
+                "Invalid argument type '{}' for __builtin_print",
+                args.front()->type.print(ctx.use_colours())
+            );
+
+            return BuiltinCallExpr::Create(*M, builtin, M->VoidTy, args, call_loc);
+        }
+    }
+
+    Unreachable("Invalid builtin type: {}", +builtin);
+}
+
 auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
     if (callee->dependent() or rgs::any_of(args, [](Expr* e) { return e->dependent(); })) {
         return CallExpr::Create(
@@ -228,11 +253,11 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
 // ============================================================================
 //  Translation Driver
 // ============================================================================
-auto Sema::Translate(ArrayRef<ParsedModule::Ptr> modules) -> Module::Ptr {
+auto Sema::Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
     Sema S{first->context()};
-    S.M = Module::Create(first->context(), first->name, first->is_module);
+    S.M = TranslationUnit::Create(first->context(), first->name, first->is_module);
     S.parsed_modules = modules;
     S.Translate();
     return std::move(S.M);
@@ -342,7 +367,7 @@ auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
     );
 }
 
-auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr> {
+auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
     // Translate arguments.
     SmallVector<Expr*> args;
     bool errored = false;
@@ -352,9 +377,22 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr> {
         else args.push_back(expr.get());
     }
 
+    // Stop if there was an error.
+    if (errored) return nullptr;
+
+    // Callee may be a builtin.
+    if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
+        using B = BuiltinCallExpr::Builtin;
+        auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front())
+                      .Case("__builtin_print", B::Print)
+                      .Default(std::nullopt);
+
+        // We have a builtin!
+        if (bk.has_value()) return BuildBuiltinCallExpr(*bk, args, parsed->loc);
+    }
+
     // Translate callee.
     auto callee = Try(TranslateExpr(parsed->callee));
-    if (errored) return nullptr;
     return BuildCallExpr(callee, args);
 }
 
@@ -394,7 +432,7 @@ auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
     return cast<Expr>(stmt.get());
 }
 
-auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed)-> Ptr<Expr> {
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     auto base = Try(TranslateExpr(parsed->base));
     if (isa<SliceType>(base->type)) {
         if (parsed->member == "data") return SliceDataExpr::Create(*M, base, parsed->loc);

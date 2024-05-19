@@ -2,7 +2,7 @@ export module srcc.ast:enums;
 import srcc.utils;
 
 export namespace srcc {
-class Module;
+class TranslationUnit;
 enum class BuiltinKind : u8;
 enum class CallingConvention : u8;
 enum class Dependence : u8;

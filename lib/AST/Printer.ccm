@@ -18,7 +18,9 @@ protected:
     utils::Colours C;
 
     explicit PrinterBase(bool use_colour) : C{use_colour} {}
-    void PrintChildren(this auto&& This, ArrayRef<NodeType*> children) {
+
+    template <typename Node = NodeType>
+    void PrintChildren(this auto&& This, std::type_identity_t<ArrayRef<Node*>> children) {
         using enum utils::Colour;
         if (children.empty()) return;
         auto& leading = This.leading;

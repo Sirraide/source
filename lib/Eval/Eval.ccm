@@ -1,0 +1,100 @@
+module;
+
+#include <memory>
+#include <optional>
+#include <variant>
+
+export module srcc.eval;
+import srcc;
+import srcc.ast;
+
+export namespace srcc::eval {
+class Value;
+auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain) -> std::optional<Value>;
+}
+
+namespace srcc::eval {
+class EvaluationContext;
+}
+
+/// A compile-time value.
+class srcc::eval::Value {
+    friend EvaluationContext;
+
+    /// A compile-time lvalue.
+    ///
+    /// This represents a non-owning view to compile-time known
+    /// mutable or immutable data.
+    ///
+    /// Note that this is also used for things that are not lvalues
+    /// themselves, but which can act and be accessed like an lvalue,
+    /// such as slices.
+    struct LValue {
+        void* pointer;
+        Size size;
+        bool modifiable;
+
+        LValue(const void* pointer, isz size)
+            : pointer(const_cast<void*>(pointer)),
+              size(Size::Bytes(size)),
+              modifiable(false) {}
+
+        LValue(void* pointer, isz size)
+            : pointer(pointer),
+              size(Size::Bytes(size)),
+              modifiable(true) {}
+    };
+
+    /// A compile-time pointer value.
+    struct Reference {
+        LValue base;
+        Size offset;
+    };
+
+    std::variant<ProcDecl*, LValue, Reference, std::monostate> value{std::monostate{}};
+    Type ty{Type::UnsafeNull()};
+
+    /// These should only be created by the EvaluationContext.
+    Value() = default;
+    Value(TranslationUnit& tu) : ty(tu.VoidTy) {}
+    Value(StrLitExpr* str);
+    Value(ProcDecl* proc);
+    Value(LValue lvalue, Type ty);
+    Value(Reference ref, Type ty);
+
+public:
+    /// cast<>() the contained value.
+    template <typename Ty>
+    auto cast() const -> const Ty& { return std::get<Ty>(value); }
+
+    /// Check if the value is empty. This is also used to represent '()'.
+    auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
+
+    /// dyn_cast<>() the contained value.
+    template <typename Ty>
+    auto get() const -> const Ty* {
+        return std::holds_alternative<Ty>(value) ? &std::get<Ty>(value) : nullptr;
+    }
+
+    /// isa<>() on the contained value.
+    template <typename Ty>
+    auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
+
+    /// Get the type of the value.
+    auto type() const -> Type { return ty; }
+};
+
+/// Attempt to evaluate a statement.
+///
+/// Callers must check dependence before this is called; attempting
+/// to evaluate a dependent statement will assert.
+///
+/// \param tu Translation unit that the statement belongs to.
+/// \param stmt Statement to evaluate.
+/// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
+/// \return The value of the statement, if it can be evaluated.
+auto srcc::eval::Evaluate(
+    TranslationUnit& tu,
+    Stmt* stmt,
+    bool complain = true
+) -> std::optional<Value>;

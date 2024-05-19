@@ -84,7 +84,7 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
 // ============================================================================
 //  CG
 // ============================================================================
-CodeGen::CodeGen(Module& M)
+CodeGen::CodeGen(TranslationUnit& M)
     : M{M},
       llvm{std::make_unique<llvm::Module>(M.name, M.llvm_context)},
       builder{M.llvm_context},
@@ -143,6 +143,10 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
         if (s == expr->return_expr()) ret = val;
     }
     return ret;
+}
+
+auto CodeGen::EmitBuiltinCallExpr([[maybe_unused]] BuiltinCallExpr* expr) -> llvm::Value* {
+    Todo("Emit builtin call");
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {

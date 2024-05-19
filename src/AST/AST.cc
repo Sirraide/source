@@ -1,15 +1,16 @@
 module;
 
 #include <fmt/format.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
 using namespace srcc;
 
 // ============================================================================
-//  Module
+//  TU
 // ============================================================================
-Module::Module(Context& ctx, String name, bool is_module)
+TranslationUnit::TranslationUnit(Context& ctx, String name, bool is_module)
     : ctx{ctx},
       name{name},
       is_module{is_module},
@@ -61,7 +62,7 @@ Module::Module(Context& ctx, String name, bool is_module)
     procs.push_back(initialiser_proc);
 }
 
-void Module::dump() const {
+void TranslationUnit::dump() const {
     using enum utils::Colour;
     bool c = context().use_colours();
     utils::Colours C{c};
@@ -80,11 +81,11 @@ struct Stmt::Printer : PrinterBase<Stmt> {
     using enum utils::Colour;
     bool print_procedure_bodies = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
-    void PrintBasicHeader(Stmt* S, StringRef name);
+    void PrintBasicHeader(Stmt* S, StringRef name, llvm::function_ref<void()> print_extra_data = {});
     void Print(Stmt* E);
 };
 
-void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
+void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name, llvm::function_ref<void()> print_extra_data) {
     fmt::print(
         "{}{} {}{} {}<{}>",
         C(Red),
@@ -96,9 +97,9 @@ void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     );
 
     if (auto e = dyn_cast<Expr>(s)) fmt::print(" {}", e->type.print(C.use_colours));
+    if (print_extra_data) print_extra_data();
     fmt::print("\n");
 }
-
 
 void Stmt::Printer::Print(Stmt* e) {
     switch (e->kind()) {
@@ -106,6 +107,22 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(e, "BlockExpr");
             PrintChildren(cast<BlockExpr>(e)->stmts());
             break;
+
+        case Kind::BuiltinCallExpr: {
+            auto& c = *cast<BuiltinCallExpr>(e);
+            PrintBasicHeader(e, "BuiltinCallExpr", [&] {
+                fmt::print(" {}{}", C(Green), [&] -> std::string_view {
+                    switch (c.builtin) {
+                        using B = BuiltinCallExpr::Builtin;
+                        case B::Print: return "__builtin_print";
+                    }
+
+                    return "<invalid>";
+                }());
+            });
+
+            PrintChildren<Expr>(c.args());
+        } break;
 
         case Kind::CallExpr: {
             PrintBasicHeader(e, "CallExpr");

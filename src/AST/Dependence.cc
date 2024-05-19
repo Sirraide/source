@@ -24,6 +24,30 @@ void ComputeDependence(BlockExpr* e) {
     e->set_dependence(d);
 }
 
+void ComputeDependence(BuiltinCallExpr* e) {
+    auto d = Dependence::None;
+
+    // Always propagate instantiation dependence from arguments.
+    for (auto s : e->args()) {
+        if (s->dependent()) {
+            d = Dependence::Instantiation;
+            break;
+        }
+    }
+
+    // Dependence of the call overall depends on the builtin.
+    [&] {
+        switch (e->builtin) {
+            // Never dependent.
+            case BuiltinCallExpr::Builtin::Print: return;
+        }
+
+        Unreachable("Invalid builtin: {}", +e->builtin);
+    }();
+
+    e->set_dependence(d);
+}
+
 void ComputeDependence(CallExpr* e) {
     auto d = Dependence::None;
     for (auto a : e->args()) d |= a->dependence();

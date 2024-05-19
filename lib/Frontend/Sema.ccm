@@ -20,7 +20,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     class Importer;
     friend Importer;
     Context& ctx;
-    Module::Ptr M;
+    TranslationUnit::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
 
     /// All scopes that have been created.
@@ -36,7 +36,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
 
     /// Map from module names to imported modules.
-    StringMap<Module*> imported_modules;
+    StringMap<TranslationUnit*> imported_modules;
 
     explicit Sema(Context& ctx) : ctx(ctx) {}
 
@@ -44,7 +44,7 @@ public:
     /// Analyse a set of parsed modules and combine them into a single module.
     ///
     /// @return The combined module, or `nullptr` if there was an error.
-    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> Module::Ptr;
+    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr;
 
     /// Get the context.
     auto context() const -> Context& { return ctx; }
@@ -151,7 +151,7 @@ private:
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Import a C++ header as a module.
-    auto ImportCXXHeader(Location import_loc, String linkage_name) -> Module::Ptr;
+    auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
 
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
@@ -186,12 +186,13 @@ private:
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
     /// Building AST nodes; called after translation and template instantiation.
+    auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
 
     /// Translation from the parse tree to the AST.
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
-    auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<CallExpr>;
+    auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr>;
     auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;

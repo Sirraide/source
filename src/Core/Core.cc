@@ -5,6 +5,7 @@ module;
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Unicode.h>
@@ -47,7 +48,13 @@ struct Context::Impl {
 };
 
 SRCC_DEFINE_HIDDEN_IMPL(Context);
-Context::Context() : impl(new Impl) {}
+Context::Context() : impl(new Impl) {
+    static std::once_flag init_flag;
+    std::call_once(init_flag, [] {
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+    });
+}
 
 auto Context::diags() const -> DiagnosticsEngine& {
     Assert(impl->diags_engine, "Diagnostics engine not set!");

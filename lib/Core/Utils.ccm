@@ -5,6 +5,7 @@ module;
 #include <cstdint>
 #include <filesystem>
 #include <fmt/format.h>
+#include <llvm/Support/Error.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -132,15 +133,15 @@ public:
     constexpr Size() : raw{0} {}
     explicit Size(Align align) : raw{align.value() * 8} {}
 
-    [[nodiscard]] static constexpr Size Bits(usz bits) { return Size{bits}; }
-    [[nodiscard]] static constexpr Size Bytes(usz bytes) { return Size{bytes * 8}; }
+    [[nodiscard]] static constexpr Size Bits(std::unsigned_integral auto bits) { return Size{bits}; }
+    [[nodiscard]] static constexpr Size Bytes(std::unsigned_integral auto bytes) { return Size{bytes * 8}; }
 
-    [[nodiscard]] static constexpr Size Bits(isz bits) {
+    [[nodiscard]] static constexpr Size Bits(std::signed_integral auto bits) {
         Assert(bits >= 0, "Size cannot be negative");
         return Size{usz(bits)};
     }
 
-    [[nodiscard]] static constexpr Size Bytes(isz bytes) {
+    [[nodiscard]] static constexpr Size Bytes(std::signed_integral auto bytes) {
         Assert(bytes >= 0, "Size cannot be negative");
         return Size{usz(bytes) * 8};
     }

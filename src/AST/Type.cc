@@ -30,7 +30,7 @@ auto FindOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* 
 // ============================================================================
 //  Type
 // ============================================================================
-void* TypeBase::operator new(usz size, Module& mod) {
+void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
@@ -123,7 +123,7 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
 // ============================================================================
 //  Types
 // ============================================================================
-auto ArrayType::Get(Module& mod, Type elem, i64 size) -> ArrayType* {
+auto ArrayType::Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType* {
     auto CreateNew = [&] { return new (mod) ArrayType{elem, size}; };
     return FindOrCreateType(mod.array_types, CreateNew, elem, size);
 }
@@ -133,7 +133,7 @@ void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
     ID.AddInteger(size);
 }
 
-auto IntType::Get(Module& mod, i64 bits) -> IntType* {
+auto IntType::Get(TranslationUnit& mod, i64 bits) -> IntType* {
     auto CreateNew = [&] { return new (mod) IntType{bits}; };
     return FindOrCreateType(mod.int_types, CreateNew, bits);
 }
@@ -142,7 +142,7 @@ void IntType::Profile(FoldingSetNodeID& ID, i64 bits) {
     ID.AddInteger(bits);
 }
 
-auto ReferenceType::Get(Module& mod, Type elem) -> ReferenceType* {
+auto ReferenceType::Get(TranslationUnit& mod, Type elem) -> ReferenceType* {
     auto CreateNew = [&] { return new (mod) ReferenceType{elem}; };
     return FindOrCreateType(mod.reference_types, CreateNew, elem);
 }
@@ -152,7 +152,7 @@ void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
 }
 
 auto ProcType::Get(
-    Module& mod,
+    TranslationUnit& mod,
     Type return_type,
     ArrayRef<Type> param_types,
     CallingConvention cconv,
@@ -204,7 +204,7 @@ void ProcType::Profile(FoldingSetNodeID& ID, Type return_type, ArrayRef<Type> pa
     for (auto t : param_types) ID.AddPointer(t.as_opaque_ptr());
 }
 
-auto SliceType::Get(Module& mod, Type elem) -> SliceType* {
+auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {
     auto CreateNew = [&] { return new (mod) SliceType{elem}; };
     return FindOrCreateType(mod.slice_types, CreateNew, elem);
 }

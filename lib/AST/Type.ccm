@@ -9,7 +9,7 @@ import srcc;
 import :enums;
 
 export namespace srcc {
-class Module;
+class TranslationUnit;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -50,7 +50,7 @@ protected:
 public:
     // Only allow allocating these in the module.
     void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
-    void* operator new(usz size, Module& mod);
+    void* operator new(usz size, TranslationUnit& mod);
 
     /// Get the dependence of this type.
     auto dependence() const -> Dependence { return dep; }
@@ -78,14 +78,18 @@ public:
 private:
     WrappedType* pointer;
 
+    TypeWrapper() = default;
+
 public:
-    TypeWrapper(WrappedType* t) : pointer{t} {}
+    TypeWrapper(WrappedType* t) : pointer{t} { Check(); }
 
     template <std::derived_from<WrappedType> Derived>
-    TypeWrapper(Derived* derived) : pointer{derived} {}
+    TypeWrapper(Derived* derived) : pointer{derived} { Check(); }
 
     template <std::derived_from<WrappedType> Derived>
-    TypeWrapper(TypeWrapper<Derived> derived) : pointer{derived.ptr()} {}
+    TypeWrapper(TypeWrapper<Derived> derived) : pointer{derived.ptr()} { Check(); }
+
+    TypeWrapper(std::nullptr_t) = SRCC_DELETED("Use `TypeWrapper::UnsafeNull()` if you must");
 
     /// Get this as an opaque pointer.
     auto as_opaque_ptr() const -> void* { return pointer; }
@@ -107,6 +111,18 @@ public:
     /// Construct a `TypeWrapper` from an opaque pointer.
     static auto FromOpaquePointer(void* ptr) -> TypeWrapper {
         return TypeWrapper{static_cast<WrappedType*>(ptr)};
+    }
+
+    /// Construct a null `TypeWrapper`.
+    static auto UnsafeNull() -> TypeWrapper {
+        TypeWrapper t;
+        t.pointer = nullptr;
+        return t;
+    }
+
+private:
+    void Check() {
+        Assert(pointer, "Null type pointer can only be constructed with `TypeWrapper::UnsafeNull()`");
     }
 };
 
@@ -141,14 +157,14 @@ public:
     auto dimension() const -> i64 { return elems; }
 
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), elems); }
-    static auto Get(Module& mod, Type elem, i64 size) -> ArrayType*;
+    static auto Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, i64 size);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
 };
 
 class srcc::BuiltinType final : public TypeBase {
     // The module creates all instances of these.
-    friend Module;
+    friend TranslationUnit;
     const BuiltinKind b_kind;
 
     explicit BuiltinType(BuiltinKind kind) : TypeBase{Kind::BuiltinType}, b_kind{kind} {}
@@ -157,7 +173,7 @@ public:
     /// Get the kind of this builtin type.
     auto builtin_kind() const -> BuiltinKind { return b_kind; }
 
-    static auto Get(Module& mod, BuiltinKind kind) = SRCC_DELETED("Use Module.VoidTy and friends instead");
+    static auto Get(TranslationUnit& mod, BuiltinKind kind) = SRCC_DELETED("Use Module.VoidTy and friends instead");
     static bool classof(const TypeBase* e) { return e->kind() == Kind::BuiltinType; }
 };
 
@@ -174,8 +190,8 @@ public:
     auto bit_width() const -> Size { return Size::Bits(bits); }
 
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, bits); }
-    static auto Get(Module& mod, i64 bit_width) -> IntType*;
-    static auto Get(Module& mod, Size size) -> IntType* { return Get(mod, i64(size.bits())); }
+    static auto Get(TranslationUnit& mod, i64 bit_width) -> IntType*;
+    static auto Get(TranslationUnit& mod, Size size) -> IntType* { return Get(mod, i64(size.bits())); }
     static void Profile(FoldingSetNodeID& ID, i64 bit_width);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::IntType; }
 };
@@ -186,7 +202,7 @@ class srcc::ReferenceType final : public SingleElementTypeBase
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(Module& mod, Type elem) -> ReferenceType*;
+    static auto Get(TranslationUnit& mod, Type elem) -> ReferenceType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ReferenceType; }
 };
@@ -228,7 +244,7 @@ public:
     }
 
     static auto Get(
-        Module& mod,
+        TranslationUnit& mod,
         Type return_type,
         ArrayRef<Type> param_types = {},
         CallingConvention cconv = CallingConvention::Source,
@@ -252,7 +268,7 @@ class srcc::SliceType final : public SingleElementTypeBase
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(Module& mod, Type elem) -> SliceType*;
+    static auto Get(TranslationUnit& mod, Type elem) -> SliceType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };

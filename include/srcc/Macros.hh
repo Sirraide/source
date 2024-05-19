@@ -31,7 +31,7 @@ private:                            \
 
 #define Assert(X, ...) ASSERT(X __VA_OPT__(, ::fmt::format(__VA_ARGS__)))
 #define Fatal(...) PANIC(__VA_OPT__(::fmt::format(__VA_ARGS__)))
-#define Todo() PANIC("TODO")
+#define Todo(...) Unreachable("TODO: " __VA_ARGS__)
 #define Unreachable(...) UNREACHABLE(__VA_OPT__(::fmt::format(__VA_ARGS__)))
 
 // Here until compilers support delete("message").

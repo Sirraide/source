@@ -11,7 +11,7 @@ class CodeGen;
 }
 
 class srcc::CodeGen {
-    Module& M;
+    TranslationUnit& M;
     std::unique_ptr<llvm::Module> llvm;
     llvm::IRBuilder<> builder;
     llvm::Function* curr_func{};
@@ -23,10 +23,10 @@ class srcc::CodeGen {
     llvm::StructType* const SliceTy;
     llvm::Type* const VoidTy;
 
-    CodeGen(Module& M);
+    CodeGen(TranslationUnit& M);
 
 public:
-    static auto Emit(Module& M) -> std::unique_ptr<llvm::Module> {
+    static auto Emit(TranslationUnit& M) -> std::unique_ptr<llvm::Module> {
         CodeGen CG{M};
         CG.Emit();
         return std::move(CG.llvm);
@@ -44,6 +44,7 @@ private:
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
     auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
+    auto EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value*;
     auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
     void EmitProcedure(ProcDecl* proc);
     auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
