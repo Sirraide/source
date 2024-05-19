@@ -149,6 +149,21 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
             );
         } break;
 
+        case Kind::EvalExpr: {
+            auto& v = *cast<ParsedEvalExpr>(e);
+            fmt::print(
+                "{}EvalExpr {}{} {}<{}>\n{}",
+                C(Red),
+                C(Blue),
+                fmt::ptr(e),
+                C(Magenta),
+                e->loc.pos,
+                C(Reset)
+            );
+
+            PrintChildren(v.expr);
+        } break;
+
         case Kind::StrLitExpr: {
             auto& s = *cast<ParsedStrLitExpr>(e);
             fmt::print(
@@ -443,10 +458,20 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <stmt> ::= <decl> | <expr> ";"
+// <stmt>  ::= [ <expr> ] ";"
+//           | <expr-block>
+//           | EVAL <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedExpr> {
+    auto loc = tok->location;
+    if (Consume(Tk::Eval)) {
+        auto arg = ParseStmt();
+        if (not arg) return {};
+        return new (*this) ParsedEvalExpr{arg.get(), loc};
+    }
+
     if (auto res = ParseExpr()) {
-        if (not isa<ParsedDecl>(res.get())) ConsumeOrError(Tk::Semicolon);
+        if (not isa<ParsedDecl>(res.get()) and not isa<ParsedBlockExpr>(res.get()))
+            ConsumeOrError(Tk::Semicolon);
         return res;
     }
 

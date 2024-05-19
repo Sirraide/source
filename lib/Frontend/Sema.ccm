@@ -197,6 +197,7 @@ private:
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
+    auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Stmt> { Todo(); }
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;

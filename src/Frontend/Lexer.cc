@@ -44,6 +44,7 @@ const StringMap<Tk> keywords = {
     {"elif", Tk::Elif},
     {"else", Tk::Else},
     {"enum", Tk::Enum},
+    {"eval", Tk::Eval},
     {"export", Tk::Export},
     {"f32", Tk::F32},
     {"f64", Tk::F64},

@@ -193,6 +193,19 @@ public:
     static bool classof(const ParsedExpr* e) { return e->kind() == Kind::DeclRefExpr; }
 };
 
+/// A statement to evaluate.
+class srcc::ParsedEvalExpr final : public ParsedExpr {
+public:
+    ParsedExpr* expr;
+
+    ParsedEvalExpr(
+        ParsedExpr* expr,
+        Location location
+    ) : ParsedExpr{Kind::EvalExpr, location}, expr{expr} {}
+
+    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::EvalExpr; }
+};
+
 /// A string literal.
 class srcc::ParsedStrLitExpr final : public ParsedExpr {
 public:

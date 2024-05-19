@@ -1,0 +1,21 @@
+// V %srcc --parse --verify %s
+// expected-no-diagnostics
+
+program x;
+
+foo();
+{ }
+{{{{{{ }}}}}}
+{ foo(); foo(); }
+
+eval foo();
+eval eval eval eval foo();
+eval eval {
+    eval eval {
+        eval foo();
+        foo();
+        eval {}
+    }
+}
+
+proc foo {}

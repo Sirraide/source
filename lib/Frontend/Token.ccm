@@ -46,6 +46,7 @@ enum struct srcc::Tk : u8 {
     Elif,
     Else,
     Enum,
+    Eval,
     Export,
     F32,
     F64,
@@ -264,6 +265,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Elif: return "elif";
         case Tk::Else: return "else";
         case Tk::Enum: return "enum";
+        case Tk::Eval: return "eval";
         case Tk::Export: return "export";
         case Tk::F32: return "f32";
         case Tk::F64: return "f64";
@@ -409,6 +411,7 @@ bool Token::operator==(const Token& b) {
         case Tk::Elif:
         case Tk::Else:
         case Tk::Enum:
+        case Tk::Eval:
         case Tk::Export:
         case Tk::F32:
         case Tk::F64:
