@@ -60,7 +60,7 @@ public:
     void wait();
 };
 
-struct Driver::Impl {
+struct Driver::Impl : DiagsProducer<> {
     Options opts;
     DriverThreadPool thread_pool;
     SmallVector<File::Path> files;
@@ -68,9 +68,22 @@ struct Driver::Impl {
     std::mutex mutex;
     bool compiled = false;
 
-    Impl(Options opts) : opts(opts), thread_pool(opts.num_threads) {}
+    Impl(Options opts)
+        : opts(opts),
+          thread_pool(opts.num_threads) {}
 
     int run_job();
+
+    template <typename ...Args>
+    void Diag(Diagnostic::Level level, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename ...Args>
+    int Error(fmt::format_string<Args...> fmt, Args&&... args) {
+        Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
+        return 1;
+    }
 
     /// Parse a file and return the parsed module.
     auto ParseFile(const File::Path& path, bool verify) -> ParsedModule*;
@@ -80,33 +93,34 @@ int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
 
-
-    // Verifier can only run in sema/parse mode.
-    if (opts.verify and opts.action != Action::Parse and opts.action != Action::Sema) {
-        StreamingDiagnosticsEngine::Create(ctx)->diag(
-            Diagnostic::Level::Error,
-            Location(),
-            "--verify requires either --sema or --parse"
-        );
-        return 1;
-    }
-
     // Initialise.
     ctx.set_diags(opts.verify ? VerifyDiagnosticsEngine::Create(ctx) : StreamingDiagnosticsEngine::Create(ctx));
 
     // Disable colours in verify mode.
     ctx.enable_colours(opts.colours and not opts.verify);
 
+    // Verifier can only run in sema/parse mode.
+    if (opts.verify and opts.action != Action::Parse and opts.action != Action::Sema)
+        return Error("--verify requires either --sema or --parse");
+
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
     std::unordered_set<File::Path> file_uniquer;
     for (const auto& f : files) {
+        if (not fs::exists(f)) {
+            Error("File '{}' does not exist", f);
+            continue;
+        }
+
         auto can = canonical(f);
         if (not file_uniquer.insert(can).second) Fatal(
             "Duplicate file name in command-line: '{}'",
             can
         );
     }
+
+    // Stop if there was a file we couldn’t find.
+    if (ctx.diags().has_error()) return 1;
 
     // Parse files in parallel.
     SmallVector<std::shared_future<ParsedModule*>> futures;

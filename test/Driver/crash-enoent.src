@@ -1,0 +1,2 @@
+// X %srcc does-not-exist.src
+// FIXME: Should be a 'V' test that checks for the error message.
