@@ -316,6 +316,13 @@ auto Parser::ParseExpr() -> Ptr<ParsedExpr> {
             lhs = ParseBlock();
             break;
 
+        // <expr-eval> ::= EVAL <expr>
+        case Tk::Eval: {
+            auto arg = ParseExpr();
+            if (not arg) return {};
+            lhs = new (*this) ParsedEvalExpr{arg.get(), tok->location};
+        } break;
+
         // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
         case Tk::Identifier: {
             auto loc = tok->location;

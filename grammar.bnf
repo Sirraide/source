@@ -34,12 +34,14 @@
 <expr> ::= <expr-block>
          | <expr-call>
          | <expr-decl-ref>
+         | <expr-eval>
          | <expr-lit>
          | <expr-member>
 
 <expr-block>    ::= "{" <stmts>  "}"
 <expr-call>     ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
+<expr-eval>     ::= EVAL <expr>
 <expr-lit>      ::= STRING-LITERAL
 <expr-member>   ::= <expr> "." IDENTIFIER
 

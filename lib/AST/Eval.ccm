@@ -1,0 +1,131 @@
+module;
+
+#include <memory>
+#include <optional>
+#include <variant>
+
+export module srcc.ast:eval;
+import srcc;
+import :type;
+
+export namespace srcc {
+class Stmt;
+class ProcDecl;
+class StrLitExpr;
+}
+
+export namespace srcc::eval {
+class LValue;
+class Reference;
+class Slice;
+class Value;
+
+/// Attempt to evaluate a statement.
+///
+/// Callers must check dependence before this is called; attempting
+/// to evaluate a dependent statement will assert.
+///
+/// \param tu Translation unit that the statement belongs to.
+/// \param stmt Statement to evaluate.
+/// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
+/// \return The value of the statement, if it can be evaluated.
+auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain = true) -> std::optional<Value>;
+}
+
+namespace srcc::eval {
+class EvaluationContext;
+}
+
+class srcc::eval::LValue {
+public:
+    // Base of the lvalue. This is either:
+    //     - a string literal;
+    std::variant<String> base;
+
+    // Whether the lvalue is modifiable.
+    bool modifiable{false};
+
+    /// Get the base type of this LValue.
+    auto base_type(TranslationUnit& tu) const -> Type;
+
+    /// cast<>() the base.
+    template <typename Ty>
+    auto cast() const -> const Ty& { return std::get<Ty>(base); }
+
+    /// dyn_cast<>() the base.
+    template <typename Ty>
+    auto get() const -> const Ty* {
+        return std::holds_alternative<Ty>(base) ? &std::get<Ty>(base) : nullptr;
+    }
+
+    /// isa<>() on the base.
+    template <typename Ty>
+    auto isa() const -> bool { return std::holds_alternative<Ty>(base); }
+};
+
+class srcc::eval::Reference {
+public:
+    LValue base;
+    APInt offset;
+};
+
+class srcc::eval::Slice {
+public:
+    std::unique_ptr<Value> data;
+    std::unique_ptr<Value> size;
+
+    Slice(Value data, Value size);
+    Slice(const Slice& other);
+    Slice(Slice&& other);
+    auto operator=(const Slice& other) -> Slice&;
+    auto operator=(Slice&& other) -> Slice&;
+};
+
+/// A compile-time value.
+class srcc::eval::Value {
+    friend EvaluationContext;
+    friend Slice;
+
+    std::variant<ProcDecl*, LValue, Slice, Reference, APInt, std::monostate> value{std::monostate{}};
+    Type ty{Type::UnsafeNull()};
+
+    /// These should only be created by the EvaluationContext.
+    Value() = default;
+    Value(TranslationUnit& tu);
+    Value(ProcDecl* proc);
+    Value(Slice lvalue, Type ty);
+    Value(LValue lvalue, Type ty) : value(std::move(lvalue)), ty(ty) {}
+    Value(Reference ref, Type ty) : value(std::move(ref)), ty(ty) {}
+    Value(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
+
+public:
+    /// cast<>() the contained value.
+    template <typename Ty>
+    auto cast() const -> const Ty& { return std::get<Ty>(value); }
+
+    /// Print this value.
+    void dump(bool use_color = true) const;
+    void dump_colour() const { dump(true); }
+
+    /// Check if the value is empty. This is also used to represent '()'.
+    auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
+
+    /// dyn_cast<>() the contained value.
+    template <typename Ty>
+    auto get() const -> const Ty* {
+        return std::holds_alternative<Ty>(value) ? &std::get<Ty>(value) : nullptr;
+    }
+
+    /// isa<>() on the contained value.
+    template <typename Ty>
+    auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
+
+    /// Get the type of the value.
+    auto type() const -> Type { return ty; }
+
+    /// Run a visitor over this value.
+    template <typename Visitor>
+    auto visit(Visitor&& visitor) const -> decltype(auto) {
+        return std::visit(std::forward<Visitor>(visitor), value);
+    }
+};

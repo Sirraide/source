@@ -1,6 +1,8 @@
 module;
 
+#include <llvm/IR/ConstantFold.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
 #include <memory>
 #include <ranges>
@@ -81,6 +83,10 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     //}
 }
 
+auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
+    return llvm::ConstantInt::get(M.llvm_context, value);
+}
+
 // ============================================================================
 //  CG
 // ============================================================================
@@ -92,6 +98,7 @@ CodeGen::CodeGen(TranslationUnit& M)
       I1Ty{builder.getInt1Ty()},
       I8Ty{builder.getInt8Ty()},
       PtrTy{builder.getPtrTy()},
+      FFIIntTy{llvm::Type::getIntNTy(M.llvm_context, 32)}, // FIXME: Get size from target.
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       VoidTy{builder.getVoidTy()} {}
 
@@ -145,8 +152,21 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     return ret;
 }
 
-auto CodeGen::EmitBuiltinCallExpr([[maybe_unused]] BuiltinCallExpr* expr) -> llvm::Value* {
-    Todo("Emit builtin call");
+auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value* {
+    switch (expr->builtin) {
+        case BuiltinCallExpr::Builtin::Print: {
+            Assert(expr->args().size() == 1);
+            Assert(expr->args().front()->type == M.StrLitTy);
+            auto slice = Emit(expr->args().front());
+            auto format = builder.CreateGlobalStringPtr("%.*s");
+            auto printf = llvm->getOrInsertFunction("printf", llvm::FunctionType::get(IntTy, {PtrTy}, true));
+            auto data = builder.CreateExtractValue(slice, 0);
+            auto size = builder.CreateZExtOrTrunc(builder.CreateExtractValue(slice, 1), FFIIntTy);
+            return builder.CreateCall(printf, {format, size, data});
+        }
+    }
+
+    Unreachable("Unknown builtin");
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
@@ -161,6 +181,19 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     auto call = builder.CreateCall(callee, args);
     call->setCallingConv(ConvertCC(proc_ty->cconv()));
     return call;
+}
+
+auto CodeGen::EmitConstExpr(ConstExpr* constant) -> llvm::Constant* {
+    return EmitValue(*constant->value);
+}
+
+auto CodeGen::EmitEvalExpr(EvalExpr*) -> llvm::Value* {
+    Unreachable("Should have been evaluated");
+}
+
+auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
+    auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
+    return cast<llvm::Function>(callee.getCallee());
 }
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
@@ -184,9 +217,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
-    auto proc = expr->decl;
-    auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
-    return callee.getCallee();
+    return EmitProcAddress(expr->decl);
 }
 
 auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
@@ -205,4 +236,38 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     auto ptr = builder.CreateGlobalStringPtr({expr->value.data(), expr->value.size()});
     auto size = llvm::ConstantInt::get(IntTy, expr->value.size());
     return llvm::ConstantStruct::getAnon({ptr, size});
+}
+
+auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
+    // FIXME: Should use Overloaded{} idiom whenever that one clang bug is fixed.
+    struct  Visitor {
+        CodeGen& CG;
+        auto operator()(ProcDecl* proc) -> llvm::Constant* { return CG.EmitProcAddress(proc); }
+        auto operator()(std::monostate) -> llvm::Constant* { return nullptr; }
+        auto operator()(const APInt& value) -> llvm::Constant* { return CG.MakeInt(value); }
+        auto operator()(const eval::LValue& lval) -> llvm::Constant* {
+            return CG.builder.CreateGlobalString(*lval.get<String>());
+        }
+
+        auto operator()(const eval::Reference& ref) -> llvm::Constant* {
+            auto base = (*this)(ref.base);
+            return llvm::ConstantFoldGetElementPtr(
+                CG.ConvertType(ref.base.base_type(CG.M)),
+                base,
+                true,
+                {},
+                CG.MakeInt(ref.offset)
+            );
+        }
+
+        auto operator()(const eval::Slice& slice) -> llvm::Constant* {
+            return llvm::ConstantStruct::getAnon(
+                CG.EmitValue(*slice.data),
+                CG.EmitValue(*slice.size)
+            );
+        }
+    }; // clang-format on
+
+    Visitor V{*this};
+    return val.visit(V);
 }

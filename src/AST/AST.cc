@@ -97,7 +97,10 @@ void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name, llvm::function_ref
     );
 
     if (auto e = dyn_cast<Expr>(s)) fmt::print(" {}", e->type.print(C.use_colours));
-    if (print_extra_data) print_extra_data();
+    if (print_extra_data) {
+        fmt::print(" ");
+        print_extra_data();
+    }
     fmt::print("\n");
 }
 
@@ -111,7 +114,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::BuiltinCallExpr: {
             auto& c = *cast<BuiltinCallExpr>(e);
             PrintBasicHeader(e, "BuiltinCallExpr", [&] {
-                fmt::print(" {}{}", C(Green), [&] -> std::string_view {
+                fmt::print("{}{}", C(Green), [&] -> std::string_view {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
                         case B::Print: return "__builtin_print";
@@ -131,6 +134,17 @@ void Stmt::Printer::Print(Stmt* e) {
             if (c.callee) fields.push_back(c.callee);
             if (auto a = c.args(); not a.empty()) fields.append(a.begin(), a.end());
             PrintChildren(fields);
+        } break;
+
+        case Kind::ConstExpr: {
+            auto c = cast<ConstExpr>(e);
+            PrintBasicHeader(e, "ConstExpr", [&] { c->value->dump(C.use_colours); });
+            if (c->stmt) PrintChildren(c->stmt.get());
+        } break;
+
+        case Kind::EvalExpr: {
+            PrintBasicHeader(e, "EvalExpr");
+            PrintChildren(cast<EvalExpr>(e)->stmt);
         } break;
 
         case Kind::ProcRefExpr: {

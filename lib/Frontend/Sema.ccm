@@ -188,6 +188,7 @@ private:
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
+    auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
 
     /// Translation from the parse tree to the AST.
@@ -197,7 +198,7 @@ private:
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
-    auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Stmt> { Todo(); }
+    auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr>;
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;

@@ -65,6 +65,13 @@ auto CallExpr::Create(
     return ::new (mem) CallExpr{type, callee, args, location};
 }
 
+ConstExpr::ConstExpr(
+    TranslationUnit& tu,
+    eval::Value value,
+    Location location,
+    Ptr<Stmt> stmt
+) : Expr{Kind::ConstExpr, value.type(), location}, value{tu.save(std::move(value))}, stmt{stmt} {}
+
 BlockExpr::BlockExpr(
     Scope* parent_scope,
     Type type,

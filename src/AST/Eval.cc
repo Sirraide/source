@@ -3,27 +3,74 @@ module;
 #include <optional>
 #include <srcc/Macros.hh>
 
-module srcc.eval;
+module srcc.ast;
 using namespace srcc::eval;
 
 // ============================================================================
 //  Value
 // ============================================================================
-Value::Value(StrLitExpr* str)
-    : value(LValue{str->value.data(), isz(str->value.size())}),
-      ty(str->type) {}
+auto LValue::base_type(TranslationUnit& tu) const -> Type {
+    utils::Overloaded V {
+        [&](String) { return tu.I8Ty; }
+    };
+
+    return std::visit(V, base);
+}
+
+Slice::Slice(Value data, Value size)
+    : data(std::make_unique<Value>(std::move(data))),
+      size(std::make_unique<Value>(std::move(size))) {}
+
+Slice::Slice(Slice&& other)
+    : data(std::move(other.data)),
+      size(std::move(other.size)) {}
+
+Slice::Slice(const Slice& other)
+    : data(std::make_unique<Value>(*other.data)),
+      size(std::make_unique<Value>(*other.size)) {}
+
+Slice& Slice::operator=(Slice&& other) {
+    data = std::move(other.data);
+    size = std::move(other.size);
+    return *this;
+}
+
+Slice& Slice::operator=(const Slice& other) {
+    data = std::make_unique<Value>(*other.data);
+    size = std::make_unique<Value>(*other.size);
+    return *this;
+}
+
+Value::Value(TranslationUnit& tu)
+    : ty{tu.VoidTy} {}
 
 Value::Value(ProcDecl* proc)
     : value(proc),
       ty(proc->type) {}
 
-Value::Value(LValue lval, Type ty)
-    : value(lval),
+Value::Value(Slice slice, Type ty)
+    : value(std::move(slice)),
       ty(ty) {}
 
-Value::Value(Reference ref, Type ty)
-    : value(ref),
-      ty(ty) {}
+void Value::dump(bool use_color) const {
+    struct Visitor {
+        using enum utils::Colour;
+        utils::Colours C;
+        void operator()(std::monostate) { }
+        void operator()(ProcDecl* proc) { fmt::print("{}{}", C(Green), proc->name); }
+        void operator()(const LValue& lval) { fmt::print("{}\"{}\"", C(Yellow), *lval.get<String>()); }
+        void operator()(const APInt& value) { fmt::print("{}{}", C(Magenta), value); }
+        void operator()(const Slice&) {}
+        void operator()(const Reference& ref) {
+            (*this)(ref.base);
+            fmt::print("{}@{}{}", C(Red), C(Magenta), ref.offset);
+        }
+    };
+
+    Visitor V{{use_color}};
+    visit(V);
+}
+
 
 // ============================================================================
 //  Evaluator
@@ -62,10 +109,15 @@ public:
     bool EvalBlockExpr(Value& out, BlockExpr* block);
     bool EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin);
     bool EvalCallExpr(Value& out, CallExpr* call);
+    bool EvalConstExpr(Value& out, ConstExpr* constant);
+    bool EvalEvalExpr(Value& out, EvalExpr* eval);
     bool EvalProcDecl(Value& out, ProcDecl* proc);
     bool EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref);
     bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
     bool EvalStrLitExpr(Value& out, StrLitExpr* str_lit);
+
+    /// Create an integer.
+    auto IntValue(std::integral auto val) -> Value;
 
     /// Get the JIT executor.
     /*auto Executor() -> Executor&;*/
@@ -84,9 +136,14 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
         using K = Stmt::Kind;
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
-#include "srcc/AST.inc"
+#include "../../include/srcc/AST.inc"
     }
     Unreachable("Invalid statement kind");
+}
+
+auto EvaluationContext::IntValue(std::integral auto val) -> Value {
+    // FIXME: Change to 'int'.
+    return Value{APInt{64, u64(val)}, tu.I64Ty};
 }
 
 /*auto EvaluationContext::Executor() -> class Executor& {
@@ -153,8 +210,7 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
         case BuiltinCallExpr::Builtin::Print: {
             Assert(builtin->args().size() == 1);
             if (not Eval(out, builtin->args().front())) return false;
-            auto lv = out.cast<Value::LValue>();
-            fmt::print("{}", std::string_view{static_cast<const char*>(lv.pointer), lv.size.bytes()});
+            fmt::print("{}", *out.cast<Slice>().data->cast<Reference>().base.get<String>());
             out = Empty();
             return true;
         }
@@ -162,7 +218,6 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
 
     Unreachable("Invalid builtin kind");
 }
-
 
 bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     if (not Eval(out, call->callee)) return false;
@@ -180,6 +235,16 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     return Error(call->location(), "Sorry, can’t call external functions at compile-time yet");
 }
 
+bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
+    out = *constant->value;
+    return true;
+}
+
+bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
+    EvaluationContext C{tu, complain};
+    return C.Eval(out, eval->stmt);
+}
+
 bool EvaluationContext::EvalProcDecl(Value& out, ProcDecl* proc) {
     out = proc;
     return true;
@@ -191,13 +256,22 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
 
 bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data) {
     if (not Eval(out, slice_data->slice)) return false;
-    auto ref = Value::Reference{out.cast<Value::LValue>(), Size::Bytes(0)};
-    out = {ref, slice_data->type};
+    auto data = std::move(*out.get<Slice>()->data);
+    out = std::move(data);
     return true;
 }
 
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
-    out = str_lit;
+    out = Value{
+        Slice{
+            Value{
+                Reference{LValue{str_lit->value, false}, APInt::getZero(64)},
+                ArrayType::Get(tu, tu.I8Ty, i64(str_lit->value.size())),
+            },
+            IntValue(str_lit->value.size()),
+        },
+        tu.StrLitTy,
+    };
     return true;
 }
 

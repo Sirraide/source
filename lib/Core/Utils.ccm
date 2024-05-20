@@ -368,6 +368,14 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
 
+template <typename ...Lambdas>
+struct Overloaded : Lambdas... {
+    using Lambdas::operator()...;
+};
+
+template <typename ...Lambdas>
+Overloaded(Lambdas...) -> Overloaded<Lambdas...>;
+
 /// Replace all occurrences of `from` with `to` in `str`.
 void ReplaceAll(
     std::string& str,

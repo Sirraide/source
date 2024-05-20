@@ -55,6 +55,17 @@ void ComputeDependence(CallExpr* e) {
     e->set_dependence(d);
 }
 
+void ComputeDependence(ConstExpr*) {
+    // An evaluated constant expression is NEVER dependent; it may
+    // contain a dependent expression that has been instantiated and
+    // evaluated, but we don’t care about that anymore since we already
+    // have the value.
+}
+
+void ComputeDependence(EvalExpr* e) {
+    e->set_dependence(e->stmt->dependence());
+}
+
 void ComputeDependence(ProcRefExpr* p) {
     p->set_dependence(p->decl->dependence());
 }

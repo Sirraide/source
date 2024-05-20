@@ -5,6 +5,7 @@ module;
 
 export module srcc.codegen;
 import srcc.ast;
+import srcc;
 
 export namespace srcc {
 class CodeGen;
@@ -20,6 +21,7 @@ class srcc::CodeGen {
     llvm::IntegerType* const I1Ty;
     llvm::IntegerType* const I8Ty;
     llvm::PointerType* const PtrTy;
+    llvm::IntegerType* const FFIIntTy;
     llvm::StructType* const SliceTy;
     llvm::Type* const VoidTy;
 
@@ -46,8 +48,14 @@ private:
     auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
     auto EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value*;
     auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
+    auto EmitConstExpr(ConstExpr* constant) -> llvm::Constant*;
+    auto EmitEvalExpr(EvalExpr* eval) -> llvm::Value*;
     void EmitProcedure(ProcDecl* proc);
+    auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;
     auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
     auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
     auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
+    auto EmitValue(const eval::Value& val) -> llvm::Constant*;
+
+    auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
 };

@@ -9,6 +9,7 @@ module;
 
 export module srcc.ast;
 export import :enums;
+export import :eval;
 export import :stmt;
 export import :type;
 import srcc;
@@ -46,6 +47,9 @@ private:
 
     /// Not unique because we’ll mostly just be creating unique symbols from now on.
     llvm::StringSaver saver{alloc};
+
+    /// Used to store evaluated constant expressions.
+    SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
 
     explicit TranslationUnit(Context& ctx, String name, bool is_module);
 
@@ -146,6 +150,12 @@ public:
 
     /// Save a string in the module.
     auto save(StringRef s) -> String { return String::Save(saver, s); }
+
+    /// Save a constant in the module.
+    auto save(eval::Value val) -> eval::Value* {
+        evaluated_constants.push_back(std::make_unique<eval::Value>(std::move(val)));
+        return evaluated_constants.back().get();
+    }
 
     /// Serialise this module to a memory buffer
     void serialise(SmallVectorImpl<char>& buffer) const;

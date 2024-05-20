@@ -1,0 +1,16 @@
+// V %srcc --sema
+// R %srcc --sema
+// expected-no-diagnostics
+
+program x;
+
+proc foo {
+    __builtin_print("baz");
+    __builtin_print("quux\n");
+}
+
+// * foobar
+eval __builtin_print("foobar\n");
+
+// + bazquux
+eval foo();

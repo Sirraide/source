@@ -8,6 +8,7 @@ module;
 
 module srcc.frontend.sema;
 import srcc.utils;
+import srcc.ast;
 using namespace srcc;
 
 #define Try(expression) ({              \
@@ -220,6 +221,22 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
     );
 }
 
+auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
+    // Always create an EvalExpr to represent this in the AST.
+    auto eval = new (*M) EvalExpr(M->DependentTy, arg, loc);
+    if (arg->dependent()) return eval;
+
+    // If the expression is not dependent, evaluate it now.
+    auto value = srcc::eval::Evaluate(*M, arg);
+    if (not value.has_value()) {
+        eval->set_errored();
+        return eval;
+    }
+
+    // And cache the value for later.
+    return new (*M) ConstExpr(*M , std::move(*value), loc, eval);
+}
+
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     // Make sure all paths return a value.
     //
@@ -430,6 +447,11 @@ auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
     if (stmt.invalid()) return nullptr;
     if (not isa<Expr>(stmt.get())) return Error(parsed->loc, "Expected expression");
     return cast<Expr>(stmt.get());
+}
+
+auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
+    auto arg = Try(TranslateStmt(parsed->expr));
+    return BuildEvalExpr(arg, parsed->loc);
 }
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {

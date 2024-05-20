@@ -268,7 +268,6 @@ target_link_libraries(srcc-core PRIVATE options)
 ##  Other libraries
 ## ============================================================================
 add_srcc_library(ast AST)
-add_srcc_library(eval Eval LINK srcc-ast)
 add_srcc_library(frontend Frontend LINK srcc-ast)
 add_srcc_library(codegen CG LINK srcc-ast)
 add_srcc_library(driver Driver LINK srcc-ast srcc-frontend srcc-codegen)

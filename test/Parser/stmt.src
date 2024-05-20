@@ -8,6 +8,8 @@ foo();
 {{{{{{ }}}}}}
 { foo(); foo(); }
 
+proc foo {}
+
 eval foo();
 eval eval eval eval foo();
 eval eval {
@@ -18,4 +20,3 @@ eval eval {
     }
 }
 
-proc foo {}
