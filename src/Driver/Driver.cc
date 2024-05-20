@@ -138,7 +138,7 @@ int Driver::Impl::run_job() {
     }
 
     if (ctx.diags().has_error()) {
-        Verify();
+        if (opts.verify) return Verify();
         return 1;
     }
 
