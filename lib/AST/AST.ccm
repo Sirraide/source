@@ -124,13 +124,13 @@ public:
     static auto Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr;
 
     /// Allocate data.
-    void* Allocate(usz size, usz align) { return allocator().Allocate(size, align); }
+    void* allocate(usz size, usz align) { return allocator().Allocate(size, align); }
 
     /// Allocate an object.
     template<typename T, typename... Args>
     auto AllocateAndConstruct(Args&&... args) -> T* {
         static_assert(std::is_trivially_destructible_v<T>, "Type must be trivially destructible");
-        return new (Allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
+        return new (allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
     }
 
     /// Get the module’s allocator.

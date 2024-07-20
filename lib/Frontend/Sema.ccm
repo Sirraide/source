@@ -193,18 +193,22 @@ private:
 
     /// Translation from the parse tree to the AST.
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
+    auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> std::nullptr_t { Todo(); }
     auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr>;
     auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr>;
+    auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
     auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr>;
+    auto TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> std::nullptr_t { Todo(); }
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
+    auto TranslateParamDecl(ParsedParamDecl* parsed) -> std::nullptr_t { Todo(); }
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
     auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
-    auto TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
-    auto TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt>;
-    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) -> void;
+    auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    auto TranslateProcType(ParsedProcType* parsed) -> std::nullptr_t { Todo(); }
+    auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
+    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
     auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
 };

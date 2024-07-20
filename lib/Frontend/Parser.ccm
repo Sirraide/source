@@ -13,7 +13,7 @@ import srcc.utils;
 export namespace srcc {
 class Parser;
 class ParsedModule;
-class ParsedExpr;
+class ParsedStmt;
 struct ImportedModule;
 
 #define PARSE_TREE_NODE(node) class SRCC_CAT(Parsed, node);
@@ -32,14 +32,18 @@ class srcc::ParsedModule {
     /// once we’re done building the AST.
     llvm::BumpPtrAllocator alloc;
 
+
 public:
     using Ptr = std::unique_ptr<ParsedModule>;
 
     /// Allocator used for allocating strings.
     std::unique_ptr<llvm::BumpPtrAllocator> string_alloc = std::make_unique<llvm::BumpPtrAllocator>();
 
+    /// Allocator used for integer literals.
+    IntegerStorage integers;
+
     /// Top-level statements.
-    std::vector<ParsedExpr*> top_level;
+    std::vector<ParsedStmt*> top_level;
 
     /// The name of this program or module.
     Location name_loc;
@@ -70,14 +74,18 @@ public:
     void dump() const;
 };
 
+// ============================================================================
+//  Statements
+// ============================================================================
 /// Root of the parse tree hierarchy.
-class srcc::ParsedExpr {
+class srcc::ParsedStmt {
     struct Printer;
     friend Printer;
 
 public:
     enum struct Kind : u8 {
-#define PARSE_TREE_LEAF_NODE(node) node,
+#define PARSE_TREE_LEAF_NODE(node)             node,
+#define PARSE_TREE_INHERITANCE_MARKER(m, node) m = node,
 #include "srcc/ParseTree.inc"
 
     };
@@ -86,7 +94,7 @@ public:
     Location loc;
 
 protected:
-    ParsedExpr(Kind kind, Location loc) : expr_kind{kind}, loc{loc} {}
+    ParsedStmt(Kind kind, Location loc) : expr_kind{kind}, loc{loc} {}
 
 public:
     // Only allow allocating these in the parser.
@@ -95,80 +103,134 @@ public:
 
     auto kind() const -> Kind { return expr_kind; }
 
+    void dump(const ParsedModule* owner, bool use_colour) const;
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
 };
 
-/// An syntactic block that contains other expressions.
-class srcc::ParsedBlockExpr final : public ParsedExpr
-    , TrailingObjects<ParsedBlockExpr, ParsedExpr*> {
+// ============================================================================
+//  Types
+// ============================================================================
+class srcc::ParsedType : public ParsedStmt {
+protected:
+    ParsedType(Kind kind, Location loc) : ParsedStmt{kind, loc} {}
+
+public:
+    auto str(utils::Colours C) -> std::string;
+
+    static bool classof(const ParsedStmt* e) {
+        using K = ParsedStmt::Kind;
+        return e->kind() >= K::Type$Start and e->kind() <= K::Type$End;
+    }
+};
+
+class srcc::ParsedBuiltinType final : public ParsedType {
+public:
+    enum struct Kind {
+        Int
+    };
+
+    const Kind builtin_kind;
+
+private:
+    ParsedBuiltinType(Kind kind, Location loc)
+        : ParsedType{ParsedStmt::Kind::BuiltinType, loc}, builtin_kind{kind} {}
+
+public:
+    static auto Int(Parser& p, Location loc) { return new (p) ParsedBuiltinType{Kind::Int, loc}; }
+    static bool classof(const ParsedStmt* e) {
+        return e->kind() == ParsedStmt::Kind::BuiltinType;
+    }
+};
+
+class srcc::ParsedProcType final : public ParsedType
+    , llvm::TrailingObjects<ParsedProcType, ParsedType*> {
     friend TrailingObjects;
-
-    const u32 num_stmts;
-
-    auto numTrailingObjects(OverloadToken<ParsedExpr*>) -> usz { return num_stmts; }
-
-    ParsedBlockExpr(
-        ArrayRef<ParsedExpr*> stmts,
-        Location location
-    );
+    const u32 num_params;
+    auto numTrailingObjects(OverloadToken<ParsedType*>) -> usz { return num_params; }
+    ParsedProcType(ArrayRef<ParsedType*> params, Location loc);
 
 public:
     static auto Create(
         Parser& parser,
-        ArrayRef<ParsedExpr*> stmts,
+        ArrayRef<ParsedType*> params,
+        Location loc
+    ) -> ParsedProcType*;
+
+    auto param_types() -> ArrayRef<ParsedType*> {
+        return {getTrailingObjects<ParsedType*>(), num_params};
+    }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
+};
+
+// ============================================================================
+//  Expressions
+// ============================================================================
+/// An syntactic block that contains other expressions.
+class srcc::ParsedBlockExpr final : public ParsedStmt
+    , TrailingObjects<ParsedBlockExpr, ParsedStmt*> {
+    friend TrailingObjects;
+    const u32 num_stmts;
+    auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_stmts; }
+    ParsedBlockExpr(ArrayRef<ParsedStmt*> stmts, Location location);
+
+public:
+    static auto Create(
+        Parser& parser,
+        ArrayRef<ParsedStmt*> stmts,
         Location location
     ) -> ParsedBlockExpr*;
 
     /// Get the statements stored in this block.
-    auto stmts() -> ArrayRef<ParsedExpr*> {
-        return {getTrailingObjects<ParsedExpr*>(), num_stmts};
+    auto stmts() -> ArrayRef<ParsedStmt*> {
+        return {getTrailingObjects<ParsedStmt*>(), num_stmts};
     }
 
-    static bool classof(const ParsedExpr* e) {
+    static bool classof(const ParsedStmt* e) {
         return e->kind() == Kind::BlockExpr;
     }
 };
 
 /// A call to a function, or anything that syntactically
 /// resembles one.
-class srcc::ParsedCallExpr final : public ParsedExpr
-    , TrailingObjects<ParsedCallExpr, ParsedExpr*> {
+class srcc::ParsedCallExpr final : public ParsedStmt
+    , TrailingObjects<ParsedCallExpr, ParsedStmt*> {
     friend TrailingObjects;
 
 public:
     /// The expression that is called.
-    ParsedExpr* callee;
+    ParsedStmt* callee;
 
 private:
     const u32 num_args;
 
-    auto numTrailingObjects(OverloadToken<ParsedExpr*>) -> usz { return num_args; }
+    auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_args; }
 
     ParsedCallExpr(
-        ParsedExpr* callee,
-        ArrayRef<ParsedExpr*> args,
+        ParsedStmt* callee,
+        ArrayRef<ParsedStmt*> args,
         Location location
     );
 
 public:
     static auto Create(
         Parser& parser,
-        ParsedExpr* callee,
-        ArrayRef<ParsedExpr*> args,
+        ParsedStmt* callee,
+        ArrayRef<ParsedStmt*> args,
         Location location
     ) -> ParsedCallExpr*;
 
     /// Get the arguments to the call.
-    auto args() -> ArrayRef<ParsedExpr*> {
-        return {getTrailingObjects<ParsedExpr*>(), num_args};
+    auto args() -> ArrayRef<ParsedStmt*> {
+        return {getTrailingObjects<ParsedStmt*>(), num_args};
     }
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::CallExpr; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CallExpr; }
 };
 
 /// A reference to a declaration.
-class srcc::ParsedDeclRefExpr final : public ParsedExpr
+class srcc::ParsedDeclRefExpr final : public ParsedStmt
     , TrailingObjects<ParsedDeclRefExpr, String> {
     friend TrailingObjects;
 
@@ -190,52 +252,69 @@ public:
     /// Get the parts of the declaration reference.
     auto names() -> ArrayRef<String> { return {getTrailingObjects<String>(), num_parts}; }
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::DeclRefExpr; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeclRefExpr; }
 };
 
 /// A statement to evaluate.
-class srcc::ParsedEvalExpr final : public ParsedExpr {
+class srcc::ParsedEvalExpr final : public ParsedStmt {
 public:
-    ParsedExpr* expr;
+    ParsedStmt* expr;
 
     ParsedEvalExpr(
-        ParsedExpr* expr,
+        ParsedStmt* expr,
         Location location
-    ) : ParsedExpr{Kind::EvalExpr, location}, expr{expr} {}
+    ) : ParsedStmt{Kind::EvalExpr, location}, expr{expr} {}
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::EvalExpr; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EvalExpr; }
 };
 
 /// A string literal.
-class srcc::ParsedStrLitExpr final : public ParsedExpr {
+class srcc::ParsedStrLitExpr final : public ParsedStmt {
 public:
     String value;
 
     ParsedStrLitExpr(
         String value,
         Location location
-    ) : ParsedExpr{Kind::StrLitExpr, location}, value{value} {}
+    ) : ParsedStmt{Kind::StrLitExpr, location}, value{value} {}
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::StrLitExpr; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StrLitExpr; }
+};
+
+/// An integer literal.
+class srcc::ParsedIntLitExpr final : public ParsedStmt {
+public:
+    StoredInteger storage;
+
+    ParsedIntLitExpr(
+        Parser& p,
+        APInt value,
+        Location location
+    );
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntLitExpr; }
 };
 
 /// A member access.
-class srcc::ParsedMemberExpr final : public ParsedExpr {
+class srcc::ParsedMemberExpr final : public ParsedStmt {
 public:
-    ParsedExpr* base;
+    ParsedStmt* base;
     String member;
 
     ParsedMemberExpr(
-        ParsedExpr* base,
+        ParsedStmt* base,
         String member,
         Location location
-    ) : ParsedExpr{Kind::MemberExpr, location}, base{base}, member{member} {}
+    ) : ParsedStmt{Kind::MemberExpr, location}, base{base}, member{member} {}
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::MemberExpr; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::MemberExpr; }
 };
 
+// ============================================================================
+//  Declarations
+// ============================================================================
 /// Base class for declarations.
-class srcc::ParsedDecl : public ParsedExpr {
+class srcc::ParsedDecl : public ParsedStmt {
 public:
     /// The name of the declaration; may be empty if it is
     /// compiler-generated.
@@ -246,28 +325,67 @@ protected:
         Kind kind,
         String name,
         Location location
-    ) : ParsedExpr{kind, location}, name{name} {}
+    ) : ParsedStmt{kind, location}, name{name} {}
 
 public:
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::ProcDecl; }
+    static bool classof(const ParsedStmt* e) {
+        return e->kind() >= Kind::Decl$Start and e->kind() <= Kind::Decl$End;
+    }
+};
+
+class srcc::ParsedParamDecl final : public ParsedDecl {
+public:
+    ParsedType* type;
+
+    ParsedParamDecl(
+        String name,
+        ParsedType* param_type,
+        Location location
+    ) : ParsedDecl{Kind::ParamDecl, name, location}, type{param_type} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParamDecl; }
 };
 
 /// A procedure declaration.
-class srcc::ParsedProcDecl final : public ParsedDecl {
+class srcc::ParsedProcDecl final : public ParsedDecl
+    , llvm::TrailingObjects<ParsedProcDecl, ParsedParamDecl*> {
+    friend TrailingObjects;
+
 public:
     /// The body of the procedure.
     ///
     /// This is not present if the procedure is only declared,
     /// not defined.
-    ParsedExpr* body;
+    ParsedStmt* body;
 
+    /// The type of the procedure.
+    ParsedProcType* type;
+
+private:
+    auto numTrailingObjects(OverloadToken<ParsedParamDecl*>) -> usz { return type->param_types().size(); }
     ParsedProcDecl(
         String name,
-        ParsedExpr* body,
+        ParsedProcType* type,
+        ArrayRef<ParsedParamDecl*> param_decls,
+        ParsedStmt* body,
         Location location
-    ) : ParsedDecl{Kind::ProcDecl, name, location}, body{body} {}
+    );
 
-    static bool classof(const ParsedExpr* e) { return e->kind() == Kind::ProcDecl; }
+public:
+    static auto Create(
+        Parser& parser,
+        String name,
+        ParsedProcType* type,
+        ArrayRef<ParsedParamDecl*> param_names,
+        ParsedStmt* body,
+        Location location
+    ) -> ParsedProcDecl*;
+
+    auto params() -> ArrayRef<ParsedParamDecl*> {
+        return {getTrailingObjects<ParsedParamDecl*>(), type->param_types().size()};
+    }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcDecl; }
 };
 
 class srcc::Parser : DiagsProducer<std::nullptr_t> {
@@ -293,7 +411,10 @@ public:
     ) -> ParsedModule::Ptr;
 
     /// Allocate data.
-    void* Allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
+    void* allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
+
+    /// Get the module.
+    auto module() -> ParsedModule& { return *mod; }
 
 private:
     explicit Parser(const File& file)
@@ -303,13 +424,14 @@ private:
 
     /// Each of these corresponds to a production in the grammar.
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
-    auto ParseExpr() -> Ptr<ParsedExpr>;
+    auto ParseExpr() -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
     void ParseImport();
     void ParsePreamble();
-    auto ParseStmt() -> Ptr<ParsedExpr>;
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
+    auto ParseStmt() -> Ptr<ParsedStmt>;
+    auto ParseType() -> Ptr<ParsedType>;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -318,7 +440,7 @@ private:
 
     using DiagsProducer::Error;
     template <typename... Args>
-    auto Error(std::format_string<Args...> fmt, Args&&... args) -> Ptr<ParsedExpr> {
+    auto Error(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         return Error(tok->location, fmt, std::forward<Args>(args)...);
     }
 

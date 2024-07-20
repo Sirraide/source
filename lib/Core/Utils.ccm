@@ -2,27 +2,28 @@ module;
 
 #include <chrono>
 #include <cmath>
+#include <expected>
 #include <filesystem>
-#include <print>
-#include <llvm/Support/Error.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/FoldingSet.h>
+#include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
+#include <print>
 #include <ranges>
 #include <source_location>
 #include <srcc/Macros.hh>
 #include <string>
-#include <expected>
 
 export module srcc.utils;
 export import base;
@@ -68,6 +69,7 @@ class Ptr {
 public:
     Ptr() : value{nullptr} {}
     Ptr(Ty* value) : value{value} {}
+    Ptr(std::nullptr_t) : value{nullptr} {}
 
     template <std::derived_from<Ty> Derived>
     Ptr(Ptr<Derived> other) : value{other.value} { }
@@ -255,6 +257,39 @@ auto operator+=(std::string& s, String str) -> std::string& {
     s += str.value();
     return s;
 }
+
+class StoredInteger;
+class IntegerStorage {
+    friend StoredInteger;
+    SmallVector<APInt> saved;
+public:
+    auto store_int(APInt integer) -> StoredInteger;
+};
+
+/// Class to store APInts in AST nodes.
+class StoredInteger {
+    friend IntegerStorage;
+
+    // Stored inline if small, and a pointer to an APInt otherwise.
+    u64 data;
+    u64 bits;
+
+    StoredInteger() = default;
+
+public:
+    /// Get the value if it is small enough.
+    auto inline_value() const -> std::optional<i64>;
+
+    /// Check if the value is stored inline.
+    bool is_inline() const { return bits <= 64; }
+
+    /// Convert this to a string for printing.
+    auto str(const IntegerStorage* storage, bool is_signed) const -> std::string;
+
+    /// Get the value of this integer.
+    auto value(const IntegerStorage& storage) const -> APInt;
+};
+
 } // namespace srcc
 
 // Rarely used helpers go here.
@@ -290,7 +325,7 @@ struct Colours {
     constexpr Colours(bool use_colours)
         : use_colours{use_colours} {}
 
-    constexpr auto operator()(Colour c) -> std::string_view {
+    constexpr auto operator()(Colour c) const -> std::string_view {
         if (not use_colours) return "";
         switch (c) {
             case Colour::Reset: return "\033[m";
@@ -337,16 +372,6 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
 } // namespace srcc::utils
-
-template <>
-struct std::formatter<llvm::APInt> : formatter<std::string_view> {
-    template <typename FormatContext>
-    auto format(const llvm::APInt& i, FormatContext& ctx) const {
-        llvm::SmallVector<char> buf;
-        i.toStringSigned(buf, 10);
-        return formatter<std::string_view>::format(std::string_view{buf.data(), buf.size()}, ctx);
-    }
-};
 
 template <>
 struct std::formatter<srcc::Size> : formatter<srcc::usz> {

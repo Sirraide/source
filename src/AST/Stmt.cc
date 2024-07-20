@@ -10,7 +10,7 @@ import :stmt;
 using namespace srcc;
 
 void* Stmt::operator new(usz size, TranslationUnit& mod) {
-    return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 void Scope::add(Decl* d) {
@@ -38,7 +38,7 @@ auto BuiltinCallExpr::Create(
     Location location
 ) -> BuiltinCallExpr* {
     auto size = totalSizeToAlloc<Expr*>(args.size());
-    auto mem = tu.Allocate(size, alignof(BuiltinCallExpr));
+    auto mem = tu.allocate(size, alignof(BuiltinCallExpr));
     return ::new (mem) BuiltinCallExpr{kind, return_type, args, location};
 }
 
@@ -61,7 +61,7 @@ auto CallExpr::Create(
     Location location
 ) -> CallExpr* {
     const auto size = totalSizeToAlloc<Expr*>(args.size());
-    auto mem = mod.Allocate(size, alignof(CallExpr));
+    auto mem = mod.allocate(size, alignof(CallExpr));
     return ::new (mem) CallExpr{type, callee, args, location};
 }
 
@@ -96,7 +96,7 @@ auto BlockExpr::Create(
 ) -> BlockExpr* {
     auto type = idx == NoExprIndex ? mod.VoidTy : cast<Expr>(stmts[idx])->type;
     auto size = totalSizeToAlloc<Stmt*>(stmts.size());
-    auto mem = mod.Allocate(size, alignof(BlockExpr));
+    auto mem = mod.allocate(size, alignof(BlockExpr));
     return ::new (mem) BlockExpr{parent_scope, type, stmts, idx, location};
 }
 

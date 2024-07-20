@@ -31,7 +31,7 @@ auto FindOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* 
 //  Type
 // ============================================================================
 void* TypeBase::operator new(usz size, TranslationUnit& mod) {
-    return mod.Allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+    return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 void TypeBase::dump(bool use_colour) const {
@@ -160,7 +160,7 @@ auto ProcType::Get(
 ) -> ProcType* {
     auto CreateNew = [&] {
         const auto size = totalSizeToAlloc<Type>(param_types.size());
-        auto mem = mod.Allocate(size, alignof(ProcType));
+        auto mem = mod.allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
             variadic,

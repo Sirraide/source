@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/StringExtras.h>
 #include <optional>
 #include <print>
 #include <srcc/Macros.hh>
@@ -54,21 +55,19 @@ Value::Value(Slice slice, Type ty)
       ty(ty) {}
 
 void Value::dump(bool use_color) const {
-    struct Visitor {
-        using enum utils::Colour;
-        utils::Colours C;
-        void operator()(std::monostate) { }
-        void operator()(ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); }
-        void operator()(const LValue& lval) { std::print("{}\"{}\"", C(Yellow), *lval.get<String>()); }
-        void operator()(const APInt& value) { std::print("{}{}", C(Magenta), value); }
-        void operator()(const Slice&) {}
-        void operator()(const Reference& ref) {
-            (*this)(ref.base);
-            std::print("{}@{}{}", C(Red), C(Magenta), ref.offset);
+    using enum utils::Colour;
+    utils::Colours C{use_color};
+    utils::Overloaded V {
+        [&](std::monostate) { },
+        [&](ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); },
+        [&](const LValue& lval) { std::print("{}\"{}\"", C(Yellow), *lval.get<String>()); },
+        [&](const APInt& value) { std::print("{}{}", C(Magenta), llvm::toString(value, 10, true)); },
+        [&](const Slice&) {},
+        [&](this auto& Self, const Reference& ref) {
+            Self(ref.base);
+            std::print("{}@{}{}", C(Red), C(Magenta), llvm::toString(ref.offset, 10, true));
         }
     };
-
-    Visitor V{{use_color}};
     visit(V);
 }
 

@@ -26,6 +26,7 @@
 <stmts> ::= { <stmt> | <decl> }
 <stmt>  ::= [ <expr> ] ";"
           | <expr-block>
+          | <decl>
           | EVAL <stmt>
 
 // ============================================================================
@@ -42,7 +43,7 @@
 <expr-call>     ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>     ::= EVAL <expr>
-<expr-lit>      ::= STRING-LITERAL
+<expr-lit>      ::= STRING-LITERAL | INTEGER
 <expr-member>   ::= <expr> "." IDENTIFIER
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
@@ -51,4 +52,13 @@
 //  Declarations
 // ============================================================================
 <decl> ::= <decl-proc>
-<decl-proc> ::= PROC IDENTIFIER <expr-block>
+<decl-proc>  ::= PROC IDENTIFIER <signature> <expr-block>
+<signature>  ::= [ <proc-args> ]
+<proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+<param-decl> ::= <type> [ IDENTIFIER ]
+
+// ============================================================================
+//  Types
+// ============================================================================
+<type> ::= <type-prim>
+<type-prim> ::= "int"

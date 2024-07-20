@@ -2,6 +2,7 @@ module;
 
 #include <llvm/ADT/StringExtras.h>
 #include <srcc/Macros.hh>
+#include <print>
 
 module srcc.frontend.parser;
 import srcc.frontend.token;

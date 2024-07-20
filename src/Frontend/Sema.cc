@@ -314,7 +314,7 @@ void Sema::Translate() {
     M->initialiser_proc->body = M->file_scope_block;
 }
 
-void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> parsed) {
+void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
@@ -323,7 +323,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedExpr*> p
     //
     // This translation only applies to *some* decls. It is allowed to do nothing,
     // but if it does fail, then we can’t process the rest of this scope.
-    llvm::MapVector<ParsedExpr*, Decl*> translated_decls;
+    llvm::MapVector<ParsedStmt*, Decl*> translated_decls;
     bool ok = true;
     for (auto p : parsed) {
         if (auto d = dyn_cast<ParsedDecl>(p)) {
@@ -423,7 +423,7 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
 /// Perform initial processing of a decl so it can be used by the rest
 /// of the code. This only handles order-independent decls.
 auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
-    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcType(proc);
+    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
     return nullptr;
 }
 
@@ -442,7 +442,7 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
-auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr> {
     auto stmt = TranslateStmt(parsed);
     if (stmt.invalid()) return nullptr;
     if (not isa<Expr>(stmt.get())) return Error(parsed->loc, "Expected expression");
@@ -503,7 +503,7 @@ auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr> {
 
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.
-auto Sema::TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
+auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     // We don’t actually have parameters or return types atm...
     auto type = ProcType::Get(*M, M->VoidTy);
     auto proc = new (*M) ProcDecl(
@@ -524,9 +524,9 @@ auto Sema::TranslateProcType(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 }
 
 /// Dispatch to translate a statement.
-auto Sema::TranslateStmt(ParsedExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
     switch (parsed->kind()) {
-        using K = ParsedExpr::Kind;
+        using K = ParsedStmt::Kind;
 #define PARSE_TREE_LEAF_NODE(node) \
     case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #include "srcc/ParseTree.inc"

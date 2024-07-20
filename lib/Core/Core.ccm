@@ -272,19 +272,21 @@ protected:
 class srcc::StreamingDiagnosticsEngine final : public DiagnosticsEngine {
     llvm::raw_ostream& stream;
 
-    /// Used for determining whether to print an empty line between diagnostics.
-    bool issued_diagnostic = false;
+    /// Used to limit how many errors we print before giving up.
+    u32 error_limit;
+    u32 printed = 0;
 
-    StreamingDiagnosticsEngine(const Context& ctx, llvm::raw_ostream& output_stream)
-        : DiagnosticsEngine(ctx), stream(output_stream) {}
+    StreamingDiagnosticsEngine(const Context& ctx, u32 error_limit, llvm::raw_ostream& output_stream)
+        : DiagnosticsEngine(ctx), stream(output_stream), error_limit(error_limit) {}
 
 public:
     /// Create a new diagnostic engine.
     [[nodiscard]] static auto Create(
         const Context& ctx,
+        u32 error_limit = 0,
         llvm::raw_ostream& output_stream = llvm::errs()
     ) -> Ptr {
-        return llvm::IntrusiveRefCntPtr(new StreamingDiagnosticsEngine(ctx, output_stream));
+        return llvm::IntrusiveRefCntPtr(new StreamingDiagnosticsEngine(ctx, error_limit, output_stream));
     }
 
 private:

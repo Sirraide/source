@@ -33,6 +33,10 @@ public:
         /// The action to perform.
         Action action;
 
+        /// How many errors are printed before we stop printing them
+        /// altogether. Set to 0 to disable.
+        u32 error_limit;
+
         /// Number of threads to use for compilation.
         u32 num_threads;
 

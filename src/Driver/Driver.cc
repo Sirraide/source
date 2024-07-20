@@ -94,7 +94,7 @@ int Driver::Impl::run_job() {
     compiled = true;
 
     // Always create a regular diags engine first for driver diags.
-    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx));
+    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
 
     // Disable colours in verify mode.
     ctx.enable_colours(opts.colours and not opts.verify);

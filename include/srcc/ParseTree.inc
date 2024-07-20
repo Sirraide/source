@@ -2,8 +2,16 @@
 #    define PARSE_TREE_LEAF_NODE(node) PARSE_TREE_NODE(node)
 #endif
 
+#ifndef PARSE_TREE_LEAF_TYPE
+#    define PARSE_TREE_LEAF_TYPE(node) PARSE_TREE_LEAF_NODE(node)
+#endif
+
 #ifndef PARSE_TREE_NODE
 #    define PARSE_TREE_NODE(node)
+#endif
+
+#ifndef PARSE_TREE_INHERITANCE_MARKER
+#    define PARSE_TREE_INHERITANCE_MARKER(m, value)
 #endif
 
 // These must be arranged in a preorder traversal of the class hierarchy
@@ -13,10 +21,22 @@ PARSE_TREE_LEAF_NODE(CallExpr)
 PARSE_TREE_LEAF_NODE(DeclRefExpr)
 PARSE_TREE_LEAF_NODE(EvalExpr)
 PARSE_TREE_LEAF_NODE(StrLitExpr)
+PARSE_TREE_LEAF_NODE(IntLitExpr)
 PARSE_TREE_LEAF_NODE(MemberExpr)
 
+PARSE_TREE_NODE(Type)
+PARSE_TREE_LEAF_TYPE(BuiltinType)
+PARSE_TREE_LEAF_TYPE(ProcType)
+PARSE_TREE_INHERITANCE_MARKER(Type$Start, BuiltinType)
+PARSE_TREE_INHERITANCE_MARKER(Type$End, ProcType)
+
 PARSE_TREE_NODE(Decl)
+PARSE_TREE_LEAF_NODE(ParamDecl)
 PARSE_TREE_LEAF_NODE(ProcDecl)
+PARSE_TREE_INHERITANCE_MARKER(Decl$Start, ParamDecl)
+PARSE_TREE_INHERITANCE_MARKER(Decl$End, ProcDecl)
 
 #undef PARSE_TREE_NODE
 #undef PARSE_TREE_LEAF_NODE
+#undef PARSE_TREE_LEAF_TYPE
+#undef PARSE_TREE_INHERITANCE_MARKER

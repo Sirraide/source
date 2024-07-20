@@ -12,6 +12,7 @@ using namespace command_line_options;
 using options = clopts< // clang-format off
     positional<"file", "The file to compile">,
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
+    option<"--error-limit", "Limit how many errors are printed; passing 0 removes the limit", std::int64_t>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
     flag<"--ast", "Dump the parse tree / AST">,
     flag<"--lex", "Lex tokens only and exit">,
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
     // Create driver.
     Driver driver{{
         .action = action,
+        .error_limit = u32(opts.get_or<"--error-limit">(10)),
         .num_threads = u32(opts.get_or<"-j">(std::thread::hardware_concurrency())),
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),
