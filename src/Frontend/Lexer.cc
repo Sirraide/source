@@ -1,6 +1,6 @@
 module;
 
-#include <cctype>
+#include <llvm/ADT/StringExtras.h>
 #include <srcc/Macros.hh>
 
 module srcc.frontend.parser;
@@ -13,18 +13,18 @@ using namespace srcc;
 // ===========================================================================
 /// Check if a character is allowed at the start of an identifier.
 constexpr bool IsStart(char c) {
-    return std::isalpha(static_cast<unsigned char>(c)) or c == '_' or c == '$';
+    return llvm::isAlpha(c) or c == '_' or c == '$';
 }
 
 /// Check if a character is allowed in an identifier.
 constexpr bool IsContinue(char c) {
-    return IsStart(c) or isdigit(static_cast<unsigned char>(c)) or c == '!';
+    return IsStart(c) or llvm::isDigit(c) or c == '!';
 }
 
 constexpr bool IsBinary(char c) { return c == '0' or c == '1'; }
 constexpr bool IsDecimal(char c) { return c >= '0' and c <= '9'; }
 constexpr bool IsOctal(char c) { return c >= '0' and c <= '7'; }
-constexpr bool IsHex(char c) { return (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F'); }
+constexpr bool IsHex(char c) { return llvm::isHexDigit(c); }
 
 // All keywords.
 const StringMap<Tk> keywords = {
@@ -111,8 +111,9 @@ struct Lexer {
     auto tok() -> Token& { return tokens.back(); }
 
     template <typename ...Args>
-    void Error(Location where, fmt::format_string<Args...> fmt, Args&& ...args) {
+    bool Error(Location where, fmt::format_string<Args...> fmt, Args&& ...args) {
         f.context().diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        return false;
     }
 
     auto CurrOffs() -> u32;
@@ -120,7 +121,7 @@ struct Lexer {
     void HandleCommentToken();
     void LexEscapedId();
     void LexIdentifier();
-    void LexNumber();
+    bool LexNumber();
     void LexString(char delim);
     void Next();
     void NextChar();
@@ -139,6 +140,7 @@ Lexer::Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb)
       comment_token_handler{std::move(cb)},
       curr{f.data()},
       end{curr + f.size()} {
+    Assert(f.size() <= std::numeric_limits<u32>::max(), "We can’t handle files this big right now");
     NextChar();
     do Next();
     while (not tok().eof());
@@ -207,6 +209,7 @@ void Lexer::NextImpl() {
     tok().artificial = false;
     tok().type = Tk::Invalid;
     tok().location.pos = CurrOffs();
+    tok().location.len = 1;
 
     // Lex the token.
     switch (lastc) {
@@ -491,7 +494,10 @@ void Lexer::NextImpl() {
         case '7':
         case '8':
         case '9':
-            LexNumber();
+            // Skip the rest of the broken literal if this fails.
+            if (not LexNumber())
+                while (llvm::isAlnum(lastc))
+                    NextChar();
             break;
 
         default:
@@ -574,13 +580,30 @@ void Lexer::LexIdentifier() {
     LexSpecialToken();
 }
 
-void Lexer::LexNumber() {
+bool Lexer::LexNumber() {
     // Helper function that actually parses a number.
-    auto lex_number_impl = [this](bool pred(char), unsigned base) {
+    auto LexNumberImpl = [this](bool pred(char), char delim = 0, unsigned base = 10) -> bool {
+        auto DiagnoseInvalidLiteral = [&] {
+            auto kind = [=] -> std::string_view {
+                switch (base) {
+                    case 2: return "binary";
+                    case 8: return "octal";
+                    case 10: return "decimal";
+                    case 16: return "hexadecimal";
+                    default: Unreachable("Invalid base: {}", base);
+                }
+            }();
+            return Error(CurrLoc(), "Invalid digit '{}' in {} integer literal", lastc, kind);
+        };
+
         // Need at least one digit.
-        if (not pred(lastc)) {
-            Error(CurrLoc() << 1 <<= 1, "Invalid integer literal");
-            return;
+        if (delim != 0 and not pred(lastc)) {
+            // If this is not even any sort of digit, then issue
+            // a more helpful error; this is so we don’t complain
+            // about e.g. ‘;’ not being a digit.
+            if (not llvm::isAlnum(lastc))
+                return Error(CurrLoc(), "Expected at least one digit after '{}'", delim);
+            return DiagnoseInvalidLiteral();
         }
 
         // Parse the literal.
@@ -591,10 +614,7 @@ void Lexer::LexNumber() {
         }
 
         // The next character must not be a start character.
-        if (IsStart(lastc)) {
-            Error(Location{tok().location, CurrLoc()}, "Invalid character in integer literal: '{}'", lastc);
-            return;
-        }
+        if (IsStart(lastc)) return DiagnoseInvalidLiteral();
 
         // We have a valid integer literal!
         tok().type = Tk::Integer;
@@ -602,50 +622,50 @@ void Lexer::LexNumber() {
         // Note: This returns true on error!
         tok().integer = APInt{};
         Assert(not buf.str().getAsInteger(base, tok().integer));
+        return true;
     };
 
     // If the first character is a 0, then this might be a non-decimal constant.
-    if (lastc == 0) {
+    if (lastc == '0') {
         NextChar();
+        char delim = lastc;
 
         // Hexadecimal literal.
         if (lastc == 'x' or lastc == 'X') {
             NextChar();
-            return lex_number_impl(IsHex, 16);
+            return LexNumberImpl(IsHex, delim, 16);
         }
 
         // Octal literal.
         if (lastc == 'o' or lastc == 'O') {
             NextChar();
-            return lex_number_impl(IsOctal, 8);
+            return LexNumberImpl(IsOctal, delim, 8);
         }
 
         // Binary literal.
         if (lastc == 'b' or lastc == 'B') {
             NextChar();
-            return lex_number_impl(IsBinary, 2);
+            return LexNumberImpl(IsBinary, delim, 2);
         }
 
-        // Multiple leading 0’s are not permitted.
-        if (std::isdigit(lastc)) {
-            Error(CurrLoc() << 1, "Leading 0 in integer literal. (Hint: Use 0o/0O for octal literals)");
-            return;
+        // Leading 0’s must be followed by one of the above.
+        if (llvm::isDigit(lastc)) {
+            return Error(CurrLoc() << 1, "Leading zeros are not allowed in integers. Use 0o/0O for octal literals");
         }
 
         // Integer literal must be a literal 0.
         if (IsStart(lastc)) {
-            Error(CurrLoc() <<= 1, "Invalid character in integer literal: '{}'", lastc);
-            return;
+            return Error(CurrLoc() <<= 1, "Invalid character in integer literal: '{}'", lastc);
         }
 
         // Integer literal is 0.
         tok().type = Tk::Integer;
         tok().integer = 0;
-        return;
+        return true;
     }
 
     // If the first character is not 0, then we have a decimal literal.
-    return lex_number_impl(IsDecimal, 10);
+    return LexNumberImpl(IsDecimal);
 }
 
 void Lexer::LexString(char delim) {
@@ -670,6 +690,7 @@ void Lexer::LexString(char delim) {
                 switch (lastc) {
                     case 'a': text += '\a'; break;
                     case 'b': text += '\b'; break;
+                    case 'e': text += '\033'; break;
                     case 'f': text += '\f'; break;
                     case 'n': text += '\n'; break;
                     case 'r': text += '\r'; break;

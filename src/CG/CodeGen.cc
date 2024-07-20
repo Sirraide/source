@@ -239,35 +239,30 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
-    // FIXME: Should use Overloaded{} idiom whenever that one clang bug is fixed.
-    struct  Visitor {
-        CodeGen& CG;
-        auto operator()(ProcDecl* proc) -> llvm::Constant* { return CG.EmitProcAddress(proc); }
-        auto operator()(std::monostate) -> llvm::Constant* { return nullptr; }
-        auto operator()(const APInt& value) -> llvm::Constant* { return CG.MakeInt(value); }
-        auto operator()(const eval::LValue& lval) -> llvm::Constant* {
-            return CG.builder.CreateGlobalString(*lval.get<String>());
-        }
+    utils::Overloaded V {
+        [&](ProcDecl* proc) -> llvm::Constant* { return EmitProcAddress(proc); },
+        [&](std::monostate) -> llvm::Constant* { return nullptr; },
+        [&](const APInt& value) -> llvm::Constant* { return MakeInt(value); },
+        [&](const eval::LValue& lval) -> llvm::Constant* {
+            return builder.CreateGlobalString(*lval.get<String>());
+        },
 
-        auto operator()(const eval::Reference& ref) -> llvm::Constant* {
-            auto base = (*this)(ref.base);
+        [&](this auto& self, const eval::Reference& ref) -> llvm::Constant* {
+            auto base = self(ref.base);
             return llvm::ConstantFoldGetElementPtr(
-                CG.ConvertType(ref.base.base_type(CG.M)),
+                ConvertType(ref.base.base_type(M)),
                 base,
-                true,
                 {},
-                CG.MakeInt(ref.offset)
+                MakeInt(ref.offset)
             );
-        }
+        },
 
-        auto operator()(const eval::Slice& slice) -> llvm::Constant* {
+        [&](const eval::Slice& slice) -> llvm::Constant* {
             return llvm::ConstantStruct::getAnon(
-                CG.EmitValue(*slice.data),
-                CG.EmitValue(*slice.size)
+                EmitValue(*slice.data),
+                EmitValue(*slice.size)
             );
         }
     }; // clang-format on
-
-    Visitor V{*this};
     return val.visit(V);
 }

@@ -74,34 +74,38 @@ struct Driver::Impl : DiagsProducer<> {
 
     int run_job();
 
-    template <typename ...Args>
+    template <typename... Args>
     void Diag(Diagnostic::Level level, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     int Error(fmt::format_string<Args...> fmt, Args&&... args) {
         Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
         return 1;
     }
 
     /// Parse a file and return the parsed module.
-    auto ParseFile(const File::Path& path, bool verify) -> ParsedModule*;
+    auto ParseFile(const File::Path& path, bool lex_only, bool verify) -> ParsedModule*;
 };
 
 int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
 
-    // Initialise.
-    ctx.set_diags(opts.verify ? VerifyDiagnosticsEngine::Create(ctx) : StreamingDiagnosticsEngine::Create(ctx));
+    // Always create a regular diags engine first for driver diags.
+    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx));
 
     // Disable colours in verify mode.
     ctx.enable_colours(opts.colours and not opts.verify);
 
-    // Verifier can only run in sema/parse mode.
-    if (opts.verify and opts.action != Action::Parse and opts.action != Action::Sema)
-        return Error("--verify requires either --sema or --parse");
+    // Verifier can only run in sema/parse/lex mode.
+    if (
+        opts.verify and
+        opts.action != Action::Parse and
+        opts.action != Action::Sema and
+        opts.action != Action::Lex
+    ) return Error("--verify requires one of: --lex, --parse, --sema");
 
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
@@ -122,9 +126,14 @@ int Driver::Impl::run_job() {
     // Stop if there was a file we couldn’t find.
     if (ctx.diags().has_error()) return 1;
 
+    // Replace driver diags with the actual diags engine.
+    if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
+
     // Parse files in parallel.
     SmallVector<std::shared_future<ParsedModule*>> futures;
-    for (const auto& f : files) futures.push_back(thread_pool.run([&] { return ParseFile(f, opts.verify); }));
+    for (const auto& f : files) futures.push_back(thread_pool.run([&] {
+        return ParseFile(f, opts.action == Action::Lex, opts.verify);
+    }));
 
     // Wait for all modules to be parsed.
     thread_pool.wait();
@@ -143,7 +152,7 @@ int Driver::Impl::run_job() {
     };
 
     // Dump modules if we should only do parsing.
-    if (opts.action == Action::Parse) {
+    if (opts.action == Action::Parse or opts.action == Action::Lex) {
         if (opts.verify) return Verify();
         if (opts.print_ast)
             for (auto& m : parsed_modules)
@@ -173,10 +182,10 @@ int Driver::Impl::run_job() {
     std::exit(42);
 }
 
-auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {
+auto Driver::Impl::ParseFile(const File::Path& path, bool lex_only, bool verify) -> ParsedModule* {
     auto engine = verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
     auto& f = ctx.get_file(path);
-    return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr).release();
+    return Parser::Parse(f, lex_only, verify ? engine->comment_token_callback() : nullptr).release();
 }
 
 template <typename Task>

@@ -1,5 +1,5 @@
-// V %srcc --sema
-// R %srcc --sema
+// V %srcc --sema %s
+// FIXME: Test codegen
 // expected-no-diagnostics
 
 program x;

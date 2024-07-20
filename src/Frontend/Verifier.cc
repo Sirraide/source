@@ -31,6 +31,7 @@ auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> DecodedLocation {
 
 /// This is called by the lexer when a comment token is encountered.
 void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
+    // FIXME: Use libbase streams for this.
     // Skip slashes and initial whitespace.
     auto comment = StringRef(tok.text);
     comment = comment.drop_while([](char c) { return c == '/'; });
@@ -58,6 +59,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
     // Didn’t find a valid diagnostic type.
     if (level == Diagnostic::Level::ICE) return;
 
+    // TODO: Line offsets.
     // Next, we expect a colon.
     comment = comment.drop_front(type.size());
     if (not comment.starts_with(':')) return;

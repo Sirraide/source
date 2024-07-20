@@ -15,6 +15,9 @@ enum struct srcc::Action : srcc::u8 {
     /// executables and modules and save them to disk.
     Compile,
 
+    /// Lex tokens only and exit.
+    Lex,
+
     /// Parse only and exit.
     Parse,
 

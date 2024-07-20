@@ -1,0 +1,28 @@
+
+proc a () {}
+proc b (int) {}
+proc c (int, int, int) {}
+proc d (int a, int b, int c) {}
+proc e (int a, int a) {} // expected-error: parameter 'a' redefined
+proc f (
+    int, int, int, int, int,
+    int, int, int, int, int
+) {}
+
+a();
+b(1);
+c(1, 2, 3);
+d(1, 2, 3);
+e(1, 2); // No error here! The name is a problem, but we should recover from that.
+f(1, 2, 3, 4, 5, 6, 7, 8, 9, 0);
+
+a(1); // expected-error: argument count mismatch, expected 0, got 1.
+b();  // expected-error: argument count mismatch, expected 1, got 0.
+c(1); // expected-error: argument count mismatch, expected 3, got 1.
+c(1, 2, 3, 4); // expected-error: argument count mismatch, expected 3, got 4.
+d(1, 2, 3, 4); // expected-error: argument count mismatch, expected 3, got 4.
+e(1, 2, 3); // expected-error: argument count mismatch, expected 2, got 3.
+e(1); // expected-error: argument count mismatch, expected 2, got 1.
+f(1, 2, 3, 4, 5, 6, 7, 8, 9); // expected-error: argument count mismatch, expected 10, got 9.
+f(1); // expected-error: argument count mismatch, expected 10, got 1.
+f(); // expected-error: argument count mismatch, expected 10, got 0.

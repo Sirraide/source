@@ -114,7 +114,7 @@ target_include_directories(options INTERFACE
 message(STATUS "Clopts not found, downloading ...")
 FetchContent_Declare(clopts
     GIT_REPOSITORY https://github.com/Sirraide/clopts.git
-    GIT_TAG v2.2.0
+    GIT_TAG v2.2.1
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/clopts"
 )
 FetchContent_MakeAvailable(clopts)
@@ -126,7 +126,7 @@ add_definitions(-DLIBASSERT_STATIC_DEFINE)
 FetchContent_Declare(
     libassert
     GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
-    GIT_TAG        v2.0.1
+    GIT_TAG        v2.1.0
 )
 FetchContent_MakeAvailable(libassert)
 

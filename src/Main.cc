@@ -14,6 +14,7 @@ using options = clopts< // clang-format off
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
     flag<"--ast", "Dump the parse tree / AST">,
+    flag<"--lex", "Lex tokens only and exit">,
     flag<"--parse", "Parse only and exit">,
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
@@ -31,7 +32,8 @@ int main(int argc, char** argv) {
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
     // Figure out what we want to do.
-    auto action = opts.get<"--parse">() ? Action::Parse
+    auto action = opts.get<"--lex">()   ? Action::Lex
+                : opts.get<"--parse">() ? Action::Parse
                 : opts.get<"--sema">()  ? Action::Sema
                                         : Action::Compile;
 

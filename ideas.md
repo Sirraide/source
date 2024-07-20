@@ -9,7 +9,7 @@ A parameter can only have at most one of these intents:
               to an outparameter on all code paths, but not read from it until it has been written
               to at least once. Note: outparameters may not alias.
   - `inout` = Like `out`, except that its value may be read before it is written. Note: inout
-              parameters may not alias.
+              parameters may not alias with any other parameters.
   - `copy`  = Pass by value; the object behaves like a local variable in the callee.
   - `ref`   = Pass by reference; this is only valid in procedure *types* and indicates whether
               a parameter ends up being passed by reference. This is a very low-level (and sometimes

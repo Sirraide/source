@@ -1,0 +1,25 @@
+// V %srcc --lex --verify %s
+1;
+2;
+0;
+00;  // expected-error: Leading zeros are not allowed in integers. Use 0o/0O for octal literals
+01;  // expected-error: Leading zeros are not allowed in integers. Use 0o/0O for octal literals
+002; // expected-error: Leading zeros are not allowed in integers. Use 0o/0O for octal literals
+0x;  // expected-error: Expected at least one digit after 'x'
+0xabcdefABCDEF;
+0xg; // expected-error: Invalid digit 'g' in hexadecimal integer literal
+0xx; // expected-error: Invalid digit 'x' in hexadecimal integer literal
+0x0;
+0o01234567;
+0o8; // expected-error: Invalid digit '8' in octal integer literal
+0o9; // expected-error: Invalid digit '9' in octal integer literal
+0oa; // expected-error: Invalid digit 'a' in octal integer literal
+0b0;
+0b1;
+0b2; // expected-error: Invalid digit '2' in binary integer literal
+0b8; // expected-error: Invalid digit '8' in binary integer literal
+0ba; // expected-error: Invalid digit 'a' in binary integer literal
+18446744073709551615;
+18446744073709551616;
+1844674407370955161518446744073709551615184467440737095516151844674407370955161518446744073709551615;
+100000000000000000000000000000000000000000000000000000000;
