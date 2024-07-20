@@ -1,7 +1,7 @@
 module;
 
-#include <fmt/format.h>
 #include <memory>
+#include <print>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -35,7 +35,7 @@ void* TypeBase::operator new(usz size, TranslationUnit& mod) {
 }
 
 void TypeBase::dump(bool use_colour) const {
-    fmt::print("{}", print(use_colour));
+    std::print("{}", print(use_colour));
 }
 
 bool TypeBase::is_void() const {
@@ -54,7 +54,7 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
     switch (kind()) {
         case Kind::ArrayType: {
             auto* arr = cast<ArrayType>(this);
-            return fmt::format(
+            return std::format(
                 "{}[{}{}{}]{}",
                 arr->elem()->print_impl(C),
                 C(Red),
@@ -66,33 +66,33 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Void: return fmt::format("{}void", C(Cyan));
-                case BuiltinKind::Dependent: return fmt::format("{}<dependent type>", C(Cyan));
-                case BuiltinKind::Bool: return fmt::format("{}bool", C(Cyan));
-                case BuiltinKind::NoReturn: return fmt::format("{}noreturn", C(Cyan));
+                case BuiltinKind::Void: return std::format("{}void", C(Cyan));
+                case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
+                case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
+                case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
             }
         }
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            return fmt::format("{}i{}", C(Cyan), int_ty->bit_width());
+            return std::format("{}i{}", C(Cyan), int_ty->bit_width());
         }
 
         case Kind::ProcType: {
             auto proc = cast<ProcType>(this);
-            auto ret = fmt::format("{}proc", C(Red));
+            auto ret = std::format("{}proc", C(Red));
 
             // Add params.
             auto params = proc->params();
             if (not params.empty()) {
-                ret += fmt::format("{} (", C(Red));
+                ret += std::format("{} (", C(Red));
                 bool first = true;
                 for (auto p : params) {
                     if (first) first = false;
-                    else ret += fmt::format("{}, ", C(Red));
+                    else ret += std::format("{}, ", C(Red));
                     ret += p->print_impl(C);
                 }
-                ret += fmt::format("{})", C(Red));
+                ret += std::format("{})", C(Red));
             }
 
             // Add attributes.
@@ -101,19 +101,19 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
 
             // Add return type.
             if (not proc->ret()->is_void())
-                ret += fmt::format(" {}-> {}", C(Red), proc->ret()->print_impl(C));
+                ret += std::format(" {}-> {}", C(Red), proc->ret()->print_impl(C));
 
             return ret;
         }
 
         case Kind::ReferenceType: {
             auto* ref = cast<ReferenceType>(this);
-            return fmt::format("{}ref {}", C(Red), ref->elem()->print_impl(C));
+            return std::format("{}ref {}", C(Red), ref->elem()->print_impl(C));
         }
 
         case Kind::SliceType: {
             auto* slice = cast<SliceType>(this);
-            return fmt::format("{}{}[]", slice->elem()->print_impl(C), C(Red));
+            return std::format("{}{}[]", slice->elem()->print_impl(C), C(Red));
         }
     }
 

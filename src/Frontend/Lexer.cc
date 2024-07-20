@@ -111,7 +111,7 @@ struct Lexer {
     auto tok() -> Token& { return tokens.back(); }
 
     template <typename ...Args>
-    bool Error(Location where, fmt::format_string<Args...> fmt, Args&& ...args) {
+    bool Error(Location where, std::format_string<Args...> fmt, Args&& ...args) {
         f.context().diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
         return false;
     }

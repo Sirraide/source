@@ -1,6 +1,6 @@
 module;
 
-#include <fmt/core.h>
+#include <print>
 #include <llvm/ADT/SmallString.h>
 
 export module srcc.ast.printer;
@@ -31,13 +31,13 @@ protected:
         leading += "│ ";
         const auto current = StringRef{leading}.take_front(size);
         for (auto c : children.drop_back(1)) {
-            fmt::print("{}{}├─", C(Red), current);
+            std::print("{}{}├─", C(Red), current);
             This.Print(c);
         }
 
         // Print the preheader of the last.
         leading.resize(size);
-        fmt::print("{}{}└─", C(Red), StringRef{leading});
+        std::print("{}{}└─", C(Red), StringRef{leading});
 
         // Print the last one.
         leading += "  ";

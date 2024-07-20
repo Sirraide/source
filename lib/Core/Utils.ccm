@@ -1,10 +1,9 @@
 module;
 
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
+#include <cmath>
 #include <filesystem>
-#include <fmt/format.h>
+#include <print>
 #include <llvm/Support/Error.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -26,30 +25,10 @@ module;
 #include <expected>
 
 export module srcc.utils;
+export import base;
 
 export namespace srcc {
-using namespace std::literals;
-namespace chr = std::chrono;
-namespace rgs = std::ranges;
-namespace vws = std::views;
-namespace fs = std::filesystem;
-
-using u8 = std::uint8_t;
-using u16 = std::uint16_t;
-using u32 = std::uint32_t;
-using u64 = std::uint64_t;
-using usz = std::size_t;
-using uptr = std::uintptr_t;
-
-using i8 = std::int8_t;
-using i16 = std::int16_t;
-using i32 = std::int32_t;
-using i64 = std::int64_t;
-using isz = std::ptrdiff_t;
-using iptr = std::intptr_t;
-
-using f32 = float;
-using f64 = double;
+using namespace base;
 
 using llvm::cast;
 using llvm::cast_if_present;
@@ -73,13 +52,10 @@ using llvm::StringRef;
 using llvm::TrailingObjects;
 
 template <typename... arguments>
-void debug(fmt::format_string<arguments...> fmt, arguments&&... args) {
-    fmt::print(stderr, fmt, std::forward<arguments>(args)...);
-    fmt::print(stderr, "\n");
+void debug(std::format_string<arguments...> fmt, arguments&&... args) {
+    std::print(stderr, fmt, std::forward<arguments>(args)...);
+    std::print(stderr, "\n");
 }
-
-template <typename T, typename... Us>
-concept is = (std::is_same_v<std::remove_cvref_t<T>, std::remove_cvref_t<Us>> or ...);
 
 /// Nullable pointer.
 template <typename Ty>
@@ -275,14 +251,17 @@ public:
     }
 };
 
-/// Get the underlying value of an enumerator.
-template <typename T>
-requires std::is_enum_v<T>
-auto operator+(T t) -> std::underlying_type_t<T> { return std::to_underlying(t); }
+auto operator+=(std::string& s, String str) -> std::string& {
+    s += str.value();
+    return s;
+}
 } // namespace srcc
 
 // Rarely used helpers go here.
-export namespace srcc::utils {
+//
+// We use the 'utils' namespace of 'base' for this to avoid creating
+// ambiguity between the two so we can just write e.g. 'utils::Escape'.
+export namespace base::utils {
 /// ANSI Terminal colours.
 enum struct Colour {
     Bold,
@@ -304,7 +283,7 @@ enum struct Colour {
 ///     using enum Colour;
 ///     Colours C{true};
 ///     out += C(Red);
-///     out += fmt::format("{}foo{}", C(Green), C(Reset));
+///     out += std::format("{}foo{}", C(Green), C(Reset));
 /// \endcode
 struct Colours {
     bool use_colours;
@@ -329,23 +308,13 @@ struct Colours {
     }
 };
 
-/// Erase an element from a container without maintaining order.
-template <typename Container, typename Iterator>
-void erase_unordered(Container& container, Iterator it) {
-    if (container.size() == 1) container.erase(it);
-    else {
-        std::iter_swap(it, container.end() - 1);
-        container.pop_back();
-    }
-}
-
 /// Escape non-printable characters in a string.
-auto Escape(StringRef str) -> std::string;
+auto Escape(llvm::StringRef str) -> std::string;
 
 /// Format string that also stores the source location of the caller.
 template <typename... Args>
 struct FStringWithSrcLocImpl {
-    fmt::format_string<Args...> fmt;
+    std::format_string<Args...> fmt;
     std::source_location sloc;
 
     consteval FStringWithSrcLocImpl(
@@ -367,25 +336,10 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
-
-template <typename ...Lambdas>
-struct Overloaded : Lambdas... {
-    using Lambdas::operator()...;
-};
-
-template <typename ...Lambdas>
-Overloaded(Lambdas...) -> Overloaded<Lambdas...>;
-
-/// Replace all occurrences of `from` with `to` in `str`.
-void ReplaceAll(
-    std::string& str,
-    StringRef from,
-    StringRef to
-);
 } // namespace srcc::utils
 
 template <>
-struct fmt::formatter<llvm::APInt> : formatter<std::string_view> {
+struct std::formatter<llvm::APInt> : formatter<std::string_view> {
     template <typename FormatContext>
     auto format(const llvm::APInt& i, FormatContext& ctx) const {
         llvm::SmallVector<char> buf;
@@ -395,7 +349,7 @@ struct fmt::formatter<llvm::APInt> : formatter<std::string_view> {
 };
 
 template <>
-struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
+struct std::formatter<srcc::Size> : formatter<srcc::usz> {
     template <typename FormatContext>
     auto format(srcc::Size sz, FormatContext& ctx) const {
         return formatter<srcc::usz>::format(sz.bits(), ctx);
@@ -403,7 +357,7 @@ struct fmt::formatter<srcc::Size> : formatter<srcc::usz> {
 };
 
 template <>
-struct fmt::formatter<srcc::String> : formatter<std::string_view> {
+struct std::formatter<srcc::String> : formatter<std::string_view> {
     template <typename FormatContext>
     auto format(srcc::String s, FormatContext& ctx) const {
         return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
@@ -411,33 +365,32 @@ struct fmt::formatter<srcc::String> : formatter<std::string_view> {
 };
 
 template <>
-struct fmt::formatter<llvm::StringRef> : formatter<std::string_view> {
+struct std::formatter<llvm::StringRef> : formatter<std::string_view> {
     template <typename FormatContext>
     auto format(llvm::StringRef s, FormatContext& ctx) const {
         return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
     }
 };
 
+// TODO: Remove once this is part of C++26.
+template <>
+struct std::formatter<std::filesystem::path> : std::formatter<std::string> {
+    template <typename FormatContext>
+    auto format(const std::filesystem::path& path, FormatContext& ctx) const {
+        return std::formatter<std::string>::format(path.string(), ctx);
+    }
+};
+
 module :private;
 using namespace srcc;
 
-auto utils::Escape(StringRef str) -> std::string {
+auto base::utils::Escape(StringRef str) -> std::string {
     std::string s;
     llvm::raw_string_ostream os{s};
     os.write_escaped(str, true);
     return s;
 }
 
-void utils::ReplaceAll(
-    std::string& str,
-    StringRef from,
-    StringRef to
-) {
-    if (from.empty()) return;
-    for (usz i = 0; i = str.find(from, i), i != std::string::npos; i += to.size())
-        str.replace(i, from.size(), to);
-}
-
-auto utils::NumberWidth(usz number, usz base) -> usz {
+auto base::utils::NumberWidth(usz number, usz base) -> usz {
     return number == 0 ? 1 : usz(std::log(number) / std::log(base) + 1);
 }

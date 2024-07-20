@@ -4,7 +4,7 @@ module;
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Tooling/Tooling.h>
 #include <clang/Frontend/CompilerInstance.h>
-#include <fmt/core.h>
+#include <print>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
@@ -246,7 +246,7 @@ auto Sema::ImportCXXHeader(Location import_loc, String name) -> TranslationUnit:
     clang.getDiagnostics().setShowColors(ctx.use_colours());
 
     // Create the file we’re going to parse.
-    auto code = fmt::format("#include <{}>\n", name);
+    auto code = std::format("#include <{}>\n", name);
     auto buffer = llvm::MemoryBuffer::getMemBuffer(code);
     mem->addFile("__srcc_imports.cc", /*mtime=*/0, std::move(buffer));
 

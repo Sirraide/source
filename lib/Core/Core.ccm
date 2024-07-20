@@ -4,7 +4,7 @@ module;
 #include <bit>
 #include <expected>
 #include <filesystem>
-#include <fmt/format.h>
+#include <print>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -193,9 +193,9 @@ public:
     Diagnostic(
         Level lvl,
         Location where,
-        fmt::format_string<Args...> fmt,
+        std::format_string<Args...> fmt,
         Args&&... args
-    ) : Diagnostic{lvl, where, fmt::format(fmt, std::forward<Args>(args)...)} {}
+    ) : Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)} {}
 
     /// Get the colour of a diagnostic.
     static constexpr auto Colour(utils::Colours C, Level kind) -> std::string_view {
@@ -244,10 +244,10 @@ public:
     void diag(
         Diagnostic::Level lvl,
         Location where,
-        fmt::format_string<Args...> fmt,
+        std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        report(Diagnostic{lvl, where, fmt::format(fmt, std::forward<Args>(args)...)});
+        report(Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)});
     }
 
     /// Check whether any diagnostics have been issued.
@@ -296,24 +296,24 @@ template <typename ErrRetTy = void>
 class srcc::DiagsProducer {
 public:
     template <typename... Args>
-    auto Error(this auto& This, Location where, fmt::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
+    auto Error(this auto& This, Location where, std::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
         This.Diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
         return ErrRetTy();
     }
 
     template <typename... Args>
-    auto ICE(this auto& This, Location where, fmt::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
+    auto ICE(this auto& This, Location where, std::format_string<Args...> fmt, Args&&... args) -> ErrRetTy {
         This.Diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
         return ErrRetTy();
     }
 
     template <typename... Args>
-    void Note(this auto& This, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Note(this auto& This, Location loc, std::format_string<Args...> fmt, Args&&... args) {
         This.Diag(Diagnostic::Level::Note, loc, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    void Warn(this auto& This, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Warn(this auto& This, Location loc, std::format_string<Args...> fmt, Args&&... args) {
         This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
     }
 };

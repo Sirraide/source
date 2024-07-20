@@ -1,8 +1,7 @@
 module;
 
 #include <cctype>
-#include <fmt/format.h>
-#include <fmt/std.h>
+#include <print>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/STLExtras.h>
 #include <srcc/Macros.hh>
@@ -86,7 +85,7 @@ bool VerifyDiagnosticsEngine::verify() {
     // to stderr.
     if (expects_none and not expected_diags.empty()) {
         ok = false;
-        fmt::print(
+        std::print(
             stderr,
             "{}{}Error: {}{}Cannot specify both 'expected-no-diagnostics' and expected diagnostics.{}\n",
             C(Bold),
@@ -100,7 +99,7 @@ bool VerifyDiagnosticsEngine::verify() {
     // Conversely, also complain if we saw nothing at all.
     if (not expects_none and expected_diags.empty()) {
         ok = false;
-        fmt::print(
+        std::print(
             stderr,
             "{}{}Error: {}{}Expected at least one 'expected-' directive. Use "
             "'expected-no-diagnostics' if no diagnostics are expected.{}\n",
@@ -132,8 +131,8 @@ bool VerifyDiagnosticsEngine::verify() {
     // Complain about every diagnostic that remains.
     if (not expected_diags.empty()) {
         ok = false;
-        fmt::print(stderr, "{}Expected diagnostics that were not seen:{}\n", C(Bold), C(Reset));
-        for (const auto& expected : expected_diags) fmt::print(
+        std::print(stderr, "{}Expected diagnostics that were not seen:{}\n", C(Bold), C(Reset));
+        for (const auto& expected : expected_diags) std::print(
             stderr,
             "  {}{}:{} {}{}: {}{}\n",
             C(Bold),
@@ -149,8 +148,8 @@ bool VerifyDiagnosticsEngine::verify() {
     // And about every diagnostic that we didn’t expect.
     if (not seen_diags.empty()) {
         ok = false;
-        fmt::print(stderr, "{}Unexpected diagnostics:{}\n", C(Bold), C(Reset));
-        for (const auto& seen : seen_diags) fmt::print(
+        std::print(stderr, "{}Unexpected diagnostics:{}\n", C(Bold), C(Reset));
+        for (const auto& seen : seen_diags) std::print(
             stderr,
             "  {}{}:{} {}{}: {}{}\n",
             C(Bold),

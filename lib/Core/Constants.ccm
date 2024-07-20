@@ -1,7 +1,7 @@
 module;
 
 #include <llvm/ADT/StringRef.h>
-#include <fmt/format.h>
+#include <format>
 
 export module srcc.constants;
 import srcc.utils;
@@ -16,9 +16,9 @@ auto ModuleDescriptionSectionName(StringRef ModuleName) -> std::string;
 }
 
 auto srcc::constants::EntryPointName(StringRef ModuleName) -> std::string {
-    return fmt::format("{}{}", ModuleEntryPointPrefix.sv(), ModuleName);
+    return std::format("{}{}", ModuleEntryPointPrefix.sv(), ModuleName);
 }
 
 auto srcc::constants::ModuleDescriptionSectionName(StringRef ModuleName) -> std::string {
-    return fmt::format("{}", ModuleSectionNamePrefix.sv(), ModuleName);
+    return std::format("{}", ModuleSectionNamePrefix.sv(), ModuleName);
 }

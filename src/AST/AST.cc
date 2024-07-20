@@ -1,6 +1,6 @@
 module;
 
-#include <fmt/format.h>
+#include <print>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <srcc/Macros.hh>
 
@@ -68,7 +68,7 @@ void TranslationUnit::dump() const {
     utils::Colours C{c};
 
     // Print preamble.
-    fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
+    std::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
 
     // Print content.
     for (auto s : file_scope_block->stmts()) s->dump(c);
@@ -86,22 +86,22 @@ struct Stmt::Printer : PrinterBase<Stmt> {
 };
 
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name, llvm::function_ref<void()> print_extra_data) {
-    fmt::print(
+    std::print(
         "{}{} {}{} {}<{}>",
         C(Red),
         name,
         C(Blue),
-        fmt::ptr(s),
+        static_cast<void*>(s),
         C(Magenta),
         s->loc.pos
     );
 
-    if (auto e = dyn_cast<Expr>(s)) fmt::print(" {}", e->type.print(C.use_colours));
+    if (auto e = dyn_cast<Expr>(s)) std::print(" {}", e->type.print(C.use_colours));
     if (print_extra_data) {
-        fmt::print(" ");
+        std::print(" ");
         print_extra_data();
     }
-    fmt::print("\n");
+    std::print("\n");
 }
 
 void Stmt::Printer::Print(Stmt* e) {
@@ -114,7 +114,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::BuiltinCallExpr: {
             auto& c = *cast<BuiltinCallExpr>(e);
             PrintBasicHeader(e, "BuiltinCallExpr", [&] {
-                fmt::print("{}{}", C(Green), [&] -> std::string_view {
+                std::print("{}{}", C(Green), [&] -> std::string_view {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
                         case B::Print: return "__builtin_print";
@@ -149,11 +149,11 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::ProcRefExpr: {
             auto& p = *cast<ProcRefExpr>(e);
-            fmt::print(
+            std::print(
                 "{}ProcRefExpr {}{} {}<{}> {}{}\n",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Green),
@@ -170,11 +170,11 @@ void Stmt::Printer::Print(Stmt* e) {
             break;
 
         case Kind::StrLitExpr: {
-            fmt::print(
+            std::print(
                 "{}StrLitExpr {}{} {}<{}> {}\"{}\"\n",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Yellow),
@@ -184,11 +184,11 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::ProcDecl: {
             auto& p = *cast<ProcDecl>(e);
-            fmt::print(
+            std::print(
                 "{}ProcDecl {}{} {}<{}> {}{} {}\n",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Green),

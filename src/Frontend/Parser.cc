@@ -3,6 +3,8 @@ module;
 #include <algorithm>
 #include <llvm/ADT/SmallString.h>
 #include <memory>
+#include <print>
+#include <ranges>
 #include <srcc/Macros.hh>
 #include <utility>
 
@@ -19,8 +21,8 @@ void ParsedModule::dump() const {
     utils::Colours C{c};
 
     // Print preamble.
-    fmt::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
-    for (auto i : imports) fmt::print(
+    std::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
+    for (auto i : imports) std::print(
         "{}Import {}<{}> {}as {}{}\n",
         C(Red),
         C(Blue),
@@ -101,11 +103,11 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
         using enum utils::Colour;
         case Kind::BlockExpr: {
             auto& b = *cast<ParsedBlockExpr>(e);
-            fmt::print(
+            std::print(
                 "{}BlockExpr {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset)
@@ -118,11 +120,11 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
 
         case Kind::CallExpr: {
             auto& c = *cast<ParsedCallExpr>(e);
-            fmt::print(
+            std::print(
                 "{}CallExpr {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset)
@@ -136,26 +138,26 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
 
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(e);
-            fmt::print(
+            std::print(
                 "{}DeclRefExpr {}{} {}<{}> {}{}\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset),
-                fmt::join(d.names(), "::"),
+                utils::join(d.names(), "::"),
                 C(Reset)
             );
         } break;
 
         case Kind::EvalExpr: {
             auto& v = *cast<ParsedEvalExpr>(e);
-            fmt::print(
+            std::print(
                 "{}EvalExpr {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset)
@@ -166,11 +168,11 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
 
         case Kind::StrLitExpr: {
             auto& s = *cast<ParsedStrLitExpr>(e);
-            fmt::print(
+            std::print(
                 "{}StrLitExpr {}{} {}<{}> {}\"{}\"\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Yellow),
@@ -181,11 +183,11 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
 
         case Kind::MemberExpr: {
             auto& m = *cast<ParsedMemberExpr>(e);
-            fmt::print(
+            std::print(
                 "{}MemberExpr {}{} {}<{}> {}{}\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset),
@@ -198,11 +200,11 @@ void ParsedExpr::Printer::Print(ParsedExpr* e) {
 
         case Kind::ProcDecl: {
             auto& p = *cast<ParsedProcDecl>(e);
-            fmt::print(
+            std::print(
                 "{}ProcDecl {}{} {}<{}>\n{}",
                 C(Red),
                 C(Blue),
-                fmt::ptr(e),
+                static_cast<void*>(e),
                 C(Magenta),
                 e->loc.pos,
                 C(Reset)

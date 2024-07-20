@@ -228,9 +228,9 @@ public:
 };
 
 template <>
-struct fmt::formatter<Tk> : formatter<String> {
+struct std::formatter<Tk> : formatter<String> {
     template <typename FormatContext>
-    auto format(Tk tk, FormatContext& ctx) {
+    auto format(Tk tk, FormatContext& ctx) const {
         return formatter<String>::format(Spelling(tk), ctx);
     }
 };

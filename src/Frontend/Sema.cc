@@ -11,7 +11,7 @@ import srcc.utils;
 import srcc.ast;
 using namespace srcc;
 
-#define Try(expression) ({              \
+#define TRY(expression) ({              \
     auto _res = expression;             \
     if (_res.invalid()) return nullptr; \
     _res.get();                         \
@@ -409,7 +409,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
     }
 
     // Translate callee.
-    auto callee = Try(TranslateExpr(parsed->callee));
+    auto callee = TRY(TranslateExpr(parsed->callee));
     return BuildCallExpr(callee, args);
 }
 
@@ -450,12 +450,12 @@ auto Sema::TranslateExpr(ParsedExpr* parsed) -> Ptr<Expr> {
 }
 
 auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
-    auto arg = Try(TranslateStmt(parsed->expr));
+    auto arg = TRY(TranslateStmt(parsed->expr));
     return BuildEvalExpr(arg, parsed->loc);
 }
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
-    auto base = Try(TranslateExpr(parsed->base));
+    auto base = TRY(TranslateExpr(parsed->base));
     if (isa<SliceType>(base->type)) {
         if (parsed->member == "data") return SliceDataExpr::Create(*M, base, parsed->loc);
         return Error(parsed->loc, "Slice has no member named '{}'", parsed->member);

@@ -1,6 +1,7 @@
 module;
 
 #include <optional>
+#include <print>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -57,13 +58,13 @@ void Value::dump(bool use_color) const {
         using enum utils::Colour;
         utils::Colours C;
         void operator()(std::monostate) { }
-        void operator()(ProcDecl* proc) { fmt::print("{}{}", C(Green), proc->name); }
-        void operator()(const LValue& lval) { fmt::print("{}\"{}\"", C(Yellow), *lval.get<String>()); }
-        void operator()(const APInt& value) { fmt::print("{}{}", C(Magenta), value); }
+        void operator()(ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); }
+        void operator()(const LValue& lval) { std::print("{}\"{}\"", C(Yellow), *lval.get<String>()); }
+        void operator()(const APInt& value) { std::print("{}{}", C(Magenta), value); }
         void operator()(const Slice&) {}
         void operator()(const Reference& ref) {
             (*this)(ref.base);
-            fmt::print("{}@{}{}", C(Red), C(Magenta), ref.offset);
+            std::print("{}@{}{}", C(Red), C(Magenta), ref.offset);
         }
     };
 
@@ -97,7 +98,7 @@ public:
     EvaluationContext(TranslationUnit& tu, bool complain) : tu{tu}, complain{complain} {}
 
     template <typename... Args>
-    void Diag(Diagnostic::Level level, Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
         if (complain) tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
     }
 
@@ -210,7 +211,7 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
         case BuiltinCallExpr::Builtin::Print: {
             Assert(builtin->args().size() == 1);
             if (not Eval(out, builtin->args().front())) return false;
-            fmt::print("{}", *out.cast<Slice>().data->cast<Reference>().base.get<String>());
+            std::print("{}", *out.cast<Slice>().data->cast<Reference>().base.get<String>());
             out = Empty();
             return true;
         }

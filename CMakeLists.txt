@@ -99,39 +99,18 @@ endif()
 ## ============================================================================
 include(FetchContent)
 
-## Find libfmt.
-message(STATUS "Fmtlib not found, downloading ...")
-FetchContent_Declare(fmtlib
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 10.2.1
-    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/fmt"
+## Get libbase.
+message(STATUS "Downloading libbase ...")
+set(LIBBASE_CXXFLAGS -fno-exceptions -fno-rtti -fwrapv -fnew-infallible)
+FetchContent_Declare(libbase
+    GIT_REPOSITORY https://github.com/Sirraide/libbase
+    GIT_TAG master
+    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/libbase"
 )
-FetchContent_MakeAvailable(fmtlib)
-target_include_directories(options INTERFACE
-    "${CMAKE_CURRENT_BINARY_DIR}/libs/fmt/include")
-
-## Find clopts.
-message(STATUS "Clopts not found, downloading ...")
-FetchContent_Declare(clopts
-    GIT_REPOSITORY https://github.com/Sirraide/clopts.git
-    GIT_TAG v2.2.1
-    SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/clopts"
-)
-FetchContent_MakeAvailable(clopts)
-target_include_directories(options INTERFACE
-    "${CMAKE_CURRENT_BINARY_DIR}/libs/clopts/include")
-
-## Find libassert.
-add_definitions(-DLIBASSERT_STATIC_DEFINE)
-FetchContent_Declare(
-    libassert
-    GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
-    GIT_TAG        v2.1.0
-)
-FetchContent_MakeAvailable(libassert)
+FetchContent_MakeAvailable(libbase)
 
 ## Link against libfmt.
-target_link_libraries(options INTERFACE fmt libassert::assert)
+target_link_libraries(options INTERFACE libbase)
 
 ## Add ‘include’ to the include path.
 target_include_directories(options INTERFACE "${PROJECT_SOURCE_DIR}/include")

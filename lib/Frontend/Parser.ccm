@@ -312,13 +312,13 @@ private:
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
     using DiagsProducer::Error;
     template <typename... Args>
-    auto Error(fmt::format_string<Args...> fmt, Args&&... args) -> Ptr<ParsedExpr> {
+    auto Error(std::format_string<Args...> fmt, Args&&... args) -> Ptr<ParsedExpr> {
         return Error(tok->location, fmt, std::forward<Args>(args)...);
     }
 
@@ -350,7 +350,7 @@ private:
 
     /// Consume a token if we’re at it, and issue an error about it otherwise.
     template <typename... Args>
-    bool ExpectAndConsume(Tk t, fmt::format_string<Args...> fmt, Args&&... args) {
+    bool ExpectAndConsume(Tk t, std::format_string<Args...> fmt, Args&&... args) {
         if (Consume(t)) return true;
         Error(fmt, std::forward<Args>(args)...);
         return false;

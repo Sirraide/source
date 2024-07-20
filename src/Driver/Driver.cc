@@ -21,7 +21,7 @@ module;
 
 #include <algorithm>
 #include <filesystem>
-#include <fmt/std.h>
+#include <print>
 #include <future>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
@@ -75,12 +75,12 @@ struct Driver::Impl : DiagsProducer<> {
     int run_job();
 
     template <typename... Args>
-    void Diag(Diagnostic::Level level, Location loc, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level level, Location loc, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    int Error(fmt::format_string<Args...> fmt, Args&&... args) {
+    int Error(std::format_string<Args...> fmt, Args&&... args) {
         Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
         return 1;
     }

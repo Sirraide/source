@@ -102,7 +102,7 @@ private:
     void Translate();
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, fmt::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 

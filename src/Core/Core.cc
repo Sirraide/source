@@ -1,7 +1,6 @@
 module;
 
 #include <filesystem>
-#include <fmt/std.h>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
@@ -128,7 +127,7 @@ auto File::TempPath(StringRef extension) -> Path {
     rgs::generate(rand, [&] { return rd() % 26 + 'a'; });
 
     // Create a unique file name.
-    auto tmp_name = fmt::format(
+    auto tmp_name = std::format(
         "{}.{}.{}.{}",
         pid,
         tid,
@@ -153,7 +152,7 @@ auto File::Write(const void* data, usz size, const Path& file) -> std::expected<
 
     std::string text;
     llvm::handleAllErrors(std::move(err), [&](const llvm::ErrorInfoBase& e) {
-        text += fmt::format("Failed to write to file '{}': {}", file, e.message());
+        text += std::format("Failed to write to file '{}': {}", file, e.message());
     });
     return std::unexpected(text);
 }
@@ -281,7 +280,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     using enum utils::Colour;
 
     // Reset the colour when we’re done.
-    defer { stream << fmt::format("{}", C(Reset)); };
+    defer { stream << std::format("{}", C(Reset)); };
 
     /// Make sure that diagnostics don’t clump together, but also don’t insert
     /// an ugly empty line before the first diagnostic.
@@ -295,10 +294,10 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     if (not l.has_value()) {
         /// Even if the location is invalid, print the file name if we can.
         if (auto f = ctx.file(diag.where.file_id))
-            stream << fmt::format("{}{}: ", C(Bold), f->path());
+            stream << std::format("{}{}: ", C(Bold), f->path());
 
         /// Print the message.
-        stream << fmt::format(
+        stream << std::format(
             "{}{}{}: {}{}{}{}\n",
             C(Bold),
             Diagnostic::Colour(C, diag.level),
@@ -331,17 +330,17 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
 
     /// Print the file name, line number, and column number.
     const auto& file = *ctx.file(diag.where.file_id);
-    stream << fmt::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
+    stream << std::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
 
     /// Print the diagnostic name and message.
-    stream << fmt::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
-    stream << fmt::format("{}{}\n", C(Reset), diag.msg);
+    stream << std::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
+    stream << std::format("{}{}\n", C(Reset), diag.msg);
 
     /// Print the line up to the start of the location, the range in the right
     /// colour, and the rest of the line.
-    stream << fmt::format(" {} | {}", line, before);
-    stream << fmt::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
-    stream << fmt::format("{}\n", after);
+    stream << std::format(" {} | {}", line, before);
+    stream << std::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
+    stream << std::format("{}\n", after);
 
     /// Determine the number of digits in the line number.
     const auto digits = utils::NumberWidth(line);
@@ -360,7 +359,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
         stream << " ";
 
     /// Finally, underline the range.
-    stream << fmt::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
+    stream << std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
     for (usz i = 0, end = ColumnWidth(range); i < end; i++) stream << "~";
     stream << "\n";
 }
