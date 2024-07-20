@@ -16,7 +16,7 @@ class VerifyDiagnosticsEngine;
 // ============================================================================
 //  Diagnostic Verifier
 // ============================================================================
-class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine {
+class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, private DiagsProducer<> {
     struct DecodedLocation {
         const File* file;
         usz line;
@@ -37,6 +37,7 @@ class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine {
 
     SmallVector<SeenDiagnostic, 0> seen_diags;
     SmallVector<ExpectedDiagnostic, 0> expected_diags;
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_reporter;
     bool expects_none = false;
     bool enable_colours;
 
@@ -62,6 +63,14 @@ public:
     }
 
 private:
+    friend DiagsProducer;
+
+    // For reporting errors during the verification and comment parsing steps.
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        diags_reporter->diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
     auto DecodeLocation(Location loc) -> DecodedLocation;
     void HandleCommentToken(const Token& tok);
 };

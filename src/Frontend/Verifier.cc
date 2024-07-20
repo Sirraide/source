@@ -1,9 +1,9 @@
 module;
 
-#include <cctype>
-#include <print>
-#include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringExtras.h>
+#include <llvm/ADT/StringSwitch.h>
+#include <print>
 #include <srcc/Macros.hh>
 #include <string_view>
 
@@ -17,6 +17,10 @@ VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : Diagnosti
     // we *actually* want to use colours (in the output of
     // the verifier).
     enable_colours = ctx.use_colours();
+
+    // Nested engine for reporting errors during the comment
+    // parsing process.
+    diags_reporter = StreamingDiagnosticsEngine::Create(ctx);
 }
 
 /// Decode location so we don’t have to do that every time we check a
@@ -30,17 +34,16 @@ auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> DecodedLocation {
 
 /// This is called by the lexer when a comment token is encountered.
 void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
-    // FIXME: Use libbase streams for this.
     // Skip slashes and initial whitespace.
-    auto comment = StringRef(tok.text);
-    comment = comment.drop_while([](char c) { return c == '/'; });
-    comment = comment.drop_while([](char c) { return std::isspace(c); });
+    stream comment{tok.text.sv()};
+    comment.drop_while('/');
+    comment.trim_front();
 
     // If the comment doesn’t start with 'expected-', ignore it.
     if (!comment.starts_with("expected-")) return;
 
     // Handle 'expected-no-diagnostics'.
-    comment = comment.drop_front("expected-"sv.size());
+    comment.drop("expected-"sv.size());
     if (comment.trim() == "no-diagnostics") {
         expects_none = true;
         return;
@@ -48,7 +51,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 
     // Parse the diagnostic type. 'ICE' is not supported, but used here
     // as a failure state so we don’t have to bother with optionals.
-    auto type = comment.take_while([](char c) { return std::isalnum(c); });
+    auto type = comment.take_while(llvm::isAlnum);
     auto level = llvm::StringSwitch<Diagnostic::Level>(type)
                      .Case("error", Diagnostic::Level::Error)
                      .Case("warning", Diagnostic::Level::Warning)
@@ -58,16 +61,48 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
     // Didn’t find a valid diagnostic type.
     if (level == Diagnostic::Level::ICE) return;
 
-    // TODO: Line offsets.
+    // Parse line offsets.
+    auto where = DecodeLocation(tok.location);
+    if (comment.trim_front().starts_with('@')) {
+        comment.drop().trim_front();
+
+        // Offset may be relative.
+        bool negative = comment.starts_with("-");
+        bool relative = negative or comment.starts_with("+");
+        if (relative) comment.drop().trim_front();
+
+        // Parse the offset.
+        auto offset = Parse<u64>(comment.take_while(llvm::isDigit));
+        if (not offset.has_value()) return Error(
+            tok.location,
+            "Invalid line offset in expected diagnostic: '{}'\n",
+            offset.error()
+        );
+
+        auto offs = offset.value();
+        if (relative) {
+            if (negative) {
+                where.line -= offs;
+            } else where.line += offs;
+        } else {
+            where.line = offs;
+        }
+
+        // Sanity check.
+        if (where.line < 1 or where.line > usz(where.file->size())) return Error(
+            tok.location,
+            "Invalid computed line offset in expected diagnostic: '{}'\n",
+            offset.error()
+        );
+    }
+
     // Next, we expect a colon.
-    comment = comment.drop_front(type.size());
-    if (not comment.starts_with(':')) return;
+    if (not comment.trim_front().starts_with(':')) return;
 
     // The rest of the comment is the diagnostic text.
-    comment = comment.drop_front(1).trim();
-    expected_diags.emplace_back(level, std::string{comment}, DecodeLocation(tok.location));
+    comment.drop().trim_front();
+    expected_diags.emplace_back(level, std::string{comment.text()}, where);
 }
-
 
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     seen_diags.emplace_back(std::move(diag), DecodeLocation(diag.where));
