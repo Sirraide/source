@@ -11,9 +11,13 @@ export namespace srcc {
 class CodeGen;
 }
 
-class srcc::CodeGen {
+class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
+    friend DiagsProducer;
+
     TranslationUnit& M;
     std::unique_ptr<llvm::Module> llvm;
+    StringMap<llvm::Constant*> strings;
+    DenseMap<LocalDecl*, llvm::AllocaInst*> locals;
     llvm::IRBuilder<> builder;
     llvm::Function* curr_func{};
 
@@ -43,6 +47,11 @@ private:
     auto ConvertTypeImpl(Type ty) -> llvm::Type*;
     auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
 
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        M.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
     auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
@@ -61,6 +70,9 @@ private:
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
 
     void EmitLocal(LocalDecl* decl);
+
+    /// Same as CreateGlobalStringPtr(), but is interned.
+    auto GetString(StringRef s) -> llvm::Constant*;
 
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
 };

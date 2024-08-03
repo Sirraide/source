@@ -521,8 +521,12 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
 auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
     // If the value fits in an 'int', its type is 'int'.
     auto val = parsed->storage.value();
-    auto small = val.trySExtValue();
-    if (small.has_value()) return new (*M) IntLitExpr(Types::IntTy, parsed->storage, parsed->loc);
+    auto small = val.tryZExtValue();
+    if (small.has_value()) return new (*M) IntLitExpr(
+        Types::IntTy,
+        M->store_int(APInt(u32(Types::IntTy->size(*M).bits()), u64(*small), true)),
+        parsed->loc
+    );
 
     // Otherwise, the type is the smallest power of two large enough
     // to store the value.
@@ -637,7 +641,6 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     // Add the procedure to the module and the current scope.
     proc_decl_map[parsed] = proc;
     AddDeclToScope(curr_scope(), proc);
-    M->procs.push_back(proc);
     return proc;
 }
 
@@ -650,6 +653,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -686,6 +690,7 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
     }
 
     Unreachable("Not a valid type kind: {}", +parsed->kind());

@@ -87,6 +87,12 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     //}
 }
 
+auto CodeGen::GetString(StringRef s) -> llvm::Constant* {
+    if (auto it = strings.find(s); it != strings.end()) return it->second;
+    return strings[s] = builder.CreateGlobalStringPtr(s);
+}
+
+
 auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
     return llvm::ConstantInt::get(M.llvm_context, value);
 }
@@ -108,7 +114,10 @@ CodeGen::CodeGen(TranslationUnit& M)
 
 void CodeGen::Emit() {
     // Emit procedures.
-    for (auto& p : M.procs) EmitProcedure(p);
+    for (auto& p : M.procs) {
+        locals.clear();
+        EmitProcedure(p);
+    }
 
     // Emit module description.
     if (M.is_module) {
@@ -159,14 +168,33 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
 auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
-            Assert(expr->args().size() == 1);
-            Assert(expr->args().front()->type == M.StrLitTy);
-            auto slice = Emit(expr->args().front());
-            auto format = builder.CreateGlobalStringPtr("%.*s");
-            auto printf = llvm->getOrInsertFunction("printf", llvm::FunctionType::get(IntTy, {PtrTy}, true));
-            auto data = builder.CreateExtractValue(slice, 0);
-            auto size = builder.CreateZExtOrTrunc(builder.CreateExtractValue(slice, 1), FFIIntTy);
-            return builder.CreateCall(printf, {format, size, data});
+            auto printf = llvm->getOrInsertFunction("printf", llvm::FunctionType::get(FFIIntTy, {PtrTy}, true));
+            auto str_format = GetString("%.*s");
+            auto int_format = GetString("%" PRId64);
+            for (auto a : expr->args()) {
+                if (a->type == M.StrLitTy) {
+                    Assert(a->value_category == Expr::SRValue);
+                    auto slice = Emit(a);
+                    auto data = builder.CreateExtractValue(slice, 0);
+                    auto size = builder.CreateZExtOrTrunc(builder.CreateExtractValue(slice, 1), FFIIntTy);
+                    builder.CreateCall(printf, {str_format, size, data});
+                }
+
+                else if (a->type == Types::IntTy) {
+                    Assert(a->value_category == Expr::SRValue);
+                    auto val = Emit(a);
+                    builder.CreateCall(printf, {int_format, val});
+                }
+
+                else {
+                    ICE(
+                        a->location(),
+                        "Sorry, can’t print this type yet: {}",
+                        a->type.print(M.context().use_colours())
+                    );
+                }
+            }
+            return nullptr;
         }
     }
 
@@ -187,8 +215,16 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     return call;
 }
 
-auto CodeGen::EmitCastExpr(CastExpr* expr) -> llvm::Value* {
-    Todo();
+auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
+    auto val = Emit(expr->arg);
+    switch (expr->kind) {
+        case CastExpr::LValueToSRValue: {
+            Assert(expr->arg->value_category == Expr::LValue);
+            return builder.CreateLoad(ConvertType(expr->type), val, "l2sr");
+        }
+    }
+
+    Unreachable();
 }
 
 auto CodeGen::EmitConstExpr(ConstExpr* constant) -> llvm::Constant* {
@@ -204,11 +240,12 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant* {
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
-    Todo();
+    auto a = builder.CreateAlloca(ConvertType(decl->type));
+    locals[decl] = a;
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
-    Todo();
+    return locals.at(expr->decl);
 }
 
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
@@ -230,10 +267,19 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     auto entry = llvm::BasicBlock::Create(M.llvm_context, "entry", curr_func);
     builder.SetInsertPoint(entry);
 
-    // TODO: Emit locals.
+    // Emit locals.
+    for (auto l : proc->locals) EmitLocal(l);
+
+    // Initialise parameters.
+    for (auto [a, p] : vws::zip(curr_func->args(), proc->params()))
+        builder.CreateStore(&a, locals.at(p));
 
     // Emit the body.
     Emit(proc->body);
+
+    // Emit a return statement if we fell off the end.
+    // TODO: Actually add a return stmt to the AST.
+    builder.CreateRetVoid();
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
@@ -254,14 +300,14 @@ auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
 
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     // Include the null terminator in the string.
-    auto ptr = builder.CreateGlobalStringPtr({expr->value.data(), expr->value.size()});
+    auto ptr = GetString({expr->value.data(), expr->value.size()});
     auto size = llvm::ConstantInt::get(IntTy, expr->value.size());
     return llvm::ConstantStruct::getAnon({ptr, size});
 }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
     utils::Overloaded LValueEmitter {
-        [&](String s) -> llvm::Constant* { return builder.CreateGlobalString(s); },
+        [&](String s) -> llvm::Constant* { return GetString(s); },
         [&](eval::Memory* m) -> llvm::Constant* {
             Assert(m->alive());
             Todo("Emit memory");
