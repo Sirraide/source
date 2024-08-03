@@ -65,7 +65,7 @@ public:
 
     /// Check whether this is (still) alive.
     [[nodiscard]] auto alive() const {
-        return data_and_state.getInt()  == LifetimeState::Initialised;
+        return data_and_state.getInt() == LifetimeState::Initialised;
     }
 
     /// Check whether this is not alive anymore.
@@ -110,14 +110,12 @@ public:
 
 class srcc::eval::Slice {
 public:
-    std::unique_ptr<Value> data;
-    std::unique_ptr<Value> size;
+    Reference data;
+    APInt size;
 
-    Slice(Value data, Value size);
-    Slice(const Slice& other);
-    Slice(Slice&& other);
-    auto operator=(const Slice& other) -> Slice&;
-    auto operator=(Slice&& other) -> Slice&;
+    Slice(Reference data, APInt size)
+        : data(std::move(data)),
+          size(std::move(size)) {}
 };
 
 /// A compile-time value.

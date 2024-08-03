@@ -283,10 +283,10 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
             );
         },
 
-        [&](const eval::Slice& slice) -> llvm::Constant* {
+        [&](this auto& Self, const eval::Slice& slice) -> llvm::Constant* {
             return llvm::ConstantStruct::getAnon(
-                EmitValue(*slice.data),
-                EmitValue(*slice.size)
+                Self(slice.data),
+                Self(slice.size)
             );
         }
     }; // clang-format on

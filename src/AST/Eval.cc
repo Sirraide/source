@@ -4,6 +4,7 @@ module;
 #include <llvm/Support/Allocator.h>
 #include <optional>
 #include <print>
+#include <ranges>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -20,30 +21,6 @@ auto LValue::base_type(TranslationUnit& tu) const -> Type {
     };
 
     return std::visit(V, base);
-}
-
-Slice::Slice(Value data, Value size)
-    : data(std::make_unique<Value>(std::move(data))),
-      size(std::make_unique<Value>(std::move(size))) {}
-
-Slice::Slice(Slice&& other)
-    : data(std::move(other.data)),
-      size(std::move(other.size)) {}
-
-Slice::Slice(const Slice& other)
-    : data(std::make_unique<Value>(*other.data)),
-      size(std::make_unique<Value>(*other.size)) {}
-
-Slice& Slice::operator=(Slice&& other) {
-    data = std::move(other.data);
-    size = std::move(other.size);
-    return *this;
-}
-
-Slice& Slice::operator=(const Slice& other) {
-    data = std::make_unique<Value>(*other.data);
-    size = std::make_unique<Value>(*other.size);
-    return *this;
 }
 
 Value::Value(ProcDecl* proc)
@@ -87,6 +64,10 @@ auto Value::value_category() const -> ValueCategory {
 // ============================================================================
 struct StackFrame {
     explicit StackFrame() = default;
+    StackFrame(const StackFrame&) = delete;
+    StackFrame& operator=(const StackFrame&) = delete;
+    StackFrame(StackFrame&&) = default;
+    StackFrame& operator=(StackFrame&&) = default;
 
     /// The local variables and parameters allocated in this frame.
     DenseMap<LocalDecl*, LValue> locals;
@@ -139,6 +120,12 @@ public:
         Assert(not stack.empty(), "No stack frame");
         return stack.back();
     }
+
+    /// Check and diagnose for invalid memory accesses.
+    [[nodiscard]] bool CheckMemoryAccess(const Memory* mem, Size size, bool write, Location loc);
+
+    /// Get a slice as a raw memory buffer.
+    [[nodiscard]] auto GetMemoryBuffer(const Slice& slice, Location loc) -> std::optional<ArrayRef<char>>;
 
     /// Read from memory.
     [[nodiscard]] bool LoadMemory(const Memory* mem, void* into, Size size, Location loc);
@@ -238,10 +225,10 @@ auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
     return ::new (data) Memory{ty, loc, static_cast<char*>(data) + data_offs.bytes()};
 }
 
-bool EvaluationContext::LoadMemory(
+bool EvaluationContext::CheckMemoryAccess(
     const Memory* mem,
-    void* into,
-    Size size_to_load,
+    Size size,
+    bool write,
     Location loc
 ) {
     if (mem->dead()) return ReportMemoryError(
@@ -250,14 +237,50 @@ bool EvaluationContext::LoadMemory(
         "Accessing memory outside of its lifetime"
     );
 
-    if (size_to_load.bytes() > mem->ty->size(tu).bytes()) return ReportMemoryError(
+    if (size.bytes() > mem->ty->size(tu).bytes()) return ReportMemoryError(
         mem,
         loc,
-        "Out-of-bounds read of size {} (total size: {})",
-        mem->ty->size(tu) - size_to_load,
-        size_to_load
+        "Out-of-bounds {} of size {} (total size: {})",
+        write ? "write" : "read",
+        mem->ty->size(tu) - size,
+        size
     );
 
+    return true;
+}
+
+auto EvaluationContext::GetMemoryBuffer(
+    const Slice& slice,
+    Location loc
+) -> std::optional<ArrayRef<char>> {
+    using Ret = std::optional<ArrayRef<char>>;
+    auto size = slice.size.getZExtValue();
+    auto offs = slice.data.offset.getZExtValue();
+    return slice.data.lvalue.base.visit(utils::Overloaded{// clang-format off
+        [&](String s) -> Ret {
+            if (s.size() < size + offs) {
+                // TODO: improve error.
+                Error(loc, "Out-of-bounds access to string literal");
+                return std::nullopt;
+            }
+
+            return ArrayRef{s.data() + offs, size};
+        },
+
+        [&](const Memory* mem) -> Ret {
+            if (not CheckMemoryAccess(mem, Size::Bytes(offs + size), false, loc)) return std::nullopt;
+            return ArrayRef{static_cast<const char*>(mem->data()) + offs, size};
+        }
+    }); // clang-format on
+}
+
+bool EvaluationContext::LoadMemory(
+    const Memory* mem,
+    void* into,
+    Size size_to_load,
+    Location loc
+) {
+    if (not CheckMemoryAccess(mem, size_to_load, false, loc)) return false;
     std::memcpy(into, mem->data(), size_to_load.bytes());
     return true;
 }
@@ -268,20 +291,7 @@ bool EvaluationContext::StoreMemory(
     Size size_to_write,
     Location loc
 ) {
-    if (mem->dead()) return ReportMemoryError(
-        mem,
-        loc,
-        "Accessing memory outside of its lifetime"
-    );
-
-    if (size_to_write.bytes() > mem->ty->size(tu).bytes()) return ReportMemoryError(
-        mem,
-        loc,
-        "Out-of-bounds write of size {} (total size: {})",
-        mem->ty->size(tu) - size_to_write,
-        size_to_write
-    );
-
+    if (not CheckMemoryAccess(mem, size_to_write, true, loc)) return false;
     std::memcpy(mem->data(), from, size_to_write.bytes());
     return true;
 }
@@ -378,10 +388,27 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
 bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin) {
     switch (builtin->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
-            Assert(builtin->args().size() == 1);
-            if (not Eval(out, builtin->args().front())) return false;
-            std::print("{}", out.cast<Slice>().data->cast<Reference>().lvalue.base.get<String>());
-            out = {};
+            for (auto arg : builtin->args()) {
+                if (not Eval(out, arg)) return false;
+
+                // String.
+                if (auto slice = out.get<Slice>()) {
+                    auto mem = GetMemoryBuffer(*slice, arg->location());
+                    if (mem == std::nullopt) return false;
+                    std::print("{}", StringRef{mem->data(), mem->size()});
+                    continue;
+                }
+
+                // Integer.
+                if (auto int_val = out.get<APInt>()) {
+                    std::print("{}", llvm::toString(*int_val, 10, true));
+                    continue;
+                }
+
+                // Fallback. Should never be used anyway.
+                out.dump();
+            }
+
             return true;
         }
     }
@@ -403,7 +430,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         // Allocate and initialise local variables and initialise them.
         for (auto [i, l] : enumerate(proc->locals)) {
             auto& addr = frame.locals[l] = LValue{AllocateMemory(l->type, l->location())};
-            if (not PerformVariableInitialisation(addr, args[i]))
+            if (isa<ParamDecl>(l) and not PerformVariableInitialisation(addr, args[i]))
                 return false;
         }
 
@@ -421,7 +448,31 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
 }
 
 bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
-    Todo();
+    if (not Eval(out, cast->arg)) return false;
+    switch (cast->kind) {
+        case CastExpr::LValueToSRValue: {
+            auto lvalue = out.cast<LValue>();
+            auto mem = lvalue.base.get<Memory*>();
+
+            // Integers.
+            if (mem->type() == Types::IntTy) {
+                u64 value;
+                if (not LoadMemory(mem, value, cast->location())) return false;
+                out = IntValue(value);
+                return true;
+            }
+
+            ICE(
+                cast->location(),
+                "Sorry, we don’t support lvalue->srvalue conversion of {} yet",
+                mem->type().print(tu.context().use_colours())
+            );
+
+            return false;
+        }
+    }
+
+    Unreachable("Invalid cast");
 }
 
 bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
@@ -440,18 +491,28 @@ bool EvaluationContext::EvalIntLitExpr(Value& out, IntLitExpr* int_lit) {
 }
 
 bool EvaluationContext::EvalLocalDecl(Value& out, LocalDecl* decl) {
-    Assert(InFunction(), "Evaluating local outside of function call?");
-    Assert(CurrFrame().locals.contains(decl), "Local variable not initialised?");
-    out = {CurrFrame().locals.at(decl), decl->type};
-    return true;
+    Unreachable("Evaluating local decl?");
 }
 
 bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
-    Todo();
+    // Walk up the stack until we find an entry for this variable; note
+    // that the same function may be present in multiple frames, so just
+    // find the nearest one.
+    for (auto& frame : vws::reverse(stack)) {
+        auto it = frame.locals.find(local->decl);
+        if (it != frame.locals.end()) {
+            out = {it->second, local->decl->type};
+            return true;
+        }
+    }
+
+    // This should never happen since we always create all
+    // locals when we set up the stack frame.
+    Unreachable("Local variable not found: {}", local->decl->name);
 }
 
 bool EvaluationContext::EvalParamDecl(Value& out, LocalDecl* decl) {
-    return EvalLocalDecl(out, decl);
+    Unreachable("Evaluating local decl?");
 }
 
 bool EvaluationContext::EvalProcDecl(Value&, ProcDecl*) {
@@ -465,19 +526,16 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
 
 bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data) {
     if (not Eval(out, slice_data->slice)) return false;
-    auto data = std::move(*out.get<Slice>()->data);
-    out = std::move(data);
+    auto data = std::move(out.get<Slice>()->data);
+    out = {std::move(data), slice_data->type};
     return true;
 }
 
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
     out = Value{
         Slice{
-            Value{
-                Reference{LValue{str_lit->value, false}, APInt::getZero(64)},
-                ArrayType::Get(tu, tu.I8Ty, i64(str_lit->value.size())),
-            },
-            IntValue(str_lit->value.size()),
+            Reference{LValue{str_lit->value, false}, APInt::getZero(64)},
+            APInt(u32(Types::IntTy->size(tu).bits()), str_lit->value.size(), false),
         },
         tu.StrLitTy,
     };

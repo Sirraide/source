@@ -192,11 +192,23 @@ auto Sema::BuildBuiltinCallExpr(
     Location call_loc
 ) -> Ptr<BuiltinCallExpr> {
     switch (builtin) {
-        // __builtin_print takes a sequence of arguments and formats them.
-        // FIXME: Actually implement that; it only prints one argument for now.
+        // __builtin_print takes a sequence of arguments and prints them all;
+        // the arguments must be strings or integers.
         case BuiltinCallExpr::Builtin::Print: {
+            SmallVector<Expr*> actual_args{args};
             if (args.empty()) return Error(call_loc, "__builtin_print takes at least one argument");
-            return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, args, call_loc);
+            for (auto& arg : actual_args) {
+                if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy) {
+                    return Error(
+                        arg->location(),
+                        "__builtin_print only accepts string literals and integers"
+                    );
+                }
+
+                if (arg->type == Types::IntTy and arg->value_category == Expr::LValue)
+                    LValueToSRValue(arg);
+            }
+            return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, actual_args, call_loc);
         }
     }
 
@@ -638,9 +650,6 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -677,9 +686,6 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
     }
 
     Unreachable("Not a valid type kind: {}", +parsed->kind());
