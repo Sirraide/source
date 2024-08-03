@@ -15,6 +15,11 @@ enum struct srcc::Action : srcc::u8 {
     /// executables and modules and save them to disk.
     Compile,
 
+    /// Run the input through the constant evaluator, as
+    /// though the entire file were wrapped in an eval {}
+    /// block.
+    Eval,
+
     /// Lex tokens only and exit.
     Lex,
 

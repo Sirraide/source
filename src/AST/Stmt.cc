@@ -13,10 +13,6 @@ void* Stmt::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
-void Scope::add(Decl* d) {
-    decls[d->name].push_back(d);
-}
-
 // ============================================================================
 //  AST
 // ============================================================================
@@ -117,6 +113,11 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts()[return_expr_index]);
 }
 
+LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
+    : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
+    ComputeDependence();
+}
+
 ProcRefExpr::ProcRefExpr(
     ProcDecl* decl,
     Location location
@@ -178,7 +179,7 @@ auto ProcDecl::Create(
 void ProcDecl::finalise(ArrayRef<LocalDecl*> vars) {
     locals = vars.copy(owner->allocator());
     for (auto l : locals.take_front(proc_type()->params().size()))
-        Assert (isa<ParamDecl>(l), "Parameters must be ParamDecls");
+        Assert(isa<ParamDecl>(l), "Parameters must be ParamDecls");
 }
 
 auto ProcDecl::proc_type() const -> ProcType* {

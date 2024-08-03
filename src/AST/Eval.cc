@@ -165,8 +165,10 @@ public:
     [[nodiscard]] bool EvalBlockExpr(Value& out, BlockExpr* block);
     [[nodiscard]] bool EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin);
     [[nodiscard]] bool EvalCallExpr(Value& out, CallExpr* call);
+    [[nodiscard]] bool EvalCastExpr(Value& out, CastExpr* cast);
     [[nodiscard]] bool EvalConstExpr(Value& out, ConstExpr* constant);
     [[nodiscard]] bool EvalEvalExpr(Value& out, EvalExpr* eval);
+    [[nodiscard]] bool EvalLocalRefExpr(Value& out, LocalRefExpr* local);
     [[nodiscard]] bool EvalIntLitExpr(Value& out, IntLitExpr* int_lit);
     [[nodiscard]] bool EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref);
     [[nodiscard]] bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
@@ -418,6 +420,10 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     return Error(call->location(), "Sorry, can’t call external functions at compile-time yet");
 }
 
+bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
+    Todo();
+}
+
 bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
     out = *constant->value;
     return true;
@@ -438,6 +444,10 @@ bool EvaluationContext::EvalLocalDecl(Value& out, LocalDecl* decl) {
     Assert(CurrFrame().locals.contains(decl), "Local variable not initialised?");
     out = {CurrFrame().locals.at(decl), decl->type};
     return true;
+}
+
+bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
+    Todo();
 }
 
 bool EvaluationContext::EvalParamDecl(Value& out, LocalDecl* decl) {

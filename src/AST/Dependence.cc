@@ -1,5 +1,7 @@
 module;
 
+#include <algorithm>
+#include <ranges>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -58,6 +60,10 @@ void ComputeDependence(CallExpr* e) {
     e->set_dependence(d);
 }
 
+void ComputeDependence(CastExpr* e) {
+    e->set_dependence(e->arg->dependence());
+}
+
 void ComputeDependence(ConstExpr*) {
     // An evaluated constant expression is NEVER dependent; it may
     // contain a dependent expression that has been instantiated and
@@ -76,6 +82,10 @@ void ComputeDependence(IntLitExpr*) {
 void ComputeDependence(LocalDecl* d) {
     if (d->type->dependent())
         d->set_dependence(Dependence::Type);
+}
+
+void ComputeDependence(LocalRefExpr* e) {
+    e->set_dependence(e->decl->dependence());
 }
 
 void ComputeDependence(ParamDecl* d) {

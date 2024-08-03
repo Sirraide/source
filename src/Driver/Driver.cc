@@ -34,6 +34,7 @@ module;
 
 module srcc.driver;
 import srcc;
+import srcc.ast;
 import srcc.frontend.verifier;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
@@ -172,6 +173,13 @@ int Driver::Impl::run_job() {
         if (opts.verify) return Verify();
         if (opts.print_ast) module->dump();
         return ctx.diags().has_error();
+    }
+
+    // Run the constant evaluator.
+    if (opts.action == Action::Eval) {
+        // TODO: Static initialisation.
+        auto res = eval::Evaluate(*module, module->file_scope_block);
+        return res.has_value() ? 0 : 1;
     }
 
     // Don’t try and codegen if there was an error.

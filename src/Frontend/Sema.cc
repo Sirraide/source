@@ -20,11 +20,44 @@ using namespace srcc;
 // ============================================================================
 //  Helpers
 // ============================================================================
+void Sema::AddDeclToScope(Scope* scope, Decl* d) {
+    // Do not add anonymous decls to the scope.
+    if (d->name.empty()) return;
+
+    // And make sure to check for duplicates. Duplicate declarations
+    // are usually allowed, but we forbid redeclaring e.g. parameters.
+    auto& ds = scope->decls[d->name];
+    if (not ds.empty() and isa<ParamDecl>(d)) {
+        Error(
+            d->location(),
+            "Redeclaration of parameter '{}'",
+            d->name
+        );
+    } else {
+        ds.push_back(d);
+    }
+}
+
+auto Sema::AdjustVariableType(Type ty) -> Type {
+    // 'noreturn' is not a valid type for a variable.
+    if (ty == Types::NoReturnTy) return Types::ErrorDependentTy;
+    return ty;
+}
+
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
+        case Stmt::Kind::LocalDecl:
+        case Stmt::Kind::ParamDecl:
+            return new (*M) LocalRefExpr(cast<LocalDecl>(d), loc);
     }
+}
+
+void Sema::DeclareLocal(LocalDecl* d) {
+    Assert(d->parent == curr_proc().proc, "Must EnterProcedure befor adding a local variable");
+    curr_proc().locals.push_back(d);
+    AddDeclToScope(curr_scope(), d);
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -130,6 +163,10 @@ auto Sema::LookUpName(
     return res;
 }
 
+void Sema::LValueToSRValue(Expr*& expr) {
+    expr = new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
+}
+
 void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
@@ -158,14 +195,7 @@ auto Sema::BuildBuiltinCallExpr(
         // __builtin_print takes a sequence of arguments and formats them.
         // FIXME: Actually implement that; it only prints one argument for now.
         case BuiltinCallExpr::Builtin::Print: {
-            if (args.size() != 1) return Error(call_loc, "__builtin_print takes one argument");
-            if (args.front()->dependent()) return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, args, call_loc);
-            if (args.front()->type != M->StrLitTy) return Error(
-                call_loc,
-                "Invalid argument type '{}' for __builtin_print",
-                args.front()->type.print(ctx.use_colours())
-            );
-
+            if (args.empty()) return Error(call_loc, "__builtin_print takes at least one argument");
             return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, args, call_loc);
         }
     }
@@ -202,7 +232,8 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
         );
     }
 
-    for (auto [a, p] : vws::zip(args, params)) {
+    SmallVector<Expr*> actual_args{args};
+    for (auto [a, p] : vws::zip(actual_args, params)) {
         if (a->type != p) {
             return Error(
                 a->location(),
@@ -211,13 +242,21 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
                 p.print(ctx.use_colours())
             );
         }
+
+        if (a->type != Types::IntTy) return ICE(
+            a->location(),
+            "Only integer arguments are supported for now"
+        );
+
+        Assert(a->value_category == Expr::LValue or a->value_category == Expr::SRValue);
+        if (a->value_category == Expr::LValue) LValueToSRValue(a);
     }
 
     return CallExpr::Create(
         *M,
         callee_proc->return_type(),
         callee,
-        args,
+        actual_args,
         callee_proc->location()
     );
 }
@@ -236,6 +275,12 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
 
     // And cache the value for later.
     return new (*M) ConstExpr(*M, std::move(*value), loc, eval);
+}
+
+auto Sema::BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl* {
+    auto param = new (*M) ParamDecl(AdjustVariableType(ty), name, proc.proc, loc);
+    DeclareLocal(param);
+    return param;
 }
 
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
@@ -510,11 +555,10 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
 }
 
 auto Sema::TranslateParamDecl(
-    ProcDecl* parent,
     ParsedParamDecl* parsed,
     Type ty
 ) -> ParamDecl* {
-    return new (*M) ParamDecl(ty, parsed->name, parent, parsed->loc);
+    return BuildParamDecl(curr_proc(), ty, parsed->name, parsed->loc);
 }
 
 auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
@@ -525,7 +569,7 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
         if (res.invalid()) decl->set_errored();
         else {
             decl->body = res.get();
-            decl->finalise(proc_stack.back().locals);
+            decl->finalise(curr_proc().locals);
         }
     }
 
@@ -541,8 +585,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     auto ty = decl->proc_type();
     for (auto [i, pair] : vws::zip(ty->params(), parsed->params()) | vws::enumerate) {
         auto [param_ty, parsed_decl] = pair;
-        auto param_decl = TranslateParamDecl(decl, parsed_decl, param_ty);
-        proc_stack.back().locals.push_back(param_decl);
+        TranslateParamDecl(parsed_decl, param_ty);
     }
 
     // Translate body.
@@ -574,14 +617,14 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         parsed->name,
         Linkage::Internal,
         Mangling::None,
-        curr_proc(),
+        proc_stack.empty() ? nullptr : proc_stack.back().proc,
         nullptr,
         parsed->loc
     );
 
     // Add the procedure to the module and the current scope.
     proc_decl_map[parsed] = proc;
-    if (not parsed->name.empty()) curr_scope()->add(proc);
+    AddDeclToScope(curr_scope(), proc);
     M->procs.push_back(proc);
     return proc;
 }
@@ -595,6 +638,9 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -631,6 +677,9 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
     }
 
     Unreachable("Not a valid type kind: {}", +parsed->kind());

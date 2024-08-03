@@ -94,11 +94,12 @@ struct Stmt::Printer : PrinterBase<Stmt> {
     using enum utils::Colour;
     bool print_procedure_bodies = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
-    void PrintBasicHeader(Stmt* S, StringRef name, llvm::function_ref<void()> print_extra_data = {});
+    void PrintBasicHeader(Stmt* s, StringRef name);
+    void PrintBasicNode(Stmt* S, StringRef name, llvm::function_ref<void()> print_extra_data = {});
     void Print(Stmt* E);
 };
 
-void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name, llvm::function_ref<void()> print_extra_data) {
+void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     std::print(
         "{}{} {}{} {}<{}>",
         C(Red),
@@ -108,25 +109,43 @@ void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name, llvm::function_ref
         C(Magenta),
         s->loc.pos
     );
+}
+
+
+void Stmt::Printer::PrintBasicNode(Stmt* s, StringRef name, llvm::function_ref<void()> print_extra_data) {
+    PrintBasicHeader(s, name);
 
     if (auto e = dyn_cast<Expr>(s)) std::print(" {}", e->type.print(C.use_colours));
     if (print_extra_data) {
         std::print(" ");
         print_extra_data();
     }
+
+    if (auto e = dyn_cast<Expr>(s)) {
+        std::print("{}", C(White));
+        if (e->value_category != Expr::SRValue) {
+            switch (e->value_category) {
+                case ValueCategory::SRValue: Unreachable();
+                case ValueCategory::MRValue: std::print(" mrvalue"); break;
+                case ValueCategory::LValue: std::print(" lvalue"); break;
+                case ValueCategory::DValue: std::print(" dvalue"); break;
+            }
+        }
+    }
+
     std::print("\n");
 }
 
 void Stmt::Printer::Print(Stmt* e) {
     switch (e->kind()) {
         case Kind::BlockExpr:
-            PrintBasicHeader(e, "BlockExpr");
+            PrintBasicNode(e, "BlockExpr");
             PrintChildren(cast<BlockExpr>(e)->stmts());
             break;
 
         case Kind::BuiltinCallExpr: {
             auto& c = *cast<BuiltinCallExpr>(e);
-            PrintBasicHeader(e, "BuiltinCallExpr", [&] {
+            PrintBasicNode(e, "BuiltinCallExpr", [&] {
                 std::print("{}{}", C(Green), [&] -> std::string_view {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
@@ -141,7 +160,7 @@ void Stmt::Printer::Print(Stmt* e) {
         } break;
 
         case Kind::CallExpr: {
-            PrintBasicHeader(e, "CallExpr");
+            PrintBasicNode(e, "CallExpr");
             auto& c = *cast<CallExpr>(e);
             SmallVector<Stmt*, 10> fields;
             if (c.callee) fields.push_back(c.callee);
@@ -149,14 +168,25 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(fields);
         } break;
 
+        case Kind::CastExpr: {
+            auto c = cast<CastExpr>(e);
+            PrintBasicHeader(c, "CastExpr");
+            std::print(" {}{} ", c->type.print(C.use_colours), C(White));
+            switch (c->kind) {
+                case CastExpr::LValueToSRValue: std::print("lvalue->srvalue"); break;
+            }
+            std::print("\n");
+            PrintChildren(c->arg);
+        } break;
+
         case Kind::ConstExpr: {
             auto c = cast<ConstExpr>(e);
-            PrintBasicHeader(e, "ConstExpr", [&] { c->value->dump(C.use_colours); });
+            PrintBasicNode(e, "ConstExpr", [&] { c->value->dump(C.use_colours); });
             if (c->stmt) PrintChildren(c->stmt.get());
         } break;
 
         case Kind::EvalExpr: {
-            PrintBasicHeader(e, "EvalExpr");
+            PrintBasicNode(e, "EvalExpr");
             PrintChildren(cast<EvalExpr>(e)->stmt);
         } break;
 
@@ -166,7 +196,7 @@ void Stmt::Printer::Print(Stmt* e) {
             // unary minus is just an operator).
             auto i = cast<IntLitExpr>(e);
             auto PrintValue = [&] { std::print("{}{}", C(Magenta), i->storage.str(false)); };
-            PrintBasicHeader(e, "IntLitExpr", PrintValue);
+            PrintBasicNode(e, "IntLitExpr", PrintValue);
         } break;
 
         case Kind::LocalDecl:
@@ -174,7 +204,14 @@ void Stmt::Printer::Print(Stmt* e) {
             bool is_param = e->kind() == Kind::ParamDecl;
             auto d = cast<LocalDecl>(e);
             auto PrintName = [&] { std::print("{}{}", C(is_param ? Blue : White), d->name); };
-            PrintBasicHeader(e, is_param ? "ParamDecl" : "LocalDecl", PrintName);
+            PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintName);
+        } break;
+
+        case Kind::LocalRefExpr: {
+            auto d = cast<LocalRefExpr>(e);
+            bool is_param = d->decl->kind() == Kind::ParamDecl;
+            auto PrintName = [&] { std::print("{}{}", C(is_param ? Blue : White), d->decl->name); };
+            PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
         case Kind::ProcRefExpr: {
@@ -195,7 +232,7 @@ void Stmt::Printer::Print(Stmt* e) {
         } break;
 
         case Kind::SliceDataExpr:
-            PrintBasicHeader(e, "SliceDataExpr");
+            PrintBasicNode(e, "SliceDataExpr");
             PrintChildren(cast<SliceDataExpr>(e)->slice);
             break;
 

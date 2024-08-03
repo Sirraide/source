@@ -19,6 +19,7 @@ using options = clopts< // clang-format off
     flag<"--parse", "Parse only and exit">,
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
+    flag<"--eval", "Run the entire input through the constant evaluator">,
     help<>
 >; // clang-format on
 }
@@ -33,7 +34,8 @@ int main(int argc, char** argv) {
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
     // Figure out what we want to do.
-    auto action = opts.get<"--lex">()   ? Action::Lex
+    auto action = opts.get<"--eval">()   ? Action::Eval
+                : opts.get<"--lex">()   ? Action::Lex
                 : opts.get<"--parse">() ? Action::Parse
                 : opts.get<"--sema">()  ? Action::Sema
                                         : Action::Compile;
@@ -41,7 +43,7 @@ int main(int argc, char** argv) {
     // Create driver.
     Driver driver{{
         .action = action,
-        .error_limit = u32(opts.get_or<"--error-limit">(10)),
+        .error_limit = u32(opts.get_or<"--error-limit">(20)),
         .num_threads = u32(opts.get_or<"-j">(std::thread::hardware_concurrency())),
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),

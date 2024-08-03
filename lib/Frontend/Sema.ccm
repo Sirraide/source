@@ -65,7 +65,10 @@ public:
     auto context() const -> Context& { return ctx; }
 
     /// Get the current procedure.
-    auto curr_proc() -> ProcDecl* { return proc_stack.empty() ? nullptr : proc_stack.back().proc; }
+    auto curr_proc() -> ProcScopeInfo& {
+        Assert(not proc_stack.empty(), "Procedure stack underflow");
+        return proc_stack.back();
+    }
 
     /// Get the current scope.
     auto curr_scope() -> Scope* { return scope_stack.back(); }
@@ -113,14 +116,6 @@ private:
         }
     };
 
-    /// Entry point.
-    void Translate();
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
-
     struct LookupResult {
         enum struct Reason : u8 {
             /// Lookup was successful.
@@ -159,8 +154,25 @@ private:
         static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, "", Reason::Success}; }
     };
 
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
+    /// Add a declaration to a scope.
+    ///
+    /// This correctly handles redeclarations and declarations
+    /// with an empty name.
+    void AddDeclToScope(Scope* scope, Decl* d);
+
+    /// Adjust a type for use in a variable declaration.
+    auto AdjustVariableType(Type ty) -> Type;
+
     /// Create a reference to a declaration.
     auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
+
+    /// Add a variable to the current scope and procedure.
+    void DeclareLocal(LocalDecl* d);
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
@@ -197,6 +209,9 @@ private:
         bool complain = true
     ) -> LookupResult;
 
+    /// Convert an lvalue to an srvalue.
+    void LValueToSRValue(Expr*& expr);
+
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
@@ -205,6 +220,10 @@ private:
     auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
+    auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
+
+    /// Entry point.
+    void Translate();
 
     /// Statements.
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
@@ -220,7 +239,7 @@ private:
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateParamDecl(ProcDecl* parent, ParsedParamDecl* parsed, Type ty) -> ParamDecl*;
+    auto TranslateParamDecl(ParsedParamDecl* parsed, Type ty) -> ParamDecl*;
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
     auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;

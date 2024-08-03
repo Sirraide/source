@@ -48,8 +48,10 @@ private:
     auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
     auto EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value*;
     auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
+    auto EmitCastExpr(CastExpr* expr) -> llvm::Value*;
     auto EmitConstExpr(ConstExpr* constant) -> llvm::Constant*;
     auto EmitEvalExpr(EvalExpr* eval) -> llvm::Value*;
+    auto EmitLocalRefExpr(LocalRefExpr* expr) -> llvm::Value*;
     auto EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant*;
     void EmitProcedure(ProcDecl* proc);
     auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;

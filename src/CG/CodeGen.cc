@@ -156,7 +156,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     return ret;
 }
 
-auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value* {
+auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
             Assert(expr->args().size() == 1);
@@ -187,11 +187,15 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     return call;
 }
 
+auto CodeGen::EmitCastExpr(CastExpr* expr) -> llvm::Value* {
+    Todo();
+}
+
 auto CodeGen::EmitConstExpr(ConstExpr* constant) -> llvm::Constant* {
     return EmitValue(*constant->value);
 }
 
-auto CodeGen::EmitEvalExpr(EvalExpr*) -> llvm::Value* {
+auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
 }
 
@@ -203,6 +207,9 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
     Todo();
 }
 
+auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
+    Todo();
+}
 
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
     auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));

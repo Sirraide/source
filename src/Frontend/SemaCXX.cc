@@ -130,7 +130,7 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
     );
 
     Mod->procs.push_back(Proc);
-    Mod->exports.add(Proc);
+    S.AddDeclToScope(&Mod->exports, Proc);
 }
 
 // The types in this function are currently created in the module we’re

@@ -43,9 +43,6 @@ public:
         : parent_scope{parent},
           proc_scope{proc_scope} {}
 
-    /// Add a declaration to this scope.
-    void add(Decl* d);
-
     /// Check if this is a procedure scope.
     bool is_proc_scope() const { return proc_scope; }
 
@@ -265,6 +262,35 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::CallExpr; }
 };
 
+class srcc::CastExpr final : public Expr {
+public:
+    enum class CastKind : u8 {
+        /// Convert an lvalue to an srvalue.
+        ///
+        /// This is only valid for types that can be srvalues.
+        LValueToSRValue,
+    };
+
+    using enum CastKind;
+
+    Expr* arg;
+    CastKind kind;
+    bool implicit;
+
+    CastExpr(
+        Type type,
+        CastKind kind,
+        Expr* expr,
+        Location location,
+        bool implicit = false
+    ) : Expr{Kind::CastExpr, type, SRValue, location},
+        arg{expr},
+        kind{kind},
+        implicit{implicit} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::CastExpr; }
+};
+
 class srcc::ConstExpr final : public Expr {
 public:
     /// Constant value.
@@ -308,6 +334,13 @@ public:
     ) : Expr{Kind::IntLitExpr, ty, SRValue, location}, storage{integer} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
+};
+
+class srcc::LocalRefExpr final : public Expr {
+public:
+    LocalDecl* decl;
+    LocalRefExpr(LocalDecl* decl, Location location);
+    static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
 };
 
 class srcc::ProcRefExpr final : public Expr {
