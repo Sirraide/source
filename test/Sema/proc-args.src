@@ -1,0 +1,16 @@
+program test;
+
+proc a () {}
+proc b (int) {}
+proc c (int, int, int) {}
+proc d (int a, int b, int c) {}
+proc e (
+    int, int, int, int, int,
+    int, int, int, int, int
+) {}
+
+a();
+b(1);
+c(1, 2, 3);
+d(1, 2, 3);
+e(1, 2, 3, 4, 5, 6, 7, 8, 9, 0);

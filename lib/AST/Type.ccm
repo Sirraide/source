@@ -1,8 +1,9 @@
 module;
 
-#include <srcc/Macros.hh>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/PointerLikeTypeTraits.h>
+#include <srcc/Macros.hh>
 
 export module srcc.ast:type;
 import srcc;
@@ -10,6 +11,7 @@ import :enums;
 
 export namespace srcc {
 class TranslationUnit;
+class Types;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -45,15 +47,24 @@ public:
     Dependence dep = Dependence::None;
 
 protected:
-    explicit TypeBase(Kind kind, Dependence dep = Dependence::None) : type_kind{kind}, dep{dep} {}
+    explicit constexpr TypeBase(Kind kind, Dependence dep = Dependence::None) : type_kind{kind}, dep{dep} {}
 
 public:
     // Only allow allocating these in the module.
     void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
     void* operator new(usz size, TranslationUnit& mod);
 
+    /// Get the alignment of this type.
+    LLVM_READONLY auto align(TranslationUnit& tu) const -> Align;
+
+    /// Get the size of this type when stored in an array.
+    LLVM_READONLY auto array_size(TranslationUnit& tu) const -> Size;
+
     /// Get the dependence of this type.
     auto dependence() const -> Dependence { return dep; }
+
+    /// Check if this is dependent.
+    bool dependent() const { return dep != Dependence::None; }
 
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
@@ -62,11 +73,62 @@ public:
     auto kind() const -> Kind { return type_kind; }
 
     /// Check if this type is the builtin 'void' type.
-    bool is_void() const;
+    LLVM_READONLY bool is_void() const;
+
+    /// Get the size of this type. This does NOT include tail padding!
+    LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
+
+    /// Get a string representation of this type.
+    LLVM_READONLY auto print(bool use_colour) const -> std::string;
+
+    /// Get the value category that an expression with this type has by default.
+    LLVM_READONLY auto value_category() const -> ValueCategory;
+
+protected:
+    void ComputeDependence();
 
 private:
-    auto print(bool use_colour) const -> std::string;
     auto print_impl(utils::Colours C) const -> std::string;
+};
+
+class srcc::BuiltinType final : public TypeBase {
+    friend Types;
+    const BuiltinKind b_kind;
+
+    explicit constexpr BuiltinType(BuiltinKind kind, Dependence dep = Dependence::None)
+        : TypeBase{Kind::BuiltinType, dep}, b_kind{kind} {}
+
+public:
+
+    /// Get the kind of this builtin type.
+    auto builtin_kind() const -> BuiltinKind { return b_kind; }
+
+    static auto Get(TranslationUnit& mod, BuiltinKind kind) = SRCC_DELETED("Use Types::VoidTy and friends instead");
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::BuiltinType; }
+};
+
+class srcc::IntType final : public TypeBase
+    , public FoldingSetNode {
+    friend Types;
+
+public:
+    static constexpr Size MaxBits = Size::Bits(u64(llvm::IntegerType::MAX_INT_BITS));
+
+private:
+    Size bits;
+
+    explicit constexpr IntType(Size bit_width) : TypeBase{Kind::IntType}, bits{bit_width} {
+        Assert(bits <= MaxBits, "Bit width too large: {}", bits);
+    }
+
+public:
+    /// Get the bit width of this integer type.
+    auto bit_width() const -> Size { return bits; }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, bits); }
+    static auto Get(TranslationUnit& mod, Size size) -> IntType*;
+    static void Profile(FoldingSetNodeID& ID, Size bit_width);
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::IntType; }
 };
 
 /// A type together with qualifiers.
@@ -81,7 +143,7 @@ private:
     TypeWrapper() = default;
 
 public:
-    TypeWrapper(WrappedType* t) : pointer{t} { Check(); }
+    constexpr TypeWrapper(WrappedType* t) : pointer{t} { Check(); }
 
     template <std::derived_from<WrappedType> Derived>
     TypeWrapper(Derived* derived) : pointer{derived} { Check(); }
@@ -121,9 +183,32 @@ public:
     }
 
 private:
-    void Check() {
+    constexpr void Check() {
         Assert(pointer, "Null type pointer can only be constructed with `TypeWrapper::UnsafeNull()`");
     }
+};
+
+// The const_cast here is fine because we never modify types anyway.
+#define PREDECLARED_TYPE(Class, Name) \
+static constexpr TypeWrapper<Class> Name = const_cast<Class*>(&Name##Impl)
+
+// FIXME: Eliminate 'TypeWrapper' in favour of a single 'Type' class and move these there?
+class srcc::Types {
+    static constexpr BuiltinType VoidTyImpl{BuiltinKind::Void};
+    static constexpr BuiltinType DependentTyImpl{BuiltinKind::Dependent, Dependence::Type};
+    static constexpr BuiltinType ErrorDependentTyImpl{BuiltinKind::ErrorDependent, Dependence::Type | Dependence::Error};
+    static constexpr BuiltinType NoReturnTyImpl{BuiltinKind::NoReturn};
+    static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
+    static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
+
+public:
+    /// Builtin types.
+    PREDECLARED_TYPE(BuiltinType, VoidTy);
+    PREDECLARED_TYPE(BuiltinType, DependentTy);
+    PREDECLARED_TYPE(BuiltinType, ErrorDependentTy);
+    PREDECLARED_TYPE(BuiltinType, NoReturnTy);
+    PREDECLARED_TYPE(BuiltinType, BoolTy);
+    PREDECLARED_TYPE(BuiltinType, IntTy);
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {
@@ -150,6 +235,7 @@ class srcc::ArrayType final : public SingleElementTypeBase
         i64 size
     ) : SingleElementTypeBase{Kind::ArrayType, elem}, elems{size} {
         Assert(size >= 0, "Negative array size?");
+        ComputeDependence();
     }
 
 public:
@@ -162,43 +248,11 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
 };
 
-class srcc::BuiltinType final : public TypeBase {
-    // The module creates all instances of these.
-    friend TranslationUnit;
-    const BuiltinKind b_kind;
-
-    explicit BuiltinType(BuiltinKind kind) : TypeBase{Kind::BuiltinType}, b_kind{kind} {}
-
-public:
-    /// Get the kind of this builtin type.
-    auto builtin_kind() const -> BuiltinKind { return b_kind; }
-
-    static auto Get(TranslationUnit& mod, BuiltinKind kind) = SRCC_DELETED("Use Module.VoidTy and friends instead");
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::BuiltinType; }
-};
-
-class srcc::IntType final : public TypeBase
-    , public FoldingSetNode {
-    i64 bits;
-
-    explicit IntType(i64 bit_width) : TypeBase{Kind::IntType}, bits{bit_width} {
-        Assert(bits >= 0, "Negative bit width?");
-    }
-
-public:
-    /// Get the bit width of this integer type.
-    auto bit_width() const -> Size { return Size::Bits(bits); }
-
-    void Profile(FoldingSetNodeID& ID) const { Profile(ID, bits); }
-    static auto Get(TranslationUnit& mod, i64 bit_width) -> IntType*;
-    static auto Get(TranslationUnit& mod, Size size) -> IntType* { return Get(mod, i64(size.bits())); }
-    static void Profile(FoldingSetNodeID& ID, i64 bit_width);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::IntType; }
-};
-
 class srcc::ReferenceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit ReferenceType(Type elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
+    explicit ReferenceType(Type elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {
+        ComputeDependence();
+    }
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
@@ -264,7 +318,9 @@ public:
 
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
+    explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {
+        ComputeDependence();
+    }
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }

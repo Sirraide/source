@@ -32,7 +32,6 @@ class srcc::ParsedModule {
     /// once we’re done building the AST.
     llvm::BumpPtrAllocator alloc;
 
-
 public:
     using Ptr = std::unique_ptr<ParsedModule>;
 

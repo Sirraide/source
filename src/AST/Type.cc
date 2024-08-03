@@ -3,6 +3,7 @@ module;
 #include <memory>
 #include <print>
 #include <srcc/Macros.hh>
+#include <llvm/Support/MathExtras.h>
 
 module srcc.ast;
 import srcc;
@@ -32,6 +33,41 @@ auto FindOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* 
 // ============================================================================
 void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+}
+
+auto TypeBase::align(TranslationUnit& tu) const -> Align {
+    switch (type_kind) {
+        case Kind::BuiltinType: {
+            switch (cast<BuiltinType>(this)->builtin_kind()) {
+                case BuiltinKind::Void: return Align{1};
+                case BuiltinKind::Bool: return Align{1};
+                case BuiltinKind::Int: return Align{8}; // FIXME: Get alignment from context.
+                case BuiltinKind::NoReturn: return Align{1};
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                    Unreachable("Requested alignment of dependent type");
+            }
+        }
+
+        case Kind::ArrayType:
+        case Kind::SliceType:
+            return cast<SingleElementTypeBase>(this)->elem()->align(tu);
+
+        case Kind::ReferenceType: return Align{8}; // FIXME: Get pointer alignment from context.
+        case Kind::IntType: {
+            auto bytes = cast<IntType>(this)->bit_width().bytes();
+            return Align{llvm::PowerOf2Ceil(bytes)};
+        }
+
+        case Kind::ProcType: return Align{8}; // FIXME: Get closure alignment from context.
+    }
+
+    Unreachable("Invalid type kind");
+}
+
+auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
+    // Currently identical for all types we support.
+    return size(tu);
 }
 
 void TypeBase::dump(bool use_colour) const {
@@ -68,7 +104,9 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Void: return std::format("{}void", C(Cyan));
                 case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
+                case BuiltinKind::ErrorDependent: return std::format("{}<error>", C(Cyan));
                 case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
+                case BuiltinKind::Int: return std::format("{}int", C(Cyan));
                 case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
             }
         }
@@ -120,6 +158,79 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
     Unreachable("Invalid type kind");
 }
 
+auto TypeBase::size(TranslationUnit& tu) const -> Size {
+    switch (type_kind) {
+        case Kind::BuiltinType: {
+            switch (cast<BuiltinType>(this)->builtin_kind()) {
+                case BuiltinKind::Bool: return Size::Bits(1);
+                case BuiltinKind::Int: return Size::Bytes(8); // FIXME: Get size from context.
+
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::Void:
+                    return Size();
+
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                    Unreachable("Requested size of dependent type");
+            }
+        }
+
+        case Kind::ReferenceType: return Size::Bytes(8); // FIXME: Get pointer size from context.
+        case Kind::IntType: return cast<IntType>(this)->bit_width();
+        case Kind::ProcType: return Size::Bytes(16); // FIXME: Get closure size from context.
+        case Kind::SliceType: return Size::Bytes(16); // FIXME: Get slice size from context.
+        case Kind::ArrayType: {
+            auto arr = cast<ArrayType>(this);
+            return arr->elem()->array_size(tu) * usz(arr->dimension());
+        }
+    }
+
+    Unreachable("Invalid type kind");
+}
+
+
+auto TypeBase::value_category() const -> ValueCategory {
+    switch (type_kind) {
+        case Kind::BuiltinType: {
+            switch (cast<BuiltinType>(this)->builtin_kind()) {
+                // 'void' is our unit type; 'noreturn' is never instantiated
+                // by definition, so just making it an srvalue is fine.
+                case BuiltinKind::Void:
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::Bool:
+                case BuiltinKind::Int:
+                    return Expr::SRValue;
+
+                // Don’t know yet.
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                    return Expr::DValue;
+            }
+
+            Unreachable("Invalid builtin kind");
+        }
+
+        // It’s not worth it to try and construct arrays in registers.
+        case Kind::ArrayType: return Expr::LValue;
+
+        // Slices are a pointer+size, which our ABI just passes in registers.
+        case Kind::SliceType: return Expr::SRValue;
+
+        // Pointers are just scalars.
+        case Kind::ReferenceType: return Expr::SRValue;
+
+        // Integers may end up being rather large (e.g. i1024), but
+        // that’s for the backend to deal with.
+        case Kind::IntType: return Expr::SRValue;
+
+        // Invalid, can’t be instantiated; return some random nonsense.
+        case Kind::ProcType: return Expr::DValue;
+    }
+
+    Unreachable("Invalid type kind");
+}
+
+
 // ============================================================================
 //  Types
 // ============================================================================
@@ -133,13 +244,13 @@ void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
     ID.AddInteger(size);
 }
 
-auto IntType::Get(TranslationUnit& mod, i64 bits) -> IntType* {
+auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
     auto CreateNew = [&] { return new (mod) IntType{bits}; };
     return FindOrCreateType(mod.int_types, CreateNew, bits);
 }
 
-void IntType::Profile(FoldingSetNodeID& ID, i64 bits) {
-    ID.AddInteger(bits);
+void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
+    ID.AddInteger(bits.bits());
 }
 
 auto ReferenceType::Get(TranslationUnit& mod, Type elem) -> ReferenceType* {
@@ -194,6 +305,7 @@ ProcType::ProcType(
         param_types.size(),
         getTrailingObjects<Type>()
     );
+    ComputeDependence();
 }
 
 void ProcType::Profile(FoldingSetNodeID& ID, Type return_type, ArrayRef<Type> param_types, CallingConvention cc, bool is_variadic) {

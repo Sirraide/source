@@ -107,8 +107,8 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
             break;
     }
 
-    // Don’t import constexpr or inline functions for now.
-    if (D->isConstexpr() or D->isInlineSpecified()) return;
+    // Don’t import immediate or inline functions for now.
+    if (D->isImmediateFunction() or D->isInlineSpecified()) return;
 
     // Don’t import functions with internal linkage.
     if (D->getLinkageInternal() != clang::Linkage::External) return;
@@ -118,7 +118,8 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
     if (not T) return;
 
     // Create the procedure.
-    auto* Proc = new (*Mod) ProcDecl(
+    auto* Proc = ProcDecl::Create(
+        *Mod,
         *T,
         Mod->save(D->getNameAsString()),
         Linkage::Imported,
@@ -153,7 +154,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             switch (cast<clang::BuiltinType>(T)->getKind()) {
                 using K = clang::BuiltinType::Kind;
                 default: return std::nullopt;
-                case K::Void: return S.M->VoidTy;
+                case K::Void: return Types::VoidTy;
                 case K::Bool: return S.M->FFIBoolTy;
 
                 case K::SChar:
@@ -190,7 +191,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
 
         case K::BitInt: {
             auto B = cast<clang::BitIntType>(T);
-            return IntType::Get(*S.M, i64(B->getNumBits()));
+            return IntType::Get(*S.M, Size::Bits(B->getNumBits()));
         }
 
         case K::ConstantArray: {
@@ -204,7 +205,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             auto FPT = cast<clang::FunctionProtoType>(T);
             if (FPT->getCallConv() != clang::CallingConv::CC_C) return std::nullopt;
 
-            auto Ret = FPT->getExtInfo().getNoReturn() ? S.M->NoReturnTy : ImportType(FPT->getReturnType());
+            auto Ret = FPT->getExtInfo().getNoReturn() ? Types::NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return std::nullopt;
 
             SmallVector<Type> Params;

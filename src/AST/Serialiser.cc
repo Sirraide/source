@@ -45,6 +45,8 @@ struct Serialiser {
 
     Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer);
     void SerialiseDecl(const Decl*);
+    void SerialiseLocalDecl(const LocalDecl*);
+    void SerialiseParamDecl(const ParamDecl*);
     void SerialiseProcDecl(const ProcDecl* proc);
     auto SerialiseType(Type ty) -> u64;
 };
@@ -71,14 +73,22 @@ Serialiser::Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer)
 void Serialiser::SerialiseDecl(const Decl* d) {
     Writer{decls_buffer} << d->kind();
     serialised_decls++;
-    switch (d->kind()) {
+    switch (d->kind()) { // clang-format off
         using K = Stmt::Kind;
 #       define AST_STMT_LEAF(node) case K::node: Unreachable("Not a declaration!");
 #       define AST_DECL_LEAF(node) case K::node: SRCC_CAT(Serialise, node)(cast<node>(d)); return;
 #       include "srcc/AST.inc"
-    }
+    } // clang-format on
 
     Unreachable("Invalid statement kind");
+}
+
+void Serialiser::SerialiseLocalDecl(const LocalDecl*) {
+    Unreachable("Serialising local decl");
+}
+
+void Serialiser::SerialiseParamDecl(const ParamDecl*) {
+    Unreachable("Serialising local decl");
 }
 
 void Serialiser::SerialiseProcDecl(const ProcDecl* proc) {
@@ -184,6 +194,8 @@ struct Deserialiser {
 
     auto Deserialise() -> TranslationUnit::Ptr;
     void DeserialiseDecl();
+    void DeserialiseLocalDecl();
+    void DeserialiseParamDecl();
     void DeserialiseProcDecl();
     void DeserialiseType();
 };
@@ -198,21 +210,26 @@ auto Deserialiser::Deserialise() -> TranslationUnit::Ptr {
 }
 
 void Deserialiser::DeserialiseDecl() {
-    switch (Read<Stmt::Kind>()) {
+    switch (Read<Stmt::Kind>()) { // clang-format off
         using K = Stmt::Kind;
 #       define AST_STMT_LEAF(node) case K::node: Unreachable("Not a declaration!");
 #       define AST_DECL_LEAF(node) case K::node: SRCC_CAT(Deserialise, node)(); return;
 #       include "srcc/AST.inc"
-    }
+    } // clang-format on
 
     Unreachable("Invalid statement kind");
+}
+
+void Deserialiser::DeserialiseLocalDecl() {
+    Unreachable("Never serialised");
 }
 
 void Deserialiser::DeserialiseProcDecl() {
     auto ty = ReadType();
     auto name = ReadString();
     auto mangling = Read<Mangling>();
-    auto proc = new (*M) ProcDecl{
+    auto proc = ProcDecl::Create(
+        *M,
         ty,
         name,
         Linkage::Imported,
@@ -220,9 +237,13 @@ void Deserialiser::DeserialiseProcDecl() {
         nullptr,
         nullptr,
         {}
-    };
+    );
 
     M->exports.decls[name].push_back(proc);
+}
+
+void Deserialiser::DeserialiseParamDecl() {
+    Unreachable("Never serialised");
 }
 
 void Deserialiser::DeserialiseType() {
@@ -248,10 +269,12 @@ void Deserialiser::DeserialiseType() {
 
         case TypeBase::Kind::BuiltinType: {
             switch (Read<BuiltinKind>()) {
-                case BuiltinKind::Void: deserialised_types.push_back(M->VoidTy); return;
-                case BuiltinKind::Dependent: deserialised_types.push_back(M->DependentTy); return;
-                case BuiltinKind::NoReturn: deserialised_types.push_back(M->NoReturnTy); return;
-                case BuiltinKind::Bool: deserialised_types.push_back(M->BoolTy); return;
+                case BuiltinKind::Void: deserialised_types.push_back(Types::VoidTy); return;
+                case BuiltinKind::Dependent: deserialised_types.push_back(Types::DependentTy); return;
+                case BuiltinKind::ErrorDependent: deserialised_types.push_back(Types::ErrorDependentTy); return;
+                case BuiltinKind::NoReturn: deserialised_types.push_back(Types::NoReturnTy); return;
+                case BuiltinKind::Bool: deserialised_types.push_back(Types::BoolTy); return;
+                case BuiltinKind::Int: deserialised_types.push_back(Types::IntTy); return;
             }
 
             Unreachable("Invalid builtin type");

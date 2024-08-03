@@ -8,6 +8,9 @@ import :enums;
 
 using namespace srcc;
 
+// ============================================================================
+//  Statements.
+// ============================================================================
 void ComputeDependence(BlockExpr* e) {
     auto d = Dependence::None;
 
@@ -66,6 +69,19 @@ void ComputeDependence(EvalExpr* e) {
     e->set_dependence(e->stmt->dependence());
 }
 
+void ComputeDependence(IntLitExpr*) {
+    // Always of type 'int' and thus never dependent.
+}
+
+void ComputeDependence(LocalDecl* d) {
+    if (d->type->dependent())
+        d->set_dependence(Dependence::Type);
+}
+
+void ComputeDependence(ParamDecl* d) {
+    ComputeDependence(static_cast<LocalDecl*>(d));
+}
+
 void ComputeDependence(ProcRefExpr* p) {
     p->set_dependence(p->decl->dependence());
 }
@@ -92,4 +108,28 @@ void Stmt::ComputeDependence() {
     }
 
     Unreachable("Invalid statement kind: {}", +kind());
+}
+
+// ============================================================================
+//  Types.
+// ============================================================================
+void ComputeDependence(BuiltinType*) {}
+void ComputeDependence(IntType*) {}
+void ComputeDependence(ArrayType* arr) { arr->dep = arr->elem()->dep; }
+void ComputeDependence(ReferenceType* ref) { ref->dep = ref->elem()->dep; }
+void ComputeDependence(SliceType* slice) { slice->dep = slice->elem()->dep; }
+void ComputeDependence(ProcType* proc) {
+    Dependence d = proc->ret()->dep;
+    for (auto param : proc->params()) d |= param->dep;
+    proc->dep = d;
+}
+
+void TypeBase::ComputeDependence() {
+    switch (kind()) {
+#define AST_TYPE_LEAF(node)                    \
+    case Kind::node:                           \
+        ::ComputeDependence(cast<node>(this)); \
+        return;
+#include "srcc/AST.inc"
+    }
 }

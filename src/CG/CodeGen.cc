@@ -57,8 +57,12 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
 
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
-                case BuiltinKind::Dependent: Unreachable("Dependent type in codegen?");
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                    Unreachable("Dependent type in codegen?");
+
                 case BuiltinKind::Bool: return I1Ty;
+                case BuiltinKind::Int: return IntTy;
 
                 case BuiltinKind::Void:
                 case BuiltinKind::NoReturn:
@@ -191,6 +195,15 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> llvm::Value* {
     Unreachable("Should have been evaluated");
 }
 
+auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant* {
+    return llvm::ConstantInt::get(ConvertType(expr->type), expr->storage.value());
+}
+
+void CodeGen::EmitLocal(LocalDecl* decl) {
+    Todo();
+}
+
+
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
     auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
     return cast<llvm::Function>(callee.getCallee());
@@ -227,7 +240,8 @@ auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
     // This supports both lvalues and rvalues because it’s easy to do so and
     // slices are small enough to where they may reasonably may end up in a
     // temporary.
-    if (expr->is_lvalue) return builder.CreateLoad(ConvertType(stype->elem()), slice);
+    Assert(expr->value_category == Expr::SRValue or expr->value_category == Expr::LValue);
+    if (expr->lvalue()) return builder.CreateLoad(ConvertType(stype->elem()), slice);
     return builder.CreateExtractValue(slice, 0);
 }
 
@@ -239,18 +253,23 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
+    utils::Overloaded LValueEmitter {
+        [&](String s) -> llvm::Constant* { return builder.CreateGlobalString(s); },
+        [&](eval::Memory* m) -> llvm::Constant* {
+            Assert(m->alive());
+            Todo("Emit memory");
+        }
+    };
+
     utils::Overloaded V {
         [&](ProcDecl* proc) -> llvm::Constant* { return EmitProcAddress(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
         [&](const APInt& value) -> llvm::Constant* { return MakeInt(value); },
-        [&](const eval::LValue& lval) -> llvm::Constant* {
-            return builder.CreateGlobalString(*lval.get<String>());
-        },
-
+        [&](const eval::LValue& lval) -> llvm::Constant* { return lval.base.visit(LValueEmitter); },
         [&](this auto& self, const eval::Reference& ref) -> llvm::Constant* {
-            auto base = self(ref.base);
+            auto base = self(ref.lvalue);
             return llvm::ConstantFoldGetElementPtr(
-                ConvertType(ref.base.base_type(M)),
+                ConvertType(ref.lvalue.base_type(M)),
                 base,
                 {},
                 MakeInt(ref.offset)

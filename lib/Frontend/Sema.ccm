@@ -23,11 +23,26 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     TranslationUnit::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
 
+    struct ProcScopeInfo {
+        ProcDecl* proc;
+        SmallVector<LocalDecl*> locals;
+
+        ProcScopeInfo(ProcDecl* proc) : proc{proc} {}
+    };
+
+    class [[nodiscard]] EnterProcedure {
+        SRCC_IMMOVABLE(EnterProcedure);
+        Sema& S;
+    public:
+        explicit EnterProcedure(Sema& S, ProcDecl* proc) : S{S} { S.proc_stack.emplace_back(proc); }
+        ~EnterProcedure() { S.proc_stack.pop_back(); }
+    };
+
     /// All scopes that have been created.
     std::vector<std::unique_ptr<Scope>> all_scopes;
 
     /// Stack of active procedures.
-    SmallVector<ProcDecl*> proc_stack;
+    SmallVector<ProcScopeInfo> proc_stack;
 
     /// Stack of active scopes.
     SmallVector<Scope*> scope_stack;
@@ -50,7 +65,7 @@ public:
     auto context() const -> Context& { return ctx; }
 
     /// Get the current procedure.
-    auto curr_proc() -> ProcDecl* { return proc_stack.empty() ? nullptr : proc_stack.back(); }
+    auto curr_proc() -> ProcDecl* { return proc_stack.empty() ? nullptr : proc_stack.back().proc; }
 
     /// Get the current scope.
     auto curr_scope() -> Scope* { return scope_stack.back(); }
@@ -191,24 +206,29 @@ private:
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
 
-    /// Translation from the parse tree to the AST.
+    /// Statements.
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
-    auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> std::nullptr_t { Todo(); }
+    auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
     auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr>;
     auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
-    auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
-    auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
     auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr>;
-    auto TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> std::nullptr_t { Todo(); }
+    auto TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr>;
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
-    auto TranslateParamDecl(ParsedParamDecl* parsed) -> std::nullptr_t { Todo(); }
+    auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
+
+    /// Declarations.
+    auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
+    auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
+    auto TranslateParamDecl(ProcDecl* parent, ParsedParamDecl* parsed, Type ty) -> ParamDecl*;
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
     auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
-    auto TranslateProcType(ParsedProcType* parsed) -> std::nullptr_t { Todo(); }
     auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
     auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
-    auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
+
+    /// Types.
+    auto TranslateProcType(ParsedProcType* parsed) -> Type;
+    auto TranslateType(ParsedType* parsed) -> Type;
 };

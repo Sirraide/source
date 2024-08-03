@@ -233,7 +233,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
         case Kind::IntLitExpr: {
             PrintHeader(s, "IntLitExpr", false);
-            auto val = cast<ParsedIntLitExpr>(s)->storage.str(module ? &module->integers : nullptr, false);
+            auto val = cast<ParsedIntLitExpr>(s)->storage.str(false);
             std::print("{}{}{}\n", C(Magenta), val, C(Reset));
         } break;
 

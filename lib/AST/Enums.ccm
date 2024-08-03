@@ -1,5 +1,6 @@
 export module srcc.ast:enums;
 import srcc.utils;
+using namespace srcc;
 
 export namespace srcc {
 class TranslationUnit;
@@ -9,6 +10,7 @@ enum class Dependence : u8;
 enum class ExprKind : u8;
 enum class Linkage : u8;
 enum class Mangling : u8;
+enum class ValueCategory : u8;
 } // namespace srcc
 
 /// Expression dependence.
@@ -30,7 +32,7 @@ enum class Mangling : u8;
 /// know that determining its type caused an error, we also model
 /// it as dependence. Unlike other forms of dependence, error
 /// dependence is never resolved once set.
-enum class srcc::Dependence : srcc::u8 {
+enum class srcc::Dependence : u8 {
     /// This expression is not dependent.
     None = 0,
 
@@ -55,11 +57,13 @@ enum class srcc::Dependence : srcc::u8 {
 };
 
 /// Builtin types.
-enum class srcc::BuiltinKind : srcc::u8 {
+enum class srcc::BuiltinKind : u8 {
     Void,
     Dependent,
+    ErrorDependent,
     NoReturn,
     Bool,
+    Int,
 };
 
 export namespace srcc {
@@ -69,7 +73,7 @@ constexpr auto operator&(Dependence a, Dependence b) -> Dependence { return Depe
 } // namespace srcc
 
 /// Linkage of a global entity.
-enum class srcc::Linkage : srcc::u8 {
+enum class srcc::Linkage : u8 {
     Internal,   ///< Not accessible outside this module.
     Exported,   ///< Exported from the module.
     Imported,   ///< Imported from another module.
@@ -78,14 +82,39 @@ enum class srcc::Linkage : srcc::u8 {
 };
 
 /// Mangling scheme of a global entity.
-enum class srcc::Mangling : srcc::u8 {
+enum class srcc::Mangling : u8 {
     None,   ///< Do not mangle this at all.
     Source, ///< Mangling this using our language rules.
     CXX,    ///< Use C++’s name mangling rules.
 };
 
 /// Calling convention of a function.
-enum class srcc::CallingConvention : srcc::u8 {
+enum class srcc::CallingConvention : u8 {
     Source, ///< Default calling convention.
     Native, ///< Native calling convention for C and C++ interop.
+};
+
+enum class srcc::ValueCategory : u8 {
+    /// Scalar rvalue, i.e. an rvalue that is passed in registers
+    /// and available as an SSA variable. This is everything that
+    /// we can construct w/o needing a memory location.
+    ///
+    /// These roughly correspond to scalar prvalues in C++.
+    SRValue,
+
+    /// Class rvalues, i.e. an rvalue (usually of class type) that
+    /// needs a memory location to construct into.
+    ///
+    /// These roughly correspond to prvalues of class type in C++;
+    /// note that these are *not* xvalues; we don’t have xvalues.
+    MRValue,
+
+    /// An object on the stack or heap that stores a value and has
+    /// a memory location that can be references.
+    ///
+    /// These roughly correspond to glvalues in C++.
+    LValue,
+
+    /// Dependent, don’t know yet.
+    DValue,
 };

@@ -21,7 +21,7 @@ add_compile_options(-fcolor-diagnostics)
 ## Use mold as the default linker, if it exists.
 find_program(MOLD_LINKER "mold")
 if (MOLD_LINKER)
-    add_link_options(-fuse-ld=mold)
+    add_link_options(-fuse-ld=mold -Wl,--color-diagnostics)
 endif()
 
 ## ============================================================================
@@ -143,14 +143,13 @@ endif()
 if (NOT SOURCE_LLVM_ROOT)
     message(FATAL_ERROR "SOURCE_LLVM_ROOT is not set. See README.md for instructions.")
 endif()
-if (NOT EXISTS "${SOURCE_LLVM_ROOT}/out/bin/clang")
+if (NOT EXISTS "${SOURCE_LLVM_ROOT}/bin/clang")
     message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
 endif()
 
 ## LLVM paths.
-set(SOURCE_LLVM_BUILD_DIR "${SOURCE_LLVM_ROOT}/out")
-set(SOURCE_LLVM_CMAKE_DIR "${SOURCE_LLVM_BUILD_DIR}/lib/cmake")
-set(SOURCE_LLVM_BIN_DIR "${SOURCE_LLVM_BUILD_DIR}/bin")
+set(SOURCE_LLVM_CMAKE_DIR "${SOURCE_LLVM_ROOT}/lib/cmake")
+set(SOURCE_LLVM_BIN_DIR "${SOURCE_LLVM_ROOT}/bin")
 set(LLVM_DIR "${SOURCE_LLVM_CMAKE_DIR}/llvm")
 set(Clang_DIR "${SOURCE_LLVM_CMAKE_DIR}/clang")
 
@@ -192,7 +191,7 @@ target_link_libraries(options INTERFACE
 ## Global definitions.
 add_definitions(
     "-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
-    "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_BUILD_DIR}/bin/clang\""
+    "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_ROOT}/bin/clang\""
 )
 
 #[[

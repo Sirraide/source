@@ -50,12 +50,15 @@ private:
     auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
     auto EmitConstExpr(ConstExpr* constant) -> llvm::Constant*;
     auto EmitEvalExpr(EvalExpr* eval) -> llvm::Value*;
+    auto EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant*;
     void EmitProcedure(ProcDecl* proc);
     auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;
     auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
     auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
     auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
+
+    void EmitLocal(LocalDecl* decl);
 
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
 };

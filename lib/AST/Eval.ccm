@@ -1,7 +1,9 @@
 module;
 
+#include <llvm/ADT/PointerIntPair.h>
 #include <memory>
 #include <optional>
+#include <srcc/Macros.hh>
 #include <variant>
 
 export module srcc.ast:eval;
@@ -19,6 +21,8 @@ class LValue;
 class Reference;
 class Slice;
 class Value;
+class Memory;
+enum struct LifetimeState : u8;
 
 /// Attempt to evaluate a statement.
 ///
@@ -30,17 +34,63 @@ class Value;
 /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
 /// \return The value of the statement, if it can be evaluated.
 auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain = true) -> std::optional<Value>;
-}
+} // namespace srcc::eval
 
 namespace srcc::eval {
 class EvaluationContext;
 }
 
+enum struct srcc::eval::LifetimeState : u8 {
+    Uninitialised,
+    Initialised,
+};
+
+/// Memory location.
+///
+/// This class is actually just effectively a header: the
+/// actual memory is stored as trailing data.
+class srcc::eval::Memory {
+    SRCC_IMMOVABLE(Memory);
+    friend EvaluationContext;
+
+    const Type ty;
+    Location loc;
+    llvm::PointerIntPair<void*, 1, LifetimeState> data_and_state;
+
+public:
+    explicit Memory(Type ty, Location loc, void* data)
+        : ty{ty},
+          loc{loc},
+          data_and_state{data, LifetimeState::Uninitialised} {}
+
+    /// Check whether this is (still) alive.
+    [[nodiscard]] auto alive() const {
+        return data_and_state.getInt()  == LifetimeState::Initialised;
+    }
+
+    /// Check whether this is not alive anymore.
+    [[nodiscard]] auto dead() const { return not alive(); }
+
+    /// End the lifetime of this memory location.
+    void destroy();
+
+    /// Start the lifetime of this memory location.
+    void init(TranslationUnit& tu);
+
+    /// Get the type of this memory.
+    [[nodiscard]] auto type() const -> Type { return ty; }
+
+private:
+    [[nodiscard]] auto data() -> void* { return data_and_state.getPointer(); }
+    [[nodiscard]] auto data() const -> const void* { return data_and_state.getPointer(); }
+};
+
 class srcc::eval::LValue {
 public:
     // Base of the lvalue. This is either:
     //     - a string literal;
-    std::variant<String> base;
+    //     - stack or heap memory;
+    Variant<String, Memory*> base;
 
     // Whether the lvalue is modifiable.
     bool modifiable{false};
@@ -48,24 +98,13 @@ public:
     /// Get the base type of this LValue.
     auto base_type(TranslationUnit& tu) const -> Type;
 
-    /// cast<>() the base.
-    template <typename Ty>
-    auto cast() const -> const Ty& { return std::get<Ty>(base); }
-
-    /// dyn_cast<>() the base.
-    template <typename Ty>
-    auto get() const -> const Ty* {
-        return std::holds_alternative<Ty>(base) ? &std::get<Ty>(base) : nullptr;
-    }
-
-    /// isa<>() on the base.
-    template <typename Ty>
-    auto isa() const -> bool { return std::holds_alternative<Ty>(base); }
+    /// Print this.
+    void dump(bool use_colour = true) const;
 };
 
 class srcc::eval::Reference {
 public:
-    LValue base;
+    LValue lvalue;
     APInt offset;
 };
 
@@ -86,25 +125,23 @@ class srcc::eval::Value {
     friend EvaluationContext;
     friend Slice;
 
-    std::variant<ProcDecl*, LValue, Slice, Reference, APInt, std::monostate> value{std::monostate{}};
-    Type ty{Type::UnsafeNull()};
+    Variant<ProcDecl*, LValue, Slice, Reference, APInt, std::monostate> value{std::monostate{}};
+    Type ty{Types::VoidTy};
 
-    /// These should only be created by the EvaluationContext.
+public:
     Value() = default;
-    Value(TranslationUnit& tu);
     Value(ProcDecl* proc);
     Value(Slice lvalue, Type ty);
     Value(LValue lvalue, Type ty) : value(std::move(lvalue)), ty(ty) {}
     Value(Reference ref, Type ty) : value(std::move(ref)), ty(ty) {}
     Value(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
 
-public:
     /// cast<>() the contained value.
     template <typename Ty>
     auto cast() const -> const Ty& { return std::get<Ty>(value); }
 
     /// Print this value.
-    void dump(bool use_color = true) const;
+    void dump(bool use_colour = true) const;
     void dump_colour() const { dump(true); }
 
     /// Check if the value is empty. This is also used to represent '()'.
@@ -122,6 +159,9 @@ public:
 
     /// Get the type of the value.
     auto type() const -> Type { return ty; }
+
+    /// Get the value category of this value.
+    auto value_category() const -> ValueCategory;
 
     /// Run a visitor over this value.
     template <typename Visitor>

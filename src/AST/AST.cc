@@ -1,7 +1,8 @@
 module;
 
-#include <print>
+#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <print>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -14,25 +15,38 @@ TranslationUnit::TranslationUnit(Context& ctx, String name, bool is_module)
     : ctx{ctx},
       name{name},
       is_module{is_module},
-      VoidTy{new(*this) BuiltinType(BuiltinKind::Void)},
-      DependentTy{new(*this) BuiltinType(BuiltinKind::Dependent)},
-      NoReturnTy{new(*this) BuiltinType(BuiltinKind::NoReturn)},
-      BoolTy{new(*this) BuiltinType(BuiltinKind::Bool)} {
-    // Initialise FFI and cached types.
+      FFIBoolTy{Type::UnsafeNull()},
+      FFICharTy{Type::UnsafeNull()},
+      FFIShortTy{Type::UnsafeNull()},
+      FFIIntTy{Type::UnsafeNull()},
+      FFILongTy{Type::UnsafeNull()},
+      FFILongLongTy{Type::UnsafeNull()},
+      FFISizeTy{Type::UnsafeNull()},
+      I8Ty{Type::UnsafeNull()},
+      I16Ty{Type::UnsafeNull()},
+      I32Ty{Type::UnsafeNull()},
+      I64Ty{Type::UnsafeNull()},
+      I128Ty{Type::UnsafeNull()},
+      StrLitTy{Type::UnsafeNull()} {
+    // Initialise integer types.
+    I8Ty = IntType::Get(*this, Size::Bits(8));
+    I16Ty = IntType::Get(*this, Size::Bits(16));
+    I32Ty = IntType::Get(*this, Size::Bits(32));
+    I64Ty = IntType::Get(*this, Size::Bits(64));
+    I128Ty = IntType::Get(*this, Size::Bits(128));
+
+    // Initialise FFI types.
     // TODO: Get type size from Clang.
-    I8Ty = IntType::Get(*this, 8);
-    I16Ty = IntType::Get(*this, 16);
-    I32Ty = IntType::Get(*this, 32);
-    I64Ty = IntType::Get(*this, 64);
-    I128Ty = IntType::Get(*this, 128);
-    StrLitTy = SliceType::Get(*this, I8Ty);
-    FFIBoolTy = IntType::Get(*this, 8);
-    FFICharTy = IntType::Get(*this, 8);
-    FFIShortTy = IntType::Get(*this, 16);
-    FFIIntTy = IntType::Get(*this, 32);
-    FFILongTy = IntType::Get(*this, 64);
-    FFILongLongTy = IntType::Get(*this, 64);
+    FFIBoolTy = I8Ty;
+    FFICharTy = I8Ty;
+    FFIShortTy = I16Ty;
+    FFIIntTy = I32Ty;
+    FFILongTy = I64Ty;
+    FFILongLongTy = I64Ty;
     FFISizeTy = FFILongTy;
+
+    // Initialise other cached types.
+    StrLitTy = SliceType::Get(*this, I8Ty);
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and
@@ -49,8 +63,9 @@ TranslationUnit::TranslationUnit(Context& ctx, String name, bool is_module)
     //
     // The name of an entry point is dependent on the module name and
     // cannot be overloaded, so it doesn’t need to be mangled.
-    initialiser_proc = new (*this) ProcDecl(
-        ProcType::Get(*this, VoidTy),
+    initialiser_proc = ProcDecl::Create(
+        *this,
+        ProcType::Get(*this, Types::VoidTy),
         is_module ? save(constants::EntryPointName(name)) : constants::ProgramEntryPoint,
         is_module ? Linkage::Internal : Linkage::Exported,
         Mangling::None,
@@ -58,8 +73,6 @@ TranslationUnit::TranslationUnit(Context& ctx, String name, bool is_module)
         nullptr,
         {}
     );
-
-    procs.push_back(initialiser_proc);
 }
 
 void TranslationUnit::dump() const {
@@ -145,6 +158,23 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::EvalExpr: {
             PrintBasicHeader(e, "EvalExpr");
             PrintChildren(cast<EvalExpr>(e)->stmt);
+        } break;
+
+        case Kind::IntLitExpr: {
+            // These always come straight from the parser and are thus
+            // always unsigned (because negative literals don’t exist;
+            // unary minus is just an operator).
+            auto i = cast<IntLitExpr>(e);
+            auto PrintValue = [&] { std::print("{}{}", C(Magenta), i->storage.str(false)); };
+            PrintBasicHeader(e, "IntLitExpr", PrintValue);
+        } break;
+
+        case Kind::LocalDecl:
+        case Kind::ParamDecl: {
+            bool is_param = e->kind() == Kind::ParamDecl;
+            auto d = cast<LocalDecl>(e);
+            auto PrintName = [&] { std::print("{}{}", C(is_param ? Blue : White), d->name); };
+            PrintBasicHeader(e, is_param ? "ParamDecl" : "LocalDecl", PrintName);
         } break;
 
         case Kind::ProcRefExpr: {

@@ -14,8 +14,9 @@ auto IntegerStorage::store_int(APInt integer) -> StoredInteger {
         return si;
     }
 
-    si.data = saved.size();
-    saved.push_back(std::move(integer));
+    auto* i = new APInt(integer);
+    si.data = reinterpret_cast<uintptr_t>(i);
+    saved.emplace_back(i);
     return si;
 }
 
@@ -24,13 +25,12 @@ auto StoredInteger::inline_value() const -> std::optional<i64>{
     return std::nullopt;
 }
 
-auto StoredInteger::str(const IntegerStorage* storage, bool is_signed) const -> std::string {
+auto StoredInteger::str(bool is_signed) const -> std::string {
     if (is_inline()) return std::to_string(data);
-    if (storage) return llvm::toString(storage->saved[usz(data)], 10, is_signed);
-    return "<huge value>";
+    return llvm::toString(*reinterpret_cast<APInt*>(data), 10, is_signed);
 }
 
-auto StoredInteger::value(const IntegerStorage& storage) const -> APInt {
+auto StoredInteger::value() const -> APInt {
     if (is_inline()) return APInt(u32(bits), data);
-    return storage.saved[usz(data)];
+    return *reinterpret_cast<APInt*>(data);
 }

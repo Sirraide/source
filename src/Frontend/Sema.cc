@@ -159,14 +159,14 @@ auto Sema::BuildBuiltinCallExpr(
         // FIXME: Actually implement that; it only prints one argument for now.
         case BuiltinCallExpr::Builtin::Print: {
             if (args.size() != 1) return Error(call_loc, "__builtin_print takes one argument");
-            if (args.front()->dependent()) return BuiltinCallExpr::Create(*M, builtin, M->VoidTy, args, call_loc);
+            if (args.front()->dependent()) return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, args, call_loc);
             if (args.front()->type != M->StrLitTy) return Error(
                 call_loc,
                 "Invalid argument type '{}' for __builtin_print",
                 args.front()->type.print(ctx.use_colours())
             );
 
-            return BuiltinCallExpr::Create(*M, builtin, M->VoidTy, args, call_loc);
+            return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, args, call_loc);
         }
     }
 
@@ -177,7 +177,7 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
     if (callee->dependent() or rgs::any_of(args, [](Expr* e) { return e->dependent(); })) {
         return CallExpr::Create(
             *M,
-            M->DependentTy,
+            Types::DependentTy,
             callee,
             args,
             callee->location()
@@ -194,9 +194,10 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
     if (args.size() != params.size()) {
         return Error(
             callee->location(),
-            "Procedure '{}' expects {} arguments, but {} were provided",
+            "Procedure '{}' expects {} argument{}, got {}",
             callee_proc->decl->name,
             params.size(),
+            params.size() == 1 ? "" : "s",
             args.size()
         );
     }
@@ -223,7 +224,7 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     // Always create an EvalExpr to represent this in the AST.
-    auto eval = new (*M) EvalExpr(M->DependentTy, arg, loc);
+    auto eval = new (*M) EvalExpr(arg, loc);
     if (arg->dependent()) return eval;
 
     // If the expression is not dependent, evaluate it now.
@@ -234,7 +235,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     }
 
     // And cache the value for later.
-    return new (*M) ConstExpr(*M , std::move(*value), loc, eval);
+    return new (*M) ConstExpr(*M, std::move(*value), loc, eval);
 }
 
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
@@ -247,8 +248,8 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     // Accordingly, a function that actually never returns is also always fine,
     // since 'noreturn' is convertible to any type.
     auto ret = proc->return_type();
-    if (ret != M->VoidTy and body->type != M->NoReturnTy and body->type != M->DependentTy) {
-        if (ret == M->NoReturnTy) Error(
+    if (ret != Types::VoidTy and body->type != Types::NoReturnTy and body->type != Types::DependentTy) {
+        if (ret == Types::NoReturnTy) Error(
             proc->location(),
             "Procedure '{}' returns despite being marked as 'noreturn'",
             proc->name
@@ -284,6 +285,12 @@ void Sema::Translate() {
     // Initialise sema.
     all_scopes.push_back(std::make_unique<Scope>(nullptr));
     scope_stack.push_back(all_scopes.back().get());
+
+    // Take ownership of any resources of the parsed modules.
+    for (auto& p : parsed_modules) {
+        M->add_allocator(std::move(p->string_alloc));
+        M->add_integer_storage(std::move(p->integers));
+    }
 
     // Resolve imports.
     for (auto& p : parsed_modules)
@@ -454,6 +461,44 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
     return BuildEvalExpr(arg, parsed->loc);
 }
 
+auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
+    // If the value fits in an 'int', its type is 'int'.
+    auto val = parsed->storage.value();
+    auto small = val.trySExtValue();
+    if (small.has_value()) return new (*M) IntLitExpr(Types::IntTy, parsed->storage, parsed->loc);
+
+    // Otherwise, the type is the smallest power of two large enough
+    // to store the value.
+    auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits()));
+
+    // Too big.
+    if (bits > IntType::MaxBits) {
+        // Print and colour the type names manually here since we can’t
+        // even create a type this large properly...
+        using enum utils::Colour;
+        utils::Colours C{ctx.use_colours()};
+        Error(parsed->loc, "Sorry, we can’t compile a number that big :(");
+        Note(
+            parsed->loc,
+            "The maximum supported integer type is {}, "
+            "which is smaller than an {}i{}{}, which would "
+            "be required to store a value of {}",
+            IntType::Get(*M, IntType::MaxBits)->print(C.use_colours),
+            C(Cyan),
+            bits,
+            C(Reset),
+            parsed->storage.str(false) // Parsed literals are unsigned.
+        );
+        return nullptr;
+    }
+
+    return new (*M) IntLitExpr(
+        IntType::Get(*M, bits),
+        parsed->storage,
+        parsed->loc
+    );
+}
+
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     auto base = TRY(TranslateExpr(parsed->base));
     if (isa<SliceType>(base->type)) {
@@ -464,12 +509,24 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
 }
 
+auto Sema::TranslateParamDecl(
+    ProcDecl* parent,
+    ParsedParamDecl* parsed,
+    Type ty
+) -> ParamDecl* {
+    return new (*M) ParamDecl(ty, parsed->name, parent, parsed->loc);
+}
+
 auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     // Translate the body if there is one.
     if (parsed->body) {
+        EnterProcedure _{*this, decl};
         auto res = TranslateProcBody(decl, parsed);
         if (res.invalid()) decl->set_errored();
-        else decl->body = res.get();
+        else {
+            decl->body = res.get();
+            decl->finalise(proc_stack.back().locals);
+        }
     }
 
     return decl;
@@ -478,9 +535,15 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
 auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt> {
     ScopeRAII scope{*this, true};
     Assert(parsed->body);
-
-    // TODO: Create local variables for parameters.
     decl->scope = scope.get();
+
+    // Translate parameters.
+    auto ty = decl->proc_type();
+    for (auto [i, pair] : vws::zip(ty->params(), parsed->params()) | vws::enumerate) {
+        auto [param_ty, parsed_decl] = pair;
+        auto param_decl = TranslateParamDecl(decl, parsed_decl, param_ty);
+        proc_stack.back().locals.push_back(param_decl);
+    }
 
     // Translate body.
     auto body = TranslateExpr(parsed->body);
@@ -504,9 +567,9 @@ auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr> {
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.
 auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
-    // We don’t actually have parameters or return types atm...
-    auto type = ProcType::Get(*M, M->VoidTy);
-    auto proc = new (*M) ProcDecl(
+    auto type = TranslateProcType(parsed->type);
+    auto proc = ProcDecl::Create(
+        *M,
         type,
         parsed->name,
         Linkage::Internal,
@@ -525,12 +588,14 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 
 /// Dispatch to translate a statement.
 auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
-    switch (parsed->kind()) {
+    switch (parsed->kind()) { // clang-format off
         using K = ParsedStmt::Kind;
-#define PARSE_TREE_LEAF_NODE(node) \
-    case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
-#include "srcc/ParseTree.inc"
-    }
+#       define PARSE_TREE_LEAF_TYPE(node) case K::node: Todo("Translate type to expr");
+#       define NODE_PARAM_DECL(node) case K::node: Unreachable("Param decls are emitted elsewhere");
+#       define PARSE_TREE_LEAF_NODE(node) \
+            case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
+#       include "srcc/ParseTree.inc"
+    } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
 }
@@ -539,3 +604,34 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr> {
     return StrLitExpr::Create(*M, parsed->value, parsed->loc);
 }
+
+// ============================================================================
+//  Translation of Types
+// ============================================================================
+auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
+    switch (parsed->builtin_kind) {
+        using K = ParsedBuiltinType::Kind;
+        case K::Int: return Types::IntTy;
+    }
+
+    Unreachable("Invalid builtin type");
+}
+
+auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
+    SmallVector<Type, 10> params;
+    for (auto a : parsed->param_types()) params.push_back(TranslateType(a));
+    return ProcType::Get(*M, Types::VoidTy, params);
+}
+
+auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
+    switch (parsed->kind()) {
+        // Dispatch to individual type translators and reject everything that isn’t a type.
+        using K = ParsedStmt::Kind;
+#       define PARSE_TREE_LEAF_NODE(node) case K::node: break;
+#       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
+            return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
+#       include "srcc/ParseTree.inc"
+    }
+
+    Unreachable("Not a valid type kind: {}", +parsed->kind());
+} // clang-format on

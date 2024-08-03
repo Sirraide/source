@@ -124,6 +124,9 @@ public:
         return Size{usz(bytes) * 8};
     }
 
+    template <typename Ty>
+    [[nodiscard]] static consteval Size Of() { return Bytes(sizeof(Ty)); }
+
     /// Return this size aligned to a given alignment.
     [[nodiscard]] Size aligned(Align align) const {
         return Bytes(alignTo(bytes(), align));
@@ -261,8 +264,15 @@ auto operator+=(std::string& s, String str) -> std::string& {
 class StoredInteger;
 class IntegerStorage {
     friend StoredInteger;
-    SmallVector<APInt> saved;
+    SmallVector<std::unique_ptr<APInt>> saved;
+
 public:
+    IntegerStorage() = default;
+    IntegerStorage(IntegerStorage&&) = default;
+    IntegerStorage(const IntegerStorage&) = delete;
+    IntegerStorage& operator=(IntegerStorage&&) = default;
+    IntegerStorage& operator=(const IntegerStorage&) = delete;
+
     auto store_int(APInt integer) -> StoredInteger;
 };
 
@@ -271,7 +281,7 @@ class StoredInteger {
     friend IntegerStorage;
 
     // Stored inline if small, and a pointer to an APInt otherwise.
-    u64 data;
+    uintptr_t data;
     u64 bits;
 
     StoredInteger() = default;
@@ -284,10 +294,10 @@ public:
     bool is_inline() const { return bits <= 64; }
 
     /// Convert this to a string for printing.
-    auto str(const IntegerStorage* storage, bool is_signed) const -> std::string;
+    auto str(bool is_signed) const -> std::string;
 
     /// Get the value of this integer.
-    auto value(const IntegerStorage& storage) const -> APInt;
+    auto value() const -> APInt;
 };
 
 } // namespace srcc

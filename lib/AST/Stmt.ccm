@@ -121,28 +121,28 @@ protected:
 // ============================================================================
 class srcc::Expr : public Stmt {
 public:
-    /// Whether this expression is an lvalue.
-    bool is_lvalue : 1 = false;
-
     /// The type of this expression.
     Type type;
+
+    /// The value category of this expression.
+    ValueCategory value_category;
 
 protected:
     Expr(
         Kind kind,
         Type type,
+        ValueCategory category,
         Location location
-    ) : Stmt(kind, location), type{type} {}
+    ) : Stmt(kind, location), type{type}, value_category{category} {}
 
 public:
+    using enum ValueCategory;
+
     /// Check if this expression is an lvalue.
-    [[nodiscard]] bool lvalue() const { return is_lvalue; }
+    [[nodiscard]] bool lvalue() const { return value_category == LValue; }
 
     /// Check if this expression is an rvalue.
     [[nodiscard]] bool rvalue() const { return not lvalue(); }
-
-    /// Mark that this is an lvalue.
-    void set_lvalue() { is_lvalue = true; }
 
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::BlockExpr and e->kind() <= Kind::StrLitExpr;
@@ -283,17 +283,31 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::ConstExpr; }
 };
 
+/// This is wrapped with a 'ConstExpr' after evaluation, so the
+/// type of this itself is irrelevant.
 class srcc::EvalExpr final : public Expr {
 public:
     Stmt* stmt;
 
     EvalExpr(
-        Type ty,
         Stmt* stmt,
         Location location
-    ) : Expr{Kind::EvalExpr, ty, location}, stmt{stmt} {}
+    ) : Expr{Kind::EvalExpr, Types::DependentTy, DValue, location}, stmt{stmt} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
+};
+
+class srcc::IntLitExpr final : public Expr {
+public:
+    StoredInteger storage;
+
+    IntLitExpr(
+        Type ty,
+        StoredInteger integer,
+        Location location
+    ) : Expr{Kind::IntLitExpr, ty, SRValue, location}, storage{integer} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
 };
 
 class srcc::ProcRefExpr final : public Expr {
@@ -319,7 +333,7 @@ private:
         Type ty,
         Expr* slice,
         Location location
-    ) : Expr{Kind::SliceDataExpr, ty, location}, slice{slice} {}
+    ) : Expr{Kind::SliceDataExpr, ty, SRValue, location}, slice{slice} {}
 
 public:
     static auto Create(
@@ -340,7 +354,7 @@ private:
         Type ty,
         String value,
         Location location
-    ) : Expr{Kind::StrLitExpr, ty, location}, value{value} {}
+    ) : Expr{Kind::StrLitExpr, ty, SRValue, location}, value{value} {}
 
 public:
     static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
@@ -361,27 +375,71 @@ protected:
         Type type,
         String name,
         Location location
-    ) : Expr{kind, type, location}, name{name} {}
+    ) : Expr{kind, type, LValue, location}, name{name} {}
 
 public:
-    static bool classof(const Stmt* e) { return e->kind() >= Kind::ProcDecl; }
+    static bool classof(const Stmt* e) { return e->kind() >= Kind::LocalDecl; }
+};
+
+class srcc::LocalDecl : public Decl {
+public:
+    /// The immediate parent whose stack frame this belongs to.
+    ProcDecl* parent;
+
+protected:
+    LocalDecl(
+        Kind k,
+        Type type,
+        String name,
+        ProcDecl* parent,
+        Location location
+    ) : Decl{k, type, name, location},
+        parent{parent} {}
+
+
+public:
+    LocalDecl(
+        Type type,
+        String name,
+        ProcDecl* parent,
+        Location location
+    ) : LocalDecl(Kind::LocalDecl, type, name, parent, location) {}
+
+    static bool classof(const Stmt* e) {
+        return e->kind() >= Kind::LocalDecl and e->kind() <= Kind::ParamDecl;
+    }
+};
+
+class srcc::ParamDecl : public LocalDecl {
+public:
+    ParamDecl(
+        Type type,
+        String name,
+        ProcDecl* parent,
+        Location location
+    ) : LocalDecl{Kind::ParamDecl, type, name, parent, location} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
 };
 
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
 public:
+    TranslationUnit* owner;
     Linkage linkage;
     Mangling mangling;
 
 protected:
     ObjectDecl(
         Kind kind,
+        TranslationUnit* owner,
         Type type,
         String name,
         Linkage linkage,
         Mangling mangling,
         Location location
     ) : Decl{kind, type, name, location},
+        owner{owner},
         linkage{linkage},
         mangling{mangling} {}
 
@@ -401,7 +459,14 @@ public:
     /// Scope associated with this procedure, if any.
     Scope* scope = nullptr;
 
+    /// Local variables in this procedure.
+    ///
+    /// The parameter declarations are stored at the start of this array.
+    ArrayRef<LocalDecl*> locals;
+
+private:
     ProcDecl(
+        TranslationUnit* owner,
         Type type,
         String name,
         Linkage linkage,
@@ -409,15 +474,37 @@ public:
         ProcDecl* parent,
         Stmt* body,
         Location location
-    ) : ObjectDecl{Kind::ProcDecl, type, name, linkage, mangling, location},
-        parent{parent},
-        body{body} { ComputeDependence(); }
+    );
 
-    /// Get the procedure's return type.
-    auto return_type() -> Type;
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        Type type,
+        String name,
+        Linkage linkage,
+        Mangling mangling,
+        ProcDecl* parent,
+        Stmt* body,
+        Location location
+    ) -> ProcDecl*;
+
+    /// Finalise analysing a procedure.
+    ///
+    /// \param locals The declarations for all parameters and
+    ///        local variables of this procedure.
+    void finalise(ArrayRef<LocalDecl*> locals);
 
     /// Get the procedure type.
     auto proc_type() const -> ProcType*;
+
+    /// Get the parameters.
+    auto params() -> ArrayRef<ParamDecl*> {
+        auto arr = locals.take_front(proc_type()->params().size());
+        return {reinterpret_cast<ParamDecl* const*>(arr.data()), arr.size()};
+    }
+
+    /// Get the procedure's return type.
+    auto return_type() -> Type;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };
