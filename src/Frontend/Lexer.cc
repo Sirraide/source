@@ -1,8 +1,8 @@
 module;
 
 #include <llvm/ADT/StringExtras.h>
-#include <srcc/Macros.hh>
 #include <print>
+#include <srcc/Macros.hh>
 
 module srcc.frontend.parser;
 import srcc.frontend.token;
@@ -111,18 +111,29 @@ struct Lexer {
 
     auto tok() -> Token& { return tokens.back(); }
 
-    template <typename ...Args>
-    bool Error(Location where, std::format_string<Args...> fmt, Args&& ...args) {
+    template <typename... Args>
+    bool Error(Location where, std::format_string<Args...> fmt, Args&&... args) {
         f.context().diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        return false;
+    }
+
+    bool Eat(std::same_as<char> auto... cs) {
+        // Remove the pointless bool() cast once Clang bug #101863 is fixed.
+        if ((bool(lastc == cs) or ...)) {
+            NextChar();
+            return true;
+        }
+
         return false;
     }
 
     auto CurrOffs() -> u32;
     auto CurrLoc() -> Location;
     void HandleCommentToken();
+    void LexCXXHeaderName();
     void LexEscapedId();
-    void LexIdentifier();
-    bool LexNumber();
+    void LexIdentifier(char first_char);
+    bool LexNumber(char first_char);
     void LexString(char delim);
     void Next();
     void NextChar();
@@ -207,282 +218,109 @@ void Lexer::NextImpl() {
     // if we encounter an error, we can just issue a diagnostic and return
     // without setting the token type. The parser will then stop because
     // it encounters an invalid token.
+    auto& ty = tok().type = Tk::Invalid;
     tok().artificial = false;
-    tok().type = Tk::Invalid;
     tok().location.pos = CurrOffs();
     tok().location.len = 1;
 
     // Lex the token.
-    switch (lastc) {
+    //
+    // Warning: Ternary abuse incoming.
+    switch (auto c = lastc; NextChar(), c) {
+        // Single-character tokens.
+        case ';': ty = Tk::Semicolon; break;
+        case ',': ty = Tk::Comma; break;
+        case '?': ty = Tk::Question; break;
+        case '(': ty = Tk::LParen; break;
+        case ')': ty = Tk::RParen; break;
+        case '[': ty = Tk::LBrack; break;
+        case ']': ty = Tk::RBrack; break;
+        case '{': ty = Tk::LBrace; break;
+        case '}': ty = Tk::RBrace; break;
+        case '^': ty = Tk::Caret; break;
+        case '&': ty = Tk::Ampersand; break;
+        case '|': ty = Tk::VBar; break;
+        case '~': ty = Tk::Tilde; break;
+
+        // Two-character tokens.
+        case ':': ty = Eat(':') ? Tk::ColonColon : Tk::Colon; break;
+        case '%': ty = Eat('=') ? Tk::PercentEq : Tk::Percent; break;
+        case '!': ty = Eat('=') ? Tk::Neq : Tk::Bang; break;
+
+        // Multi-character tokens.
+        case '.':
+            ty = not Eat('.') ? Tk::Dot
+               : Eat('.')     ? Tk::Ellipsis
+               : Eat('<')     ? Tk::DotDotLess
+               : Eat('=')     ? Tk::DotDotEq
+                              : Tk::DotDot;
+
+            break;
+
+        case '-':
+            ty = Eat('>') ? Tk::RArrow
+               : Eat('-') ? Tk::MinusMinus
+               : Eat('=') ? Tk::MinusEq
+                          : Tk::Minus;
+            break;
+
+        case '+':
+            ty = Eat('+') ? Tk::PlusPlus
+               : Eat('=') ? Tk::PlusEq
+                          : ty = Tk::Plus;
+            break;
+
+        case '*':
+            ty = Eat('=') ? Tk::StarEq
+               : Eat('*') ? (Eat('=') ? Tk::StarStarEq : Tk::StarStar)
+                          : Tk::Star;
+            break;
+
+        case '=':
+            ty = Eat('=') ? Tk::EqEq
+               : Eat('>') ? Tk::RDblArrow
+                          : Tk::Assign;
+            break;
+
+        case '>':
+            ty = Eat('=')     ? Tk::Ge
+               : not Eat('>') ? Tk::Gt
+               : Eat('>')     ? (Eat('=') ? Tk::ShiftRightLogicalEq : Tk::ShiftRightLogical)
+               : Eat('=')     ? Tk::ShiftRightEq
+                              : Tk::ShiftRight;
+            break;
+
+        // Complex tokens.
+        case '/':
+            if (Eat('/')) {
+                HandleCommentToken();
+                NextImpl();
+                return;
+            }
+
+            ty = Eat('=') ? Tk::SlashEq : Tk::Slash;
+            break;
+
+        case '<':
+            // Handle C++ header names.
+            if (tokens.size() > 1 and tokens[tokens.size() - 2].type == Tk::Import) {
+                LexCXXHeaderName();
+                break;
+            }
+
+            ty = Eat('=') ? Tk::Le
+               : Eat('<') ? (Eat('=') ? Tk::ShiftLeftEq : Tk::ShiftLeft)
+               : Eat('-') ? Tk::LArrow
+                          : Tk::Lt;
+            break;
+
         case '\\':
             LexEscapedId();
             return;
 
-        case ';':
-            NextChar();
-            tok().type = Tk::Semicolon;
-            break;
-
-        case ':':
-            NextChar();
-            if (lastc == ':') {
-                NextChar();
-                tok().type = Tk::ColonColon;
-            } else {
-                tok().type = Tk::Colon;
-            }
-            break;
-
-        case ',':
-            NextChar();
-            tok().type = Tk::Comma;
-            break;
-
-        case '?':
-            NextChar();
-            tok().type = Tk::Question;
-            break;
-
-        case '(':
-            NextChar();
-            tok().type = Tk::LParen;
-            break;
-
-        case ')':
-            NextChar();
-            tok().type = Tk::RParen;
-            break;
-
-        case '[':
-            NextChar();
-            tok().type = Tk::LBrack;
-            break;
-
-        case ']':
-            NextChar();
-            tok().type = Tk::RBrack;
-            break;
-
-        case '{':
-            NextChar();
-            tok().type = Tk::LBrace;
-            break;
-
-        case '}':
-            NextChar();
-            tok().type = Tk::RBrace;
-            break;
-
-        case '.':
-            NextChar();
-            if (lastc == '.') {
-                NextChar();
-                if (lastc == '.') {
-                    NextChar();
-                    tok().type = Tk::Ellipsis;
-                } else if (lastc == '<') {
-                    NextChar();
-                    tok().type = Tk::DotDotLess;
-                } else if (lastc == '=') {
-                    NextChar();
-                    tok().type = Tk::DotDotEq;
-                } else {
-                    tok().type = Tk::DotDot;
-                }
-            } else {
-                tok().type = Tk::Dot;
-            }
-            break;
-
-        case '-':
-            NextChar();
-            if (lastc == '>') {
-                NextChar();
-                tok().type = Tk::RArrow;
-            } else if (lastc == '-') {
-                NextChar();
-                tok().type = Tk::MinusMinus;
-            } else if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::MinusEq;
-            } else {
-                tok().type = Tk::Minus;
-            }
-            break;
-
-        case '+':
-            NextChar();
-            if (lastc == '+') {
-                NextChar();
-                tok().type = Tk::PlusPlus;
-            } else if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::PlusEq;
-            } else {
-                tok().type = Tk::Plus;
-            }
-            break;
-
-        case '*':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::StarEq;
-            } else if (lastc == '*') {
-                NextChar();
-                if (lastc == '=') {
-                    NextChar();
-                    tok().type = Tk::StarStarEq;
-                } else {
-                    tok().type = Tk::StarStar;
-                }
-            } else {
-                tok().type = Tk::Star;
-            }
-            break;
-
-        case '/':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::SlashEq;
-            } else if (lastc == '/') {
-                NextChar();
-                HandleCommentToken();
-                NextImpl();
-                return;
-            } else {
-                tok().type = Tk::Slash;
-            }
-            break;
-
-        case '%':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::PercentEq;
-            } else {
-                tok().type = Tk::Percent;
-            }
-            break;
-
-        case '^':
-            NextChar();
-            tok().type = Tk::Caret;
-            break;
-
-        case '&':
-            NextChar();
-            tok().type = Tk::Ampersand;
-            break;
-
-        case '|':
-            NextChar();
-            tok().type = Tk::VBar;
-            break;
-
-        case '~':
-            NextChar();
-            tok().type = Tk::Tilde;
-            break;
-
-        case '!':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::Neq;
-            } else {
-                tok().type = Tk::Bang;
-            }
-            break;
-
-        case '=':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::EqEq;
-            } else if (lastc == '>') {
-                NextChar();
-                tok().type = Tk::RDblArrow;
-            } else {
-                tok().type = Tk::Assign;
-            }
-            break;
-
-        case '<':
-            NextChar();
-
-            // Handle C++ header names.
-            if (tokens.size() > 1 and tokens[tokens.size() - 2].type == Tk::Import) {
-                tempset raw_mode = true;
-                tok().type = Tk::CXXHeaderName;
-
-                SmallString<32> text;
-                while (lastc != '>' and lastc != 0) {
-                    text.push_back(lastc);
-                    NextChar();
-                }
-
-                if (lastc == 0) {
-                    Error(tok().location, "Expected '>'");
-                    break;
-                }
-
-                tok().text = tokens.save(text);
-
-                // Bring the lexer back into sync.
-                NextChar();
-                break;
-            }
-
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::Le;
-            } else if (lastc == '<') {
-                NextChar();
-                if (lastc == '=') {
-                    NextChar();
-                    tok().type = Tk::ShiftLeftEq;
-                } else {
-                    tok().type = Tk::ShiftLeft;
-                }
-            } else if (lastc == '-') {
-                NextChar();
-                tok().type = Tk::LArrow;
-            } else {
-                tok().type = Tk::Lt;
-            }
-            break;
-
-        case '>':
-            NextChar();
-            if (lastc == '=') {
-                NextChar();
-                tok().type = Tk::Ge;
-            } else if (lastc == '>') {
-                NextChar();
-                if (lastc == '>') {
-                    NextChar();
-                    if (lastc == '=') {
-                        NextChar();
-                        tok().type = Tk::ShiftRightLogicalEq;
-                    } else {
-                        tok().type = Tk::ShiftRightLogical;
-                    }
-                } else if (lastc == '=') {
-                    NextChar();
-                    tok().type = Tk::ShiftRightEq;
-                } else {
-                    tok().type = Tk::ShiftRight;
-                }
-            } else {
-                tok().type = Tk::Gt;
-            }
-            break;
-
         case '"':
         case '\'':
-            LexString(lastc);
+            LexString(c);
             break;
 
         case '0':
@@ -496,13 +334,13 @@ void Lexer::NextImpl() {
         case '8':
         case '9':
             // Skip the rest of the broken literal if this fails.
-            if (not LexNumber())
+            if (not LexNumber(c))
                 while (llvm::isAlnum(lastc))
                     NextChar();
             break;
 
         default:
-            if (IsStart(lastc)) LexIdentifier();
+            if (IsStart(c)) LexIdentifier(c);
             else {
                 Error(CurrLoc() << 1, "Unexpected <U+{:X}> character in program", lastc);
                 break;
@@ -515,7 +353,7 @@ void Lexer::NextImpl() {
 }
 
 void Lexer::HandleCommentToken() {
-    const auto KeepSkipping = [&]{ return lastc != '\n' && lastc != 0; };
+    const auto KeepSkipping = [&] { return lastc != '\n' && lastc != 0; };
 
     // If we were asked to lex comment tokens, do so and dispatch it. To
     // keep the parser from having to deal with these, they never enter
@@ -543,13 +381,14 @@ void Lexer::SkipWhitespace() {
     while (std::isspace(lastc)) NextChar();
 }
 
-void Lexer::LexIdentifier() {
+void Lexer::LexIdentifier(char first_char) {
     tok().type = Tk::Identifier;
     SmallString<32> text;
-    do {
+    text += first_char;
+    while (IsContinue(lastc)) {
         text += lastc;
         NextChar();
-    } while (IsContinue(lastc));
+    }
     tok().text = tokens.save(text);
 
     // Helper to parse keywords and integer types.
@@ -558,10 +397,7 @@ void Lexer::LexIdentifier() {
             tok().type = k->second;
 
             // Handle "for~".
-            if (tok().type == Tk::For and lastc == '~') {
-                NextChar();
-                tok().type = Tk::ForReverse;
-            }
+            if (tok().type == Tk::For and Eat('~')) tok().type = Tk::ForReverse;
         } else if (tok().text.starts_with("i")) {
             // Note: this returns true on error.
             if (not StringRef(tok().text).substr(1).getAsInteger(10, tok().integer))
@@ -581,9 +417,13 @@ void Lexer::LexIdentifier() {
     LexSpecialToken();
 }
 
-bool Lexer::LexNumber() {
+bool Lexer::LexNumber(char first_char) {
+    SmallString<64> buf;
+    buf += first_char;
+    char delim = lastc;
+
     // Helper function that actually parses a number.
-    auto LexNumberImpl = [this](bool pred(char), char delim = 0, unsigned base = 10) -> bool {
+    auto LexNumberImpl = [&](bool pred(char), unsigned base = 10) -> bool {
         auto DiagnoseInvalidLiteral = [&] {
             auto kind = [=] -> std::string_view {
                 switch (base) {
@@ -598,7 +438,7 @@ bool Lexer::LexNumber() {
         };
 
         // Need at least one digit.
-        if (delim != 0 and not pred(lastc)) {
+        if (base != 10 and not pred(lastc)) {
             // If this is not even any sort of digit, then issue
             // a more helpful error; this is so we don’t complain
             // about e.g. ‘;’ not being a digit.
@@ -608,7 +448,6 @@ bool Lexer::LexNumber() {
         }
 
         // Parse the literal.
-        SmallString<64> buf;
         while (pred(lastc)) {
             buf += lastc;
             NextChar();
@@ -626,53 +465,33 @@ bool Lexer::LexNumber() {
         return true;
     };
 
-    // If the first character is a 0, then this might be a non-decimal constant.
-    if (lastc == '0') {
-        NextChar();
-        char delim = lastc;
-
-        // Hexadecimal literal.
-        if (lastc == 'x' or lastc == 'X') {
-            NextChar();
-            return LexNumberImpl(IsHex, delim, 16);
-        }
-
-        // Octal literal.
-        if (lastc == 'o' or lastc == 'O') {
-            NextChar();
-            return LexNumberImpl(IsOctal, delim, 8);
-        }
-
-        // Binary literal.
-        if (lastc == 'b' or lastc == 'B') {
-            NextChar();
-            return LexNumberImpl(IsBinary, delim, 2);
-        }
-
-        // Leading 0’s must be followed by one of the above.
-        if (llvm::isDigit(lastc)) {
-            return Error(CurrLoc() << 1, "Leading zeros are not allowed in integers. Use 0o/0O for octal literals");
-        }
-
-        // Integer literal must be a literal 0.
-        if (IsStart(lastc)) {
-            return Error(CurrLoc() <<= 1, "Invalid character in integer literal: '{}'", lastc);
-        }
-
-        // Integer literal is 0.
-        tok().type = Tk::Integer;
-        tok().integer = 0;
-        return true;
-    }
-
     // If the first character is not 0, then we have a decimal literal.
-    return LexNumberImpl(IsDecimal);
+    if (first_char != '0') return LexNumberImpl(IsDecimal);
+    if (Eat('x', 'X')) return LexNumberImpl(IsHex, 16);
+    if (Eat('o', 'O')) return LexNumberImpl(IsOctal, 8);
+    if (Eat('b', 'B')) return LexNumberImpl(IsBinary, 2);
+
+    // Leading 0’s must be followed by one of the above.
+    if (llvm::isDigit(lastc)) return Error(
+        CurrLoc() << 1,
+        "Leading zeros are not allowed in integers. Use 0o/0O for octal literals"
+    );
+
+    // Integer literal must be a literal 0.
+    if (IsStart(lastc)) return Error(
+        CurrLoc() <<= 1,
+        "Invalid character in integer literal: '{}'",
+        lastc
+    );
+
+    // If we get here, this must be a literal 0.
+    tok().type = Tk::Integer;
+    tok().integer = 0;
+    return true;
 }
 
 void Lexer::LexString(char delim) {
-    // Yeet the delimiter.
     SmallString<32> text;
-    NextChar();
 
     // Lex the string. If it’s a raw string, we don’t need to
     // do any escaping.
@@ -686,8 +505,7 @@ void Lexer::LexString(char delim) {
     // Otherwise, we also need to replace escape sequences.
     else if (delim == '"') {
         while (lastc != delim && lastc != 0) {
-            if (lastc == '\\') {
-                NextChar();
+            if (Eat('\\')) {
                 switch (lastc) {
                     case 'a': text += '\a'; break;
                     case 'b': text += '\b'; break;
@@ -729,6 +547,27 @@ void Lexer::LexString(char delim) {
 
     // This is a valid string.
     tok().type = Tk::StringLiteral;
+}
+
+void Lexer::LexCXXHeaderName() {
+    tempset raw_mode = true;
+    tok().type = Tk::CXXHeaderName;
+
+    SmallString<32> text;
+    while (lastc != '>' and lastc != 0) {
+        text.push_back(lastc);
+        NextChar();
+    }
+
+    if (lastc == 0) {
+        Error(tok().location, "Expected '>'");
+        return;
+    }
+
+    tok().text = tokens.save(text);
+
+    // Bring the lexer back into sync.
+    NextChar();
 }
 
 void Lexer::LexEscapedId() {
