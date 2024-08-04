@@ -401,12 +401,12 @@ bool Parser::ConsumeOrError(Tk tk) {
 // ============================================================================
 auto Parser::Parse(
     const File& file,
-    bool lex_only,
     CommentTokenCallback cb
 ) -> std::unique_ptr<ParsedModule> {
     Parser P{file};
-    P.ReadTokens(file, std::move(cb));
-    if (not lex_only) P.ParseFile();
+    ReadTokens(P.stream, file, std::move(cb));
+    P.tok = P.stream.begin();
+    P.ParseFile();
     return std::move(P.mod);
 }
 

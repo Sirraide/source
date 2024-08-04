@@ -124,7 +124,7 @@ struct srcc::Location {
     ///
     /// This returns a StringRef instead of a String because the returned
     /// range is almost certainly not null-terminated.
-    [[nodiscard]] auto text(const Context& ctx) const -> StringRef;
+    [[nodiscard]] auto text(const Context& ctx) const -> String;
 
     /// Decode a source location from a 64-bit number.
     static constexpr auto Decode(u64 loc) -> Location {

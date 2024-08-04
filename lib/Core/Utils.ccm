@@ -11,6 +11,7 @@ module;
 #include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Alignment.h>
@@ -72,7 +73,7 @@ public:
     Ptr(std::nullptr_t) : value{nullptr} {}
 
     template <std::derived_from<Ty> Derived>
-    Ptr(Ptr<Derived> other) : value{other.value} { }
+    Ptr(Ptr<Derived> other) : value{other.value} {}
 
     template <typename Derived>
     auto cast() -> Ptr<Derived> {
@@ -161,7 +162,7 @@ private:
     }
 };
 
-/// A null-terminated string that is saved somewhere.
+/// A string that is saved somewhere.
 ///
 /// This is used for strings that are guaranteed to ‘live long
 /// enough’ to be passed around without having to worry about who
@@ -177,18 +178,44 @@ public:
 
     /// Construct from a string literal.
     template <usz size>
-    consteval String(const char (&arr)[size]) : val{arr} {
-        Assert(arr[size - 1] == '\0', "Strings must be null-terminated!");
-    }
+    consteval String(const char (&arr)[size]) : val{arr} {}
 
     /// Construct from a string literal.
     consteval String(llvm::StringLiteral lit) : val{lit} {}
+
+    /// Create a 'String' from a 'StringRef'.
+    ///
+    /// This is an unsafe operation! The caller must ensure that the
+    /// underlying value lives as long as the string is going to be
+    /// used and that it is null-terminated. This is intended to be
+    /// used e.g. by the lexer; always prefer to obtain a 'String'
+    /// by other means.
+    [[nodiscard]] static constexpr auto CreateUnsafe(StringRef value) {
+        String s;
+        s.val = value;
+        return s;
+    }
+
+    /// Save it in a string saver; this is how you’re supposed to create these.
+    [[nodiscard]] static auto Save(llvm::StringSaver& ss, StringRef s) {
+        return CreateUnsafe(ss.save(s));
+    }
+
+    [[nodiscard]] static auto Save(llvm::UniqueStringSaver& ss, StringRef s) {
+        return CreateUnsafe(ss.save(s));
+    }
 
     /// Get an iterator to the beginning of the string.
     [[nodiscard]] constexpr auto begin() const { return val.begin(); }
 
     /// Get the data of the string.
     [[nodiscard]] constexpr auto data() const -> const char* { return val.data(); }
+
+    /// Drop characters from the beginning of the string.
+    [[nodiscard]] constexpr auto drop(usz n = 1) const -> String { return CreateUnsafe(val.drop_front(n)); }
+
+    /// Drop characters from the end of the string.
+    [[nodiscard]] constexpr auto drop_back(usz n = 1) const -> String { return CreateUnsafe(val.drop_back(n)); }
 
     /// Check if the string is empty.
     [[nodiscard]] constexpr auto empty() const -> bool { return val.empty(); }
@@ -232,28 +259,6 @@ public:
 
     /// Get the string.
     [[nodiscard]] constexpr operator StringRef() const { return val; }
-
-    /// Create a 'String' from a 'StringRef'.
-    ///
-    /// This is an unsafe operation! The caller must ensure that the
-    /// underlying value lives as long as the string is going to be
-    /// used and that it is null-terminated. This is intended to be
-    /// used e.g. by the lexer; always prefer to obtain a 'String'
-    /// by other means.
-    [[nodiscard]] static constexpr auto CreateUnsafe(StringRef value) {
-        String s;
-        s.val = value;
-        return s;
-    }
-
-    /// Save it in a string saver; this is how you’re supposed to create these.
-    [[nodiscard]] static auto Save(llvm::StringSaver& ss, StringRef s) {
-        return CreateUnsafe(ss.save(s));
-    }
-
-    [[nodiscard]] static auto Save(llvm::UniqueStringSaver& ss, StringRef s) {
-        return CreateUnsafe(ss.save(s));
-    }
 };
 
 auto operator+=(std::string& s, String str) -> std::string& {
@@ -381,7 +386,7 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
-} // namespace srcc::utils
+} // namespace base::utils
 
 template <>
 struct std::formatter<srcc::Size> : formatter<srcc::usz> {
@@ -421,8 +426,22 @@ using namespace srcc;
 
 auto base::utils::Escape(StringRef str) -> std::string {
     std::string s;
-    llvm::raw_string_ostream os{s};
-    os.write_escaped(str, true);
+    for (auto c : str) {
+        switch (c) {
+            case '\n': s += "\\n"; break;
+            case '\r': s += "\\r"; break;
+            case '\t': s += "\\t"; break;
+            case '\v': s += "\\v"; break;
+            case '\f': s += "\\f"; break;
+            case '\a': s += "\\a"; break;
+            case '\b': s += "\\b"; break;
+            case '\\': s += "\\\\"; break;
+            case '\0': s += "\\0"; break;
+            default:
+                if (llvm::isPrint(c)) s += c;
+                else s += std::format("\\x{:02x}", static_cast<u8>(c));
+        }
+    }
     return s;
 }
 

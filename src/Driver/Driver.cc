@@ -21,15 +21,14 @@ module;
 
 #include <algorithm>
 #include <filesystem>
-#include <print>
 #include <future>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ThreadPool.h>
 #include <mutex>
+#include <print>
 #include <ranges>
 #include <srcc/Macros.hh>
-#include <string>
 #include <unordered_set>
 
 module srcc.driver;
@@ -38,6 +37,7 @@ import srcc.ast;
 import srcc.frontend.verifier;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
+import srcc.frontend.token;
 import srcc.codegen;
 
 using namespace srcc;
@@ -87,12 +87,13 @@ struct Driver::Impl : DiagsProducer<> {
     }
 
     /// Parse a file and return the parsed module.
-    auto ParseFile(const File::Path& path, bool lex_only, bool verify) -> ParsedModule*;
+    auto ParseFile(const File::Path& path, bool verify) -> ParsedModule*;
 };
 
 int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
+    auto a = opts.action;
 
     // Always create a regular diags engine first for driver diags.
     ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
@@ -103,10 +104,11 @@ int Driver::Impl::run_job() {
     // Verifier can only run in sema/parse/lex mode.
     if (
         opts.verify and
-        opts.action != Action::Parse and
-        opts.action != Action::Sema and
-        opts.action != Action::Lex
-    ) return Error("--verify requires one of: --lex, --parse, --sema");
+        a != Action::Parse and
+        a != Action::Sema and
+        a != Action::Lex and
+        a != Action::DumpTokens
+    ) return Error("--verify requires one of: --lex, --parse, --sema, --tokens");
 
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
@@ -130,10 +132,50 @@ int Driver::Impl::run_job() {
     // Replace driver diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
 
+    // Run the verifier.
+    const auto Verify = [&] {
+        auto& engine = static_cast<VerifyDiagnosticsEngine&>(ctx.diags());
+        return engine.verify() ? 0 : 1;
+    };
+
+    // We only allow one file if we’re only lexing.
+    if (a == Action::Lex or a == Action::DumpTokens) {
+        if (files.size() != 1) return Error("Lexing supports one file");
+        auto engine = opts.verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
+        auto [alloc, stream] = Parser::ReadTokens(
+            ctx.get_file(*files.begin()),
+            opts.verify ? engine->comment_token_callback() : nullptr
+        );
+
+        if (opts.verify) return Verify();
+        if (a == Action::DumpTokens) {
+            for (auto tok : stream) {
+                auto lc = tok.location.seek_line_column(ctx);
+                if (not lc) std::print("<invalid srcloc>\n");
+                else {
+                    std::print(
+                        "{}:{}-{}: ",
+                        lc->line,
+                        lc->col,
+                        lc->col + tok.location.len - 1
+                    );
+
+                    if (tok.type == Tk::StringLiteral) {
+                        std::println("{}", utils::Escape(tok.spelling(ctx)));
+                    } else {
+                        std::println("{}", tok.spelling(ctx));
+                    }
+                }
+            }
+        }
+
+        return ctx.diags().has_error();
+    }
+
     // Parse files in parallel.
     SmallVector<std::shared_future<ParsedModule*>> futures;
     for (const auto& f : files) futures.push_back(thread_pool.run([&] {
-        return ParseFile(f, opts.action == Action::Lex, opts.verify);
+        return ParseFile(f, opts.verify);
     }));
 
     // Wait for all modules to be parsed.
@@ -146,14 +188,8 @@ int Driver::Impl::run_job() {
         parsed_modules.emplace_back(ptr);
     }
 
-    // Run the verifier.
-    const auto Verify = [&] {
-        auto& engine = static_cast<VerifyDiagnosticsEngine&>(ctx.diags());
-        return engine.verify() ? 0 : 1;
-    };
-
-    // Dump modules if we should only do parsing.
-    if (opts.action == Action::Parse or opts.action == Action::Lex) {
+    // Dump parse tree.
+    if (a == Action::Parse) {
         if (opts.verify) return Verify();
         if (opts.print_ast)
             for (auto& m : parsed_modules)
@@ -161,22 +197,17 @@ int Driver::Impl::run_job() {
         return ctx.diags().has_error();
     }
 
-    if (ctx.diags().has_error()) {
-        if (opts.verify) return Verify();
-        return 1;
-    }
-
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
     auto module = Sema::Translate(parsed_modules);
-    if (opts.action == Action::Sema) {
+    if (a == Action::Sema) {
         if (opts.verify) return Verify();
         if (opts.print_ast) module->dump();
         return ctx.diags().has_error();
     }
 
     // Run the constant evaluator.
-    if (opts.action == Action::Eval) {
+    if (a == Action::Eval) {
         // TODO: Static initialisation.
         auto res = eval::Evaluate(*module, module->file_scope_block);
         return res.has_value() ? 0 : 1;
@@ -190,10 +221,10 @@ int Driver::Impl::run_job() {
     std::exit(42);
 }
 
-auto Driver::Impl::ParseFile(const File::Path& path, bool lex_only, bool verify) -> ParsedModule* {
+auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {
     auto engine = verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
     auto& f = ctx.get_file(path);
-    return Parser::Parse(f, lex_only, verify ? engine->comment_token_callback() : nullptr).release();
+    return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr).release();
 }
 
 template <typename Task>

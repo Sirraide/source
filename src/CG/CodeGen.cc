@@ -92,7 +92,6 @@ auto CodeGen::GetString(StringRef s) -> llvm::Constant* {
     return strings[s] = builder.CreateGlobalStringPtr(s);
 }
 
-
 auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
     return llvm::ConstantInt::get(M.llvm_context, value);
 }
@@ -299,8 +298,7 @@ auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
-    // Include the null terminator in the string.
-    auto ptr = GetString({expr->value.data(), expr->value.size()});
+    auto ptr = GetString(expr->value.value());
     auto size = llvm::ConstantInt::get(IntTy, expr->value.size());
     return llvm::ConstantStruct::getAnon({ptr, size});
 }

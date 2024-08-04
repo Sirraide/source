@@ -200,7 +200,7 @@ auto File::LoadFileData(const Path& path) -> std::unique_ptr<llvm::MemoryBuffer>
 bool Location::seekable(const Context& ctx) const {
     auto* f = ctx.file(file_id);
     if (not f) return false;
-    return pos + len <= f->size() and is_valid();
+    return pos + len <= f->size() + 1 and is_valid();
 }
 
 /// Seek to a source location. The location must be valid.
@@ -266,10 +266,10 @@ auto Location::seek_line_column(const Context& ctx) const -> std::optional<LocIn
     return info;
 }
 
-auto Location::text(const Context& ctx) const -> StringRef {
+auto Location::text(const Context& ctx) const -> String {
     if (not seekable(ctx)) return "";
     auto* f = ctx.file(file_id);
-    return StringRef{f->data(), usz(f->size())}.substr(pos, len);
+    return String::CreateUnsafe(StringRef{f->data(), usz(f->size())}.substr(pos, len));
 }
 
 // ============================================================================

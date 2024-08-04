@@ -490,7 +490,7 @@ bool EvaluationContext::EvalIntLitExpr(Value& out, IntLitExpr* int_lit) {
     return true;
 }
 
-bool EvaluationContext::EvalLocalDecl(Value& out, LocalDecl* decl) {
+bool EvaluationContext::EvalLocalDecl(Value&, LocalDecl*) {
     Unreachable("Evaluating local decl?");
 }
 
@@ -511,7 +511,7 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     Unreachable("Local variable not found: {}", local->decl->name);
 }
 
-bool EvaluationContext::EvalParamDecl(Value& out, LocalDecl* decl) {
+bool EvaluationContext::EvalParamDecl(Value&, LocalDecl*) {
     Unreachable("Evaluating local decl?");
 }
 

@@ -15,7 +15,8 @@ using options = clopts< // clang-format off
     option<"--error-limit", "Limit how many errors are printed; passing 0 removes the limit", std::int64_t>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
     flag<"--ast", "Dump the parse tree / AST">,
-    flag<"--lex", "Lex tokens only and exit">,
+    flag<"--lex", "Lex tokens only (but do not print them) and exit">,
+    flag<"--tokens", "Print tokens and exit">,
     flag<"--parse", "Parse only and exit">,
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
@@ -35,10 +36,11 @@ int main(int argc, char** argv) {
 
     // Figure out what we want to do.
     auto action = opts.get<"--eval">()   ? Action::Eval
-                : opts.get<"--lex">()   ? Action::Lex
-                : opts.get<"--parse">() ? Action::Parse
-                : opts.get<"--sema">()  ? Action::Sema
-                                        : Action::Compile;
+                : opts.get<"--tokens">() ? Action::DumpTokens
+                : opts.get<"--lex">()    ? Action::Lex
+                : opts.get<"--parse">()  ? Action::Parse
+                : opts.get<"--sema">()   ? Action::Sema
+                                         : Action::Compile;
 
     // Create driver.
     Driver driver{{

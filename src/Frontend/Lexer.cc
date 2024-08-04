@@ -104,12 +104,14 @@ struct Lexer {
     Parser::CommentTokenCallback comment_token_handler;
     const char* curr;
     const char* const end;
-    char lastc;
-    bool raw_mode = false;
 
     Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb);
 
     auto tok() -> Token& { return tokens.back(); }
+
+    char Curr() { return Done() ? 0 : *curr; }
+
+    bool Done() { return curr == end; }
 
     template <typename... Args>
     bool Error(Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -118,13 +120,17 @@ struct Lexer {
     }
 
     bool Eat(std::same_as<char> auto... cs) {
-        // Remove the pointless bool() cast once Clang bug #101863 is fixed.
-        if ((bool(lastc == cs) or ...)) {
-            NextChar();
+        if (curr != end and ((*curr == cs) or ...)) {
+            curr++;
             return true;
         }
 
         return false;
+    }
+
+    void FinishText() {
+        tok().location.len = u16(curr - f.data() - tok().location.pos);
+        tok().text = tok().location.text(f.context());
     }
 
     auto CurrOffs() -> u32;
@@ -132,18 +138,25 @@ struct Lexer {
     void HandleCommentToken();
     void LexCXXHeaderName();
     void LexEscapedId();
-    void LexIdentifier(char first_char);
-    bool LexNumber(char first_char);
+    void LexIdentifierRest();
+    bool LexNumber(bool zero);
     void LexString(char delim);
     void Next();
-    void NextChar();
     void NextImpl();
     void SkipWhitespace();
 };
 
-void Parser::ReadTokens(const File& file, CommentTokenCallback cb) {
-    Lexer(stream, file, std::move(cb));
-    tok = stream.begin();
+auto Parser::ReadTokens(
+    const File& file,
+    CommentTokenCallback comment_callback
+) -> LexedTokenStream {
+    LexedTokenStream stream;
+    ReadTokens(stream.tokens, file, std::move(comment_callback));
+    return stream;
+}
+
+void Parser::ReadTokens(TokenStream& s, const File& file, CommentTokenCallback cb) {
+    Lexer(s, file, std::move(cb));
 }
 
 Lexer::Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb)
@@ -153,46 +166,17 @@ Lexer::Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb)
       curr{f.data()},
       end{curr + f.size()} {
     Assert(f.size() <= std::numeric_limits<u32>::max(), "We can’t handle files this big right now");
-    NextChar();
     do Next();
     while (not tok().eof());
     if (not tokens.back().eof()) tokens.allocate()->type = Tk::Eof;
 }
 
 auto Lexer::CurrLoc() -> Location { return {CurrOffs(), 1, u16(f.file_id())}; }
-auto Lexer::CurrOffs() -> u32 { return u32(curr - f.data()) - 1; }
+auto Lexer::CurrOffs() -> u32 { return u32(curr - f.data()); }
 
 void Lexer::Next() {
     tokens.allocate();
     NextImpl();
-}
-
-void Lexer::NextChar() {
-    if (curr == end) {
-        lastc = 0;
-        return;
-    }
-
-    lastc = *curr++;
-
-    // Collapse CR LF and LF CR to a single newline,
-    // but keep CR CR and LF LF as two newlines.
-    if (lastc == '\r' || lastc == '\n') {
-        // Two newlines in a row.
-        if (curr != end && (*curr == '\r' || *curr == '\n')) {
-            bool same = lastc == *curr;
-            lastc = '\n';
-
-            // CR CR or LF LF.
-            if (same) return;
-
-            // CR LF or LF CR.
-            curr++;
-        }
-
-        // Either CR or LF followed by something else.
-        lastc = '\n';
-    }
 }
 
 void Lexer::NextImpl() {
@@ -205,11 +189,9 @@ void Lexer::NextImpl() {
     SkipWhitespace();
 
     // Keep returning EOF if we're at EOF.
-    if (lastc == 0) {
+    if (Done()) {
         tok().type = Tk::Eof;
-
-        // Fudge the location to be *something* valid.
-        tok().location.pos = u32(f.size() - 1);
+        tok().location.pos = u32(f.size());
         tok().location.len = 1;
         return;
     }
@@ -219,6 +201,7 @@ void Lexer::NextImpl() {
     // without setting the token type. The parser will then stop because
     // it encounters an invalid token.
     auto& ty = tok().type = Tk::Invalid;
+    auto start = curr;
     tok().artificial = false;
     tok().location.pos = CurrOffs();
     tok().location.len = 1;
@@ -226,7 +209,7 @@ void Lexer::NextImpl() {
     // Lex the token.
     //
     // Warning: Ternary abuse incoming.
-    switch (auto c = lastc; NextChar(), c) {
+    switch (auto c = *curr++) {
         // Single-character tokens.
         case ';': ty = Tk::Semicolon; break;
         case ',': ty = Tk::Comma; break;
@@ -321,7 +304,7 @@ void Lexer::NextImpl() {
         case '"':
         case '\'':
             LexString(c);
-            break;
+            return;
 
         case '0':
         case '1':
@@ -334,93 +317,70 @@ void Lexer::NextImpl() {
         case '8':
         case '9':
             // Skip the rest of the broken literal if this fails.
-            if (not LexNumber(c))
-                while (llvm::isAlnum(lastc))
-                    NextChar();
-            break;
+            if (LexNumber(c == '0')) return;
+            while (llvm::isAlnum(Curr()))
+                curr++;
+            NextImpl();
+            return;
 
         default:
-            if (IsStart(c)) LexIdentifier(c);
-            else {
-                Error(CurrLoc() << 1, "Unexpected <U+{:X}> character in program", lastc);
-                break;
-            }
+            if (IsStart(c)) return LexIdentifierRest();
+            Error(CurrLoc() << 1, "Unexpected <U+{:X}> character in program", c);
+            break;
     }
 
     // Set the end of the token.
-    tok().location.len = u16(u64(curr - f.data()) - tok().location.pos - 1);
-    if (curr == end and not lastc) tok().location.len++;
+    tok().location.len = u16(curr - start);
 }
 
 void Lexer::HandleCommentToken() {
-    const auto KeepSkipping = [&] { return lastc != '\n' && lastc != 0; };
+    const auto KeepSkipping = [&] { return not Done() and *curr != '\n'; };
 
     // If we were asked to lex comment tokens, do so and dispatch it. To
     // keep the parser from having to deal with these, they never enter
     // the token stream.
     if (comment_token_handler) {
-        Token token{Tk::Comment};
-        std::string text;
-        while (KeepSkipping()) {
-            text += lastc;
-            NextChar();
-        }
-
-        token.text = tokens.save(text);
-        token.location = tok().location;
-        token.location.len = u16(text.size()) + 2;
-        comment_token_handler(token);
+        tok().type = Tk::Comment;
+        while (KeepSkipping()) curr++;
+        FinishText();
+        comment_token_handler(tok());
         return;
     }
 
     // Otherwise, just skip past the comment.
-    while (KeepSkipping()) NextChar();
+    while (KeepSkipping()) curr++;
 }
 
 void Lexer::SkipWhitespace() {
-    while (std::isspace(lastc)) NextChar();
+    while (llvm::isSpace(Curr())) curr++;
 }
 
-void Lexer::LexIdentifier(char first_char) {
+void Lexer::LexIdentifierRest() {
     tok().type = Tk::Identifier;
-    SmallString<32> text;
-    text += first_char;
-    while (IsContinue(lastc)) {
-        text += lastc;
-        NextChar();
-    }
-    tok().text = tokens.save(text);
+    while (IsContinue(Curr())) curr++;
+    FinishText();
 
-    // Helper to parse keywords and integer types.
-    const auto LexSpecialToken = [&] {
-        if (auto k = keywords.find(tok().text); k != keywords.end()) {
-            tok().type = k->second;
+    // Keywords.
+    if (auto k = keywords.find(tok().text); k != keywords.end()) {
+        tok().type = k->second;
 
-            // Handle "for~".
-            if (tok().type == Tk::For and Eat('~')) tok().type = Tk::ForReverse;
-        } else if (tok().text.starts_with("i")) {
-            // Note: this returns true on error.
-            if (not StringRef(tok().text).substr(1).getAsInteger(10, tok().integer))
-                tok().type = Tk::IntegerType;
+        // Handle "for~".
+        if (tok().type == Tk::For and Eat('~')) {
+            tok().type = Tk::ForReverse;
+            FinishText();
         }
-    };
+    }
 
-    // In raw mode, special processing is disabled. This is used for
-    // parsing the argument and expansion lists of macros, as well as
-    // for handling __id.
-    if (raw_mode) return LexSpecialToken();
-
-    // TODO: If we decide to support lexer macros, check for macro
-    // definitions and expansions here.
-
-    // Check for keywords and ints.
-    LexSpecialToken();
+    // Integer types.
+    else if (tok().text.starts_with("i")) {
+        // Note: this returns true on error.
+        if (not StringRef(tok().text).substr(1).getAsInteger(10, tok().integer))
+            tok().type = Tk::IntegerType;
+    }
 }
 
-bool Lexer::LexNumber(char first_char) {
-    SmallString<64> buf;
-    buf += first_char;
-    char delim = lastc;
+bool Lexer::LexNumber(bool zero) {
+    auto second = Curr();
 
     // Helper function that actually parses a number.
     auto LexNumberImpl = [&](bool pred(char), unsigned base = 10) -> bool {
@@ -434,177 +394,152 @@ bool Lexer::LexNumber(char first_char) {
                     default: Unreachable("Invalid base: {}", base);
                 }
             }();
-            return Error(CurrLoc(), "Invalid digit '{}' in {} integer literal", lastc, kind);
+            return Error(CurrLoc(), "Invalid digit '{}' in {} integer literal", Curr(), kind);
         };
 
         // Need at least one digit.
-        if (base != 10 and not pred(lastc)) {
+        if (base != 10 and not pred(Curr())) {
             // If this is not even any sort of digit, then issue
             // a more helpful error; this is so we don’t complain
             // about e.g. ‘;’ not being a digit.
-            if (not llvm::isAlnum(lastc))
-                return Error(CurrLoc(), "Expected at least one digit after '{}'", delim);
+            if (not llvm::isAlnum(Curr()))
+                return Error(CurrLoc(), "Expected at least one digit after '{}'", second);
             return DiagnoseInvalidLiteral();
         }
 
         // Parse the literal.
-        while (pred(lastc)) {
-            buf += lastc;
-            NextChar();
-        }
+        while (pred(Curr())) curr++;
 
         // The next character must not be a start character.
-        if (IsStart(lastc)) return DiagnoseInvalidLiteral();
+        if (IsStart(Curr())) return DiagnoseInvalidLiteral();
 
         // We have a valid integer literal!
+        FinishText();
         tok().type = Tk::Integer;
 
         // Note: This returns true on error!
         tok().integer = APInt{};
-        Assert(not buf.str().getAsInteger(base, tok().integer));
+        Assert(
+            not tok().text.value().drop_front(base != 10 ? 2 : 0).getAsInteger(base, tok().integer),
+            "Failed to lex base-{} integer '{}'",
+            base,
+            tok().text
+        );
+
         return true;
     };
 
     // If the first character is not 0, then we have a decimal literal.
-    if (first_char != '0') return LexNumberImpl(IsDecimal);
+    if (not zero) return LexNumberImpl(IsDecimal);
     if (Eat('x', 'X')) return LexNumberImpl(IsHex, 16);
     if (Eat('o', 'O')) return LexNumberImpl(IsOctal, 8);
     if (Eat('b', 'B')) return LexNumberImpl(IsBinary, 2);
 
     // Leading 0’s must be followed by one of the above.
-    if (llvm::isDigit(lastc)) return Error(
+    if (llvm::isDigit(Curr())) return Error(
         CurrLoc() << 1,
         "Leading zeros are not allowed in integers. Use 0o/0O for octal literals"
     );
 
     // Integer literal must be a literal 0.
-    if (IsStart(lastc)) return Error(
+    if (IsStart(Curr())) return Error(
         CurrLoc() <<= 1,
         "Invalid character in integer literal: '{}'",
-        lastc
+        Curr()
     );
 
     // If we get here, this must be a literal 0.
+    FinishText();
     tok().type = Tk::Integer;
     tok().integer = 0;
     return true;
 }
 
 void Lexer::LexString(char delim) {
-    SmallString<32> text;
-
-    // Lex the string. If it’s a raw string, we don’t need to
-    // do any escaping.
-    if (delim == '\'') {
-        while (lastc != delim && lastc != 0) {
-            text += lastc;
-            NextChar();
-        }
-    }
-
-    // Otherwise, we also need to replace escape sequences.
-    else if (delim == '"') {
-        while (lastc != delim && lastc != 0) {
-            if (Eat('\\')) {
-                switch (lastc) {
-                    case 'a': text += '\a'; break;
-                    case 'b': text += '\b'; break;
-                    case 'e': text += '\033'; break;
-                    case 'f': text += '\f'; break;
-                    case 'n': text += '\n'; break;
-                    case 'r': text += '\r'; break;
-                    case 't': text += '\t'; break;
-                    case 'v': text += '\v'; break;
-                    case '\\': text += '\\'; break;
-                    case '\'': text += '\''; break;
-                    case '"': text += '"'; break;
-                    case '0': text += '\0'; break;
-                    default:
-                        Error({tok().location, CurrLoc()}, "Invalid escape sequence");
-                        return;
-                }
-            } else {
-                text += lastc;
-            }
-            NextChar();
-        }
-    }
-
-    // Other string delimiters are invalid.
-    else {
+    // Anything other than ', " is invalid.
+    if (delim != '"' and delim != '\'') {
         Error(CurrLoc() << 1, "Invalid delimiter: {}", delim);
         return;
     }
 
-    // Make sure we actually have a delimiter.
-    if (lastc != delim) {
-        Error(CurrLoc() << 1, "Unterminated string literal");
+    // Lex the string. If it’s a raw string, we don’t need to
+    // do any escaping.
+    tok().type = Tk::StringLiteral;
+    if (delim == '\'') {
+        while (not Done() and *curr != delim) curr++;
+        if (not Eat(delim)) Error(CurrLoc() << 1, "Unterminated string literal");
+        FinishText();
+        tok().text = tok().text.drop().drop_back(); // Drop the quotes.
+        tok().type = Tk::StringLiteral;
         return;
     }
 
-    tok().text = tokens.save(text);
-    NextChar();
+    // We need to perform escaping here, so we can’t get away with
+    // not allocating a buffer here unfortunately.
+    SmallString<32> text;
+    while (not Done() and *curr != delim) {
+        if (not Eat('\\')) {
+            text += *curr++;
+            continue;
+        }
 
-    // This is a valid string.
-    tok().type = Tk::StringLiteral;
+        // If, somehow, the file ends with an unterminated escape sequence,
+        // don’t even bother reporting it since we’ll complain about the
+        // missing delimiter anyway.
+        if (Done()) break;
+
+        // Handle escape sequences now (we could save the original source text
+        // and do this later, but then we’d have to constantly keep track of
+        // whether we’ve already done that etc. etc., so just get this out of
+        // the way now.
+        switch (*curr++) {
+            case 'a': text += '\a'; break;
+            case 'b': text += '\b'; break;
+            case 'e': text += '\033'; break;
+            case 'f': text += '\f'; break;
+            case 'n': text += '\n'; break;
+            case 'r': text += '\r'; break;
+            case 't': text += '\t'; break;
+            case 'v': text += '\v'; break;
+            case '\\': text += '\\'; break;
+            case '\'': text += '\''; break;
+            case '"': text += '"'; break;
+            case '0': text += '\0'; break;
+            default: Error({tok().location, CurrLoc()}, "Invalid escape sequence");
+        }
+    }
+
+    // Done!
+    if (not Eat(delim)) Error(CurrLoc() << 1, "Unterminated string literal");
+    FinishText();
+    tok().text = tokens.save(text);
 }
 
 void Lexer::LexCXXHeaderName() {
-    tempset raw_mode = true;
     tok().type = Tk::CXXHeaderName;
-
-    SmallString<32> text;
-    while (lastc != '>' and lastc != 0) {
-        text.push_back(lastc);
-        NextChar();
-    }
-
-    if (lastc == 0) {
-        Error(tok().location, "Expected '>'");
-        return;
-    }
-
-    tok().text = tokens.save(text);
-
-    // Bring the lexer back into sync.
-    NextChar();
+    while (not Done() and Curr() != '>') curr++;
+    if (not Eat('>')) Error(tok().location, "Expected '>'");
+    FinishText();
 }
 
 void Lexer::LexEscapedId() {
-    // Yeet backslash.
-    tempset raw_mode = true;
-    auto start = tok().location;
+    auto backslash = tok().location;
     NextImpl();
-
-    // Mark this token as ‘artificial’. This is so we can e.g. nest
-    // macro definitions using `\expands` and `\endmacro`.
     tok().artificial = true;
 
     // If the next token is anything other than "(", then it becomes the name.
     if (tok().type != Tk::LParen) {
         tok().type = Tk::Identifier;
-        tok().text = tok().spelling();
-        tok().location = {start, tok().location};
+        tok().text = tok().location.text(f.context());
+        tok().location = {backslash, tok().location};
         return;
     }
 
     // If the token is "(", then everything up to the next ")" is the name.
     tok().type = Tk::Identifier;
-    SmallString<32> text;
-    while (lastc != ')' and lastc != 0) {
-        text += lastc;
-        NextChar();
-    }
-
-    // EOF.
-    if (lastc == 0) {
-        Error(start, "EOF reached while lexing \\(...");
-        tok().type = Tk::Invalid;
-        return;
-    }
-
-    // Skip the ")".
-    tokens.save(text);
-    tok().location = {start, tok().location};
-    NextChar();
+    tok().location = CurrLoc();
+    while (not Done() and *curr != ')') curr++;
+    FinishText();
+    tok().location = {backslash, CurrLoc()};
+    if (not Eat(')')) Error(CurrLoc() << 1, "EOF reached while lexing \\(...");
 }

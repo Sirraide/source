@@ -176,7 +176,7 @@ struct srcc::Token {
     [[nodiscard]] auto eof() const -> bool { return type == Tk::Eof; }
 
     /// Get the source code spelling of this token.
-    [[nodiscard]] auto spelling() const -> String;
+    [[nodiscard]] auto spelling(const Context& ctx) const -> String;
 
     /// Compare two tokens for equality. This only checks if their
     /// types and values are equal and ignores e.g. whether they are
@@ -373,9 +373,16 @@ auto srcc::Spelling(Tk t) -> String {
     Unreachable();
 }
 
-/// Stringify a token type.
-auto Token::spelling() const -> String {
-    return Spelling(type);
+auto Token::spelling(const Context& ctx) const -> String {
+    switch (type) {
+        default: return Spelling(type); // Always spelled the same way.
+        case Tk::StringLiteral: return location.text(ctx); // Include quotes.
+        case Tk::Identifier: return location.text(ctx); // May be escaped.
+        case Tk::CXXHeaderName:
+        case Tk::Integer:
+        case Tk::IntegerType:
+            return text;
+    }
 }
 
 bool Token::operator==(const Token& b) {
