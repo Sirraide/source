@@ -57,6 +57,7 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
 
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
+                case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Dependent type in codegen?");

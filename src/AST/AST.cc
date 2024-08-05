@@ -94,9 +94,14 @@ struct Stmt::Printer : PrinterBase<Stmt> {
     using enum utils::Colour;
     bool print_procedure_bodies = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
-    void PrintBasicHeader(Stmt* s, StringRef name);
-    void PrintBasicNode(Stmt* S, StringRef name, llvm::function_ref<void()> print_extra_data = {});
     void Print(Stmt* E);
+    void PrintBasicHeader(Stmt* s, StringRef name);
+    void PrintBasicNode(
+        Stmt* S,
+        StringRef name,
+        llvm::function_ref<void()> print_extra_data = {},
+        bool print_type = true
+    );
 };
 
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
@@ -111,17 +116,21 @@ void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     );
 }
 
-
-void Stmt::Printer::PrintBasicNode(Stmt* s, StringRef name, llvm::function_ref<void()> print_extra_data) {
+void Stmt::Printer::PrintBasicNode(
+    Stmt* s,
+    StringRef name,
+    llvm::function_ref<void()> print_extra_data,
+    bool print_type
+) {
     PrintBasicHeader(s, name);
 
-    if (auto e = dyn_cast<Expr>(s)) std::print(" {}", e->type.print(C.use_colours));
+    if (auto e = dyn_cast<Expr>(s); e and print_type) std::print(" {}", e->type.print(C.use_colours));
     if (print_extra_data) {
-        std::print(" ");
+        std::print("{} ", C(Reset));
         print_extra_data();
     }
 
-    if (auto e = dyn_cast<Expr>(s)) {
+    if (auto e = dyn_cast<Expr>(s); e and print_type) {
         std::print("{}", C(White));
         if (e->value_category != Expr::SRValue) {
             switch (e->value_category) {
@@ -214,21 +223,36 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
-        case Kind::ProcRefExpr: {
-            auto& p = *cast<ProcRefExpr>(e);
+        case Kind::ProcDecl: {
+            auto p = cast<ProcDecl>(e);
+            PrintBasicHeader(p, "ProcDecl");
             std::print(
-                "{}ProcRefExpr {}{} {}<{}> {}{}\n",
-                C(Red),
-                C(Blue),
-                static_cast<void*>(e),
-                C(Magenta),
-                e->loc.pos,
+                " {}{} {}\n",
                 C(Green),
-                p.decl->name
+                p->name,
+                p->type.print(C.use_colours)
+            );
+
+            if (print_procedure_bodies and p->body) PrintChildren(p->body);
+        } break;
+
+        case Kind::ProcRefExpr: {
+            auto p = cast<ProcRefExpr>(e);
+            PrintBasicHeader(p, "ProcRefExpr");
+            std::print(
+                " {}{}\n",
+                C(Green),
+                p->decl->name
             );
 
             tempset print_procedure_bodies = false;
-            PrintChildren(p.decl);
+            PrintChildren(p->decl);
+        } break;
+
+        case Kind::ReturnExpr: {
+            auto ret = cast<ReturnExpr>(e);
+            PrintBasicNode(e, "ReturnExpr", [ret] { if (ret->implicit) std::print("implicit"); }, false);
+            if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
         } break;
 
         case Kind::SliceDataExpr:
@@ -237,33 +261,12 @@ void Stmt::Printer::Print(Stmt* e) {
             break;
 
         case Kind::StrLitExpr: {
+            PrintBasicHeader(e, "StrLitExpr");
             std::print(
-                "{}StrLitExpr {}{} {}<{}> {}\"{}\"\n",
-                C(Red),
-                C(Blue),
-                static_cast<void*>(e),
-                C(Magenta),
-                e->loc.pos,
+                " {}\"{}\"\n",
                 C(Yellow),
                 utils::Escape(cast<StrLitExpr>(e)->value)
             );
-        } break;
-
-        case Kind::ProcDecl: {
-            auto& p = *cast<ProcDecl>(e);
-            std::print(
-                "{}ProcDecl {}{} {}<{}> {}{} {}\n",
-                C(Red),
-                C(Blue),
-                static_cast<void*>(e),
-                C(Magenta),
-                e->loc.pos,
-                C(Green),
-                p.name,
-                p.type.print(C.use_colours)
-            );
-
-            if (print_procedure_bodies) PrintChildren(p.body);
         } break;
     }
 }

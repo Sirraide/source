@@ -250,7 +250,7 @@ void Lexer::NextImpl() {
         case '+':
             ty = Eat('+') ? Tk::PlusPlus
                : Eat('=') ? Tk::PlusEq
-                          : ty = Tk::Plus;
+                          : Tk::Plus;
             break;
 
         case '*':

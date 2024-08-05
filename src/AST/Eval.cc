@@ -160,6 +160,7 @@ public:
     [[nodiscard]] bool EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref);
     [[nodiscard]] bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
     [[nodiscard]] bool EvalStrLitExpr(Value& out, StrLitExpr* str_lit);
+    [[nodiscard]] bool EvalReturnExpr(Value& out, ReturnExpr* expr) { Todo(); }
 
     [[nodiscard]] bool EvalLocalDecl(Value& out, LocalDecl* decl);
     [[nodiscard]] bool EvalParamDecl(Value& out, LocalDecl* decl);

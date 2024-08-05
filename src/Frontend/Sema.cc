@@ -296,6 +296,9 @@ auto Sema::BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location lo
 }
 
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
+    // If the body is not a block, build an implicit return.
+    if (not isa<BlockExpr>(body)) body = BuildReturnExpr(body, body->location(), true);
+
     // Make sure all paths return a value.
     //
     // A function marked as returning void requires no checking and is allowed
@@ -314,7 +317,7 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
 
         else Error(
             proc->location(),
-            "Procedure '{}' does not return a value on all paths",
+            "Procedure '{}' must return a value",
             proc->name
         );
 
@@ -323,6 +326,39 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     }
 
     return body;
+}
+
+auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr* {
+    if (value.present() and value.get()->dependent())
+        return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
+
+    // Perform return type deduction.
+    auto proc = curr_proc().proc;
+    if (proc->return_type() == Types::DeducedTy) {
+        auto proc_type = proc->proc_type();
+        Type deduced = Types::VoidTy;
+        if (auto val = value.get_or_null()) deduced = val->type;
+        proc->type = ProcType::Get(
+            *M,
+            deduced,
+            proc_type->params(),
+            proc_type->cconv(),
+            proc_type->variadic()
+        );
+    }
+
+    // Or complain if the type doesn’t match.
+    else {
+        Type ret = value.invalid() ? Types::VoidTy : value.get()->type;
+        if (ret != proc->return_type()) Error(
+            loc,
+            "Return type '{}' does not match procedure return type '{}'",
+            ret.print(ctx.use_colours()),
+            proc->return_type().print(ctx.use_colours())
+        );
+    }
+
+    return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
 }
 
 // ============================================================================
@@ -654,6 +690,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
 
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -664,22 +701,24 @@ auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr> {
     return StrLitExpr::Create(*M, parsed->value, parsed->loc);
 }
 
+/// Translate a return expression.
+auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr> {
+    Ptr<Expr> ret_val;
+    if (parsed->value.present()) ret_val = TranslateExpr(parsed->value.get());
+    return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
+}
+
 // ============================================================================
 //  Translation of Types
 // ============================================================================
 auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
-    switch (parsed->builtin_kind) {
-        using K = ParsedBuiltinType::Kind;
-        case K::Int: return Types::IntTy;
-    }
-
-    Unreachable("Invalid builtin type");
+    return parsed->ty;
 }
 
 auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     SmallVector<Type, 10> params;
     for (auto a : parsed->param_types()) params.push_back(TranslateType(a));
-    return ProcType::Get(*M, Types::VoidTy, params);
+    return ProcType::Get(*M, TranslateType(parsed->ret_type), params);
 }
 
 auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
@@ -690,6 +729,7 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
     }
 

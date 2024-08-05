@@ -38,6 +38,7 @@
          | <expr-eval>
          | <expr-lit>
          | <expr-member>
+         | <expr-return>
 
 <expr-block>    ::= "{" <stmts>  "}"
 <expr-call>     ::= <expr> "(" [ <call-args> ] ")"
@@ -45,6 +46,7 @@
 <expr-eval>     ::= EVAL <expr>
 <expr-lit>      ::= STRING-LITERAL | INTEGER
 <expr-member>   ::= <expr> "." IDENTIFIER
+<expr-return>   ::= RETURN [ <expr> ]
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 
@@ -52,13 +54,14 @@
 //  Declarations
 // ============================================================================
 <decl> ::= <decl-proc>
-<decl-proc>  ::= PROC IDENTIFIER <signature> <expr-block>
-<signature>  ::= [ <proc-args> ]
+<decl-proc>  ::= PROC IDENTIFIER <signature> <proc-body>
+<signature>  ::= [ <proc-args> ] [ "->" <type> ]
 <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+<proc-body>  ::= <expr-block> | "=" <expr> ";"
 <param-decl> ::= <type> [ IDENTIFIER ]
 
 // ============================================================================
 //  Types
 // ============================================================================
 <type> ::= <type-prim>
-<type-prim> ::= "int"
+<type-prim> ::= INT | VOID

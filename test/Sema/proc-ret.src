@@ -1,0 +1,25 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc sink(int) {}
+
+proc a -> void {}
+proc b -> int {} // expected-error: Procedure 'b' must return a value
+proc c -> int = 1;
+proc d -> void { return; }
+proc e = 1;
+proc f -> int { return 1; }
+proc g -> int { return c(); }
+proc h = c();
+proc i -> int = e();
+proc j -> void = e(); // expected-error: Return type 'int' does not match procedure return type 'void'
+
+sink(a()); // expected-error: Argument of type 'void' does not match expected type 'int'
+sink(b());
+sink(c());
+sink(b());
+sink(e());
+sink(f());
+sink(g());
+sink(h());
+sink(i());

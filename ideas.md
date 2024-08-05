@@ -76,7 +76,8 @@ for enum i, var x in A do ...
 ```
 
 ## Deproceduring
-For functions w/ no arguments only.
+For functions w/ no arguments only. ALWAYS do this if the function is not
+expressly preceded by `&`.
 
 ## `()`
 This is our equivalent of `{}`, `null`, or `nil`. No, I don’t actually like LISP. 

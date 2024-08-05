@@ -6,6 +6,7 @@ module;
 #include <srcc/Macros.hh>
 
 export module srcc.frontend.parser;
+import srcc.ast;
 import srcc.frontend.token;
 import srcc;
 import srcc.utils;
@@ -126,18 +127,13 @@ public:
 
 class srcc::ParsedBuiltinType final : public ParsedType {
 public:
-    enum struct Kind {
-        Int
-    };
-
-    const Kind builtin_kind;
-
-private:
-    ParsedBuiltinType(Kind kind, Location loc)
-        : ParsedType{ParsedStmt::Kind::BuiltinType, loc}, builtin_kind{kind} {}
+    BuiltinType* const ty;
 
 public:
-    static auto Int(Parser& p, Location loc) { return new (p) ParsedBuiltinType{Kind::Int, loc}; }
+    ParsedBuiltinType(BuiltinType* ty, Location loc)
+        : ParsedType{Kind::BuiltinType, loc},
+          ty{ty} {}
+
     static bool classof(const ParsedStmt* e) {
         return e->kind() == ParsedStmt::Kind::BuiltinType;
     }
@@ -148,11 +144,14 @@ class srcc::ParsedProcType final : public ParsedType
     friend TrailingObjects;
     const u32 num_params;
     auto numTrailingObjects(OverloadToken<ParsedType*>) -> usz { return num_params; }
-    ParsedProcType(ArrayRef<ParsedType*> params, Location loc);
+    ParsedProcType(ParsedType* ret_type, ArrayRef<ParsedType*> params, Location loc);
 
 public:
+    ParsedType* const ret_type;
+
     static auto Create(
         Parser& parser,
+        ParsedType* ret_type,
         ArrayRef<ParsedType*> params,
         Location loc
     ) -> ParsedProcType*;
@@ -308,6 +307,19 @@ public:
     ) : ParsedStmt{Kind::MemberExpr, location}, base{base}, member{member} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::MemberExpr; }
+};
+
+/// A return from a function.
+class srcc::ParsedReturnExpr final : public ParsedStmt {
+public:
+    const Ptr<ParsedStmt> value;
+
+    ParsedReturnExpr(
+        Ptr<ParsedStmt> value,
+        Location location
+    ) : ParsedStmt{Kind::ReturnExpr, location}, value{std::move(value)} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ReturnExpr; }
 };
 
 // ============================================================================
@@ -470,6 +482,9 @@ private:
     bool At(std::same_as<Tk> auto... tks) {
         return ((tok->type == tks) or ...);
     }
+
+    /// Check if we’re at the start of an expression.
+    bool AtStartOfExpression();
 
     /// Consume a token if it is present.
     bool Consume(Tk tk);

@@ -200,6 +200,7 @@ class srcc::Types {
     static constexpr BuiltinType NoReturnTyImpl{BuiltinKind::NoReturn};
     static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
     static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
+    static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced, Dependence::Type};
 
 public:
     /// Builtin types.
@@ -209,6 +210,7 @@ public:
     PREDECLARED_TYPE(BuiltinType, NoReturnTy);
     PREDECLARED_TYPE(BuiltinType, BoolTy);
     PREDECLARED_TYPE(BuiltinType, IntTy);
+    PREDECLARED_TYPE(BuiltinType, DeducedTy);
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {

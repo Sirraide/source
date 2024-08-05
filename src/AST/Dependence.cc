@@ -100,6 +100,11 @@ void ComputeDependence(ProcDecl* d) {
     if (d->body) d->set_dependence(d->body->dependence());
 }
 
+void ComputeDependence(ReturnExpr* e) {
+    if (auto value = e->value.get_or_null())
+        e->set_dependence(value->dependence());
+}
+
 void ComputeDependence(SliceDataExpr* s) {
     s->set_dependence(s->slice->dependence());
 }

@@ -395,6 +395,26 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
 };
 
+class srcc::ReturnExpr final : public Expr {
+public:
+    Ptr<Expr> value;
+    bool implicit;
+
+    ReturnExpr(
+        Ptr<Expr> value,
+        Location location,
+        bool implicit = false
+    ) : Expr{
+            Kind::ReturnExpr,
+            Types::NoReturnTy,
+            SRValue,
+            location,
+        },
+        value{value}, implicit{implicit} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ReturnExpr; }
+};
+
 // ============================================================================
 //  Declarations
 // ============================================================================

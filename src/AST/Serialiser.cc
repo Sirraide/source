@@ -275,6 +275,7 @@ void Deserialiser::DeserialiseType() {
                 case BuiltinKind::NoReturn: deserialised_types.push_back(Types::NoReturnTy); return;
                 case BuiltinKind::Bool: deserialised_types.push_back(Types::BoolTy); return;
                 case BuiltinKind::Int: deserialised_types.push_back(Types::IntTy); return;
+                case BuiltinKind::Deduced: deserialised_types.push_back(Types::DeducedTy); return;
             }
 
             Unreachable("Invalid builtin type");

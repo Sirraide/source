@@ -76,21 +76,23 @@ public:
     Ptr(Ptr<Derived> other) : value{other.value} {}
 
     template <typename Derived>
-    auto cast() -> Ptr<Derived> {
+    auto cast() const -> Ptr<Derived> {
         if (not value) return nullptr;
         return cast<Derived>(value);
     }
 
     template <typename Derived>
-    auto dyn_cast() -> Ptr<Derived> {
+    auto dyn_cast() const -> Ptr<Derived> {
         if (not value) return nullptr;
         return dyn_cast<Derived>(value);
     }
 
-    auto get() -> Ty* {
+    auto get() const -> Ty* {
         Assert(value, "Value must be present!");
         return value;
     }
+
+    auto get_or_null() const -> Ty* { return value; }
 
     auto invalid() const -> bool { return not present(); }
     auto present() const -> bool { return value != nullptr; }

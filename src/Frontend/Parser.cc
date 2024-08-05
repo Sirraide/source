@@ -46,20 +46,22 @@ void* ParsedStmt::operator new(usz size, Parser& parser) {
 // ============================================================================
 //  Types
 // ============================================================================
-ParsedProcType::ParsedProcType(ArrayRef<ParsedType*> params, Location loc)
-    : ParsedType{ParsedStmt::Kind::ProcType, loc},
-      num_params{u32(params.size())} {
+ParsedProcType::ParsedProcType(ParsedType* ret_type, ArrayRef<ParsedType*> params, Location loc)
+    : ParsedType{Kind::ProcType, loc},
+      num_params{u32(params.size())},
+      ret_type{ret_type} {
     std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedType*>());
 }
 
 auto ParsedProcType::Create(
     Parser& parser,
+    ParsedType* ret_type,
     ArrayRef<ParsedType*> params,
     Location loc
 ) -> ParsedProcType* {
     const auto size = totalSizeToAlloc<ParsedType*>(params.size());
     auto mem = parser.allocate(size, alignof(ParsedProcType));
-    return ::new (mem) ParsedProcType{params, loc};
+    return ::new (mem) ParsedProcType{ret_type, params, loc};
 }
 
 // ============================================================================
@@ -289,6 +291,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
                 C(Reset)
             );
         } break;
+
+        case Kind::ReturnExpr: {
+            auto ret = cast<ParsedReturnExpr>(s);
+            PrintHeader(s, "ReturnExpr");
+            if (auto val = ret->value.get_or_null()) PrintChildren(val);
+        } break;
     }
 }
 
@@ -304,16 +312,11 @@ auto ParsedType::str(utils::Colours C) -> std::string {
     using enum utils::Colour;
     std::string out;
 
-    auto Append = [C, &out](this auto& Append, ParsedType* type) {
+    auto Append = [C, &out](this auto& Append, ParsedType* type) -> void {
         switch (type->kind()) {
             case Kind::BuiltinType:
-                out += C(Cyan);
-                switch (cast<ParsedBuiltinType>(type)->builtin_kind) {
-                    case ParsedBuiltinType::Kind::Int:
-                        out += "int";
-                        return;
-                }
-                Unreachable("Invalid builtin type");
+                out += cast<ParsedBuiltinType>(type)->ty->print(C.use_colours);
+                break;
 
             case Kind::ProcType: {
                 auto p = cast<ParsedProcType>(type);
@@ -362,6 +365,19 @@ PARSE_TREE_NODE(Stmt);
 // ============================================================================
 //  Parser Helpers
 // ============================================================================
+bool Parser::AtStartOfExpression() {
+    switch (tok->type) {
+        default: return false;
+        case Tk::RBrace:
+        case Tk::Identifier:
+        case Tk::Eval:
+        case Tk::StringLiteral:
+        case Tk::Integer:
+        case Tk::Return:
+            return true;
+    }
+}
+
 bool Parser::Consume(Tk tk) {
     if (At(tk)) {
         ++tok;
@@ -419,7 +435,12 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     while (not At(Tk::Eof, Tk::RBrace))
         if (auto s = ParseStmt())
             stmts.push_back(s.get());
-    ConsumeOrError(Tk::RBrace);
+
+    if (not Consume(Tk::RBrace)) {
+        Error("Expected '}}'");
+        Note(loc, "To match this '{{'");
+    }
+
     return ParsedBlockExpr::Create(*this, stmts, loc);
 }
 
@@ -429,8 +450,10 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
 //          | <expr-eval>
 //          | <expr-lit>
 //          | <expr-member>
+//          | <expr-return>
 auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
     Ptr<ParsedStmt> lhs;
+    bool at_start = AtStartOfExpression(); // See below.
     switch (tok->type) {
         default: return Error("Expected expression");
 
@@ -475,7 +498,26 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedIntLitExpr{*this, tok->integer, tok->location};
             ++tok;
             break;
+
+        // <expr-return>   ::= RETURN [ <expr> ]
+        case Tk::Return: {
+            auto loc = tok->location;
+            ++tok;
+
+            Ptr<ParsedStmt> value;
+            if (AtStartOfExpression()) {
+                value = ParseExpr();
+                if (not value) return {};
+            }
+
+            if (value.present()) loc = {loc, value.get()->loc};
+            lhs = new (*this) ParsedReturnExpr{value, loc};
+        }
     }
+
+    // I keep forgetting to add new tokens to AtStartOfExpression,
+    // so this is here to make sure I don’t forget.
+    Assert(at_start, "Forgot to add a token to AtStartOfExpression");
 
     // Big operator parse loop.
     // TODO: precedence.
@@ -594,9 +636,10 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <decl-proc>  ::= PROC IDENTIFIER <signature> <expr-block>
-// <signature>  ::= [ <proc-args> ]
+// <decl-proc>  ::= PROC IDENTIFIER <signature> <proc-body>
+// <signature>  ::= [ <proc-args> ] [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+// <proc-body>  ::= <expr-block> | "=" <expr> ";"
 // <param-decl> ::= <type> [ IDENTIFIER ]
 auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Yeet 'proc'.
@@ -640,13 +683,34 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         if (not Consume(Tk::RParen)) return Error("Expected ')'");
     }
 
+    // Return Type.
+    Ptr<ParsedType> ret;
+    if (Consume(Tk::RArrow)) ret = ParseType();
+
+    // If we failed to parse a return type, or if there was
+    // none, just default to void instead, or deduce the type
+    // if this is a '= <expr>' declaration.
+    if (ret.invalid()) {
+        ret = new (*this) ParsedBuiltinType(
+            At(Tk::Assign) ? Types::DeducedTy.ptr() : Types::VoidTy.ptr(),
+            loc
+        );
+    }
+
     // Parse body.
-    auto body = ParseBlock();
+    Ptr<ParsedStmt> body;
+    if (Consume(Tk::Assign)) {
+        body = ParseExpr();
+        if (not Consume(Tk::Semicolon)) Error("Expected ';'");
+    } else {
+        body = ParseBlock();
+    }
+
     if (not body) return {};
     return ParsedProcDecl::Create(
         *this,
         name,
-        ParsedProcType::Create(*this, param_types, loc),
+        ParsedProcType::Create(*this, ret.get(), param_types, loc),
         param_decls,
         body.get(),
         loc
@@ -688,15 +752,18 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
 // <type> ::= <type-prim>
 auto Parser::ParseType() -> Ptr<ParsedType> {
+    auto Builtin = [&](BuiltinType* ty) {
+        auto loc = tok->location;
+        ++tok;
+        return new (*this) ParsedBuiltinType(ty, loc);
+    };
+
     switch (tok->type) {
         default: return Error("Expected type");
 
-        // <type-prim> ::= "int"
-        case Tk::Int: {
-            auto loc = tok->location;
-            ++tok;
-            return ParsedBuiltinType::Int(*this, loc);
-        }
+        // <type-prim> ::= INT | VOID
+        case Tk::Int: return Builtin(Types::IntTy.ptr());
+        case Tk::Void: return Builtin(Types::VoidTy.ptr());
     }
 }
 

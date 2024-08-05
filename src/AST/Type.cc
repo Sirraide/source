@@ -39,10 +39,11 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
     switch (type_kind) {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Bool: return Align{1};
                 case BuiltinKind::Int: return Align{8}; // FIXME: Get alignment from context.
                 case BuiltinKind::NoReturn: return Align{1};
+                case BuiltinKind::Void: return Align{1};
+                case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Requested alignment of dependent type");
@@ -102,12 +103,13 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Void: return std::format("{}void", C(Cyan));
+                case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
+                case BuiltinKind::Deduced: return std::format("{}<deduced type>", C(Cyan));
                 case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
                 case BuiltinKind::ErrorDependent: return std::format("{}<error>", C(Cyan));
-                case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
                 case BuiltinKind::Int: return std::format("{}int", C(Cyan));
                 case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
+                case BuiltinKind::Void: return std::format("{}void", C(Cyan));
             }
         }
 
@@ -169,6 +171,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
                 case BuiltinKind::Void:
                     return Size();
 
+                case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Requested size of dependent type");
@@ -202,6 +205,7 @@ auto TypeBase::value_category() const -> ValueCategory {
                     return Expr::SRValue;
 
                 // Don’t know yet.
+                case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     return Expr::DValue;

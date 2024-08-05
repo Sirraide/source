@@ -221,6 +221,7 @@ private:
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
+    auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
 
     /// Entry point.
     void Translate();
@@ -235,6 +236,7 @@ private:
     auto TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr>;
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
     auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
+    auto TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr>;
 
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
