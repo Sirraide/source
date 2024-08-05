@@ -209,6 +209,7 @@ int Driver::Impl::run_job() {
     // Run the constant evaluator.
     if (a == Action::Eval) {
         // TODO: Static initialisation.
+        if (ctx.diags().has_error()) return 1;
         auto res = eval::Evaluate(*module, module->file_scope_block);
         return res.has_value() ? 0 : 1;
     }

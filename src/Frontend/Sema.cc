@@ -164,6 +164,8 @@ auto Sema::LookUpName(
 }
 
 void Sema::LValueToSRValue(Expr*& expr) {
+    if (expr->value_category == Expr::SRValue) return;
+    Assert(expr->value_category == Expr::LValue);
     expr = new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
 }
 
@@ -205,8 +207,7 @@ auto Sema::BuildBuiltinCallExpr(
                     );
                 }
 
-                if (arg->type == Types::IntTy and arg->value_category == Expr::LValue)
-                    LValueToSRValue(arg);
+                if (arg->type == Types::IntTy) LValueToSRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, actual_args, call_loc);
         }
@@ -356,6 +357,18 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
             ret.print(ctx.use_colours()),
             proc->return_type().print(ctx.use_colours())
         );
+    }
+
+    // Perform any necessary conversions.
+    if (auto val = value.get_or_null()) {
+        if (val->type == Types::VoidTy) {
+            // Nop.
+        } else if (val->type == Types::IntTy) {
+            LValueToSRValue(val);
+            value = val;
+        } else {
+            ICE(loc, "Cannot compile this return type yet: {}", val->type.print(ctx.use_colours()));
+        }
     }
 
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
@@ -691,6 +704,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       include "srcc/ParseTree.inc"
 
 
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -729,6 +743,7 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
 
     }

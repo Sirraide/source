@@ -160,7 +160,7 @@ public:
     [[nodiscard]] bool EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref);
     [[nodiscard]] bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
     [[nodiscard]] bool EvalStrLitExpr(Value& out, StrLitExpr* str_lit);
-    [[nodiscard]] bool EvalReturnExpr(Value& out, ReturnExpr* expr) { Todo(); }
+    [[nodiscard]] bool EvalReturnExpr(Value& out, ReturnExpr* expr);
 
     [[nodiscard]] bool EvalLocalDecl(Value& out, LocalDecl* decl);
     [[nodiscard]] bool EvalParamDecl(Value& out, LocalDecl* decl);
@@ -436,7 +436,9 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         }
 
         // Dew it.
-        return Eval(out, proc->body);
+        if (not Eval(out, proc->body)) return false;
+        out = CurrFrame().return_value;
+        return true;
     }
 
     // FIXME: We can only call functions defined in this module; calling
@@ -540,6 +542,13 @@ bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
         },
         tu.StrLitTy,
     };
+    return true;
+}
+
+bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
+    Assert(CurrFrame().return_value.isa<std::monostate>(), "Return value already set!");
+    out = {};
+    if (auto val = expr->value.get_or_null()) return Eval(CurrFrame().return_value, val);
     return true;
 }
 
