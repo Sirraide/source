@@ -233,7 +233,8 @@ void Stmt::Printer::Print(Stmt* e) {
                 p->type.print(C.use_colours)
             );
 
-            if (print_procedure_bodies and p->body) PrintChildren(p->body);
+            if (auto body = p->body.get_or_null(); body and print_procedure_bodies)
+                PrintChildren(body);
         } break;
 
         case Kind::ProcRefExpr: {

@@ -153,7 +153,7 @@ ProcDecl::ProcDecl(
     Linkage linkage,
     Mangling mangling,
     ProcDecl* parent,
-    Stmt* body,
+    Ptr<Stmt> body,
     Location location
 ) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
     parent{parent},
@@ -169,7 +169,7 @@ auto ProcDecl::Create(
     Linkage linkage,
     Mangling mangling,
     ProcDecl* parent,
-    Stmt* body,
+    Ptr<Stmt> body,
     Location location
 ) -> ProcDecl* {
     auto mem = tu.allocate(sizeof(ProcDecl), alignof(ProcDecl));

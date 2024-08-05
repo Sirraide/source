@@ -97,7 +97,7 @@ void ComputeDependence(ProcRefExpr* p) {
 }
 
 void ComputeDependence(ProcDecl* d) {
-    if (d->body) d->set_dependence(d->body->dependence());
+    if (auto body = d->body.get_or_null()) d->set_dependence(body->dependence());
 }
 
 void ComputeDependence(ReturnExpr* e) {

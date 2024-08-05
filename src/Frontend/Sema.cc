@@ -203,7 +203,8 @@ auto Sema::BuildBuiltinCallExpr(
                 if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy) {
                     return Error(
                         arg->location(),
-                        "__builtin_print only accepts string literals and integers"
+                        "__builtin_print only accepts string literals and integers, but got {}",
+                        arg->type.print(ctx.use_colours())
                     );
                 }
 
@@ -280,7 +281,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     if (arg->dependent()) return eval;
 
     // If the expression is not dependent, evaluate it now.
-    auto value = srcc::eval::Evaluate(*M, arg);
+    auto value = eval::Evaluate(*M, arg);
     if (not value.has_value()) {
         eval->set_errored();
         return eval;
@@ -300,33 +301,29 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     // If the body is not a block, build an implicit return.
     if (not isa<BlockExpr>(body)) body = BuildReturnExpr(body, body->location(), true);
 
-    // Make sure all paths return a value.
-    //
-    // A function marked as returning void requires no checking and is allowed
-    // to not return at all; invalid return expressions are checked when we first
-    // encounter them.
-    //
-    // Accordingly, a function that actually never returns is also always fine,
-    // since 'noreturn' is convertible to any type.
-    auto ret = proc->return_type();
-    if (ret != Types::VoidTy and body->type != Types::NoReturnTy and body->type != Types::DependentTy) {
-        if (ret == Types::NoReturnTy) Error(
-            proc->location(),
-            "Procedure '{}' returns despite being marked as 'noreturn'",
-            proc->name
-        );
+    // Make sure all paths return a value. First, if the body is
+    // 'noreturn', then that means we never actually get here.
+    auto body_ret = body->type;
+    if (body_ret->dependent() or body_ret == Types::NoReturnTy) return body;
 
-        else Error(
-            proc->location(),
-            "Procedure '{}' must return a value",
-            proc->name
-        );
-
-        // Procedure can’t be evaluated anyway if its body is invalid.
-        return nullptr;
+    // Next, a function marked as returning void requires no checking
+    // and is allowed to not return at all; invalid return expressions
+    // are checked when we first encounter them.
+    //
+    // We do, however, need to synthesise a return statement in that case.
+    if (proc->return_type() == Types::VoidTy) {
+        Assert(isa<BlockExpr>(body));
+        auto ret = BuildReturnExpr(nullptr, body->location(), true);
+        return BlockExpr::Create(*M, nullptr, {body, ret}, BlockExpr::NoExprIndex, body->location());
     }
 
-    return body;
+    // In any other case, we’re missing a return statement and have
+    // fallen off the end.
+    return Error(
+        body->location(),
+        "Procedure '{}' must return a value",
+        proc->name
+    );
 }
 
 auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr* {
@@ -421,10 +418,11 @@ void Sema::Translate() {
     if (errored) return;
 
     // Collect all statements and translate them.
+    EnterProcedure _{*this, M->initialiser_proc};
     SmallVector<Stmt*> top_level_stmts;
     for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, BlockExpr::NoExprIndex, Location{});
-    M->initialiser_proc->body = M->file_scope_block;
+    M->initialiser_proc->body = BuildProcBody(M->initialiser_proc, M->file_scope_block);
 }
 
 void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {
@@ -633,7 +631,7 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
         auto res = TranslateProcBody(decl, parsed);
         if (res.invalid()) decl->set_errored();
         else {
-            decl->body = res.get();
+            decl->body = res;
             decl->finalise(curr_proc().locals);
         }
     }

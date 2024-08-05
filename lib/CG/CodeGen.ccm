@@ -66,7 +66,7 @@ private:
     void EmitProcedure(ProcDecl* proc);
     auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;
     auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
-    auto EmitReturnExpr(ReturnExpr* expr) -> llvm::Value* { Todo(); }
+    auto EmitReturnExpr(ReturnExpr* expr) -> llvm::Value*;
     auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
     auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;

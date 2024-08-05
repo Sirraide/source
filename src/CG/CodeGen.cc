@@ -275,15 +275,18 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         builder.CreateStore(&a, locals.at(p));
 
     // Emit the body.
-    Emit(proc->body);
-
-    // Emit a return statement if we fell off the end.
-    // TODO: Actually add a return stmt to the AST.
-    builder.CreateRetVoid();
+    Emit(proc->body.get());
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
     return EmitProcAddress(expr->decl);
+}
+
+auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> llvm::Value* {
+    auto val = expr->value.get_or_null();
+    if (val) builder.CreateRet(Emit(val));
+    else builder.CreateRetVoid();
+    return {};
 }
 
 auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {

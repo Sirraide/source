@@ -323,8 +323,7 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
 }
 
 auto EvaluationContext::IntValue(std::integral auto val) -> Value {
-    // FIXME: Change to 'int'.
-    return Value{APInt{64, u64(val)}, tu.I64Ty};
+    return Value{APInt{64, u64(val)}, Types::IntTy};
 }
 
 /*auto EvaluationContext::Executor() -> class Executor& {
@@ -423,7 +422,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     auto args = call->args();
 
     // If we have a body, just evaluate it.
-    if (proc->body) {
+    if (auto body = proc->body.get_or_null()) {
         // Set up stack.
         PushStackFrame _{*this};
         auto& frame = CurrFrame();
@@ -436,7 +435,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         }
 
         // Dew it.
-        if (not Eval(out, proc->body)) return false;
+        if (not Eval(out, body)) return false;
         out = CurrFrame().return_value;
         return true;
     }

@@ -464,9 +464,11 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
 
         // <expr-eval> ::= EVAL <expr>
         case Tk::Eval: {
+            auto start = tok->location;
+            ++tok;
             auto arg = ParseExpr();
             if (not arg) return {};
-            lhs = new (*this) ParsedEvalExpr{arg.get(), tok->location};
+            lhs = new (*this) ParsedEvalExpr{arg.get(), {start, arg.get()->loc}};
         } break;
 
         // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]

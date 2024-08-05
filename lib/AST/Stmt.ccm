@@ -507,7 +507,7 @@ public:
     ProcDecl* parent;
 
     /// Not set if this is e.g. external.
-    Stmt* body;
+    Ptr<Stmt> body;
 
     /// Scope associated with this procedure, if any.
     Scope* scope = nullptr;
@@ -525,7 +525,7 @@ private:
         Linkage linkage,
         Mangling mangling,
         ProcDecl* parent,
-        Stmt* body,
+        Ptr<Stmt> body,
         Location location
     );
 
@@ -537,7 +537,7 @@ public:
         Linkage linkage,
         Mangling mangling,
         ProcDecl* parent,
-        Stmt* body,
+        Ptr<Stmt> body,
         Location location
     ) -> ProcDecl*;
 
