@@ -154,11 +154,20 @@ ProcDecl::ProcDecl(
     Mangling mangling,
     ProcDecl* parent,
     Ptr<Stmt> body,
+    ArrayRef<TemplateTypeDecl*> template_params,
     Location location
 ) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
+    num_template_params{u32(template_params.size())},
     parent{parent},
     body{body} {
     owner->procs.push_back(this);
+
+    std::uninitialized_copy_n(
+        template_params.begin(),
+        template_params.size(),
+        getTrailingObjects<TemplateTypeDecl*>()
+    );
+
     ComputeDependence();
 }
 
@@ -170,10 +179,22 @@ auto ProcDecl::Create(
     Mangling mangling,
     ProcDecl* parent,
     Ptr<Stmt> body,
-    Location location
+    Location location,
+    ArrayRef<TemplateTypeDecl*> template_params
 ) -> ProcDecl* {
-    auto mem = tu.allocate(sizeof(ProcDecl), alignof(ProcDecl));
-    return ::new (mem) ProcDecl{&tu, type, name, linkage, mangling, parent, body, location};
+    auto size = totalSizeToAlloc<TemplateTypeDecl*>(template_params.size());
+    auto mem = tu.allocate(size, alignof(ProcDecl));
+    return ::new (mem) ProcDecl{
+        &tu,
+        type,
+        name,
+        linkage,
+        mangling,
+        parent,
+        body,
+        template_params,
+        location,
+    };
 }
 
 void ProcDecl::finalise(ArrayRef<LocalDecl*> vars) {
@@ -188,6 +209,26 @@ auto ProcDecl::proc_type() const -> ProcType* {
 
 auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
+}
+
+TemplateTypeDecl::TemplateTypeDecl(
+    String name,
+    ArrayRef<u32> deduced_indices,
+    Location location
+) : Decl{Kind::TemplateTypeDecl, name, location},
+    num_deduced_indices{u32(deduced_indices.size())} {
+    std::uninitialized_copy_n(deduced_indices.begin(), deduced_indices.size(), getTrailingObjects<u32>());
+}
+
+auto TemplateTypeDecl::Create(
+    TranslationUnit& tu,
+    String name,
+    ArrayRef<u32> deduced_indices,
+    Location location
+) -> TemplateTypeDecl* {
+    auto size = totalSizeToAlloc<u32>(deduced_indices.size());
+    auto mem = tu.allocate(size, alignof(TemplateTypeDecl));
+    return ::new (mem) TemplateTypeDecl{name, deduced_indices, location};
 }
 
 // ============================================================================

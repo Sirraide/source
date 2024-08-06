@@ -10,6 +10,7 @@ import srcc;
 import :enums;
 
 export namespace srcc {
+class TemplateTypeDecl;
 class TranslationUnit;
 class Types;
 #define AST_TYPE(node) class node;
@@ -18,7 +19,6 @@ class Types;
 template <typename Wrapped>
 class TypeWrapper;
 using Type = TypeWrapper<TypeBase>;
-
 
 /// Casting.
 template <typename To, typename From> auto cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To>;
@@ -99,7 +99,6 @@ class srcc::BuiltinType final : public TypeBase {
         : TypeBase{Kind::BuiltinType, dep}, b_kind{kind} {}
 
 public:
-
     /// Get the kind of this builtin type.
     auto builtin_kind() const -> BuiltinKind { return b_kind; }
 
@@ -190,7 +189,7 @@ private:
 
 // The const_cast here is fine because we never modify types anyway.
 #define PREDECLARED_TYPE(Class, Name) \
-static constexpr TypeWrapper<Class> Name = const_cast<Class*>(&Name##Impl)
+    static constexpr TypeWrapper<Class> Name = const_cast<Class*>(&Name##Impl)
 
 // FIXME: Eliminate 'TypeWrapper' in favour of a single 'Type' class and move these there?
 class srcc::Types {
@@ -329,6 +328,24 @@ public:
     static auto Get(TranslationUnit& mod, Type elem) -> SliceType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
+};
+
+class srcc::TemplateType final : public TypeBase
+    , public FoldingSetNode {
+    TemplateTypeDecl* decl;
+    explicit TemplateType(TemplateTypeDecl* decl)
+        : TypeBase{Kind::TemplateType},
+          decl{decl} {
+        ComputeDependence();
+    }
+
+public:
+    auto template_decl() const -> TemplateTypeDecl* { return decl; }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, decl); }
+    static auto Get(TranslationUnit& mod, TemplateTypeDecl* decl) -> TemplateType*;
+    static void Profile(FoldingSetNodeID& ID, TemplateTypeDecl* decl);
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::TemplateType; }
 };
 
 template <typename To, typename From>

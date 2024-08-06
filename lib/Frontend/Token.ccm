@@ -23,6 +23,7 @@ enum struct srcc::Tk : u8 {
     Invalid,
     Eof,
     Identifier,
+    TemplateType,
     CXXHeaderName,
     Integer,
     StringLiteral,
@@ -244,6 +245,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Invalid: return "<invalid>";
         case Tk::Eof: return "<eof>";
         case Tk::Identifier: return "<identifier>";
+        case Tk::TemplateType: return "<template type>";
         case Tk::CXXHeaderName: return "<cxx header name>";
         case Tk::StringLiteral: return "<string literal>";
         case Tk::Integer: return "<integer>";
@@ -378,6 +380,7 @@ auto Token::spelling(const Context& ctx) const -> String {
         default: return Spelling(type); // Always spelled the same way.
         case Tk::StringLiteral: return location.text(ctx); // Include quotes.
         case Tk::Identifier: return location.text(ctx); // May be escaped.
+        case Tk::TemplateType:
         case Tk::CXXHeaderName:
         case Tk::Integer:
         case Tk::IntegerType:
@@ -391,6 +394,7 @@ bool Token::operator==(const Token& b) {
         case Tk::Identifier:
         case Tk::StringLiteral:
         case Tk::CXXHeaderName:
+        case Tk::TemplateType:
             return text == b.text;
 
         case Tk::Integer:

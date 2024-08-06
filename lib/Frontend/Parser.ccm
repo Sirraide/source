@@ -129,13 +129,25 @@ class srcc::ParsedBuiltinType final : public ParsedType {
 public:
     BuiltinType* const ty;
 
-public:
     ParsedBuiltinType(BuiltinType* ty, Location loc)
         : ParsedType{Kind::BuiltinType, loc},
           ty{ty} {}
 
     static bool classof(const ParsedStmt* e) {
         return e->kind() == ParsedStmt::Kind::BuiltinType;
+    }
+};
+
+class srcc::ParsedNamedType final : public ParsedType {
+public:
+    String name;
+
+    ParsedNamedType(String name, Location loc)
+        : ParsedType{Kind::NamedType, loc},
+          name{name} {}
+
+    static bool classof(const ParsedStmt* e) {
+        return e->kind() == ParsedStmt::Kind::NamedType;
     }
 };
 
@@ -161,6 +173,19 @@ public:
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
+};
+
+class srcc::ParsedTemplateType final : public ParsedType {
+public:
+    String name;
+
+    ParsedTemplateType(String name, Location loc)
+        : ParsedType{Kind::TemplateType, loc},
+          name{name} {}
+
+    static bool classof(const ParsedStmt* e) {
+        return e->kind() == Kind::TemplateType;
+    }
 };
 
 // ============================================================================

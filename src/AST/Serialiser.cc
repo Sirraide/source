@@ -48,6 +48,7 @@ struct Serialiser {
     void SerialiseLocalDecl(const LocalDecl*);
     void SerialiseParamDecl(const ParamDecl*);
     void SerialiseProcDecl(const ProcDecl* proc);
+    void SerialiseTemplateTypeDecl(const TemplateTypeDecl*);
     auto SerialiseType(Type ty) -> u64;
 };
 
@@ -84,11 +85,11 @@ void Serialiser::SerialiseDecl(const Decl* d) {
 }
 
 void Serialiser::SerialiseLocalDecl(const LocalDecl*) {
-    Unreachable("Serialising local decl");
+    Todo();
 }
 
 void Serialiser::SerialiseParamDecl(const ParamDecl*) {
-    Unreachable("Serialising local decl");
+    Todo();
 }
 
 void Serialiser::SerialiseProcDecl(const ProcDecl* proc) {
@@ -97,6 +98,10 @@ void Serialiser::SerialiseProcDecl(const ProcDecl* proc) {
     W << SerialiseType(proc->type);
     W << proc->name;
     W << proc->mangling;
+}
+
+void Serialiser::SerialiseTemplateTypeDecl(const TemplateTypeDecl*) {
+    Todo();
 }
 
 auto Serialiser::SerialiseType(Type ty) -> u64 {
@@ -142,6 +147,10 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             W << SerialiseType(proc->ret());
             for (auto p : params) W << SerialiseType(p);
             return idx;
+        }
+
+        case TypeBase::Kind::TemplateType: {
+            Todo();
         }
     }
 
@@ -197,6 +206,7 @@ struct Deserialiser {
     void DeserialiseLocalDecl();
     void DeserialiseParamDecl();
     void DeserialiseProcDecl();
+    void DeserialiseTemplateTypeDecl();
     void DeserialiseType();
 };
 
@@ -221,7 +231,7 @@ void Deserialiser::DeserialiseDecl() {
 }
 
 void Deserialiser::DeserialiseLocalDecl() {
-    Unreachable("Never serialised");
+    Todo();
 }
 
 void Deserialiser::DeserialiseProcDecl() {
@@ -243,7 +253,11 @@ void Deserialiser::DeserialiseProcDecl() {
 }
 
 void Deserialiser::DeserialiseParamDecl() {
-    Unreachable("Never serialised");
+    Todo();
+}
+
+void Deserialiser::DeserialiseTemplateTypeDecl() {
+    Todo();
 }
 
 void Deserialiser::DeserialiseType() {
@@ -290,6 +304,10 @@ void Deserialiser::DeserialiseType() {
             for (u64 i = 0; i < num_params; i++) param_types.push_back(ReadType());
             deserialised_types.push_back(ProcType::Get(*M, ret, param_types, cc, variadic));
             return;
+        }
+
+        case TypeBase::Kind::TemplateType: {
+            Todo();
         }
     }
 

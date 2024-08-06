@@ -165,6 +165,7 @@ public:
     [[nodiscard]] bool EvalLocalDecl(Value& out, LocalDecl* decl);
     [[nodiscard]] bool EvalParamDecl(Value& out, LocalDecl* decl);
     [[nodiscard]] bool EvalProcDecl(Value& out, ProcDecl* proc);
+    [[nodiscard]] bool EvalTemplateTypeDecl(Value& out, TemplateTypeDecl* ttd);
 
     /// Check if we’re in a function.
     [[nodiscard]] bool InFunction() { return not stack.empty(); }
@@ -492,8 +493,9 @@ bool EvaluationContext::EvalIntLitExpr(Value& out, IntLitExpr* int_lit) {
     return true;
 }
 
-bool EvaluationContext::EvalLocalDecl(Value&, LocalDecl*) {
-    Unreachable("Evaluating local decl?");
+bool EvaluationContext::EvalLocalDecl(Value&, LocalDecl* ld) {
+    Error(ld->location(), "Local variable is not a constant expression");
+    return false;
 }
 
 bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
@@ -513,12 +515,16 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     Unreachable("Local variable not found: {}", local->decl->name);
 }
 
-bool EvaluationContext::EvalParamDecl(Value&, LocalDecl*) {
-    Unreachable("Evaluating local decl?");
+bool EvaluationContext::EvalParamDecl(Value& out, LocalDecl* ld) {
+    return EvalLocalDecl(out, ld);
 }
 
 bool EvaluationContext::EvalProcDecl(Value&, ProcDecl*) {
-    return true; // Proc decls are never ‘evaluated’.
+    Unreachable("Never evaluated");
+}
+
+bool EvaluationContext::EvalTemplateTypeDecl(Value&, TemplateTypeDecl*) {
+    Unreachable("Syntactically impossible to get here");
 }
 
 bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {

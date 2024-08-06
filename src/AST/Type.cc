@@ -14,7 +14,7 @@ using namespace srcc;
 //  Helpers
 // ============================================================================
 template <typename T, typename... Args>
-auto FindOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
+auto GetOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
     FoldingSetNodeID ID;
     T::Profile(ID, std::forward<Args>(args)...);
 
@@ -61,6 +61,8 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
         }
 
         case Kind::ProcType: return Align{8}; // FIXME: Get closure alignment from context.
+
+        case Kind::TemplateType: Unreachable("Requested size of dependent type");
     }
 
     Unreachable("Invalid type kind");
@@ -155,6 +157,11 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
             auto* slice = cast<SliceType>(this);
             return std::format("{}{}[]", slice->elem()->print_impl(C), C(Red));
         }
+
+        case Kind::TemplateType: {
+            auto* tt = cast<TemplateType>(this);
+            return std::format("{}{}", C(Yellow), tt->template_decl()->name);
+        }
     }
 
     Unreachable("Invalid type kind");
@@ -186,6 +193,8 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             auto arr = cast<ArrayType>(this);
             return arr->elem()->array_size(tu) * usz(arr->dimension());
         }
+
+        case Kind::TemplateType: Unreachable("Requested size of dependent type");
     }
 
     Unreachable("Invalid type kind");
@@ -229,6 +238,9 @@ auto TypeBase::value_category() const -> ValueCategory {
 
         // Invalid, can’t be instantiated; return some random nonsense.
         case Kind::ProcType: return Expr::DValue;
+
+        // Dependent.
+        case Kind::TemplateType: return Expr::DValue;
     }
 
     Unreachable("Invalid type kind");
@@ -240,7 +252,7 @@ auto TypeBase::value_category() const -> ValueCategory {
 // ============================================================================
 auto ArrayType::Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType* {
     auto CreateNew = [&] { return new (mod) ArrayType{elem, size}; };
-    return FindOrCreateType(mod.array_types, CreateNew, elem, size);
+    return GetOrCreateType(mod.array_types, CreateNew, elem, size);
 }
 
 void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
@@ -250,7 +262,7 @@ void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
 
 auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
     auto CreateNew = [&] { return new (mod) IntType{bits}; };
-    return FindOrCreateType(mod.int_types, CreateNew, bits);
+    return GetOrCreateType(mod.int_types, CreateNew, bits);
 }
 
 void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
@@ -259,7 +271,7 @@ void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
 
 auto ReferenceType::Get(TranslationUnit& mod, Type elem) -> ReferenceType* {
     auto CreateNew = [&] { return new (mod) ReferenceType{elem}; };
-    return FindOrCreateType(mod.reference_types, CreateNew, elem);
+    return GetOrCreateType(mod.reference_types, CreateNew, elem);
 }
 
 void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
@@ -284,7 +296,7 @@ auto ProcType::Get(
         };
     };
 
-    return FindOrCreateType(
+    return GetOrCreateType(
         mod.proc_types,
         CreateNew,
         return_type,
@@ -320,9 +332,18 @@ void ProcType::Profile(FoldingSetNodeID& ID, Type return_type, ArrayRef<Type> pa
     for (auto t : param_types) ID.AddPointer(t.as_opaque_ptr());
 }
 
+auto TemplateType::Get(TranslationUnit& tu, TemplateTypeDecl* decl) -> TemplateType* {
+    auto CreateNew = [&] { return new (tu) TemplateType{decl}; };
+    return GetOrCreateType(tu.template_types, CreateNew, decl);
+}
+
+void TemplateType::Profile(FoldingSetNodeID& ID, TemplateTypeDecl* decl) {
+    ID.AddPointer(decl);
+}
+
 auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {
     auto CreateNew = [&] { return new (mod) SliceType{elem}; };
-    return FindOrCreateType(mod.slice_types, CreateNew, elem);
+    return GetOrCreateType(mod.slice_types, CreateNew, elem);
 }
 
 void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {

@@ -100,6 +100,10 @@ void ComputeDependence(ProcDecl* d) {
     if (auto body = d->body.get_or_null()) d->set_dependence(body->dependence());
 }
 
+void ComputeDependence(TemplateTypeDecl* d) {
+    d->set_dependence(Dependence::Type);
+}
+
 void ComputeDependence(ReturnExpr* e) {
     if (auto value = e->value.get_or_null())
         e->set_dependence(value->dependence());
@@ -137,6 +141,10 @@ void ComputeDependence(ProcType* proc) {
     Dependence d = proc->ret()->dep;
     for (auto param : proc->params()) d |= param->dep;
     proc->dep = d;
+}
+
+void ComputeDependence(TemplateType* ty) {
+    ty->dep = Dependence::Type;
 }
 
 void TypeBase::ComputeDependence() {

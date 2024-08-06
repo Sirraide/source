@@ -132,6 +132,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
 }
 
 auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult {
+    if (name.empty()) return LookupResult(name);
     while (in_scope) {
         // Look up the name in the this scope.
         auto it = in_scope->decls.find(name);
@@ -233,6 +234,10 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
     auto callee_proc = dyn_cast<ProcRefExpr>(callee);
     if (not isa<ProcRefExpr>(callee_proc))
         return Error(callee->location(), "Attempt to call non-procedure");
+
+    // TODO: Perform template instantiation.
+    if (callee_proc->decl->is_template())
+        Todo("Instantiate template");
 
     auto params = callee_proc->decl->proc_type()->params();
     if (args.size() != params.size()) {
@@ -346,7 +351,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     }
 
     // Or complain if the type doesn’t match.
-    else {
+    else if (not proc->return_type()->dependent()) {
         Type ret = value.invalid() ? Types::VoidTy : value.get()->type;
         if (ret != proc->return_type()) Error(
             loc,
@@ -355,6 +360,10 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
             proc->return_type().print(ctx.use_colours())
         );
     }
+
+    // Stop here if the procedure type is still dependent.
+    if (proc->return_type()->dependent())
+        return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
 
     // Perform any necessary conversions.
     if (auto val = value.get_or_null()) {
@@ -472,7 +481,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 //  Translation of Individual Statements
 // ============================================================================
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
-    ScopeRAII scope{*this};
+    EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, parsed->stmts());
 
@@ -640,9 +649,8 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
 }
 
 auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt> {
-    ScopeRAII scope{*this, true};
+    EnterScope scope{*this, decl->scope};
     Assert(parsed->body);
-    decl->scope = scope.get();
 
     // Translate parameters.
     auto ty = decl->proc_type();
@@ -673,7 +681,9 @@ auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr> {
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.
 auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
-    auto type = TranslateProcType(parsed->type);
+    EnterScope scope{*this, true};
+    SmallVector<TemplateTypeDecl*> ttds;
+    auto type = TranslateProcType(parsed->type, &ttds);
     auto proc = ProcDecl::Create(
         *M,
         type,
@@ -682,12 +692,14 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         Mangling::None,
         proc_stack.empty() ? nullptr : proc_stack.back().proc,
         nullptr,
-        parsed->loc
+        parsed->loc,
+        ttds
     );
 
-    // Add the procedure to the module and the current scope.
+    // Add the procedure to the module and the parent scope.
     proc_decl_map[parsed] = proc;
-    AddDeclToScope(curr_scope(), proc);
+    proc->scope = scope.get();
+    AddDeclToScope(scope.get()->parent(), proc);
     return proc;
 }
 
@@ -700,9 +712,6 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -727,10 +736,119 @@ auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
     return parsed->ty;
 }
 
-auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
+auto Sema::TranslateNamedType(ParsedNamedType* parsed) -> Type {
+    auto res = LookUpName(curr_scope(), parsed->name, parsed->loc);
+    if (not res) return Types::ErrorDependentTy;
+
+    // Currently, the only type declaration we can find this way is a template type.
+    if (auto ttd = dyn_cast<TemplateTypeDecl>(res.decls.front()))
+        return TemplateType::Get(*M, ttd);
+
+    Error(parsed->loc, "'{}' does not name a type", parsed->name);
+    Note(res.decls.front()->location(), "Declared here");
+    return Types::ErrorDependentTy;
+}
+
+auto Sema::TranslateProcType(
+    ParsedProcType* parsed,
+    SmallVectorImpl<TemplateTypeDecl*>* ttds
+) -> Type {
     SmallVector<Type, 10> params;
-    for (auto a : parsed->param_types()) params.push_back(TranslateType(a));
+
+    // We may have to handle template parameters here.
+    //
+    // In Source, template parameters are declared using a template type
+    // token, e.g. '$type', in the parameter list of a function declaration;
+    // these declarations serve a twofold purpose:
+    //
+    //    1. To introduce a new template parameter.
+    //    2. To signify where that parameter should be deduced.
+    //
+    // The first is self-explanatory. The second has to do with the fact that
+    // we sometimes want to enforce that certain arguments have the exact same
+    // type, and sometimes, we just want the parameters to have the same type,
+    // i.e. we want to permit implicit conversions at the call site.
+    //
+    // To accomplish this, a template type is deduced from a parameter, iff that
+    // parameter’s type is a template type that uses the '$' sigil. Consider:
+    //
+    //   proc foo (T a, $T b, $T c) { ... }
+    //
+    // In this procedure, all of 'a', 'b', and 'c' will have the same type, that
+    // being 'T'. However, what type 'T' actually is will be deduced from the
+    // arguments passed in for 'b' and 'c' only. Furthermore, template parameters
+    // are order-independent, since we sometimes want to be able to deduce a
+    // parameter at an occurrence other than its first. Thus, consider the call:
+    //
+    //   foo(1 as i16, 2 as i32, 3 as i32)
+    //
+    // This succeeds because the type of 'T' is deduced to be 'i32' for both 'b'
+    // and 'c', and the 'i16' passed for 'a' is converted to 'i32' accordingly;
+    // next, consider:
+    //
+    //   foo(1 as i16, 2 as i16, 3 as i32)
+    //
+    // This call fails because we can’t deduce a type for 'T' that satisfies both
+    // 'b' and 'c'.
+    if (ttds) {
+        struct TemplateDecl {
+            String name;
+            Location loc;
+            SmallVector<u32, 1> deduced_indices;
+        };
+
+        // Can’t really do a DenseMap of strings too well, so we just use a vector.
+        SmallVector<TemplateDecl, 4> template_param_decls{parsed->param_types().size()};
+
+        // First, do a prescan to collect template type defs.
+        for (auto [i, a] : enumerate(parsed->param_types())) {
+            if (auto ptt = dyn_cast<ParsedTemplateType>(a)) {
+                auto& [name, loc, deduced_indices] = template_param_decls[i];
+                name = ptt->name;
+                if (deduced_indices.empty()) loc = ptt->loc;
+                deduced_indices.push_back(u32(i));
+            }
+        }
+
+        // Then build all the template type decls.
+        for (auto& [name, loc, deduced_indices] : template_param_decls) {
+            if (deduced_indices.empty()) continue;
+            auto ttd = ttds->emplace_back(TemplateTypeDecl::Create(*M, name, deduced_indices, loc));
+            AddDeclToScope(curr_scope(), ttd);
+        }
+    }
+
+    // Then, compute the actual parameter types.
+    for (auto a : parsed->param_types()) {
+        // Template types encountered here introduce a template parameter
+        // instead of referencing one, so we process them manually as the
+        // usual translation machinery isn’t equipped to handle template
+        // definitions.
+        //
+        // At this point, the only thing in the scope here should be the
+        // template parameters, so lookup should never find anything else.
+        if (auto ptt = dyn_cast<ParsedTemplateType>(a); ptt and ttds) {
+            auto res = LookUpUnqualifiedName(curr_scope(), ptt->name, true);
+            Assert(res.successful(), "Template parameter should have been declared earlier");
+            Assert(res.decls.size() == 1 and isa<TemplateTypeDecl>(res.decls.front()));
+            params.push_back(TemplateType::Get(*M, cast<TemplateTypeDecl>(res.decls.front())));
+        }
+
+        // Anything else is parsed as a regular type.
+        //
+        // If this is a template parameter that occurs in a context where
+        // it is not allowed (e.g. in a function type that is not part of
+        // a procedure definition), type translation will handle that case
+        // and return an error.
+        else { params.push_back(TranslateType(a)); }
+    }
+
     return ProcType::Get(*M, TranslateType(parsed->ret_type), params);
+}
+
+auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
+    Error(parsed->loc, "A template type declaration is only allowed in the parameter list of a procedure");
+    return Types::ErrorDependentTy;
 }
 
 auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
@@ -741,9 +859,6 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
     }
 
     Unreachable("Not a valid type kind: {}", +parsed->kind());

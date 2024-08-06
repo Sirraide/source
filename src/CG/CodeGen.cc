@@ -72,6 +72,8 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
 
             Unreachable("Unknown builtin type");
         }
+
+        case TypeBase::Kind::TemplateType: Unreachable("TemplateType in codegen?");
     }
 
     Unreachable("Unknown type kind");
@@ -249,11 +251,14 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
+    Assert(not proc->is_template(), "Requested address of template");
     auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
     return cast<llvm::Function>(callee.getCallee());
 }
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
+    if (proc->is_template()) return;
+
     // Create the procedure.
     auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
     curr_func = cast<llvm::Function>(callee.getCallee());

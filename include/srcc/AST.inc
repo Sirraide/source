@@ -39,7 +39,9 @@ AST_STMT_LEAF(ProcRefExpr)
 AST_STMT_LEAF(ReturnExpr)
 AST_STMT_LEAF(SliceDataExpr)
 AST_STMT_LEAF(StrLitExpr)
+
 AST_STMT(Decl)
+AST_DECL_LEAF(TemplateTypeDecl)
 AST_STMT(ObjectDecl)
 AST_DECL_LEAF(LocalDecl)
 AST_DECL_LEAF(ParamDecl)
@@ -53,6 +55,7 @@ AST_TYPE_LEAF(ReferenceType)
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
 AST_TYPE_LEAF(ProcType)
+AST_TYPE_LEAF(TemplateType)
 
 #undef AST_STMT_LEAF
 #undef AST_STMT

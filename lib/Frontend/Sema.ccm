@@ -19,9 +19,6 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     friend DiagsProducer;
     class Importer;
     friend Importer;
-    Context& ctx;
-    TranslationUnit::Ptr M;
-    ArrayRef<ParsedModule::Ptr> parsed_modules;
 
     struct ProcScopeInfo {
         ProcDecl* proc;
@@ -38,52 +35,13 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         ~EnterProcedure() { S.proc_stack.pop_back(); }
     };
 
-    /// All scopes that have been created.
-    std::vector<std::unique_ptr<Scope>> all_scopes;
-
-    /// Stack of active procedures.
-    SmallVector<ProcScopeInfo> proc_stack;
-
-    /// Stack of active scopes.
-    SmallVector<Scope*> scope_stack;
-
-    /// Map from parsed procedures to their declarations.
-    DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
-
-    /// Map from module names to imported modules.
-    StringMap<TranslationUnit*> imported_modules;
-
-    explicit Sema(Context& ctx) : ctx(ctx) {}
-
-public:
-    /// Analyse a set of parsed modules and combine them into a single module.
-    ///
-    /// @return The combined module, or `nullptr` if there was an error.
-    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr;
-
-    /// Get the context.
-    auto context() const -> Context& { return ctx; }
-
-    /// Get the current procedure.
-    auto curr_proc() -> ProcScopeInfo& {
-        Assert(not proc_stack.empty(), "Procedure stack underflow");
-        return proc_stack.back();
-    }
-
-    /// Get the current scope.
-    auto curr_scope() -> Scope* { return scope_stack.back(); }
-
-    /// Get the global scope.
-    auto global_scope() -> Scope* { return scope_stack.front(); }
-
-private:
     /// RAII Object to push and pop a scope.
-    class [[nodiscard]] ScopeRAII {
+    class [[nodiscard]] EnterScope {
         Sema& S;
         Scope* scope;
 
     public:
-        ScopeRAII(Sema& S, bool proc_scope = false)
+        EnterScope(Sema& S, bool proc_scope = false)
             : S{S} {
             auto sc = std::make_unique<Scope>(S.curr_scope(), proc_scope);
             scope = sc.get();
@@ -91,19 +49,23 @@ private:
             S.all_scopes.push_back(std::move(sc));
         }
 
+        EnterScope(Sema& S, Scope* scope) : S{S} {
+            S.scope_stack.push_back(scope);
+        }
+
         /// Pop the scope if it is still active.
-        ~ScopeRAII() {
+        ~EnterScope() {
             if (scope) S.scope_stack.pop_back();
         }
 
         /// Not copyable since copying scopes is nonsense.
-        ScopeRAII(const ScopeRAII&) = delete;
-        const ScopeRAII& operator=(const ScopeRAII&) = delete;
+        EnterScope(const EnterScope&) = delete;
+        const EnterScope& operator=(const EnterScope&) = delete;
 
         /// However, we may want to pass these to functions in some cases
         /// to open a new scope or indicate that they do so.
-        ScopeRAII(ScopeRAII&& other) : S{other.S}, scope{std::exchange(other.scope, nullptr)} {}
-        ScopeRAII& operator=(ScopeRAII&& other) {
+        EnterScope(EnterScope&& other) : S{other.S}, scope{std::exchange(other.scope, nullptr)} {}
+        EnterScope& operator=(EnterScope&& other) {
             Assert(&S == &other.S, "Cannot move scope between semas");
             scope = std::exchange(other.scope, nullptr);
             return *this;
@@ -147,6 +109,7 @@ private:
 
         /// Check if this lookup result is a success.
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
+        [[nodiscard]] explicit operator bool() const { return successful(); }
 
         /// Create an ambiguous lookup result.
         static auto Ambiguous(String name, ArrayRef<Decl*> decls) -> LookupResult { return LookupResult{decls, name, Reason::Ambiguous}; }
@@ -154,6 +117,49 @@ private:
         static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, "", Reason::Success}; }
     };
 
+    Context& ctx;
+    TranslationUnit::Ptr M;
+    ArrayRef<ParsedModule::Ptr> parsed_modules;
+
+    /// All scopes that have been created.
+    std::vector<std::unique_ptr<Scope>> all_scopes;
+
+    /// Stack of active procedures.
+    SmallVector<ProcScopeInfo> proc_stack;
+
+    /// Stack of active scopes.
+    SmallVector<Scope*> scope_stack;
+
+    /// Map from parsed procedures to their declarations.
+    DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
+
+    /// Map from module names to imported modules.
+    StringMap<TranslationUnit*> imported_modules;
+
+    explicit Sema(Context& ctx) : ctx(ctx) {}
+
+public:
+    /// Analyse a set of parsed modules and combine them into a single module.
+    ///
+    /// @return The combined module, or `nullptr` if there was an error.
+    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr;
+
+    /// Get the context.
+    auto context() const -> Context& { return ctx; }
+
+    /// Get the current procedure.
+    auto curr_proc() -> ProcScopeInfo& {
+        Assert(not proc_stack.empty(), "Procedure stack underflow");
+        return proc_stack.back();
+    }
+
+    /// Get the current scope.
+    auto curr_scope() -> Scope* { return scope_stack.back(); }
+
+    /// Get the global scope.
+    auto global_scope() -> Scope* { return scope_stack.front(); }
+
+private:
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
@@ -183,8 +189,12 @@ private:
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
 
-    /// Use LookUpName() instead.
-    auto LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult;
+    /// Perform unqualified name lookup.
+    auto LookUpUnqualifiedName(
+        Scope* in_scope,
+        String name,
+        bool this_scope_only
+    ) -> LookupResult;
 
     /// Look up a name in a scope.
     ///
@@ -228,7 +238,6 @@ private:
 
     /// Statements.
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
-    auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
     auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr>;
     auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
     auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
@@ -250,6 +259,13 @@ private:
     auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
 
     /// Types.
-    auto TranslateProcType(ParsedProcType* parsed) -> Type;
+    auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
+    auto TranslateNamedType(ParsedNamedType* parsed) -> Type;
+    auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedType* parsed) -> Type;
+
+    auto TranslateProcType(
+        ParsedProcType* parsed,
+        SmallVectorImpl<TemplateTypeDecl*>* ttds = nullptr
+    ) -> Type;
 };

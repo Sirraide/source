@@ -193,6 +193,8 @@ void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) 
 void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
         case Kind::BuiltinType:
+        case Kind::NamedType:
+        case Kind::TemplateType:
         case Kind::ProcType:
             std::print("{}Type {}\n", C(Red), cast<ParsedType>(s)->str(C));
             break;
@@ -318,6 +320,12 @@ auto ParsedType::str(utils::Colours C) -> std::string {
                 out += cast<ParsedBuiltinType>(type)->ty->print(C.use_colours);
                 break;
 
+            case Kind::NamedType: {
+                auto t = cast<ParsedNamedType>(type);
+                out += C(Cyan);
+                out += t->name;
+            } break;
+
             case Kind::ProcType: {
                 auto p = cast<ParsedProcType>(type);
                 out += C(Red);
@@ -340,6 +348,16 @@ auto ParsedType::str(utils::Colours C) -> std::string {
                     out += C(Red);
                     out += ")";
                 }
+
+                out += " -> ";
+                Append(p->ret_type);
+            } break;
+
+            case Kind::TemplateType: {
+                auto t = cast<ParsedTemplateType>(type);
+                out += C(Yellow);
+                out += "$";
+                out += t->name;
             } break;
 
 #define PARSE_TREE_LEAF_TYPE(node)
@@ -752,7 +770,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     }
 }
 
-// <type> ::= <type-prim>
+// <type> ::= <type-prim> | TEMPLATE-TYPE | IDENTIFIER
 auto Parser::ParseType() -> Ptr<ParsedType> {
     auto Builtin = [&](BuiltinType* ty) {
         auto loc = tok->location;
@@ -766,6 +784,21 @@ auto Parser::ParseType() -> Ptr<ParsedType> {
         // <type-prim> ::= INT | VOID
         case Tk::Int: return Builtin(Types::IntTy.ptr());
         case Tk::Void: return Builtin(Types::VoidTy.ptr());
+
+        // TEMPLATE-TYPE
+        case Tk::TemplateType: {
+            // Drop the '$' from the type.
+            auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
+            ++tok;
+            return ty;
+        }
+
+        // IDENTIFIER
+        case Tk::Identifier: {
+            auto ty = new (*this) ParsedNamedType(tok->text, tok->location);
+            ++tok;
+            return ty;
+        }
     }
 }
 

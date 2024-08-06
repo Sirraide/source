@@ -233,8 +233,11 @@ void Stmt::Printer::Print(Stmt* e) {
                 p->type.print(C.use_colours)
             );
 
+            SmallVector<Stmt*> children{p->template_params()};
+            children.append(p->params().begin(), p->params().end());
             if (auto body = p->body.get_or_null(); body and print_procedure_bodies)
-                PrintChildren(body);
+                children.push_back(body);
+            PrintChildren(children);
         } break;
 
         case Kind::ProcRefExpr: {
@@ -268,6 +271,12 @@ void Stmt::Printer::Print(Stmt* e) {
                 C(Yellow),
                 utils::Escape(cast<StrLitExpr>(e)->value)
             );
+        } break;
+
+        case Kind::TemplateTypeDecl: {
+            auto t = cast<TemplateTypeDecl>(e);
+            PrintBasicHeader(t, "TemplateTypeDecl");
+            std::print(" {}${}\n", C(Yellow), t->name);
         } break;
     }
 }

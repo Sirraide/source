@@ -14,7 +14,7 @@ using namespace srcc;
 // ===========================================================================
 /// Check if a character is allowed at the start of an identifier.
 constexpr bool IsStart(char c) {
-    return llvm::isAlpha(c) or c == '_' or c == '$';
+    return llvm::isAlpha(c) or c == '_';
 }
 
 /// Check if a character is allowed in an identifier.
@@ -138,7 +138,7 @@ struct Lexer {
     void HandleCommentToken();
     void LexCXXHeaderName();
     void LexEscapedId();
-    void LexIdentifierRest();
+    void LexIdentifierRest(bool dollar);
     bool LexNumber(bool zero);
     void LexString(char delim);
     void Next();
@@ -301,6 +301,10 @@ void Lexer::NextImpl() {
             LexEscapedId();
             return;
 
+        case '$':
+            LexIdentifierRest(true);
+            return;
+
         case '"':
         case '\'':
             LexString(c);
@@ -324,7 +328,7 @@ void Lexer::NextImpl() {
             return;
 
         default:
-            if (IsStart(c)) return LexIdentifierRest();
+            if (IsStart(c)) return LexIdentifierRest(false);
             Error(CurrLoc() << 1, "Unexpected <U+{:X}> character in program", c);
             break;
     }
@@ -355,10 +359,11 @@ void Lexer::SkipWhitespace() {
     while (llvm::isSpace(Curr())) curr++;
 }
 
-void Lexer::LexIdentifierRest() {
-    tok().type = Tk::Identifier;
+void Lexer::LexIdentifierRest(bool dollar) {
+    tok().type = dollar ? Tk::TemplateType: Tk::Identifier;
     while (IsContinue(Curr())) curr++;
     FinishText();
+    if (dollar) return;
 
     // Keywords.
     if (auto k = keywords.find(tok().text); k != keywords.end()) {

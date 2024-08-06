@@ -108,6 +108,7 @@ public:
     FoldingSet<ReferenceType> reference_types;
     FoldingSet<ProcType> proc_types;
     FoldingSet<SliceType> slice_types;
+    FoldingSet<TemplateType> template_types;
 
     /// Create a new module.
     static auto Create(Context& ctx, String name, bool is_module) -> Ptr {

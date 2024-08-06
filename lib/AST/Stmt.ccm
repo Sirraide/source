@@ -418,26 +418,60 @@ public:
 // ============================================================================
 //  Declarations
 // ============================================================================
-class srcc::Decl : public Expr {
+class srcc::Decl : public Stmt {
 public:
     String name;
 
 protected:
     Decl(
         Kind kind,
-        Type type,
         String name,
         Location location
-    ) : Expr{kind, type, LValue, location}, name{name} {}
+    ) : Stmt{kind, location}, name{name} {}
 
 public:
-    static bool classof(const Stmt* e) { return e->kind() >= Kind::LocalDecl; }
+    static bool classof(const Stmt* e) {
+        return e->kind() >= Kind::TemplateTypeDecl;
+    }
+};
+
+class srcc::TemplateTypeDecl final : public Decl
+    , llvm::TrailingObjects<TemplateTypeDecl, u32> {
+    friend TrailingObjects;
+    u32 num_deduced_indices;
+    auto numTrailingObjects(OverloadToken<u32>) -> usz { return num_deduced_indices; }
+
+    TemplateTypeDecl(
+        String name,
+        ArrayRef<u32> deduced_indices,
+        Location location
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        String name,
+        ArrayRef<u32> deduced_indices,
+        Location location
+    ) -> TemplateTypeDecl*;
+
+    /// Get the indices of any parameters of the procedure that this
+    /// declaration belongs to from which the type of this declaration
+    /// shall be deduced.
+    auto deduced_inidices() -> ArrayRef<u32> {
+        return {getTrailingObjects<u32>(), num_deduced_indices};
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeDecl; }
 };
 
 class srcc::LocalDecl : public Decl {
 public:
     /// The immediate parent whose stack frame this belongs to.
     ProcDecl* parent;
+
+    /// The type of this decl.
+    Type type;
 
 protected:
     LocalDecl(
@@ -446,9 +480,9 @@ protected:
         String name,
         ProcDecl* parent,
         Location location
-    ) : Decl{k, type, name, location},
-        parent{parent} {}
-
+    ) : Decl{k, name, location},
+        parent{parent},
+        type{type} {}
 
 public:
     LocalDecl(
@@ -481,6 +515,7 @@ public:
     TranslationUnit* owner;
     Linkage linkage;
     Mangling mangling;
+    Type type;
 
 protected:
     ObjectDecl(
@@ -491,17 +526,23 @@ protected:
         Linkage linkage,
         Mangling mangling,
         Location location
-    ) : Decl{kind, type, name, location},
+    ) : Decl{kind, name, location},
         owner{owner},
         linkage{linkage},
-        mangling{mangling} {}
+        mangling{mangling},
+        type{type} {}
 
 public:
     static bool classof(const Stmt* e) { return e->kind() >= Kind::ProcDecl; }
 };
 
 /// Procedure declaration.
-class srcc::ProcDecl final : public ObjectDecl {
+class srcc::ProcDecl final : public ObjectDecl
+    , llvm::TrailingObjects<ProcDecl, TemplateTypeDecl*> {
+    friend TrailingObjects;
+    const u32 num_template_params;
+    auto numTrailingObjects(OverloadToken<TemplateTypeDecl*>) -> usz { return num_template_params; }
+
 public:
     /// May be null if this is a top-level procedure.
     ProcDecl* parent;
@@ -526,6 +567,7 @@ private:
         Mangling mangling,
         ProcDecl* parent,
         Ptr<Stmt> body,
+        ArrayRef<TemplateTypeDecl*> template_params,
         Location location
     );
 
@@ -538,7 +580,8 @@ public:
         Mangling mangling,
         ProcDecl* parent,
         Ptr<Stmt> body,
-        Location location
+        Location location,
+        ArrayRef<TemplateTypeDecl*> template_params = {}
     ) -> ProcDecl*;
 
     /// Finalise analysing a procedure.
@@ -546,6 +589,9 @@ public:
     /// \param locals The declarations for all parameters and
     ///        local variables of this procedure.
     void finalise(ArrayRef<LocalDecl*> locals);
+
+    /// Whether this is a template.
+    bool is_template() const { return num_template_params > 0; }
 
     /// Get the procedure type.
     auto proc_type() const -> ProcType*;
@@ -558,6 +604,11 @@ public:
 
     /// Get the procedure's return type.
     auto return_type() -> Type;
+
+    /// Get the template parameters.
+    auto template_params() -> ArrayRef<TemplateTypeDecl*> {
+        return {getTrailingObjects<TemplateTypeDecl*>(), num_template_params};
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };
