@@ -160,11 +160,7 @@ int Driver::Impl::run_job() {
                         lc->col + tok.location.len - 1
                     );
 
-                    if (tok.type == Tk::StringLiteral) {
-                        std::println("{}", utils::Escape(tok.spelling(ctx)));
-                    } else {
-                        std::println("{}", tok.spelling(ctx));
-                    }
+                    std::println("{}", tok.spelling(ctx));
                 }
             }
         }
@@ -219,7 +215,7 @@ int Driver::Impl::run_job() {
     if (ctx.diags().has_error()) return 1;
     auto ir_module = CodeGen::Emit(*module);
     ir_module->dump();
-    std::exit(42);
+    return 0;
 }
 
 auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {

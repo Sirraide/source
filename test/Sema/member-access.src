@@ -1,6 +1,6 @@
 // V %srcc --sema --verify %s
 program test;
 
-foo::bar(); // expected-error: Invalid left-hand side for '::'
+foo::bar(); // expected-error: Unknown symbol 'bar'
 
-proc foo { } // expected-note: 'foo' does not contain a scope
+proc foo { }
