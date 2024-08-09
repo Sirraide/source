@@ -84,13 +84,13 @@ public:
     void* operator new(usz size, TranslationUnit& mod);
 
     /// Get whether this statement is dependent.
-    bool dependent() const { return (dependence() & Dependence::Instantiation) != Dependence::None; }
+    bool dependent() const { return dependence() != Dependence::None; }
 
     /// Get the dependence of this statement.
     auto dependence() const -> Dependence { return dep; }
 
     /// Check if this statement contains an error.
-    bool errored() const { return (dependence() & Dependence::Error) == Dependence::Error; }
+    bool errored() const { return dependence() & Dependence::Error; }
 
     /// Dump the statement.
     void dump(bool use_colour = false) const;
@@ -458,7 +458,7 @@ public:
     /// Get the indices of any parameters of the procedure that this
     /// declaration belongs to from which the type of this declaration
     /// shall be deduced.
-    auto deduced_inidices() -> ArrayRef<u32> {
+    auto deduced_indices() -> ArrayRef<u32> {
         return {getTrailingObjects<u32>(), num_deduced_indices};
     }
 

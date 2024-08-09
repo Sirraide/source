@@ -14,9 +14,14 @@ export namespace srcc {
 class Sema;
 }
 
+namespace srcc {
+class TemplateInstantiator;
+}
+
 class srcc::Sema : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
     friend DiagsProducer;
+    friend TemplateInstantiator;
     class Importer;
     friend Importer;
 
@@ -180,8 +185,14 @@ private:
     /// Add a variable to the current scope and procedure.
     void DeclareLocal(LocalDecl* d);
 
+    /// Perform template deduction.
+    auto DeduceType(TemplateTypeDecl* ty, Type arg) -> Type;
+
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
+
+    /// Instantiate a procedure template.
+    auto InstantiateTemplate(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
 
     /// Import a C++ header as a module.
     auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
@@ -225,9 +236,12 @@ private:
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
+    /// Substitute types in a procedure template.
+    auto SubstituteTemplate(ProcDecl* proc_template, ArrayRef<TypeLoc> input_types) -> Type;
+
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
-    auto BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr>;
+    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;

@@ -8,4 +8,4 @@ proc b -> int = 42;
 // The 'eval' forces constant evaluation even if we codegen this.
 //   * value: 42
 //CG * call i32 (ptr, ...) @printf(ptr @1, i64 42)
-__builtin_print("value: ", eval a(a(a(a(a(a(b())))))), "\n");
+__srcc_print("value: ", eval a(a(a(a(a(a(b())))))), "\n");

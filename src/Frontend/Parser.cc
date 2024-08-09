@@ -560,8 +560,9 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
                     }
                 }
 
+                auto end = tok->location;
                 ConsumeOrError(Tk::RParen);
-                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc});
+                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc, end});
                 continue;
             }
 

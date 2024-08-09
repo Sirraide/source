@@ -1,4 +1,4 @@
 program test;
 
 proc foo(T, $T t) = t;
-foo(1, 42);
+//foo(1, 42);

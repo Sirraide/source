@@ -306,6 +306,10 @@ auto ProcType::Get(
     );
 }
 
+auto ProcType::GetInvalid(TranslationUnit& tu) -> ProcType* {
+    return Get(tu, Types::ErrorDependentTy, {});
+}
+
 ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,

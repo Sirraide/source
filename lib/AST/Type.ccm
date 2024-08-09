@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/PointerLikeTypeTraits.h>
@@ -19,6 +20,7 @@ class Types;
 template <typename Wrapped>
 class TypeWrapper;
 using Type = TypeWrapper<TypeBase>;
+class TypeLoc;
 
 /// Casting.
 template <typename To, typename From> auto cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To>;
@@ -155,6 +157,8 @@ public:
     /// Get this as an opaque pointer.
     auto as_opaque_ptr() const -> void* { return pointer; }
 
+    /// Check if this is null. Only useful if UnsafeNull() is used.
+
     /// Print a type.
     auto print(bool use_colour) const -> std::string {
         return pointer->print(use_colour);
@@ -175,7 +179,11 @@ public:
     }
 
     /// Construct a null `TypeWrapper`.
-    static auto UnsafeNull() -> TypeWrapper {
+    ///
+    /// This should be used very sparingly; a type that is passed
+    /// to a function or returned from one must never be null; this
+    /// is only to allow late initialisation of fields.
+    static constexpr auto UnsafeNull() -> TypeWrapper {
         TypeWrapper t;
         t.pointer = nullptr;
         return t;
@@ -185,6 +193,40 @@ private:
     constexpr void Check() {
         Assert(pointer, "Null type pointer can only be constructed with `TypeWrapper::UnsafeNull()`");
     }
+};
+
+class srcc::TypeLoc {
+public:
+    Type ty;
+    Location loc;
+    TypeLoc(Type ty, Location loc) : ty{ty}, loc{loc} {}
+};
+
+// Specialisation that uses the null state to represent a null type.
+template <typename Ty>
+class srcc::Opt<TypeWrapper<Ty>> {
+    using Type = TypeWrapper<Ty>;
+    Type val;
+
+public:
+    constexpr Opt() : val{Type::UnsafeNull()} {}
+    constexpr Opt(std::nullptr_t) : Opt() {}
+    constexpr Opt(std::nullopt_t) : Opt() {}
+    constexpr Opt(Type ty) : val{ty} {}
+    constexpr Opt(Ty* ty) : val{ty} {}
+
+    constexpr bool has_value() const { return val != Type::UnsafeNull(); }
+    constexpr auto value() const -> Type {
+        Assert(has_value());
+        return val;
+    }
+
+    constexpr auto value() -> Type& {
+        Assert(has_value());
+        return val;
+    }
+
+    constexpr explicit operator bool() const { return has_value(); }
 };
 
 // The const_cast here is fine because we never modify types anyway.
@@ -305,6 +347,8 @@ public:
         CallingConvention cconv = CallingConvention::Source,
         bool variadic = false
     ) -> ProcType*;
+
+    static auto GetInvalid(TranslationUnit& tu) -> ProcType*;
 
     static void Profile(
         FoldingSetNodeID& ID,

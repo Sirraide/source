@@ -5,12 +5,12 @@
 program x;
 
 proc foo {
-    __builtin_print("baz");
-    __builtin_print("quux\n");
+    __srcc_print("baz");
+    __srcc_print("quux\n");
 }
 
 // * foobar
-eval __builtin_print("foobar\n");
+eval __srcc_print("foobar\n");
 
 // + bazquux
 eval foo();

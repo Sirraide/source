@@ -3,6 +3,7 @@ module;
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
+#include <print>
 #include <ranges>
 #include <srcc/Macros.hh>
 
@@ -195,16 +196,16 @@ auto Sema::BuildBuiltinCallExpr(
     Location call_loc
 ) -> Ptr<BuiltinCallExpr> {
     switch (builtin) {
-        // __builtin_print takes a sequence of arguments and prints them all;
+        // __srcc_print takes a sequence of arguments and prints them all;
         // the arguments must be strings or integers.
         case BuiltinCallExpr::Builtin::Print: {
             SmallVector<Expr*> actual_args{args};
-            if (args.empty()) return Error(call_loc, "__builtin_print takes at least one argument");
+            if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
                 if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy) {
                     return Error(
                         arg->location(),
-                        "__builtin_print only accepts string literals and integers, but got {}",
+                        "__srcc_print only accepts string literals and integers, but got {}",
                         arg->type.print(ctx.use_colours())
                     );
                 }
@@ -218,33 +219,50 @@ auto Sema::BuildBuiltinCallExpr(
     Unreachable("Invalid builtin type: {}", +builtin);
 }
 
-auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
-    if (callee->dependent() or rgs::any_of(args, [](Expr* e) { return e->dependent(); })) {
+auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
+    auto BuildDependentCallExpr = [&] (Expr* callee) {
         return CallExpr::Create(
             *M,
             Types::DependentTy,
             callee,
             args,
-            callee->location()
+            loc
         );
-    }
+    };
+
+    if (callee_expr->dependent() or rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
+        return BuildDependentCallExpr(callee_expr);
 
     // Check that we can call this.
     // TODO: overload resolution.
-    auto callee_proc = dyn_cast<ProcRefExpr>(callee);
-    if (not isa<ProcRefExpr>(callee_proc))
-        return Error(callee->location(), "Attempt to call non-procedure");
+    if (not isa<ProcRefExpr>(callee_expr))
+        return Error(callee_expr->location(), "Attempt to call non-procedure");
 
-    // TODO: Perform template instantiation.
-    if (callee_proc->decl->is_template())
-        Todo("Instantiate template");
+    // Perform template instantiation, if need be.
+    //
+    // Attempt instantiate the template by performing substitution; if this fails,
+    // then we can’t call this anyway, so give up (don’t instantiate the body, and
+    // cache the result).
+    //
+    // Later, AFTER checking all the args (including non-deduced ones), instantiate
+    // the body of the function.
+    auto callee = dyn_cast<ProcRefExpr>(callee_expr)->decl;
+    ProcType* callee_type = callee->proc_type();
+    if (callee->is_template()) {
+        SmallVector<TypeLoc> types;
+        for (auto arg : args) types.emplace_back(arg->type, arg->location());
+        Type substituted = SubstituteTemplate(callee, types);
+        std::println("Substituted: {}", substituted.print(true));
+        if (substituted->dependent()) return BuildDependentCallExpr(callee_expr);
+        callee_type = cast<ProcType>(substituted).ptr();
+    }
 
-    auto params = callee_proc->decl->proc_type()->params();
+    auto params = callee_type->params();
     if (args.size() != params.size()) {
         return Error(
-            callee->location(),
+            callee_expr->location(),
             "Procedure '{}' expects {} argument{}, got {}",
-            callee_proc->decl->name,
+            callee->name,
             params.size(),
             params.size() == 1 ? "" : "s",
             args.size()
@@ -271,12 +289,21 @@ auto Sema::BuildCallExpr(Expr* callee, ArrayRef<Expr*> args) -> Ptr<CallExpr> {
         if (a->value_category == Expr::LValue) LValueToSRValue(a);
     }
 
+    // Instantiate this template.
+    if (callee->is_template()) {
+        if (not callee->body) return ICE(callee_expr->location(), "Sorry, cannot instantiate this procedure yet");
+        auto instantiation = InstantiateTemplate(callee, callee_type);
+        if (not instantiation) return nullptr;
+        callee_expr = new (*M) ProcRefExpr(instantiation.get(), callee_expr->location());
+    }
+
+    // Done!
     return CallExpr::Create(
         *M,
-        callee_proc->return_type(),
-        callee,
+        callee_type->ret(),
+        callee_expr,
         actual_args,
-        callee_proc->location()
+        loc
     );
 }
 
@@ -521,7 +548,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
     if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
         using B = BuiltinCallExpr::Builtin;
         auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front())
-                      .Case("__builtin_print", B::Print)
+                      .Case("__srcc_print", B::Print)
                       .Default(std::nullopt);
 
         // We have a builtin!
@@ -530,7 +557,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
 
     // Translate callee.
     auto callee = TRY(TranslateExpr(parsed->callee));
-    return BuildCallExpr(callee, args);
+    return BuildCallExpr(callee, args, parsed->loc);
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
@@ -668,14 +695,15 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
 /// This is only called if we’re asked to translate a procedure by the expression
 /// parser; actual procedure translation is handled elsewhere; only return a reference
 /// here.
-auto Sema::TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr> {
-    auto it = proc_decl_map.find(parsed);
+auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Ptr<Expr> {
+    Unreachable("Translating declaration as expression?");
+    /*auto it = proc_decl_map.find(parsed);
 
     // This can happen if the procedure errored somehow.
     if (it == proc_decl_map.end()) return nullptr;
 
     // The procedure has already been created.
-    return CreateReference(it->second, parsed->loc);
+    return CreateReference(it->second, parsed->loc);*/
 }
 
 /// Perform initial type checking on a procedure, enough to enable calls

@@ -59,6 +59,16 @@ void debug(std::format_string<arguments...> fmt, arguments&&... args) {
     std::print(stderr, "\n");
 }
 
+/// A wrapper around std::optional that is specialised for some types.
+template <typename Ty>
+class Opt : public std::optional<Ty> {
+    using std::optional<Ty>::optional;
+
+    // Disallow these because they’re unsafe.
+    auto operator->() -> Ty* = delete;
+    auto operator*() -> Ty& = delete;
+};
+
 /// Nullable pointer.
 template <typename Ty>
 class Ptr {

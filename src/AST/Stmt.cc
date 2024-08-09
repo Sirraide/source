@@ -236,7 +236,7 @@ auto TemplateTypeDecl::Create(
 // ============================================================================
 auto EnumToStr(BuiltinCallExpr::Builtin b) -> String {
     switch (b) {
-        case BuiltinCallExpr::Builtin::Print: return "__builtin_print";
+        case BuiltinCallExpr::Builtin::Print: return "__srcc_print";
     }
 
     return "<invalid builtin>";

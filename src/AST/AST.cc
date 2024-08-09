@@ -158,7 +158,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 std::print("{}{}", C(Green), [&] -> std::string_view {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
-                        case B::Print: return "__builtin_print";
+                        case B::Print: return "__srcc_print";
                     }
 
                     return "<invalid>";
@@ -212,8 +212,16 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ParamDecl: {
             bool is_param = e->kind() == Kind::ParamDecl;
             auto d = cast<LocalDecl>(e);
-            auto PrintName = [&] { std::print("{}{}", C(is_param ? Blue : White), d->name); };
-            PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintName);
+            auto PrintNameAndType = [&] {
+                std::print(
+                    "{}{} {}",
+                    C(is_param ? Blue : White),
+                    d->name,
+                    d->type.print(C.use_colours)
+                );
+            };
+
+            PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);
         } break;
 
         case Kind::LocalRefExpr: {
