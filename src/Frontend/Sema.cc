@@ -752,7 +752,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         type,
         parsed->name,
         Linkage::Internal,
-        Mangling::None,
+        Mangling::Source,
         proc_stack.empty() ? nullptr : proc_stack.back()->proc,
         parsed->loc,
         ttds

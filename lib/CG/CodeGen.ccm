@@ -19,6 +19,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     std::unique_ptr<llvm::Module> llvm;
     StringMap<llvm::Constant*> strings;
     DenseMap<LocalDecl*, llvm::AllocaInst*> locals;
+    DenseMap<ProcDecl*, std::string> mangled_names;
     llvm::IRBuilder<> builder;
     llvm::Function* curr_func{};
 
@@ -53,6 +54,8 @@ private:
         M.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
+    auto DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee;
+
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
     auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
@@ -77,4 +80,5 @@ private:
     auto GetString(StringRef s) -> llvm::Constant*;
 
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
+    auto MangledName(ProcDecl* proc) -> StringRef;
 };

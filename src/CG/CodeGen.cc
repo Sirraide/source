@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/ConstantFold.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
@@ -38,6 +39,107 @@ auto CodeGen::ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes {
 
     Unreachable("Unknown linkage");
 }
+
+auto CodeGen::DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee {
+    auto name = MangledName(proc);
+    return llvm->getOrInsertFunction(name, ConvertType<llvm::FunctionType>(proc->type));
+}
+
+auto CodeGen::GetString(StringRef s) -> llvm::Constant* {
+    if (auto it = strings.find(s); it != strings.end()) return it->second;
+    return strings[s] = builder.CreateGlobalStringPtr(s);
+}
+
+auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
+    return llvm::ConstantInt::get(M.llvm_context, value);
+}
+
+// ============================================================================
+//  Mangling
+// ============================================================================
+// Mangling codes:
+//
+struct Mangler {
+    std::string name;
+
+    explicit Mangler(ProcDecl* proc) {
+        name = "_S";
+        Append(proc->name);
+        Append(proc->type);
+    }
+
+    void Append(StringRef s);
+    void Append(Type ty);
+};
+
+void Mangler::Append(StringRef s) {
+    Assert(not s.empty());
+    if (not llvm::isAlpha(s.front())) name += "$";
+    name += std::format("{}{}", s.size(), s);
+}
+
+void Mangler::Append(Type ty) {
+    struct Visitor {
+        Mangler& M;
+
+        void ElemTy(StringRef s, SingleElementTypeBase* t) {
+            M.name += s;
+            t->elem()->visit(*this);
+        }
+
+        void operator()(TemplateType*) { Unreachable("Mangling dependent type?"); }
+        void operator()(SliceType* sl) { ElemTy("S", sl); }
+        void operator()(ArrayType* arr) { ElemTy(std::format("A{}", arr->dimension()), arr); }
+        void operator()(ReferenceType* ref) { ElemTy("R", ref); }
+        void operator()(IntType* i) { M.name += std::format("I{}", i->bit_width().bits()); }
+        void operator()(BuiltinType* b) {
+            switch (b->builtin_kind()) {
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                    Unreachable("Mangling dependent type?");
+                case BuiltinKind::Deduced:
+                    Unreachable("Mangling undeduced type?");
+                case BuiltinKind::Void: M.name += "v"; return;
+                case BuiltinKind::NoReturn: M.name += "z"; return;
+                case BuiltinKind::Bool: M.name += "b"; return;
+                case BuiltinKind::Int: M.name += "i"; return;
+            }
+            Unreachable();
+        }
+
+        void operator()(ProcType* proc) {
+            M.name += "F";
+            proc->ret()->visit(*this);
+            for (auto p : proc->params()) p->visit(*this);
+            M.name += "E";
+        }
+    };
+
+    ty->visit(Visitor{*this});
+}
+
+
+auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
+    Assert(not proc->is_template(), "Mangling template?");
+    if (proc->mangling == Mangling::None) return proc->name;
+
+    // Maybe we’ve already cached this?
+    auto it = mangled_names.find(proc);
+    if (it != mangled_names.end()) return it->second;
+
+    // Compute it.
+    auto name = [&] -> std::string {
+        switch (proc->mangling) {
+            case Mangling::None: Unreachable();
+            case Mangling::Source: return std::move(Mangler(proc).name);
+            case Mangling::CXX: Todo("Mangle C++ function name");
+        }
+        Unreachable("Invalid mangling");
+    }();
+
+    return mangled_names[proc] = std::move(name);
+}
+
 
 // ============================================================================
 //  Type Conversion
@@ -88,15 +190,6 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     for (auto p : ty->params()) args.push_back(ConvertType(p));
     return llvm::FunctionType::get(ret, args, ty->variadic());
     //}
-}
-
-auto CodeGen::GetString(StringRef s) -> llvm::Constant* {
-    if (auto it = strings.find(s); it != strings.end()) return it->second;
-    return strings[s] = builder.CreateGlobalStringPtr(s);
-}
-
-auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
-    return llvm::ConstantInt::get(M.llvm_context, value);
 }
 
 // ============================================================================
@@ -252,7 +345,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
 
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
     Assert(not proc->is_template(), "Requested address of template");
-    auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
+    auto callee = DeclareProcedure(proc);
     return cast<llvm::Function>(callee.getCallee());
 }
 
@@ -260,7 +353,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     if (proc->is_template()) return;
 
     // Create the procedure.
-    auto callee = llvm->getOrInsertFunction(proc->name, ConvertType<llvm::FunctionType>(proc->type));
+    auto callee = DeclareProcedure(proc);
     curr_func = cast<llvm::Function>(callee.getCallee());
     curr_func->setCallingConv(ConvertCC(proc->proc_type()->cconv()));
     curr_func->setLinkage(ConvertLinkage(proc->linkage));

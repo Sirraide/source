@@ -86,6 +86,10 @@ public:
     /// Get the value category that an expression with this type has by default.
     LLVM_READONLY auto value_category() const -> ValueCategory;
 
+    /// Visit this type.
+    template <typename Visitor>
+    auto visit(Visitor&& v) -> decltype(auto);
+
 protected:
     void ComputeDependence();
 
@@ -391,6 +395,17 @@ public:
     static void Profile(FoldingSetNodeID& ID, TemplateTypeDecl* decl);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::TemplateType; }
 };
+
+/// Visit this type.
+template <typename Visitor>
+auto srcc::TypeBase::visit(Visitor&& v) -> decltype(auto) {
+    switch (kind()) {
+#define AST_TYPE_LEAF(node) \
+    case Kind::node: return std::invoke(std::forward<Visitor>(v), static_cast<node*>(this));
+#include "srcc/AST.inc"
+    }
+    Unreachable();
+}
 
 template <typename To, typename From>
 auto srcc::cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To> {
