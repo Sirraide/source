@@ -79,9 +79,11 @@ void ComputeDependence(IntLitExpr*) {
     // Always of type 'int' and thus never dependent.
 }
 
-void ComputeDependence(LocalDecl* d) {
-    if (d->type->dependent())
-        d->set_dependence(Dependence::Type);
+void ComputeDependence(LocalDecl* decl) {
+    Dependence d = Dependence::None;
+    if (decl->type->dependent()) d |= Dependence::Type;
+    if (auto init = decl->init.get_or_null()) d |= init->dependence();
+    decl->set_dependence(d);
 }
 
 void ComputeDependence(LocalRefExpr* e) {
@@ -115,6 +117,10 @@ void ComputeDependence(SliceDataExpr* s) {
 
 void ComputeDependence(StrLitExpr*) {
     // Never dependent.
+}
+
+void ComputeDependence(TypeExpr* e) {
+    e->set_dependence(e->value->dependence());
 }
 
 void Stmt::ComputeDependence() {

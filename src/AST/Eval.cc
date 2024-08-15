@@ -37,6 +37,7 @@ void Value::dump(bool use_colour) const {
     utils::Overloaded V{// clang-format off
         [&](std::monostate) { },
         [&](ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); },
+        [&](TypeTag) { std::print("{}", ty->print(use_colour)); },
         [&](const LValue& lval) { lval.dump(use_colour); },
         [&](const APInt& value) { std::print("{}{}", C(Magenta), llvm::toString(value, 10, true)); },
         [&](const Slice&) { std::print("<slice>"); },
@@ -53,6 +54,7 @@ auto Value::value_category() const -> ValueCategory {
         [](std::monostate) { return Expr::SRValue; },
         [](ProcDecl*) { return Expr::SRValue; },
         [](Slice) { return Expr::SRValue; },
+        [](TypeTag) { return Expr::SRValue; },
         [](const APInt&) { return Expr::SRValue; },
         [](const LValue&) { return Expr::LValue; },
         [](const Reference&) { return Expr::LValue; }
@@ -161,6 +163,7 @@ public:
     [[nodiscard]] bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
     [[nodiscard]] bool EvalStrLitExpr(Value& out, StrLitExpr* str_lit);
     [[nodiscard]] bool EvalReturnExpr(Value& out, ReturnExpr* expr);
+    [[nodiscard]] bool EvalTypeExpr(Value& out, TypeExpr* expr);
 
     [[nodiscard]] bool EvalLocalDecl(Value& out, LocalDecl* decl);
     [[nodiscard]] bool EvalParamDecl(Value& out, LocalDecl* decl);
@@ -558,6 +561,11 @@ bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
     Assert(CurrFrame().return_value.isa<std::monostate>(), "Return value already set!");
     out = {};
     if (auto val = expr->value.get_or_null()) return Eval(CurrFrame().return_value, val);
+    return true;
+}
+
+bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr){
+    out = expr->value;
     return true;
 }
 

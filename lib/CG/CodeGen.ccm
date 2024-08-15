@@ -72,6 +72,7 @@ private:
     auto EmitReturnExpr(ReturnExpr* expr) -> llvm::Value*;
     auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
     auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
+    auto EmitTypeExpr(TypeExpr* expr) -> llvm::Value*;
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
 
     void EmitLocal(LocalDecl* decl);

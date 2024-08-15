@@ -297,6 +297,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(t, "TemplateTypeDecl");
             std::print(" {}${}\n", C(Yellow), t->name);
         } break;
+
+        case Kind::TypeExpr:
+            PrintBasicHeader(e, "TypeExpr");
+            std::print(" {}\n", cast<TypeExpr>(e)->value->print(C.use_colours));
+            break;
     }
 }
 

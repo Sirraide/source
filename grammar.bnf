@@ -53,7 +53,8 @@
 // ============================================================================
 //  Declarations
 // ============================================================================
-<decl> ::= <decl-proc>
+<decl> ::= <decl-proc> | <decl-var>
+<decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
 <decl-proc>  ::= PROC IDENTIFIER <signature> <proc-body>
 <signature>  ::= [ <proc-args> ] [ "->" <type> ]
 <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
@@ -63,5 +64,5 @@
 // ============================================================================
 //  Types
 // ============================================================================
-<type> ::= <type-prim> | TEMPLATE-TYPE | IDENTIFIER
-<type-prim> ::= INT | VOID
+<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref>
+<type-prim> ::= INT | VOID | VAR

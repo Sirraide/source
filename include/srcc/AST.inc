@@ -6,6 +6,10 @@
 #    define AST_STMT(node) AST_NODE(node)
 #endif
 
+#ifndef AST_INIT_LEAF
+#    define AST_INIT_LEAF(node) AST_STMT_LEAF(node)
+#endif
+
 #ifndef AST_DECL_LEAF
 #    define AST_DECL_LEAF(node) AST_STMT_LEAF(node)
 #endif
@@ -39,6 +43,7 @@ AST_STMT_LEAF(ProcRefExpr)
 AST_STMT_LEAF(ReturnExpr)
 AST_STMT_LEAF(SliceDataExpr)
 AST_STMT_LEAF(StrLitExpr)
+AST_STMT_LEAF(TypeExpr)
 
 AST_STMT(Decl)
 AST_DECL_LEAF(TemplateTypeDecl)

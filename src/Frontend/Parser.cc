@@ -46,20 +46,20 @@ void* ParsedStmt::operator new(usz size, Parser& parser) {
 // ============================================================================
 //  Types
 // ============================================================================
-ParsedProcType::ParsedProcType(ParsedType* ret_type, ArrayRef<ParsedType*> params, Location loc)
-    : ParsedType{Kind::ProcType, loc},
+ParsedProcType::ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedStmt*> params, Location loc)
+    : ParsedStmt{Kind::ProcType, loc},
       num_params{u32(params.size())},
       ret_type{ret_type} {
-    std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedType*>());
+    std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedStmt*>());
 }
 
 auto ParsedProcType::Create(
     Parser& parser,
-    ParsedType* ret_type,
-    ArrayRef<ParsedType*> params,
+    ParsedStmt* ret_type,
+    ArrayRef<ParsedStmt*> params,
     Location loc
 ) -> ParsedProcType* {
-    const auto size = totalSizeToAlloc<ParsedType*>(params.size());
+    const auto size = totalSizeToAlloc<ParsedStmt*>(params.size());
     auto mem = parser.allocate(size, alignof(ParsedProcType));
     return ::new (mem) ParsedProcType{ret_type, params, loc};
 }
@@ -130,7 +130,7 @@ ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, Location loc)
 ParsedProcDecl::ParsedProcDecl(
     String name,
     ParsedProcType* type,
-    ArrayRef<ParsedParamDecl*> param_decls,
+    ArrayRef<ParsedLocalDecl*> param_decls,
     ParsedStmt* body,
     Location location
 ) : ParsedDecl{Kind::ProcDecl, name, location},
@@ -139,7 +139,7 @@ ParsedProcDecl::ParsedProcDecl(
     std::uninitialized_copy_n(
         param_decls.begin(),
         param_decls.size(),
-        getTrailingObjects<ParsedParamDecl*>()
+        getTrailingObjects<ParsedLocalDecl*>()
     );
 }
 
@@ -147,11 +147,11 @@ auto ParsedProcDecl::Create(
     Parser& parser,
     String name,
     ParsedProcType* type,
-    ArrayRef<ParsedParamDecl*> param_decls,
+    ArrayRef<ParsedLocalDecl*> param_decls,
     ParsedStmt* body,
     Location location
 ) -> ParsedProcDecl* {
-    const auto size = totalSizeToAlloc<ParsedParamDecl*>(param_decls.size());
+    const auto size = totalSizeToAlloc<ParsedLocalDecl*>(param_decls.size());
     auto mem = parser.allocate(size, alignof(ParsedProcDecl));
     return ::new (mem) ParsedProcDecl{name, type, param_decls, body, location};
 }
@@ -193,10 +193,9 @@ void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) 
 void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
         case Kind::BuiltinType:
-        case Kind::NamedType:
         case Kind::TemplateType:
         case Kind::ProcType:
-            std::print("{}Type {}\n", C(Red), cast<ParsedType>(s)->str(C));
+            std::print("{}Type {}\n", C(Red), s->dump_as_type(C));
             break;
 
         case Kind::BlockExpr: {
@@ -254,16 +253,17 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(m.base);
         } break;
 
-        case Kind::ParamDecl: {
-            auto& p = *cast<ParsedParamDecl>(s);
-            PrintHeader(s, "ParamDecl", false);
+        case Kind::LocalDecl: {
+            auto& p = *cast<ParsedLocalDecl>(s);
+            PrintHeader(s, "LocalDecl", false);
             std::print(
                 "{}{}{}{}\n",
                 C(Blue),
                 p.name,
                 p.name.empty() ? ""sv : " "sv,
-                p.type->str(C)
+                p.type->dump_as_type(C)
             );
+            if (p.init) PrintChildren(p.init.get());
         } break;
 
         case Kind::ProcDecl: {
@@ -274,7 +274,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
                 C(Green),
                 p.name,
                 p.name.empty() ? ""sv : " "sv,
-                p.type->str(C)
+                p.type->dump_as_type(C)
             );
 
             // No need to print the param decls here.
@@ -310,21 +310,15 @@ void ParsedStmt::dump(const ParsedModule* owner, bool use_colour) const {
     Printer(owner, use_colour, const_cast<ParsedStmt*>(this));
 }
 
-auto ParsedType::str(utils::Colours C) -> std::string {
+auto ParsedStmt::dump_as_type(utils::Colours C) -> std::string {
     using enum utils::Colour;
     std::string out;
 
-    auto Append = [C, &out](this auto& Append, ParsedType* type) -> void {
+    auto Append = [C, &out](this auto& Append, ParsedStmt* type) -> void {
         switch (type->kind()) {
             case Kind::BuiltinType:
                 out += cast<ParsedBuiltinType>(type)->ty->print(C.use_colours);
                 break;
-
-            case Kind::NamedType: {
-                auto t = cast<ParsedNamedType>(type);
-                out += C(Cyan);
-                out += t->name;
-            } break;
 
             case Kind::ProcType: {
                 auto p = cast<ParsedProcType>(type);
@@ -360,11 +354,9 @@ auto ParsedType::str(utils::Colours C) -> std::string {
                 out += t->name;
             } break;
 
-#define PARSE_TREE_LEAF_TYPE(node)
-#define PARSE_TREE_LEAF_NODE(node) case Kind::node:
-#include "srcc/ParseTree.inc"
-
-                Unreachable("Not a type");
+            default:
+                out += "<invalid type>";
+                break;
         }
     };
 
@@ -386,12 +378,16 @@ PARSE_TREE_NODE(Stmt);
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
-        case Tk::RBrace:
-        case Tk::Identifier:
         case Tk::Eval:
-        case Tk::StringLiteral:
+        case Tk::Identifier:
+        case Tk::Int:
         case Tk::Integer:
+        case Tk::RBrace:
         case Tk::Return:
+        case Tk::StringLiteral:
+        case Tk::TemplateType:
+        case Tk::Void:
+        case Tk::Var:
             return true;
     }
 }
@@ -462,6 +458,27 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     return ParsedBlockExpr::Create(*this, stmts, loc);
 }
 
+// <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
+auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
+    auto loc = tok->location;
+    SmallVector<String> strings;
+    do {
+        if (not At(Tk::Identifier)) {
+            Error("Expected identifier after '::'");
+            SkipTo(Tk::Semicolon);
+            break;
+        }
+
+        strings.push_back(tok->text);
+        loc = {loc, tok->location};
+        ++tok;
+    } while (Consume(Tk::ColonColon));
+    return ParsedDeclRefExpr::Create(*this, strings, loc);
+}
+
+// This parses expressions and also some declarations (e.g.
+// variable declarations)
+//
 // <expr> ::= <expr-block>
 //          | <expr-call>
 //          | <expr-decl-ref>
@@ -489,23 +506,9 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedEvalExpr{arg.get(), {start, arg.get()->loc}};
         } break;
 
-        // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
-        case Tk::Identifier: {
-            auto loc = tok->location;
-            SmallVector<String> strings;
-            do {
-                if (not At(Tk::Identifier)) {
-                    Error("Expected identifier after '::'");
-                    SkipTo(Tk::Semicolon);
-                    break;
-                }
-
-                strings.push_back(tok->text);
-                loc = {loc, tok->location};
-                ++tok;
-            } while (Consume(Tk::ColonColon));
-            lhs = ParsedDeclRefExpr::Create(*this, strings, loc);
-        } break;
+        case Tk::Identifier:
+            lhs = ParseDeclRefExpr();
+            break;
 
         // <expr-lit> ::= STRING-LITERAL | INTEGER
         case Tk::StringLiteral:
@@ -532,12 +535,25 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
 
             if (value.present()) loc = {loc, value.get()->loc};
             lhs = new (*this) ParsedReturnExpr{value, loc};
-        }
+        } break;
+
+        case Tk::Int:
+        case Tk::Void:
+        case Tk::Var:
+        case Tk::TemplateType:
+            lhs = ParseType();
+            break;
     }
+
+    // There was an error.
+    if (lhs.invalid()) return nullptr;
 
     // I keep forgetting to add new tokens to AtStartOfExpression,
     // so this is here to make sure I don’t forget.
     Assert(at_start, "Forgot to add a token to AtStartOfExpression");
+
+    // If the next token is an identifier, then this is a declaration.
+    if (At(Tk::Identifier)) return ParseVarDecl(lhs.get());
 
     // Big operator parse loop.
     // TODO: precedence.
@@ -600,12 +616,12 @@ void Parser::ParseFile() {
 void Parser::ParseHeader() {
     if (not ConsumeContextual(mod->program_or_module_loc, "program")) {
         Error("Expected 'program' directive at start of file");
-        return SkipTo(Tk::Semicolon);
+        return SkipPast(Tk::Semicolon);
     }
 
     if (not At(Tk::Identifier)) {
         Error("Expected identifier in 'program' directive");
-        return SkipTo(Tk::Semicolon);
+        return SkipPast(Tk::Semicolon);
     }
 
     mod->name = tok->text;
@@ -619,7 +635,7 @@ void Parser::ParseImport() {
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
     if (not At(Tk::CXXHeaderName)) {
         Error("Expected C++ header name after 'import'");
-        SkipTo(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
@@ -651,6 +667,26 @@ void Parser::ParseImport() {
     ConsumeOrError(Tk::Semicolon);
 }
 
+// <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
+auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
+    auto decl = new (*this) ParsedLocalDecl(
+        tok->text,
+        type,
+        {type->loc, tok->location}
+    );
+
+    // Parse the optional initialiser.
+    ++tok;
+    if (Consume(Tk::Assign)) decl->init = ParseExpr();
+
+    // We don’t allow declaration groups such as 'int a, b;'.
+    if (At(Tk::Comma)) {
+        Error("A declaration must declare a single variable");
+        SkipTo(Tk::Semicolon);
+    }
+    return decl;
+}
+
 // <preamble> ::= <header> { <import> }
 void Parser::ParsePreamble() {
     ParseHeader();
@@ -673,14 +709,14 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     ++tok;
 
     // Parse signature.
-    SmallVector<ParsedType*, 10> param_types;
-    SmallVector<ParsedParamDecl*, 10> param_decls;
+    SmallVector<ParsedStmt*, 10> param_types;
+    SmallVector<ParsedLocalDecl*, 10> param_decls;
     if (Consume(Tk::LParen)) {
         while (not At(Tk::RParen)) {
             auto ty = ParseType();
             if (not ty) {
                 SkipTo(Tk::RParen);
-                return {};
+                break;
             }
 
             String name;
@@ -692,7 +728,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
             }
 
             param_types.push_back(ty.get());
-            param_decls.push_back(new (*this) ParsedParamDecl{
+            param_decls.push_back(new (*this) ParsedLocalDecl{
                 name,
                 ty.get(),
                 {ty.get()->loc, end}
@@ -705,7 +741,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     }
 
     // Return Type.
-    Ptr<ParsedType> ret;
+    Ptr<ParsedStmt> ret;
     if (Consume(Tk::RArrow)) ret = ParseType();
 
     // If we failed to parse a return type, or if there was
@@ -760,19 +796,22 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         // expression.
         default:
             if (auto res = ParseExpr()) {
-                if (not Consume(Tk::Semicolon)) Error("Expected ';'");
+                if (not Consume(Tk::Semicolon)) {
+                    Error("Expected ';'");
+                    SkipPast(Tk::Semicolon);
+                }
                 return res;
             }
 
             // Expression parser should have already complained here;
             // just yeet everything up tot he next semicolon.
-            SkipTo(Tk::Semicolon);
+            SkipPast(Tk::Semicolon);
             return {};
     }
 }
 
-// <type> ::= <type-prim> | TEMPLATE-TYPE | IDENTIFIER
-auto Parser::ParseType() -> Ptr<ParsedType> {
+// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref>
+auto Parser::ParseType() -> Ptr<ParsedStmt> {
     auto Builtin = [&](BuiltinType* ty) {
         auto loc = tok->location;
         ++tok;
@@ -782,9 +821,10 @@ auto Parser::ParseType() -> Ptr<ParsedType> {
     switch (tok->type) {
         default: return Error("Expected type");
 
-        // <type-prim> ::= INT | VOID
+        // <type-prim> ::= INT | VOID | VAR
         case Tk::Int: return Builtin(Types::IntTy.ptr());
         case Tk::Void: return Builtin(Types::VoidTy.ptr());
+        case Tk::Var: return Builtin(Types::DeducedTy.ptr());
 
         // TEMPLATE-TYPE
         case Tk::TemplateType: {
@@ -794,12 +834,9 @@ auto Parser::ParseType() -> Ptr<ParsedType> {
             return ty;
         }
 
-        // IDENTIFIER
-        case Tk::Identifier: {
-            auto ty = new (*this) ParsedNamedType(tok->text, tok->location);
-            ++tok;
-            return ty;
-        }
+        // <expr-decl-ref>
+        case Tk::Identifier:
+            return ParseDeclRefExpr();
     }
 }
 

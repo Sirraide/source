@@ -24,6 +24,9 @@ class Value;
 class Memory;
 enum struct LifetimeState : u8;
 
+/// Tag that marks that a Value stores a type.
+struct TypeTag {};
+
 /// Attempt to evaluate a statement.
 ///
 /// Callers must check dependence before this is called; attempting
@@ -123,12 +126,13 @@ class srcc::eval::Value {
     friend EvaluationContext;
     friend Slice;
 
-    Variant<ProcDecl*, LValue, Slice, Reference, APInt, std::monostate> value{std::monostate{}};
+    Variant<ProcDecl*, LValue, Slice, Reference, APInt, TypeTag, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
 public:
     Value() = default;
     Value(ProcDecl* proc);
+    Value(Type ty) : value{TypeTag{}}, ty{ty} {}
     Value(Slice lvalue, Type ty);
     Value(LValue lvalue, Type ty) : value(std::move(lvalue)), ty(ty) {}
     Value(Reference ref, Type ty) : value(std::move(ref)), ty(ty) {}

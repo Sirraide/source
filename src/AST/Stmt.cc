@@ -81,13 +81,10 @@ BlockExpr::BlockExpr(
     Scope* parent_scope,
     Type type,
     ArrayRef<Stmt*> stmts,
-    u32 idx,
     Location location
 ) : Expr{Kind::BlockExpr, type, SRValue, location},
     num_stmts{u32(stmts.size())},
-    return_expr_index{idx},
     scope{parent_scope} {
-    Assert(type->is_void() or return_expr_index <= num_stmts, "Return expression index out of bounds");
     std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<Stmt*>());
     ComputeDependence();
 
@@ -99,18 +96,18 @@ auto BlockExpr::Create(
     TranslationUnit& mod,
     Scope* parent_scope,
     ArrayRef<Stmt*> stmts,
-    u32 idx,
     Location location
 ) -> BlockExpr* {
-    auto type = idx == NoExprIndex ? Types::VoidTy : cast<Expr>(stmts[idx])->type;
+    auto last = stmts.empty() ? nullptr : dyn_cast_if_present<Expr>(stmts.back());
+    auto type = last ? last->type : Types::VoidTy;
     auto size = totalSizeToAlloc<Stmt*>(stmts.size());
     auto mem = mod.allocate(size, alignof(BlockExpr));
-    return ::new (mem) BlockExpr{parent_scope, type, stmts, idx, location};
+    return ::new (mem) BlockExpr{parent_scope, type, stmts, location};
 }
 
 auto BlockExpr::return_expr() -> Expr* {
     if (type->is_void()) return nullptr;
-    return cast<Expr>(stmts()[return_expr_index]);
+    return cast<Expr>(stmts().back());
 }
 
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)

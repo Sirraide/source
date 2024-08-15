@@ -107,80 +107,56 @@ public:
     void dump(const ParsedModule* owner, bool use_colour) const;
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
+    auto dump_as_type(utils::Colours C) -> std::string;
 };
 
 // ============================================================================
 //  Types
 // ============================================================================
-class srcc::ParsedType : public ParsedStmt {
-protected:
-    ParsedType(Kind kind, Location loc) : ParsedStmt{kind, loc} {}
 
-public:
-    auto str(utils::Colours C) -> std::string;
-
-    static bool classof(const ParsedStmt* e) {
-        using K = ParsedStmt::Kind;
-        return e->kind() >= K::Type$Start and e->kind() <= K::Type$End;
-    }
-};
-
-class srcc::ParsedBuiltinType final : public ParsedType {
+class srcc::ParsedBuiltinType final : public ParsedStmt {
 public:
     BuiltinType* const ty;
 
     ParsedBuiltinType(BuiltinType* ty, Location loc)
-        : ParsedType{Kind::BuiltinType, loc},
+        : ParsedStmt{Kind::BuiltinType, loc},
           ty{ty} {}
 
     static bool classof(const ParsedStmt* e) {
-        return e->kind() == ParsedStmt::Kind::BuiltinType;
+        return e->kind() == Kind::BuiltinType;
     }
 };
 
-class srcc::ParsedNamedType final : public ParsedType {
-public:
-    String name;
-
-    ParsedNamedType(String name, Location loc)
-        : ParsedType{Kind::NamedType, loc},
-          name{name} {}
-
-    static bool classof(const ParsedStmt* e) {
-        return e->kind() == ParsedStmt::Kind::NamedType;
-    }
-};
-
-class srcc::ParsedProcType final : public ParsedType
-    , llvm::TrailingObjects<ParsedProcType, ParsedType*> {
+class srcc::ParsedProcType final : public ParsedStmt
+    , llvm::TrailingObjects<ParsedProcType, ParsedStmt*> {
     friend TrailingObjects;
     const u32 num_params;
-    auto numTrailingObjects(OverloadToken<ParsedType*>) -> usz { return num_params; }
-    ParsedProcType(ParsedType* ret_type, ArrayRef<ParsedType*> params, Location loc);
+    auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_params; }
+    ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedStmt*> params, Location loc);
 
 public:
-    ParsedType* const ret_type;
+    ParsedStmt* const ret_type;
 
     static auto Create(
         Parser& parser,
-        ParsedType* ret_type,
-        ArrayRef<ParsedType*> params,
+        ParsedStmt* ret_type,
+        ArrayRef<ParsedStmt*> params,
         Location loc
     ) -> ParsedProcType*;
 
-    auto param_types() -> ArrayRef<ParsedType*> {
-        return {getTrailingObjects<ParsedType*>(), num_params};
+    auto param_types() -> ArrayRef<ParsedStmt*> {
+        return {getTrailingObjects<ParsedStmt*>(), num_params};
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
 };
 
-class srcc::ParsedTemplateType final : public ParsedType {
+class srcc::ParsedTemplateType final : public ParsedStmt {
 public:
     String name;
 
     ParsedTemplateType(String name, Location loc)
-        : ParsedType{Kind::TemplateType, loc},
+        : ParsedStmt{Kind::TemplateType, loc},
           name{name} {}
 
     static bool classof(const ParsedStmt* e) {
@@ -370,22 +346,23 @@ public:
     }
 };
 
-class srcc::ParsedParamDecl final : public ParsedDecl {
+class srcc::ParsedLocalDecl final : public ParsedDecl {
 public:
-    ParsedType* type;
+    ParsedStmt* type;
+    Ptr<ParsedStmt> init;
 
-    ParsedParamDecl(
+    ParsedLocalDecl(
         String name,
-        ParsedType* param_type,
+        ParsedStmt* param_type,
         Location location
-    ) : ParsedDecl{Kind::ParamDecl, name, location}, type{param_type} {}
+    ) : ParsedDecl{Kind::LocalDecl, name, location}, type{param_type} {}
 
-    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParamDecl; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LocalDecl; }
 };
 
 /// A procedure declaration.
 class srcc::ParsedProcDecl final : public ParsedDecl
-    , llvm::TrailingObjects<ParsedProcDecl, ParsedParamDecl*> {
+    , llvm::TrailingObjects<ParsedProcDecl, ParsedLocalDecl*> {
     friend TrailingObjects;
 
 public:
@@ -399,11 +376,11 @@ public:
     ParsedProcType* type;
 
 private:
-    auto numTrailingObjects(OverloadToken<ParsedParamDecl*>) -> usz { return type->param_types().size(); }
+    auto numTrailingObjects(OverloadToken<ParsedLocalDecl*>) -> usz { return type->param_types().size(); }
     ParsedProcDecl(
         String name,
         ParsedProcType* type,
-        ArrayRef<ParsedParamDecl*> param_decls,
+        ArrayRef<ParsedLocalDecl*> param_decls,
         ParsedStmt* body,
         Location location
     );
@@ -413,13 +390,13 @@ public:
         Parser& parser,
         String name,
         ParsedProcType* type,
-        ArrayRef<ParsedParamDecl*> param_names,
+        ArrayRef<ParsedLocalDecl*> param_names,
         ParsedStmt* body,
         Location location
     ) -> ParsedProcDecl*;
 
-    auto params() -> ArrayRef<ParsedParamDecl*> {
-        return {getTrailingObjects<ParsedParamDecl*>(), type->param_types().size()};
+    auto params() -> ArrayRef<ParsedLocalDecl*> {
+        return {getTrailingObjects<ParsedLocalDecl*>(), type->param_types().size()};
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcDecl; }
@@ -474,14 +451,16 @@ private:
 
     /// Each of these corresponds to a production in the grammar.
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
+    auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
     auto ParseExpr() -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
     void ParseImport();
+    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     auto ParseStmt() -> Ptr<ParsedStmt>;
-    auto ParseType() -> Ptr<ParsedType>;
+    auto ParseType() -> Ptr<ParsedStmt>;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -497,9 +476,14 @@ private:
     /// Consume a token or issue an error.
     bool ConsumeOrError(Tk tk);
 
-    /// Skip to and past a token.
+    /// Skip up to a token.
     void SkipTo(std::same_as<Tk> auto... tks) {
         while (not At(tks..., Tk::Eof)) ++tok;
+    }
+
+    /// Skip up and past a token.
+    void SkipPast(std::same_as<Tk> auto... tks) {
+        SkipTo(tks...);
         if (not At(Tk::Eof)) ++tok;
     }
 

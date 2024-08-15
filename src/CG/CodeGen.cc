@@ -99,6 +99,8 @@ void Mangler::Append(Type ty) {
                     Unreachable("Mangling dependent type?");
                 case BuiltinKind::Deduced:
                     Unreachable("Mangling undeduced type?");
+                case BuiltinKind::Type:
+                    Unreachable("Mangling internal 'type' type?");
                 case BuiltinKind::Void: M.name += "v"; return;
                 case BuiltinKind::NoReturn: M.name += "z"; return;
                 case BuiltinKind::Bool: M.name += "b"; return;
@@ -163,6 +165,9 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Dependent type in codegen?");
+
+                case BuiltinKind::Type:
+                    Unreachable("Cannot emit 'type' type");
 
                 case BuiltinKind::Bool: return I1Ty;
                 case BuiltinKind::Int: return IntTy;
@@ -380,7 +385,7 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
     return EmitProcAddress(expr->decl);
 }
 
-auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> llvm::Value* {
+auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     auto val = expr->value.get_or_null();
     if (val) builder.CreateRet(Emit(val));
     else builder.CreateRetVoid();
@@ -405,6 +410,12 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return llvm::ConstantStruct::getAnon({ptr, size});
 }
 
+auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
+    // These should only exist at compile time.
+    ICE(expr->location(), "Can’t emit type expr");
+    return nullptr;
+}
+
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
     utils::Overloaded LValueEmitter {
         [&](String s) -> llvm::Constant* { return GetString(s); },
@@ -417,6 +428,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
     utils::Overloaded V {
         [&](ProcDecl* proc) -> llvm::Constant* { return EmitProcAddress(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
+        [&](eval::TypeTag) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> llvm::Constant* { return MakeInt(value); },
         [&](const eval::LValue& lval) -> llvm::Constant* { return lval.base.visit(LValueEmitter); },
         [&](this auto& self, const eval::Reference& ref) -> llvm::Constant* {

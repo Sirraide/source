@@ -1,0 +1,13 @@
+// V %srcc --parse --verify %s
+program test;
+proc foo {
+    int;
+    int b;
+    int c, d; // expected-error: A declaration must declare a single variable
+    int e
+    int f; // expected-error: Expected ';'
+    var g;
+    var h = 1;
+    int i = 2;
+    var j = h;
+}

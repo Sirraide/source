@@ -246,6 +246,7 @@ class srcc::Types {
     static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
     static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
     static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced}; // NOT dependent.
+    static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
 
 public:
     /// Builtin types.
@@ -256,6 +257,7 @@ public:
     PREDECLARED_TYPE(BuiltinType, BoolTy);
     PREDECLARED_TYPE(BuiltinType, IntTy);
     PREDECLARED_TYPE(BuiltinType, DeducedTy);
+    PREDECLARED_TYPE(BuiltinType, TypeTy);
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {

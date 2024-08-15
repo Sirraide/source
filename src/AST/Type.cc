@@ -43,6 +43,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
                 case BuiltinKind::Int: return Align{8}; // FIXME: Get alignment from context.
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
+                case BuiltinKind::Type: return Align::Of<Type>();
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
@@ -106,11 +107,12 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
-                case BuiltinKind::Deduced: return std::format("{}<deduced type>", C(Cyan));
+                case BuiltinKind::Deduced: return std::format("{}var", C(Cyan));
                 case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
                 case BuiltinKind::ErrorDependent: return std::format("{}<error>", C(Cyan));
                 case BuiltinKind::Int: return std::format("{}int", C(Cyan));
                 case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
+                case BuiltinKind::Type: return std::format("{}type", C(Cyan));
                 case BuiltinKind::Void: return std::format("{}void", C(Cyan));
             }
         }
@@ -173,6 +175,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
                 case BuiltinKind::Int: return Size::Bytes(8); // FIXME: Get size from context.
+                case BuiltinKind::Type: return Size::Of<Type>();
 
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
@@ -211,6 +214,7 @@ auto TypeBase::value_category() const -> ValueCategory {
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
+                case BuiltinKind::Type:
                     return Expr::SRValue;
 
                 // Don’t know yet.

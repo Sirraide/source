@@ -1,0 +1,15 @@
+// V %srcc --sema --verify %s
+
+program test;
+proc foo(var x) { // expected-error: 'var' is not a valid type for a procedure argument
+    int;
+    int b; // expected-note: Candidate here
+    int b = 6; // expected-note: Candidate here
+    int f = b; // expected-error: Ambiguous symbol 'b'
+    var g; // expected-error: Type inference requires an initialiser
+    var h = 1;
+    int i = 2;
+    var j = i;
+    var k = j;
+    var q = x;
+}

@@ -6,6 +6,7 @@ proc b (int) {}
 proc c (int, int, int) {}
 proc d (int a, int b, int c) {}
 proc e (int a, int a) {} // expected-error: Redeclaration of parameter 'a'
+                         // expected-note@-1: Previous declaration was here
 proc f (
     int, int, int, int, int,
     int, int, int, int, int

@@ -190,7 +190,7 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Adjust a type for use in a variable declaration.
-    auto AdjustVariableType(Type ty) -> Type;
+    auto AdjustVariableType(Type ty, Location loc) -> Type;
 
     /// Create a reference to a declaration.
     auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
@@ -248,7 +248,7 @@ private:
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
-    void LValueToSRValue(Expr*& expr);
+    [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
@@ -264,9 +264,11 @@ private:
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
+    auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
+    auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
 
     /// Entry point.
     void Translate();
@@ -285,7 +287,7 @@ private:
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateParamDecl(ParsedParamDecl* parsed, Type ty) -> ParamDecl*;
+    auto TranslateLocalDecl(ParsedLocalDecl* parsed) -> LocalDecl*;
     auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
     auto TranslateProcDecl(ParsedProcDecl* parsed) -> Ptr<Expr>;
@@ -295,9 +297,9 @@ private:
 
     /// Types.
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
-    auto TranslateNamedType(ParsedNamedType* parsed) -> Type;
+    auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
-    auto TranslateType(ParsedType* parsed) -> Type;
+    auto TranslateType(ParsedStmt* stmt) -> Type;
 
     auto TranslateProcType(
         ParsedProcType* parsed,

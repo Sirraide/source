@@ -72,6 +72,7 @@ class srcc::TemplateInstantiator {
     auto InstantiateReturnExpr(ReturnExpr* e) -> Ptr<Expr>;
     auto InstantiateSliceDataExpr(SliceDataExpr* e) -> Ptr<Expr>;
     auto InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Expr>;
+    auto InstantiateTypeExpr(TypeExpr* e) -> Ptr<TypeExpr>;
 
     // Type Instantiation
     auto InstantiateType(Type ty) -> Type;
@@ -268,6 +269,10 @@ auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Expr> {
 auto TemplateInstantiator::InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Expr> {
     Assert(not e->dependent(), "Dependent StrLitExpr?");
     return e;
+}
+
+auto TemplateInstantiator::InstantiateTypeExpr(TypeExpr* e) -> Ptr<TypeExpr> {
+    return new (*S.M) TypeExpr(InstantiateType(e->type), e->location());
 }
 
 auto TemplateInstantiator::InstantiateReturnExpr(ReturnExpr* e) -> Ptr<Expr> {
