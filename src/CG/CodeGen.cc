@@ -257,8 +257,26 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
 auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     Value* ret = nullptr;
     for (auto s : expr->stmts()) {
-        // Can’t emit declarations here.
+        // Initialise variables.
+        if (auto var = dyn_cast<LocalDecl>(s)) {
+            switch (var->type->value_category()) {
+                case ValueCategory::MRValue: Todo("Initialise mrvalue");
+                case ValueCategory::LValue: Todo("Initialise lvalue");
+                case ValueCategory::DValue: Unreachable("Dependent value in codegen?");
+                case ValueCategory::SRValue: {
+                    // SRValues are simply constructed and stored.
+                    if (auto i = var->init.get_or_null()) builder.CreateStore(Emit(i), locals[var]);
+
+                    // Or zero-initialised if there is no initialiser.
+                    else builder.CreateStore(llvm::Constant::getNullValue(ConvertType(var->type)), locals[var]);
+                }
+            }
+        }
+
+        // Can’t emit other declarations here.
         if (isa<Decl>(s)) continue;
+
+        // Emit statement.
         auto val = Emit(s);
         if (s == expr->return_expr()) ret = val;
     }
