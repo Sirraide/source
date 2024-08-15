@@ -222,6 +222,7 @@ void Stmt::Printer::Print(Stmt* e) {
             };
 
             PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);
+            if (auto init = d->init.get_or_null()) PrintChildren(init);
         } break;
 
         case Kind::LocalRefExpr: {

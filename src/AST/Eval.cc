@@ -177,7 +177,7 @@ public:
     [[nodiscard]] auto IntValue(std::integral auto val) -> Value;
 
     /// Initialise a variable.
-    [[nodiscard]] bool PerformVariableInitialisation(LValue& addr, Expr* init);
+    [[nodiscard]] bool PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc);
 
     /// Report an error that involves accessing memory.
     template <typename... Args>
@@ -383,10 +383,34 @@ auto EvaluationContext::IntValue(std::integral auto val) -> Value {
 //  Evaluation
 // ============================================================================
 bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
+    // FIXME: Once we have destructors, this information should
+    // just be available in the BlockExpr.
+    struct VariableRAII {
+        SRCC_IMMOVABLE(VariableRAII);
+        SmallVector<Memory*> locals_to_destroy;
+        VariableRAII() = default;
+        ~VariableRAII() {
+            for (auto v : locals_to_destroy)
+                v->destroy();
+        }
+    } initialised_vars;
+
     out = {};
     for (auto s : block->stmts()) {
         Value val;
+
+        // Variables need to be initialised.
+        if (auto l = dyn_cast<LocalDecl>(s)) {
+            auto& loc = CurrFrame().locals[l];
+            if (not PerformVariableInitialisation(loc, l->init, l->location()))
+                return false;
+            initialised_vars.locals_to_destroy.push_back(loc.base.get<Memory*>());
+        }
+
+        // Any other decls can be skipped.
         if (isa<Decl>(s)) continue;
+
+        // Anything else needs to be evaluated.
         if (not Eval(val, s)) return false;
         if (s == block->return_expr()) out = std::exchange(val, {});
     }
@@ -438,7 +462,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         // Allocate and initialise local variables and initialise them.
         for (auto [i, l] : enumerate(proc->locals)) {
             auto& addr = frame.locals[l] = LValue{AllocateMemory(l->type, l->location())};
-            if (isa<ParamDecl>(l) and not PerformVariableInitialisation(addr, args[i]))
+            if (isa<ParamDecl>(l) and not PerformVariableInitialisation(addr, args[i], l->location()))
                 return false;
         }
 
@@ -569,26 +593,42 @@ bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr){
     return true;
 }
 
-bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Expr* init) {
+bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc) {
     auto mem = addr.base.get<Memory*>();
 
     // For builtin types, Sema will have ensured that the RHS is
     // an srvalue of the same type.
-    if (mem->type() == Types::IntTy) {
-        Assert(init->value_category == Expr::SRValue);
-        Value int_val;
-        if (not Eval(int_val, init))
-            return false;
+    switch (mem->type()->value_category()) {
+        case ValueCategory::MRValue: Todo("Initialise mrvalue");
+        case ValueCategory::LValue: Todo("Initialise lvalue");
+        case ValueCategory::DValue: Unreachable("Dependent value in constant evaluation?");
+        case ValueCategory::SRValue: {
+            if (mem->type() == Types::IntTy) {
+                if (auto i = init.get_or_null()) {
+                    Assert(i->value_category == Expr::SRValue);
+                    Value int_val;
+                    if (not Eval(int_val, i))
+                        return false;
 
-        mem->init(tu);
-        return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), init->location());
+                    mem->init(tu);
+                    return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), i->location());
+
+                }
+
+                // No initialiser. Initialise it to 0.
+                mem->init(tu);
+                return StoreMemory(mem, u64(0), loc);
+            }
+
+            return Error(
+                loc,
+                "Unsupported variable type in constant evaluation: {}",
+                mem->type().print(true)
+            );
+        }
     }
 
-    return Error(
-        init->location(),
-        "Unsupported variable type in constant evaluation: {}",
-        mem->type().print(true)
-    );
+    Unreachable();
 }
 
 // ============================================================================

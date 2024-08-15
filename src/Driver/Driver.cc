@@ -193,6 +193,9 @@ int Driver::Impl::run_job() {
         return ctx.diags().has_error();
     }
 
+    // Stop if there was an error.
+    if (ctx.diags().has_error()) return 1;
+
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
     auto module = Sema::Translate(parsed_modules);
