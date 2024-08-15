@@ -286,7 +286,9 @@ public:
     ) : Expr{Kind::CastExpr, type, SRValue, location},
         arg{expr},
         kind{kind},
-        implicit{implicit} {}
+        implicit{implicit} {
+        ComputeDependence();
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::CastExpr; }
 };
@@ -318,7 +320,9 @@ public:
     EvalExpr(
         Stmt* stmt,
         Location location
-    ) : Expr{Kind::EvalExpr, Types::DependentTy, DValue, location}, stmt{stmt} {}
+    ) : Expr{Kind::EvalExpr, Types::DependentTy, DValue, location}, stmt{stmt} {
+        ComputeDependence();
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
 };
@@ -366,7 +370,9 @@ private:
         Type ty,
         Expr* slice,
         Location location
-    ) : Expr{Kind::SliceDataExpr, ty, SRValue, location}, slice{slice} {}
+    ) : Expr{Kind::SliceDataExpr, ty, SRValue, location}, slice{slice} {
+        ComputeDependence();
+    }
 
 public:
     static auto Create(
@@ -410,7 +416,9 @@ public:
             SRValue,
             location,
         },
-        value{value}, implicit{implicit} {}
+        value{value}, implicit{implicit} {
+        ComputeDependence();
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ReturnExpr; }
 };
@@ -482,7 +490,9 @@ protected:
         Location location
     ) : Decl{k, name, location},
         parent{parent},
-        type{type} {}
+        type{type} {
+        ComputeDependence();
+    }
 
 public:
     LocalDecl(
@@ -543,12 +553,12 @@ class srcc::ProcDecl final : public ObjectDecl
     const u32 num_template_params;
     auto numTrailingObjects(OverloadToken<TemplateTypeDecl*>) -> usz { return num_template_params; }
 
+    /// Not set if this is e.g. external.
+    Ptr<Stmt> body_stmt;
+
 public:
     /// May be null if this is a top-level procedure.
     ProcDecl* parent;
-
-    /// Not set if this is e.g. external.
-    Ptr<Stmt> body;
 
     /// Scope associated with this procedure, if any.
     Scope* scope = nullptr;
@@ -558,6 +568,9 @@ public:
     /// The parameter declarations are stored at the start of this array.
     ArrayRef<LocalDecl*> locals;
 
+    /// The template this was instantiated from.
+    ProcDecl* instantiated_from = nullptr;
+
 private:
     ProcDecl(
         TranslationUnit* owner,
@@ -566,7 +579,6 @@ private:
         Linkage linkage,
         Mangling mangling,
         ProcDecl* parent,
-        Ptr<Stmt> body,
         ArrayRef<TemplateTypeDecl*> template_params,
         Location location
     );
@@ -579,16 +591,19 @@ public:
         Linkage linkage,
         Mangling mangling,
         ProcDecl* parent,
-        Ptr<Stmt> body,
         Location location,
         ArrayRef<TemplateTypeDecl*> template_params = {}
     ) -> ProcDecl*;
 
+    /// Get the procedure body.
+    auto body() -> Ptr<Stmt> { return body_stmt; }
+
     /// Finalise analysing a procedure.
     ///
+    /// \param body The body of the procedure.
     /// \param locals The declarations for all parameters and
     ///        local variables of this procedure.
-    void finalise(ArrayRef<LocalDecl*> locals);
+    void finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> locals);
 
     /// Whether this is a template.
     bool is_template() const { return num_template_params > 0; }

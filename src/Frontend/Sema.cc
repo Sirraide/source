@@ -18,6 +18,13 @@ using namespace srcc;
     _res.get();                         \
 })
 
+struct Err {
+    bool value;
+    Err(bool v) : value{v} {}
+    Err(std::nullptr_t) : Err(false) {}
+    explicit operator bool() const { return value; }
+};
+
 // ============================================================================
 //  Helpers
 // ============================================================================
@@ -190,6 +197,26 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
 // ============================================================================
 //  Building nodes.
 // ============================================================================
+auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
+    // Determine the expression that is returned from this block, if
+    // any. Ignore declarations. If the last non-declaration statement
+    // is an expression, we return it; if not, we return nothing.
+    u32 return_index = BlockExpr::NoExprIndex;
+    for (auto [i, stmt] : enumerate(stmts | vws::reverse)) {
+        if (isa<Decl>(stmt)) continue;
+        if (isa<Expr>(stmt)) return_index = u32(i);
+        break;
+    }
+
+    return BlockExpr::Create(
+        *M,
+        scope,
+        stmts,
+        return_index,
+        loc
+    );
+}
+
 auto Sema::BuildBuiltinCallExpr(
     BuiltinCallExpr::Builtin builtin,
     ArrayRef<Expr*> args,
@@ -220,7 +247,9 @@ auto Sema::BuildBuiltinCallExpr(
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
-    auto BuildDependentCallExpr = [&] (Expr* callee) {
+    // Build a call expression that we can resolve later, usually
+    // because the callee is dependent.
+    auto BuildDependentCallExpr = [&](Expr* callee) {
         return CallExpr::Create(
             *M,
             Types::DependentTy,
@@ -230,78 +259,101 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         );
     };
 
-    if (callee_expr->dependent() or rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
+    // Validate that we can actually perform a call to this
+    // procedure with the given arguments.
+    SmallVector<Expr*> actual_args{args};
+    auto ValidateCall = [&](ProcDecl* callee, ProcType* callee_type) -> Err {
+        auto params = callee_type->params();
+        if (args.size() != params.size()) {
+            return Error(
+                callee_expr->location(),
+                "Procedure '{}' expects {} argument{}, got {}",
+                callee->name,
+                params.size(),
+                params.size() == 1 ? "" : "s",
+                args.size()
+            );
+        }
+
+        for (auto [a, p] : vws::zip(actual_args, params)) {
+            if (a->type != p) {
+                return Error(
+                    a->location(),
+                    "Argument of type '{}' does not match expected type '{}'",
+                    a->type.print(ctx.use_colours()),
+                    p.print(ctx.use_colours())
+                );
+            }
+
+            if (a->type != Types::IntTy) return ICE(
+                a->location(),
+                "Only integer arguments are supported for now"
+            );
+
+            Assert(a->value_category == Expr::LValue or a->value_category == Expr::SRValue);
+            if (a->value_category == Expr::LValue) LValueToSRValue(a);
+        }
+        return true;
+    };
+
+    // Dependent calls are checked when they’re instantiated.
+    if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
         return BuildDependentCallExpr(callee_expr);
 
     // Check that we can call this.
     // TODO: overload resolution.
-    if (not isa<ProcRefExpr>(callee_expr))
+    if (not isa<ProcRefExpr>(callee_expr)) {
+        if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
         return Error(callee_expr->location(), "Attempt to call non-procedure");
-
-    // Perform template instantiation, if need be.
-    //
-    // Attempt instantiate the template by performing substitution; if this fails,
-    // then we can’t call this anyway, so give up (don’t instantiate the body, and
-    // cache the result).
-    //
-    // Later, AFTER checking all the args (including non-deduced ones), instantiate
-    // the body of the function.
-    auto callee = dyn_cast<ProcRefExpr>(callee_expr)->decl;
-    ProcType* callee_type = callee->proc_type();
-    if (callee->is_template()) {
-        SmallVector<TypeLoc> types;
-        for (auto arg : args) types.emplace_back(arg->type, arg->location());
-        Type substituted = SubstituteTemplate(callee, types);
-        std::println("Substituted: {}", substituted.print(true));
-        if (substituted->dependent()) return BuildDependentCallExpr(callee_expr);
-        callee_type = cast<ProcType>(substituted).ptr();
     }
 
-    auto params = callee_type->params();
-    if (args.size() != params.size()) {
-        return Error(
-            callee_expr->location(),
-            "Procedure '{}' expects {} argument{}, got {}",
-            callee->name,
-            params.size(),
-            params.size() == 1 ? "" : "s",
-            args.size()
+    // This is not a template. Call it directly.
+    auto proc = cast<ProcRefExpr>(callee_expr)->decl;
+    if (not proc->is_template()) {
+        if (not ValidateCall(proc, proc->proc_type())) return {};
+        return CallExpr::Create(
+            *M,
+            proc->return_type(),
+            callee_expr,
+            actual_args,
+            loc
         );
     }
 
-    SmallVector<Expr*> actual_args{args};
-    for (auto [a, p] : vws::zip(actual_args, params)) {
-        if (a->type != p) {
-            return Error(
-                a->location(),
-                "Argument of type '{}' does not match expected type '{}'",
-                a->type.print(ctx.use_colours()),
-                p.print(ctx.use_colours())
-            );
-        }
+    // Otherwise, we need to perform template instantiation.
+    ProcType* callee_type = proc->proc_type();
 
-        if (a->type != Types::IntTy) return ICE(
-            a->location(),
-            "Only integer arguments are supported for now"
-        );
+    // Collect the types of all arguments (and their locations for
+    // diagnostics) for substitution.
+    SmallVector<TypeLoc, 6> types;
+    for (auto arg : args) types.emplace_back(arg->type, arg->location());
 
-        Assert(a->value_category == Expr::LValue or a->value_category == Expr::SRValue);
-        if (a->value_category == Expr::LValue) LValueToSRValue(a);
-    }
+    // Perform template substitution.
+    auto [substituted, template_args] = SubstituteTemplate(proc, types);
 
-    // Instantiate this template.
-    if (callee->is_template()) {
-        if (not callee->body) return ICE(callee_expr->location(), "Sorry, cannot instantiate this procedure yet");
-        auto instantiation = InstantiateTemplate(callee, callee_type);
-        if (not instantiation) return nullptr;
-        callee_expr = new (*M) ProcRefExpr(instantiation.get(), callee_expr->location());
-    }
+    // If the substituted type is still dependent, we’re either in
+    // a nested template, or there was an error; either way, we can’t
+    // instantiated anything right now.
+    if (substituted->dependent()) return BuildDependentCallExpr(callee_expr);
 
-    // Done!
+    // Otherwise, type check the call now.
+    callee_type = cast<ProcType>(substituted).ptr();
+    if (not ValidateCall(proc, callee_type)) return {};
+
+    // Instantiating an external function?
+    if (not proc->body()) return ICE(
+        callee_expr->location(),
+        "Sorry, cannot instantiate this procedure yet"
+    );
+
+    // Finally, instantiate the template; this already
+    // takes care of caching etc.
+    auto instantiation = InstantiateTemplate(proc, callee_type, template_args);
+    if (not instantiation) return nullptr;
     return CallExpr::Create(
         *M,
-        callee_type->ret(),
-        callee_expr,
+        instantiation.get()->return_type(),
+        new (*M) ProcRefExpr(instantiation.get(), callee_expr->location()),
         actual_args,
         loc
     );
@@ -458,7 +510,10 @@ void Sema::Translate() {
     SmallVector<Stmt*> top_level_stmts;
     for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, BlockExpr::NoExprIndex, Location{});
-    M->initialiser_proc->body = BuildProcBody(M->initialiser_proc, M->file_scope_block);
+
+    // File scope block should never be dependent.
+    M->file_scope_block->set_dependence(Dependence::None);
+    M->initialiser_proc->finalise(BuildProcBody(M->initialiser_proc, M->file_scope_block), {});
 }
 
 void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {
@@ -511,24 +566,7 @@ auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
     EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, parsed->stmts());
-
-    // Determine the expression that is returned from this block, if
-    // any. Ignore declarations. If the last non-declaration statement
-    // is an expression, we return it; if not, we return nothing.
-    u32 return_index = BlockExpr::NoExprIndex;
-    for (auto [i, stmt] : llvm::enumerate(stmts | vws::reverse)) {
-        if (isa<Decl>(stmt)) continue;
-        if (isa<Expr>(stmt)) return_index = u32(i);
-        break;
-    }
-
-    return BlockExpr::Create(
-        *M,
-        scope.get(),
-        stmts,
-        return_index,
-        parsed->loc
-    );
+    return BuildBlockExpr(scope.get(), stmts, parsed->loc);
 }
 
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
@@ -666,10 +704,7 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
         EnterProcedure _{*this, decl};
         auto res = TranslateProcBody(decl, parsed);
         if (res.invalid()) decl->set_errored();
-        else {
-            decl->body = res;
-            decl->finalise(curr_proc().locals);
-        }
+        else decl->finalise(res, curr_proc().locals);
     }
 
     return decl;
@@ -718,8 +753,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         parsed->name,
         Linkage::Internal,
         Mangling::None,
-        proc_stack.empty() ? nullptr : proc_stack.back().proc,
-        nullptr,
+        proc_stack.empty() ? nullptr : proc_stack.back()->proc,
         parsed->loc,
         ttds
     );
@@ -887,6 +921,13 @@ auto Sema::TranslateType(ParsedType* parsed) -> Type { // clang-format off
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: \
             return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
+
+
     }
 
     Unreachable("Not a valid type kind: {}", +parsed->kind());

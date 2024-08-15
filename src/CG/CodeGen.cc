@@ -266,7 +266,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     curr_func->setLinkage(ConvertLinkage(proc->linkage));
 
     // If it doesn’t have a body, then we’re done.
-    if (not proc->body) return;
+    if (not proc->body()) return;
 
     // Create the entry block.
     auto entry = llvm::BasicBlock::Create(M.llvm_context, "entry", curr_func);
@@ -280,7 +280,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         builder.CreateStore(&a, locals.at(p));
 
     // Emit the body.
-    Emit(proc->body.get());
+    Emit(proc->body().get());
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {

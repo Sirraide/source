@@ -245,7 +245,6 @@ void Deserialiser::DeserialiseProcDecl() {
         Linkage::Imported,
         mangling,
         nullptr,
-        nullptr,
         {}
     );
 

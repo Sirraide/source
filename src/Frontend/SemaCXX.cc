@@ -125,7 +125,6 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
-        nullptr,
         {}
     );
 

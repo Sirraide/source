@@ -82,6 +82,9 @@ public:
     /// Declarations exported from this module.
     Scope exports{nullptr};
 
+    /// Cached template instantiations.
+    DenseMap<ProcDecl*, llvm::SmallDenseMap<ProcType*, ProcDecl*>> template_instantiations;
+
     /// LLVM context for this module.
     llvm::LLVMContext llvm_context;
 

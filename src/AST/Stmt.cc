@@ -153,13 +153,11 @@ ProcDecl::ProcDecl(
     Linkage linkage,
     Mangling mangling,
     ProcDecl* parent,
-    Ptr<Stmt> body,
     ArrayRef<TemplateTypeDecl*> template_params,
     Location location
 ) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
     num_template_params{u32(template_params.size())},
-    parent{parent},
-    body{body} {
+    parent{parent} {
     owner->procs.push_back(this);
 
     std::uninitialized_copy_n(
@@ -167,8 +165,6 @@ ProcDecl::ProcDecl(
         template_params.size(),
         getTrailingObjects<TemplateTypeDecl*>()
     );
-
-    ComputeDependence();
 }
 
 auto ProcDecl::Create(
@@ -178,7 +174,6 @@ auto ProcDecl::Create(
     Linkage linkage,
     Mangling mangling,
     ProcDecl* parent,
-    Ptr<Stmt> body,
     Location location,
     ArrayRef<TemplateTypeDecl*> template_params
 ) -> ProcDecl* {
@@ -191,16 +186,19 @@ auto ProcDecl::Create(
         linkage,
         mangling,
         parent,
-        body,
         template_params,
         location,
     };
 }
 
-void ProcDecl::finalise(ArrayRef<LocalDecl*> vars) {
+void ProcDecl::finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> vars) {
+    body_stmt = body;
     locals = vars.copy(owner->allocator());
+
     for (auto l : locals.take_front(proc_type()->params().size()))
         Assert(isa<ParamDecl>(l), "Parameters must be ParamDecls");
+
+    ComputeDependence();
 }
 
 auto ProcDecl::proc_type() const -> ProcType* {
@@ -218,6 +216,7 @@ TemplateTypeDecl::TemplateTypeDecl(
 ) : Decl{Kind::TemplateTypeDecl, name, location},
     num_deduced_indices{u32(deduced_indices.size())} {
     std::uninitialized_copy_n(deduced_indices.begin(), deduced_indices.size(), getTrailingObjects<u32>());
+    ComputeDependence();
 }
 
 auto TemplateTypeDecl::Create(

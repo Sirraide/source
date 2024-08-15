@@ -1,4 +1,8 @@
+// R %srcc --eval %s
+
 program test;
 
 proc foo(T, $T t) = t;
-//foo(1, 42);
+
+// * 42
+__srcc_print(foo(1, 42), "\n");

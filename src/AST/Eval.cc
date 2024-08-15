@@ -313,7 +313,11 @@ void Memory::init(TranslationUnit& tu) {
 //  Helpers
 // ============================================================================
 bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
-    Assert(not stmt->dependent(), "Cannot evaluate dependent statement");
+    if (stmt->dependent()) {
+        ICE(stmt->location(), "Cannot evaluate dependent statement");
+        return false;
+    }
+
     switch (stmt->kind()) {
         using K = Stmt::Kind;
 #define AST_STMT_LEAF(node) \
@@ -423,7 +427,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     auto args = call->args();
 
     // If we have a body, just evaluate it.
-    if (auto body = proc->body.get_or_null()) {
+    if (auto body = proc->body().get_or_null()) {
         // Set up stack.
         PushStackFrame _{*this};
         auto& frame = CurrFrame();

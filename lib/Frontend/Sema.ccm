@@ -25,18 +25,31 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     class Importer;
     friend Importer;
 
+public:
+    using TemplateArguments = DenseMap<TemplateTypeDecl*, TypeBase*>;
+
+private:
     struct ProcScopeInfo {
+        SRCC_IMMOVABLE(ProcScopeInfo);
         ProcDecl* proc;
         SmallVector<LocalDecl*> locals;
 
         ProcScopeInfo(ProcDecl* proc) : proc{proc} {}
     };
 
+    template <typename ScopeInfo = ProcScopeInfo>
     class [[nodiscard]] EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);
         Sema& S;
+        ScopeInfo info;
+
     public:
-        explicit EnterProcedure(Sema& S, ProcDecl* proc) : S{S} { S.proc_stack.emplace_back(proc); }
+        template <typename... Args>
+        explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
+            : S{S}, info{proc, std::forward<Args>(args)...} {
+            S.proc_stack.emplace_back(&info);
+        }
+
         ~EnterProcedure() { S.proc_stack.pop_back(); }
     };
 
@@ -130,7 +143,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     std::vector<std::unique_ptr<Scope>> all_scopes;
 
     /// Stack of active procedures.
-    SmallVector<ProcScopeInfo> proc_stack;
+    SmallVector<ProcScopeInfo*> proc_stack;
 
     /// Stack of active scopes.
     SmallVector<Scope*> scope_stack;
@@ -155,7 +168,7 @@ public:
     /// Get the current procedure.
     auto curr_proc() -> ProcScopeInfo& {
         Assert(not proc_stack.empty(), "Procedure stack underflow");
-        return proc_stack.back();
+        return *proc_stack.back();
     }
 
     /// Get the current scope.
@@ -186,13 +199,17 @@ private:
     void DeclareLocal(LocalDecl* d);
 
     /// Perform template deduction.
-    auto DeduceType(TemplateTypeDecl* ty, Type arg) -> Type;
+    auto DeduceType(TemplateTypeDecl* ty, Type param, Type arg) -> Type;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Instantiate a procedure template.
-    auto InstantiateTemplate(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
+    auto InstantiateTemplate(
+        ProcDecl* proc,
+        ProcType* substituted_type,
+        TemplateArguments& args
+    ) -> Ptr<ProcDecl>;
 
     /// Import a C++ header as a module.
     auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
@@ -237,9 +254,13 @@ private:
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
     /// Substitute types in a procedure template.
-    auto SubstituteTemplate(ProcDecl* proc_template, ArrayRef<TypeLoc> input_types) -> Type;
+    auto SubstituteTemplate(
+        ProcDecl* proc_template,
+        ArrayRef<TypeLoc> input_types
+    ) -> std::pair<Type, TemplateArguments>;
 
     /// Building AST nodes; called after translation and template instantiation.
+    auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;

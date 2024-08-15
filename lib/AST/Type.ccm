@@ -241,7 +241,7 @@ class srcc::Types {
     static constexpr BuiltinType NoReturnTyImpl{BuiltinKind::NoReturn};
     static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
     static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
-    static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced, Dependence::Type};
+    static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced}; // NOT dependent.
 
 public:
     /// Builtin types.

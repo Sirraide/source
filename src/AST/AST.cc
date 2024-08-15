@@ -70,7 +70,6 @@ TranslationUnit::TranslationUnit(Context& ctx, String name, bool is_module)
         is_module ? Linkage::Internal : Linkage::Exported,
         Mangling::None,
         nullptr,
-        nullptr,
         {}
     );
 }
@@ -142,6 +141,7 @@ void Stmt::Printer::PrintBasicNode(
         }
     }
 
+    if (s->dependent()) std::print(" dependent");
     std::print("\n");
 }
 
@@ -235,16 +235,27 @@ void Stmt::Printer::Print(Stmt* e) {
             auto p = cast<ProcDecl>(e);
             PrintBasicHeader(p, "ProcDecl");
             std::print(
-                " {}{} {}\n",
+                " {}{} {}",
                 C(Green),
                 p->name,
                 p->type.print(C.use_colours)
             );
 
+            if (p->instantiated_from) std::print(" instantiation");
+            std::print("\n");
+            if (not print_procedure_bodies) break;
+
+            // Print template parameters and parameters.
             SmallVector<Stmt*> children{p->template_params()};
             children.append(p->params().begin(), p->params().end());
-            if (auto body = p->body.get_or_null(); body and print_procedure_bodies)
-                children.push_back(body);
+
+            // And the body, if there is one.
+            if (auto body = p->body().get_or_null()) children.push_back(body);
+
+            // Also, print instantiations.
+            for (auto inst : p->owner->template_instantiations[p])
+                children.push_back(inst.second);
+
             PrintChildren(children);
         } break;
 
