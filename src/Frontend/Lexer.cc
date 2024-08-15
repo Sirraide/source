@@ -59,8 +59,6 @@ const StringMap<Tk> keywords = {
     {"init", Tk::Init},
     {"int", Tk::Int},
     {"is", Tk::Is},
-    {"land", Tk::Land},
-    {"lor", Tk::Lor},
     {"match", Tk::Match},
     {"noreturn", Tk::NoReturn},
     {"not", Tk::Not},
@@ -226,11 +224,18 @@ void Lexer::NextImpl() {
         case '~': ty = Tk::Tilde; break;
 
         // Two-character tokens.
-        case ':': ty = Eat(':') ? Tk::ColonColon : Tk::Colon; break;
         case '%': ty = Eat('=') ? Tk::PercentEq : Tk::Percent; break;
         case '!': ty = Eat('=') ? Tk::Neq : Tk::Bang; break;
 
         // Multi-character tokens.
+        case ':':
+            ty = Eat(':') ? Tk::ColonColon
+               : Eat('/') ? Tk::ColonSlash
+               : Eat('%') ? Tk::ColonPercent
+               : Eat('>') ? (Eat('=') ? Tk::UGe : Tk::UGt)
+                          : Tk::Colon;
+            break;
+
         case '.':
             ty = not Eat('.') ? Tk::Dot
                : Eat('.')     ? Tk::Ellipsis
@@ -243,6 +248,8 @@ void Lexer::NextImpl() {
         case '-':
             ty = Eat('>') ? Tk::RArrow
                : Eat('-') ? Tk::MinusMinus
+               : Eat('~') ? (Eat('=') ? Tk::MinusTildeEq : Tk::MinusTilde)
+               : Eat('|') ? (Eat('=') ? Tk::MinusVBarEq : Tk::MinusVBar)
                : Eat('=') ? Tk::MinusEq
                           : Tk::Minus;
             break;
@@ -250,11 +257,15 @@ void Lexer::NextImpl() {
         case '+':
             ty = Eat('+') ? Tk::PlusPlus
                : Eat('=') ? Tk::PlusEq
+               : Eat('~') ? (Eat('=') ? Tk::PlusTildeEq : Tk::PlusTilde)
+               : Eat('|') ? (Eat('=') ? Tk::PlusVBarEq : Tk::PlusVBar)
                           : Tk::Plus;
             break;
 
         case '*':
             ty = Eat('=') ? Tk::StarEq
+               : Eat('~') ? (Eat('=') ? Tk::StarTildeEq : Tk::StarTilde)
+               : Eat('|') ? (Eat('=') ? Tk::StarVBarEq : Tk::StarVBar)
                : Eat('*') ? (Eat('=') ? Tk::StarStarEq : Tk::StarStar)
                           : Tk::Star;
             break;
@@ -266,8 +277,8 @@ void Lexer::NextImpl() {
             break;
 
         case '>':
-            ty = Eat('=')     ? Tk::Ge
-               : not Eat('>') ? Tk::Gt
+            ty = Eat('=')     ? Tk::SGe
+               : not Eat('>') ? Tk::SGt
                : Eat('>')     ? (Eat('=') ? Tk::ShiftRightLogicalEq : Tk::ShiftRightLogical)
                : Eat('=')     ? Tk::ShiftRightEq
                               : Tk::ShiftRight;
@@ -291,10 +302,11 @@ void Lexer::NextImpl() {
                 break;
             }
 
-            ty = Eat('=') ? Tk::Le
+            ty = Eat('=') ? (Eat(':') ? Tk::ULe : Tk::SLe)
                : Eat('<') ? (Eat('=') ? Tk::ShiftLeftEq : Tk::ShiftLeft)
                : Eat('-') ? Tk::LArrow
-                          : Tk::Lt;
+               : Eat(':') ? Tk::ULt
+                          : Tk::SLt;
             break;
 
         case '\\':
@@ -360,7 +372,7 @@ void Lexer::SkipWhitespace() {
 }
 
 void Lexer::LexIdentifierRest(bool dollar) {
-    tok().type = dollar ? Tk::TemplateType: Tk::Identifier;
+    tok().type = dollar ? Tk::TemplateType : Tk::Identifier;
     while (IsContinue(Curr())) curr++;
     FinishText();
     if (dollar) return;

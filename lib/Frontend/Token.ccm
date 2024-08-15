@@ -63,8 +63,6 @@ enum struct srcc::Tk : u8 {
     Int,
     IntegerType,
     Is,
-    Land,
-    Lor,
     Match,
     NoReturn,
     Not,
@@ -120,10 +118,18 @@ enum struct srcc::Tk : u8 {
 
     /// Operators.
     Plus,
+    PlusTilde,
+    PlusVBar,
     Minus,
+    MinusTilde,
+    MinusVBar,
     Star,
+    StarTilde,
+    StarVBar,
     Slash,
+    ColonSlash,
     Percent,
+    ColonPercent,
     Caret,
     Ampersand,
     VBar,
@@ -136,15 +142,25 @@ enum struct srcc::Tk : u8 {
     MinusMinus,
     PlusPlus,
     StarStar,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    SLt,
+    SLe,
+    SGt,
+    SGe,
+    ULt,
+    ULe,
+    UGt,
+    UGe,
     EqEq,
     Neq,
     PlusEq,
+    PlusTildeEq,
+    PlusVBarEq,
     MinusEq,
+    MinusTildeEq,
+    MinusVBarEq,
     StarEq,
+    StarTildeEq,
+    StarVBarEq,
     SlashEq,
     PercentEq,
     ShiftLeft,
@@ -282,8 +298,6 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Int: return "int";
         case Tk::Import: return "import";
         case Tk::Is: return "is";
-        case Tk::Land: return "land";
-        case Tk::Lor: return "lor";
         case Tk::Match: return "match";
         case Tk::NoReturn: return "noreturn";
         case Tk::Not: return "not";
@@ -322,6 +336,8 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Semicolon: return ";";
         case Tk::Colon: return ":";
         case Tk::ColonColon: return "::";
+        case Tk::ColonSlash: return ":/";
+        case Tk::ColonPercent: return ":%";
         case Tk::Comma: return ",";
         case Tk::LParen: return "(";
         case Tk::RParen: return ")";
@@ -336,8 +352,14 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::RDblArrow: return "=>";
         case Tk::Question: return "?";
         case Tk::Plus: return "+";
+        case Tk::PlusTilde: return "+~";
+        case Tk::PlusVBar: return "+|";
         case Tk::Minus: return "-";
+        case Tk::MinusTilde: return "-~";
+        case Tk::MinusVBar: return "-|";
         case Tk::Star: return "*";
+        case Tk::StarTilde: return "*~";
+        case Tk::StarVBar: return "*|";
         case Tk::Slash: return "/";
         case Tk::Percent: return "%";
         case Tk::Caret: return "^";
@@ -352,15 +374,25 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::MinusMinus: return "--";
         case Tk::PlusPlus: return "++";
         case Tk::StarStar: return "**";
-        case Tk::Lt: return "<";
-        case Tk::Le: return "<=";
-        case Tk::Gt: return ">";
-        case Tk::Ge: return ">=";
+        case Tk::SLt: return "<";
+        case Tk::SLe: return "<=";
+        case Tk::SGt: return ">";
+        case Tk::SGe: return ">=";
+        case Tk::ULt: return "<:";
+        case Tk::ULe: return "<=:";
+        case Tk::UGt: return ":>";
+        case Tk::UGe: return ":>=";
         case Tk::EqEq: return "==";
         case Tk::Neq: return "!=";
         case Tk::PlusEq: return "+=";
+        case Tk::PlusTildeEq: return "+~=";
+        case Tk::PlusVBarEq: return "+|=";
         case Tk::MinusEq: return "-=";
+        case Tk::MinusTildeEq: return "-~=";
+        case Tk::MinusVBarEq: return "-|=";
         case Tk::StarEq: return "*=";
+        case Tk::StarTildeEq: return "*~=";
+        case Tk::StarVBarEq: return "*|=";
         case Tk::SlashEq: return "/=";
         case Tk::PercentEq: return "%=";
         case Tk::ShiftLeft: return "<<";
@@ -402,129 +434,7 @@ bool Token::operator==(const Token& b) {
             return integer == b.integer;
 
         /// All these are trivially equal.
-        case Tk::Comment:
-        case Tk::Invalid:
-        case Tk::Eof:
-
-        case Tk::Alias:
-        case Tk::And:
-        case Tk::As:
-        case Tk::AsBang:
-        case Tk::Asm:
-        case Tk::Assert:
-        case Tk::Bool:
-        case Tk::Break:
-        case Tk::Continue:
-        case Tk::Defer:
-        case Tk::Delete:
-        case Tk::Do:
-        case Tk::Dynamic:
-        case Tk::Elif:
-        case Tk::Else:
-        case Tk::Enum:
-        case Tk::Eval:
-        case Tk::Export:
-        case Tk::F32:
-        case Tk::F64:
-        case Tk::Fallthrough:
-        case Tk::False:
-        case Tk::For:
-        case Tk::ForReverse:
-        case Tk::Goto:
-        case Tk::If:
-        case Tk::In:
-        case Tk::Init:
-        case Tk::Int:
-        case Tk::Import:
-        case Tk::Is:
-        case Tk::Land:
-        case Tk::Lor:
-        case Tk::Match:
-        case Tk::NoReturn:
-        case Tk::Not:
-        case Tk::Or:
-        case Tk::Pragma:
-        case Tk::Proc:
-        case Tk::Return:
-        case Tk::Static:
-        case Tk::Struct:
-        case Tk::Then:
-        case Tk::True:
-        case Tk::Try:
-        case Tk::Type:
-        case Tk::Typeof:
-        case Tk::Unreachable:
-        case Tk::Val:
-        case Tk::Var:
-        case Tk::Variant:
-        case Tk::Void:
-        case Tk::While:
-        case Tk::With:
-        case Tk::Xor:
-
-        case Tk::CChar:
-        case Tk::CChar8T:
-        case Tk::CChar16T:
-        case Tk::CChar32T:
-        case Tk::CWCharT:
-        case Tk::CShort:
-        case Tk::CInt:
-        case Tk::CLong:
-        case Tk::CLongLong:
-        case Tk::CLongDouble:
-        case Tk::CSizeT:
-
-        case Tk::Semicolon:
-        case Tk::Colon:
-        case Tk::ColonColon:
-        case Tk::Comma:
-        case Tk::LParen:
-        case Tk::RParen:
-        case Tk::LBrack:
-        case Tk::RBrack:
-        case Tk::LBrace:
-        case Tk::RBrace:
-        case Tk::Ellipsis:
-        case Tk::Dot:
-        case Tk::LArrow:
-        case Tk::RArrow:
-        case Tk::RDblArrow:
-        case Tk::Question:
-        case Tk::Plus:
-        case Tk::Minus:
-        case Tk::Star:
-        case Tk::Slash:
-        case Tk::Percent:
-        case Tk::Caret:
-        case Tk::Ampersand:
-        case Tk::VBar:
-        case Tk::Tilde:
-        case Tk::Bang:
-        case Tk::Assign:
-        case Tk::DotDot:
-        case Tk::DotDotLess:
-        case Tk::DotDotEq:
-        case Tk::MinusMinus:
-        case Tk::PlusPlus:
-        case Tk::StarStar:
-        case Tk::Lt:
-        case Tk::Le:
-        case Tk::Gt:
-        case Tk::Ge:
-        case Tk::EqEq:
-        case Tk::Neq:
-        case Tk::PlusEq:
-        case Tk::MinusEq:
-        case Tk::StarEq:
-        case Tk::SlashEq:
-        case Tk::PercentEq:
-        case Tk::ShiftLeft:
-        case Tk::ShiftRight:
-        case Tk::ShiftRightLogical:
-        case Tk::ShiftLeftEq:
-        case Tk::ShiftRightEq:
-        case Tk::ShiftRightLogicalEq:
-        case Tk::StarStarEq:
+        default:
             return true;
     }
 

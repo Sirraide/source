@@ -207,6 +207,14 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(children);
         } break;
 
+        case Kind::BinaryExpr: {
+            auto& b = *cast<ParsedBinaryExpr>(s);
+            PrintHeader(s, "BinaryExpr", false);
+            std::print("{}{}{}\n", C(Red), b.op, C(Reset));
+            SmallVector<ParsedStmt*, 2> children{b.lhs, b.rhs};
+            PrintChildren(children);
+        } break;
+
         case Kind::CallExpr: {
             auto& c = *cast<ParsedCallExpr>(s);
             PrintHeader(s, "CallExpr");
@@ -299,6 +307,13 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "ReturnExpr");
             if (auto val = ret->value.get_or_null()) PrintChildren(val);
         } break;
+
+        case Kind::UnaryExpr: {
+            auto& u = *cast<ParsedUnaryExpr>(s);
+            PrintHeader(s, "UnaryExpr", false);
+            std::print("{}{}{}\n", C(Red), u.op, C(Reset));
+            PrintChildren(u.arg);
+        } break;
     }
 }
 
@@ -375,6 +390,130 @@ PARSE_TREE_NODE(Stmt);
 // ============================================================================
 //  Parser Helpers
 // ============================================================================
+constexpr int BinaryOrPostfixPrecedence(Tk t) {
+    switch (t) {
+        case Tk::ColonColon:
+            return 100'000;
+
+        case Tk::Dot:
+            return 10'000;
+
+        case Tk::LBrack:
+            return 5'000;
+
+        case Tk::LParen:
+            return 1'000;
+
+        case Tk::As:
+        case Tk::AsBang:
+            return 200;
+
+        case Tk::StarStar:
+            return 100;
+
+        case Tk::Star:
+        case Tk::Slash:
+        case Tk::Percent:
+        case Tk::StarTilde:
+        case Tk::StarVBar:
+        case Tk::ColonSlash:
+        case Tk::ColonPercent:
+            return 95;
+
+        case Tk::Plus:
+        case Tk::PlusTilde:
+        case Tk::PlusVBar:
+        case Tk::Minus:
+        case Tk::MinusTilde:
+        case Tk::MinusVBar:
+            return 90;
+
+        // Shifts have higher precedence than logical/bitwise
+        // operators so e.g. `a & 1 << 3` works properly.
+        case Tk::ShiftLeft:
+        case Tk::ShiftRight:
+        case Tk::ShiftRightLogical:
+            return 85;
+
+        case Tk::Ampersand:
+        case Tk::VBar:
+            return 82;
+
+        case Tk::ULt:
+        case Tk::UGt:
+        case Tk::ULe:
+        case Tk::UGe:
+        case Tk::SLt:
+        case Tk::SGt:
+        case Tk::SLe:
+        case Tk::SGe:
+            return 80;
+
+        case Tk::EqEq:
+        case Tk::Neq:
+            return 75;
+
+        case Tk::In:
+            return 72;
+
+        case Tk::And:
+        case Tk::Or:
+        case Tk::Xor:
+            return 70;
+
+        // Assignment has the lowest precedence.
+        case Tk::Assign:
+        case Tk::PlusEq:
+        case Tk::PlusTildeEq:
+        case Tk::PlusVBarEq:
+        case Tk::MinusEq:
+        case Tk::MinusTildeEq:
+        case Tk::MinusVBarEq:
+        case Tk::StarEq:
+        case Tk::StarTildeEq:
+        case Tk::StarVBarEq:
+        case Tk::StarStarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq:
+            return 1;
+
+        default:
+            return -1;
+    }
+}
+
+constexpr int PrefixPrecedence = 900;
+
+constexpr bool IsRightAssociative(Tk t) {
+    switch (t) {
+        case Tk::StarStar:
+        case Tk::Assign:
+        case Tk::PlusEq:
+        case Tk::MinusEq:
+        case Tk::StarEq:
+        case Tk::StarStarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+constexpr bool IsPostfix(Tk t) {
+    switch (t) {
+        default:
+            return false;
+    }
+}
+
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
@@ -382,12 +521,18 @@ bool Parser::AtStartOfExpression() {
         case Tk::Identifier:
         case Tk::Int:
         case Tk::Integer:
+        case Tk::Minus:
+        case Tk::MinusMinus:
+        case Tk::Not:
+        case Tk::Plus:
+        case Tk::PlusPlus:
         case Tk::RBrace:
         case Tk::Return:
         case Tk::StringLiteral:
         case Tk::TemplateType:
-        case Tk::Void:
+        case Tk::Tilde:
         case Tk::Var:
+        case Tk::Void:
             return true;
     }
 }
@@ -486,11 +631,29 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-lit>
 //          | <expr-member>
 //          | <expr-return>
-auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
+//          | <expr-prefix>
+//          | <expr-binary>
+//          | <expr-subscript>
+auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     Ptr<ParsedStmt> lhs;
     bool at_start = AtStartOfExpression(); // See below.
     switch (tok->type) {
         default: return Error("Expected expression");
+
+        // <expr-prefix> ::= <prefix> <expr>
+        case Tk::Minus:
+        case Tk::Plus:
+        case Tk::Not:
+        case Tk::Tilde:
+        case Tk::MinusMinus:
+        case Tk::PlusPlus: {
+            auto start = tok->location;
+            auto op = tok->type;
+            ++tok;
+            auto arg = ParseExpr(PrefixPrecedence);
+            if (not arg) return {};
+            lhs = new (*this) ParsedUnaryExpr{op, arg.get(), false, {start, arg.get()->loc}};
+        } break;
 
         // <expr-block> ::= "{" { <stmt> } "}"
         case Tk::LBrace:
@@ -556,8 +719,11 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
     if (At(Tk::Identifier)) return ParseVarDecl(lhs.get());
 
     // Big operator parse loop.
-    // TODO: precedence.
-    while (At(Tk::LParen, Tk::Dot)) {
+    while (
+        BinaryOrPostfixPrecedence(tok->type) > precedence or
+        (BinaryOrPostfixPrecedence(tok->type) == precedence and IsRightAssociative(tok->type))
+    ) {
+        // Some 'operators' have precedence, but require additional logic.
         switch (tok->type) {
             default: break;
 
@@ -582,6 +748,17 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
                 continue;
             }
 
+            // <expr=subscript> ::= <expr> "[" <expr> "]"
+            case Tk::LBrack: {
+                ++tok;
+                auto index = ParseExpr();
+                if (not index) return {};
+                auto end = tok->location;
+                ConsumeOrError(Tk::RBrack);
+                lhs = new (*this) ParsedBinaryExpr{Tk::LBrack, lhs.get(), index.get(), {lhs.get()->loc, end}};
+                continue;
+            }
+
             // <expr-member> ::= <expr> "." IDENTIFIER
             case Tk::Dot: {
                 ++tok;
@@ -597,7 +774,16 @@ auto Parser::ParseExpr() -> Ptr<ParsedStmt> {
             }
         }
 
-        Unreachable("Invalid operator: {}", tok->type);
+        auto op = tok->type;
+        auto end = tok->location;
+        ++tok;
+        if (IsPostfix(op)) {
+            lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, {lhs.get()->loc, end}};
+        } else {
+            auto rhs = ParseExpr(BinaryOrPostfixPrecedence(op));
+            if (not rhs) return {};
+            lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), {lhs.get()->loc, rhs.get()->loc}};
+        }
     }
 
     return lhs;

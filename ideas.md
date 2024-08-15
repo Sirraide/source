@@ -37,9 +37,9 @@ to a local variable may not be stored—except in other local variables—or bou
 parameter of a function. Lastly, such values may not be returned from the function.
 
 ## Operators
-`+%` for wrapping addition and `+|` for saturating addition.
+`+~` for wrapping addition and `+|` for saturating addition.
 
-Use `:>`, `<:`, `:>=`, `<=:` for unsigned comparison. `//` and `%%` for unsigned division/remainder. 
+Use `:>`, `<:`, `:>=`, `<=:` for unsigned comparison. `:/` and `:%` for unsigned division/remainder. 
 (note: multiplication isn’t signed, so `**` can still be exponentiation).
 
 `try` establishes a context that has the effect of
@@ -65,14 +65,15 @@ object is there or not.
 for a specific declaration.
 
 ## For loops
-Iteration over multiple sequences at once:
+Iteration over multiple sequences at once (this picks the shorter of the two):
 ```c#
-for var i in A, var j in B do ...
+for a, b in A, B do ...
 ```
 
 Iteration + index:
 ```c#
-for enum i, var x in A do ...
+for enum i, a in A do ...
+for enum i, a, b in A, B do ...
 ```
 
 ## Deproceduring

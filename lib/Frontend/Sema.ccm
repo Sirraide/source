@@ -274,6 +274,7 @@ private:
     void Translate();
 
     /// Statements.
+    auto TranslateBinaryExpr(ParsedBinaryExpr* parsed) -> Ptr<Expr>;
     auto TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr>;
     auto TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr>;
     auto TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr>;
@@ -283,6 +284,7 @@ private:
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
     auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
     auto TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr>;
+    auto TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr>;
 
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;

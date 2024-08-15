@@ -16,17 +16,19 @@
 
 // These must be arranged in a preorder traversal of the class hierarchy
 // for classof() to work properly.
+PARSE_TREE_LEAF_NODE(BinaryExpr)
 PARSE_TREE_LEAF_NODE(BlockExpr)
 PARSE_TREE_LEAF_NODE(CallExpr)
 PARSE_TREE_LEAF_NODE(DeclRefExpr)
 PARSE_TREE_LEAF_NODE(EvalExpr)
-PARSE_TREE_LEAF_NODE(StrLitExpr)
 PARSE_TREE_LEAF_NODE(IntLitExpr)
 PARSE_TREE_LEAF_NODE(MemberExpr)
 PARSE_TREE_LEAF_NODE(ReturnExpr)
+PARSE_TREE_LEAF_NODE(StrLitExpr)
+PARSE_TREE_LEAF_NODE(UnaryExpr)
 PARSE_TREE_LEAF_TYPE(BuiltinType)
-PARSE_TREE_LEAF_TYPE(TemplateType)
 PARSE_TREE_LEAF_TYPE(ProcType)
+PARSE_TREE_LEAF_TYPE(TemplateType)
 
 // DECLS BEGIN
 PARSE_TREE_NODE(Decl)

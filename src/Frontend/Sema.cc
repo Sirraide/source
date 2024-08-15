@@ -613,6 +613,10 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr*)-> Ptr<Expr> {
+    Todo();
+}
+
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
     EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
@@ -827,10 +831,6 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -847,6 +847,11 @@ auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr> {
     if (parsed->value.present()) ret_val = TranslateExpr(parsed->value.get());
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
+
+auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed)-> Ptr<Expr> {
+    Todo();
+}
+
 
 // ============================================================================
 //  Translation of Types

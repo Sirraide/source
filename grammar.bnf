@@ -39,16 +39,25 @@
          | <expr-lit>
          | <expr-member>
          | <expr-return>
+         | <expr-prefix>
+         | <expr-binary>
+         | <expr-subscript>
 
-<expr-block>    ::= "{" <stmts>  "}"
-<expr-call>     ::= <expr> "(" [ <call-args> ] ")"
-<expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
-<expr-eval>     ::= EVAL <expr>
-<expr-lit>      ::= STRING-LITERAL | INTEGER
-<expr-member>   ::= <expr> "." IDENTIFIER
-<expr-return>   ::= RETURN [ <expr> ]
+<expr-block>     ::= "{" <stmts>  "}"
+<expr-call>      ::= <expr> "(" [ <call-args> ] ")"
+<expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
+<expr-eval>      ::= EVAL <expr>
+<expr-lit>       ::= STRING-LITERAL | INTEGER
+<expr-member>    ::= <expr> "." IDENTIFIER
+<expr-return>    ::= RETURN [ <expr> ]
+<expr-prefix>    ::= <prefix> <expr>
+<expr-binary>    ::= <expr> <binary> <expr>
+<expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
+<prefix> ::= "-" | "+" | "not" | "~"
+<binary> ::= // TODO: list all binary operators here.
+
 
 // ============================================================================
 //  Declarations

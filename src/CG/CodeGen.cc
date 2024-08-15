@@ -269,7 +269,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
 
                     // Or zero-initialised if there is no initialiser.
                     else builder.CreateStore(llvm::Constant::getNullValue(ConvertType(var->type)), locals[var]);
-                }
+                } break;
             }
         }
 

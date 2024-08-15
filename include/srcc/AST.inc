@@ -31,6 +31,7 @@
 
 AST_STMT(Stmt)
 AST_STMT(Expr)
+//AST_STMT_LEAF(BinaryExpr)
 AST_STMT_LEAF(BlockExpr)
 AST_STMT_LEAF(BuiltinCallExpr)
 AST_STMT_LEAF(CallExpr)
@@ -44,6 +45,7 @@ AST_STMT_LEAF(ReturnExpr)
 AST_STMT_LEAF(SliceDataExpr)
 AST_STMT_LEAF(StrLitExpr)
 AST_STMT_LEAF(TypeExpr)
+//AST_STMT_LEAF(UnaryExpr)
 
 AST_STMT(Decl)
 AST_DECL_LEAF(TemplateTypeDecl)

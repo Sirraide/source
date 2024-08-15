@@ -113,7 +113,6 @@ public:
 // ============================================================================
 //  Types
 // ============================================================================
-
 class srcc::ParsedBuiltinType final : public ParsedStmt {
 public:
     BuiltinType* const ty;
@@ -167,7 +166,23 @@ public:
 // ============================================================================
 //  Expressions
 // ============================================================================
-/// An syntactic block that contains other expressions.
+class srcc::ParsedBinaryExpr final : public ParsedStmt {
+public:
+    Tk op;
+    ParsedStmt* lhs;
+    ParsedStmt* rhs;
+
+    ParsedBinaryExpr(
+        Tk op,
+        ParsedStmt* lhs,
+        ParsedStmt* rhs,
+        Location location
+    ) : ParsedStmt{Kind::BinaryExpr, location}, op{op}, lhs{lhs}, rhs{rhs} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BinaryExpr; }
+};
+
+/// A syntactic block that contains other expressions.
 class srcc::ParsedBlockExpr final : public ParsedStmt
     , TrailingObjects<ParsedBlockExpr, ParsedStmt*> {
     friend TrailingObjects;
@@ -323,6 +338,22 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ReturnExpr; }
 };
 
+class srcc::ParsedUnaryExpr final : public ParsedStmt {
+public:
+    Tk op;
+    ParsedStmt* arg;
+    bool postfix;
+
+    ParsedUnaryExpr(
+        Tk op,
+        ParsedStmt* arg,
+        bool postfix,
+        Location location
+    ) : ParsedStmt{Kind::UnaryExpr, location}, op{op}, arg{arg}, postfix{postfix} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::UnaryExpr; }
+};
+
 // ============================================================================
 //  Declarations
 // ============================================================================
@@ -452,7 +483,7 @@ private:
     /// Each of these corresponds to a production in the grammar.
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
-    auto ParseExpr() -> Ptr<ParsedStmt>;
+    auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
     void ParseImport();
