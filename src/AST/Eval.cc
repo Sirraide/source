@@ -151,24 +151,8 @@ public:
 
     /// \return True on success, false on failure.
     [[nodiscard]] bool Eval(Value& out, Stmt* stmt);
-    [[nodiscard]] bool EvalBlockExpr(Value& out, BlockExpr* block);
-    [[nodiscard]] bool EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin);
-    [[nodiscard]] bool EvalCallExpr(Value& out, CallExpr* call);
-    [[nodiscard]] bool EvalCastExpr(Value& out, CastExpr* cast);
-    [[nodiscard]] bool EvalConstExpr(Value& out, ConstExpr* constant);
-    [[nodiscard]] bool EvalEvalExpr(Value& out, EvalExpr* eval);
-    [[nodiscard]] bool EvalLocalRefExpr(Value& out, LocalRefExpr* local);
-    [[nodiscard]] bool EvalIntLitExpr(Value& out, IntLitExpr* int_lit);
-    [[nodiscard]] bool EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref);
-    [[nodiscard]] bool EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data);
-    [[nodiscard]] bool EvalStrLitExpr(Value& out, StrLitExpr* str_lit);
-    [[nodiscard]] bool EvalReturnExpr(Value& out, ReturnExpr* expr);
-    [[nodiscard]] bool EvalTypeExpr(Value& out, TypeExpr* expr);
-
-    [[nodiscard]] bool EvalLocalDecl(Value& out, LocalDecl* decl);
-    [[nodiscard]] bool EvalParamDecl(Value& out, LocalDecl* decl);
-    [[nodiscard]] bool EvalProcDecl(Value& out, ProcDecl* proc);
-    [[nodiscard]] bool EvalTemplateTypeDecl(Value& out, TemplateTypeDecl* ttd);
+#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval##Class(Value& out, Class* expr);
+#include "srcc/AST.inc"
 
     /// Check if we’re in a function.
     [[nodiscard]] bool InFunction() { return not stack.empty(); }
@@ -334,6 +318,45 @@ auto EvaluationContext::IntValue(std::integral auto val) -> Value {
     return Value{APInt{64, u64(val)}, Types::IntTy};
 }
 
+
+bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc) {
+    auto mem = addr.base.get<Memory*>();
+
+    // For builtin types, Sema will have ensured that the RHS is
+    // an srvalue of the same type.
+    switch (mem->type()->value_category()) {
+        case ValueCategory::MRValue: Todo("Initialise mrvalue");
+        case ValueCategory::LValue: Todo("Initialise lvalue");
+        case ValueCategory::DValue: Unreachable("Dependent value in constant evaluation?");
+        case ValueCategory::SRValue: {
+            if (mem->type() == Types::IntTy) {
+                if (auto i = init.get_or_null()) {
+                    Assert(i->value_category == Expr::SRValue);
+                    Value int_val;
+                    if (not Eval(int_val, i))
+                        return false;
+
+                    mem->init(tu);
+                    return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), i->location());
+
+                }
+
+                // No initialiser. Initialise it to 0.
+                mem->init(tu);
+                return StoreMemory(mem, u64(0), loc);
+            }
+
+            return Error(
+                loc,
+                "Unsupported variable type in constant evaluation: {}",
+                mem->type().print(true)
+            );
+        }
+    }
+
+    Unreachable();
+}
+
 /*auto EvaluationContext::Executor() -> class Executor& {
     if (not cached_executor.has_value()) cached_executor.emplace();
     return *cached_executor;
@@ -382,6 +405,10 @@ auto EvaluationContext::IntValue(std::integral auto val) -> Value {
 // ============================================================================
 //  Evaluation
 // ============================================================================
+bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
+    Todo();
+}
+
 bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
     // FIXME: Once we have destructors, this information should
     // just be available in the BlockExpr.
@@ -546,7 +573,12 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     Unreachable("Local variable not found: {}", local->decl->name);
 }
 
-bool EvaluationContext::EvalParamDecl(Value& out, LocalDecl* ld) {
+bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr){
+    Todo();
+}
+
+
+bool EvaluationContext::EvalParamDecl(Value& out, ParamDecl* ld) {
     return EvalLocalDecl(out, ld);
 }
 
@@ -593,42 +625,8 @@ bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr){
     return true;
 }
 
-bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc) {
-    auto mem = addr.base.get<Memory*>();
-
-    // For builtin types, Sema will have ensured that the RHS is
-    // an srvalue of the same type.
-    switch (mem->type()->value_category()) {
-        case ValueCategory::MRValue: Todo("Initialise mrvalue");
-        case ValueCategory::LValue: Todo("Initialise lvalue");
-        case ValueCategory::DValue: Unreachable("Dependent value in constant evaluation?");
-        case ValueCategory::SRValue: {
-            if (mem->type() == Types::IntTy) {
-                if (auto i = init.get_or_null()) {
-                    Assert(i->value_category == Expr::SRValue);
-                    Value int_val;
-                    if (not Eval(int_val, i))
-                        return false;
-
-                    mem->init(tu);
-                    return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), i->location());
-
-                }
-
-                // No initialiser. Initialise it to 0.
-                mem->init(tu);
-                return StoreMemory(mem, u64(0), loc);
-            }
-
-            return Error(
-                loc,
-                "Unsupported variable type in constant evaluation: {}",
-                mem->type().print(true)
-            );
-        }
-    }
-
-    Unreachable();
+bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
+    Todo();
 }
 
 // ============================================================================

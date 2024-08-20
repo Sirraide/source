@@ -51,38 +51,13 @@ class srcc::TemplateInstantiator {
 
     auto InstantiateProcedure(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
 
-    // Type Instantiation
-    auto InstantiateTemplateTypeDecl(TemplateTypeDecl* d) -> Decl*;
-    auto InstantiateLocalDecl(LocalDecl* d) -> LocalDecl*;
-    auto InstantiateParamDecl(ParamDecl* d) -> ParamDecl*;
-    auto InstantiateProcDecl(ProcDecl* d) -> ProcDecl*;
-
-    // Stmt instantiation.
+#define AST_DECL_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Class*;
+#define AST_STMT_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Ptr<Stmt>;
+#define AST_TYPE_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Type;
+#include "srcc/AST.inc"
     auto InstantiateStmt(Stmt* stmt) -> Ptr<Stmt>;
-    auto InstantiateBlockExpr(BlockExpr* e) -> Ptr<Expr>;
-    auto InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr<Expr>;
-    auto InstantiateCallExpr(CallExpr* e) -> Ptr<Expr>;
-    auto InstantiateCastExpr(CastExpr* e) -> Ptr<Expr>;
-    auto InstantiateConstExpr(ConstExpr* e) -> Ptr<Expr>;
-    auto InstantiateEvalExpr(EvalExpr* e) -> Ptr<Expr>;
     auto InstantiateExpr(Expr* e) -> Ptr<Expr>;
-    auto InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Expr>;
-    auto InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Expr>;
-    auto InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Expr>;
-    auto InstantiateReturnExpr(ReturnExpr* e) -> Ptr<Expr>;
-    auto InstantiateSliceDataExpr(SliceDataExpr* e) -> Ptr<Expr>;
-    auto InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Expr>;
-    auto InstantiateTypeExpr(TypeExpr* e) -> Ptr<TypeExpr>;
-
-    // Type Instantiation
     auto InstantiateType(Type ty) -> Type;
-    auto InstantiateArrayType(ArrayType*) -> Type { Todo(); }
-    auto InstantiateBuiltinType(BuiltinType* ty) -> Type;
-    auto InstantiateIntType(IntType*) -> Type { Unreachable("Never dependent"); }
-    auto InstantiateProcType(ProcType* ty) -> Type;
-    auto InstantiateReferenceType(ReferenceType*) -> Type { Todo(); }
-    auto InstantiateSliceType(SliceType*) -> Type { Todo(); }
-    auto InstantiateTemplateType(TemplateType* ty) -> Type;
 };
 
 // ============================================================================
@@ -144,7 +119,7 @@ auto TemplateInstantiator::InstantiateProcedure(
 
     // Instantiate the parameters.
     EnterInstantiation _{S, proc, inst};
-    for (auto param : proc->params()) InstantiateParamDecl(param);
+    for (auto param : proc->params()) (void) InstantiateParamDecl(param);
     auto body = InstantiateStmt(proc->body().get());
     inst->finalise(body, S.curr_proc().locals);
     return inst;
@@ -168,7 +143,7 @@ auto TemplateInstantiator::InstantiateProcDecl(ProcDecl*) -> ProcDecl* {
     Todo("Instantiate nested proc decl");
 }
 
-auto TemplateInstantiator::InstantiateTemplateTypeDecl(TemplateTypeDecl*) -> Decl* {
+auto TemplateInstantiator::InstantiateTemplateTypeDecl(TemplateTypeDecl*) -> TemplateTypeDecl* {
     Todo("Instantiate nested template type decl");
 }
 
@@ -187,13 +162,17 @@ auto TemplateInstantiator::InstantiateStmt(Stmt* stmt) -> Ptr<Stmt> {
     Unreachable("Invalid stmt kind");
 }
 
-auto TemplateInstantiator::InstantiateBlockExpr(BlockExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateBinaryExpr(BinaryExpr* n) -> Ptr<Stmt> {
+    Todo();
+}
+
+auto TemplateInstantiator::InstantiateBlockExpr(BlockExpr* e) -> Ptr<Stmt> {
     SmallVector<Stmt*> stmts;
     for (auto stmt : e->stmts()) stmts.push_back(TryInstantiateStmt(stmt));
     return S.BuildBlockExpr(e->scope, stmts, e->location());
 }
 
-auto TemplateInstantiator::InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr<Stmt> {
     // Some builtins are instantiated as though they were
     // a regular call expression.
     auto InstantiateAsCall = [&] -> Ptr<Expr> {
@@ -211,14 +190,14 @@ auto TemplateInstantiator::InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr
     Unreachable("Invalid builtin");
 }
 
-auto TemplateInstantiator::InstantiateCallExpr(CallExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateCallExpr(CallExpr* e) -> Ptr<Stmt> {
     SmallVector<Expr*> args;
     auto callee = TryInstantiateExpr(e->callee);
     for (auto arg : e->args()) args.push_back(TryInstantiateExpr(arg));
     return S.BuildCallExpr(callee, args, e->location());
 }
 
-auto TemplateInstantiator::InstantiateCastExpr(CastExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateCastExpr(CastExpr* e) -> Ptr<Stmt> {
     [[maybe_unused]] auto arg = TryInstantiateExpr(e->arg);
     switch (e->kind) {
         case CastExpr::LValueToSRValue: Unreachable("Never dependent");
@@ -226,7 +205,7 @@ auto TemplateInstantiator::InstantiateCastExpr(CastExpr* e) -> Ptr<Expr> {
     Unreachable("Invalid cast");
 }
 
-auto TemplateInstantiator::InstantiateConstExpr(ConstExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateConstExpr(ConstExpr* e) -> Ptr<Stmt> {
     // This is never dependent and only created after evaluation; the
     // eval expression possibly contained within is always marked as
     // dependent because it isn’t supposed to be used anymore after
@@ -235,7 +214,7 @@ auto TemplateInstantiator::InstantiateConstExpr(ConstExpr* e) -> Ptr<Expr> {
     return e;
 }
 
-auto TemplateInstantiator::InstantiateEvalExpr(EvalExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateEvalExpr(EvalExpr* e) -> Ptr<Stmt> {
     return S.BuildEvalExpr(TryInstantiateStmt(e->stmt), e->location());
 }
 
@@ -245,39 +224,47 @@ auto TemplateInstantiator::InstantiateExpr(Expr* e) -> Ptr<Expr> {
     return cast<Expr>(expr);
 }
 
-auto TemplateInstantiator::InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Stmt> {
     Assert(not e->dependent(), "Dependent IntLitExpr?");
     return e;
 }
 
-auto TemplateInstantiator::InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Stmt> {
     for (auto inst : InstantiationStack() | vws::reverse)
         if (auto d = inst->local_instantiations.find(e->decl); d != inst->local_instantiations.end())
             return new (*S.M) LocalRefExpr{d->second, e->location()};
     Unreachable("Local not instantiated?");
 }
 
-auto TemplateInstantiator::InstantiateSliceDataExpr(SliceDataExpr* e) -> Ptr<Expr> {
-    return SliceDataExpr::Create(*S.M, TryInstantiateExpr(e->slice), e->location());
+auto TemplateInstantiator::InstantiateParenExpr(ParenExpr* n) -> Ptr<Stmt> {
+    Todo();
 }
 
-auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Stmt> {
     Assert(not e->decl->is_template(), "TODO: Instantiate reference to template");
     return e;
 }
 
-auto TemplateInstantiator::InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateSliceDataExpr(SliceDataExpr* e) -> Ptr<Stmt> {
+    return SliceDataExpr::Create(*S.M, TryInstantiateExpr(e->slice), e->location());
+}
+
+auto TemplateInstantiator::InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Stmt> {
     Assert(not e->dependent(), "Dependent StrLitExpr?");
     return e;
 }
 
-auto TemplateInstantiator::InstantiateTypeExpr(TypeExpr* e) -> Ptr<TypeExpr> {
+auto TemplateInstantiator::InstantiateTypeExpr(TypeExpr* e) -> Ptr<Stmt> {
     return new (*S.M) TypeExpr(InstantiateType(e->type), e->location());
 }
 
-auto TemplateInstantiator::InstantiateReturnExpr(ReturnExpr* e) -> Ptr<Expr> {
+auto TemplateInstantiator::InstantiateReturnExpr(ReturnExpr* e) -> Ptr<Stmt> {
     Assert(e->value.present(), "Dependent return expression w/o argument?");
     return S.BuildReturnExpr(TryInstantiateExpr(e->value.get()), e->location(), e->implicit);
+}
+
+auto TemplateInstantiator::InstantiateUnaryExpr(UnaryExpr* n) -> Ptr<Stmt> {
+    Todo();
 }
 
 // ============================================================================
@@ -295,10 +282,18 @@ auto TemplateInstantiator::InstantiateType(Type ty) -> Type {
     Unreachable("Invalid type kind");
 }
 
+auto TemplateInstantiator::InstantiateArrayType(ArrayType* ty) -> Type {
+    return ArrayType::Get(*S.M, InstantiateType(ty->elem()), ty->dimension());
+}
+
 auto TemplateInstantiator::InstantiateBuiltinType(BuiltinType* ty) -> Type {
     // This can happen if someone tries to instantiate e.g. DependentTy;
     // unfortunately for them, there is nothing to be done here.
     return ty;
+}
+
+auto TemplateInstantiator::InstantiateIntType(IntType*) -> Type {
+    Unreachable("Never dependent");
 }
 
 auto TemplateInstantiator::InstantiateProcType(ProcType* ty) -> Type {
@@ -306,6 +301,14 @@ auto TemplateInstantiator::InstantiateProcType(ProcType* ty) -> Type {
     auto ret = InstantiateType(ty->ret());
     for (auto param : ty->params()) params.push_back(InstantiateType(param));
     return ProcType::Get(*S.M, ret, params, ty->cconv(), ty->variadic());
+}
+
+auto TemplateInstantiator::InstantiateReferenceType(ReferenceType* ty) -> Type {
+    return ReferenceType::Get(*S.M, InstantiateType(ty->elem()));
+}
+
+auto TemplateInstantiator::InstantiateSliceType(SliceType* ty) -> Type {
+    return SliceType::Get(*S.M, InstantiateType(ty->elem()));
 }
 
 auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {

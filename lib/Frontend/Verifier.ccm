@@ -7,7 +7,7 @@ module;
 export module srcc.frontend.verifier;
 import srcc;
 import srcc.frontend.parser;
-import srcc.frontend.token;
+import srcc.token;
 
 export namespace srcc {
 class VerifyDiagnosticsEngine;

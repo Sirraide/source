@@ -274,6 +274,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             if (p.init) PrintChildren(p.init.get());
         } break;
 
+        case Kind::ParenExpr: {
+            PrintHeader(s, "ParenExpr");
+            PrintChildren(cast<ParsedParenExpr>(s)->inner);
+        } break;
+
         case Kind::ProcDecl: {
             auto& p = *cast<ParsedProcDecl>(s);
             PrintHeader(s, "ProcDecl", false);
@@ -524,6 +529,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Minus:
         case Tk::MinusMinus:
         case Tk::Not:
+        case Tk::LParen:
         case Tk::Plus:
         case Tk::PlusPlus:
         case Tk::RBrace:
@@ -625,14 +631,15 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 // variable declarations)
 //
 // <expr> ::= <expr-block>
+//          | <expr-binary>
 //          | <expr-call>
 //          | <expr-decl-ref>
 //          | <expr-eval>
 //          | <expr-lit>
 //          | <expr-member>
-//          | <expr-return>
+//          | <expr-paren>
 //          | <expr-prefix>
-//          | <expr-binary>
+//          | <expr-return>
 //          | <expr-subscript>
 auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     Ptr<ParsedStmt> lhs;
@@ -698,6 +705,19 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             if (value.present()) loc = {loc, value.get()->loc};
             lhs = new (*this) ParsedReturnExpr{value, loc};
+        } break;
+
+        // <expr-paren> ::= "(" <expr> ")"
+        case Tk::LParen: {
+            ++tok;
+            lhs = ParseExpr();
+            auto loc = tok->location;
+            if (not Consume(Tk::RParen)) {
+                Error("Expected ')'");
+                SkipTo(Tk::RParen, Tk::Semicolon);
+                if (not Consume(loc, Tk::RParen)) return {};
+            }
+            lhs = new (*this) ParsedParenExpr{lhs.get(), {lhs.get()->loc, loc}};
         } break;
 
         case Tk::Int:

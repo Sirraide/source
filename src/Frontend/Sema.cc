@@ -746,6 +746,10 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
 }
 
+auto Sema::TranslateParenExpr(ParsedParenExpr*)-> Ptr<Expr> {
+    Todo();
+}
+
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> LocalDecl* {
     return BuildLocalDecl(
         curr_proc(),

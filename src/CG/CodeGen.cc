@@ -254,6 +254,8 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Unreachable("Unknown statement kind");
 }
 
+auto CodeGen::EmitBinaryExpr(BinaryExpr*) -> Value* { Todo(); }
+
 auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     Value* ret = nullptr;
     for (auto s : expr->stmts()) {
@@ -345,7 +347,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     Unreachable();
 }
 
-auto CodeGen::EmitConstExpr(ConstExpr* constant) -> llvm::Constant* {
+auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
     return EmitValue(*constant->value);
 }
 
@@ -353,7 +355,7 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
 }
 
-auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant* {
+auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
     return llvm::ConstantInt::get(ConvertType(expr->type), expr->storage.value());
 }
 
@@ -365,6 +367,8 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
     return locals.at(expr->decl);
 }
+
+auto CodeGen::EmitParenExpr(ParenExpr*) -> Value* { Todo(); }
 
 auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
     Assert(not proc->is_template(), "Requested address of template");
@@ -433,6 +437,8 @@ auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
     ICE(expr->location(), "Can’t emit type expr");
     return nullptr;
 }
+
+auto CodeGen::EmitUnaryExpr(UnaryExpr*) -> Value* { Todo(); }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
     utils::Overloaded LValueEmitter {

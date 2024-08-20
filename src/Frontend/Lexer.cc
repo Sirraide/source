@@ -5,7 +5,7 @@ module;
 #include <srcc/Macros.hh>
 
 module srcc.frontend.parser;
-import srcc.frontend.token;
+import srcc.token;
 import srcc.utils;
 using namespace srcc;
 

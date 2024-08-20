@@ -58,21 +58,11 @@ private:
 
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
-    auto EmitBlockExpr(BlockExpr* expr) -> llvm::Value*;
-    auto EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> llvm::Value*;
-    auto EmitCallExpr(CallExpr* expr) -> llvm::Value*;
-    auto EmitCastExpr(CastExpr* expr) -> llvm::Value*;
-    auto EmitConstExpr(ConstExpr* constant) -> llvm::Constant*;
-    auto EmitEvalExpr(EvalExpr* eval) -> llvm::Value*;
-    auto EmitLocalRefExpr(LocalRefExpr* expr) -> llvm::Value*;
-    auto EmitIntLitExpr(IntLitExpr* expr) -> llvm::Constant*;
+#define AST_DECL_LEAF(Class)
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt) -> llvm::Value*;
+#include "srcc/AST.inc"
     void EmitProcedure(ProcDecl* proc);
     auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;
-    auto EmitProcRefExpr(ProcRefExpr* expr) -> llvm::Value*;
-    auto EmitReturnExpr(ReturnExpr* expr) -> llvm::Value*;
-    auto EmitSliceDataExpr(SliceDataExpr* expr) -> llvm::Value*;
-    auto EmitStrLitExpr(StrLitExpr* expr) -> llvm::Value*;
-    auto EmitTypeExpr(TypeExpr* expr) -> llvm::Value*;
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
 
     void EmitLocal(LocalDecl* decl);

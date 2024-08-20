@@ -1,0 +1,29 @@
+program test;
+
+
+proc arith(int a, int b) {
+    __srcc_print(a, ", ", b, "\n");
+    __srcc_print(a + b, "\n");
+    __srcc_print(a +~ b, "\n");
+    __srcc_print(a +| b, "\n");
+
+    __srcc_print(a - b, "\n");
+    __srcc_print(a -~ b, "\n");
+    __srcc_print(a -| b, "\n");
+
+    __srcc_print(a * b, "\n");
+    __srcc_print(a *~ b, "\n");
+    __srcc_print(a *| b, "\n");
+
+    __srcc_print(a / b, "\n");
+    __srcc_print(a % b, "\n");
+    __srcc_print(a :/ b, "\n");
+    __srcc_print(a :% b, "\n");
+
+    __srcc_print(a ** b, "\n");
+    __srcc_print("\n");
+}
+
+arith(20, 5);
+arith(~(1 << 63), 10);
+arith(1 << 63, 10);

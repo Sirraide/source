@@ -7,6 +7,7 @@ module;
 #include <srcc/Macros.hh>
 
 export module srcc.ast:stmt;
+import srcc.token;
 import srcc;
 import :enums;
 import :eval;
@@ -108,6 +109,10 @@ public:
     /// Mark this node as errored.
     void set_errored() { dep |= Dependence::Error; }
 
+    /// Visit this statement.
+    template <typename Visitor>
+    auto visit(Visitor&& v) -> decltype(auto);
+
 protected:
     /// Compute the dependence of this expression.
     void ComputeDependence();
@@ -144,6 +149,28 @@ public:
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::BlockExpr and e->kind() <= Kind::TypeExpr;
     }
+};
+
+class srcc::BinaryExpr final : public Expr {
+public:
+    Tk op;
+    Expr* lhs;
+    Expr* rhs;
+
+    BinaryExpr(
+        Type type,
+        Tk op,
+        Expr* lhs,
+        Expr* rhs,
+        Location location
+    ) : Expr{Kind::BinaryExpr, type, SRValue, location},
+        op{op},
+        lhs{lhs},
+        rhs{rhs} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::BinaryExpr; }
 };
 
 class srcc::BlockExpr final : public Expr
@@ -336,6 +363,21 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
 };
 
+class srcc::ParenExpr final : public Expr {
+public:
+    Expr* expr;
+
+    ParenExpr(
+        Type type,
+        Expr* expr,
+        Location location
+    ) : Expr{Kind::ParenExpr, type, SRValue, location}, expr{expr} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ParenExpr; }
+};
+
 class srcc::ProcRefExpr final : public Expr {
 public:
     ProcDecl* decl;
@@ -420,6 +462,25 @@ public:
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ReturnExpr; }
+};
+
+class srcc::UnaryExpr final : public Expr {
+public:
+    Tk op;
+    Expr* arg;
+
+    UnaryExpr(
+        Type type,
+        Tk op,
+        Expr* arg,
+        Location location
+    ) : Expr{Kind::UnaryExpr, type, SRValue, location},
+        op{op},
+        arg{arg} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::UnaryExpr; }
 };
 
 // ============================================================================
@@ -637,3 +698,14 @@ public:
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };
+
+/// Visit this statement.
+template <typename Visitor>
+auto srcc::Stmt::visit(Visitor&& v) -> decltype(auto) {
+    switch (kind()) {
+#define AST_STMT_LEAF(node) \
+    case Kind::node: return std::invoke(std::forward<Visitor>(v), static_cast<node*>(this));
+#include "srcc/AST.inc"
+    }
+    Unreachable();
+}

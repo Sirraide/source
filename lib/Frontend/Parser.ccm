@@ -7,7 +7,7 @@ module;
 
 export module srcc.frontend.parser;
 import srcc.ast;
-import srcc.frontend.token;
+import srcc.token;
 import srcc;
 import srcc.utils;
 
@@ -323,6 +323,18 @@ public:
     ) : ParsedStmt{Kind::MemberExpr, location}, base{base}, member{member} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::MemberExpr; }
+};
+
+class srcc::ParsedParenExpr final : public ParsedStmt {
+public:
+    ParsedStmt* inner;
+
+    ParsedParenExpr(
+        ParsedStmt* inner,
+        Location location
+    ) : ParsedStmt{Kind::ParenExpr, location}, inner{inner} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParenExpr; }
 };
 
 /// A return from a function.

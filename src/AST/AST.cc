@@ -147,6 +147,13 @@ void Stmt::Printer::PrintBasicNode(
 
 void Stmt::Printer::Print(Stmt* e) {
     switch (e->kind()) {
+        case Kind::BinaryExpr: {
+            auto b = cast<BinaryExpr>(e);
+            PrintBasicNode(e, "BinaryExpr", [&] { std::print("{}{}", C(Red), b->op); });
+            SmallVector<Stmt*, 2> children{b->lhs, b->rhs};
+            PrintChildren(children);
+        } break;
+
         case Kind::BlockExpr:
             PrintBasicNode(e, "BlockExpr");
             PrintChildren(cast<BlockExpr>(e)->stmts());
@@ -232,6 +239,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
+        case Kind::ParenExpr: {
+            PrintBasicNode(e, "ParenExpr");
+            PrintChildren(cast<ParenExpr>(e)->expr);
+        } break;
+
         case Kind::ProcDecl: {
             auto p = cast<ProcDecl>(e);
             PrintBasicHeader(p, "ProcDecl");
@@ -303,6 +315,12 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(e, "TypeExpr");
             std::print(" {}\n", cast<TypeExpr>(e)->value->print(C.use_colours));
             break;
+
+        case Kind::UnaryExpr: {
+            auto u = cast<UnaryExpr>(e);
+            PrintBasicNode(e, "UnaryExpr", [&] { std::print("{}{}", C(Red), u->op); });
+            PrintChildren(u->arg);
+        } break;
     }
 }
 

@@ -1,14 +1,13 @@
 module;
 
+#include <srcc/Macros.hh>
+#include <deque>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
-#include <srcc/Macros.hh>
 #include <utility>
-#include <deque>
 
-export module srcc.frontend.token;
-import srcc.utils;
+export module srcc.token;
 import srcc;
 
 using namespace srcc;

@@ -45,6 +45,7 @@ target_compile_options(options INTERFACE
     -Wformat=2        # Stricter format checking.
 
     ## Disabled warnings.
+    -Wno-unused-parameter ## FIXME: Should periodically reenable this.
     -Wno-unused-function
     -Wno-unused-local-typedefs
     -Wno-ctad-maybe-unsupported

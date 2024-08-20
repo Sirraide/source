@@ -282,6 +282,7 @@ private:
     auto TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr>;
     auto TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr>;
     auto TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr>;
+    auto TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr>;
     auto TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr>;
     auto TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr>;
     auto TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr>;

@@ -37,7 +37,7 @@ import srcc.ast;
 import srcc.frontend.verifier;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
-import srcc.frontend.token;
+import srcc.token;
 import srcc.codegen;
 
 using namespace srcc;
