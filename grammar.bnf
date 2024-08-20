@@ -66,14 +66,14 @@
 // ============================================================================
 <decl> ::= <decl-proc> | <decl-var>
 <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
-<decl-proc>  ::= PROC IDENTIFIER <signature> <proc-body>
-<signature>  ::= [ <proc-args> ] [ "->" <type> ]
+<decl-proc>  ::= <signature> <proc-body>
+<signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
 <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-body>  ::= <expr-block> | "=" <expr> ";"
-<param-decl> ::= <type> [ IDENTIFIER ]
+<param-decl> ::= <type> [ IDENTIFIER ] | <signature>
 
 // ============================================================================
 //  Types
 // ============================================================================
-<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref>
-<type-prim> ::= INT | VOID | VAR
+<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
+<type-prim> ::= BOOL | INT | VOID | VAR

@@ -522,6 +522,7 @@ constexpr bool IsPostfix(Tk t) {
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
+        case Tk::Bool:
         case Tk::Eval:
         case Tk::Identifier:
         case Tk::Int:
@@ -532,6 +533,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::LParen:
         case Tk::Plus:
         case Tk::PlusPlus:
+        case Tk::Proc:
         case Tk::RBrace:
         case Tk::Return:
         case Tk::StringLiteral:
@@ -576,6 +578,24 @@ bool Parser::ConsumeOrError(Tk tk) {
     }
     return true;
 }
+
+auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
+    // If no return type was provided, default to 'void' here.
+    if (sig.ret.invalid()) {
+        sig.ret = new (*this) ParsedBuiltinType(
+            Types::VoidTy.ptr(),
+            sig.proc_loc
+        );
+    }
+
+    return ParsedProcType::Create(
+        *this,
+        sig.ret.get(),
+        sig.param_types,
+        sig.proc_loc
+    );
+}
+
 
 // ============================================================================
 //  Parser
@@ -899,64 +919,20 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <decl-proc>  ::= PROC IDENTIFIER <signature> <proc-body>
-// <signature>  ::= [ <proc-args> ] [ "->" <type> ]
-// <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-// <proc-body>  ::= <expr-block> | "=" <expr> ";"
-// <param-decl> ::= <type> [ IDENTIFIER ]
+// <decl-proc>  ::= <signature> <proc-body>
 auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
-    // Yeet 'proc'.
-    auto loc = tok->location;
-    ++tok;
-
-    // Parse name.
-    if (not At(Tk::Identifier)) return Error("Expected identifier");
-    auto name = tok->text;
-    ++tok;
-
     // Parse signature.
-    SmallVector<ParsedStmt*, 10> param_types;
     SmallVector<ParsedLocalDecl*, 10> param_decls;
-    if (Consume(Tk::LParen)) {
-        while (not At(Tk::RParen)) {
-            auto ty = ParseType();
-            if (not ty) {
-                SkipTo(Tk::RParen);
-                break;
-            }
-
-            String name;
-            Location end = ty.get()->loc;
-            if (At(Tk::Identifier)) {
-                name = tok->text;
-                end = tok->location;
-                ++tok;
-            }
-
-            param_types.push_back(ty.get());
-            param_decls.push_back(new (*this) ParsedLocalDecl{
-                name,
-                ty.get(),
-                {ty.get()->loc, end}
-            });
-
-            if (not Consume(Tk::Comma)) break;
-        }
-
-        if (not Consume(Tk::RParen)) return Error("Expected ')'");
-    }
-
-    // Return Type.
-    Ptr<ParsedStmt> ret;
-    if (Consume(Tk::RArrow)) ret = ParseType();
+    Signature sig;
+    if (not ParseSignature(sig, &param_decls)) return nullptr;
 
     // If we failed to parse a return type, or if there was
     // none, just default to void instead, or deduce the type
     // if this is a '= <expr>' declaration.
-    if (ret.invalid()) {
-        ret = new (*this) ParsedBuiltinType(
+    if (sig.ret.invalid()) {
+        sig.ret = new (*this) ParsedBuiltinType(
             At(Tk::Assign) ? Types::DeducedTy.ptr() : Types::VoidTy.ptr(),
-            loc
+            sig.proc_loc
         );
     }
 
@@ -972,12 +948,100 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (not body) return {};
     return ParsedProcDecl::Create(
         *this,
-        name,
-        ParsedProcType::Create(*this, ret.get(), param_types, loc),
+        sig.name,
+        CreateType(sig),
         param_decls,
         body.get(),
-        loc
+        sig.proc_loc
     );
+}
+
+// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
+// <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+// <proc-body>  ::= <expr-block> | "=" <expr> ";"
+// <param-decl> ::= <type> [ IDENTIFIER ] | <signature>
+bool Parser::ParseSignature(
+    Signature& sig,
+    SmallVectorImpl<ParsedLocalDecl*>* decls
+) {
+    // Yeet 'proc'.
+    sig.proc_loc = tok->location;
+    ++tok;
+
+    // Parse name.
+    sig.tok_after_proc = tok->location;
+    if (At(Tk::Identifier)) {
+        sig.name = tok->text;
+        ++tok;
+    }
+
+    // Parse signature.
+    if (Consume(Tk::LParen)) {
+        while (not At(Tk::RParen)) {
+            Ptr<ParsedStmt> type;
+            String name;
+            Location name_loc;
+
+            // Special handling for signatures, which may have
+            // a name in this position.
+            if (At(Tk::Proc)) {
+                Signature inner;
+                if (not ParseSignature(inner, nullptr)) {
+                    SkipTo(Tk::RParen);
+                    break;
+                }
+
+                type = CreateType(inner);
+                name = inner.name;
+                name_loc = inner.tok_after_proc;
+            }
+
+            // Otherwise, parse a regular type and a name if we’re
+            // creating declarations.
+            else {
+                type = ParseType();
+                if (not type) {
+                    SkipTo(Tk::RParen);
+                    break;
+                }
+            }
+
+            sig.param_types.push_back(type.get());
+
+            // If decls is not null, then we allow named parameters here; parse
+            // the name if there is one and create the declaration.
+            if (decls) {
+                Location end = type.get()->loc;
+                if (At(Tk::Identifier)) {
+                    if (not name.empty()) {
+                        Error("Parameter cannot have two names");
+                        Note(name_loc, "Name was already specified here");
+                    }
+
+                    name = tok->text;
+                    end = tok->location;
+                    ++tok;
+                }
+
+                decls->push_back(new (*this) ParsedLocalDecl{
+                    name,
+                    type.get(),
+                    {type.get()->loc, end}
+                });
+            } else if (At(Tk::Identifier)) {
+                Error("Named parameters are not allowed here");
+                ++tok;
+            }
+
+            if (not Consume(Tk::Comma)) break;
+        }
+
+        if (not Consume(Tk::RParen)) Error("Expected ')'");
+    }
+
+    // Return Type.
+    if (Consume(Tk::RArrow)) sig.ret = ParseType();
+    return true;
 }
 
 // <stmt>  ::= [ <expr> ] ";"
@@ -1016,7 +1080,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     }
 }
 
-// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref>
+// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
 auto Parser::ParseType() -> Ptr<ParsedStmt> {
     auto Builtin = [&](BuiltinType* ty) {
         auto loc = tok->location;
@@ -1027,7 +1091,8 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
     switch (tok->type) {
         default: return Error("Expected type");
 
-        // <type-prim> ::= INT | VOID | VAR
+        // <type-prim> ::= BOOL | INT | VOID | VAR
+        case Tk::Bool: return Builtin(Types::BoolTy.ptr());
         case Tk::Int: return Builtin(Types::IntTy.ptr());
         case Tk::Void: return Builtin(Types::VoidTy.ptr());
         case Tk::Var: return Builtin(Types::DeducedTy.ptr());
@@ -1043,6 +1108,21 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
         // <expr-decl-ref>
         case Tk::Identifier:
             return ParseDeclRefExpr();
+
+        // <signature>
+        case Tk::Proc: {
+            Signature sig;
+            if (not ParseSignature(sig, nullptr)) return nullptr;
+
+            // A procedure name is not allowed here. If you want
+            // to allow a name, call ParseSignature instead.
+            if (not sig.name.empty()) Error(
+                sig.tok_after_proc,
+                "A name is not allowed in a procedure type"
+            );
+
+            return CreateType(sig);
+        }
     }
 }
 

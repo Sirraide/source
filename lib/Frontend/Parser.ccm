@@ -487,6 +487,14 @@ public:
     auto module() -> ParsedModule& { return *mod; }
 
 private:
+    struct Signature {
+        SmallVector<ParsedStmt*, 10> param_types;
+        Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
+        String name;
+        Location proc_loc;
+        Location tok_after_proc;
+    };
+
     explicit Parser(const File& file)
         : mod{std::make_unique<ParsedModule>(file)},
           stream{*mod->string_alloc},
@@ -496,14 +504,17 @@ private:
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
+    auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
+    bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
+    auto ParseStmt() -> Ptr<ParsedStmt>;
+    auto ParseType() -> Ptr<ParsedStmt>;
+    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
     void ParseImport();
-    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
     void ParsePreamble();
-    auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
-    auto ParseStmt() -> Ptr<ParsedStmt>;
-    auto ParseType() -> Ptr<ParsedStmt>;
+
+    auto CreateType(Signature& sig) -> ParsedProcType*;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

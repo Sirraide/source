@@ -1,0 +1,39 @@
+// V %srcc %s --sema --verify
+// expected-no-diagnostics
+program test;
+
+// My overloading stress test.
+//
+// This is a complicated one, the situation is basically this:
+// the rows of the table below are the possible overloads of a
+// call whose arguments are all overload sets themselves, and the
+// columns are the possible overloads for the arguments.
+//
+// Given a call `f(a, b, c)` and the following situation (an x indicates
+// that there is a valid overload (of a, b, or c) for that parameter
+// of a specific overload of f.
+//
+//    a1 a2 a3
+// f1 x
+// f2 x  x
+// f3 x  x  x
+// f4    x  x
+// f5       x
+//
+// Here, overload f3 must be selected.
+
+f(     // f3
+    a, // a3
+    a, // a2
+    a  // a1
+);
+
+proc a {}          // a1
+proc a (int) {}    // a2
+proc a (bool) -> int = 0; // a3
+
+proc f (proc,                proc        -> bool, proc        -> bool) -> int = 1; // f1
+proc f (proc (int),          proc,                proc        -> bool) -> int = 2; // f2
+proc f (proc (bool) -> int,  proc (int),          proc               ) -> int = 3; // f3
+proc f (proc        -> bool, proc (bool) -> int,  proc (int)         ) -> int = 4; // f4
+proc f (proc        -> bool, proc        -> bool, proc (bool) -> int ) -> int = 5; // f5
