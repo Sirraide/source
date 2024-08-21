@@ -11,6 +11,7 @@ module;
 #include <llvm/Support/Unicode.h>
 #include <mutex>
 #include <random>
+#include <ranges>
 #include <srcc/Macros.hh>
 #include <thread>
 
@@ -276,23 +277,111 @@ auto Location::text(const Context& ctx) const -> String {
 // ============================================================================
 //  Diagnostics
 // ============================================================================
-u32 StreamingDiagnosticsEngine::cols() {
-    return std::max<u32>({
-        llvm::sys::Process::StandardErrColumns(),
-        llvm::sys::Process::StandardOutColumns(),
-        80
-    });
-}
-
-void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
+auto FormatDiagnostic(const Context& ctx, Diagnostic& diag) -> std::string {
     utils::Colours C(ctx.use_colours());
     using enum utils::Colour;
+    std::string out;
 
     // Print any extra data that should come after the source line.
     auto PrintExtraData = [&] {
         if (diag.extra.empty()) return;
-        stream << diag.extra << C(Reset) << "\n";
+
+        // Adding a newline at the end here forces an extra empty line to
+        // be emitted when we print the diagnostic; that looks better if
+        // we have extra data, but it’s weird if we don’t, which is why
+        // we add the linebreak after the main diagnostic text here.
+        out += std::format("\n{}{}\n", C(Reset), diag.extra);
     };
+
+    // If the location is invalid, either because the specified file does not
+    // exists, its position is out of bounds or 0, or its length is 0, then we
+    // skip printing the location.
+    auto l = diag.where.seek(ctx);
+    if (not l.has_value()) {
+        // Even if the location is invalid, print the file name if we can.
+        if (auto f = ctx.file(diag.where.file_id))
+            out += std::format("{}{}: ", C(Bold), f->path());
+
+        // Print the message.
+        out += std::format(
+            "{}{}{}: {}{}{}{}",
+            C(Bold),
+            Diagnostic::Colour(C, diag.level),
+            Diagnostic::Name(diag.level),
+            C(Reset),
+            C(Bold),
+            diag.msg,
+            C(Reset)
+        );
+
+        PrintExtraData();
+        return out;
+    }
+
+    // If the location is valid, get the line, line number, and column number.
+    const auto [line, col, line_start, line_end] = *l;
+    auto col_offs = col - 1;
+
+    // Split the line into everything before the range, the range itself,
+    // and everything after.
+    std::string before(line_start, col_offs);
+    std::string range(line_start + col_offs, std::min<u64>(diag.where.len, u64(line_end - (line_start + col_offs))));
+    auto after = line_start + col_offs + diag.where.len > line_end
+                   ? std::string{}
+                   : std::string(line_start + col_offs + diag.where.len, line_end);
+
+    // Replace tabs with spaces. We need to do this *after* splitting
+    // because this invalidates the offsets.
+    utils::ReplaceAll(before, "\t", "    ");
+    utils::ReplaceAll(range, "\t", "    ");
+    utils::ReplaceAll(after, "\t", "    ");
+
+    // Print the file name, line number, and column number.
+    const auto& file = *ctx.file(diag.where.file_id);
+    out += std::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
+
+    // Print the diagnostic name and message.
+    out += std::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
+    out += std::format("{}{}\n", C(Reset), diag.msg);
+
+    // Print the line up to the start of the location, the range in the right
+    // colour, and the rest of the line.
+    out += std::format("{} | {}", line, before);
+    out += std::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
+    out += std::format("{}\n", after);
+
+    // Determine the number of digits in the line number.
+    const auto digits = utils::NumberWidth(line);
+
+    // LLVM’s columnWidthUTF8() function returns -1 for non-printable characters
+    // for some ungodly reason, so guard against that.
+    static const auto ColumnWidth = [](StringRef text) {
+        auto wd = llvm::sys::unicode::columnWidthUTF8(text);
+        return wd < 0 ? 0 : usz(wd);
+    };
+
+    // Underline the range. For that, we first pad the line based on the number
+    // of digits in the line number and append more spaces to line us up with
+    // the range.
+    for (usz i = 0, end = digits + ColumnWidth(before) + sizeof(" | ") - 1; i < end; i++)
+        out += " ";
+
+    // Finally, underline the range.
+    out += std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
+    for (usz i = 0, end = ColumnWidth(range); i < end; i++) out += "~";
+
+    // And print any extra data.
+    PrintExtraData();
+    return out;
+}
+
+u32 StreamingDiagnosticsEngine::cols() {
+    return std::max<u32>({llvm::sys::Process::StandardErrColumns(), llvm::sys::Process::StandardOutColumns(), 80});
+}
+
+void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
+    using enum utils::Colour;
+    utils::Colours C{ctx.use_colours()};
 
     // Give up if we’ve printed too many errors.
     if (error_limit and printed >= error_limit) {
@@ -328,84 +417,16 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     if (printed != 0 and diag.level != Diagnostic::Level::Note) stream << "\n";
     printed++;
 
-    // If the location is invalid, either because the specified file does not
-    // exists, its position is out of bounds or 0, or its length is 0, then we
-    // skip printing the location.
-    auto l = diag.where.seek(ctx);
-    if (not l.has_value()) {
-        // Even if the location is invalid, print the file name if we can.
-        if (auto f = ctx.file(diag.where.file_id))
-            stream << std::format("{}{}: ", C(Bold), f->path());
+    // Render the diagnostic text.
+    auto out = FormatDiagnostic(ctx, diag);
 
-        // Print the message.
-        stream << std::format(
-            "{}{}{}: {}{}{}{}\n",
-            C(Bold),
-            Diagnostic::Colour(C, diag.level),
-            Diagnostic::Name(diag.level),
-            C(Reset),
-            C(Bold),
-            diag.msg,
-            C(Reset)
-        );
-
-        PrintExtraData();
-        return;
+    // Then, indent everything properly.
+    auto lines = base::stream{out}.lines();
+    auto count = rgs::distance(lines);
+    for (auto [i, line] : lines | vws::enumerate) {
+        auto leading = i == 0         ? "╭ "sv
+                     : i == count - 1 ? "╰ "sv
+                                      : "│ "sv;
+        stream << C(Reset) << leading << line.text() << "\n";
     }
-
-    // If the location is valid, get the line, line number, and column number.
-    const auto [line, col, line_start, line_end] = *l;
-    auto col_offs = col - 1;
-
-    // Split the line into everything before the range, the range itself,
-    // and everything after.
-    std::string before(line_start, col_offs);
-    std::string range(line_start + col_offs, std::min<u64>(diag.where.len, u64(line_end - (line_start + col_offs))));
-    auto after = line_start + col_offs + diag.where.len > line_end
-                   ? std::string{}
-                   : std::string(line_start + col_offs + diag.where.len, line_end);
-
-    // Replace tabs with spaces. We need to do this *after* splitting
-    // because this invalidates the offsets.
-    utils::ReplaceAll(before, "\t", "    ");
-    utils::ReplaceAll(range, "\t", "    ");
-    utils::ReplaceAll(after, "\t", "    ");
-
-    // Print the file name, line number, and column number.
-    const auto& file = *ctx.file(diag.where.file_id);
-    stream << std::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
-
-    // Print the diagnostic name and message.
-    stream << std::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
-    stream << std::format("{}{}\n", C(Reset), diag.msg);
-
-    // Print the line up to the start of the location, the range in the right
-    // colour, and the rest of the line.
-    stream << std::format(" {} | {}", line, before);
-    stream << std::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
-    stream << std::format("{}\n", after);
-
-    // Determine the number of digits in the line number.
-    const auto digits = utils::NumberWidth(line);
-
-    // LLVM’s columnWidthUTF8() function returns -1 for non-printable characters
-    // for some ungodly reason, so guard against that.
-    static const auto ColumnWidth = [](StringRef text) {
-        auto wd = llvm::sys::unicode::columnWidthUTF8(text);
-        return wd < 0 ? 0 : usz(wd);
-    };
-
-    // Underline the range. For that, we first pad the line based on the number
-    // of digits in the line number and append more spaces to line us up with
-    // the range.
-    for (usz i = 0, end = digits + ColumnWidth(before) + sizeof("  | ") - 1; i < end; i++)
-        stream << " ";
-
-    // Finally, underline the range.
-    stream << std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
-    for (usz i = 0, end = ColumnWidth(range); i < end; i++) stream << "~";
-    stream << C(Reset) << "\n";
-
-    // And print any extra data.
-    PrintExtraData();
 }

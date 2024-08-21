@@ -226,7 +226,7 @@ void Sema::ReportOverloadResolutionFailure(
 ) {
     using enum utils::Colour;
     utils::Colours C{ctx.use_colours()};
-    std::string message = std::format("  {}Candidates:\n", C(Bold));
+    std::string message = std::format("{}Candidates:\n", C(Bold));
 
     // Compute the width of the number field.
     u32 width = u32(std::to_string(candidates.size()).size());
@@ -234,7 +234,9 @@ void Sema::ReportOverloadResolutionFailure(
     // First, print all overloads.
     u32 term_width = ctx.diags().cols();
     for (auto [i, c] : enumerate(candidates)) {
-        // We don’t have a location, so print only the type.
+        message += C(Bold);
+
+        // Check if the location is valid.
         auto loc = c.location();
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
@@ -243,7 +245,7 @@ void Sema::ReportOverloadResolutionFailure(
             // the ANSI escape codes would throw everything off.
             auto type_width = c.type_for_diagnostic()->print(false).size();
             auto start = std::format(
-                "    {:>{}}. ",
+                "  {:>{}}. ",
                 i + 1,
                 width
             );
@@ -278,8 +280,9 @@ void Sema::ReportOverloadResolutionFailure(
         }
 
         // It doesn’t, or we have no location. Print the type first.
+        if (i != 0) message += "\n";
         message += std::format(
-            "    {:>{}}. {}\n",
+            "  {:>{}}. {}\n",
             i + 1,
             width,
             c.type_for_diagnostic()->print(C.use_colours)
@@ -288,10 +291,11 @@ void Sema::ReportOverloadResolutionFailure(
         // And the location on the next line if there is one.
         if (lc) {
             message += std::format(
-                "    {}{:>{}}  at {}:{}:{}\n",
+                "  {}{:>{}}  at {}{}:{}:{}\n",
                 C(Bold),
                 "",
                 width,
+                C(Reset),
                 ctx.file(loc.file_id)->name(),
                 lc->line,
                 lc->col
@@ -299,11 +303,11 @@ void Sema::ReportOverloadResolutionFailure(
         }
     }
 
-    message += std::format("\n  {}Failure Reason:", C(Bold));
+    message += std::format("\n{}Failure Reason:", C(Bold));
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
-        message += std::format("\n    {}{:>{}}. {}", C(Bold), i + 1, width, C(Reset));
+        message += std::format("\n  {}{:>{}}. {}", C(Bold), i + 1, width, C(Reset));
         auto V = utils::Overloaded{// clang-format off
             [&] (const Candidate::Viable& v) {
                 // If the badness is equal to the final badness,
@@ -316,7 +320,7 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::ArgumentCountMismatch) {
                 auto params = c.type_for_diagnostic()->params();
                 message += std::format(
-                    "Expected {} argument{}, got {}",
+                    "Expected {} arg{}, got {}",
                     params.size(),
                     params.size() == 1 ? "" : "s",
                     call_args.size()
@@ -324,7 +328,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
             [&](Candidate::TypeMismatch t) {
                 message += std::format(
-                    "Type mismatch for argument #{}: expected '{}' but got '{}'",
+                    "Type mismatch for arg #{}: expected '{}' but got '{}'",
                     t.mismatch_index + 1,
                     c.type_for_diagnostic()->params()[t.mismatch_index].print(C.use_colours),
                     call_args[t.mismatch_index]->type.print(C.use_colours)
@@ -338,7 +342,7 @@ void Sema::ReportOverloadResolutionFailure(
                     [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
                     [&](TempSubstRes::DeductionFailed f) {
                         message += std::format(
-                            "In parameter #{}: cannot deduce ${} in {} from {}",
+                            "In param #{}: cannot deduce ${} in {} from {}",
                             f.param_index + 1,
                             f.ttd->name,
                             ti.pattern->params()[f.param_index]->type.print(C.use_colours),
@@ -349,8 +353,8 @@ void Sema::ReportOverloadResolutionFailure(
                     [&](const TempSubstRes::DeductionAmbiguous& a) {
                         message += std::format(
                             "Template deduction mismatch for parameter {}${}{}:\n"
-                            "        Argument #{}: Deduced as {}\n"
-                            "        Argument #{}: Deduced as {}",
+                            "        #{}: Deduced as {}\n"
+                            "        #{}: Deduced as {}",
                             C(Yellow),
                             a.ttd->name,
                             C(Reset),
