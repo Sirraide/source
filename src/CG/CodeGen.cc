@@ -59,10 +59,11 @@ auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
 // ============================================================================
 // Mangling codes:
 //
-struct Mangler {
+struct CodeGen::Mangler {
+    CodeGen& CG;
     std::string name;
 
-    explicit Mangler(ProcDecl* proc) {
+    explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
         name = "_S";
         Append(proc->name);
         Append(proc->type);
@@ -72,13 +73,13 @@ struct Mangler {
     void Append(Type ty);
 };
 
-void Mangler::Append(StringRef s) {
+void CodeGen::Mangler::Append(StringRef s) {
     Assert(not s.empty());
     if (not llvm::isAlpha(s.front())) name += "$";
     name += std::format("{}{}", s.size(), s);
 }
 
-void Mangler::Append(Type ty) {
+void CodeGen::Mangler::Append(Type ty) {
     struct Visitor {
         Mangler& M;
 
@@ -96,11 +97,10 @@ void Mangler::Append(Type ty) {
             switch (b->builtin_kind()) {
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
-                    Unreachable("Mangling dependent type?");
                 case BuiltinKind::Deduced:
-                    Unreachable("Mangling undeduced type?");
                 case BuiltinKind::Type:
-                    Unreachable("Mangling internal 'type' type?");
+                case BuiltinKind::UnresolvedOverloadSet:
+                    Unreachable("Can’t mangle this: {}", b->print(M.CG.M.context().use_colours()));
                 case BuiltinKind::Void: M.name += "v"; return;
                 case BuiltinKind::NoReturn: M.name += "z"; return;
                 case BuiltinKind::Bool: M.name += "b"; return;
@@ -133,7 +133,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
     auto name = [&] -> std::string {
         switch (proc->mangling) {
             case Mangling::None: Unreachable();
-            case Mangling::Source: return std::move(Mangler(proc).name);
+            case Mangling::Source: return std::move(Mangler(*this, proc).name);
             case Mangling::CXX: Todo("Mangle C++ function name");
         }
         Unreachable("Invalid mangling");
@@ -165,6 +165,9 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Dependent type in codegen?");
+
+                case BuiltinKind::UnresolvedOverloadSet:
+                    Unreachable("Unresolved overload set type in codegen?");
 
                 case BuiltinKind::Type:
                     Unreachable("Cannot emit 'type' type");
@@ -366,6 +369,10 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
     return locals.at(expr->decl);
+}
+
+auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
+    Unreachable("Emitting unresolved overload set?");
 }
 
 auto CodeGen::EmitParenExpr(ParenExpr*) -> Value* { Todo(); }

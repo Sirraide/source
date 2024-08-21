@@ -573,10 +573,15 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     Unreachable("Local variable not found: {}", local->decl->name);
 }
 
+bool EvaluationContext::EvalOverloadSetExpr(Value&, OverloadSetExpr*) {
+    // FIXME: A function that returns an overload set should be fine
+    // so long as it is only called at compile-time.
+    Unreachable("Evaluating unresolved overload set?");
+}
+
 bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr){
     Todo();
 }
-
 
 bool EvaluationContext::EvalParamDecl(Value& out, ParamDecl* ld) {
     return EvalLocalDecl(out, ld);

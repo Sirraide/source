@@ -239,6 +239,13 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
+        case Kind::OverloadSetExpr: {
+            auto o = cast<OverloadSetExpr>(e);
+            PrintBasicNode(e, "OverloadSetExpr");
+            tempset print_procedure_bodies = false;
+            PrintChildren<ProcDecl>(o->overloads());
+        } break;
+
         case Kind::ParenExpr: {
             PrintBasicNode(e, "ParenExpr");
             PrintChildren(cast<ParenExpr>(e)->expr);

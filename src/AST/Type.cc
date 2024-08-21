@@ -44,6 +44,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Type: return Align::Of<Type>();
+                case BuiltinKind::UnresolvedOverloadSet: return Align{8};
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
                 case BuiltinKind::ErrorDependent:
@@ -110,6 +111,7 @@ auto TypeBase::print_impl(utils::Colours C) const -> std::string {
                 case BuiltinKind::Deduced: return std::format("{}var", C(Cyan));
                 case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
                 case BuiltinKind::ErrorDependent: return std::format("{}<error>", C(Cyan));
+                case BuiltinKind::UnresolvedOverloadSet: return std::format("{}<overload set>", C(Cyan));
                 case BuiltinKind::Int: return std::format("{}int", C(Cyan));
                 case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
                 case BuiltinKind::Type: return std::format("{}type", C(Cyan));
@@ -176,6 +178,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
                 case BuiltinKind::Bool: return Size::Bits(1);
                 case BuiltinKind::Int: return Size::Bytes(8); // FIXME: Get size from context.
                 case BuiltinKind::Type: return Size::Of<Type>();
+                case BuiltinKind::UnresolvedOverloadSet: return Size::Bytes(16); // FIXME: Get size from context.
 
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
@@ -215,6 +218,7 @@ auto TypeBase::value_category() const -> ValueCategory {
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
                 case BuiltinKind::Type:
+                case BuiltinKind::UnresolvedOverloadSet:
                     return Expr::SRValue;
 
                 // Don’t know yet.

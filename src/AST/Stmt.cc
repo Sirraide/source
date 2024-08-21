@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <ranges>
 #include <srcc/Macros.hh>
 
 module srcc.ast;
@@ -110,9 +111,35 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts().back());
 }
 
+auto Expr::strip_parens() -> Expr* {
+    auto paren = dyn_cast<ParenExpr>(this);
+    if (not paren) return this;
+    return paren->expr->strip_parens();
+}
+
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
     ComputeDependence();
+}
+
+OverloadSetExpr::OverloadSetExpr(
+    ArrayRef<Decl*> decls,
+    Location location
+) : Expr{Kind::OverloadSetExpr, Types::UnresolvedOverloadSetTy, SRValue, location},
+    num_overloads{u32(decls.size())} {
+    auto proc_decls = decls | vws::transform([](auto d) { return cast<ProcDecl>(d); });
+    std::uninitialized_copy(proc_decls.begin(), proc_decls.end(), getTrailingObjects<ProcDecl*>());
+    ComputeDependence();
+}
+
+auto OverloadSetExpr::Create(
+    TranslationUnit& tu,
+    ArrayRef<Decl*> decls,
+    Location location
+) -> OverloadSetExpr* {
+    auto size = totalSizeToAlloc<ProcDecl*>(decls.size());
+    auto mem = tu.allocate(size, alignof(OverloadSetExpr));
+    return ::new (mem) OverloadSetExpr{decls, location};
 }
 
 ProcRefExpr::ProcRefExpr(

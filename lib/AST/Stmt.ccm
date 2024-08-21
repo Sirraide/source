@@ -4,6 +4,7 @@ module;
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/Support/TrailingObjects.h>
 #include <memory>
+#include <ranges>
 #include <srcc/Macros.hh>
 
 export module srcc.ast:stmt;
@@ -145,6 +146,9 @@ public:
 
     /// Check if this expression is an rvalue.
     [[nodiscard]] bool rvalue() const { return not lvalue(); }
+
+    /// Look through parentheses.
+    [[nodiscard]] auto strip_parens() -> Expr*;
 
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::BlockExpr and e->kind() <= Kind::TypeExpr;
@@ -361,6 +365,26 @@ public:
     LocalDecl* decl;
     LocalRefExpr(LocalDecl* decl, Location location);
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
+};
+
+class srcc::OverloadSetExpr final : public Expr
+    , TrailingObjects<OverloadSetExpr, ProcDecl*> {
+    friend TrailingObjects;
+    const u32 num_overloads;
+    auto numTrailingObjects(OverloadToken<ProcDecl*>) -> usz { return num_overloads; }
+
+    OverloadSetExpr(ArrayRef<Decl*> overloads, Location location);
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        ArrayRef<Decl*> overloads,
+        Location location
+    ) -> OverloadSetExpr*;
+
+    auto overloads() -> ArrayRef<ProcDecl*> { return {getTrailingObjects<ProcDecl*>(), num_overloads}; }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
 };
 
 class srcc::ParenExpr final : public Expr {

@@ -18,7 +18,7 @@ class srcc::TemplateInstantiator {
     friend Sema;
 
     Sema& S;
-    Sema::TemplateArguments template_arguments;
+    Sema::TemplateArguments& template_arguments;
 
     struct InstantiationScopeInfo : Sema::ProcScopeInfo {
         ProcDecl* pattern;
@@ -38,15 +38,14 @@ class srcc::TemplateInstantiator {
 
     explicit TemplateInstantiator(
         Sema& S,
-        Sema::TemplateArguments args
-    ) : S{S}, template_arguments{std::move(args)} {}
-
-    // Steal the template arguments from the instantiator.
-    auto take_args() -> Sema::TemplateArguments&& { return std::move(template_arguments); }
+        Sema::TemplateArguments& args
+    ) : S{S}, template_arguments{args} {}
 
     /// Traverse scopes of procedures that we’re instantiating.
     auto InstantiationStack() {
-        return S.proc_stack | vws::filter(InstantiationScopeInfo::classof) | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
+        return S.proc_stack                                 //
+             | vws::filter(InstantiationScopeInfo::classof) //
+             | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
     }
 
     auto InstantiateProcedure(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
@@ -55,6 +54,7 @@ class srcc::TemplateInstantiator {
 #define AST_STMT_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Ptr<Stmt>;
 #define AST_TYPE_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Type;
 #include "srcc/AST.inc"
+
     auto InstantiateStmt(Stmt* stmt) -> Ptr<Stmt>;
     auto InstantiateExpr(Expr* e) -> Ptr<Expr>;
     auto InstantiateType(Type ty) -> Type;
@@ -63,17 +63,17 @@ class srcc::TemplateInstantiator {
 // ============================================================================
 //  Deduction
 // ============================================================================
-auto Sema::DeduceType(TemplateTypeDecl* decl, Type param, Type arg) -> Type {
+auto Sema::DeduceType(TemplateTypeDecl* decl, Type param, Type arg) -> Opt<Type> {
     // TODO: More complicated deduction, e.g. $T[4].
     if (isa<TemplateType>(param)) return arg;
-    Error(
+    /*Error(
         decl->location(),
         "Cannot deduce ${} in {} from {}",
         decl->name,
         param->print(ctx.use_colours()),
         arg->print(ctx.use_colours())
-    );
-    return Types::ErrorDependentTy;
+    );*/
+    return Type{Types::ErrorDependentTy};
 }
 
 // ============================================================================
@@ -236,6 +236,10 @@ auto TemplateInstantiator::InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Stmt>
     Unreachable("Local not instantiated?");
 }
 
+auto TemplateInstantiator::InstantiateOverloadSetExpr(OverloadSetExpr* n) -> Ptr<Stmt> {
+    Todo();
+}
+
 auto TemplateInstantiator::InstantiateParenExpr(ParenExpr* n) -> Ptr<Stmt> {
     Todo();
 }
@@ -333,10 +337,11 @@ auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
 auto Sema::SubstituteTemplate(
     ProcDecl* proc_template,
     ArrayRef<TypeLoc> input_types
-) -> std::pair<Type, TemplateArguments> {
+) -> ProcedureTemplateSubstitutionResult {
+    using enum ProcedureTemplateSubstitutionResult::Status;
     Assert(proc_template->is_template(), "Instantiating non-template?");
+    ProcedureTemplateSubstitutionResult res;
     auto proc_type = proc_template->proc_type();
-    TemplateArguments args;
 
     // First, perform template deduction against any parameters that need it.
     for (auto param : proc_template->template_params()) {
@@ -348,17 +353,27 @@ auto Sema::SubstituteTemplate(
         // can use it to get the previous index for diagnostics.
         for (auto [index_of_index, idx] : enumerate(idxs)) {
             auto& input_ty = input_types[idx];
-            auto deduced = DeduceType(param, proc_type->params()[idx], input_ty.ty);
+            auto deduced_opt = DeduceType(param, proc_type->params()[idx], input_ty.ty);
 
-            // There was an error deducing this; throw it away.
-            if (deduced->dependence() & Dependence::Error)
-                continue;
+            // There was an error.
+            if (not deduced_opt or deduced_opt.value() == Types::ErrorDependentTy) {
+                res.status = deduced_opt ? DeductionFailed : Error;
+                res.error_index = idx;
+                return res;
+            }
 
             // If the value was already set, but the two don’t match, we have to
             // report the mismatch.
-            if (auto it = args.find(param); it != args.end() and it->second != deduced) {
+            auto deduced = deduced_opt.value();
+            if (auto it = res.args.find(param); it != res.args.end() and it->second != deduced) {
                 Assert(index_of_index != 0, "Mismatch on first argument?");
-                using enum utils::Colour;
+                res.status = DeductionAmbiguous;
+                res.error_index = idx;
+                res.mismatch_index = idxs[index_of_index - 1]; // Mismatch was w/ previous index.
+                res.mismatched_type = it->second;
+                res.args[param] = deduced.ptr();
+                return res;
+                /*using enum utils::Colour;
                 utils::Colours C{ctx.use_colours()};
                 Error(
                     input_ty.loc,
@@ -372,22 +387,15 @@ auto Sema::SubstituteTemplate(
                     it->second->print(C.use_colours),
                     idx,
                     deduced.print(C.use_colours)
-                );
-
-                // Trying to deduce from other args is only going
-                // to result in more errors.
-                break;
+                );*/
             }
 
             // Otherwise, just remember the value and keep going.
-            args[param] = deduced.ptr();
+            res.args[param] = deduced.ptr();
         }
-
-        // We couldn’t deduce this. Give up.
-        if (not args.contains(param)) return {ProcType::GetInvalid(*M), TemplateArguments{}};
     }
 
-    TemplateInstantiator I{*this, std::move(args)};
-    auto ty = I.InstantiateType(proc_template->type);
-    return {ty, I.take_args()};
+    TemplateInstantiator I{*this, res.args};
+    res.substituted_type = cast<ProcType>(I.InstantiateType(proc_template->type)).ptr();
+    return res;
 }

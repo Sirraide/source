@@ -43,7 +43,7 @@ private:
         Sema& S;
         ScopeInfo info;
 
-    public:
+        public:
         template <typename... Args>
         explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
             : S{S}, info{proc, std::forward<Args>(args)...} {
@@ -58,7 +58,7 @@ private:
         Sema& S;
         Scope* scope;
 
-    public:
+        public:
         EnterScope(Sema& S, bool proc_scope = false)
             : S{S} {
             auto sc = std::make_unique<Scope>(S.curr_scope(), proc_scope);
@@ -96,6 +96,24 @@ private:
         }
     };
 
+    /// A conversion from one type to another.
+    struct Conversion {
+        enum struct Kind : u8 {
+            LValueToSRValue,
+            SelectOverload
+        };
+
+        Kind kind;
+        u16 index{};
+
+        static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
+        static auto SelectOverload(u16 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
+    };
+
+    /// A (possibly empty) sequence of conversions applied to a type.
+    using  ConversionSequence = SmallVector<Conversion, 1>;
+
+    /// The result of name lookup.
     struct LookupResult {
         enum struct Reason : u8 {
             /// Lookup was successful.
@@ -133,6 +151,42 @@ private:
         static auto Ambiguous(String name, ArrayRef<Decl*> decls) -> LookupResult { return LookupResult{decls, name, Reason::Ambiguous}; }
         static auto NonScopeInPath(String name, Decl* decl) -> LookupResult { return LookupResult{decl, name, Reason::NonScopeInPath}; }
         static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, "", Reason::Success}; }
+    };
+
+    /// The result of substituting a procedure type before template instantiation.
+    struct ProcedureTemplateSubstitutionResult {
+        enum struct Status : u8 {
+            /// Substitution was successful.
+            Success,
+
+            /// Deduction for an argument failed.
+            DeductionFailed,
+
+            /// Deduction for an argument was ambiguous.
+            DeductionAmbiguous,
+
+            /// There was a hard error during deduction. The
+            /// error was already reported when it happened.
+            Error,
+        };
+
+        /// What happened.
+        Status status = Status::Success;
+
+        /// The substituted type, if successful.
+        Ptr<ProcType> substituted_type;
+
+        /// The template arguments, if successful.
+        TemplateArguments args;
+
+        /// The index of the argument containing a deduction error.
+        u32 error_index{};
+
+        /// Index of the argument that didn’t match if deduction was ambiguous.
+        u32 mismatch_index{};
+
+        /// Mismatched type if deduction was ambiguous.
+        Opt<Type> mismatched_type;
     };
 
     Context& ctx;
@@ -192,6 +246,9 @@ private:
     /// Adjust a type for use in a variable declaration.
     auto AdjustVariableType(Type ty, Location loc) -> Type;
 
+    /// Apply a conversion sequence to an expression.
+    auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
+
     /// Create a reference to a declaration.
     auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
@@ -199,7 +256,14 @@ private:
     void DeclareLocal(LocalDecl* d);
 
     /// Perform template deduction.
-    auto DeduceType(TemplateTypeDecl* ty, Type param, Type arg) -> Type;
+    ///
+    /// Returns Types::ErrorDependentTy on deduction failure, and
+    /// an empty optional on a hard error.
+    auto DeduceType(
+        TemplateTypeDecl* ty,
+        Type param,
+        Type arg
+    ) -> Opt<Type>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
@@ -250,6 +314,9 @@ private:
     /// Convert an lvalue to an srvalue.
     [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
 
+    /// Resolve an overload set.
+    auto PerformOverloadResolution();
+
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
@@ -257,7 +324,7 @@ private:
     auto SubstituteTemplate(
         ProcDecl* proc_template,
         ArrayRef<TypeLoc> input_types
-    ) -> std::pair<Type, TemplateArguments>;
+    ) -> ProcedureTemplateSubstitutionResult;
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;

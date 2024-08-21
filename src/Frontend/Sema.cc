@@ -50,8 +50,29 @@ auto Sema::AdjustVariableType(Type ty, Location loc) -> Type {
         return Types::ErrorDependentTy;
     }
 
+    if (ty == Types::UnresolvedOverloadSetTy) {
+        Error(loc, "Unresolved overload set in parameter declaration");
+        return Types::ErrorDependentTy;
+    }
+
     return ty;
 }
+
+auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
+    for (auto& c : seq) {
+        switch (c.kind) {
+            case Conversion::Kind::LValueToSRValue:
+                e = LValueToSRValue(e);
+                continue;
+            case Conversion::Kind::SelectOverload:
+                e = CreateReference(cast<OverloadSetExpr>(e)->overloads()[c.index], e->location()).get();
+                continue;
+        }
+        Unreachable("Invalid conversion");
+    }
+    return e;
+}
+
 
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
@@ -96,7 +117,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
                 in_scope = scope.get();
             } break;
 
-            // This is a hard error here.
+            // Can’t perform scope access on an ambiguous lookup.
             case Ambiguous:
                 return res;
 
@@ -237,6 +258,8 @@ auto Sema::BuildBuiltinCallExpr(
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
+    using SubstStatus = ProcedureTemplateSubstitutionResult::Status;
+
     // Build a call expression that we can resolve later, usually
     // because the callee is dependent.
     auto BuildDependentCallExpr = [&](Expr* callee) {
@@ -249,104 +272,310 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         );
     };
 
-    // Validate that we can actually perform a call to this
-    // procedure with the given arguments.
-    SmallVector<Expr*> actual_args{args};
-    auto ValidateCall = [&](ProcDecl* callee, ProcType* callee_type) -> Err {
-        auto params = callee_type->params();
-        if (args.size() != params.size()) {
-            return Error(
-                callee_expr->location(),
-                "Procedure '{}' expects {} argument{}, got {}",
-                callee->name,
-                params.size(),
-                params.size() == 1 ? "" : "s",
-                args.size()
-            );
-        }
-
-        for (auto [a, p] : vws::zip(actual_args, params)) {
-            if (a->type != p) {
-                return Error(
-                    a->location(),
-                    "Argument of type '{}' does not match expected type '{}'",
-                    a->type.print(ctx.use_colours()),
-                    p.print(ctx.use_colours())
-                );
-            }
-
-            if (a->type != Types::IntTy) return ICE(
-                a->location(),
-                "Only integer arguments are supported for now"
-            );
-
-            Assert(a->value_category == Expr::LValue or a->value_category == Expr::SRValue);
-            if (a->value_category == Expr::LValue) a = LValueToSRValue(a);
-        }
-        return true;
-    };
-
-    // Dependent calls are checked when they’re instantiated.
+    // Calls with dependent arguments are checked when they’re instantiated.
     if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
         return BuildDependentCallExpr(callee_expr);
 
-    // Check that we can call this.
-    // TODO: overload resolution.
-    if (not isa<ProcRefExpr>(callee_expr)) {
+    // Check that we can call this at all.
+    auto callee_no_parens = callee_expr->strip_parens();
+    if (not isa<OverloadSetExpr, ProcRefExpr>(callee_no_parens)) {
         if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
-        return Error(callee_expr->location(), "Attempt to call non-procedure");
+        return Error(callee_expr->location(), "Cannot call non-procedure");
     }
 
-    // This is not a template. Call it directly.
-    auto proc = cast<ProcRefExpr>(callee_expr)->decl;
-    if (not proc->is_template()) {
-        if (not ValidateCall(proc, proc->proc_type())) return {};
+    // Perform overloading.
+    //
+    // Since this may also entail template substitution etc. we always
+    // treat calls as requiring overload resolution even if there is
+    // only a single ‘overload’.
+    //
+    // Source does have a restricted form of SFINAE: deduction failure
+    // and deduction failure only is not an error. Random errors during
+    // deduction are hard errors.
+    struct Candidate {
+        // Ambiguous candidate.
+        struct Ambiguous {};
+
+        // Viable candidate.
+        struct Viable {
+            // The conversion sequences that need to be applied to each
+            // argument if this overload does get selected.
+            SmallVector<ConversionSequence, 4> conversions;
+
+            // How 'bad' is this overload, i.e. how many conversions are
+            // required to make it work.
+            u32 badness = 0;
+        };
+
+        // Candidate for which the argument count didn’t match the parameter count.
+        struct ArgumentCountMismatch {};
+
+        // Candidate for which there was something wrong with the arguments;
+        // used for generic argument-related failures.
+        struct TypeMismatch {
+            // Which argument rendered it not viable.
+            u32 mismatch_index;
+        };
+
+        // A candidate for which deduction failed entirely.
+        struct InvalidTemplate {};
+
+        // One of the arguments is an overload set, and we failed
+        // to match any of the overloads against a parameter. This
+        // has information about why each of the overloads didn’t
+        // match. Because this only performs a subset of overload
+        // resolution, it only needs to deal with a subset of failure
+        // reasons.
+        struct NestedResolutionFailure {
+            // Index of the argument which contains this overload set.
+            u32 mismatch_index;
+        };
+
+        // Info about a yet to be instantiated template.
+        struct TemplateInfo {
+            ProcDecl* pattern;
+            ProcedureTemplateSubstitutionResult res;
+        };
+
+        // The procedure (template) that this candidate represents.
+        using ProcInfo = Variant<ProcDecl*, TemplateInfo>;
+        ProcInfo proc;
+
+        // Whether this candidate is still viable, or why not.
+        Variant<
+            Ambiguous,
+            Viable,
+            ArgumentCountMismatch,
+            TypeMismatch,
+            InvalidTemplate,
+            NestedResolutionFailure>
+            status;
+
+        Candidate(ProcDecl* p) : proc{p}, status{Viable{}} {}
+        Candidate(ProcDecl* pattern, ProcedureTemplateSubstitutionResult&& res)
+            : proc{TemplateInfo{pattern, std::move(res)}} {
+            if (res.status != SubstStatus::Success)
+                status = InvalidTemplate{};
+        }
+
+        auto badness() -> u32 { return status.get<Viable>().badness; }
+
+        auto type() -> ProcType* {
+            Assert(viable(), "Requesting type of non-viable candidate?");
+            if (auto p = proc.get<ProcDecl*>()) return p->proc_type();
+            return proc.get<TemplateInfo>().res.substituted_type.get();
+        }
+
+        bool viable() { return status.is<Viable>(); }
+    };
+
+    // All candidates, whether viable or not.
+    SmallVector<Candidate, 4> candidates;
+    bool dependent = false;
+
+    // Add a candidate to the overload set.
+    auto AddCandidate = [&](ProcDecl* proc) -> bool {
+        if (not proc->is_template()) {
+            candidates.emplace_back(proc);
+            return true;
+        }
+
+        // Collect the types of all arguments (and their locations for
+        // diagnostics) for substitution.
+        SmallVector<TypeLoc, 6> types;
+        for (auto arg : args) types.emplace_back(arg->type, arg->location());
+
+        // Perform template substitution.
+        auto res = SubstituteTemplate(proc, types);
+        if (res.status == SubstStatus::Error) return false;
+        if (
+            res.status == SubstStatus::Success and
+            res.substituted_type.get()->dependent()
+        ) dependent = true;
+        candidates.emplace_back(proc, std::move(res));
+        return true;
+    };
+
+    // Collect all candidates.
+    if (auto proc = dyn_cast<ProcRefExpr>(callee_expr)) {
+        if (not AddCandidate(proc->decl)) return {};
+    } else {
+        auto os = cast<OverloadSetExpr>(callee_expr);
+        if (not rgs::all_of(os->overloads(), AddCandidate)) return {};
+    }
+
+    // If any of the candidates are still dependent, we’re either in
+    // a nested template, or there was an error; either way, we can’t
+    // instantiate anything right now, so defer overload resolution
+    // until we can.
+    if (dependent) return BuildDependentCallExpr(callee_expr);
+
+    // Check if a single candidate is viable. Returns false if there
+    // is a fatal error that prevents overload resolution entirely.
+    auto CheckCandidate = [&](Candidate& c) -> bool {
+        auto ty = c.type();
+        auto params = ty->params();
+
+        // Argument count mismatch is not allowed.
+        //
+        // TODO: Default arguments and C-style variadic functions.
+        if (args.size() != params.size()) {
+            c.status = Candidate::ArgumentCountMismatch{};
+            return true;
+        }
+
+        // Check that we can initialise each parameter with its
+        // corresponding argument.
+        for (auto [i, a] : enumerate(args)) {
+            auto p = params[i];
+            auto& conv = c.status.get<Candidate::Viable>().conversions.emplace_back();
+
+            // Type matches exactly.
+            if (a->type == p) {
+                // We currently can only handle srvalues here.
+                if (a->type->value_category() != ValueCategory::SRValue) {
+                    ICE(
+                        a->location(),
+                        "Sorry, we currently don’t support arguments of type {}",
+                        a->type.print(ctx.use_colours())
+                    );
+                    return false;
+                }
+
+                // Convert lvalues to srvalues here.
+                if (a->lvalue()) conv.push_back(Conversion::LValueToSRValue());
+            }
+
+            // Type is an overload set; attempt to convert it.
+            //
+            // This is *not* the same algorithm as overload resolution, because
+            // the types must match exactly here, and we also need to check the
+            // return type.
+            else if (a->type == Types::UnresolvedOverloadSetTy) {
+                auto p_proc_type = dyn_cast<ProcType>(p.ptr());
+                if (not p_proc_type) {
+                    c.status = Candidate::TypeMismatch{u32(i)};
+                    return true;
+                }
+
+                // Instantiate templates and simply match function types otherwise; we
+                // don’t need to do anything fancier here.
+                auto overloads = cast<OverloadSetExpr>(a->strip_parens())->overloads();
+
+                // Check non-templates first to avoid storing template substitution
+                // for all of them.
+                for (auto [j, o] : enumerate(overloads)) {
+                    if (o->is_template()) continue;
+
+                    // We have a match!
+                    //
+                    // The internal consistency of an overload set was already verified
+                    // when the corresponding declarations were added to their scope, so
+                    // if one of them matches, it is the only one that matches.
+                    if (o->type == p) {
+                        conv.push_back(Conversion::SelectOverload(u16(j)));
+                        goto next_param;
+                    }
+                }
+
+                // Otherwise, we need to try and instantiate templates in this overload set.
+                for (auto o : overloads) {
+                    if (not o->is_template()) continue;
+                    Todo("Instantiate template in nested overload set");
+                }
+
+                // None of the overloads matched.
+                c.status = Candidate::NestedResolutionFailure{u32(i)};
+                return true;
+            }
+
+            // Otherwise, the types don’t match.
+            else {
+                c.status = Candidate::TypeMismatch{u32(i)};
+                return true;
+            }
+        next_param:
+        }
+
+        // All parameters match.
+        return true;
+    };
+
+    // Check each candidate, computing viability etc.
+    for (auto& c : candidates) {
+        if (not c.viable()) continue;
+        if (not CheckCandidate(c)) return {};
+    }
+
+    // Find the best viable unique overload, if there is one.
+    Ptr<Candidate> best;
+    bool ambiguous = false;
+    auto viable = candidates | vws::filter(&Candidate::viable);
+    for (auto& c : viable) {
+        // First viable candidate.
+        if (not best) {
+            best = &c;
+            continue;
+        }
+
+        // We already have a candidate. If the badness of this
+        // one is better, then it becomes the new best candidate.
+        if (c.badness() < best.get()->badness()) {
+            best = &c;
+            ambiguous = false;
+        }
+
+        // Otherwise, if its badness is the same, we have an
+        // ambiguous candidate; else, ignore it entirely.
+        else if (c.badness() == best.get()->badness())
+            ambiguous = true;
+    }
+
+    // If overload resolution was ambiguous, mark each viable
+    // candidate as ambiguous.
+    if (ambiguous) {
+        for (auto& c : viable) c.status = Candidate::Ambiguous{};
+        best = {};
+    }
+
+    // We found a single best candidate!
+    if (auto c = best.get_or_null()) {
+        ProcDecl* final_callee;
+
+        // Instantiate it now if it is a template.
+        if (auto* temp = c->proc.get_if<Candidate::TemplateInfo>()) {
+            auto inst = InstantiateTemplate(
+                temp->pattern,
+                temp->res.substituted_type.get(),
+                temp->res.args
+            );
+
+            // And call it.
+            if (not inst) return nullptr;
+            final_callee = inst.get();
+        }
+
+        // Otherwise, just grab the procedure.
+        else { final_callee = c->proc.get<ProcDecl*>(); }
+
+        // Now is the time to apply the argument conversions.
+        SmallVector<Expr*> actual_args;
+        actual_args.reserve(args.size());
+        for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
+            actual_args.emplace_back(ApplyConversionSequence(args[i], conv));
+
+        // Finally, create the call.
         return CallExpr::Create(
             *M,
-            proc->return_type(),
-            callee_expr,
+            final_callee->return_type(),
+            CreateReference(final_callee, callee_expr->location()).get(),
             actual_args,
             loc
         );
     }
 
-    // Otherwise, we need to perform template instantiation.
-    ProcType* callee_type = proc->proc_type();
-
-    // Collect the types of all arguments (and their locations for
-    // diagnostics) for substitution.
-    SmallVector<TypeLoc, 6> types;
-    for (auto arg : args) types.emplace_back(arg->type, arg->location());
-
-    // Perform template substitution.
-    auto [substituted, template_args] = SubstituteTemplate(proc, types);
-
-    // If the substituted type is still dependent, we’re either in
-    // a nested template, or there was an error; either way, we can’t
-    // instantiated anything right now.
-    if (substituted->dependent()) return BuildDependentCallExpr(callee_expr);
-
-    // Otherwise, type check the call now.
-    callee_type = cast<ProcType>(substituted).ptr();
-    if (not ValidateCall(proc, callee_type)) return {};
-
-    // Instantiating an external function?
-    if (not proc->body()) return ICE(
-        callee_expr->location(),
-        "Sorry, cannot instantiate this procedure yet"
-    );
-
-    // Finally, instantiate the template; this already
-    // takes care of caching etc.
-    auto instantiation = InstantiateTemplate(proc, callee_type, template_args);
-    if (not instantiation) return nullptr;
-    return CallExpr::Create(
-        *M,
-        instantiation.get()->return_type(),
-        new (*M) ProcRefExpr(instantiation.get(), callee_expr->location()),
-        actual_args,
-        loc
-    );
+    // Overload resolution failed. :(
+    Todo("Report overload resolution failure");
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
@@ -613,7 +842,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateBinaryExpr(ParsedBinaryExpr*)-> Ptr<Expr> {
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr*) -> Ptr<Expr> {
     Todo();
 }
 
@@ -655,9 +884,17 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
 
 /// Translate a parsed name to a reference to the declaration it references.
 auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
-    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
-    if (not res.successful()) return nullptr;
-    return CreateReference(res.decls.front(), parsed->loc);
+    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc, false);
+    if (res.successful()) return CreateReference(res.decls.front(), parsed->loc);
+
+    // Overload sets are ok here.
+    if (
+        res.result == LookupResult::Reason::Ambiguous and
+        isa<ProcDecl>(res.decls.front())
+    ) return OverloadSetExpr::Create(*M, res.decls, parsed->loc);
+
+    ReportLookupFailure(res, parsed->loc);
+    return {};
 }
 
 /// Perform initial processing of a decl so it can be used by the rest
@@ -746,7 +983,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr*)-> Ptr<Expr> {
+auto Sema::TranslateParenExpr(ParsedParenExpr*) -> Ptr<Expr> {
     Todo();
 }
 
@@ -835,6 +1072,12 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -852,10 +1095,9 @@ auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr> {
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
 
-auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed)-> Ptr<Expr> {
+auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
     Todo();
 }
-
 
 // ============================================================================
 //  Translation of Types
@@ -881,6 +1123,20 @@ auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     SmallVectorImpl<TemplateTypeDecl*>* ttds
 ) -> Type {
+    // Sanity check.
+    //
+    // We use u32s for indices here and there, so ensure that this is small
+    // enough. For now, only allow up to 65535 parameters because that’s
+    // more than anyone should need.
+    if (parsed->param_types().size() > std::numeric_limits<u16>::max()) {
+        Error(
+            parsed->loc,
+            "Sorry, that’s too many parameters (max is {})",
+            std::numeric_limits<u16>::max()
+        );
+        return Types::ErrorDependentTy;
+    }
+
     // We may have to handle template parameters here.
     //
     // In Source, template parameters are declared using a template type
@@ -991,6 +1247,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Type {
         case K::BuiltinType: return TranslateBuiltinType(cast<ParsedBuiltinType>(parsed));
         case K::TemplateType: return TranslateTemplateType(cast<ParsedTemplateType>(parsed));
         case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
+        case K::ProcType: return TranslateProcType(cast<ParsedProcType>(parsed));
         default:
             Error(parsed->loc, "Expected type");
             return Types::ErrorDependentTy;

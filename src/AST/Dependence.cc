@@ -74,6 +74,10 @@ void Stmt::ComputeDependence() { // clang-format off
     },
 
     [&](LocalRefExpr* e) { d = e->decl->dependence(); },
+    [&](OverloadSetExpr* e) {
+      for (auto o : e->overloads()) d |= o->dependence();
+    },
+
     [&](ParenExpr* e) { d = e->expr->dependence(); },
     [&](ProcRefExpr* e) { d = e->decl->dependence(); },
     [&](ProcDecl* e) {

@@ -234,30 +234,21 @@ public:
 };
 
 // The const_cast here is fine because we never modify types anyway.
-#define PREDECLARED_TYPE(Class, Name) \
-    static constexpr TypeWrapper<Class> Name = const_cast<Class*>(&Name##Impl)
+#define BUILTIN_TYPE(Name, ...) \
+    private: static constexpr BuiltinType Name##TyImpl{BuiltinKind::Name __VA_OPT__(,) __VA_ARGS__}; \
+    public : static constexpr TypeWrapper<BuiltinType> Name##Ty = const_cast<BuiltinType*>(&Name##Ty##Impl)
 
 // FIXME: Eliminate 'TypeWrapper' in favour of a single 'Type' class and move these there?
 class srcc::Types {
-    static constexpr BuiltinType VoidTyImpl{BuiltinKind::Void};
-    static constexpr BuiltinType DependentTyImpl{BuiltinKind::Dependent, Dependence::Type};
-    static constexpr BuiltinType ErrorDependentTyImpl{BuiltinKind::ErrorDependent, Dependence::Type | Dependence::Error};
-    static constexpr BuiltinType NoReturnTyImpl{BuiltinKind::NoReturn};
-    static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
-    static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
-    static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced}; // NOT dependent.
-    static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
-
-public:
-    /// Builtin types.
-    PREDECLARED_TYPE(BuiltinType, VoidTy);
-    PREDECLARED_TYPE(BuiltinType, DependentTy);
-    PREDECLARED_TYPE(BuiltinType, ErrorDependentTy);
-    PREDECLARED_TYPE(BuiltinType, NoReturnTy);
-    PREDECLARED_TYPE(BuiltinType, BoolTy);
-    PREDECLARED_TYPE(BuiltinType, IntTy);
-    PREDECLARED_TYPE(BuiltinType, DeducedTy);
-    PREDECLARED_TYPE(BuiltinType, TypeTy);
+    BUILTIN_TYPE(Void);
+    BUILTIN_TYPE(Dependent, Dependence::Type);
+    BUILTIN_TYPE(ErrorDependent, Dependence::Type | Dependence::Error);
+    BUILTIN_TYPE(NoReturn);
+    BUILTIN_TYPE(Bool);
+    BUILTIN_TYPE(Int);
+    BUILTIN_TYPE(Deduced);
+    BUILTIN_TYPE(Type);
+    BUILTIN_TYPE(UnresolvedOverloadSet);
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {
