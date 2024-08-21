@@ -256,6 +256,9 @@ public:
         report(Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)});
     }
 
+    /// Emit pending diagnostics.
+    virtual void flush() { }
+
     /// Check whether any diagnostics have been issued.
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
 
@@ -281,9 +284,14 @@ class srcc::StreamingDiagnosticsEngine final : public DiagnosticsEngine {
     /// Used to limit how many errors we print before giving up.
     u32 error_limit;
     u32 printed = 0;
+    bool has_flushed_backlog = false;
+
+    /// Backlog of diagnostics so we can group notes with errors/warnings.
+    SmallVector<Diagnostic, 20> backlog;
 
     StreamingDiagnosticsEngine(const Context& ctx, u32 error_limit, llvm::raw_ostream& output_stream)
         : DiagnosticsEngine(ctx), stream(output_stream), error_limit(error_limit) {}
+    ~StreamingDiagnosticsEngine();
 
 public:
     /// Create a new diagnostic engine.
@@ -296,9 +304,11 @@ public:
     }
 
     u32 cols() override;
+    void flush() override;
 
 private:
     void report_impl(Diagnostic&&) override;
+    void EmitDiagnostics();
 };
 
 /// Mixin to provide helper functions to issue diagnostics.

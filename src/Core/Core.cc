@@ -95,6 +95,7 @@ auto Context::get_file(const File::Path& path) -> const File& {
 }
 
 void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
+    if (impl->diags_engine) impl->diags_engine->flush();
     impl->diags_engine = std::move(diags);
 }
 
@@ -277,7 +278,15 @@ auto Location::text(const Context& ctx) const -> String {
 // ============================================================================
 //  Diagnostics
 // ============================================================================
-auto FormatDiagnostic(const Context& ctx, Diagnostic& diag) -> std::string {
+StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
+    Assert(backlog.empty(), "Diagnostics not flushed?");
+}
+
+auto FormatDiagnostic(
+    const Context& ctx,
+    Diagnostic& diag,
+    Opt<Location> previous_loc
+) -> std::string {
     utils::Colours C(ctx.use_colours());
     using enum utils::Colour;
     std::string out;
@@ -336,9 +345,17 @@ auto FormatDiagnostic(const Context& ctx, Diagnostic& diag) -> std::string {
     utils::ReplaceAll(range, "\t", "    ");
     utils::ReplaceAll(after, "\t", "    ");
 
-    // Print the file name, line number, and column number.
+    // Print the file name, unless the location is in the same
+    // file as the previous diagnostic.
     const auto& file = *ctx.file(diag.where.file_id);
-    out += std::format("{}{}:{}:{}: ", C(Bold), file.name(), line, col);
+    out += C(Bold);
+    if (
+        not previous_loc.has_value() or
+        previous_loc.value().file_id != diag.where.file_id
+    ) out += std::format("{}:", file.name());
+
+    // Print the line and column number.
+    out += std::format("{}:{}: ", line, col);
 
     // Print the diagnostic name and message.
     out += std::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
@@ -375,8 +392,46 @@ auto FormatDiagnostic(const Context& ctx, Diagnostic& diag) -> std::string {
     return out;
 }
 
+void StreamingDiagnosticsEngine::EmitDiagnostics() {
+    using enum utils::Colour;
+    utils::Colours C{ctx.use_colours()};
+    if (backlog.empty()) return;
+
+    // Print a dividing line first so diagnostics don’t clump together too much.
+    if (has_flushed_backlog) stream << "\n";
+    has_flushed_backlog = true;
+
+    // Print all diagnostics that we have queued up as a group.
+    Opt<Location> previous_loc;
+    for (auto [di, diag] : enumerate(backlog)) {
+        // Render the diagnostic text.
+        auto out = FormatDiagnostic(ctx, diag, previous_loc);
+
+        // Then, indent everything properly.
+        auto lines = base::stream{out}.lines();
+        auto count = rgs::distance(lines);
+        for (auto [i, line] : lines | vws::enumerate) {
+            auto leading = di == 0 and i == 0                          ? "╭ "sv
+                         : di == backlog.size() - 1 and i == count - 1 ? "╰ "sv
+                                                                       : "│ "sv;
+            stream << C(Reset) << leading << line.text() << "\n";
+        }
+
+        previous_loc = diag.where;
+    }
+
+    // Finally, reset the colour.
+    stream << C(Reset);
+    backlog.clear();
+}
+
 u32 StreamingDiagnosticsEngine::cols() {
     return std::max<u32>({llvm::sys::Process::StandardErrColumns(), llvm::sys::Process::StandardOutColumns(), 80});
+}
+
+void StreamingDiagnosticsEngine::flush() {
+    EmitDiagnostics();
+    stream.flush();
 }
 
 void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
@@ -387,6 +442,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     if (error_limit and printed >= error_limit) {
         if (printed == error_limit) {
             printed++;
+            EmitDiagnostics();
 
             stream << std::format(
                 "\n{}{}Error:{}{} Too many errors emitted (> {}). Not showing any more errors.\n",
@@ -409,24 +465,10 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
         return;
     }
 
-    // Reset the colour when we’re done.
-    defer { stream << std::format("{}", C(Reset)); };
-
-    // Make sure that diagnostics don’t clump together, but also don’t insert
-    // an ugly empty line before the first diagnostic.
-    if (printed != 0 and diag.level != Diagnostic::Level::Note) stream << "\n";
+    // Count this as printed, even if we haven’t done that yet.
     printed++;
 
-    // Render the diagnostic text.
-    auto out = FormatDiagnostic(ctx, diag);
-
-    // Then, indent everything properly.
-    auto lines = base::stream{out}.lines();
-    auto count = rgs::distance(lines);
-    for (auto [i, line] : lines | vws::enumerate) {
-        auto leading = i == 0         ? "╭ "sv
-                     : i == count - 1 ? "╰ "sv
-                                      : "│ "sv;
-        stream << C(Reset) << leading << line.text() << "\n";
-    }
+    // If this not a note, emit the backlog.
+    if (diag.level != Diagnostic::Level::Note) EmitDiagnostics();
+    backlog.push_back(std::move(diag));
 }
