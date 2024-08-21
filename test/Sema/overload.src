@@ -1,5 +1,4 @@
 // V %srcc %s --sema --verify
-// expected-no-diagnostics
 program test;
 
 // My overloading stress test.
@@ -37,3 +36,7 @@ proc f (proc (int),          proc,                proc        -> bool) -> int = 
 proc f (proc (bool) -> int,  proc (int),          proc               ) -> int = 3; // f3
 proc f (proc        -> bool, proc (bool) -> int,  proc (int)         ) -> int = 4; // f4
 proc f (proc        -> bool, proc        -> bool, proc (bool) -> int ) -> int = 5; // f5
+
+f(1, 2, 3);    // expected-error: No matching overload for call to 'f'
+f(1, 2);       // expected-error: No matching overload for call to 'f'
+f(1, 2, 3, 4); // expected-error: No matching overload for call to 'f'

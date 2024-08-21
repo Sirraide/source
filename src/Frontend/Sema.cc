@@ -265,8 +265,9 @@ void Sema::ReportOverloadResolutionFailure(
             // It fits!
             if (term_width == 0 or total < term_width) {
                 message += std::format(
-                    "{}{} {}at {}{}:{}:{}\n",
+                    "{}{}{} {}at {}{}:{}:{}\n",
                     start,
+                    C(Reset),
                     c.type_for_diagnostic()->print(C.use_colours),
                     C(Bold),
                     C(Reset),
@@ -282,9 +283,10 @@ void Sema::ReportOverloadResolutionFailure(
         // It doesn’t, or we have no location. Print the type first.
         if (i != 0) message += "\n";
         message += std::format(
-            "  {:>{}}. {}\n",
+            "  {:>{}}. {}{}\n",
             i + 1,
             width,
+            C(Reset),
             c.type_for_diagnostic()->print(C.use_colours)
         );
 
@@ -328,7 +330,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
             [&](Candidate::TypeMismatch t) {
                 message += std::format(
-                    "Type mismatch for arg #{}: expected '{}' but got '{}'",
+                    "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
                     c.type_for_diagnostic()->params()[t.mismatch_index].print(C.use_colours),
                     call_args[t.mismatch_index]->type.print(C.use_colours)
