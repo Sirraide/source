@@ -397,10 +397,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     };
 
     // Collect all candidates.
-    if (auto proc = dyn_cast<ProcRefExpr>(callee_expr)) {
+    if (auto proc = dyn_cast<ProcRefExpr>(callee_no_parens)) {
         if (not AddCandidate(proc->decl)) return {};
     } else {
-        auto os = cast<OverloadSetExpr>(callee_expr);
+        auto os = cast<OverloadSetExpr>(callee_no_parens);
         if (not rgs::all_of(os->overloads(), AddCandidate)) return {};
     }
 
