@@ -43,7 +43,7 @@ private:
         Sema& S;
         ScopeInfo info;
 
-        public:
+    public:
         template <typename... Args>
         explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
             : S{S}, info{proc, std::forward<Args>(args)...} {
@@ -58,7 +58,7 @@ private:
         Sema& S;
         Scope* scope;
 
-        public:
+    public:
         EnterScope(Sema& S, bool proc_scope = false)
             : S{S} {
             auto sc = std::make_unique<Scope>(S.curr_scope(), proc_scope);
@@ -111,7 +111,7 @@ private:
     };
 
     /// A (possibly empty) sequence of conversions applied to a type.
-    using  ConversionSequence = SmallVector<Conversion, 1>;
+    using ConversionSequence = SmallVector<Conversion, 1>;
 
     /// The result of name lookup.
     struct LookupResult {
@@ -154,39 +154,148 @@ private:
     };
 
     /// The result of substituting a procedure type before template instantiation.
-    struct ProcedureTemplateSubstitutionResult {
-        enum struct Status : u8 {
-            /// Substitution was successful.
-            Success,
+    struct TempSubstRes {
+        /// Substitution was successful.
+        struct Success {
+            /// The substituted type.
+            ProcType* type;
 
-            /// Deduction for an argument failed.
-            DeductionFailed,
-
-            /// Deduction for an argument was ambiguous.
-            DeductionAmbiguous,
-
-            /// There was a hard error during deduction. The
-            /// error was already reported when it happened.
-            Error,
+            /// The template argument list for instantiation.
+            TemplateArguments args;
         };
 
+        /// Deduction failed entirely for a TDD.
+        struct DeductionFailed {
+            /// The TTD that we failed to deduce.
+            TemplateTypeDecl* ttd;
+
+            /// The index of the parameter in which we tried to
+            /// perform deduction.
+            u32 param_index;
+        };
+
+        /// The type of a TDD decl was deduced to be two different types
+        /// in two different parameters.
+        struct DeductionAmbiguous {
+            /// The TTD that we failed to deduce.
+            TemplateTypeDecl* ttd;
+
+            /// The two parameters that caused the ambiguity.
+            u32 first, second;
+
+            /// The two types that we deduced each time.
+            Type first_type, second_type;
+        };
+
+        /// There was a hard error which has already been reported.
+        struct Error {};
+
         /// What happened.
-        Status status = Status::Success;
+        Variant<Success, DeductionFailed, DeductionAmbiguous, Error> data = Error{};
 
-        /// The substituted type, if successful.
-        Ptr<ProcType> substituted_type;
+        TempSubstRes() = default;
+        TempSubstRes(Success&& s) : data{std::move(s)} {}
+        TempSubstRes(DeductionFailed&& f) : data{std::move(f)} {}
+        TempSubstRes(DeductionAmbiguous&& a) : data{std::move(a)} {}
+    };
 
-        /// The template arguments, if successful.
-        TemplateArguments args;
+    // Overload resolution candidate.
+    struct Candidate {
+        // Viable candidate.
+        struct Viable {
+            // The conversion sequences that need to be applied to each
+            // argument if this overload does get selected.
+            SmallVector<ConversionSequence, 4> conversions;
 
-        /// The index of the argument containing a deduction error.
-        u32 error_index{};
+            // How 'bad' is this overload, i.e. how many conversions are
+            // required to make it work.
+            u32 badness = 0;
+        };
 
-        /// Index of the argument that didn’t match if deduction was ambiguous.
-        u32 mismatch_index{};
+        // Candidate for which the argument count didn’t match the parameter count.
+        struct ArgumentCountMismatch {};
 
-        /// Mismatched type if deduction was ambiguous.
-        Opt<Type> mismatched_type;
+        // Candidate for which there was something wrong with the arguments;
+        // used for generic argument-related failures.
+        struct TypeMismatch {
+            // Which argument rendered it not viable.
+            u32 mismatch_index;
+        };
+
+        // A candidate for which deduction failed entirely.
+        struct InvalidTemplate {};
+
+        // One of the arguments is an overload set, and we failed
+        // to match any of the overloads against a parameter. This
+        // has information about why each of the overloads didn’t
+        // match. Because this only performs a subset of overload
+        // resolution, it only needs to deal with a subset of failure
+        // reasons.
+        struct NestedResolutionFailure {
+            // Index of the argument which contains this overload set.
+            u32 mismatch_index;
+        };
+
+        // Info about a yet to be instantiated template.
+        struct TemplateInfo {
+            ProcDecl* pattern;
+            TempSubstRes res;
+        };
+
+        // The procedure (template) that this candidate represents.
+        using ProcInfo = Variant<ProcDecl*, TemplateInfo>;
+        ProcInfo proc;
+
+        // Whether this candidate is still viable, or why not.
+        Variant<
+            Viable,
+            ArgumentCountMismatch,
+            TypeMismatch,
+            InvalidTemplate,
+            NestedResolutionFailure>
+            status = Viable{};
+
+        Candidate(ProcDecl* p) : proc{p} {}
+        Candidate(ProcDecl* pattern, TempSubstRes&& res)
+            : proc{TemplateInfo{pattern, std::move(res)}} {
+            if (not res.data.is<TempSubstRes::Success>())
+                status = InvalidTemplate{};
+        }
+
+        auto badness() const -> u32 { return status.get<Viable>().badness; }
+
+        auto name() const -> String {
+            return decl()->name;
+        }
+
+        auto location() const -> Location {
+            return decl()->location();
+        }
+
+        auto type() -> ProcType* {
+            Assert(viable(), "Requesting type of non-viable candidate?");
+            return proc.visit(utils::Overloaded{// clang-format off
+                [](ProcDecl* p) { return p->proc_type(); },
+                [](TemplateInfo& ti) { return ti.res.data.get<TempSubstRes::Success>().type; }
+            }); // clang-format on
+        }
+
+        auto type_for_diagnostic() const -> ProcType* {
+            if (auto p = proc.get<ProcDecl*>()) return p->proc_type();
+            auto& ti = proc.get<TemplateInfo>();
+            if (auto* s = ti.res.data.get_if<TempSubstRes::Success>()) return s->type;
+            return ti.pattern->proc_type();
+        }
+
+        bool viable() { return status.is<Viable>(); }
+
+    private:
+        auto decl() const -> ProcDecl* {
+            return proc.visit(utils::Overloaded{// clang-format off
+                [](ProcDecl* p) { return p; },
+                [](const TemplateInfo& ti) { return ti.pattern; }
+            }); // clang-format on
+        }
     };
 
     Context& ctx;
@@ -320,11 +429,19 @@ private:
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
+    /// Issue an error about overload resolution failure.
+    void ReportOverloadResolutionFailure(
+        ArrayRef<Candidate> candidates,
+        ArrayRef<Expr*> call_args,
+        Location call_loc,
+        u32 final_badness
+    );
+
     /// Substitute types in a procedure template.
     auto SubstituteTemplate(
         ProcDecl* proc_template,
         ArrayRef<TypeLoc> input_types
-    ) -> ProcedureTemplateSubstitutionResult;
+    ) -> TempSubstRes;
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;

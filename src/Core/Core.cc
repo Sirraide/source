@@ -4,9 +4,10 @@ module;
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/Process.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/Unicode.h>
 #include <mutex>
 #include <random>
@@ -275,9 +276,23 @@ auto Location::text(const Context& ctx) const -> String {
 // ============================================================================
 //  Diagnostics
 // ============================================================================
+u32 StreamingDiagnosticsEngine::cols() {
+    return std::max<u32>({
+        llvm::sys::Process::StandardErrColumns(),
+        llvm::sys::Process::StandardOutColumns(),
+        80
+    });
+}
+
 void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     utils::Colours C(ctx.use_colours());
     using enum utils::Colour;
+
+    // Print any extra data that should come after the source line.
+    auto PrintExtraData = [&] {
+        if (diag.extra.empty()) return;
+        stream << diag.extra << C(Reset) << "\n";
+    };
 
     // Give up if we’ve printed too many errors.
     if (error_limit and printed >= error_limit) {
@@ -333,6 +348,8 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             diag.msg,
             C(Reset)
         );
+
+        PrintExtraData();
         return;
     }
 
@@ -387,5 +404,8 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     // Finally, underline the range.
     stream << std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
     for (usz i = 0, end = ColumnWidth(range); i < end; i++) stream << "~";
-    stream << "\n";
+    stream << C(Reset) << "\n";
+
+    // And print any extra data.
+    PrintExtraData();
 }

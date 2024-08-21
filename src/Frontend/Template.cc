@@ -50,9 +50,9 @@ class srcc::TemplateInstantiator {
 
     auto InstantiateProcedure(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
 
-#define AST_DECL_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Class*;
-#define AST_STMT_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Ptr<Stmt>;
-#define AST_TYPE_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n) -> Type;
+#define AST_DECL_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n)->Class*;
+#define AST_STMT_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n)->Ptr<Stmt>;
+#define AST_TYPE_LEAF(Class) [[nodiscard]] auto Instantiate##Class(Class* n)->Type;
 #include "srcc/AST.inc"
 
     auto InstantiateStmt(Stmt* stmt) -> Ptr<Stmt>;
@@ -66,13 +66,6 @@ class srcc::TemplateInstantiator {
 auto Sema::DeduceType(TemplateTypeDecl* decl, Type param, Type arg) -> Opt<Type> {
     // TODO: More complicated deduction, e.g. $T[4].
     if (isa<TemplateType>(param)) return arg;
-    /*Error(
-        decl->location(),
-        "Cannot deduce ${} in {} from {}",
-        decl->name,
-        param->print(ctx.use_colours()),
-        arg->print(ctx.use_colours())
-    );*/
     return Type{Types::ErrorDependentTy};
 }
 
@@ -337,10 +330,9 @@ auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
 auto Sema::SubstituteTemplate(
     ProcDecl* proc_template,
     ArrayRef<TypeLoc> input_types
-) -> ProcedureTemplateSubstitutionResult {
-    using enum ProcedureTemplateSubstitutionResult::Status;
+) -> TempSubstRes {
     Assert(proc_template->is_template(), "Instantiating non-template?");
-    ProcedureTemplateSubstitutionResult res;
+    TemplateArguments args;
     auto proc_type = proc_template->proc_type();
 
     // First, perform template deduction against any parameters that need it.
@@ -356,46 +348,32 @@ auto Sema::SubstituteTemplate(
             auto deduced_opt = DeduceType(param, proc_type->params()[idx], input_ty.ty);
 
             // There was an error.
-            if (not deduced_opt or deduced_opt.value() == Types::ErrorDependentTy) {
-                res.status = deduced_opt ? DeductionFailed : Error;
-                res.error_index = idx;
-                return res;
-            }
+            if (not deduced_opt) return {};
+            if (deduced_opt.value() == Types::ErrorDependentTy) return TempSubstRes::DeductionFailed{
+                param,
+                idx,
+            };
 
             // If the value was already set, but the two don’t match, we have to
             // report the mismatch.
             auto deduced = deduced_opt.value();
-            if (auto it = res.args.find(param); it != res.args.end() and it->second != deduced) {
+            if (auto it = args.find(param); it != args.end() and it->second != deduced) {
                 Assert(index_of_index != 0, "Mismatch on first argument?");
-                res.status = DeductionAmbiguous;
-                res.error_index = idx;
-                res.mismatch_index = idxs[index_of_index - 1]; // Mismatch was w/ previous index.
-                res.mismatched_type = it->second;
-                res.args[param] = deduced.ptr();
-                return res;
-                /*using enum utils::Colour;
-                utils::Colours C{ctx.use_colours()};
-                Error(
-                    input_ty.loc,
-                    "Template deduction mismatch for parameter {}${}{}:\n"
-                    "    Argument #{}: Deduced as {}\n"
-                    "    Argument #{}: Deduced as {}",
-                    C(Yellow),
-                    param->name,
-                    C(Reset),
-                    idxs[index_of_index - 1], // Mismatch was w/ previous index.
-                    it->second->print(C.use_colours),
-                    idx,
-                    deduced.print(C.use_colours)
-                );*/
+                return TempSubstRes::DeductionAmbiguous{
+                    .ttd = param,
+                    .first = idxs[index_of_index - 1], // Mismatch was w/ previous index.
+                    .second = idx,
+                    .first_type = args[param],
+                    .second_type = deduced.ptr(),
+                };
             }
 
             // Otherwise, just remember the value and keep going.
-            res.args[param] = deduced.ptr();
+            args[param] = deduced.ptr();
         }
     }
 
-    TemplateInstantiator I{*this, res.args};
-    res.substituted_type = cast<ProcType>(I.InstantiateType(proc_template->type)).ptr();
-    return res;
+    TemplateInstantiator I{*this, args};
+    auto substituted_type = cast<ProcType>(I.InstantiateType(proc_template->type)).ptr();
+    return TempSubstRes::Success{substituted_type, std::move(args)};
 }

@@ -73,7 +73,6 @@ auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
     return e;
 }
 
-
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration");
@@ -217,6 +216,170 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
 }
 
 // ============================================================================
+//  Overloading.
+// ============================================================================
+void Sema::ReportOverloadResolutionFailure(
+    ArrayRef<Candidate> candidates,
+    ArrayRef<Expr*> call_args,
+    Location call_loc,
+    u32 final_badness
+) {
+    using enum utils::Colour;
+    utils::Colours C{ctx.use_colours()};
+    std::string message = std::format("  {}Candidates:\n", C(Bold));
+
+    // Compute the width of the number field.
+    u32 width = u32(std::to_string(candidates.size()).size());
+
+    // First, print all overloads.
+    u32 term_width = ctx.diags().cols();
+    for (auto [i, c] : enumerate(candidates)) {
+        // We don’t have a location, so print only the type.
+        auto loc = c.location();
+        auto lc = loc.seek_line_column(ctx);
+        if (lc) {
+            // We have a location. Compute the width of everything so we can print
+            // it in a single line if it fits. We need to print the type twice since
+            // the ANSI escape codes would throw everything off.
+            auto type_width = c.type_for_diagnostic()->print(false).size();
+            auto start = std::format(
+                "    {:>{}}. ",
+                i + 1,
+                width
+            );
+
+            // Technically, we don’t have to do this calculation if the terminal width
+            // is zero, but this is really not a place where we have to worry about
+            // performance...
+            auto total =
+                type_width +
+                start.size() +
+                4 + // ' at '
+                2 + // ':' twice
+                ctx.file(loc.file_id)->name().size() +
+                std::to_string(lc->line).size() +
+                std::to_string(lc->col).size();
+
+            // It fits!
+            if (term_width == 0 or total < term_width) {
+                message += std::format(
+                    "{}{} {}at {}{}:{}:{}\n",
+                    start,
+                    c.type_for_diagnostic()->print(C.use_colours),
+                    C(Bold),
+                    C(Reset),
+                    ctx.file(loc.file_id)->name(),
+                    lc->line,
+                    lc->col
+                );
+
+                continue;
+            }
+        }
+
+        // It doesn’t, or we have no location. Print the type first.
+        message += std::format(
+            "    {:>{}}. {}\n",
+            i + 1,
+            width,
+            c.type_for_diagnostic()->print(C.use_colours)
+        );
+
+        // And the location on the next line if there is one.
+        if (lc) {
+            message += std::format(
+                "    {}{:>{}}  at {}:{}:{}\n",
+                C(Bold),
+                "",
+                width,
+                ctx.file(loc.file_id)->name(),
+                lc->line,
+                lc->col
+            );
+        }
+    }
+
+    message += std::format("\n  {}Failure Reason:", C(Bold));
+
+    // For each overload, print why there was an issue.
+    for (auto [i, c] : enumerate(candidates)) {
+        message += std::format("\n    {}{:>{}}. {}", C(Bold), i + 1, width, C(Reset));
+        auto V = utils::Overloaded{// clang-format off
+            [&] (const Candidate::Viable& v) {
+                // If the badness is equal to the final badness,
+                // then this candidate was ambiguous. Otherwise,
+                // another candidate was simply better.
+                message += v.badness == final_badness
+                    ? "Matches as well as another candidate"sv
+                    : "Another candidate was better"sv;
+            },
+            [&](Candidate::ArgumentCountMismatch) {
+                auto params = c.type_for_diagnostic()->params();
+                message += std::format(
+                    "Expected {} argument{}, got {}",
+                    params.size(),
+                    params.size() == 1 ? "" : "s",
+                    call_args.size()
+                );
+            },
+            [&](Candidate::TypeMismatch t) {
+                message += std::format(
+                    "Type mismatch for argument #{}: expected '{}' but got '{}'",
+                    t.mismatch_index + 1,
+                    c.type_for_diagnostic()->params()[t.mismatch_index].print(C.use_colours),
+                    call_args[t.mismatch_index]->type.print(C.use_colours)
+                );
+            },
+            [&](Candidate::InvalidTemplate) {
+                message += "Template argument deduction failed";
+                const auto& ti = c.proc.get<Candidate::TemplateInfo>();
+                auto TV = utils::Overloaded {
+                    [](const TempSubstRes::Success&) { Unreachable("Invalid template even though deduction succeeded?"); },
+                    [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+                    [&](TempSubstRes::DeductionFailed f) {
+                        message += std::format(
+                            "In parameter #{}: cannot deduce ${} in {} from {}",
+                            f.param_index + 1,
+                            f.ttd->name,
+                            ti.pattern->params()[f.param_index]->type.print(C.use_colours),
+                            call_args[f.param_index]->type.print(C.use_colours)
+                        );
+                    },
+
+                    [&](const TempSubstRes::DeductionAmbiguous& a) {
+                        message += std::format(
+                            "Template deduction mismatch for parameter {}${}{}:\n"
+                            "        Argument #{}: Deduced as {}\n"
+                            "        Argument #{}: Deduced as {}",
+                            C(Yellow),
+                            a.ttd->name,
+                            C(Reset),
+                            a.first,
+                            a.first_type->print(C.use_colours),
+                            a.second,
+                            a.second_type->print(C.use_colours)
+                        );
+                    }
+                };
+                ti.res.data.visit(TV);
+            },
+
+            [&](const Candidate::NestedResolutionFailure& n) {
+                Todo("Report this");
+            }
+        }; // clang-format on
+        c.status.visit(V);
+    }
+
+    ctx.diags().report(Diagnostic{
+        Diagnostic::Level::Error,
+        call_loc,
+        std::format("No matching overload for call to '{}{}{}'", C(Green), candidates.front().name(), C(Reset)),
+        std::move(message),
+    });
+}
+
+// ============================================================================
 //  Building nodes.
 // ============================================================================
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
@@ -258,8 +421,6 @@ auto Sema::BuildBuiltinCallExpr(
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
-    using SubstStatus = ProcedureTemplateSubstitutionResult::Status;
-
     // Build a call expression that we can resolve later, usually
     // because the callee is dependent.
     auto BuildDependentCallExpr = [&](Expr* callee) {
@@ -292,83 +453,6 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // Source does have a restricted form of SFINAE: deduction failure
     // and deduction failure only is not an error. Random errors during
     // deduction are hard errors.
-    struct Candidate {
-        // Ambiguous candidate.
-        struct Ambiguous {};
-
-        // Viable candidate.
-        struct Viable {
-            // The conversion sequences that need to be applied to each
-            // argument if this overload does get selected.
-            SmallVector<ConversionSequence, 4> conversions;
-
-            // How 'bad' is this overload, i.e. how many conversions are
-            // required to make it work.
-            u32 badness = 0;
-        };
-
-        // Candidate for which the argument count didn’t match the parameter count.
-        struct ArgumentCountMismatch {};
-
-        // Candidate for which there was something wrong with the arguments;
-        // used for generic argument-related failures.
-        struct TypeMismatch {
-            // Which argument rendered it not viable.
-            u32 mismatch_index;
-        };
-
-        // A candidate for which deduction failed entirely.
-        struct InvalidTemplate {};
-
-        // One of the arguments is an overload set, and we failed
-        // to match any of the overloads against a parameter. This
-        // has information about why each of the overloads didn’t
-        // match. Because this only performs a subset of overload
-        // resolution, it only needs to deal with a subset of failure
-        // reasons.
-        struct NestedResolutionFailure {
-            // Index of the argument which contains this overload set.
-            u32 mismatch_index;
-        };
-
-        // Info about a yet to be instantiated template.
-        struct TemplateInfo {
-            ProcDecl* pattern;
-            ProcedureTemplateSubstitutionResult res;
-        };
-
-        // The procedure (template) that this candidate represents.
-        using ProcInfo = Variant<ProcDecl*, TemplateInfo>;
-        ProcInfo proc;
-
-        // Whether this candidate is still viable, or why not.
-        Variant<
-            Ambiguous,
-            Viable,
-            ArgumentCountMismatch,
-            TypeMismatch,
-            InvalidTemplate,
-            NestedResolutionFailure>
-            status;
-
-        Candidate(ProcDecl* p) : proc{p}, status{Viable{}} {}
-        Candidate(ProcDecl* pattern, ProcedureTemplateSubstitutionResult&& res)
-            : proc{TemplateInfo{pattern, std::move(res)}} {
-            if (res.status != SubstStatus::Success)
-                status = InvalidTemplate{};
-        }
-
-        auto badness() -> u32 { return status.get<Viable>().badness; }
-
-        auto type() -> ProcType* {
-            Assert(viable(), "Requesting type of non-viable candidate?");
-            if (auto p = proc.get<ProcDecl*>()) return p->proc_type();
-            return proc.get<TemplateInfo>().res.substituted_type.get();
-        }
-
-        bool viable() { return status.is<Viable>(); }
-    };
-
     // All candidates, whether viable or not.
     SmallVector<Candidate, 4> candidates;
     bool dependent = false;
@@ -387,10 +471,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // Perform template substitution.
         auto res = SubstituteTemplate(proc, types);
-        if (res.status == SubstStatus::Error) return false;
+        if (res.data.is<TempSubstRes::Error>()) return false;
         if (
-            res.status == SubstStatus::Success and
-            res.substituted_type.get()->dependent()
+            auto subst = res.data.get_if<TempSubstRes::Success>();
+            subst and subst->type->dependent()
         ) dependent = true;
         candidates.emplace_back(proc, std::move(res));
         return true;
@@ -531,12 +615,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             ambiguous = true;
     }
 
-    // If overload resolution was ambiguous, mark each viable
-    // candidate as ambiguous.
-    if (ambiguous) {
-        for (auto& c : viable) c.status = Candidate::Ambiguous{};
-        best = {};
-    }
+    // If overload resolution was ambiguous, then we don’t have
+    // a best candidate.
+    u32 badness = best.get_or_null() ? best.get()->badness() : 0;
+    if (ambiguous) best = {};
 
     // We found a single best candidate!
     if (auto c = best.get_or_null()) {
@@ -544,10 +626,11 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // Instantiate it now if it is a template.
         if (auto* temp = c->proc.get_if<Candidate::TemplateInfo>()) {
+            auto& subst = temp->res.data.get<TempSubstRes::Success>();
             auto inst = InstantiateTemplate(
                 temp->pattern,
-                temp->res.substituted_type.get(),
-                temp->res.args
+                subst.type,
+                subst.args
             );
 
             // And call it.
@@ -574,8 +657,9 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         );
     }
 
-    // Overload resolution failed. :(
-    Todo("Report overload resolution failure");
+    // Overload resolution failed :(.
+    ReportOverloadResolutionFailure(candidates, args, loc, badness);
+    return nullptr;
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
@@ -1072,6 +1156,13 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
+
+
 
 
 

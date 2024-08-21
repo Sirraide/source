@@ -180,13 +180,15 @@ public:
 
     Level level;
     Location where;
-    std::string msg;
+    std::string msg; // Main diagnostic message.
+    std::string extra; // Extra data to print after the location.
 
     /// Create a diagnostic.
-    Diagnostic(Level lvl, Location where, std::string msg)
+    Diagnostic(Level lvl, Location where, std::string msg, std::string extra = "")
         : level(lvl),
           where(where),
-          msg(std::move(msg)) {}
+          msg(std::move(msg)),
+          extra(std::move(extra)) {}
 
     /// Create a diagnostic with a format string and arguments.
     template <typename... Args>
@@ -239,6 +241,10 @@ public:
     virtual ~DiagnosticsEngine() = default;
     explicit DiagnosticsEngine(const Context& ctx) : ctx(ctx) {}
 
+    /// How many columns the output we’re printing to has. Returns
+    /// 0 if there is no column limit.
+    virtual u32 cols() = 0;
+
     /// Issue a diagnostic.
     template <typename... Args>
     void diag(
@@ -288,6 +294,8 @@ public:
     ) -> Ptr {
         return llvm::IntrusiveRefCntPtr(new StreamingDiagnosticsEngine(ctx, error_limit, output_stream));
     }
+
+    u32 cols() override;
 
 private:
     void report_impl(Diagnostic&&) override;

@@ -44,6 +44,8 @@ class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, private Di
 public:
     explicit VerifyDiagnosticsEngine(const Context& ctx);
 
+    u32 cols() override { return 0; }
+
     /// Get the comment callback that should be called by the lexer
     /// when it encounters a comment token.
     auto comment_token_callback() -> Parser::CommentTokenCallback {
