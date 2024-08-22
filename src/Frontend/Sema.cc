@@ -58,18 +58,20 @@ auto Sema::AdjustVariableType(Type ty, Location loc) -> Type {
     return ty;
 }
 
-auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
-    for (auto& c : seq) {
-        switch (c.kind) {
-            case Conversion::Kind::LValueToSRValue:
-                e = LValueToSRValue(e);
-                continue;
-            case Conversion::Kind::SelectOverload:
-                e = CreateReference(cast<OverloadSetExpr>(e)->overloads()[c.index], e->location()).get();
-                continue;
+auto Sema::ApplyConversion(Expr* e, Conversion conv) -> Expr* {
+    switch (conv.kind) {
+        using K = Conversion::Kind;
+        case K::LValueToSRValue: return LValueToSRValue(e);
+        case K::SelectOverload: {
+            auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.index];
+            return CreateReference(proc, e->location()).get();
         }
-        Unreachable("Invalid conversion");
     }
+    Unreachable("Invalid conversion");
+}
+
+auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
+    for (auto& c : seq) e = ApplyConversion(e, c);
     return e;
 }
 
@@ -216,6 +218,129 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
 }
 
 // ============================================================================
+//  Initialisation.
+// ============================================================================
+// Initialisation context that applies conversions and diagnoses
+// failures to do so immediately.
+class Sema::ImmediateInitContext {
+    Sema& S;
+    Expr* res;
+    Type target_type;
+
+public:
+    ImmediateInitContext(Sema& S, Expr* e, Type target_type)
+        : S{S},
+          res{e},
+          target_type{target_type} {}
+
+    void apply(Conversion c) { res = S.ApplyConversion(res, c); }
+
+    bool report_type_mismatch() {
+        S.Error(
+            res->location(),
+            "Cannot convert expression of type '{}' to '{}'",
+            res->type.print(S.ctx.use_colours()),
+            target_type.print(S.ctx.use_colours())
+        );
+        return false;
+    }
+
+    bool report_nested_resolution_failure() {
+        Todo("Report this");
+    }
+};
+
+// Initialisation context that converts conversion failures into
+// making an overload not viable.
+class Sema::OverloadInitContext {
+    Sema& S;
+    Candidate& c;
+    u32 param_index;
+
+public:
+    OverloadInitContext(Sema& S, Candidate& c, u32 param_index)
+        : S{S},
+          c{c},
+          param_index{param_index} {}
+
+    void apply(Conversion conv) {
+        c.status.get<Candidate::Viable>().conversions.back().push_back(conv);
+    }
+
+    bool report_type_mismatch() {
+        c.status = Candidate::TypeMismatch{u32(param_index)};
+        return true; // Not a fatal error.
+    }
+
+    bool report_nested_resolution_failure() {
+        c.status = Candidate::NestedResolutionFailure{u32(param_index)};
+        return true; // Not a fatal error.
+    }
+};
+
+template <typename InitContext>
+bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Expr* a) {
+    // Type matches exactly.
+    if (a->type == param_type) {
+        // We currently can only handle srvalues here.
+        if (a->type->value_category() != ValueCategory::SRValue) {
+            ICE(
+                a->location(),
+                "Sorry, we currently don’t support arguments of type {}",
+                a->type.print(ctx.use_colours())
+            );
+            return false;
+        }
+
+        // Convert lvalues to srvalues here.
+        if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
+        return true;
+    }
+
+    // Type is an overload set; attempt to convert it.
+    //
+    // This is *not* the same algorithm as overload resolution, because
+    // the types must match exactly here, and we also need to check the
+    // return type.
+    if (a->type == Types::UnresolvedOverloadSetTy) {
+        auto p_proc_type = dyn_cast<ProcType>(param_type.ptr());
+        if (not p_proc_type) return init.report_type_mismatch();
+
+        // Instantiate templates and simply match function types otherwise; we
+        // don’t need to do anything fancier here.
+        auto overloads = cast<OverloadSetExpr>(a->strip_parens())->overloads();
+
+        // Check non-templates first to avoid storing template substitution
+        // for all of them.
+        for (auto [j, o] : enumerate(overloads)) {
+            if (o->is_template()) continue;
+
+            // We have a match!
+            //
+            // The internal consistency of an overload set was already verified
+            // when the corresponding declarations were added to their scope, so
+            // if one of them matches, it is the only one that matches.
+            if (o->type == param_type) {
+                init.apply(Conversion::SelectOverload(u16(j)));
+                return true;
+            }
+        }
+
+        // Otherwise, we need to try and instantiate templates in this overload set.
+        for (auto o : overloads) {
+            if (not o->is_template()) continue;
+            Todo("Instantiate template in nested overload set");
+        }
+
+        // None of the overloads matched.
+        return init.report_nested_resolution_failure();
+    }
+
+    // Otherwise, the types don’t match.
+    return init.report_type_mismatch();
+}
+
+// ============================================================================
 //  Overloading.
 // ============================================================================
 void Sema::ReportOverloadResolutionFailure(
@@ -232,7 +357,7 @@ void Sema::ReportOverloadResolutionFailure(
     if (candidates.size() == 1) {
         auto c = candidates.front();
         auto ty = c.type_for_diagnostic();
-        auto V = utils::Overloaded { // clang-format off
+        auto V = utils::Overloaded{// clang-format off
             [](const Candidate::Viable&) { Unreachable(); },
             [&](Candidate::ArgumentCountMismatch) {
                 Error(
@@ -516,77 +641,18 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // Check that we can initialise each parameter with its
         // corresponding argument.
         for (auto [i, a] : enumerate(args)) {
+            // Candidate may have become invalid in the meantime.
+            auto st = c.status.get_if<Candidate::Viable>();
+            if (not st) break;
+
+            // Check the next parameter.
             auto p = params[i];
-            auto& conv = c.status.get<Candidate::Viable>().conversions.emplace_back();
-
-            // Type matches exactly.
-            if (a->type == p) {
-                // We currently can only handle srvalues here.
-                if (a->type->value_category() != ValueCategory::SRValue) {
-                    ICE(
-                        a->location(),
-                        "Sorry, we currently don’t support arguments of type {}",
-                        a->type.print(ctx.use_colours())
-                    );
-                    return false;
-                }
-
-                // Convert lvalues to srvalues here.
-                if (a->lvalue()) conv.push_back(Conversion::LValueToSRValue());
-            }
-
-            // Type is an overload set; attempt to convert it.
-            //
-            // This is *not* the same algorithm as overload resolution, because
-            // the types must match exactly here, and we also need to check the
-            // return type.
-            else if (a->type == Types::UnresolvedOverloadSetTy) {
-                auto p_proc_type = dyn_cast<ProcType>(p.ptr());
-                if (not p_proc_type) {
-                    c.status = Candidate::TypeMismatch{u32(i)};
-                    return true;
-                }
-
-                // Instantiate templates and simply match function types otherwise; we
-                // don’t need to do anything fancier here.
-                auto overloads = cast<OverloadSetExpr>(a->strip_parens())->overloads();
-
-                // Check non-templates first to avoid storing template substitution
-                // for all of them.
-                for (auto [j, o] : enumerate(overloads)) {
-                    if (o->is_template()) continue;
-
-                    // We have a match!
-                    //
-                    // The internal consistency of an overload set was already verified
-                    // when the corresponding declarations were added to their scope, so
-                    // if one of them matches, it is the only one that matches.
-                    if (o->type == p) {
-                        conv.push_back(Conversion::SelectOverload(u16(j)));
-                        goto next_param;
-                    }
-                }
-
-                // Otherwise, we need to try and instantiate templates in this overload set.
-                for (auto o : overloads) {
-                    if (not o->is_template()) continue;
-                    Todo("Instantiate template in nested overload set");
-                }
-
-                // None of the overloads matched.
-                c.status = Candidate::NestedResolutionFailure{u32(i)};
-                return true;
-            }
-
-            // Otherwise, the types don’t match.
-            else {
-                c.status = Candidate::TypeMismatch{u32(i)};
-                return true;
-            }
-        next_param:
+            st->conversions.emplace_back();
+            OverloadInitContext init{*this, c, u32(i)};
+            if (not PerformVariableInitialisation(init, p, a)) return false;
         }
 
-        // All parameters match.
+        // No fatal error.
         return true;
     };
 
@@ -1161,6 +1227,10 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
 
 
 

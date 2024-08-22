@@ -20,9 +20,13 @@ class TemplateInstantiator;
 
 class srcc::Sema : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
+
+    class Importer;
+    class ImmediateInitContext;
+    class OverloadInitContext;
+
     friend DiagsProducer;
     friend TemplateInstantiator;
-    class Importer;
     friend Importer;
 
 public:
@@ -247,13 +251,13 @@ private:
         ProcInfo proc;
 
         // Whether this candidate is still viable, or why not.
-        Variant<
+        using Status = Variant<
             Viable,
             ArgumentCountMismatch,
             TypeMismatch,
             InvalidTemplate,
-            NestedResolutionFailure>
-            status = Viable{};
+            NestedResolutionFailure>;
+        Status status = Viable{};
 
         Candidate(ProcDecl* p) : proc{p} {}
         Candidate(ProcDecl* pattern, TempSubstRes&& res)
@@ -357,13 +361,16 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Adjust a type for use in a variable declaration.
-    auto AdjustVariableType(Type ty, Location loc) -> Type;
+    [[nodiscard]] auto AdjustVariableType(Type ty, Location loc) -> Type;
+
+    /// Apply a conversion to an expression.
+    [[nodiscard]] auto ApplyConversion(Expr* e, Conversion conv) -> Expr*;
 
     /// Apply a conversion sequence to an expression.
-    auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
+    [[nodiscard]] auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
 
     /// Create a reference to a declaration.
-    auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
+    [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
     /// Add a variable to the current scope and procedure.
     void DeclareLocal(LocalDecl* d);
@@ -429,6 +436,14 @@ private:
 
     /// Resolve an overload set.
     auto PerformOverloadResolution();
+
+    /// Initialise a variable from an expression.
+    template <typename InitContext>
+    bool PerformVariableInitialisation(
+        InitContext& ctx,
+        Type param_type,
+        Expr* arg
+    );
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
