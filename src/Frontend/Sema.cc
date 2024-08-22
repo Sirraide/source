@@ -565,24 +565,26 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     };
 
     // Calls with dependent arguments are checked when they’re instantiated.
-    if (
-        callee_expr->dependent() or
-        rgs::any_of(args, [](Expr* e) { return e->dependent(); })
-    ) return BuildDependentCallExpr(callee_expr);
-
-    // If does not have procedure type, then we can’t call it.
-    if (not isa<ProcType>(callee_expr->type)) return Error(
-        callee_expr->location(),
-        "Expression of type '{}' is not callable",
-        callee_expr->type.print(ctx.use_colours())
-    );
+    if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
+        return BuildDependentCallExpr(callee_expr);
 
     // If this is not a procedure reference or overload set, then we don’t
     // need to perform overload resolution nor template instantiation, so
     // just typecheck the arguments directly.
     auto callee_no_parens = callee_expr->strip_parens();
     if (not isa<OverloadSetExpr, ProcRefExpr>(callee_no_parens)) {
-        auto ty = cast<ProcType>(callee_expr->type);
+        auto ty = dyn_cast<ProcType>(callee_expr->type.ptr());
+
+        // If this is not a literal procedure and still dependent, then we
+        // can’t check this yet.
+        if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
+
+        // If does not have procedure type, then we can’t call it.
+        if (not ty) return Error(
+            callee_expr->location(),
+            "Expression of type '{}' is not callable",
+            callee_expr->type.print(ctx.use_colours())
+        );
 
         // Check arg count.
         if (ty->params().size() != args.size()) {
