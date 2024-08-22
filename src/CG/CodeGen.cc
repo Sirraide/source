@@ -470,6 +470,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
     };
 
     utils::Overloaded V {
+        [&](bool b) -> llvm::Constant* { return llvm::ConstantInt::get(I1Ty, b); },
         [&](ProcDecl* proc) -> llvm::Constant* { return EmitClosure(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
         [&](eval::TypeTag) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },

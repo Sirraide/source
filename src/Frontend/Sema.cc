@@ -604,6 +604,7 @@ auto Sema::BuildBinaryExpr(
         case Tk::MinusTilde:
         case Tk::MinusVBar:
         case Tk::ShiftLeft:
+        case Tk::ShiftLeftLogical:
         case Tk::ShiftRight:
         case Tk::ShiftRightLogical:
         case Tk::Ampersand:
@@ -672,6 +673,7 @@ auto Sema::BuildBinaryExpr(
         case Tk::SlashEq:
         case Tk::PercentEq:
         case Tk::ShiftLeftEq:
+        case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
             // Both sides must have the same type.

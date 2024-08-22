@@ -126,12 +126,13 @@ class srcc::eval::Value {
     friend EvaluationContext;
     friend Slice;
 
-    Variant<ProcDecl*, LValue, Slice, Reference, APInt, TypeTag, std::monostate> value{std::monostate{}};
+    Variant<ProcDecl*, LValue, Slice, Reference, APInt, bool, TypeTag, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
 public:
     Value() = default;
     Value(ProcDecl* proc);
+    Value(bool b) : value{b}, ty{Types::BoolTy} {}
     Value(Type ty) : value{TypeTag{}}, ty{ty} {}
     Value(Slice lvalue, Type ty);
     Value(LValue lvalue, Type ty) : value(std::move(lvalue)), ty(ty) {}
@@ -140,7 +141,7 @@ public:
 
     /// cast<>() the contained value.
     template <typename Ty>
-    auto cast() const -> const Ty& { return std::get<Ty>(value); }
+    auto cast() -> Ty& { return std::get<Ty>(value); }
 
     /// Print this value.
     void dump(bool use_colour = true) const;

@@ -1,5 +1,5 @@
+// R %srcc --eval %s
 program test;
-
 
 proc arith(int a, int b) {
     __srcc_print(a, ", ", b, "\n");
@@ -21,9 +21,23 @@ proc arith(int a, int b) {
     __srcc_print(a :% b, "\n");
 
     __srcc_print(a ** b, "\n");
-    __srcc_print("\n");
 }
 
+// + 20, 5
+// * 25
+// * 25
+// * 25
+// * 15
+// * 15
+// * 15
+// * 100
+// * 100
+// * 100
+// * 4
+// * 0
+// * 4
+// * 0
+// * 3200000
 arith(20, 5);
-arith(~(1 << 63), 10);
-arith(1 << 63, 10);
+//arith(~(1 <<< 63), 10);
+//arith(1 <<< 63, 10);

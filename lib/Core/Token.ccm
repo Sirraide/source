@@ -163,9 +163,11 @@ enum struct srcc::Tk : u8 {
     SlashEq,
     PercentEq,
     ShiftLeft,
+    ShiftLeftLogical,
     ShiftRight,
     ShiftRightLogical,
     ShiftLeftEq,
+    ShiftLeftLogicalEq,
     ShiftRightEq,
     ShiftRightLogicalEq,
     StarStarEq,
@@ -395,9 +397,11 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::SlashEq: return "/=";
         case Tk::PercentEq: return "%=";
         case Tk::ShiftLeft: return "<<";
+        case Tk::ShiftLeftLogical: return "<<<";
         case Tk::ShiftRight: return ">>";
         case Tk::ShiftRightLogical: return ">>>";
         case Tk::ShiftLeftEq: return "<<=";
+        case Tk::ShiftLeftLogicalEq: return "<<<=";
         case Tk::ShiftRightEq: return ">>=";
         case Tk::ShiftRightLogicalEq: return ">>>=";
         case Tk::StarStarEq: return "**=";

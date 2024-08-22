@@ -8,6 +8,7 @@ module;
 #include <srcc/Macros.hh>
 
 module srcc.ast;
+import srcc.token;
 using namespace srcc;
 using namespace srcc::eval;
 
@@ -40,22 +41,32 @@ void Value::dump(bool use_colour) const {
     using enum utils::Colour;
     utils::Colours C{use_colour};
     utils::Overloaded V{// clang-format off
+        [&](bool) { std::print("{}{}", C(Red), value.get<bool>()); },
         [&](std::monostate) { },
         [&](ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); },
         [&](TypeTag) { std::print("{}", ty->print(use_colour)); },
         [&](const LValue& lval) { lval.dump(use_colour); },
-        [&](const APInt& value) { std::print("{}{}", C(Magenta), llvm::toString(value, 10, true)); },
+        [&](const APInt& value) { std::print("{}{}", C(Magenta), toString(value, 10, true)); },
         [&](const Slice&) { std::print("<slice>"); },
         [&](this auto& Self, const Reference& ref) {
             Self(ref.lvalue);
-            std::print("{}@{}{}", C(Red), C(Magenta), llvm::toString(ref.offset, 10, true));
+            std::print("{}@{}{}", C(Red), C(Magenta), toString(ref.offset, 10, true));
         }
     }; // clang-format on
     visit(V);
 }
 
 auto Value::value_category() const -> ValueCategory {
-    return value.visit(utils::Overloaded{[](std::monostate) { return Expr::SRValue; }, [](ProcDecl*) { return Expr::SRValue; }, [](Slice) { return Expr::SRValue; }, [](TypeTag) { return Expr::SRValue; }, [](const APInt&) { return Expr::SRValue; }, [](const LValue&) { return Expr::LValue; }, [](const Reference&) { return Expr::LValue; }});
+    return value.visit(utils::Overloaded{
+        [](std::monostate) { return Expr::SRValue; },
+        [](bool) { return Expr::SRValue; },
+        [](ProcDecl*) { return Expr::SRValue; },
+        [](Slice) { return Expr::SRValue; },
+        [](TypeTag) { return Expr::SRValue; },
+        [](const APInt&) { return Expr::SRValue; },
+        [](const LValue&) { return Expr::LValue; },
+        [](const Reference&) { return Expr::LValue; },
+    });
 }
 
 // ============================================================================
@@ -220,7 +231,7 @@ auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
     // That is, both the compile-time metadata for this allocation,
     // as well as the Source object that is the memory location are
     // store as a single compile-time object.
-    auto ty_sz = ty->size(tu); // FIXME: This needs to be the size on the host, not the target.
+    auto ty_sz = ty->size(tu);     // FIXME: This needs to be the size on the host, not the target.
     auto ty_align = ty->align(tu); // FIXME: This needs to be the alignment on the host, not the target.
     auto data_offs = Size::Bytes(sizeof(Memory)).align(ty_align);
     auto total_size = data_offs + ty_sz;
@@ -437,7 +448,211 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
 //  Evaluation
 // ============================================================================
 bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
-    Todo();
+    using enum OverflowBehaviour;
+    Value lhs, rhs;
+    if (not Eval(lhs, expr->lhs)) return false;
+    if (not Eval(rhs, expr->rhs)) return false;
+
+    auto EvalAndCheckOverflow = [&](
+                                    APInt (APInt::* op)(const APInt&, bool&) const,
+                                    OverflowBehaviour ob
+                                ) {
+        auto& left = lhs.cast<APInt>();
+        auto& right = rhs.cast<APInt>();
+
+        bool overflow = false;
+        out = {(left.*op)(right, overflow), lhs.type()};
+
+        // Handle overflow.
+        if (not overflow) return true;
+        switch (ob) {
+            case Wrap: return true;
+            case Trap: {
+                return Error(
+                    expr->location(),
+                    "Integer overflow in calculation\f'{} {} {}'",
+                    toString(left, 10, true),
+                    expr->op,
+                    toString(right, 10, true)
+                );
+            }
+
+            case Saturate: {
+                out = {APInt::getMaxValue(left.getBitWidth()), lhs.type()};
+                return true;
+            }
+        }
+
+        Unreachable();
+    };
+
+    auto EvalUnchecked = [&](APInt (APInt::* op)(const APInt&) const) {
+        out = {(lhs.cast<APInt>().*op)(rhs.cast<APInt>()), lhs.type()};
+        return true;
+    };
+
+    auto EvalCompare = [&](bool (APInt::* op)(const APInt&) const) {
+        out = (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
+        return true;
+    };
+
+    auto EvalLogical = [&](auto op) {
+        out = op(lhs.cast<bool>(), rhs.cast<bool>());
+        return true;
+    };
+
+    auto EvalInPlace = [&]<typename T = void>(T (APInt::* op)(const APInt&)) {
+        (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
+        out = std::move(lhs);
+        return true;
+    };
+
+    switch (expr->op) {
+        default: Unreachable("Invalid operator: {}", expr->op);
+
+        // Array or slice subscript.
+        case Tk::LBrack: return ICE(expr->location(), "Array/slice subscript not supported yet");
+        case Tk::In: return ICE(expr->location(), "Operator 'in' not yet implemented");
+
+        // APInt doesn’t support this, so we have to do it ourselves.
+        case Tk::StarStar: {
+            auto base = lhs.cast<APInt>();
+            auto exp = rhs.cast<APInt>();
+            auto One = [&] { return APInt::getOneBitSet(base.getBitWidth(), 0); };
+            auto Zero = [&] { return APInt::getZero(base.getBitWidth()); };
+
+            // Anything to the power of 0, including 0 itself, is 1,
+            // *by definition*.
+            if (exp.isZero()) {
+                out = {One(), lhs.type()};
+                return true;
+            }
+
+            // 0 to the power of anything is 0.
+            if (base.isZero()) {
+                out = {Zero(), lhs.type()};
+                return true;
+            }
+
+            // If the base and exponent are both negative, then they
+            // cancel each other out.
+            bool both_negative = false;
+            if (base.isNegative() and exp.isNegative()) {
+                both_negative = true;
+                base.negate();
+                exp.negate();
+            }
+
+            // Otherwise, if only the exponent is negative, the result
+            // will be a fraction, which collapses to 0 because this is
+            // integer arithmetic, unless the base is 1, in which case
+            // the result is 1 (the base can’t be -1 because we already
+            // checked for that case earlier).
+            if (exp.isNegative()) {
+                if (base.isOne()) {
+                    out = {One(), lhs.type()};
+                    return true;
+                }
+
+                out = {Zero(), lhs.type()};
+                return true;
+            }
+
+            // Otherwise, if the base is negative, the result will be
+            // negative if the exponent is odd, and positive otherwise.
+            bool negate = false;
+            if (base.isNegative()) {
+                base.negate();
+                negate = exp.countTrailingZeros() == 0;
+            }
+
+            // Finally, both the base and exponent are positive here; we
+            // can now perform the calculation.
+            out = {One(), lhs.type()};
+            auto& res = out.cast<APInt>();
+            for (auto i = exp; i != 0; --i) {
+                bool overflow = false;
+                res = res.smul_ov(base, overflow);
+                if (overflow) {
+                    if (negate or both_negative) base.negate();
+                    if (both_negative) exp.negate();
+                    return Error(
+                        expr->location(),
+                        "Integer overflow in calculation\f'{} ** {}'",
+                        toString(base, 10, true),
+                        toString(exp, 10, true)
+                    );
+                }
+            }
+
+            // Negate if necessary.
+            if (negate) res.negate();
+            return true;
+        }
+
+        // These operations can overflow.
+        case Tk::Star: return EvalAndCheckOverflow(&APInt::smul_ov, Trap);
+        case Tk::Slash: return EvalAndCheckOverflow(&APInt::sdiv_ov, Trap);
+        case Tk::StarTilde: return EvalAndCheckOverflow(&APInt::smul_ov, Wrap);
+        case Tk::StarVBar: return EvalAndCheckOverflow(&APInt::smul_ov, Saturate);
+        case Tk::Plus: return EvalAndCheckOverflow(&APInt::sadd_ov, Trap);
+        case Tk::PlusTilde: return EvalAndCheckOverflow(&APInt::sadd_ov, Wrap);
+        case Tk::PlusVBar: return EvalAndCheckOverflow(&APInt::sadd_ov, Saturate);
+        case Tk::Minus: return EvalAndCheckOverflow(&APInt::ssub_ov, Trap);
+        case Tk::MinusTilde: return EvalAndCheckOverflow(&APInt::ssub_ov, Wrap);
+        case Tk::MinusVBar: return EvalAndCheckOverflow(&APInt::ssub_ov, Saturate);
+        case Tk::ShiftLeft: return EvalAndCheckOverflow(&APInt::sshl_ov, Trap);
+        case Tk::ShiftLeftLogical: return EvalAndCheckOverflow(&APInt::ushl_ov, Trap);
+
+        // These physically can’t.
+        case Tk::ColonSlash: return EvalUnchecked(&APInt::udiv);
+        case Tk::ColonPercent: return EvalUnchecked(&APInt::urem);
+        case Tk::Percent: return EvalUnchecked(&APInt::srem);
+
+        // For these, we can avoid allocating a new APInt.
+        case Tk::ShiftRight: return EvalInPlace(&APInt::ashrInPlace);
+        case Tk::ShiftRightLogical: return EvalInPlace(&APInt::lshrInPlace);
+        case Tk::Ampersand: return EvalInPlace(&APInt::operator&=);
+        case Tk::VBar: return EvalInPlace(&APInt::operator|=);
+
+        // Comparison operators.
+        case Tk::ULt: return EvalCompare(&APInt::ult);
+        case Tk::UGt: return EvalCompare(&APInt::ugt);
+        case Tk::ULe: return EvalCompare(&APInt::ule);
+        case Tk::UGe: return EvalCompare(&APInt::uge);
+        case Tk::SLt: return EvalCompare(&APInt::slt);
+        case Tk::SGt: return EvalCompare(&APInt::sgt);
+        case Tk::SLe: return EvalCompare(&APInt::sle);
+        case Tk::SGe: return EvalCompare(&APInt::sge);
+        case Tk::EqEq: return EvalCompare(&APInt::operator==);
+        case Tk::Neq: return EvalCompare(&APInt::operator!=);
+
+        // Logical operators.
+        case Tk::And: return EvalLogical([](bool a, bool b) { return a and b; });
+        case Tk::Or: return EvalLogical([](bool a, bool b) { return a or b; });
+        case Tk::Xor: return EvalLogical([](bool a, bool b) { return a xor b; });
+
+        // Assignment operators.
+        case Tk::Assign:
+        case Tk::PlusEq:
+        case Tk::PlusTildeEq:
+        case Tk::PlusVBarEq:
+        case Tk::MinusEq:
+        case Tk::MinusTildeEq:
+        case Tk::MinusVBarEq:
+        case Tk::StarEq:
+        case Tk::StarTildeEq:
+        case Tk::StarVBarEq:
+        case Tk::StarStarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftLeftLogicalEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq: {
+            return ICE(expr->location(), "Assignment operators not supported yet");
+        }
+    }
 }
 
 bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
@@ -619,7 +834,7 @@ bool EvaluationContext::EvalOverloadSetExpr(Value&, OverloadSetExpr*) {
 }
 
 bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr) {
-    Todo();
+    return Eval(out, expr->expr);
 }
 
 bool EvaluationContext::EvalParamDecl(Value& out, ParamDecl* ld) {
@@ -670,7 +885,34 @@ bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr) {
 }
 
 bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
-    Todo();
+    if (not Eval(out, expr->arg)) return false;
+    if (expr->postfix) return ICE(expr->location(), "Postfix unary operators not supported yet");
+    switch (expr->op) {
+        default: Unreachable("Invalid prefix operator: {}", expr->op);
+
+        // Boolean negation.
+        case Tk::Not: {
+            out = not out.cast<bool>();
+            return true;
+        }
+
+        // Arithmetic operators.
+        case Tk::Minus: {
+            out.cast<APInt>().negate();
+            return true;
+        }
+
+        case Tk::Plus: return true;
+        case Tk::Tilde: {
+            out.cast<APInt>().flipAllBits();
+            return true;
+        }
+
+        case Tk::MinusMinus:
+        case Tk::PlusPlus: {
+            return ICE(expr->location(), "Increment/decrement operators not supported yet");
+        }
+    }
 }
 
 // ============================================================================

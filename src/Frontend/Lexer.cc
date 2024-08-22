@@ -302,11 +302,14 @@ void Lexer::NextImpl() {
                 break;
             }
 
-            ty = Eat('=') ? (Eat(':') ? Tk::ULe : Tk::SLe)
-               : Eat('<') ? (Eat('=') ? Tk::ShiftLeftEq : Tk::ShiftLeft)
-               : Eat('-') ? Tk::LArrow
-               : Eat(':') ? Tk::ULt
-                          : Tk::SLt;
+            ty = Eat('=')     ? (Eat(':') ? Tk::ULe : Tk::SLe)
+               : Eat('-')     ? Tk::LArrow
+               : Eat(':')     ? Tk::ULt
+               : not Eat('<') ? Tk::SLt
+               : Eat('<')     ? (Eat('=') ? Tk::ShiftLeftLogicalEq : Tk::ShiftLeftLogical)
+               : Eat('=')     ? Tk::ShiftLeftEq
+                              : Tk::ShiftLeft;
+
             break;
 
         case '\\':
@@ -350,7 +353,7 @@ void Lexer::NextImpl() {
 }
 
 void Lexer::HandleCommentToken() {
-    const auto KeepSkipping = [&] { return not Done() and *curr != '\n'; };
+    const auto KeepSkipping = [&] { return not Done() and * curr != '\n'; };
 
     // If we were asked to lex comment tokens, do so and dispatch it. To
     // keep the parser from having to deal with these, they never enter
