@@ -284,7 +284,7 @@ class srcc::StreamingDiagnosticsEngine final : public DiagnosticsEngine {
     /// Used to limit how many errors we print before giving up.
     u32 error_limit;
     u32 printed = 0;
-    bool has_flushed_backlog = false;
+    bool has_ever_flushed_backlog = false;
 
     /// Backlog of diagnostics so we can group notes with errors/warnings.
     SmallVector<Diagnostic, 20> backlog;

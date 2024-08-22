@@ -232,80 +232,35 @@ void Sema::ReportOverloadResolutionFailure(
     u32 width = u32(std::to_string(candidates.size()).size());
 
     // First, print all overloads.
-    u32 term_width = ctx.diags().cols();
     for (auto [i, c] : enumerate(candidates)) {
         message += C(Bold);
 
-        // Check if the location is valid.
-        auto loc = c.location();
-        auto lc = loc.seek_line_column(ctx);
-        if (lc) {
-            // We have a location. Compute the width of everything so we can print
-            // it in a single line if it fits. We need to print the type twice since
-            // the ANSI escape codes would throw everything off.
-            auto type_width = c.type_for_diagnostic()->print(false).size();
-            auto start = std::format(
-                "  {:>{}}. ",
-                i + 1,
-                width
-            );
-
-            // Technically, we don’t have to do this calculation if the terminal width
-            // is zero, but this is really not a place where we have to worry about
-            // performance...
-            auto total =
-                type_width +
-                start.size() +
-                4 + // ' at '
-                2 + // ':' twice
-                ctx.file(loc.file_id)->name().size() +
-                std::to_string(lc->line).size() +
-                std::to_string(lc->col).size();
-
-            // It fits!
-            if (term_width == 0 or total < term_width) {
-                message += std::format(
-                    "{}{}{} {}at {}{}:{}:{}\n",
-                    start,
-                    C(Reset),
-                    c.type_for_diagnostic()->print(C.use_colours),
-                    C(Bold),
-                    C(Reset),
-                    ctx.file(loc.file_id)->name(),
-                    lc->line,
-                    lc->col
-                );
-
-                continue;
-            }
-        }
-
-        // It doesn’t, or we have no location. Print the type first.
-        if (i != 0) message += "\n";
+        // Print the type.
         message += std::format(
-            "  {:>{}}. {}{}\n",
+            "  {}. \v{}{}",
             i + 1,
-            width,
             C(Reset),
             c.type_for_diagnostic()->print(C.use_colours)
         );
 
-        // And the location on the next line if there is one.
+        // And include the location if it is valid.
+        auto loc = c.location();
+        auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
-                "  {}{:>{}}  at {}{}:{}:{}\n",
+                "\f{}at {}{}:{}:{}",
                 C(Bold),
-                "",
-                width,
                 C(Reset),
                 ctx.file(loc.file_id)->name(),
                 lc->line,
                 lc->col
             );
         }
+
+        message += "\n";
     }
 
-    message += std::format("\n{}Failure Reason:", C(Bold));
+    message += std::format("\n\r{}Failure Reason:", C(Bold));
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {

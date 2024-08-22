@@ -2,6 +2,7 @@ module;
 
 #include <filesystem>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -20,6 +21,7 @@ module;
 #endif
 
 module srcc;
+import base.text;
 using namespace srcc;
 
 // ============================================================================
@@ -282,9 +284,26 @@ StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
     Assert(backlog.empty(), "Diagnostics not flushed?");
 }
 
+auto TextWidth(std::u32string_view data) -> usz {
+    static constexpr usz TabSize = 4;
+    u32stream text{data};
+
+    // Abuse Size for this since it has alignment code.
+    usz sz = 0;
+    while (not text.empty()) {
+        // Handle ANSI escape sequences, tabs, and non-printable chars.
+        if (text.consume('\033')) text.drop_until('m');
+        else if (text.starts_with(U'\t')) sz += TabSize;
+        else if (*text.front() > char32_t(31)) sz += c32(*text.front()).width();
+        text.drop();
+    }
+
+    return sz;
+}
+
 auto FormatDiagnostic(
     const Context& ctx,
-    Diagnostic& diag,
+    const Diagnostic& diag,
     Opt<Location> previous_loc
 ) -> std::string {
     utils::Colours C(ctx.use_colours());
@@ -368,59 +387,195 @@ auto FormatDiagnostic(
     out += std::format("{}\n", after);
 
     // Determine the number of digits in the line number.
-    const auto digits = utils::NumberWidth(line);
+    const auto digits = std::to_string(line).size();
 
     // LLVM’s columnWidthUTF8() function returns -1 for non-printable characters
     // for some ungodly reason, so guard against that.
-    static const auto ColumnWidth = [](StringRef text) {
+    /*static const auto ColumnWidth = [](StringRef text) {
         auto wd = llvm::sys::unicode::columnWidthUTF8(text);
         return wd < 0 ? 0 : usz(wd);
-    };
+    };*/
 
     // Underline the range. For that, we first pad the line based on the number
     // of digits in the line number and append more spaces to line us up with
     // the range.
-    for (usz i = 0, end = digits + ColumnWidth(before) + sizeof(" | ") - 1; i < end; i++)
+    for (usz i = 0, end = digits + TextWidth(text::ToUTF32(before)) + sizeof(" | ") - 1; i < end; i++)
         out += " ";
 
     // Finally, underline the range.
     out += std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
-    for (usz i = 0, end = ColumnWidth(range); i < end; i++) out += "~";
+    for (usz i = 0, end = TextWidth(text::ToUTF32(range)); i < end; i++) out += "~";
 
     // And print any extra data.
     PrintExtraData();
     return out;
 }
 
-void StreamingDiagnosticsEngine::EmitDiagnostics() {
+auto RenderDiagnostics(
+    const Context& ctx,
+    ArrayRef<Diagnostic> backlog,
+    usz cols
+) -> std::string {
     using enum utils::Colour;
     utils::Colours C{ctx.use_colours()};
-    if (backlog.empty()) return;
 
-    // Print a dividing line first so diagnostics don’t clump together too much.
-    if (has_flushed_backlog) stream << "\n";
-    has_flushed_backlog = true;
+    // Subtract 2 here for the leading character and the space after it.
+    auto cols_rem = cols - 2;
+
+    // Print an extra line after a line that was broken into multiple lines if
+    // another line would immediately follow; this keeps track of that.
+    bool prev_was_multiple = false;
 
     // Print all diagnostics that we have queued up as a group.
+    std::string buffer;
     Opt<Location> previous_loc;
     for (auto [di, diag] : enumerate(backlog)) {
         // Render the diagnostic text.
         auto out = FormatDiagnostic(ctx, diag, previous_loc);
 
         // Then, indent everything properly.
-        auto lines = base::stream{out}.lines();
+        auto lines = stream{out}.split("\n");
         auto count = rgs::distance(lines);
         for (auto [i, line] : lines | vws::enumerate) {
-            auto leading = di == 0 and i == 0                          ? "╭ "sv
-                         : di == backlog.size() - 1 and i == count - 1 ? "╰ "sv
-                                                                       : "│ "sv;
-            stream << C(Reset) << leading << line.text() << "\n";
+            auto EmitLeading = [&](bool last_line_segment, bool segment_empty = false) {
+                StringRef leading;
+                if (
+                    last_line_segment and
+                    di == backlog.size() - 1 and
+                    i == count - 1
+                ) {
+                    leading = "╰"sv;
+                } else {
+                    leading = di == 0 and i == 0 ? "╭"sv : "│"sv;
+                }
+
+                buffer += C(Reset);
+                buffer += leading;
+                if (not segment_empty) buffer += " ";
+            };
+
+            // A '\r' at the start of the line prints an empty line only if
+            // the previous line was not empty.
+            bool add_line = line.consume('\r');
+            if (add_line and not buffer.ends_with("│\n")) {
+                EmitLeading(false, true);
+                buffer += "\n";
+            }
+
+            // Print an extra empty line after a line that was broken into pieces.
+            if (prev_was_multiple and not line.empty() and not add_line) {
+                EmitLeading(false, true);
+                buffer += "\n";
+            }
+
+            // Always clear this flag.
+            prev_was_multiple = false;
+
+            // The text might need some post processing: within a line,
+            // a vertical tab can be used to set a tab stop to which the
+            // line is indented if broken into multiple pieces; form feeds
+            // can additionally be used to specify where a line break can
+            // happen, in which case no other line breaks are allowed.
+            if (line.contains_any("\v\f")) {
+                // Convert to utf32 so we can iterate chars more easily.
+                auto utf32 = text::ToUTF32(line.text());
+
+                // Check if everything fits in a single line. size() may be
+                // an overestimate because it contains ANSI escape code etc.
+                // but if that already fits, then we don’t need to check
+                // anything else.
+                if (utf32.size() < cols_rem or TextWidth(utf32) < cols_rem) {
+                    SmallString<80> s;
+                    EmitLeading(true);
+                    for (auto c : line.text()) {
+                        if (c == '\f') s.push_back(' ');
+                        else if (c != '\v') s.push_back(c);
+                    }
+                    buffer += stream{s.str()}.trim().text();
+                    buffer += "\n";
+                }
+
+                // Otherwise, we need to break the line.
+                else {
+                    u32stream s{utf32};
+
+                    // Determine hanging indentation. This is the position of
+                    // the first '\v', or all leading whitespace if there is
+                    // none.
+                    usz hang;
+                    if (s.contains(U'\v')) {
+                        auto start = s.take_until(U'\v');
+                        hang = TextWidth(start);
+
+                        // Emit everything up to the tab stop.
+                        s.drop();
+                        EmitLeading(false);
+                        buffer += text::ToUTF8(start);
+                    } else {
+                        // We don’t use tabs in diagnostics, so just check for spaces.
+                        auto ws = s.take_while_or_empty(' ');
+                        hang = ws.size();
+                        EmitLeading(false);
+                        buffer += text::ToUTF8(ws);
+                    }
+
+                    // Emit the rest of the line.
+                    std::string hang_indent(hang, ' ');
+                    auto EmitRestOfLine = [&](std::u32string_view rest_of_line, auto parts) {
+                        buffer += text::ToUTF8(rest_of_line);
+                        buffer += "\n";
+
+                        // Emit the remaining parts.
+                        auto total = rgs::distance(parts);
+                        for (auto [j, part] : parts | vws::enumerate) {
+                            EmitLeading(j == total - 1, part.empty());
+                            if (not part.empty()) {
+                                buffer += hang_indent;
+                                buffer += text::ToUTF8(part.text());
+                            }
+                            buffer += "\n";
+                        }
+
+                        prev_was_multiple = true;
+                    };
+
+                    // Next, if we have form feeds, split the text along them
+                    // and indent every part based on the hanging indentation.
+                    if (s.contains(U'\f')) {
+                        auto first = s.take_until(U'\f');
+                        EmitRestOfLine(first, s.drop().split(U"\f"));
+                    }
+
+                    // Otherwise, just wrap the test at screen width.
+                    else {
+                        auto chunk_size = cols_rem - hang;
+                        auto first = s.take(chunk_size);
+                        EmitRestOfLine(first, s.chunks(chunk_size));
+                    }
+                }
+            }
+
+            // If neither is present, emit the line literally.
+            else {
+                EmitLeading(true, line.empty());
+                buffer += line.text();
+                buffer += "\n";
+            }
         }
 
         previous_loc = diag.where;
     }
 
-    // Finally, reset the colour.
+    return buffer;
+}
+
+void StreamingDiagnosticsEngine::EmitDiagnostics() {
+    using enum utils::Colour;
+    utils::Colours C{ctx.use_colours()};
+    if (backlog.empty()) return;
+    if (has_ever_flushed_backlog) stream << "\n";
+    has_ever_flushed_backlog = true;
+    stream << RenderDiagnostics(ctx, backlog, cols());
     stream << C(Reset);
     backlog.clear();
 }
