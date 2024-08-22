@@ -1,6 +1,7 @@
 module;
 
 #include <filesystem>
+#include <generator>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/LLVMContext.h>
@@ -23,6 +24,7 @@ module;
 module srcc;
 import base.text;
 using namespace srcc;
+using namespace base;
 
 // ============================================================================
 //  Context
@@ -284,20 +286,31 @@ StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
     Assert(backlog.empty(), "Diagnostics not flushed?");
 }
 
-auto TextWidth(std::u32string_view data) -> usz {
+auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
     static constexpr usz TabSize = 4;
-    u32stream text{data};
+    static constexpr std::u32string_view Tab = U"    ";
 
-    // Abuse Size for this since it has alignment code.
+    std::u32string buf;
     usz sz = 0;
-    while (not text.empty()) {
+
+    while (not s.empty() and sz < n) {
         // Handle ANSI escape sequences, tabs, and non-printable chars.
-        if (text.consume('\033')) text.drop_until('m');
-        else if (text.starts_with(U'\t')) sz += TabSize;
-        else if (*text.front() > char32_t(31)) sz += c32(*text.front()).width();
-        text.drop();
+        if (s.starts_with('\033')) buf += s.take_until('m');
+        else if (s.starts_with(U'\t')) {
+            sz += TabSize;
+            buf += Tab;
+        } else if (*s.front() > char32_t(31)) {
+            sz += c32(*s.front()).width();
+        }
+        buf += s.take();
     }
 
+    return {std::move(buf), sz};
+}
+
+auto TextWidth(std::u32string_view data) -> usz {
+    u32stream text{data};
+    auto [_, sz] = TakeColumns(text, std::numeric_limits<usz>::max());
     return sz;
 }
 
@@ -364,6 +377,9 @@ auto FormatDiagnostic(
     utils::ReplaceAll(range, "\t", "    ");
     utils::ReplaceAll(after, "\t", "    ");
 
+    // Break the message itself before the file name.
+    out += "\v";
+
     // Print the file name, unless the location is in the same
     // file as the previous diagnostic.
     const auto& file = *ctx.file(diag.where.file_id);
@@ -427,6 +443,7 @@ auto RenderDiagnostics(
     bool prev_was_multiple = false;
 
     // Print all diagnostics that we have queued up as a group.
+    bool first_line = true;
     std::string buffer;
     Opt<Location> previous_loc;
     for (auto [di, diag] : enumerate(backlog)) {
@@ -446,7 +463,8 @@ auto RenderDiagnostics(
                 ) {
                     leading = "╰"sv;
                 } else {
-                    leading = di == 0 and i == 0 ? "╭"sv : "│"sv;
+                    leading = first_line ? "╭"sv : "│"sv;
+                    first_line = false;
                 }
 
                 buffer += C(Reset);
@@ -531,7 +549,7 @@ auto RenderDiagnostics(
                             EmitLeading(j == total - 1, part.empty());
                             if (not part.empty()) {
                                 buffer += hang_indent;
-                                buffer += text::ToUTF8(part.text());
+                                buffer += text::ToUTF8(std::u32string_view{part.data(), part.size()});
                             }
                             buffer += "\n";
                         }
@@ -549,8 +567,14 @@ auto RenderDiagnostics(
                     // Otherwise, just wrap the test at screen width.
                     else {
                         auto chunk_size = cols_rem - hang;
-                        auto first = s.take(chunk_size);
-                        EmitRestOfLine(first, s.chunks(chunk_size));
+                        auto first = TakeColumns(s, chunk_size).first;
+                        SmallVector<std::u32string, 8> chunks;
+                        while (not s.empty()) {
+                            auto [chunk, _] = TakeColumns(s, chunk_size);
+                            chunks.push_back(std::move(chunk));
+                        }
+
+                        EmitRestOfLine(first, chunks);
                     }
                 }
             }
