@@ -151,7 +151,7 @@ public:
     [[nodiscard]] auto strip_parens() -> Expr*;
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::BlockExpr and e->kind() <= Kind::TypeExpr;
+        return e->kind() >= Kind::BinaryExpr and e->kind() <= Kind::UnaryExpr;
     }
 };
 
@@ -163,11 +163,12 @@ public:
 
     BinaryExpr(
         Type type,
+        ValueCategory cat,
         Tk op,
         Expr* lhs,
         Expr* rhs,
         Location location
-    ) : Expr{Kind::BinaryExpr, type, SRValue, location},
+    ) : Expr{Kind::BinaryExpr, type, cat, location},
         op{op},
         lhs{lhs},
         rhs{rhs} {
@@ -392,10 +393,9 @@ public:
     Expr* expr;
 
     ParenExpr(
-        Type type,
         Expr* expr,
         Location location
-    ) : Expr{Kind::ParenExpr, type, SRValue, location}, expr{expr} {
+    ) : Expr{Kind::ParenExpr, expr->type, expr->value_category, location}, expr{expr} {
         ComputeDependence();
     }
 
@@ -492,15 +492,19 @@ class srcc::UnaryExpr final : public Expr {
 public:
     Tk op;
     Expr* arg;
+    bool postfix;
 
     UnaryExpr(
         Type type,
+        ValueCategory val,
         Tk op,
         Expr* arg,
+        bool postfix,
         Location location
-    ) : Expr{Kind::UnaryExpr, type, SRValue, location},
+    ) : Expr{Kind::UnaryExpr, type, val, location},
         op{op},
-        arg{arg} {
+        arg{arg},
+        postfix{postfix} {
         ComputeDependence();
     }
 

@@ -11,6 +11,7 @@ enum class ExprKind : u8;
 enum class Linkage : u8;
 enum class Mangling : u8;
 enum class ValueCategory : u8;
+enum class OverflowBehaviour : u8;
 } // namespace srcc
 
 /// Expression dependence.
@@ -120,4 +121,15 @@ enum class srcc::ValueCategory : u8 {
 
     /// Dependent, don’t know yet.
     DValue,
+};
+
+enum class srcc::OverflowBehaviour : u8 {
+    /// Abort the program.
+    Trap,
+
+    /// Wrap around like normal.
+    Wrap,
+
+    /// Saturate to the maximum/minimum value.
+    Saturate,
 };

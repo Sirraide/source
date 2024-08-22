@@ -232,7 +232,7 @@ auto TypeBase::value_category() const -> ValueCategory {
         }
 
         // It’s not worth it to try and construct arrays in registers.
-        case Kind::ArrayType: return Expr::LValue;
+        case Kind::ArrayType: return Expr::MRValue;
 
         // Slices are a pointer+size, which our ABI just passes in registers.
         case Kind::SliceType: return Expr::SRValue;

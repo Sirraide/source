@@ -8,6 +8,7 @@ export module srcc.frontend.sema;
 import srcc;
 import srcc.utils;
 import srcc.ast;
+import srcc.token;
 import srcc.frontend.parser;
 
 export namespace srcc {
@@ -388,6 +389,10 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
+    /// Ensure that an expression is an srvalue of the given type. This is
+    /// mainly used for expressions involving operators.
+    bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+
     /// Instantiate a procedure template.
     auto InstantiateTemplate(
         ProcDecl* proc,
@@ -434,6 +439,9 @@ private:
     /// Convert an lvalue to an srvalue.
     [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
 
+    /// Materialise a temporary value.
+    [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
+
     /// Resolve an overload set.
     auto PerformOverloadResolution();
 
@@ -463,15 +471,17 @@ private:
     ) -> TempSubstRes;
 
     /// Building AST nodes; called after translation and template instantiation.
+    auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<BinaryExpr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
-    auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
+    auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
+    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<UnaryExpr>;
 
     /// Entry point.
     void Translate();

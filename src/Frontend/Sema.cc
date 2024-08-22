@@ -10,6 +10,7 @@ module;
 module srcc.frontend.sema;
 import srcc.utils;
 import srcc.ast;
+import srcc.token;
 using namespace srcc;
 
 #define TRY(expression) ({              \
@@ -201,6 +202,28 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
     return new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
 }
 
+bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
+    if (e->type != ty) {
+        Error(
+            e->location(),
+            "{} of {} be of type '{}', but was '{}'",
+            elem_name,
+            op,
+            ty.print(ctx.use_colours()),
+            e->type.print(ctx.use_colours())
+        );
+        return false;
+    }
+
+    e = LValueToSRValue(e);
+    return true;
+};
+
+auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
+    if (expr->lvalue()) return expr;
+    Todo();
+}
+
 void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
@@ -285,7 +308,7 @@ bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Exp
     // Type matches exactly.
     if (a->type == param_type) {
         // We currently can only handle srvalues here.
-        if (a->type->value_category() != ValueCategory::SRValue) {
+        if (a->type->value_category() != Expr::SRValue) {
             ICE(
                 a->location(),
                 "Sorry, we currently don’t support arguments of type {}",
@@ -519,6 +542,173 @@ auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> 
         stmts,
         loc
     );
+}
+
+auto Sema::BuildBinaryExpr(
+    Tk op,
+    Expr* lhs,
+    Expr* rhs,
+    Location loc
+) -> Ptr<BinaryExpr> {
+    using enum ValueCategory;
+    auto Build = [&](Type ty, ValueCategory cat = SRValue) {
+        return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
+    };
+
+    // If either operand is dependent, then we can’t do much.
+    if (lhs->dependent() or rhs->dependent()) return Build(
+        Types::DependentTy,
+        DValue
+    );
+
+    // Otherwise, each builtin operator needs custom handling.
+    switch (op) {
+        default: Unreachable("Invalid binary operator: {}", op);
+
+        // Array or slice subscript.
+        case Tk::LBrack: {
+            if (not isa<SliceType, ArrayType>(lhs->type)) return Error(
+                lhs->location(),
+                "Cannot subscript non-array, non-slice type '{}'",
+                lhs->type.print(ctx.use_colours())
+            );
+
+            if (not MakeSRValue(Types::IntTy, rhs, "Index", "subscript")) return {};
+
+            // Arrays need to be in memory before we can do anything
+            // with them; slices are srvalues and should be loaded
+            // whole.
+            if (isa<ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
+            else lhs = LValueToSRValue(lhs);
+
+            // A subscripting operation yields an lvalue.
+            return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
+        }
+
+        // TODO: Allow for slices and arrays.
+        case Tk::In: return ICE(loc, "Operator 'in' not yet implemented");
+
+        // Arithmetic operation.
+        case Tk::StarStar:
+        case Tk::Star:
+        case Tk::Slash:
+        case Tk::Percent:
+        case Tk::StarTilde:
+        case Tk::StarVBar:
+        case Tk::ColonSlash:
+        case Tk::ColonPercent:
+        case Tk::Plus:
+        case Tk::PlusTilde:
+        case Tk::PlusVBar:
+        case Tk::Minus:
+        case Tk::MinusTilde:
+        case Tk::MinusVBar:
+        case Tk::ShiftLeft:
+        case Tk::ShiftRight:
+        case Tk::ShiftRightLogical:
+        case Tk::Ampersand:
+        case Tk::VBar: {
+            // Arguments must be integer srvalues; result is
+            // an integer srvalue.
+            if (not MakeSRValue(Types::IntTy, lhs, "Left operand", Spelling(op))) return {};
+            if (not MakeSRValue(Types::IntTy, rhs, "Right operand", Spelling(op))) return {};
+            return Build(Types::IntTy, SRValue);
+        }
+
+        // Comparison.
+        case Tk::ULt:
+        case Tk::UGt:
+        case Tk::ULe:
+        case Tk::UGe:
+        case Tk::SLt:
+        case Tk::SGt:
+        case Tk::SLe:
+        case Tk::SGe:
+        case Tk::EqEq:
+        case Tk::Neq: {
+            // Both operands must have the same type.
+            if (lhs->type != rhs->type) return Error(
+                loc,
+                "Cannot compare '{}' with '{}'",
+                lhs->type.print(ctx.use_colours()),
+                rhs->type.print(ctx.use_colours())
+            );
+
+            // For now, we only support srvalues.
+            if (lhs->type->value_category() != SRValue) return ICE(
+                loc,
+                "Sorry, we can’t compare values of type '{}' yet",
+                lhs->type.print(ctx.use_colours())
+            );
+
+            lhs = LValueToSRValue(lhs);
+            rhs = LValueToSRValue(rhs);
+
+            // Result is an srvalue bool.
+            return Build(Types::BoolTy, SRValue);
+        }
+
+        // Logical operator.
+        case Tk::And:
+        case Tk::Or:
+        case Tk::Xor: {
+            if (not MakeSRValue(Types::BoolTy, lhs, "Left operand", Spelling(op))) return {};
+            if (not MakeSRValue(Types::BoolTy, rhs, "Right operand", Spelling(op))) return {};
+            return Build(Types::BoolTy, SRValue);
+        }
+
+        // Assignment.
+        case Tk::Assign:
+        case Tk::PlusEq:
+        case Tk::PlusTildeEq:
+        case Tk::PlusVBarEq:
+        case Tk::MinusEq:
+        case Tk::MinusTildeEq:
+        case Tk::MinusVBarEq:
+        case Tk::StarEq:
+        case Tk::StarTildeEq:
+        case Tk::StarVBarEq:
+        case Tk::StarStarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq: {
+            // Both sides must have the same type.
+            if (lhs->type != rhs->type) return Error(
+                loc,
+                "Cannot assign '{}' to '{}'",
+                lhs->type.print(ctx.use_colours()),
+                rhs->type.print(ctx.use_colours())
+            );
+
+            // LHS must be an lvalue.
+            if (lhs->value_category != LValue) return Error(
+                lhs->location(),
+                "Left-hand side of assignment must be an lvalue"
+            );
+
+            // The RHS an RValue.
+            if (rhs->type->value_category() == MRValue) return ICE(
+                rhs->location(),
+                "Sorry, assignment to a variable of type '{}' is not yet supported",
+                rhs->type.print(ctx.use_colours())
+            );
+
+            rhs = LValueToSRValue(rhs);
+
+            // For arithmetic operations, both sides must be ints.
+            if (op != Tk::Assign and lhs->type != Types::IntTy) Error(
+                lhs->location(),
+                "Compound assignment operator '{}' is not supported for type '{}'",
+                Spelling(op),
+                lhs->type.print(ctx.use_colours())
+            );
+
+            // The LHS is returned as an lvalue.
+            return Build(lhs->type, LValue);
+        }
+    }
 }
 
 auto Sema::BuildBuiltinCallExpr(
@@ -814,11 +1004,11 @@ auto Sema::BuildLocalDecl(
     // Then, perform initialisation.
     if (auto i = init.get_or_null()) {
         switch (ty->value_category()) {
-            case ValueCategory::MRValue: Todo("Initialise MRValue");
-            case ValueCategory::LValue: Todo("Initialise LValue");
+            case Expr::MRValue: Todo("Initialise MRValue");
+            case Expr::LValue: Todo("Initialise LValue");
 
             // Easy case: this behaves like an integer.
-            case ValueCategory::SRValue:
+            case Expr::SRValue:
                 if (not i->dependent()) {
                     if (i->type != ty) {
                         Error(
@@ -835,7 +1025,7 @@ auto Sema::BuildLocalDecl(
                 break;
 
             // Dependent. We’ll come back to this later.
-            case ValueCategory::DValue:
+            case Expr::DValue:
                 break;
         }
     }
@@ -935,6 +1125,55 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
 
 auto Sema::BuildTypeExpr(Type ty, Location loc) -> TypeExpr* {
     return new (*M) TypeExpr(ty, loc);
+}
+
+auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<UnaryExpr> {
+    auto Build = [&](Type ty, ValueCategory cat) {
+        return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
+    };
+
+    if (operand->dependent()) return Build(Types::DependentTy, Expr::DValue);
+    if (postfix) return ICE(loc, "Postfix unary operators are not yet implemented");
+
+    // Handle prefix operators.
+    switch (op) {
+        default: Unreachable("Invalid unary operator: {}", op);
+
+        // Boolean negation.
+        case Tk::Not: {
+            if (not MakeSRValue(Types::BoolTy, operand, "Operand", "not")) return {};
+            return Build(Types::BoolTy, Expr::SRValue);
+        }
+
+        // Arithmetic operators.
+        case Tk::Minus:
+        case Tk::Plus:
+        case Tk::Tilde: {
+            if (not MakeSRValue(Types::IntTy, operand, "Operand", Spelling(op))) return {};
+            return Build(Types::IntTy, Expr::SRValue);
+        }
+
+        // Increment and decrement.
+        case Tk::MinusMinus:
+        case Tk::PlusPlus: {
+            // Operand must be an lvalue.
+            if (operand->value_category != Expr::LValue) return Error(
+                operand->location(),
+                "Operand of '{}' must be an lvalue",
+                Spelling(op)
+            );
+
+            // Operand must be an integer.
+            if (operand->type != Types::IntTy) return Error(
+                operand->location(),
+                "Operand of '{}' must be an integer",
+                Spelling(op)
+            );
+
+            // Result is an lvalue.
+            return Build(Types::IntTy, Expr::LValue);
+        }
+    }
 }
 
 // ============================================================================
@@ -1040,8 +1279,11 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateBinaryExpr(ParsedBinaryExpr*) -> Ptr<Expr> {
-    Todo();
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Expr> {
+    // Translate LHS and RHS.
+    auto lhs = TRY(TranslateExpr(expr->lhs));
+    auto rhs = TRY(TranslateExpr(expr->rhs));
+    return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);
 }
 
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
@@ -1181,8 +1423,8 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr*) -> Ptr<Expr> {
-    Todo();
+auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr> {
+    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
 }
 
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> LocalDecl* {
@@ -1288,6 +1530,12 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 
 
 
+
+
+
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -1306,7 +1554,8 @@ auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr> {
 }
 
 auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
-    Todo();
+    auto arg = TRY(TranslateExpr(parsed->arg));
+    return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
 // ============================================================================
