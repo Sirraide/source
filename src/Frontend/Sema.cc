@@ -454,10 +454,11 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // treat calls as requiring overload resolution even if there is
     // only a single ‘overload’.
     //
+    // FIXME: This doesn’t work for indirect calls.
+    //
     // Source does have a restricted form of SFINAE: deduction failure
     // and deduction failure only is not an error. Random errors during
     // deduction are hard errors.
-    // All candidates, whether viable or not.
     SmallVector<Candidate, 4> candidates;
     bool dependent = false;
 
