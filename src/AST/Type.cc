@@ -244,8 +244,8 @@ auto TypeBase::value_category() const -> ValueCategory {
         // that’s for the backend to deal with.
         case Kind::IntType: return Expr::SRValue;
 
-        // Invalid, can’t be instantiated; return some random nonsense.
-        case Kind::ProcType: return Expr::DValue;
+        // Closures are srvalues.
+        case Kind::ProcType: return Expr::SRValue;
 
         // Dependent.
         case Kind::TemplateType: return Expr::DValue;

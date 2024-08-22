@@ -1,0 +1,19 @@
+// R %srcc --eval %s
+program test;
+
+// * 3
+__srcc_print(f(
+    a,
+    a,
+    a
+), "\n");
+
+proc a {}
+proc a (int) {}
+proc a (bool) -> int = 0;
+
+proc f (proc,                proc        -> bool, proc        -> bool) -> int = 1; // f1
+proc f (proc (int),          proc,                proc        -> bool) -> int = 2; // f2
+proc f (proc (bool) -> int,  proc (int),          proc               ) -> int = 3; // f3
+proc f (proc        -> bool, proc (bool) -> int,  proc (int)         ) -> int = 4; // f4
+proc f (proc        -> bool, proc        -> bool, proc (bool) -> int ) -> int = 5; // f5

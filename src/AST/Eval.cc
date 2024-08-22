@@ -50,26 +50,24 @@ void Value::dump(bool use_colour) const {
 }
 
 auto Value::value_category() const -> ValueCategory {
-    return value.visit(utils::Overloaded{
-        [](std::monostate) { return Expr::SRValue; },
-        [](ProcDecl*) { return Expr::SRValue; },
-        [](Slice) { return Expr::SRValue; },
-        [](TypeTag) { return Expr::SRValue; },
-        [](const APInt&) { return Expr::SRValue; },
-        [](const LValue&) { return Expr::LValue; },
-        [](const Reference&) { return Expr::LValue; }
-    });
+    return value.visit(utils::Overloaded{[](std::monostate) { return Expr::SRValue; }, [](ProcDecl*) { return Expr::SRValue; }, [](Slice) { return Expr::SRValue; }, [](TypeTag) { return Expr::SRValue; }, [](const APInt&) { return Expr::SRValue; }, [](const LValue&) { return Expr::LValue; }, [](const Reference&) { return Expr::LValue; }});
 }
 
 // ============================================================================
 //  Evaluation State
 // ============================================================================
 struct StackFrame {
-    explicit StackFrame() = default;
     StackFrame(const StackFrame&) = delete;
     StackFrame& operator=(const StackFrame&) = delete;
     StackFrame(StackFrame&&) = default;
     StackFrame& operator=(StackFrame&&) = default;
+    StackFrame(ProcDecl* proc, Location loc) : proc{proc}, call_loc{loc} {}
+
+    /// The procedure that this frame belongs to.
+    ProcDecl* proc;
+
+    /// Location of the call that pushed this frame.
+    Location call_loc;
 
     /// The local variables and parameters allocated in this frame.
     DenseMap<LocalDecl*, LValue> locals;
@@ -104,7 +102,8 @@ public:
         EvaluationContext& ctx;
 
     public:
-        PushStackFrame(EvaluationContext& ctx) : ctx{ctx} { ctx.stack.emplace_back(); }
+        PushStackFrame(EvaluationContext& ctx, ProcDecl* proc, Location loc)
+            : ctx{ctx} { ctx.stack.emplace_back(proc, loc); }
         ~PushStackFrame() { ctx.stack.pop_back(); }
     };
 
@@ -114,7 +113,18 @@ public:
 
     template <typename... Args>
     void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
+        if (complain) {
+            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
+
+            // Print call stack, but take care not to recurse infinitely here.
+            if (level != Diagnostic::Level::Note) {
+                for (auto& frame : stack | vws::reverse) Note(
+                    frame.call_loc,
+                    "In call to '{}' here",
+                    frame.proc->name
+                );
+            }
+        }
     }
 
     /// Get the current stack frame.
@@ -318,7 +328,6 @@ auto EvaluationContext::IntValue(std::integral auto val) -> Value {
     return Value{APInt{64, u64(val)}, Types::IntTy};
 }
 
-
 bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc) {
     auto mem = addr.base.get<Memory*>();
 
@@ -327,7 +336,10 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
     switch (mem->type()->value_category()) {
         case ValueCategory::MRValue: Todo("Initialise mrvalue");
         case ValueCategory::LValue: Todo("Initialise lvalue");
-        case ValueCategory::DValue: Unreachable("Dependent value in constant evaluation?");
+        case ValueCategory::DValue:
+            ICE(mem->loc, "Dependent value in constant evaluation");
+            return false;
+
         case ValueCategory::SRValue: {
             if (mem->type() == Types::IntTy) {
                 if (auto i = init.get_or_null()) {
@@ -338,12 +350,26 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
 
                     mem->init(tu);
                     return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), i->location());
-
                 }
 
                 // No initialiser. Initialise it to 0.
                 mem->init(tu);
                 return StoreMemory(mem, u64(0), loc);
+            }
+
+            if (isa<ProcType>(mem->type())) {
+                if (auto i = init.get_or_null()) {
+                    Assert(i->value_category == Expr::SRValue);
+                    Value closure;
+                    if (not Eval(closure, i))
+                        return false;
+
+                    mem->init(tu);
+                    return StoreMemory(mem, closure.cast<ProcDecl*>(), i->location());
+                }
+
+                ICE(loc, "Uninitialised closure in constant evaluator");
+                return false;
             }
 
             return Error(
@@ -483,7 +509,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     // If we have a body, just evaluate it.
     if (auto body = proc->body().get_or_null()) {
         // Set up stack.
-        PushStackFrame _{*this};
+        PushStackFrame _{*this, proc, call->location()};
         auto& frame = CurrFrame();
 
         // Allocate and initialise local variables and initialise them.
@@ -579,7 +605,7 @@ bool EvaluationContext::EvalOverloadSetExpr(Value&, OverloadSetExpr*) {
     Unreachable("Evaluating unresolved overload set?");
 }
 
-bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr){
+bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr) {
     Todo();
 }
 
@@ -625,7 +651,7 @@ bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
     return true;
 }
 
-bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr){
+bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr) {
     out = expr->value;
     return true;
 }

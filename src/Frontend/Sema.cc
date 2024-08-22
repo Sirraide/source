@@ -406,6 +406,7 @@ auto Sema::BuildBuiltinCallExpr(
             SmallVector<Expr*> actual_args{args};
             if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
+                if (arg->dependent()) continue;
                 if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy) {
                     return Error(
                         arg->location(),

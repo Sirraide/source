@@ -1,0 +1,5 @@
+program test;
+
+proc caller (proc x -> int) = x();
+proc foo = 42;
+__srcc_print(caller(foo));
