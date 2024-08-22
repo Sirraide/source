@@ -42,6 +42,9 @@ public:
         return std::move(CG.llvm);
     }
 
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return M.context().diags(); }
+
 private:
     auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
     auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;

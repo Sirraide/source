@@ -125,6 +125,9 @@ public:
 
     EvaluationContext(TranslationUnit& tu, bool complain) : tu{tu}, complain{complain} {}
 
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+
     auto AllocateMemory(Type ty, Location loc) -> Memory*;
 
     template <typename... Args>
@@ -520,6 +523,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
             auto exp = rhs.cast<APInt>();
             auto One = [&] { return APInt::getOneBitSet(base.getBitWidth(), 0); };
             auto Zero = [&] { return APInt::getZero(base.getBitWidth()); };
+            auto MinusOne = [&] { return APInt::getAllOnes(base.getBitWidth()); };
 
             // Anything to the power of 0, including 0 itself, is 1,
             // *by definition*.
@@ -528,42 +532,61 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
                 return true;
             }
 
-            // 0 to the power of anything is 0.
+            // 0 to the power of a positive number is 0, and 0 to the
+            // power of a negative number is undefined.
             if (base.isZero()) {
-                out = {Zero(), lhs.type()};
-                return true;
-            }
+                if (exp.isNegative()) {
+                    Error(
+                        expr->location(),
+                        "Undefined operation: 0 ** {}",
+                        toString(exp, 10, true)
+                    );
 
-            // If the base and exponent are both negative, then they
-            // cancel each other out.
-            bool both_negative = false;
-            if (base.isNegative() and exp.isNegative()) {
-                both_negative = true;
-                base.negate();
-                exp.negate();
-            }
+                    Remark(
+                        "\r\vTaking 0 to the power of a negative number would "
+                        "require division by zero, which is not defined for "
+                        "integers."
+                    );
 
-            // Otherwise, if only the exponent is negative, the result
-            // will be a fraction, which collapses to 0 because this is
-            // integer arithmetic, unless the base is 1, in which case
-            // the result is 1 (the base can’t be -1 because we already
-            // checked for that case earlier).
-            if (exp.isNegative()) {
-                if (base.isOne()) {
-                    out = {One(), lhs.type()};
-                    return true;
+                    return false;
                 }
 
                 out = {Zero(), lhs.type()};
                 return true;
             }
 
-            // Otherwise, if the base is negative, the result will be
-            // negative if the exponent is odd, and positive otherwise.
-            bool negate = false;
-            if (base.isNegative()) {
+            // If the exponent is negative, the result will be a fraction,
+            // which collapses to 0 because this is integer arithmetic,
+            // unless the base is 1, in which case the result is always 1,
+            // or if the base is -1, in which case the result is -1 instead
+            // if the exponent is odd.
+            //
+            // Check for this first so we avoid having to negate 'base' in
+            // this case if it happens to be INT_MIN.
+            if (exp.isNegative()) {
+                if (base.isOne()) out = {One(), lhs.type()};
+                if (base.isAllOnes()) out = {exp[0] ? MinusOne() : One(), lhs.type()};
+                else out = {Zero(), lhs.type()};
+                return true;
+            }
+
+            // If the base is negative, the result will be negative if the
+            // exponent is odd, and positive otherwise.
+            bool negate = base.isNegative();
+            if (negate) {
+                // If base is INT_MIN, then its negation is not representable;
+                // furthermore, we only get here if the exponent is positive,
+                // which means that exponentiation would result in an even
+                // larger value, which means that this overflows either way.
+                if (base.isMinSignedValue()) Error(
+                    expr->location(),
+                    "Integer overflow in calculation\f'{} ** {}'",
+                    toString(base, 10, true),
+                    toString(exp, 10, true)
+                );
+
+                // Otherwise, the negation is fine.
                 base.negate();
-                negate = exp.countTrailingZeros() == 0;
             }
 
             // Finally, both the base and exponent are positive here; we
@@ -574,8 +597,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
                 bool overflow = false;
                 res = res.smul_ov(base, overflow);
                 if (overflow) {
-                    if (negate or both_negative) base.negate();
-                    if (both_negative) exp.negate();
+                    if (negate) base.negate();
                     return Error(
                         expr->location(),
                         "Integer overflow in calculation\f'{} ** {}'",
@@ -586,6 +608,10 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
             }
 
             // Negate if necessary.
+            //
+            // This is always fine since the smallest negative number is
+            // always greater in magnitude than the largest positive number
+            // because of how two’s complement works.
             if (negate) res.negate();
             return true;
         }
@@ -898,7 +924,27 @@ bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
 
         // Arithmetic operators.
         case Tk::Minus: {
-            out.cast<APInt>().negate();
+            auto& i = out.cast<APInt>();
+            // This can overflow if this is INT_MIN.
+            if (i.isMinSignedValue()) {
+                Error(
+                    expr->location(),
+                    "Integer overflow in calculation\f'- {}'",
+                    toString(i, 10, true)
+                );
+
+                Remark(
+                    "\vThe {}-bit value '{}', the smallest representable negative value, "
+                    "has no positive {}-bit counterpart because of two’s complement.",
+                    i.getBitWidth(),
+                    toString(i, 10, true),
+                    i.getBitWidth()
+                );
+
+                return false;
+            }
+
+            i.negate();
             return true;
         }
 

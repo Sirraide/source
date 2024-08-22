@@ -331,7 +331,11 @@ auto FormatDiagnostic(
         // be emitted when we print the diagnostic; that looks better if
         // we have extra data, but it’s weird if we don’t, which is why
         // we add the linebreak after the main diagnostic text here.
-        out += std::format("\n{}{}\n", C(Reset), diag.extra);
+        //
+        // Make sure the extra data is at the start of a line so that \r
+        // is handled properly.
+        // TODO: Just turn \r into \n mid-line.
+        out += std::format("{}\n{}\n", C(Reset), diag.extra);
     };
 
     // If the location is invalid, either because the specified file does not
@@ -602,6 +606,11 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     stream << RenderDiagnostics(ctx, backlog, cols());
     stream << C(Reset);
     backlog.clear();
+}
+
+void StreamingDiagnosticsEngine::add_remark(std::string msg) {
+    if (backlog.empty()) return;
+    backlog.back().extra += std::move(msg);
 }
 
 u32 StreamingDiagnosticsEngine::cols() {

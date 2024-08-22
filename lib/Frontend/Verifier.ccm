@@ -16,7 +16,7 @@ class VerifyDiagnosticsEngine;
 // ============================================================================
 //  Diagnostic Verifier
 // ============================================================================
-class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, private DiagsProducer<> {
+class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, DiagsProducer<> {
     struct DecodedLocation {
         const File* file;
         usz line;
@@ -44,7 +44,12 @@ class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, private Di
 public:
     explicit VerifyDiagnosticsEngine(const Context& ctx);
 
+    /// Print everything in one line.
     u32 cols() override { return 0; }
+
+    /// Get the diagnostics engine for reporting errors during the verification
+    /// and comment parsing steps.
+    auto diags() const -> DiagnosticsEngine& { return *diags_reporter; }
 
     /// Get the comment callback that should be called by the lexer
     /// when it encounters a comment token.

@@ -1,0 +1,15 @@
+// V %srcc --sema --verify %s
+program test;
+
+// TODO: Test more operations.
+
+eval 1 << 63;      // expected-error: Integer overflow in calculation
+eval 1 <<< 64;     // expected-error: Integer overflow in calculation
+eval 1 <<< 111111; // expected-error: Integer overflow in calculation
+
+eval (1 <<< 63) - 1;  // expected-error: Integer overflow in calculation
+eval -(1 <<< 63)   ; // expected-error: Integer overflow in calculation
+
+eval 100 ** 100;   // expected-error: Integer overflow in calculation
+eval 0 ** -1;      // expected-error: Undefined operation
+eval 0 ** -100;    // expected-error: Undefined operation

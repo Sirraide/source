@@ -141,6 +141,7 @@ void Stmt::Printer::PrintBasicNode(
         }
     }
 
+    if (s->errored()) std::print(" has-error");
     if (s->dependent()) std::print(" dependent");
     std::print("\n");
 }

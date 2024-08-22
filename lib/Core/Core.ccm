@@ -226,10 +226,9 @@ public:
 };
 
 /// This class handles dispatching diagnostics. Objects of this
-/// type are thread-safe.
+/// type are NOT thread-safe. Create a separate one for each thread.
 class srcc::DiagnosticsEngine : public llvm::RefCountedBase<DiagnosticsEngine> {
     SRCC_IMMOVABLE(DiagnosticsEngine);
-    std::mutex mtx;
 
 protected:
     /// The context that owns this engine.
@@ -240,6 +239,9 @@ public:
     using Ptr = llvm::IntrusiveRefCntPtr<DiagnosticsEngine>;
     virtual ~DiagnosticsEngine() = default;
     explicit DiagnosticsEngine(const Context& ctx) : ctx(ctx) {}
+
+    /// Add a remark to a diagnostic as extra information.
+    virtual void add_remark(std::string msg) {}
 
     /// How many columns the output we’re printing to has. Returns
     /// 0 if there is no column limit.
@@ -266,9 +268,6 @@ public:
     void report(Diagnostic&& diag) {
         if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
             error_flag.store(true, std::memory_order_relaxed);
-
-        // Use a lock to avoid interleaving diagnostics.
-        std::unique_lock _{mtx};
         report_impl(std::move(diag));
     }
 
@@ -302,6 +301,7 @@ public:
         return llvm::IntrusiveRefCntPtr(new StreamingDiagnosticsEngine(ctx, error_limit, output_stream));
     }
 
+    void add_remark(std::string msg) override;
     u32 cols() override;
     void flush() override;
 
@@ -334,6 +334,11 @@ public:
     template <typename... Args>
     void Warn(this auto& This, Location loc, std::format_string<Args...> fmt, Args&&... args) {
         This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename ...Args>
+    void Remark(this auto& This, std::format_string<Args...> fmt, Args&&... args) {
+        This.diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
 };
 

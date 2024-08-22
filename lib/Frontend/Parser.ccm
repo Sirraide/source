@@ -483,6 +483,9 @@ public:
     /// Allocate data.
     void* allocate(usz size, usz align) { return mod->allocator().Allocate(size, align); }
 
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return ctx.diags(); }
+
     /// Get the module.
     auto module() -> ParsedModule& { return *mod; }
 

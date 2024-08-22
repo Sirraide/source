@@ -189,6 +189,7 @@ int Driver::Impl::run_job() {
 
     // Dump parse tree.
     if (a == Action::Parse) {
+        ctx.diags().flush();
         if (opts.verify) return Verify();
         if (opts.print_ast)
             for (auto& m : parsed_modules)
@@ -203,6 +204,7 @@ int Driver::Impl::run_job() {
     // TODO: topological sort, group, and schedule.
     auto module = Sema::Translate(parsed_modules);
     if (a == Action::Sema) {
+        ctx.diags().flush();
         if (opts.verify) return Verify();
         if (opts.print_ast) module->dump();
         return ctx.diags().has_error();

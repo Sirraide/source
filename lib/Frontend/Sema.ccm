@@ -337,6 +337,9 @@ public:
     /// Get the context.
     auto context() const -> Context& { return ctx; }
 
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return ctx.diags(); }
+
     /// Get the current procedure.
     auto curr_proc() -> ProcScopeInfo& {
         Assert(not proc_stack.empty(), "Procedure stack underflow");
