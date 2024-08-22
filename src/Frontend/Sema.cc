@@ -248,12 +248,14 @@ public:
     bool report_nested_resolution_failure() {
         Todo("Report this");
     }
+
+    auto result() -> Expr* { return res; }
 };
 
 // Initialisation context that converts conversion failures into
 // making an overload not viable.
 class Sema::OverloadInitContext {
-    Sema& S;
+    [[maybe_unused]] Sema& S;
     Candidate& c;
     u32 param_index;
 
@@ -563,17 +565,56 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     };
 
     // Calls with dependent arguments are checked when they’re instantiated.
-    if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
-        return BuildDependentCallExpr(callee_expr);
+    if (
+        callee_expr->dependent() or
+        rgs::any_of(args, [](Expr* e) { return e->dependent(); })
+    ) return BuildDependentCallExpr(callee_expr);
 
-    // Check that we can call this at all.
+    // If does not have procedure type, then we can’t call it.
+    if (not isa<ProcType>(callee_expr->type)) return Error(
+        callee_expr->location(),
+        "Expression of type '{}' is not callable",
+        callee_expr->type.print(ctx.use_colours())
+    );
+
+    // If this is not a procedure reference or overload set, then we don’t
+    // need to perform overload resolution nor template instantiation, so
+    // just typecheck the arguments directly.
     auto callee_no_parens = callee_expr->strip_parens();
     if (not isa<OverloadSetExpr, ProcRefExpr>(callee_no_parens)) {
-        if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
-        return Error(callee_expr->location(), "Cannot call non-procedure");
+        auto ty = cast<ProcType>(callee_expr->type);
+
+        // Check arg count.
+        if (ty->params().size() != args.size()) {
+            return Error(
+                loc,
+                "Procedure expects {} argument{}, got {}",
+                ty->params().size(),
+                ty->params().size() == 1 ? "" : "s",
+                args.size()
+            );
+        }
+
+        // Check each parameter.
+        SmallVector<Expr*> actual_args;
+        actual_args.reserve(args.size());
+        for (auto [p, a] : vws::zip(ty->params(), args)) {
+            ImmediateInitContext init{*this, a, p};
+            if (not PerformVariableInitialisation(init, p, a)) return {};
+            actual_args.push_back(init.result());
+        }
+
+        // And create the call.
+        return CallExpr::Create(
+            *M,
+            ty->ret(),
+            LValueToSRValue(callee_expr),
+            actual_args,
+            loc
+        );
     }
 
-    // Perform overloading.
+    // Otherwise, perform overload resolution and instantiation.
     //
     // Since this may also entail template substitution etc. we always
     // treat calls as requiring overload resolution even if there is
@@ -1227,6 +1268,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
 
 
