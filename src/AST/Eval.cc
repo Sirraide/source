@@ -11,6 +11,11 @@ module srcc.ast;
 using namespace srcc;
 using namespace srcc::eval;
 
+struct Closure {
+    ProcDecl* decl;
+    void* env = nullptr;
+};
+
 // ============================================================================
 //  Value
 // ============================================================================
@@ -215,8 +220,8 @@ auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
     // That is, both the compile-time metadata for this allocation,
     // as well as the Source object that is the memory location are
     // store as a single compile-time object.
-    auto ty_sz = ty->size(tu);
-    auto ty_align = ty->align(tu);
+    auto ty_sz = ty->size(tu); // FIXME: This needs to be the size on the host, not the target.
+    auto ty_align = ty->align(tu); // FIXME: This needs to be the alignment on the host, not the target.
     auto data_offs = Size::Bytes(sizeof(Memory)).align(ty_align);
     auto total_size = data_offs + ty_sz;
     auto total_align = std::max(Align(alignof(Memory)), ty_align);
@@ -365,7 +370,7 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
                         return false;
 
                     mem->init(tu);
-                    return StoreMemory(mem, closure.cast<ProcDecl*>(), i->location());
+                    return StoreMemory(mem, Closure{closure.cast<ProcDecl*>()}, i->location());
                 }
 
                 ICE(loc, "Uninitialised closure in constant evaluator");
@@ -546,6 +551,14 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
                 u64 value;
                 if (not LoadMemory(mem, value, cast->location())) return false;
                 out = IntValue(value);
+                return true;
+            }
+
+            // Closures.
+            if (isa<ProcType>(mem->type())) {
+                Closure cl;
+                if (not LoadMemory(mem, cl, cast->location())) return false;
+                out = cl.decl;
                 return true;
             }
 
