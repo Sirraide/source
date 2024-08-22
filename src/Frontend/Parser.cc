@@ -952,7 +952,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         CreateType(sig),
         param_decls,
         body.get(),
-        sig.proc_loc
+        sig.name.empty() ? sig.proc_loc : sig.tok_after_proc
     );
 }
 

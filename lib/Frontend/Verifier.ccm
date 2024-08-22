@@ -27,7 +27,7 @@ class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, private Di
         Diagnostic::Level level;
         std::string text;
         DecodedLocation loc;
-        bool seen = false;
+        u32 count;
     };
 
     struct SeenDiagnostic {

@@ -272,6 +272,10 @@ private:
             return decl()->location();
         }
 
+        auto param_loc(usz index) const -> Location {
+            return decl()->params()[index]->location();
+        }
+
         auto type() -> ProcType* {
             Assert(viable(), "Requesting type of non-viable candidate?");
             return proc.visit(utils::Overloaded{// clang-format off

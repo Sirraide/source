@@ -1,5 +1,6 @@
-// V %srcc --parse --verify
+// V %srcc --parse --verify %s
 // expected-no-diagnostics
+program test;
 
 proc f (proc,                proc        -> bool, proc        -> bool) -> int = 1; // f1
 proc f (proc (int),          proc,                proc        -> bool) -> int = 2; // f2

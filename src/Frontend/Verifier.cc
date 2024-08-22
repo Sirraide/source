@@ -96,12 +96,24 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
         );
     }
 
+    // Next, the optional count.
+    u32 count = 1;
+    if (comment.trim_front().starts_with_any("123456789")) {
+        auto res = Parse<u32>(comment.take_while(llvm::isDigit));
+        if (not res.has_value()) return Error(
+            tok.location,
+            "Invalid count in expected diagnostic: '{}'\n",
+            res.error()
+        );
+        count = res.value();
+    }
+
     // Next, we expect a colon.
     if (not comment.trim_front().starts_with(':')) return;
 
     // The rest of the comment is the diagnostic text.
     comment.drop().trim_front();
-    expected_diags.emplace_back(level, std::string{comment.text()}, where);
+    expected_diags.emplace_back(level, std::string{comment.text()}, where, count);
 }
 
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
@@ -149,20 +161,21 @@ bool VerifyDiagnosticsEngine::verify() {
 
     // Check that we have seen every diagnostic that we expect.
     for (auto& expected : expected_diags) {
-        auto it = rgs::find_if(seen_diags, [&](const SeenDiagnostic& sd) {
-            if (sd.loc != expected.loc) return false;
-            if (sd.diag.level != expected.level) return false;
-            return sd.diag.msg.contains(expected.text);
-        });
+        while (expected.count != 0) {
+            auto it = rgs::find_if(seen_diags, [&](const SeenDiagnostic& sd) {
+                if (sd.loc != expected.loc) return false;
+                if (sd.diag.level != expected.level) return false;
+                return sd.diag.msg.contains(expected.text);
+            });
 
-        if (it != seen_diags.end()) {
-            expected.seen = true;
+            if (it == seen_diags.end()) break;
+            expected.count--;
             utils::erase_unordered(seen_diags, it);
         }
     }
 
     // Erase all diagnostics that were seen.
-    llvm::erase_if(expected_diags, [](const ExpectedDiagnostic& ed) { return ed.seen; });
+    llvm::erase_if(expected_diags, [](const ExpectedDiagnostic& ed) { return ed.count == 0; });
 
     // Complain about every diagnostic that remains.
     if (not expected_diags.empty()) {

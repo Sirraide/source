@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc sink(int) {}
+proc sink(int) {} // expected-note: Declared here
 
 proc a -> void {}
 proc b -> int {} // expected-error: Procedure 'b' must return a value

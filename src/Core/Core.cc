@@ -573,8 +573,8 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     using enum utils::Colour;
     utils::Colours C{ctx.use_colours()};
     if (backlog.empty()) return;
-    if (has_ever_flushed_backlog) stream << "\n";
-    has_ever_flushed_backlog = true;
+    if (printed) stream << "\n";
+    printed++;
     stream << RenderDiagnostics(ctx, backlog, cols());
     stream << C(Reset);
     backlog.clear();
@@ -619,9 +619,6 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
 
         return;
     }
-
-    // Count this as printed, even if we haven’t done that yet.
-    printed++;
 
     // If this not a note, emit the backlog.
     if (diag.level != Diagnostic::Level::Note) EmitDiagnostics();

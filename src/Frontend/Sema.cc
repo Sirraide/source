@@ -226,6 +226,48 @@ void Sema::ReportOverloadResolutionFailure(
 ) {
     using enum utils::Colour;
     utils::Colours C{ctx.use_colours()};
+
+    // If there is only one overload, print the failure reason for
+    // it and leave it at that.
+    if (candidates.size() == 1) {
+        auto c = candidates.front();
+        auto ty = c.type_for_diagnostic();
+        auto V = utils::Overloaded { // clang-format off
+            [](const Candidate::Viable&) { Unreachable(); },
+            [&](Candidate::ArgumentCountMismatch) {
+                Error(
+                    call_loc,
+                    "Procedure '{}{}{}' expects {} argument{}, got {}",
+                    C(Green),
+                    c.name(),
+                    C(Reset),
+                    ty->params().size(),
+                    ty->params().size() == 1 ? "" : "s",
+                    call_args.size()
+                );
+                Note(c.location(), "Declared here");
+            },
+            [&](Candidate::TypeMismatch m) {
+                Error(
+                    call_args[m.mismatch_index]->location(),
+                    "Argument of type '{}' does not match expected type '{}'",
+                    call_args[m.mismatch_index]->type.print(C.use_colours),
+                    ty->params()[m.mismatch_index].print(C.use_colours)
+                );
+                Note(c.param_loc(m.mismatch_index), "Declared here");
+            },
+            [&](Candidate::InvalidTemplate) {
+                Todo("Report this");
+            },
+            [&](Candidate::NestedResolutionFailure n) {
+                Todo("Report this");
+            }
+        }; // clang-format on
+        c.status.visit(V);
+        return;
+    }
+
+    // Otherwise, we need to print all overloads, and why they failed.
     std::string message = std::format("{}Candidates:\n", C(Bold));
 
     // Compute the width of the number field.

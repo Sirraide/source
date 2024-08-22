@@ -1,13 +1,14 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc a () {}
-proc b (int) {}
-proc c (int, int, int) {}
-proc d (int a, int b, int c) {}
+proc a () {} // expected-note: Declared here
+proc b (int) {} // expected-note: Declared here
+proc c (int, int, int) {} // expected-note 2: Declared here
+proc d (int a, int b, int c) {} // expected-note: Declared here
 proc e (int a, int a) {} // expected-error: Redeclaration of parameter 'a'
                          // expected-note@-1: Previous declaration was here
-proc f (
+                         // expected-note@-2 2: Declared here
+proc f ( // expected-note 3: Declared here
     int, int, int, int, int,
     int, int, int, int, int
 ) {}
