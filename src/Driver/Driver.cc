@@ -220,7 +220,14 @@ int Driver::Impl::run_job() {
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
     auto ir_module = CodeGen::Emit(*module);
-    ir_module->dump();
+
+    // Emit LLVM IR, if requested.
+    if (a == Action::EmitLLVM) {
+        ir_module->dump();
+        return 0;
+    }
+
+    // TODO: Emit object file etc.
     return 0;
 }
 

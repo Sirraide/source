@@ -30,6 +30,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     llvm::PointerType* const PtrTy;
     llvm::IntegerType* const FFIIntTy;
     llvm::StructType* const SliceTy;
+    llvm::StructType* const ClosureTy;
     llvm::Type* const VoidTy;
 
     CodeGen(TranslationUnit& M);
@@ -48,6 +49,7 @@ private:
     template <typename Ty = llvm::Type>
     auto ConvertType(Type ty) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty)); }
     auto ConvertTypeImpl(Type ty) -> llvm::Type*;
+    auto ConvertTypeForMem(Type ty) -> llvm::Type*;
     auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
 
     template <typename... Args>
@@ -62,8 +64,8 @@ private:
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt) -> llvm::Value*;
 #include "srcc/AST.inc"
+    auto EmitClosure(ProcDecl* proc) -> llvm::Constant*;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitProcAddress(ProcDecl* proc) -> llvm::Constant*;
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
 
     void EmitLocal(LocalDecl* decl);

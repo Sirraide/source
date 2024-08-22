@@ -26,6 +26,9 @@ enum struct srcc::Action : srcc::u8 {
     /// Lex tokens only and exit.
     Lex,
 
+    /// Emit LLVM IR.
+    EmitLLVM,
+
     /// Parse only and exit.
     Parse,
 

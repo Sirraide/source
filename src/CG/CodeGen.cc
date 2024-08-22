@@ -120,7 +120,6 @@ void CodeGen::Mangler::Append(Type ty) {
     ty->visit(Visitor{*this});
 }
 
-
 auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
     Assert(not proc->is_template(), "Mangling template?");
     if (proc->mangling == Mangling::None) return proc->name;
@@ -141,7 +140,6 @@ auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
 
     return mangled_names[proc] = std::move(name);
 }
-
 
 // ============================================================================
 //  Type Conversion
@@ -189,13 +187,19 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
     Unreachable("Unknown type kind");
 }
 
+auto CodeGen::ConvertTypeForMem(Type ty) -> llvm::Type* {
+    // Convert procedure types to closures.
+    if (isa<ProcType>(ty)) return ClosureTy;
+    return ConvertType(ty);
+}
+
 auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     // Easy case, we can do what we want here.
     // TODO: hard case: implement the C ABI.
     // if (ty->cconv() == CallingConvention::Source) {
     auto ret = ConvertType(ty->ret());
     SmallVector<llvm::Type*> args;
-    for (auto p : ty->params()) args.push_back(ConvertType(p));
+    for (auto p : ty->params()) args.push_back(ConvertTypeForMem(p));
     return llvm::FunctionType::get(ret, args, ty->variadic());
     //}
 }
@@ -213,6 +217,7 @@ CodeGen::CodeGen(TranslationUnit& M)
       PtrTy{builder.getPtrTy()},
       FFIIntTy{llvm::Type::getIntNTy(M.llvm_context, 32)}, // FIXME: Get size from target.
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
+      ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
       VoidTy{builder.getVoidTy()} {}
 
 void CodeGen::Emit() {
@@ -273,7 +278,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
                     if (auto i = var->init.get_or_null()) builder.CreateStore(Emit(i), locals[var]);
 
                     // Or zero-initialised if there is no initialiser.
-                    else builder.CreateStore(llvm::Constant::getNullValue(ConvertType(var->type)), locals[var]);
+                    else builder.CreateStore(llvm::Constant::getNullValue(ConvertTypeForMem(var->type)), locals[var]);
                 } break;
             }
         }
@@ -329,8 +334,15 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     // Emit args and callee.
     SmallVector<Value*> args;
     auto proc_ty = cast<ProcType>(expr->callee->type);
-    auto callee = llvm::FunctionCallee(ConvertType<llvm::FunctionType>(proc_ty), Emit(expr->callee));
     for (auto arg : expr->args()) args.push_back(Emit(arg));
+
+    // Callee is always a closure, even if it is a static call to
+    // a function with no environment.
+    auto closure = Emit(expr->callee);
+    auto callee = llvm::FunctionCallee(
+        ConvertType<llvm::FunctionType>(proc_ty),
+        builder.CreateExtractValue(closure, 0)
+    );
 
     // Emit call.
     auto call = builder.CreateCall(callee, args);
@@ -343,11 +355,18 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     switch (expr->kind) {
         case CastExpr::LValueToSRValue: {
             Assert(expr->arg->value_category == Expr::LValue);
-            return builder.CreateLoad(ConvertType(expr->type), val, "l2sr");
+            return builder.CreateLoad(ConvertTypeForMem(expr->type), val, "l2sr");
         }
     }
 
     Unreachable();
+}
+
+auto CodeGen::EmitClosure(ProcDecl* proc) -> llvm::Constant* {
+    Assert(not proc->is_template(), "Requested address of template");
+    auto callee = DeclareProcedure(proc);
+    auto f = cast<llvm::Function>(callee.getCallee());
+    return llvm::ConstantStruct::get(ClosureTy, {f, llvm::ConstantPointerNull::get(PtrTy)});
 }
 
 auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
@@ -363,7 +382,7 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
-    auto a = builder.CreateAlloca(ConvertType(decl->type));
+    auto a = builder.CreateAlloca(ConvertTypeForMem(decl->type));
     locals[decl] = a;
 }
 
@@ -376,12 +395,6 @@ auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
 }
 
 auto CodeGen::EmitParenExpr(ParenExpr*) -> Value* { Todo(); }
-
-auto CodeGen::EmitProcAddress(ProcDecl* proc) -> llvm::Constant* {
-    Assert(not proc->is_template(), "Requested address of template");
-    auto callee = DeclareProcedure(proc);
-    return cast<llvm::Function>(callee.getCallee());
-}
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
     if (proc->is_template()) return;
@@ -411,7 +424,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
-    return EmitProcAddress(expr->decl);
+    return EmitClosure(expr->decl);
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
@@ -457,7 +470,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
     };
 
     utils::Overloaded V {
-        [&](ProcDecl* proc) -> llvm::Constant* { return EmitProcAddress(proc); },
+        [&](ProcDecl* proc) -> llvm::Constant* { return EmitClosure(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
         [&](eval::TypeTag) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> llvm::Constant* { return MakeInt(value); },

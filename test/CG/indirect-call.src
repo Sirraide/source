@@ -1,0 +1,32 @@
+// R %srcc --llvm %s
+program test;
+
+proc caller (proc x -> int) = x();
+proc foo = 42;
+
+// * 42
+__srcc_print(caller(foo), "\n");
+
+
+// * define fastcc void @__src_main() {
+// + entry:
+// +   %0 = call fastcc i64 @_S6callerFiFiEE({ ptr, ptr } { ptr @_S3fooFiE, ptr null })
+// +   %1 = call i32 (ptr, ...) @printf(ptr @1, i64 %0)
+// +   %2 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @2)
+// +   ret void
+// + }
+
+// * define private fastcc i64 @_S3fooFiE() {
+// + entry:
+// +   ret i64 42
+// + }
+
+// * define private fastcc i64 @_S6callerFiFiEE({ ptr, ptr } %0) {
+// + entry:
+// +   %1 = alloca { ptr, ptr }, align 8
+// +   store { ptr, ptr } %0, ptr %1, align 8
+// +   %l2sr = load { ptr, ptr }, ptr %1, align 8
+// +   %2 = extractvalue { ptr, ptr } %l2sr, 0
+// +   %3 = call fastcc i64 %2()
+// +   ret i64 %3
+// + }

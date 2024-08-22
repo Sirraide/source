@@ -21,6 +21,7 @@ using options = clopts< // clang-format off
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
+    flag<"--llvm", "Emit LLVM IR">,
     help<>
 >; // clang-format on
 }
@@ -36,10 +37,11 @@ int main(int argc, char** argv) {
 
     // Figure out what we want to do.
     auto action = opts.get<"--eval">()   ? Action::Eval
-                : opts.get<"--tokens">() ? Action::DumpTokens
                 : opts.get<"--lex">()    ? Action::Lex
+                : opts.get<"--llvm">()   ? Action::EmitLLVM
                 : opts.get<"--parse">()  ? Action::Parse
                 : opts.get<"--sema">()   ? Action::Sema
+                : opts.get<"--tokens">() ? Action::DumpTokens
                                          : Action::Compile;
 
     // Create driver.
