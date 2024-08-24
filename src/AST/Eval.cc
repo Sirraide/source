@@ -223,24 +223,11 @@ void LValue::dump(bool use_colour) const {
 }
 
 auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
-    // Possibly the most cursed code in this entire codebase;
-    // we effectively create and allocate the following:
-    //
-    // struct {
-    //     Memory mem;
-    //     [:ty:] type;
-    // }
-    //
-    // That is, both the compile-time metadata for this allocation,
-    // as well as the Source object that is the memory location are
-    // store as a single compile-time object.
-    auto ty_sz = ty->size(tu);     // FIXME: This needs to be the size on the host, not the target.
-    auto ty_align = ty->align(tu); // FIXME: This needs to be the alignment on the host, not the target.
-    auto data_offs = Size::Bytes(sizeof(Memory)).align(ty_align);
-    auto total_size = data_offs + ty_sz;
-    auto total_align = std::max(Align(alignof(Memory)), ty_align);
-    auto data = memory.Allocate(total_size.bytes(), total_align);
-    return ::new (data) Memory{ty, loc, static_cast<char*>(data) + data_offs.bytes()};
+    auto ty_sz = ty->size(tu);
+    auto ty_align = ty->align(tu);
+    auto data = memory.Allocate(ty_sz.bytes(), ty_align);
+    auto mem = memory.Allocate<Memory>();
+    return ::new (mem) Memory{ty, loc, data};
 }
 
 bool EvaluationContext::CheckMemoryAccess(
@@ -456,10 +443,10 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
     if (not Eval(lhs, expr->lhs)) return false;
     if (not Eval(rhs, expr->rhs)) return false;
 
-    auto EvalAndCheckOverflow = [&](
-                                    APInt (APInt::* op)(const APInt&, bool&) const,
-                                    OverflowBehaviour ob
-                                ) {
+    auto EvalAndCheckOverflow = [&]( // clang-format off
+        APInt (APInt::* op)(const APInt&, bool&) const,
+        OverflowBehaviour ob
+    ) { // clang-format on
         auto& left = lhs.cast<APInt>();
         auto& right = rhs.cast<APInt>();
 

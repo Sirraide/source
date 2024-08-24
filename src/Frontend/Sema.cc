@@ -217,7 +217,7 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
 
     e = LValueToSRValue(e);
     return true;
-};
+}
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->lvalue()) return expr;
