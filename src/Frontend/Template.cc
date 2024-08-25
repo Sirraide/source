@@ -155,6 +155,10 @@ auto TemplateInstantiator::InstantiateStmt(Stmt* stmt) -> Ptr<Stmt> {
     Unreachable("Invalid stmt kind");
 }
 
+auto TemplateInstantiator::InstantiateAssertExpr(AssertExpr* n) -> Ptr<Stmt> {
+    Todo();
+}
+
 auto TemplateInstantiator::InstantiateBinaryExpr(BinaryExpr* n) -> Ptr<Stmt> {
     Todo();
 }

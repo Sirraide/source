@@ -203,12 +203,16 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
 }
 
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
+    using enum utils::Colour;
+    utils::Colours C{ctx.use_colours()};
     if (e->type != ty) {
         Error(
             e->location(),
-            "{} of {} be of type '{}', but was '{}'",
+            "{} of '{}{}{}' must be of type\f'{}', but was '{}'",
             elem_name,
+            C(Red),
             op,
+            C(Reset),
             ty.print(ctx.use_colours()),
             e->type.print(ctx.use_colours())
         );
@@ -535,6 +539,26 @@ void Sema::ReportOverloadResolutionFailure(
 // ============================================================================
 //  Building nodes.
 // ============================================================================
+auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr> {
+    // Condition must be a bool.
+    if (not cond->dependent()) {
+        if (not MakeSRValue(Types::BoolTy, cond, "Condition", "assert"))
+            return {};
+    }
+
+    // Message must be a string literal.
+    // TODO: Allow other string-like expressions.
+    if (auto m = msg.get_or_null(); m and not m->dependent()) {
+        if (not isa<StrLitExpr>(m)) return Error(
+            m->location(),
+            "Assertion message must be a string literal",
+            m->type.print(ctx.use_colours())
+        );
+    }
+
+    return new (*M) AssertExpr(cond, std::move(msg), loc);
+}
+
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
     return BlockExpr::Create(
         *M,
@@ -573,7 +597,7 @@ auto Sema::BuildBinaryExpr(
                 lhs->type.print(ctx.use_colours())
             );
 
-            if (not MakeSRValue(Types::IntTy, rhs, "Index", "subscript")) return {};
+            if (not MakeSRValue(Types::IntTy, rhs, "Index", "[]")) return {};
 
             // Arrays need to be in memory before we can do anything
             // with them; slices are srvalues and should be loaded
@@ -1282,7 +1306,10 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 //  Translation of Individual Statements
 // ============================================================================
 auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed)-> Ptr<Expr> {
-    Todo();
+    auto cond = TRY(TranslateExpr(parsed->cond));
+    Ptr<Expr> msg;
+    if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
+    return BuildAssertExpr(cond, msg, parsed->loc);
 }
 
 auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Expr> {

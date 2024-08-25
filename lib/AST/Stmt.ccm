@@ -151,8 +151,26 @@ public:
     [[nodiscard]] auto strip_parens() -> Expr*;
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::BinaryExpr and e->kind() <= Kind::UnaryExpr;
+        return e->kind() >= Kind::AssertExpr and e->kind() <= Kind::UnaryExpr;
     }
+};
+
+class srcc::AssertExpr final : public Expr {
+public:
+    Expr* cond;
+    Ptr<Expr> message;
+
+    AssertExpr(
+        Expr* cond,
+        Ptr<Expr> message,
+        Location location
+    ) : Expr{Kind::AssertExpr, Types::VoidTy, SRValue, location},
+        cond{cond},
+        message{message} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::AssertExpr; }
 };
 
 class srcc::BinaryExpr final : public Expr {

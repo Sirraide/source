@@ -437,6 +437,10 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
 // ============================================================================
 //  Evaluation
 // ============================================================================
+bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
+    Todo();
+}
+
 bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
     using enum OverflowBehaviour;
     Value lhs, rhs;

@@ -262,6 +262,8 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Unreachable("Unknown statement kind");
 }
 
+auto CodeGen::EmitAssertExpr(AssertExpr* stmt) -> Value* { Todo(); }
+
 auto CodeGen::EmitBinaryExpr(BinaryExpr*) -> Value* { Todo(); }
 
 auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {

@@ -16,6 +16,11 @@ using namespace srcc;
 void Stmt::ComputeDependence() { // clang-format off
     auto d = Dependence::None;
     visit(utils::Overloaded {
+    [&](AssertExpr* e) {
+        d |= e->cond->dependence();
+        if (auto msg = e->message.get_or_null()) d |= msg->dependence();
+    },
+
     [&](BinaryExpr* e) {
         d |= e->lhs->dependence();
         d |= e->rhs->dependence();

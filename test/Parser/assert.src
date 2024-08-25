@@ -1,4 +1,4 @@
-// V %srcc --parse %s
+// V %srcc --parse --verify %s
 program test;
 
 assert; // expected-error: Expected expression

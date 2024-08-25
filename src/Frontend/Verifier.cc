@@ -117,7 +117,9 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 }
 
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
-    diag.msg = stream{diag.msg}.remove_all("\v\f"); // Remove line-wrap formatting codes.
+    // Remove line-wrap formatting codes.
+    std::erase_if(diag.msg, [](char c) { return c == '\v' or c == '\r'; });
+    rgs::replace(diag.msg, '\f', ' ');
     seen_diags.emplace_back(std::move(diag), DecodeLocation(diag.where));
 }
 

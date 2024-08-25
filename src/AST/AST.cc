@@ -148,6 +148,15 @@ void Stmt::Printer::PrintBasicNode(
 
 void Stmt::Printer::Print(Stmt* e) {
     switch (e->kind()) {
+        case Kind::AssertExpr: {
+            auto a = cast<AssertExpr>(e);
+            PrintBasicNode(e, "AssertExpr");
+            SmallVector<Stmt*, 2> children;
+            children.push_back(a->cond);
+            if (auto msg = a->message.get_or_null()) children.push_back(msg);
+            PrintChildren(children);
+        } break;
+
         case Kind::BinaryExpr: {
             auto b = cast<BinaryExpr>(e);
             PrintBasicNode(e, "BinaryExpr", [&] { std::print("{}{}", C(Red), b->op); });
