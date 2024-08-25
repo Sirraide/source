@@ -166,6 +166,20 @@ public:
 // ============================================================================
 //  Expressions
 // ============================================================================
+class srcc::ParsedAssertExpr final : public ParsedStmt {
+public:
+    ParsedStmt* cond;
+    Ptr<ParsedStmt> message;
+
+    ParsedAssertExpr(
+        ParsedStmt* cond,
+        Ptr<ParsedStmt> message,
+        Location location
+    ) : ParsedStmt{Kind::AssertExpr, location}, cond{cond}, message{std::move(message)} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::AssertExpr; }
+};
+
 class srcc::ParsedBinaryExpr final : public ParsedStmt {
 public:
     Tk op;

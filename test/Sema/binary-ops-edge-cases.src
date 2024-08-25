@@ -2,21 +2,21 @@
 // expected-no-diagnostics
 program test;
 
-static assert 1 <<< 63 == -9223372036854775808;
-static assert 1 >> 100 == 0;
-static assert 1 >>> 100 == 0;
+eval assert 1 <<< 63 == -9223372036854775808;
+eval assert 1 >> 100 == 0;
+eval assert 1 >>> 100 == 0;
 
-static assert 2 ** 8 == 256;
-static assert 0 ** 0 == 1;
-static assert 1 ** 0 == 1;
-static assert 10000 ** 0 == 1;
-static assert 0 ** 1 == 0;
-static assert 0 ** 100 == 0;
-static assert 1 ** -1 == 1;
-static assert 1 ** -100 == 1;
-static assert 4 ** -1 == 0;
-static assert -4 ** -1 == 0;
-static assert -4 ** 1 == -4;
-static assert -4 ** 2 == 16;
-static assert -4 ** 3 == -64;
-static assert -4 ** 4 == 256;
+eval assert 2 ** 8 == 256;
+eval assert 0 ** 0 == 1;
+eval assert 1 ** 0 == 1;
+eval assert 10000 ** 0 == 1;
+eval assert 0 ** 1 == 0;
+eval assert 0 ** 100 == 0;
+eval assert 1 ** -1 == 1;
+eval assert 1 ** -100 == 1;
+eval assert 4 ** -1 == 0;
+eval assert -4 ** -1 == 0;
+eval assert -4 ** 1 == -4;
+eval assert -4 ** 2 == 16;
+eval assert -4 ** 3 == -64;
+eval assert -4 ** 4 == 256;

@@ -198,6 +198,15 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             std::print("{}Type {}\n", C(Red), s->dump_as_type(C));
             break;
 
+        case Kind::AssertExpr: {
+            auto& a = *cast<ParsedAssertExpr>(s);
+            PrintHeader(s, "AssertExpr");
+            SmallVector<ParsedStmt*, 2> children;
+            children.push_back(a.cond);
+            if (auto msg = a.message.get_or_null()) children.push_back(msg);
+            PrintChildren(children);
+        } break;
+
         case Kind::BlockExpr: {
             auto& b = *cast<ParsedBlockExpr>(s);
             PrintHeader(s, "BlockExpr");
@@ -524,6 +533,7 @@ constexpr bool IsPostfix(Tk t) {
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
+        case Tk::Assert:
         case Tk::Bool:
         case Tk::Eval:
         case Tk::Identifier:
@@ -598,7 +608,6 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     );
 }
 
-
 // ============================================================================
 //  Parser
 // ============================================================================
@@ -652,7 +661,8 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 // This parses expressions and also some declarations (e.g.
 // variable declarations)
 //
-// <expr> ::= <expr-block>
+// <expr> ::= <expr-assert>
+//          | <expr-block>
 //          | <expr-binary>
 //          | <expr-call>
 //          | <expr-decl-ref>
@@ -682,6 +692,24 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             auto arg = ParseExpr(PrefixPrecedence);
             if (not arg) return {};
             lhs = new (*this) ParsedUnaryExpr{op, arg.get(), false, {start, arg.get()->loc}};
+        } break;
+
+        // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
+        case Tk::Assert: {
+            auto start = tok->location;
+            ++tok;
+            auto cond = ParseExpr();
+            if (not cond) return {};
+
+            // Message is optional.
+            Ptr<ParsedStmt> message;
+            if (Consume(Tk::Comma)) message = ParseExpr();
+
+            lhs = new (*this) ParsedAssertExpr{
+                cond.get(),
+                message,
+                {start, message ? message.get()->loc : cond.get()->loc},
+            };
         } break;
 
         // <expr-block> ::= "{" { <stmt> } "}"
@@ -1025,11 +1053,7 @@ bool Parser::ParseSignature(
                     ++tok;
                 }
 
-                decls->push_back(new (*this) ParsedLocalDecl{
-                    name,
-                    type.get(),
-                    {type.get()->loc, end}
-                });
+                decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {type.get()->loc, end}});
             } else if (At(Tk::Identifier)) {
                 Error("Named parameters are not allowed here");
                 ++tok;

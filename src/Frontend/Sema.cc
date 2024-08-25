@@ -1281,6 +1281,10 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
+auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed)-> Ptr<Expr> {
+    Todo();
+}
+
 auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Expr> {
     // Translate LHS and RHS.
     auto lhs = TRY(TranslateExpr(expr->lhs));
@@ -1288,7 +1292,7 @@ auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Expr> {
     return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);
 }
 
-auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<BlockExpr> {
+auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Expr> {
     EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, parsed->stmts());
@@ -1429,7 +1433,7 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr> {
     return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
 }
 
-auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> LocalDecl* {
+auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     return BuildLocalDecl(
         curr_proc(),
         TranslateType(parsed->type),
@@ -1468,10 +1472,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     return BuildProcBody(decl, body.get());
 }
 
-/// This is only called if we’re asked to translate a procedure by the expression
-/// parser; actual procedure translation is handled elsewhere; only return a reference
-/// here.
-auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Ptr<Expr> {
+auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
     Unreachable("Translating declaration as expression?");
     /*auto it = proc_decl_map.find(parsed);
 
@@ -1544,7 +1545,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 }
 
 /// Translate a string literal.
-auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<StrLitExpr> {
+auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<Expr> {
     return StrLitExpr::Create(*M, parsed->value, parsed->loc);
 }
 

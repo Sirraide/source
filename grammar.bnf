@@ -32,7 +32,8 @@
 // ============================================================================
 //  Expressions
 // ============================================================================
-<expr> ::= <expr-block>
+<expr> ::= <expr-assert>
+         | <expr-block>
          | <expr-binary>
          | <expr-call>
          | <expr-decl-ref>
@@ -44,6 +45,7 @@
          | <expr-return>
          | <expr-subscript>
 
+<expr-assert>    ::= ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>
 <expr-block>     ::= "{" <stmts>  "}"
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"

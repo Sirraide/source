@@ -1,0 +1,12 @@
+// V %srcc --parse %s
+program test;
+
+assert; // expected-error: Expected expression
+assert 0;
+assert ); // expected-error: Expected expression
+assert 1 == 1;
+assert 2 + 3;
+assert 3 = 4;
+assert 0, "foo";
+assert 0, 0;
+assert 0,; // expected-error: Expected expression
