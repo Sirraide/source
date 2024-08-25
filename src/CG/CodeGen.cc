@@ -389,11 +389,10 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
             auto printf = llvm->getOrInsertFunction("printf", llvm::FunctionType::get(FFIIntTy, {PtrTy}, true));
-            auto str_format = GetStringPtr("%.*s");
-            auto int_format = GetStringPtr("%" PRId64);
             for (auto a : expr->args()) {
                 if (a->type == M.StrLitTy) {
                     Assert(a->value_category == Expr::SRValue);
+                    auto str_format = GetStringPtr("%.*s");
                     auto slice = Emit(a);
                     auto data = builder.CreateExtractValue(slice, 0);
                     auto size = builder.CreateZExtOrTrunc(builder.CreateExtractValue(slice, 1), FFIIntTy);
@@ -402,8 +401,17 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
 
                 else if (a->type == Types::IntTy) {
                     Assert(a->value_category == Expr::SRValue);
+                    auto int_format = GetStringPtr("%" PRId64);
                     auto val = Emit(a);
                     builder.CreateCall(printf, {int_format, val});
+                }
+
+                else if (a->type == Types::BoolTy) {
+                    Assert(a->value_category == Expr::SRValue);
+                    auto bool_format = GetStringPtr("%s");
+                    auto val = Emit(a);
+                    auto str = builder.CreateSelect(val, GetStringPtr("true"), GetStringPtr("false"));
+                    builder.CreateCall(printf, {bool_format, str});
                 }
 
                 else {

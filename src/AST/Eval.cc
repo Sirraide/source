@@ -782,12 +782,17 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
 
                 // Integer.
                 if (auto int_val = out.get<APInt>()) {
-                    std::print("{}", llvm::toString(*int_val, 10, true));
+                    std::print("{}", toString(*int_val, 10, true));
                     continue;
                 }
 
-                // Fallback. Should never be used anyway.
-                out.dump();
+                // Bool.
+                if (auto bool_val = out.get<bool>()) {
+                    std::print("{}", *bool_val);
+                    continue;
+                }
+
+                Unreachable("Invalid value in __srcc_print call");
             }
 
             return true;

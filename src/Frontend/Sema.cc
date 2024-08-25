@@ -750,15 +750,14 @@ auto Sema::BuildBuiltinCallExpr(
             if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
                 if (arg->dependent()) continue;
-                if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy) {
+                if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy and arg->type != Types::BoolTy) {
                     return Error(
                         arg->location(),
                         "__srcc_print only accepts string literals and integers, but got {}",
                         arg->type.print(ctx.use_colours())
                     );
                 }
-
-                if (arg->type == Types::IntTy) arg = LValueToSRValue(arg);
+                arg = LValueToSRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, actual_args, call_loc);
         }

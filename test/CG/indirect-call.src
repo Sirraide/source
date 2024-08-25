@@ -9,8 +9,8 @@ __srcc_print(caller(foo), "\n");
 // * define fastcc void @__src_main() {
 // + entry:
 // +   %0 = call fastcc i64 @_S6callerFiFiEE({ ptr, ptr } { ptr @_S3fooFiE, ptr null })
-// +   %1 = call i32 (ptr, ...) @printf(ptr @1, i64 %0)
-// +   %2 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @2)
+// +   %1 = call i32 (ptr, ...) @printf(ptr @0, i64 %0)
+// +   %2 = call i32 (ptr, ...) @printf(ptr @1, i32 1, ptr @2)
 // +   ret void
 // + }
 

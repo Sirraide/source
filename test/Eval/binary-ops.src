@@ -20,6 +20,27 @@ proc arith(int a, int b) {
     __srcc_print(a :/ b, "\n");
     __srcc_print(a :% b, "\n");
 
+    __srcc_print(a >> b, "\n");
+    __srcc_print(a >>> b, "\n");
+    __srcc_print(a << b, "\n");
+    __srcc_print(a <<< b, "\n");
+
+    __srcc_print(a & b, "\n");
+    __srcc_print(a | b, "\n");
+
+    __srcc_print(a < b, "\n");
+    __srcc_print(a <= b, "\n");
+    __srcc_print(a > b, "\n");
+    __srcc_print(a >= b, "\n");
+
+    __srcc_print(a <: b, "\n");
+    __srcc_print(a <=: b, "\n");
+    __srcc_print(a :> b, "\n");
+    __srcc_print(a :>= b, "\n");
+
+    __srcc_print(a == b, "\n");
+    __srcc_print(a != b, "\n");
+
     __srcc_print(a ** b, "\n");
 }
 
@@ -42,7 +63,29 @@ proc arith_template($T a, T b) {
     __srcc_print(a :/ b, "\n");
     __srcc_print(a :% b, "\n");
 
+    __srcc_print(a >> b, "\n");
+    __srcc_print(a >>> b, "\n");
+    __srcc_print(a << b, "\n");
+    __srcc_print(a <<< b, "\n");
+
+    __srcc_print(a & b, "\n");
+    __srcc_print(a | b, "\n");
+
+    __srcc_print(a < b, "\n");
+    __srcc_print(a <= b, "\n");
+    __srcc_print(a > b, "\n");
+    __srcc_print(a >= b, "\n");
+
+    __srcc_print(a <: b, "\n");
+    __srcc_print(a <=: b, "\n");
+    __srcc_print(a :> b, "\n");
+    __srcc_print(a :>= b, "\n");
+
+    __srcc_print(a == b, "\n");
+    __srcc_print(a != b, "\n");
+
     __srcc_print(a ** b, "\n");
+
 }
 
 // * 20, 5
@@ -59,6 +102,22 @@ proc arith_template($T a, T b) {
 // + 0
 // + 4
 // + 0
+// + 0
+// + 0
+// + 640
+// + 640
+// + 4
+// + 21
+// + false
+// + false
+// + true
+// + true
+// + false
+// + false
+// + true
+// + true
+// + false
+// + true
 // + 3200000
 arith(20, 5);
 
@@ -76,5 +135,21 @@ arith(20, 5);
 // + 0
 // + 4
 // + 0
+// + 0
+// + 0
+// + 640
+// + 640
+// + 4
+// + 21
+// + false
+// + false
+// + true
+// + true
+// + false
+// + false
+// + true
+// + true
+// + false
+// + true
 // + 3200000
 arith_template(20, 5);
