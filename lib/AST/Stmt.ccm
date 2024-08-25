@@ -92,7 +92,7 @@ public:
     auto dependence() const -> Dependence { return dep; }
 
     /// Check if this statement contains an error.
-    bool errored() const { return dependence() & Dependence::Error; }
+    bool errored() const { return dependence() & Dependence::ErrorDependent; }
 
     /// Dump the statement.
     void dump(bool use_colour = false) const;

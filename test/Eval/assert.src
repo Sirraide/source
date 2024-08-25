@@ -6,3 +6,10 @@ eval assert 1 == 2; // expected-error: Assertion failed: '1 == 2'
 eval assert 1 == 2, "bar"; // expected-error: Assertion failed: '1 == 2': bar
 eval assert (111) == (((110) + 1));
 eval assert (111) == (((100) + 10)); // expected-error: Assertion failed: '(111) == (((100) + 10))'
+
+proc foo($T a, T b) {
+    assert a == b; // expected-error: Assertion failed: 'a == b'
+}
+
+eval foo(1, 1);
+eval foo(1, 2); // expected-note: In call to 'foo' here

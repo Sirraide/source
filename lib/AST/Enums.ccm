@@ -54,7 +54,8 @@ enum class srcc::Dependence : u8 {
     ValueAndType = Value | Type,
 
     /// This expression contains an error.
-    Error = 1 << 7 | Instantiation,
+    ErrorDependent = 1 << 7,
+    Error = ErrorDependent | Instantiation,
 };
 
 /// Builtin types.

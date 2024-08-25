@@ -156,11 +156,15 @@ auto TemplateInstantiator::InstantiateStmt(Stmt* stmt) -> Ptr<Stmt> {
 }
 
 auto TemplateInstantiator::InstantiateAssertExpr(AssertExpr* n) -> Ptr<Stmt> {
-    Todo();
+    auto cond = TryInstantiateExpr(n->cond);
+    auto msg = n->message ? TryInstantiateExpr(n->message.get()) : nullptr;
+    return S.BuildAssertExpr(cond, msg, n->location());
 }
 
 auto TemplateInstantiator::InstantiateBinaryExpr(BinaryExpr* n) -> Ptr<Stmt> {
-    Todo();
+    auto lhs = TryInstantiateExpr(n->lhs);
+    auto rhs = TryInstantiateExpr(n->rhs);
+    return S.BuildBinaryExpr(n->op, lhs, rhs, n->location());
 }
 
 auto TemplateInstantiator::InstantiateBlockExpr(BlockExpr* e) -> Ptr<Stmt> {
