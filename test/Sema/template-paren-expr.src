@@ -1,0 +1,9 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+proc foo ($T a) {
+    ((a));
+}
+
+foo(1);

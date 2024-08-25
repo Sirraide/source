@@ -242,7 +242,8 @@ auto TemplateInstantiator::InstantiateOverloadSetExpr(OverloadSetExpr* n) -> Ptr
 }
 
 auto TemplateInstantiator::InstantiateParenExpr(ParenExpr* n) -> Ptr<Stmt> {
-    Todo();
+    auto inner = TryInstantiateExpr(n->expr);
+    return new (*S.M) ParenExpr(inner, n->location());
 }
 
 auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Stmt> {
