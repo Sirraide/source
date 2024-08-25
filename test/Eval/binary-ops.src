@@ -5,15 +5,12 @@ proc arith(int a, int b) {
     __srcc_print(a, ", ", b, "\n");
     __srcc_print(a + b, "\n");
     __srcc_print(a +~ b, "\n");
-    __srcc_print(a +| b, "\n");
 
     __srcc_print(a - b, "\n");
     __srcc_print(a -~ b, "\n");
-    __srcc_print(a -| b, "\n");
 
     __srcc_print(a * b, "\n");
     __srcc_print(a *~ b, "\n");
-    __srcc_print(a *| b, "\n");
 
     __srcc_print(a / b, "\n");
     __srcc_print(a % b, "\n");
@@ -48,15 +45,12 @@ proc arith_template($T a, T b) {
     __srcc_print(a, ", ", b, "\n");
     __srcc_print(a + b, "\n");
     __srcc_print(a +~ b, "\n");
-    __srcc_print(a +| b, "\n");
 
     __srcc_print(a - b, "\n");
     __srcc_print(a -~ b, "\n");
-    __srcc_print(a -| b, "\n");
 
     __srcc_print(a * b, "\n");
     __srcc_print(a *~ b, "\n");
-    __srcc_print(a *| b, "\n");
 
     __srcc_print(a / b, "\n");
     __srcc_print(a % b, "\n");
@@ -85,17 +79,13 @@ proc arith_template($T a, T b) {
     __srcc_print(a != b, "\n");
 
     __srcc_print(a ** b, "\n");
-
 }
 
 // * 20, 5
 // + 25
 // + 25
-// + 25
 // + 15
 // + 15
-// + 15
-// + 100
 // + 100
 // + 100
 // + 4
@@ -124,11 +114,8 @@ arith(20, 5);
 // + 20, 5
 // + 25
 // + 25
-// + 25
 // + 15
 // + 15
-// + 15
-// + 100
 // + 100
 // + 100
 // + 4

@@ -249,7 +249,6 @@ void Lexer::NextImpl() {
             ty = Eat('>') ? Tk::RArrow
                : Eat('-') ? Tk::MinusMinus
                : Eat('~') ? (Eat('=') ? Tk::MinusTildeEq : Tk::MinusTilde)
-               : Eat('|') ? (Eat('=') ? Tk::MinusVBarEq : Tk::MinusVBar)
                : Eat('=') ? Tk::MinusEq
                           : Tk::Minus;
             break;
@@ -258,14 +257,12 @@ void Lexer::NextImpl() {
             ty = Eat('+') ? Tk::PlusPlus
                : Eat('=') ? Tk::PlusEq
                : Eat('~') ? (Eat('=') ? Tk::PlusTildeEq : Tk::PlusTilde)
-               : Eat('|') ? (Eat('=') ? Tk::PlusVBarEq : Tk::PlusVBar)
                           : Tk::Plus;
             break;
 
         case '*':
             ty = Eat('=') ? Tk::StarEq
                : Eat('~') ? (Eat('=') ? Tk::StarTildeEq : Tk::StarTilde)
-               : Eat('|') ? (Eat('=') ? Tk::StarVBarEq : Tk::StarVBar)
                : Eat('*') ? (Eat('=') ? Tk::StarStarEq : Tk::StarStar)
                           : Tk::Star;
             break;

@@ -429,17 +429,14 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::Slash:
         case Tk::Percent:
         case Tk::StarTilde:
-        case Tk::StarVBar:
         case Tk::ColonSlash:
         case Tk::ColonPercent:
             return 95;
 
         case Tk::Plus:
         case Tk::PlusTilde:
-        case Tk::PlusVBar:
         case Tk::Minus:
         case Tk::MinusTilde:
-        case Tk::MinusVBar:
             return 90;
 
         // Shifts have higher precedence than logical/bitwise
@@ -480,13 +477,10 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::Assign:
         case Tk::PlusEq:
         case Tk::PlusTildeEq:
-        case Tk::PlusVBarEq:
         case Tk::MinusEq:
         case Tk::MinusTildeEq:
-        case Tk::MinusVBarEq:
         case Tk::StarEq:
         case Tk::StarTildeEq:
-        case Tk::StarVBarEq:
         case Tk::StarStarEq:
         case Tk::SlashEq:
         case Tk::PercentEq:

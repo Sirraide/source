@@ -529,11 +529,6 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
                     toString(right, 10, true)
                 );
             }
-
-            case Saturate: {
-                out = {APInt::getMaxValue(left.getBitWidth()), lhs.type()};
-                return true;
-            }
         }
 
         Unreachable();
@@ -670,13 +665,10 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         case Tk::Star: return EvalAndCheckOverflow(&APInt::smul_ov, Trap);
         case Tk::Slash: return EvalAndCheckOverflow(&APInt::sdiv_ov, Trap);
         case Tk::StarTilde: return EvalAndCheckOverflow(&APInt::smul_ov, Wrap);
-        case Tk::StarVBar: return EvalAndCheckOverflow(&APInt::smul_ov, Saturate);
         case Tk::Plus: return EvalAndCheckOverflow(&APInt::sadd_ov, Trap);
         case Tk::PlusTilde: return EvalAndCheckOverflow(&APInt::sadd_ov, Wrap);
-        case Tk::PlusVBar: return EvalAndCheckOverflow(&APInt::sadd_ov, Saturate);
         case Tk::Minus: return EvalAndCheckOverflow(&APInt::ssub_ov, Trap);
         case Tk::MinusTilde: return EvalAndCheckOverflow(&APInt::ssub_ov, Wrap);
-        case Tk::MinusVBar: return EvalAndCheckOverflow(&APInt::ssub_ov, Saturate);
         case Tk::ShiftLeft: return EvalAndCheckOverflow(&APInt::sshl_ov, Trap);
         case Tk::ShiftLeftLogical: return EvalAndCheckOverflow(&APInt::ushl_ov, Trap);
 
@@ -712,13 +704,10 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         case Tk::Assign:
         case Tk::PlusEq:
         case Tk::PlusTildeEq:
-        case Tk::PlusVBarEq:
         case Tk::MinusEq:
         case Tk::MinusTildeEq:
-        case Tk::MinusVBarEq:
         case Tk::StarEq:
         case Tk::StarTildeEq:
-        case Tk::StarVBarEq:
         case Tk::StarStarEq:
         case Tk::SlashEq:
         case Tk::PercentEq:

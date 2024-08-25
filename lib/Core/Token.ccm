@@ -118,13 +118,10 @@ enum struct srcc::Tk : u8 {
     /// Operators.
     Plus,
     PlusTilde,
-    PlusVBar,
     Minus,
     MinusTilde,
-    MinusVBar,
     Star,
     StarTilde,
-    StarVBar,
     Slash,
     ColonSlash,
     Percent,
@@ -153,13 +150,10 @@ enum struct srcc::Tk : u8 {
     Neq,
     PlusEq,
     PlusTildeEq,
-    PlusVBarEq,
     MinusEq,
     MinusTildeEq,
-    MinusVBarEq,
     StarEq,
     StarTildeEq,
-    StarVBarEq,
     SlashEq,
     PercentEq,
     ShiftLeft,
@@ -354,13 +348,10 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Question: return "?";
         case Tk::Plus: return "+";
         case Tk::PlusTilde: return "+~";
-        case Tk::PlusVBar: return "+|";
         case Tk::Minus: return "-";
         case Tk::MinusTilde: return "-~";
-        case Tk::MinusVBar: return "-|";
         case Tk::Star: return "*";
         case Tk::StarTilde: return "*~";
-        case Tk::StarVBar: return "*|";
         case Tk::Slash: return "/";
         case Tk::Percent: return "%";
         case Tk::Caret: return "^";
@@ -387,13 +378,10 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Neq: return "!=";
         case Tk::PlusEq: return "+=";
         case Tk::PlusTildeEq: return "+~=";
-        case Tk::PlusVBarEq: return "+|=";
         case Tk::MinusEq: return "-=";
         case Tk::MinusTildeEq: return "-~=";
-        case Tk::MinusVBarEq: return "-|=";
         case Tk::StarEq: return "*=";
         case Tk::StarTildeEq: return "*~=";
-        case Tk::StarVBarEq: return "*|=";
         case Tk::SlashEq: return "/=";
         case Tk::PercentEq: return "%=";
         case Tk::ShiftLeft: return "<<";

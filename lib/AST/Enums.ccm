@@ -130,7 +130,4 @@ enum class srcc::OverflowBehaviour : u8 {
 
     /// Wrap around like normal.
     Wrap,
-
-    /// Saturate to the maximum/minimum value.
-    Saturate,
 };

@@ -618,15 +618,12 @@ auto Sema::BuildBinaryExpr(
         case Tk::Slash:
         case Tk::Percent:
         case Tk::StarTilde:
-        case Tk::StarVBar:
         case Tk::ColonSlash:
         case Tk::ColonPercent:
         case Tk::Plus:
         case Tk::PlusTilde:
-        case Tk::PlusVBar:
         case Tk::Minus:
         case Tk::MinusTilde:
-        case Tk::MinusVBar:
         case Tk::ShiftLeft:
         case Tk::ShiftLeftLogical:
         case Tk::ShiftRight:
@@ -686,13 +683,10 @@ auto Sema::BuildBinaryExpr(
         case Tk::Assign:
         case Tk::PlusEq:
         case Tk::PlusTildeEq:
-        case Tk::PlusVBarEq:
         case Tk::MinusEq:
         case Tk::MinusTildeEq:
-        case Tk::MinusVBarEq:
         case Tk::StarEq:
         case Tk::StarTildeEq:
-        case Tk::StarVBarEq:
         case Tk::StarStarEq:
         case Tk::SlashEq:
         case Tk::PercentEq:
