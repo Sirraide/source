@@ -1,5 +1,5 @@
 // R %srcc --eval %s
-// R[//CG] %srcc %s
+// R[//CG] %srcc --llvm %s
 program test;
 
 proc a(int b) -> int = b;

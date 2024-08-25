@@ -11,6 +11,7 @@ module;
 
 module srcc.codegen;
 import srcc;
+import srcc.token;
 import srcc.constants;
 using namespace srcc;
 using llvm::Value;
@@ -40,18 +41,51 @@ auto CodeGen::ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes {
     Unreachable("Unknown linkage");
 }
 
+auto CodeGen::DeclareAssertFailureHandler() -> llvm::FunctionCallee {
+    if (not assert_failure_handler) {
+        // proc __src_assert_fail (
+        //     u8[] file,
+        //     int line,
+        //     int col,
+        //     u8[] cond,
+        //     u8[] message
+        // ) -> noreturn
+        assert_failure_handler = llvm->getOrInsertFunction(
+            "__src_assert_fail",
+            llvm::FunctionType::get(VoidTy, {SliceTy, IntTy, IntTy, SliceTy, SliceTy}, false)
+        );
+
+        auto f = cast<llvm::Function>(assert_failure_handler.value().getCallee());
+        f->setDoesNotReturn();
+        f->setDoesNotThrow();
+    }
+
+    return assert_failure_handler.value();
+}
+
+
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee {
     auto name = MangledName(proc);
     return llvm->getOrInsertFunction(name, ConvertType<llvm::FunctionType>(proc->type));
 }
 
-auto CodeGen::GetString(StringRef s) -> llvm::Constant* {
+auto CodeGen::GetStringPtr(StringRef s) -> llvm::Constant* {
     if (auto it = strings.find(s); it != strings.end()) return it->second;
     return strings[s] = builder.CreateGlobalStringPtr(s);
 }
 
+auto CodeGen::GetStringSlice(StringRef s) -> llvm::Constant* {
+    auto ptr = GetStringPtr(s);
+    auto size = llvm::ConstantInt::get(IntTy, s.size());
+    return llvm::ConstantStruct::getAnon({ptr, size});
+}
+
 auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
     return llvm::ConstantInt::get(M.llvm_context, value);
+}
+
+auto CodeGen::MakeInt(u64 integer) -> llvm::ConstantInt* {
+    return llvm::ConstantInt::get(IntTy, integer, true);
 }
 
 // ============================================================================
@@ -262,9 +296,65 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Unreachable("Unknown statement kind");
 }
 
-auto CodeGen::EmitAssertExpr(AssertExpr* stmt) -> Value* { Todo(); }
+auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
+    auto loc = expr->location().seek_line_column(M.context());
+    if (not loc) {
+        ICE(expr->location(), "No location for assert");
+        return {};
+    }
 
-auto CodeGen::EmitBinaryExpr(BinaryExpr*) -> Value* { Todo(); }
+    // Emit condition and branch.
+    auto cond = Emit(expr->cond);
+    auto err = llvm::BasicBlock::Create(llvm->getContext(), "assert.fail");
+    auto join = llvm::BasicBlock::Create(llvm->getContext(), "assert.join");
+    builder.CreateCondBr(cond, err, join);
+    curr_func->insert(curr_func->end(), err);
+
+    // Emit failure handler and args.
+    auto failure_handler = DeclareAssertFailureHandler();
+    auto file = GetStringSlice(M.context().file(expr->location().file_id)->name());
+    auto line = MakeInt(loc->line);
+    auto col = MakeInt(loc->col);
+    auto cond_str = GetStringSlice(expr->cond->location().text(M.context()));
+
+    // Emit the message if there is one.
+    Value* msg{};
+    builder.SetInsertPoint(err);
+    if (auto m = expr->message.get_or_null()) msg = Emit(m);
+    else msg = llvm::ConstantAggregateZero::get(SliceTy);
+
+    // Call it.
+    builder.CreateCall(failure_handler, {file, line, col, cond_str, msg});
+
+    // Terminate the block and insert the join block.
+    builder.CreateUnreachable();
+    curr_func->insert(curr_func->end(), join);
+    builder.SetInsertPoint(join);
+    return {};
+}
+
+auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
+    using enum OverflowBehaviour;
+
+    auto lhs = Emit(expr->lhs);
+    auto rhs = Emit(expr->rhs);
+
+    switch (expr->op) {
+        default: Todo("Codegen for '{}'", expr->op);
+
+        // Comparison operators.
+        case Tk::ULt: return builder.CreateICmpULT(lhs, rhs, "ult");
+        case Tk::UGt: return builder.CreateICmpUGT(lhs, rhs, "ugt");
+        case Tk::ULe: return builder.CreateICmpULE(lhs, rhs, "ule");
+        case Tk::UGe: return builder.CreateICmpUGE(lhs, rhs, "uge");
+        case Tk::SLt: return builder.CreateICmpSLT(lhs, rhs, "slt");
+        case Tk::SGt: return builder.CreateICmpSGT(lhs, rhs, "sgt");
+        case Tk::SLe: return builder.CreateICmpSLE(lhs, rhs, "sle");
+        case Tk::SGe: return builder.CreateICmpSGE(lhs, rhs, "sge");
+        case Tk::EqEq: return builder.CreateICmpEQ(lhs, rhs, "eq");
+        case Tk::Neq: return builder.CreateICmpNE(lhs, rhs, "ne");
+    }
+}
 
 auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     Value* ret = nullptr;
@@ -299,8 +389,8 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
             auto printf = llvm->getOrInsertFunction("printf", llvm::FunctionType::get(FFIIntTy, {PtrTy}, true));
-            auto str_format = GetString("%.*s");
-            auto int_format = GetString("%" PRId64);
+            auto str_format = GetStringPtr("%.*s");
+            auto int_format = GetStringPtr("%" PRId64);
             for (auto a : expr->args()) {
                 if (a->type == M.StrLitTy) {
                     Assert(a->value_category == Expr::SRValue);
@@ -449,9 +539,7 @@ auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
-    auto ptr = GetString(expr->value.value());
-    auto size = llvm::ConstantInt::get(IntTy, expr->value.size());
-    return llvm::ConstantStruct::getAnon({ptr, size});
+    return GetStringSlice(expr->value);
 }
 
 auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
@@ -464,7 +552,7 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr*) -> Value* { Todo(); }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
     utils::Overloaded LValueEmitter {
-        [&](String s) -> llvm::Constant* { return GetString(s); },
+        [&](String s) -> llvm::Constant* { return GetStringPtr(s); },
         [&](eval::Memory* m) -> llvm::Constant* {
             Assert(m->alive());
             Todo("Emit memory");

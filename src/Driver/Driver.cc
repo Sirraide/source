@@ -24,6 +24,7 @@ module;
 #include <future>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/ThreadPool.h>
 #include <mutex>
 #include <print>
@@ -225,7 +226,7 @@ int Driver::Impl::run_job() {
 
     // Emit LLVM IR, if requested.
     if (a == Action::EmitLLVM) {
-        ir_module->dump();
+        ir_module->print(llvm::outs(), nullptr);
         return 0;
     }
 

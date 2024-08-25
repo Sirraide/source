@@ -277,6 +277,6 @@ FCHKAddAllTestsInDir(
     PATTERN "*.src"
     PREFIX  "//"
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-    ARGS -P re -P nocap -P captype -l . -D "srcc=$<TARGET_FILE:srcc>"
+    ARGS -P nocap -P captype -l . -D "srcc=$<TARGET_FILE:srcc>"
     RECURSIVE
 )
