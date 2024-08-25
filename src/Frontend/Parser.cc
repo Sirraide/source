@@ -759,15 +759,18 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
         // <expr-paren> ::= "(" <expr> ")"
         case Tk::LParen: {
+            Location rparen;
+            auto lparen = tok->location;
             ++tok;
+
             lhs = ParseExpr();
-            auto loc = tok->location;
-            if (not Consume(Tk::RParen)) {
+            if (not Consume(rparen, Tk::RParen)) {
                 Error("Expected ')'");
                 SkipTo(Tk::RParen, Tk::Semicolon);
-                if (not Consume(loc, Tk::RParen)) return {};
+                if (not Consume(rparen, Tk::RParen)) return {};
             }
-            lhs = new (*this) ParsedParenExpr{lhs.get(), {lhs.get()->loc, loc}};
+
+            lhs = new (*this) ParsedParenExpr{lhs.get(), {lparen, rparen}};
         } break;
 
         case Tk::Int:

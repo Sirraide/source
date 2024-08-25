@@ -38,22 +38,30 @@ Value::Value(Slice slice, Type ty)
       ty(ty) {}
 
 void Value::dump(bool use_colour) const {
+    std::print("{}", print(use_colour));
+}
+
+auto Value::print(bool use_colour) const -> std::string {
     using enum utils::Colour;
+    std::string out;
     utils::Colours C{use_colour};
     utils::Overloaded V{// clang-format off
-        [&](bool) { std::print("{}{}", C(Red), value.get<bool>()); },
+        [&](bool) { out += std::format("{}{}", C(Red), value.get<bool>()); },
         [&](std::monostate) { },
-        [&](ProcDecl* proc) { std::print("{}{}", C(Green), proc->name); },
-        [&](TypeTag) { std::print("{}", ty->print(use_colour)); },
-        [&](const LValue& lval) { lval.dump(use_colour); },
-        [&](const APInt& value) { std::print("{}{}", C(Magenta), toString(value, 10, true)); },
-        [&](const Slice&) { std::print("<slice>"); },
+        [&](ProcDecl* proc) { out += std::format("{}{}", C(Green), proc->name); },
+        [&](TypeTag) { out += ty->print(use_colour); },
+        [&](const LValue& lval) { out += lval.print(use_colour); },
+        [&](const APInt& value) { out += std::format("{}{}", C(Magenta), toString(value, 10, true)); },
+        [&](const Slice&) { out += "<slice>"; },
         [&](this auto& Self, const Reference& ref) {
             Self(ref.lvalue);
-            std::print("{}@{}{}", C(Red), C(Magenta), toString(ref.offset, 10, true));
+            out += std::format("{}@{}{}", C(Red), C(Magenta), toString(ref.offset, 10, true));
         }
     }; // clang-format on
+
     visit(V);
+    out += C(Reset);
+    return out;
 }
 
 auto Value::value_category() const -> ValueCategory {
@@ -213,13 +221,19 @@ public:
 //  LValue/Memory
 // ============================================================================
 void LValue::dump(bool use_colour) const {
+    std::print("{}", print(use_colour));
+}
+
+auto LValue::print(bool use_colour) const -> std::string {
     using enum utils::Colour;
+    std::string out;
     utils::Colours C{use_colour};
     utils::Overloaded V{// clang-format off
-        [&](String s) { std::print("{}\"{}\"", C(Yellow), s); },
-        [&](const Memory*) { std::print("<memory location>"); }
+        [&](String s) { out += std::format("{}\"{}\"", C(Yellow), s); },
+        [&](const Memory*) { out += "<memory location>"; }
     }; // clang-format on
     base.visit(V);
+    return out;
 }
 
 auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
@@ -438,7 +452,52 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
 //  Evaluation
 // ============================================================================
 bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
-    Todo();
+    if (not Eval(out, expr->cond)) return false;
+
+    // If the assertion fails, print the message if there is one and
+    // if it is a constant expression.
+    if (not out.cast<bool>()) {
+        if (auto m = expr->message.get_or_null(); m and Eval(out, m)) {
+            auto sl = out.cast<Slice>();
+            auto mem = GetMemoryBuffer(sl, m->location());
+            if (mem == std::nullopt) return false;
+            Error(
+                expr->location(),
+                "Assertion failed:\f'{}': {}",
+                expr->cond->location().text(tu.context()),
+                StringRef{mem->data(), mem->size()}
+            );
+        } else {
+            Error(
+                expr->location(),
+                "Assertion failed:\f'{}'",
+                expr->cond->location().text(tu.context())
+            );
+        }
+
+        // Try to decompose the message to print a more helpful error.
+        if (
+            auto bin = dyn_cast<BinaryExpr>(expr->cond->strip_parens());
+            bin and
+            (bin->op == Tk::EqEq or bin->op == Tk::Neq)
+        ) {
+            Value left, right;
+            Assert(Eval(left, bin->lhs));
+            Assert(Eval(right, bin->rhs));
+            Remark(
+                "\rHelp: Comparison evaluates to '{} {} {}'",
+                left.print(tu.context().use_colours()),
+                Spelling(bin->op),
+                right.print(tu.context().use_colours())
+            );
+        }
+
+        return false;
+    }
+
+    // Assertion returns void.
+    out = {};
+    return true;
 }
 
 bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
@@ -556,7 +615,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
             // this case if it happens to be INT_MIN.
             if (exp.isNegative()) {
                 if (base.isOne()) out = {One(), lhs.type()};
-                if (base.isAllOnes()) out = {exp[0] ? MinusOne() : One(), lhs.type()};
+                else if (base.isAllOnes()) out = {exp[0] ? MinusOne() : One(), lhs.type()};
                 else out = {Zero(), lhs.type()};
                 return true;
             }
@@ -603,7 +662,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
             // This is always fine since the smallest negative number is
             // always greater in magnitude than the largest positive number
             // because of how two’s complement works.
-            if (negate) res.negate();
+            if (negate and exp[0]) res.negate();
             return true;
         }
 

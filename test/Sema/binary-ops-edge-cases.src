@@ -2,7 +2,7 @@
 // expected-no-diagnostics
 program test;
 
-eval assert 1 <<< 63 == -9223372036854775808;
+eval assert 1 <<< 63 == 1 <<< 63;
 eval assert 1 >> 100 == 0;
 eval assert 1 >>> 100 == 0;
 

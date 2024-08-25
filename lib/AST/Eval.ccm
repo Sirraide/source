@@ -103,6 +103,7 @@ public:
 
     /// Print this.
     void dump(bool use_colour = true) const;
+    auto print(bool use_colour) const -> std::string;
 };
 
 class srcc::eval::Reference {
@@ -159,6 +160,9 @@ public:
     /// isa<>() on the contained value.
     template <typename Ty>
     auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
+
+    /// Print the value to a string.
+    auto print(bool use_colour) const -> std::string;
 
     /// Get the type of the value.
     auto type() const -> Type { return ty; }
