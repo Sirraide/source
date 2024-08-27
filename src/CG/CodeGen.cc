@@ -24,31 +24,6 @@ namespace Intrinsic = llvm::Intrinsic;
 // ============================================================================
 //  Helpers
 // ============================================================================
-auto CodeGen::If(
-    Value* cond,
-    llvm::function_ref<void()> emit_then,
-    llvm::function_ref<void()> emit_else
-) -> BasicBlock* {
-    auto then = BasicBlock::Create(llvm->getContext());
-    auto join = BasicBlock::Create(llvm->getContext());
-    auto else_ = emit_else ? BasicBlock::Create(llvm->getContext()) : join;
-    builder.CreateCondBr(cond, then, else_);
-
-    EnterBlock(then);
-    emit_then();
-    if (not builder.GetInsertBlock()->getTerminator())
-        builder.CreateBr(join);
-
-    if (emit_else) {
-        EnterBlock(else_);
-        emit_else();
-        if (not builder.GetInsertBlock()->getTerminator())
-            builder.CreateBr(join);
-    }
-
-    return EnterBlock(join);
-}
-
 auto CodeGen::ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID {
     switch (cc) {
         case CallingConvention::Source: return llvm::CallingConv::Fast;
@@ -71,36 +46,28 @@ auto CodeGen::ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes {
     Unreachable("Unknown linkage");
 }
 
-auto CodeGen::CreateArithFailure(Value* cond, Tk op, Location loc, StringRef name) {
-    auto fail = BasicBlock::Create(llvm->getContext(), "arith.fail", curr_func);
-    auto join = BasicBlock::Create(llvm->getContext(), "arith.join", curr_func);
+void CodeGen::CreateArithFailure(Value* cond, Tk op, Location loc, StringRef name) {
+    If(cond, [&] {
+        // Get file, line, and column. Don’t require a valid location here as
+        // this is also called from within implicitly generated code.
+        Value *file, *line, *col;
+        if (auto lc = loc.seek_line_column(M.context())) {
+            file = GetStringSlice(M.context().file(loc.file_id)->name());
+            line = MakeInt(lc->line);
+            col = MakeInt(lc->col);
+        } else {
+            file = llvm::ConstantAggregateZero::get(SliceTy);
+            line = MakeInt(0);
+            col = MakeInt(0);
+        }
 
-    // Failure branch.
-    builder.CreateCondBr(cond, fail, join);
-
-    // Get file, line, and column. Don’t require a valid location here as
-    // this is also called from within implicitly generated code.
-    Value *file, *line, *col;
-    if (auto lc = loc.seek_line_column(M.context())) {
-        file = GetStringSlice(M.context().file(loc.file_id)->name());
-        line = MakeInt(lc->line);
-        col = MakeInt(lc->col);
-    } else {
-        file = llvm::ConstantAggregateZero::get(SliceTy);
-        line = MakeInt(0);
-        col = MakeInt(0);
-    }
-
-    // Emit the failure handler.
-    auto handler = DeclareArithmeticFailureHandler();
-    auto op_token = GetStringSlice(Spelling(op));
-    auto operation = GetStringSlice(name);
-    builder.SetInsertPoint(fail);
-    builder.CreateCall(handler, {file, line, col, op_token, operation});
-    builder.CreateUnreachable();
-
-    // Join block.
-    builder.SetInsertPoint(join);
+        // Emit the failure handler.
+        auto handler = DeclareArithmeticFailureHandler();
+        auto op_token = GetStringSlice(Spelling(op));
+        auto operation = GetStringSlice(name);
+        builder.CreateCall(handler, {file, line, col, op_token, operation});
+        builder.CreateUnreachable();
+    });
 }
 
 auto CodeGen::DeclareAssertFailureHandler() -> llvm::FunctionCallee {
@@ -225,24 +192,21 @@ auto CodeGen::DefineExp(llvm::Type* ty) -> llvm::FunctionCallee {
     CreateArithFailure(is_min, Tk::StarStar, Location());
 
     // Emit the multiplication loop.
-    auto bb_start = builder.GetInsertBlock();
+    Loop([&](BasicBlock* bb_start) {
+        auto val = builder.CreatePHI(ty, 2);
+        auto exp = builder.CreatePHI(ty, 2);
+        val->addIncoming(lhs, bb_start);
+        exp->addIncoming(rhs, bb_start);
+        If(builder.CreateICmpEQ(exp, zero), [&] {
+            builder.CreateRet(val);
+        });
 
-    // Condition block.
-    auto bb_cond = EnterBlock(BasicBlock::Create(M.llvm_context));
-    auto val = builder.CreatePHI(ty, 2);
-    auto exp = builder.CreatePHI(ty, 2);
-    val->addIncoming(lhs, bb_start);
-    exp->addIncoming(rhs, bb_start);
-    If(builder.CreateICmpEQ(exp, zero), [&] {
-        builder.CreateRet(val);
+        // Computation (and overflow check).
+        auto new_val = EmitArithmeticOrComparisonOperator(Tk::Star, val, lhs, Location());
+        auto new_exp = builder.CreateSub(exp, one);
+        val->addIncoming(new_val, builder.GetInsertBlock());
+        exp->addIncoming(new_exp, builder.GetInsertBlock());
     });
-
-    // Computation (and overflow check).
-    auto new_val = EmitArithmeticOrComparisonOperator(Tk::Star, val, lhs, Location());
-    auto new_exp = builder.CreateSub(exp, one);
-    val->addIncoming(new_val, builder.GetInsertBlock());
-    exp->addIncoming(new_exp, builder.GetInsertBlock());
-    builder.CreateBr(bb_cond);
 
     // No return here since we return in the loop.
     return func;
@@ -265,7 +229,7 @@ auto CodeGen::EnterBlock(BasicBlock* bb) -> BasicBlock* {
 }
 
 CodeGen::EnterFunction::EnterFunction(CodeGen& CG, llvm::Function* func)
-            : CG(CG), old_func(CG.curr_func), guard{CG.builder} {
+    : CG(CG), old_func(CG.curr_func), guard{CG.builder} {
     CG.curr_func = func;
 
     // Create the entry block if it doesn’t exist yet.
@@ -282,6 +246,64 @@ auto CodeGen::GetStringSlice(StringRef s) -> llvm::Constant* {
     auto ptr = GetStringPtr(s);
     auto size = ConstantInt::get(IntTy, s.size());
     return llvm::ConstantStruct::getAnon({ptr, size});
+}
+
+auto CodeGen::If(
+    Value* cond,
+    llvm::function_ref<Value*()> emit_then,
+    llvm::function_ref<Value*()> emit_else
+) -> llvm::PHINode* {
+    auto bb_then = BasicBlock::Create(llvm->getContext());
+    auto bb_join = BasicBlock::Create(llvm->getContext());
+    auto bb_else = emit_else ? BasicBlock::Create(llvm->getContext()) : bb_join;
+    builder.CreateCondBr(cond, bb_then, bb_else);
+
+    // Emit the then block.
+    EnterBlock(bb_then);
+    auto then_val = emit_then();
+    auto then_val_block = builder.GetInsertBlock();
+    if (not builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(bb_join);
+
+    // Emit the else block if there is one.
+    Value* else_val{};
+    BasicBlock* else_val_block{};
+    if (emit_else) {
+        EnterBlock(bb_else);
+        else_val = emit_else();
+        else_val_block = builder.GetInsertBlock();
+        if (not builder.GetInsertBlock()->getTerminator())
+            builder.CreateBr(bb_join);
+    }
+
+    // Resume inserting at the join block.
+    EnterBlock(bb_join);
+
+    // Emit a PHI for the result values if they’re both present.
+    if (then_val and else_val) {
+        auto phi = builder.CreatePHI(then_val->getType(), 2);
+        phi->addIncoming(then_val, then_val_block);
+        phi->addIncoming(else_val, else_val_block);
+        return phi;
+    }
+
+    return nullptr;
+}
+
+auto CodeGen::If(Value* cond, llvm::function_ref<void()> emit_then) -> BasicBlock* {
+    If(cond, [&] -> Value* {
+        emit_then();
+        return nullptr;
+    }, nullptr);
+
+    return builder.GetInsertBlock();
+}
+
+void CodeGen::Loop(llvm::function_ref<void(BasicBlock*)> emit_body) {
+    auto bb_start = builder.GetInsertBlock();
+    auto bb_cond = EnterBlock(BasicBlock::Create(M.llvm_context));
+    emit_body(bb_start);
+    builder.CreateBr(bb_cond);
 }
 
 auto CodeGen::MakeInt(const APInt& value) -> ConstantInt* {
@@ -507,64 +529,45 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
         return {};
     }
 
-    // Emit condition and branch.
-    auto cond = Emit(expr->cond);
-    auto err = BasicBlock::Create(llvm->getContext(), "assert.fail");
-    auto join = BasicBlock::Create(llvm->getContext(), "assert.join");
-    builder.CreateCondBr(cond, err, join);
-    curr_func->insert(curr_func->end(), err);
+    If(Emit(expr->cond), [&] {
+        // Emit failure handler and args.
+        auto failure_handler = DeclareAssertFailureHandler();
+        auto file = GetStringSlice(M.context().file(expr->location().file_id)->name());
+        auto line = MakeInt(loc->line);
+        auto col = MakeInt(loc->col);
+        auto cond_str = GetStringSlice(expr->cond->location().text(M.context()));
 
-    // Emit failure handler and args.
-    auto failure_handler = DeclareAssertFailureHandler();
-    auto file = GetStringSlice(M.context().file(expr->location().file_id)->name());
-    auto line = MakeInt(loc->line);
-    auto col = MakeInt(loc->col);
-    auto cond_str = GetStringSlice(expr->cond->location().text(M.context()));
+        // Emit the message if there is one.
+        Value* msg{};
+        if (auto m = expr->message.get_or_null()) msg = Emit(m);
+        else msg = llvm::ConstantAggregateZero::get(SliceTy);
 
-    // Emit the message if there is one.
-    Value* msg{};
-    builder.SetInsertPoint(err);
-    if (auto m = expr->message.get_or_null()) msg = Emit(m);
-    else msg = llvm::ConstantAggregateZero::get(SliceTy);
+        // Call it.
+        builder.CreateCall(failure_handler, {file, line, col, cond_str, msg});
+        builder.CreateUnreachable();
+    });
 
-    // Call it.
-    builder.CreateCall(failure_handler, {file, line, col, cond_str, msg});
-
-    // Terminate the block and insert the join block.
-    builder.CreateUnreachable();
-    curr_func->insert(curr_func->end(), join);
-    builder.SetInsertPoint(join);
     return {};
 }
 
 auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
     switch (expr->op) {
         // Convert 'x and y' to 'if x then y else false'.
+        case Tk::And: {
+            return If(
+                Emit(expr->lhs),
+                [&] { return Emit(expr->rhs); },
+                [&] { return builder.getFalse(); }
+            );
+        }
+
         // Convert 'x or y' to 'if x then true else y'.
-        case Tk::And:
         case Tk::Or: {
-            auto is_and = expr->op == Tk::And;
-
-            // Emit the LHS and the branch.
-            auto lhs = Emit(expr->lhs);
-            auto bb_lhs = builder.GetInsertBlock();
-            auto bb_cont = BasicBlock::Create(llvm->getContext(), "lazy.cont", curr_func);
-            auto bb_join = BasicBlock::Create(llvm->getContext(), "lazy.join");
-            builder.CreateCondBr(lhs, is_and ? bb_cont : bb_join, is_and ? bb_join : bb_cont);
-
-            // Emit the rhs.
-            builder.SetInsertPoint(bb_cont);
-            auto rhs = Emit(expr->rhs);
-            auto bb_rhs = builder.GetInsertBlock();
-            builder.CreateBr(bb_join);
-
-            // Emit the result.
-            curr_func->insert(curr_func->end(), bb_join);
-            builder.SetInsertPoint(bb_join);
-            auto phi = builder.CreatePHI(I1Ty, 2);
-            phi->addIncoming(ConstantInt::getBool(I1Ty, not is_and), bb_lhs);
-            phi->addIncoming(rhs, bb_rhs);
-            return phi;
+            return If(
+                Emit(expr->lhs),
+                [&] { return builder.getTrue(); },
+                [&] { return Emit(expr->rhs); }
+            );
         }
 
         default: return EmitArithmeticOrComparisonOperator(

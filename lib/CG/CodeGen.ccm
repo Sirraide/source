@@ -73,7 +73,7 @@ private:
     auto ConvertTypeForMem(Type ty) -> llvm::Type*;
     auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
 
-    auto CreateArithFailure(llvm::Value* cond, Tk op, Location loc, StringRef name = "integer overflow");
+    void CreateArithFailure(llvm::Value* cond, Tk op, Location loc, StringRef name = "integer overflow");
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -108,25 +108,48 @@ private:
 
     /// Create a conditional branch and join block.
     ///
-    /// If 'emit_else' is not null, this creates three blocks: 'then',
-    /// 'else', and 'join'. The condition is emitted, and if it is true,
-    /// we branch to 'then', otherwise, we branch to 'else'. After 'then'
-    /// and 'else' are emitted, we branch to 'join', if the blocks are
-    /// not already terminated.
+    /// This creates two blocks: a 'then' and a 'join' block. Control
+    /// flow branches to 'then' if the condition is true, where the
+    /// callback is used to emit its body, after which we branch to
+    /// 'join'. If the condition is false, we branch to 'join' directly.
     ///
-    /// Otherwise, no 'else' block is created, and the false branch of
-    /// the conditional branch is the join block.
-    ///
-    /// The join block is passed to 'emit_then' and 'emit_else'. The
-    /// builder is positioned at the end of the join block after this
+    /// The builder is positioned at the end of the join block after this
     /// returns.
     ///
     /// \return The join block.
     auto If(
         llvm::Value* cond,
-        llvm::function_ref<void()> emit_then,
-        llvm::function_ref<void()> emit_else = {}
+        llvm::function_ref<void()> emit_body
     ) -> llvm::BasicBlock*;
+
+    /// Create a branch that can return a value.
+    ///
+    /// If 'emit_else' is not null, this creates three blocks: 'then',
+    /// 'else', and 'join'. The condition is emitted, and if it is true,
+    /// we branch to 'then', otherwise, we branch to 'else'. After 'then'
+    /// and 'else' are emitted, we branch to 'join', if the blocks are
+    /// not already terminated. If both branches return non-null values
+    /// then a phi is created at the join block and returned.
+    ///
+    /// Otherwise, no 'else' block is created, and the false branch of
+    /// the conditional branch is the join block.
+    ///
+    /// The builder is positioned at the end of the join block after this
+    /// returns.
+    ///
+    /// \return A PHI node that contains the values of both branches, or
+    /// null if there is no else branch or if either branch returns null.
+    auto If(
+        llvm::Value* cond,
+        llvm::function_ref<llvm::Value*()> emit_then,
+        llvm::function_ref<llvm::Value*()> emit_else
+    ) -> llvm::PHINode*;
+
+    /// Create an infinite loop.
+    ///
+    /// The block before the condition block from which the loop is
+    /// first entered is passed as a parameter to the callback.
+    void Loop(llvm::function_ref<void(llvm::BasicBlock*)> emit_body);
 
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
     auto MakeInt(u64 integer) -> llvm::ConstantInt*;

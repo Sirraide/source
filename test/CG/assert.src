@@ -20,21 +20,21 @@ proc foo(int a, int b) {
 // +   %l2sr = load i64, ptr %2, align 4
 // +   %l2sr1 = load i64, ptr %3, align 4
 // +   %eq = icmp eq i64 %l2sr, %l2sr1
-// +   br i1 %eq, label %assert.fail, label %assert.join
+// +   br i1 %eq, label %4, label %5
 // +
-// + assert.fail:
+// + 4:
 // +   call void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 43 }, i64 5, i64 5, { ptr, i64 } { ptr @1, i64 6 }, { ptr, i64 } zeroinitializer)
 // +   unreachable
 // +
-// + assert.join:
+// + 5:
 // +   %l2sr2 = load i64, ptr %2, align 4
 // +   %sgt = icmp sgt i64 %l2sr2, 42
-// +   br i1 %sgt, label %assert.fail3, label %assert.join4
+// +   br i1 %sgt, label %6, label %7
 // +
-// + assert.fail3:
+// + 6:
 // +   call void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 43 }, i64 6, i64 5, { ptr, i64 } { ptr @2, i64 6 }, { ptr, i64 } { ptr @3, i64 27 })
 // +   unreachable
 // +
-// + assert.join4:
+// + 7:
 // +   ret void
 // + }
