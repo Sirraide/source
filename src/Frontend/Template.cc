@@ -91,6 +91,7 @@ auto TemplateInstantiator::InstantiateProcedure(
 
     // Remember that we’re an instantiation.
     inst->instantiated_from = proc;
+    inst->scope = proc->scope;
 
     // Instantiate the parameters.
     EnterInstantiation _{S, proc, inst, inst_loc};

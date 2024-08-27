@@ -36,49 +36,12 @@ public:
     using TemplateArguments = DenseMap<TemplateTypeDecl*, TypeBase*>;
 
 private:
-    struct ProcScopeInfo {
-        SRCC_IMMOVABLE(ProcScopeInfo);
-        ProcDecl* proc;
-        SmallVector<LocalDecl*> locals;
-
-        ProcScopeInfo(ProcDecl* proc) : proc{proc} {}
-    };
-
-    struct InstantiationScopeInfo : ProcScopeInfo {
-        ProcDecl* pattern;
-        DenseMap<LocalDecl*, LocalDecl*> local_instantiations;
-        Location inst_loc;
-
-        InstantiationScopeInfo(
-            ProcDecl* pattern,
-            ProcDecl* instantiation,
-            Location inst_loc
-        ) : ProcScopeInfo{instantiation}, pattern{pattern}, inst_loc{inst_loc} {}
-
-        static bool classof(const ProcScopeInfo* info) {
-            return info->proc->instantiated_from != nullptr;
-        }
-    };
-
-    template <typename ScopeInfo = ProcScopeInfo>
-    class [[nodiscard]] EnterProcedure {
-        SRCC_IMMOVABLE(EnterProcedure);
-        Sema& S;
-        ScopeInfo info;
-
-    public:
-        template <typename... Args>
-        explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
-            : S{S}, info{proc, std::forward<Args>(args)...} {
-            S.proc_stack.emplace_back(&info);
-        }
-
-        ~EnterProcedure() { S.proc_stack.pop_back(); }
-    };
-
     /// RAII Object to push and pop a scope.
     class [[nodiscard]] EnterScope {
+    public:
         Sema& S;
+
+    private:
         Scope* scope;
 
     public:
@@ -113,10 +76,52 @@ private:
         }
 
         /// Get the scope.
-        auto get() -> Scope* {
+        auto get() const -> Scope* {
             Assert(scope, "Accessing scope after it has been moved");
             return scope;
         }
+    };
+
+    struct ProcScopeInfo {
+        SRCC_IMMOVABLE(ProcScopeInfo);
+        ProcDecl* proc;
+        SmallVector<LocalDecl*> locals;
+        const EnterScope es;
+
+        ProcScopeInfo(Sema& S, ProcDecl* proc) : proc{proc}, es{S, proc->scope} {}
+    };
+
+    struct InstantiationScopeInfo : ProcScopeInfo {
+        ProcDecl* pattern;
+        DenseMap<LocalDecl*, LocalDecl*> local_instantiations;
+        Location inst_loc;
+
+        InstantiationScopeInfo(
+            Sema& S,
+            ProcDecl* pattern,
+            ProcDecl* instantiation,
+            Location inst_loc
+        ) : ProcScopeInfo{S, instantiation}, pattern{pattern}, inst_loc{inst_loc} {}
+
+        static bool classof(const ProcScopeInfo* info) {
+            return info->proc->instantiated_from != nullptr;
+        }
+    };
+
+    template <std::derived_from<ProcScopeInfo> ScopeInfo = ProcScopeInfo>
+    class [[nodiscard]] EnterProcedure {
+        SRCC_IMMOVABLE(EnterProcedure);
+        ScopeInfo info;
+
+        public:
+        template <typename... Args>
+        explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
+            : info{S, proc, std::forward<Args>(args)...} {
+            Assert(proc->scope, "Entering procedure without scope?");
+            S.proc_stack.emplace_back(&info);
+        }
+
+        ~EnterProcedure() { info.es.S.proc_stack.pop_back(); }
     };
 
     /// A conversion from one type to another.

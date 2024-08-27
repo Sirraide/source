@@ -90,7 +90,11 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
 void Sema::DeclareLocal(LocalDecl* d) {
     Assert(d->parent == curr_proc().proc, "Must EnterProcedure befor adding a local variable");
     curr_proc().locals.push_back(d);
-    AddDeclToScope(curr_scope(), d);
+
+    // If the current procedure is a template instantiation, do not
+    // add this to the procedure scope again since it’s the same one.
+    if (not isa<InstantiationScopeInfo>(curr_proc()))
+        AddDeclToScope(curr_scope(), d);
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -1247,6 +1251,7 @@ void Sema::Translate() {
     if (errored) return;
 
     // Collect all statements and translate them.
+    M->initialiser_proc->scope = global_scope();
     EnterProcedure _{*this, M->initialiser_proc};
     SmallVector<Stmt*> top_level_stmts;
     for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
@@ -1481,7 +1486,6 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
 }
 
 auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt> {
-    EnterScope scope{*this, decl->scope};
     Assert(parsed->body);
 
     // Translate parameters.
