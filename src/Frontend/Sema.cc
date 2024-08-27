@@ -467,8 +467,8 @@ void Sema::ReportOverloadResolutionFailure(
                 // then this candidate was ambiguous. Otherwise,
                 // another candidate was simply better.
                 message += v.badness == final_badness
-                    ? "Matches as well as another candidate"sv
-                    : "Another candidate was better"sv;
+                    ? "Ambiguous (matches as well as another candidate)"sv
+                    : "Not selected (another candidate matches better)"sv;
             },
             [&](Candidate::ArgumentCountMismatch) {
                 auto params = c.type_for_diagnostic()->params();
@@ -531,7 +531,7 @@ void Sema::ReportOverloadResolutionFailure(
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("No matching overload for call to '{}{}{}'", C(Green), candidates.front().name(), C(Reset)),
+        std::format("Overload resolution failed in call to\f'{}{}{}'", C(Green), candidates.front().name(), C(Reset)),
         std::move(message),
     });
 }
