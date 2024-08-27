@@ -2,6 +2,7 @@ module;
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/TinyPtrVector.h>
+#include <ranges>
 #include <srcc/Macros.hh>
 
 export module srcc.frontend.sema;
@@ -41,6 +42,22 @@ private:
         SmallVector<LocalDecl*> locals;
 
         ProcScopeInfo(ProcDecl* proc) : proc{proc} {}
+    };
+
+    struct InstantiationScopeInfo : ProcScopeInfo {
+        ProcDecl* pattern;
+        DenseMap<LocalDecl*, LocalDecl*> local_instantiations;
+        Location inst_loc;
+
+        InstantiationScopeInfo(
+            ProcDecl* pattern,
+            ProcDecl* instantiation,
+            Location inst_loc
+        ) : ProcScopeInfo{instantiation}, pattern{pattern}, inst_loc{inst_loc} {}
+
+        static bool classof(const ProcScopeInfo* info) {
+            return info->proc->instantiated_from != nullptr;
+        }
     };
 
     template <typename ScopeInfo = ProcScopeInfo>
@@ -357,11 +374,6 @@ public:
     auto global_scope() -> Scope* { return scope_stack.front(); }
 
 private:
-    template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
-
     /// Add a declaration to a scope.
     ///
     /// This correctly handles redeclarations and declarations
@@ -400,15 +412,23 @@ private:
     /// mainly used for expressions involving operators.
     bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
+    /// Import a C++ header as a module.
+    auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
+
     /// Instantiate a procedure template.
     auto InstantiateTemplate(
         ProcDecl* proc,
         ProcType* substituted_type,
-        TemplateArguments& args
+        TemplateArguments& args,
+        Location inst_loc
     ) -> Ptr<ProcDecl>;
 
-    /// Import a C++ header as a module.
-    auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
+    /// Traverse scopes of procedures that we’re instantiating.
+    auto InstantiationStack() {
+        return proc_stack                                   //
+             | vws::filter(InstantiationScopeInfo::classof) //
+             | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
+    }
 
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
@@ -474,7 +494,8 @@ private:
     /// Substitute types in a procedure template.
     auto SubstituteTemplate(
         ProcDecl* proc_template,
-        ArrayRef<TypeLoc> input_types
+        ArrayRef<TypeLoc> input_types,
+        Location inst_loc
     ) -> TempSubstRes;
 
     /// Building AST nodes; called after translation and template instantiation.
@@ -521,4 +542,12 @@ private:
         ParsedProcType* parsed,
         SmallVectorImpl<TemplateTypeDecl*>* ttds = nullptr
     ) -> Type;
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+        if (lvl != Diagnostic::Level::Note)
+            for (auto i : InstantiationStack() | vws::reverse)
+                ctx.diags().add_extra_location(i->inst_loc, "in instantiation of '{}'", i->pattern->name);
+    }
 };

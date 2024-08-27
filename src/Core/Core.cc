@@ -392,17 +392,45 @@ auto FormatDiagnostic(
     out += std::format("{}{}{}: ", C(Bold), Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
     out += std::format("{}{}{}{}\n", C(Reset), C(Reset), diag.msg, C(Reset));
 
-    // Print the location it is in the same file as the previous diagnostic.
-    const auto& file = *ctx.file(diag.where.file_id);
+    // Print the location if it is in the same file as the previous
+    // diagnostic or if there are extra locations.
     if (
+        not diag.extra_locations.empty() or
         not previous_loc.has_value() or
         previous_loc.value().file_id != diag.where.file_id
     ) {
-        out += "  at ";
-        out += std::format("{}{}{}{}:", C(Blue), C(Bold), file.name(), C(Reset));
+        auto PrintLocation = [&](Location loc, LocInfoShort l) {
+            const auto& file = *ctx.file(loc.file_id);
+            out += std::format(
+                "at {}{}{}{}:{}:{}\n",
+                C(Blue),
+                C(Bold),
+                file.name(),
+                C(Reset),
+                l.line,
+                l.col
+            );
+        };
 
-        // Print the line and column number.
-        out += std::format("{}:{}\n\n", line, col);
+        // Print main location.
+        out += "  ";
+        PrintLocation(diag.where, l->short_info());
+
+        // Print extra locations.
+        for (const auto& [note, extra] : diag.extra_locations) {
+            auto extra_lc = extra.seek_line_column(ctx);
+            if (not extra_lc) continue;
+
+            out += "  ";
+            if (not note.empty()) {
+                out += note;
+                out += ' ';
+            }
+
+            PrintLocation(extra, *extra_lc);
+        }
+
+        out += "\n";
     }
 
     // Print the line up to the start of the location, the range in the right
@@ -610,6 +638,11 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     stream << RenderDiagnostics(ctx, backlog, cols());
     stream << C(Reset);
     backlog.clear();
+}
+
+void StreamingDiagnosticsEngine::add_extra_location_impl(Location extra, std::string note) {
+    if (backlog.empty()) return;
+    backlog.back().extra_locations.emplace_back(std::move(note), extra);
 }
 
 void StreamingDiagnosticsEngine::add_remark(std::string msg) {

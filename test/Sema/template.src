@@ -1,8 +1,12 @@
-// R %srcc --eval %s
-
+// V %srcc --sema --verify %s
 program test;
 
-proc foo(T, $T t) = t;
+proc add($T a, T b) = a + b;
+proc add2(T a, $T b) = a + b;
+proc add3($T a, $T b) = a + b;
+proc add4($T a, $U b) = a + b;
 
-// * 42
-__srcc_print(foo(1, 42), "\n");
+add(1, 2);
+add2(1, 2);
+add3(1, 2);
+add4(1, 2);

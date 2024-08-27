@@ -31,18 +31,20 @@ struct LocInfo;
 struct LocInfoShort;
 } // namespace srcc
 
+/// A short decoded source location.
+struct srcc::LocInfoShort {
+    usz line;
+    usz col;
+};
+
 /// A decoded source location.
 struct srcc::LocInfo {
     usz line;
     usz col;
     const char* line_start;
     const char* line_end;
-};
 
-/// A short decoded source location.
-struct srcc::LocInfoShort {
-    usz line;
-    usz col;
+    auto short_info() const -> LocInfoShort { return {line, col}; }
 };
 
 /// A source range in a file.
@@ -182,6 +184,7 @@ public:
     Location where;
     std::string msg; // Main diagnostic message.
     std::string extra; // Extra data to print after the location.
+    SmallVector<std::pair<std::string, Location>> extra_locations; // Extra locations to print.
 
     /// Create a diagnostic.
     Diagnostic(Level lvl, Location where, std::string msg, std::string extra = "")
@@ -240,6 +243,12 @@ public:
     virtual ~DiagnosticsEngine() = default;
     explicit DiagnosticsEngine(const Context& ctx) : ctx(ctx) {}
 
+    /// Add additional location information to a diagnostic.
+    template <typename ...Args>
+    void add_extra_location(Location extra, std::format_string<Args...> fmt, Args&& ...args) {
+        add_extra_location_impl(extra, std::format(fmt, std::forward<Args>(args)...));
+    }
+
     /// Add a remark to a diagnostic as extra information.
     virtual void add_remark(std::string msg) {}
 
@@ -274,6 +283,7 @@ public:
 protected:
     /// Override this to implement the actual reporting.
     virtual void report_impl(Diagnostic&& diag) = 0;
+    virtual void add_extra_location_impl(Location, std::string) {}
 };
 
 /// Diagnostics engine that outputs to a stream.
@@ -289,7 +299,7 @@ class srcc::StreamingDiagnosticsEngine final : public DiagnosticsEngine {
 
     StreamingDiagnosticsEngine(const Context& ctx, u32 error_limit, llvm::raw_ostream& output_stream)
         : DiagnosticsEngine(ctx), stream(output_stream), error_limit(error_limit) {}
-    ~StreamingDiagnosticsEngine();
+    ~StreamingDiagnosticsEngine() override;
 
 public:
     /// Create a new diagnostic engine.
@@ -306,6 +316,7 @@ public:
     void flush() override;
 
 private:
+    void add_extra_location_impl(Location, std::string) override;
     void report_impl(Diagnostic&&) override;
     void EmitDiagnostics();
 };

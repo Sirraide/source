@@ -34,9 +34,10 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     if (d->name.empty()) return;
 
     // And make sure to check for duplicates. Duplicate declarations
-    // are usually allowed, but we forbid redeclaring e.g. parameters.
+    // are usually allowed, but we forbid redeclaring e.g. (template)
+    // parameters.
     auto& ds = scope->decls[d->name];
-    if (not ds.empty() and isa<ParamDecl>(d)) {
+    if (not ds.empty() and isa<ParamDecl, TemplateTypeDecl>(d)) {
         Error(d->location(), "Redeclaration of parameter '{}'", d->name);
         Note(ds.front()->location(), "Previous declaration was here");
     } else {
@@ -852,7 +853,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         for (auto arg : args) types.emplace_back(arg->type, arg->location());
 
         // Perform template substitution.
-        auto res = SubstituteTemplate(proc, types);
+        auto res = SubstituteTemplate(proc, types, callee_expr->location());
         if (res.data.is<TempSubstRes::Error>()) return false;
         if (
             auto subst = res.data.get_if<TempSubstRes::Success>();
@@ -953,7 +954,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             auto inst = InstantiateTemplate(
                 temp->pattern,
                 subst.type,
-                subst.args
+                subst.args,
+                callee_expr->location()
             );
 
             // And call it.
@@ -1535,34 +1537,8 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
     switch (parsed->kind()) { // clang-format off
         using K = ParsedStmt::Kind;
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
-#       define PARSE_TREE_LEAF_NODE(node) \
-            case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
+#       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -1665,23 +1641,26 @@ auto Sema::TranslateProcType(
             SmallVector<u32, 1> deduced_indices;
         };
 
-        // Can’t really do a DenseMap of strings too well, so we just use a vector.
-        SmallVector<TemplateDecl, 4> template_param_decls{parsed->param_types().size()};
+        // Template decl by template parameter name.
+        StringMap<TemplateDecl> template_param_decls{};
 
         // First, do a prescan to collect template type defs.
-        for (auto [i, a] : enumerate(parsed->param_types())) {
-            if (auto ptt = dyn_cast<ParsedTemplateType>(a)) {
-                auto& [name, loc, deduced_indices] = template_param_decls[i];
-                name = ptt->name;
-                if (deduced_indices.empty()) loc = ptt->loc;
-                deduced_indices.push_back(u32(i));
+        for (auto [i, p] : enumerate(parsed->param_types())) {
+            if (auto ptt = dyn_cast<ParsedTemplateType>(p)) {
+                auto& td = template_param_decls[ptt->name];
+                if (td.deduced_indices.empty()) {
+                    td.loc = ptt->loc;
+                    td.name = ptt->name;
+                }
+                td.deduced_indices.push_back(u32(i));
             }
         }
 
         // Then build all the template type decls.
-        for (auto& [name, loc, deduced_indices] : template_param_decls) {
-            if (deduced_indices.empty()) continue;
-            auto ttd = ttds->emplace_back(TemplateTypeDecl::Create(*M, name, deduced_indices, loc));
+        for (const auto& entry : template_param_decls) {
+            auto& td = entry.getValue();
+            Assert(not td.deduced_indices.empty(), "Undeduced parameter?");
+            auto ttd = ttds->emplace_back(TemplateTypeDecl::Create(*M, td.name, td.deduced_indices, td.loc));
             AddDeclToScope(curr_scope(), ttd);
         }
     }

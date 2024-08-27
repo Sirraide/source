@@ -152,6 +152,7 @@ public:
 
 class srcc::ParsedTemplateType final : public ParsedStmt {
 public:
+    /// The parameter name, *without* the '$' sigil.
     String name;
 
     ParsedTemplateType(String name, Location loc)

@@ -19,34 +19,15 @@ class srcc::TemplateInstantiator {
 
     Sema& S;
     Sema::TemplateArguments& template_arguments;
+    Location inst_loc;
 
-    struct InstantiationScopeInfo : Sema::ProcScopeInfo {
-        ProcDecl* pattern;
-        DenseMap<LocalDecl*, LocalDecl*> local_instantiations;
-
-        InstantiationScopeInfo(
-            ProcDecl* pattern,
-            ProcDecl* instantiation
-        ) : ProcScopeInfo{instantiation}, pattern{pattern} {}
-
-        static bool classof(const ProcScopeInfo* info) {
-            return info->proc->instantiated_from != nullptr;
-        }
-    };
-
-    using EnterInstantiation = Sema::EnterProcedure<InstantiationScopeInfo>;
+    using EnterInstantiation = Sema::EnterProcedure<Sema::InstantiationScopeInfo>;
 
     explicit TemplateInstantiator(
         Sema& S,
-        Sema::TemplateArguments& args
-    ) : S{S}, template_arguments{args} {}
-
-    /// Traverse scopes of procedures that we’re instantiating.
-    auto InstantiationStack() {
-        return S.proc_stack                                 //
-             | vws::filter(InstantiationScopeInfo::classof) //
-             | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
-    }
+        Sema::TemplateArguments& args,
+        Location inst_loc
+    ) : S{S}, template_arguments{args}, inst_loc{inst_loc} {}
 
     auto InstantiateProcedure(ProcDecl* proc, ProcType* substituted_type) -> Ptr<ProcDecl>;
 
@@ -75,7 +56,8 @@ auto Sema::DeduceType(TemplateTypeDecl* decl, Type param, Type arg) -> Opt<Type>
 auto Sema::InstantiateTemplate(
     ProcDecl* proc,
     ProcType* substituted_type,
-    TemplateArguments& args
+    TemplateArguments& args,
+    Location inst_loc
 ) -> Ptr<ProcDecl> {
     // Reuse the instantiation if we’ve already done it.
     auto& cache = M->template_instantiations[proc];
@@ -83,7 +65,7 @@ auto Sema::InstantiateTemplate(
         return it->second;
 
     // Dew it.
-    TemplateInstantiator I{*this, args};
+    TemplateInstantiator I{*this, args, inst_loc};
     auto instantiated = I.InstantiateProcedure(proc, substituted_type);
 
     // Record the result, irrespective of whether we succeeded or not.
@@ -111,7 +93,7 @@ auto TemplateInstantiator::InstantiateProcedure(
     inst->instantiated_from = proc;
 
     // Instantiate the parameters.
-    EnterInstantiation _{S, proc, inst};
+    EnterInstantiation _{S, proc, inst, inst_loc};
     for (auto param : proc->params()) (void) InstantiateParamDecl(param);
     auto body = InstantiateStmt(proc->body().get());
     inst->finalise(body, S.curr_proc().locals);
@@ -128,7 +110,7 @@ auto TemplateInstantiator::InstantiateLocalDecl(LocalDecl* d) -> LocalDecl* {
 auto TemplateInstantiator::InstantiateParamDecl(ParamDecl* d) -> ParamDecl* {
     auto ty = InstantiateType(d->type);
     auto param = S.BuildParamDecl(S.curr_proc(), ty, d->name, d->location());
-    cast<InstantiationScopeInfo>(S.curr_proc()).local_instantiations[d] = param;
+    cast<Sema::InstantiationScopeInfo>(S.curr_proc()).local_instantiations[d] = param;
     return param;
 }
 
@@ -231,7 +213,7 @@ auto TemplateInstantiator::InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Stmt> {
 }
 
 auto TemplateInstantiator::InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Stmt> {
-    for (auto inst : InstantiationStack() | vws::reverse)
+    for (auto inst : S.InstantiationStack() | vws::reverse)
         if (auto d = inst->local_instantiations.find(e->decl); d != inst->local_instantiations.end())
             return new (*S.M) LocalRefExpr{d->second, e->location()};
     Unreachable("Local not instantiated?");
@@ -338,7 +320,8 @@ auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
 // ============================================================================
 auto Sema::SubstituteTemplate(
     ProcDecl* proc_template,
-    ArrayRef<TypeLoc> input_types
+    ArrayRef<TypeLoc> input_types,
+    Location inst_loc
 ) -> TempSubstRes {
     Assert(proc_template->is_template(), "Instantiating non-template?");
     TemplateArguments args;
@@ -382,7 +365,7 @@ auto Sema::SubstituteTemplate(
         }
     }
 
-    TemplateInstantiator I{*this, args};
+    TemplateInstantiator I{*this, args, inst_loc};
     auto substituted_type = cast<ProcType>(I.InstantiateType(proc_template->type)).ptr();
     return TempSubstRes::Success{substituted_type, std::move(args)};
 }

@@ -383,6 +383,12 @@ auto ParsedStmt::dump_as_type(utils::Colours C) -> std::string {
                 out += t->name;
             } break;
 
+            case Kind::DeclRefExpr: {
+                auto d = cast<ParsedDeclRefExpr>(type);
+                out += C(White);
+                out += utils::join(d->names(), "::");
+            } break;
+
             default:
                 out += "<invalid type>";
                 break;
