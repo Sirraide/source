@@ -9,6 +9,7 @@ import srcc;
 import srcc.utils;
 import srcc.ast;
 import srcc.token;
+import srcc.langopts;
 import srcc.frontend.parser;
 
 export namespace srcc {
@@ -332,7 +333,10 @@ public:
     /// Analyse a set of parsed modules and combine them into a single module.
     ///
     /// @return The combined module, or `nullptr` if there was an error.
-    [[nodiscard]] static auto Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr;
+    [[nodiscard]] static auto Translate(
+        const LangOpts& opts,
+        ArrayRef<ParsedModule::Ptr> modules
+    ) -> TranslationUnit::Ptr;
 
     /// Get the context.
     auto context() const -> Context& { return ctx; }
@@ -491,10 +495,11 @@ private:
     void Translate();
 
     /// Statements.
-#define PARSE_TREE_LEAF_NODE(Name) auto Translate##Name(Parsed##Name* parsed) -> Ptr<Expr>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed) -> Decl*;
+#define PARSE_TREE_LEAF_NODE(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Expr>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed)->Decl*;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
+
     auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
 
     /// Declarations.

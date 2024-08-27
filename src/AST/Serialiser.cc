@@ -198,7 +198,7 @@ struct Deserialiser {
 
     Deserialiser(Context& ctx, ArrayRef<char> data)
         : ctx{ctx},
-          M{TranslationUnit::CreateEmpty(ctx)},
+          M{TranslationUnit::CreateEmpty(ctx, LangOpts{})}, // FIXME: Serialise and deserialise lang opts.
           data{data} {}
 
     auto Deserialise() -> TranslationUnit::Ptr;

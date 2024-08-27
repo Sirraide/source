@@ -35,6 +35,7 @@ module;
 module srcc.driver;
 import srcc;
 import srcc.ast;
+import srcc.langopts;
 import srcc.frontend.verifier;
 import srcc.frontend.parser;
 import srcc.frontend.sema;
@@ -113,6 +114,13 @@ int Driver::Impl::run_job() {
         a != Action::Lex and
         a != Action::DumpTokens
     ) return Error("--verify requires one of: --lex, --parse, --sema, --tokens");
+
+    // AST dump requires parse/sema mode.
+    if (opts.print_ast and a != Action::Parse and a != Action::Sema)
+        return Error("--ast requires --parse or --sema");
+
+    // Create lang opts.
+    LangOpts lang_opts;
 
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?
@@ -203,7 +211,7 @@ int Driver::Impl::run_job() {
 
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
-    auto module = Sema::Translate(parsed_modules);
+    auto module = Sema::Translate(lang_opts, parsed_modules);
     if (a == Action::Sema) {
         ctx.diags().flush();
         if (opts.verify) return Verify();

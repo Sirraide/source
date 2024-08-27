@@ -1198,11 +1198,14 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 // ============================================================================
 //  Translation Driver
 // ============================================================================
-auto Sema::Translate(ArrayRef<ParsedModule::Ptr> modules) -> TranslationUnit::Ptr {
+auto Sema::Translate(
+    const LangOpts& opts,
+    ArrayRef<ParsedModule::Ptr> modules
+) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
     Sema S{first->context()};
-    S.M = TranslationUnit::Create(first->context(), first->name, first->is_module);
+    S.M = TranslationUnit::Create(first->context(), opts, first->name, first->is_module);
     S.parsed_modules = modules;
     S.Translate();
     return std::move(S.M);
@@ -1298,7 +1301,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed)-> Ptr<Expr> {
+auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Expr> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
@@ -1535,6 +1538,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_NODE(node) \
             case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
 
 

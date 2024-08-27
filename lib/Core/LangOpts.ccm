@@ -1,0 +1,9 @@
+export module srcc.langopts;
+
+export namespace srcc {
+struct LangOpts {
+    // Enable overflow checking. When disabled, overflow is
+    // undefined behaviour instead.
+    bool OverflowChecks : 1 = true;
+};
+}

@@ -32,7 +32,7 @@ public:
 };
 
 auto Sema::Importer::Import(String name) -> TranslationUnit::Ptr {
-    Mod = TranslationUnit::Create(S.context(), name, true);
+    Mod = TranslationUnit::Create(S.context(), S.M->lang_opts(), name, true);
     auto* TU = AST.getASTContext().getTranslationUnitDecl();
     for (auto D : TU->decls()) ImportDecl(D);
     return std::move(Mod);

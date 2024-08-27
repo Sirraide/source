@@ -3,8 +3,10 @@ module;
 #include <base/Assert.hh>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
+#include <srcc/Macros.hh>
 
 export module srcc.codegen;
+import srcc.token;
 import srcc.ast;
 import srcc;
 
@@ -21,6 +23,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     StringMap<llvm::Constant*> strings;
     DenseMap<LocalDecl*, llvm::AllocaInst*> locals;
     DenseMap<ProcDecl*, std::string> mangled_names;
+    DenseMap<llvm::Type*, llvm::FunctionCallee> exp_funcs;
     llvm::IRBuilder<> builder;
     llvm::Function* curr_func{};
 
@@ -34,6 +37,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     llvm::Type* const VoidTy;
 
     Opt<llvm::FunctionCallee> assert_failure_handler;
+    Opt<llvm::FunctionCallee> overflow_handler;
 
     CodeGen(TranslationUnit& M);
 
@@ -48,6 +52,18 @@ public:
     auto diags() const -> DiagnosticsEngine& { return M.context().diags(); }
 
 private:
+    class EnterFunction {
+        SRCC_IMMOVABLE(EnterFunction);
+
+        CodeGen& CG;
+        llvm::Function* old_func;
+        llvm::IRBuilder<>::InsertPointGuard guard;
+
+    public:
+        EnterFunction(CodeGen& CG, llvm::Function* func);
+        ~EnterFunction() { CG.curr_func = old_func; }
+    };
+
     auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
     auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
 
@@ -57,30 +73,60 @@ private:
     auto ConvertTypeForMem(Type ty) -> llvm::Type*;
     auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
 
+    auto CreateArithFailure(llvm::Value* cond, Tk op, Location loc, StringRef name = "integer overflow");
+
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         M.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
     auto DeclareAssertFailureHandler() -> llvm::FunctionCallee;
+    auto DeclareArithmeticFailureHandler() -> llvm::FunctionCallee;
     auto DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee;
+    auto DefineExp(llvm::Type* ty) -> llvm::FunctionCallee;
 
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt) -> llvm::Value*;
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->llvm::Value*;
 #include "srcc/AST.inc"
+
+    auto EmitArithmeticOrComparisonOperator(Tk op, llvm::Value* lhs, llvm::Value* rhs, Location loc) -> llvm::Value*;
     auto EmitClosure(ProcDecl* proc) -> llvm::Constant*;
     void EmitProcedure(ProcDecl* proc);
     auto EmitValue(const eval::Value& val) -> llvm::Constant*;
 
     void EmitLocal(LocalDecl* decl);
 
+    auto EnterBlock(llvm::BasicBlock* bb) -> llvm::BasicBlock*;
+
     /// Same as CreateGlobalStringPtr(), but is interned.
     auto GetStringPtr(StringRef s) -> llvm::Constant*;
 
     /// Create a constant slice for a string.
     auto GetStringSlice(StringRef s) -> llvm::Constant*;
+
+    /// Create a conditional branch and join block.
+    ///
+    /// If 'emit_else' is not null, this creates three blocks: 'then',
+    /// 'else', and 'join'. The condition is emitted, and if it is true,
+    /// we branch to 'then', otherwise, we branch to 'else'. After 'then'
+    /// and 'else' are emitted, we branch to 'join', if the blocks are
+    /// not already terminated.
+    ///
+    /// Otherwise, no 'else' block is created, and the false branch of
+    /// the conditional branch is the join block.
+    ///
+    /// The join block is passed to 'emit_then' and 'emit_else'. The
+    /// builder is positioned at the end of the join block after this
+    /// returns.
+    ///
+    /// \return The join block.
+    auto If(
+        llvm::Value* cond,
+        llvm::function_ref<void()> emit_then,
+        llvm::function_ref<void()> emit_else = {}
+    ) -> llvm::BasicBlock*;
 
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
     auto MakeInt(u64 integer) -> llvm::ConstantInt*;

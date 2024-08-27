@@ -4,6 +4,7 @@ module;
 #include <llvm/IR/ConstantFold.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <memory>
 #include <ranges>
@@ -14,11 +15,40 @@ import srcc;
 import srcc.token;
 import srcc.constants;
 using namespace srcc;
+using llvm::BasicBlock;
+using llvm::ConstantInt;
+using llvm::IRBuilder;
 using llvm::Value;
+namespace Intrinsic = llvm::Intrinsic;
 
 // ============================================================================
 //  Helpers
 // ============================================================================
+auto CodeGen::If(
+    Value* cond,
+    llvm::function_ref<void()> emit_then,
+    llvm::function_ref<void()> emit_else
+) -> BasicBlock* {
+    auto then = BasicBlock::Create(llvm->getContext());
+    auto join = BasicBlock::Create(llvm->getContext());
+    auto else_ = emit_else ? BasicBlock::Create(llvm->getContext()) : join;
+    builder.CreateCondBr(cond, then, else_);
+
+    EnterBlock(then);
+    emit_then();
+    if (not builder.GetInsertBlock()->getTerminator())
+        builder.CreateBr(join);
+
+    if (emit_else) {
+        EnterBlock(else_);
+        emit_else();
+        if (not builder.GetInsertBlock()->getTerminator())
+            builder.CreateBr(join);
+    }
+
+    return EnterBlock(join);
+}
+
 auto CodeGen::ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID {
     switch (cc) {
         case CallingConvention::Source: return llvm::CallingConv::Fast;
@@ -39,6 +69,38 @@ auto CodeGen::ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes {
     }
 
     Unreachable("Unknown linkage");
+}
+
+auto CodeGen::CreateArithFailure(Value* cond, Tk op, Location loc, StringRef name) {
+    auto fail = BasicBlock::Create(llvm->getContext(), "arith.fail", curr_func);
+    auto join = BasicBlock::Create(llvm->getContext(), "arith.join", curr_func);
+
+    // Failure branch.
+    builder.CreateCondBr(cond, fail, join);
+
+    // Get file, line, and column. Don’t require a valid location here as
+    // this is also called from within implicitly generated code.
+    Value *file, *line, *col;
+    if (auto lc = loc.seek_line_column(M.context())) {
+        file = GetStringSlice(M.context().file(loc.file_id)->name());
+        line = MakeInt(lc->line);
+        col = MakeInt(lc->col);
+    } else {
+        file = llvm::ConstantAggregateZero::get(SliceTy);
+        line = MakeInt(0);
+        col = MakeInt(0);
+    }
+
+    // Emit the failure handler.
+    auto handler = DeclareArithmeticFailureHandler();
+    auto op_token = GetStringSlice(Spelling(op));
+    auto operation = GetStringSlice(name);
+    builder.SetInsertPoint(fail);
+    builder.CreateCall(handler, {file, line, col, op_token, operation});
+    builder.CreateUnreachable();
+
+    // Join block.
+    builder.SetInsertPoint(join);
 }
 
 auto CodeGen::DeclareAssertFailureHandler() -> llvm::FunctionCallee {
@@ -63,10 +125,152 @@ auto CodeGen::DeclareAssertFailureHandler() -> llvm::FunctionCallee {
     return assert_failure_handler.value();
 }
 
+auto CodeGen::DeclareArithmeticFailureHandler() -> llvm::FunctionCallee {
+    if (not overflow_handler) {
+        // proc __src_int_arith_error(
+        //    u8[] file,
+        //    int line,
+        //    int col,
+        //    u8[] operator,
+        //    u8[] operation,
+        // )
+        overflow_handler = llvm->getOrInsertFunction(
+            "__src_int_arith_error",
+            llvm::FunctionType::get(VoidTy, {SliceTy, IntTy, IntTy, SliceTy, SliceTy}, false)
+        );
+
+        auto f = cast<llvm::Function>(overflow_handler.value().getCallee());
+        f->setDoesNotReturn();
+        f->setDoesNotThrow();
+    }
+
+    return overflow_handler.value();
+}
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee {
     auto name = MangledName(proc);
     return llvm->getOrInsertFunction(name, ConvertType<llvm::FunctionType>(proc->type));
+}
+
+auto CodeGen::DefineExp(llvm::Type* ty) -> llvm::FunctionCallee {
+    if (auto it = exp_funcs.find(ty); it != exp_funcs.end())
+        return it->second;
+
+    auto func = llvm::Function::Create(
+        llvm::FunctionType::get(ty, {ty, ty}, false),
+        llvm::Function::PrivateLinkage,
+        std::format("__srcc_exp_i{}", ty->getScalarSizeInBits()),
+        llvm.get()
+    );
+
+    func->setCallingConv(llvm::CallingConv::Fast);
+    func->setDoesNotThrow();
+    func->setMustProgress();
+    exp_funcs[ty] = func;
+
+    // For '**', we use the same algorithm that is used during constant
+    // evaluation; see EvaluationContext::EvalBinaryExpr() for an explanation
+    // of how this works.
+    EnterFunction _(*this, func);
+
+    // Values that we’ll need.
+    auto minus_one = ConstantInt::get(ty, u64(-1));
+    auto zero = ConstantInt::get(ty, 0);
+    auto one = ConstantInt::get(ty, 1);
+    auto lhs = &func->arg_begin()[0];
+    auto rhs = &func->arg_begin()[1];
+
+    // x ** 0 = 1.
+    If(builder.CreateICmpEQ(rhs, zero), [&] {
+        builder.CreateRet(one);
+    });
+
+    // If base == 0.
+    If(builder.CreateICmpEQ(lhs, zero), [&] {
+        // If exp < 0, then error.
+        if (M.lang_opts().OverflowChecks) {
+            CreateArithFailure(
+                builder.CreateICmpSLT(rhs, zero),
+                Tk::StarStar,
+                Location(),
+                "division by zero"
+            );
+        } else {
+            If(builder.CreateICmpSLT(rhs, zero), [&] {
+                builder.CreateRet(llvm::PoisonValue::get(ty));
+            });
+        }
+
+        // Otherwise, return 0.
+        builder.CreateRet(zero);
+    });
+
+    // If exp < 0.
+    If(builder.CreateICmpSLT(rhs, zero), [&] {
+        // If base == -1, then return 1 if exp is even, -1 if odd.
+        If(builder.CreateICmpEQ(lhs, minus_one), [&] {
+            auto is_odd = builder.CreateTrunc(rhs, I1Ty);
+            auto result = builder.CreateSelect(is_odd, minus_one, one);
+            builder.CreateRet(result);
+        });
+
+        // If base == 1, then return 1, otherwise 0.
+        auto cmp = builder.CreateICmpEQ(lhs, one);
+        builder.CreateRet(builder.CreateSelect(cmp, one, zero));
+    });
+
+    // Handle overflow.
+    auto min_value = ConstantInt::get(ty, APInt::getSignedMinValue(ty->getIntegerBitWidth()));
+    auto is_min = builder.CreateICmpEQ(lhs, min_value);
+    CreateArithFailure(is_min, Tk::StarStar, Location());
+
+    // Emit the multiplication loop.
+    auto bb_start = builder.GetInsertBlock();
+
+    // Condition block.
+    auto bb_cond = EnterBlock(BasicBlock::Create(M.llvm_context));
+    auto val = builder.CreatePHI(ty, 2);
+    auto exp = builder.CreatePHI(ty, 2);
+    val->addIncoming(lhs, bb_start);
+    exp->addIncoming(rhs, bb_start);
+    If(builder.CreateICmpEQ(exp, zero), [&] {
+        builder.CreateRet(val);
+    });
+
+    // Computation (and overflow check).
+    auto new_val = EmitArithmeticOrComparisonOperator(Tk::Star, val, lhs, Location());
+    auto new_exp = builder.CreateSub(exp, one);
+    val->addIncoming(new_val, builder.GetInsertBlock());
+    exp->addIncoming(new_exp, builder.GetInsertBlock());
+    builder.CreateBr(bb_cond);
+
+    // No return here since we return in the loop.
+    return func;
+}
+
+auto CodeGen::EnterBlock(BasicBlock* bb) -> BasicBlock* {
+    // Add the block to the current function if we haven’t already done so.
+    if (not bb->getParent()) curr_func->insert(curr_func->end(), bb);
+
+    // If there is a current block, and it is not closed, branch to the newly
+    // inserted block, unless that block is the function’s entry block.
+    if (
+        auto b = builder.GetInsertBlock();
+        b and not b->getTerminator() and &curr_func->getEntryBlock() != bb
+    ) builder.CreateBr(bb);
+
+    // Finally, position the builder at the end of the block.
+    builder.SetInsertPoint(bb);
+    return bb;
+}
+
+CodeGen::EnterFunction::EnterFunction(CodeGen& CG, llvm::Function* func)
+            : CG(CG), old_func(CG.curr_func), guard{CG.builder} {
+    CG.curr_func = func;
+
+    // Create the entry block if it doesn’t exist yet.
+    if (func->empty()) BasicBlock::Create(CG.llvm->getContext(), "entry", func);
+    CG.EnterBlock(&func->getEntryBlock());
 }
 
 auto CodeGen::GetStringPtr(StringRef s) -> llvm::Constant* {
@@ -76,16 +280,16 @@ auto CodeGen::GetStringPtr(StringRef s) -> llvm::Constant* {
 
 auto CodeGen::GetStringSlice(StringRef s) -> llvm::Constant* {
     auto ptr = GetStringPtr(s);
-    auto size = llvm::ConstantInt::get(IntTy, s.size());
+    auto size = ConstantInt::get(IntTy, s.size());
     return llvm::ConstantStruct::getAnon({ptr, size});
 }
 
-auto CodeGen::MakeInt(const APInt& value) -> llvm::ConstantInt* {
-    return llvm::ConstantInt::get(M.llvm_context, value);
+auto CodeGen::MakeInt(const APInt& value) -> ConstantInt* {
+    return ConstantInt::get(M.llvm_context, value);
 }
 
-auto CodeGen::MakeInt(u64 integer) -> llvm::ConstantInt* {
-    return llvm::ConstantInt::get(IntTy, integer, true);
+auto CodeGen::MakeInt(u64 integer) -> ConstantInt* {
+    return ConstantInt::get(IntTy, integer, true);
 }
 
 // ============================================================================
@@ -305,8 +509,8 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
 
     // Emit condition and branch.
     auto cond = Emit(expr->cond);
-    auto err = llvm::BasicBlock::Create(llvm->getContext(), "assert.fail");
-    auto join = llvm::BasicBlock::Create(llvm->getContext(), "assert.join");
+    auto err = BasicBlock::Create(llvm->getContext(), "assert.fail");
+    auto join = BasicBlock::Create(llvm->getContext(), "assert.join");
     builder.CreateCondBr(cond, err, join);
     curr_func->insert(curr_func->end(), err);
 
@@ -334,13 +538,76 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
-    using enum OverflowBehaviour;
-
-    auto lhs = Emit(expr->lhs);
-    auto rhs = Emit(expr->rhs);
-
     switch (expr->op) {
-        default: Todo("Codegen for '{}'", expr->op);
+        // Convert 'x and y' to 'if x then y else false'.
+        // Convert 'x or y' to 'if x then true else y'.
+        case Tk::And:
+        case Tk::Or: {
+            auto is_and = expr->op == Tk::And;
+
+            // Emit the LHS and the branch.
+            auto lhs = Emit(expr->lhs);
+            auto bb_lhs = builder.GetInsertBlock();
+            auto bb_cont = BasicBlock::Create(llvm->getContext(), "lazy.cont", curr_func);
+            auto bb_join = BasicBlock::Create(llvm->getContext(), "lazy.join");
+            builder.CreateCondBr(lhs, is_and ? bb_cont : bb_join, is_and ? bb_join : bb_cont);
+
+            // Emit the rhs.
+            builder.SetInsertPoint(bb_cont);
+            auto rhs = Emit(expr->rhs);
+            auto bb_rhs = builder.GetInsertBlock();
+            builder.CreateBr(bb_join);
+
+            // Emit the result.
+            curr_func->insert(curr_func->end(), bb_join);
+            builder.SetInsertPoint(bb_join);
+            auto phi = builder.CreatePHI(I1Ty, 2);
+            phi->addIncoming(ConstantInt::getBool(I1Ty, not is_and), bb_lhs);
+            phi->addIncoming(rhs, bb_rhs);
+            return phi;
+        }
+
+        default: return EmitArithmeticOrComparisonOperator(
+            expr->op,
+            Emit(expr->lhs),
+            Emit(expr->rhs),
+            expr->location()
+        );
+    }
+}
+
+auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, Location loc) -> Value* {
+    using enum OverflowBehaviour;
+    auto ty = rhs->getType();
+
+    auto CheckDivByZero = [&] {
+        auto check = builder.CreateICmpEQ(rhs, ConstantInt::get(ty, 0));
+        CreateArithFailure(check, op, loc, "division by zero");
+    };
+
+    auto CreateCheckedBinop = [&](auto unchecked_op, Intrinsic::ID id) -> Value* {
+        if (not M.lang_opts().OverflowChecks) return std::invoke(
+            unchecked_op,
+            builder,
+            lhs,
+            rhs,
+            ""
+        );
+
+        // LLVM has intrinsics that can check for overflow.
+        auto call = builder.CreateBinaryIntrinsic(id, lhs, rhs);
+        auto overflow = builder.CreateExtractValue(call, 1);
+        CreateArithFailure(overflow, op, loc);
+        return builder.CreateExtractValue(call, 0);
+    };
+
+    switch (op) {
+        default: Todo("Codegen for '{}'", op);
+
+        // 'and' and 'or' require lazy evaluation and are handled elsewhere.
+        case Tk::And:
+        case Tk::Or:
+            Unreachable("'and' and 'or' cannot be handled here.");
 
         // Comparison operators.
         case Tk::ULt: return builder.CreateICmpULT(lhs, rhs, "ult");
@@ -353,6 +620,81 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         case Tk::SGe: return builder.CreateICmpSGE(lhs, rhs, "sge");
         case Tk::EqEq: return builder.CreateICmpEQ(lhs, rhs, "eq");
         case Tk::Neq: return builder.CreateICmpNE(lhs, rhs, "ne");
+
+        // Arithmetic operators that wrap or can’t overflow.
+        case Tk::PlusTilde: return builder.CreateAdd(lhs, rhs);
+        case Tk::MinusTilde: return builder.CreateSub(lhs, rhs);
+        case Tk::StarTilde: return builder.CreateMul(lhs, rhs);
+        case Tk::ShiftRight: return builder.CreateAShr(lhs, rhs);
+        case Tk::ShiftRightLogical: return builder.CreateLShr(lhs, rhs);
+        case Tk::Ampersand: return builder.CreateAnd(lhs, rhs);
+        case Tk::VBar: return builder.CreateOr(lhs, rhs);
+        case Tk::Xor: return builder.CreateXor(lhs, rhs);
+
+        // Arithmetic operators for which there is an intrinsic
+        // that can perform overflow checking.
+        case Tk::Plus: return CreateCheckedBinop(
+            &IRBuilder<>::CreateNSWAdd,
+            Intrinsic::sadd_with_overflow
+        );
+
+        case Tk::Minus: return CreateCheckedBinop(
+            &IRBuilder<>::CreateNSWSub,
+            Intrinsic::ssub_with_overflow
+        );
+
+        case Tk::Star: return CreateCheckedBinop(
+            &IRBuilder<>::CreateNSWMul,
+            Intrinsic::smul_with_overflow
+        );
+
+        // Division only requires a check for division by zero.
+        case Tk::ColonSlash:
+        case Tk::ColonPercent: {
+            CheckDivByZero();
+            return op == Tk::ColonSlash ? builder.CreateUDiv(lhs, rhs) : builder.CreateURem(lhs, rhs);
+        }
+
+        // Signed division additionally has to check for overflow, which
+        // happens only if we divide INT_MIN by -1.
+        case Tk::Slash:
+        case Tk::Percent: {
+            CheckDivByZero();
+            auto int_min = ConstantInt::get(ty, APInt::getSignedMinValue(ty->getIntegerBitWidth()));
+            auto minus_one = ConstantInt::get(ty, u64(-1));
+            auto check_lhs = builder.CreateICmpEQ(lhs, int_min);
+            auto check_rhs = builder.CreateICmpEQ(rhs, minus_one);
+            CreateArithFailure(builder.CreateAnd(check_lhs, check_rhs), op, loc);
+            return op == Tk::Slash ? builder.CreateSDiv(lhs, rhs) : builder.CreateSRem(lhs, rhs);
+        }
+
+        // Left shift overflows if the shift amount is equal
+        // to or exceeds the bit width.
+        case Tk::ShiftLeftLogical: {
+            auto check = builder.CreateICmpUGE(rhs, MakeInt(lhs->getType()->getIntegerBitWidth()));
+            CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
+            return builder.CreateShl(lhs, rhs);
+        }
+
+        // Signed left shift additionally does not allow a sign change.
+        case Tk::ShiftLeft: {
+            auto check = builder.CreateICmpUGE(rhs, MakeInt(lhs->getType()->getIntegerBitWidth()));
+            CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
+
+            // Check sign.
+            auto res = builder.CreateShl(lhs, rhs);
+            auto sign = builder.CreateAShr(lhs, MakeInt(lhs->getType()->getIntegerBitWidth() - 1));
+            auto new_sign = builder.CreateAShr(res, MakeInt(lhs->getType()->getIntegerBitWidth() - 1));
+            auto sign_change = builder.CreateICmpNE(sign, new_sign);
+            CreateArithFailure(sign_change, op, loc);
+            return res;
+        }
+
+        // This is lowered to a call to a compiler-generated function.
+        case Tk::StarStar: {
+            auto func = DefineExp(ty);
+            return builder.CreateCall(func, {lhs, rhs});
+        }
     }
 }
 
@@ -478,7 +820,7 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
 }
 
 auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
-    return llvm::ConstantInt::get(ConvertType(expr->type), expr->storage.value());
+    return ConstantInt::get(ConvertType(expr->type), expr->storage.value());
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
@@ -509,8 +851,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     if (not proc->body()) return;
 
     // Create the entry block.
-    auto entry = llvm::BasicBlock::Create(M.llvm_context, "entry", curr_func);
-    builder.SetInsertPoint(entry);
+    EnterFunction _(*this, curr_func);
 
     // Emit locals.
     for (auto l : proc->locals) EmitLocal(l);
@@ -568,7 +909,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
     };
 
     utils::Overloaded V {
-        [&](bool b) -> llvm::Constant* { return llvm::ConstantInt::get(I1Ty, b); },
+        [&](bool b) -> llvm::Constant* { return ConstantInt::get(I1Ty, b); },
         [&](ProcDecl* proc) -> llvm::Constant* { return EmitClosure(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
         [&](eval::TypeTag) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },

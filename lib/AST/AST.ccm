@@ -13,6 +13,7 @@ export import :eval;
 export import :stmt;
 export import :type;
 import srcc;
+import srcc.langopts;
 import srcc.constants;
 import srcc.ast.printer;
 
@@ -30,6 +31,9 @@ public:
 private:
     /// Context that owns this module.
     Context& ctx;
+
+    /// Language options for this module.
+    LangOpts language_opts;
 
     /// Files that make up this module.
     SmallVector<const File*> files;
@@ -54,7 +58,7 @@ private:
     /// Used to store evaluated constant expressions.
     SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
 
-    explicit TranslationUnit(Context& ctx, String name, bool is_module);
+    explicit TranslationUnit(Context& ctx, const LangOpts& opts, String name, bool is_module);
 
 public:
     struct Import {
@@ -114,13 +118,13 @@ public:
     FoldingSet<TemplateType> template_types;
 
     /// Create a new module.
-    static auto Create(Context& ctx, String name, bool is_module) -> Ptr {
+    static auto Create(Context& ctx, const LangOpts& opts, String name, bool is_module) -> Ptr {
         Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
-        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, name, is_module});
+        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, name, is_module});
     }
 
-    static auto CreateEmpty(Context& ctx) -> Ptr {
-        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, "", true});
+    static auto CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
+        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, "", true});
     }
 
     /// Deserialise a module.
@@ -155,6 +159,9 @@ public:
 
     /// Dump the contents of the module.
     void dump() const;
+
+    /// Get the language options for this module.
+    [[nodiscard]] auto lang_opts() const -> const LangOpts& { return language_opts; }
 
     /// Save a string in the module.
     auto save(StringRef s) -> String { return String::Save(saver, s); }

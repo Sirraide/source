@@ -617,6 +617,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
 
             // If the base is negative, the result will be negative if the
             // exponent is odd, and positive otherwise.
+            // FIXME: I don’t think we need this negation dance here?
             bool negate = base.isNegative();
             if (negate) {
                 // If base is INT_MIN, then its negation is not representable;
