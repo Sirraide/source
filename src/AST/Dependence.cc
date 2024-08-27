@@ -39,6 +39,7 @@ void Stmt::ComputeDependence() { // clang-format off
         if (auto r = e->return_expr()) d |= r->dependence();
     },
 
+    [&](BoolLitExpr*) {}, // Never dependent.
     [&](BuiltinCallExpr* e) {
         // Always propagate instantiation dependence from arguments.
         for (auto s : e->args()) {

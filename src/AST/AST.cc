@@ -170,6 +170,10 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(cast<BlockExpr>(e)->stmts());
             break;
 
+        case Kind::BoolLitExpr:
+            PrintBasicNode(e, "BoolLitExpr", [&] { std::print("{}{}", C(Red), cast<BoolLitExpr>(e)->value); });
+            break;
+
         case Kind::BuiltinCallExpr: {
             auto& c = *cast<BuiltinCallExpr>(e);
             PrintBasicNode(e, "BuiltinCallExpr", [&] {

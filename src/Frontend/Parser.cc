@@ -224,6 +224,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(children);
         } break;
 
+        case Kind::BoolLitExpr: {
+            PrintHeader(s, "BoolLitExpr", false);
+            std::print("{}{}{}\n", C(Red), cast<ParsedBoolLitExpr>(s)->value, C(Reset));
+        } break;
+
         case Kind::CallExpr: {
             auto& c = *cast<ParsedCallExpr>(s);
             PrintHeader(s, "CallExpr");
@@ -536,6 +541,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Assert:
         case Tk::Bool:
         case Tk::Eval:
+        case Tk::False:
         case Tk::Identifier:
         case Tk::Int:
         case Tk::Integer:
@@ -551,6 +557,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::StringLiteral:
         case Tk::TemplateType:
         case Tk::Tilde:
+        case Tk::True:
         case Tk::Var:
         case Tk::Void:
             return true;
@@ -730,15 +737,22 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             lhs = ParseDeclRefExpr();
             break;
 
-        // <expr-lit> ::= STRING-LITERAL | INTEGER
+        // STRING-LITERAL
         case Tk::StringLiteral:
             lhs = new (*this) ParsedStrLitExpr{tok->text, tok->location};
             ++tok;
             break;
 
-        // <expr-lit> ::= STRING-LITERAL | INTEGER
+        // INTEGER
         case Tk::Integer:
             lhs = new (*this) ParsedIntLitExpr{*this, tok->integer, tok->location};
+            ++tok;
+            break;
+
+        // TRUE | FALSE
+        case Tk::True:
+        case Tk::False:
+            lhs = new (*this) ParsedBoolLitExpr{tok->type == Tk::True, tok->location};
             ++tok;
             break;
 

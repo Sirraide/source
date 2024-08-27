@@ -156,6 +156,10 @@ auto TemplateInstantiator::InstantiateBlockExpr(BlockExpr* e) -> Ptr<Stmt> {
     return S.BuildBlockExpr(e->scope, stmts, e->location());
 }
 
+auto TemplateInstantiator::InstantiateBoolLitExpr(BoolLitExpr*) -> Ptr<Stmt> {
+    Unreachable("Never dependent");
+}
+
 auto TemplateInstantiator::InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr<Stmt> {
     // Some builtins are instantiated as though they were
     // a regular call expression.

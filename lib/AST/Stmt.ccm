@@ -231,6 +231,18 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::BlockExpr; }
 };
 
+class srcc::BoolLitExpr final : public Expr {
+public:
+    const bool value;
+
+    BoolLitExpr(
+        bool value,
+        Location location
+    ) : Expr{Kind::BoolLitExpr, Types::BoolTy, SRValue, location}, value{value} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
+};
+
 class srcc::BuiltinCallExpr final : public Expr
     , TrailingObjects<BuiltinCallExpr, Expr*> {
     friend TrailingObjects;

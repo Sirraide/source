@@ -51,7 +51,7 @@
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
-<expr-lit>       ::= STRING-LITERAL | INTEGER
+<expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-member>    ::= <expr> "." IDENTIFIER
 <expr-paren>     ::= "(" <expr> ")"
 <expr-prefix>    ::= <prefix> <expr>

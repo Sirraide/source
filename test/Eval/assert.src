@@ -1,6 +1,8 @@
 // R %srcc --sema --verify %s
 program test;
 
+eval assert true;
+eval assert false; // expected-error: Assertion failed: 'false'
 eval assert 1 == 1;
 eval assert 1 == 2; // expected-error: Assertion failed: '1 == 2'
 eval assert 1 == 2, "bar"; // expected-error: Assertion failed: '1 == 2': bar

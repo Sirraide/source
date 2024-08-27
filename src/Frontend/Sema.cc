@@ -986,7 +986,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         );
     }
 
-    // Overload resolution failed :(.
+    // Overload resolution failed. :(
     ReportOverloadResolutionFailure(candidates, args, loc, badness);
     return nullptr;
 }
@@ -1329,6 +1329,10 @@ auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Expr> {
     return BuildBlockExpr(scope.get(), stmts, parsed->loc);
 }
 
+auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed)-> Ptr<Expr> {
+    return new (*M) BoolLitExpr(parsed->value, parsed->loc);
+}
+
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
     // Translate arguments.
     SmallVector<Expr*> args;
@@ -1452,6 +1456,8 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     auto base = TRY(TranslateExpr(parsed->base));
     if (isa<SliceType>(base->type)) {
+        // TODO: Consolidate into a single BuiltinMemberAccess AST node
+        // when we start allowing '.size'.
         if (parsed->member == "data") return SliceDataExpr::Create(*M, base, parsed->loc);
         return Error(parsed->loc, "Slice has no member named '{}'", parsed->member);
     }

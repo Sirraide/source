@@ -222,6 +222,16 @@ public:
     }
 };
 
+class srcc::ParsedBoolLitExpr final : public ParsedStmt {
+public:
+    bool value;
+
+    ParsedBoolLitExpr(bool value, Location location)
+        : ParsedStmt{Kind::BoolLitExpr, location}, value{value} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BoolLitExpr; }
+};
+
 /// A call to a function, or anything that syntactically
 /// resembles one.
 class srcc::ParsedCallExpr final : public ParsedStmt

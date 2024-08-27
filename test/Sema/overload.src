@@ -44,4 +44,4 @@ f(1, 2, 3, 4); // expected-error: Overload resolution failed in call to 'f'
 // Ambiguity.
 proc ambiguous (proc, proc (int)) {}
 proc ambiguous (proc (int), proc) {}
-ambiguous(a, a);
+ambiguous(a, a); // expected-error: Overload resolution failed in call to 'ambiguous'

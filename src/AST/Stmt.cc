@@ -3,6 +3,7 @@ module;
 #include <memory>
 #include <ranges>
 #include <srcc/Macros.hh>
+#include <type_traits>
 
 module srcc.ast;
 import srcc;
@@ -13,6 +14,10 @@ using namespace srcc;
 void* Stmt::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
+
+// Sanity check.
+#define AST_STMT_LEAF(node) static_assert(std::is_trivially_destructible_v<node>);
+#include "srcc/AST.inc"
 
 // ============================================================================
 //  AST

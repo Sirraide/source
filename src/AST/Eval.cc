@@ -756,6 +756,12 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
     return true;
 }
 
+bool EvaluationContext::EvalBoolLitExpr(Value& out, BoolLitExpr* expr) {
+    out = expr->value;
+    return true;
+}
+
+
 bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin) {
     switch (builtin->builtin) {
         case BuiltinCallExpr::Builtin::Print: {

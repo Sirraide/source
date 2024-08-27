@@ -730,6 +730,10 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     return ret;
 }
 
+auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> Value* {
+    return builder.getInt1(stmt->value);
+}
+
 auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
