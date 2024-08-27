@@ -343,10 +343,6 @@ auto FormatDiagnostic(
     // skip printing the location.
     auto l = diag.where.seek(ctx);
     if (not l.has_value()) {
-        // Even if the location is invalid, print the file name if we can.
-        if (auto f = ctx.file(diag.where.file_id))
-            out += std::format("{}{}: ", C(Bold), f->path());
-
         // Print the message.
         out += std::format(
             "{}{}{}: {}{}{}{}",
@@ -358,6 +354,10 @@ auto FormatDiagnostic(
             diag.msg,
             C(Reset)
         );
+
+        // Even if the location is invalid, print the file name if we can.
+        if (auto f = ctx.file(diag.where.file_id))
+            out += std::format("\n  in {}{}:<invalid location>\n\n", C(Bold), f->path());
 
         PrintExtraData();
         return out;
@@ -381,40 +381,38 @@ auto FormatDiagnostic(
     utils::ReplaceAll(range, "\t", "    ");
     utils::ReplaceAll(after, "\t", "    ");
 
-    // Break the message itself before the file name.
-    out += "\v";
+    // TODO: Explore this idea:
+    //
+    //   Error at foo.src:1:1
+    //    1 | code goes here
+    //                  ~~~~ Error message goes here
+    //
 
-    // Print the file name, unless the location is in the same
-    // file as the previous diagnostic.
+    // Print the diagnostic name and message.
+    out += std::format("{}{}{}: ", C(Bold), Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
+    out += std::format("{}{}{}{}\n", C(Reset), C(Reset), diag.msg, C(Reset));
+
+    // Print the location it is in the same file as the previous diagnostic.
     const auto& file = *ctx.file(diag.where.file_id);
-    out += C(Bold);
     if (
         not previous_loc.has_value() or
         previous_loc.value().file_id != diag.where.file_id
-    ) out += std::format("{}:", file.name());
+    ) {
+        out += "  at ";
+        out += std::format("{}{}{}{}:", C(Blue), C(Bold), file.name(), C(Reset));
 
-    // Print the line and column number.
-    out += std::format("{}:{}: ", line, col);
-
-    // Print the diagnostic name and message.
-    out += std::format("{}{}: ", Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
-    out += std::format("{}{}\n", C(Reset), diag.msg);
+        // Print the line and column number.
+        out += std::format("{}:{}\n\n", line, col);
+    }
 
     // Print the line up to the start of the location, the range in the right
     // colour, and the rest of the line.
-    out += std::format("{} | {}", line, before);
-    out += std::format("{}{}{}{}", C(Bold), Diagnostic::Colour(C, diag.level), range, C(Reset));
+    out += std::format("{}{} |{} {}", C(Bold), line, C(Reset), before);
+    out += std::format("{}{}{}{}", C(Bold), C(White), range, C(Reset));
     out += std::format("{}\n", after);
 
     // Determine the number of digits in the line number.
     const auto digits = std::to_string(line).size();
-
-    // LLVM’s columnWidthUTF8() function returns -1 for non-printable characters
-    // for some ungodly reason, so guard against that.
-    /*static const auto ColumnWidth = [](StringRef text) {
-        auto wd = llvm::sys::unicode::columnWidthUTF8(text);
-        return wd < 0 ? 0 : usz(wd);
-    };*/
 
     // Underline the range. For that, we first pad the line based on the number
     // of digits in the line number and append more spaces to line us up with
