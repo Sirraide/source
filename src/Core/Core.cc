@@ -463,6 +463,12 @@ auto RenderDiagnostics(
                     di == backlog.size() - 1 and
                     i == count - 1
                 ) {
+                    // Edge case: print nothing if this is the only line.
+                    if (first_line) {
+                        buffer += C(Reset);
+                        return;
+                    }
+
                     leading = "╰"sv;
                 } else {
                     leading = first_line ? "╭"sv : "│"sv;
