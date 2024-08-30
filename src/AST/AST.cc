@@ -77,12 +77,10 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, String name
 }
 
 void TranslationUnit::dump() const {
-    using enum utils::Colour;
     bool c = context().use_colours();
-    utils::Colours C{c};
 
     // Print preamble.
-    std::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
+    utils::Print(c, "%1({}) %2({})\n", is_module ? "Module" : "Program", name);
 
     // Print content.
     for (auto s : file_scope_block->stmts()) s->dump(c);
@@ -92,7 +90,6 @@ void TranslationUnit::dump() const {
 //  Printer
 // ============================================================================
 struct Stmt::Printer : PrinterBase<Stmt> {
-    using enum utils::Colour;
     bool print_procedure_bodies = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
     void Print(Stmt* E);

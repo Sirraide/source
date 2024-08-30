@@ -328,52 +328,6 @@ using SmallUnrenderedString = SmallString<128>;
 // We use the 'utils' namespace of 'base' for this to avoid creating
 // ambiguity between the two so we can just write e.g. 'utils::Escape'.
 export namespace base::utils {
-/// ANSI Terminal colours.
-enum struct Colour {
-    Bold,
-    Reset,
-    Red,
-    Green,
-    Yellow,
-    Blue,
-    Magenta,
-    Cyan,
-    White,
-    None,
-};
-
-/// RAII helper to toggle colours when printing.
-///
-/// Example:
-/// \code{.cpp}
-///     using enum Colour;
-///     Colours C{true};
-///     out += C(Red);
-///     out += std::format("{}foo{}", C(Green), C(Reset));
-/// \endcode
-struct Colours {
-    bool use_colours;
-    constexpr Colours(bool use_colours)
-        : use_colours{use_colours} {}
-
-    constexpr auto operator()(Colour c) const -> std::string_view {
-        if (not use_colours) return "";
-        switch (c) {
-            case Colour::Reset: return "\033[m";
-            case Colour::None: return "";
-            case Colour::Red: return "\033[31m";
-            case Colour::Green: return "\033[32m";
-            case Colour::Yellow: return "\033[33m";
-            case Colour::Blue: return "\033[34m";
-            case Colour::Magenta: return "\033[35m";
-            case Colour::Cyan: return "\033[36m";
-            case Colour::White: return "\033[37m";
-            case Colour::Bold: return "\033[1m";
-        }
-        return "";
-    }
-};
-
 /// Escape non-printable characters in a string.
 auto Escape(llvm::StringRef str) -> std::string;
 
@@ -402,6 +356,14 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
 /// Determine the width of a number when printed.
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
+
+/// Print (coloured) text.
+template <typename ...Args>
+void Print(bool use_colours, std::format_string<Args...> fmt, Args&&... args) {
+    auto s = std::format(fmt, std::forward<Args>(args)...);
+    auto r = text::RenderColours(use_colours, s);
+    std::print("{}", r);
+}
 } // namespace base::utils
 
 template <>

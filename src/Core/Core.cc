@@ -633,13 +633,10 @@ auto RenderDiagnostics(
 }
 
 void StreamingDiagnosticsEngine::EmitDiagnostics() {
-    using enum utils::Colour;
-    utils::Colours C{ctx.use_colours()};
     if (backlog.empty()) return;
     if (printed) stream << "\n";
     printed++;
     stream << RenderDiagnostics(ctx, backlog, cols());
-    stream << C(Reset);
     backlog.clear();
 }
 

@@ -136,7 +136,7 @@ bool VerifyDiagnosticsEngine::verify() {
         ok = false;
         print(
             stderr,
-            "%b(%1(Error:) Cannot specify both 'expected-no-diagnostics' and expected diagnostics.\n"
+            "%b(%1(Error:) Cannot specify both 'expected-no-diagnostics' and expected diagnostics.)\n"
         );
     }
 
@@ -146,7 +146,7 @@ bool VerifyDiagnosticsEngine::verify() {
         print(
             stderr,
             "%b(%1(Error:) Expected at least one 'expected-' directive. Use "
-            "'expected-no-diagnostics' if no diagnostics are expected.\n"
+            "'expected-no-diagnostics' if no diagnostics are expected.)\n"
         );
     }
 
@@ -189,7 +189,7 @@ bool VerifyDiagnosticsEngine::verify() {
         print(stderr, "%b(Unexpected diagnostics:)\n");
         for (const auto& seen : seen_diags) print(
             stderr,
-            "  %b({}:{} %{}({}:) {}\n",
+            "  %b({}:{} %{}({}:)) {}\n",
             seen.loc.file->path(),
             seen.loc.line,
             Diagnostic::Colour(seen.diag.level),

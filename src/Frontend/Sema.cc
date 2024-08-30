@@ -1428,18 +1428,14 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
     if (bits > IntType::MaxBits) {
         // Print and colour the type names manually here since we can’t
         // even create a type this large properly...
-        using enum utils::Colour;
-        utils::Colours C{ctx.use_colours()};
         Error(parsed->loc, "Sorry, we can’t compile a number that big :(");
         Note(
             parsed->loc,
             "The maximum supported integer type is {}, "
-            "which is smaller than an {}i{}{}, which would "
+            "which is smaller than an %6(i{}), which would "
             "be required to store a value of {}",
             IntType::Get(*M, IntType::MaxBits),
-            C(Cyan),
             bits,
-            C(Reset),
             parsed->storage.str(false) // Parsed literals are unsigned.
         );
         return nullptr;

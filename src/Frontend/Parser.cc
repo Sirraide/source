@@ -17,19 +17,13 @@ using namespace srcc;
 //  Parse Tree
 // ============================================================================
 void ParsedModule::dump() const {
-    using enum utils::Colour;
     bool c = context().use_colours();
-    utils::Colours C{c};
 
     // Print preamble.
-    std::print("{}{} {}{}\n", C(Red), is_module ? "Module" : "Program", C(Green), name);
+    utils::Print(c, "%1({}) {}\n", is_module ? "Module" : "Program", name);
     for (auto i : imports) std::print(
-        "{}Import {}<{}> {}as {}{}\n",
-        C(Red),
-        C(Blue),
+        "%1(Import) %4(<{}>) %1(as) %4({})\n",
         i.linkage_name,
-        C(Red),
-        C(Blue),
         i.import_name
     );
 
@@ -161,7 +155,6 @@ auto ParsedProcDecl::Create(
 //  Printer
 // ============================================================================
 struct ParsedStmt::Printer : PrinterBase<ParsedStmt> {
-    using enum utils::Colour;
     const ParsedModule* module = nullptr;
 
     Printer(
@@ -325,7 +318,6 @@ void ParsedStmt::dump(const ParsedModule* owner, bool use_colour) const {
 }
 
 auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
-    using enum utils::Colour;
     SmallUnrenderedString out;
 
     auto Append = [&out](this auto& Append, ParsedStmt* type) -> void {
