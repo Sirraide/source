@@ -378,12 +378,14 @@ auto FormatDiagnostic(
     // Replace tabs with spaces. We need to do this *after* splitting
     // because this invalidates the offsets. Also escape any parentheses
     // in the source text.
-    before = EscapeParens(before);
-    range = EscapeParens(range);
-    after = EscapeParens(after);
     utils::ReplaceAll(before, "\t", "    ");
     utils::ReplaceAll(range, "\t", "    ");
     utils::ReplaceAll(after, "\t", "    ");
+    auto before_wd = TextWidth(text::ToUTF32(before));
+    auto range_wd = TextWidth(text::ToUTF32(range));
+    before = EscapeParens(before);
+    range = EscapeParens(range);
+    after = EscapeParens(after);
 
     // TODO: Explore this idea:
     //
@@ -451,14 +453,14 @@ auto FormatDiagnostic(
     // Underline the range. For that, we first pad the line based on the number
     // of digits in the line number and append more spaces to line us up with
     // the range.
-    for (usz i = 0, end = digits + TextWidth(text::ToUTF32(before)) + sizeof(" | ") - 1; i < end; i++)
+    for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++)
         out += " ";
 
     // Finally, underline the range.
     out += std::format(
         "%{}b({})",
         Diagnostic::Colour(diag.level),
-        std::string(TextWidth(text::ToUTF32(range)), '~')
+        std::string(range_wd, '~')
     );
 
     // And print any extra data.
