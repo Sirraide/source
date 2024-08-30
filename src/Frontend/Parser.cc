@@ -170,11 +170,13 @@ struct ParsedStmt::Printer : PrinterBase<ParsedStmt> {
 };
 
 void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) {
+    auto lc = module ? s->loc.seek_line_column(module->context()) : std::nullopt;
     print(
-        "%1({}) %4({}) %5(<{}>)",
+        "%1({}) %4({}) %5(<{}:{}>)",
         name,
         static_cast<void*>(s),
-        s->loc.pos
+        lc ? lc->line : 0,
+        lc ? lc->col : 0
     );
 
     if (full) print("\n");
@@ -240,6 +242,15 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             auto& v = *cast<ParsedEvalExpr>(s);
             PrintHeader(s, "EvalExpr");
             PrintChildren(v.expr);
+        } break;
+
+        case Kind::IfExpr: {
+            auto& i = *cast<ParsedIfExpr>(s);
+            PrintHeader(s, "IfExpr", not i.stmt);
+            if (i.stmt) print("statement\n");
+            SmallVector<ParsedStmt*, 3> children{i.cond, i.then};
+            if (auto e = i.else_.get_or_null()) children.push_back(e);
+            PrintChildren(children);
         } break;
 
         case Kind::IntLitExpr: {
@@ -505,11 +516,13 @@ bool Parser::AtStartOfExpression() {
         case Tk::Eval:
         case Tk::False:
         case Tk::Identifier:
+        case Tk::If:
         case Tk::Int:
         case Tk::Integer:
         case Tk::Minus:
         case Tk::MinusMinus:
         case Tk::Not:
+        case Tk::LBrace:
         case Tk::LParen:
         case Tk::Plus:
         case Tk::PlusPlus:
@@ -636,6 +649,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-call>
 //          | <expr-decl-ref>
 //          | <expr-eval>
+//          | <expr-if>
 //          | <expr-lit>
 //          | <expr-member>
 //          | <expr-paren>
@@ -645,6 +659,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     Ptr<ParsedStmt> lhs;
     bool at_start = AtStartOfExpression(); // See below.
+    auto start_tok = tok->type;
     switch (tok->type) {
         default: return Error("Expected expression");
 
@@ -694,6 +709,10 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             if (not arg) return {};
             lhs = new (*this) ParsedEvalExpr{arg.get(), {start, arg.get()->loc}};
         } break;
+
+        case Tk::If:
+            lhs = ParseIf(false);
+            break;
 
         case Tk::Identifier:
             lhs = ParseDeclRefExpr();
@@ -762,7 +781,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
     // I keep forgetting to add new tokens to AtStartOfExpression,
     // so this is here to make sure I don’t forget.
-    Assert(at_start, "Forgot to add a token to AtStartOfExpression");
+    Assert(at_start, "Forgot to add '{}' to AtStartOfExpression", start_tok);
 
     // If the next token is an identifier, then this is a declaration.
     if (At(Tk::Identifier)) return ParseVarDecl(lhs.get());
@@ -862,6 +881,51 @@ void Parser::ParseHeader() {
     mod->name = tok->text;
     ++tok;
     ConsumeOrError(Tk::Semicolon);
+}
+
+// <stmt-if> ::= IF <expr> [ THEN ] <stmt> { ELIF <stmt> } [ ELSE <stmt> ]
+// <expr-if> ::= IF <expr> <if-body> { ELIF <expr> } ELSE <expr>
+// <if-body> ::= THEN <expr> | <expr-block>
+auto Parser::ParseIf(bool stmt) -> Ptr<ParsedIfExpr> {
+    // Yeet 'if'.
+    auto loc = tok->location;
+    ++tok;
+
+    // Condition.
+    auto cond = ParseExpr();
+    if (not cond) {
+        SkipTo(Tk::Semicolon);
+        return {};
+    }
+
+    // 'then' is optional for statements.
+    Ptr<ParsedStmt> body;
+    bool then = Consume(Tk::Then);
+    if (not stmt) {
+        if (then) body = ParseExpr();
+        else if (At(Tk::LBrace)) ParseBlock();
+        else Error("Expected '%1(then)' or '%1({{)' after condition in '%1(if)' expression");
+    } else {
+        body = ParseStmt();
+    }
+
+    // Bail if we don’t have a body.
+    if (not body) {
+        SkipTo(Tk::Semicolon);
+        return {};
+    }
+
+    // Parse the else/elif branch.
+    auto else_ = At(Tk::Elif)      ? ParseIf(stmt)
+               : Consume(Tk::Else) ? (stmt ? ParseStmt() : ParseExpr())
+                                   : nullptr;
+    return new (*this) ParsedIfExpr{
+        cond.get(),
+        body.get(),
+        else_,
+        stmt,
+        {loc, else_ ? else_.get()->loc : body.get()->loc}
+    };
 }
 
 // <import> ::= IMPORT CXX-HEADER-NAME AS IDENTIFIER ";"
@@ -1053,6 +1117,7 @@ bool Parser::ParseSignature(
 //           | <expr-block>
 //           | <decl>
 //           | EVAL <stmt>
+//           | <stmt-if>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
@@ -1065,6 +1130,11 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
         case Tk::LBrace: return ParseBlock();
         case Tk::Proc: return ParseProcDecl();
+        case Tk::If: {
+            auto if_ = ParseIf(true);
+            if (not if_) SkipPast(Tk::Semicolon);
+            return if_;
+        }
 
         // Fall through to the expression parser, but remember
         // to eat a semicolon afterwards if we don’t parse a block

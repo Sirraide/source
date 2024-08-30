@@ -321,6 +321,28 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StrLitExpr; }
 };
 
+class srcc::ParsedIfExpr final : public ParsedStmt {
+public:
+    ParsedStmt* cond;
+    ParsedStmt* then;
+    Ptr<ParsedStmt> else_;
+    bool stmt;
+
+    ParsedIfExpr(
+        ParsedStmt* cond,
+        ParsedStmt* then,
+        Ptr<ParsedStmt> else_,
+        bool stmt,
+        Location location
+    ) : ParsedStmt{Kind::IfExpr, location},
+        cond{cond},
+        then{then},
+        else_{else_},
+        stmt{stmt} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IfExpr; }
+};
+
 /// An integer literal.
 class srcc::ParsedIntLitExpr final : public ParsedStmt {
 public:
@@ -532,15 +554,16 @@ private:
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
+    void ParseFile();
+    void ParseHeader();
+    auto ParseIf(bool stmt) -> Ptr<ParsedIfExpr>;
+    void ParseImport();
+    void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseType() -> Ptr<ParsedStmt>;
     auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
-    void ParseFile();
-    void ParseHeader();
-    void ParseImport();
-    void ParsePreamble();
 
     auto CreateType(Signature& sig) -> ParsedProcType*;
 

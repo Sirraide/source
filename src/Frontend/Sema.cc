@@ -1410,6 +1410,10 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
     return BuildEvalExpr(arg, parsed->loc);
 }
 
+auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Expr> {
+    Todo();
+}
+
 auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
     // If the value fits in an 'int', its type is 'int'.
     auto val = parsed->storage.value();

@@ -28,6 +28,9 @@
           | <expr-block>
           | <decl>
           | EVAL <stmt>
+          | <stmt-if>
+
+<stmt-if> ::= IF <expr> [ THEN ] <stmt> { ELIF <stmt> } [ ELSE <stmt> ]
 
 // ============================================================================
 //  Expressions
@@ -38,6 +41,7 @@
          | <expr-call>
          | <expr-decl-ref>
          | <expr-eval>
+         | <expr-if>
          | <expr-lit>
          | <expr-member>
          | <expr-paren>
@@ -51,6 +55,7 @@
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
+<expr-if>        ::= IF <expr> <if-body> { ELIF <expr> } ELSE <expr>
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-member>    ::= <expr> "." IDENTIFIER
 <expr-paren>     ::= "(" <expr> ")"
@@ -60,6 +65,7 @@
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | "not" | "~"
+<if-body> ::= THEN <expr> | <expr-block>
 <binary> ::= // TODO: list all binary operators here.
 
 

@@ -1,0 +1,24 @@
+// V %srcc --parse --verify %s
+program test;
+
+// Statement if.
+if true {}
+if 1 {}
+if {} {}
+if true then 1;
+if true then {}
+if true then 1; else 2;
+if true {} elif true {} elif true {} else {}
+
+// Expression if.
+x = if true then 1 else 2;
+x = if true then 1 elif true then 2 else 3;
+x = if true {};
+x = if true then 1;
+
+if; // expected-error: Expected expression
+if else; // expected-error: Expected expression
+else; // expected-error: Expected expression
+elif; // expected-error: Expected expression
+x = if true 1; // Expected 'then' or '{' after condition in 'if' expression
+if true {} else {} else {} // expected-error: Expected expression
