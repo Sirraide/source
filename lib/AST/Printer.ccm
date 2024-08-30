@@ -5,6 +5,7 @@ module;
 
 export module srcc.ast.printer;
 import srcc.utils;
+import base.colours;
 
 export namespace srcc {
 template <typename NodeType>
@@ -12,32 +13,34 @@ class PrinterBase;
 }
 
 template <typename NodeType>
-class srcc::PrinterBase {
+class srcc::PrinterBase : protected base::text::ColourFormatter {
+    friend ColourFormatter;
+    bool use_colour_;
+
 protected:
     SmallString<128> leading;
-    utils::Colours C;
 
-    explicit PrinterBase(bool use_colour) : C{use_colour} {}
+    explicit PrinterBase(bool use_colour) : use_colour_{use_colour} {}
+
+    bool use_colour() const { return use_colour_; }
 
     template <typename Node = NodeType>
     void PrintChildren(this auto&& This, std::type_identity_t<ArrayRef<Node*>> children) {
-        using enum utils::Colour;
         if (children.empty()) return;
         auto& leading = This.leading;
-        auto C = This.C;
 
         // Print all but the last.
         const auto size = leading.size();
         leading += "│ ";
         const auto current = StringRef{leading}.take_front(size);
         for (auto c : children.drop_back(1)) {
-            std::print("{}{}├─", C(Red), current);
+            This.print("%1({}├─)", current);
             This.Print(c);
         }
 
         // Print the preheader of the last.
         leading.resize(size);
-        std::print("{}{}└─", C(Red), StringRef{leading});
+        This.print("%1({}└─)", StringRef{leading});
 
         // Print the last one.
         leading += "  ";

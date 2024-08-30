@@ -1,12 +1,13 @@
 module;
 
+#include <llvm/Support/MathExtras.h>
 #include <memory>
 #include <print>
 #include <srcc/Macros.hh>
-#include <llvm/Support/MathExtras.h>
 
 module srcc.ast;
 import srcc;
+import base.colours;
 import :type;
 using namespace srcc;
 
@@ -76,99 +77,86 @@ auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
 }
 
 void TypeBase::dump(bool use_colour) const {
-    std::print("{}", print(use_colour));
+    std::print("{}", text::RenderColours(use_colour, print().str()));
 }
 
 bool TypeBase::is_void() const {
-    return kind() == Kind::BuiltinType and cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
+    return kind() == Kind::BuiltinType and
+           cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
 }
 
-auto TypeBase::print(bool use_colour) const -> std::string {
-    utils::Colours C{use_colour};
-    std::string out = print_impl(C);
-    out += C(utils::Colour::Reset);
-    return out;
-}
-
-auto TypeBase::print_impl(utils::Colours C) const -> std::string {
-    using enum utils::Colour;
+auto TypeBase::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
     switch (kind()) {
         case Kind::ArrayType: {
             auto* arr = cast<ArrayType>(this);
-            return std::format(
-                "{}[{}{}{}]{}",
-                arr->elem()->print_impl(C),
-                C(Red),
-                C(Magenta),
-                arr->dimension(),
-                C(Red)
-            );
-        }
+            out += std::format("{}%1([%5({})])", arr->elem()->print(), arr->dimension());
+        } break;
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Bool: return std::format("{}bool", C(Cyan));
-                case BuiltinKind::Deduced: return std::format("{}var", C(Cyan));
-                case BuiltinKind::Dependent: return std::format("{}<dependent type>", C(Cyan));
-                case BuiltinKind::ErrorDependent: return std::format("{}<error>", C(Cyan));
-                case BuiltinKind::UnresolvedOverloadSet: return std::format("{}<overload set>", C(Cyan));
-                case BuiltinKind::Int: return std::format("{}int", C(Cyan));
-                case BuiltinKind::NoReturn: return std::format("{}noreturn", C(Cyan));
-                case BuiltinKind::Type: return std::format("{}type", C(Cyan));
-                case BuiltinKind::Void: return std::format("{}void", C(Cyan));
+                case BuiltinKind::Bool: out += "%6(bool)"; break;
+                case BuiltinKind::Deduced: out += "%6(var)"; break;
+                case BuiltinKind::Dependent: out += "%6(<dependent type>)"; break;
+                case BuiltinKind::ErrorDependent: out += "%6(<error>)"; break;
+                case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>)"; break;
+                case BuiltinKind::Int: out += "%6(int)"; break;
+                case BuiltinKind::NoReturn: out += "%6(noreturn)"; break;
+                case BuiltinKind::Type: out += "%6(type)"; break;
+                case BuiltinKind::Void: out += "%6(void)"; break;
             }
-        }
+        } break;
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            return std::format("{}i{}", C(Cyan), int_ty->bit_width());
-        }
+            out += std::format("%6(i{})", int_ty->bit_width());
+        } break;
 
         case Kind::ProcType: {
             auto proc = cast<ProcType>(this);
-            auto ret = std::format("{}proc", C(Red));
+            out += "%1(proc";
 
             // Add params.
             auto params = proc->params();
             if (not params.empty()) {
-                ret += std::format("{} (", C(Red));
+                out += " (";
                 bool first = true;
                 for (auto p : params) {
                     if (first) first = false;
-                    else ret += std::format("{}, ", C(Red));
-                    ret += p->print_impl(C);
+                    else out += ", ";
+                    out += p->print();
                 }
-                ret += std::format("{})", C(Red));
+                out += "\033)";
             }
 
             // Add attributes.
-            if (proc->cconv() == CallingConvention::Native) ret += " native";
-            if (proc->variadic()) ret += " variadic";
+            if (proc->cconv() == CallingConvention::Native) out += " native";
+            if (proc->variadic()) out += " variadic";
 
             // Add return type.
             if (not proc->ret()->is_void())
-                ret += std::format(" {}-> {}", C(Red), proc->ret()->print_impl(C));
+                out += std::format(" -> {}", proc->ret()->print());
 
-            return ret;
-        }
+            out += ")";
+        } break;
 
         case Kind::ReferenceType: {
             auto* ref = cast<ReferenceType>(this);
-            return std::format("{}ref {}", C(Red), ref->elem()->print_impl(C));
-        }
+            out += std::format("%1(ref) {}", ref->elem()->print());
+        } break;
 
         case Kind::SliceType: {
             auto* slice = cast<SliceType>(this);
-            return std::format("{}{}[]", slice->elem()->print_impl(C), C(Red));
-        }
+            out += std::format("{}%1([])", slice->elem()->print());
+        } break;
 
         case Kind::TemplateType: {
             auto* tt = cast<TemplateType>(this);
-            return std::format("{}{}", C(Yellow), tt->template_decl()->name);
-        }
+            out += std::format("%3({})", tt->template_decl()->name);
+        } break;
     }
 
-    Unreachable("Invalid type kind");
+    return out;
 }
 
 auto TypeBase::size(TranslationUnit& tu) const -> Size {
@@ -193,7 +181,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
 
         case Kind::ReferenceType: return Size::Bytes(8); // FIXME: Get pointer size from context.
         case Kind::IntType: return cast<IntType>(this)->bit_width();
-        case Kind::ProcType: return Size::Bytes(16); // FIXME: Get closure size from context.
+        case Kind::ProcType: return Size::Bytes(16);  // FIXME: Get closure size from context.
         case Kind::SliceType: return Size::Bytes(16); // FIXME: Get slice size from context.
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
@@ -205,7 +193,6 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
 
     Unreachable("Invalid type kind");
 }
-
 
 auto TypeBase::value_category() const -> ValueCategory {
     switch (type_kind) {
@@ -253,7 +240,6 @@ auto TypeBase::value_category() const -> ValueCategory {
 
     Unreachable("Invalid type kind");
 }
-
 
 // ============================================================================
 //  Types

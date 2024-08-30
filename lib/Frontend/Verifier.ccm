@@ -16,7 +16,9 @@ class VerifyDiagnosticsEngine;
 // ============================================================================
 //  Diagnostic Verifier
 // ============================================================================
-class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine, DiagsProducer<> {
+class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine
+    , DiagsProducer<>
+    , public text::ColourFormatter {
     struct DecodedLocation {
         const File* file;
         usz line;
@@ -58,6 +60,8 @@ public:
     }
 
     void report_impl(Diagnostic&& diags) override;
+
+    bool use_colour() const { return enable_colours; }
 
     /// Run the verification step.
     ///

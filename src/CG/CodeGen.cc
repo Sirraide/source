@@ -360,7 +360,7 @@ void CodeGen::Mangler::Append(Type ty) {
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Type:
                 case BuiltinKind::UnresolvedOverloadSet:
-                    Unreachable("Can’t mangle this: {}", b->print(M.CG.M.context().use_colours()));
+                    Unreachable("Can’t mangle this: {}", Type{b});
                 case BuiltinKind::Void: M.name += "v"; return;
                 case BuiltinKind::NoReturn: M.name += "z"; return;
                 case BuiltinKind::Bool: M.name += "b"; return;
@@ -767,7 +767,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
                     ICE(
                         a->location(),
                         "Sorry, can’t print this type yet: {}",
-                        a->type.print(M.context().use_colours())
+                        a->type
                     );
                 }
             }

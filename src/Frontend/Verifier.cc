@@ -120,12 +120,11 @@ void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     // Remove line-wrap formatting codes.
     std::erase_if(diag.msg, [](char c) { return c == '\v' or c == '\r'; });
     rgs::replace(diag.msg, '\f', ' ');
+    diag.msg = text::RenderColours(false, diag.msg);
     seen_diags.emplace_back(std::move(diag), DecodeLocation(diag.where));
 }
 
 bool VerifyDiagnosticsEngine::verify() {
-    using enum utils::Colour;
-    utils::Colours C{enable_colours};
     bool ok = true;
 
     // If we expected no diagnostics, complain if we were instructed to check for any.
@@ -135,29 +134,19 @@ bool VerifyDiagnosticsEngine::verify() {
     // to stderr.
     if (expects_none and not expected_diags.empty()) {
         ok = false;
-        std::print(
+        print(
             stderr,
-            "{}{}Error: {}{}Cannot specify both 'expected-no-diagnostics' and expected diagnostics.{}\n",
-            C(Bold),
-            C(Red),
-            C(Reset),
-            C(Bold),
-            C(Reset)
+            "%b(%1(Error:) Cannot specify both 'expected-no-diagnostics' and expected diagnostics.\n"
         );
     }
 
     // Conversely, also complain if we saw nothing at all.
     if (not expects_none and expected_diags.empty()) {
         ok = false;
-        std::print(
+        print(
             stderr,
-            "{}{}Error: {}{}Expected at least one 'expected-' directive. Use "
-            "'expected-no-diagnostics' if no diagnostics are expected.{}\n",
-            C(Bold),
-            C(Red),
-            C(Reset),
-            C(Bold),
-            C(Reset)
+            "%b(%1(Error:) Expected at least one 'expected-' directive. Use "
+            "'expected-no-diagnostics' if no diagnostics are expected.\n"
         );
     }
 
@@ -182,16 +171,14 @@ bool VerifyDiagnosticsEngine::verify() {
     // Complain about every diagnostic that remains.
     if (not expected_diags.empty()) {
         ok = false;
-        std::print(stderr, "{}Expected diagnostics that were not seen:{}\n", C(Bold), C(Reset));
-        for (const auto& expected : expected_diags) std::print(
+        print(stderr, "%b(Expected diagnostics that were not seen:)\n");
+        for (const auto& expected : expected_diags) print(
             stderr,
-            "  {}{}:{} {}{}: {}{}\n",
-            C(Bold),
+            "  %b({}:{} %{}({}:)) {}\n",
             expected.loc.file->path(),
             expected.loc.line,
-            Diagnostic::Colour(C, expected.level),
+            Diagnostic::Colour(expected.level),
             Diagnostic::Name(expected.level),
-            C(Reset),
             expected.text
         );
     }
@@ -199,16 +186,14 @@ bool VerifyDiagnosticsEngine::verify() {
     // And about every diagnostic that we didn’t expect.
     if (not seen_diags.empty()) {
         ok = false;
-        std::print(stderr, "{}Unexpected diagnostics:{}\n", C(Bold), C(Reset));
-        for (const auto& seen : seen_diags) std::print(
+        print(stderr, "%b(Unexpected diagnostics:)\n");
+        for (const auto& seen : seen_diags) print(
             stderr,
-            "  {}{}:{} {}{}: {}{}\n",
-            C(Bold),
+            "  %b({}:{} %{}({}:) {}\n",
             seen.loc.file->path(),
             seen.loc.line,
-            Diagnostic::Colour(C, seen.diag.level),
+            Diagnostic::Colour(seen.diag.level),
             Diagnostic::Name(seen.diag.level),
-            C(Reset),
             seen.diag.msg
         );
     }

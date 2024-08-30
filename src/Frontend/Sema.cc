@@ -48,7 +48,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
 auto Sema::AdjustVariableType(Type ty, Location loc) -> Type {
     // 'noreturn' and 'type' are not a valid type for a variable.
     if (ty == Types::NoReturnTy or ty == Types::TypeTy) {
-        Error(loc, "Cannot declare a variable of type '{}'", ty.print(ctx.use_colours()));
+        Error(loc, "Cannot declare a variable of type '{}'", ty);
         return Types::ErrorDependentTy;
     }
 
@@ -208,18 +208,14 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
 }
 
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
-    using enum utils::Colour;
-    utils::Colours C{ctx.use_colours()};
     if (e->type != ty) {
         Error(
             e->location(),
-            "{} of '{}{}{}' must be of type\f'{}', but was '{}'",
+            "{} of '%1({})' must be of type\f'{}', but was '{}'",
             elem_name,
-            C(Red),
             op,
-            C(Reset),
-            ty.print(ctx.use_colours()),
-            e->type.print(ctx.use_colours())
+            ty,
+            e->type
         );
         return false;
     }
@@ -271,8 +267,8 @@ public:
         S.Error(
             res->location(),
             "Cannot convert expression of type '{}' to '{}'",
-            res->type.print(S.ctx.use_colours()),
-            target_type.print(S.ctx.use_colours())
+            res->type,
+            target_type
         );
         return false;
     }
@@ -321,7 +317,7 @@ bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Exp
             ICE(
                 a->location(),
                 "Sorry, we currently don’t support arguments of type {}",
-                a->type.print(ctx.use_colours())
+                a->type
             );
             return false;
         }
@@ -383,8 +379,37 @@ void Sema::ReportOverloadResolutionFailure(
     Location call_loc,
     u32 final_badness
 ) {
-    using enum utils::Colour;
-    utils::Colours C{ctx.use_colours()};
+    auto FormatTempSubstFailure = [&](const Candidate::TemplateInfo& ti, std::string& out, std::string_view indent) {
+        auto TV = utils::Overloaded {
+            [](const TempSubstRes::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
+            [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+            [&](TempSubstRes::DeductionFailed f) {
+                out += std::format(
+                    "In param #{}: cannot deduce ${} in {} from {}",
+                    f.param_index + 1,
+                    f.ttd->name,
+                    ti.pattern->params()[f.param_index]->type,
+                    call_args[f.param_index]->type
+                );
+            },
+
+            [&](const TempSubstRes::DeductionAmbiguous& a) {
+                out += std::format(
+                    "Template deduction mismatch for parameter %3(${}):\n"
+                    "{}#{}: Deduced as {}\n"
+                    "{}#{}: Deduced as {}",
+                    a.ttd->name,
+                    indent,
+                    a.first,
+                    a.first_type,
+                    indent,
+                    a.second,
+                    a.second_type
+                );
+            }
+        };
+        ti.res.data.visit(TV);
+    };
 
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
@@ -396,29 +421,34 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::ArgumentCountMismatch) {
                 Error(
                     call_loc,
-                    "Procedure '{}{}{}' expects {} argument{}, got {}",
-                    C(Green),
+                    "Procedure '%2({})' expects {} argument{}, got {}",
                     c.name(),
-                    C(Reset),
                     ty->params().size(),
                     ty->params().size() == 1 ? "" : "s",
                     call_args.size()
                 );
                 Note(c.location(), "Declared here");
             },
+
             [&](Candidate::TypeMismatch m) {
                 Error(
                     call_args[m.mismatch_index]->location(),
                     "Argument of type '{}' does not match expected type '{}'",
-                    call_args[m.mismatch_index]->type.print(C.use_colours),
-                    ty->params()[m.mismatch_index].print(C.use_colours)
+                    call_args[m.mismatch_index]->type,
+                    ty->params()[m.mismatch_index]
                 );
                 Note(c.param_loc(m.mismatch_index), "Declared here");
             },
+
             [&](Candidate::InvalidTemplate) {
-                Todo("Report this");
+                std::string extra;
+                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), extra, "  ");
+                Error(call_loc, "Template argument substitution failed");
+                Remark("\r{}", extra);
+                Note(c.location(), "Declared here");
             },
-            [&](Candidate::NestedResolutionFailure n) {
+
+            [&](Candidate::NestedResolutionFailure) {
                 Todo("Report this");
             }
         }; // clang-format on
@@ -427,21 +457,18 @@ void Sema::ReportOverloadResolutionFailure(
     }
 
     // Otherwise, we need to print all overloads, and why they failed.
-    std::string message = std::format("{}Candidates:\n", C(Bold));
+    std::string message = std::format("%b(Candidates:)\n");
 
     // Compute the width of the number field.
     u32 width = u32(std::to_string(candidates.size()).size());
 
     // First, print all overloads.
     for (auto [i, c] : enumerate(candidates)) {
-        message += C(Bold);
-
         // Print the type.
         message += std::format(
-            "  {}. \v{}{}",
+            "  %b({}.) \v{}",
             i + 1,
-            C(Reset),
-            c.type_for_diagnostic()->print(C.use_colours)
+            c.type_for_diagnostic()
         );
 
         // And include the location if it is valid.
@@ -449,9 +476,7 @@ void Sema::ReportOverloadResolutionFailure(
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
-                "\f{}at {}{}:{}:{}",
-                C(Bold),
-                C(Reset),
+                "\f%b(at) {}:{}:{}",
                 ctx.file(loc.file_id)->name(),
                 lc->line,
                 lc->col
@@ -461,11 +486,11 @@ void Sema::ReportOverloadResolutionFailure(
         message += "\n";
     }
 
-    message += std::format("\n\r{}Failure Reason:", C(Bold));
+    message += std::format("\n\r%b(Failure Reason:)");
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
-        message += std::format("\n  {}{:>{}}. {}", C(Bold), i + 1, width, C(Reset));
+        message += std::format("\n  %b({:>{}}.) ", i + 1, width);
         auto V = utils::Overloaded{// clang-format off
             [&] (const Candidate::Viable& v) {
                 // If the badness is equal to the final badness,
@@ -475,6 +500,7 @@ void Sema::ReportOverloadResolutionFailure(
                     ? "Ambiguous (matches as well as another candidate)"sv
                     : "Not selected (another candidate matches better)"sv;
             },
+
             [&](Candidate::ArgumentCountMismatch) {
                 auto params = c.type_for_diagnostic()->params();
                 message += std::format(
@@ -484,46 +510,19 @@ void Sema::ReportOverloadResolutionFailure(
                     call_args.size()
                 );
             },
+
             [&](Candidate::TypeMismatch t) {
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
-                    c.type_for_diagnostic()->params()[t.mismatch_index].print(C.use_colours),
-                    call_args[t.mismatch_index]->type.print(C.use_colours)
+                    c.type_for_diagnostic()->params()[t.mismatch_index],
+                    call_args[t.mismatch_index]->type
                 );
             },
-            [&](Candidate::InvalidTemplate) {
-                message += "Template argument deduction failed";
-                const auto& ti = c.proc.get<Candidate::TemplateInfo>();
-                auto TV = utils::Overloaded {
-                    [](const TempSubstRes::Success&) { Unreachable("Invalid template even though deduction succeeded?"); },
-                    [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
-                    [&](TempSubstRes::DeductionFailed f) {
-                        message += std::format(
-                            "In param #{}: cannot deduce ${} in {} from {}",
-                            f.param_index + 1,
-                            f.ttd->name,
-                            ti.pattern->params()[f.param_index]->type.print(C.use_colours),
-                            call_args[f.param_index]->type.print(C.use_colours)
-                        );
-                    },
 
-                    [&](const TempSubstRes::DeductionAmbiguous& a) {
-                        message += std::format(
-                            "Template deduction mismatch for parameter {}${}{}:\n"
-                            "        #{}: Deduced as {}\n"
-                            "        #{}: Deduced as {}",
-                            C(Yellow),
-                            a.ttd->name,
-                            C(Reset),
-                            a.first,
-                            a.first_type->print(C.use_colours),
-                            a.second,
-                            a.second_type->print(C.use_colours)
-                        );
-                    }
-                };
-                ti.res.data.visit(TV);
+            [&](Candidate::InvalidTemplate) {
+                message += "Template argument substitution failed";
+                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");
             },
 
             [&](const Candidate::NestedResolutionFailure& n) {
@@ -536,7 +535,7 @@ void Sema::ReportOverloadResolutionFailure(
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'{}{}{}'", C(Green), candidates.front().name(), C(Reset)),
+        std::format("Overload resolution failed in call to\f'%2({})'", candidates.front().name()),
         std::move(message),
     });
 }
@@ -557,7 +556,7 @@ auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<Asser
         if (not isa<StrLitExpr>(m)) return Error(
             m->location(),
             "Assertion message must be a string literal",
-            m->type.print(ctx.use_colours())
+            m->type
         );
     }
 
@@ -599,7 +598,7 @@ auto Sema::BuildBinaryExpr(
             if (not isa<SliceType, ArrayType>(lhs->type)) return Error(
                 lhs->location(),
                 "Cannot subscript non-array, non-slice type '{}'",
-                lhs->type.print(ctx.use_colours())
+                lhs->type
             );
 
             if (not MakeSRValue(Types::IntTy, rhs, "Index", "[]")) return {};
@@ -657,15 +656,15 @@ auto Sema::BuildBinaryExpr(
             if (lhs->type != rhs->type) return Error(
                 loc,
                 "Cannot compare '{}' with '{}'",
-                lhs->type.print(ctx.use_colours()),
-                rhs->type.print(ctx.use_colours())
+                lhs->type,
+                rhs->type
             );
 
             // For now, we only support srvalues.
             if (lhs->type->value_category() != SRValue) return ICE(
                 loc,
                 "Sorry, we can’t compare values of type '{}' yet",
-                lhs->type.print(ctx.use_colours())
+                lhs->type
             );
 
             lhs = LValueToSRValue(lhs);
@@ -703,8 +702,8 @@ auto Sema::BuildBinaryExpr(
             if (lhs->type != rhs->type) return Error(
                 loc,
                 "Cannot assign '{}' to '{}'",
-                lhs->type.print(ctx.use_colours()),
-                rhs->type.print(ctx.use_colours())
+                lhs->type,
+                rhs->type
             );
 
             // LHS must be an lvalue.
@@ -717,7 +716,7 @@ auto Sema::BuildBinaryExpr(
             if (rhs->type->value_category() == MRValue) return ICE(
                 rhs->location(),
                 "Sorry, assignment to a variable of type '{}' is not yet supported",
-                rhs->type.print(ctx.use_colours())
+                rhs->type
             );
 
             rhs = LValueToSRValue(rhs);
@@ -727,7 +726,7 @@ auto Sema::BuildBinaryExpr(
                 lhs->location(),
                 "Compound assignment operator '{}' is not supported for type '{}'",
                 Spelling(op),
-                lhs->type.print(ctx.use_colours())
+                lhs->type
             );
 
             // The LHS is returned as an lvalue.
@@ -753,7 +752,7 @@ auto Sema::BuildBuiltinCallExpr(
                     return Error(
                         arg->location(),
                         "__srcc_print only accepts string literals and integers, but got {}",
-                        arg->type.print(ctx.use_colours())
+                        arg->type
                     );
                 }
                 arg = LValueToSRValue(arg);
@@ -797,7 +796,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         if (not ty) return Error(
             callee_expr->location(),
             "Expression of type '{}' is not callable",
-            callee_expr->type.print(ctx.use_colours())
+            callee_expr->type
         );
 
         // Check arg count.
@@ -1039,8 +1038,8 @@ auto Sema::BuildLocalDecl(
                         Error(
                             i->location(),
                             "Initialiser of type '{}' does not match variable type '{}'",
-                            i->type.print(ctx.use_colours()),
-                            ty.print(ctx.use_colours())
+                            i->type,
+                            ty
                         );
                         init = nullptr;
                     } else {
@@ -1125,8 +1124,8 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         if (ret != proc->return_type()) Error(
             loc,
             "Return type '{}' does not match procedure return type '{}'",
-            ret.print(ctx.use_colours()),
-            proc->return_type().print(ctx.use_colours())
+            ret,
+            proc->return_type()
         );
     }
 
@@ -1141,7 +1140,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         } else if (val->type == Types::IntTy) {
             value = LValueToSRValue(val);
         } else {
-            ICE(loc, "Cannot compile this return type yet: {}", val->type.print(ctx.use_colours()));
+            ICE(loc, "Cannot compile this return type yet: {}", val->type);
         }
     }
 
@@ -1437,7 +1436,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
             "The maximum supported integer type is {}, "
             "which is smaller than an {}i{}{}, which would "
             "be required to store a value of {}",
-            IntType::Get(*M, IntType::MaxBits)->print(C.use_colours),
+            IntType::Get(*M, IntType::MaxBits),
             C(Cyan),
             bits,
             C(Reset),
@@ -1462,7 +1461,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
         return Error(parsed->loc, "Slice has no member named '{}'", parsed->member);
     }
 
-    return Error(parsed->loc, "Attempt to access member of type {}", base->type.print(true));
+    return Error(parsed->loc, "Attempt to access member of type {}", base->type);
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr> {
@@ -1701,7 +1700,7 @@ auto Sema::TranslateProcType(
         else {
             auto ty = TranslateType(a);
             if (ty == Types::DeducedTy) {
-                Error(a->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy->print(ctx.use_colours()));
+                Error(a->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy);
                 ty = Types::ErrorDependentTy;
             }
             params.push_back(ty);

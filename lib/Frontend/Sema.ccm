@@ -313,10 +313,13 @@ private:
         }
 
         auto type_for_diagnostic() const -> ProcType* {
-            if (auto p = proc.get<ProcDecl*>()) return p->proc_type();
-            auto& ti = proc.get<TemplateInfo>();
-            if (auto* s = ti.res.data.get_if<TempSubstRes::Success>()) return s->type;
-            return ti.pattern->proc_type();
+            return proc.visit(utils::Overloaded{ // clang-format off
+                [](ProcDecl* p) { return p->proc_type(); },
+                [](const TemplateInfo& ti) {
+                    if (auto* s = ti.res.data.get_if<TempSubstRes::Success>()) return s->type;
+                    return ti.pattern->proc_type();
+                }
+            }); // clang-format on
         }
 
         bool viable() { return status.is<Viable>(); }

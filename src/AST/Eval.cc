@@ -38,29 +38,26 @@ Value::Value(Slice slice, Type ty)
       ty(ty) {}
 
 void Value::dump(bool use_colour) const {
-    std::print("{}", print(use_colour));
+    std::print("{}", text::RenderColours(use_colour, print().str()));
 }
 
-auto Value::print(bool use_colour) const -> std::string {
-    using enum utils::Colour;
-    std::string out;
-    utils::Colours C{use_colour};
+auto Value::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
     utils::Overloaded V{// clang-format off
-        [&](bool) { out += std::format("{}{}", C(Red), value.get<bool>()); },
+        [&](bool) { out += std::format("%1({})", value.get<bool>()); },
         [&](std::monostate) { },
-        [&](ProcDecl* proc) { out += std::format("{}{}", C(Green), proc->name); },
-        [&](TypeTag) { out += ty->print(use_colour); },
-        [&](const LValue& lval) { out += lval.print(use_colour); },
-        [&](const APInt& value) { out += std::format("{}{}", C(Magenta), toString(value, 10, true)); },
+        [&](ProcDecl* proc) { out += std::format("%2({})", proc->name); },
+        [&](TypeTag) { out += ty->print(); },
+        [&](const LValue& lval) { out += lval.print(); },
+        [&](const APInt& value) { out += std::format("$5({})", toString(value, 10, true)); },
         [&](const Slice&) { out += "<slice>"; },
         [&](this auto& Self, const Reference& ref) {
             Self(ref.lvalue);
-            out += std::format("{}@{}{}", C(Red), C(Magenta), toString(ref.offset, 10, true));
+            out += std::format("%1(@)%5({})", toString(ref.offset, 10, true));
         }
     }; // clang-format on
 
     visit(V);
-    out += C(Reset);
     return out;
 }
 
@@ -221,15 +218,13 @@ public:
 //  LValue/Memory
 // ============================================================================
 void LValue::dump(bool use_colour) const {
-    std::print("{}", print(use_colour));
+    std::print("{}", text::RenderColours(use_colour, print().str()));
 }
 
-auto LValue::print(bool use_colour) const -> std::string {
-    using enum utils::Colour;
-    std::string out;
-    utils::Colours C{use_colour};
+auto LValue::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
     utils::Overloaded V{// clang-format off
-        [&](String s) { out += std::format("{}\"{}\"", C(Yellow), s); },
+        [&](String s) { out += std::format("%3(\"{}\")", s); },
         [&](const Memory*) { out += "<memory location>"; }
     }; // clang-format on
     base.visit(V);
@@ -395,7 +390,7 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
             return Error(
                 loc,
                 "Unsupported variable type in constant evaluation: {}",
-                mem->type().print(true)
+                mem->type()
             );
         }
     }
@@ -486,9 +481,9 @@ bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
             Assert(Eval(right, bin->rhs));
             Remark(
                 "\rHelp: Comparison evaluates to '{} {} {}'",
-                left.print(tu.context().use_colours()),
+                left,
                 Spelling(bin->op),
-                right.print(tu.context().use_colours())
+                right
             );
         }
 
@@ -857,7 +852,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             ICE(
                 cast->location(),
                 "Sorry, we don’t support lvalue->srvalue conversion of {} yet",
-                mem->type().print(tu.context().use_colours())
+                mem->type()
             );
 
             return false;

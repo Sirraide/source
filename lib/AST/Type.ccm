@@ -81,7 +81,7 @@ public:
     LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
 
     /// Get a string representation of this type.
-    LLVM_READONLY auto print(bool use_colour) const -> std::string;
+    LLVM_READONLY auto print() const -> SmallUnrenderedString;
 
     /// Get the value category that an expression with this type has by default.
     LLVM_READONLY auto value_category() const -> ValueCategory;
@@ -92,9 +92,6 @@ public:
 
 protected:
     void ComputeDependence();
-
-private:
-    auto print_impl(utils::Colours C) const -> std::string;
 };
 
 class srcc::BuiltinType final : public TypeBase {
@@ -160,13 +157,6 @@ public:
 
     /// Get this as an opaque pointer.
     auto as_opaque_ptr() const -> void* { return pointer; }
-
-    /// Check if this is null. Only useful if UnsafeNull() is used.
-
-    /// Print a type.
-    auto print(bool use_colour) const -> std::string {
-        return pointer->print(use_colour);
-    }
 
     /// Get the type pointer.
     auto ptr() const -> WrappedType* { return pointer; }
@@ -399,6 +389,22 @@ auto srcc::TypeBase::visit(Visitor&& v) -> decltype(auto) {
     }
     Unreachable();
 }
+
+template <typename Ty>
+struct std::formatter<TypeWrapper<Ty>> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(TypeWrapper<Ty> t, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
+    }
+};
+
+template <std::derived_from<TypeBase> Ty>
+struct std::formatter<Ty*> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(Ty* t, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
+    }
+};
 
 template <typename To, typename From>
 auto srcc::cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To> {

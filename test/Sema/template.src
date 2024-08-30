@@ -5,9 +5,14 @@ program test;
 proc add($T a, T b) = a + b;
 proc add2(T a, $T b) = a + b;
 proc add3($T a, $T b) = a + b;
-proc add4($T a, $U b) = a + b;
+proc add4($T a, $U b) = a + b; // expected-error:  Right operand of '+' must be of type 'int', but was 'bool'
 
 add(1, 2);
 add2(1, 2);
 add3(1, 2);
 add4(1, 2);
+
+add(1); // expected-error: Procedure 'add' expects 2 arguments, got 1
+add(1, true); // expected-error: Argument of type 'bool' does not match expected type 'int'
+add3(1, true); // expected-error: Template argument substitution failed
+add4(1, true);

@@ -10,6 +10,7 @@ module;
 
 module srcc.frontend.parser;
 import srcc.ast.printer;
+import base.colours;
 using namespace srcc;
 
 // ============================================================================
@@ -176,18 +177,15 @@ struct ParsedStmt::Printer : PrinterBase<ParsedStmt> {
 };
 
 void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) {
-    std::print(
-        "{}{} {}{} {}<{}>",
-        C(Red),
+    print(
+        "%1({}) %4({}) %5(<{}>)",
         name,
-        C(Blue),
         static_cast<void*>(s),
-        C(Magenta),
         s->loc.pos
     );
 
-    if (full) std::print("{}\n", C(Reset));
-    else std::print(" ");
+    if (full) print("\n");
+    else print(" ");
 }
 
 void ParsedStmt::Printer::Print(ParsedStmt* s) {
@@ -195,7 +193,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::BuiltinType:
         case Kind::TemplateType:
         case Kind::ProcType:
-            std::print("{}Type {}\n", C(Red), s->dump_as_type(C));
+            print("%1(Type) {}\n", s->dump_as_type());
             break;
 
         case Kind::AssertExpr: {
@@ -219,14 +217,14 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::BinaryExpr: {
             auto& b = *cast<ParsedBinaryExpr>(s);
             PrintHeader(s, "BinaryExpr", false);
-            std::print("{}{}{}\n", C(Red), b.op, C(Reset));
+            print("%1({})\n", b.op);
             SmallVector<ParsedStmt*, 2> children{b.lhs, b.rhs};
             PrintChildren(children);
         } break;
 
         case Kind::BoolLitExpr: {
             PrintHeader(s, "BoolLitExpr", false);
-            std::print("{}{}{}\n", C(Red), cast<ParsedBoolLitExpr>(s)->value, C(Reset));
+            print("%1({})\n", cast<ParsedBoolLitExpr>(s)->value);
         } break;
 
         case Kind::CallExpr: {
@@ -242,12 +240,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(s);
             PrintHeader(s, "DeclRefExpr", false);
-            std::print(
-                "{}{}{}\n",
-                C(Reset),
-                utils::join(d.names(), "::"),
-                C(Reset)
-            );
+            print("%8({})\n", utils::join(d.names(), "::"));
         } break;
 
         case Kind::EvalExpr: {
@@ -259,31 +252,24 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::IntLitExpr: {
             PrintHeader(s, "IntLitExpr", false);
             auto val = cast<ParsedIntLitExpr>(s)->storage.str(false);
-            std::print("{}{}{}\n", C(Magenta), val, C(Reset));
+            print("%5({})\n", val);
         } break;
 
         case Kind::MemberExpr: {
             auto& m = *cast<ParsedMemberExpr>(s);
             PrintHeader(s, "MemberExpr", false);
-            std::print(
-                "{}{}\n{}",
-                C(Reset),
-                m.member,
-                C(Reset)
-            );
-
+            print("%8({})\n", m.member);
             PrintChildren(m.base);
         } break;
 
         case Kind::LocalDecl: {
             auto& p = *cast<ParsedLocalDecl>(s);
             PrintHeader(s, "LocalDecl", false);
-            std::print(
-                "{}{}{}{}\n",
-                C(Blue),
+            print(
+                "%4({}){}{}\n",
                 p.name,
                 p.name.empty() ? ""sv : " "sv,
-                p.type->dump_as_type(C)
+                p.type->dump_as_type()
             );
             if (p.init) PrintChildren(p.init.get());
         } break;
@@ -296,12 +282,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::ProcDecl: {
             auto& p = *cast<ParsedProcDecl>(s);
             PrintHeader(s, "ProcDecl", false);
-            std::print(
-                "{}{}{}{}\n",
-                C(Green),
+            print(
+                "%2({}){}{}\n",
                 p.name,
                 p.name.empty() ? ""sv : " "sv,
-                p.type->dump_as_type(C)
+                p.type->dump_as_type()
             );
 
             // No need to print the param decls here.
@@ -313,12 +298,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::StrLitExpr: {
             auto& str = *cast<ParsedStrLitExpr>(s);
             PrintHeader(s, "StrLitExpr", false);
-            std::print(
-                "{}\"{}\"\n{}",
-                C(Yellow),
-                utils::Escape(str.value),
-                C(Reset)
-            );
+            print("%3(\"{}\")\n", utils::Escape(str.value));
         } break;
 
         case Kind::ReturnExpr: {
@@ -330,7 +310,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::UnaryExpr: {
             auto& u = *cast<ParsedUnaryExpr>(s);
             PrintHeader(s, "UnaryExpr", false);
-            std::print("{}{}{}\n", C(Red), u.op, C(Reset));
+            print("%1({})\n", u.op);
             PrintChildren(u.arg);
         } break;
     }
@@ -344,54 +324,45 @@ void ParsedStmt::dump(const ParsedModule* owner, bool use_colour) const {
     Printer(owner, use_colour, const_cast<ParsedStmt*>(this));
 }
 
-auto ParsedStmt::dump_as_type(utils::Colours C) -> std::string {
+auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
     using enum utils::Colour;
-    std::string out;
+    SmallUnrenderedString out;
 
-    auto Append = [C, &out](this auto& Append, ParsedStmt* type) -> void {
+    auto Append = [&out](this auto& Append, ParsedStmt* type) -> void {
         switch (type->kind()) {
             case Kind::BuiltinType:
-                out += cast<ParsedBuiltinType>(type)->ty->print(C.use_colours);
+                out += cast<ParsedBuiltinType>(type)->ty->print();
                 break;
 
             case Kind::ProcType: {
                 auto p = cast<ParsedProcType>(type);
-                out += C(Red);
-                out += "proc";
+                out += "%1(proc";
 
                 if (not p->param_types().empty()) {
                     bool first = true;
                     out += " (";
 
                     for (auto t : p->param_types()) {
-                        if (not first) {
-                            out += C(Red);
-                            out += ", ";
-                        }
-
+                        if (not first) out += ", ";
                         first = false;
                         Append(t);
                     }
 
-                    out += C(Red);
-                    out += ")";
+                    out += "\033)";
                 }
 
-                out += " -> ";
+                out += " -> )";
                 Append(p->ret_type);
             } break;
 
             case Kind::TemplateType: {
                 auto t = cast<ParsedTemplateType>(type);
-                out += C(Yellow);
-                out += "$";
-                out += t->name;
+                out += std::format("%3(${})", t->name);
             } break;
 
             case Kind::DeclRefExpr: {
                 auto d = cast<ParsedDeclRefExpr>(type);
-                out += C(White);
-                out += utils::join(d->names(), "::");
+                out += std::format("%8({})", utils::join(d->names(), "::"));
             } break;
 
             default:
@@ -401,7 +372,6 @@ auto ParsedStmt::dump_as_type(utils::Colours C) -> std::string {
     };
 
     Append(this);
-    out += C(Reset);
     return out;
 }
 

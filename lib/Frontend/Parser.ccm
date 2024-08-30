@@ -107,7 +107,7 @@ public:
     void dump(const ParsedModule* owner, bool use_colour) const;
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
-    auto dump_as_type(utils::Colours C) -> std::string;
+    auto dump_as_type() -> SmallUnrenderedString;
 };
 
 // ============================================================================

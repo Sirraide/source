@@ -286,6 +286,12 @@ StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
     Assert(backlog.empty(), "Diagnostics not flushed?");
 }
 
+auto EscapeParens(StringRef str) -> std::string {
+    std::string s{str};
+    utils::ReplaceAll(s, ")", "\033)");
+    return s;
+}
+
 auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
     static constexpr usz TabSize = 4;
     static constexpr std::u32string_view Tab = U"    ";
@@ -319,8 +325,6 @@ auto FormatDiagnostic(
     const Diagnostic& diag,
     Opt<Location> previous_loc
 ) -> std::string {
-    utils::Colours C(ctx.use_colours());
-    using enum utils::Colour;
     std::string out;
 
     // Print any extra data that should come after the source line.
@@ -335,7 +339,7 @@ auto FormatDiagnostic(
         // Make sure the extra data is at the start of a line so that \r
         // is handled properly.
         // TODO: Just turn \r into \n mid-line.
-        out += std::format("{}\n{}\n", C(Reset), diag.extra);
+        out += std::format("\n{}\n", diag.extra);
     };
 
     // If the location is invalid, either because the specified file does not
@@ -345,19 +349,15 @@ auto FormatDiagnostic(
     if (not l.has_value()) {
         // Print the message.
         out += std::format(
-            "{}{}{}: {}{}{}{}",
-            C(Bold),
-            Diagnostic::Colour(C, diag.level),
+            "%b(%{}({}:) {})",
+            Diagnostic::Colour(diag.level),
             Diagnostic::Name(diag.level),
-            C(Reset),
-            C(Bold),
-            diag.msg,
-            C(Reset)
+            diag.msg
         );
 
         // Even if the location is invalid, print the file name if we can.
         if (auto f = ctx.file(diag.where.file_id))
-            out += std::format("\n  in {}{}:<invalid location>\n\n", C(Bold), f->path());
+            out += std::format("\n  in %b({}:<invalid location>)\n\n", EscapeParens(f->name()));
 
         PrintExtraData();
         return out;
@@ -376,7 +376,11 @@ auto FormatDiagnostic(
                    : std::string(line_start + col_offs + diag.where.len, line_end);
 
     // Replace tabs with spaces. We need to do this *after* splitting
-    // because this invalidates the offsets.
+    // because this invalidates the offsets. Also escape any parentheses
+    // in the source text.
+    before = EscapeParens(before);
+    range = EscapeParens(range);
+    after = EscapeParens(after);
     utils::ReplaceAll(before, "\t", "    ");
     utils::ReplaceAll(range, "\t", "    ");
     utils::ReplaceAll(after, "\t", "    ");
@@ -389,8 +393,12 @@ auto FormatDiagnostic(
     //
 
     // Print the diagnostic name and message.
-    out += std::format("{}{}{}: ", C(Bold), Diagnostic::Colour(C, diag.level), Diagnostic::Name(diag.level));
-    out += std::format("{}{}{}{}\n", C(Reset), C(Reset), diag.msg, C(Reset));
+    out += std::format(
+        "%b(%{}({}:) {})\n",
+        Diagnostic::Colour(diag.level),
+        Diagnostic::Name(diag.level),
+        diag.msg
+    );
 
     // Print the location if it is in the same file as the previous
     // diagnostic or if there are extra locations.
@@ -402,11 +410,8 @@ auto FormatDiagnostic(
         auto PrintLocation = [&](Location loc, LocInfoShort l) {
             const auto& file = *ctx.file(loc.file_id);
             out += std::format(
-                "at {}{}{}{}:{}:{}\n",
-                C(Blue),
-                C(Bold),
-                file.name(),
-                C(Reset),
+                "at %b4({}):{}:{}\n",
+                EscapeParens(file.name()),
                 l.line,
                 l.col
             );
@@ -435,8 +440,9 @@ auto FormatDiagnostic(
 
     // Print the line up to the start of the location, the range in the right
     // colour, and the rest of the line.
-    out += std::format("{}{} |{} {}", C(Bold), line, C(Reset), before);
-    out += std::format("{}{}{}{}", C(Bold), C(White), range, C(Reset));
+    // TODO: Proper underlines: \033[1;58:5:1;4:3m
+    out += std::format("%b({} |) {}", line, before);
+    out += std::format("%b8({})", range);
     out += std::format("{}\n", after);
 
     // Determine the number of digits in the line number.
@@ -449,8 +455,11 @@ auto FormatDiagnostic(
         out += " ";
 
     // Finally, underline the range.
-    out += std::format("{}{}", C(Bold), Diagnostic::Colour(C, diag.level));
-    for (usz i = 0, end = TextWidth(text::ToUTF32(range)); i < end; i++) out += "~";
+    out += std::format(
+        "%{}b({})",
+        Diagnostic::Colour(diag.level),
+        std::string(TextWidth(text::ToUTF32(range)), '~')
+    );
 
     // And print any extra data.
     PrintExtraData();
@@ -462,8 +471,7 @@ auto RenderDiagnostics(
     ArrayRef<Diagnostic> backlog,
     usz cols
 ) -> std::string {
-    using enum utils::Colour;
-    utils::Colours C{ctx.use_colours()};
+    bool use_colours = ctx.use_colours();
 
     // Subtract 2 here for the leading character and the space after it.
     auto cols_rem = cols - 2;
@@ -478,7 +486,7 @@ auto RenderDiagnostics(
     Opt<Location> previous_loc;
     for (auto [di, diag] : enumerate(backlog)) {
         // Render the diagnostic text.
-        auto out = FormatDiagnostic(ctx, diag, previous_loc);
+        auto out = text::RenderColours(use_colours, FormatDiagnostic(ctx, diag, previous_loc));
 
         // Then, indent everything properly.
         auto lines = stream{out}.split("\n");
@@ -492,18 +500,13 @@ auto RenderDiagnostics(
                     i == count - 1
                 ) {
                     // Edge case: print nothing if this is the only line.
-                    if (first_line) {
-                        buffer += C(Reset);
-                        return;
-                    }
-
+                    if (first_line) return;
                     leading = "╰"sv;
                 } else {
                     leading = first_line ? "╭"sv : "│"sv;
                     first_line = false;
                 }
 
-                buffer += C(Reset);
                 buffer += leading;
                 if (not segment_empty) buffer += " ";
             };
@@ -660,31 +663,22 @@ void StreamingDiagnosticsEngine::flush() {
 }
 
 void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
-    using enum utils::Colour;
-    utils::Colours C{ctx.use_colours()};
-
     // Give up if we’ve printed too many errors.
     if (error_limit and printed >= error_limit) {
         if (printed == error_limit) {
             printed++;
             EmitDiagnostics();
 
-            stream << std::format(
-                "\n{}{}Error:{}{} Too many errors emitted (> {}). Not showing any more errors.\n",
-                C(Bold),
-                Diagnostic::Colour(C, Diagnostic::Level::Error),
-                C(Reset),
-                C(Bold),
+            stream << text::RenderColours(ctx.use_colours(), std::format(
+                "\n%b(%{}(Error:) Too many errors emitted (> {}\033). Not showing any more errors.)\n",
+                Diagnostic::Colour(Diagnostic::Level::Error),
                 printed - 1
-            );
+            ));
 
-            stream << std::format(
-                "{}Note:{}{} Use '--error-limit <limit>' to show more errors.{}\n",
-                Diagnostic::Colour(C, Diagnostic::Level::Note),
-                C(Reset),
-                C(Bold),
-                C(Reset)
-            );
+            stream << text::RenderColours(ctx.use_colours(), std::format(
+                "%b(%{}(Note:) Use '--error-limit <limit>' to show more errors.)\n",
+                Diagnostic::Colour(Diagnostic::Level::Note)
+            ));
         }
 
         return;

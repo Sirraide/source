@@ -103,7 +103,7 @@ public:
 
     /// Print this.
     void dump(bool use_colour = true) const;
-    auto print(bool use_colour) const -> std::string;
+    auto print() const -> SmallUnrenderedString;
 };
 
 class srcc::eval::Reference {
@@ -162,7 +162,7 @@ public:
     auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
 
     /// Print the value to a string.
-    auto print(bool use_colour) const -> std::string;
+    auto print() const -> SmallUnrenderedString;
 
     /// Get the type of the value.
     auto type() const -> Type { return ty; }
@@ -174,5 +174,13 @@ public:
     template <typename Visitor>
     auto visit(Visitor&& visitor) const -> decltype(auto) {
         return std::visit(std::forward<Visitor>(visitor), value);
+    }
+};
+
+template <>
+struct std::formatter<eval::Value> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(const eval::Value& val, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(std::string_view{val.print().str()}, ctx);
     }
 };

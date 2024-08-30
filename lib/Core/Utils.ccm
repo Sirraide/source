@@ -28,6 +28,7 @@ module;
 
 export module srcc.utils;
 export import base;
+export import base.colours;
 
 export namespace srcc {
 using namespace base;
@@ -317,6 +318,9 @@ public:
     auto value() const -> APInt;
 };
 
+// String that contains formatting characters that are yet to be rendered.
+using SmallUnrenderedString = SmallString<128>;
+
 } // namespace srcc
 
 // Rarely used helpers go here.
@@ -418,6 +422,14 @@ struct std::formatter<srcc::String> : formatter<std::string_view> {
 
 template <>
 struct std::formatter<llvm::StringRef> : formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(llvm::StringRef s, FormatContext& ctx) const {
+        return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
+    }
+};
+
+template <srcc::usz n>
+struct std::formatter<llvm::SmallString<n>> : formatter<std::string_view> {
     template <typename FormatContext>
     auto format(llvm::StringRef s, FormatContext& ctx) const {
         return formatter<std::string_view>::format(std::string_view{s.data(), s.size()}, ctx);
