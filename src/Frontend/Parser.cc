@@ -587,6 +587,12 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     );
 }
 
+auto Parser::LookAhead(usz n) -> Token& {
+    usz curr = usz(tok - stream.begin());
+    if (n + curr >= stream.size()) return stream.back();
+    return stream[n + curr];
+}
+
 auto Parser::Next() -> Location {
     auto loc = tok->location;
     ++tok;
@@ -612,9 +618,7 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
 
     // Parse statements.
     SmallVector<ParsedStmt*> stmts;
-    while (not At(Tk::Eof, Tk::RBrace))
-        if (auto s = ParseStmt())
-            stmts.push_back(s.get());
+    ParseStmts(stmts);
 
     if (not Consume(Tk::RBrace)) {
         Error("Expected '}}'");
@@ -761,7 +765,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             lhs = ParseExpr();
             if (not Consume(rparen, Tk::RParen)) {
-                Error("Expected ')'");
+                Error("Expected '\033)'");
                 SkipTo(Tk::RParen, Tk::Semicolon);
                 if (not Consume(rparen, Tk::RParen)) return {};
             }
@@ -784,8 +788,19 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     // so this is here to make sure I don’t forget.
     Assert(at_start, "Forgot to add '{}' to AtStartOfExpression", start_tok);
 
-    // If the next token is an identifier, then this is a declaration.
-    if (At(Tk::Identifier)) return ParseVarDecl(lhs.get());
+    // If the next token is an identifier, then this is a declaration,
+    // provided that the lhs could conceivably be a type (i.e. don’t
+    // parse 'true a' as a declaration).
+    if (At(Tk::Identifier)) {
+        if (isa< // clang-format off
+            ParsedDeclRefExpr,
+            ParsedBuiltinType,
+            ParsedProcType,
+            ParsedTemplateType,
+            ParsedParenExpr
+        >(lhs.get())) return ParseVarDecl(lhs.get()); // clang-format on
+        return lhs;
+    }
 
     // Big operator parse loop.
     while (
@@ -860,9 +875,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 // <file> ::= <preamble> { <stmt> }
 void Parser::ParseFile() {
     ParsePreamble();
-    while (not At(Tk::Eof))
-        if (auto stmt = ParseStmt())
-            mod->top_level.push_back(stmt.get());
+    ParseStmts(mod->top_level);
 }
 
 // <header> ::= "program" <module-name> ";"
@@ -884,7 +897,7 @@ void Parser::ParseHeader() {
 }
 
 // <expr-if> ::= IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <expr> ]
-// <if-body> ::= THEN <expr> | <expr-block>
+// <if-body> ::= [ THEN ] <expr>
 auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.
     auto loc = Next();
@@ -919,6 +932,26 @@ auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
         SkipTo(Tk::Semicolon);
         return {};
     }
+
+    // Disallow semicolons here.
+    //
+    // Requiring semicolons here would make figuring out at what point
+    // we should discard the semicolon more difficult (currently, this
+    // only happens in one place outside of the preamble, viz. in the
+    // loop in ParseStmts()).
+    //
+    //
+    if (At(Tk::Semicolon) and LookAhead().is(Tk::Elif, Tk::Else)) {
+        Error("Semicolon before '%1({})' is not allowed", LookAhead().type);
+        Next();
+    }
+
+    // 'else if' actually parses just fine, but I like 'elif' more so
+    // we just warn on that. ;Þ
+    if (At(Tk::Else) and LookAhead().is(Tk::If)) Warn(
+        {tok->location, LookAhead().location},
+        "Use '%1(elif)' instead of '%1(else if)'"
+    );
 
     // Parse the else/elif branch.
     auto else_ = At(Tk::Elif)      ? ParseIf()
@@ -1107,7 +1140,7 @@ bool Parser::ParseSignature(
             if (not Consume(Tk::Comma)) break;
         }
 
-        if (not Consume(Tk::RParen)) Error("Expected ')'");
+        if (not Consume(Tk::RParen)) Error("Expected '\033)'");
     }
 
     // Return Type.
@@ -1115,14 +1148,14 @@ bool Parser::ParseSignature(
     return true;
 }
 
-// <stmt>  ::= [ <expr> ] ";"
-//           | <expr-block>
+// <stmt>  ::= <expr>
 //           | <decl>
 //           | EVAL <stmt>
-//           | <stmt-if>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
+        default: return ParseExpr();
+
         case Tk::Eval: {
             Next();
             auto arg = ParseStmt();
@@ -1131,19 +1164,15 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         }
 
         case Tk::Proc: return ParseProcDecl();
+    }
+}
 
-        // Fall through to the expression parser, but remember
-        // to eat an optional semicolon afterwards.
-        default:
-            if (auto res = ParseExpr()) {
-                Consume(Tk::Semicolon);
-                return res;
-            }
-
-            // Expression parser should have already complained here;
-            // just yeet everything up tot he next semicolon.
-            SkipPast(Tk::Semicolon);
-            return {};
+// <stmts> ::= { <stmt> [ ";" ] | <decl> }
+void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts) {
+    while (not At(Tk::Eof, Tk::RBrace)) {
+        if (auto s = ParseStmt()) stmts.push_back(s.get());
+        else SkipTo(Tk::Semicolon);
+        Consume(Tk::Semicolon);
     }
 }
 

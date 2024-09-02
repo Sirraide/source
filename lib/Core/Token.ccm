@@ -187,6 +187,11 @@ struct srcc::Token {
     /// Check if this is an end-of-file token.
     [[nodiscard]] auto eof() const -> bool { return type == Tk::Eof; }
 
+    /// Check if this token has a certain type.
+    [[nodiscard]] auto is(std::same_as<Tk> auto ... t) const -> bool {
+        return ((type == t) or ...);
+    }
+
     /// Get the source code spelling of this token.
     [[nodiscard]] auto spelling(const Context& ctx) const -> String;
 

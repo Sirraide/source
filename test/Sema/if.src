@@ -1,6 +1,34 @@
+// V %srcc --sema --verify %s
 program test;
 
-proc f(int a, int b) {
-    if a == 0 then a = b; else a = 42;
-    b = if a == 3 then 9 elif a == 42 then 4 else 3;
+proc f(int a, int b, bool c) {
+    // Ok.
+    if a == 0 then a = b else a = 42;
+    b = if a == 3 then 9 elif a == 42 then 4 else a;
+    if a == 0 then 2 else true;
+
+    // No common type -> no yield.
+    b = if a == 0 2 else true; // expected-error: Cannot assign 'void' to 'int'
+    b = if a == 0 then 2 elif false 3 else true; // expected-error: Cannot assign 'void' to 'int'
+    b = if a == 0 2 elif false true else b; // expected-error: Cannot assign 'void' to 'int'
+    b = if a == 0 then true elif false 3 else b; // expected-error: Cannot assign 'void' to 'int'
+    b = if a == 0 then 2; // expected-error: Cannot assign 'void' to 'int'
+
+    // LValue tests. Ok.
+    (if true a else b) = 42;
+    (if true a elif true b else a) = 42;
+
+    // One of the branches is not an lvalue of the same type.
+    (if true a) = 42; // expected-error: Invalid target for assignment
+    (if true a else 3) = 42; // expected-error: Invalid target for assignment
+    (if true a else c) = 42; // expected-error: Invalid target for assignment
+    (if true 3 else a) = 42; // expected-error: Invalid target for assignment
+    (if true c else a) = 42; // expected-error: Invalid target for assignment
+    (if true 2 elif true b else a) = 42; // expected-error: Invalid target for assignment
+    (if true a elif true 2 else a) = 42; // expected-error: Invalid target for assignment
+    (if true a elif true b else 2) = 42; // expected-error: Invalid target for assignment
+    (if true c elif true b else a) = 42; // expected-error: Invalid target for assignment
+    (if true a elif true c else a) = 42; // expected-error: Invalid target for assignment
+    (if true a elif true b else c) = 42; // expected-error: Invalid target for assignment
+    (if true a elif true b else false) = 42; // expected-error: Invalid target for assignment
 }

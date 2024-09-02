@@ -697,18 +697,18 @@ auto Sema::BuildBinaryExpr(
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
+            // LHS must be an lvalue.
+            if (lhs->value_category != LValue) return Error(
+                lhs->location(),
+                "Invalid target for assignment"
+            );
+
             // Both sides must have the same type.
             if (lhs->type != rhs->type) return Error(
                 loc,
                 "Cannot assign '{}' to '{}'",
-                lhs->type,
-                rhs->type
-            );
-
-            // LHS must be an lvalue.
-            if (lhs->value_category != LValue) return Error(
-                lhs->location(),
-                "Left-hand side of assignment must be an lvalue"
+                rhs->type,
+                lhs->type
             );
 
             // The RHS an RValue.
@@ -1265,7 +1265,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
             // Operand must be an lvalue.
             if (operand->value_category != Expr::LValue) return Error(
                 operand->location(),
-                "Operand of '{}' must be an lvalue",
+                "Invalid operand for '{}'",
                 Spelling(op)
             );
 

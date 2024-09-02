@@ -23,16 +23,10 @@
 // ============================================================================
 //  Statements
 // ============================================================================
-<stmts> ::= { <stmt> | <decl> }
-<stmt>  ::= <expr> [ ";" ]
-          | ";"
-          | <expr-block>
+<stmts> ::= { <stmt> [ ";" ] | <decl> }
+<stmt>  ::= <expr>
           | <decl>
           | EVAL <stmt>
-
-// The effect of this confusing rule is to extend <stmt> to additionally allow
-// expressions without a trailing semicolon.
-<expr-or-stmt> ::= <expr> | <stmt>
 
 // ============================================================================
 //  Expressions
@@ -67,7 +61,7 @@
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | "not" | "~"
-<if-body> ::= [ THEN ] <expr-or-stmt>
+<if-body> ::= [ THEN ] <stmt>
 <binary> ::= // TODO: list all binary operators here.
 
 
