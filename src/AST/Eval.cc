@@ -194,8 +194,11 @@ public:
     /// Create an integer.
     [[nodiscard]] auto IntValue(std::integral auto val) -> Value;
 
+    /// Perform an assignment to an already live variable.
+    [[nodiscard]] bool PerformAssign(LValue& addr, Ptr<Expr> init, Location loc);
+
     /// Initialise a variable.
-    [[nodiscard]] bool PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc);
+    [[nodiscard]] bool PerformVarInit(LValue& addr, Ptr<Expr> init, Location loc);
 
     /// Report an error that involves accessing memory.
     template <typename... Args>
@@ -343,7 +346,7 @@ auto EvaluationContext::IntValue(std::integral auto val) -> Value {
     return Value{APInt{64, u64(val)}, Types::IntTy};
 }
 
-bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> init, Location loc) {
+bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc) {
     auto mem = addr.base.get<Memory*>();
 
     // For builtin types, Sema will have ensured that the RHS is
@@ -356,30 +359,33 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
             return false;
 
         case ValueCategory::SRValue: {
-            if (mem->type() == Types::IntTy) {
+            auto InitBuiltin = [&]<typename T>(T get_value(Value&), T default_value) {
                 if (auto i = init.get_or_null()) {
                     Assert(i->value_category == Expr::SRValue);
-                    Value int_val;
-                    if (not Eval(int_val, i))
-                        return false;
-
-                    mem->init(tu);
-                    return StoreMemory(mem, int_val.cast<APInt>().getZExtValue(), i->location());
+                    Value val;
+                    if (not Eval(val, i)) return false;
+                    return StoreMemory(mem, get_value(val), i->location());
                 }
 
                 // No initialiser. Initialise it to 0.
-                mem->init(tu);
-                return StoreMemory(mem, u64(0), loc);
-            }
+                return StoreMemory(mem, default_value, loc);
+            };
+
+            if (mem->type() == Types::IntTy) return InitBuiltin(
+                +[](Value& v) { return v.cast<APInt>().getZExtValue(); },
+                u64(0)
+            );
+
+            if (mem->type() == Types::BoolTy) return InitBuiltin(
+                +[](Value& v) { return v.cast<bool>(); },
+                false
+            );
 
             if (isa<ProcType>(mem->type())) {
                 if (auto i = init.get_or_null()) {
                     Assert(i->value_category == Expr::SRValue);
                     Value closure;
-                    if (not Eval(closure, i))
-                        return false;
-
-                    mem->init(tu);
+                    if (not Eval(closure, i)) return false;
                     return StoreMemory(mem, Closure{closure.cast<ProcDecl*>()}, i->location());
                 }
 
@@ -389,13 +395,26 @@ bool EvaluationContext::PerformVariableInitialisation(LValue& addr, Ptr<Expr> in
 
             return Error(
                 loc,
-                "Unsupported variable type in constant evaluation: {}",
+                "Unsupported variable type in constant evaluation: '{}'",
                 mem->type()
             );
         }
     }
 
     Unreachable();
+}
+
+bool EvaluationContext::PerformVarInit(LValue& addr, Ptr<Expr> init, Location loc) {
+    auto* mem = addr.base.get<Memory*>();
+    Assert(mem->dead(), "Already initialised?");
+
+    mem->init(tu);
+    if (not PerformAssign(addr, init, loc)) {
+        mem->destroy();
+        return false;
+    }
+
+    return true;
 }
 
 /*auto EvaluationContext::Executor() -> class Executor& {
@@ -497,6 +516,23 @@ bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
 
 bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
     using enum OverflowBehaviour;
+
+    // Some operators need special handling because not every
+    // operand may be evaluated.
+    switch (expr->op) {
+        default: break;
+        case Tk::And:
+        case Tk::Or:
+            return ICE(expr->location(), "TODO: Handle 'and' and 'or' properly");
+
+        // This, as ever, is just variable initialisation.
+        case Tk::Assign: {
+            if (not Eval(out, expr->lhs)) return false;
+            return PerformAssign(out.cast<LValue>(), expr->rhs, expr->location());
+        }
+    }
+
+    // Any other operators require us to evaluate both sides.
     Value lhs, rhs;
     if (not Eval(lhs, expr->lhs)) return false;
     if (not Eval(rhs, expr->rhs)) return false;
@@ -536,11 +572,6 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
 
     auto EvalCompare = [&](bool (APInt::* op)(const APInt&) const) {
         out = (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
-        return true;
-    };
-
-    auto EvalLogical = [&](auto op) {
-        out = op(lhs.cast<bool>(), rhs.cast<bool>());
         return true;
     };
 
@@ -691,13 +722,12 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         case Tk::EqEq: return EvalCompare(&APInt::operator==);
         case Tk::Neq: return EvalCompare(&APInt::operator!=);
 
-        // Logical operators.
-        case Tk::And: return EvalLogical([](bool a, bool b) { return a and b; });
-        case Tk::Or: return EvalLogical([](bool a, bool b) { return a or b; });
-        case Tk::Xor: return EvalLogical([](bool a, bool b) { return a xor b; });
+        // Exclusive or.
+        // This needs special handling because it’s supported for both bools and ints.
+        case Tk::Xor:
+            return ICE(expr->location(), "Unsupported operator in constant evaluation: 'xor'");
 
         // Assignment operators.
-        case Tk::Assign:
         case Tk::PlusEq:
         case Tk::PlusTildeEq:
         case Tk::MinusEq:
@@ -711,7 +741,7 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
-            return ICE(expr->location(), "Assignment operators not supported yet");
+            return ICE(expr->location(), "Compound assignment operators not supported yet");
         }
     }
 }
@@ -736,7 +766,7 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
         // Variables need to be initialised.
         if (auto l = dyn_cast<LocalDecl>(s)) {
             auto& loc = CurrFrame().locals[l];
-            if (not PerformVariableInitialisation(loc, l->init, l->location()))
+            if (not PerformVarInit(loc, l->init, l->location()))
                 return false;
             initialised_vars.locals_to_destroy.push_back(loc.base.get<Memory*>());
         }
@@ -806,7 +836,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         // Allocate and initialise local variables and initialise them.
         for (auto [i, l] : enumerate(proc->locals)) {
             auto& addr = frame.locals[l] = LValue{AllocateMemory(l->type, l->location())};
-            if (isa<ParamDecl>(l) and not PerformVariableInitialisation(addr, args[i], l->location()))
+            if (isa<ParamDecl>(l) and not PerformVarInit(addr, args[i], l->location()))
                 return false;
         }
 
@@ -840,6 +870,14 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
                 return true;
             }
 
+            // Bool.
+            if (mem->type() == Types::BoolTy) {
+                bool value;
+                if (not LoadMemory(mem, value, cast->location())) return false;
+                out = value;
+                return true;
+            }
+
             // Closures.
             if (isa<ProcType>(mem->type())) {
                 Closure cl;
@@ -850,7 +888,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
 
             ICE(
                 cast->location(),
-                "Sorry, we don’t support lvalue->srvalue conversion of {} yet",
+                "Sorry, we don’t support lvalue->srvalue conversion of '{}' yet",
                 mem->type()
             );
 

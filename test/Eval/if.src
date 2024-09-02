@@ -1,0 +1,28 @@
+// R %srcc --eval %s
+program test;
+
+proc x(int a, int b, bool d) {
+    if d then __srcc_print("d = true\n")
+    else __srcc_print("d = false\n");
+    __srcc_print(if d "d = true\n" else "d = false\n");
+
+    (if d then d else d) = (if a < b then false else true);
+
+    if d then __srcc_print("d = true\n")
+    else __srcc_print("d = false\n");
+    __srcc_print(if d "d = true\n" else "d = false\n");
+
+    __srcc_print("\n");
+}
+
+// * d = true
+// + d = true
+// + d = false
+// + d = false
+x(1, 2, true);
+
+// * d = false
+// + d = false
+// + d = true
+// + d = true
+x(2, 1, false);

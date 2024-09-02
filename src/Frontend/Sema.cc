@@ -380,7 +380,7 @@ void Sema::ReportOverloadResolutionFailure(
     u32 final_badness
 ) {
     auto FormatTempSubstFailure = [&](const Candidate::TemplateInfo& ti, std::string& out, std::string_view indent) {
-        ti.res.data.visit(utils::Overloaded { // clang-format off
+        ti.res.data.visit(utils::Overloaded{// clang-format off
             [](const TempSubstRes::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
             [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
             [&](TempSubstRes::DeductionFailed f) {
@@ -747,13 +747,15 @@ auto Sema::BuildBuiltinCallExpr(
             if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
                 if (arg->dependent()) continue;
-                if (not isa<StrLitExpr>(arg) and arg->type != Types::IntTy and arg->type != Types::BoolTy) {
-                    return Error(
-                        arg->location(),
-                        "__srcc_print only accepts string literals and integers, but got {}",
-                        arg->type
-                    );
-                }
+                if (
+                    arg->type != M->StrLitTy and
+                    arg->type != Types::IntTy and
+                    arg->type != Types::BoolTy
+                ) return Error( //
+                    arg->location(),
+                    "__srcc_print only accepts i8[] and integers, but got {}",
+                    arg->type
+                );
                 arg = LValueToSRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, actual_args, call_loc);
@@ -1633,6 +1635,8 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
