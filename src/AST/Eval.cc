@@ -756,7 +756,6 @@ bool EvaluationContext::EvalBoolLitExpr(Value& out, BoolLitExpr* expr) {
     return true;
 }
 
-
 bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin) {
     switch (builtin->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
@@ -870,6 +869,20 @@ bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
 bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
     EvaluationContext C{tu, complain};
     return C.Eval(out, eval->stmt);
+}
+
+bool EvaluationContext::EvalIfExpr(Value& out, IfExpr* expr) {
+    if (not Eval(out, expr->cond)) return false;
+
+    // Always reset to an empty value if this isn’t supposed
+    // to yield anything.
+    defer {
+        if (not expr->has_yield()) out = {};
+    };
+
+    if (out.cast<bool>()) return Eval(out, expr->then);
+    if (auto e = expr->else_.get_or_null()) return Eval(out, e);
+    return true;
 }
 
 bool EvaluationContext::EvalIntLitExpr(Value& out, IntLitExpr* int_lit) {

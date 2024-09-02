@@ -153,3 +153,18 @@ would mean that this can store 1 to 12 ints. This also means we can store the si
 bits since 5 bits would be enough in this case; also, since we always have at least one int in this
 particular case, we don’t need the flag that indicates whether it’s present unless the size doesn’t
 fit in any of the padding bits.
+
+## Common Type
+Add a notion of a ‘common type’ (that is user-definable for user-defined types) that is used to determine
+the type of e.g. `if` expressions, deduced return types, etc. (Idea stolen from Carbon).
+
+## Keywords
+Make all keywords ‘contextual’, i.e. allow this
+```c#
+struct foo {
+   int else;
+}
+```
+
+This is fine since it is always accessed as `a.else` or `.else`, and `else` in that position (or any other
+keyword, I think) would be syntactically invalid as a keyword anyway.

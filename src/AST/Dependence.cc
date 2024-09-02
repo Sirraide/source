@@ -72,6 +72,17 @@ void Stmt::ComputeDependence() { // clang-format off
     },
 
     [&](EvalExpr* e) { d = e->stmt->dependence(); },
+    [&](IfExpr* e) {
+        // Only propagate instantiation dependence here; whether the *type*
+        // of the if is supposed to be dependent is taken care of by Sema when
+        // the node is built.
+        if (
+            e->cond->dependent() or
+            e->then->dependent() or
+            (e->else_ and e->else_.get()->dependent())
+        ) d = Dependence::Instantiation;
+    },
+
     [&](IntLitExpr*) { /* Always of type 'int' and thus never dependent. */ },
     [&](LocalDecl* e) {
         // This also handles ParamDecls.

@@ -513,6 +513,7 @@ private:
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
+    auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
     auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;

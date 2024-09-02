@@ -400,7 +400,7 @@ auto srcc::Spelling(Tk t) -> String {
 
 auto Token::spelling(const Context& ctx) const -> String {
     switch (type) {
-        default: return Spelling(type); // Always spelled the same way.
+        default: return Spelling(type); // Always spelt the same way.
         case Tk::StringLiteral: return location.text(ctx); // Include quotes.
         case Tk::Identifier: return location.text(ctx); // May be escaped.
         case Tk::TemplateType:

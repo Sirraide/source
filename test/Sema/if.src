@@ -1,0 +1,6 @@
+program test;
+
+proc f(int a, int b) {
+    if a == 0 then a = b; else a = 42;
+    b = if a == 3 then 9 elif a == 42 then 4 else 3;
+}

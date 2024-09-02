@@ -5,9 +5,9 @@ proc foo {
     int b;
     int c, d; // expected-error: A declaration must declare a single variable
     int e
-    int f; // expected-error: Expected ';'
+    int f;
     var g;
     var h = 1;
-    int i = 2;
-    var j = h;
+    int i = 2
+    var j = h
 }

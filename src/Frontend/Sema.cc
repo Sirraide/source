@@ -380,7 +380,7 @@ void Sema::ReportOverloadResolutionFailure(
     u32 final_badness
 ) {
     auto FormatTempSubstFailure = [&](const Candidate::TemplateInfo& ti, std::string& out, std::string_view indent) {
-        auto TV = utils::Overloaded {
+        ti.res.data.visit(utils::Overloaded { // clang-format off
             [](const TempSubstRes::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
             [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
             [&](TempSubstRes::DeductionFailed f) {
@@ -407,8 +407,7 @@ void Sema::ReportOverloadResolutionFailure(
                     a.second_type
                 );
             }
-        };
-        ti.res.data.visit(TV);
+        }); // clang-format on
     };
 
     // If there is only one overload, print the failure reason for
@@ -1006,6 +1005,89 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     return new (*M) ConstExpr(*M, std::move(*value), loc, eval);
 }
 
+auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr> {
+    auto Build = [&](Type ty, ValueCategory val) {
+        return new (*M) IfExpr(
+            ty,
+            val,
+            cond,
+            then,
+            else_,
+            loc
+        );
+    };
+
+    // Degenerate case: the condition does not return.
+    if (cond->type == Types::NoReturnTy) return Build(Types::NoReturnTy, Expr::SRValue);
+
+    // Condition must be a bool.
+    if (not cond->dependent() and not MakeSRValue(Types::BoolTy, cond, "Condition", "if"))
+        return {};
+
+    // If there is no else branch, or if either branch is not an expression,
+    // the type of the 'if' is 'void'.
+    if (
+        not else_ or
+        not isa<Expr>(then) or
+        not isa<Expr>(else_.get())
+    ) return Build(Types::VoidTy, Expr::SRValue);
+
+    // Otherwise, if either branch is dependent, we can’t determine the type yet.
+    auto t = cast<Expr>(then);
+    auto e = cast<Expr>(else_.get());
+    if (t->type_dependent() or e->type_dependent()) return Build(
+        Types::DependentTy,
+        Expr::DValue
+    );
+
+    // Next, if either branch is 'noreturn', the type of the 'if' is the type
+    // of the other branch (unless both are noreturn, in which case the type
+    // is just 'noreturn').
+    if (t->type == Types::NoReturnTy or e->type == Types::NoReturnTy) {
+        bool both = t->type == Types::NoReturnTy and e->type == Types::NoReturnTy;
+        return Build(
+            both                           ? Types::NoReturnTy
+            : t->type == Types::NoReturnTy ? e->type
+                                           : t->type,
+            both                           ? Expr::SRValue
+            : t->type == Types::NoReturnTy ? e->value_category
+                                           : t->value_category
+        );
+    }
+
+    // If both are lvalues of the same type, the result is an lvalue
+    // of that type.
+    if (
+        t->type == e->type and
+        t->value_category == Expr::LValue and
+        e->value_category == Expr::LValue
+    ) return Build(t->type, Expr::LValue);
+
+    // Finally, if there is a common type, the result is an rvalue of
+    // that type.
+    // TODO: Actually implement calculating the common type; for now
+    //       we just use 'void' if the types don’t match.
+    auto common_ty = t->type == e->type ? t->type : Types::VoidTy;
+
+    // We don’t convert lvalues to rvalues in this case because neither
+    // side will actually be used if there is no common type.
+    // TODO: If there is no common type, both sides need to be marked
+    //       as discarded.
+    if (common_ty == Types::VoidTy) return Build(Types::VoidTy, Expr::SRValue);
+
+    // Permitting MRValues here is non-trivial.
+    if (common_ty->value_category() == Expr::MRValue) return ICE(
+        loc,
+        "Sorry, we don’t support returning a value of type '{}' from an '%1(if)' expression yet.",
+        common_ty
+    );
+
+    // Make sure both sides are rvalues.
+    t = LValueToSRValue(t);
+    e = LValueToSRValue(e);
+    return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, loc);
+}
+
 auto Sema::BuildLocalDecl(
     ProcScopeInfo& proc,
     Type ty,
@@ -1328,7 +1410,7 @@ auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Expr> {
     return BuildBlockExpr(scope.get(), stmts, parsed->loc);
 }
 
-auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed)-> Ptr<Expr> {
+auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed) -> Ptr<Expr> {
     return new (*M) BoolLitExpr(parsed->value, parsed->loc);
 }
 
@@ -1411,7 +1493,10 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Expr> {
-    Todo();
+    auto cond = TRY(TranslateExpr(parsed->cond));
+    auto then = TRY(TranslateStmt(parsed->then));
+    Ptr else_ = parsed->else_ ? TRY(TranslateStmt(parsed->else_.get())) : nullptr;
+    return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
 auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {

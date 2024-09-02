@@ -1,4 +1,6 @@
 // V %srcc --parse --verify %s
-program test;
+// expected-no-diagnostics
+program test
+import <foo> as bar
 
-foo() // expected-error: Expected ';'
+foo()

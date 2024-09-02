@@ -212,6 +212,13 @@ auto TemplateInstantiator::InstantiateExpr(Expr* e) -> Ptr<Expr> {
     return cast<Expr>(expr);
 }
 
+auto TemplateInstantiator::InstantiateIfExpr(IfExpr* n) -> Ptr<Stmt> {
+    auto cond = TryInstantiateExpr(n->cond);
+    auto then_ = TryInstantiateStmt(n->then);
+    auto else_ = n->else_ ? TryInstantiateStmt(n->else_.get()) : nullptr;
+    return S.BuildIfExpr(cond, then_, else_, n->location());
+}
+
 auto TemplateInstantiator::InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Stmt> {
     Assert(not e->dependent(), "Dependent IntLitExpr?");
     return e;

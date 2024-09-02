@@ -142,6 +142,7 @@ void Stmt::Printer::PrintBasicNode(
 }
 
 void Stmt::Printer::Print(Stmt* e) {
+    // FIXME: Should be a visitor.
     switch (e->kind()) {
         case Kind::AssertExpr: {
             auto a = cast<AssertExpr>(e);
@@ -213,6 +214,14 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::EvalExpr: {
             PrintBasicNode(e, "EvalExpr");
             PrintChildren(cast<EvalExpr>(e)->stmt);
+        } break;
+
+        case Kind::IfExpr: {
+            auto i = cast<IfExpr>(e);
+            PrintBasicNode(e, "IfExpr");
+            SmallVector<Stmt*, 3> children{i->cond, i->then};
+            if (auto el = i->else_.get_or_null()) children.push_back(el);
+            PrintChildren(children);
         } break;
 
         case Kind::IntLitExpr: {

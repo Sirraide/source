@@ -826,6 +826,14 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
 }
 
+auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {
+    return If(
+        Emit(stmt->cond),
+        [&] { return Emit(stmt->then); },
+        stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<Value*()>{}
+    );
+}
+
 auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
     return ConstantInt::get(ConvertType(expr->type), expr->storage.value());
 }

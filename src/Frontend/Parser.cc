@@ -246,8 +246,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
-            PrintHeader(s, "IfExpr", not i.stmt);
-            if (i.stmt) print("statement\n");
+            PrintHeader(s, "IfExpr");
             SmallVector<ParsedStmt*, 3> children{i.cond, i.then};
             if (auto e = i.else_.get_or_null()) children.push_back(e);
             PrintChildren(children);
@@ -541,7 +540,7 @@ bool Parser::AtStartOfExpression() {
 
 bool Parser::Consume(Tk tk) {
     if (At(tk)) {
-        ++tok;
+        Next();
         return true;
     }
     return false;
@@ -549,8 +548,7 @@ bool Parser::Consume(Tk tk) {
 
 bool Parser::Consume(Location& into, Tk tk) {
     if (At(tk)) {
-        into = tok->location;
-        ++tok;
+        into = Next();
         return true;
     }
     return false;
@@ -558,8 +556,7 @@ bool Parser::Consume(Location& into, Tk tk) {
 
 bool Parser::ConsumeContextual(Location& into, StringRef keyword) {
     if (At(Tk::Identifier) and tok->text == keyword) {
-        into = tok->location;
-        ++tok;
+        into = Next();
         return true;
     }
     return false;
@@ -590,6 +587,12 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     );
 }
 
+auto Parser::Next() -> Location {
+    auto loc = tok->location;
+    ++tok;
+    return loc;
+}
+
 // ============================================================================
 //  Parser
 // ============================================================================
@@ -605,8 +608,7 @@ auto Parser::Parse(
 }
 
 auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
-    auto loc = tok->location;
-    ++tok;
+    auto loc = Next();
 
     // Parse statements.
     SmallVector<ParsedStmt*> stmts;
@@ -634,8 +636,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
         }
 
         strings.push_back(tok->text);
-        loc = {loc, tok->location};
-        ++tok;
+        loc = {loc, Next()};
     } while (Consume(Tk::ColonColon));
     return ParsedDeclRefExpr::Create(*this, strings, loc);
 }
@@ -663,6 +664,11 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     switch (tok->type) {
         default: return Error("Expected expression");
 
+        case Tk::Else:
+        case Tk::Elif:
+        case Tk::Then:
+            return Error("Unexpected '%1({})'", tok->type);
+
         // <expr-prefix> ::= <prefix> <expr>
         case Tk::Minus:
         case Tk::Plus:
@@ -670,9 +676,8 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::Tilde:
         case Tk::MinusMinus:
         case Tk::PlusPlus: {
-            auto start = tok->location;
             auto op = tok->type;
-            ++tok;
+            auto start = Next();
             auto arg = ParseExpr(PrefixPrecedence);
             if (not arg) return {};
             lhs = new (*this) ParsedUnaryExpr{op, arg.get(), false, {start, arg.get()->loc}};
@@ -680,8 +685,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
         case Tk::Assert: {
-            auto start = tok->location;
-            ++tok;
+            auto start = Next();
             auto cond = ParseExpr();
             if (not cond) return {};
 
@@ -703,15 +707,14 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
         // <expr-eval> ::= EVAL <expr>
         case Tk::Eval: {
-            auto start = tok->location;
-            ++tok;
+            auto start = Next();
             auto arg = ParseExpr();
             if (not arg) return {};
             lhs = new (*this) ParsedEvalExpr{arg.get(), {start, arg.get()->loc}};
         } break;
 
         case Tk::If:
-            lhs = ParseIf(false);
+            lhs = ParseIf();
             break;
 
         case Tk::Identifier:
@@ -721,26 +724,25 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         // STRING-LITERAL
         case Tk::StringLiteral:
             lhs = new (*this) ParsedStrLitExpr{tok->text, tok->location};
-            ++tok;
+            Next();
             break;
 
         // INTEGER
         case Tk::Integer:
             lhs = new (*this) ParsedIntLitExpr{*this, tok->integer, tok->location};
-            ++tok;
+            Next();
             break;
 
         // TRUE | FALSE
         case Tk::True:
         case Tk::False:
             lhs = new (*this) ParsedBoolLitExpr{tok->type == Tk::True, tok->location};
-            ++tok;
+            Next();
             break;
 
         // <expr-return>   ::= RETURN [ <expr> ]
         case Tk::Return: {
-            auto loc = tok->location;
-            ++tok;
+            auto loc = Next();
 
             Ptr<ParsedStmt> value;
             if (AtStartOfExpression()) {
@@ -755,8 +757,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         // <expr-paren> ::= "(" <expr> ")"
         case Tk::LParen: {
             Location rparen;
-            auto lparen = tok->location;
-            ++tok;
+            auto lparen = Next();
 
             lhs = ParseExpr();
             if (not Consume(rparen, Tk::RParen)) {
@@ -798,7 +799,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
             // <call-args> ::= <expr> { "," <expr> } [ "," ]
             case Tk::LParen: {
-                ++tok;
+                Next();
                 SmallVector<ParsedStmt*> args;
                 while (not At(Tk::RParen)) {
                     if (auto arg = ParseExpr()) {
@@ -818,7 +819,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             // <expr=subscript> ::= <expr> "[" <expr> "]"
             case Tk::LBrack: {
-                ++tok;
+                Next();
                 auto index = ParseExpr();
                 if (not index) return {};
                 auto end = tok->location;
@@ -829,7 +830,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             // <expr-member> ::= <expr> "." IDENTIFIER
             case Tk::Dot: {
-                ++tok;
+                Next();
                 if (not At(Tk::Identifier)) {
                     Error("Expected identifier after '.'");
                     SkipTo(Tk::Semicolon);
@@ -837,14 +838,13 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
                 }
 
                 lhs = new (*this) ParsedMemberExpr(lhs.get(), tok->text, {lhs.get()->loc, tok->location});
-                ++tok;
+                Next();
                 continue;
             }
         }
 
         auto op = tok->type;
-        auto end = tok->location;
-        ++tok;
+        auto end = Next();
         if (IsPostfix(op)) {
             lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, {lhs.get()->loc, end}};
         } else {
@@ -879,17 +879,15 @@ void Parser::ParseHeader() {
     }
 
     mod->name = tok->text;
-    ++tok;
-    ConsumeOrError(Tk::Semicolon);
+    Next();
+    Consume(Tk::Semicolon);
 }
 
-// <stmt-if> ::= IF <expr> [ THEN ] <stmt> { ELIF <stmt> } [ ELSE <stmt> ]
-// <expr-if> ::= IF <expr> <if-body> { ELIF <expr> } ELSE <expr>
+// <expr-if> ::= IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <expr> ]
 // <if-body> ::= THEN <expr> | <expr-block>
-auto Parser::ParseIf(bool stmt) -> Ptr<ParsedIfExpr> {
+auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.
-    auto loc = tok->location;
-    ++tok;
+    auto loc = Next();
 
     // Condition.
     auto cond = ParseExpr();
@@ -898,16 +896,23 @@ auto Parser::ParseIf(bool stmt) -> Ptr<ParsedIfExpr> {
         return {};
     }
 
-    // 'then' is optional for statements.
-    Ptr<ParsedStmt> body;
-    bool then = Consume(Tk::Then);
-    if (not stmt) {
-        if (then) body = ParseExpr();
-        else if (At(Tk::LBrace)) ParseBlock();
-        else Error("Expected '%1(then)' or '%1({{)' after condition in '%1(if)' expression");
-    } else {
-        body = ParseStmt();
-    }
+    // Check for unnecessary parens around the condition, which is
+    // common in other languages.
+    //
+    // Note that, because the parser is greedy, it is impossible for
+    // the meaning of the program to change if the parens are omitted;
+    // even in cases that at first seem like they might be problematic,
+    // e.g. 'if (x) (3)' and 'if (x) ++y', we would actually end up with
+    // '(x)(3)' (a call) and '(x)++' (a unary expression) as the condition,
+    // neither of which is a ParenExpr.
+    if (isa<ParsedParenExpr>(cond.get())) Warn(
+        cond.get()->loc,
+        "Unnecessary parentheses around '%1(if)' condition"
+    );
+
+    // 'then' is optional.
+    Consume(Tk::Then);
+    Ptr<ParsedStmt> body = ParseStmt();
 
     // Bail if we don’t have a body.
     if (not body) {
@@ -916,14 +921,13 @@ auto Parser::ParseIf(bool stmt) -> Ptr<ParsedIfExpr> {
     }
 
     // Parse the else/elif branch.
-    auto else_ = At(Tk::Elif)      ? ParseIf(stmt)
-               : Consume(Tk::Else) ? (stmt ? ParseStmt() : ParseExpr())
+    auto else_ = At(Tk::Elif)      ? ParseIf()
+               : Consume(Tk::Else) ? ParseStmt()
                                    : nullptr;
     return new (*this) ParsedIfExpr{
         cond.get(),
         body.get(),
         else_,
-        stmt,
         {loc, else_ ? else_.get()->loc : body.get()->loc}
     };
 }
@@ -940,7 +944,7 @@ void Parser::ParseImport() {
 
     // Save name for later.
     auto linkage_name = tok->text;
-    ++tok;
+    Next();
 
     // Read import name.
     ExpectAndConsume(Tk::As, "Syntax for header imports is `import <header> as name`");
@@ -962,8 +966,8 @@ void Parser::ParseImport() {
         mod->imports.emplace_back(linkage_name, tok->text, loc);
     }
 
-    ++tok;
-    ConsumeOrError(Tk::Semicolon);
+    Next();
+    Consume(Tk::Semicolon);
 }
 
 // <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
@@ -975,7 +979,7 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
     );
 
     // Parse the optional initialiser.
-    ++tok;
+    Next();
     if (Consume(Tk::Assign)) decl->init = ParseExpr();
 
     // We don’t allow declaration groups such as 'int a, b;'.
@@ -1038,14 +1042,13 @@ bool Parser::ParseSignature(
     SmallVectorImpl<ParsedLocalDecl*>* decls
 ) {
     // Yeet 'proc'.
-    sig.proc_loc = tok->location;
-    ++tok;
+    sig.proc_loc = Next();
 
     // Parse name.
     sig.tok_after_proc = tok->location;
     if (At(Tk::Identifier)) {
         sig.name = tok->text;
-        ++tok;
+        Next();
     }
 
     // Parse signature.
@@ -1092,14 +1095,13 @@ bool Parser::ParseSignature(
                     }
 
                     name = tok->text;
-                    end = tok->location;
-                    ++tok;
+                    end = Next();
                 }
 
                 decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {type.get()->loc, end}});
             } else if (At(Tk::Identifier)) {
                 Error("Named parameters are not allowed here");
-                ++tok;
+                Next();
             }
 
             if (not Consume(Tk::Comma)) break;
@@ -1122,29 +1124,19 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
         case Tk::Eval: {
-            ++tok;
+            Next();
             auto arg = ParseStmt();
             if (not arg) return {};
             return new (*this) ParsedEvalExpr{arg.get(), loc};
         }
 
-        case Tk::LBrace: return ParseBlock();
         case Tk::Proc: return ParseProcDecl();
-        case Tk::If: {
-            auto if_ = ParseIf(true);
-            if (not if_) SkipPast(Tk::Semicolon);
-            return if_;
-        }
 
         // Fall through to the expression parser, but remember
-        // to eat a semicolon afterwards if we don’t parse a block
-        // expression.
+        // to eat an optional semicolon afterwards.
         default:
             if (auto res = ParseExpr()) {
-                if (not Consume(Tk::Semicolon)) {
-                    Error("Expected ';'");
-                    SkipPast(Tk::Semicolon);
-                }
+                Consume(Tk::Semicolon);
                 return res;
             }
 
@@ -1158,9 +1150,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 // <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
 auto Parser::ParseType() -> Ptr<ParsedStmt> {
     auto Builtin = [&](BuiltinType* ty) {
-        auto loc = tok->location;
-        ++tok;
-        return new (*this) ParsedBuiltinType(ty, loc);
+        return new (*this) ParsedBuiltinType(ty, Next());
     };
 
     switch (tok->type) {
@@ -1176,7 +1166,7 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
         case Tk::TemplateType: {
             // Drop the '$' from the type.
             auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
-            ++tok;
+            Next();
             return ty;
         }
 

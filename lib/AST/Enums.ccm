@@ -45,10 +45,12 @@ enum class srcc::Dependence : u8 {
     Instantiation = 1,
 
     /// The value of this expression is dependent.
-    Value = 1 << 1 | Instantiation,
+    ValueDependent = 1 << 1,
+    Value = ValueDependent | Instantiation,
 
     /// The type of this expression is dependent.
-    Type = 1 << 2 | Instantiation,
+    TypeDependent = 1 << 2,
+    Type = TypeDependent | Instantiation,
 
     /// Combination of value and type dependence.
     ValueAndType = Value | Type,

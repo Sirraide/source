@@ -326,19 +326,16 @@ public:
     ParsedStmt* cond;
     ParsedStmt* then;
     Ptr<ParsedStmt> else_;
-    bool stmt;
 
     ParsedIfExpr(
         ParsedStmt* cond,
         ParsedStmt* then,
         Ptr<ParsedStmt> else_,
-        bool stmt,
         Location location
     ) : ParsedStmt{Kind::IfExpr, location},
         cond{cond},
         then{then},
-        else_{else_},
-        stmt{stmt} {}
+        else_{else_} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IfExpr; }
 };
@@ -556,7 +553,7 @@ private:
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
-    auto ParseIf(bool stmt) -> Ptr<ParsedIfExpr>;
+    auto ParseIf() -> Ptr<ParsedIfExpr>;
     void ParseImport();
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
@@ -581,17 +578,6 @@ private:
     /// Consume a token or issue an error.
     bool ConsumeOrError(Tk tk);
 
-    /// Skip up to a token.
-    void SkipTo(std::same_as<Tk> auto... tks) {
-        while (not At(tks..., Tk::Eof)) ++tok;
-    }
-
-    /// Skip up and past a token.
-    void SkipPast(std::same_as<Tk> auto... tks) {
-        SkipTo(tks...);
-        if (not At(Tk::Eof)) ++tok;
-    }
-
     /// Check if we’re at a token.
     bool At(std::same_as<Tk> auto... tks) {
         return ((tok->type == tks) or ...);
@@ -613,6 +599,20 @@ private:
         if (Consume(t)) return true;
         Error(fmt, std::forward<Args>(args)...);
         return false;
+    }
+
+    /// Consume a token and return its location.
+    auto Next() -> Location;
+
+    /// Skip up to a token.
+    void SkipTo(std::same_as<Tk> auto... tks) {
+        while (not At(tks..., Tk::Eof)) ++tok;
+    }
+
+    /// Skip up and past a token.
+    void SkipPast(std::same_as<Tk> auto... tks) {
+        SkipTo(tks...);
+        if (not At(Tk::Eof)) ++tok;
     }
 
     /// Read all tokens from a file.

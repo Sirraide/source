@@ -110,6 +110,9 @@ public:
     /// Mark this node as errored.
     void set_errored() { dep |= Dependence::Error; }
 
+    /// Check if this is type-dependent.
+    bool type_dependent() const { return dependence() & Dependence::TypeDependent; }
+
     /// Visit this statement.
     template <typename Visitor>
     auto visit(Visitor&& v) -> decltype(auto);
@@ -376,6 +379,33 @@ public:
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
+};
+
+class srcc::IfExpr final : public Expr {
+public:
+    Expr* cond;
+    Stmt* then;
+    Ptr<Stmt> else_;
+
+    IfExpr(
+        Type type,
+        ValueCategory val,
+        Expr* cond,
+        Stmt* then,
+        Ptr<Stmt> else_,
+        Location location
+    ) : Expr{Kind::IfExpr, type, val, location},
+        cond{cond},
+        then{then},
+        else_{else_} {
+        ComputeDependence();
+    }
+
+    [[nodiscard]] bool has_yield() const {
+        return type != Types::VoidTy and type != Types::NoReturnTy;
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::IfExpr; }
 };
 
 class srcc::IntLitExpr final : public Expr {

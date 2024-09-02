@@ -83,7 +83,8 @@ public:
     /// Get a string representation of this type.
     LLVM_READONLY auto print() const -> SmallUnrenderedString;
 
-    /// Get the value category that an expression with this type has by default.
+    /// Get the value category that an expression with this type
+    /// has by default. This will usually be some kind of rvalue.
     LLVM_READONLY auto value_category() const -> ValueCategory;
 
     /// Visit this type.
@@ -136,6 +137,8 @@ public:
 /// A type together with qualifiers.
 template <typename Wrapped = srcc::TypeBase>
 class srcc::TypeWrapper {
+    template <typename> friend class TypeWrapper;
+
 public:
     using WrappedType = Wrapped;
 
@@ -165,7 +168,9 @@ public:
     auto operator->() const -> WrappedType* { return pointer; }
 
     /// Check if two types are equal.
-    auto operator==(TypeWrapper other) const -> bool { return pointer == other.pointer; }
+    template <typename T>
+    auto operator==(TypeWrapper<T> other) const -> bool { return pointer == other.pointer; }
+    auto operator==(TypeBase* ty) const -> bool { return pointer == ty; }
 
     /// Construct a `TypeWrapper` from an opaque pointer.
     static auto FromOpaquePointer(void* ptr) -> TypeWrapper {

@@ -24,13 +24,15 @@
 //  Statements
 // ============================================================================
 <stmts> ::= { <stmt> | <decl> }
-<stmt>  ::= [ <expr> ] ";"
+<stmt>  ::= <expr> [ ";" ]
+          | ";"
           | <expr-block>
           | <decl>
           | EVAL <stmt>
-          | <stmt-if>
 
-<stmt-if> ::= IF <expr> [ THEN ] <stmt> { ELIF <stmt> } [ ELSE <stmt> ]
+// The effect of this confusing rule is to extend <stmt> to additionally allow
+// expressions without a trailing semicolon.
+<expr-or-stmt> ::= <expr> | <stmt>
 
 // ============================================================================
 //  Expressions
@@ -55,7 +57,7 @@
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
-<expr-if>        ::= IF <expr> <if-body> { ELIF <expr> } ELSE <expr>
+<expr-if>        ::= IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <if-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-member>    ::= <expr> "." IDENTIFIER
 <expr-paren>     ::= "(" <expr> ")"
@@ -65,7 +67,7 @@
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | "not" | "~"
-<if-body> ::= THEN <expr> | <expr-block>
+<if-body> ::= [ THEN ] <expr-or-stmt>
 <binary> ::= // TODO: list all binary operators here.
 
 
