@@ -856,12 +856,6 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
     // Add a candidate to the overload set.
     auto AddCandidate = [&](ProcDecl* proc) -> bool {
-        // Argument or return type contains a hard error; this is likely
-        // to lead to bogus errors, so just abort the entire overload
-        // resolution process and return an error. We've already diagnosed
-        // the underlying problem, so don’t emit an error here.
-        if (proc->type->errored()) return false;
-
         // Candidate is a template.
         if (not proc->is_template()) {
             candidates.emplace_back(proc);
@@ -906,7 +900,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // If the candidate’s return type is deduced, we’re trying to
         // call it before it has been fully analysed. Disallow this.
-        if (ty->ret() == Types::DeducedTy) {
+        if (ty->ret() == Types::DeducedTy and not c.is_template()) {
             c.status = Candidate::UndeducedReturnType{};
             return true;
         }

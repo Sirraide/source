@@ -297,6 +297,8 @@ private:
 
         auto badness() const -> u32 { return status.get<Viable>().badness; }
 
+        bool is_template() const { return proc.is<TemplateInfo>(); }
+
         auto name() const -> String {
             return decl()->name;
         }
