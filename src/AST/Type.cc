@@ -272,6 +272,16 @@ void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.as_opaque_ptr());
 }
 
+auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType* {
+    return Get(
+        mod,
+        new_ret,
+        ty->params(),
+        ty->cconv(),
+        ty->variadic()
+    );
+}
+
 auto ProcType::Get(
     TranslationUnit& mod,
     Type return_type,

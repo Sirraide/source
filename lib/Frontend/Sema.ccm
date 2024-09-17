@@ -240,6 +240,10 @@ private:
             u32 badness = 0;
         };
 
+        // Candidate that is called before it is fully defined. This can
+        // happen due to e.g. recursion.
+        struct UndeducedReturnType {};
+
         // Candidate for which the argument count didn’t match the parameter count.
         struct ArgumentCountMismatch {};
 
@@ -277,6 +281,7 @@ private:
         // Whether this candidate is still viable, or why not.
         using Status = Variant<
             Viable,
+            UndeducedReturnType,
             ArgumentCountMismatch,
             TypeMismatch,
             InvalidTemplate,

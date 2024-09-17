@@ -71,6 +71,9 @@ public:
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
 
+    /// Check if this type contains an error.
+    bool errored() const { return dep & Dependence::Error; }
+
     /// Get the kind of this type.
     auto kind() const -> Kind { return type_kind; }
 
@@ -331,6 +334,10 @@ public:
     void Profile(FoldingSetNodeID& ID) const {
         Profile(ID, return_type, params(), cc, is_variadic);
     }
+
+    /// Get a copy of this type, with the return type adjusted
+    /// to \p new_ret.
+    static auto AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType*;
 
     static auto Get(
         TranslationUnit& mod,

@@ -274,6 +274,7 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(p, "ProcDecl");
             print(" %2({}) {}", p->name, p->type->print());
 
+            if (p->errored()) print(" errored");
             if (p->instantiated_from) print(" instantiation");
             print("\n");
             if (not print_procedure_bodies) break;

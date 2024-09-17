@@ -447,6 +447,12 @@ void Sema::ReportOverloadResolutionFailure(
                 Note(c.location(), "Declared here");
             },
 
+            [&](Candidate::UndeducedReturnType) {
+                Error(call_loc, "Cannot call procedure before its return type has been deduced");
+                Note(c.location(), "Declared here");
+                Remark("\rTry specifying the return type explicitly: '%1(->) <type>'");
+            },
+
             [&](Candidate::NestedResolutionFailure) {
                 Todo("Report this");
             }
@@ -522,6 +528,10 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::InvalidTemplate) {
                 message += "Template argument substitution failed";
                 FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");
+            },
+
+            [&](Candidate::UndeducedReturnType) {
+                message += "Return type has not been deduced yet";
             },
 
             [&](const Candidate::NestedResolutionFailure& n) {
@@ -846,6 +856,13 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
     // Add a candidate to the overload set.
     auto AddCandidate = [&](ProcDecl* proc) -> bool {
+        // Argument or return type contains a hard error; this is likely
+        // to lead to bogus errors, so just abort the entire overload
+        // resolution process and return an error. We've already diagnosed
+        // the underlying problem, so don’t emit an error here.
+        if (proc->type->errored()) return false;
+
+        // Candidate is a template.
         if (not proc->is_template()) {
             candidates.emplace_back(proc);
             return true;
@@ -886,6 +903,13 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     auto CheckCandidate = [&](Candidate& c) -> bool {
         auto ty = c.type();
         auto params = ty->params();
+
+        // If the candidate’s return type is deduced, we’re trying to
+        // call it before it has been fully analysed. Disallow this.
+        if (ty->ret() == Types::DeducedTy) {
+            c.status = Candidate::UndeducedReturnType{};
+            return true;
+        }
 
         // Argument count mismatch is not allowed.
         //
@@ -1193,13 +1217,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         auto proc_type = proc->proc_type();
         Type deduced = Types::VoidTy;
         if (auto val = value.get_or_null()) deduced = val->type;
-        proc->type = ProcType::Get(
-            *M,
-            deduced,
-            proc_type->params(),
-            proc_type->cconv(),
-            proc_type->variadic()
-        );
+        proc->type = ProcType::AdjustRet(*M, proc_type, deduced);
     }
 
     // Or complain if the type doesn’t match.
@@ -1589,7 +1607,14 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
 
     // Translate body.
     auto body = TranslateExpr(parsed->body);
-    if (body.invalid()) return nullptr;
+    if (body.invalid()) {
+        // If we’re attempting to deduce the return type of this procedure,
+        // but the body contains an error, then set the return type to errored.
+        if (decl->return_type() == Types::DeducedTy)
+            decl->type = ProcType::AdjustRet(*M, decl->proc_type(), Types::ErrorDependentTy);
+        return nullptr;
+    }
+
     return BuildProcBody(decl, body.get());
 }
 
