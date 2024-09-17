@@ -49,7 +49,7 @@ auto Value::print() const -> SmallUnrenderedString {
         [&](ProcDecl* proc) { out += std::format("%2({})", proc->name); },
         [&](TypeTag) { out += ty->print(); },
         [&](const LValue& lval) { out += lval.print(); },
-        [&](const APInt& value) { out += std::format("$5({})", toString(value, 10, true)); },
+        [&](const APInt& value) { out += std::format("%5({})", toString(value, 10, true)); },
         [&](const Slice&) { out += "<slice>"; },
         [&](this auto& Self, const Reference& ref) {
             Self(ref.lvalue);
@@ -78,11 +78,15 @@ auto Value::value_category() const -> ValueCategory {
 //  Evaluation State
 // ============================================================================
 struct StackFrame {
+    using LocalsMap = DenseMap<LocalDecl*, LValue>;
+
     StackFrame(const StackFrame&) = delete;
     StackFrame& operator=(const StackFrame&) = delete;
     StackFrame(StackFrame&&) = default;
     StackFrame& operator=(StackFrame&&) = default;
-    StackFrame(ProcDecl* proc, Location loc) : proc{proc}, call_loc{loc} {}
+
+    StackFrame(ProcDecl* proc, LocalsMap&& locals, Location loc)
+        : proc{proc}, call_loc{loc}, locals{std::move(locals)} {}
 
     /// The procedure that this frame belongs to.
     ProcDecl* proc;
@@ -91,7 +95,7 @@ struct StackFrame {
     Location call_loc;
 
     /// The local variables and parameters allocated in this frame.
-    DenseMap<LocalDecl*, LValue> locals;
+    LocalsMap locals;
 
     /// The return value, if any.
     Value return_value;
@@ -123,8 +127,12 @@ public:
         EvaluationContext& ctx;
 
     public:
-        PushStackFrame(EvaluationContext& ctx, ProcDecl* proc, Location loc)
-            : ctx{ctx} { ctx.stack.emplace_back(proc, loc); }
+        PushStackFrame(
+            EvaluationContext& ctx,
+            ProcDecl* proc,
+            StackFrame::LocalsMap&& locals,
+            Location loc
+        ) : ctx{ctx} { ctx.stack.emplace_back(proc, std::move(locals), loc); }
         ~PushStackFrame() { ctx.stack.pop_back(); }
     };
 
@@ -159,6 +167,9 @@ public:
 
     /// Check and diagnose for invalid memory accesses.
     [[nodiscard]] bool CheckMemoryAccess(const Memory* mem, Size size, bool write, Location loc);
+
+    /// Print the contents of a stack frame for debugging.
+    void DumpFrame(StackFrame& frame);
 
     /// Get a slice as a raw memory buffer.
     [[nodiscard]] auto GetMemoryBuffer(const Slice& slice, Location loc) -> std::optional<ArrayRef<char>>;
@@ -228,7 +239,21 @@ auto LValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{// clang-format off
         [&](String s) { out += std::format("%3(\"{}\")", s); },
-        [&](const Memory*) { out += "<memory location>"; }
+        [&](const Memory* mem) {
+            out += std::format(
+                "<{} memory:%3({})",
+                mem->type(),
+                mem->alive() ? "alive"sv : "dead"sv
+            );
+
+            if (mem->alive() and mem->type() == Types::IntTy) {
+                i64 value;
+                std::memcpy(&value, mem->data(), sizeof(i64));
+                out += std::format(" value:%5({})", value);
+            }
+
+            out += ">";
+        }
     }; // clang-format on
     base.visit(V);
     return out;
@@ -327,6 +352,16 @@ void Memory::init(TranslationUnit& tu) {
 // ============================================================================
 //  Helpers
 // ============================================================================
+void EvaluationContext::DumpFrame(StackFrame& frame) {
+    std::println("In procedure '{}'", frame.proc->name);
+    for (auto& [decl, lval] : frame.locals) {
+        std::print("  {} -> ", decl->name);
+        lval.dump(true);
+        std::print("\n");
+    }
+    std::print("\n");
+}
+
 bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
     if (stmt->dependent()) {
         ICE(stmt->location(), "Cannot evaluate dependent statement");
@@ -565,17 +600,17 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         Unreachable();
     };
 
-    auto EvalUnchecked = [&](APInt (APInt::* op)(const APInt&) const) {
+    auto EvalUnchecked = [&](APInt (APInt::*op)(const APInt&) const) {
         out = {(lhs.cast<APInt>().*op)(rhs.cast<APInt>()), lhs.type()};
         return true;
     };
 
-    auto EvalCompare = [&](bool (APInt::* op)(const APInt&) const) {
+    auto EvalCompare = [&](bool (APInt::*op)(const APInt&) const) {
         out = (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
         return true;
     };
 
-    auto EvalInPlace = [&]<typename T = void>(T (APInt::* op)(const APInt&)) {
+    auto EvalInPlace = [&]<typename T = void>(T (APInt::*op)(const APInt&)) {
         (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
         out = std::move(lhs);
         return true;
@@ -829,16 +864,20 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
 
     // If we have a body, just evaluate it.
     if (auto body = proc->body().get_or_null()) {
-        // Set up stack.
-        PushStackFrame _{*this, proc, call->location()};
-        auto& frame = CurrFrame();
+        StackFrame::LocalsMap locals;
 
-        // Allocate and initialise local variables and initialise them.
+        // Allocate and initialise local variables and initialise them. Do
+        // this before we set up the stack frame, otherwise, we’ll try to
+        // access the locals in the new frame before we’re done setting them
+        // up.
         for (auto [i, l] : enumerate(proc->locals)) {
-            auto& addr = frame.locals[l] = LValue{AllocateMemory(l->type, l->location())};
+            auto& addr = locals[l] = LValue{AllocateMemory(l->type, l->location())};
             if (isa<ParamDecl>(l) and not PerformVarInit(addr, args[i], l->location()))
                 return false;
         }
+
+        // Set up stack.
+        PushStackFrame _{*this, proc, std::move(locals), call->location()};
 
         // Dew it.
         if (not Eval(out, body)) return false;

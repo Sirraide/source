@@ -48,13 +48,30 @@ enum struct srcc::eval::LifetimeState : u8 {
     Initialised,
 };
 
+
+class srcc::eval::LValue {
+public:
+    // Base of the lvalue. This is either:
+    //     - a string literal;
+    //     - stack or heap memory;
+    Variant<String, Memory*> base;
+
+    // Whether the lvalue is modifiable.
+    bool modifiable{false};
+
+    /// Get the base type of this LValue.
+    auto base_type(TranslationUnit& tu) const -> Type;
+
+    /// Print this.
+    void dump(bool use_colour = true) const;
+    auto print() const -> SmallUnrenderedString;
+};
+
 /// Memory location.
-///
-/// This class is actually just effectively a header: the
-/// actual memory is stored as trailing data.
 class srcc::eval::Memory {
     SRCC_IMMOVABLE(Memory);
     friend EvaluationContext;
+    friend auto LValue::print() const -> SmallUnrenderedString;
 
     const Type ty;
     Location loc;
@@ -86,24 +103,6 @@ public:
 private:
     [[nodiscard]] auto data() -> void* { return data_and_state.getPointer(); }
     [[nodiscard]] auto data() const -> const void* { return data_and_state.getPointer(); }
-};
-
-class srcc::eval::LValue {
-public:
-    // Base of the lvalue. This is either:
-    //     - a string literal;
-    //     - stack or heap memory;
-    Variant<String, Memory*> base;
-
-    // Whether the lvalue is modifiable.
-    bool modifiable{false};
-
-    /// Get the base type of this LValue.
-    auto base_type(TranslationUnit& tu) const -> Type;
-
-    /// Print this.
-    void dump(bool use_colour = true) const;
-    auto print() const -> SmallUnrenderedString;
 };
 
 class srcc::eval::Reference {
