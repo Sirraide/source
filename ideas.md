@@ -14,8 +14,8 @@ A parameter can only have at most one of these intents:
   - `ref`   = Pass by reference; this is only valid in procedure *types* and indicates whether
               a parameter ends up being passed by reference. This is a very low-level (and sometimes
               platform-dependent) feature that should generally not be used. Maybe only allow this in
-              printouts or internally? This is basically what `out`, `inout` and large `in` parameters
-              are lowered to internally.
+              printouts or internally? ~~This is basically what `out`, `inout` and large `in` parameters
+              are lowered to internally.~~ Maybe rewrite `inout` to a move instead? (https://www.youtube.com/watch?v=5lecIqUhEl4)
 
 Additional parameter modifiers. These are optional and *precede* the intent. A parameter
 can have any number of these, but each one only once:
@@ -168,3 +168,6 @@ struct foo {
 
 This is fine since it is always accessed as `a.else` or `.else`, and `else` in that position (or any other
 keyword, I think) would be syntactically invalid as a keyword anyway.
+
+## Immutability
+`ILValue`?

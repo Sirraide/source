@@ -154,4 +154,9 @@ private:
     auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
     auto MakeInt(u64 integer) -> llvm::ConstantInt*;
     auto MangledName(ProcDecl* proc) -> StringRef;
+
+    /// Initialise a variable or memory location.
+    ///
+    /// \return addr
+    auto PerformVariableInitialisation(llvm::Value* addr, Expr* init) -> llvm::Value*;
 };

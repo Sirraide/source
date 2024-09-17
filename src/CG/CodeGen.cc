@@ -402,6 +402,27 @@ auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
 }
 
 // ============================================================================
+//  Initialisation.
+// ============================================================================
+auto CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) -> Value* {
+    switch (init->type->value_category()) {
+        case Expr::DValue: Unreachable("Dependent initialiser in codegen?");
+        case Expr::LValue: Unreachable("Initialisation from lvalue?");
+
+        // Emit + store.
+        case Expr::SRValue: {
+            auto val = Emit(init);
+            builder.CreateStore(val, addr);
+            return addr;
+        }
+
+        case ValueCategory::MRValue: Todo("Construct from MRValue");
+    }
+
+    Unreachable();
+}
+
+// ============================================================================
 //  Type Conversion
 // ============================================================================
 auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
@@ -570,6 +591,10 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
             );
         }
 
+        // Assignment.
+        case Tk::Assign: return PerformVariableInitialisation(Emit(expr->lhs), expr->rhs);
+
+        // Anything else.
         default: return EmitArithmeticOrComparisonOperator(
             expr->op,
             Emit(expr->lhs),
@@ -851,7 +876,9 @@ auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
     Unreachable("Emitting unresolved overload set?");
 }
 
-auto CodeGen::EmitParenExpr(ParenExpr*) -> Value* { Todo(); }
+auto CodeGen::EmitParenExpr(ParenExpr* expr) -> Value* {
+    return Emit(expr->expr);
+}
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
     if (proc->is_template()) return;
