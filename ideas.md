@@ -171,3 +171,39 @@ keyword, I think) would be syntactically invalid as a keyword anyway.
 
 ## Immutability
 `ILValue`?
+
+## Initialisers and return values.
+Allow initialisers to return a value of any type, i.e. this
+```c++
+struct S {
+    init -> int = 4;
+}
+```
+is valid, if dumb. The intent is that initialisers are just regular
+functions that just happen to have the same name as the type they belong
+to (the type name is ‘overloaded’, in a sense). This has two consequences.
+
+1. These syntaxes require some thought:
+   ```c#
+   S s = 4;
+   S s = (4);
+   ```
+   This is only allowed if the initialiser that takes an `int` returns an `S`. Otherwise,
+   you have to call the initialiser explicitly.
+   ```c#
+   S? s = S(4);
+   var s = S(4); // For longer type names. 
+   ```
+
+2. We need some way to *actually* initialise the fields (since `S(4)` would just call)
+   the initialiser again. For this `S::(4)` can be used. This might be a bit ugly, but
+   you’re not supposed to use it outside of initialisers anyway.
+ 
+   To prevent accidentally running into an infinite loop in the initialiser, we disallow
+   the `S()` syntax there and require writing either `S::()` or `init()` to call another
+   initialiser (that is, only for the type that the initialiser belongs to; some other type,
+   e.g. `T()` can still be used with that syntax).
+
+   We should probably allow this if the type is (or was at some point) dependent, though, as
+   this might cause problems for generic code otherwise. Maybe we should just warn on it if
+   the type isn’t dependent and suggest writing either `S::()` or `init()`?

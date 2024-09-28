@@ -93,6 +93,10 @@ const StringMap<Tk> keywords = {
     {"__srcc_ffi_wchar", Tk::CWCharT},
 };
 
+bool Parser::IsKeyword(Tk t) {
+    return keywords.contains(Spelling(t));
+}
+
 // ========================================================================
 //  Main lexer implementation.
 // ========================================================================

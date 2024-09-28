@@ -74,7 +74,8 @@
 <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
 <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-body>  ::= <expr-block> | "=" <expr> ";"
-<param-decl> ::= <type> [ IDENTIFIER ] | <signature>
+<param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
+<intent>     ::= IN | OUT | INOUT | COPY
 
 // ============================================================================
 //  Types

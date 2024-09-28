@@ -17,6 +17,7 @@ class ParsedModule;
 class ParsedStmt;
 struct LexedTokenStream;
 struct ImportedModule;
+struct ParsedParameter;
 
 #define PARSE_TREE_NODE(node) class SRCC_CAT(Parsed, node);
 #include "srcc/ParseTree.inc"
@@ -126,12 +127,21 @@ public:
     }
 };
 
+/// This only holds type information. The parameter name is stored
+/// in the corresponding declaration instead.
+struct srcc::ParsedParameter {
+    Intent intent;
+    ParsedStmt* type;
+    ParsedParameter(Intent intent, ParsedStmt* type)
+        : intent{intent}, type{type} {}
+};
+
 class srcc::ParsedProcType final : public ParsedStmt
-    , llvm::TrailingObjects<ParsedProcType, ParsedStmt*> {
+    , llvm::TrailingObjects<ParsedProcType, ParsedParameter> {
     friend TrailingObjects;
     const u32 num_params;
-    auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_params; }
-    ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedStmt*> params, Location loc);
+    auto numTrailingObjects(OverloadToken<ParsedParameter>) -> usz { return num_params; }
+    ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedParameter> params, Location loc);
 
 public:
     ParsedStmt* const ret_type;
@@ -139,12 +149,12 @@ public:
     static auto Create(
         Parser& parser,
         ParsedStmt* ret_type,
-        ArrayRef<ParsedStmt*> params,
+        ArrayRef<ParsedParameter> params,
         Location loc
     ) -> ParsedProcType*;
 
-    auto param_types() -> ArrayRef<ParsedStmt*> {
-        return {getTrailingObjects<ParsedStmt*>(), num_params};
+    auto param_types() -> ArrayRef<ParsedParameter> {
+        return {getTrailingObjects<ParsedParameter>(), num_params};
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
@@ -437,12 +447,14 @@ class srcc::ParsedLocalDecl final : public ParsedDecl {
 public:
     ParsedStmt* type;
     Ptr<ParsedStmt> init;
+    Intent intent; // Only used for parameters.
 
     ParsedLocalDecl(
         String name,
         ParsedStmt* param_type,
-        Location location
-    ) : ParsedDecl{Kind::LocalDecl, name, location}, type{param_type} {}
+        Location location,
+        Intent intent = Intent::Move
+    ) : ParsedDecl{Kind::LocalDecl, name, location}, type{param_type}, intent{intent} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LocalDecl; }
 };
@@ -535,7 +547,7 @@ public:
 
 private:
     struct Signature {
-        SmallVector<ParsedStmt*, 10> param_types;
+        SmallVector<ParsedParameter, 10> param_types;
         Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
         String name;
         Location proc_loc;
@@ -555,6 +567,7 @@ private:
     void ParseHeader();
     auto ParseIf() -> Ptr<ParsedIfExpr>;
     void ParseImport();
+    auto ParseIntent() -> std::pair<Location, Intent>;
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
@@ -592,6 +605,7 @@ private:
     bool Consume(Location& into, Tk tk);
 
     /// Consume a contextual keyword.
+    bool ConsumeContextual(StringRef keyword);
     bool ConsumeContextual(Location& into, StringRef keyword);
 
     /// Consume a token if we’re at it, and issue an error about it otherwise.
@@ -602,21 +616,25 @@ private:
         return false;
     }
 
+    /// Check if a token is a keyword (implemented in the lexer).
+    bool IsKeyword(Tk t);
+
     /// Get a lookahead token; returns EOF if looking past the end.
     auto LookAhead(usz n = 1) -> Token&;
 
-    /// Consume a token and return its location.
+    /// Consume a token and return its location. If the parser is at
+    /// end of file, the token iterator is not advanced.
     auto Next() -> Location;
 
     /// Skip up to a token.
     void SkipTo(std::same_as<Tk> auto... tks) {
-        while (not At(tks..., Tk::Eof)) ++tok;
+        while (not At(tks..., Tk::Eof)) Next();
     }
 
     /// Skip up and past a token.
     void SkipPast(std::same_as<Tk> auto... tks) {
         SkipTo(tks...);
-        if (not At(Tk::Eof)) ++tok;
+        Next();
     }
 
     /// Read all tokens from a file.

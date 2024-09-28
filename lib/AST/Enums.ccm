@@ -1,3 +1,6 @@
+module;
+#include <base/Assert.hh>
+#include <format>
 export module srcc.ast:enums;
 import srcc.utils;
 using namespace srcc;
@@ -8,6 +11,7 @@ enum class BuiltinKind : u8;
 enum class CallingConvention : u8;
 enum class Dependence : u8;
 enum class ExprKind : u8;
+enum class Intent : u8;
 enum class Linkage : u8;
 enum class Mangling : u8;
 enum class ValueCategory : u8;
@@ -58,6 +62,32 @@ enum class srcc::Dependence : u8 {
     /// This expression contains an error.
     ErrorDependent = 1 << 7,
     Error = ErrorDependent | Instantiation,
+};
+
+/// Parameter intents.
+enum class srcc::Intent : u8 {
+    /// The parameter is moved into the callee, who takes ownership
+    /// of it. This may be lowered to a copy for small types, or to
+    /// pass-by-reference for larger ones.
+    ///
+    /// This is the default if no intent is specified and cannot be
+    /// written explicitly.
+    Move,
+
+    /// The parameter is passed readonly.
+    In,
+
+    /// The parameter is used to return a value.
+    Out,
+
+    /// The parameter is used to return a value, but the callee
+    /// may also inspect it before that.
+    Inout,
+
+    /// The parameter is copied and behaves like a local variable in
+    /// the callee. This is the only valid intent for procedures that
+    /// use the C++ ABI.
+    Copy,
 };
 
 /// Builtin types.
@@ -132,4 +162,22 @@ enum class srcc::OverflowBehaviour : u8 {
 
     /// Wrap around like normal.
     Wrap,
+};
+
+template <>
+struct std::formatter<Intent> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(Intent i, FormatContext& ctx) const {
+        auto s = [i] -> std::string_view {
+            switch (i) {
+                case Intent::Move: return "move";
+                case Intent::In: return "in";
+                case Intent::Out: return "out";
+                case Intent::Inout: return "inout";
+                case Intent::Copy: return "copy";
+            }
+            return "<invalid intent>";
+        }();
+        return std::formatter<std::string_view>::format(s, ctx);
+    }
 };

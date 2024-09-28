@@ -41,20 +41,20 @@ void* ParsedStmt::operator new(usz size, Parser& parser) {
 // ============================================================================
 //  Types
 // ============================================================================
-ParsedProcType::ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedStmt*> params, Location loc)
+ParsedProcType::ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedParameter> params, Location loc)
     : ParsedStmt{Kind::ProcType, loc},
       num_params{u32(params.size())},
       ret_type{ret_type} {
-    std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedStmt*>());
+    std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedParameter>());
 }
 
 auto ParsedProcType::Create(
     Parser& parser,
     ParsedStmt* ret_type,
-    ArrayRef<ParsedStmt*> params,
+    ArrayRef<ParsedParameter> params,
     Location loc
 ) -> ParsedProcType* {
-    const auto size = totalSizeToAlloc<ParsedStmt*>(params.size());
+    const auto size = totalSizeToAlloc<ParsedParameter>(params.size());
     auto mem = parser.allocate(size, alignof(ParsedProcType));
     return ::new (mem) ParsedProcType{ret_type, params, loc};
 }
@@ -268,12 +268,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::LocalDecl: {
             auto& p = *cast<ParsedLocalDecl>(s);
             PrintHeader(s, "LocalDecl", false);
-            print(
-                "%4({}){}{}\n",
-                p.name,
-                p.name.empty() ? ""sv : " "sv,
-                p.type->dump_as_type()
-            );
+            print("%4({}){}", p.name, p.name.empty() ? "" : " ");
+            if (p.intent != Intent::Move) print("%1({}) ", p.intent);
+            print("{}\n", p.type->dump_as_type());
             if (p.init) PrintChildren(p.init.get());
         } break;
 
@@ -344,10 +341,11 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                     bool first = true;
                     out += " (";
 
-                    for (auto t : p->param_types()) {
+                    for (auto param : p->param_types()) {
                         if (not first) out += ", ";
                         first = false;
-                        Append(t);
+                        if (param.intent != Intent::Move) out += std::format("{} ", param.intent);
+                        Append(param.type);
                     }
 
                     out += "\033)";
@@ -539,11 +537,8 @@ bool Parser::AtStartOfExpression() {
 }
 
 bool Parser::Consume(Tk tk) {
-    if (At(tk)) {
-        Next();
-        return true;
-    }
-    return false;
+    Location l;
+    return Consume(l, tk);
 }
 
 bool Parser::Consume(Location& into, Tk tk) {
@@ -552,6 +547,11 @@ bool Parser::Consume(Location& into, Tk tk) {
         return true;
     }
     return false;
+}
+
+bool Parser::ConsumeContextual(StringRef keyword) {
+    Location l;
+    return ConsumeContextual(l, keyword);
 }
 
 bool Parser::ConsumeContextual(Location& into, StringRef keyword) {
@@ -595,7 +595,7 @@ auto Parser::LookAhead(usz n) -> Token& {
 
 auto Parser::Next() -> Location {
     auto loc = tok->location;
-    ++tok;
+    if (not At(Tk::Eof)) ++tok;
     return loc;
 }
 
@@ -1003,6 +1003,32 @@ void Parser::ParseImport() {
     Consume(Tk::Semicolon);
 }
 
+// <intent> ::= IN | OUT | INOUT | COPY
+auto Parser::ParseIntent() -> std::pair<Location, Intent> {
+    Location loc;
+
+    // 'in' is a keyword, unlike the other intents.
+    if (Consume(loc, Tk::In)) {
+        // Correct 'in out' to 'inout'.
+        Location out_loc;
+        if (ConsumeContextual(out_loc, "out")) {
+            Error({loc, out_loc}, "Cannot specify more than one parameter intent");
+            Remark("Did you mean to write 'inout' instead of 'in out'?");
+            return {{loc, out_loc}, Intent::Inout};
+        }
+
+        return {loc, Intent::In};
+    }
+
+    // The other intents are contextual keywords.
+    if (ConsumeContextual(loc, "out")) return {loc, Intent::Out};
+    if (ConsumeContextual(loc, "inout")) return {loc, Intent::Inout};
+    if (ConsumeContextual(loc, "copy")) return {loc, Intent::Copy};
+
+    // If no intent is present, just return this as a default.
+    return {{}, Intent::Move};
+}
+
 // <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
 auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
     auto decl = new (*this) ParsedLocalDecl(
@@ -1069,7 +1095,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 // <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-body>  ::= <expr-block> | "=" <expr> ";"
-// <param-decl> ::= <type> [ IDENTIFIER ] | <signature>
+// <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 bool Parser::ParseSignature(
     Signature& sig,
     SmallVectorImpl<ParsedLocalDecl*>* decls
@@ -1085,19 +1111,30 @@ bool Parser::ParseSignature(
     }
 
     // Parse signature.
-    if (Consume(Tk::LParen)) {
-        while (not At(Tk::RParen)) {
+    if (Consume(Tk::LParen) and not Consume(Tk::RParen)) {
+        do {
             Ptr<ParsedStmt> type;
             String name;
             Location name_loc;
+
+            // Parse intent.
+            auto [start_loc, intent] = ParseIntent();
+            if (intent == Intent::Move) start_loc = tok->location;
+
+            // And do it again; two intents are an error.
+            else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
+                Error(loc, "Cannot specify more than one parameter intent");
+                SkipTo(Tk::Comma, Tk::RParen);
+                continue;
+            }
 
             // Special handling for signatures, which may have
             // a name in this position.
             if (At(Tk::Proc)) {
                 Signature inner;
                 if (not ParseSignature(inner, nullptr)) {
-                    SkipTo(Tk::RParen);
-                    break;
+                    SkipTo(Tk::Comma, Tk::RParen);
+                    continue;
                 }
 
                 type = CreateType(inner);
@@ -1110,12 +1147,12 @@ bool Parser::ParseSignature(
             else {
                 type = ParseType();
                 if (not type) {
-                    SkipTo(Tk::RParen);
-                    break;
+                    SkipTo(Tk::Comma, Tk::RParen);
+                    continue;
                 }
             }
 
-            sig.param_types.push_back(type.get());
+            sig.param_types.emplace_back(intent, type.get());
 
             // If decls is not null, then we allow named parameters here; parse
             // the name if there is one and create the declaration.
@@ -1129,17 +1166,23 @@ bool Parser::ParseSignature(
 
                     name = tok->text;
                     end = Next();
+                } else if (not At(Tk::Comma, Tk::RParen)) {
+                    Error("Expected parameter name, '%1(,)', or '%1(\033))'");
+                    if (IsKeyword(tok->type)) Remark(
+                        "'%1({})' is not a valid parameter name because it is "
+                        "a reserved word.",
+                        tok->text
+                    );
+
+                    SkipTo(Tk::Comma, Tk::RParen);
                 }
 
-                decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {type.get()->loc, end}});
+                decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {start_loc, end}, intent});
             } else if (At(Tk::Identifier)) {
                 Error("Named parameters are not allowed here");
                 Next();
             }
-
-            if (not Consume(Tk::Comma)) break;
-        }
-
+        } while (Consume(Tk::Comma));
         if (not Consume(Tk::RParen)) Error("Expected '\033)'");
     }
 

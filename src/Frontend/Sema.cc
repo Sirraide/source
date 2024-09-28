@@ -1761,7 +1761,7 @@ auto Sema::TranslateProcType(
 
         // First, do a prescan to collect template type defs.
         for (auto [i, p] : enumerate(parsed->param_types())) {
-            if (auto ptt = dyn_cast<ParsedTemplateType>(p)) {
+            if (auto ptt = dyn_cast<ParsedTemplateType>(p.type)) {
                 auto& td = template_param_decls[ptt->name];
                 if (td.deduced_indices.empty()) {
                     td.loc = ptt->loc;
@@ -1790,7 +1790,7 @@ auto Sema::TranslateProcType(
         //
         // At this point, the only thing in the scope here should be the
         // template parameters, so lookup should never find anything else.
-        if (auto ptt = dyn_cast<ParsedTemplateType>(a); ptt and ttds) {
+        if (auto ptt = dyn_cast<ParsedTemplateType>(a.type); ptt and ttds) {
             auto res = LookUpUnqualifiedName(curr_scope(), ptt->name, true);
             Assert(res.successful(), "Template parameter should have been declared earlier");
             Assert(res.decls.size() == 1 and isa<TemplateTypeDecl>(res.decls.front()));
@@ -1804,9 +1804,9 @@ auto Sema::TranslateProcType(
         // a procedure definition), type translation will handle that case
         // and return an error.
         else {
-            auto ty = TranslateType(a);
+            auto ty = TranslateType(a.type);
             if (ty == Types::DeducedTy) {
-                Error(a->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy);
+                Error(a.type->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy);
                 ty = Types::ErrorDependentTy;
             }
             params.push_back(ty);
