@@ -15,6 +15,7 @@ class TemplateTypeDecl;
 class TranslationUnit;
 class Types;
 struct Parameter;
+class Expr;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -77,6 +78,9 @@ public:
 
     /// Get the kind of this type.
     auto kind() const -> Kind { return type_kind; }
+
+    /// Check if this is 'int' or a sized integer.
+    LLVM_READONLY bool is_integer() const;
 
     /// Check if this type is the builtin 'void' type.
     LLVM_READONLY bool is_void() const;
@@ -182,7 +186,7 @@ public:
     /// Check if two types are equal.
     template <typename T>
     auto operator==(TypeWrapper<T> other) const -> bool { return pointer == other.pointer; }
-    auto operator==(TypeBase* ty) const -> bool { return pointer == ty; }
+    auto operator==(const TypeBase* ty) const -> bool { return pointer == ty; }
 
     /// Construct a `TypeWrapper` from an opaque pointer.
     static auto FromOpaquePointer(void* ptr) -> TypeWrapper {
@@ -211,6 +215,7 @@ public:
     Type ty;
     Location loc;
     TypeLoc(Type ty, Location loc) : ty{ty}, loc{loc} {}
+    TypeLoc(Expr* e);
 };
 
 // Specialisation that uses the null state to represent a null type.

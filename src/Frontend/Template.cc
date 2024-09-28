@@ -188,7 +188,9 @@ auto TemplateInstantiator::InstantiateCallExpr(CallExpr* e) -> Ptr<Stmt> {
 auto TemplateInstantiator::InstantiateCastExpr(CastExpr* e) -> Ptr<Stmt> {
     [[maybe_unused]] auto arg = TryInstantiateExpr(e->arg);
     switch (e->kind) {
-        case CastExpr::LValueToSRValue: Unreachable("Never dependent");
+        case CastExpr::LValueToSRValue:
+        case CastExpr::Integral:
+            Unreachable("Never dependent");
     }
     Unreachable("Invalid cast");
 }

@@ -1,0 +1,22 @@
+// V %srcc --sema --verify %s
+program test;
+
+i10000 i;
+i1000 j;
+int k;
+
+i * 2;
+i * j;
+i + i;
+j + i;
+j + i;
+i + j;
+i + 3;
+j + 3;
+i = 4;
+j = 4;
+i = j;
+j = i; // expected-error: Cannot convert expression of type 'i10000' to 'i1000'
+k + i; // expected-error: Invalid operation: + between int and i10000
+k + j; // expected-error: Invalid operation: + between int and i1000
+k + 100000000000000000000000000; // expected-error: Invalid operation: + between int and i128

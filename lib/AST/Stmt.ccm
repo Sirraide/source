@@ -323,6 +323,9 @@ public:
         ///
         /// This is only valid for types that can be srvalues.
         LValueToSRValue,
+
+        /// Cast an srvalue integer to an srvalue integer.
+        Integral,
     };
 
     using enum CastKind;

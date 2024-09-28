@@ -1,0 +1,53 @@
+// V %srcc --eval %s
+program test;
+
+proc f_move(int i) = i * 2;
+proc f_move_10000(i10000 i) = i * 2;
+
+int mi = 5;
+i10000 mj = 10;
+
+assert f_move(mi) == 10;
+assert f_move(mj) == 20;
+assert f_move(20) == 40;
+
+int i = 5;
+i10000 j = 10;
+
+proc f_in(in int i) = i * 3;
+proc f_in_10000(in i10000 i) = i * 3;
+
+assert f_in(i) == 15;
+assert f_in(j) == 30;
+assert f_in(20) == 60;
+
+proc f_out(out int i) { i = 100; }
+proc f_out_10000(out i10000 i) { i = 1000; }
+
+f_out(i);
+f_out_10000(j);
+assert i == 100;
+assert j == 1000;
+
+proc f_inout(inout int i) = i = i * 5;
+proc f_inout_10000(inout i10000 i) = i = i * 5;
+
+i = 5;
+j = 10;
+
+assert f_inout(i) == 25;
+assert f_inout(j) == 50;
+assert i == 25;
+assert j == 50;
+
+proc f_copy(copy int i) = i = i * 6;
+proc f_copy_10000(copy i10000 i) = i = i * 6;
+
+i = 5;
+j = 10;
+
+assert f_copy(i) == 30;
+assert f_copy(j) == 60;
+assert i == 5;
+assert j == 10;
+

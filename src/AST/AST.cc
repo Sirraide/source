@@ -200,6 +200,7 @@ void Stmt::Printer::Print(Stmt* e) {
             print(" {} ", c->type->print());
             switch (c->kind) {
                 case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
+                case CastExpr::Integral: print("int->int"); break;
             }
             print("\n");
             PrintChildren(c->arg);

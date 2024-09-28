@@ -8,11 +8,11 @@ proc f(int a, int b, bool c) {
     if a == 0 then 2 else true;
 
     // No common type -> no yield.
-    b = if a == 0 2 else true; // expected-error: Cannot assign 'void' to 'int'
-    b = if a == 0 then 2 elif false 3 else true; // expected-error: Cannot assign 'void' to 'int'
-    b = if a == 0 2 elif false true else b; // expected-error: Cannot assign 'void' to 'int'
-    b = if a == 0 then true elif false 3 else b; // expected-error: Cannot assign 'void' to 'int'
-    b = if a == 0 then 2; // expected-error: Cannot assign 'void' to 'int'
+    b = if a == 0 2 else true; // expected-error: Cannot convert expression of type 'void' to 'int'
+    b = if a == 0 then 2 elif false 3 else true; // expected-error: Cannot convert expression of type 'void' to 'int'
+    b = if a == 0 2 elif false true else b; // expected-error: Cannot convert expression of type 'void' to 'int'
+    b = if a == 0 then true elif false 3 else b; // expected-error: Cannot convert expression of type 'void' to 'int'
+    b = if a == 0 then 2; // expected-error: Cannot convert expression of type 'void' to 'int'
 
     // LValue tests. Ok.
     (if true a else b) = 42;

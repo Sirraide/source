@@ -933,6 +933,8 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
 
             return false;
         }
+
+        case CastExpr::Integral: Todo();
     }
 
     Unreachable("Invalid cast");

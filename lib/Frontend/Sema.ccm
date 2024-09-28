@@ -27,6 +27,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     class Importer;
     class ImmediateInitContext;
     class OverloadInitContext;
+    class TentativeInitContext;
 
     friend DiagsProducer;
     friend TemplateInstantiator;
@@ -128,12 +129,21 @@ private:
     struct Conversion {
         enum struct Kind : u8 {
             LValueToSRValue,
+            IntegralCast,
             SelectOverload
         };
 
         Kind kind;
-        u16 index{};
+        union {
+            Type ty;
+            u16 index{};
+        };
 
+        Conversion(Kind kind) : kind{kind} {}
+        Conversion(Kind kind, Type ty) : kind{kind}, ty{ty} {}
+        Conversion(Kind kind, u16 index) : kind{kind}, index{index} {}
+
+        static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
         static auto SelectOverload(u16 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
     };
@@ -404,6 +414,12 @@ private:
     /// Apply a conversion sequence to an expression.
     [[nodiscard]] auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
 
+    /*/// Find the common type of two types.
+    [[nodiscard]] auto CommonType(TypeLoc a, TypeLoc b, bool complain = true) -> Opt<Type>;
+
+    /// Find the common integer type for two expressions.
+    [[nodiscard]] auto CommonIntegerType(Expr* a, Expr* b) -> Opt<Type>;*/
+
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
@@ -444,6 +460,9 @@ private:
              | vws::filter(InstantiationScopeInfo::classof) //
              | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
     }
+
+    /// Check if an integer literal can be stored in a given type.
+    bool IntegerLiteralFitsInType(IntLitExpr* i, Type ty);
 
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
@@ -492,14 +511,39 @@ private:
     /// During parameter initialisation, pass the parameter intent
     /// if there is one; in all other cases, leave it as 'Move'
     /// because that is the default for assignment.
+    ///
+    /// \param ctx The initialisation context; this determines whether
+    ///   any required conversions are applied immediately, or deferred
+    ///   until a later point in time.
+    ///
+    /// \param var_type The type of the variable to be initialised.
+    /// \param arg The argument to initialise it with.
+    /// \param intent If the variable is a parameter, its intent.
+    ///
+    /// \param cc If this is an argument to a call, the calling convention
+    ///    of the called procedure.
+    ///
+    /// \param in_call Whether this is argument passing.
+    ///
+    /// \return Whether initialisation was successful.
     template <typename InitContext>
     bool PerformVariableInitialisation(
         InitContext& ctx,
         Type var_type,
         Expr* arg,
         Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source
+        CallingConvention cc = CallingConvention::Source,
+        bool in_call = false
     );
+
+    /// Perform variable initialisation immediately.
+    auto PerformVariableInitialisation(
+        Type var_type,
+        Expr* arg,
+        Intent intent = Intent::Move,
+        CallingConvention cc = CallingConvention::Source,
+        bool is_call = false
+    ) -> Expr*;
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
@@ -518,6 +562,11 @@ private:
         ArrayRef<TypeLoc> input_types,
         Location inst_loc
     ) -> TempSubstRes;
+
+    /// Try to perform variable initialisation and return the result if
+    /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
+    /// either way.
+    auto TryPerformVariableInitialisation(Type var_type, Expr* arg) -> Expr*;
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr>;

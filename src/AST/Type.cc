@@ -29,6 +29,8 @@ auto GetOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
     return type;
 }
 
+TypeLoc::TypeLoc(Expr* e): ty{e->type}, loc{e->location()} {}
+
 // ============================================================================
 //  Type
 // ============================================================================
@@ -79,6 +81,11 @@ auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
 void TypeBase::dump(bool use_colour) const {
     std::print("{}", text::RenderColours(use_colour, print().str()));
 }
+
+bool TypeBase::is_integer() const {
+    return this == Types::IntTy or isa<IntType>(this);
+}
+
 
 bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and

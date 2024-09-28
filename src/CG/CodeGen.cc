@@ -847,6 +847,9 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
             Assert(expr->arg->value_category == Expr::LValue);
             return builder.CreateLoad(ConvertTypeForMem(expr->type), val, "l2sr");
         }
+        case CastExpr::Integral: {
+            Todo();
+        }
     }
 
     Unreachable();
