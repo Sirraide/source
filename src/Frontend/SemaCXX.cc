@@ -207,11 +207,11 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             auto Ret = FPT->getExtInfo().getNoReturn() ? Types::NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return std::nullopt;
 
-            SmallVector<Type> Params;
+            SmallVector<Parameter> Params;
             for (auto P : FPT->param_types()) {
                 auto T = ImportType(P);
                 if (not T) return std::nullopt;
-                Params.push_back(*T);
+                Params.emplace_back(Intent::Copy, *T);
             }
 
             return ProcType::Get(

@@ -85,6 +85,46 @@ bool TypeBase::is_void() const {
            cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
 }
 
+bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
+    // Always pass parameters to C or C++ functions by value.
+    if (cc == CallingConvention::Native) return true;
+    Assert(cc == CallingConvention::Source, "Unsupported calling convention");
+    switch (intent) {
+        // These allow modifying the original value, which means that
+        // we always have to pass by reference here.
+        case Intent::Inout:
+        case Intent::Out:
+            return false;
+
+        // Always pass by value if we’re making a copy.
+        case Intent::Copy:
+            return true;
+
+        // If we only want to inspect the value, pass by value if small,
+        // and by reference otherwise.
+        //
+        // On the caller side, moving is treated the same as 'in', the
+        // only difference is that the latter creates a variable in the
+        // callee, whereas the former doesn’t.
+        //
+        // The intent behind the latter is that e.g. 'moving' a large
+        // struct should not require a memcpy unless the callee actually
+        // moves it somewhere else; otherwise, it doesn't matter where
+        // it is stored, and we save a memcpy that way.
+        case Intent::In:
+        case Intent::Move:
+            return visit(utils::Overloaded{ // clang-format off
+                [](ArrayType*) { return false; },                        // Arrays are usually big, so pass by reference.
+                [](BuiltinType*) { return true; },                       // All builtin types are small.
+                [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
+                [](ProcType*) { return true; },                          // Closures are two pointers.
+                [](ReferenceType*) { return true; },                     // References are small.
+                [](SliceType*) { return true; },                         // Slices are two pointers.
+                [](TemplateType*) -> bool { Unreachable(); }             // Should never be called for these.
+            }); // clang-format on
+    }
+}
+
 auto TypeBase::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     switch (kind()) {
@@ -124,7 +164,8 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 for (auto p : params) {
                     if (first) first = false;
                     else out += ", ";
-                    out += p->print();
+                    if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
+                    out += p.type->print();
                 }
                 out += "\033)";
             }
@@ -285,12 +326,12 @@ auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> Pr
 auto ProcType::Get(
     TranslationUnit& mod,
     Type return_type,
-    ArrayRef<Type> param_types,
+    ArrayRef<Parameter> param_types,
     CallingConvention cconv,
     bool variadic
 ) -> ProcType* {
     auto CreateNew = [&] {
-        const auto size = totalSizeToAlloc<Type>(param_types.size());
+        const auto size = totalSizeToAlloc<Parameter>(param_types.size());
         auto mem = mod.allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
@@ -318,26 +359,35 @@ ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
     Type return_type,
-    ArrayRef<Type> param_types
+    ArrayRef<Parameter> param_types
 ) : TypeBase{Kind::ProcType},
     cc{cconv},
     is_variadic{variadic},
-    num_param_types{u32(param_types.size())},
+    num_params{u32(param_types.size())},
     return_type{return_type} {
     std::uninitialized_copy_n(
         param_types.begin(),
         param_types.size(),
-        getTrailingObjects<Type>()
+        getTrailingObjects<Parameter>()
     );
     ComputeDependence();
 }
 
-void ProcType::Profile(FoldingSetNodeID& ID, Type return_type, ArrayRef<Type> param_types, CallingConvention cc, bool is_variadic) {
+void ProcType::Profile(
+    FoldingSetNodeID& ID,
+    Type return_type,
+    ArrayRef<Parameter> param_types,
+    CallingConvention cc,
+    bool is_variadic
+) {
     ID.AddInteger(+cc);
     ID.AddBoolean(is_variadic);
     ID.AddPointer(return_type.as_opaque_ptr());
     ID.AddInteger(param_types.size());
-    for (auto t : param_types) ID.AddPointer(t.as_opaque_ptr());
+    for (auto t : param_types) {
+        ID.AddInteger(+t.intent);
+        ID.AddPointer(t.type.as_opaque_ptr());
+    }
 }
 
 auto TemplateType::Get(TranslationUnit& tu, TemplateTypeDecl* decl) -> TemplateType* {

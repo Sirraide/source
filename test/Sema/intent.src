@@ -1,0 +1,37 @@
+// R %srcc --parse --ast %s
+program test;
+
+proc f_move(int) {}
+proc f_move_10000(i10000) {}
+proc f_in(in int) {}
+proc f_in_10000(in i10000) {}
+proc f_out(out int) {}
+proc f_out_10000(out i10000) {}
+proc f_inout(inout int) {}
+proc f_inout_10000(inout i10000) {}
+proc f_copy(copy int) {}
+proc f_copy_10000(copy i10000) {}
+
+int i;
+i10000 j;
+
+// FIXME: Add rvalues of type 'i10000' once we have casts.
+f_move(42);
+f_move(i);
+f_move_10000(j);
+
+f_in(42);
+f_in(i);
+f_in_10000(j);
+
+f_out(42); // expected-error: Cannot bind this expression to an out parameter
+f_out(i);
+f_out_10000(j);
+
+f_inout(42); // expected-error: Cannot bind this expression to an inout parameter
+f_inout(i);
+f_inout_10000(j);
+
+f_copy(42);
+f_copy(i);
+f_copy_10000(j);

@@ -372,7 +372,19 @@ void CodeGen::Mangler::Append(Type ty) {
         void operator()(ProcType* proc) {
             M.name += "F";
             proc->ret()->visit(*this);
-            for (auto p : proc->params()) p->visit(*this);
+            for (auto p : proc->params()) {
+                M.name += [&] {
+                    switch (p.intent) {
+                        case Intent::Move: return "";
+                        case Intent::In: return "x";
+                        case Intent::Out: return "x1";
+                        case Intent::Inout: return "x2";
+                        case Intent::Copy: return "x3";
+                    }
+                    Unreachable();
+                }();
+                p.type->visit(*this);
+            }
             M.name += "E";
         }
     };
@@ -480,7 +492,11 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     // if (ty->cconv() == CallingConvention::Source) {
     auto ret = ConvertType(ty->ret());
     SmallVector<llvm::Type*> args;
-    for (auto p : ty->params()) args.push_back(ConvertTypeForMem(p));
+    for (auto p : ty->params()) {
+        // Parameters that are passed by reference are just 'ptr's.
+        if (p.type->pass_by_lvalue(ty->cconv(), p.intent)) args.push_back(PtrTy);
+        else args.push_back(ConvertTypeForMem(p.type));
+    }
     return llvm::FunctionType::get(ret, args, ty->variadic());
     //}
 }

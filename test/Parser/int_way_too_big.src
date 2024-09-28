@@ -1,0 +1,4 @@
+// V %srcc --parse --verify %s
+program test;
+
+i1000000000000000000000000000000000000000000 x; // expected-error: Integer type too large

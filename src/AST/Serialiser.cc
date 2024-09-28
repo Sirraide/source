@@ -145,7 +145,10 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             W << proc->variadic();
             W << params.size();
             W << SerialiseType(proc->ret());
-            for (auto p : params) W << SerialiseType(p);
+            for (auto p : params) {
+                W << p.intent;
+                W << SerialiseType(p.type);
+            }
             return idx;
         }
 
@@ -297,12 +300,12 @@ void Deserialiser::DeserialiseType() {
         }
 
         case TypeBase::Kind::ProcType: {
-            SmallVector<Type> param_types;
+            SmallVector<Parameter> param_types;
             auto cc = Read<CallingConvention>();
             auto variadic = Read<bool>();
             auto num_params = ReadInt();
             auto ret = ReadType();
-            for (u64 i = 0; i < num_params; i++) param_types.push_back(ReadType());
+            for (u64 i = 0; i < num_params; i++) param_types.emplace_back(Read<Intent>(), ReadType());
             deserialised_types.push_back(ProcType::Get(*M, ret, param_types, cc, variadic));
             return;
         }

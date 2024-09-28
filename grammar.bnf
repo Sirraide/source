@@ -81,4 +81,4 @@
 //  Types
 // ============================================================================
 <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
-<type-prim> ::= BOOL | INT | VOID | VAR
+<type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE

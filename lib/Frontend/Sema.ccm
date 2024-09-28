@@ -488,11 +488,17 @@ private:
     auto PerformOverloadResolution();
 
     /// Initialise a variable from an expression.
+    ///
+    /// During parameter initialisation, pass the parameter intent
+    /// if there is one; in all other cases, leave it as 'Move'
+    /// because that is the default for assignment.
     template <typename InitContext>
     bool PerformVariableInitialisation(
         InitContext& ctx,
-        Type param_type,
-        Expr* arg
+        Type var_type,
+        Expr* arg,
+        Intent intent = Intent::Move,
+        CallingConvention cc = CallingConvention::Source
     );
 
     /// Issue an error about lookup failure.
@@ -522,7 +528,7 @@ private:
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
-    auto BuildParamDecl(ProcScopeInfo& proc, Type ty, String name, Location loc) -> ParamDecl*;
+    auto BuildParamDecl(ProcScopeInfo& proc, Type ty, Intent intent, String name, Location loc) -> ParamDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
@@ -550,6 +556,7 @@ private:
 
     /// Types.
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
+    auto TranslateIntType(ParsedIntType* parsed) -> Type;
     auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt) -> Type;

@@ -309,14 +309,44 @@ public:
 };
 
 template <typename InitContext>
-bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Expr* a) {
+bool Sema::PerformVariableInitialisation(
+    InitContext& init,
+    Type var_type,
+    Expr* a,
+    Intent intent,
+    CallingConvention cc
+) {
     // Type matches exactly.
-    if (a->type == param_type) {
-        // We currently can only handle srvalues here.
+    if (a->type == var_type) {
+        // If the intent resolves to pass by reference, then we
+        // need to bind to it.
+        if (var_type->pass_by_lvalue(cc, intent)) {
+            if (not a->lvalue()) {
+                // If this is itself a parameter, issue a better error.
+                if (auto dre = dyn_cast<LocalRefExpr>(a->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
+                    Error(
+                        a->location(),
+                        "Cannot pass parameter of intent %1({}) to a parameter with intent %1({})",
+                        cast<ParamDecl>(dre->decl)->intent,
+                        intent
+                    );
+                    Note(dre->decl->location(), "Parameter declared here");
+                } else {
+                    Error(a->location(), "Cannot bind this expression to an %1({}) parameter.", intent);
+                }
+                Remark("Try storing this in a variable first.");
+                return false;
+            }
+
+            // Otherwise, there is nothing to do here.
+            return true;
+        }
+
+        // We’re passing by value. Currently, we can only handle srvalues here.
         if (a->type->value_category() != Expr::SRValue) {
             ICE(
                 a->location(),
-                "Sorry, we currently don’t support arguments of type {}",
+                "Sorry, we currently don’t support by-value arguments of type {}",
                 a->type
             );
             return false;
@@ -327,13 +357,29 @@ bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Exp
         return true;
     }
 
+    // If a conversion is required, the result can (currently) never be
+    // an lvalue, so always error if reference binding is required.
+    //
+    // Once we have structs, we might want to try temporary materialisation
+    // instead here in a least some cases.
+    if (var_type->pass_by_lvalue(cc, intent)) {
+        Error(
+            a->location(),
+            "Cannot pass type {} to %1({}) parameter of type {}",
+            a->type,
+            intent,
+            var_type
+        );
+        return false;
+    }
+
     // Type is an overload set; attempt to convert it.
     //
     // This is *not* the same algorithm as overload resolution, because
     // the types must match exactly here, and we also need to check the
     // return type.
     if (a->type == Types::UnresolvedOverloadSetTy) {
-        auto p_proc_type = dyn_cast<ProcType>(param_type.ptr());
+        auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
         if (not p_proc_type) return init.report_type_mismatch();
 
         // Instantiate templates and simply match function types otherwise; we
@@ -350,7 +396,7 @@ bool Sema::PerformVariableInitialisation(InitContext& init, Type param_type, Exp
             // The internal consistency of an overload set was already verified
             // when the corresponding declarations were added to their scope, so
             // if one of them matches, it is the only one that matches.
-            if (o->type == param_type) {
+            if (o->type == var_type) {
                 init.apply(Conversion::SelectOverload(u16(j)));
                 return true;
             }
@@ -434,7 +480,7 @@ void Sema::ReportOverloadResolutionFailure(
                     call_args[m.mismatch_index]->location(),
                     "Argument of type '{}' does not match expected type '{}'",
                     call_args[m.mismatch_index]->type,
-                    ty->params()[m.mismatch_index]
+                    ty->params()[m.mismatch_index].type
                 );
                 Note(c.param_loc(m.mismatch_index), "Declared here");
             },
@@ -520,7 +566,7 @@ void Sema::ReportOverloadResolutionFailure(
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
-                    c.type_for_diagnostic()->params()[t.mismatch_index],
+                    c.type_for_diagnostic()->params()[t.mismatch_index].type,
                     call_args[t.mismatch_index]->type
                 );
             },
@@ -825,8 +871,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         for (auto [p, a] : vws::zip(ty->params(), args)) {
-            ImmediateInitContext init{*this, a, p};
-            if (not PerformVariableInitialisation(init, p, a)) return {};
+            ImmediateInitContext init{*this, a, p.type};
+            if (not PerformVariableInitialisation(init, p.type, a, p.intent, ty->cconv())) return {};
             actual_args.push_back(init.result());
         }
 
@@ -924,7 +970,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             auto p = params[i];
             st->conversions.emplace_back();
             OverloadInitContext init{*this, c, u32(i)};
-            if (not PerformVariableInitialisation(init, p, a)) return false;
+            if (not PerformVariableInitialisation(init, p.type, a, p.intent, ty->cconv())) return false;
         }
 
         // No fatal error.
@@ -1164,10 +1210,11 @@ auto Sema::BuildLocalDecl(
 auto Sema::BuildParamDecl(
     ProcScopeInfo& proc,
     Type ty,
+    Intent intent,
     String name,
     Location loc
 ) -> ParamDecl* {
-    auto param = new (*M) ParamDecl(AdjustVariableType(ty, loc), name, proc.proc, loc);
+    auto param = new (*M) ParamDecl(AdjustVariableType(ty, loc), intent, name, proc.proc, loc);
     DeclareLocal(param);
     return param;
 }
@@ -1463,6 +1510,9 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
     if (res.successful()) return CreateReference(res.decls.front(), parsed->loc);
 
     // Overload sets are ok here.
+    // TODO: Validate overload set; i.e. that there are no two functions that
+    // differ only in return type, or not at all. Also: don’t allow overloading
+    // on intent (for now).
     if (
         res.result == LookupResult::Reason::Ambiguous and
         isa<ProcDecl>(res.decls.front())
@@ -1596,7 +1646,13 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     auto ty = decl->proc_type();
     for (auto [i, pair] : vws::zip(ty->params(), parsed->params()) | vws::enumerate) {
         auto [param_ty, parsed_decl] = pair;
-        BuildParamDecl(curr_proc(), param_ty, parsed_decl->name, parsed_decl->loc);
+        BuildParamDecl(
+            curr_proc(),
+            param_ty.type,
+            param_ty.intent,
+            parsed_decl->name,
+            parsed_decl->loc
+        );
     }
 
     // Translate body.
@@ -1654,6 +1710,11 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -1682,6 +1743,15 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
 auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
     return parsed->ty;
 }
+
+auto Sema::TranslateIntType(ParsedIntType* parsed)-> Type {
+    if (parsed->bit_width > IntType::MaxBits) {
+        Error(parsed->loc, "The maximum integer type is %6(i{})", IntType::MaxBits);
+        return IntType::Get(*M, IntType::MaxBits);
+    }
+    return IntType::Get(*M, parsed->bit_width);
+}
+
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
@@ -1781,7 +1851,7 @@ auto Sema::TranslateProcType(
     }
 
     // Then, compute the actual parameter types.
-    SmallVector<Type, 10> params;
+    SmallVector<Parameter, 10> params;
     for (auto a : parsed->param_types()) {
         // Template types encountered here introduce a template parameter
         // instead of referencing one, so we process them manually as the
@@ -1794,7 +1864,7 @@ auto Sema::TranslateProcType(
             auto res = LookUpUnqualifiedName(curr_scope(), ptt->name, true);
             Assert(res.successful(), "Template parameter should have been declared earlier");
             Assert(res.decls.size() == 1 and isa<TemplateTypeDecl>(res.decls.front()));
-            params.push_back(TemplateType::Get(*M, cast<TemplateTypeDecl>(res.decls.front())));
+            params.emplace_back(a.intent, TemplateType::Get(*M, cast<TemplateTypeDecl>(res.decls.front())));
         }
 
         // Anything else is parsed as a regular type.
@@ -1809,7 +1879,7 @@ auto Sema::TranslateProcType(
                 Error(a.type->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy);
                 ty = Types::ErrorDependentTy;
             }
-            params.push_back(ty);
+            params.emplace_back(a.intent, ty);
         }
     }
 
@@ -1825,6 +1895,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Type {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
         case K::BuiltinType: return TranslateBuiltinType(cast<ParsedBuiltinType>(parsed));
+        case K::IntType: return TranslateIntType(cast<ParsedIntType>(parsed));
         case K::TemplateType: return TranslateTemplateType(cast<ParsedTemplateType>(parsed));
         case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
         case K::ProcType: return TranslateProcType(cast<ParsedProcType>(parsed));

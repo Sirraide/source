@@ -239,11 +239,12 @@ void Stmt::Printer::Print(Stmt* e) {
             auto d = cast<LocalDecl>(e);
             auto PrintNameAndType = [&] {
                 print(
-                    "%{}({}) {}",
+                    "%{}({})",
                     is_param ? '4' : '8',
-                    d->name,
-                    d->type->print()
+                    d->name
                 );
+                if (is_param) print(" %1({})", cast<ParamDecl>(d)->intent);
+                print(" {}", d->type->print());
             };
 
             PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);

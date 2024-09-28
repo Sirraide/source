@@ -14,6 +14,7 @@ export namespace srcc {
 class TemplateTypeDecl;
 class TranslationUnit;
 class Types;
+struct Parameter;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -80,11 +81,19 @@ public:
     /// Check if this type is the builtin 'void' type.
     LLVM_READONLY bool is_void() const;
 
-    /// Get the size of this type. This does NOT include tail padding!
-    LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
+    /// Whether this type should be passed as an lvalue given a specific intent.
+    LLVM_READONLY bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
+        return not pass_by_rvalue(cc, intent);
+    }
+
+    /// Whether this type should be passed as an rvalue given a specific intent.
+    LLVM_READONLY bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
 
     /// Get a string representation of this type.
     LLVM_READONLY auto print() const -> SmallUnrenderedString;
+
+    /// Get the size of this type. This does NOT include tail padding!
+    LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
 
     /// Get the value category that an expression with this type
     /// has by default. This will usually be some kind of rvalue.
@@ -92,7 +101,7 @@ public:
 
     /// Visit this type.
     template <typename Visitor>
-    auto visit(Visitor&& v) -> decltype(auto);
+    auto visit(Visitor&& v) const -> decltype(auto);
 
 protected:
     void ComputeDependence();
@@ -299,23 +308,29 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ReferenceType; }
 };
 
+struct srcc::Parameter {
+    Intent intent;
+    Type type;
+    Parameter(Intent intent, Type type) : intent{intent}, type{type} {}
+};
+
 class srcc::ProcType final : public TypeBase
     , public FoldingSetNode
-    , TrailingObjects<ProcType, Type> {
+    , TrailingObjects<ProcType, Parameter> {
     friend TrailingObjects;
 
     CallingConvention cc;
     bool is_variadic;
-    const u32 num_param_types;
+    const u32 num_params;
     Type return_type;
 
-    auto numTrailingObjects(OverloadToken<Type>) -> usz { return num_param_types; }
+    auto numTrailingObjects(OverloadToken<Parameter>) -> usz { return num_params; }
 
     ProcType(
         CallingConvention cconv,
         bool variadic,
         Type return_type,
-        ArrayRef<Type> param_types
+        ArrayRef<Parameter> param_types
     );
 
 public:
@@ -323,7 +338,7 @@ public:
     auto cconv() const -> CallingConvention { return cc; }
 
     /// Get the parameter types of this procedure type.
-    auto params() const -> ArrayRef<Type> { return {getTrailingObjects<Type>(), num_param_types}; }
+    auto params() const -> ArrayRef<Parameter> { return {getTrailingObjects<Parameter>(), num_params}; }
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }
@@ -342,7 +357,7 @@ public:
     static auto Get(
         TranslationUnit& mod,
         Type return_type,
-        ArrayRef<Type> param_types = {},
+        ArrayRef<Parameter> param_types = {},
         CallingConvention cconv = CallingConvention::Source,
         bool variadic = false
     ) -> ProcType*;
@@ -352,7 +367,7 @@ public:
     static void Profile(
         FoldingSetNodeID& ID,
         Type return_type,
-        ArrayRef<Type> param_types,
+        ArrayRef<Parameter> param_types,
         CallingConvention cconv,
         bool variadic
     );
@@ -393,10 +408,15 @@ public:
 
 /// Visit this type.
 template <typename Visitor>
-auto srcc::TypeBase::visit(Visitor&& v) -> decltype(auto) {
+auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
+    // We const_cast here because types are never modified anyway,
+    // so the 'const' is just superfluous and does nothing.
     switch (kind()) {
 #define AST_TYPE_LEAF(node) \
-    case Kind::node: return std::invoke(std::forward<Visitor>(v), static_cast<node*>(this));
+    case Kind::node: return std::invoke( \
+        std::forward<Visitor>(v), \
+        const_cast<node*>(static_cast<const node*>(this)) \
+    );
 #include "srcc/AST.inc"
     }
     Unreachable();

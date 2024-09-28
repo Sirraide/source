@@ -127,6 +127,16 @@ public:
     }
 };
 
+class srcc::ParsedIntType final : public ParsedStmt {
+public:
+    const Size bit_width;
+
+    ParsedIntType(Size bitwidth, Location loc)
+        : ParsedStmt{Kind::IntType, loc}, bit_width{bitwidth} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntType; }
+};
+
 /// This only holds type information. The parameter name is stored
 /// in the corresponding declaration instead.
 struct srcc::ParsedParameter {

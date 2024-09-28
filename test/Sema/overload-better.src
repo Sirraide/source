@@ -1,0 +1,8 @@
+// V %srcc --sema --ast %s
+// expected-no-diagnostics
+program test;
+
+proc f(int) = 1;
+proc f(i10000) = 2;
+
+eval assert f(42) == 1;

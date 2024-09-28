@@ -125,7 +125,7 @@ void TypeBase::ComputeDependence() { // clang-format off
         [&](TemplateType*) { return Dependence::Type; },
         [&](ProcType* e) {
             Dependence d = e->ret()->dep;
-            for (auto param : e->params()) d |= param->dep;
+            for (auto param : e->params()) d |= param.type->dep;
             return d;
         }
     });

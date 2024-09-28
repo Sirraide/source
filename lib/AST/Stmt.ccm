@@ -668,12 +668,14 @@ public:
 
 class srcc::ParamDecl : public LocalDecl {
 public:
+    Intent intent;
     ParamDecl(
         Type type,
+        Intent intent,
         String name,
         ProcDecl* parent,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, type, name, parent, nullptr, location} {}
+    ) : LocalDecl{Kind::ParamDecl, type, name, parent, nullptr, location}, intent{intent} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
 };

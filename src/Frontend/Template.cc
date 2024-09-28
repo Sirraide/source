@@ -110,7 +110,7 @@ auto TemplateInstantiator::InstantiateLocalDecl(LocalDecl* d) -> LocalDecl* {
 
 auto TemplateInstantiator::InstantiateParamDecl(ParamDecl* d) -> ParamDecl* {
     auto ty = InstantiateType(d->type);
-    auto param = S.BuildParamDecl(S.curr_proc(), ty, d->name, d->location());
+    auto param = S.BuildParamDecl(S.curr_proc(), ty, d->intent, d->name, d->location());
     cast<Sema::InstantiationScopeInfo>(S.curr_proc()).local_instantiations[d] = param;
     return param;
 }
@@ -297,9 +297,9 @@ auto TemplateInstantiator::InstantiateIntType(IntType*) -> Type {
 }
 
 auto TemplateInstantiator::InstantiateProcType(ProcType* ty) -> Type {
-    SmallVector<Type, 4> params;
+    SmallVector<Parameter, 4> params;
     auto ret = InstantiateType(ty->ret());
-    for (auto param : ty->params()) params.push_back(InstantiateType(param));
+    for (auto param : ty->params()) params.emplace_back(param.intent, InstantiateType(param.type));
     return ProcType::Get(*S.M, ret, params, ty->cconv(), ty->variadic());
 }
 
@@ -349,7 +349,7 @@ auto Sema::SubstituteTemplate(
         // can use it to get the previous index for diagnostics.
         for (auto [index_of_index, idx] : enumerate(idxs)) {
             auto& input_ty = input_types[idx];
-            auto deduced_opt = DeduceType(param, proc_type->params()[idx], input_ty.ty);
+            auto deduced_opt = DeduceType(param, proc_type->params()[idx].type, input_ty.ty);
 
             // There was an error.
             if (not deduced_opt) return {};

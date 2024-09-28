@@ -186,6 +186,7 @@ void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) 
 void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
         case Kind::BuiltinType:
+        case Kind::IntType:
         case Kind::TemplateType:
         case Kind::ProcType:
             print("%1(Type) {}\n", s->dump_as_type());
@@ -331,6 +332,10 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
         switch (type->kind()) {
             case Kind::BuiltinType:
                 out += cast<ParsedBuiltinType>(type)->ty->print();
+                break;
+
+            case Kind::IntType:
+                out += std::format("%6(i{})", cast<ParsedIntType>(type)->bit_width);
                 break;
 
             case Kind::ProcType: {
@@ -515,6 +520,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Identifier:
         case Tk::If:
         case Tk::Int:
+        case Tk::IntegerType:
         case Tk::Integer:
         case Tk::Minus:
         case Tk::MinusMinus:
@@ -774,6 +780,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         } break;
 
         case Tk::Int:
+        case Tk::IntegerType:
         case Tk::Void:
         case Tk::Var:
         case Tk::TemplateType:
@@ -794,6 +801,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     if (At(Tk::Identifier)) {
         if (isa< // clang-format off
             ParsedDeclRefExpr,
+            ParsedIntType,
             ParsedBuiltinType,
             ParsedProcType,
             ParsedTemplateType,
@@ -1233,6 +1241,11 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
         case Tk::Int: return Builtin(Types::IntTy.ptr());
         case Tk::Void: return Builtin(Types::VoidTy.ptr());
         case Tk::Var: return Builtin(Types::DeducedTy.ptr());
+
+        // INTEGER_TYPE
+        case Tk::IntegerType:
+            if (not tok->integer.isSingleWord()) return Error("Integer type too large");
+            return new (*this) ParsedIntType(Size::Bits(tok->integer.getZExtValue()), Next());
 
         // TEMPLATE-TYPE
         case Tk::TemplateType: {
