@@ -766,6 +766,9 @@ public:
     /// Get the procedure body.
     auto body() -> Ptr<Stmt> { return body_stmt; }
 
+    /// Get the procedure's calling convention.
+    auto cconv() const { return proc_type()->cconv(); }
+
     /// Finalise analysing a procedure.
     ///
     /// \param body The body of the procedure.

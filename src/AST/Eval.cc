@@ -1,5 +1,6 @@
 module;
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
 #include <optional>
@@ -16,6 +17,12 @@ struct Closure {
     ProcDecl* decl;
     void* env = nullptr;
 };
+
+#define TRY(x)                    \
+    do {                          \
+        if (not(x)) return false; \
+    } while (0)
+#define TryEval(...) TRY(Eval(__VA_ARGS__))
 
 // ============================================================================
 //  Value
@@ -69,7 +76,9 @@ auto Value::value_category() const -> ValueCategory {
 //  Evaluation State
 // ============================================================================
 struct StackFrame {
-    using LocalsMap = DenseMap<LocalDecl*, LValue>;
+    /// This is *not* a map to lvalues because some locals
+    /// (e.g. small 'in' parameters, are *not* lvalues!)
+    using LocalsMap = DenseMap<LocalDecl*, Value>;
 
     StackFrame(const StackFrame&) = delete;
     StackFrame& operator=(const StackFrame&) = delete;
@@ -138,8 +147,8 @@ public:
     auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
     auto AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue&;
-    auto AllocateMemory(Type ty, Location loc) -> Memory*;
-    auto AllocateMemory(Size size, Align align, Location loc) -> Memory*;
+    auto AllocateMemory(Type ty) -> Memory*;
+    auto AllocateMemory(Size size, Align align) -> Memory*;
 
     template <typename... Args>
     void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -164,7 +173,7 @@ public:
     }
 
     /// Check and diagnose for invalid memory accesses.
-    [[nodiscard]] bool CheckMemoryAccess(const Memory* mem, Size size, bool write, Location loc);
+    [[nodiscard]] bool CheckMemoryAccess(const LValue& lval, Size size, bool write, Location access_loc);
 
     /// Print the contents of a stack frame for debugging.
     void DumpFrame(StackFrame& frame);
@@ -173,23 +182,23 @@ public:
     [[nodiscard]] auto GetMemoryBuffer(const Slice& slice, Location loc) -> std::optional<ArrayRef<char>>;
 
     /// Read from memory.
-    [[nodiscard]] bool LoadMemory(const Memory* mem, void* into, Size size, Location loc);
+    [[nodiscard]] bool LoadMemory(const LValue& lval, void* into, Size size, Location load_loc);
 
     /// Read from memory.
     template <typename Ty>
     requires std::is_trivially_copyable_v<Ty>
-    [[nodiscard]] bool LoadMemory(const Memory* mem, Ty& into, Location loc) {
-        return LoadMemory(mem, &into, Size::Of<Ty>(), loc);
+    [[nodiscard]] bool LoadMemory(const LValue& lval, Ty& into, Location load_loc) {
+        return LoadMemory(lval, &into, Size::Of<Ty>(), load_loc);
     }
 
     /// Write into memory.
-    [[nodiscard]] bool StoreMemory(Memory* mem, const void* from, Size size, Location loc);
+    [[nodiscard]] bool StoreMemory(const LValue& lval, const void* from, Size size, Location store_loc);
 
     /// Write into memory.
     template <typename Ty>
     requires std::is_trivially_copyable_v<Ty>
-    [[nodiscard]] bool StoreMemory(Memory* mem, const Ty& from, Location loc) {
-        return StoreMemory(mem, &from, Size::Of<Ty>(), loc);
+    [[nodiscard]] bool StoreMemory(const LValue& lval, const Ty& from, Location store_loc) {
+        return StoreMemory(lval, &from, Size::Of<Ty>(), store_loc);
     }
 
     /// \return True on success, false on failure.
@@ -212,13 +221,13 @@ public:
     /// Report an error that involves accessing memory.
     template <typename... Args>
     bool ReportMemoryError(
-        const Memory* mem,
+        const LValue& lval,
         Location access_loc,
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
         Error(access_loc, fmt, std::forward<Args>(args)...);
-        Note(mem->loc, "Of variable declared here");
+        Note(lval.loc, "Of variable declared here");
         return false;
     }
 
@@ -263,42 +272,42 @@ auto EvaluationContext::AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l)
     if (isa<IntType>(l->type)) {
         mem = AllocateMemory(
             l->type->size(tu).aligned(Align::Of<u64>()),
-            Align::Of<u64>(),
-            l->location()
+            Align::Of<u64>()
         );
     } else {
-        mem = AllocateMemory(l->type, l->location());
+        mem = AllocateMemory(l->type);
     }
 
-    return locals.try_emplace(l, mem, l->type).first->second;
+    return locals.try_emplace(l, LValue{mem, l->type, l->location()}).first->second.cast<LValue>();
 }
 
-auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
+auto EvaluationContext::AllocateMemory(Type ty) -> Memory* {
     auto ty_sz = ty->size(tu);
     auto ty_align = ty->align(tu);
-    return AllocateMemory(ty_sz, ty_align, loc);
+    return AllocateMemory(ty_sz, ty_align);
 }
 
-auto EvaluationContext::AllocateMemory(Size size, Align align, Location loc) -> Memory* {
+auto EvaluationContext::AllocateMemory(Size size, Align align) -> Memory* {
     auto data = memory.Allocate(size.bytes(), align);
     auto mem = memory.Allocate<Memory>();
-    return ::new (mem) Memory{size, loc, data};
+    return ::new (mem) Memory{size, data};
 }
 
 bool EvaluationContext::CheckMemoryAccess(
-    const Memory* mem,
+    const LValue& lval,
     Size size,
     bool write,
     Location loc
 ) {
+    auto mem = lval.base.get<Memory*>();
     if (mem->dead()) return ReportMemoryError(
-        mem,
+        lval,
         loc,
         "Accessing memory outside of its lifetime"
     );
 
     if (size.bytes() > mem->size().bytes()) return ReportMemoryError(
-        mem,
+        lval,
         loc,
         "Out-of-bounds {} of size {} (total size: {})",
         write ? "write" : "read",
@@ -316,7 +325,8 @@ auto EvaluationContext::GetMemoryBuffer(
     using Ret = std::optional<ArrayRef<char>>;
     auto size = slice.size.getZExtValue();
     auto offs = slice.data.offset.getZExtValue();
-    return slice.data.lvalue.base.visit(utils::Overloaded{// clang-format off
+    auto V = utils::Overloaded{
+        // clang-format off
         [&](String s) -> Ret {
             if (s.size() < size + offs) {
                 // TODO: improve error.
@@ -328,30 +338,38 @@ auto EvaluationContext::GetMemoryBuffer(
         },
 
         [&](const Memory* mem) -> Ret {
-            if (not CheckMemoryAccess(mem, Size::Bytes(offs + size), false, loc)) return std::nullopt;
+            if (not CheckMemoryAccess(slice.data.lvalue, Size::Bytes(offs + size), false, loc)) return std::nullopt;
             return ArrayRef{static_cast<const char*>(mem->data()) + offs, size};
-        }
-    }); // clang-format on
+        },
+    }; // clang-format on
+    return slice.data.lvalue.base.visit(V);
 }
 
 bool EvaluationContext::LoadMemory(
-    const Memory* mem,
+    const LValue& lval,
     void* into,
     Size size_to_load,
     Location loc
 ) {
-    if (not CheckMemoryAccess(mem, size_to_load, false, loc)) return false;
-    std::memcpy(into, mem->data(), size_to_load.bytes());
+    if (not CheckMemoryAccess(lval, size_to_load, false, loc)) return false;
+    std::memcpy(into, lval.base.get<Memory*>()->data(), size_to_load.bytes());
     return true;
 }
 
 bool EvaluationContext::StoreMemory(
-    Memory* mem,
+    const LValue& lv,
     const void* from,
     Size size_to_write,
     Location loc
 ) {
-    if (not CheckMemoryAccess(mem, size_to_write, true, loc)) return false;
+    auto mem = lv.base.get<Memory*>();
+
+    // Check that we can store into this.
+    if (not CheckMemoryAccess(lv, size_to_write, true, loc)) return false;
+    if (not lv.modifiable)
+        return ReportMemoryError(lv, loc, "Attempting to write into read-only memory.");
+
+    // Dew it.
     std::memcpy(mem->data(), from, size_to_write.bytes());
     return true;
 }
@@ -413,7 +431,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
         case ValueCategory::MRValue: Todo("Initialise mrvalue");
         case ValueCategory::LValue: Todo("Initialise lvalue");
         case ValueCategory::DValue:
-            ICE(mem->loc, "Dependent value in constant evaluation");
+            ICE(addr.loc, "Dependent value in constant evaluation");
             return false;
 
         case ValueCategory::SRValue: {
@@ -422,11 +440,11 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                     Assert(i->value_category == Expr::SRValue);
                     Value val;
                     if (not Eval(val, i)) return false;
-                    return StoreMemory(mem, get_value(val), i->location());
+                    return StoreMemory(addr, get_value(val), i->location());
                 }
 
                 // No initialiser. Initialise it to 0.
-                return StoreMemory(mem, default_value, loc);
+                return StoreMemory(addr, default_value, loc);
             };
 
             if (addr.type == Types::IntTy) return InitBuiltin(
@@ -446,7 +464,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                     auto& ai = val.cast<APInt>();
                     auto data = ai.getRawData();
                     auto size = ai.getNumWords() * Size::Of<u64>();
-                    return StoreMemory(mem, data, size, loc);
+                    return StoreMemory(addr, data, size, loc);
                 }
 
                 mem->zero();
@@ -458,7 +476,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                     Assert(i->value_category == Expr::SRValue);
                     Value closure;
                     if (not Eval(closure, i)) return false;
-                    return StoreMemory(mem, Closure{closure.cast<ProcDecl*>()}, i->location());
+                    return StoreMemory(addr, Closure{closure.cast<ProcDecl*>()}, i->location());
                 }
 
                 ICE(loc, "Uninitialised closure in constant evaluator");
@@ -867,7 +885,7 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
                 if (not Eval(out, arg)) return false;
 
                 // String.
-                if (auto slice = out.get<Slice>()) {
+                if (auto slice = out.dyn_cast<Slice>()) {
                     auto mem = GetMemoryBuffer(*slice, arg->location());
                     if (mem == std::nullopt) return false;
                     std::print("{}", StringRef{mem->data(), mem->size()});
@@ -875,13 +893,13 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
                 }
 
                 // Integer.
-                if (auto int_val = out.get<APInt>()) {
+                if (auto int_val = out.dyn_cast<APInt>()) {
                     std::print("{}", toString(*int_val, 10, true));
                     continue;
                 }
 
                 // Bool.
-                if (auto bool_val = out.get<bool>()) {
+                if (auto bool_val = out.dyn_cast<bool>()) {
                     std::print("{}", *bool_val);
                     continue;
                 }
@@ -897,7 +915,7 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
 }
 
 bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
-    if (not Eval(out, call->callee)) return false;
+    TryEval(out, call->callee);
     auto proc = out.cast<ProcDecl*>();
     auto args = call->args();
 
@@ -909,17 +927,71 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         // this before we set up the stack frame, otherwise, we’ll try to
         // access the locals in the new frame before we’re done setting them
         // up.
-        for (auto [i, l] : enumerate(proc->params())) {
-            auto& addr = AllocateVar(locals, l);
-            if (not PerformVarInit(addr, args[i], l->location()))
-                return false;
+        //
+        // For small 'in' parameters that are passed by value, just save the
+        // actual value in the parameter slot.
+        for (auto [i, p] : enumerate(proc->params())) {
+            auto InitVarFromRValue = [&] {
+                auto& addr = AllocateVar(locals, p);
+                return PerformVarInit(addr, args[i], p->location());
+            };
+
+            auto UseValueAsVar = [&](bool lvalue = true) {
+                Value v;
+                TryEval(v, args[i]);
+
+                // Verify that this is an lvalue and adjust the location.
+                if (lvalue) {
+                    Assert(v.isa<LValue>(), "{} arg must be an lvalue", p->intent);
+                    auto lval = v.cast<LValue>();
+                    lval.loc = p->location();
+                    locals.try_emplace(p, lval);
+                    return true;
+                }
+
+                // If it is an rvalue, just bind the parameter to it.
+                locals.try_emplace(p, std::move(v));
+                return true;
+            };
+
+            switch (p->intent) {
+                // These are lvalues.
+                case Intent::Out:
+                case Intent::Inout:
+                    TRY(UseValueAsVar());
+                    break;
+
+                // Copy always passes by rvalue and creates a variable
+                // in the callee.
+                case Intent::Copy:
+                    TRY(InitVarFromRValue());
+                    break;
+
+                // Move may pass by rvalue or lvalue; if lvalue, that lvalue
+                // becomes the variable; if rvalue, a variable is created in
+                // the callee.
+                case Intent::Move:
+                    if (p->type->pass_by_rvalue(proc->cconv(), p->intent)) TRY(InitVarFromRValue());
+                    else TRY(UseValueAsVar());
+                    break;
+
+                // 'in' is similar, except that no variable is created in the
+                // callee either way.
+                case Intent::In: {
+                    TRY(UseValueAsVar(not p->type->pass_by_rvalue(proc->cconv(), p->intent)));
+
+                    // If this was an lvalue, make it readonly, and remember to reset
+                    // it when we return from this if we actually made it readonly.
+                    if (auto lv = locals[p].dyn_cast<LValue>()) lv->make_readonly();
+                } break;
+            }
         }
 
         // Set up stack.
         PushStackFrame _{*this, proc, std::move(locals), call->location()};
 
         // Dew it.
-        if (not Eval(out, body)) return false;
+        TryEval(out, body);
         out = CurrFrame().return_value;
         return true;
     }
@@ -938,20 +1010,29 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
     switch (cast->kind) {
         case CastExpr::LValueToSRValue: {
             auto lvalue = out.cast<LValue>();
-            auto mem = lvalue.base.get<Memory*>();
 
-            // Integers.
+            // Builtin int.
             if (lvalue.type == Types::IntTy) {
                 u64 value;
-                if (not LoadMemory(mem, value, cast->location())) return false;
+                if (not LoadMemory(lvalue, value, cast->location())) return false;
                 out = IntValue(value);
+                return true;
+            }
+
+            // (Potentially) large integer.
+            if (auto i = dyn_cast<IntType>(lvalue.type.ptr())) {
+                SmallVector<u64> words;
+                words.resize(lvalue.type->size(tu).aligned(Align::Of<u64>()) / Size::Of<u64>());
+                if (not LoadMemory(lvalue, words.data(), lvalue.type->size(tu), cast->location()))
+                    return false;
+                out = {APInt{unsigned(i->bit_width().bits()), unsigned(words.size()), words.data()}, lvalue.type};
                 return true;
             }
 
             // Bool.
             if (lvalue.type == Types::BoolTy) {
                 bool value;
-                if (not LoadMemory(mem, value, cast->location())) return false;
+                if (not LoadMemory(lvalue, value, cast->location())) return false;
                 out = value;
                 return true;
             }
@@ -959,7 +1040,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             // Closures.
             if (isa<ProcType>(lvalue.type)) {
                 Closure cl;
-                if (not LoadMemory(mem, cl, cast->location())) return false;
+                if (not LoadMemory(lvalue, cl, cast->location())) return false;
                 out = cl.decl;
                 return true;
             }
@@ -1024,7 +1105,7 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     for (auto& frame : vws::reverse(stack)) {
         auto it = frame.locals.find(local->decl);
         if (it != frame.locals.end()) {
-            out = {it->second, local->decl->type};
+            out = it->second;
             return true;
         }
     }
@@ -1063,7 +1144,7 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
 
 bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data) {
     if (not Eval(out, slice_data->slice)) return false;
-    auto data = std::move(out.get<Slice>()->data);
+    auto data = std::move(out.dyn_cast<Slice>()->data);
     out = {std::move(data), slice_data->type};
     return true;
 }
@@ -1071,7 +1152,7 @@ bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data)
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
     out = Value{
         Slice{
-            Reference{LValue{str_lit->value, str_lit->type, false}, APInt::getZero(64)},
+            Reference{LValue{str_lit->value, str_lit->type, str_lit->location()}, APInt::getZero(64)},
             APInt(u32(Types::IntTy->size(tu).bits()), str_lit->value.size(), false),
         },
         tu.StrLitTy,

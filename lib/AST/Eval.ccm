@@ -48,19 +48,36 @@ enum struct srcc::eval::LifetimeState : u8 {
     Initialised,
 };
 
-
 class srcc::eval::LValue {
 public:
-    // Base of the lvalue. This is either:
-    //     - a string literal;
-    //     - stack or heap memory;
+    /// Base of the lvalue. This is either:
+    ///     - a string literal;
+    ///     - stack or heap memory;
     Variant<String, Memory*> base;
 
-    // The type of this lvalue.
+    /// The type of this lvalue.
     Type type;
 
-    // Whether the lvalue is modifiable.
-    bool modifiable{true};
+    /// The location where this was created.
+    Location loc;
+
+    /// Whether the lvalue is modifiable.
+    mutable bool modifiable{true};
+
+    LValue(String base, Type type, Location loc, bool modifiable = true)
+        : base{std::move(base)},
+          type{type},
+          loc{loc},
+          modifiable{modifiable} {}
+
+    LValue(Memory* base, Type type, Location loc, bool modifiable = true)
+        : base{base},
+          type{type},
+          loc{loc},
+          modifiable{modifiable} {}
+
+    /// Make this readonly; this cannot be undone.
+    void make_readonly() const { modifiable = false; }
 
     /// Print this.
     void dump(bool use_colour = true) const;
@@ -74,13 +91,11 @@ class srcc::eval::Memory {
     friend auto LValue::print() const -> SmallUnrenderedString;
 
     Size sz;
-    Location loc;
     llvm::PointerIntPair<void*, 1, LifetimeState> data_and_state;
 
 public:
-    explicit Memory(Size size, Location loc, void* data)
+    explicit Memory(Size size, void* data)
         : sz{size},
-          loc{loc},
           data_and_state{data, LifetimeState::Uninitialised} {}
 
     /// Check whether this is (still) alive.
@@ -138,7 +153,7 @@ public:
     Value(bool b) : value{b}, ty{Types::BoolTy} {}
     Value(Type ty) : value{TypeTag{}}, ty{ty} {}
     Value(Slice lvalue, Type ty);
-    Value(LValue lvalue, Type ty) : value(std::move(lvalue)), ty(ty) {}
+    Value(LValue lvalue) : value(std::move(lvalue)), ty(lvalue.type) {}
     Value(Reference ref, Type ty) : value(std::move(ref)), ty(ty) {}
     Value(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
 
@@ -146,18 +161,18 @@ public:
     template <typename Ty>
     auto cast() -> Ty& { return std::get<Ty>(value); }
 
+    /// dyn_cast<>() the contained value.
+    template <typename Ty>
+    auto dyn_cast() const -> const Ty* {
+        return std::holds_alternative<Ty>(value) ? &std::get<Ty>(value) : nullptr;
+    }
+
     /// Print this value.
     void dump(bool use_colour = true) const;
     void dump_colour() const { dump(true); }
 
     /// Check if the value is empty. This is also used to represent '()'.
     auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
-
-    /// dyn_cast<>() the contained value.
-    template <typename Ty>
-    auto get() const -> const Ty* {
-        return std::holds_alternative<Ty>(value) ? &std::get<Ty>(value) : nullptr;
-    }
 
     /// isa<>() on the contained value.
     template <typename Ty>

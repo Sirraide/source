@@ -171,6 +171,7 @@ private:
     /// two sizes w/ one another doesn’t make sense, so that operation is not provided.
     [[nodiscard]] friend constexpr Size operator*(Size lhs, usz rhs) { return Size{lhs.raw * rhs}; }
     [[nodiscard]] friend constexpr Size operator*(usz lhs, Size rhs) { return Size{lhs * rhs.raw}; }
+    [[nodiscard]] friend constexpr auto operator/(Size lhs, Size rhs) -> usz { return lhs.raw / rhs.raw; }
     [[nodiscard]] friend constexpr Size operator+(Size lhs, Size rhs) { return Size{lhs.raw + rhs.raw}; }
     [[nodiscard]] friend constexpr bool operator==(Size lhs, Size rhs) = default;
     [[nodiscard]] friend constexpr auto operator<=>(Size lhs, Size rhs) = default;
