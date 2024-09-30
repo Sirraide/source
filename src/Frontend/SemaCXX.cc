@@ -117,6 +117,17 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
     auto T = ImportType(FPT);
     if (not T) return;
 
+    // Load the file containing it.
+    Location Loc;
+    if (auto Begin = D->getNameInfo().getBeginLoc(); Begin.isValid()) {
+        auto& Ctx = D->getASTContext();
+        auto& SM = Ctx.getSourceManager();
+        auto& F = Mod->context().get_file(SM.getFilename(Begin).str());
+        Loc.pos = SM.getFileOffset(Begin);
+        Loc.len = u16(clang::Lexer::MeasureTokenLength(Begin, SM, Ctx.getLangOpts()));
+        Loc.file_id = u16(F.file_id());
+    }
+
     // Create the procedure.
     auto* Proc = ProcDecl::Create(
         *Mod,
@@ -125,7 +136,7 @@ void Sema::Importer::ImportFunction(clang::FunctionDecl* D) {
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
-        {}
+        Loc
     );
 
     Mod->procs.push_back(Proc);
@@ -246,7 +257,7 @@ auto Sema::ImportCXXHeader(Location import_loc, String name) -> TranslationUnit:
     clang.getDiagnostics().setShowColors(ctx.use_colours());
 
     // Create the file we’re going to parse.
-    auto code = std::format("#include <{}>\n", name);
+    auto code = std::format("#include {}\n", name);
     auto buffer = llvm::MemoryBuffer::getMemBuffer(code);
     mem->addFile("__srcc_imports.cc", /*mtime=*/0, std::move(buffer));
 

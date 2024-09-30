@@ -16,6 +16,7 @@ module;
 #include <ranges>
 #include <srcc/Macros.hh>
 #include <thread>
+#include <print>
 
 #ifdef __linux__
 #    include <unistd.h>
@@ -286,12 +287,6 @@ StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
     Assert(backlog.empty(), "Diagnostics not flushed?");
 }
 
-auto EscapeParens(StringRef str) -> std::string {
-    std::string s{str};
-    utils::ReplaceAll(s, ")", "\033)");
-    return s;
-}
-
 auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
     static constexpr usz TabSize = 4;
     static constexpr std::u32string_view Tab = U"    ";
@@ -357,7 +352,7 @@ auto FormatDiagnostic(
 
         // Even if the location is invalid, print the file name if we can.
         if (auto f = ctx.file(diag.where.file_id))
-            out += std::format("\n  in %b({}:<invalid location>)\n\n", EscapeParens(f->name()));
+            out += std::format("\n  in %b(\002{}\003:<invalid location>)\n\n", f->name());
 
         PrintExtraData();
         return out;
@@ -383,9 +378,6 @@ auto FormatDiagnostic(
     utils::ReplaceAll(after, "\t", "    ");
     auto before_wd = TextWidth(text::ToUTF32(before));
     auto range_wd = TextWidth(text::ToUTF32(range));
-    before = EscapeParens(before);
-    range = EscapeParens(range);
-    after = EscapeParens(after);
 
     // TODO: Explore this idea:
     //
@@ -412,8 +404,8 @@ auto FormatDiagnostic(
         auto PrintLocation = [&](Location loc, LocInfoShort l) {
             const auto& file = *ctx.file(loc.file_id);
             out += std::format(
-                "at %b4({}):{}:{}\n",
-                EscapeParens(file.name()),
+                "at %b4(\002{}\003):{}:{}\n",
+                file.name(),
                 l.line,
                 l.col
             );
@@ -443,9 +435,9 @@ auto FormatDiagnostic(
     // Print the line up to the start of the location, the range in the right
     // colour, and the rest of the line.
     // TODO: Proper underlines: \033[1;58:5:1;4:3m
-    out += std::format("%b({} |) {}", line, before);
-    out += std::format("%b8({})", range);
-    out += std::format("{}\n", after);
+    out += std::format("%b({} |) \002{}\003", line, before);
+    out += std::format("%b8(\002{}\003)", range);
+    out += std::format("\002{}\003\n", after);
 
     // Determine the number of digits in the line number.
     const auto digits = std::to_string(line).size();
