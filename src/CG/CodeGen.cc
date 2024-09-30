@@ -239,7 +239,7 @@ CodeGen::EnterFunction::EnterFunction(CodeGen& CG, llvm::Function* func)
 
 auto CodeGen::GetStringPtr(StringRef s) -> llvm::Constant* {
     if (auto it = strings.find(s); it != strings.end()) return it->second;
-    return strings[s] = builder.CreateGlobalStringPtr(s);
+    return strings[s] = builder.CreateGlobalString(s);
 }
 
 auto CodeGen::GetStringSlice(StringRef s) -> llvm::Constant* {
