@@ -1028,6 +1028,30 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         );
     };
 
+    // Check variadic arguments.
+    auto CheckVarargs = [&](SmallVectorImpl<Expr*>& actual_args, ArrayRef<Expr*> varargs) {
+        bool ok = true;
+        for (auto a : varargs) {
+            if (
+                a->type == Types::IntTy or
+                a->type == Types::BoolTy or
+                a->type == Types::NoReturnTy or
+                (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
+                isa<ReferenceType>(a->type)
+            ) {
+                actual_args.push_back(LValueToSRValue(a));
+            } else {
+                ok = false;
+                Error(
+                    a->location(),
+                    "Passing a value of type '{}' as a varargs argument is not supported",
+                    a->type
+                );
+            }
+        }
+        return ok;
+    };
+
     // Calls with dependent arguments are checked when they’re instantiated.
     if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
         return BuildDependentCallExpr(callee_expr);
@@ -1069,6 +1093,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             if (not arg) return {};
             actual_args.push_back(arg);
         }
+
+        // And check variadic arguments.
+        if (not CheckVarargs(actual_args, args.drop_front(ty->params().size())))
+            return nullptr;
 
         // And create the call.
         return CallExpr::Create(
@@ -1145,17 +1173,21 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             return true;
         }
 
-        // Argument count mismatch is not allowed.
+        // Argument count mismatch is not allowed, unless the
+        // function is variadic.
         //
-        // TODO: Default arguments and C-style variadic functions.
+        // TODO: Default arguments.
         if (args.size() != params.size()) {
-            c.status = Candidate::ArgumentCountMismatch{};
-            return true;
+            if (args.size() < params.size() or not ty->variadic()) {
+                c.status = Candidate::ArgumentCountMismatch{};
+                return true;
+            }
         }
 
         // Check that we can initialise each parameter with its
-        // corresponding argument.
-        for (auto [i, a] : enumerate(args)) {
+        // corresponding argument. Variadic arguments are checked
+        // later when the call is built.
+        for (auto [i, a] : enumerate(args.take_front(params.size()))) {
             // Candidate may have become invalid in the meantime.
             auto st = c.status.get_if<Candidate::Viable>();
             if (not st) break;
@@ -1233,6 +1265,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         actual_args.reserve(args.size());
         for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
             actual_args.emplace_back(ApplyConversionSequence(args[i], conv));
+
+        // And check variadic arguments.
+        if (not CheckVarargs(actual_args, args.drop_front(final_callee->proc_type()->params().size())))
+            return nullptr;
 
         // Finally, create the call.
         return CallExpr::Create(
@@ -1884,6 +1920,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
 
 

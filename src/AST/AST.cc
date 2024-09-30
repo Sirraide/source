@@ -317,7 +317,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::StrLitExpr: {
             PrintBasicHeader(e, "StrLitExpr");
-            print(" %3(\"{}\")\n", utils::Escape(cast<StrLitExpr>(e)->value));
+            print(" %3(\"\002{}\003\")\n", utils::Escape(cast<StrLitExpr>(e)->value));
         } break;
 
         case Kind::TemplateTypeDecl: {

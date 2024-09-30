@@ -299,7 +299,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::StrLitExpr: {
             auto& str = *cast<ParsedStrLitExpr>(s);
             PrintHeader(s, "StrLitExpr", false);
-            print("%3(\"{}\")\n", utils::Escape(str.value));
+            print("%3(\"\002{}\003\")\n", utils::Escape(str.value));
         } break;
 
         case Kind::ReturnExpr: {
