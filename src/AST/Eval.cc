@@ -351,7 +351,7 @@ bool EvaluationContext::LoadMemory(
     Size size_to_load,
     Location loc
 ) {
-    if (not CheckMemoryAccess(lval, size_to_load, false, loc)) return false;
+    TRY(CheckMemoryAccess(lval, size_to_load, false, loc));
     std::memcpy(into, lval.base.get<Memory*>()->data(), size_to_load.bytes());
     return true;
 }
@@ -365,7 +365,7 @@ bool EvaluationContext::StoreMemory(
     auto mem = lv.base.get<Memory*>();
 
     // Check that we can store into this.
-    if (not CheckMemoryAccess(lv, size_to_write, true, loc)) return false;
+    TRY(CheckMemoryAccess(lv, size_to_write, true, loc));
     if (not lv.modifiable)
         return ReportMemoryError(lv, loc, "Attempting to write into read-only memory.");
 
@@ -439,7 +439,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                 if (auto i = init.get_or_null()) {
                     Assert(i->value_category == Expr::SRValue);
                     Value val;
-                    if (not Eval(val, i)) return false;
+                    TryEval(val, i);
                     return StoreMemory(addr, get_value(val), i->location());
                 }
 
@@ -460,7 +460,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
             if (isa<IntType>(addr.type.ptr())) {
                 if (auto i = init.get_or_null()) {
                     Value val;
-                    if (not Eval(val, i)) return false;
+                    TryEval(val, i);
                     auto& ai = val.cast<APInt>();
                     auto data = ai.getRawData();
                     auto size = ai.getNumWords() * Size::Of<u64>();
@@ -475,7 +475,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                 if (auto i = init.get_or_null()) {
                     Assert(i->value_category == Expr::SRValue);
                     Value closure;
-                    if (not Eval(closure, i)) return false;
+                    TryEval(closure, i);
                     return StoreMemory(addr, Closure{closure.cast<ProcDecl*>()}, i->location());
                 }
 
@@ -558,7 +558,7 @@ bool EvaluationContext::PerformVarInit(LValue& addr, Ptr<Expr> init, Location lo
 //  Evaluation
 // ============================================================================
 bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
-    if (not Eval(out, expr->cond)) return false;
+    TryEval(out, expr->cond);
 
     // If the assertion fails, print the message if there is one and
     // if it is a constant expression.
@@ -619,15 +619,15 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
 
         // This, as ever, is just variable initialisation.
         case Tk::Assign: {
-            if (not Eval(out, expr->lhs)) return false;
+            TryEval(out, expr->lhs);
             return PerformAssign(out.cast<LValue>(), expr->rhs, expr->location());
         }
     }
 
     // Any other operators require us to evaluate both sides.
     Value lhs, rhs;
-    if (not Eval(lhs, expr->lhs)) return false;
-    if (not Eval(rhs, expr->rhs)) return false;
+    TryEval(lhs, expr->lhs);
+    TryEval(rhs, expr->rhs);
 
     auto EvalAndCheckOverflow = [&]( // clang-format off
         APInt (APInt::* op)(const APInt&, bool&) const,
@@ -867,7 +867,7 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
         if (isa<Decl>(s)) continue;
 
         // Anything else needs to be evaluated.
-        if (not Eval(val, s)) return false;
+        TryEval(val, s);
         if (s == block->return_expr()) out = std::exchange(val, {});
     }
     return true;
@@ -882,7 +882,7 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
     switch (builtin->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
             for (auto arg : builtin->args()) {
-                if (not Eval(out, arg)) return false;
+                TryEval(out, arg);
 
                 // String.
                 if (auto slice = out.dyn_cast<Slice>()) {
@@ -1006,7 +1006,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
 }
 
 bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
-    if (not Eval(out, cast->arg)) return false;
+    TryEval(out, cast->arg);
     switch (cast->kind) {
         case CastExpr::LValueToSRValue: {
             auto lvalue = out.cast<LValue>();
@@ -1014,7 +1014,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             // Builtin int.
             if (lvalue.type == Types::IntTy) {
                 u64 value;
-                if (not LoadMemory(lvalue, value, cast->location())) return false;
+                TRY(LoadMemory(lvalue, value, cast->location()));
                 out = IntValue(value);
                 return true;
             }
@@ -1032,7 +1032,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             // Bool.
             if (lvalue.type == Types::BoolTy) {
                 bool value;
-                if (not LoadMemory(lvalue, value, cast->location())) return false;
+                TRY(LoadMemory(lvalue, value, cast->location()));
                 out = value;
                 return true;
             }
@@ -1040,7 +1040,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             // Closures.
             if (isa<ProcType>(lvalue.type)) {
                 Closure cl;
-                if (not LoadMemory(lvalue, cl, cast->location())) return false;
+                TRY(LoadMemory(lvalue, cl, cast->location()));
                 out = cl.decl;
                 return true;
             }
@@ -1075,7 +1075,7 @@ bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
 }
 
 bool EvaluationContext::EvalIfExpr(Value& out, IfExpr* expr) {
-    if (not Eval(out, expr->cond)) return false;
+    TryEval(out, expr->cond);
 
     // Always reset to an empty value if this isn’t supposed
     // to yield anything.
@@ -1143,7 +1143,7 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
 }
 
 bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data) {
-    if (not Eval(out, slice_data->slice)) return false;
+    TryEval(out, slice_data->slice);
     auto data = std::move(out.dyn_cast<Slice>()->data);
     out = {std::move(data), slice_data->type};
     return true;
@@ -1173,7 +1173,7 @@ bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr) {
 }
 
 bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
-    if (not Eval(out, expr->arg)) return false;
+    TryEval(out, expr->arg);
     if (expr->postfix) return ICE(expr->location(), "Postfix unary operators not supported yet");
     switch (expr->op) {
         default: Unreachable("Invalid prefix operator: {}", expr->op);
