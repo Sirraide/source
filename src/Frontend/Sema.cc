@@ -219,7 +219,8 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
 }
 
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
-    if (e->type != ty) {
+    auto init = TryPerformVariableInitialisation(ty, e);
+    if (not init) {
         Error(
             e->location(),
             "{} of '%1({})' must be of type\f'{}', but was '{}'",
@@ -231,7 +232,8 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
         return false;
     }
 
-    e = LValueToSRValue(e);
+    // Make sure it’s an srvalue.
+    e = LValueToSRValue(init);
     return true;
 }
 
@@ -810,6 +812,31 @@ auto Sema::BuildBinaryExpr(
         return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
     };
 
+    auto ConvertToCommonType = [&] {
+        // Find the common type of the two. We need the same logic
+        // during initialisation (and it actually turns out to be
+        // easier to write it that way), so reuse it here.
+        if (auto lhs_conv = TryPerformVariableInitialisation(rhs->type, lhs)) {
+            lhs = lhs_conv;
+        } else if (auto rhs_conv = TryPerformVariableInitialisation(lhs->type, rhs)) {
+            rhs = rhs_conv;
+        } else {
+            Error(
+                loc,
+                "Invalid operation: %1({}) between {} and {}",
+                Spelling(op),
+                lhs->type,
+                rhs->type
+            );
+            return false;
+        }
+
+        // Now they’re the same type, so ensure both are srvalues.
+        lhs = LValueToSRValue(lhs);
+        rhs = LValueToSRValue(rhs);
+        return true;
+    };
+
     // If either operand is dependent, then we can’t do much.
     if (lhs->dependent() or rhs->dependent()) return Build(
         Types::DependentTy,
@@ -869,28 +896,8 @@ auto Sema::BuildBinaryExpr(
 
             // Both operands must be integers.
             if (not Check("Left operand", lhs) or not Check("Right operand", rhs)) return nullptr;
-
-            // Find the common type of the two. We need the same logic
-            // during initialisation (and it actually turns out to be
-            // easier to write it that way), so reuse it here.
-            if (auto lhs_conv = TryPerformVariableInitialisation(rhs->type, lhs)) {
-                lhs = lhs_conv;
-            } else if (auto rhs_conv = TryPerformVariableInitialisation(lhs->type, rhs)) {
-                rhs = rhs_conv;
-            } else {
-                return Error(
-                    loc,
-                    "Invalid operation: %1({}) between {} and {}",
-                    Spelling(op),
-                    lhs->type,
-                    rhs->type
-                );
-            }
-
-            // Now they’re the same type, so ensure both are srvalues.
-            lhs = LValueToSRValue(lhs);
-            rhs = LValueToSRValue(rhs);
-            return Build(Types::IntTy, SRValue);
+            if (not ConvertToCommonType()) return nullptr;
+            return Build(lhs->type);
         }
 
         // Comparison.
@@ -904,26 +911,8 @@ auto Sema::BuildBinaryExpr(
         case Tk::SGe:
         case Tk::EqEq:
         case Tk::Neq: {
-            // Both operands must have the same type.
-            if (lhs->type != rhs->type) return Error(
-                loc,
-                "Cannot compare '{}' with '{}'",
-                lhs->type,
-                rhs->type
-            );
-
-            // For now, we only support srvalues.
-            if (lhs->type->value_category() != SRValue) return ICE(
-                loc,
-                "Sorry, we can’t compare values of type '{}' yet",
-                lhs->type
-            );
-
-            lhs = LValueToSRValue(lhs);
-            rhs = LValueToSRValue(rhs);
-
-            // Result is an srvalue bool.
-            return Build(Types::BoolTy, SRValue);
+            if (not ConvertToCommonType()) return nullptr;
+            return Build(Types::BoolTy);
         }
 
         // Logical operator.
@@ -932,7 +921,7 @@ auto Sema::BuildBinaryExpr(
         case Tk::Xor: {
             if (not MakeSRValue(Types::BoolTy, lhs, "Left operand", Spelling(op))) return {};
             if (not MakeSRValue(Types::BoolTy, rhs, "Right operand", Spelling(op))) return {};
-            return Build(Types::BoolTy, SRValue);
+            return Build(Types::BoolTy);
         }
 
         // Assignment.
@@ -1465,7 +1454,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     if (auto val = value.get_or_null()) {
         if (val->type == Types::VoidTy) {
             // Nop.
-        } else if (val->type == Types::IntTy) {
+        } else if (val->type == Types::IntTy or isa<IntType>(val->type)) {
             value = LValueToSRValue(val);
         } else {
             ICE(loc, "Cannot compile this return type yet: {}", val->type);
@@ -1895,6 +1884,8 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
 
 
 

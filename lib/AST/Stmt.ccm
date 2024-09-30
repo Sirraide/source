@@ -680,6 +680,10 @@ public:
         Location location
     ) : LocalDecl{Kind::ParamDecl, type, name, parent, nullptr, location}, intent{intent} {}
 
+    // Whether this is an 'in' parameter that is passed by value
+    // under the hood.
+    [[nodiscard]] bool is_rvalue_in_parameter() const;
+
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
 };
 

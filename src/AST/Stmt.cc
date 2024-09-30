@@ -125,6 +125,12 @@ auto Expr::strip_parens() -> Expr* {
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
     ComputeDependence();
+
+    // If this is a parameter that is passed as an rvalue, and the intent is 'In',
+    // then we only have an rvalue in the callee (other intents may be passed by
+    // value as well, but still create variables in the callee).
+    auto p = dyn_cast<ParamDecl>(decl);
+    if (p and p->is_rvalue_in_parameter()) value_category = SRValue;
 }
 
 OverloadSetExpr::OverloadSetExpr(
@@ -145,6 +151,11 @@ auto OverloadSetExpr::Create(
     auto size = totalSizeToAlloc<ProcDecl*>(decls.size());
     auto mem = tu.allocate(size, alignof(OverloadSetExpr));
     return ::new (mem) OverloadSetExpr{decls, location};
+}
+
+bool ParamDecl::is_rvalue_in_parameter() const {
+    return intent == Intent::In and
+           type->pass_by_rvalue(parent->proc_type()->cconv(), intent);
 }
 
 ProcRefExpr::ProcRefExpr(

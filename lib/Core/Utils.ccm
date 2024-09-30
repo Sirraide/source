@@ -110,6 +110,11 @@ public:
     explicit operator bool() const { return present(); }
 };
 
+template <typename T>
+auto ref(SmallVectorImpl<T>& vec) -> MutableArrayRef<T> {
+    return MutableArrayRef<T>(vec);
+}
+
 /// Used to represent the size of a type.
 ///
 /// This is just a wrapper around an integer, but it requires us
@@ -153,6 +158,7 @@ public:
     }
 
     [[nodiscard]] constexpr Size aligned(Size align) const { return Size{alignTo(bytes(), Align(align.bytes()))}; }
+    [[nodiscard]] constexpr Size as_bytes() const { return Size::Bytes(bytes()); }
     [[nodiscard]] constexpr auto bits() const -> usz { return raw; }
     [[nodiscard]] constexpr auto bytes() const -> usz { return llvm::alignToPowerOf2(raw, 8) / 8; }
 
@@ -164,6 +170,7 @@ private:
     /// Only provided for Size*Integer since that basically means scaling a size. Multiplying
     /// two sizes w/ one another doesn’t make sense, so that operation is not provided.
     [[nodiscard]] friend constexpr Size operator*(Size lhs, usz rhs) { return Size{lhs.raw * rhs}; }
+    [[nodiscard]] friend constexpr Size operator*(usz lhs, Size rhs) { return Size{lhs * rhs.raw}; }
     [[nodiscard]] friend constexpr Size operator+(Size lhs, Size rhs) { return Size{lhs.raw + rhs.raw}; }
     [[nodiscard]] friend constexpr bool operator==(Size lhs, Size rhs) = default;
     [[nodiscard]] friend constexpr auto operator<=>(Size lhs, Size rhs) = default;
@@ -172,6 +179,11 @@ private:
     [[nodiscard]] friend constexpr Size operator-(Size lhs, Size rhs) {
         Assert(lhs.raw >= rhs.raw, "Size underflow");
         return Size{lhs.raw - rhs.raw};
+    }
+
+    /// For libassert.
+    [[nodiscard]] friend auto operator<<(std::ostream& os, Size sz) -> std::ostream& {
+        return os << sz.bits();
     }
 };
 

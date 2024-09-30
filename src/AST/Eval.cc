@@ -85,11 +85,12 @@ struct StackFrame {
     StackFrame(StackFrame&&) = default;
     StackFrame& operator=(StackFrame&&) = default;
 
-    StackFrame(ProcDecl* proc, LocalsMap&& locals, Location loc)
+    StackFrame() = default;
+    StackFrame(Ptr<ProcDecl> proc, LocalsMap&& locals, Location loc)
         : proc{proc}, call_loc{loc}, locals{std::move(locals)} {}
 
     /// The procedure that this frame belongs to.
-    ProcDecl* proc;
+    Ptr<ProcDecl> proc;
 
     /// Location of the call that pushed this frame.
     Location call_loc;
@@ -136,11 +137,16 @@ public:
         ~PushStackFrame() { ctx.stack.pop_back(); }
     };
 
-    EvaluationContext(TranslationUnit& tu, bool complain) : tu{tu}, complain{complain} {}
+    EvaluationContext(TranslationUnit& tu, bool complain) : tu{tu}, complain{complain} {
+        // Push a fake stack frame in case we need to deal with
+        // local variables at the top level.
+        stack.emplace_back();
+    }
 
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
+    auto AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue&;
     auto AllocateMemory(Type ty, Location loc) -> Memory*;
 
     template <typename... Args>
@@ -150,10 +156,10 @@ public:
 
             // Print call stack, but take care not to recurse infinitely here.
             if (level != Diagnostic::Level::Note) {
-                for (auto& frame : stack | vws::reverse) Note(
+                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
                     frame.call_loc,
                     "In call to '{}' here",
-                    frame.proc->name
+                    frame.proc.get()->name
                 );
             }
         }
@@ -259,6 +265,10 @@ auto LValue::print() const -> SmallUnrenderedString {
     return out;
 }
 
+auto EvaluationContext::AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue& {
+    return locals[l] = LValue{AllocateMemory(l->type, l->location())};
+}
+
 auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
     auto ty_sz = ty->size(tu);
     auto ty_align = ty->align(tu);
@@ -346,6 +356,10 @@ void Memory::init(TranslationUnit& tu) {
     data_and_state.setInt(LifetimeState::Initialised);
 
     // Clear in any case since this starts the lifetime of this thing.
+    zero(tu);
+}
+
+void Memory::zero(TranslationUnit& tu) {
     std::memset(data(), 0, ty->size(tu).bytes());
 }
 
@@ -353,7 +367,8 @@ void Memory::init(TranslationUnit& tu) {
 //  Helpers
 // ============================================================================
 void EvaluationContext::DumpFrame(StackFrame& frame) {
-    std::println("In procedure '{}'", frame.proc->name);
+    if (not frame.proc) return;
+    std::println("In procedure '{}'", frame.proc.get()->name);
     for (auto& [decl, lval] : frame.locals) {
         std::print("  {} -> ", decl->name);
         lval.dump(true);
@@ -415,6 +430,21 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                 +[](Value& v) { return v.cast<bool>(); },
                 false
             );
+
+            if (isa<IntType>(mem->type().ptr())) {
+                if (auto i = init.get_or_null()) {
+                    Value val;
+                    if (not Eval(val, i)) return false;
+                    auto& ai = val.cast<APInt>();
+                    auto data = ai.getRawData();
+                    auto size = ai.getNumWords() * Size::Of<u64>();
+                    Assert(size <= i->type->size(tu));
+                    return StoreMemory(mem, data, size, loc);
+                }
+
+                mem->zero(tu);
+                return true;
+            }
 
             if (isa<ProcType>(mem->type())) {
                 if (auto i = init.get_or_null()) {
@@ -800,7 +830,7 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
 
         // Variables need to be initialised.
         if (auto l = dyn_cast<LocalDecl>(s)) {
-            auto& loc = CurrFrame().locals[l];
+            auto& loc = AllocateVar(CurrFrame().locals, l);
             if (not PerformVarInit(loc, l->init, l->location()))
                 return false;
             initialised_vars.locals_to_destroy.push_back(loc.base.get<Memory*>());
@@ -870,9 +900,9 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
         // this before we set up the stack frame, otherwise, we’ll try to
         // access the locals in the new frame before we’re done setting them
         // up.
-        for (auto [i, l] : enumerate(proc->locals)) {
-            auto& addr = locals[l] = LValue{AllocateMemory(l->type, l->location())};
-            if (isa<ParamDecl>(l) and not PerformVarInit(addr, args[i], l->location()))
+        for (auto [i, l] : enumerate(proc->params())) {
+            auto& addr = AllocateVar(locals, l);
+            if (not PerformVarInit(addr, args[i], l->location()))
                 return false;
         }
 
@@ -934,7 +964,11 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             return false;
         }
 
-        case CastExpr::Integral: Todo();
+        case CastExpr::Integral: {
+            auto adjusted = out.cast<APInt>().sextOrTrunc(unsigned(cast->type->size(tu).bits()));
+            out = {adjusted, cast->type};
+            return true;
+        }
     }
 
     Unreachable("Invalid cast");
