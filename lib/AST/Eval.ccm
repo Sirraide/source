@@ -56,11 +56,11 @@ public:
     //     - stack or heap memory;
     Variant<String, Memory*> base;
 
-    // Whether the lvalue is modifiable.
-    bool modifiable{false};
+    // The type of this lvalue.
+    Type type;
 
-    /// Get the base type of this LValue.
-    auto base_type(TranslationUnit& tu) const -> Type;
+    // Whether the lvalue is modifiable.
+    bool modifiable{true};
 
     /// Print this.
     void dump(bool use_colour = true) const;
@@ -73,13 +73,13 @@ class srcc::eval::Memory {
     friend EvaluationContext;
     friend auto LValue::print() const -> SmallUnrenderedString;
 
-    const Type ty;
+    Size sz;
     Location loc;
     llvm::PointerIntPair<void*, 1, LifetimeState> data_and_state;
 
 public:
-    explicit Memory(Type ty, Location loc, void* data)
-        : ty{ty},
+    explicit Memory(Size size, Location loc, void* data)
+        : sz{size},
           loc{loc},
           data_and_state{data, LifetimeState::Uninitialised} {}
 
@@ -95,13 +95,13 @@ public:
     void destroy();
 
     /// Start the lifetime of this memory location.
-    void init(TranslationUnit& tu);
+    void init();
 
-    /// Get the type of this memory.
-    [[nodiscard]] auto type() const -> Type { return ty; }
+    /// Get the size of this memory.
+    [[nodiscard]] auto size() const -> Size { return sz; }
 
     /// Zero out the memory.
-    void zero(TranslationUnit& tu);
+    void zero();
 
 private:
     [[nodiscard]] auto data() -> void* { return data_and_state.getPointer(); }

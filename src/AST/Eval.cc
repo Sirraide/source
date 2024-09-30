@@ -20,15 +20,6 @@ struct Closure {
 // ============================================================================
 //  Value
 // ============================================================================
-auto LValue::base_type(TranslationUnit& tu) const -> Type {
-    utils::Overloaded V{
-        [&](String) -> Type { return tu.I8Ty; },
-        [&](Memory* m) -> Type { return m->type(); }
-    };
-
-    return std::visit(V, base);
-}
-
 Value::Value(ProcDecl* proc)
     : value(proc),
       ty(proc->type) {}
@@ -148,6 +139,7 @@ public:
 
     auto AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue&;
     auto AllocateMemory(Type ty, Location loc) -> Memory*;
+    auto AllocateMemory(Size size, Align align, Location loc) -> Memory*;
 
     template <typename... Args>
     void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -247,12 +239,12 @@ auto LValue::print() const -> SmallUnrenderedString {
         [&](String s) { out += std::format("%3(\"{}\")", s); },
         [&](const Memory* mem) {
             out += std::format(
-                "<{} memory:%3({})",
-                mem->type(),
+                "<memory:%4({}):%3({})",
+                mem->size(),
                 mem->alive() ? "alive"sv : "dead"sv
             );
 
-            if (mem->alive() and mem->type() == Types::IntTy) {
+            if (mem->alive() and type == Types::IntTy) {
                 i64 value;
                 std::memcpy(&value, mem->data(), sizeof(i64));
                 out += std::format(" value:%5({})", value);
@@ -266,15 +258,31 @@ auto LValue::print() const -> SmallUnrenderedString {
 }
 
 auto EvaluationContext::AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue& {
-    return locals[l] = LValue{AllocateMemory(l->type, l->location())};
+    // For large integers, over-allocate so we can store multiples of words.
+    Memory* mem;
+    if (isa<IntType>(l->type)) {
+        mem = AllocateMemory(
+            l->type->size(tu).aligned(Align::Of<u64>()),
+            Align::Of<u64>(),
+            l->location()
+        );
+    } else {
+        mem = AllocateMemory(l->type, l->location());
+    }
+
+    return locals.try_emplace(l, mem, l->type).first->second;
 }
 
 auto EvaluationContext::AllocateMemory(Type ty, Location loc) -> Memory* {
     auto ty_sz = ty->size(tu);
     auto ty_align = ty->align(tu);
-    auto data = memory.Allocate(ty_sz.bytes(), ty_align);
+    return AllocateMemory(ty_sz, ty_align, loc);
+}
+
+auto EvaluationContext::AllocateMemory(Size size, Align align, Location loc) -> Memory* {
+    auto data = memory.Allocate(size.bytes(), align);
     auto mem = memory.Allocate<Memory>();
-    return ::new (mem) Memory{ty, loc, data};
+    return ::new (mem) Memory{size, loc, data};
 }
 
 bool EvaluationContext::CheckMemoryAccess(
@@ -289,12 +297,12 @@ bool EvaluationContext::CheckMemoryAccess(
         "Accessing memory outside of its lifetime"
     );
 
-    if (size.bytes() > mem->ty->size(tu).bytes()) return ReportMemoryError(
+    if (size.bytes() > mem->size().bytes()) return ReportMemoryError(
         mem,
         loc,
         "Out-of-bounds {} of size {} (total size: {})",
         write ? "write" : "read",
-        mem->ty->size(tu) - size,
+        mem->size() - size,
         size
     );
 
@@ -352,15 +360,15 @@ void Memory::destroy() {
     data_and_state.setInt(LifetimeState::Uninitialised);
 }
 
-void Memory::init(TranslationUnit& tu) {
+void Memory::init() {
     data_and_state.setInt(LifetimeState::Initialised);
 
     // Clear in any case since this starts the lifetime of this thing.
-    zero(tu);
+    zero();
 }
 
-void Memory::zero(TranslationUnit& tu) {
-    std::memset(data(), 0, ty->size(tu).bytes());
+void Memory::zero() {
+    std::memset(data(), 0, size().bytes());
 }
 
 // ============================================================================
@@ -401,7 +409,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
 
     // For builtin types, Sema will have ensured that the RHS is
     // an srvalue of the same type.
-    switch (mem->type()->value_category()) {
+    switch (addr.type->value_category()) {
         case ValueCategory::MRValue: Todo("Initialise mrvalue");
         case ValueCategory::LValue: Todo("Initialise lvalue");
         case ValueCategory::DValue:
@@ -421,32 +429,31 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
                 return StoreMemory(mem, default_value, loc);
             };
 
-            if (mem->type() == Types::IntTy) return InitBuiltin(
+            if (addr.type == Types::IntTy) return InitBuiltin(
                 +[](Value& v) { return v.cast<APInt>().getZExtValue(); },
                 u64(0)
             );
 
-            if (mem->type() == Types::BoolTy) return InitBuiltin(
+            if (addr.type == Types::BoolTy) return InitBuiltin(
                 +[](Value& v) { return v.cast<bool>(); },
                 false
             );
 
-            if (isa<IntType>(mem->type().ptr())) {
+            if (isa<IntType>(addr.type.ptr())) {
                 if (auto i = init.get_or_null()) {
                     Value val;
                     if (not Eval(val, i)) return false;
                     auto& ai = val.cast<APInt>();
                     auto data = ai.getRawData();
                     auto size = ai.getNumWords() * Size::Of<u64>();
-                    Assert(size <= i->type->size(tu));
                     return StoreMemory(mem, data, size, loc);
                 }
 
-                mem->zero(tu);
+                mem->zero();
                 return true;
             }
 
-            if (isa<ProcType>(mem->type())) {
+            if (isa<ProcType>(addr.type)) {
                 if (auto i = init.get_or_null()) {
                     Assert(i->value_category == Expr::SRValue);
                     Value closure;
@@ -461,7 +468,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
             return Error(
                 loc,
                 "Unsupported variable type in constant evaluation: '{}'",
-                mem->type()
+                addr.type
             );
         }
     }
@@ -473,7 +480,9 @@ bool EvaluationContext::PerformVarInit(LValue& addr, Ptr<Expr> init, Location lo
     auto* mem = addr.base.get<Memory*>();
     Assert(mem->dead(), "Already initialised?");
 
-    mem->init(tu);
+    // TODO: Handle intents.
+
+    mem->init();
     if (not PerformAssign(addr, init, loc)) {
         mem->destroy();
         return false;
@@ -932,7 +941,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             auto mem = lvalue.base.get<Memory*>();
 
             // Integers.
-            if (mem->type() == Types::IntTy) {
+            if (lvalue.type == Types::IntTy) {
                 u64 value;
                 if (not LoadMemory(mem, value, cast->location())) return false;
                 out = IntValue(value);
@@ -940,7 +949,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             }
 
             // Bool.
-            if (mem->type() == Types::BoolTy) {
+            if (lvalue.type == Types::BoolTy) {
                 bool value;
                 if (not LoadMemory(mem, value, cast->location())) return false;
                 out = value;
@@ -948,7 +957,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             }
 
             // Closures.
-            if (isa<ProcType>(mem->type())) {
+            if (isa<ProcType>(lvalue.type)) {
                 Closure cl;
                 if (not LoadMemory(mem, cl, cast->location())) return false;
                 out = cl.decl;
@@ -958,7 +967,7 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
             ICE(
                 cast->location(),
                 "Sorry, we don’t support lvalue->srvalue conversion of '{}' yet",
-                mem->type()
+                lvalue.type
             );
 
             return false;
@@ -1062,7 +1071,7 @@ bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data)
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
     out = Value{
         Slice{
-            Reference{LValue{str_lit->value, false}, APInt::getZero(64)},
+            Reference{LValue{str_lit->value, str_lit->type, false}, APInt::getZero(64)},
             APInt(u32(Types::IntTy->size(tu).bits()), str_lit->value.size(), false),
         },
         tu.StrLitTy,

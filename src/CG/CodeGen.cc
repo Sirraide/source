@@ -979,7 +979,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
         [&](this auto& self, const eval::Reference& ref) -> llvm::Constant* {
             auto base = self(ref.lvalue);
             return llvm::ConstantFoldGetElementPtr(
-                ConvertType(ref.lvalue.base_type(M)),
+                ConvertType(ref.lvalue.type),
                 base,
                 {},
                 MakeInt(ref.offset)
