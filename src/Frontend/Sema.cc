@@ -78,40 +78,6 @@ auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
     return e;
 }
 
-/*auto Sema::CommonIntegerType(Expr* a, Expr* b) -> Opt<Type> {
-    if (a->type == b->type) return a->type;
-
-    // Try to check if either side is a literal and convert
-    // it to the type of the other side if it is.
-    auto lit = isa<IntLitExpr>(a) ? cast<IntLitExpr>(a) : dyn_cast<IntLitExpr>(b);
-    auto other = lit == a ? b : a;
-    if (lit and IntegerLiteralFitsInType(lit, other->type)) return other->type;
-
-    // And dispatch to the regular common type implementation otherwise.
-    return CommonType(a, b);
-}
-
-auto Sema::CommonType(TypeLoc a, TypeLoc b, bool complain) -> Opt<Type> {
-    if (a.ty == b.ty) return a.ty;
-
-    // Both types are integers.
-    if (a.ty->is_integer() and b.ty->is_integer()) {
-        // If both are sized, the result is the larger one.
-        auto ia = dyn_cast<IntType>(a.ty);
-        auto ib = dyn_cast<IntType>(b.ty);
-        if (ia and ib) return ia.value()->bit_width() > ib.value()->bit_width() ? a.ty : b.ty;
-    }
-
-    // No idea.
-    if (complain) Error(
-        a.loc,
-        "No common type between '{}' and '{}'",
-        a.ty,
-        b.ty
-    );
-    return {};
-}*/
-
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration");

@@ -431,12 +431,6 @@ private:
     /// Apply a conversion sequence to an expression.
     [[nodiscard]] auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
 
-    /*/// Find the common type of two types.
-    [[nodiscard]] auto CommonType(TypeLoc a, TypeLoc b, bool complain = true) -> Opt<Type>;
-
-    /// Find the common integer type for two expressions.
-    [[nodiscard]] auto CommonIntegerType(Expr* a, Expr* b) -> Opt<Type>;*/
-
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
