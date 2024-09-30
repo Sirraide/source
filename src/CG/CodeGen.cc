@@ -918,7 +918,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     for (auto l : proc->locals) EmitLocal(l);
 
     // Initialise parameters.
-    for (auto [a, p] : vws::zip(curr_func->args(), proc->params()))
+    for (auto [a, p] : zip(curr_func->args(), proc->params()))
         builder.CreateStore(&a, locals.at(p));
 
     // Emit the body.

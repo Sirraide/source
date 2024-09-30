@@ -1045,7 +1045,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // Check each parameter.
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
-        for (auto [p, a] : vws::zip(ty->params(), args)) {
+        for (auto [p, a] : zip(ty->params(), args)) {
             auto arg = PerformVariableInitialisation(p.type, a, p.intent, ty->cconv(), true);
             if (not arg) return {};
             actual_args.push_back(arg);
@@ -1819,7 +1819,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
 
     // Translate parameters.
     auto ty = decl->proc_type();
-    for (auto [i, pair] : vws::zip(ty->params(), parsed->params()) | vws::enumerate) {
+    for (auto [i, pair] : enumerate(zip(ty->params(), parsed->params()))) {
         auto [param_ty, parsed_decl] = pair;
         BuildParamDecl(
             curr_proc(),
