@@ -9,15 +9,15 @@ program test;
 // + %5 = alloca i64, align 8
 // + %6 = alloca i64, align 8
 // + %7 = alloca i64, align 8
-// + store i64 %0, ptr %2, align 4
-// + store i64 %1, ptr %3, align 4
-// + %l2sr = load i64, ptr %2, align 4
-// + store i64 %l2sr, ptr %4, align 4
-// + %l2sr1 = load i64, ptr %3, align 4
-// + store i64 %l2sr1, ptr %5, align 4
-// + %l2sr2 = load i64, ptr %5, align 4
-// + store i64 %l2sr2, ptr %6, align 4
-// + store i64 7, ptr %7, align 4
+// + store i64 %0, ptr %2, align 8
+// + store i64 %1, ptr %3, align 8
+// + %l2sr = load i64, ptr %2, align 8
+// + store i64 %l2sr, ptr %4, align 8
+// + %l2sr1 = load i64, ptr %3, align 8
+// + store i64 %l2sr1, ptr %5, align 8
+// + %l2sr2 = load i64, ptr %5, align 8
+// + store i64 %l2sr2, ptr %6, align 8
+// + store i64 7, ptr %7, align 8
 proc foo(int a, int b) {
     int x = a;
     int y = b;

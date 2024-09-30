@@ -1575,7 +1575,7 @@ void Sema::Translate() {
 
     // File scope block should never be dependent.
     M->file_scope_block->set_dependence(Dependence::None);
-    M->initialiser_proc->finalise(BuildProcBody(M->initialiser_proc, M->file_scope_block), {});
+    M->initialiser_proc->finalise(BuildProcBody(M->initialiser_proc, M->file_scope_block), curr_proc().locals);
 }
 
 void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {

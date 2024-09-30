@@ -62,7 +62,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
         case Kind::ReferenceType: return Align{8}; // FIXME: Get pointer alignment from context.
         case Kind::IntType: {
             auto bytes = cast<IntType>(this)->bit_width().bytes();
-            return Align{llvm::PowerOf2Ceil(bytes)};
+            return Align{std::min<usz>(64, llvm::PowerOf2Ceil(bytes))};
         }
 
         case Kind::ProcType: return Align{8}; // FIXME: Get closure alignment from context.

@@ -61,6 +61,9 @@ public:
 
         /// Whether to use colours in the output.
         bool colours : 1;
+
+        /// Whether to perform overflow checking.
+        bool overflow_checking : 1;
     };
 
     /// Create a new driver.

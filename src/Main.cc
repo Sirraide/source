@@ -11,9 +11,13 @@ namespace detail {
 using namespace command_line_options;
 using options = clopts< // clang-format off
     positional<"file", "The file to compile">,
+
+    // General options.
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
     option<"--error-limit", "Limit how many errors are printed; passing 0 removes the limit", std::int64_t>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
+
+    // General flags.
     flag<"--ast", "Dump the parse tree / AST">,
     flag<"--lex", "Lex tokens only (but do not print them) and exit">,
     flag<"--tokens", "Print tokens and exit">,
@@ -22,6 +26,10 @@ using options = clopts< // clang-format off
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--llvm", "Emit LLVM IR">,
+
+    // Features.
+    flag<"-fno-overflow-checks">,
+
     help<>
 >; // clang-format on
 }
@@ -52,6 +60,7 @@ int main(int argc, char** argv) {
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),
         .colours = use_colour,
+        .overflow_checking = not opts.get<"-fno-overflow-checks">(),
     }};
 
     // Add files.

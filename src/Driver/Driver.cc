@@ -121,6 +121,7 @@ int Driver::Impl::run_job() {
 
     // Create lang opts.
     LangOpts lang_opts;
+    lang_opts.overflow_checking = opts.overflow_checking;
 
     // Duplicate TUs would create horrible linker errors.
     // FIXME: Use inode instead?

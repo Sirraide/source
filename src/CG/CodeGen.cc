@@ -155,7 +155,7 @@ auto CodeGen::DefineExp(llvm::Type* ty) -> llvm::FunctionCallee {
     // If base == 0.
     If(builder.CreateICmpEQ(lhs, zero), [&] {
         // If exp < 0, then error.
-        if (M.lang_opts().OverflowChecks) {
+        if (M.lang_opts().overflow_checking) {
             CreateArithFailure(
                 builder.CreateICmpSLT(rhs, zero),
                 Tk::StarStar,
@@ -299,6 +299,12 @@ auto CodeGen::If(Value* cond, llvm::function_ref<void()> emit_then) -> BasicBloc
     return builder.GetInsertBlock();
 }
 
+bool LocalNeedsAlloca(LocalDecl* local) {
+    auto p = dyn_cast<ParamDecl>(local);
+    if (not p) return true;
+    return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent);
+}
+
 void CodeGen::Loop(llvm::function_ref<void(BasicBlock*)> emit_body) {
     auto bb_start = builder.GetInsertBlock();
     auto bb_cond = EnterBlock(BasicBlock::Create(M.llvm_context));
@@ -339,6 +345,9 @@ void CodeGen::Mangler::Append(StringRef s) {
     name += std::format("{}{}", s.size(), s);
 }
 
+// INVARIANT: No mangling code starts with a number (this means
+// mangling codes can *end* with a number without requirding a
+// separator).
 void CodeGen::Mangler::Append(Type ty) {
     struct Visitor {
         Mangler& M;
@@ -424,7 +433,7 @@ auto CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) -> Value* {
         // Emit + store.
         case Expr::SRValue: {
             auto val = Emit(init);
-            builder.CreateStore(val, addr);
+            builder.CreateAlignedStore(val, addr, init->type->align(M));
             return addr;
         }
 
@@ -630,7 +639,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
     };
 
     auto CreateCheckedBinop = [&](auto unchecked_op, Intrinsic::ID id) -> Value* {
-        if (not M.lang_opts().OverflowChecks) return std::invoke(
+        if (not M.lang_opts().overflow_checking) return std::invoke(
             unchecked_op,
             builder,
             lhs,
@@ -753,10 +762,18 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
                 case ValueCategory::DValue: Unreachable("Dependent value in codegen?");
                 case ValueCategory::SRValue: {
                     // SRValues are simply constructed and stored.
-                    if (auto i = var->init.get_or_null()) builder.CreateStore(Emit(i), locals[var]);
+                    if (auto i = var->init.get_or_null()) builder.CreateAlignedStore(
+                        Emit(i),
+                        locals.at(var),
+                        var->type->align(M)
+                    );
 
                     // Or zero-initialised if there is no initialiser.
-                    else builder.CreateStore(llvm::Constant::getNullValue(ConvertTypeForMem(var->type)), locals[var]);
+                    else builder.CreateAlignedStore(
+                        llvm::Constant::getNullValue(ConvertTypeForMem(var->type)),
+                        locals.at(var),
+                        var->type->align(M)
+                    );
                 } break;
             }
         }
@@ -845,10 +862,10 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     switch (expr->kind) {
         case CastExpr::LValueToSRValue: {
             Assert(expr->arg->value_category == Expr::LValue);
-            return builder.CreateLoad(ConvertTypeForMem(expr->type), val, "l2sr");
+            return builder.CreateAlignedLoad(ConvertTypeForMem(expr->type), val, expr->type->align(M), "l2sr");
         }
         case CastExpr::Integral: {
-            Todo();
+            return builder.CreateIntCast(val, ConvertType(expr->type), true);
         }
     }
 
@@ -883,7 +900,13 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
+    // If this is an in parameter that is passed by rvalue, no
+    // variable will be available for it, so do nothing here.
+    if (auto p = dyn_cast<ParamDecl>(decl); p and not LocalNeedsAlloca(p))
+        return;
+
     auto a = builder.CreateAlloca(ConvertTypeForMem(decl->type));
+    a->setAlignment(std::max(a->getAlign(), decl->type->align(M)));
     locals[decl] = a;
 }
 
@@ -918,8 +941,10 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     for (auto l : proc->locals) EmitLocal(l);
 
     // Initialise parameters.
-    for (auto [a, p] : zip(curr_func->args(), proc->params()))
-        builder.CreateStore(&a, locals.at(p));
+    for (auto [a, p] : zip(curr_func->args(), proc->params())) {
+        if (not LocalNeedsAlloca(p)) locals[p] = &a;
+        else builder.CreateAlignedStore(&a, locals.at(p), p->type->align(M));
+    }
 
     // Emit the body.
     Emit(proc->body().get());
@@ -944,7 +969,7 @@ auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
     // slices are small enough to where they may reasonably may end up in a
     // temporary.
     Assert(expr->value_category == Expr::SRValue or expr->value_category == Expr::LValue);
-    if (expr->lvalue()) return builder.CreateLoad(ConvertType(stype->elem()), slice);
+    if (expr->lvalue()) return builder.CreateAlignedLoad(ConvertType(stype->elem()), slice, Align(8)); // FIXME: Magic number.
     return builder.CreateExtractValue(slice, 0);
 }
 

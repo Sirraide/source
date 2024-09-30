@@ -21,7 +21,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     TranslationUnit& M;
     std::unique_ptr<llvm::Module> llvm;
     StringMap<llvm::Constant*> strings;
-    DenseMap<LocalDecl*, llvm::AllocaInst*> locals;
+    DenseMap<LocalDecl*, llvm::Value*> locals;
     DenseMap<ProcDecl*, std::string> mangled_names;
     DenseMap<llvm::Type*, llvm::FunctionCallee> exp_funcs;
     llvm::IRBuilder<> builder;

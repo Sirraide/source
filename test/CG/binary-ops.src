@@ -51,10 +51,10 @@ proc exp (int a, int b) {
 // + entry:
 // +   %2 = alloca i64, align 8
 // +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 4
-// +   store i64 %1, ptr %3, align 4
-// +   %l2sr = load i64, ptr %2, align 4
-// +   %l2sr1 = load i64, ptr %3, align 4
+// +   store i64 %0, ptr %2, align 8
+// +   store i64 %1, ptr %3, align 8
+// +   %l2sr = load i64, ptr %2, align 8
+// +   %l2sr1 = load i64, ptr %3, align 8
 // +   %4 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %l2sr, i64 %l2sr1)
 // +   %5 = extractvalue { i64, i1 } %4, 1
 // +   br i1 %5, label %6, label %7
@@ -66,8 +66,8 @@ proc exp (int a, int b) {
 // + 7:
 // +   %8 = extractvalue { i64, i1 } %4, 0
 // +   call fastcc void @_S4sinkFviE(i64 %8)
-// +   %l2sr2 = load i64, ptr %2, align 4
-// +   %l2sr3 = load i64, ptr %3, align 4
+// +   %l2sr2 = load i64, ptr %2, align 8
+// +   %l2sr3 = load i64, ptr %3, align 8
 // +   %9 = call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 %l2sr2, i64 %l2sr3)
 // +   %10 = extractvalue { i64, i1 } %9, 1
 // +   br i1 %10, label %11, label %12
@@ -79,8 +79,8 @@ proc exp (int a, int b) {
 // + 12:
 // +   %13 = extractvalue { i64, i1 } %9, 0
 // +   call fastcc void @_S4sinkFviE(i64 %13)
-// +   %l2sr4 = load i64, ptr %2, align 4
-// +   %l2sr5 = load i64, ptr %3, align 4
+// +   %l2sr4 = load i64, ptr %2, align 8
+// +   %l2sr5 = load i64, ptr %3, align 8
 // +   %14 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %l2sr4, i64 %l2sr5)
 // +   %15 = extractvalue { i64, i1 } %14, 1
 // +   br i1 %15, label %16, label %17
@@ -92,8 +92,8 @@ proc exp (int a, int b) {
 // + 17:
 // +   %18 = extractvalue { i64, i1 } %14, 0
 // +   call fastcc void @_S4sinkFviE(i64 %18)
-// +   %l2sr6 = load i64, ptr %2, align 4
-// +   %l2sr7 = load i64, ptr %3, align 4
+// +   %l2sr6 = load i64, ptr %2, align 8
+// +   %l2sr7 = load i64, ptr %3, align 8
 // +   %19 = icmp eq i64 %l2sr7, 0
 // +   br i1 %19, label %20, label %21
 // +
@@ -114,8 +114,8 @@ proc exp (int a, int b) {
 // + 26:
 // +   %27 = sdiv i64 %l2sr6, %l2sr7
 // +   call fastcc void @_S4sinkFviE(i64 %27)
-// +   %l2sr8 = load i64, ptr %2, align 4
-// +   %l2sr9 = load i64, ptr %3, align 4
+// +   %l2sr8 = load i64, ptr %2, align 8
+// +   %l2sr9 = load i64, ptr %3, align 8
 // +   %28 = icmp eq i64 %l2sr9, 0
 // +   br i1 %28, label %29, label %30
 // +
@@ -136,8 +136,8 @@ proc exp (int a, int b) {
 // + 35:
 // +   %36 = srem i64 %l2sr8, %l2sr9
 // +   call fastcc void @_S4sinkFviE(i64 %36)
-// +   %l2sr10 = load i64, ptr %2, align 4
-// +   %l2sr11 = load i64, ptr %3, align 4
+// +   %l2sr10 = load i64, ptr %2, align 8
+// +   %l2sr11 = load i64, ptr %3, align 8
 // +   %37 = icmp eq i64 %l2sr11, 0
 // +   br i1 %37, label %38, label %39
 // +
@@ -148,8 +148,8 @@ proc exp (int a, int b) {
 // + 39:
 // +   %40 = udiv i64 %l2sr10, %l2sr11
 // +   call fastcc void @_S4sinkFviE(i64 %40)
-// +   %l2sr12 = load i64, ptr %2, align 4
-// +   %l2sr13 = load i64, ptr %3, align 4
+// +   %l2sr12 = load i64, ptr %2, align 8
+// +   %l2sr13 = load i64, ptr %3, align 8
 // +   %41 = icmp eq i64 %l2sr13, 0
 // +   br i1 %41, label %42, label %43
 // +
@@ -160,8 +160,8 @@ proc exp (int a, int b) {
 // + 43:
 // +   %44 = urem i64 %l2sr12, %l2sr13
 // +   call fastcc void @_S4sinkFviE(i64 %44)
-// +   %l2sr14 = load i64, ptr %2, align 4
-// +   %l2sr15 = load i64, ptr %3, align 4
+// +   %l2sr14 = load i64, ptr %2, align 8
+// +   %l2sr15 = load i64, ptr %3, align 8
 // +   %45 = icmp uge i64 %l2sr15, 64
 // +   br i1 %45, label %46, label %47
 // +
@@ -182,8 +182,8 @@ proc exp (int a, int b) {
 // +
 // + 53:
 // +   call fastcc void @_S4sinkFviE(i64 %48)
-// +   %l2sr16 = load i64, ptr %2, align 4
-// +   %l2sr17 = load i64, ptr %3, align 4
+// +   %l2sr16 = load i64, ptr %2, align 8
+// +   %l2sr17 = load i64, ptr %3, align 8
 // +   %54 = icmp uge i64 %l2sr17, 64
 // +   br i1 %54, label %55, label %56
 // +
@@ -201,74 +201,74 @@ proc exp (int a, int b) {
 // + entry:
 // +   %2 = alloca i64, align 8
 // +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 4
-// +   store i64 %1, ptr %3, align 4
-// +   %l2sr = load i64, ptr %2, align 4
-// +   %l2sr1 = load i64, ptr %3, align 4
+// +   store i64 %0, ptr %2, align 8
+// +   store i64 %1, ptr %3, align 8
+// +   %l2sr = load i64, ptr %2, align 8
+// +   %l2sr1 = load i64, ptr %3, align 8
 // +   %4 = add i64 %l2sr, %l2sr1
 // +   call fastcc void @_S4sinkFviE(i64 %4)
-// +   %l2sr2 = load i64, ptr %2, align 4
-// +   %l2sr3 = load i64, ptr %3, align 4
+// +   %l2sr2 = load i64, ptr %2, align 8
+// +   %l2sr3 = load i64, ptr %3, align 8
 // +   %5 = sub i64 %l2sr2, %l2sr3
 // +   call fastcc void @_S4sinkFviE(i64 %5)
-// +   %l2sr4 = load i64, ptr %2, align 4
-// +   %l2sr5 = load i64, ptr %3, align 4
+// +   %l2sr4 = load i64, ptr %2, align 8
+// +   %l2sr5 = load i64, ptr %3, align 8
 // +   %6 = mul i64 %l2sr4, %l2sr5
 // +   call fastcc void @_S4sinkFviE(i64 %6)
-// +   %l2sr6 = load i64, ptr %2, align 4
-// +   %l2sr7 = load i64, ptr %3, align 4
+// +   %l2sr6 = load i64, ptr %2, align 8
+// +   %l2sr7 = load i64, ptr %3, align 8
 // +   %7 = ashr i64 %l2sr6, %l2sr7
 // +   call fastcc void @_S4sinkFviE(i64 %7)
-// +   %l2sr8 = load i64, ptr %2, align 4
-// +   %l2sr9 = load i64, ptr %3, align 4
+// +   %l2sr8 = load i64, ptr %2, align 8
+// +   %l2sr9 = load i64, ptr %3, align 8
 // +   %8 = lshr i64 %l2sr8, %l2sr9
 // +   call fastcc void @_S4sinkFviE(i64 %8)
-// +   %l2sr10 = load i64, ptr %2, align 4
-// +   %l2sr11 = load i64, ptr %3, align 4
+// +   %l2sr10 = load i64, ptr %2, align 8
+// +   %l2sr11 = load i64, ptr %3, align 8
 // +   %9 = and i64 %l2sr10, %l2sr11
 // +   call fastcc void @_S4sinkFviE(i64 %9)
-// +   %l2sr12 = load i64, ptr %2, align 4
-// +   %l2sr13 = load i64, ptr %3, align 4
+// +   %l2sr12 = load i64, ptr %2, align 8
+// +   %l2sr13 = load i64, ptr %3, align 8
 // +   %10 = or i64 %l2sr12, %l2sr13
 // +   call fastcc void @_S4sinkFviE(i64 %10)
-// +   %l2sr14 = load i64, ptr %2, align 4
-// +   %l2sr15 = load i64, ptr %3, align 4
+// +   %l2sr14 = load i64, ptr %2, align 8
+// +   %l2sr15 = load i64, ptr %3, align 8
 // +   %slt = icmp slt i64 %l2sr14, %l2sr15
 // +   call fastcc void @_S4sinkFvbE(i1 %slt)
-// +   %l2sr16 = load i64, ptr %2, align 4
-// +   %l2sr17 = load i64, ptr %3, align 4
+// +   %l2sr16 = load i64, ptr %2, align 8
+// +   %l2sr17 = load i64, ptr %3, align 8
 // +   %sle = icmp sle i64 %l2sr16, %l2sr17
 // +   call fastcc void @_S4sinkFvbE(i1 %sle)
-// +   %l2sr18 = load i64, ptr %2, align 4
-// +   %l2sr19 = load i64, ptr %3, align 4
+// +   %l2sr18 = load i64, ptr %2, align 8
+// +   %l2sr19 = load i64, ptr %3, align 8
 // +   %sgt = icmp sgt i64 %l2sr18, %l2sr19
 // +   call fastcc void @_S4sinkFvbE(i1 %sgt)
-// +   %l2sr20 = load i64, ptr %2, align 4
-// +   %l2sr21 = load i64, ptr %3, align 4
+// +   %l2sr20 = load i64, ptr %2, align 8
+// +   %l2sr21 = load i64, ptr %3, align 8
 // +   %sge = icmp sge i64 %l2sr20, %l2sr21
 // +   call fastcc void @_S4sinkFvbE(i1 %sge)
-// +   %l2sr22 = load i64, ptr %2, align 4
-// +   %l2sr23 = load i64, ptr %3, align 4
+// +   %l2sr22 = load i64, ptr %2, align 8
+// +   %l2sr23 = load i64, ptr %3, align 8
 // +   %ult = icmp ult i64 %l2sr22, %l2sr23
 // +   call fastcc void @_S4sinkFvbE(i1 %ult)
-// +   %l2sr24 = load i64, ptr %2, align 4
-// +   %l2sr25 = load i64, ptr %3, align 4
+// +   %l2sr24 = load i64, ptr %2, align 8
+// +   %l2sr25 = load i64, ptr %3, align 8
 // +   %ule = icmp ule i64 %l2sr24, %l2sr25
 // +   call fastcc void @_S4sinkFvbE(i1 %ule)
-// +   %l2sr26 = load i64, ptr %2, align 4
-// +   %l2sr27 = load i64, ptr %3, align 4
+// +   %l2sr26 = load i64, ptr %2, align 8
+// +   %l2sr27 = load i64, ptr %3, align 8
 // +   %ugt = icmp ugt i64 %l2sr26, %l2sr27
 // +   call fastcc void @_S4sinkFvbE(i1 %ugt)
-// +   %l2sr28 = load i64, ptr %2, align 4
-// +   %l2sr29 = load i64, ptr %3, align 4
+// +   %l2sr28 = load i64, ptr %2, align 8
+// +   %l2sr29 = load i64, ptr %3, align 8
 // +   %uge = icmp uge i64 %l2sr28, %l2sr29
 // +   call fastcc void @_S4sinkFvbE(i1 %uge)
-// +   %l2sr30 = load i64, ptr %2, align 4
-// +   %l2sr31 = load i64, ptr %3, align 4
+// +   %l2sr30 = load i64, ptr %2, align 8
+// +   %l2sr31 = load i64, ptr %3, align 8
 // +   %eq = icmp eq i64 %l2sr30, %l2sr31
 // +   call fastcc void @_S4sinkFvbE(i1 %eq)
-// +   %l2sr32 = load i64, ptr %2, align 4
-// +   %l2sr33 = load i64, ptr %3, align 4
+// +   %l2sr32 = load i64, ptr %2, align 8
+// +   %l2sr33 = load i64, ptr %3, align 8
 // +   %ne = icmp ne i64 %l2sr32, %l2sr33
 // +   call fastcc void @_S4sinkFvbE(i1 %ne)
 // +   ret void
@@ -278,10 +278,10 @@ proc exp (int a, int b) {
 // + entry:
 // +   %2 = alloca i64, align 8
 // +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 4
-// +   store i64 %1, ptr %3, align 4
-// +   %l2sr = load i64, ptr %2, align 4
-// +   %l2sr1 = load i64, ptr %3, align 4
+// +   store i64 %0, ptr %2, align 8
+// +   store i64 %1, ptr %3, align 8
+// +   %l2sr = load i64, ptr %2, align 8
+// +   %l2sr1 = load i64, ptr %3, align 8
 // +   %4 = call i64 @__srcc_exp_i64(i64 %l2sr, i64 %l2sr1)
 // +   call fastcc void @_S4sinkFviE(i64 %4)
 // +   ret void

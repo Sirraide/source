@@ -1,2 +1,0 @@
-program test;
-proc f_inout(inout i10000 i) = i = i * 5;
