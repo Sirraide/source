@@ -372,6 +372,9 @@ bool Sema::PerformVariableInitialisation(
     CallingConvention cc,
     bool in_call
 ) {
+    Assert(not var_type->dependent(), "Initialising dependent variable?");
+    Assert(not a->dependent(), "Dependent initialiser?");
+
     // Type matches exactly.
     if (a->type == var_type) {
         // If the intent resolves to pass by reference, then we
@@ -1349,33 +1352,13 @@ auto Sema::BuildLocalDecl(
     ty = AdjustVariableType(ty, loc);
 
     // Then, perform initialisation.
-    if (auto i = init.get_or_null()) {
-        switch (ty->value_category()) {
-            case Expr::MRValue: Todo("Initialise MRValue");
-            case Expr::LValue: Todo("Initialise LValue");
-
-            // Easy case: this behaves like an integer.
-            case Expr::SRValue:
-                if (not i->dependent()) {
-                    if (i->type != ty) {
-                        Error(
-                            i->location(),
-                            "Initialiser of type '{}' does not match variable type '{}'",
-                            i->type,
-                            ty
-                        );
-                        init = nullptr;
-                    } else {
-                        init = LValueToSRValue(i);
-                    }
-                }
-                break;
-
-            // Dependent. We’ll come back to this later.
-            case Expr::DValue:
-                break;
-        }
-    }
+    //
+    // If this fails, the initialiser is simply discarded; we can
+    // still continue analysing this though as most of sema doesn’t
+    // care about variable initialisers.
+    if (auto i = init.get_or_null(); i and not i->dependent())
+        if (auto init_expr = PerformVariableInitialisation(ty, i))
+            init = init_expr;
 
     auto param = new (*M) LocalDecl(AdjustVariableType(ty, loc), name, proc.proc, init, loc);
     DeclareLocal(param);
