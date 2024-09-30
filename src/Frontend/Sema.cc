@@ -308,6 +308,27 @@ public:
 
     void apply(Conversion c) { res = S.ApplyConversion(res, c); }
 
+    bool report_lvalue_intent_mismatch(Intent intent) {
+        // If this is itself a parameter, issue a better error.
+        if (auto dre = dyn_cast<LocalRefExpr>(res->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
+            S.Error(
+                res->location(),
+                "Cannot pass parameter of intent %1({}) to a parameter with intent %1({})",
+                cast<ParamDecl>(dre->decl)->intent,
+                intent
+            );
+            S.Note(dre->decl->location(), "Parameter declared here");
+        } else {
+            S.Error(res->location(), "Cannot bind this expression to an %1({}) parameter.", intent);
+        }
+        S.Remark("Try storing this in a variable first.");
+        return false;
+    }
+
+    bool report_nested_resolution_failure() {
+        Todo("Report this");
+    }
+
     bool report_type_mismatch() {
         S.Error(
             res->location(),
@@ -318,8 +339,15 @@ public:
         return false;
     }
 
-    bool report_nested_resolution_failure() {
-        Todo("Report this");
+    bool report_same_type_lvalue_required(Intent intent) {
+        S.Error(
+            res->location(),
+            "Cannot pass type {} to %1({}) parameter of type {}",
+            res->type,
+            intent,
+            target_type
+        );
+        return false;
     }
 
     auto result() -> Expr* { return res; }
@@ -339,16 +367,43 @@ public:
           param_index{param_index} {}
 
     void apply(Conversion conv) {
-        c.status.get<Candidate::Viable>().conversions.back().push_back(conv);
+        auto& s = c.status.get<Candidate::Viable>();
+        s.conversions.back().push_back(conv);
+
+        // Don’t forget to increment the badness so we can actually rank them.
+        switch (conv.kind) {
+            using K = Conversion::Kind;
+
+            // The simplest thing we can do. This is only here so we can
+            // allow overloading on lvalue vs rvalue.
+            case K::LValueToSRValue: s.badness++; break;
+
+            // Other simple conversions have a badness score of 2.
+            case K::IntegralCast: s.badness += 2; break;
+
+            // This is essentially a no-op because we 'have' to select one
+            // of them anyway, as we can't just pass an overload set around.
+            case K::SelectOverload: break;
+        }
     }
 
-    bool report_type_mismatch() {
-        c.status = Candidate::TypeMismatch{u32(param_index)};
+    bool report_lvalue_intent_mismatch(Intent) {
+        c.status = Candidate::LValueIntentMismatch{u32(param_index)};
         return true; // Not a fatal error.
     }
 
     bool report_nested_resolution_failure() {
         c.status = Candidate::NestedResolutionFailure{u32(param_index)};
+        return true; // Not a fatal error.
+    }
+
+    bool report_same_type_lvalue_required(Intent) {
+        c.status = Candidate::SameTypeLValueRequired{u32(param_index)};
+        return true; // Not a fatal error.
+    }
+
+    bool report_type_mismatch() {
+        c.status = Candidate::TypeMismatch{u32(param_index)};
         return true; // Not a fatal error.
     }
 };
@@ -359,8 +414,10 @@ public:
     TentativeInitContext(Sema& S, Expr* e, Type target_type)
         : ImmediateInitContext{S, e, target_type} {}
 
-    bool report_type_mismatch() { return false; }
+    bool report_lvalue_intent_mismatch(Intent) { return false; }
     bool report_nested_resolution_failure() { return false; }
+    bool report_type_mismatch() { return false; }
+    bool report_same_type_lvalue_required(Intent) { return false; }
 };
 
 template <typename InitContext>
@@ -375,32 +432,17 @@ bool Sema::PerformVariableInitialisation(
     Assert(not var_type->dependent(), "Initialising dependent variable?");
     Assert(not a->dependent(), "Dependent initialiser?");
 
+    // If the intent resolves to pass by reference, then we
+    // need to bind to it; the type must match exactly for
+    // that.
+    if (in_call and var_type->pass_by_lvalue(cc, intent)) {
+        if (a->type != var_type) return init.report_same_type_lvalue_required(intent);
+        if (not a->lvalue()) return init.report_lvalue_intent_mismatch(intent);
+        return true;
+    }
+
     // Type matches exactly.
     if (a->type == var_type) {
-        // If the intent resolves to pass by reference, then we
-        // need to bind to it.
-        if (in_call and var_type->pass_by_lvalue(cc, intent)) {
-            if (not a->lvalue()) {
-                // If this is itself a parameter, issue a better error.
-                if (auto dre = dyn_cast<LocalRefExpr>(a->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
-                    Error(
-                        a->location(),
-                        "Cannot pass parameter of intent %1({}) to a parameter with intent %1({})",
-                        cast<ParamDecl>(dre->decl)->intent,
-                        intent
-                    );
-                    Note(dre->decl->location(), "Parameter declared here");
-                } else {
-                    Error(a->location(), "Cannot bind this expression to an %1({}) parameter.", intent);
-                }
-                Remark("Try storing this in a variable first.");
-                return false;
-            }
-
-            // Otherwise, there is nothing to do here.
-            return true;
-        }
-
         // We’re passing by value. Currently, we can only handle srvalues here.
         if (a->type->value_category() != Expr::SRValue) {
             ICE(
@@ -415,22 +457,6 @@ bool Sema::PerformVariableInitialisation(
         // Convert lvalues to srvalues here.
         if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
         return true;
-    }
-
-    // If a conversion is required, the result can (currently) never be
-    // an lvalue, so always error if reference binding is required.
-    //
-    // Once we have structs, we might want to try temporary materialisation
-    // instead here in a least some cases.
-    if (in_call and var_type->pass_by_lvalue(cc, intent)) {
-        Error(
-            a->location(),
-            "Cannot pass type {} to %1({}) parameter of type {}",
-            a->type,
-            intent,
-            var_type
-        );
-        return false;
     }
 
     // We need to perform conversion. What we do here depends on the type.
@@ -530,7 +556,6 @@ bool Sema::PerformVariableInitialisation(
                 case BuiltinKind::Int:
                 case BuiltinKind::Type:
                     return init.report_type_mismatch();
-
             }
 
             Unreachable();
@@ -606,6 +631,14 @@ void Sema::ReportOverloadResolutionFailure(
     if (candidates.size() == 1) {
         auto c = candidates.front();
         auto ty = c.type_for_diagnostic();
+        auto Ctx = [&](usz idx) {
+            return ImmediateInitContext{
+                *this,
+                call_args[idx],
+                ty->params()[idx].type,
+            };
+        };
+
         auto V = utils::Overloaded{// clang-format off
             [](const Candidate::Viable&) { Unreachable(); },
             [&](Candidate::ArgumentCountMismatch) {
@@ -620,6 +653,22 @@ void Sema::ReportOverloadResolutionFailure(
                 Note(c.location(), "Declared here");
             },
 
+            [&](Candidate::InvalidTemplate) {
+                std::string extra;
+                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), extra, "  ");
+                Error(call_loc, "Template argument substitution failed");
+                Remark("\r{}", extra);
+                Note(c.location(), "Declared here");
+            },
+
+            [&](Candidate::LValueIntentMismatch m) {
+                Ctx(m.mismatch_index).report_lvalue_intent_mismatch(ty->params()[m.mismatch_index].intent);
+            },
+
+            [&](Candidate::NestedResolutionFailure) {
+                Todo("Report this");
+            },
+
             [&](Candidate::TypeMismatch m) {
                 Error(
                     call_args[m.mismatch_index]->location(),
@@ -630,22 +679,14 @@ void Sema::ReportOverloadResolutionFailure(
                 Note(c.param_loc(m.mismatch_index), "Declared here");
             },
 
-            [&](Candidate::InvalidTemplate) {
-                std::string extra;
-                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), extra, "  ");
-                Error(call_loc, "Template argument substitution failed");
-                Remark("\r{}", extra);
-                Note(c.location(), "Declared here");
+            [&](Candidate::SameTypeLValueRequired m) {
+                Ctx(m.mismatch_index).report_same_type_lvalue_required(ty->params()[m.mismatch_index].intent);
             },
 
             [&](Candidate::UndeducedReturnType) {
                 Error(call_loc, "Cannot call procedure before its return type has been deduced");
                 Note(c.location(), "Declared here");
                 Remark("\rTry specifying the return type explicitly: '%1(->) <type>'");
-            },
-
-            [&](Candidate::NestedResolutionFailure) {
-                Todo("Report this");
             }
         }; // clang-format on
         c.status.visit(V);
@@ -693,8 +734,8 @@ void Sema::ReportOverloadResolutionFailure(
                 // then this candidate was ambiguous. Otherwise,
                 // another candidate was simply better.
                 message += v.badness == final_badness
-                    ? "Ambiguous (matches as well as another candidate)"sv
-                    : "Not selected (another candidate matches better)"sv;
+                    ? std::format("Ambiguous (matches as well as another candidate; score: {})"sv, v.badness)
+                    : std::format("Not selected (another candidate matches better; score: {})"sv, v.badness);
             },
 
             [&](Candidate::ArgumentCountMismatch) {
@@ -707,6 +748,25 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             },
 
+            [&](Candidate::InvalidTemplate) {
+                message += "Template argument substitution failed";
+                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");
+            },
+
+            [&](Candidate::LValueIntentMismatch m) {
+                auto& p = c.type_for_diagnostic()->params()[m.mismatch_index];
+                message += std::format(
+                    "Arg #{}: {} {} requires an lvalue of the same type",
+                    m.mismatch_index + 1,
+                    p.intent,
+                    p.type
+                );
+            },
+
+            [&](const Candidate::NestedResolutionFailure& n) {
+                Todo("Report this");
+            },
+
             [&](Candidate::TypeMismatch t) {
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
@@ -716,17 +776,18 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             },
 
-            [&](Candidate::InvalidTemplate) {
-                message += "Template argument substitution failed";
-                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");
+            [&](Candidate::SameTypeLValueRequired m) {
+                auto& p = c.type_for_diagnostic()->params()[m.mismatch_index];
+                message += std::format(
+                    "Arg #{}: {} {} requires an lvalue of the same type",
+                    m.mismatch_index + 1,
+                    p.intent,
+                    p.type
+                );
             },
 
             [&](Candidate::UndeducedReturnType) {
                 message += "Return type has not been deduced yet";
-            },
-
-            [&](const Candidate::NestedResolutionFailure& n) {
-                Todo("Report this");
             }
         }; // clang-format on
         c.status.visit(V);
@@ -1145,7 +1206,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             if (not st) break;
 
             // Check the next parameter.
-            auto p = params[i];
+            auto& p = params[i];
             st->conversions.emplace_back();
             OverloadInitContext init{*this, c, u32(i)};
             if (not PerformVariableInitialisation(init, p.type, a, p.intent, ty->cconv(), true)) return false;
@@ -1868,6 +1929,11 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
 
 
 

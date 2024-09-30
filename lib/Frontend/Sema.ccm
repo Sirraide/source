@@ -250,22 +250,18 @@ private:
             u32 badness = 0;
         };
 
-        // Candidate that is called before it is fully defined. This can
-        // happen due to e.g. recursion.
-        struct UndeducedReturnType {};
-
         // Candidate for which the argument count didn’t match the parameter count.
         struct ArgumentCountMismatch {};
 
-        // Candidate for which there was something wrong with the arguments;
-        // used for generic argument-related failures.
-        struct TypeMismatch {
-            // Which argument rendered it not viable.
-            u32 mismatch_index;
-        };
-
         // A candidate for which deduction failed entirely.
         struct InvalidTemplate {};
+
+        // An lvalue was required by the parameter intent, but an
+        // rvalue found.
+        struct LValueIntentMismatch {
+            // Index of the argument which caused the mismatch.
+            u32 mismatch_index;
+        };
 
         // One of the arguments is an overload set, and we failed
         // to match any of the overloads against a parameter. This
@@ -278,6 +274,24 @@ private:
             u32 mismatch_index;
         };
 
+        // An lvalue parameter requires a value of the same type to be
+        // passed, but that wasn’t the case.
+        struct SameTypeLValueRequired {
+            // Index of the argument which caused the mismatch.
+            u32 mismatch_index;
+        };
+
+        // Candidate for which there was something wrong with the arguments;
+        // used for generic argument-related failures.
+        struct TypeMismatch {
+            // Which argument rendered it not viable.
+            u32 mismatch_index;
+        };
+
+        // Candidate that is called before it is fully defined. This can
+        // happen due to e.g. recursion.
+        struct UndeducedReturnType {};
+
         // Info about a yet to be instantiated template.
         struct TemplateInfo {
             ProcDecl* pattern;
@@ -289,13 +303,16 @@ private:
         ProcInfo proc;
 
         // Whether this candidate is still viable, or why not.
-        using Status = Variant<
+        using Status = Variant< // clang-format off
             Viable,
-            UndeducedReturnType,
             ArgumentCountMismatch,
-            TypeMismatch,
             InvalidTemplate,
-            NestedResolutionFailure>;
+            LValueIntentMismatch,
+            NestedResolutionFailure,
+            SameTypeLValueRequired,
+            TypeMismatch,
+            UndeducedReturnType
+        >; // clang-format on
         Status status = Viable{};
 
         Candidate(ProcDecl* p) : proc{p} {}

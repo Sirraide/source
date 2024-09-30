@@ -145,7 +145,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             W << proc->variadic();
             W << params.size();
             W << SerialiseType(proc->ret());
-            for (auto p : params) {
+            for (const auto& p : params) {
                 W << p.intent;
                 W << SerialiseType(p.type);
             }

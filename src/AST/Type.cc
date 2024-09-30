@@ -164,11 +164,11 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += "%1(proc";
 
             // Add params.
-            auto params = proc->params();
+            const auto& params = proc->params();
             if (not params.empty()) {
                 out += " (";
                 bool first = true;
-                for (auto p : params) {
+                for (const auto& p : params) {
                     if (first) first = false;
                     else out += ", ";
                     if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
@@ -391,7 +391,7 @@ void ProcType::Profile(
     ID.AddBoolean(is_variadic);
     ID.AddPointer(return_type.as_opaque_ptr());
     ID.AddInteger(param_types.size());
-    for (auto t : param_types) {
+    for (const auto& t : param_types) {
         ID.AddInteger(+t.intent);
         ID.AddPointer(t.type.as_opaque_ptr());
     }
