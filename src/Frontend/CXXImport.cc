@@ -251,43 +251,13 @@ auto Sema::ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl> {
 }
 
 auto ModuleLoader::ImportCXXHeader(StringRef name, Location import_loc) -> Opt<ImportHandle> {
-    // TODO: Try using `clang::tooling::buildASTFromCodeWithArgs()`.
-    llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> overlay;
-    llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> mem;
-
-    // Create a filesystem where we can add the ‘header’.
-    overlay = std::make_unique<llvm::vfs::OverlayFileSystem>(llvm::vfs::getRealFileSystem());
-    mem = std::make_unique<llvm::vfs::InMemoryFileSystem>();
-    overlay->pushOverlay(mem);
-
-    // Initialise clang.
-    clang::CompilerInstance clang;
-    clang.createDiagnostics();
-    clang.getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
-    if (not clang.createTarget()) {
-        ICE(import_loc, "Failed to create target for importing '{}'", name);
-        return std::nullopt;
-    }
-
-    clang.createSourceManager(*clang.createFileManager(overlay));
-    clang.createPreprocessor(clang::TU_Prefix);
-    clang.createASTContext();
-    clang.getDiagnostics().setShowColors(ctx.use_colours());
-
-    // Create the file we’re going to parse.
-    auto code = std::format("#include {}\n", name);
-    auto buffer = llvm::MemoryBuffer::getMemBuffer(code);
-    mem->addFile("__srcc_imports.cc", /*mtime=*/0, std::move(buffer));
-
-    // Construct Clang command line.
-    //
-    // TODO: This path may not exist if we ever ship srcc
-    // on its own; we may have to ship Clang’s resource dir w/ it.
-    std::array args{
-        SOURCE_CLANG_EXE,
+    std::vector<std::string> args{
         "-x",
         "c++",
-        "__srcc_imports.cc",
+        "-Xclang",
+        "-triple",
+        "-Xclang",
+        llvm::sys::getDefaultTargetTriple(),
         "-std=c++2c",
         "-Wall",
         "-Wextra",
@@ -297,16 +267,11 @@ auto ModuleLoader::ImportCXXHeader(StringRef name, Location import_loc) -> Opt<I
         "-fsyntax-only"
     };
 
-    // Parse it.
-    clang::CreateInvocationOptions opts;
-    opts.VFS = overlay;
-    opts.Diags = &clang.getDiagnostics();
-    auto CI = std::shared_ptr<clang::CompilerInvocation>{clang::createInvocation(args, opts).release()};
-    auto AST = clang::ASTUnit::LoadFromCompilerInvocation(
-        CI,
-        std::make_shared<clang::PCHContainerOperations>(),
-        clang.getDiagnosticsPtr(),
-        &clang.getFileManager()
+    auto AST = clang::tooling::buildASTFromCodeWithArgs(
+        std::format("#include {}\n", name),
+        args,
+        "__srcc.imports.cc",
+        SOURCE_CLANG_EXE
     );
 
     if (not AST) {
