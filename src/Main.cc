@@ -29,6 +29,8 @@ using options = clopts< // clang-format off
     flag<"--llvm", "Emit LLVM IR">,
 
     // Features.
+    // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
+    // something in that vein.
     flag<"-fno-overflow-checks">,
 
     help<>

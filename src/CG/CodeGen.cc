@@ -619,6 +619,38 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         // Assignment.
         case Tk::Assign: return PerformVariableInitialisation(Emit(expr->lhs), expr->rhs);
 
+        // Subscripting is supported for slices and arrays.
+        case Tk::LBrack: {
+            Assert(
+                (isa<ArrayType, SliceType>(expr->lhs->type)),
+                "Unsupported type: {}",
+                expr->lhs->type
+            );
+
+            auto range = Emit(expr->lhs);
+            auto index = Emit(expr->rhs);
+
+            // Check that the index is in bounds.
+            if (M.lang_opts().overflow_checking) {
+                auto size = isa<SliceType>(expr->lhs->type)
+                              ? builder.CreateExtractValue(range, 1)
+                              : MakeInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
+
+                CreateArithFailure(
+                    builder.CreateICmpUGE(index, size),
+                    Tk::LBrack,
+                    expr->location(),
+                    "out of bounds access"
+                );
+            }
+
+            return builder.CreateInBoundsGEP(
+                ConvertTypeForMem(cast<SingleElementTypeBase>(expr->lhs->type)->elem()),
+                isa<SliceType>(expr->lhs->type) ? builder.CreateExtractValue(range, 0) : range,
+                index
+            );
+        }
+
         // Anything else.
         default: return EmitArithmeticOrComparisonOperator(
             expr->op,

@@ -1,0 +1,22 @@
+// R %srcc --llvm -fno-overflow-checks %s
+program test;
+
+import <cstdio> as stdio;
+
+// * @0 = private unnamed_addr constant [2 x i8] c"7\00", align 1
+// + @1 = private unnamed_addr constant [4 x i8] c"foo\00", align 1
+// + @2 = private unnamed_addr constant [9 x i8] c"bar: %d\0A\00", align 1
+
+// * define fastcc void @__src_main() {
+// + entry:
+// +   %l2sr = load i8, ptr @0, align 1
+// +   %0 = sext i8 %l2sr to i32
+// +   %1 = call i32 @putchar(i32 %0)
+// +   %2 = call i32 @puts(ptr @1)
+// +   %3 = call i32 (ptr, ...) @printf(ptr @2, i64 12)
+// +   ret void
+// + }
+
+stdio::putchar("7"[0]);
+stdio::puts("foo".data);
+stdio::printf("bar: %d\n".data, 12);
