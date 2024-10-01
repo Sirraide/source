@@ -19,6 +19,7 @@ using options = clopts< // clang-format off
 
     // General flags.
     flag<"--ast", "Dump the parse tree / AST">,
+    flag<"--dump-module", "Dump the contents of a module or C++ header that we can import">,
     flag<"--lex", "Lex tokens only (but do not print them) and exit">,
     flag<"--tokens", "Print tokens and exit">,
     flag<"--parse", "Parse only and exit">,
@@ -44,13 +45,14 @@ int main(int argc, char** argv) {
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()   ? Action::Eval
-                : opts.get<"--lex">()    ? Action::Lex
-                : opts.get<"--llvm">()   ? Action::EmitLLVM
-                : opts.get<"--parse">()  ? Action::Parse
-                : opts.get<"--sema">()   ? Action::Sema
-                : opts.get<"--tokens">() ? Action::DumpTokens
-                                         : Action::Compile;
+    auto action = opts.get<"--eval">()        ? Action::Eval
+                : opts.get<"--dump-module">() ? Action::DumpModule
+                : opts.get<"--lex">()         ? Action::Lex
+                : opts.get<"--llvm">()        ? Action::EmitLLVM
+                : opts.get<"--parse">()       ? Action::Parse
+                : opts.get<"--sema">()        ? Action::Sema
+                : opts.get<"--tokens">()      ? Action::DumpTokens
+                                              : Action::Compile;
 
     // Create driver.
     Driver driver{{

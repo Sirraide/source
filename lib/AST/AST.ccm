@@ -5,6 +5,7 @@ module;
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
+#include <clang/Frontend/ASTUnit.h>
 #include <srcc/Macros.hh>
 
 export module srcc.ast;
@@ -18,8 +19,50 @@ import srcc.constants;
 import srcc.ast.printer;
 
 export namespace srcc {
+class ImportHandle;
 class TranslationUnit;
 }
+
+/// Ref-counted handle to an import.
+class srcc::ImportHandle : public llvm::PointerUnion<TranslationUnit*, clang::ASTUnit*> {
+    // So we don’t have to deal with implementing a refcount; we won’t
+    // be moving these around much anyway.
+    Variant<
+        std::shared_ptr<TranslationUnit>,
+        std::shared_ptr<clang::ASTUnit>>
+        shared_handle;
+
+    // Logical name of this import.
+    String import_name;
+
+    // Location of the import.
+    Location import_location;
+
+    ImportHandle(const ImportHandle&) = default;
+    ImportHandle& operator=(const ImportHandle&) = default;
+
+public:
+    explicit ImportHandle(std::unique_ptr<TranslationUnit> h)
+        : PointerUnion(h.get()),
+          shared_handle{std::shared_ptr(std::move(h))} {}
+
+    explicit ImportHandle(std::unique_ptr<clang::ASTUnit> h)
+        : PointerUnion(h.get()),
+          shared_handle{std::shared_ptr(std::move(h))} {}
+
+    ImportHandle(ImportHandle&&) = default;
+    ImportHandle& operator=(ImportHandle&&) = default;
+
+    auto copy(String logical_name, Location loc) -> ImportHandle {
+        auto h = *this;
+        h.import_name = logical_name;
+        h.import_location = loc;
+        return h;
+    }
+
+    auto logical_name() const -> String { return import_name; }
+    auto location() const -> Location { return import_location; }
+};
 
 /// Representation of a single program or module. NOT thread-safe.
 class srcc::TranslationUnit {
@@ -58,17 +101,11 @@ private:
     /// Used to store evaluated constant expressions.
     SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
 
-    explicit TranslationUnit(Context& ctx, const LangOpts& opts, String name, bool is_module);
+    explicit TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module);
 
 public:
-    struct Import {
-        TranslationUnit::Ptr imported_module;
-        Location import_location;
-        String import_name;
-    };
-
-    /// Modules imported by this module.
-    StringMap<Import> imports;
+    /// Map from module names to imported modules.
+    StringMap<ImportHandle> imports;
 
     /// The name of this program or module.
     String name;
@@ -118,7 +155,7 @@ public:
     FoldingSet<TemplateType> template_types;
 
     /// Create a new module.
-    static auto Create(Context& ctx, const LangOpts& opts, String name, bool is_module) -> Ptr {
+    static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr {
         Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
         return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, name, is_module});
     }
@@ -134,7 +171,7 @@ public:
     void* allocate(usz size, usz align) { return allocator().Allocate(size, align); }
 
     /// Allocate an object.
-    template<typename T, typename... Args>
+    template <typename T, typename... Args>
     auto AllocateAndConstruct(Args&&... args) -> T* {
         static_assert(std::is_trivially_destructible_v<T>, "Type must be trivially destructible");
         return new (allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};

@@ -25,6 +25,7 @@ module;
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/StringSaver.h>
 #include <llvm/Support/ThreadPool.h>
 #include <mutex>
 #include <print>
@@ -123,20 +124,28 @@ int Driver::Impl::run_job() {
     LangOpts lang_opts;
     lang_opts.overflow_checking = opts.overflow_checking;
 
-    // Duplicate TUs would create horrible linker errors.
-    // FIXME: Use inode instead?
-    std::unordered_set<File::Path> file_uniquer;
-    for (const auto& f : files) {
-        if (not fs::exists(f)) {
-            Error("File '{}' does not exist", f);
-            continue;
-        }
+    // Handle this first; it only supports 1 file.
+    if (a == Action::DumpModule) {
+        if (files.size() != 1) return Error("'%3(--dump-module)' requires exactly one file");
+    }
 
-        auto can = canonical(f);
-        if (not file_uniquer.insert(can).second) Fatal(
-            "Duplicate file name in command-line: '{}'",
-            can
-        );
+    // Otherwise, check for duplicate TUs as they would create
+    // horrible linker errors.
+    // FIXME: Use inode instead?
+    else {
+        std::unordered_set<File::Path> file_uniquer;
+        for (const auto& f : files) {
+            if (not fs::exists(f)) {
+                Error("File '{}' does not exist", f);
+                continue;
+            }
+
+            auto can = canonical(f);
+            if (not file_uniquer.insert(can).second) Fatal(
+                "Duplicate file name in command-line: '{}'",
+                can
+            );
+        }
     }
 
     // Stop if there was a file we couldn’t find.
@@ -144,6 +153,16 @@ int Driver::Impl::run_job() {
 
     // Replace driver diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
+
+    // Dump a module.
+    if (a == Action::DumpModule) {
+        llvm::BumpPtrAllocator alloc;
+        llvm::StringSaver saver{alloc};
+        ModuleLoader loader{ctx};
+        auto hdr = loader.load("module", String::Save(saver, files.front().string()), Location(), true);
+        Todo("Dump module");
+        return 0;
+    }
 
     // Run the verifier.
     const auto Verify = [&] {
@@ -210,9 +229,23 @@ int Driver::Impl::run_job() {
     // Stop if there was an error.
     if (ctx.diags().has_error()) return 1;
 
+    // Load all imported modules we need.
+    ModuleLoader loader{ctx};
+    StringMap<ImportHandle> imported;
+    for (auto& m : parsed_modules) {
+        for (auto& i : m->imports) {
+            auto h = loader.load(i.import_name, i.linkage_name, i.loc, i.linkage_name.starts_with('<'));
+            if (not h) return 1;
+            imported.try_emplace(i.import_name.sv(), std::move(h.value()));
+        }
+    }
+
+    // Drop the loader’s refcounts.
+    loader.release_all();
+
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
-    auto module = Sema::Translate(lang_opts, parsed_modules);
+    auto module = Sema::Translate(lang_opts, parsed_modules, std::move(imported));
     if (a == Action::Sema) {
         ctx.diags().flush();
         if (opts.verify) return Verify();

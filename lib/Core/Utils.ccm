@@ -262,6 +262,10 @@ public:
         return val.starts_with(prefix);
     }
 
+    [[nodiscard]] constexpr auto starts_with(char c) const -> bool {
+        return val.starts_with(c);
+    }
+
     /// Get the string value as a std::string_view.
     [[nodiscard]] constexpr auto sv() const -> std::string_view { return val; }
 

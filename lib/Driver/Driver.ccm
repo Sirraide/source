@@ -15,6 +15,9 @@ enum struct srcc::Action : srcc::u8 {
     /// executables and modules and save them to disk.
     Compile,
 
+    /// Dump the contents of the module.
+    DumpModule,
+
     /// Print tokens.
     DumpTokens,
 

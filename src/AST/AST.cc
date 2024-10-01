@@ -12,10 +12,10 @@ using namespace srcc;
 // ============================================================================
 //  TU
 // ============================================================================
-TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, String name, bool is_module)
+TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module)
     : ctx{ctx},
       language_opts{opts},
-      name{name},
+      name{save(name)},
       is_module{is_module},
       FFIBoolTy{Type::UnsafeNull()},
       FFICharTy{Type::UnsafeNull()},

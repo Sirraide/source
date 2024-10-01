@@ -2,6 +2,7 @@
 program test;
 
 import <cstdio> as stdio;
+import <chrono> as chrono;
 
 stdio::puts("foo".data);
 stdio::printf("bar: %d\n".data, 12);

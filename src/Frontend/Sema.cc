@@ -5,6 +5,7 @@ module;
 #include <llvm/ADT/StringSwitch.h>
 #include <print>
 #include <ranges>
+#include <srcc/ClangForward.hh>
 #include <srcc/Macros.hh>
 
 module srcc.frontend.sema;
@@ -139,6 +140,12 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
             case Ambiguous:
                 return res;
 
+            // Failed imports can only happen with C++ declarations, which are handled
+            // elsewhere; we should *never* fail to import something from one of our
+            // own modules.
+            case FailedToImport:
+                Unreachable("Should never happen");
+
             // Unqualified lookup should never complain about this.
             case NonScopeInPath:
                 Unreachable("Non-scope error in unqualified lookup?");
@@ -150,9 +157,13 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
             // lookup finds a module name, because a module name alone is useless
             // if it’s not on the lhs of `::`.
             case NotFound: {
-                auto it = imported_modules.find(first);
-                if (it == imported_modules.end()) return res;
-                in_scope = &it->second->exports;
+                auto it = M->imports.find(first);
+                if (it == M->imports.end()) return res;
+                if (it->second.is<TranslationUnit*>()) Todo();
+
+                // We found an imported C++ header; do a C++ lookup.
+                auto hdr = it->second.get<clang::ASTUnit*>();
+                return LookUpCXXName(hdr, names.drop_front());
             } break;
         }
     }
@@ -196,7 +207,7 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_o
         return LookupResult::Ambiguous(name, it->second);
     }
 
-    return LookupResult(name);
+    return LookupResult::NotFound(name);
 }
 
 auto Sema::LookUpName(
@@ -246,6 +257,7 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
+        case FailedToImport: break; // Already diagnosed.
         case NotFound: Error(loc, "Unknown symbol '{}'", result.name); break;
         case Ambiguous: {
             Error(loc, "Ambiguous symbol '{}'", result.name);
@@ -253,7 +265,11 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
         } break;
         case NonScopeInPath: {
             Error(loc, "Invalid left-hand side for '::'");
-            Note(result.decls.front()->location(), "'{}' does not contain a scope", result.name);
+            if (not result.decls.empty()) Note(
+                result.decls.front()->location(),
+                "'{}' does not contain a scope",
+                result.name
+            );
         } break;
     }
 }
@@ -1558,13 +1574,15 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 // ============================================================================
 auto Sema::Translate(
     const LangOpts& opts,
-    ArrayRef<ParsedModule::Ptr> modules
+    ArrayRef<ParsedModule::Ptr> modules,
+    StringMap<ImportHandle> imported_modules
 ) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
     Sema S{first->context()};
     S.M = TranslationUnit::Create(first->context(), opts, first->name, first->is_module);
     S.parsed_modules = modules;
+    S.M->imports = std::move(imported_modules);
     S.Translate();
     return std::move(S.M);
 }
@@ -1579,28 +1597,6 @@ void Sema::Translate() {
         M->add_allocator(std::move(p->string_alloc));
         M->add_integer_storage(std::move(p->integers));
     }
-
-    // Resolve imports.
-    for (auto& p : parsed_modules)
-        for (auto& i : p->imports)
-            M->imports[i.linkage_name] = {nullptr, i.loc, i.import_name};
-
-    // FIXME: C++ headers should all be imported at the same time; it really
-    // doesn’t make sense to import them separately...
-    bool errored = false;
-    for (auto& i : M->imports) {
-        auto res = ImportCXXHeader(i.second.import_location, M->save(i.first()));
-        if (not res) {
-            errored = true;
-            continue;
-        }
-
-        i.second.imported_module = std::move(res);
-        imported_modules[i.second.import_name] = i.second.imported_module.get();
-    }
-
-    // Don’t attempt anything else if there was a problem.
-    if (errored) return;
 
     // Collect all statements and translate them.
     M->initialiser_proc->scope = global_scope();
@@ -1920,6 +1916,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
 
 
 

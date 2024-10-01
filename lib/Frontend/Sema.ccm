@@ -3,6 +3,7 @@ module;
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <ranges>
+#include <srcc/ClangForward.hh>
 #include <srcc/Macros.hh>
 
 export module srcc.frontend.sema;
@@ -14,12 +15,48 @@ import srcc.langopts;
 import srcc.frontend.parser;
 
 export namespace srcc {
+class ModuleLoader;
 class Sema;
 }
 
 namespace srcc {
 class TemplateInstantiator;
 }
+
+/// Structure that is used to collect imports for a compilation job; the
+/// loader does *not* own any modules; they are refcounted instead.
+class srcc::ModuleLoader : DiagsProducer<> {
+    Context& ctx;
+    StringMap<ImportHandle> modules;
+
+public:
+    ModuleLoader(Context& ctx) : ctx{ctx} {}
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
+    /// Load a C++ header from the system include path.
+    ///
+    /// \param logical_name The name given to this in source.
+    /// \param linkage_name The actual name of this.
+    /// \param import_loc Where this was imported from.
+    /// \param is_cxx_header Whether this is a C++ header name.
+    auto load(
+        String logical_name,
+        String linkage_name,
+        Location import_loc,
+        bool is_cxx_header
+    ) -> Opt<ImportHandle>;
+
+    /// Release all handles held by the module loader; they will be deleted
+    /// when the refcount reaches 0.
+    void release_all() { modules.clear(); }
+
+private:
+    auto ImportCXXHeader(StringRef name, Location import_loc) -> Opt<ImportHandle>;
+};
 
 class srcc::Sema : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
@@ -114,7 +151,7 @@ private:
         SRCC_IMMOVABLE(EnterProcedure);
         ScopeInfo info;
 
-        public:
+    public:
         template <typename... Args>
         explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
             : info{S, proc, std::forward<Args>(args)...} {
@@ -161,6 +198,10 @@ private:
             /// looking up e.g. function overloads.
             Ambiguous,
 
+            /// Lookup references a declaration that could not be exported;
+            /// this is a hard error.
+            FailedToImport,
+
             /// The name was not found.
             NotFound,
 
@@ -168,7 +209,8 @@ private:
             NonScopeInPath,
         };
 
-        /// The decl(s) that were found, if any.
+        /// The decl(s) that were found, if any. May be completely empty
+        /// if lookup failed.
         llvm::TinyPtrVector<Decl*> decls;
 
         /// The name we failed to look up, if any. Will be unset
@@ -180,15 +222,19 @@ private:
 
         LookupResult(String name) : name{name}, result{Reason::NotFound} {}
         LookupResult(ArrayRef<Decl*> decls, String name, Reason result) : decls{decls}, name{name}, result{result} {}
+        LookupResult(Decl* decl, String name, Reason result) : name{name}, result{result} {
+            if (decl) decls.push_back(decl);
+        }
 
         /// Check if this lookup result is a success.
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
         [[nodiscard]] explicit operator bool() const { return successful(); }
 
-        /// Create an ambiguous lookup result.
-        static auto Ambiguous(String name, ArrayRef<Decl*> decls) -> LookupResult { return LookupResult{decls, name, Reason::Ambiguous}; }
-        static auto NonScopeInPath(String name, Decl* decl) -> LookupResult { return LookupResult{decl, name, Reason::NonScopeInPath}; }
-        static auto Success(Decl* decl) -> LookupResult { return LookupResult{decl, "", Reason::Success}; }
+        static auto Ambiguous(String name, ArrayRef<Decl*> decls) { return LookupResult{decls, name, Reason::Ambiguous}; }
+        static auto FailedToImport() { return LookupResult{{}, "", Reason::FailedToImport}; }
+        static auto NonScopeInPath(String name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
+        static auto NotFound(String name) { return LookupResult{name}; }
+        static auto Success(Decl* decl) { return LookupResult{decl, "", Reason::Success}; }
     };
 
     /// The result of substituting a procedure type before template instantiation.
@@ -347,7 +393,7 @@ private:
         }
 
         auto type_for_diagnostic() const -> ProcType* {
-            return proc.visit(utils::Overloaded{ // clang-format off
+            return proc.visit(utils::Overloaded{// clang-format off
                 [](ProcDecl* p) { return p->proc_type(); },
                 [](const TemplateInfo& ti) {
                     if (auto* s = ti.res.data.get_if<TempSubstRes::Success>()) return s->type;
@@ -383,8 +429,9 @@ private:
     /// Map from parsed procedures to their declarations.
     DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
 
-    /// Map from module names to imported modules.
-    StringMap<TranslationUnit*> imported_modules;
+    /// C++ decls that have already been imported (or that
+    /// already failed to import before).
+    DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
 
     explicit Sema(Context& ctx) : ctx(ctx) {}
 
@@ -394,7 +441,8 @@ public:
     /// @return The combined module, or `nullptr` if there was an error.
     [[nodiscard]] static auto Translate(
         const LangOpts& opts,
-        ArrayRef<ParsedModule::Ptr> modules
+        ArrayRef<ParsedModule::Ptr> modules,
+        StringMap<ImportHandle> imported_modules
     ) -> TranslationUnit::Ptr;
 
     /// Get the context.
@@ -454,8 +502,8 @@ private:
     /// mainly used for expressions involving operators.
     bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
-    /// Import a C++ header as a module.
-    auto ImportCXXHeader(Location import_loc, String linkage_name) -> TranslationUnit::Ptr;
+    /// Import a declaration from a C++ AST.
+    auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
 
     /// Instantiate a procedure template.
     auto InstantiateTemplate(
@@ -474,6 +522,9 @@ private:
 
     /// Check if an integer literal can be stored in a given type.
     bool IntegerLiteralFitsInType(IntLitExpr* i, Type ty);
+
+    /// Use LookUpName() instead.
+    auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult;
 
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
