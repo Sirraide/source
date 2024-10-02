@@ -3,6 +3,7 @@ module;
 #include <base/Assert.hh>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Target/TargetMachine.h>
 #include <srcc/Macros.hh>
 
 export module srcc.codegen;
@@ -18,6 +19,7 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     struct Mangler;
     friend DiagsProducer;
 
+    llvm::TargetMachine& machine;
     TranslationUnit& M;
     std::unique_ptr<llvm::Module> llvm;
     StringMap<llvm::Constant*> strings;
@@ -39,14 +41,18 @@ class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
     Opt<llvm::FunctionCallee> assert_failure_handler;
     Opt<llvm::FunctionCallee> overflow_handler;
 
-    CodeGen(TranslationUnit& M);
+    CodeGen(llvm::TargetMachine& machine, TranslationUnit& M);
 
 public:
-    static auto Emit(TranslationUnit& M) -> std::unique_ptr<llvm::Module> {
-        CodeGen CG{M};
+    static auto Emit(llvm::TargetMachine& machine, TranslationUnit& M) -> std::unique_ptr<llvm::Module> {
+        CodeGen CG{machine, M};
         CG.Emit();
         return std::move(CG.llvm);
     }
+
+    static int EmitModuleOrProgram(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
+
+    static void OptimiseModule(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
 
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& { return M.context().diags(); }

@@ -44,6 +44,9 @@ class srcc::Driver {
 
 public:
     struct Options {
+        /// The path to a directory where modules should be stored.
+        std::string module_path;
+
         /// The action to perform.
         Action action;
 
@@ -53,6 +56,9 @@ public:
 
         /// Number of threads to use for compilation.
         u32 num_threads;
+
+        /// Optimisation level.
+        u8 opt_level;
 
         /// Whether to print the AST as part of the job. If the action
         /// specified as Parse or Sema, this only prints the parse tree

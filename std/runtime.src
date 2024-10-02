@@ -4,11 +4,8 @@ module __src_runtime;
 proc __src_main() extern nomangle;
 
 /// CRT entry point.
-export proc main(
-    __srcc_ffi_int argc,
-    ref ref __srcc_ffi_char argv,
-    ref ref __srcc_ffi_char envp
-) native -> __srcc_ffi_int {
+/// FIXME: Use FFI types.
+export proc main() native -> i32 {
     __src_main();
     return 0;
 }

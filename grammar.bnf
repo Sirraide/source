@@ -16,7 +16,7 @@
 //     if they’re the first token in the program.
 //
 <preamble>        ::= <header> { <import> }
-<header>          ::= "program" <module-name> ";"
+<header>          ::= ( "program" | "module" ) <module-name> ";"
 <import>          ::= IMPORT CXX-HEADER-NAME AS IDENTIFIER ";"
 <module-name>     ::= IDENTIFIER
 
@@ -68,7 +68,7 @@
 // ============================================================================
 //  Declarations
 // ============================================================================
-<decl> ::= <decl-proc> | <decl-var>
+<decl>       ::= <decl-proc> | <decl-var> | EXPORT <decl>
 <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
 <decl-proc>  ::= <signature> <proc-body>
 <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]

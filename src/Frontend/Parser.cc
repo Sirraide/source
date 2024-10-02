@@ -245,6 +245,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(v.expr);
         } break;
 
+        case Kind::ExportDecl: {
+            auto& e = *cast<ParsedExportDecl>(s);
+            PrintHeader(s, "ExportDecl");
+            PrintChildren(e.decl);
+        } break;
+
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
             PrintHeader(s, "IfExpr");
@@ -886,20 +892,22 @@ void Parser::ParseFile() {
     ParseStmts(mod->top_level);
 }
 
-// <header> ::= "program" <module-name> ";"
+// <header> ::= ( "program" | "module" ) <module-name> ";"
 // <module-name> ::= IDENTIFIER
 void Parser::ParseHeader() {
-    if (not ConsumeContextual(mod->program_or_module_loc, "program")) {
-        Error("Expected 'program' directive at start of file");
+    auto module = ConsumeContextual(mod->program_or_module_loc, "module");
+    if (not module and not ConsumeContextual(mod->program_or_module_loc, "program")) {
+        Error("Expected '%1(program)' or '%1(module)' directive at start of file");
         return SkipPast(Tk::Semicolon);
     }
 
     if (not At(Tk::Identifier)) {
-        Error("Expected identifier in 'program' directive");
+        Error("Expected identifier after '%1({})' directive", module ? "module" : "program");
         return SkipPast(Tk::Semicolon);
     }
 
     mod->name = tok->text;
+    mod->is_module = module;
     Next();
     Consume(Tk::Semicolon);
 }
@@ -1205,8 +1213,6 @@ bool Parser::ParseSignature(
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
-        default: return ParseExpr();
-
         case Tk::Eval: {
             Next();
             auto arg = ParseStmt();
@@ -1214,7 +1220,42 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedEvalExpr{arg.get(), loc};
         }
 
+        case Tk::Export: {
+            Next();
+
+            // Complain if this isn’t a module, but parse it anyway.
+            if (not mod->is_module) {
+                Error(loc, "'%1(export)' is only allowed in modules");
+                Remark(
+                    "If you meant to create a module (i.e. a static or shared"
+                    "library, use '%1(module)' instead of '%1(program)' at the start"
+                    "of the file"
+                );
+            }
+
+            // It’s easier to parse any statement and then disallow
+            // if we parsed something that doesn’t belong here.
+            auto arg = ParseStmt();
+            if (not arg) return {};
+            auto decl = dyn_cast<ParsedDecl>(arg.get());
+            if (not decl) return Error(arg.get()->loc, "Only declarations can be exported");
+
+            // Avoid forcing Sema to deal with unwrapping nested
+            // export declarations.
+            if (isa<ParsedExportDecl>(decl)) return Error({loc, decl->loc}, "'%1(export export)' is invalid");
+
+            // The decl must have a name to be exportable.
+            if (decl->name.empty()) return Error(decl->loc, "Anonymous declarations cannot be exported");
+            return new (*this) ParsedExportDecl{decl, loc};
+        }
+
         case Tk::Proc: return ParseProcDecl();
+
+        default: {
+            auto e = ParseExpr();
+            if (not e) SkipTo(Tk::Semicolon);
+            return e;
+        }
     }
 }
 
@@ -1222,7 +1263,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts) {
     while (not At(Tk::Eof, Tk::RBrace)) {
         if (auto s = ParseStmt()) stmts.push_back(s.get());
-        else SkipTo(Tk::Semicolon);
         Consume(Tk::Semicolon);
     }
 }

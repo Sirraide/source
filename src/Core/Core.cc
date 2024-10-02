@@ -5,18 +5,22 @@ module;
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Process.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/Unicode.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/TargetParser/Host.h>
 #include <mutex>
+#include <print>
 #include <random>
 #include <ranges>
 #include <srcc/Macros.hh>
 #include <thread>
-#include <print>
 
 #ifdef __linux__
 #    include <unistd.h>
@@ -32,6 +36,12 @@ using namespace base;
 // ============================================================================
 struct Context::Impl {
     llvm::LLVMContext llvm;
+
+    /// Optimisation level.
+    int opt_level = 0;
+
+    /// Module dir.
+    fs::path module_dir;
 
     /// Diagnostics engine.
     llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_engine;
@@ -55,11 +65,81 @@ struct Context::Impl {
 
 SRCC_DEFINE_HIDDEN_IMPL(Context);
 Context::Context() : impl(new Impl) {
-    static std::once_flag init_flag;
-    std::call_once(init_flag, [] {
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
+    static std::once_flag init;
+    std::call_once(init, [] {
+        llvm::InitializeAllTargetInfos();
+        llvm::InitializeAllTargets();
+        llvm::InitializeAllTargetMCs();
+        llvm::InitializeAllAsmParsers();
+        llvm::InitializeAllAsmPrinters();
+
+        const char* args[]{
+            "srcc",
+            "-x86-asm-syntax=intel",
+            nullptr,
+        };
+
+        llvm::cl::ParseCommandLineOptions(2, args, "", &llvm::errs(), nullptr);
     });
+}
+
+auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachine> {
+    // No need to acquire a lock since we don’t access any shared
+    // shared state (except opt_level, which is never written to).
+    auto triple = llvm::sys::getDefaultTargetTriple();
+
+    // Get the target.
+    std::string error;
+    auto target = llvm::TargetRegistry::lookupTarget(triple, error);
+    if (not error.empty() or not target) Fatal(
+        "Failed to lookup target triple '{}': {}",
+        triple,
+        error
+    );
+
+    // Get feature flags.
+    std::string features;
+    if (impl->opt_level == 4) {
+        StringMap<bool> feature_map = llvm::sys::getHostCPUFeatures();
+        for (auto& [feature, enabled] : feature_map)
+            if (enabled)
+                features += std::format("+{},", feature.str());
+    }
+
+    // User-specified features are applied last.
+    // for (auto& [feature, enabled] : target_features)
+    //    features += std::format("{}{},", enabled ? '+' : '-', feature.str());
+    // if (not features.empty()) features.pop_back();
+
+    // Get CPU.
+    std::string cpu;
+    if (impl->opt_level == 4) cpu = llvm::sys::getHostCPUName();
+    if (cpu.empty()) cpu = "generic";
+
+    // Target options.
+    llvm::TargetOptions opts;
+
+    // Get opt level.
+    llvm::CodeGenOptLevel opt;
+    switch (impl->opt_level) {
+        case 0: opt = llvm::CodeGenOptLevel::None; break;
+        case 1: opt = llvm::CodeGenOptLevel::Less; break;
+        case 2: opt = llvm::CodeGenOptLevel::Default; break;
+        default: opt = llvm::CodeGenOptLevel::Aggressive; break;
+    }
+
+    // Create machine.
+    std::unique_ptr<llvm::TargetMachine> machine{target->createTargetMachine(
+        triple,
+        cpu,               // Target CPU
+        features,          // Features.
+        opts,              // Options.
+        llvm::Reloc::PIC_, // Relocation model.
+        std::nullopt,      // Code model.
+        opt                // Opt level.
+    )};
+
+    return machine;
 }
 
 auto Context::diags() const -> DiagnosticsEngine& {
@@ -97,6 +177,15 @@ auto Context::get_file(const File::Path& path) -> const File& {
     impl->files.emplace_back(f);
     impl->files_by_path[std::move(can)] = f;
     return *f;
+}
+
+void Context::_initialise_context_(fs::path module_path, int opt_level) {
+    impl->module_dir = std::move(module_path);
+    impl->opt_level = opt_level;
+}
+
+auto Context::module_path() const -> const fs::path& {
+    return impl->module_dir;
 }
 
 void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
@@ -158,11 +247,8 @@ auto File::Write(const void* data, usz size, const Path& file) -> std::expected<
         return llvm::Error::success();
     });
 
-    std::string text;
-    llvm::handleAllErrors(std::move(err), [&](const llvm::ErrorInfoBase& e) {
-        text += std::format("Failed to write to file '{}': {}", file, e.message());
-    });
-    return std::unexpected(text);
+    if (err) return Error("Failed to write to file '{}': {}", file, utils::FormatError(err));
+    return {};
 }
 
 void File::WriteOrDie(void* data, usz size, const Path& file) {
@@ -660,16 +746,9 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             printed++;
             EmitDiagnostics();
 
-            stream << text::RenderColours(ctx.use_colours(), std::format(
-                "\n%b(%{}(Error:) Too many errors emitted (> {}\033). Not showing any more errors.)\n",
-                Diagnostic::Colour(Diagnostic::Level::Error),
-                printed - 1
-            ));
+            stream << text::RenderColours(ctx.use_colours(), std::format("\n%b(%{}(Error:) Too many errors emitted (> {}\033). Not showing any more errors.)\n", Diagnostic::Colour(Diagnostic::Level::Error), printed - 1));
 
-            stream << text::RenderColours(ctx.use_colours(), std::format(
-                "%b(%{}(Note:) Use '--error-limit <limit>' to show more errors.)\n",
-                Diagnostic::Colour(Diagnostic::Level::Note)
-            ));
+            stream << text::RenderColours(ctx.use_colours(), std::format("%b(%{}(Note:) Use '--error-limit <limit>' to show more errors.)\n", Diagnostic::Colour(Diagnostic::Level::Note)));
         }
 
         return;

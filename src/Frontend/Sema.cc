@@ -1731,12 +1731,24 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
 /// Perform initial processing of a decl so it can be used by the rest
 /// of the code. This only handles order-independent decls.
 auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
+    // Unwrap exports.
+    if (auto exp = dyn_cast<ParsedExportDecl>(d)) {
+        auto decl = TranslateDeclInitial(exp->decl);
+        if (decl and decl->present()) AddDeclToScope(&M->exports, decl->get());
+        return decl;
+    }
+
+    // Build procedure type now so we can forward-reference it.
     if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
     return std::nullopt;
 }
 
 /// Translate the body of a declaration.
 auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
+    // Unwrap exports; pass along the actual parsed decl for this.
+    if (auto exp = dyn_cast<ParsedExportDecl>(parsed))
+        return TranslateEntireDecl(d, exp->decl);
+
     // Ignore this if there was a problem w/ the procedure type.
     if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
         if (not d) return nullptr;
@@ -1747,6 +1759,10 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     auto res = TranslateStmt(parsed);
     if (res.invalid()) return nullptr;
     return cast<Decl>(res.get());
+}
+
+auto Sema::TranslateExportDecl(ParsedExportDecl*) -> Decl* {
+    Unreachable("Should not be translated in TranslateStmt()");
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
@@ -1875,14 +1891,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
 }
 
 auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
-    Unreachable("Translating declaration as expression?");
-    /*auto it = proc_decl_map.find(parsed);
-
-    // This can happen if the procedure errored somehow.
-    if (it == proc_decl_map.end()) return nullptr;
-
-    // The procedure has already been created.
-    return CreateReference(it->second, parsed->loc);*/
+    Unreachable("Should not be translated in TranslateStmt()");
 }
 
 /// Perform initial type checking on a procedure, enough to enable calls
@@ -1911,34 +1920,11 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 
 /// Dispatch to translate a statement.
 auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
-    switch (parsed->kind()) { // clang-format off
+    switch (parsed->kind()) {  // clang-format off
         using K = ParsedStmt::Kind;
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());

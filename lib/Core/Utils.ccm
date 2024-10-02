@@ -364,6 +364,17 @@ struct FStringWithSrcLocImpl {
 template <typename... Args>
 using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
+/// This parameter is moved-from because we’ll never use the
+/// same error more than once anyway.
+auto FormatError(llvm::Error& e) -> std::string {
+    std::string text;
+    llvm::handleAllErrors(std::move(e), [&](const llvm::ErrorInfoBase& e) {
+        if (not text.empty()) text+= "; ";
+        text += e.message();
+    });
+    return text;
+}
+
 /// Negate a predicate.
 [[nodiscard]] auto Not(auto Predicate) {
     return [Predicate = std::move(Predicate)]<typename... Args>(Args&&... args) {

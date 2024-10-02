@@ -10,5 +10,8 @@
 /srcc-astgen
 /srcc-astgen.exe
 
+## Compiled modules.
+/modules/*.mod
+
 ## Valgrind.
 callgrind.out.*

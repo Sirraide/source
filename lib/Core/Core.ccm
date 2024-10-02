@@ -8,6 +8,7 @@ module;
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Target/TargetMachine.h>
 #include <mutex>
 #include <srcc/Macros.hh>
 #include <string>
@@ -154,6 +155,9 @@ public:
     /// Create a new context with default options.
     explicit Context();
 
+    /// Create a machine for this target.
+    [[nodiscard]] auto create_target_machine() const -> std::unique_ptr<llvm::TargetMachine>;
+
     /// Get diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine&;
 
@@ -167,6 +171,12 @@ public:
     ///
     /// This will load the file the first time it is requested.
     [[nodiscard]] auto get_file(const fs::path& path) -> const File&;
+
+    /// DO NOT CALL THIS. This is only here for the driver.
+    void _initialise_context_(fs::path module_path, int opt_level);
+
+    /// The directory in which modules should be placed.
+    [[nodiscard]] auto module_path() const -> const fs::path&;
 
     /// Set the diagnostics engine.
     void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);

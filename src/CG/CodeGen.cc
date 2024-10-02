@@ -6,6 +6,9 @@ module;
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/Utils/ModuleUtils.h>
 #include <memory>
 #include <ranges>
 #include <srcc/Macros.hh>
@@ -513,8 +516,9 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
 // ============================================================================
 //  CG
 // ============================================================================
-CodeGen::CodeGen(TranslationUnit& M)
-    : M{M},
+CodeGen::CodeGen(llvm::TargetMachine& machine, TranslationUnit& M)
+    : machine{machine},
+      M{M},
       llvm{std::make_unique<llvm::Module>(M.name, M.llvm_context)},
       builder{M.llvm_context},
       IntTy{builder.getInt64Ty()},
@@ -524,7 +528,10 @@ CodeGen::CodeGen(TranslationUnit& M)
       FFIIntTy{llvm::Type::getIntNTy(M.llvm_context, 32)}, // FIXME: Get size from target.
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
-      VoidTy{builder.getVoidTy()} {}
+      VoidTy{builder.getVoidTy()} {
+    llvm->setTargetTriple(machine.getTargetTriple().str());
+    llvm->setDataLayout(machine.createDataLayout());
+}
 
 void CodeGen::Emit() {
     // Emit procedures.
@@ -535,22 +542,10 @@ void CodeGen::Emit() {
 
     // Emit module description.
     if (M.is_module) {
-        SmallVector<char, 0> md;
+        SmallString<0> md;
         M.serialise(md);
-        auto name = constants::ModuleDescriptionSectionName(M.name);
-        auto data = llvm::ConstantDataArray::get(M.llvm_context, md);
-        auto var = new llvm::GlobalVariable(
-            *llvm,
-            data->getType(),
-            true,
-            llvm::GlobalValue::PrivateLinkage,
-            data,
-            name
-        );
-
-        var->setSection(name);
-        var->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::None);
-        var->setVisibility(llvm::GlobalValue::DefaultVisibility);
+        auto mb = llvm::MemoryBuffer::getMemBuffer(md, "", false);
+        embedBufferInModule(*llvm, mb->getMemBufferRef(), constants::ModuleDescriptionSectionName(M.name));
     }
 }
 

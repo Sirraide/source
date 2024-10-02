@@ -97,6 +97,7 @@ int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
     auto a = opts.action;
+    ctx._initialise_context_(opts.module_path, opts.opt_level);
 
     // Always create a regular diags engine first for driver diags.
     ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
@@ -261,10 +262,16 @@ int Driver::Impl::run_job() {
         return res.has_value() ? 0 : 1;
     }
 
+    // Create a machine for this target.
+    auto machine = ctx.create_target_machine();
+
     // Don’t try and codegen if there was an error.
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
-    auto ir_module = CodeGen::Emit(*module);
+    auto ir_module = CodeGen::Emit(*machine, *module);
+
+    // Run the optimiser before potentially dumping the module.
+    if (opts.opt_level) CodeGen::OptimiseModule(*machine, *module, *ir_module);
 
     // Emit LLVM IR, if requested.
     if (a == Action::EmitLLVM) {
@@ -272,8 +279,7 @@ int Driver::Impl::run_job() {
         return 0;
     }
 
-    // TODO: Emit object file etc.
-    return 0;
+    return CodeGen::EmitModuleOrProgram(*machine, *module, *ir_module);;
 }
 
 auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {

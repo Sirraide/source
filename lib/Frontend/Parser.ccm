@@ -453,6 +453,19 @@ public:
     }
 };
 
+/// An exported declaration.
+class srcc::ParsedExportDecl final : public ParsedDecl {
+public:
+    ParsedDecl* decl;
+
+    ParsedExportDecl(
+        ParsedDecl* decl,
+        Location location
+    ) : ParsedDecl{Kind::ExportDecl, "", location}, decl{decl} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ExportDecl; }
+};
+
 class srcc::ParsedLocalDecl final : public ParsedDecl {
 public:
     ParsedStmt* type;

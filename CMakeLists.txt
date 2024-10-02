@@ -192,7 +192,7 @@ target_link_libraries(options INTERFACE
 ## Global definitions.
 add_definitions(
     "-DSOURCE_PROJECT_DIR_NAME=\"${PROJECT_SOURCE_DIR}\""
-    "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_ROOT}/bin/clang\""
+    "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_ROOT}/bin/clang++\""
 )
 
 #[[
