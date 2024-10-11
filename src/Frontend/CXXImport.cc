@@ -100,27 +100,6 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     // If the return type hasn’t been deduced yet, we can’t import it.
     if (D->getReturnType()->getAs<clang::AutoType>()) return {};
 
-    // Don’t import immediate functions.
-    if (D->isImmediateFunction()) return {};
-
-    // Do not import language builtins.
-    //
-    // Note: Clang treats C standard library functions (e.g. 'puts') as
-    // builtins as well, but those count as ‘library builtins’.
-    switch (clang::Builtin::ID(D->getBuiltinID())) {
-        // Ignore everything we don’t know what to do with.
-        default:
-            return {};
-
-            // Import library builtins only.
-#define BUILTIN(ID, ...)
-#define LIBBUILTIN(ID, ...) case clang::Builtin::BI##ID:
-#include "clang/Basic/Builtins.inc"
-
-        case clang::Builtin::NotBuiltin:
-            break;
-    }
-
     // Don’t import immediate or inline functions for now.
     if (D->isImmediateFunction() or D->isInlineSpecified()) return {};
 
@@ -129,20 +108,54 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     if (D->getLinkageInternal() != clang::Linkage::External) return {};
     if (D->getOwningModule()) return {};
 
+    // Do not import language builtins.
+    //
+    // Note: Clang treats C standard library functions (e.g. 'puts') as
+    // builtins as well, but those count as ‘library builtins’.
+    switch (clang::Builtin::ID(D->getBuiltinID())) {
+        // Ignore everything we don’t know what to do with.
+        default: return {};
+
+        // Import library builtins only.
+#define BUILTIN(ID, ...)
+#define LIBBUILTIN(ID, ...) case clang::Builtin::BI##ID:
+#include "clang/Basic/Builtins.inc"
+
+        case clang::Builtin::NotBuiltin:
+            break;
+    }
+
     // Import the type.
     auto T = ImportType(FPT);
     if (not T) return {};
+    if (not isa<ProcType>(*T)) return {};
 
     // Create the procedure.
-    return ProcDecl::Create(
+    auto PD = ProcDecl::Create(
         *S.M,
-        *T,
+        cast<ProcType>(T.value().ptr()),
         S.M->save(D->getNameAsString()),
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
         ImportSourceLocation(D->getNameInfo().getBeginLoc())
     );
+
+    // Create param decls.
+    SmallVector<LocalDecl*> Params;
+    for (auto [I, P] : enumerate(D->parameters())) {
+        Params.push_back(new (*S.M) ParamDecl(
+            &PD->param_types()[I],
+            S.M->save(P->getName()),
+            PD,
+            u32(I),
+            false,
+            ImportSourceLocation(P->getLocation())
+        ));
+    }
+
+    PD->finalise(nullptr, Params);
+    return PD;
 }
 
 auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
@@ -216,11 +229,11 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             auto Ret = FPT->getExtInfo().getNoReturn() ? Types::NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return std::nullopt;
 
-            SmallVector<Parameter> Params;
+            SmallVector<ParamTypeData, 6> Params;
             for (auto P : FPT->param_types()) {
-                auto T = ImportType(P);
-                if (not T) return std::nullopt;
-                Params.emplace_back(Intent::Copy, *T);
+                auto Ty = ImportType(P);
+                if (not Ty) return std::nullopt;
+                Params.emplace_back(Intent::Copy, *Ty);
             }
 
             return ProcType::Get(

@@ -305,7 +305,7 @@ auto CodeGen::If(Value* cond, llvm::function_ref<void()> emit_then) -> BasicBloc
 bool LocalNeedsAlloca(LocalDecl* local) {
     auto p = dyn_cast<ParamDecl>(local);
     if (not p) return true;
-    return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent);
+    return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
 }
 
 void CodeGen::Loop(llvm::function_ref<void(BasicBlock*)> emit_body) {

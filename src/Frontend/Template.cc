@@ -93,9 +93,24 @@ auto TemplateInstantiator::InstantiateProcedure(
     inst->instantiated_from = proc;
     inst->scope = proc->scope;
 
-    // Instantiate the parameters.
+    // Instantiate params.
     EnterInstantiation _{S, proc, inst, inst_loc};
-    for (auto param : proc->params()) (void) InstantiateParamDecl(param);
+    auto& info = cast<Sema::InstantiationScopeInfo>(S.curr_proc());
+    for (auto [i, param] : enumerate(proc->params())) {
+        auto new_decl = new (*S.M) ParamDecl{
+            &substituted_type->params()[i],
+            param->name,
+            inst,
+            param->index(),
+            param->is_with_param(),
+            param->location(),
+        };
+
+        S.DeclareLocal(new_decl);
+        info.instantiated_decls[param] = new_decl;
+    }
+
+    // Instantiate procedure body.
     auto body = InstantiateStmt(proc->body().get());
     inst->finalise(body, S.curr_proc().locals);
     return inst;
@@ -108,11 +123,8 @@ auto TemplateInstantiator::InstantiateLocalDecl(LocalDecl* d) -> LocalDecl* {
     Todo("Instantiate local decl");
 }
 
-auto TemplateInstantiator::InstantiateParamDecl(ParamDecl* d) -> ParamDecl* {
-    auto ty = InstantiateType(d->type);
-    auto param = S.BuildParamDecl(S.curr_proc(), ty, d->intent, d->name, d->location());
-    cast<Sema::InstantiationScopeInfo>(S.curr_proc()).local_instantiations[d] = param;
-    return param;
+auto TemplateInstantiator::InstantiateParamDecl(ParamDecl*) -> ParamDecl* {
+    Unreachable("Params are not supposed to be instantiated this way");
 }
 
 auto TemplateInstantiator::InstantiateProcDecl(ProcDecl*) -> ProcDecl* {
@@ -228,8 +240,8 @@ auto TemplateInstantiator::InstantiateIntLitExpr(IntLitExpr* e) -> Ptr<Stmt> {
 
 auto TemplateInstantiator::InstantiateLocalRefExpr(LocalRefExpr* e) -> Ptr<Stmt> {
     for (auto inst : S.InstantiationStack() | vws::reverse)
-        if (auto d = inst->local_instantiations.find(e->decl); d != inst->local_instantiations.end())
-            return new (*S.M) LocalRefExpr{d->second, e->location()};
+        if (auto d = inst->instantiated_decls.find(e->decl); d != inst->instantiated_decls.end())
+            return new (*S.M) LocalRefExpr{cast<LocalDecl>(d->second), e->location()};
     Unreachable("Local not instantiated?");
 }
 
@@ -299,7 +311,7 @@ auto TemplateInstantiator::InstantiateIntType(IntType*) -> Type {
 }
 
 auto TemplateInstantiator::InstantiateProcType(ProcType* ty) -> Type {
-    SmallVector<Parameter, 4> params;
+    SmallVector<ParamTypeData, 4> params;
     auto ret = InstantiateType(ty->ret());
     for (auto param : ty->params()) params.emplace_back(param.intent, InstantiateType(param.type));
     return ProcType::Get(*S.M, ret, params, ty->cconv(), ty->variadic());

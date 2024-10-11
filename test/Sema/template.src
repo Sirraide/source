@@ -1,7 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc add($T a, T b) = a + b; // expected-note 2: Declared here
+// expected-note@+2: Parameter declared here
+// expected-note@+1: Declared here
+proc add($T a, T b) = a + b;
 proc add2(T a, $T b) = a + b;
 proc add3($T a, $T b) = a + b; // expected-note: Declared here
 proc add4($T a, $U b) = a + b; // expected-error:  Right operand of + must be an integer

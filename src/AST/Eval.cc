@@ -409,6 +409,8 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
         return false;
     }
 
+    // TODO: Add a max steps variable to prevent infinite loops.
+
     switch (stmt->kind()) {
         using K = Stmt::Kind;
 #define AST_STMT_LEAF(node) \
@@ -942,7 +944,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
 
                 // Verify that this is an lvalue and adjust the location.
                 if (lvalue) {
-                    Assert(v.isa<LValue>(), "{} arg must be an lvalue", p->intent);
+                    Assert(v.isa<LValue>(), "{} arg must be an lvalue", p->intent());
                     auto lval = v.cast<LValue>();
                     lval.loc = p->location();
                     locals.try_emplace(p, lval);
@@ -954,7 +956,7 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
                 return true;
             };
 
-            switch (p->intent) {
+            switch (p->intent()) {
                 // These are lvalues.
                 case Intent::Out:
                 case Intent::Inout:
@@ -971,14 +973,14 @@ bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
                 // becomes the variable; if rvalue, a variable is created in
                 // the callee.
                 case Intent::Move:
-                    if (p->type->pass_by_rvalue(proc->cconv(), p->intent)) TRY(InitVarFromRValue());
+                    if (p->type->pass_by_rvalue(proc->cconv(), p->intent())) TRY(InitVarFromRValue());
                     else TRY(UseValueAsVar());
                     break;
 
                 // 'in' is similar, except that no variable is created in the
                 // callee either way.
                 case Intent::In: {
-                    TRY(UseValueAsVar(not p->type->pass_by_rvalue(proc->cconv(), p->intent)));
+                    TRY(UseValueAsVar(not p->type->pass_by_rvalue(proc->cconv(), p->intent())));
 
                     // If this was an lvalue, make it readonly, and remember to reset
                     // it when we return from this if we actually made it readonly.

@@ -106,7 +106,12 @@ delete x;         /// Delete the int pointed to by x.
 `dynamic` makes this and its variant clauses equivalent to
 a ‘class hierarchy’, except that it cannot be extended at
 runtime. By adding variant clauses and no void variant clause,
-a dynamic variant is implicitly ‘abstract’.
+a dynamic variant is implicitly 
+
+The variant storage can be in a different location for individual
+variants, for instance, if there is enough space for the variant
+data in the padding bytes of the parent struct, use that (only go
+up one parent at most tho!)
 
 ```c#
 dynamic struct Expr {
@@ -115,7 +120,7 @@ dynamic struct Expr {
     proc print; /// Function.
 
     /// `variant IDENTIFIER {` is *conceptually* short for
-    /// `variant struct IDENTIFIER {`. There is no such thing
+    /// `variant struct { ... } IDENTIFIER`. There is no such thing
     /// as a ‘variant type’. There are only struct types that
     /// have variant clauses.
     variant Binary {

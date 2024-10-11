@@ -1,5 +1,5 @@
 // V %srcc --sema --verify %s
 program test;
 
-// This ought to be to big for most platforms...
+// This ought too be to big for most platforms...
 i1000000000000 x; // expected-error: The maximum integer type is

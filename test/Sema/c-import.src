@@ -5,4 +5,8 @@ import <cstdio> as stdio;
 
 stdio::puts("foo".data);
 stdio::printf("bar: %d\n".data, 12);
+
+stdio::puts("foo"); // expected-error: Argument of type 'i8[]' does not match expected type 'ref i8'
 stdio::printf("baz: %d\n".data, " "); // expected-error: Passing a value of type 'i8[]' as a varargs argument is not supported
+
+// expected-note@*: Parameter declared here

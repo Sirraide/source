@@ -333,12 +333,12 @@ auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> Pr
 auto ProcType::Get(
     TranslationUnit& mod,
     Type return_type,
-    ArrayRef<Parameter> param_types,
+    ArrayRef<ParamTypeData> param_types,
     CallingConvention cconv,
     bool variadic
 ) -> ProcType* {
     auto CreateNew = [&] {
-        const auto size = totalSizeToAlloc<Parameter>(param_types.size());
+        const auto size = totalSizeToAlloc<ParamTypeData>(param_types.size());
         auto mem = mod.allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
@@ -366,7 +366,7 @@ ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
     Type return_type,
-    ArrayRef<Parameter> param_types
+    ArrayRef<ParamTypeData> param_types
 ) : TypeBase{Kind::ProcType},
     cc{cconv},
     is_variadic{variadic},
@@ -375,7 +375,7 @@ ProcType::ProcType(
     std::uninitialized_copy_n(
         param_types.begin(),
         param_types.size(),
-        getTrailingObjects<Parameter>()
+        getTrailingObjects<ParamTypeData>()
     );
     ComputeDependence();
 }
@@ -383,7 +383,7 @@ ProcType::ProcType(
 void ProcType::Profile(
     FoldingSetNodeID& ID,
     Type return_type,
-    ArrayRef<Parameter> param_types,
+    ArrayRef<ParamTypeData> param_types,
     CallingConvention cc,
     bool is_variadic
 ) {

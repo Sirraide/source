@@ -1,2 +1,2 @@
 // V %srcc --parse --verify %s
-5 // expected-error: Expected 'program' directive at start of file
+5 // expected-error: Expected 'program' or 'module' directive at start of file

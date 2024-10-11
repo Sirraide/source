@@ -153,9 +153,13 @@ auto OverloadSetExpr::Create(
     return ::new (mem) OverloadSetExpr{decls, location};
 }
 
+auto ParamDecl::intent() const -> Intent {
+    return parent->param_types()[idx].intent;
+}
+
 bool ParamDecl::is_rvalue_in_parameter() const {
-    return intent == Intent::In and
-           type->pass_by_rvalue(parent->proc_type()->cconv(), intent);
+    auto i = intent();
+    return i == Intent::In and type->pass_by_rvalue(parent->proc_type()->cconv(), i);
 }
 
 ProcRefExpr::ProcRefExpr(
@@ -188,7 +192,7 @@ auto StrLitExpr::Create(
 // ============================================================================
 ProcDecl::ProcDecl(
     TranslationUnit* owner,
-    Type type,
+    ProcType* type,
     String name,
     Linkage linkage,
     Mangling mangling,
@@ -209,7 +213,7 @@ ProcDecl::ProcDecl(
 
 auto ProcDecl::Create(
     TranslationUnit& tu,
-    Type type,
+    ProcType* type,
     String name,
     Linkage linkage,
     Mangling mangling,
@@ -235,6 +239,7 @@ void ProcDecl::finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> vars) {
     body_stmt = body;
     locals = vars.copy(owner->allocator());
 
+    Assert(locals.size() >= param_count(), "Missing parameter declarations!");
     for (auto l : locals.take_front(proc_type()->params().size()))
         Assert(isa<ParamDecl>(l), "Parameters must be ParamDecls");
 

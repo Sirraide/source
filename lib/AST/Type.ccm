@@ -14,7 +14,7 @@ export namespace srcc {
 class TemplateTypeDecl;
 class TranslationUnit;
 class Types;
-struct Parameter;
+struct ParamTypeData;
 class Expr;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
@@ -314,15 +314,16 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ReferenceType; }
 };
 
-struct srcc::Parameter {
+/// Parts of a parameter that are relevant for the procedure type.
+struct srcc::ParamTypeData {
     Intent intent;
     Type type;
-    Parameter(Intent intent, Type type) : intent{intent}, type{type} {}
+    ParamTypeData(Intent intent, Type type) : intent{intent}, type{type} {}
 };
 
 class srcc::ProcType final : public TypeBase
     , public FoldingSetNode
-    , TrailingObjects<ProcType, Parameter> {
+    , TrailingObjects<ProcType, ParamTypeData> {
     friend TrailingObjects;
 
     CallingConvention cc;
@@ -330,13 +331,13 @@ class srcc::ProcType final : public TypeBase
     const u32 num_params;
     Type return_type;
 
-    auto numTrailingObjects(OverloadToken<Parameter>) -> usz { return num_params; }
+    auto numTrailingObjects(OverloadToken<ParamTypeData>) -> usz { return num_params; }
 
     ProcType(
         CallingConvention cconv,
         bool variadic,
         Type return_type,
-        ArrayRef<Parameter> param_types
+        ArrayRef<ParamTypeData> param_types
     );
 
 public:
@@ -344,7 +345,7 @@ public:
     auto cconv() const -> CallingConvention { return cc; }
 
     /// Get the parameter types of this procedure type.
-    auto params() const -> ArrayRef<Parameter> { return {getTrailingObjects<Parameter>(), num_params}; }
+    auto params() const -> ArrayRef<ParamTypeData> { return {getTrailingObjects<ParamTypeData>(), num_params}; }
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }
@@ -363,7 +364,7 @@ public:
     static auto Get(
         TranslationUnit& mod,
         Type return_type,
-        ArrayRef<Parameter> param_types = {},
+        ArrayRef<ParamTypeData> param_types = {},
         CallingConvention cconv = CallingConvention::Source,
         bool variadic = false
     ) -> ProcType*;
@@ -373,7 +374,7 @@ public:
     static void Profile(
         FoldingSetNodeID& ID,
         Type return_type,
-        ArrayRef<Parameter> param_types,
+        ArrayRef<ParamTypeData> param_types,
         CallingConvention cconv,
         bool variadic
     );

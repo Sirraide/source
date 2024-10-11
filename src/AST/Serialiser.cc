@@ -194,9 +194,10 @@ struct Deserialiser {
         return M->save(buf);
     }
 
-    auto ReadType() -> Type {
+    template <typename Ty = TypeBase>
+    auto ReadType() -> Ty* {
         u64 idx = ReadInt();
-        return deserialised_types[idx];
+        return cast<Ty>(deserialised_types[idx].ptr());
     }
 
     Deserialiser(Context& ctx, ArrayRef<char> data)
@@ -238,7 +239,7 @@ void Deserialiser::DeserialiseLocalDecl() {
 }
 
 void Deserialiser::DeserialiseProcDecl() {
-    auto ty = ReadType();
+    auto ty = ReadType<ProcType>();
     auto name = ReadString();
     auto mangling = Read<Mangling>();
     auto proc = ProcDecl::Create(
@@ -251,6 +252,7 @@ void Deserialiser::DeserialiseProcDecl() {
         {}
     );
 
+    Todo("Serialise and deserialise param decls");
     M->exports.decls[name].push_back(proc);
 }
 
@@ -300,7 +302,7 @@ void Deserialiser::DeserialiseType() {
         }
 
         case TypeBase::Kind::ProcType: {
-            SmallVector<Parameter> param_types;
+            SmallVector<ParamTypeData, 6> param_types;
             auto cc = Read<CallingConvention>();
             auto variadic = Read<bool>();
             auto num_params = ReadInt();

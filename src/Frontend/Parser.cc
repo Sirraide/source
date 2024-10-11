@@ -902,7 +902,7 @@ void Parser::ParseHeader() {
     }
 
     if (not At(Tk::Identifier)) {
-        Error("Expected identifier after '%1({})' directive", module ? "module" : "program");
+        Error("Expected identifier after '%1({})'", module ? "module" : "program");
         return SkipPast(Tk::Semicolon);
     }
 
@@ -1226,10 +1226,9 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // Complain if this isn’t a module, but parse it anyway.
             if (not mod->is_module) {
                 Error(loc, "'%1(export)' is only allowed in modules");
-                Remark(
-                    "If you meant to create a module (i.e. a static or shared"
-                    "library, use '%1(module)' instead of '%1(program)' at the start"
-                    "of the file"
+                Note(stream.begin()->location,
+                    "If you meant to create a module (i.e. a static or shared "
+                    "library\033), use '%1(module)' instead of '%1(program)'"
                 );
             }
 

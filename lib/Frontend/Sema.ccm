@@ -131,7 +131,7 @@ private:
 
     struct InstantiationScopeInfo : ProcScopeInfo {
         ProcDecl* pattern;
-        DenseMap<LocalDecl*, LocalDecl*> local_instantiations;
+        DenseMap<Decl*, Decl*> instantiated_decls;
         Location inst_loc;
 
         InstantiationScopeInfo(
@@ -471,7 +471,7 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Adjust a type for use in a variable declaration.
-    [[nodiscard]] auto AdjustVariableType(Type ty, Location loc) -> Type;
+    [[nodiscard]] auto CheckVariableType(Type ty, Location loc) -> Type;
 
     /// Apply a conversion to an expression.
     [[nodiscard]] auto ApplyConversion(Expr* e, Conversion conv) -> Expr*;
@@ -639,7 +639,7 @@ private:
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
-    auto BuildParamDecl(ProcScopeInfo& proc, Type ty, Intent intent, String name, Location loc) -> ParamDecl*;
+    auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
@@ -675,7 +675,7 @@ private:
     auto TranslateProcType(
         ParsedProcType* parsed,
         SmallVectorImpl<TemplateTypeDecl*>* ttds = nullptr
-    ) -> Type;
+    ) -> ProcType*;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

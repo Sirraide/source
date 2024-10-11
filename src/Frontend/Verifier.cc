@@ -61,39 +61,44 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
     // Didn’t find a valid diagnostic type.
     if (level == Diagnostic::Level::ICE) return;
 
-    // Parse line offsets.
-    auto where = DecodeLocation(tok.location);
-    if (comment.trim_front().starts_with('@')) {
-        comment.drop().trim_front();
+    // Parse line offsets. Note that '@*' indicates that any
+    // location is allowed.
+    Opt<DecodedLocation> diag_loc = DecodeLocation(tok.location);
+    if (comment.trim_front().consume('@')) {
+        if (comment.trim_front().consume('*')) diag_loc = {};
+        else {
+            // Offset may be relative.
+            bool negative = comment.starts_with("-");
+            bool relative = negative or comment.starts_with("+");
+            if (relative) comment.drop().trim_front();
 
-        // Offset may be relative.
-        bool negative = comment.starts_with("-");
-        bool relative = negative or comment.starts_with("+");
-        if (relative) comment.drop().trim_front();
+            // Parse the offset.
+            auto offset = Parse<u64>(comment.take_while(llvm::isDigit));
+            if (not offset.has_value()) return Error(
+                tok.location,
+                "Invalid line offset in expected diagnostic: '{}'\n",
+                offset.error()
+            );
 
-        // Parse the offset.
-        auto offset = Parse<u64>(comment.take_while(llvm::isDigit));
-        if (not offset.has_value()) return Error(
-            tok.location,
-            "Invalid line offset in expected diagnostic: '{}'\n",
-            offset.error()
-        );
+            auto where = diag_loc.value();
+            auto offs = offset.value();
+            if (relative) {
+                if (negative) {
+                    where.line -= offs;
+                } else where.line += offs;
+            } else {
+                where.line = offs;
+            }
 
-        auto offs = offset.value();
-        if (relative) {
-            if (negative) {
-                where.line -= offs;
-            } else where.line += offs;
-        } else {
-            where.line = offs;
+            // Sanity check.
+            if (where.line < 1 or where.line > usz(where.file->size())) return Error(
+                tok.location,
+                "Invalid computed line offset in expected diagnostic: '{}'\n",
+                offset.error()
+            );
+
+            diag_loc = where;
         }
-
-        // Sanity check.
-        if (where.line < 1 or where.line > usz(where.file->size())) return Error(
-            tok.location,
-            "Invalid computed line offset in expected diagnostic: '{}'\n",
-            offset.error()
-        );
     }
 
     // Next, the optional count.
@@ -113,7 +118,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 
     // The rest of the comment is the diagnostic text.
     comment.drop().trim_front();
-    expected_diags.emplace_back(level, std::string{comment.text()}, where, count);
+    expected_diags.emplace_back(level, std::string{comment.text()}, diag_loc, count);
 }
 
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
@@ -150,18 +155,22 @@ bool VerifyDiagnosticsEngine::verify() {
         );
     }
 
+    // Sort expected diagnostics such that any diags without a location
+    // are placed at the end of the vector.
+    rgs::partition(expected_diags, [](const ExpectedDiagnostic& ed) { return ed.loc.has_value(); });
+
     // Check that we have seen every diagnostic that we expect.
     for (auto& expected : expected_diags) {
         while (expected.count != 0) {
             auto it = rgs::find_if(seen_diags, [&](const SeenDiagnostic& sd) {
-                if (sd.loc != expected.loc) return false;
+                if (expected.loc and sd.loc != expected.loc) return false;
                 if (sd.diag.level != expected.level) return false;
                 return sd.diag.msg.contains(expected.text);
             });
 
             if (it == seen_diags.end()) break;
             expected.count--;
-            utils::erase_unordered(seen_diags, it);
+            seen_diags.erase(it);
         }
     }
 
@@ -172,15 +181,26 @@ bool VerifyDiagnosticsEngine::verify() {
     if (not expected_diags.empty()) {
         ok = false;
         print(stderr, "%b(Expected diagnostics that were not seen:)\n");
-        for (const auto& expected : expected_diags) print(
-            stderr,
-            "  %b({}:{} %{}({}:)) {}\n",
-            expected.loc.file->path(),
-            expected.loc.line,
-            Diagnostic::Colour(expected.level),
-            Diagnostic::Name(expected.level),
-            expected.text
-        );
+        for (const auto& expected : expected_diags) {
+            if (expected.loc) {
+                print(
+                    stderr,
+                    "  %b({}:{})",
+                    expected.loc.value().file->path(),
+                    expected.loc.value().line
+                );
+            } else {
+                print(stderr, "  %b(anywhere)");
+            }
+
+            print(
+                stderr,
+                " %b(%{}({}:)) {}\n",
+                Diagnostic::Colour(expected.level),
+                Diagnostic::Name(expected.level),
+                expected.text
+            );
+        }
     }
 
     // And about every diagnostic that we didn’t expect.

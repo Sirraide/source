@@ -244,7 +244,7 @@ void Stmt::Printer::Print(Stmt* e) {
                     is_param ? '4' : '8',
                     d->name
                 );
-                if (is_param) print(" %1({})", cast<ParamDecl>(d)->intent);
+                if (is_param) print(" %1({})", cast<ParamDecl>(d)->intent());
                 print(" {}", d->type->print());
             };
 

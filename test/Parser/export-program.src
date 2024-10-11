@@ -1,0 +1,4 @@
+// V %srcc --parse --verify %s
+program test; // expected-note: If you meant to create a module (i.e. a static or shared library), use 'module' instead of 'program'
+
+export int x; // expected-error: 'export' is only allowed in modules

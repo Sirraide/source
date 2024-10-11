@@ -1,0 +1,2 @@
+// V %srcc --parse --verify %s
+module; // expected-error: Expected identifier after 'module'

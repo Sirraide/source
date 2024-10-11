@@ -46,21 +46,6 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     }
 }
 
-auto Sema::AdjustVariableType(Type ty, Location loc) -> Type {
-    // 'noreturn' and 'type' are not a valid type for a variable.
-    if (ty == Types::NoReturnTy or ty == Types::TypeTy) {
-        Error(loc, "Cannot declare a variable of type '{}'", ty);
-        return Types::ErrorDependentTy;
-    }
-
-    if (ty == Types::UnresolvedOverloadSetTy) {
-        Error(loc, "Unresolved overload set in parameter declaration");
-        return Types::ErrorDependentTy;
-    }
-
-    return ty;
-}
-
 auto Sema::ApplyConversion(Expr* e, Conversion conv) -> Expr* {
     switch (conv.kind) {
         using K = Conversion::Kind;
@@ -77,6 +62,21 @@ auto Sema::ApplyConversion(Expr* e, Conversion conv) -> Expr* {
 auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
     for (auto& c : seq) e = ApplyConversion(e, c);
     return e;
+}
+
+auto Sema::CheckVariableType(Type ty, Location loc) -> Type {
+    // 'noreturn' and 'type' are not a valid type for a variable.
+    if (ty == Types::NoReturnTy or ty == Types::TypeTy) {
+        Error(loc, "Cannot declare a variable of type '{}'", ty);
+        return Types::ErrorDependentTy;
+    }
+
+    if (ty == Types::UnresolvedOverloadSetTy) {
+        Error(loc, "Unresolved overload set in parameter declaration");
+        return Types::ErrorDependentTy;
+    }
+
+    return ty;
 }
 
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
@@ -298,7 +298,7 @@ public:
             S.Error(
                 res->location(),
                 "Cannot pass parameter of intent %1({}) to a parameter with intent %1({})",
-                cast<ParamDecl>(dre->decl)->intent,
+                cast<ParamDecl>(dre->decl)->intent(),
                 intent
             );
             S.Note(dre->decl->location(), "Parameter declared here");
@@ -588,7 +588,7 @@ void Sema::ReportOverloadResolutionFailure(
                     "In param #{}: cannot deduce ${} in {} from {}",
                     f.param_index + 1,
                     f.ttd->name,
-                    ti.pattern->params()[f.param_index]->type,
+                    ti.pattern->param_types()[f.param_index].type,
                     call_args[f.param_index]->type
                 );
             },
@@ -653,6 +653,10 @@ void Sema::ReportOverloadResolutionFailure(
                 Todo("Report this");
             },
 
+            [&](Candidate::SameTypeLValueRequired m) {
+                Ctx(m.mismatch_index).report_same_type_lvalue_required(ty->params()[m.mismatch_index].intent);
+            },
+
             [&](Candidate::TypeMismatch m) {
                 Error(
                     call_args[m.mismatch_index]->location(),
@@ -660,11 +664,7 @@ void Sema::ReportOverloadResolutionFailure(
                     call_args[m.mismatch_index]->type,
                     ty->params()[m.mismatch_index].type
                 );
-                Note(c.param_loc(m.mismatch_index), "Declared here");
-            },
-
-            [&](Candidate::SameTypeLValueRequired m) {
-                Ctx(m.mismatch_index).report_same_type_lvalue_required(ty->params()[m.mismatch_index].intent);
+                Note(c.param_loc(m.mismatch_index), "Parameter declared here");
             },
 
             [&](Candidate::UndeducedReturnType) {
@@ -1417,7 +1417,7 @@ auto Sema::BuildLocalDecl(
     }
 
     // Adjust after inference.
-    ty = AdjustVariableType(ty, loc);
+    ty = CheckVariableType(ty, loc);
 
     // Then, perform initialisation.
     //
@@ -1428,21 +1428,22 @@ auto Sema::BuildLocalDecl(
         if (auto init_expr = PerformVariableInitialisation(ty, i))
             init = init_expr;
 
-    auto param = new (*M) LocalDecl(AdjustVariableType(ty, loc), name, proc.proc, init, loc);
+    auto param = new (*M) LocalDecl(CheckVariableType(ty, loc), name, proc.proc, init, loc);
     DeclareLocal(param);
     return param;
 }
 
 auto Sema::BuildParamDecl(
     ProcScopeInfo& proc,
-    Type ty,
-    Intent intent,
+    const ParamTypeData* param,
+    u32 index,
+    bool with_param,
     String name,
     Location loc
 ) -> ParamDecl* {
-    auto param = new (*M) ParamDecl(AdjustVariableType(ty, loc), intent, name, proc.proc, loc);
-    DeclareLocal(param);
-    return param;
+    auto decl = new (*M) ParamDecl(param, name, proc.proc, index, with_param, loc);
+    DeclareLocal(decl);
+    return decl;
 }
 
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
@@ -1867,11 +1868,12 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     // Translate parameters.
     auto ty = decl->proc_type();
     for (auto [i, pair] : enumerate(zip(ty->params(), parsed->params()))) {
-        auto [param_ty, parsed_decl] = pair;
+        auto [param_info, parsed_decl] = pair;
         BuildParamDecl(
             curr_proc(),
-            param_ty.type,
-            param_ty.intent,
+            &param_info,
+            u32(i),
+            false,
             parsed_decl->name,
             parsed_decl->loc
         );
@@ -1978,7 +1980,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
 auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     SmallVectorImpl<TemplateTypeDecl*>* ttds
-) -> Type {
+) -> ProcType* {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -1990,7 +1992,7 @@ auto Sema::TranslateProcType(
             "Sorry, that’s too many parameters (max is {})",
             std::numeric_limits<u16>::max()
         );
-        return Types::ErrorDependentTy;
+        return ProcType::GetInvalid(*M);
     }
 
     // We may have to handle template parameters here.
@@ -2060,7 +2062,7 @@ auto Sema::TranslateProcType(
     }
 
     // Then, compute the actual parameter types.
-    SmallVector<Parameter, 10> params;
+    SmallVector<ParamTypeData, 10> params;
     for (auto a : parsed->param_types()) {
         // Template types encountered here introduce a template parameter
         // instead of referencing one, so we process them manually as the

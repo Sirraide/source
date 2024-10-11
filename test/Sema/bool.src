@@ -2,7 +2,7 @@
 
 program test;
 
-proc sink (bool) { } // expected-note: Declared here
+proc sink (bool) { } // expected-note: Parameter declared here
 
 sink(true);
 sink(false);

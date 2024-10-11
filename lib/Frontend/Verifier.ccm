@@ -28,7 +28,7 @@ class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine
     struct ExpectedDiagnostic {
         Diagnostic::Level level;
         std::string text;
-        DecodedLocation loc;
+        Opt<DecodedLocation> loc;
         u32 count;
     };
 

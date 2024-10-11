@@ -670,23 +670,35 @@ public:
 };
 
 class srcc::ParamDecl : public LocalDecl {
+    u32 idx;
+    bool with;
 public:
-    Intent intent;
     ParamDecl(
-        Type type,
-        Intent intent,
+        const ParamTypeData* param,
         String name,
         ProcDecl* parent,
+        u32 index,
+        bool with_param,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, type, name, parent, nullptr, location}, intent{intent} {}
+    ) : LocalDecl{Kind::ParamDecl, param->type, name, parent, nullptr, location},
+        idx{index},
+        with{with_param} {}
 
-    // Whether this is an 'in' parameter that is passed by value
-    // under the hood.
+    /// Get the parameter’s index.
+    [[nodiscard]] auto index() const -> u32 { return idx; }
+
+    /// Get the parameter’s intent.
+    [[nodiscard]] auto intent() const -> Intent;
+
+    /// Whether this is an 'in' parameter that is passed by value
+    /// under the hood.
     [[nodiscard]] bool is_rvalue_in_parameter() const;
+
+    /// Whether this is a 'with' parameter.
+    [[nodiscard]] bool is_with_param() const { return with; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
 };
-
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
 public:
@@ -742,7 +754,7 @@ public:
 private:
     ProcDecl(
         TranslationUnit* owner,
-        Type type,
+        ProcType* type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -754,7 +766,7 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
-        Type type,
+        ProcType* type,
         String name,
         Linkage linkage,
         Mangling mangling,
@@ -779,14 +791,22 @@ public:
     /// Whether this is a template.
     bool is_template() const { return num_template_params > 0; }
 
-    /// Get the procedure type.
-    auto proc_type() const -> ProcType*;
-
-    /// Get the parameters.
+    /// Get the parameter declarations.
     auto params() -> ArrayRef<ParamDecl*> {
-        auto arr = locals.take_front(proc_type()->params().size());
+        auto arr = locals.take_front(param_count());
         return {reinterpret_cast<ParamDecl* const*>(arr.data()), arr.size()};
     }
+
+    /// Get the number of parameters that this procedure has.
+    auto param_count() const -> usz { return param_types().size(); }
+
+    /// Get the parameter types.
+    auto param_types() const -> ArrayRef<ParamTypeData> {
+        return proc_type()->params();
+    }
+
+    /// Get the procedure type.
+    auto proc_type() const -> ProcType*;
 
     /// Get the procedure's return type.
     auto return_type() -> Type;
