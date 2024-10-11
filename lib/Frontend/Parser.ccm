@@ -146,20 +146,34 @@ struct srcc::ParsedParameter {
         : intent{intent}, type{type} {}
 };
 
+struct ParsedProcAttrs {
+    bool extern_ = false;
+    bool nomangle = false;
+    bool native = false;
+};
+
 class srcc::ParsedProcType final : public ParsedStmt
     , llvm::TrailingObjects<ParsedProcType, ParsedParameter> {
     friend TrailingObjects;
     const u32 num_params;
     auto numTrailingObjects(OverloadToken<ParsedParameter>) -> usz { return num_params; }
-    ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedParameter> params, Location loc);
+
+    ParsedProcType(
+        ParsedStmt* ret_type,
+        ArrayRef<ParsedParameter> params,
+        ParsedProcAttrs attrs,
+        Location loc
+    );
 
 public:
     ParsedStmt* const ret_type;
+    ParsedProcAttrs attrs;
 
     static auto Create(
         Parser& parser,
         ParsedStmt* ret_type,
         ArrayRef<ParsedParameter> params,
+        ParsedProcAttrs attrs,
         Location loc
     ) -> ParsedProcType*;
 
@@ -492,7 +506,7 @@ public:
     ///
     /// This is not present if the procedure is only declared,
     /// not defined.
-    ParsedStmt* body;
+    Ptr<ParsedStmt> body;
 
     /// The type of the procedure.
     ParsedProcType* type;
@@ -503,7 +517,7 @@ private:
         String name,
         ParsedProcType* type,
         ArrayRef<ParsedLocalDecl*> param_decls,
-        ParsedStmt* body,
+        Ptr<ParsedStmt> body,
         Location location
     );
 
@@ -513,7 +527,7 @@ public:
         String name,
         ParsedProcType* type,
         ArrayRef<ParsedLocalDecl*> param_names,
-        ParsedStmt* body,
+        Ptr<ParsedStmt> body,
         Location location
     ) -> ParsedProcDecl*;
 
@@ -575,6 +589,7 @@ private:
         String name;
         Location proc_loc;
         Location tok_after_proc;
+        ParsedProcAttrs attrs;
     };
 
     explicit Parser(const File& file)

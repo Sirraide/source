@@ -1880,7 +1880,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     }
 
     // Translate body.
-    auto body = TranslateExpr(parsed->body);
+    auto body = TranslateExpr(parsed->body.get());
     if (body.invalid()) {
         // If we’re attempting to deduce the return type of this procedure,
         // but the body contains an error, then set the return type to errored.

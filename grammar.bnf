@@ -71,9 +71,10 @@
 <decl>       ::= <decl-proc> | <decl-var> | EXPORT <decl>
 <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
 <decl-proc>  ::= <signature> <proc-body>
-<signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
+<signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-<proc-body>  ::= <expr-block> | "=" <expr> ";"
+<proc-attrs> ::= { "native" | "extern" | "nomangle" }
+<proc-body>  ::= <expr-block> | "=" <expr> ";" | ";"
 <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 <intent>     ::= IN | OUT | INOUT | COPY
 

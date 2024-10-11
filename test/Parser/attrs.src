@@ -1,0 +1,18 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc a() extern;
+proc a extern;
+proc a extern native;
+proc a native extern;
+proc a native extern nomangle;
+
+proc a; // expected-error: Procedure that is not declared 'extern' must have a body
+proc a native; // expected-error: Procedure that is not declared 'extern' must have a body
+proc a native; // expected-error: Procedure that is not declared 'extern' must have a body
+proc a native nomangle; // expected-error: Procedure that is not declared 'extern' must have a body
+
+proc a extern {} // expected-error: Procedure that is declared 'extern' must not have a body
+proc a extern native {} // expected-error: Procedure that is declared 'extern' must not have a body
+proc a native extern {} // expected-error: Procedure that is declared 'extern' must not have a body
+proc a native extern nomangle {} // expected-error: Procedure that is declared 'extern' must not have a body

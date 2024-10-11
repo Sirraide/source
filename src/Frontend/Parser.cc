@@ -41,22 +41,32 @@ void* ParsedStmt::operator new(usz size, Parser& parser) {
 // ============================================================================
 //  Types
 // ============================================================================
-ParsedProcType::ParsedProcType(ParsedStmt* ret_type, ArrayRef<ParsedParameter> params, Location loc)
-    : ParsedStmt{Kind::ProcType, loc},
-      num_params{u32(params.size())},
-      ret_type{ret_type} {
-    std::uninitialized_copy_n(params.begin(), params.size(), getTrailingObjects<ParsedParameter>());
+ParsedProcType::ParsedProcType(
+    ParsedStmt* ret_type,
+    ArrayRef<ParsedParameter> params,
+    ParsedProcAttrs attrs,
+    Location loc
+) : ParsedStmt{Kind::ProcType, loc},
+    num_params{u32(params.size())},
+    ret_type{ret_type},
+    attrs{attrs} {
+    std::uninitialized_copy_n(
+        params.begin(),
+        params.size(),
+        getTrailingObjects<ParsedParameter>()
+    );
 }
 
 auto ParsedProcType::Create(
     Parser& parser,
     ParsedStmt* ret_type,
     ArrayRef<ParsedParameter> params,
+    ParsedProcAttrs attrs,
     Location loc
 ) -> ParsedProcType* {
     const auto size = totalSizeToAlloc<ParsedParameter>(params.size());
     auto mem = parser.allocate(size, alignof(ParsedProcType));
-    return ::new (mem) ParsedProcType{ret_type, params, loc};
+    return ::new (mem) ParsedProcType{ret_type, params, attrs, loc};
 }
 
 // ============================================================================
@@ -126,7 +136,7 @@ ParsedProcDecl::ParsedProcDecl(
     String name,
     ParsedProcType* type,
     ArrayRef<ParsedLocalDecl*> param_decls,
-    ParsedStmt* body,
+    Ptr<ParsedStmt> body,
     Location location
 ) : ParsedDecl{Kind::ProcDecl, name, location},
     body{body},
@@ -143,7 +153,7 @@ auto ParsedProcDecl::Create(
     String name,
     ParsedProcType* type,
     ArrayRef<ParsedLocalDecl*> param_decls,
-    ParsedStmt* body,
+    Ptr<ParsedStmt> body,
     Location location
 ) -> ParsedProcDecl* {
     const auto size = totalSizeToAlloc<ParsedLocalDecl*>(param_decls.size());
@@ -298,7 +308,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
             // No need to print the param decls here.
             SmallVector<ParsedStmt*, 10> children;
-            if (p.body) children.push_back(p.body);
+            if (auto b = p.body.get_or_null()) children.push_back(b);
             PrintChildren(children);
         } break;
 
@@ -361,6 +371,10 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
 
                     out += "\033)";
                 }
+
+                if (p->attrs.native) out += " native";
+                if (p->attrs.extern_) out += " extern";
+                if (p->attrs.nomangle) out += " nomangle";
 
                 out += " -> )";
                 Append(p->ret_type);
@@ -595,6 +609,7 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
         *this,
         sig.ret.get(),
         sig.param_types,
+        sig.attrs,
         sig.proc_loc
     );
 }
@@ -1071,7 +1086,8 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <decl-proc>  ::= <signature> <proc-body>
+// <decl-proc> ::= <signature> <proc-body>
+// <proc-body> ::= <expr-block> | "=" <expr> ";" | ";"
 auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Parse signature.
     SmallVector<ParsedLocalDecl*, 10> param_decls;
@@ -1093,24 +1109,30 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (Consume(Tk::Assign)) {
         body = ParseExpr();
         if (not Consume(Tk::Semicolon)) Error("Expected ';'");
-    } else {
+    } else if (not At(Tk::Semicolon)) {
         body = ParseBlock();
     }
 
-    if (not body) return {};
+    if (sig.attrs.extern_ != not bool(body)) Error(
+        sig.proc_loc,
+        "Procedure that is{} declared '%1(extern)' must{} have a body",
+        sig.attrs.extern_ ? ""sv : " not"sv,
+        sig.attrs.extern_ ? " not"sv : ""sv
+    );
+
     return ParsedProcDecl::Create(
         *this,
         sig.name,
         CreateType(sig),
         param_decls,
-        body.get(),
+        body,
         sig.name.empty() ? sig.proc_loc : sig.tok_after_proc
     );
 }
 
-// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] [ "->" <type> ]
+// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-// <proc-body>  ::= <expr-block> | "=" <expr> ";"
+// <proc-attrs> ::= { "native" | "extern" | "nomangle" }
 // <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 bool Parser::ParseSignature(
     Signature& sig,
@@ -1126,7 +1148,7 @@ bool Parser::ParseSignature(
         Next();
     }
 
-    // Parse signature.
+    // Parse params.
     if (Consume(Tk::LParen) and not Consume(Tk::RParen)) {
         do {
             Ptr<ParsedStmt> type;
@@ -1202,7 +1224,24 @@ bool Parser::ParseSignature(
         if (not Consume(Tk::RParen)) Error("Expected '\033)'");
     }
 
-    // Return Type.
+    // Parse attributes.
+    auto ParseAttr = [&](bool& attr, StringRef value) {
+        if (Location loc; ConsumeContextual(loc, value)) {
+            if (attr) Warn(loc, "Duplicate '%1({})' attribute", value);
+            attr = true;
+            return true;
+        }
+
+        return false;
+    };
+
+    while (
+        ParseAttr(sig.attrs.extern_, "extern") or
+        ParseAttr(sig.attrs.native, "native") or
+        ParseAttr(sig.attrs.nomangle, "nomangle")
+    );
+
+    // Parse return type.
     if (Consume(Tk::RArrow)) sig.ret = ParseType();
     return true;
 }
@@ -1227,9 +1266,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             if (not mod->is_module) {
                 Error(loc, "'%1(export)' is only allowed in modules");
                 Note(stream.begin()->location,
-                    "If you meant to create a module (i.e. a static or shared "
-                    "library\033), use '%1(module)' instead of '%1(program)'"
-                );
+                     "If you meant to create a module (i.e. a static or shared "
+                     "library\033), use '%1(module)' instead of '%1(program)'");
             }
 
             // It’s easier to parse any statement and then disallow
