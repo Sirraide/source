@@ -426,6 +426,18 @@ struct std::formatter<llvm::SmallString<n>> : formatter<std::string_view> {
     }
 };
 
+template <typename Ty>
+struct std::formatter<llvm::ArrayRef<Ty>> : formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(llvm::ArrayRef<Ty> vals, FormatContext& ctx) const {
+        std::string s{"["};
+        for (auto& val : vals) s += std::format("{}, ", val);
+        if (not vals.empty()) s.resize(s.size() - 2);
+        s += "]";
+        return formatter<std::string_view>::format(s, ctx);
+    }
+};
+
 // TODO: Remove once this is part of C++26.
 template <>
 struct std::formatter<std::filesystem::path> : std::formatter<std::string> {

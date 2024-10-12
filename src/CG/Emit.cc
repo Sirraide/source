@@ -10,6 +10,7 @@ module;
 #include <llvm/Support/Program.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
+#include <print>
 #include <srcc/Macros.hh>
 module srcc.codegen;
 import srcc;
@@ -29,7 +30,6 @@ public:
     auto operator->() -> llvm::raw_fd_ostream* { return &stream; }
     operator llvm::raw_fd_ostream&() { return stream; }
 };
-
 
 // Largely copied and adapted from Clang.
 void CodeGen::OptimiseModule(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
@@ -52,7 +52,12 @@ void CodeGen::OptimiseModule(llvm::TargetMachine& machine, TranslationUnit&, llv
     MPM.run(m, MAM);
 }
 
-int CodeGen::EmitModuleOrProgram(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& m) {
+int CodeGen::EmitModuleOrProgram(
+    llvm::TargetMachine& machine,
+    TranslationUnit& tu,
+    llvm::Module& m,
+    ArrayRef<std::string> additional_objects
+) {
     // Create a temporary path for the object file.
     std::string object_file_path = File::TempPath(".o");
 
@@ -100,19 +105,31 @@ int CodeGen::EmitModuleOrProgram(llvm::TargetMachine& machine, TranslationUnit& 
         // we’d have to add files anyway if we’re combining modules into
         // a collection; would it be worth it?).
         OpenFile archive((tu.context().module_path() / out_name).string());
-        auto obj = llvm::NewArchiveMember::getFile(object_file_path, true);
-        Assert(obj, "Failed to read the file we just wrote?");
+
+        // Collect members.
+        SmallVector<llvm::NewArchiveMember> members;
+        auto us = llvm::NewArchiveMember::getFile(object_file_path, true);
+        Assert(us, "Failed to read the file we just wrote?");
+        us->MemberName = tu.name;
+        members.push_back(std::move(*us));
+        for (auto& obj_path : additional_objects) {
+            auto obj = llvm::NewArchiveMember::getFile(obj_path, true);
+            if (auto e = obj.takeError()) Fatal("Failed to read object file '{}': {}", obj_path, utils::FormatError(e));
+            members.push_back(std::move(*obj));
+        }
+
+        // Emit the archive.
         auto err = writeArchiveToStream(
             archive,
-            obj.get(),
+            members,
             llvm::SymtabWritingMode::NormalSymtab,
-            llvm::object::Archive::getDefaultKindForTriple(const_cast<llvm::Triple&>(machine.getTargetTriple())),
+            llvm::object::Archive::getDefaultKindForTriple(machine.getTargetTriple()),
             true,
             false
         );
 
         // Yes, this is truthy on failure for some ungodly reason.
-        if (not err) Fatal("Failed to write archive: {}", utils::FormatError(err));
+        if (err) Fatal("Failed to write archive: {}", utils::FormatError(err));
         return 0;
     }
 
@@ -126,6 +143,7 @@ int CodeGen::EmitModuleOrProgram(llvm::TargetMachine& machine, TranslationUnit& 
 
     SmallVector<StringRef> args_ref;
     for (auto& arg : clang_link_args) args_ref.push_back(arg);
+    for (auto& obj : additional_objects) args_ref.push_back(obj);
 
     // We could run the linker without waiting for it, but that defeats
     // the purpose of making the number of jobs configurable, so block

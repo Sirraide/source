@@ -4,12 +4,12 @@ module;
 #include <bit>
 #include <expected>
 #include <filesystem>
-#include <print>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
 #include <mutex>
+#include <print>
 #include <srcc/Macros.hh>
 #include <string>
 #include <string_view>
@@ -26,6 +26,9 @@ class StreamingDiagnosticsEngine;
 
 template <typename ErrRetTy>
 class DiagsProducer;
+
+template <typename ErrRetTy>
+class DefaultDiagsProducer;
 
 struct Location;
 struct LocInfo;
@@ -201,8 +204,8 @@ public:
 
     Level level;
     Location where;
-    std::string msg; // Main diagnostic message.
-    std::string extra; // Extra data to print after the location.
+    std::string msg;                                               // Main diagnostic message.
+    std::string extra;                                             // Extra data to print after the location.
     SmallVector<std::pair<std::string, Location>> extra_locations; // Extra locations to print.
 
     /// Create a diagnostic.
@@ -262,8 +265,8 @@ public:
     explicit DiagnosticsEngine(const Context& ctx) : ctx(ctx) {}
 
     /// Add additional location information to a diagnostic.
-    template <typename ...Args>
-    void add_extra_location(Location extra, std::format_string<Args...> fmt, Args&& ...args) {
+    template <typename... Args>
+    void add_extra_location(Location extra, std::format_string<Args...> fmt, Args&&... args) {
         add_extra_location_impl(extra, std::format(fmt, std::forward<Args>(args)...));
     }
 
@@ -286,7 +289,7 @@ public:
     }
 
     /// Emit pending diagnostics.
-    virtual void flush() { }
+    virtual void flush() {}
 
     /// Check whether any diagnostics have been issued.
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
@@ -365,10 +368,23 @@ public:
         This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     void Remark(this auto& This, std::format_string<Args...> fmt, Args&&... args) {
         This.diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
+};
+
+/// Diags producer that uses the context’s engine.
+template <typename ErrRetTy = void>
+class srcc::DefaultDiagsProducer : public DiagsProducer<ErrRetTy> {
+public:
+    template <typename... Args>
+    void Diag(this auto& This, Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        This.ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
+    /// Get the diagnostics engine.
+    auto diags(this const auto& This) -> DiagnosticsEngine& { return This.ctx.diags(); }
 };
 
 /// A file in the context.

@@ -1,11 +1,11 @@
 module;
 
+#include <clang/Frontend/ASTUnit.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
-#include <clang/Frontend/ASTUnit.h>
 #include <srcc/Macros.hh>
 
 export module srcc.ast;
@@ -167,6 +167,18 @@ public:
     /// Deserialise a module.
     static auto Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr;
 
+    /// Deserialise a module from an archive.
+    ///
+    /// \return std::nullopt if extracting the module description
+    /// from the file failed. Deserialisation errors are still
+    /// fatal errors!
+    static auto Deserialise(
+        Context& ctx,
+        StringRef module_name,
+        StringRef archive_path,
+        Location err_loc
+    ) -> Opt<Ptr>;
+
     /// Allocate data.
     void* allocate(usz size, usz align) { return allocator().Allocate(size, align); }
 
@@ -196,6 +208,9 @@ public:
 
     /// Dump the contents of the module.
     void dump() const;
+
+    /// Whether this is an imported module.
+    bool imported() const { return initialiser_proc == nullptr; }
 
     /// Get the language options for this module.
     [[nodiscard]] auto lang_opts() const -> const LangOpts& { return language_opts; }

@@ -21,7 +21,9 @@ using options = clopts< // clang-format off
     // General options.
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
     option<"--error-limit", "Limit how many errors are printed; passing 0 removes the limit", std::int64_t>,
-    option<"--module-path", "Path to a directory where compiled modules will be placed (default: '.')">,
+    option<"--mo", "Path to a directory where compiled modules will be placed (default: '.')">,
+    multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
+    multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
 
@@ -53,8 +55,8 @@ void InitSignalHandlers() {
                      ? "\033[1;35mInternal Compiler Error: \033[m\033[1mSegmentation fault\033[m"sv
                      : "Internal Compiler Error: Segmentation fault";
 
-        llvm::errs() << msg;
-        llvm::sys::PrintStackTrace(llvm::errs(), 1);
+        llvm::errs() << msg << "\n";
+        llvm::sys::PrintStackTrace(llvm::errs());
         _Exit(1);
     });
 }
@@ -87,7 +89,17 @@ int main(int argc, char** argv) {
 
     // Create driver.
     Driver driver{{
-        .module_path = opts.get_or<"--module-path">("."),
+        .module_output_path = opts.get_or<"--mo">("."),
+        .module_search_paths = std::vector<std::string>{
+            opts.get<"-M">().begin(),
+            opts.get<"-M">().end(),
+        },
+
+        .link_objects = std::vector<std::string>{
+            opts.get<"--link-object">().begin(),
+            opts.get<"--link-object">().end(),
+        },
+
         .action = action,
         .error_limit = u32(opts.get_or<"--error-limit">(20)),
         .num_threads = u32(opts.get_or<"-j">(std::thread::hardware_concurrency())),

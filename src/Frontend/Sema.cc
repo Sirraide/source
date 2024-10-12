@@ -12,6 +12,7 @@ module srcc.frontend.sema;
 import srcc.utils;
 import srcc.ast;
 import srcc.token;
+import base.fs;
 using namespace srcc;
 
 #define TRY(expression) ({              \
@@ -272,6 +273,63 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
             );
         } break;
     }
+}
+
+// ============================================================================
+//  Modules.
+// ============================================================================
+auto ModuleLoader::LoadModuleFromArchive(
+    StringRef name,
+    Location import_loc
+) -> Opt<ImportHandle> {
+    if (module_search_paths.empty()) {
+        ICE(import_loc, "No module search path");
+        return std::nullopt;
+    }
+
+    // Append extension.
+    std::string filename{name.str()};
+    if (not name.ends_with(".mod")) filename += ".mod";
+
+    // Try to find the module in the search path.
+    base::File::Path path;
+    for (auto& base : module_search_paths) {
+        auto combined = base::File::Path{base} / filename;
+        if (base::File::Exists(combined)) {
+            path = std::move(combined);
+            break;
+        }
+    }
+
+    // Couldn’t find it :(.
+    if (path.empty()) {
+        Error(import_loc, "Could not find module '{}'", name);
+        Remark("Search paths:\n  {}", utils::join(module_search_paths, "\n  "));
+        return std::nullopt;
+    }
+
+    auto tu = TranslationUnit::Deserialise(ctx, name, path.string(), import_loc);
+    if (not tu) return std::nullopt;
+    return ImportHandle(std::move(tu.value()));
+}
+
+auto ModuleLoader::load(
+    String logical_name,
+    String linkage_name,
+    Location import_loc,
+    bool is_cxx_header
+) -> Opt<ImportHandle> {
+    if (auto it = modules.find(linkage_name); it != modules.end())
+        return Opt<ImportHandle>{it->second.copy(logical_name, import_loc)};
+
+    auto h //
+        = is_cxx_header
+            ? ImportCXXHeader(linkage_name, import_loc)
+            : LoadModuleFromArchive(linkage_name, import_loc);
+
+    if (not h) return std::nullopt;
+    auto [it, _] = modules.try_emplace(linkage_name, std::move(h.value()));
+    return it->second.copy(logical_name, import_loc);
 }
 
 // ============================================================================
@@ -1735,7 +1793,16 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     // Unwrap exports.
     if (auto exp = dyn_cast<ParsedExportDecl>(d)) {
         auto decl = TranslateDeclInitial(exp->decl);
-        if (decl and decl->present()) AddDeclToScope(&M->exports, decl->get());
+        if (decl and decl->present()) {
+            AddDeclToScope(&M->exports, decl->get());
+
+            // If this declaration has linkage, adjust it now.
+            if (auto object = dyn_cast<ObjectDecl>(decl->get()))
+                object->linkage //
+                    = object->linkage == Linkage::Imported
+                        ? Linkage::Reexported
+                        : Linkage::Exported;
+        }
         return decl;
     }
 
@@ -1901,16 +1968,28 @@ auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
 auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     EnterScope scope{*this, true};
     SmallVector<TemplateTypeDecl*> ttds;
+
+    // Create the declaration. A top-level procedure is not considered
+    // 'nested' inside the initialiser procedure, which means that this
+    // is only local if the procedure stack contains at least 3 entries
+    // (the initialiser, our parent, and us).
+    auto attrs = parsed->type->attrs;
     auto type = TranslateProcType(parsed->type, &ttds);
     auto proc = ProcDecl::Create(
         *M,
         type,
         parsed->name,
-        Linkage::Internal,
-        Mangling::Source,
-        proc_stack.empty() ? nullptr : proc_stack.back()->proc,
+        attrs.extern_ ? Linkage::Imported : Linkage::Internal,
+        attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
+        proc_stack.size() >= 3 ? proc_stack.back()->proc : nullptr,
         parsed->loc,
         ttds
+    );
+
+    // Diagnose invalid combinations of attributes.
+    if (attrs.native and attrs.nomangle) Error(
+        parsed->loc,
+        "'%1(native)' procedures should not be declared '%1(nomangle)'"
     );
 
     // Add the procedure to the module and the parent scope.
@@ -1922,7 +2001,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 
 /// Dispatch to translate a statement.
 auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
-    switch (parsed->kind()) {  // clang-format off
+    switch (parsed->kind()) { // clang-format off
         using K = ParsedStmt::Kind;
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
@@ -2094,7 +2173,12 @@ auto Sema::TranslateProcType(
         }
     }
 
-    return ProcType::Get(*M, TranslateType(parsed->ret_type), params);
+    return ProcType::Get(
+        *M,
+        TranslateType(parsed->ret_type),
+        params,
+        parsed->attrs.native ? CallingConvention::Native : CallingConvention::Source
+    );
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {

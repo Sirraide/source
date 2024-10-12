@@ -738,7 +738,7 @@ class srcc::ProcDecl final : public ObjectDecl
 
 public:
     /// May be null if this is a top-level procedure.
-    ProcDecl* parent;
+    Ptr<ProcDecl> parent;
 
     /// Scope associated with this procedure, if any.
     Scope* scope = nullptr;
@@ -758,7 +758,7 @@ private:
         String name,
         Linkage linkage,
         Mangling mangling,
-        ProcDecl* parent,
+        Ptr<ProcDecl> parent,
         ArrayRef<TemplateTypeDecl*> template_params,
         Location location
     );
@@ -770,7 +770,7 @@ public:
         String name,
         Linkage linkage,
         Mangling mangling,
-        ProcDecl* parent,
+        Ptr<ProcDecl> parent,
         Location location,
         ArrayRef<TemplateTypeDecl*> template_params = {}
     ) -> ProcDecl*;
@@ -792,7 +792,7 @@ public:
     bool is_template() const { return num_template_params > 0; }
 
     /// Get the parameter declarations.
-    auto params() -> ArrayRef<ParamDecl*> {
+    auto params() const -> ArrayRef<ParamDecl*> {
         auto arr = locals.take_front(param_count());
         return {reinterpret_cast<ParamDecl* const*>(arr.data()), arr.size()};
     }

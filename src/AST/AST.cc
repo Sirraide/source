@@ -83,7 +83,14 @@ void TranslationUnit::dump() const {
     utils::Print(c, "%1({}) %2({})\n", is_module ? "Module" : "Program", name);
 
     // Print content.
-    for (auto s : file_scope_block->stmts()) s->dump(c);
+    if (imported()) {
+        for (auto& list : exports.decls)
+            for (auto d : list.second)
+                d->dump(c);
+    } else {
+        for (auto s : file_scope_block->stmts())
+            s->dump(c);
+    }
 }
 
 // ============================================================================
@@ -278,6 +285,9 @@ void Stmt::Printer::Print(Stmt* e) {
 
             if (p->errored()) print(" errored");
             if (p->instantiated_from) print(" instantiation");
+            if (p->linkage == Linkage::Exported or p->linkage == Linkage::Reexported) print(" exported");
+            if (p->linkage == Linkage::Imported or p->linkage == Linkage::Reexported) print(" imported");
+            if (p->parent) print(" local");
             print("\n");
             if (not print_procedure_bodies) break;
 

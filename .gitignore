@@ -11,7 +11,8 @@
 /srcc-astgen.exe
 
 ## Compiled modules.
-/modules/*.mod
+/modules/*
+!/modules/.gitkeep
 
 ## Valgrind.
 callgrind.out.*

@@ -114,9 +114,10 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     // builtins as well, but those count as ‘library builtins’.
     switch (clang::Builtin::ID(D->getBuiltinID())) {
         // Ignore everything we don’t know what to do with.
-        default: return {};
+        default:
+            return {};
 
-        // Import library builtins only.
+            // Import library builtins only.
 #define BUILTIN(ID, ...)
 #define LIBBUILTIN(ID, ...) case clang::Builtin::BI##ID:
 #include "clang/Basic/Builtins.inc"
@@ -293,29 +294,6 @@ auto ModuleLoader::ImportCXXHeader(StringRef name, Location import_loc) -> Opt<I
     }
 
     return ImportHandle(std::move(AST));
-}
-
-auto ModuleLoader::load(
-    String logical_name,
-    String linkage_name,
-    Location import_loc,
-    bool is_cxx_header
-) -> Opt<ImportHandle> {
-    if (auto it = modules.find(linkage_name); it != modules.end())
-        return Opt<ImportHandle>{it->second.copy(logical_name, import_loc)};
-
-    if (not is_cxx_header) {
-        ICE(
-            import_loc,
-            "Sorry, we currently only support importing C++ headers"
-        );
-        return std::nullopt;
-    }
-
-    auto h = ImportCXXHeader(linkage_name, import_loc);
-    if (not h) return std::nullopt;
-    auto [it, _] = modules.try_emplace(linkage_name, std::move(h.value()));
-    return it->second.copy(logical_name, import_loc);
 }
 
 auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult {

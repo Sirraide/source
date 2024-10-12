@@ -1,9 +1,13 @@
 module;
-
+#include <llvm/Object/Archive.h>
+#include <llvm/Object/ObjectFile.h>
 #include <llvm/Support/Compression.h>
 #include <srcc/Macros.hh>
-
+#include <print>
 module srcc.ast;
+
+import srcc.constants;
+
 using namespace srcc;
 
 // ============================================================================
@@ -65,7 +69,7 @@ Serialiser::Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer)
     SmallVector<char, 0> combined;
     Writer W{buffer};
     W << M.name;
-    W << types_buffer.size();
+    W << type_indices.size();
     W << serialised_decls;
     buffer.append(types_buffer.begin(), types_buffer.end());
     buffer.append(decls_buffer.begin(), decls_buffer.end());
@@ -98,6 +102,7 @@ void Serialiser::SerialiseProcDecl(const ProcDecl* proc) {
     W << SerialiseType(proc->type);
     W << proc->name;
     W << proc->mangling;
+    for (auto& param : proc->params()) SerialiseDecl(param);
 }
 
 void Serialiser::SerialiseTemplateTypeDecl(const TemplateTypeDecl*) {
@@ -109,8 +114,31 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
     auto it = type_indices.find(ty.as_opaque_ptr());
     if (it != type_indices.end()) return it->second;
 
-    // The current index will be the index of this type. Add it
-    // first to support recursion.
+    // First, ensure types that this depends on are serialised.
+    // TODO: For structs, we need to figure out some way to do
+    // recursion (maybe just add a dummy entry first?).
+    switch (ty->kind()) {
+        case TypeBase::Kind::BuiltinType:
+        case TypeBase::Kind::IntType:
+            break;
+
+        case TypeBase::Kind::TemplateType:
+            Todo();
+
+        case TypeBase::Kind::SliceType:
+        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::ArrayType:
+            SerialiseType(cast<SingleElementTypeBase>(ty)->elem());
+            break;
+
+        case TypeBase::Kind::ProcType: {
+            auto proc = cast<ProcType>(ty);
+            SerialiseType(proc->ret());
+            for (const auto& p : proc->params()) SerialiseType(p.type);
+        } break;
+    }
+
+    // The current index will be the index of this type.
     auto idx = u64(type_indices.size());
     type_indices[ty.as_opaque_ptr()] = idx;
 
@@ -157,13 +185,13 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
         }
     }
 
-    Unreachable("Invalid type kind");
+    Unreachable("Invalid type kind: {}", ty);
 }
 
 // ============================================================================
 //  Deserialiser
 // ============================================================================
-struct Deserialiser {
+struct Deserialiser : DefaultDiagsProducer<> {
     Context& ctx;
     TranslationUnit::Ptr M;
     ArrayRef<char> data;
@@ -187,7 +215,7 @@ struct Deserialiser {
 
     auto ReadString() -> String {
         SmallString<256> buf;
-        u64 size = Read<u64>();
+        u64 size = ReadInt();
         buf.resize(size);
         std::memcpy(buf.data(), data.data(), size);
         data = data.drop_front(size);
@@ -197,48 +225,141 @@ struct Deserialiser {
     template <typename Ty = TypeBase>
     auto ReadType() -> Ty* {
         u64 idx = ReadInt();
+        Assert(idx < deserialised_types.size(), "Type index out of bounds");
         return cast<Ty>(deserialised_types[idx].ptr());
     }
 
-    Deserialiser(Context& ctx, ArrayRef<char> data)
+    Deserialiser(Context& ctx, ArrayRef<char> data = {})
         : ctx{ctx},
           M{TranslationUnit::CreateEmpty(ctx, LangOpts{})}, // FIXME: Serialise and deserialise lang opts.
           data{data} {}
 
+    auto DeserialiseFromArchive(StringRef name, StringRef path, Location import_loc) -> Opt<TranslationUnit::Ptr>;
     auto Deserialise() -> TranslationUnit::Ptr;
-    void DeserialiseDecl();
-    void DeserialiseLocalDecl();
-    void DeserialiseParamDecl();
-    void DeserialiseProcDecl();
-    void DeserialiseTemplateTypeDecl();
+    auto DeserialiseDecl() -> Decl*;
+    auto DeserialiseLocalDecl() -> Decl*;
+    auto DeserialiseParamDecl() -> Decl*;
+    auto DeserialiseProcDecl() -> Decl*;
+    auto DeserialiseTemplateTypeDecl() -> Decl*;
     void DeserialiseType();
 };
 
 auto Deserialiser::Deserialise() -> TranslationUnit::Ptr {
     M->name = ReadString();
-    u64 serialised_decls = ReadInt();
     u64 serialised_types = ReadInt();
+    u64 serialised_decls = ReadInt();
     for (u64 i = 0; i < serialised_types; i++) DeserialiseType();
-    for (u64 i = 0; i < serialised_decls; i++) DeserialiseDecl();
+    for (u64 i = 0; i < serialised_decls; i++) {
+        auto decl = DeserialiseDecl();
+        M->exports.decls[decl->name].push_back(decl);
+    }
     return std::move(M);
 }
 
-void Deserialiser::DeserialiseDecl() {
+auto Deserialiser::DeserialiseFromArchive(
+    StringRef name,
+    StringRef path,
+    Location import_loc
+) -> Opt<TranslationUnit::Ptr> {
+    auto Err = [&]<typename... Args>(std::string message) -> std::nullopt_t {
+        Error(
+            import_loc,
+            "Error reading module '{}' ({}\033): {}",
+            name,
+            path,
+            message
+        );
+
+        return std::nullopt;
+    };
+
+    // Load the archive.
+    auto file = llvm::MemoryBuffer::getFile(path);
+    if (not file) return Err(file.getError().message());
+
+    // Parse it.
+    auto archive = llvm::object::Archive::create(*file.get());
+    if (auto e = archive.takeError()) return Err(toString(std::move(e)));
+
+    // Iterate through all the children (which should be
+    // object files) to find the one with the same name
+    // as the module we’re looking for.
+    auto e = llvm::Error::success();
+    std::unique_ptr<llvm::object::Binary> bin;
+    for (auto& ch : archive.get()->children(e)) {
+        auto child_name = ch.getName();
+        if (not child_name) Err(utils::FormatError(e));
+
+        // Found our module!
+        if (child_name.get() == name) {
+            auto expected_bin = ch.getAsBinary();
+            if (auto err = expected_bin.takeError()) return Err(toString(std::move(err)));
+            bin = std::move(expected_bin.get());
+            break;
+        }
+    }
+
+    // Check that we actually found something.
+    if (e) return Err(toString(std::move(e)));
+    if (not bin) {
+        Error(import_loc, "Module file '{}' is malformed: '{}' not found.", path, name);
+        return std::nullopt;
+    }
+
+    // Check that this isn’t random garbage.
+    auto obj = dyn_cast<llvm::object::ObjectFile>(bin.get());
+    if (not obj) {
+        Error(
+            import_loc,
+            "Module file '{}' is malformed. Entry for module "
+            "'{}' is not a valid object file",
+            path,
+            name
+        );
+
+        return std::nullopt;
+    }
+
+    // Find the section that contains the module data.
+    auto sname = constants::ModuleDescriptionSectionName(name);
+    for (auto& s : obj->sections()) {
+        auto n = s.getName();
+        if (auto err = n.takeError()) return Err(toString(std::move(err)));
+        if (n.get() == sname) {
+            auto contents = s.getContents();
+            if (auto err = contents.takeError()) return Err(toString(std::move(err)));
+            data = ArrayRef{contents.get().data(), contents.get().size()};
+            return Deserialise();
+        }
+    }
+
+    // We couldn’t find the module data.
+    Error(
+        import_loc,
+        "Module file '{}' is malformed. Module description for '{}' is missing",
+        path,
+        name
+    );
+
+    return std::nullopt;
+}
+
+auto Deserialiser::DeserialiseDecl() -> Decl* {
     switch (Read<Stmt::Kind>()) { // clang-format off
         using K = Stmt::Kind;
 #       define AST_STMT_LEAF(node) case K::node: Unreachable("Not a declaration!");
-#       define AST_DECL_LEAF(node) case K::node: SRCC_CAT(Deserialise, node)(); return;
+#       define AST_DECL_LEAF(node) case K::node: return SRCC_CAT(Deserialise, node)();
 #       include "srcc/AST.inc"
     } // clang-format on
 
     Unreachable("Invalid statement kind");
 }
 
-void Deserialiser::DeserialiseLocalDecl() {
+auto Deserialiser::DeserialiseLocalDecl() -> Decl* {
     Todo();
 }
 
-void Deserialiser::DeserialiseProcDecl() {
+auto Deserialiser::DeserialiseProcDecl() -> Decl* {
     auto ty = ReadType<ProcType>();
     auto name = ReadString();
     auto mangling = Read<Mangling>();
@@ -252,20 +373,24 @@ void Deserialiser::DeserialiseProcDecl() {
         {}
     );
 
-    Todo("Serialise and deserialise param decls");
-    M->exports.decls[name].push_back(proc);
+    SmallVector<LocalDecl*> params;
+    for (usz i = 0; i < proc->param_count(); i++)
+        params.push_back(cast<LocalDecl>(DeserialiseDecl()));
+    proc->finalise({}, params);
+    return proc;
 }
 
-void Deserialiser::DeserialiseParamDecl() {
+auto Deserialiser::DeserialiseParamDecl() -> Decl* {
     Todo();
 }
 
-void Deserialiser::DeserialiseTemplateTypeDecl() {
+auto Deserialiser::DeserialiseTemplateTypeDecl() -> Decl* {
     Todo();
 }
 
 void Deserialiser::DeserialiseType() {
-    switch (Read<TypeBase::Kind>()) {
+    auto k = Read<TypeBase::Kind>();
+    switch (k) {
         case TypeBase::Kind::SliceType:
             deserialised_types.push_back(SliceType::Get(*M, ReadType()));
             return;
@@ -317,7 +442,7 @@ void Deserialiser::DeserialiseType() {
         }
     }
 
-    Unreachable("Invalid type kind");
+    Unreachable("Invalid type kind: {}", +k);
 }
 
 // ============================================================================
@@ -329,4 +454,13 @@ void TranslationUnit::serialise(SmallVectorImpl<char>& buffer) const {
 
 auto TranslationUnit::Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr {
     return Deserialiser(ctx, data).Deserialise();
+}
+
+auto TranslationUnit::Deserialise(
+    Context& ctx,
+    StringRef name,
+    StringRef path,
+    Location import_loc
+) -> Opt<Ptr> {
+    return Deserialiser(ctx).DeserialiseFromArchive(name, path, import_loc);
 }

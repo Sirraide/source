@@ -20,5 +20,5 @@ auto srcc::constants::EntryPointName(StringRef ModuleName) -> std::string {
 }
 
 auto srcc::constants::ModuleDescriptionSectionName(StringRef ModuleName) -> std::string {
-    return std::format("{}", ModuleSectionNamePrefix.sv(), ModuleName);
+    return std::format("{}{}", ModuleSectionNamePrefix.sv(), ModuleName);
 }

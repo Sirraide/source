@@ -45,7 +45,13 @@ class srcc::Driver {
 public:
     struct Options {
         /// The path to a directory where modules should be stored.
-        std::string module_path;
+        std::string module_output_path;
+
+        /// Directories to search for modules.
+        std::vector<std::string> module_search_paths;
+
+        /// Additional objects to link in.
+        std::vector<std::string> link_objects;
 
         /// The action to perform.
         Action action;

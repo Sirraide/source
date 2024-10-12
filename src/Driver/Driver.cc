@@ -97,7 +97,7 @@ int Driver::Impl::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
     auto a = opts.action;
-    ctx._initialise_context_(opts.module_path, opts.opt_level);
+    ctx._initialise_context_(opts.module_output_path, opts.opt_level);
 
     // Always create a regular diags engine first for driver diags.
     ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
@@ -159,9 +159,17 @@ int Driver::Impl::run_job() {
     if (a == Action::DumpModule) {
         llvm::BumpPtrAllocator alloc;
         llvm::StringSaver saver{alloc};
-        ModuleLoader loader{ctx};
-        auto hdr = loader.load("module", String::Save(saver, files.front().string()), Location(), true);
-        Todo("Dump module");
+        ModuleLoader loader{ctx, opts.module_search_paths};
+        auto mod = loader.load(
+            "module",
+            String::Save(saver, files.front().string()),
+            Location(),
+            files.front().string().starts_with("<")
+        );
+
+        if (not mod) return 1;
+        if (auto tu = mod.value().dyn_cast<TranslationUnit*>()) tu->dump();
+        else Todo();
         return 0;
     }
 
@@ -231,7 +239,7 @@ int Driver::Impl::run_job() {
     if (ctx.diags().has_error()) return 1;
 
     // Load all imported modules we need.
-    ModuleLoader loader{ctx};
+    ModuleLoader loader{ctx, opts.module_search_paths};
     StringMap<ImportHandle> imported;
     for (auto& m : parsed_modules) {
         for (auto& i : m->imports) {
@@ -246,6 +254,11 @@ int Driver::Impl::run_job() {
 
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
+    // TODO: Maybe dispatch to multiple processes? It would simplify things if
+    // a single compiler invocation only had to deal with 1 TU, and ~~loading
+    // module descriptions multiple times might not be a bottleneck (but C++
+    // headers probably would be...).~~ Irrelevant. We need to import them into
+    // the module that uses them anyway.
     auto module = Sema::Translate(lang_opts, parsed_modules, std::move(imported));
     if (a == Action::Sema) {
         ctx.diags().flush();
@@ -279,7 +292,7 @@ int Driver::Impl::run_job() {
         return 0;
     }
 
-    return CodeGen::EmitModuleOrProgram(*machine, *module, *ir_module);;
+    return CodeGen::EmitModuleOrProgram(*machine, *module, *ir_module, opts.link_objects);
 }
 
 auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {

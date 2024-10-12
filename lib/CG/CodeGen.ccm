@@ -50,7 +50,12 @@ public:
         return std::move(CG.llvm);
     }
 
-    static int EmitModuleOrProgram(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
+    static int EmitModuleOrProgram(
+        llvm::TargetMachine& machine,
+        TranslationUnit& tu,
+        llvm::Module& compiled,
+        ArrayRef<std::string> additional_objects
+    );
 
     static void OptimiseModule(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
 

@@ -196,7 +196,7 @@ ProcDecl::ProcDecl(
     String name,
     Linkage linkage,
     Mangling mangling,
-    ProcDecl* parent,
+    Ptr<ProcDecl> parent,
     ArrayRef<TemplateTypeDecl*> template_params,
     Location location
 ) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
@@ -217,7 +217,7 @@ auto ProcDecl::Create(
     String name,
     Linkage linkage,
     Mangling mangling,
-    ProcDecl* parent,
+    Ptr<ProcDecl> parent,
     Location location,
     ArrayRef<TemplateTypeDecl*> template_params
 ) -> ProcDecl* {

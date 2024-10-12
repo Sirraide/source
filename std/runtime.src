@@ -7,5 +7,4 @@ proc __src_main() extern nomangle;
 /// FIXME: Use FFI types.
 export proc __src_runtime_entry() native {
     __src_main();
-    return 0;
 }

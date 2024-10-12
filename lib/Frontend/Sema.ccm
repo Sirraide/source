@@ -25,17 +25,15 @@ class TemplateInstantiator;
 
 /// Structure that is used to collect imports for a compilation job; the
 /// loader does *not* own any modules; they are refcounted instead.
-class srcc::ModuleLoader : DiagsProducer<> {
+class srcc::ModuleLoader : public DefaultDiagsProducer<> {
+    friend DefaultDiagsProducer;
     Context& ctx;
     StringMap<ImportHandle> modules;
+    SmallVector<std::string> module_search_paths;
 
 public:
-    ModuleLoader(Context& ctx) : ctx{ctx} {}
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
+    ModuleLoader(Context& ctx, ArrayRef<std::string> module_search_paths)
+        : ctx{ctx}, module_search_paths{module_search_paths.begin(), module_search_paths.end()} {}
 
     /// Load a C++ header from the system include path.
     ///
@@ -56,6 +54,7 @@ public:
 
 private:
     auto ImportCXXHeader(StringRef name, Location import_loc) -> Opt<ImportHandle>;
+    auto LoadModuleFromArchive(StringRef name, Location import_loc) -> Opt<ImportHandle>;
 };
 
 class srcc::Sema : DiagsProducer<std::nullptr_t> {
