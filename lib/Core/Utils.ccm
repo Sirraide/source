@@ -346,7 +346,30 @@ using SmallUnrenderedString = SmallString<128>;
 // ambiguity between the two so we can just write e.g. 'utils::Escape'.
 export namespace base::utils {
 /// Escape non-printable characters in a string.
-auto Escape(llvm::StringRef str) -> std::string;
+auto Escape(llvm::StringRef str, bool escape_quotes = false) -> std::string;
+
+/// Escape elements in a range that need escaping.
+template <typename Range>
+auto escaped(Range&& r, bool escape_quotes) {
+    return vws::transform(std::forward<Range>(r), [&, escape_quotes](auto&& el) {
+        return Escape(el, escape_quotes);
+    });
+}
+
+/// Surround each element of a range with quotes.
+template <typename Range>
+auto quoted(Range&& r, bool quote_always = false) {
+    return vws::transform(std::forward<Range>(r), [&, quote_always](auto&& el) {
+        if (el.contains('\"') or quote_always) return std::format("\"{}\"", el);
+        return std::forward<decltype(el)>(el);
+    });
+}
+
+/// Escape and quote elements in a range.
+template <typename Range>
+auto quote_escaped(Range&& r, bool quote_always = false) {
+    return quoted(escaped(std::forward<Range>(r), true), quote_always);
+}
 
 /// Format string that also stores the source location of the caller.
 template <typename... Args>
@@ -369,7 +392,7 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 auto FormatError(llvm::Error& e) -> std::string {
     std::string text;
     llvm::handleAllErrors(std::move(e), [&](const llvm::ErrorInfoBase& e) {
-        if (not text.empty()) text+= "; ";
+        if (not text.empty()) text += "; ";
         text += e.message();
     });
     return text;
@@ -386,7 +409,7 @@ auto FormatError(llvm::Error& e) -> std::string {
 [[nodiscard]] auto NumberWidth(usz number, usz base = 10) -> usz;
 
 /// Print (coloured) text.
-template <typename ...Args>
+template <typename... Args>
 void Print(bool use_colours, std::format_string<Args...> fmt, Args&&... args) {
     auto s = std::format(fmt, std::forward<Args>(args)...);
     auto r = text::RenderColours(use_colours, s);
@@ -450,7 +473,7 @@ struct std::formatter<std::filesystem::path> : std::formatter<std::string> {
 module :private;
 using namespace srcc;
 
-auto base::utils::Escape(StringRef str) -> std::string {
+auto base::utils::Escape(StringRef str, bool escape_quotes) -> std::string {
     std::string s;
     for (auto c : str) {
         switch (c) {
@@ -463,6 +486,10 @@ auto base::utils::Escape(StringRef str) -> std::string {
             case '\b': s += "\\b"; break;
             case '\\': s += "\\\\"; break;
             case '\0': s += "\\0"; break;
+            case '"':
+                if (escape_quotes) s += "\\\"";
+                else s += c;
+                break;
             default:
                 if (llvm::isPrint(c)) s += c;
                 else s += std::format("\\x{:02x}", static_cast<u8>(c));

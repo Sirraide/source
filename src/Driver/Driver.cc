@@ -238,9 +238,22 @@ int Driver::Impl::run_job() {
     // Stop if there was an error.
     if (ctx.diags().has_error()) return 1;
 
-    // Load all imported modules we need.
+    // Load the runtime.
     ModuleLoader loader{ctx, opts.module_search_paths};
     StringMap<ImportHandle> imported;
+    {
+        auto rt = loader.load(
+            "__src_runtime",
+            "__src_runtime",
+            parsed_modules.front()->program_or_module_loc,
+            false
+        );
+
+        if (not rt) return 1;
+        imported.try_emplace("__src_runtime", std::move(rt.value()));
+    }
+
+    // And all imported modules we need.
     for (auto& m : parsed_modules) {
         for (auto& i : m->imports) {
             auto h = loader.load(i.import_name, i.linkage_name, i.loc, i.linkage_name.starts_with('<'));
@@ -259,11 +272,11 @@ int Driver::Impl::run_job() {
     // module descriptions multiple times might not be a bottleneck (but C++
     // headers probably would be...).~~ Irrelevant. We need to import them into
     // the module that uses them anyway.
-    auto module = Sema::Translate(lang_opts, parsed_modules, std::move(imported));
+    auto tu = Sema::Translate(lang_opts, parsed_modules, std::move(imported));
     if (a == Action::Sema) {
         ctx.diags().flush();
         if (opts.verify) return Verify();
-        if (opts.print_ast) module->dump();
+        if (opts.print_ast) tu->dump();
         return ctx.diags().has_error();
     }
 
@@ -271,9 +284,14 @@ int Driver::Impl::run_job() {
     if (a == Action::Eval) {
         // TODO: Static initialisation.
         if (ctx.diags().has_error()) return 1;
-        auto res = eval::Evaluate(*module, module->file_scope_block);
+        auto res = eval::Evaluate(*tu, tu->file_scope_block);
         return res.has_value() ? 0 : 1;
     }
+
+    // A module’s file name is kind of important, so don’t allow changing it.
+    if (tu->is_module and not opts.output_file_name.empty()) return Error(
+        "The '-o' option can only be used with programs, not modules"
+    );
 
     // Create a machine for this target.
     auto machine = ctx.create_target_machine();
@@ -281,10 +299,10 @@ int Driver::Impl::run_job() {
     // Don’t try and codegen if there was an error.
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
-    auto ir_module = CodeGen::Emit(*machine, *module);
+    auto ir_module = CodeGen::Emit(*machine, *tu);
 
     // Run the optimiser before potentially dumping the module.
-    if (opts.opt_level) CodeGen::OptimiseModule(*machine, *module, *ir_module);
+    if (opts.opt_level) CodeGen::OptimiseModule(*machine, *tu, *ir_module);
 
     // Emit LLVM IR, if requested.
     if (a == Action::EmitLLVM) {
@@ -292,7 +310,13 @@ int Driver::Impl::run_job() {
         return 0;
     }
 
-    return CodeGen::EmitModuleOrProgram(*machine, *module, *ir_module, opts.link_objects);
+    return CodeGen::EmitModuleOrProgram(
+        *machine,
+        *tu,
+        *ir_module,
+        opts.link_objects,
+        opts.output_file_name
+    );
 }
 
 auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {

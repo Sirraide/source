@@ -22,6 +22,7 @@ using options = clopts< // clang-format off
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
     option<"--error-limit", "Limit how many errors are printed; passing 0 removes the limit", std::int64_t>,
     option<"--mo", "Path to a directory where compiled modules will be placed (default: '.')">,
+    option<"-o", "Override the default output file name">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
@@ -37,6 +38,7 @@ using options = clopts< // clang-format off
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--llvm", "Emit LLVM IR">,
+    flag<"--noruntime", "Do not automatically import the runtime module">,
 
     // Features.
     // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
@@ -72,6 +74,7 @@ int main(int argc, char** argv) {
                     : colour_opt == "always" ? true
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
+
 #ifdef __linux__
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
     InitSignalHandlers();
@@ -87,13 +90,19 @@ int main(int argc, char** argv) {
                 : opts.get<"--tokens">()      ? Action::DumpTokens
                                               : Action::Compile;
 
+    // Collect module search paths.
+    std::vector<std::string> module_search_paths{
+        opts.get<"-M">().begin(),
+        opts.get<"-M">().end(),
+    };
+
+    module_search_paths.push_back(SOURCE_PROJECT_DIR_NAME "/modules");
+
     // Create driver.
     Driver driver{{
         .module_output_path = opts.get_or<"--mo">("."),
-        .module_search_paths = std::vector<std::string>{
-            opts.get<"-M">().begin(),
-            opts.get<"-M">().end(),
-        },
+        .output_file_name = opts.get_or<"-o">(""),
+        .module_search_paths = std::move(module_search_paths),
 
         .link_objects = std::vector<std::string>{
             opts.get<"--link-object">().begin(),
@@ -108,6 +117,7 @@ int main(int argc, char** argv) {
         .verify = opts.get<"--verify">(),
         .colours = use_colour,
         .overflow_checking = not opts.get<"-fno-overflow-checks">(),
+        .import_runtime = not opts.get<"--noruntime">()
     }};
 
     // Add files.

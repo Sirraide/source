@@ -47,6 +47,9 @@ public:
         /// The path to a directory where modules should be stored.
         std::string module_output_path;
 
+        /// Output file name override. Only valid for programs.
+        std::string output_file_name;
+
         /// Directories to search for modules.
         std::vector<std::string> module_search_paths;
 
@@ -79,6 +82,9 @@ public:
 
         /// Whether to perform overflow checking.
         bool overflow_checking : 1;
+
+        /// Whether to implicitly import the runtime module.
+        bool import_runtime : 1;
     };
 
     /// Create a new driver.

@@ -10,10 +10,13 @@ import srcc.constants;
 
 using namespace srcc;
 
+using Serialiser = srcc::TranslationUnit::Serialiser;
+using Deserialiser = srcc::TranslationUnit::Deserialiser;
+
 // ============================================================================
 //  Serialiser
 // ============================================================================
-struct Serialiser {
+struct srcc::TranslationUnit::Serialiser {
     const TranslationUnit& M;
     SmallVectorImpl<char>& buffer;
     SmallVector<char, 0> types_buffer{};
@@ -191,7 +194,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
 // ============================================================================
 //  Deserialiser
 // ============================================================================
-struct Deserialiser : DefaultDiagsProducer<> {
+struct srcc::TranslationUnit::Deserialiser : DefaultDiagsProducer<> {
     Context& ctx;
     TranslationUnit::Ptr M;
     ArrayRef<char> data;
@@ -274,6 +277,7 @@ auto Deserialiser::DeserialiseFromArchive(
     };
 
     // Load the archive.
+    M->import_path = M->save(path);
     auto file = llvm::MemoryBuffer::getFile(path);
     if (not file) return Err(file.getError().message());
 

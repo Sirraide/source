@@ -69,6 +69,8 @@ class srcc::TranslationUnit {
     SRCC_IMMOVABLE(TranslationUnit);
 
 public:
+    struct Serialiser;
+    struct Deserialiser;
     using Ptr = std::unique_ptr<TranslationUnit>;
 
 private:
@@ -100,6 +102,9 @@ private:
 
     /// Used to store evaluated constant expressions.
     SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
+
+    /// If this was imported, the path to the module file.
+    String import_path;
 
     explicit TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module);
 
@@ -214,6 +219,9 @@ public:
 
     /// Get the language options for this module.
     [[nodiscard]] auto lang_opts() const -> const LangOpts& { return language_opts; }
+
+    /// The path to the file that needs to be linked against when importing this module.
+    auto link_path() const -> String { return import_path; }
 
     /// Save a string in the module.
     auto save(StringRef s) -> String { return String::Save(saver, s); }

@@ -56,7 +56,8 @@ int CodeGen::EmitModuleOrProgram(
     llvm::TargetMachine& machine,
     TranslationUnit& tu,
     llvm::Module& m,
-    ArrayRef<std::string> additional_objects
+    ArrayRef<std::string> additional_objects,
+    StringRef program_file_name_override
 ) {
     // Create a temporary path for the object file.
     std::string object_file_path = File::TempPath(".o");
@@ -94,8 +95,12 @@ int CodeGen::EmitModuleOrProgram(
     // use '.mod' instead of e.g. '.a' because linking against a module
     // isn’t enough to make it usable: you also have to run the module
     // initialiser.
+    //
+    // For programs, we also allow overriding this with a user-defined
+    // output file name.
     std::string out_name{tu.name.sv()};
     if (tu.is_module) out_name = std::format("{}.mod", out_name);
+    else if (not program_file_name_override.empty()) out_name = program_file_name_override;
     else if (machine.getTargetTriple().isOSWindows()) out_name += ".exe";
 
     // If we’re compiling a module, create a static archive.
@@ -144,10 +149,18 @@ int CodeGen::EmitModuleOrProgram(
     SmallVector<StringRef> args_ref;
     for (auto& arg : clang_link_args) args_ref.push_back(arg);
     for (auto& obj : additional_objects) args_ref.push_back(obj);
+    for (auto& import : tu.imports)
+        if (auto src_mod = import.second.dyn_cast<TranslationUnit*>())
+            args_ref.push_back(src_mod->link_path());
 
     // We could run the linker without waiting for it, but that defeats
     // the purpose of making the number of jobs configurable, so block
     // until it’s done.
-    return llvm::sys::ExecuteAndWait(SOURCE_CLANG_EXE, args_ref);
+    int code = llvm::sys::ExecuteAndWait(SOURCE_CLANG_EXE, args_ref);
+    if (code != 0) std::println(
+        "Linker invocation: {}",
+        utils::join(utils::quote_escaped(args_ref), " ")
+    );
+    return code;
 }
 

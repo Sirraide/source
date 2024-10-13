@@ -54,7 +54,8 @@ public:
         llvm::TargetMachine& machine,
         TranslationUnit& tu,
         llvm::Module& compiled,
-        ArrayRef<std::string> additional_objects
+        ArrayRef<std::string> additional_objects,
+        StringRef program_file_name_override = ""
     );
 
     static void OptimiseModule(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
