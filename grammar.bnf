@@ -26,7 +26,10 @@
 <stmts> ::= { <stmt> [ ";" ] | <decl> }
 <stmt>  ::= <expr>
           | <decl>
+          | <stmt-while>
           | EVAL <stmt>
+
+<stmt-while> ::= WHILE <expr> [ DO ] <stmt>
 
 // ============================================================================
 //  Expressions

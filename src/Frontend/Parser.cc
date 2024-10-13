@@ -13,6 +13,10 @@ import srcc.ast.printer;
 import base.colours;
 using namespace srcc;
 
+#define TRY(x, ...)     ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })
+#define TryParseExpr(...) TRY(ParseExpr() __VA_OPT__(,) __VA_ARGS__)
+#define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(,) __VA_ARGS__)
+
 // ============================================================================
 //  Parse Tree
 // ============================================================================
@@ -329,6 +333,13 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "UnaryExpr", false);
             print("%1({})\n", u.op);
             PrintChildren(u.arg);
+        } break;
+
+        case Kind::WhileStmt: {
+            auto& w = *cast<ParsedWhileStmt>(s);
+            PrintHeader(s, "WhileStmt");
+            SmallVector<ParsedStmt*, 2> children{w.cond, w.body};
+            PrintChildren(children);
         } break;
     }
 }
@@ -709,25 +720,23 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::PlusPlus: {
             auto op = tok->type;
             auto start = Next();
-            auto arg = ParseExpr(PrefixPrecedence);
-            if (not arg) return {};
-            lhs = new (*this) ParsedUnaryExpr{op, arg.get(), false, {start, arg.get()->loc}};
+            auto arg = TRY(ParseExpr(PrefixPrecedence));
+            lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
         } break;
 
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
         case Tk::Assert: {
             auto start = Next();
-            auto cond = ParseExpr();
-            if (not cond) return {};
+            auto cond = TryParseExpr();
 
             // Message is optional.
             Ptr<ParsedStmt> message;
             if (Consume(Tk::Comma)) message = ParseExpr();
 
             lhs = new (*this) ParsedAssertExpr{
-                cond.get(),
+                cond,
                 message,
-                {start, message ? message.get()->loc : cond.get()->loc},
+                {start, message ? message.get()->loc : cond->loc},
             };
         } break;
 
@@ -739,9 +748,8 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         // <expr-eval> ::= EVAL <expr>
         case Tk::Eval: {
             auto start = Next();
-            auto arg = ParseExpr();
-            if (not arg) return {};
-            lhs = new (*this) ParsedEvalExpr{arg.get(), {start, arg.get()->loc}};
+            auto arg = TryParseExpr();
+            lhs = new (*this) ParsedEvalExpr{arg, {start, arg->loc}};
         } break;
 
         case Tk::If:
@@ -776,11 +784,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             auto loc = Next();
 
             Ptr<ParsedStmt> value;
-            if (AtStartOfExpression()) {
-                value = ParseExpr();
-                if (not value) return {};
-            }
-
+            if (AtStartOfExpression()) value = TryParseExpr();
             if (value.present()) loc = {loc, value.get()->loc};
             lhs = new (*this) ParsedReturnExpr{value, loc};
         } break;
@@ -864,11 +868,15 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             // <expr=subscript> ::= <expr> "[" <expr> "]"
             case Tk::LBrack: {
                 Next();
-                auto index = ParseExpr();
-                if (not index) return {};
+                auto index = TryParseExpr();
                 auto end = tok->location;
                 ConsumeOrError(Tk::RBrack);
-                lhs = new (*this) ParsedBinaryExpr{Tk::LBrack, lhs.get(), index.get(), {lhs.get()->loc, end}};
+                lhs = new (*this) ParsedBinaryExpr{
+                    Tk::LBrack,
+                    lhs.get(),
+                    index,
+                    {lhs.get()->loc, end}
+                };
                 continue;
             }
 
@@ -934,11 +942,7 @@ auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
     auto loc = Next();
 
     // Condition.
-    auto cond = ParseExpr();
-    if (not cond) {
-        SkipTo(Tk::Semicolon);
-        return {};
-    }
+    auto cond = TryParseExpr(SkipTo(Tk::Semicolon));
 
     // Check for unnecessary parens around the condition, which is
     // common in other languages.
@@ -949,20 +953,14 @@ auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
     // e.g. 'if (x) (3)' and 'if (x) ++y', we would actually end up with
     // '(x)(3)' (a call) and '(x)++' (a unary expression) as the condition,
     // neither of which is a ParenExpr.
-    if (isa<ParsedParenExpr>(cond.get())) Warn(
-        cond.get()->loc,
+    if (isa<ParsedParenExpr>(cond)) Warn(
+        cond->loc,
         "Unnecessary parentheses around '%1(if)' condition"
     );
 
     // 'then' is optional.
     Consume(Tk::Then);
-    Ptr<ParsedStmt> body = ParseStmt();
-
-    // Bail if we don’t have a body.
-    if (not body) {
-        SkipTo(Tk::Semicolon);
-        return {};
-    }
+    auto body = TryParseStmt(SkipTo(Tk::Semicolon));
 
     // Disallow semicolons here.
     //
@@ -989,10 +987,10 @@ auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
                : Consume(Tk::Else) ? ParseStmt()
                                    : nullptr;
     return new (*this) ParsedIfExpr{
-        cond.get(),
-        body.get(),
+        cond,
+        body,
         else_,
-        {loc, else_ ? else_.get()->loc : body.get()->loc}
+        {loc, else_ ? else_.get()->loc : body->loc}
     };
 }
 
@@ -1248,15 +1246,15 @@ bool Parser::ParseSignature(
 
 // <stmt>  ::= <expr>
 //           | <decl>
+//           | <stmt-while>
 //           | EVAL <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
         case Tk::Eval: {
             Next();
-            auto arg = ParseStmt();
-            if (not arg) return {};
-            return new (*this) ParsedEvalExpr{arg.get(), loc};
+            auto arg = TryParseStmt();
+            return new (*this) ParsedEvalExpr{arg, loc};
         }
 
         case Tk::Export: {
@@ -1272,10 +1270,9 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
             // It’s easier to parse any statement and then disallow
             // if we parsed something that doesn’t belong here.
-            auto arg = ParseStmt();
-            if (not arg) return {};
-            auto decl = dyn_cast<ParsedDecl>(arg.get());
-            if (not decl) return Error(arg.get()->loc, "Only declarations can be exported");
+            auto arg = TryParseStmt();
+            auto decl = dyn_cast<ParsedDecl>(arg);
+            if (not decl) return Error(arg->loc, "Only declarations can be exported");
 
             // Avoid forcing Sema to deal with unwrapping nested
             // export declarations.
@@ -1286,13 +1283,17 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedExportDecl{decl, loc};
         }
 
-        case Tk::Proc: return ParseProcDecl();
-
-        default: {
-            auto e = ParseExpr();
-            if (not e) SkipTo(Tk::Semicolon);
-            return e;
+        // <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
+        case Tk::While: {
+            Next();
+            auto cond = TryParseExpr(SkipTo(Tk::Semicolon));
+            Consume(Tk::Do);
+            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+            return new (*this) ParsedWhileStmt{cond, body, loc};
         }
+
+        case Tk::Proc: return ParseProcDecl();
+        default: return TryParseExpr(SkipTo(Tk::Semicolon));
     }
 }
 

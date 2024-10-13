@@ -2028,6 +2028,10 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
+auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed)-> Ptr<Expr> {
+    Todo();
+}
+
 // ============================================================================
 //  Translation of Types
 // ============================================================================

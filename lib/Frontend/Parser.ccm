@@ -444,6 +444,19 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::UnaryExpr; }
 };
 
+class srcc::ParsedWhileStmt final : public ParsedStmt {
+public:
+    ParsedStmt* cond;
+    ParsedStmt* body;
+
+    ParsedWhileStmt(
+        ParsedStmt* cond,
+        ParsedStmt* body,
+        Location location
+    ) : ParsedStmt{Kind::WhileStmt, location}, cond{cond}, body{body} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::WhileStmt; }
+};
 // ============================================================================
 //  Declarations
 // ============================================================================
