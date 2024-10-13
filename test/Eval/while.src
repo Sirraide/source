@@ -1,0 +1,10 @@
+// V %srcc --eval %s
+program test;
+
+proc f(int i, int j) -> int {
+    while i < j do i = i + 1;
+    return i;
+}
+
+assert f(0, 10) == 10;
+assert f(10, 20) == 20;

@@ -54,6 +54,9 @@ public:
     auto parent() -> Scope* { return parent_scope; }
 };
 
+// ============================================================================
+//  Statements
+// ============================================================================
 /// Root of the AST inheritance hierarchy.
 class srcc::Stmt {
     SRCC_IMMOVABLE(Stmt);
@@ -120,6 +123,22 @@ public:
 protected:
     /// Compute the dependence of this expression.
     void ComputeDependence();
+};
+
+class srcc::WhileStmt : public Stmt {
+public:
+    Expr* cond;
+    Stmt* body;
+
+    WhileStmt(
+        Expr* cond,
+        Stmt* body,
+        Location location
+    ) : Stmt{Kind::WhileStmt, location}, cond{cond}, body{body} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
 };
 
 // ============================================================================

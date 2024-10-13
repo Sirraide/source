@@ -1628,6 +1628,14 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
     }
 }
 
+auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt> {
+    if (
+        not cond->dependent() and
+        not MakeSRValue(Types::BoolTy, cond, "Condition", "while")
+    ) return {};
+    return new (*M) WhileStmt(cond, body, loc);
+}
+
 // ============================================================================
 //  Translation Driver
 // ============================================================================
@@ -2006,6 +2014,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -2028,8 +2037,10 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
-auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed)-> Ptr<Expr> {
-    Todo();
+auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed) -> Ptr<Stmt> {
+    auto cond = TRY(TranslateExpr(parsed->cond));
+    auto body = TRY(TranslateStmt(parsed->body));
+    return BuildWhileStmt(cond, body, parsed->loc);
 }
 
 // ============================================================================

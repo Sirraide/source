@@ -346,6 +346,13 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "UnaryExpr", [&] { print("%1({})", u->op); });
             PrintChildren(u->arg);
         } break;
+
+        case Kind::WhileStmt: {
+            auto w = cast<WhileStmt>(e);
+            PrintBasicNode(e, "WhileStmt");
+            SmallVector<Stmt*, 2> children{w->cond, w->body};
+            PrintChildren(children);
+        } break;
     }
 }
 

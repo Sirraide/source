@@ -1012,6 +1012,10 @@ auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
 
 auto CodeGen::EmitUnaryExpr(UnaryExpr*) -> Value* { Todo(); }
 
+auto CodeGen::EmitWhileStmt(WhileStmt* stmt)-> Value* {
+    Todo();
+}
+
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off
     utils::Overloaded LValueEmitter {
         [&](String s) -> llvm::Constant* { return GetStringPtr(s); },

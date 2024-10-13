@@ -1225,6 +1225,15 @@ bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
     }
 }
 
+bool EvaluationContext::EvalWhileStmt(Value& out, WhileStmt* expr) {
+    defer { out = {}; };
+    for (;;) {
+        if (not Eval(out, expr->cond)) return false;
+        if (not out.cast<bool>()) return true;
+        if (not Eval(out, expr->body)) return false;
+    }
+}
+
 // ============================================================================
 //  API
 // ============================================================================

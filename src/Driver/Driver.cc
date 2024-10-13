@@ -241,7 +241,7 @@ int Driver::Impl::run_job() {
     // Load the runtime.
     ModuleLoader loader{ctx, opts.module_search_paths};
     StringMap<ImportHandle> imported;
-    {
+    if (opts.import_runtime) {
         auto rt = loader.load(
             "__src_runtime",
             "__src_runtime",

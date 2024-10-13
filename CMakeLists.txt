@@ -280,3 +280,34 @@ FCHKAddAllTestsInDir(
     ARGS -P nocap -P captype -l . -D "srcc=$<TARGET_FILE:srcc>"
     RECURSIVE
 )
+
+## ============================================================================
+##  Stdlib
+## ============================================================================
+## Build the runtime first.
+add_custom_target(src_runtime ALL
+    COMMAND "${SOURCE_LLVM_ROOT}/bin/clang++"
+        "${PROJECT_SOURCE_DIR}/std/runtime.cc"
+        -std=c++20
+        -c
+        -Wall -Wextra
+        -O3 -march=native
+        -fno-exceptions -fno-rtti -fwrapv -fnew-infallible
+        -o "${CMAKE_CURRENT_BINARY_DIR}/runtime.cc.o"
+
+    COMMAND $<TARGET_FILE:srcc>
+        "${PROJECT_SOURCE_DIR}/std/runtime.src"
+        --mo "${PROJECT_SOURCE_DIR}/modules"
+        "--link-object=${CMAKE_CURRENT_BINARY_DIR}/runtime.cc.o"
+        --noruntime
+
+    DEPENDS srcc
+    BYPRODUCTS
+        "${CMAKE_CURRENT_BINARY_DIR}/runtime.cc.o"
+        "${PROJECT_SOURCE_DIR}/modules/__src_runtime.mod"
+
+    COMMENT "Building Source runtime"
+
+    VERBATIM
+    USES_TERMINAL
+)

@@ -281,6 +281,10 @@ auto TemplateInstantiator::InstantiateUnaryExpr(UnaryExpr* n) -> Ptr<Stmt> {
     Todo();
 }
 
+auto TemplateInstantiator::InstantiateWhileStmt(WhileStmt* n) -> Ptr<Stmt> {
+    Todo();
+}
+
 // ============================================================================
 //  Type Instantiation
 // ============================================================================

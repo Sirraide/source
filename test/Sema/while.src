@@ -1,0 +1,15 @@
+// V %srcc --sema --verify %s
+program test;
+
+while 1 1; // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+while 2 {} // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+while {} {} // expected-error: Condition of 'while' must be of type 'bool', but was 'void'
+while true false;
+while 3 + 4 * 5 / 4 4; // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+
+while 1 do 1; // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+while 2 do {} // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+while {} do {} // expected-error: Condition of 'while' must be of type 'bool', but was 'void'
+while true do false;
+while 3 + 4 * 5 / 4 do 4; // expected-error: Condition of 'while' must be of type 'bool', but was 'int'
+

@@ -110,6 +110,10 @@ void Stmt::ComputeDependence() { // clang-format off
     [&](StrLitExpr*) { /* Never dependent */ },
     [&](TypeExpr* e) { if (e->value->dependent()) d = Dependence::Type; },
     [&](UnaryExpr* e) { d = e->arg->dependence(); },
+    [&](WhileStmt* e) {
+        if (e->cond->dependent() or e->body->dependent())
+            d = Dependence::Instantiation;
+    }
     });
     set_dependence(d);
 } // clang-format on
