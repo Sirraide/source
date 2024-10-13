@@ -167,6 +167,9 @@ public:
     /// Enable or disable coloured output.
     void enable_colours(bool enable);
 
+    /// Get the number of steps the constant evaluator can run for.
+    [[nodiscard]] auto eval_steps() const -> u64;
+
     /// Get a file by index. Returns nullptr if the index is out of bounds.
     [[nodiscard]] auto file(usz idx) const -> const File*;
 
@@ -183,6 +186,9 @@ public:
 
     /// Set the diagnostics engine.
     void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);
+
+    /// Set the maximum step count for the constant evaluator.
+    void set_eval_steps(u64 steps);
 
     /// Whether to enable coloured output.
     [[nodiscard]] bool use_colours() const;

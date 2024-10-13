@@ -123,6 +123,12 @@ public:
     SmallVector<StackFrame, 16> stack;
     llvm::BumpPtrAllocator memory;
 
+private:
+    u64 steps = 0;
+    const u64 max_steps = tu.context().eval_steps();
+    Location entry_loc;
+
+public:
     class PushStackFrame {
         SRCC_IMMOVABLE(PushStackFrame);
         EvaluationContext& ctx;
@@ -137,7 +143,8 @@ public:
         ~PushStackFrame() { ctx.stack.pop_back(); }
     };
 
-    EvaluationContext(TranslationUnit& tu, bool complain) : tu{tu}, complain{complain} {
+    EvaluationContext(TranslationUnit& tu, Location entry_loc, bool complain)
+        : tu{tu}, complain{complain}, entry_loc{entry_loc} {
         // Push a fake stack frame in case we need to deal with
         // local variables at the top level.
         stack.emplace_back();
@@ -404,6 +411,12 @@ void EvaluationContext::DumpFrame(StackFrame& frame) {
 }
 
 bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
+    if (steps++ > max_steps) {
+        Error(entry_loc, "Exceeded maximum compile-time evaluation steps ({})", max_steps);
+        Remark("You can raise the maximum using the '--eval-steps' flag");
+        return false;
+    }
+
     if (stmt->dependent()) {
         ICE(stmt->location(), "Cannot evaluate dependent statement");
         return false;
@@ -1072,7 +1085,7 @@ bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
 }
 
 bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
-    EvaluationContext C{tu, complain};
+    EvaluationContext C{tu, eval->location(), complain};
     return C.Eval(out, eval->stmt);
 }
 
@@ -1242,7 +1255,7 @@ auto srcc::eval::Evaluate(
     Stmt* stmt,
     bool complain
 ) -> std::optional<Value> {
-    EvaluationContext C{tu, complain};
+    EvaluationContext C{tu, stmt->location(), complain};
     Value val = {};
     if (not C.Eval(val, stmt)) return std::nullopt;
     return std::move(val);

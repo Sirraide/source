@@ -59,6 +59,10 @@ public:
         /// The action to perform.
         Action action;
 
+        /// How many steps the constant evaluator can run for before
+        /// we give up.
+        u64 eval_steps;
+
         /// How many errors are printed before we stop printing them
         /// altogether. Set to 0 to disable.
         u32 error_limit;

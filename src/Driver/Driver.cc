@@ -125,6 +125,9 @@ int Driver::Impl::run_job() {
     LangOpts lang_opts;
     lang_opts.overflow_checking = opts.overflow_checking;
 
+    // Forward options to context.
+    ctx.set_eval_steps(opts.eval_steps);
+
     // Handle this first; it only supports 1 file.
     if (a == Action::DumpModule) {
         if (files.size() != 1) return Error("'%3(--dump-module)' requires exactly one file");

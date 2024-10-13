@@ -40,6 +40,9 @@ struct Context::Impl {
     /// Optimisation level.
     int opt_level = 0;
 
+    /// Constant evaluator steps.
+    std::atomic<u64> eval_steps = 1 << 20;
+
     /// Module dir.
     fs::path module_dir;
 
@@ -151,6 +154,10 @@ void Context::enable_colours(bool enable) {
     impl->enable_colours.store(enable, std::memory_order_release);
 }
 
+auto Context::eval_steps() const -> u64 {
+    return impl->eval_steps.load(std::memory_order_relaxed);
+}
+
 auto Context::file(usz idx) const -> const File* {
     std::unique_lock _{impl->context_mutex};
 
@@ -191,6 +198,10 @@ auto Context::module_path() const -> const fs::path& {
 void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
     if (impl->diags_engine) impl->diags_engine->flush();
     impl->diags_engine = std::move(diags);
+}
+
+void Context::set_eval_steps(u64 steps) {
+    impl->eval_steps.store(steps, std::memory_order_relaxed);
 }
 
 bool Context::use_colours() const {
