@@ -493,6 +493,19 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ExportDecl; }
 };
 
+class srcc::ParsedFieldDecl final : public ParsedDecl {
+public:
+    ParsedStmt* type;
+
+    ParsedFieldDecl(
+        String name,
+        ParsedStmt* type,
+        Location location
+    ) : ParsedDecl{Kind::FieldDecl, name, location}, type{type} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::FieldDecl; }
+};
+
 class srcc::ParsedLocalDecl final : public ParsedDecl {
 public:
     ParsedStmt* type;
@@ -549,6 +562,35 @@ public:
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcDecl; }
+};
+
+class srcc::ParsedStructDecl final : public ParsedDecl
+    , TrailingObjects<ParsedStructDecl, ParsedFieldDecl*> {
+    friend TrailingObjects;
+
+    u32 num_fields;
+    auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) -> usz { return num_fields; }
+
+public:
+    String name;
+    Location loc;
+
+private:
+    ParsedStructDecl(String name, ArrayRef<ParsedFieldDecl*> fields, Location loc);
+
+public:
+    static auto Create(
+        Parser& parser,
+        String name,
+        ArrayRef<ParsedFieldDecl*> fields,
+        Location loc
+    ) -> ParsedStructDecl*;
+
+    auto fields() -> ArrayRef<ParsedFieldDecl*> {
+        return {getTrailingObjects<ParsedFieldDecl*>(), num_fields};
+    }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StructDecl; }
 };
 
 // ============================================================================
@@ -624,6 +666,7 @@ private:
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     void ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts);
+    auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType() -> Ptr<ParsedStmt>;
     auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
 

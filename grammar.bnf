@@ -71,15 +71,16 @@
 // ============================================================================
 //  Declarations
 // ============================================================================
-<decl>       ::= <decl-proc> | <decl-var> | EXPORT <decl>
-<decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
-<decl-proc>  ::= <signature> <proc-body>
-<signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
-<proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-<proc-attrs> ::= { "native" | "extern" | "nomangle" }
-<proc-body>  ::= <expr-block> | "=" <expr> ";" | ";"
-<param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
-<intent>     ::= IN | OUT | INOUT | COPY
+<decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | EXPORT <decl>
+<decl-var>    ::= <type> IDENTIFIER [ "=" <expr> ] ";"
+<decl-proc>   ::= <signature> <proc-body>
+<decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" } "}"
+<signature>   ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
+<proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+<proc-attrs>  ::= { "native" | "extern" | "nomangle" }
+<proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
+<param-decl>  ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
+<intent>      ::= IN | OUT | INOUT | COPY
 
 // ============================================================================
 //  Types

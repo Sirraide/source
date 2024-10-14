@@ -13,9 +13,9 @@ import srcc.ast.printer;
 import base.colours;
 using namespace srcc;
 
-#define TRY(x, ...)     ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })
-#define TryParseExpr(...) TRY(ParseExpr() __VA_OPT__(,) __VA_ARGS__)
-#define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(,) __VA_ARGS__)
+#define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })
+#define TryParseExpr(...) TRY(ParseExpr() __VA_OPT__(, ) __VA_ARGS__)
+#define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(, ) __VA_ARGS__)
 
 // ============================================================================
 //  Parse Tree
@@ -165,6 +165,29 @@ auto ParsedProcDecl::Create(
     return ::new (mem) ParsedProcDecl{name, type, param_decls, body, location};
 }
 
+ParsedStructDecl::ParsedStructDecl(
+    String name,
+    ArrayRef<ParsedFieldDecl*> fields,
+    Location loc
+) : ParsedDecl{Kind::StructDecl, name, loc}, num_fields(u32(fields.size())) {
+    std::uninitialized_copy_n(
+        fields.begin(),
+        fields.size(),
+        getTrailingObjects<ParsedFieldDecl*>()
+    );
+}
+
+auto ParsedStructDecl::Create(
+    Parser& parser,
+    String name,
+    ArrayRef<ParsedFieldDecl*> fields,
+    Location loc
+) -> ParsedStructDecl* {
+    const auto size = totalSizeToAlloc<ParsedFieldDecl*>(fields.size());
+    auto mem = parser.allocate(size, alignof(ParsedStructDecl));
+    return ::new (mem) ParsedStructDecl{name, fields, loc};
+}
+
 // ============================================================================
 //  Printer
 // ============================================================================
@@ -265,6 +288,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(e.decl);
         } break;
 
+        case Kind::FieldDecl: {
+            auto& f = *cast<ParsedFieldDecl>(s);
+            PrintHeader(s, "FieldDecl", false);
+            print("%5({}) {}\n", f.name, f.type->dump_as_type());
+        } break;
+
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
             PrintHeader(s, "IfExpr");
@@ -326,6 +355,13 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             auto ret = cast<ParsedReturnExpr>(s);
             PrintHeader(s, "ReturnExpr");
             if (auto val = ret->value.get_or_null()) PrintChildren(val);
+        } break;
+
+        case Kind::StructDecl: {
+            auto& d = *cast<ParsedStructDecl>(s);
+            PrintHeader(s, "StructDecl", false);
+            print("%2({})\n", d.name);
+            PrintChildren<ParsedFieldDecl>(d.fields());
         } break;
 
         case Kind::UnaryExpr: {
@@ -1283,6 +1319,9 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedExportDecl{decl, loc};
         }
 
+        // <decl-struct>
+        case Tk::Struct: return ParseStructDecl();
+
         // <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
         case Tk::While: {
             Next();
@@ -1303,6 +1342,43 @@ void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts) {
         if (auto s = ParseStmt()) stmts.push_back(s.get());
         Consume(Tk::Semicolon);
     }
+}
+
+// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" } "}"
+auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
+    auto struct_loc = Next();
+
+    // Name.
+    String name = tok->text;
+    if (not Consume(Tk::Identifier)) {
+        Error("Expected identifier after '%1(struct)'");
+        SkipTo(Tk::Semicolon);
+        return {};
+    }
+
+    // Body.
+    SmallVector<ParsedFieldDecl*> fields;
+    if (not ExpectAndConsume(Tk::LBrace, "Expected '{{'")) return {};
+    while (not At(Tk::RBrace)) {
+        auto ty = ParseType();
+        if (not ty) {
+            SkipTo(Tk::RBrace, Tk::Semicolon);
+            break;
+        }
+
+        String field_name = tok->text;
+        if (not Consume(Tk::Identifier)) {
+            Error("Expected identifier");
+            SkipTo(Tk::RBrace, Tk::Semicolon);
+            break;
+        }
+
+        fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), {ty.get()->loc, tok->location}});
+        if (not ExpectAndConsume(Tk::Semicolon, "Expected ';'")) SkipTo(Tk::Semicolon);
+    }
+
+    if (not Consume(Tk::RBrace)) Error("Expected '}}'");
+    return ParsedStructDecl::Create(*this, name, fields, struct_loc);
 }
 
 // <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>

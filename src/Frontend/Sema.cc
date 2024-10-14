@@ -1854,6 +1854,10 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
     return BuildEvalExpr(arg, parsed->loc);
 }
 
+auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
+    Unreachable("Handled as part of StructDecl translation");
+}
+
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Expr> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     auto then = TRY(TranslateStmt(parsed->then));
@@ -2014,10 +2018,13 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
+}
+
+auto Sema::TranslateStructDecl(ParsedStructDecl* parsed) -> Decl* {
+    Todo();
 }
 
 /// Translate a string literal.
