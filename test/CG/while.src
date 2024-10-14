@@ -1,0 +1,114 @@
+// R %srcc --llvm %s
+program test;
+
+// * define private fastcc void @_S12while_simpleFvE() {
+// + entry:
+// +   %0 = alloca i64, align 8
+// +   store i64 0, ptr %0, align 8
+// +   br label %1
+// +
+// + 1:
+// +   %l2sr = load i64, ptr %0, align 8
+// +   %slt = icmp slt i64 %l2sr, 10
+// +   br i1 %slt, label %2, label %4
+// +
+// + 2:
+// +   %l2sr1 = load i64, ptr %0, align 8
+// +   %3 = add i64 %l2sr1, 1
+// +   store i64 %3, ptr %0, align 8
+// +   br label %1
+// +
+// + 4:
+// +   ret void
+// + }
+proc while_simple {
+    int i;
+    while i < 10 do i = i +~ 1;
+}
+
+// * define private fastcc void @_S12while_nestedFvE() {
+// + entry:
+// +   %0 = alloca i64, align 8
+// +   %1 = alloca i64, align 8
+// +   store i64 0, ptr %0, align 8
+// +   br label %2
+// +
+// + 2:
+// +   %l2sr = load i64, ptr %0, align 8
+// +   %slt = icmp slt i64 %l2sr, 10
+// +   br i1 %slt, label %3, label %9
+// +
+// + 3:
+// +   store i64 0, ptr %1, align 8
+// +   br label %4
+// +
+// + 4:
+// +   %l2sr1 = load i64, ptr %1, align 8
+// +   %slt2 = icmp slt i64 %l2sr1, 10
+// +   br i1 %slt2, label %5, label %7
+// +
+// + 5:
+// +   %l2sr3 = load i64, ptr %1, align 8
+// +   %6 = add i64 %l2sr3, 1
+// +   store i64 %6, ptr %1, align 8
+// +   br label %4
+// +
+// + 7:
+// +   %l2sr4 = load i64, ptr %0, align 8
+// +   %8 = add i64 %l2sr4, 1
+// +   store i64 %8, ptr %0, align 8
+// +   br label %2
+// +
+// + 9:
+// +   ret void
+// + }
+proc while_nested {
+    int i;
+    while i < 10 do {
+        int j;
+        while j < 10 do j = j +~ 1;
+        i = i +~ 1;
+    }
+}
+
+// * define private fastcc void @_S14while_infiniteFvE() {
+// + entry:
+// +   %0 = alloca i64, align 8
+// +   store i64 0, ptr %0, align 8
+// +   br label %1
+// +
+// + 1:
+// +   br i1 true, label %2, label %4
+// +
+// + 2:
+// +   %l2sr = load i64, ptr %0, align 8
+// +   %3 = add i64 %l2sr, 1
+// +   store i64 %3, ptr %0, align 8
+// +   br label %1
+// +
+// + 4:
+// +   ret void
+// + }
+proc while_infinite {
+    int i;
+    while true {
+        i = i +~ 1;
+    }
+}
+
+// * define private fastcc void @_S20while_infinite_emptyFvE() {
+// + entry:
+// +   br label %0
+// +
+// + 0:
+// +   br i1 true, label %1, label %2
+// +
+// + 1:
+// +   br label %0
+// +
+// + 2:
+// +   ret void
+// + }
+proc while_infinite_empty {
+    while true {};
+}

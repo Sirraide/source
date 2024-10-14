@@ -323,6 +323,28 @@ auto CodeGen::MakeInt(u64 integer) -> ConstantInt* {
     return ConstantInt::get(IntTy, integer, true);
 }
 
+void CodeGen::While(
+    llvm::function_ref<Value*()> emit_cond,
+    llvm::function_ref<void()> emit_body
+) {
+    auto bb_cond = BasicBlock::Create(M.llvm_context);
+    auto bb_body = BasicBlock::Create(M.llvm_context);
+    auto bb_end = BasicBlock::Create(M.llvm_context);
+
+    // Emit condition.
+    builder.CreateBr(bb_cond);
+    EnterBlock(bb_cond);
+    builder.CreateCondBr(emit_cond(), bb_body, bb_end);
+
+    // Emit body.
+    EnterBlock(bb_body);
+    emit_body();
+    builder.CreateBr(bb_cond);
+
+    // Continue after the loop.
+    EnterBlock(bb_end);
+}
+
 // ============================================================================
 //  Mangling
 // ============================================================================
@@ -1012,8 +1034,13 @@ auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
 
 auto CodeGen::EmitUnaryExpr(UnaryExpr*) -> Value* { Todo(); }
 
-auto CodeGen::EmitWhileStmt(WhileStmt* stmt)-> Value* {
-    Todo();
+auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
+    While(
+        [&] { return Emit(stmt->cond); },
+        [&] { Emit(stmt->body); }
+    );
+
+    return nullptr;
 }
 
 auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-format off

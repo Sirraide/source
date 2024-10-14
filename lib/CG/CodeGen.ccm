@@ -171,4 +171,10 @@ private:
     ///
     /// \return addr
     auto PerformVariableInitialisation(llvm::Value* addr, Expr* init) -> llvm::Value*;
+
+    /// Create a while loop.
+    void While(
+        llvm::function_ref<llvm::Value*()> emit_cond,
+        llvm::function_ref<void()> emit_body
+    );
 };

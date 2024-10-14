@@ -99,6 +99,19 @@ int main(int argc, char** argv) {
 
     module_search_paths.push_back(SOURCE_PROJECT_DIR_NAME "/modules");
 
+    // TODO:
+    //  - Move lang opts to be TU-specific in case the TU wants
+    //    to alter them using e.g. pragmas.
+    //
+    //  - Move eval steps into lang opts.
+    //
+    //  - Add a pragma to control eval steps.
+    //
+    //  - eval steps = 0 to disable the check entirely. (Note:
+    //    ‘disabling’ constant evaluation is impossible since
+    //    it’s required by the language in some places even if
+    //    `eval` is not used.)
+
     // Create driver.
     Driver driver{{
         .module_output_path = opts.get_or<"--mo">("."),
