@@ -16,6 +16,8 @@ class TranslationUnit;
 class Types;
 struct ParamTypeData;
 class Expr;
+class FieldDecl;
+class TypeDecl;
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -247,9 +249,11 @@ public:
 };
 
 // The const_cast here is fine because we never modify types anyway.
-#define BUILTIN_TYPE(Name, ...) \
-    private: static constexpr BuiltinType Name##TyImpl{BuiltinKind::Name __VA_OPT__(,) __VA_ARGS__}; \
-    public : static constexpr TypeWrapper<BuiltinType> Name##Ty = const_cast<BuiltinType*>(&Name##Ty##Impl)
+#define BUILTIN_TYPE(Name, ...)                                                              \
+private:                                                                                     \
+    static constexpr BuiltinType Name##TyImpl{BuiltinKind::Name __VA_OPT__(, ) __VA_ARGS__}; \
+public:                                                                                      \
+    static constexpr TypeWrapper<BuiltinType> Name##Ty = const_cast<BuiltinType*>(&Name##Ty##Impl)
 
 // FIXME: Eliminate 'TypeWrapper' in favour of a single 'Type' class and move these there?
 class srcc::Types {
@@ -395,6 +399,52 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };
 
+class srcc::StructType final : public TypeBase
+    , TrailingObjects<StructType, FieldDecl*> {
+    friend TrailingObjects;
+
+    u32 num_fields;
+    auto numTrailingObjects(OverloadToken<FieldDecl*>) -> usz { return num_fields; }
+
+    Align computed_alignment;
+    bool finalised = false;
+    Size computed_size;
+    Size computed_array_size;
+
+    TranslationUnit& owning_tu;
+    TypeDecl* type_decl;
+
+    StructType(TranslationUnit& owner, u32 num_fields)
+        : TypeBase{Kind::StructType},
+          num_fields{num_fields},
+          owning_tu{owner} {}
+
+public:
+    /// Create a type and the corresponding declaration.
+    ///
+    /// The fields will be filled in later, but note that the
+    /// field count cannot be changed once the type has been
+    /// created.
+    static auto Create(
+        TranslationUnit& owner,
+        String name,
+        u32 num_fields,
+        Location decl_loc
+    ) -> StructType*;
+
+    auto align() const -> Align { return computed_alignment; }
+    auto array_size() const -> Size { return computed_array_size; }
+    auto decl() const -> TypeDecl* { return type_decl; }
+    auto fields() const -> ArrayRef<FieldDecl*> { return {getTrailingObjects<FieldDecl*>(), num_fields}; }
+    void finalise(ArrayRef<FieldDecl*> fields, Size size, Align alignment);
+    bool is_complete() const { return finalised; }
+    auto name() const -> String;
+    auto owner() const -> TranslationUnit& { return owning_tu; }
+    auto size() const -> Size { return computed_size; }
+
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
+};
+
 class srcc::TemplateType final : public TypeBase
     , public FoldingSetNode {
     TemplateTypeDecl* decl;
@@ -419,9 +469,9 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     // We const_cast here because types are never modified anyway,
     // so the 'const' is just superfluous and does nothing.
     switch (kind()) {
-#define AST_TYPE_LEAF(node) \
-    case Kind::node: return std::invoke( \
-        std::forward<Visitor>(v), \
+#define AST_TYPE_LEAF(node)                               \
+    case Kind::node: return std::invoke(                  \
+        std::forward<Visitor>(v),                         \
         const_cast<node*>(static_cast<const node*>(this)) \
     );
 #include "srcc/AST.inc"

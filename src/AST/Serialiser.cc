@@ -52,11 +52,13 @@ struct srcc::TranslationUnit::Serialiser {
 
     Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer);
     void SerialiseDecl(const Decl*);
+    void SerialiseFieldDecl(const FieldDecl*);
     void SerialiseLocalDecl(const LocalDecl*);
     void SerialiseParamDecl(const ParamDecl*);
     void SerialiseProcDecl(const ProcDecl* proc);
     void SerialiseTemplateTypeDecl(const TemplateTypeDecl*);
     auto SerialiseType(Type ty) -> u64;
+    void SerialiseTypeDecl(const TypeDecl*);
 };
 
 Serialiser::Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer)
@@ -89,6 +91,10 @@ void Serialiser::SerialiseDecl(const Decl* d) {
     } // clang-format on
 
     Unreachable("Invalid statement kind");
+}
+
+void Serialiser::SerialiseFieldDecl(const FieldDecl*) {
+    Todo();
 }
 
 void Serialiser::SerialiseLocalDecl(const LocalDecl*) {
@@ -125,9 +131,6 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
         case TypeBase::Kind::IntType:
             break;
 
-        case TypeBase::Kind::TemplateType:
-            Todo();
-
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::ReferenceType:
         case TypeBase::Kind::ArrayType:
@@ -139,6 +142,13 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             SerialiseType(proc->ret());
             for (const auto& p : proc->params()) SerialiseType(p.type);
         } break;
+
+        case TypeBase::Kind::TemplateType:
+            Todo();
+
+        case TypeBase::Kind::StructType: {
+            Todo();
+        }
     }
 
     // The current index will be the index of this type.
@@ -183,12 +193,21 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             return idx;
         }
 
+        case TypeBase::Kind::StructType: {
+            Todo();
+        }
+
         case TypeBase::Kind::TemplateType: {
             Todo();
         }
     }
 
     Unreachable("Invalid type kind: {}", ty);
+}
+
+
+void Serialiser::SerialiseTypeDecl(const TypeDecl*) {
+    Todo();
 }
 
 // ============================================================================
@@ -240,11 +259,13 @@ struct srcc::TranslationUnit::Deserialiser : DefaultDiagsProducer<> {
     auto DeserialiseFromArchive(StringRef name, StringRef path, Location import_loc) -> Opt<TranslationUnit::Ptr>;
     auto Deserialise() -> TranslationUnit::Ptr;
     auto DeserialiseDecl() -> Decl*;
+    auto DeserialiseFieldDecl() -> Decl*;
     auto DeserialiseLocalDecl() -> Decl*;
     auto DeserialiseParamDecl() -> Decl*;
     auto DeserialiseProcDecl() -> Decl*;
     auto DeserialiseTemplateTypeDecl() -> Decl*;
     void DeserialiseType();
+    auto DeserialiseTypeDecl() -> Decl*;
 };
 
 auto Deserialiser::Deserialise() -> TranslationUnit::Ptr {
@@ -359,6 +380,10 @@ auto Deserialiser::DeserialiseDecl() -> Decl* {
     Unreachable("Invalid statement kind");
 }
 
+auto Deserialiser::DeserialiseFieldDecl() -> Decl* {
+    Todo();
+}
+
 auto Deserialiser::DeserialiseLocalDecl() -> Decl* {
     Todo();
 }
@@ -444,9 +469,17 @@ void Deserialiser::DeserialiseType() {
         case TypeBase::Kind::TemplateType: {
             Todo();
         }
+
+        case TypeBase::Kind::StructType: {
+            Todo();
+        }
     }
 
     Unreachable("Invalid type kind: {}", +k);
+}
+
+auto Deserialiser::DeserialiseTypeDecl() -> Decl* {
+    Todo();
 }
 
 // ============================================================================

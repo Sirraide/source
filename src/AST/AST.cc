@@ -224,6 +224,17 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(cast<EvalExpr>(e)->stmt);
         } break;
 
+        case Kind::FieldDecl: {
+            auto f = cast<FieldDecl>(e);
+            PrintBasicHeader(e, "FieldDecl");
+            print(
+                " {} %5({}) %1(offs) %3({})\n",
+                f->type->print(),
+                f->name,
+                f->offset
+            );
+        } break;
+
         case Kind::IfExpr: {
             auto i = cast<IfExpr>(e);
             PrintBasicNode(e, "IfExpr");
@@ -334,6 +345,23 @@ void Stmt::Printer::Print(Stmt* e) {
             auto t = cast<TemplateTypeDecl>(e);
             PrintBasicHeader(t, "TemplateTypeDecl");
             print(" %3(${})\n", t->name);
+        } break;
+
+        case Kind::TypeDecl: {
+            auto td = cast<TypeDecl>(e);
+            PrintBasicHeader(td, "TypeDecl");
+            if (auto s = dyn_cast<StructType>(td->type.ptr())) {
+                print(
+                    " %1(struct %3({}) size %3({})/%3({}) align %3({}))\n",
+                    s->name(),
+                    s->size(),
+                    s->array_size(),
+                    s->align()
+                );
+                PrintChildren<FieldDecl>(s->fields());
+            } else {
+                print("%3({}) = {}\n", td->name, td->type->print());
+            }
         } break;
 
         case Kind::TypeExpr:

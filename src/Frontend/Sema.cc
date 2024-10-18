@@ -7,6 +7,7 @@ module;
 #include <ranges>
 #include <srcc/ClangForward.hh>
 #include <srcc/Macros.hh>
+#include <llvm/Support/Alignment.h>
 
 module srcc.frontend.sema;
 import srcc.utils;
@@ -66,7 +67,13 @@ auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
 }
 
 auto Sema::CheckVariableType(Type ty, Location loc) -> Type {
-    // 'noreturn' and 'type' are not a valid type for a variable.
+    // Any places that want to do type deduction need to take
+    // care of it *before* this is called.
+    if (ty == Types::DeducedTy) {
+        Error(loc, "Type deduction is not allowed here");
+        return Types::ErrorDependentTy;
+    }
+
     if (ty == Types::NoReturnTy or ty == Types::TypeTy) {
         Error(loc, "Cannot declare a variable of type '{}'", ty);
         return Types::ErrorDependentTy;
@@ -74,6 +81,12 @@ auto Sema::CheckVariableType(Type ty, Location loc) -> Type {
 
     if (ty == Types::UnresolvedOverloadSetTy) {
         Error(loc, "Unresolved overload set in parameter declaration");
+        return Types::ErrorDependentTy;
+    }
+
+    if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
+        Error(loc, "Declaring a variable of type '{}' before it is complete", ty);
+        Note(s->decl()->location(), "'{}' declared here", ty);
         return Types::ErrorDependentTy;
     }
 
@@ -601,6 +614,10 @@ bool Sema::PerformVariableInitialisation(
             }
 
             Unreachable();
+        }
+
+        case TypeBase::Kind::StructType: {
+            Todo();
         }
     }
 
@@ -1816,6 +1833,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
 
     // Build procedure type now so we can forward-reference it.
     if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
+    if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
     return std::nullopt;
 }
 
@@ -1829,6 +1847,12 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
         if (not d) return nullptr;
         return TranslateProc(cast<ProcDecl>(d), proc);
+    }
+
+    // Complete struct declarations.
+    if (auto s = dyn_cast<ParsedStructDecl>(parsed)) {
+        if (not d) return nullptr;
+        return TranslateStruct(cast<TypeDecl>(d), s);
     }
 
     // No special handling for anything else.
@@ -2023,8 +2047,53 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
 }
 
-auto Sema::TranslateStructDecl(ParsedStructDecl* parsed) -> Decl* {
-    Todo();
+auto Sema::TranslateStructDecl(ParsedStructDecl*) -> Decl* {
+    Unreachable("Should not be translated normally");
+}
+
+auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed)-> Ptr<TypeDecl> {
+    auto s = cast<StructType>(decl->type);
+    Assert(not s->is_complete(), "Type is already complete?");
+
+    // Translate the fields. While we’re at it, also keep track
+    // of the struct’s size, and alignment.
+    Size size{};
+    Align align{1};
+    SmallVector<FieldDecl*> fields;
+    for (auto f : parsed->fields()) {
+        auto ty = CheckVariableType(TranslateType(f->type), f->loc);
+
+        // If the field’s type is invalid, we can’t query any of its
+        // properties, so just insert an error field and continue.
+        if (ty == Types::ErrorDependentTy) {
+            fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
+            continue;
+        }
+
+        // Otherwise, add the field and adjust our size and alignment.
+        // TODO: Optimise layout if this isn’t meant for FFI.
+        size.align(ty->align(*M));
+        fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
+        size += ty->size(*M);
+        align = std::max(align, ty->align(*M));
+    }
+
+    // Finally, mark the struct as complete.
+    s->finalise(fields, size, align);
+    return decl;
+}
+
+
+auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
+    auto ty = StructType::Create(
+        *M,
+        parsed->name,
+        u32(parsed->fields().size()),
+        parsed->loc
+    );
+
+    AddDeclToScope(curr_scope(), ty->decl());
+    return ty->decl();
 }
 
 /// Translate a string literal.
@@ -2069,9 +2138,13 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
     if (not res) return Types::ErrorDependentTy;
 
-    // Currently, the only type declaration we can find this way is a template type.
+    // Template type.
     if (auto ttd = dyn_cast<TemplateTypeDecl>(res.decls.front()))
         return TemplateType::Get(*M, ttd);
+
+    // Type decl (struct or type alias).
+    if (auto s = dyn_cast<TypeDecl>(res.decls.front()))
+        return s->type;
 
     Error(parsed->loc, "'{}' does not name a type", utils::join(parsed->names(), "::"));
     Note(res.decls.front()->location(), "Declared here");

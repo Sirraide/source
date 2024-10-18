@@ -72,6 +72,7 @@ void Stmt::ComputeDependence() { // clang-format off
     },
 
     [&](EvalExpr* e) { d = e->stmt->dependence(); },
+    [&](FieldDecl* e) { d = e->type->dep; },
     [&](IfExpr* e) {
         // Only propagate instantiation dependence here; whether the *type*
         // of the if is supposed to be dependent is taken care of by Sema when
@@ -109,6 +110,7 @@ void Stmt::ComputeDependence() { // clang-format off
     [&](SliceDataExpr* e) { d = e->slice->dependence(); },
     [&](StrLitExpr*) { /* Never dependent */ },
     [&](TypeExpr* e) { if (e->value->dependent()) d = Dependence::Type; },
+    [&](TypeDecl* td) { d = td->type->dep; },
     [&](UnaryExpr* e) { d = e->arg->dependence(); },
     [&](WhileStmt* e) {
         if (e->cond->dependent() or e->body->dependent())
@@ -126,9 +128,14 @@ void TypeBase::ComputeDependence() { // clang-format off
         [&](BuiltinType* e) { return e->dep; },
         [&](IntType*) { return Dependence::None; },
         [&](SingleElementTypeBase* e) { return e->dependence(); },
+        [&](StructType* s) {
+            auto d = Dependence::None;
+            for (const auto& field : s->fields()) d |= field->type->dep;
+            return d;
+        },
         [&](TemplateType*) { return Dependence::Type; },
         [&](ProcType* e) {
-            Dependence d = e->ret()->dep;
+            auto d = e->ret()->dep;
             for (const auto& param : e->params()) d |= param.type->dep;
             return d;
         }

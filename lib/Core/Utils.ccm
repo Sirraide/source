@@ -418,6 +418,14 @@ void Print(bool use_colours, std::format_string<Args...> fmt, Args&&... args) {
 } // namespace base::utils
 
 template <>
+struct std::formatter<llvm::Align> : formatter<srcc::usz> {
+    template <typename FormatContext>
+    auto format(llvm::Align align, FormatContext& ctx) const {
+        return formatter<srcc::usz>::format(align.value(), ctx);
+    }
+};
+
+template <>
 struct std::formatter<srcc::Size> : formatter<srcc::usz> {
     template <typename FormatContext>
     auto format(srcc::Size sz, FormatContext& ctx) const {

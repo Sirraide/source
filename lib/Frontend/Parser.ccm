@@ -570,12 +570,6 @@ class srcc::ParsedStructDecl final : public ParsedDecl
 
     u32 num_fields;
     auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) -> usz { return num_fields; }
-
-public:
-    String name;
-    Location loc;
-
-private:
     ParsedStructDecl(String name, ArrayRef<ParsedFieldDecl*> fields, Location loc);
 
 public:

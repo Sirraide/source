@@ -1089,6 +1089,10 @@ bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
     return C.Eval(out, eval->stmt);
 }
 
+bool EvaluationContext::EvalFieldDecl(Value&, FieldDecl*) {
+    Unreachable("Invalid evaluation target");
+}
+
 bool EvaluationContext::EvalIfExpr(Value& out, IfExpr* expr) {
     TryEval(out, expr->cond);
 
@@ -1184,6 +1188,11 @@ bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
 
 bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr) {
     out = expr->value;
+    return true;
+}
+
+bool EvaluationContext::EvalTypeDecl(Value& out, TypeDecl* expr) {
+    out = expr->type;
     return true;
 }
 

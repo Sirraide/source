@@ -119,6 +119,10 @@ auto TemplateInstantiator::InstantiateProcedure(
 // ============================================================================
 //  Decl Instantiation
 // ============================================================================
+auto TemplateInstantiator::InstantiateFieldDecl(FieldDecl* n) -> FieldDecl* {
+    Todo();
+}
+
 auto TemplateInstantiator::InstantiateLocalDecl(LocalDecl* d) -> LocalDecl* {
     Todo("Instantiate local decl");
 }
@@ -133,6 +137,10 @@ auto TemplateInstantiator::InstantiateProcDecl(ProcDecl*) -> ProcDecl* {
 
 auto TemplateInstantiator::InstantiateTemplateTypeDecl(TemplateTypeDecl*) -> TemplateTypeDecl* {
     Todo("Instantiate nested template type decl");
+}
+
+auto TemplateInstantiator::InstantiateTypeDecl(TypeDecl* n) -> TypeDecl* {
+    Todo();
 }
 
 // ============================================================================
@@ -328,6 +336,11 @@ auto TemplateInstantiator::InstantiateReferenceType(ReferenceType* ty) -> Type {
 auto TemplateInstantiator::InstantiateSliceType(SliceType* ty) -> Type {
     return SliceType::Get(*S.M, InstantiateType(ty->elem()));
 }
+
+auto TemplateInstantiator::InstantiateStructType(StructType* n) -> Type {
+    Todo();
+}
+
 
 auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
     auto it = template_arguments.find(ty->template_decl());

@@ -665,6 +665,8 @@ private:
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
     auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
     auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
+    auto TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
+    auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 
     /// Types.
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;

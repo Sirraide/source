@@ -29,7 +29,7 @@ auto GetOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
     return type;
 }
 
-TypeLoc::TypeLoc(Expr* e): ty{e->type}, loc{e->location()} {}
+TypeLoc::TypeLoc(Expr* e) : ty{e->type}, loc{e->location()} {}
 
 // ============================================================================
 //  Type
@@ -38,10 +38,11 @@ void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
-auto TypeBase::align(TranslationUnit& tu) const -> Align {
-    switch (type_kind) {
-        case Kind::BuiltinType: {
-            switch (cast<BuiltinType>(this)->builtin_kind()) {
+auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
+    return visit(utils::Overloaded{
+        [&](const ArrayType* ty) -> Align { return ty->elem()->align(tu); },
+        [&](const BuiltinType* ty) -> Align {
+            switch (ty->builtin_kind()) {
                 case BuiltinKind::Bool: return Align{1};
                 case BuiltinKind::Int: return Align{8}; // FIXME: Get alignment from context.
                 case BuiltinKind::NoReturn: return Align{1};
@@ -53,28 +54,22 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align {
                 case BuiltinKind::ErrorDependent:
                     Unreachable("Requested alignment of dependent type");
             }
-        }
-
-        case Kind::ArrayType:
-        case Kind::SliceType:
-            return cast<SingleElementTypeBase>(this)->elem()->align(tu);
-
-        case Kind::ReferenceType: return Align{8}; // FIXME: Get pointer alignment from context.
-        case Kind::IntType: {
-            auto bytes = cast<IntType>(this)->bit_width().bytes();
-            return Align{std::min<usz>(64, llvm::PowerOf2Ceil(bytes))};
-        }
-
-        case Kind::ProcType: return Align{8}; // FIXME: Get closure alignment from context.
-
-        case Kind::TemplateType: Unreachable("Requested size of dependent type");
-    }
-
-    Unreachable("Invalid type kind");
-}
+            Unreachable();
+        },
+        [&](const IntType* ty) { return Align{std::min<usz>(64, llvm::PowerOf2Ceil(ty->bit_width().bytes()))}; },
+        [&](const ProcType*) { return Align{8}; }, // FIXME: Get alignment from context.
+        [&](const ReferenceType*) { return Align{8}; }, // FIXME: Get alignment from context.
+        [&](const SliceType*) { return Align{8}; }, // FIXME: Get alignment from context.
+        [&](const StructType* ty) {
+            Assert(ty->is_complete(), "Requested size of incomplete struct");
+            return ty->align();
+        },
+        [&](const TemplateType*) -> Align { Unreachable("Requested size of dependent type"); },
+    });
+} // clang-format on
 
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
-    // Currently identical for all types we support.
+    if (auto s = dyn_cast<StructType>(this)) return s->array_size();
     return size(tu);
 }
 
@@ -85,7 +80,6 @@ void TypeBase::dump(bool use_colour) const {
 bool TypeBase::is_integer() const {
     return this == Types::IntTy or isa<IntType>(this);
 }
-
 
 bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and
@@ -120,13 +114,15 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
         // it is stored, and we save a memcpy that way.
         case Intent::In:
         case Intent::Move:
-            return visit(utils::Overloaded{ // clang-format off
+            return visit(utils::Overloaded{
+                // clang-format off
                 [](ArrayType*) { return false; },                        // Arrays are usually big, so pass by reference.
                 [](BuiltinType*) { return true; },                       // All builtin types are small.
                 [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
                 [](ProcType*) { return true; },                          // Closures are two pointers.
                 [](ReferenceType*) { return true; },                     // References are small.
                 [](SliceType*) { return true; },                         // Slices are two pointers.
+                [](StructType*) { return false; },                       // Pass structs by reference (TODO: small ones by value).
                 [](TemplateType*) -> bool { Unreachable(); }             // Should never be called for these.
             }); // clang-format on
     }
@@ -198,6 +194,11 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += std::format("{}%1([])", slice->elem()->print());
         } break;
 
+        case Kind::StructType: {
+            auto* s = cast<StructType>(this);
+            out += std::format("%6({})", s->name());
+        } break;
+
         case Kind::TemplateType: {
             auto* tt = cast<TemplateType>(this);
             out += std::format("%3({})", tt->template_decl()->name);
@@ -231,6 +232,10 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
         case Kind::IntType: return cast<IntType>(this)->bit_width();
         case Kind::ProcType: return Size::Bytes(16);  // FIXME: Get closure size from context.
         case Kind::SliceType: return Size::Bytes(16); // FIXME: Get slice size from context.
+        case Kind::StructType: {
+            auto s = cast<StructType>(this);
+            return s->size();
+        }
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
             return arr->elem()->array_size(tu) * usz(arr->dimension());
@@ -271,6 +276,11 @@ auto TypeBase::value_category() const -> ValueCategory {
 
         // Slices are a pointer+size, which our ABI just passes in registers.
         case Kind::SliceType: return Expr::SRValue;
+
+        // Structs are always passed in memory.
+        // TODO: Only if they’re big, have a non-trivial ctor,
+        //       or are not trivially copyable/movable.
+        case Kind::StructType: return Expr::MRValue;
 
         // Pointers are just scalars.
         case Kind::ReferenceType: return Expr::SRValue;
@@ -414,3 +424,35 @@ auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {
 void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.as_opaque_ptr());
 }
+
+auto StructType::Create(
+    TranslationUnit& owner,
+    String name,
+    u32 num_fields,
+    Location decl_loc
+) -> StructType* {
+    auto type = ::new (owner.allocate(
+        totalSizeToAlloc<FieldDecl*>(num_fields),
+        alignof(StructType)
+    )) StructType{owner, num_fields};
+    type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
+    return type;
+}
+
+auto StructType::name() const -> String {
+    return type_decl->name;
+}
+
+void StructType::finalise(ArrayRef<FieldDecl*> fields, Size sz, Align align) {
+    Assert(not finalised, "finalise() called twice?");
+    finalised = true;
+    computed_size = sz;
+    computed_alignment = align;
+    computed_array_size = sz.aligned(align);
+    std::uninitialized_copy_n(
+        fields.begin(),
+        fields.size(),
+        getTrailingObjects<FieldDecl*>()
+    );
+}
+

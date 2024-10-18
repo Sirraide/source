@@ -360,7 +360,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::StructDecl: {
             auto& d = *cast<ParsedStructDecl>(s);
             PrintHeader(s, "StructDecl", false);
-            print("%2({})\n", d.name);
+            print("%6({})\n", d.name);
             PrintChildren<ParsedFieldDecl>(d.fields());
         } break;
 

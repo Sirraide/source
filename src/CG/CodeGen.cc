@@ -421,6 +421,10 @@ void CodeGen::Mangler::Append(Type ty) {
             }
             M.name += "E";
         }
+
+        void operator()(StructType* ty) {
+            Todo();
+        }
     };
 
     ty->visit(Visitor{*this});
@@ -509,6 +513,9 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
         }
 
         case TypeBase::Kind::TemplateType: Unreachable("TemplateType in codegen?");
+        case TypeBase::Kind::StructType: {
+            Todo();
+        }
     }
 
     Unreachable("Unknown type kind");

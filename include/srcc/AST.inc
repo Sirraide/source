@@ -54,7 +54,9 @@ AST_STMT_LEAF(TypeExpr)
 AST_STMT_LEAF(UnaryExpr)
 
 AST_STMT(Decl)
+AST_DECL_LEAF(FieldDecl)
 AST_DECL_LEAF(TemplateTypeDecl)
+AST_DECL_LEAF(TypeDecl)
 AST_STMT(ObjectDecl)
 AST_DECL_LEAF(LocalDecl)
 AST_DECL_LEAF(ParamDecl)
@@ -68,6 +70,7 @@ AST_TYPE_LEAF(ReferenceType)
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
 AST_TYPE_LEAF(ProcType)
+AST_TYPE_LEAF(StructType)
 AST_TYPE_LEAF(TemplateType)
 
 #undef AST_STMT_LEAF

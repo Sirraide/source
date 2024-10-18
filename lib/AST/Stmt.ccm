@@ -609,8 +609,23 @@ protected:
 
 public:
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::TemplateTypeDecl;
+        return e->kind() >= Kind::FieldDecl;
     }
+};
+
+class srcc::FieldDecl final : public Decl {
+public:
+    Type type;
+    Size offset;
+
+    FieldDecl(
+        Type type,
+        Size offset,
+        String name,
+        Location location
+    ) : Decl{Kind::FieldDecl, name, location}, type{type}, offset{offset} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
 };
 
 class srcc::TemplateTypeDecl final : public Decl
@@ -641,6 +656,24 @@ public:
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeDecl; }
+};
+
+// A struct or type alias decl.
+class srcc::TypeDecl : public Decl {
+    friend StructType;
+
+public:
+    Type type;
+
+private:
+    TypeDecl(
+        Type type,
+        String name,
+        Location location
+    ) : Decl{Kind::TypeDecl, name, location}, type{type} {}
+
+public:
+    static bool classof(const Stmt* e) { return e->kind() == Kind::TypeDecl; }
 };
 
 class srcc::LocalDecl : public Decl {
