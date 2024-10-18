@@ -218,3 +218,26 @@ to (the type name is ‘overloaded’, in a sense). This has two consequences.
 pointer and a context pointer. The function pointer has an extra argument for the context
 pointer (maybe make it configurable where in the signature that argument goes). We also need
 a separate function pointer type for this (probably just as a stdlib template).
+
+## Operator `throw`
+For returning errors, we run into a problem if the actual return type and the error type are
+the same (e.g. `Res<int, int>`). One idea would be to do something like this:
+```c#
+proc foo -> Res<int, int> {
+    return 4; // Returns with value state engaged.
+    throw 5;  // Returns with error state engaged.
+}
+```
+To support this for user-defined types, a type can implement a ‘`throw` constructor’:
+```c#
+init throw Res<$T, $U> (int i) { ... }
+```
+ which
+is called when `throw` is used in a function that returns a value of that type. E.g. desugared,
+the function above would be:
+```c#
+proc foo -> Res<int, int> {
+    return Res<int, int>(4);
+    return Res<int, int>::Error(4); // Pseudocode, but you get the point.
+}
+```

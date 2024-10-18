@@ -95,8 +95,9 @@ auto Sema::CheckVariableType(Type ty, Location loc) -> Type {
 
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
-        default: return ICE(d->location(), "Cannot build a reference to this declaration");
+        default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
+        case Stmt::Kind::TypeDecl: return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
         case Stmt::Kind::LocalDecl:
         case Stmt::Kind::ParamDecl:
             return new (*M) LocalRefExpr(cast<LocalDecl>(d), loc);
@@ -104,7 +105,7 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
 }
 
 void Sema::DeclareLocal(LocalDecl* d) {
-    Assert(d->parent == curr_proc().proc, "Must EnterProcedure befor adding a local variable");
+    Assert(d->parent == curr_proc().proc, "Must EnterProcedure before adding a local variable");
     curr_proc().locals.push_back(d);
 
     // If the current procedure is a template instantiation, do not
@@ -1973,6 +1974,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
             .Case("bits", AK::TypeBits)
             .Case("bytes", AK::TypeBytes)
             .Case("name", AK::TypeName)
+            .Case("size", AK::TypeBytes)
             .Default(std::nullopt);
 
         if (isa<SliceType>(base->type)) return Switch(parsed->member)
@@ -1987,12 +1989,6 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     if (kind == AlreadyDiagnosed) return {};
     if (kind == std::nullopt) {
         Error(parsed->loc, "'{}' has no member named '{}'", base->type, parsed->member);
-
-        // TODO: Should we add a 'size' type to the language or stdlib that
-        // functions exactly like our 'Size' struct?
-        if (isa<TypeExpr>(base) and parsed->member == "size") Remark(
-            "Did you mean 'bytes' instead of 'size'?"
-        );
         return {};
     }
 

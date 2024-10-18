@@ -3,24 +3,57 @@ program test;
 
 eval assert i64.bits == 64;
 eval assert i64.bytes == 8;
+eval assert i64.size == 8;
 eval assert i64.align == 8;
 eval assert i64.arrsize == 8;
 eval assert i64.name == "i64";
 
 eval assert i64[].bits == 128;
 eval assert i64[].bytes == 16;
+eval assert i64[].size == 16;
 eval assert i64[].align == 8;
 eval assert i64[].arrsize == 16;
 eval assert i64[].name == "i64[]";
 
 eval assert i64.bits == 65; // expected-error: Assertion failed: 'i64.bits == 65'
 eval assert i64.bytes == 9; // expected-error: Assertion failed: 'i64.bytes == 9'
+eval assert i64.size == 9; // expected-error: Assertion failed: 'i64.size == 9'
 eval assert i64.align == 9; // expected-error: Assertion failed: 'i64.align == 9'
 eval assert i64.arrsize == 9; // expected-error: Assertion failed: 'i64.arrsize == 9'
 eval assert i64.name == "i65"; // expected-error: Assertion failed: 'i64.name == "i65"'
 
 eval assert i64[].bits == 65; // expected-error: Assertion failed: 'i64[].bits == 65'
 eval assert i64[].bytes == 9; // expected-error: Assertion failed: 'i64[].bytes == 9'
+eval assert i64[].size == 9; // expected-error: Assertion failed: 'i64[].size == 9'
 eval assert i64[].align == 9; // expected-error: Assertion failed: 'i64[].align == 9'
 eval assert i64[].arrsize == 9; // expected-error: Assertion failed: 'i64[].arrsize == 9'
 eval assert i64[].name == "i65"; // expected-error: Assertion failed: 'i64[].name == "i65"'
+
+struct Padding1 {
+    i8 a;
+    i64 b;
+}
+
+struct Padding2 {
+    i8 a;
+    i32 b;
+    i64 c;
+}
+
+eval assert Padding1.size == 16;
+eval assert Padding2.size == 16;
+
+struct TrailingPadding1 {
+    i64 a;
+    i8 b;
+}
+
+struct TrailingPadding2 {
+    TrailingPadding1 a;
+    i16 b;
+}
+
+eval assert TrailingPadding1.size == 9;
+eval assert TrailingPadding1.arrsize == 16;
+eval assert TrailingPadding2.size == 12;
+eval assert TrailingPadding2.arrsize == 16;
