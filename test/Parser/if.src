@@ -20,8 +20,25 @@ if true then 1 else 2;
 
 (if true a else b) = 42;
 
+static if 1 {}
+static if {} {}
+static if true then {}
+static if true {} elif true {} elif true 4;
+static if true {} elif true {} elif true {} else {}
+static if true 7 elif true 7 elif true 7 else {}
+x = static if true then 1 else 2;
+(static if true a else b) = 42;
+
 if (true) {} // expected-warning: Unnecessary parentheses around 'if' condition
 if true {} else if {} {} // expected-warning: Use 'elif' instead of 'else if'
+
+// Warn about this since it’s clunky.
+static if 4 {} else static if 4 {} else {} // expected-warning: Use 'elif' instead of 'else static if'
+static if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'elif' instead of 'else static if'
+
+// But NOT here because the parent if isn’t static!
+if 4 {} else static if 4 {} else {}
+if 4 {} elif 4 {} else static if 4 {}
 
 if true then 1; else 2; // expected-error: Semicolon before 'else' is not allowed
 if true {}
@@ -43,4 +60,12 @@ else; // expected-error: Unexpected 'else'
 elif; // expected-error: Unexpected 'elif'
 if true 7 elif true 7 elif true; // expected-error: Expected expression
 if true {} elif true {} elif true; // expected-error: Expected expression
-if true {} else {} else {} // expected-error: Unexpected 'else'
+if true {} else {} else {}; // expected-error: Unexpected 'else'
+
+static if true {} static elif true {} elif true 4; // expected-error: 'static elif' is invalid
+static if true {} elif true {} static elif true {} else {} // expected-error: 'static elif' is invalid
+static if true 7 elif true 7 elif true 7 static else {} // expected-error: 'static else' is invalid
+
+if true {} static elif true {} elif true 4; // expected-error: 'static elif' is invalid
+if true {} elif true {} static elif true {} else {} // expected-error: 'static elif' is invalid
+if true 7 elif true 7 elif true 7 static else {} // expected-error: 'static else' is invalid

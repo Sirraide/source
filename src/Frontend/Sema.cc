@@ -881,7 +881,7 @@ auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<Asser
         );
     }
 
-    return new (*M) AssertExpr(cond, std::move(msg), loc);
+    return new (*M) AssertExpr(cond, std::move(msg), false, loc);
 }
 
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
@@ -1435,6 +1435,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
             cond,
             then,
             else_,
+            false,
             loc
         );
     };
@@ -1507,7 +1508,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     // Make sure both sides are rvalues.
     t = LValueToSRValue(t);
     e = LValueToSRValue(e);
-    return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, loc);
+    return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
 }
 
 auto Sema::BuildLocalDecl(

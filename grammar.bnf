@@ -54,7 +54,7 @@
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
-<expr-if>        ::= IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <if-body> ]
+<expr-if>        ::= [ STATIC ] IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <if-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-member>    ::= <expr> "." IDENTIFIER
 <expr-paren>     ::= "(" <expr> ")"

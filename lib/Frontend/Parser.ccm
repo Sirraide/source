@@ -370,16 +370,19 @@ public:
     ParsedStmt* cond;
     ParsedStmt* then;
     Ptr<ParsedStmt> else_;
+    bool is_static;
 
     ParsedIfExpr(
         ParsedStmt* cond,
         ParsedStmt* then,
         Ptr<ParsedStmt> else_,
+        bool is_static,
         Location location
     ) : ParsedStmt{Kind::IfExpr, location},
         cond{cond},
         then{then},
-        else_{else_} {}
+        else_{else_},
+        is_static{is_static} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IfExpr; }
 };
@@ -662,7 +665,7 @@ private:
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
-    auto ParseIf() -> Ptr<ParsedIfExpr>;
+    auto ParseIf(bool is_static) -> Ptr<ParsedIfExpr>;
     void ParseImport();
     auto ParseIntent() -> std::pair<Location, Intent>;
     void ParsePreamble();

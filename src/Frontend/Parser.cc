@@ -297,7 +297,8 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
-            PrintHeader(s, "IfExpr");
+            PrintHeader(s, "IfExpr", not i.is_static);
+            if (i.is_static) print("static\n");
             SmallVector<ParsedStmt*, 3> children{i.cond, i.then};
             if (auto e = i.else_.get_or_null()) children.push_back(e);
             PrintChildren(children);
@@ -606,6 +607,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Proc:
         case Tk::RBrace:
         case Tk::Return:
+        case Tk::Static:
         case Tk::StringLiteral:
         case Tk::TemplateType:
         case Tk::Tilde:
@@ -767,6 +769,13 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
         } break;
 
+        // Static assert, and static if.
+        case Tk::Static: {
+            auto static_loc = Next();
+            if (At(Tk::If)) lhs = ParseIf(true);
+            if (auto l = lhs.get()) l->loc = {static_loc, l->loc};
+        } break;
+
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
         case Tk::Assert: {
             auto start = Next();
@@ -796,7 +805,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         } break;
 
         case Tk::If:
-            lhs = ParseIf();
+            lhs = ParseIf(false);
             break;
 
         case Tk::Identifier:
@@ -983,9 +992,9 @@ void Parser::ParseHeader() {
     Consume(Tk::Semicolon);
 }
 
-// <expr-if> ::= IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <expr> ]
+// <expr-if> ::= [ STATIC] IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <expr> ]
 // <if-body> ::= [ THEN ] <expr>
-auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
+auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.
     auto loc = Next();
 
@@ -1030,14 +1039,58 @@ auto Parser::ParseIf() -> Ptr<ParsedIfExpr> {
         "Use '%1(elif)' instead of '%1(else if)'"
     );
 
+    // 'else static if' on the other hand looks really janky and is
+    // completely unnecessary if this would already be static if it
+    // was an 'elif'.
+    if (
+        At(Tk::Else) and
+        LookAhead(1).is(Tk::Static) and
+        LookAhead(2).is(Tk::If) and
+        is_static
+    ) {
+        Warn(
+            {tok->location, LookAhead(2).location},
+            "Use '%1(elif)' instead of '%1(else static if)' here"
+        );
+
+        Remark(
+            "\vThe '%1(static)' is redundant in this case since the "
+            "parent '%1(if)' is already static."
+        );
+    }
+
+    // Recover from redundant 'static' here.
+    if (At(Tk::Static) and LookAhead().is(Tk::Elif, Tk::Else)) {
+        Error(
+            {tok->location, LookAhead().location},
+            "'%1(static {})' is invalid", LookAhead().type
+        );
+
+        // Suggest 'else static if' instead of 'static elif' iff the parent
+        // if isn’t static. This is theoretically a valid, if janky, use case
+        // that we allow and should tell people about because it’s not obvious.
+        Remark( // clang-format off
+            "\v'%1(elif)' or '%1(else)' are static if and only if the main '%1(if)' is static.",
+            is_static or LookAhead().is(Tk::Else) ? "" : " If you really want a static if "
+            "inside a non-static if, you can write '%1(else static if)' or '%1(else { static "
+            "if ... })' instead."
+        ); // clang-format on
+        Next();
+    }
+
     // Parse the else/elif branch.
-    auto else_ = At(Tk::Elif)      ? ParseIf()
+    //
+    // Parse the elif clause by treating it as though it were the start
+    // of a new if statement; this also ends up propagating the 'static'
+    // flag appropriately so we don’t have to write 'static elif'.
+    auto else_ = At(Tk::Elif)      ? ParseIf(is_static)
                : Consume(Tk::Else) ? ParseStmt()
                                    : nullptr;
     return new (*this) ParsedIfExpr{
         cond,
         body,
         else_,
+        is_static,
         {loc, else_ ? else_.get()->loc : body->loc}
     };
 }
@@ -1402,7 +1455,7 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
     return ParseTypeRest(ty.get());
 }
 
-auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt>{
+auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt> {
     switch (tok->type) {
         default: return ty;
         case Tk::LBrack: {

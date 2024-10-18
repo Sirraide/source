@@ -181,14 +181,17 @@ class srcc::AssertExpr final : public Expr {
 public:
     Expr* cond;
     Ptr<Expr> message;
+    bool is_static;
 
     AssertExpr(
         Expr* cond,
         Ptr<Expr> message,
+        bool is_static,
         Location location
     ) : Expr{Kind::AssertExpr, Types::VoidTy, SRValue, location},
         cond{cond},
-        message{message} {
+        message{message},
+        is_static{is_static} {
         ComputeDependence();
     }
 
@@ -438,6 +441,7 @@ public:
     Expr* cond;
     Stmt* then;
     Ptr<Stmt> else_;
+    bool is_static;
 
     IfExpr(
         Type type,
@@ -445,11 +449,13 @@ public:
         Expr* cond,
         Stmt* then,
         Ptr<Stmt> else_,
+        bool is_static,
         Location location
     ) : Expr{Kind::IfExpr, type, val, location},
         cond{cond},
         then{then},
-        else_{else_} {
+        else_{else_},
+        is_static{is_static} {
         ComputeDependence();
     }
 
