@@ -1119,7 +1119,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     Location loc
 ) -> Ptr<BuiltinMemberAccessExpr> {
     auto type = [&] -> Type {
-        switch (ak)  {
+        switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
             case AK::SliceData: return ReferenceType::Get(*M, cast<SliceType>(operand->type)->elem());
             case AK::SliceSize: return Types::IntTy;
@@ -1628,6 +1628,34 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
 }
 
+auto Sema::BuildStaticIfExpr(
+    Expr* cond,
+    ParsedStmt* then,
+    Ptr<ParsedStmt> else_,
+    Location loc
+) -> Ptr<Stmt> {
+    // If the condition is dependent, defer this until later.
+    if (cond->dependent()) return new (*M) StaticIfExpr(cond, then, else_, loc);
+
+    // Otherwise, check this now.
+    if (not MakeSRValue(Types::BoolTy, cond, "Condition", "static if")) return {};
+    auto val = eval::Evaluate(*M, cond);
+    if (not val) {
+        Error(loc, "Condition of 'static if' must be a constant expression");
+        return {};
+    }
+
+    // If there is no else clause, and the condition is false, return
+    // an empty statement.
+    // TODO: Add an 'EmptyExpr' node.
+    auto cond_val = val->cast<bool>();
+    if (not cond_val and not else_) return new (*M) ConstExpr(*M, {}, loc, nullptr);
+
+    // Otherwise, translate the appropriate branch now, and throw
+    // away the other one.
+    return TranslateStmt(cond_val ? then : else_.get());
+}
+
 auto Sema::BuildTypeExpr(Type ty, Location loc) -> TypeExpr* {
     return new (*M) TypeExpr(ty, loc);
 }
@@ -1776,32 +1804,32 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
     return BuildAssertExpr(cond, msg, parsed->loc);
 }
 
-auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Expr> {
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Stmt> {
     // Translate LHS and RHS.
     auto lhs = TRY(TranslateExpr(expr->lhs));
     auto rhs = TRY(TranslateExpr(expr->rhs));
     return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);
 }
 
-auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Stmt> {
     EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, parsed->stmts());
     return BuildBlockExpr(scope.get(), stmts, parsed->loc);
 }
 
-auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed) -> Ptr<Stmt> {
     return new (*M) BoolLitExpr(parsed->value, parsed->loc);
 }
 
-auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
     // Translate arguments.
     SmallVector<Expr*> args;
     bool errored = false;
@@ -1831,7 +1859,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Expr> {
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
-auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Stmt> {
     auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc, false);
     if (res.successful()) return CreateReference(res.decls.front(), parsed->loc);
 
@@ -1909,7 +1937,7 @@ auto Sema::TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr> {
     return cast<Expr>(stmt.get());
 }
 
-auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Stmt> {
     auto arg = TRY(TranslateStmt(parsed->expr));
     return BuildEvalExpr(arg, parsed->loc);
 }
@@ -1918,14 +1946,15 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
     Unreachable("Handled as part of StructDecl translation");
 }
 
-auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
+    if (parsed->is_static) return BuildStaticIfExpr(cond, parsed->then, parsed->else_, parsed->loc);
     auto then = TRY(TranslateStmt(parsed->then));
     Ptr else_ = parsed->else_ ? TRY(TranslateStmt(parsed->else_.get())) : nullptr;
     return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
-auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
     // If the value fits in an 'int', its type is 'int'.
     auto val = parsed->storage.value();
     auto small = val.tryZExtValue();
@@ -1963,7 +1992,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
     );
 }
 
-auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
     using AK = BuiltinMemberAccessExpr::AccessKind;
     static constexpr auto AlreadyDiagnosed = AK(255);
@@ -1996,7 +2025,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     return BuildBuiltinMemberAccessExpr(kind.value(), base, parsed->loc);
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
     return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
 }
 
@@ -2099,9 +2128,6 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
-
-
-
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -2156,18 +2182,18 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
 }
 
 /// Translate a string literal.
-auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<Stmt> {
     return StrLitExpr::Create(*M, parsed->value, parsed->loc);
 }
 
 /// Translate a return expression.
-auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Stmt> {
     Ptr<Expr> ret_val;
     if (parsed->value.present()) ret_val = TranslateExpr(parsed->value.get());
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
 
-auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Expr> {
+auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Stmt> {
     auto arg = TRY(TranslateExpr(parsed->arg));
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }

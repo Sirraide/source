@@ -1043,6 +1043,10 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     return {};
 }
 
+auto CodeGen::EmitStaticIfExpr(StaticIfExpr*) -> Value* {
+    Unreachable();
+}
+
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return GetStringSlice(expr->value);
 }

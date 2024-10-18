@@ -109,6 +109,7 @@ void Stmt::ComputeDependence() { // clang-format off
         if (auto value = e->value.get_or_null()) d = value->dependence();
     },
 
+    [&](StaticIfExpr*) { d = Dependence::ValueAndType; },
     [&](StrLitExpr*) { /* Never dependent */ },
     [&](TypeExpr* e) { if (e->value->dependent()) d = Dependence::Type; },
     [&](TypeDecl* td) { d = td->type->dep; },

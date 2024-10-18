@@ -1242,6 +1242,12 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
     return true;
 }
 
+bool EvaluationContext::EvalStaticIfExpr(Value&, StaticIfExpr*) {
+    // This node is always dependent, so getting here in the
+    // first place should be impossible.
+    Unreachable("Evaluating dependent 'static if' expression?");
+}
+
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
     out = MakeString(str_lit->value, str_lit->location());
     return true;

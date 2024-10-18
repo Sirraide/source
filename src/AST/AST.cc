@@ -352,6 +352,10 @@ void Stmt::Printer::Print(Stmt* e) {
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
         } break;
 
+        case Kind::StaticIfExpr: {
+            PrintBasicNode(e, "StaticIfExpr");
+        } break;
+
         case Kind::StrLitExpr: {
             PrintBasicHeader(e, "StrLitExpr");
             print(" %3(\"\002{}\003\")\n", utils::Escape(cast<StrLitExpr>(e)->value));

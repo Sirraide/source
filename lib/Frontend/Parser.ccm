@@ -80,7 +80,7 @@ public:
 //  Statements
 // ============================================================================
 /// Root of the parse tree hierarchy.
-class srcc::ParsedStmt {
+class srcc::ParsedStmt : public ParseTreeNodeBase {
     struct Printer;
     friend Printer;
 

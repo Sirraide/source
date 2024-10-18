@@ -274,6 +274,16 @@ auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Stmt> {
     return e;
 }
 
+auto TemplateInstantiator::InstantiateStaticIfExpr(StaticIfExpr* n) -> Ptr<Stmt> {
+    auto cond = TryInstantiateExpr(n->cond);
+    return S.BuildStaticIfExpr(
+        cond,
+        static_cast<ParsedStmt*>(n->then),
+        static_cast<ParsedStmt*>(n->else_.get_or_null()),
+        n->location()
+    );
+}
+
 auto TemplateInstantiator::InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Stmt> {
     Assert(not e->dependent(), "Dependent StrLitExpr?");
     return e;
