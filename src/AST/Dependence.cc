@@ -58,6 +58,8 @@ void Stmt::ComputeDependence() { // clang-format off
         Unreachable("Invalid builtin: {}", +e->builtin);
     },
 
+    [&](BuiltinMemberAccessExpr* e) { d = e->operand->dependence(); },
+
     [&](CallExpr* e) {
         for (auto a : e->args()) d |= a->dependence();
         d |= e->callee->dependence();
@@ -107,7 +109,6 @@ void Stmt::ComputeDependence() { // clang-format off
         if (auto value = e->value.get_or_null()) d = value->dependence();
     },
 
-    [&](SliceDataExpr* e) { d = e->slice->dependence(); },
     [&](StrLitExpr*) { /* Never dependent */ },
     [&](TypeExpr* e) { if (e->value->dependent()) d = Dependence::Type; },
     [&](TypeDecl* td) { d = td->type->dep; },

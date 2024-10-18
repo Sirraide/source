@@ -35,6 +35,21 @@ Value::Value(Slice slice, Type ty)
     : value(std::move(slice)),
       ty(ty) {}
 
+bool Value::operator==(const Value& other) const {
+    if (value.index() != other.value.index()) return false;
+    return visit(utils::Overloaded{
+        [&](bool b) { return b == other.cast<bool>(); },
+        [&](std::monostate) { return other.isa<std::monostate>(); },
+        [&](ProcDecl* proc) { return proc == other.cast<ProcDecl*>(); },
+        [&](Type ty) { return ty == other.cast<Type>(); },
+        [&](const LValue& lval) { return lval == other.cast<LValue>(); },
+        [&](const APInt& i) { return i == other.cast<APInt>(); },
+        [&](const Slice& s) { return s == other.cast<Slice>(); },
+        [&](const Reference& r) { return r == other.cast<Reference>(); }
+    });
+}
+
+
 void Value::dump(bool use_colour) const {
     std::print("{}", text::RenderColours(use_colour, print().str()));
 }
@@ -45,7 +60,7 @@ auto Value::print() const -> SmallUnrenderedString {
         [&](bool) { out += std::format("%1({})", value.get<bool>()); },
         [&](std::monostate) { },
         [&](ProcDecl* proc) { out += std::format("%2({})", proc->name); },
-        [&](TypeTag) { out += ty->print(); },
+        [&](Type ty) { out += ty->print(); },
         [&](const LValue& lval) { out += lval.print(); },
         [&](const APInt& value) { out += std::format("%5({})", toString(value, 10, true)); },
         [&](const Slice&) { out += "<slice>"; },
@@ -65,7 +80,7 @@ auto Value::value_category() const -> ValueCategory {
         [](bool) { return Expr::SRValue; },
         [](ProcDecl*) { return Expr::SRValue; },
         [](Slice) { return Expr::SRValue; },
-        [](TypeTag) { return Expr::SRValue; },
+        [](Type) { return Expr::SRValue; },
         [](const APInt&) { return Expr::SRValue; },
         [](const LValue&) { return Expr::LValue; },
         [](const Reference&) { return Expr::LValue; },
@@ -216,8 +231,8 @@ public:
     /// Check if we’re in a function.
     [[nodiscard]] bool InFunction() { return not stack.empty(); }
 
-    /// Create an integer.
-    [[nodiscard]] auto IntValue(std::integral auto val) -> Value;
+    /// Create a string.
+    [[nodiscard]] auto MakeString(String s, Location l) -> Value;
 
     /// Perform an assignment to an already live variable.
     [[nodiscard]] bool PerformAssign(LValue& addr, Ptr<Expr> init, Location loc);
@@ -433,8 +448,14 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
     Unreachable("Invalid statement kind");
 }
 
-auto EvaluationContext::IntValue(std::integral auto val) -> Value {
-    return Value{APInt{64, u64(val)}, Types::IntTy};
+auto EvaluationContext::MakeString(String s, Location l) -> Value {
+    return Value{
+        Slice{
+            Reference{LValue{s, tu.StrLitTy, l}, APInt::getZero(64)},
+            APInt(u32(Types::IntTy->size(tu).bits()), s.size(), false),
+        },
+        tu.StrLitTy,
+    };
 }
 
 bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc) {
@@ -826,8 +847,17 @@ bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
         case Tk::SGt: return EvalCompare(&APInt::sgt);
         case Tk::SLe: return EvalCompare(&APInt::sle);
         case Tk::SGe: return EvalCompare(&APInt::sge);
-        case Tk::EqEq: return EvalCompare(&APInt::operator==);
-        case Tk::Neq: return EvalCompare(&APInt::operator!=);
+
+        // Equality comparison.
+        case Tk::EqEq: {
+            out = lhs == rhs;
+            return true;
+        }
+
+        case Tk::Neq: {
+            out = lhs != rhs;
+            return true;
+        }
 
         // Exclusive or.
         // This needs special handling because it’s supported for both bools and ints.
@@ -929,6 +959,57 @@ bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin
     Unreachable("Invalid builtin kind");
 }
 
+bool EvaluationContext::EvalBuiltinMemberAccessExpr(Value& out, BuiltinMemberAccessExpr* expr) {
+    switch (expr->access_kind) {
+        using AK = BuiltinMemberAccessExpr::AccessKind;
+        case AK::SliceData: {
+            TryEval(out, expr->operand);
+            auto data = std::move(out.dyn_cast<Slice>()->data);
+            out = {std::move(data), expr->type};
+            return true;
+        }
+
+        case AK::SliceSize: {
+            TryEval(out, expr->operand);
+            auto size = out.dyn_cast<Slice>()->size;
+            out = {size, expr->type};
+            return true;
+        }
+
+        case AK::TypeAlign: {
+            auto te = cast<TypeExpr>(expr->operand);
+            out = i64(te->value->align(tu).value());
+            return true;
+        }
+
+        case AK::TypeBits: {
+            auto te = cast<TypeExpr>(expr->operand);
+            out = i64(te->value->size(tu).bits());
+            return true;
+        }
+
+        case AK::TypeBytes: {
+            auto te = cast<TypeExpr>(expr->operand);
+            out = i64(te->value->size(tu).bytes());
+            return true;
+        }
+
+        case AK::TypeArraySize: {
+            auto te = cast<TypeExpr>(expr->operand);
+            out = i64(te->value->array_size(tu).bytes());
+            return true;
+        }
+
+        case AK::TypeName: {
+            auto te = cast<TypeExpr>(expr->operand);
+            out = MakeString(tu.save(StripColours(te->value->print())), expr->location());
+            return true;
+        }
+    }
+    Unreachable();
+}
+
+
 bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     TryEval(out, call->callee);
     auto proc = out.cast<ProcDecl*>();
@@ -1028,9 +1109,9 @@ bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
 
             // Builtin int.
             if (lvalue.type == Types::IntTy) {
-                u64 value;
+                i64 value;
                 TRY(LoadMemory(lvalue, value, cast->location()));
-                out = IntValue(value);
+                out = value;
                 return true;
             }
 
@@ -1161,21 +1242,8 @@ bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
     return true;
 }
 
-bool EvaluationContext::EvalSliceDataExpr(Value& out, SliceDataExpr* slice_data) {
-    TryEval(out, slice_data->slice);
-    auto data = std::move(out.dyn_cast<Slice>()->data);
-    out = {std::move(data), slice_data->type};
-    return true;
-}
-
 bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
-    out = Value{
-        Slice{
-            Reference{LValue{str_lit->value, str_lit->type, str_lit->location()}, APInt::getZero(64)},
-            APInt(u32(Types::IntTy->size(tu).bits()), str_lit->value.size(), false),
-        },
-        tu.StrLitTy,
-    };
+    out = MakeString(str_lit->value, str_lit->location());
     return true;
 }
 

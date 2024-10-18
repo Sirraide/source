@@ -338,6 +338,10 @@ public:
 // String that contains formatting characters that are yet to be rendered.
 using SmallUnrenderedString = SmallString<128>;
 
+// Strip colours from an unrendered string.
+auto StripColours(const SmallUnrenderedString& s) -> std::string {
+    return text::RenderColours(false, s.str().str());
+}
 } // namespace srcc
 
 // Rarely used helpers go here.

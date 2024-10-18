@@ -3,11 +3,11 @@ module;
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/Support/Alignment.h>
 #include <print>
 #include <ranges>
 #include <srcc/ClangForward.hh>
 #include <srcc/Macros.hh>
-#include <llvm/Support/Alignment.h>
 
 module srcc.frontend.sema;
 import srcc.utils;
@@ -928,6 +928,19 @@ auto Sema::BuildBinaryExpr(
         return true;
     };
 
+    auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<BinaryExpr> {
+        auto Check = [&](std::string_view which, Expr* e) {
+            if (e->type->is_integer()) return true;
+            Error(e->location(), "{} of %1({}) must be an integer", which, Spelling(op));
+            return false;
+        };
+
+        // Both operands must be integers.
+        if (not Check("Left operand", lhs) or not Check("Right operand", rhs)) return nullptr;
+        if (not ConvertToCommonType()) return nullptr;
+        return Build(comparison ? Types::BoolTy : lhs->type);
+    };
+
     // If either operand is dependent, then we can’t do much.
     if (lhs->dependent() or rhs->dependent()) return Build(
         Types::DependentTy,
@@ -978,18 +991,8 @@ auto Sema::BuildBinaryExpr(
         case Tk::ShiftRight:
         case Tk::ShiftRightLogical:
         case Tk::Ampersand:
-        case Tk::VBar: {
-            auto Check = [&](std::string_view which, Expr* e) {
-                if (e->type->is_integer()) return true;
-                Error(e->location(), "{} of %1({}) must be an integer", which, Spelling(op));
-                return false;
-            };
-
-            // Both operands must be integers.
-            if (not Check("Left operand", lhs) or not Check("Right operand", rhs)) return nullptr;
-            if (not ConvertToCommonType()) return nullptr;
-            return Build(lhs->type);
-        }
+        case Tk::VBar:
+            return BuildArithmeticOrComparisonOperator(false);
 
         // Comparison.
         case Tk::ULt:
@@ -1000,6 +1003,9 @@ auto Sema::BuildBinaryExpr(
         case Tk::SGt:
         case Tk::SLe:
         case Tk::SGe:
+            return BuildArithmeticOrComparisonOperator(true);
+
+        // Equality comparison. This is supported for more types.
         case Tk::EqEq:
         case Tk::Neq: {
             if (not ConvertToCommonType()) return nullptr;
@@ -1104,6 +1110,34 @@ auto Sema::BuildBuiltinCallExpr(
     }
 
     Unreachable("Invalid builtin type: {}", +builtin);
+}
+
+auto Sema::BuildBuiltinMemberAccessExpr(
+    BuiltinMemberAccessExpr::AccessKind ak,
+    Expr* operand,
+    Location loc
+) -> Ptr<BuiltinMemberAccessExpr> {
+    auto type = [&] -> Type {
+        switch (ak)  {
+            using AK = BuiltinMemberAccessExpr::AccessKind;
+            case AK::SliceData: return ReferenceType::Get(*M, cast<SliceType>(operand->type)->elem());
+            case AK::SliceSize: return Types::IntTy;
+            case AK::TypeAlign: return Types::IntTy;
+            case AK::TypeArraySize: return Types::IntTy;
+            case AK::TypeBits: return Types::IntTy;
+            case AK::TypeBytes: return Types::IntTy;
+            case AK::TypeName: return M->StrLitTy;
+        }
+        Unreachable();
+    }();
+
+    return new (*M) BuiltinMemberAccessExpr{
+        type,
+        Expr::SRValue,
+        operand,
+        ak,
+        loc
+    };
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
@@ -1929,14 +1963,40 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Expr> {
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Expr> {
     auto base = TRY(TranslateExpr(parsed->base));
-    if (isa<SliceType>(base->type)) {
-        // TODO: Consolidate into a single BuiltinMemberAccess AST node
-        // when we start allowing '.size'.
-        if (parsed->member == "data") return SliceDataExpr::Create(*M, base, parsed->loc);
-        return Error(parsed->loc, "Slice has no member named '{}'", parsed->member);
+    using AK = BuiltinMemberAccessExpr::AccessKind;
+    static constexpr auto AlreadyDiagnosed = AK(255);
+    auto kind = [&] -> Opt<AK> {
+        using Switch = llvm::StringSwitch<Opt<AK>>;
+        if (isa<TypeExpr>(base)) return Switch(parsed->member)
+            .Case("align", AK::TypeAlign)
+            .Case("arrsize", AK::TypeArraySize)
+            .Case("bits", AK::TypeBits)
+            .Case("bytes", AK::TypeBytes)
+            .Case("name", AK::TypeName)
+            .Default(std::nullopt);
+
+        if (isa<SliceType>(base->type)) return Switch(parsed->member)
+            .Case("data", AK::SliceData)
+            .Case("size", AK::SliceSize)
+            .Default(std::nullopt);
+
+        Error(parsed->loc, "Cannot perform member access on type '{}'", base->type);
+        return AlreadyDiagnosed;
+    }();
+
+    if (kind == AlreadyDiagnosed) return {};
+    if (kind == std::nullopt) {
+        Error(parsed->loc, "'{}' has no member named '{}'", base->type, parsed->member);
+
+        // TODO: Should we add a 'size' type to the language or stdlib that
+        // functions exactly like our 'Size' struct?
+        if (isa<TypeExpr>(base) and parsed->member == "size") Remark(
+            "Did you mean 'bytes' instead of 'size'?"
+        );
+        return {};
     }
 
-    return Error(parsed->loc, "Attempt to access member of type {}", base->type);
+    return BuildBuiltinMemberAccessExpr(kind.value(), base, parsed->loc);
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Expr> {
@@ -2042,6 +2102,9 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
@@ -2051,7 +2114,7 @@ auto Sema::TranslateStructDecl(ParsedStructDecl*) -> Decl* {
     Unreachable("Should not be translated normally");
 }
 
-auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed)-> Ptr<TypeDecl> {
+auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
     auto s = cast<StructType>(decl->type);
     Assert(not s->is_complete(), "Type is already complete?");
 
@@ -2082,7 +2145,6 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed)-> Ptr<TypeD
     s->finalise(fields, size, align);
     return decl;
 }
-
 
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
     auto ty = StructType::Create(

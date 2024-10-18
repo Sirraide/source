@@ -192,6 +192,27 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren<Expr>(c.args());
         } break;
 
+        case Kind::BuiltinMemberAccessExpr: {
+            auto& m = *cast<BuiltinMemberAccessExpr>(e);
+            PrintBasicNode(e, "BuiltinMemberAccessExpr", [&] {
+                using AK = BuiltinMemberAccessExpr::AccessKind;
+                auto kind = [&] -> std::string_view {
+                    switch (m.access_kind) {
+                        case AK::SliceData: return "data";
+                        case AK::SliceSize: return "size";
+                        case AK::TypeAlign: return "align";
+                        case AK::TypeArraySize: return "arrsize";
+                        case AK::TypeBits: return "bits";
+                        case AK::TypeBytes: return "bytes";
+                        case AK::TypeName: return "name";
+                    }
+                    return "<invalid>";
+                }();
+                print("%3({})", kind);
+            });
+            PrintChildren(m.operand);
+        } break;
+
         case Kind::CallExpr: {
             PrintBasicNode(e, "CallExpr");
             auto& c = *cast<CallExpr>(e);
@@ -330,11 +351,6 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "ReturnExpr", [&] { if (ret->implicit) print("implicit"); }, false);
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
         } break;
-
-        case Kind::SliceDataExpr:
-            PrintBasicNode(e, "SliceDataExpr");
-            PrintChildren(cast<SliceDataExpr>(e)->slice);
-            break;
 
         case Kind::StrLitExpr: {
             PrintBasicHeader(e, "StrLitExpr");

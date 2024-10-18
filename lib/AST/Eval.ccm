@@ -24,9 +24,6 @@ class Value;
 class Memory;
 enum struct LifetimeState : u8;
 
-/// Tag that marks that a Value stores a type.
-struct TypeTag {};
-
 /// Attempt to evaluate a statement.
 ///
 /// Callers must check dependence before this is called; attempting
@@ -75,6 +72,10 @@ public:
           type{type},
           loc{loc},
           modifiable{modifiable} {}
+
+    bool operator==(const LValue& other) const {
+        return base == other.base;
+    }
 
     /// Make this readonly; this cannot be undone.
     void make_readonly() const { modifiable = false; }
@@ -127,6 +128,8 @@ class srcc::eval::Reference {
 public:
     LValue lvalue;
     APInt offset;
+
+    bool operator==(const Reference&) const = default;
 };
 
 class srcc::eval::Slice {
@@ -137,6 +140,8 @@ public:
     Slice(Reference data, APInt size)
         : data(std::move(data)),
           size(std::move(size)) {}
+
+    bool operator==(const Slice&) const = default;
 };
 
 /// A compile-time value.
@@ -144,22 +149,29 @@ class srcc::eval::Value {
     friend EvaluationContext;
     friend Slice;
 
-    Variant<ProcDecl*, LValue, Slice, Reference, APInt, bool, TypeTag, std::monostate> value{std::monostate{}};
+    Variant<ProcDecl*, LValue, Slice, Reference, APInt, bool, Type, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
 public:
     Value() = default;
     Value(ProcDecl* proc);
     Value(bool b) : value{b}, ty{Types::BoolTy} {}
-    Value(Type ty) : value{TypeTag{}}, ty{ty} {}
+    Value(Type ty) : value{ty}, ty{Types::TypeTy} {}
     Value(Slice lvalue, Type ty);
     Value(LValue lvalue) : value(std::move(lvalue)), ty(lvalue.type) {}
     Value(Reference ref, Type ty) : value(std::move(ref)), ty(ty) {}
     Value(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
+    Value(i64 val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
+
+    /// Check if two values hold the same value.
+    bool operator==(const Value& other) const;
 
     /// cast<>() the contained value.
     template <typename Ty>
     auto cast() -> Ty& { return std::get<Ty>(value); }
+
+    template <typename Ty>
+    auto cast() const -> const Ty& { return std::get<Ty>(value); }
 
     /// dyn_cast<>() the contained value.
     template <typename Ty>

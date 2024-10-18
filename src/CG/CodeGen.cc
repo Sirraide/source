@@ -892,6 +892,32 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     Unreachable("Unknown builtin");
 }
 
+auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Value* {
+    switch (expr->access_kind) {
+        using AK = BuiltinMemberAccessExpr::AccessKind;
+        case AK::SliceData:
+        case AK::SliceSize: {
+            auto slice = Emit(expr->operand);
+            auto stype = cast<SliceType>(expr->operand->type);
+            auto ty = expr->access_kind == AK::SliceData ? ConvertType(stype->elem()) : IntTy;
+
+            // This supports both lvalues and rvalues because it’s easy to do so and
+            // slices are small enough to where they may reasonably may end up in a
+            // temporary.
+            Assert(expr->value_category == Expr::SRValue or expr->value_category == Expr::LValue);
+            if (expr->lvalue()) return builder.CreateAlignedLoad(ty, slice, Align(8)); // FIXME: Magic number.
+            return builder.CreateExtractValue(slice, expr->access_kind == AK::SliceSize);
+        }
+
+        case AK::TypeAlign: return MakeInt(cast<TypeExpr>(expr->operand)->value->size(M).bytes());
+        case AK::TypeArraySize: return MakeInt(cast<TypeExpr>(expr->operand)->value->array_size(M).bytes());
+        case AK::TypeBits: return MakeInt(cast<TypeExpr>(expr->operand)->value->size(M).bits());
+        case AK::TypeBytes: return MakeInt(cast<TypeExpr>(expr->operand)->value->size(M).bytes());
+        case AK::TypeName: return GetStringSlice(StripColours(cast<TypeExpr>(expr->operand)->value->print()));
+    }
+}
+
+
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     // FIXME: Handle C calling convention properly for small integers and structs.
     // Emit args and callee.
@@ -1017,18 +1043,6 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     return {};
 }
 
-auto CodeGen::EmitSliceDataExpr(SliceDataExpr* expr) -> Value* {
-    auto slice = Emit(expr->slice);
-    auto stype = cast<SliceType>(expr->slice->type);
-
-    // This supports both lvalues and rvalues because it’s easy to do so and
-    // slices are small enough to where they may reasonably may end up in a
-    // temporary.
-    Assert(expr->value_category == Expr::SRValue or expr->value_category == Expr::LValue);
-    if (expr->lvalue()) return builder.CreateAlignedLoad(ConvertType(stype->elem()), slice, Align(8)); // FIXME: Magic number.
-    return builder.CreateExtractValue(slice, 0);
-}
-
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return GetStringSlice(expr->value);
 }
@@ -1063,7 +1077,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> llvm::Constant* { // clang-fo
         [&](bool b) -> llvm::Constant* { return ConstantInt::get(I1Ty, b); },
         [&](ProcDecl* proc) -> llvm::Constant* { return EmitClosure(proc); },
         [&](std::monostate) -> llvm::Constant* { return nullptr; },
-        [&](eval::TypeTag) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },
+        [&](Type) -> llvm::Constant* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> llvm::Constant* { return MakeInt(value); },
         [&](const eval::LValue& lval) -> llvm::Constant* { return lval.base.visit(LValueEmitter); },
         [&](this auto& self, const eval::Reference& ref) -> llvm::Constant* {

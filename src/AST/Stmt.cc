@@ -174,11 +174,6 @@ auto ProcRefExpr::return_type() const -> Type {
     return decl->return_type();
 }
 
-auto SliceDataExpr::Create(TranslationUnit& mod, Expr* slice, Location location) -> SliceDataExpr* {
-    auto ty = ReferenceType::Get(mod, cast<SliceType>(slice->type)->elem());
-    return new (mod) SliceDataExpr{ty, slice, location};
-}
-
 auto StrLitExpr::Create(
     TranslationUnit& mod,
     String value,

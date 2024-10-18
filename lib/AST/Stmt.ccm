@@ -302,6 +302,36 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinCallExpr; }
 };
 
+class srcc::BuiltinMemberAccessExpr final : public Expr {
+public:
+    enum struct AccessKind : u8 {
+        SliceData,
+        SliceSize,
+        TypeAlign,
+        TypeArraySize,
+        TypeBits,
+        TypeBytes,
+        TypeName,
+    };
+
+    Expr* operand;
+    const AccessKind access_kind;
+
+    BuiltinMemberAccessExpr(
+        Type type,
+        ValueCategory cat,
+        Expr* operand,
+        AccessKind kind,
+        Location location
+    ) : Expr{Kind::BuiltinMemberAccessExpr, type, cat, location},
+        operand{operand},
+        access_kind{kind} {
+        ComputeDependence();
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinMemberAccessExpr; }
+};
+
 class srcc::CallExpr final : public Expr
     , TrailingObjects<CallExpr, Expr*> {
     friend TrailingObjects;
@@ -496,29 +526,6 @@ public:
     auto return_type() const -> Type;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
-};
-
-class srcc::SliceDataExpr final : public Expr {
-public:
-    Expr* slice;
-
-private:
-    SliceDataExpr(
-        Type ty,
-        Expr* slice,
-        Location location
-    ) : Expr{Kind::SliceDataExpr, ty, SRValue, location}, slice{slice} {
-        ComputeDependence();
-    }
-
-public:
-    static auto Create(
-        TranslationUnit& mod,
-        Expr* slice,
-        Location location
-    ) -> SliceDataExpr*;
-
-    static bool classof(const Stmt* e) { return e->kind() == Kind::SliceDataExpr; }
 };
 
 class srcc::StrLitExpr final : public Expr {

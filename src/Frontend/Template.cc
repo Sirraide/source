@@ -198,6 +198,13 @@ auto TemplateInstantiator::InstantiateBuiltinCallExpr(BuiltinCallExpr* e) -> Ptr
     Unreachable("Invalid builtin");
 }
 
+auto TemplateInstantiator::InstantiateBuiltinMemberAccessExpr(
+    BuiltinMemberAccessExpr* n
+) -> Ptr<Stmt> {
+    auto expr = TryInstantiateExpr(n->operand);
+    return S.BuildBuiltinMemberAccessExpr(n->access_kind, expr, n->location());
+}
+
 auto TemplateInstantiator::InstantiateCallExpr(CallExpr* e) -> Ptr<Stmt> {
     SmallVector<Expr*> args;
     auto callee = TryInstantiateExpr(e->callee);
@@ -265,10 +272,6 @@ auto TemplateInstantiator::InstantiateParenExpr(ParenExpr* n) -> Ptr<Stmt> {
 auto TemplateInstantiator::InstantiateProcRefExpr(ProcRefExpr* e) -> Ptr<Stmt> {
     Assert(not e->decl->is_template(), "TODO: Instantiate reference to template");
     return e;
-}
-
-auto TemplateInstantiator::InstantiateSliceDataExpr(SliceDataExpr* e) -> Ptr<Stmt> {
-    return SliceDataExpr::Create(*S.M, TryInstantiateExpr(e->slice), e->location());
 }
 
 auto TemplateInstantiator::InstantiateStrLitExpr(StrLitExpr* e) -> Ptr<Stmt> {
@@ -340,7 +343,6 @@ auto TemplateInstantiator::InstantiateSliceType(SliceType* ty) -> Type {
 auto TemplateInstantiator::InstantiateStructType(StructType* n) -> Type {
     Todo();
 }
-
 
 auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
     auto it = template_arguments.find(ty->template_decl());
