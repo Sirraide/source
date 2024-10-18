@@ -2338,6 +2338,11 @@ auto Sema::TranslateProcType(
     );
 }
 
+auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
+    auto ty = CheckVariableType(TranslateType(parsed->elem), parsed->loc);
+    return SliceType::Get(*M, ty);
+}
+
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
     Error(parsed->loc, "A template type declaration is only allowed in the parameter list of a procedure");
     return Types::ErrorDependentTy;
@@ -2348,6 +2353,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Type {
         using K = ParsedStmt::Kind;
         case K::BuiltinType: return TranslateBuiltinType(cast<ParsedBuiltinType>(parsed));
         case K::IntType: return TranslateIntType(cast<ParsedIntType>(parsed));
+        case K::SliceType: return TranslateSliceType(cast<ParsedSliceType>(parsed));
         case K::TemplateType: return TranslateTemplateType(cast<ParsedTemplateType>(parsed));
         case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
         case K::ProcType: return TranslateProcType(cast<ParsedProcType>(parsed));

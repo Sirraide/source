@@ -7,11 +7,11 @@ eval assert i64.align == 8;
 eval assert i64.arrsize == 8;
 eval assert i64.name == "i64";
 
-// eval assert i64[].bits == 128;
-// eval assert i64[].bytes == 16;
-// eval assert i64[].align == 16;
-// eval assert i64[].arrsize == 16;
-// eval assert i64[].name == "i64[]";
+eval assert i64[].bits == 128;
+eval assert i64[].bytes == 16;
+eval assert i64[].align == 8;
+eval assert i64[].arrsize == 16;
+eval assert i64[].name == "i64[]";
 
 eval assert i64.bits == 65; // expected-error: Assertion failed: 'i64.bits == 65'
 eval assert i64.bytes == 9; // expected-error: Assertion failed: 'i64.bytes == 9'
@@ -19,8 +19,8 @@ eval assert i64.align == 9; // expected-error: Assertion failed: 'i64.align == 9
 eval assert i64.arrsize == 9; // expected-error: Assertion failed: 'i64.arrsize == 9'
 eval assert i64.name == "i65"; // expected-error: Assertion failed: 'i64.name == "i65"'
 
-// eval assert i64[].bits == 65; // expected-error: Assertion failed: 'i64[].bits == 65'
-// eval assert i64[].bytes == 9; // expected-error: Assertion failed: 'i64[].bytes == 9'
-// eval assert i64[].align == 9; // expected-error: Assertion failed: 'i64[].align == 9'
-// eval assert i64[].arrsize == 9; // expected-error: Assertion failed: 'i64[].arrsize == 9'
-// eval assert i64[].name == "i65"; // expected-error: Assertion failed: 'i64[].name == "i65"'
+eval assert i64[].bits == 65; // expected-error: Assertion failed: 'i64[].bits == 65'
+eval assert i64[].bytes == 9; // expected-error: Assertion failed: 'i64[].bytes == 9'
+eval assert i64[].align == 9; // expected-error: Assertion failed: 'i64[].align == 9'
+eval assert i64[].arrsize == 9; // expected-error: Assertion failed: 'i64[].arrsize == 9'
+eval assert i64[].name == "i65"; // expected-error: Assertion failed: 'i64[].name == "i65"'

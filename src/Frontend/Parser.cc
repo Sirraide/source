@@ -224,8 +224,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
         case Kind::BuiltinType:
         case Kind::IntType:
-        case Kind::TemplateType:
         case Kind::ProcType:
+        case Kind::SliceType:
+        case Kind::TemplateType:
             print("%1(Type) {}\n", s->dump_as_type());
             break;
 
@@ -425,6 +426,12 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
 
                 out += " -> )";
                 Append(p->ret_type);
+            } break;
+
+            case Kind::SliceType: {
+                auto s = cast<ParsedSliceType>(type);
+                Append(s->elem);
+                out += "%1([])";
             } break;
 
             case Kind::TemplateType: {
@@ -903,6 +910,11 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             // <expr=subscript> ::= <expr> "[" <expr> "]"
             case Tk::LBrack: {
+                if (LookAhead().is(Tk::RBrack)) {
+                    lhs = ParseTypeRest(lhs.get());
+                    continue;
+                }
+
                 Next();
                 auto index = TryParseExpr();
                 auto end = tok->location;
@@ -1381,8 +1393,34 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     return ParsedStructDecl::Create(*this, name, fields, struct_loc);
 }
 
-// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
+// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified>
+// <type-qualified> ::= <type> { <qualifier> }
+// <qualifier> ::= "[" "]"
 auto Parser::ParseType() -> Ptr<ParsedStmt> {
+    auto ty = ParseTypeStart();
+    if (not ty) return {};
+    return ParseTypeRest(ty.get());
+}
+
+auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt>{
+    switch (tok->type) {
+        default: return ty;
+        case Tk::LBrack: {
+            Next();
+            Location loc;
+            if (not Consume(loc, Tk::RBrack)) {
+                Error("Expected ']'");
+                SkipTo(Tk::Semicolon);
+                return {};
+            }
+
+            ty = new (*this) ParsedSliceType(ty, {ty->loc, loc});
+            return ParseTypeRest(ty);
+        }
+    }
+}
+
+auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
     auto Builtin = [&](BuiltinType* ty) {
         return new (*this) ParsedBuiltinType(ty, Next());
     };

@@ -85,5 +85,7 @@
 // ============================================================================
 //  Types
 // ============================================================================
-<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature>
+<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified>
+<type-qualified> ::= <type> { <qualifier> }
+<qualifier> ::= "[" "]"
 <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE

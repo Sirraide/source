@@ -184,6 +184,16 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
 };
 
+class srcc::ParsedSliceType final : public ParsedStmt {
+public:
+    ParsedStmt* elem;
+
+    ParsedSliceType(ParsedStmt* elem, Location loc)
+        : ParsedStmt{Kind::SliceType, loc}, elem{elem} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::SliceType; }
+};
+
 class srcc::ParsedTemplateType final : public ParsedStmt {
 public:
     /// The parameter name, *without* the '$' sigil.
@@ -662,6 +672,8 @@ private:
     void ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts);
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType() -> Ptr<ParsedStmt>;
+    auto ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt>;
+    auto ParseTypeStart() -> Ptr<ParsedStmt>;
     auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
 
     auto CreateType(Signature& sig) -> ParsedProcType*;
