@@ -773,6 +773,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::Static: {
             auto static_loc = Next();
             if (At(Tk::If)) lhs = ParseIf(true);
+            else return Error("Expected '%1(if)' after '%1(static)'");
             if (auto l = lhs.get()) l->loc = {static_loc, l->loc};
         } break;
 
@@ -1025,8 +1026,6 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // we should discard the semicolon more difficult (currently, this
     // only happens in one place outside of the preamble, viz. in the
     // loop in ParseStmts()).
-    //
-    //
     if (At(Tk::Semicolon) and LookAhead().is(Tk::Elif, Tk::Else)) {
         Error("Semicolon before '%1({})' is not allowed", LookAhead().type);
         Next();
@@ -1039,51 +1038,29 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
         "Use '%1(elif)' instead of '%1(else if)'"
     );
 
-    // 'else static if' on the other hand looks really janky and is
-    // completely unnecessary if this would already be static if it
-    // was an 'elif'.
+    // Same with 'else static if'.
     if (
         At(Tk::Else) and
         LookAhead(1).is(Tk::Static) and
-        LookAhead(2).is(Tk::If) and
-        is_static
-    ) {
-        Warn(
-            {tok->location, LookAhead(2).location},
-            "Use '%1(elif)' instead of '%1(else static if)' here"
-        );
-
-        Remark(
-            "\vThe '%1(static)' is redundant in this case since the "
-            "parent '%1(if)' is already static."
-        );
-    }
+        LookAhead(2).is(Tk::If)
+    ) Warn( //
+        {tok->location, LookAhead(2).location},
+        "Use '%1(static elif)' instead of '%1(else static if)'"
+    );
 
     // Recover from redundant 'static' here.
-    if (At(Tk::Static) and LookAhead().is(Tk::Elif, Tk::Else)) {
+    if (At(Tk::Static) and LookAhead().is(Tk::Else)) {
         Error(
             {tok->location, LookAhead().location},
-            "'%1(static {})' is invalid", LookAhead().type
+            "'%1(static else)' is invalid"
         );
-
-        // Suggest 'else static if' instead of 'static elif' iff the parent
-        // if isn’t static. This is theoretically a valid, if janky, use case
-        // that we allow and should tell people about because it’s not obvious.
-        Remark( // clang-format off
-            "\v'%1(elif)' or '%1(else)' are static if and only if the main '%1(if)' is static.",
-            is_static or LookAhead().is(Tk::Else) ? "" : " If you really want a static if "
-            "inside a non-static if, you can write '%1(else static if)' or '%1(else { static "
-            "if ... })' instead."
-        ); // clang-format on
         Next();
     }
 
     // Parse the else/elif branch.
-    //
-    // Parse the elif clause by treating it as though it were the start
-    // of a new if statement; this also ends up propagating the 'static'
-    // flag appropriately so we don’t have to write 'static elif'.
-    auto else_ = At(Tk::Elif)      ? ParseIf(is_static)
+    bool elif_is_static = At(Tk::Static) and LookAhead().is(Tk::Elif);
+    if (elif_is_static) Consume(Tk::Static);
+    auto else_ = At(Tk::Elif)      ? ParseIf(elif_is_static)
                : Consume(Tk::Else) ? ParseStmt()
                                    : nullptr;
     return new (*this) ParsedIfExpr{

@@ -28,17 +28,19 @@ static if true {} elif true {} elif true {} else {}
 static if true 7 elif true 7 elif true 7 else {}
 x = static if true then 1 else 2;
 (static if true a else b) = 42;
+static if true {} static elif true {} elif true 4;
+static if true {} elif true {} static elif true {} else {};
+if true {} static elif true {} elif true 4;
+if true {} elif true {} static elif true {} else {};
 
 if (true) {} // expected-warning: Unnecessary parentheses around 'if' condition
 if true {} else if {} {} // expected-warning: Use 'elif' instead of 'else if'
 
 // Warn about this since it’s clunky.
-static if 4 {} else static if 4 {} else {} // expected-warning: Use 'elif' instead of 'else static if'
-static if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'elif' instead of 'else static if'
-
-// But NOT here because the parent if isn’t static!
-if 4 {} else static if 4 {} else {}
-if 4 {} elif 4 {} else static if 4 {}
+static if 4 {} else static if 4 {} else {} // expected-warning: Use 'static elif' instead of 'else static if'
+static if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'static elif' instead of 'else static if'
+if 4 {} else static if 4 {} else {} // expected-warning: Use 'static elif' instead of 'else static if'
+if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'static elif' instead of 'else static if'
 
 if true then 1; else 2; // expected-error: Semicolon before 'else' is not allowed
 if true {}
@@ -62,10 +64,8 @@ if true 7 elif true 7 elif true; // expected-error: Expected expression
 if true {} elif true {} elif true; // expected-error: Expected expression
 if true {} else {} else {}; // expected-error: Unexpected 'else'
 
-static if true {} static elif true {} elif true 4; // expected-error: 'static elif' is invalid
-static if true {} elif true {} static elif true {} else {} // expected-error: 'static elif' is invalid
-static if true 7 elif true 7 elif true 7 static else {} // expected-error: 'static else' is invalid
+static if true 7 elif true 7 elif true 7 static else {}; // expected-error: 'static else' is invalid
+if true 7 elif true 7 elif true 7 static else {}; // expected-error: 'static else' is invalid
 
-if true {} static elif true {} elif true 4; // expected-error: 'static elif' is invalid
-if true {} elif true {} static elif true {} else {} // expected-error: 'static elif' is invalid
-if true 7 elif true 7 elif true 7 static else {} // expected-error: 'static else' is invalid
+static static; // expected-error: Expected 'if' after 'static'
+static if 4 {} static static elif 4 {}; // expected-error: Expected 'if' after 'static'
