@@ -965,6 +965,10 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
     return EmitValue(*constant->value);
 }
 
+auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
+    Todo();
+}
+
 auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
 }

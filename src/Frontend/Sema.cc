@@ -245,7 +245,7 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
 }
 
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
-    auto init = TryPerformVariableInitialisation(ty, e);
+    auto init = TryBuildInitialiser(ty, e);
     if (not init) {
         Error(
             e->location(),
@@ -355,12 +355,14 @@ class Sema::ImmediateInitContext {
     Sema& S;
     Expr* res;
     Type target_type;
+    Location loc;
 
 public:
-    ImmediateInitContext(Sema& S, Expr* e, Type target_type)
+    ImmediateInitContext(Sema& S, Expr* e, Type target_type, Location loc = {})
         : S{S},
           res{e},
-          target_type{target_type} {}
+          target_type{target_type},
+          loc{loc == Location() ? e->location() : loc} {}
 
     void apply(Conversion c) { res = S.ApplyConversion(res, c); }
 
@@ -468,7 +470,7 @@ public:
 class Sema::TentativeInitContext : public ImmediateInitContext {
 public:
     TentativeInitContext(Sema& S, Expr* e, Type target_type)
-        : ImmediateInitContext{S, e, target_type} {}
+        : ImmediateInitContext{S, e, target_type, e->location()} {}
 
     bool report_lvalue_intent_mismatch(Intent) { return false; }
     bool report_nested_resolution_failure() { return false; }
@@ -477,7 +479,7 @@ public:
 };
 
 template <typename InitContext>
-bool Sema::PerformVariableInitialisation(
+bool Sema::BuildInitialiser(
     InitContext& init,
     Type var_type,
     Expr* a,
@@ -625,24 +627,69 @@ bool Sema::PerformVariableInitialisation(
     Unreachable();
 }
 
-auto Sema::PerformVariableInitialisation(
+auto Sema::BuildInitialiser(
     Type var_type,
     Expr* arg,
     Intent intent,
     CallingConvention cc,
-    bool is_call
+    Location loc
 ) -> Expr* {
     // Passing in 'arg' and 'var_type' twice here is unavoidable because
     // InitContexts generally don't store either; it’s just this one that
     // does...
-    ImmediateInitContext init{*this, arg, var_type};
-    if (not PerformVariableInitialisation(init, var_type, arg, intent, cc, is_call)) return nullptr;
+    ImmediateInitContext init{*this, arg, var_type, loc};
+    if (not BuildInitialiser(init, var_type, arg, intent, cc, true)) return nullptr;
     return init.result();
 }
 
-auto Sema::TryPerformVariableInitialisation(Type var_type, Expr* arg) -> Expr* {
+auto Sema::BuildInitialiser(Type var_type, Expr* arg, Location loc) -> Expr* {
+    ImmediateInitContext init{*this, arg, var_type, loc};
+    if (not BuildInitialiser(init, var_type, arg, {}, {}, false)) return nullptr;
+    return init.result();
+}
+
+auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Expr* {
+    var_type = CheckVariableType(var_type, loc);
+    if (var_type == Types::ErrorDependentTy) return nullptr;
+
+    // If there are no arguments, we have a default initialiser.
+    if (args.empty()) return BuildDefaultInitialiser(var_type, loc);
+
+    // If there is exactly one argument, delegate to the rest of the
+    // initialisation machinery.
+    if (args.size() == 1) return BuildInitialiser(var_type, args.front(), loc);
+
+    // There are only few (classes of) types that support initialisation
+    // from more than one argument. Handle them here.
+    if (auto s = dyn_cast<StructType>(var_type.ptr())) {
+        Assert(s->is_complete());
+        return ICE(loc, "TODO: Call struct init");
+    }
+
+    return Error(
+        loc,
+        "Cannot create a value of type '{}' from more than one argument",
+        var_type
+    );
+}
+
+auto Sema::BuildDefaultInitialiser(Type var_type, Location loc) -> Expr* {
+    // Aggregates may not have a default initialiser.
+    if (isa<StructType, ArrayType>(var_type)) return ICE(loc, "TODO");
+
+    // Procedures, references, and the 'type' type cannot be default-initialised.
+    if (isa<ProcType, ReferenceType>(var_type) or var_type == Types::TypeTy)
+        return Error(loc, "Type '{}' has no default initialiser", var_type);
+
+    // Everything else is fine. What exactly this entails is handled by
+    // the backend (or the evaluator) since there isn’t much to be gained
+    // from doing it here.
+    return new (*M) DefaultInitExpr(var_type, loc);
+}
+
+auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Expr* {
     TentativeInitContext init{*this, arg, var_type};
-    if (not PerformVariableInitialisation(init, var_type, arg)) return nullptr;
+    if (not BuildInitialiser(init, var_type, arg)) return nullptr;
     return init.result();
 }
 
@@ -908,9 +955,9 @@ auto Sema::BuildBinaryExpr(
         // Find the common type of the two. We need the same logic
         // during initialisation (and it actually turns out to be
         // easier to write it that way), so reuse it here.
-        if (auto lhs_conv = TryPerformVariableInitialisation(rhs->type, lhs)) {
+        if (auto lhs_conv = TryBuildInitialiser(rhs->type, lhs)) {
             lhs = lhs_conv;
-        } else if (auto rhs_conv = TryPerformVariableInitialisation(lhs->type, rhs)) {
+        } else if (auto rhs_conv = TryBuildInitialiser(lhs->type, rhs)) {
             rhs = rhs_conv;
         } else {
             Error(
@@ -1075,7 +1122,7 @@ auto Sema::BuildBinaryExpr(
             }
 
             // Delegate to initialisation.
-            rhs = PerformVariableInitialisation(lhs->type, rhs);
+            rhs = BuildInitialiser(lhs->type, rhs);
             if (not rhs) return nullptr;
             return Build(lhs->type, LValue);
         }
@@ -1141,7 +1188,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     };
 }
 
-auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr> {
+auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
     // Build a call expression that we can resolve later, usually
     // because the callee is dependent.
     auto BuildDependentCallExpr = [&](Expr* callee) {
@@ -1193,6 +1240,21 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // can’t check this yet.
         if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
 
+        // If the type is 'type', then this is actually an initialiser call.
+        if (callee_expr->type == Types::TypeTy) {
+            auto type = eval::Evaluate(*M, callee_expr);
+            if (not type) return ICE(
+                callee_expr->location(),
+                "Failed to evaluate expression designating a type"
+            );
+
+            return BuildInitialiser(
+                type.value().cast<Type>(),
+                args,
+                loc
+            );
+        }
+
         // If does not have procedure type, then we can’t call it.
         if (not ty) return Error(
             callee_expr->location(),
@@ -1215,7 +1277,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         for (auto [p, a] : zip(ty->params(), args)) {
-            auto arg = PerformVariableInitialisation(p.type, a, p.intent, ty->cconv(), true);
+            auto arg = BuildInitialiser(p.type, a, p.intent, ty->cconv());
             if (not arg) return {};
             actual_args.push_back(arg);
         }
@@ -1322,7 +1384,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             auto& p = params[i];
             st->conversions.emplace_back();
             OverloadInitContext init{*this, c, u32(i)};
-            if (not PerformVariableInitialisation(init, p.type, a, p.intent, ty->cconv(), true)) return false;
+            if (not BuildInitialiser(init, p.type, a, p.intent, ty->cconv(), true)) return false;
         }
 
         // No fatal error.
@@ -1536,7 +1598,7 @@ auto Sema::BuildLocalDecl(
     // still continue analysing this though as most of sema doesn’t
     // care about variable initialisers.
     if (auto i = init.get_or_null(); i and not i->dependent())
-        if (auto init_expr = PerformVariableInitialisation(ty, i))
+        if (auto init_expr = BuildInitialiser(ty, i))
             init = init_expr;
 
     auto param = new (*M) LocalDecl(CheckVariableType(ty, loc), name, proc.proc, init, loc);
@@ -2030,11 +2092,21 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
+    Ptr<Expr> init;
+    auto ty = TranslateType(parsed->type);
+    if (auto val = parsed->init.get_or_null()) {
+        init = TranslateExpr(val);
+
+        // If the initialiser is invalid, we can get bogus errors
+        // if the variable type is deduced, so give up in that case.
+        if (not init and ty == Types::DeducedTy) return nullptr;
+    }
+
     return BuildLocalDecl(
         curr_proc(),
-        TranslateType(parsed->type),
+        ty,
         parsed->name,
-        parsed->init ? TranslateExpr(parsed->init.get()) : nullptr,
+        init,
         parsed->loc
     );
 }
@@ -2128,6 +2200,13 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
 #       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
 #       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #       include "srcc/ParseTree.inc"
+
+
+
+
+
+
+
     } // clang-format on
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());

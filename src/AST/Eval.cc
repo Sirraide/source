@@ -1165,6 +1165,10 @@ bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
     return true;
 }
 
+bool EvaluationContext::EvalDefaultInitExpr(Value& out, DefaultInitExpr* expr) {
+    Todo();
+}
+
 bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
     EvaluationContext C{tu, eval->location(), complain};
     return C.Eval(out, eval->stmt);

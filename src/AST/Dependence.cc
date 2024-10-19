@@ -73,6 +73,12 @@ void Stmt::ComputeDependence() { // clang-format off
         // have the value.
     },
 
+    [&](DefaultInitExpr*) {
+        // These are only ever created once we know what the actual type
+        // is; a ‘dependent default initialiser’ is modelled as a call
+        // expression instead.
+    },
+
     [&](EvalExpr* e) { d = e->stmt->dependence(); },
     [&](FieldDecl* e) { d = e->type->dep; },
     [&](IfExpr* e) {

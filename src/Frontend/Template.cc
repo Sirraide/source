@@ -231,6 +231,10 @@ auto TemplateInstantiator::InstantiateConstExpr(ConstExpr* e) -> Ptr<Stmt> {
     return e;
 }
 
+auto TemplateInstantiator::InstantiateDefaultInitExpr(DefaultInitExpr*) -> Ptr<Stmt> {
+    Unreachable("Never dependent");
+}
+
 auto TemplateInstantiator::InstantiateEvalExpr(EvalExpr* e) -> Ptr<Stmt> {
     return S.BuildEvalExpr(TryInstantiateStmt(e->stmt), e->location());
 }

@@ -1,0 +1,19 @@
+program test;
+
+struct DefaultInit {
+    int a;
+    int b;
+}
+
+{
+DefaultInit x;
+DefaultInit y = DefaultInit(1, 2);
+var z = DefaultInit(1, 2);
+var w = DefaultInit();
+}
+
+{
+var x = DefaultInit(1);
+var y = 1;
+var z = "";
+}

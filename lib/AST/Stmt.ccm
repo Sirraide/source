@@ -424,6 +424,17 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::ConstExpr; }
 };
 
+/// Default-initialise a type.
+class srcc::DefaultInitExpr final : public Expr {
+public:
+    DefaultInitExpr(
+        Type type,
+        Location location
+    ) : Expr{Kind::DefaultInitExpr, type, type->value_category(), location} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
+};
+
 /// This is wrapped with a 'ConstExpr' after evaluation, so the
 /// type of this itself is irrelevant.
 class srcc::EvalExpr final : public Expr {

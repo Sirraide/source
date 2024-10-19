@@ -469,6 +469,66 @@ private:
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
 
+    /// Build an rvalue that can initialise a variable using a
+    /// list of arguments.
+    ///
+    /// During parameter initialisation, pass the parameter intent
+    /// if there is one; in all other cases, leave it as 'Move'
+    /// because that is the default for assignment.
+    ///
+    /// The expression that results from the conversion is an rvalue
+    /// suitable for initialising a variable of the given type iff it
+    /// is an srvalue, or an expression that, when provided with a
+    /// memory location, evaluates an mrvalue into that location.
+    ///
+    /// \param ctx The initialisation context; this determines whether
+    ///   any required conversions are applied immediately, or deferred
+    ///   until a later point in time.
+    ///
+    /// \param var_type The type of the variable to be initialised.
+    /// \param arg The argument to initialise it with.
+    /// \param intent If the variable is a parameter, its intent.
+    ///
+    /// \param cc If this is an argument to a call, the calling convention
+    ///    of the called procedure.
+    ///
+    /// \param in_call Whether this is argument passing.
+    ///
+    /// \return Whether initialisation was successful.
+    template <typename InitContext>
+    bool BuildInitialiser(
+        InitContext& ctx,
+        Type var_type,
+        Expr* arg,
+        Intent intent = Intent::Move,
+        CallingConvention cc = CallingConvention::Source,
+        bool in_call = false
+    );
+
+    /// Build and initialiser immediately, returning the
+    /// computed initialiser or nullptr on error.
+    auto BuildInitialiser(
+        Type var_type,
+        Expr* arg,
+        Intent intent,
+        CallingConvention cc,
+        Location loc = {}
+    ) -> Expr*;
+
+    /// Build and initialiser immediately, returning the
+    /// computed initialiser or nullptr on error.
+    auto BuildInitialiser(
+        Type var_type,
+        Expr* arg,
+        Location loc = {}
+    ) -> Expr*;
+
+    /// Build an initialiser from more than one argument.
+    auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Expr*;
+
+    /// Build a default initialiser, i.e. one that takes no arguments.
+    auto BuildDefaultInitialiser(Type var_type, Location loc) -> Expr*;
+
     /// Adjust a type for use in a variable declaration.
     [[nodiscard]] auto CheckVariableType(Type ty, Location loc) -> Type;
 
@@ -567,45 +627,6 @@ private:
     /// Resolve an overload set.
     auto PerformOverloadResolution();
 
-    /// Initialise a variable from an expression.
-    ///
-    /// During parameter initialisation, pass the parameter intent
-    /// if there is one; in all other cases, leave it as 'Move'
-    /// because that is the default for assignment.
-    ///
-    /// \param ctx The initialisation context; this determines whether
-    ///   any required conversions are applied immediately, or deferred
-    ///   until a later point in time.
-    ///
-    /// \param var_type The type of the variable to be initialised.
-    /// \param arg The argument to initialise it with.
-    /// \param intent If the variable is a parameter, its intent.
-    ///
-    /// \param cc If this is an argument to a call, the calling convention
-    ///    of the called procedure.
-    ///
-    /// \param in_call Whether this is argument passing.
-    ///
-    /// \return Whether initialisation was successful.
-    template <typename InitContext>
-    bool PerformVariableInitialisation(
-        InitContext& ctx,
-        Type var_type,
-        Expr* arg,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source,
-        bool in_call = false
-    );
-
-    /// Perform variable initialisation immediately.
-    auto PerformVariableInitialisation(
-        Type var_type,
-        Expr* arg,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source,
-        bool is_call = false
-    ) -> Expr*;
-
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);
 
@@ -627,7 +648,7 @@ private:
     /// Try to perform variable initialisation and return the result if
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
     /// either way.
-    auto TryPerformVariableInitialisation(Type var_type, Expr* arg) -> Expr*;
+    auto TryBuildInitialiser(Type var_type, Expr* arg) -> Expr*;
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr>;
@@ -635,7 +656,7 @@ private:
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, Location loc) -> Ptr<BuiltinMemberAccessExpr>;
-    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<CallExpr>;
+    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;

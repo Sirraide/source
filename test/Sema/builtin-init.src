@@ -1,0 +1,15 @@
+// V %srcc --sema --verify %s
+program test;
+
+var a = int();
+var b = i64();
+var c = int(1);
+var d = i64(1);
+var e = int[]();
+var f = int[](e);
+var g = int(int(int()));
+var h = int(int(int(3)));
+var i = var(1); // expected-error: Type deduction is not allowed here
+var j = void();
+var k = void(1); // expected-error: Cannot convert expression of type 'int' to 'void'
+var l = i8[]("foo");

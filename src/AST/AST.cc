@@ -240,6 +240,10 @@ void Stmt::Printer::Print(Stmt* e) {
             if (c->stmt) PrintChildren(c->stmt.get());
         } break;
 
+        case Kind::DefaultInitExpr: {
+            PrintBasicNode(e, "DefaultInitExpr");
+        } break;
+
         case Kind::EvalExpr: {
             PrintBasicNode(e, "EvalExpr");
             PrintChildren(cast<EvalExpr>(e)->stmt);

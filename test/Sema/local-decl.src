@@ -12,4 +12,8 @@ proc foo(var x) { // expected-error: 'var' is not a valid type for a procedure a
     var j = i;
     var k = j;
     var q = x;
+
+    // Check that we don’t scream about type inference requiring an
+    // initialiser if there is one, but we fail to translate it.
+    var z = garbage; // expected-error: Unknown symbol 'garbage'
 }

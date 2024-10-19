@@ -115,6 +115,9 @@ struct srcc::Location {
         return l;
     }
 
+    /// Compare two source locations for equality.
+    [[nodiscard]] constexpr bool operator==(const Location& other) const = default;
+
     /// Encode a location as a 64-bit number.
     [[nodiscard]] constexpr u64 encode() const { return std::bit_cast<u64>(*this); }
 
