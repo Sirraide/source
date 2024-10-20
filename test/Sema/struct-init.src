@@ -1,8 +1,9 @@
+// V %srcc --sema --verify %s
 program test;
 
 struct DefaultInit {
-    int a;
-    int b;
+    int a; // expected-note 2: In initialiser for field 'a'
+    int b; // expected-note: In initialiser for field 'b'
 }
 
 {
@@ -13,7 +14,42 @@ var w = DefaultInit();
 }
 
 {
-var x = DefaultInit(1);
+var x = DefaultInit(1); // expected-error: Struct 'DefaultInit' has 2 fields, but got 1 argument
 var y = 1;
 var z = "";
+}
+
+{
+var x = DefaultInit(1, "foo"); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+var y = DefaultInit("foo", 1); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+var y = DefaultInit("foo", "foo"); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+}
+
+{
+struct Nested {
+    DefaultInit x;
+    DefaultInit y;
+}
+
+var x = Nested();
+var y = Nested(DefaultInit(1, 2), DefaultInit(3, 4));
+}
+
+{
+struct NestedLiteralInit1 { int x; }
+struct NestedLiteralInit2 { NestedLiteralInit1 x; }
+var x = NestedLiteralInit2(NestedLiteralInit1(1));
+var y = NestedLiteralInit2(1);
+}
+
+{
+struct NestedLiteralInit1 { int x; }
+struct NestedLiteralInit2 {
+    NestedLiteralInit1 x;
+    NestedLiteralInit1 y;
+}
+
+var x = NestedLiteralInit2(NestedLiteralInit1(1), 1);
+var y = NestedLiteralInit2(1, NestedLiteralInit1(1));
+var z = NestedLiteralInit2(1, 1);
 }

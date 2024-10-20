@@ -249,6 +249,27 @@ auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
 }
 
+StructInitExpr::StructInitExpr(
+    StructType* ty,
+    ArrayRef<Expr*> fields,
+    Location location
+) : Expr{Kind::StructInitExpr, ty, ty->value_category(), location} {
+    std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects<Expr*>());
+    ComputeDependence();
+}
+
+auto StructInitExpr::Create(
+    TranslationUnit& tu,
+    StructType* type,
+    ArrayRef<Expr*> fields,
+    Location location
+) -> StructInitExpr* {
+    Assert(fields.size() == type->fields().size(), "Argument count mismatch");
+    auto size = totalSizeToAlloc<Expr*>(fields.size());
+    auto mem = tu.allocate(size, alignof(StructInitExpr));
+    return ::new (mem) StructInitExpr{type, fields, location};
+}
+
 TemplateTypeDecl::TemplateTypeDecl(
     String name,
     ArrayRef<u32> deduced_indices,

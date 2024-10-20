@@ -32,6 +32,14 @@ auto GetOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
 TypeLoc::TypeLoc(Expr* e) : ty{e->type}, loc{e->location()} {}
 
 // ============================================================================
+//  Scope
+// ============================================================================
+Scope::~Scope() = default;
+Scope::Scope(Scope* parent, ScopeKind k)
+    : parent_scope{parent},
+      kind{k} {}
+
+// ============================================================================
 //  Type
 // ============================================================================
 void* TypeBase::operator new(usz size, TranslationUnit& mod) {
@@ -49,9 +57,9 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
                 case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Type: return Align::Of<Type>();
                 case BuiltinKind::UnresolvedOverloadSet: return Align{8};
+                case BuiltinKind::ErrorDependent: return Align{1}; // Dummy value.
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                     Unreachable("Requested alignment of dependent type");
             }
             Unreachable();
@@ -71,6 +79,46 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
     if (auto s = dyn_cast<StructType>(this)) return s->array_size();
     return size(tu);
+}
+
+template <bool (StructType::*struct_predicate)() const>
+bool InitCheckHelper(const TypeBase* type) { // clang-format off
+    return type->visit(utils::Overloaded{
+        [&](const ArrayType* ty) { return InitCheckHelper<struct_predicate>(ty->elem().ptr()); },
+        [&](const BuiltinType* ty) {
+            switch (ty->builtin_kind()) {
+                case BuiltinKind::Bool:
+                case BuiltinKind::Int:
+                case BuiltinKind::Void:
+                case BuiltinKind::ErrorDependent:
+                    return true;
+
+                case BuiltinKind::UnresolvedOverloadSet:
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::Type:
+                    return false;
+
+                case BuiltinKind::Deduced:
+                case BuiltinKind::Dependent:
+                    Unreachable("Querying property of dependent type");
+            }
+            Unreachable();
+        },
+        [&](const IntType*) { return true; },
+        [&](const ProcType*) { return false; },
+        [&](const ReferenceType*) { return false; },
+        [&](const SliceType*) { return true; },
+        [&](const StructType* ty) { return (ty->*struct_predicate)(); },
+        [&](const TemplateType*) -> bool { Unreachable("Querying property of dependent type"); },
+    });
+} // clang-format on
+
+bool TypeBase::can_default_init() const {
+    return InitCheckHelper<&StructType::has_default_init>(this);
+}
+
+bool TypeBase::can_init_from_no_args() const {
+    return InitCheckHelper<&StructType::has_init_from_no_args>(this);
 }
 
 void TypeBase::dump(bool use_colour) const {
@@ -217,13 +265,13 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
                 case BuiltinKind::Type: return Size::Of<Type>();
                 case BuiltinKind::UnresolvedOverloadSet: return Size::Bytes(16); // FIXME: Get size from context.
 
+                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
                     return Size();
 
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                     Unreachable("Requested size of dependent type");
             }
         }
@@ -427,6 +475,7 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
 
 auto StructType::Create(
     TranslationUnit& owner,
+    StructScope* scope,
     String name,
     u32 num_fields,
     Location decl_loc
@@ -434,7 +483,7 @@ auto StructType::Create(
     auto type = ::new (owner.allocate(
         totalSizeToAlloc<FieldDecl*>(num_fields),
         alignof(StructType)
-    )) StructType{owner, num_fields};
+    )) StructType{owner, scope, num_fields};
     type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
     return type;
 }
@@ -443,9 +492,15 @@ auto StructType::name() const -> String {
     return type_decl->name;
 }
 
-void StructType::finalise(ArrayRef<FieldDecl*> fields, Size sz, Align align) {
+void StructType::finalise(
+    ArrayRef<FieldDecl*> fields,
+    Size sz,
+    Align align,
+    Bits struct_bits
+) {
     Assert(not finalised, "finalise() called twice?");
     finalised = true;
+    bits = struct_bits;
     computed_size = sz;
     computed_alignment = align;
     computed_array_size = sz.aligned(align);

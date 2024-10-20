@@ -669,8 +669,8 @@ auto RenderDiagnostics(
 
                     // Emit the rest of the line.
                     std::string hang_indent(hang, ' ');
-                    auto EmitRestOfLine = [&](std::u32string_view rest_of_line, auto parts) {
-                        buffer += text::ToUTF8(rest_of_line);
+                    auto EmitRestOfLine = [&](u32stream rest_of_line, auto parts) {
+                        buffer += text::ToUTF8(rest_of_line.trim().text());
                         buffer += "\n";
 
                         // Emit the remaining parts.
@@ -679,7 +679,7 @@ auto RenderDiagnostics(
                             EmitLeading(j == total - 1, part.empty());
                             if (not part.empty()) {
                                 buffer += hang_indent;
-                                buffer += text::ToUTF8(std::u32string_view{part.data(), part.size()});
+                                buffer += text::ToUTF8(u32stream{std::u32string_view{part.data(), part.size()}}.trim().text());
                             }
                             buffer += "\n";
                         }

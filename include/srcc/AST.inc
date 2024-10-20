@@ -52,6 +52,7 @@ AST_STMT_LEAF(ProcRefExpr)
 AST_STMT_LEAF(ReturnExpr)
 AST_STMT_LEAF(StaticIfExpr)
 AST_STMT_LEAF(StrLitExpr)
+AST_STMT_LEAF(StructInitExpr)
 AST_STMT_LEAF(TypeExpr)
 AST_STMT_LEAF(UnaryExpr)
 

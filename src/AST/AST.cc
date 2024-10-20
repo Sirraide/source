@@ -365,6 +365,12 @@ void Stmt::Printer::Print(Stmt* e) {
             print(" %3(\"\002{}\003\")\n", utils::Escape(cast<StrLitExpr>(e)->value));
         } break;
 
+        case Kind::StructInitExpr: {
+            auto s = cast<StructInitExpr>(e);
+            PrintBasicNode(e, "StructInitExpr");
+            PrintChildren<Expr>(s->values());
+        } break;
+
         case Kind::TemplateTypeDecl: {
             auto t = cast<TemplateTypeDecl>(e);
             PrintBasicHeader(t, "TemplateTypeDecl");
@@ -382,7 +388,11 @@ void Stmt::Printer::Print(Stmt* e) {
                     s->array_size(),
                     s->align()
                 );
-                PrintChildren<FieldDecl>(s->fields());
+
+                SmallVector<Stmt*, 10> children;
+                children.append(s->fields().begin(), s->fields().end());
+                children.append(s->scope()->inits.begin(), s->scope()->inits.end());
+                PrintChildren(children);
             } else {
                 print("%3({}) = {}\n", td->name, td->type->print());
             }

@@ -358,6 +358,10 @@ auto TemplateInstantiator::InstantiateStructType(StructType* n) -> Type {
     Todo();
 }
 
+auto TemplateInstantiator::InstantiateStructInitExpr(StructInitExpr*) -> Ptr<Stmt> {
+    Unreachable("Never dependent");
+}
+
 auto TemplateInstantiator::InstantiateTemplateType(TemplateType* ty) -> Type {
     auto it = template_arguments.find(ty->template_decl());
 

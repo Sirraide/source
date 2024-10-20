@@ -82,12 +82,10 @@ private:
         Scope* scope;
 
     public:
-        EnterScope(Sema& S, bool proc_scope = false)
+        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block)
             : S{S} {
-            auto sc = std::make_unique<Scope>(S.curr_scope(), proc_scope);
-            scope = sc.get();
+            scope = S.M->create_scope(S.curr_scope(), kind);
             S.scope_stack.push_back(scope);
-            S.all_scopes.push_back(std::move(sc));
         }
 
         EnterScope(Sema& S, Scope* scope) : S{S} {
@@ -416,9 +414,6 @@ private:
     TranslationUnit::Ptr M;
     ArrayRef<ParsedModule::Ptr> parsed_modules;
 
-    /// All scopes that have been created.
-    std::vector<std::unique_ptr<Scope>> all_scopes;
-
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
 
@@ -469,6 +464,11 @@ private:
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
 
+    /// Build an initialiser for an aggregate type.
+    ///
+    /// This should not be called directly; call BuildInitialiser() instead.
+    auto BuildAggregateInitialiser(StructType* s, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
+
     /// Build an rvalue that can initialise a variable using a
     /// list of arguments.
     ///
@@ -513,7 +513,7 @@ private:
         Intent intent,
         CallingConvention cc,
         Location loc = {}
-    ) -> Expr*;
+    ) -> Ptr<Expr>;
 
     /// Build and initialiser immediately, returning the
     /// computed initialiser or nullptr on error.
@@ -521,13 +521,10 @@ private:
         Type var_type,
         Expr* arg,
         Location loc = {}
-    ) -> Expr*;
+    ) -> Ptr<Expr>;
 
     /// Build an initialiser from more than one argument.
-    auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Expr*;
-
-    /// Build a default initialiser, i.e. one that takes no arguments.
-    auto BuildDefaultInitialiser(Type var_type, Location loc) -> Expr*;
+    auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
 
     /// Adjust a type for use in a variable declaration.
     [[nodiscard]] auto CheckVariableType(Type ty, Location loc) -> Type;
@@ -648,7 +645,7 @@ private:
     /// Try to perform variable initialisation and return the result if
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
     /// either way.
-    auto TryBuildInitialiser(Type var_type, Expr* arg) -> Expr*;
+    auto TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr>;
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr>;

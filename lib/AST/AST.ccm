@@ -103,6 +103,9 @@ private:
     /// Used to store evaluated constant expressions.
     SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
 
+    /// All scopes in this TU.
+    std::vector<std::unique_ptr<Scope>> all_scopes;
+
     /// If this was imported, the path to the module file.
     String import_path;
 
@@ -209,6 +212,13 @@ public:
     /// Add an integer storage unit.
     void add_integer_storage(IntegerStorage&& storage) {
         integers.push_back(std::move(storage));
+    }
+
+    /// Create a new scope.
+    template <typename ScopeTy = Scope, typename ...Args>
+    auto create_scope(Args&&... args) -> ScopeTy* {
+        all_scopes.emplace_back(new ScopeTy{std::forward<Args>(args)...});
+        return static_cast<ScopeTy*>(all_scopes.back().get());
     }
 
     /// Dump the contents of the module.

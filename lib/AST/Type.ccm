@@ -1,9 +1,9 @@
 module;
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/PointerLikeTypeTraits.h>
 #include <srcc/Macros.hh>
 
 export module srcc.ast:type;
@@ -11,11 +11,14 @@ import srcc;
 import :enums;
 
 export namespace srcc {
+class Scope;
+class StructScope;
 class TemplateTypeDecl;
 class TranslationUnit;
 class Types;
 struct ParamTypeData;
 class Expr;
+class Decl;
 class FieldDecl;
 class TypeDecl;
 #define AST_TYPE(node) class node;
@@ -31,6 +34,57 @@ template <typename To, typename From> auto cast(srcc::TypeWrapper<From> from) ->
 template <typename To, typename From> auto dyn_cast(srcc::TypeWrapper<From> from) -> std::optional<srcc::TypeWrapper<To>>;
 template <typename To, typename From> auto isa(srcc::TypeWrapper<From> from) -> bool;
 } // namespace srcc
+
+/// Scope that stores declarations.
+///
+/// These need to be allocated separately because we usually need
+/// to be able to look up declarations in one before we create the
+/// node that contains it.
+///
+/// Note that these are only valid during sema and should not be
+/// referenced after that.
+class srcc::Scope {
+    SRCC_IMMOVABLE(Scope);
+
+    friend TranslationUnit;
+
+    /// The parent scope.
+    Scope* parent_scope;
+
+    /// Whether this is a procedure scope.
+    const ScopeKind kind;
+
+protected:
+    explicit Scope(Scope* parent, ScopeKind k = ScopeKind::Block);
+
+public:
+    /// Declarations in this scope.
+    StringMap<llvm::TinyPtrVector<Decl*>> decls;
+
+    virtual ~Scope(); // Defaulted out-of-line.
+
+    /// Check if this is a procedure scope.
+    bool is_block_scope() const { return kind == ScopeKind::Block; }
+    bool is_proc_scope() const { return kind == ScopeKind::Procedure; }
+    bool is_struct_scope() const { return kind == ScopeKind::Struct; }
+
+    /// Get the parent scope.
+    ///
+    /// This returns null if this is the global scope.
+    auto parent() -> Scope* { return parent_scope; }
+};
+
+/// Scope that stores struct members, initialisers, etc.
+class srcc::StructScope : public Scope {
+    friend TranslationUnit;
+
+    StructScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
+
+public:
+    /// Initialiser declarations.
+    SmallVector<Decl*> inits;
+
+};
 
 /// Type of an expression or declaration.
 ///
@@ -65,6 +119,14 @@ public:
 
     /// Get the size of this type when stored in an array.
     LLVM_READONLY auto array_size(TranslationUnit& tu) const -> Size;
+
+    /// Get whether this type can be initialised using an empty
+    /// argument list. For struct types, this can entail calling
+    /// an initialiser with no arguments.
+    LLVM_READONLY bool can_init_from_no_args() const;
+
+    /// Get whether this type has a default initialiser.
+    LLVM_READONLY bool can_default_init() const;
 
     /// Get the dependence of this type.
     auto dependence() const -> Dependence { return dep; }
@@ -406,18 +468,29 @@ class srcc::StructType final : public TypeBase
     u32 num_fields;
     auto numTrailingObjects(OverloadToken<FieldDecl*>) -> usz { return num_fields; }
 
-    Align computed_alignment;
-    bool finalised = false;
+public:
+    struct Bits {
+        bool default_initialiser : 1 = false;
+        bool init_from_no_args : 1 = false;
+        bool literal_initialiser : 1 = false;
+    };
+
+private:
     Size computed_size;
     Size computed_array_size;
+    Align computed_alignment;
+    bool finalised : 1 = false;
+    Bits bits;
 
     TranslationUnit& owning_tu;
-    TypeDecl* type_decl;
+    TypeDecl* type_decl = nullptr;
+    StructScope* struct_scope;
 
-    StructType(TranslationUnit& owner, u32 num_fields)
+    StructType(TranslationUnit& owner, StructScope* struct_scope, u32 num_fields)
         : TypeBase{Kind::StructType},
           num_fields{num_fields},
-          owning_tu{owner} {}
+          owning_tu{owner},
+          struct_scope{struct_scope} {}
 
 public:
     /// Create a type and the corresponding declaration.
@@ -427,19 +500,78 @@ public:
     /// created.
     static auto Create(
         TranslationUnit& owner,
+        StructScope* scope,
         String name,
         u32 num_fields,
         Location decl_loc
     ) -> StructType*;
 
-    auto align() const -> Align { return computed_alignment; }
-    auto array_size() const -> Size { return computed_array_size; }
+    /// Get the computed alignment of this struct.
+    auto align() const -> Align {
+        Assert(finalised);
+        return computed_alignment;
+    }
+
+    /// Get the size that this struct has when stored in an
+    /// array (this includes tail padding, unlike 'size()').
+    auto array_size() const -> Size {
+        Assert(finalised);
+        return computed_array_size;
+    }
+
+    /// Get the type declaration for this struct.
     auto decl() const -> TypeDecl* { return type_decl; }
-    auto fields() const -> ArrayRef<FieldDecl*> { return {getTrailingObjects<FieldDecl*>(), num_fields}; }
-    void finalise(ArrayRef<FieldDecl*> fields, Size size, Align alignment);
+
+    /// Get the struct’s fields.
+    auto fields() const -> ArrayRef<FieldDecl*> {
+        Assert(finalised);
+        return {getTrailingObjects<FieldDecl*>(), num_fields};
+    }
+
+    /// Initialise fields and other properties; this marks
+    /// the struct as complete.
+    void finalise(
+        ArrayRef<FieldDecl*> fields,
+        Size size,
+        Align alignment,
+        Bits bits
+    );
+
+    /// Whether this struct has a default initialiser (i.e.
+    /// an initialiser that takes no arguments and is *not*
+    /// declared by the user).
+    bool has_default_init() const { return bits.default_initialiser; }
+
+    /// Whether this struct can be initialised with an empty
+    /// argument list; this need not entail using a default
+    /// initialiser.
+    bool has_init_from_no_args() const { return bits.init_from_no_args; }
+
+    /// Whether this struct has a literal initialiser (i.e.
+    /// an initialiser that takes a list of rvalues and emits
+    /// them directly into the struct’s memory).
+    bool has_literal_init() const { return bits.literal_initialiser; }
+
+    /// Get the user-declared initialisers for this struct.
+    auto initialisers() const -> ArrayRef<Decl*> { return struct_scope->inits; }
+
+    /// Get whether this type is complete, i.e. whether we can
+    /// declare variables and create objects of this type.
     bool is_complete() const { return finalised; }
+
+    /// Get the name of this type.
     auto name() const -> String;
+
+    /// Get the translation unit this is attached to.
     auto owner() const -> TranslationUnit& { return owning_tu; }
+
+    /// Get the scope containing the fields, member functions, and
+    /// initialisers of this struct.
+    auto scope() const -> StructScope* { return struct_scope; }
+
+    /// Get the size of a single instance of this type; this does
+    /// *not* include tail padding (use 'array_size()' instead for
+    /// that).
     auto size() const -> Size { return computed_size; }
 
     static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }

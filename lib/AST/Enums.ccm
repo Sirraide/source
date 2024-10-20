@@ -16,6 +16,7 @@ enum class Linkage : u8;
 enum class Mangling : u8;
 enum class ValueCategory : u8;
 enum class OverflowBehaviour : u8;
+enum class ScopeKind : u8;
 } // namespace srcc
 
 /// Expression dependence.
@@ -162,6 +163,12 @@ enum class srcc::OverflowBehaviour : u8 {
 
     /// Wrap around like normal.
     Wrap,
+};
+
+enum class srcc::ScopeKind : u8 {
+    Block,
+    Procedure,
+    Struct,
 };
 
 template <>

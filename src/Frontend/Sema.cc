@@ -246,7 +246,7 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
 
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     auto init = TryBuildInitialiser(ty, e);
-    if (not init) {
+    if (init.invalid()) {
         Error(
             e->location(),
             "{} of '%1({})' must be of type\f'{}', but was '{}'",
@@ -259,7 +259,7 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     }
 
     // Make sure it’s an srvalue.
-    e = LValueToSRValue(init);
+    e = LValueToSRValue(init.get());
     return true;
 }
 
@@ -353,18 +353,21 @@ auto ModuleLoader::load(
 // failures to do so immediately.
 class Sema::ImmediateInitContext {
     Sema& S;
-    Expr* res;
     Type target_type;
     Location loc;
 
 public:
+    Expr* res;
+
     ImmediateInitContext(Sema& S, Expr* e, Type target_type, Location loc = {})
         : S{S},
-          res{e},
           target_type{target_type},
-          loc{loc == Location() ? e->location() : loc} {}
+          loc{loc == Location() ? e->location() : loc},
+          res{e} {}
 
     void apply(Conversion c) { res = S.ApplyConversion(res, c); }
+
+    auto location() const -> Location { return loc; }
 
     bool report_lvalue_intent_mismatch(Intent intent) {
         // If this is itself a parameter, issue a better error.
@@ -478,6 +481,88 @@ public:
     bool report_same_type_lvalue_required(Intent) { return false; }
 };
 
+// There are three ways of initialising a struct type:
+//
+//   1. By calling a user-defined initialisation procedure;
+//      overload resolution is performed against all declared
+//      initialisers.
+//
+//   2. By iterating over every field, building an initialiser
+//      from an empty argument list for it, and evaluating the
+//      resulting rvalue into the field (this usually ends up
+//      performing this step recursively).
+//
+//   3. By initialising each field directly from a preexisting
+//      rvalue of the same type.
+//
+// Option 1 is called ‘call initialisation’.
+// Option 2 is called ‘default/empty initialisation’.
+// Option 3 is called ‘direct/literal initialisation’.
+//
+// A type is default-initialisable/constructible if option 2 is
+// valid; this also means option 2 is always taken if the argument
+// list is empty.
+//
+// To determine which option should be applied, first, check if
+// there are any user-defined initialisers. If there are, always
+// use option 1, unless the argument list is empty and the 'default'
+// attribute was specified, in which case use option 2 (specifying
+// both 'default' *and* defining an initialiser that takes an empty
+// argument list is an error).
+//
+// If there are no initialisers, use option 2 if the argument list
+// is empty, and option 3 otherwise.
+auto Sema::BuildAggregateInitialiser(
+    StructType* s,
+    ArrayRef<Expr*> args,
+    Location loc
+) -> Ptr<Expr> {
+    // First case: option 1 or 2.
+    if (not s->initialisers().empty()) {
+        return ICE(loc, "TODO: Call struct initialiser");
+    }
+
+    // Second case: option 3. Option 2 is handled before we get here,
+    // i.e. at this point, we know we’re building a literal initialiser.
+    Assert(not args.empty(), "Should have called BuildDefaultInitialiser() instead");
+    Assert(s->has_literal_init(), "Should have rejected before we ever get here");
+
+    // For this initialiser, the number of arguments must match the number
+    // of fields in the struct.
+    if (s->fields().size() != args.size()) {
+        Error(
+            loc,
+            "Struct '{}' has {} field{}, but got {} argument{}",
+            Type{s},
+            s->fields().size(),
+            s->fields().size() == 1 ? "" : "s",
+            args.size(),
+            args.size() == 1 ? "" : "s"
+        );
+
+        Remark(
+            "\vIf you want to be able to initialise the struct using fewer "
+            "arguments, either define an initialisation procedure or provide "
+            "default values for the remaining fields."
+        );
+
+        return {};
+    }
+
+    // Recursively build an initialiser for each element.
+    SmallVector<Expr*> inits;
+    for (auto [field, arg] : zip(s->fields(), args)) {
+        auto init = BuildInitialiser(field->type, arg, arg->location());
+        if (init) inits.push_back(init.get());
+        else {
+            Note(field->location(), "In initialiser for field '{}'", field->name);
+            return {};
+        }
+    }
+
+    return StructInitExpr::Create(*M, s, inits, loc);
+}
+
 template <typename InitContext>
 bool Sema::BuildInitialiser(
     InitContext& init,
@@ -501,20 +586,21 @@ bool Sema::BuildInitialiser(
 
     // Type matches exactly.
     if (a->type == var_type) {
-        // We’re passing by value. Currently, we can only handle srvalues here.
-        if (a->type->value_category() != Expr::SRValue) {
-            ICE(
-                a->location(),
-                "Sorry, we currently don’t support {} of type {}",
-                in_call ? "by-value arguments" : "assigning to variables",
-                a->type
-            );
-            return false;
+        // We’re passing by value. For srvalue types, convert lvalues
+        // to srvalues here.
+        if (a->type->value_category() == Expr::SRValue) {
+            if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
+            return true;
         }
 
-        // Convert lvalues to srvalues here.
-        if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
-        return true;
+        // Otherwise, we expect an mrvalue here.
+        if (a->value_category == Expr::MRValue) return true;
+        ICE(
+            a->location(),
+            "TODO: {} a struct by copy",
+            in_call ? "Passing" : "Assigning"
+        );
+        return false;
     }
 
     // We need to perform conversion. What we do here depends on the type.
@@ -620,7 +706,25 @@ bool Sema::BuildInitialiser(
         }
 
         case TypeBase::Kind::StructType: {
-            Todo();
+            // FIXME: HACK.
+            //
+            // TODO: Do we want to support implicit conversions to struct types
+            // in calls and tentative conversion? Note that if the type of the
+            // argument *is* a struct type, this is already supported by the
+            // check for type identity above.
+            if constexpr (utils::is<InitContext, ImmediateInitContext>) {
+                auto result = BuildAggregateInitialiser(
+                    cast<StructType>(var_type.ptr()),
+                    a,
+                    init.location()
+                );
+
+                if (not result) return false;
+                init.res = result.get();
+                return true;
+            } else {
+                return init.report_type_mismatch();
+            }
         }
     }
 
@@ -633,7 +737,7 @@ auto Sema::BuildInitialiser(
     Intent intent,
     CallingConvention cc,
     Location loc
-) -> Expr* {
+) -> Ptr<Expr> {
     // Passing in 'arg' and 'var_type' twice here is unavoidable because
     // InitContexts generally don't store either; it’s just this one that
     // does...
@@ -642,30 +746,37 @@ auto Sema::BuildInitialiser(
     return init.result();
 }
 
-auto Sema::BuildInitialiser(Type var_type, Expr* arg, Location loc) -> Expr* {
+auto Sema::BuildInitialiser(Type var_type, Expr* arg, Location loc) -> Ptr<Expr> {
     ImmediateInitContext init{*this, arg, var_type, loc};
     if (not BuildInitialiser(init, var_type, arg, {}, {}, false)) return nullptr;
     return init.result();
 }
 
-auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Expr* {
+auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
     var_type = CheckVariableType(var_type, loc);
     if (var_type == Types::ErrorDependentTy) return nullptr;
 
-    // If there are no arguments, we have a default initialiser.
-    if (args.empty()) return BuildDefaultInitialiser(var_type, loc);
+    // Easy case: no arguments.
+    if (args.empty()) {
+        if (var_type->can_default_init()) return new (*M) DefaultInitExpr(var_type, loc);
+        if (var_type->can_init_from_no_args()) return ICE(
+            loc,
+            "TODO: non-default empty initialisation of '{}'",
+            var_type
+        );
+
+        return Error(loc, "Type '{}' has requires a non-empty initialiser", var_type);
+    }
 
     // If there is exactly one argument, delegate to the rest of the
     // initialisation machinery.
     if (args.size() == 1) return BuildInitialiser(var_type, args.front(), loc);
 
     // There are only few (classes of) types that support initialisation
-    // from more than one argument. Handle them here.
-    if (auto s = dyn_cast<StructType>(var_type.ptr())) {
-        Assert(s->is_complete());
-        return ICE(loc, "TODO: Call struct init");
-    }
-
+    // from more than one argument. We only support immediate initialisation
+    // of these for now.
+    if (isa<ArrayType>(var_type)) return ICE(loc, "TODO: Array initialiser");
+    if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, loc);
     return Error(
         loc,
         "Cannot create a value of type '{}' from more than one argument",
@@ -673,21 +784,7 @@ auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -
     );
 }
 
-auto Sema::BuildDefaultInitialiser(Type var_type, Location loc) -> Expr* {
-    // Aggregates may not have a default initialiser.
-    if (isa<StructType, ArrayType>(var_type)) return ICE(loc, "TODO");
-
-    // Procedures, references, and the 'type' type cannot be default-initialised.
-    if (isa<ProcType, ReferenceType>(var_type) or var_type == Types::TypeTy)
-        return Error(loc, "Type '{}' has no default initialiser", var_type);
-
-    // Everything else is fine. What exactly this entails is handled by
-    // the backend (or the evaluator) since there isn’t much to be gained
-    // from doing it here.
-    return new (*M) DefaultInitExpr(var_type, loc);
-}
-
-auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Expr* {
+auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
     TentativeInitContext init{*this, arg, var_type};
     if (not BuildInitialiser(init, var_type, arg)) return nullptr;
     return init.result();
@@ -955,9 +1052,9 @@ auto Sema::BuildBinaryExpr(
         // Find the common type of the two. We need the same logic
         // during initialisation (and it actually turns out to be
         // easier to write it that way), so reuse it here.
-        if (auto lhs_conv = TryBuildInitialiser(rhs->type, lhs)) {
+        if (auto lhs_conv = TryBuildInitialiser(rhs->type, lhs).get_or_null()) {
             lhs = lhs_conv;
-        } else if (auto rhs_conv = TryBuildInitialiser(lhs->type, rhs)) {
+        } else if (auto rhs_conv = TryBuildInitialiser(lhs->type, rhs).get_or_null()) {
             rhs = rhs_conv;
         } else {
             Error(
@@ -1122,8 +1219,8 @@ auto Sema::BuildBinaryExpr(
             }
 
             // Delegate to initialisation.
-            rhs = BuildInitialiser(lhs->type, rhs);
-            if (not rhs) return nullptr;
+            if (auto init = BuildInitialiser(lhs->type, rhs).get_or_null()) rhs = init;
+            else return nullptr;
             return Build(lhs->type, LValue);
         }
     }
@@ -1277,8 +1374,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         for (auto [p, a] : zip(ty->params(), args)) {
-            auto arg = BuildInitialiser(p.type, a, p.intent, ty->cconv());
-            if (not arg) return {};
+            auto arg = TRY(BuildInitialiser(p.type, a, p.intent, ty->cconv()));
             actual_args.push_back(arg);
         }
 
@@ -1799,8 +1895,7 @@ auto Sema::Translate(
 
 void Sema::Translate() {
     // Initialise sema.
-    all_scopes.push_back(std::make_unique<Scope>(nullptr));
-    scope_stack.push_back(all_scopes.back().get());
+    scope_stack.push_back(M->create_scope(nullptr));
 
     // Take ownership of any resources of the parsed modules.
     for (auto& p : parsed_modules) {
@@ -2160,7 +2255,7 @@ auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.
 auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
-    EnterScope scope{*this, true};
+    EnterScope scope{*this, ScopeKind::Procedure};
     SmallVector<TemplateTypeDecl*> ttds;
 
     // Create the declaration. A top-level procedure is not considered
@@ -2195,19 +2290,14 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 
 /// Dispatch to translate a statement.
 auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
-    switch (parsed->kind()) { // clang-format off
+    switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
-#       define PARSE_TREE_LEAF_TYPE(node) case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
-#       define PARSE_TREE_LEAF_NODE(node) case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
-#       include "srcc/ParseTree.inc"
-
-
-
-
-
-
-
-    } // clang-format on
+#define PARSE_TREE_LEAF_TYPE(node) \
+    case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
+#define PARSE_TREE_LEAF_NODE(node) \
+    case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
+#include "srcc/ParseTree.inc"
+    }
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
 }
@@ -2222,9 +2312,12 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 
     // Translate the fields. While we’re at it, also keep track
     // of the struct’s size, and alignment.
+    // FIXME: Move most of this logic into some BuildStructType() function.
+    EnterScope _{*this, s->scope()};
     Size size{};
     Align align{1};
     SmallVector<FieldDecl*> fields;
+    StructType::Bits bits;
     for (auto f : parsed->fields()) {
         auto ty = CheckVariableType(TranslateType(f->type), f->loc);
 
@@ -2243,14 +2336,44 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
         align = std::max(align, ty->align(*M));
     }
 
+    // TODO: Initialisers are declared out-of-line, but they should
+    // have been picked up during initial translation when we find
+    // all the procedures in the current scope. Add any that we found
+    // here, and if we didn’t find any (or the 'default' attribute was
+    // specified on the struct declaration), declare the default initialiser.
+
+    // TODO: If we decide to allow this:
+    //
+    // struct S { ... }
+    // proc f {
+    //    init S(...) { ... }
+    // }
+    //
+    // Then the initialiser should still respect normal lookup rules (i.e.
+    // it should only be visible within 'f'). Perhaps we want to store
+    // local member functions outside the struct itself and in the local
+    // scope instead?
+    if (s->initialisers().empty()) {
+        // Compute whether we can define a default initialiser for this.
+        bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
+            fields,
+            [](FieldDecl* d) { return d->type->can_init_from_no_args(); }
+        );
+
+        // We always provide a literal initialiser in this case.
+        bits.literal_initialiser = true;
+    }
+
     // Finally, mark the struct as complete.
-    s->finalise(fields, size, align);
+    s->finalise(fields, size, align, bits);
     return decl;
 }
 
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
+    auto sc = M->create_scope<StructScope>(curr_scope());
     auto ty = StructType::Create(
         *M,
+        sc,
         parsed->name,
         u32(parsed->fields().size()),
         parsed->loc

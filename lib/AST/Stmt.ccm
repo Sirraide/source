@@ -1,7 +1,7 @@
 module;
 
+#include <functional>
 #include <llvm/ADT/StringSwitch.h>
-#include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/Support/TrailingObjects.h>
 #include <memory>
 #include <ranges>
@@ -15,48 +15,13 @@ import :eval;
 import :type;
 
 export namespace srcc {
-class Scope;
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
 // Hack because this language is too stupid to allow forward
 // declarations across modules.
 struct ParseTreeNodeBase {};
-}
-
-/// Scope that stores declarations.
-///
-/// These need to be allocated separately because we usually need
-/// to be able to look up declarations in one before we create the
-/// node that contains it.
-///
-/// Note that these are only valid during sema and should not be
-/// referenced after that.
-class srcc::Scope {
-    SRCC_IMMOVABLE(Scope);
-
-    /// The parent scope.
-    Scope* parent_scope;
-
-    /// Whether this is a procedure scope.
-    const bool proc_scope;
-
-public:
-    /// Declarations in this scope.
-    StringMap<llvm::TinyPtrVector<Decl*>> decls;
-
-    explicit Scope(Scope* parent, bool proc_scope = false)
-        : parent_scope{parent},
-          proc_scope{proc_scope} {}
-
-    /// Check if this is a procedure scope.
-    bool is_proc_scope() const { return proc_scope; }
-
-    /// Get the parent scope.
-    ///
-    /// This returns null if this is the global scope.
-    auto parent() -> Scope* { return parent_scope; }
-};
+} // namespace srcc
 
 // ============================================================================
 //  Statements
@@ -89,8 +54,8 @@ protected:
 
 public:
     // Only allow allocating these in the module.
-    void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
-    void* operator new(usz size, TranslationUnit& mod);
+    void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead");
+    void* operator new(usz size, TranslationUnit& tu);
 
     /// Get whether this statement is dependent.
     bool dependent() const { return dependence() != Dependence::None; }
@@ -591,6 +556,34 @@ public:
     static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
+};
+
+/// A literal initialiser for a struct.
+class srcc::StructInitExpr final : public Expr
+    , TrailingObjects<StructInitExpr, Expr*> {
+    friend TrailingObjects;
+    auto numTrailingObjects(OverloadToken<Expr*>) -> usz {
+        return struct_type()->fields().size();
+    }
+
+    StructInitExpr(
+        StructType* ty,
+        ArrayRef<Expr*> fields,
+        Location location
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        StructType* type,
+        ArrayRef<Expr*> fields,
+        Location location
+    ) -> StructInitExpr*;
+
+    auto struct_type() const -> StructType* { return cast<StructType>(type.ptr()); }
+    auto values() -> ArrayRef<Expr*> { return {getTrailingObjects<Expr*>(), struct_type()->fields().size()}; }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::StructInitExpr; }
 };
 
 class srcc::TypeExpr final : public Expr {

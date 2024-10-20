@@ -1055,6 +1055,10 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return GetStringSlice(expr->value);
 }
 
+auto CodeGen::EmitStructInitExpr(StructInitExpr*)-> Value* {
+    Unreachable("Emitting struct initialiser without memory location?");
+}
+
 auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
     // These should only exist at compile time.
     ICE(expr->location(), "Can’t emit type expr");

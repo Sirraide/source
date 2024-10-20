@@ -181,8 +181,10 @@ keyword, I think) would be syntactically invalid as a keyword anyway.
 Allow initialisers to return a value of any type, i.e. this
 ```c++
 struct S {
-    init -> int = 4;
+
 }
+
+init S -> int = 4;
 ```
 is valid, if dumb. The intent is that initialisers are just regular
 functions that just happen to have the same name as the type they belong

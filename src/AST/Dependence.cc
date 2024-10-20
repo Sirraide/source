@@ -117,6 +117,7 @@ void Stmt::ComputeDependence() { // clang-format off
 
     [&](StaticIfExpr*) { d = Dependence::ValueAndType; },
     [&](StrLitExpr*) { /* Never dependent */ },
+    [&](StructInitExpr*) { /* Never dependent */ },
     [&](TypeExpr* e) { if (e->value->dependent()) d = Dependence::Type; },
     [&](TypeDecl* td) { d = td->type->dep; },
     [&](UnaryExpr* e) { d = e->arg->dependence(); },

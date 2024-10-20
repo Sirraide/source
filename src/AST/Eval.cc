@@ -1257,6 +1257,10 @@ bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
     return true;
 }
 
+bool EvaluationContext::EvalStructInitExpr(Value&, StructInitExpr*) {
+    Unreachable("Evaluating struct initialiser without memory location?");
+}
+
 bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
     Assert(CurrFrame().return_value.isa<std::monostate>(), "Return value already set!");
     out = {};
