@@ -1,0 +1,6 @@
+// V %srcc --sema --verify %s
+program test;
+
+foo::bar(); // expected-error: Unknown symbol 'bar'
+
+proc foo { }

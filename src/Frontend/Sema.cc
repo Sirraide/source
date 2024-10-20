@@ -40,8 +40,8 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // are usually allowed, but we forbid redeclaring e.g. (template)
     // parameters.
     auto& ds = scope->decls[d->name];
-    if (not ds.empty() and isa<ParamDecl, TemplateTypeDecl>(d)) {
-        Error(d->location(), "Redeclaration of parameter '{}'", d->name);
+    if (not ds.empty() and isa<FieldDecl, ParamDecl, TemplateTypeDecl>(d)) {
+        Error(d->location(), "Redeclaration of '{}'", d->name);
         Note(ds.front()->location(), "Previous declaration was here");
     } else {
         ds.push_back(d);
@@ -2155,6 +2155,45 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
+    if (base->type->dependent()) return ICE(
+        parsed->loc,
+        "TODO: DependentMemberAccessExpr"
+    );
+
+    // Struct member access.
+    if (auto s = dyn_cast<StructType>(base->type.ptr())) {
+        if (not s->is_complete()) return Error(
+            parsed->loc,
+            "Member access on incomplete type '{}'",
+            base->type
+        );
+
+        if (not base->lvalue()) return ICE(parsed->loc, "TODO: Materialise temporary");
+        auto field = LookUpUnqualifiedName(s->scope(), parsed->member, true);
+        switch (field.result) {
+            using enum LookupResult::Reason;
+            case Success: break;
+            case Ambiguous:
+            case FailedToImport:
+            case NonScopeInPath:
+                Unreachable();
+
+            case NotFound: return Error(
+                parsed->loc,
+                "Struct '{}' has no member named '{}'",
+                base->type,
+                parsed->member
+            );
+        }
+
+        return new (*M) MemberAccessExpr(
+            base,
+            cast<FieldDecl>(field.decls.front()),
+            parsed->loc
+        );
+    }
+
+    // Member access on builtin types.
     using AK = BuiltinMemberAccessExpr::AccessKind;
     static constexpr auto AlreadyDiagnosed = AK(255);
     auto kind = [&] -> Opt<AK> {
@@ -2338,6 +2377,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
         fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
         size += ty->size(*M);
         align = std::max(align, ty->align(*M));
+        AddDeclToScope(s->scope(), fields.back());
     }
 
     // TODO: Initialisers are declared out-of-line, but they should

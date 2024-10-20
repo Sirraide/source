@@ -1017,6 +1017,10 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
     return locals.at(expr->decl);
 }
 
+auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {
+    Todo();
+}
+
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
     Unreachable("Emitting unresolved overload set?");
 }

@@ -100,6 +100,7 @@ void Stmt::ComputeDependence() { // clang-format off
     },
 
     [&](LocalRefExpr* e) { d = e->decl->dependence(); },
+    [&](MemberAccessExpr* e) { d = e->base->dependence() | e->field->dependence(); },
     [&](OverloadSetExpr* e) {
       for (auto o : e->overloads()) d |= o->dependence();
     },

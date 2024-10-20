@@ -339,6 +339,10 @@ auto TemplateInstantiator::InstantiateIntType(IntType*) -> Type {
     Unreachable("Never dependent");
 }
 
+auto TemplateInstantiator::InstantiateMemberAccessExpr(MemberAccessExpr* n) -> Ptr<Stmt> {
+    Todo();
+}
+
 auto TemplateInstantiator::InstantiateProcType(ProcType* ty) -> Type {
     SmallVector<ParamTypeData, 4> params;
     auto ret = InstantiateType(ty->ret());

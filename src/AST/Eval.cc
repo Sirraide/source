@@ -1210,6 +1210,10 @@ bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
     Unreachable("Local variable not found: {}", local->decl->name);
 }
 
+bool EvaluationContext::EvalMemberAccessExpr(Value& out, MemberAccessExpr* expr) {
+    Todo();
+}
+
 bool EvaluationContext::EvalOverloadSetExpr(Value&, OverloadSetExpr*) {
     // FIXME: A function that returns an overload set should be fine
     // so long as it is only called at compile-time.

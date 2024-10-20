@@ -1,6 +1,28 @@
 // V %srcc --sema --verify %s
 program test;
 
-foo::bar(); // expected-error: Unknown symbol 'bar'
+struct S {
+    int x;
+    int y; // expected-note: Previous declaration was here
+    int y; // expected-error: Redeclaration of 'y'
+}
 
-proc foo { }
+S a;
+a.x = 1;
+a.y = 2;
+a.x = ""; // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+a.z = 3; // expected-error: Struct 'S' has no member named 'z'
+
+struct Nested {
+    S a;
+    int b;
+}
+
+Nested b;
+b.a.x = 1;
+b.a.y = 2;
+b.a.y = b.a.x;
+b.a.x = ""; // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+b.a.z = 3; // expected-error: Struct 'S' has no member named 'z'
+b.b = 4;
+b.b.b = 5; // expected-error: Cannot perform member access on type 'int'

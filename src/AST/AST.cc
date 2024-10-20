@@ -302,6 +302,14 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
+        case Kind::MemberAccessExpr: {
+            auto m = cast<MemberAccessExpr>(e);
+            PrintBasicNode(e, "MemberAccessExpr");
+            SmallVector<Stmt*, 2> children{m->base};
+            children.push_back(m->field);
+            PrintChildren(children);
+        } break;
+
         case Kind::OverloadSetExpr: {
             auto o = cast<OverloadSetExpr>(e);
             PrintBasicNode(e, "OverloadSetExpr");

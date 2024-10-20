@@ -466,6 +466,19 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
 };
 
+class srcc::MemberAccessExpr final : public Expr {
+public:
+    Expr* base;
+    FieldDecl* field;
+
+    MemberAccessExpr(
+        Expr* base,
+        FieldDecl* field,
+        Location location
+    );
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::MemberAccessExpr; }
+};
 class srcc::OverloadSetExpr final : public Expr
     , TrailingObjects<OverloadSetExpr, ProcDecl*> {
     friend TrailingObjects;

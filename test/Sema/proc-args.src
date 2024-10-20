@@ -5,7 +5,7 @@ proc a () {} // expected-note: Declared here
 proc b (int) {} // expected-note: Declared here
 proc c (int, int, int) {} // expected-note 2: Declared here
 proc d (int a, int b, int c) {} // expected-note: Declared here
-proc e (int a, int a) {} // expected-error: Redeclaration of parameter 'a'
+proc e (int a, int a) {} // expected-error: Redeclaration of 'a'
                          // expected-note@-1: Previous declaration was here
                          // expected-note@-2 2: Declared here
 proc f ( // expected-note 3: Declared here

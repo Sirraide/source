@@ -133,6 +133,16 @@ LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     if (p and p->is_rvalue_in_parameter()) value_category = SRValue;
 }
 
+MemberAccessExpr::MemberAccessExpr(
+    Expr* base,
+    FieldDecl* field,
+    Location location
+) : Expr{Kind::MemberAccessExpr, field->type, LValue, location},
+    base{base},
+    field{field} {
+    ComputeDependence();
+}
+
 OverloadSetExpr::OverloadSetExpr(
     ArrayRef<Decl*> decls,
     Location location
