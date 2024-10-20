@@ -80,8 +80,8 @@ private:
     auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
 
     template <typename Ty = llvm::Type>
-    auto ConvertType(Type ty) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty)); }
-    auto ConvertTypeImpl(Type ty) -> llvm::Type*;
+    auto ConvertType(Type ty, bool array_elem = false) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty, array_elem)); }
+    auto ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type*;
     auto ConvertTypeForMem(Type ty) -> llvm::Type*;
     auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
 
@@ -168,9 +168,7 @@ private:
     auto MangledName(ProcDecl* proc) -> StringRef;
 
     /// Initialise a variable or memory location.
-    ///
-    /// \return addr
-    auto PerformVariableInitialisation(llvm::Value* addr, Expr* init) -> llvm::Value*;
+    void PerformVariableInitialisation(llvm::Value* addr, Expr* init);
 
     /// Create a while loop.
     void While(

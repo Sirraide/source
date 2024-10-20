@@ -746,12 +746,6 @@ auto Sema::BuildInitialiser(
     return init.result();
 }
 
-auto Sema::BuildInitialiser(Type var_type, Expr* arg, Location loc) -> Ptr<Expr> {
-    ImmediateInitContext init{*this, arg, var_type, loc};
-    if (not BuildInitialiser(init, var_type, arg, {}, {}, false)) return nullptr;
-    return init.result();
-}
-
 auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
     var_type = CheckVariableType(var_type, loc);
     if (var_type == Types::ErrorDependentTy) return nullptr;
@@ -770,7 +764,11 @@ auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -
 
     // If there is exactly one argument, delegate to the rest of the
     // initialisation machinery.
-    if (args.size() == 1) return BuildInitialiser(var_type, args.front(), loc);
+    if (args.size() == 1) {
+        ImmediateInitContext init{*this, args.front(), var_type, loc};
+        if (not BuildInitialiser(init, var_type, args.front(), {}, {}, false)) return {};
+        return init.result();
+    }
 
     // There are only few (classes of) types that support initialisation
     // from more than one argument. We only support immediate initialisation
@@ -1219,7 +1217,7 @@ auto Sema::BuildBinaryExpr(
             }
 
             // Delegate to initialisation.
-            if (auto init = BuildInitialiser(lhs->type, rhs).get_or_null()) rhs = init;
+            if (auto init = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null()) rhs = init;
             else return nullptr;
             return Build(lhs->type, LValue);
         }
@@ -1693,9 +1691,15 @@ auto Sema::BuildLocalDecl(
     // If this fails, the initialiser is simply discarded; we can
     // still continue analysing this though as most of sema doesn’t
     // care about variable initialisers.
-    if (auto i = init.get_or_null(); i and not i->dependent())
-        if (auto init_expr = BuildInitialiser(ty, i))
-            init = init_expr;
+    if (not ty->dependent()) {
+        if (auto i = init.get_or_null()) {
+            if (auto init_expr = BuildInitialiser(ty, i, i->location()))
+                init = init_expr;
+        }
+
+        // If we have no initialiser, create an empty initialiser.
+        else { init = BuildInitialiser(ty, {}, loc); }
+    }
 
     auto param = new (*M) LocalDecl(CheckVariableType(ty, loc), name, proc.proc, init, loc);
     DeclareLocal(param);

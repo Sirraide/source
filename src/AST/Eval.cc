@@ -45,10 +45,9 @@ bool Value::operator==(const Value& other) const {
         [&](const LValue& lval) { return lval == other.cast<LValue>(); },
         [&](const APInt& i) { return i == other.cast<APInt>(); },
         [&](const Slice& s) { return s == other.cast<Slice>(); },
-        [&](const Reference& r) { return r == other.cast<Reference>(); }
+        [&](const Reference& r) { return r == other.cast<Reference>(); },
     });
 }
-
 
 void Value::dump(bool use_colour) const {
     std::print("{}", text::RenderColours(use_colour, print().str()));
@@ -235,10 +234,10 @@ public:
     [[nodiscard]] auto MakeString(String s, Location l) -> Value;
 
     /// Perform an assignment to an already live variable.
-    [[nodiscard]] bool PerformAssign(LValue& addr, Ptr<Expr> init, Location loc);
+    [[nodiscard]] bool PerformAssign(LValue& addr, Expr* init, Location loc);
 
     /// Initialise a variable.
-    [[nodiscard]] bool PerformVarInit(LValue& addr, Ptr<Expr> init, Location loc);
+    [[nodiscard]] bool PerformVarInit(LValue& addr, Expr* init, Location loc);
 
     /// Report an error that involves accessing memory.
     template <typename... Args>
@@ -458,7 +457,7 @@ auto EvaluationContext::MakeString(String s, Location l) -> Value {
     };
 }
 
-bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc) {
+bool EvaluationContext::PerformAssign(LValue& addr, Expr* init, Location loc) {
     auto mem = addr.base.get<Memory*>();
 
     // For builtin types, Sema will have ensured that the RHS is
@@ -471,52 +470,45 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
             return false;
 
         case ValueCategory::SRValue: {
-            auto InitBuiltin = [&]<typename T>(T get_value(Value&), T default_value) {
-                if (auto i = init.get_or_null()) {
-                    Assert(i->value_category == Expr::SRValue);
-                    Value val;
-                    TryEval(val, i);
-                    return StoreMemory(addr, get_value(val), i->location());
+            auto InitBuiltin = [&]<typename T>(T get_value(Value&)) {
+                Assert(init->value_category == Expr::SRValue);
+                if (isa<DefaultInitExpr>(init)) {
+                    mem->zero();
+                    return true;
                 }
 
-                // No initialiser. Initialise it to 0.
-                return StoreMemory(addr, default_value, loc);
+                Value val;
+                TryEval(val, init);
+                return StoreMemory(addr, get_value(val), init->location());
             };
 
             if (addr.type == Types::IntTy) return InitBuiltin(
-                +[](Value& v) { return v.cast<APInt>().getZExtValue(); },
-                u64(0)
+                +[](Value& v) { return v.cast<APInt>().getZExtValue(); }
             );
 
             if (addr.type == Types::BoolTy) return InitBuiltin(
-                +[](Value& v) { return v.cast<bool>(); },
-                false
+                +[](Value& v) { return v.cast<bool>(); }
             );
 
             if (isa<IntType>(addr.type.ptr())) {
-                if (auto i = init.get_or_null()) {
-                    Value val;
-                    TryEval(val, i);
-                    auto& ai = val.cast<APInt>();
-                    auto data = ai.getRawData();
-                    auto size = ai.getNumWords() * Size::Of<u64>();
-                    return StoreMemory(addr, data, size, loc);
+                if (isa<DefaultInitExpr>(init)) {
+                    mem->zero();
+                    return true;
                 }
 
-                mem->zero();
-                return true;
+                Value val;
+                TryEval(val, init);
+                auto& ai = val.cast<APInt>();
+                auto data = ai.getRawData();
+                auto size = ai.getNumWords() * Size::Of<u64>();
+                return StoreMemory(addr, data, size, loc);
             }
 
             if (isa<ProcType>(addr.type)) {
-                if (auto i = init.get_or_null()) {
-                    Assert(i->value_category == Expr::SRValue);
-                    Value closure;
-                    TryEval(closure, i);
-                    return StoreMemory(addr, Closure{closure.cast<ProcDecl*>()}, i->location());
-                }
-
-                ICE(loc, "Uninitialised closure in constant evaluator");
-                return false;
+                Assert(init->value_category == Expr::SRValue);
+                Value closure;
+                TryEval(closure, init);
+                return StoreMemory(addr, Closure{closure.cast<ProcDecl*>()}, init->location());
             }
 
             return Error(
@@ -530,7 +522,7 @@ bool EvaluationContext::PerformAssign(LValue& addr, Ptr<Expr> init, Location loc
     Unreachable();
 }
 
-bool EvaluationContext::PerformVarInit(LValue& addr, Ptr<Expr> init, Location loc) {
+bool EvaluationContext::PerformVarInit(LValue& addr, Expr* init, Location loc) {
     auto* mem = addr.base.get<Memory*>();
     Assert(mem->dead(), "Already initialised?");
 
@@ -903,7 +895,7 @@ bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
         // Variables need to be initialised.
         if (auto l = dyn_cast<LocalDecl>(s)) {
             auto& loc = AllocateVar(CurrFrame().locals, l);
-            if (not PerformVarInit(loc, l->init, l->location()))
+            if (not PerformVarInit(loc, l->init.get(), l->location()))
                 return false;
             initialised_vars.locals_to_destroy.push_back(loc.base.get<Memory*>());
         }
@@ -1008,7 +1000,6 @@ bool EvaluationContext::EvalBuiltinMemberAccessExpr(Value& out, BuiltinMemberAcc
     }
     Unreachable();
 }
-
 
 bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
     TryEval(out, call->callee);

@@ -1,0 +1,50 @@
+// R %srcc --llvm %s
+program test;
+
+struct A {
+    int x;
+    int y;
+};
+
+struct B {
+    A a;
+    A b;
+};
+
+// * define private fastcc void @_S1fFvE() {
+// + entry:
+// +   %0 = alloca [16 x i8], align 8
+// +   %1 = alloca [32 x i8], align 8
+// +   %2 = getelementptr inbounds i8, ptr %0, i64 0
+// +   store i64 1, ptr %2, align 8
+// +   %3 = getelementptr inbounds i8, ptr %0, i64 8
+// +   store i64 2, ptr %3, align 8
+// +   %4 = getelementptr inbounds i8, ptr %1, i64 0
+// +   %5 = getelementptr inbounds i8, ptr %4, i64 0
+// +   store i64 3, ptr %5, align 8
+// +   %6 = getelementptr inbounds i8, ptr %4, i64 8
+// +   store i64 4, ptr %6, align 8
+// +   %7 = getelementptr inbounds i8, ptr %1, i64 16
+// +   %8 = getelementptr inbounds i8, ptr %7, i64 0
+// +   store i64 5, ptr %8, align 8
+// +   %9 = getelementptr inbounds i8, ptr %7, i64 8
+// +   store i64 6, ptr %9, align 8
+// +   ret void
+// + }
+proc f {
+    A a = A(1, 2);
+    B b = B(A(3, 4), A(5, 6));
+}
+
+// * define private fastcc void @_S1gFvE() {
+// + entry:
+// +   %0 = alloca [16 x i8], align 8
+// +   %1 = alloca [32 x i8], align 8
+// +   call void @llvm.memset.p0.i64(ptr align 8 %0, i8 0, i64 16, i1 false)
+// +   call void @llvm.memset.p0.i64(ptr align 8 %1, i8 0, i64 32, i1 false)
+// +   ret void
+// + }
+proc g {
+    A a;
+    B b;
+}

@@ -303,6 +303,7 @@ int Driver::Impl::run_job() {
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
     auto ir_module = CodeGen::Emit(*machine, *tu);
+    if (ctx.diags().has_error()) return 1;
 
     // Run the optimiser before potentially dumping the module.
     if (opts.opt_level) CodeGen::OptimiseModule(*machine, *tu, *ir_module);

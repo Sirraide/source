@@ -515,15 +515,8 @@ private:
         Location loc = {}
     ) -> Ptr<Expr>;
 
-    /// Build and initialiser immediately, returning the
-    /// computed initialiser or nullptr on error.
-    auto BuildInitialiser(
-        Type var_type,
-        Expr* arg,
-        Location loc = {}
-    ) -> Ptr<Expr>;
-
-    /// Build an initialiser from more than one argument.
+    /// Build an initialiser immediately. 'args' can be empty to
+    /// attempt to build an empty initialiser.
     auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
 
     /// Adjust a type for use in a variable declaration.

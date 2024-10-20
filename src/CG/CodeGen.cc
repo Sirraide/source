@@ -454,7 +454,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> StringRef {
 // ============================================================================
 //  Initialisation.
 // ============================================================================
-auto CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) -> Value* {
+void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
     switch (init->type->value_category()) {
         case Expr::DValue: Unreachable("Dependent initialiser in codegen?");
         case Expr::LValue: Unreachable("Initialisation from lvalue?");
@@ -463,10 +463,38 @@ auto CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) -> Value* {
         case Expr::SRValue: {
             auto val = Emit(init);
             builder.CreateAlignedStore(val, addr, init->type->align(M));
-            return addr;
+            return;
         }
 
-        case ValueCategory::MRValue: Todo("Construct from MRValue");
+        case ValueCategory::MRValue: {
+            // Default initialiser here is a memset to 0.
+            if (isa<DefaultInitExpr>(init)) {
+                builder.CreateMemSet(
+                    addr,
+                    builder.getInt8(0),
+                    u64(init->type->size(M).bytes()),
+                    init->type->align(M)
+                );
+                return;
+            }
+
+            // Structs are otherwise constructed field by field.
+            if (auto lit = dyn_cast<StructInitExpr>(init)) {
+                auto s = lit->struct_type();
+                for (auto [field, val] : zip(s->fields(), lit->values())) {
+                    auto offs = builder.CreateInBoundsPtrAdd(
+                        addr,
+                        builder.getInt64(field->offset.bytes())
+                    );
+                    PerformVariableInitialisation(offs, val);
+                }
+                return;
+            }
+
+            // Anything else here is nonsense.
+            ICE(init->location(), "Unsupported initialiser");
+            return;
+        }
     }
 
     Unreachable();
@@ -475,7 +503,7 @@ auto CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) -> Value* {
 // ============================================================================
 //  Type Conversion
 // ============================================================================
-auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
+auto CodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
     switch (ty->kind()) {
         case TypeBase::Kind::SliceType: return SliceTy;
         case TypeBase::Kind::ReferenceType: return PtrTy;
@@ -483,8 +511,9 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
         case TypeBase::Kind::IntType: return builder.getIntNTy(u32(cast<IntType>(ty)->bit_width().bits()));
 
         case TypeBase::Kind::ArrayType: {
+            // FIXME: This doesn’t handle structs correctly at the moment.
             auto arr = cast<ArrayType>(ty);
-            auto elem = ConvertType(arr->elem());
+            auto elem = ConvertType(arr->elem(), true);
             return llvm::ArrayType::get(elem, u64(arr->dimension()));
         }
 
@@ -514,7 +543,9 @@ auto CodeGen::ConvertTypeImpl(Type ty) -> llvm::Type* {
 
         case TypeBase::Kind::TemplateType: Unreachable("TemplateType in codegen?");
         case TypeBase::Kind::StructType: {
-            Todo();
+            auto s = cast<StructType>(ty);
+            auto sz = array_elem ? s->array_size() : s->size();
+            return llvm::ArrayType::get(I8Ty, sz.bytes());
         }
     }
 
@@ -641,7 +672,11 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         }
 
         // Assignment.
-        case Tk::Assign: return PerformVariableInitialisation(Emit(expr->lhs), expr->rhs);
+        case Tk::Assign: {
+            auto addr = Emit(expr->lhs);
+            PerformVariableInitialisation(addr, expr->rhs);
+            return addr;
+        }
 
         // Subscripting is supported for slices and arrays.
         case Tk::LBrack: {
@@ -812,26 +847,8 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     for (auto s : expr->stmts()) {
         // Initialise variables.
         if (auto var = dyn_cast<LocalDecl>(s)) {
-            switch (var->type->value_category()) {
-                case ValueCategory::MRValue: Todo("Initialise mrvalue");
-                case ValueCategory::LValue: Todo("Initialise lvalue");
-                case ValueCategory::DValue: Unreachable("Dependent value in codegen?");
-                case ValueCategory::SRValue: {
-                    // SRValues are simply constructed and stored.
-                    if (auto i = var->init.get_or_null()) builder.CreateAlignedStore(
-                        Emit(i),
-                        locals.at(var),
-                        var->type->align(M)
-                    );
-
-                    // Or zero-initialised if there is no initialiser.
-                    else builder.CreateAlignedStore(
-                        llvm::Constant::getNullValue(ConvertTypeForMem(var->type)),
-                        locals.at(var),
-                        var->type->align(M)
-                    );
-                } break;
-            }
+            Assert(var->init, "Sema should always create an initialiser for local vars");
+            PerformVariableInitialisation(locals.at(var), var->init.get());
         }
 
         // Can’t emit other declarations here.
@@ -917,7 +934,6 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
     }
 }
 
-
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     // FIXME: Handle C calling convention properly for small integers and structs.
     // Emit args and callee.
@@ -966,7 +982,8 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
 }
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
-    Todo();
+    Assert(stmt->type->value_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
+    return llvm::Constant::getNullValue(ConvertTypeForMem(stmt->type));
 }
 
 auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
@@ -1055,7 +1072,7 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return GetStringSlice(expr->value);
 }
 
-auto CodeGen::EmitStructInitExpr(StructInitExpr*)-> Value* {
+auto CodeGen::EmitStructInitExpr(StructInitExpr*) -> Value* {
     Unreachable("Emitting struct initialiser without memory location?");
 }
 
