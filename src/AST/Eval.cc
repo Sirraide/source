@@ -1,15 +1,17 @@
-module;
+#include <srcc/AST/AST.hh>
+#include <srcc/AST/Eval.hh>
+#include <srcc/AST/Stmt.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
+
 #include <optional>
 #include <print>
 #include <ranges>
-#include <srcc/Macros.hh>
 
-module srcc.ast;
-import srcc.token;
 using namespace srcc;
 using namespace srcc::eval;
 
@@ -224,8 +226,9 @@ public:
 
     /// \return True on success, false on failure.
     [[nodiscard]] bool Eval(Value& out, Stmt* stmt);
-#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval##Class(Value& out, Class* expr);
+#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval## Class(Value& out, Class* expr);
 #include "srcc/AST.inc"
+
 
     /// Check if we’re in a function.
     [[nodiscard]] bool InFunction() { return not stack.empty(); }
@@ -443,6 +446,7 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
 #include "../../include/srcc/AST.inc"
+
     }
     Unreachable("Invalid statement kind");
 }
@@ -1346,3 +1350,4 @@ auto srcc::eval::Evaluate(
     if (not C.Eval(val, stmt)) return std::nullopt;
     return std::move(val);
 }
+

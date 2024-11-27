@@ -1,12 +1,13 @@
-module;
+#include <srcc/Core/Utils.hh>
+#include <srcc/Frontend/Sema.hh>
+
+#include <llvm/ADT/STLExtras.h>
 
 #include <base/Assert.hh>
 #include <base/Macros.hh>
-#include <llvm/ADT/STLExtras.h>
+
 #include <ranges>
 
-module srcc.frontend.sema;
-import srcc.utils;
 using namespace srcc;
 
 #undef Try

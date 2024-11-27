@@ -1,12 +1,5 @@
-module;
-
-#include <algorithm>
-#include <ranges>
+#include <srcc/AST/Stmt.hh>
 #include <srcc/Macros.hh>
-
-module srcc.ast;
-import :stmt;
-import :enums;
 
 using namespace srcc;
 

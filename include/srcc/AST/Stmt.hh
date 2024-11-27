@@ -1,26 +1,26 @@
-module;
+#ifndef SRCC_AST_STMT_HH
+#define SRCC_AST_STMT_HH
 
-#include <functional>
-#include <llvm/ADT/StringSwitch.h>
-#include <llvm/Support/TrailingObjects.h>
-#include <memory>
-#include <ranges>
+#include <srcc/AST/Enums.hh>
+#include <srcc/AST/Eval.hh>
+#include <srcc/AST/Type.hh>
+#include <srcc/Core/Location.hh>
+#include <srcc/Core/Token.hh>
+#include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
-export module srcc.ast:stmt;
-import srcc.token;
-import srcc;
-import :enums;
-import :eval;
-import :type;
+#include <llvm/ADT/StringSwitch.h>
+#include <llvm/Support/TrailingObjects.h>
 
-export namespace srcc {
+#include <functional>
+#include <memory>
+#include <ranges>
+
+namespace srcc {
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
-// Hack because this language is too stupid to allow forward
-// declarations across modules.
-struct ParseTreeNodeBase {};
+class ParsedStmt;
 } // namespace srcc
 
 // ============================================================================
@@ -531,17 +531,17 @@ class srcc::StaticIfExpr final : public Expr {
 public:
     Expr* cond;
 
-    // *Somehow* making the body of a 'static if' ‘dependent’ or deferring
-    // instantiation in some other way is *really* complicated. Instead, we
-    // take a page out of D’s book and simply... don’t translate the body
-    // until we know which branch we actually want.
-    ParseTreeNodeBase* then;
-    Ptr<ParseTreeNodeBase> else_;
+    // Making the body of a 'static if' ‘dependent’ or deferring instantiation
+    // in some other way is *really* complicated. Instead, we take a page out
+    // of D’s book and simply... don’t translate the body until we know which
+    // branch we actually want.
+    ParsedStmt* then;
+    Ptr<ParsedStmt> else_;
 
     StaticIfExpr(
         Expr* cond,
-        ParseTreeNodeBase* then,
-        Ptr<ParseTreeNodeBase> else_,
+        ParsedStmt* then,
+        Ptr<ParsedStmt> else_,
         Location location
     ) : Expr{Kind::StaticIfExpr, Types::DependentTy, DValue, location},
         cond{cond},
@@ -942,3 +942,5 @@ auto srcc::Stmt::visit(Visitor&& v) -> decltype(auto) {
     }
     Unreachable();
 }
+
+#endif // SRCC_AST_STMT_HH

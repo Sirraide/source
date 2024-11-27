@@ -1,9 +1,8 @@
-module;
+#include <srcc/Core/Utils.hh>
 
 #include <llvm/ADT/StringExtras.h>
-#include <print>
 
-module srcc.utils;
+using namespace srcc;
 
 auto IntegerStorage::store_int(APInt integer) -> StoredInteger {
     StoredInteger si;
@@ -20,7 +19,7 @@ auto IntegerStorage::store_int(APInt integer) -> StoredInteger {
     return si;
 }
 
-auto StoredInteger::inline_value() const -> std::optional<i64>{
+auto StoredInteger::inline_value() const -> std::optional<i64> {
     if (is_inline()) return i64(data);
     return std::nullopt;
 }

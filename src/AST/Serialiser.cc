@@ -1,22 +1,21 @@
-module;
+#include <srcc/AST/AST.hh>
+#include <srcc/AST/Stmt.hh>
+#include <srcc/Core/Constants.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Macros.hh>
+
 #include <llvm/Object/Archive.h>
 #include <llvm/Object/ObjectFile.h>
-#include <llvm/Support/Compression.h>
-#include <srcc/Macros.hh>
-#include <print>
-module srcc.ast;
-
-import srcc.constants;
 
 using namespace srcc;
 
-using Serialiser = srcc::TranslationUnit::Serialiser;
-using Deserialiser = srcc::TranslationUnit::Deserialiser;
+using Serialiser = TranslationUnit::Serialiser;
+using Deserialiser = TranslationUnit::Deserialiser;
 
 // ============================================================================
 //  Serialiser
 // ============================================================================
-struct srcc::TranslationUnit::Serialiser {
+struct TranslationUnit::Serialiser {
     const TranslationUnit& M;
     SmallVectorImpl<char>& buffer;
     SmallVector<char, 0> types_buffer{};
@@ -205,7 +204,6 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
     Unreachable("Invalid type kind: {}", ty);
 }
 
-
 void Serialiser::SerialiseTypeDecl(const TypeDecl*) {
     Todo();
 }
@@ -213,9 +211,9 @@ void Serialiser::SerialiseTypeDecl(const TypeDecl*) {
 // ============================================================================
 //  Deserialiser
 // ============================================================================
-struct srcc::TranslationUnit::Deserialiser : DefaultDiagsProducer<> {
+struct TranslationUnit::Deserialiser : DefaultDiagsProducer<> {
     Context& ctx;
-    TranslationUnit::Ptr M;
+    Ptr M;
     ArrayRef<char> data;
     SmallVector<Type, 0> deserialised_types;
 

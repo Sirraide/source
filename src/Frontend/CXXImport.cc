@@ -1,4 +1,6 @@
-module;
+#include <srcc/ClangForward.hh>
+#include <srcc/Frontend/Sema.hh>
+#include <srcc/Macros.hh>
 
 #include <clang/Basic/FileManager.h>
 #include <clang/Frontend/ASTUnit.h>
@@ -6,15 +8,13 @@ module;
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
 #include <clang/Tooling/Tooling.h>
+
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
-#include <print>
-#include <srcc/ClangForward.hh>
-#include <srcc/Macros.hh>
 
-module srcc.frontend.sema;
-import srcc.ast;
+#include <print>
+
 using namespace srcc;
 
 class Sema::Importer {

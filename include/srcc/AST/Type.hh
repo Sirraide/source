@@ -1,16 +1,16 @@
-module;
+#ifndef SRCC_AST_TYPE_HH
+#define SRCC_AST_TYPE_HH
+
+#include <srcc/AST/Enums.hh>
+#include <srcc/Core/Location.hh>
+#include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
-#include <srcc/Macros.hh>
 
-export module srcc.ast:type;
-import srcc;
-import :enums;
-
-export namespace srcc {
+namespace srcc {
 class Scope;
 class StructScope;
 class TemplateTypeDecl;
@@ -21,6 +21,7 @@ class Expr;
 class Decl;
 class FieldDecl;
 class TypeDecl;
+
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
@@ -30,9 +31,9 @@ using Type = TypeWrapper<TypeBase>;
 class TypeLoc;
 
 /// Casting.
-template <typename To, typename From> auto cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To>;
-template <typename To, typename From> auto dyn_cast(srcc::TypeWrapper<From> from) -> std::optional<srcc::TypeWrapper<To>>;
-template <typename To, typename From> auto isa(srcc::TypeWrapper<From> from) -> bool;
+template <typename To, typename From> auto cast(TypeWrapper<From> from) -> TypeWrapper<To>;
+template <typename To, typename From> auto dyn_cast(TypeWrapper<From> from) -> std::optional<TypeWrapper<To>>;
+template <typename To, typename From> auto isa(TypeWrapper<From> from) -> bool;
 } // namespace srcc
 
 /// Scope that stores declarations.
@@ -285,7 +286,7 @@ public:
 
 // Specialisation that uses the null state to represent a null type.
 template <typename Ty>
-class srcc::Opt<TypeWrapper<Ty>> {
+class srcc::Opt<srcc::TypeWrapper<Ty>> {
     using Type = TypeWrapper<Ty>;
     Type val;
 
@@ -612,14 +613,14 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
 }
 
 template <typename Ty>
-struct std::formatter<TypeWrapper<Ty>> : std::formatter<std::string_view> {
+struct std::formatter<srcc::TypeWrapper<Ty>> : std::formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(TypeWrapper<Ty> t, FormatContext& ctx) const {
+    auto format(srcc::TypeWrapper<Ty> t, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
     }
 };
 
-template <std::derived_from<TypeBase> Ty>
+template <std::derived_from<srcc::TypeBase> Ty>
 struct std::formatter<Ty*> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(Ty* t, FormatContext& ctx) const {
@@ -642,3 +643,5 @@ template <typename To, typename From>
 auto srcc::isa(srcc::TypeWrapper<From> from) -> bool {
     return llvm::isa<To>(from.ptr());
 }
+
+#endif // SRCC_AST_TYPE_HH

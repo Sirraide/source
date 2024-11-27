@@ -1,13 +1,30 @@
-module;
+#include <srcc/AST/AST.hh>
+#include <srcc/AST/Printer.hh>
+#include <srcc/AST/Type.hh>
+#include <srcc/Core/Constants.hh>
+#include <srcc/Core/Core.hh>
 
-#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <print>
-#include <srcc/Macros.hh>
 
-module srcc.ast;
-import base.colours;
 using namespace srcc;
+
+// ============================================================================
+//  ImportHandle
+// ============================================================================
+ImportHandle::ImportHandle(std::unique_ptr<TranslationUnit> h)
+    : PointerUnion(h.get()),
+      shared_handle{std::shared_ptr(std::move(h))} {}
+
+ImportHandle::ImportHandle(std::unique_ptr<clang::ASTUnit> h)
+    : PointerUnion(h.get()),
+      shared_handle{std::shared_ptr(std::move(h))} {}
+
+auto ImportHandle::copy(String logical_name, Location loc) -> ImportHandle {
+    auto h = *this;
+    h.import_name = logical_name;
+    h.import_location = loc;
+    return h;
+}
 
 // ============================================================================
 //  TU
@@ -76,6 +93,15 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     );
 }
 
+auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr {
+    Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
+    return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, name, is_module});
+}
+
+auto TranslationUnit::CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
+    return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, "", true});
+}
+
 void TranslationUnit::dump() const {
     bool c = context().use_colours();
 
@@ -91,6 +117,15 @@ void TranslationUnit::dump() const {
         for (auto s : file_scope_block->stmts())
             s->dump(c);
     }
+}
+
+auto TranslationUnit::save(eval::Value val) -> eval::Value* {
+    evaluated_constants.push_back(std::make_unique<eval::Value>(std::move(val)));
+    return evaluated_constants.back().get();
+}
+
+auto TranslationUnit::store_int(APInt value) -> StoredInteger {
+    return integers.front().store_int(std::move(value));
 }
 
 // ============================================================================

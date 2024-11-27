@@ -1,5 +1,5 @@
-module;
-#include <base/Assert.hh>
+#include <srcc/CG/CodeGen.hh>
+
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/MCContext.h>
@@ -10,10 +10,11 @@ module;
 #include <llvm/Support/Program.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Target/TargetMachine.h>
+
+#include <base/Assert.hh>
+
 #include <print>
-#include <srcc/Macros.hh>
-module srcc.codegen;
-import srcc;
+
 using namespace srcc;
 
 // I’m at the end of my patience with the myriad of overly verbose

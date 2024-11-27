@@ -243,3 +243,13 @@ proc foo -> Res<int, int> {
     return Res<int, int>::Error(4); // Pseudocode, but you get the point.
 }
 ```
+
+## Programs
+Allow multiple programs/modules in a single file: `program`/`module` is always
+a keyword at the top-level (and at the top-level only). Handle all of this in
+the parser.
+
+## Pragmas
+Allow setting compile options, what files to compile, what libraries to link
+etc. etc. using pragmas within the source code (MSVC-style, a bit). The (if
+somewhat lofty) goal would be to just... not require a build system at all.

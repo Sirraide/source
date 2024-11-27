@@ -17,32 +17,32 @@
 //   - No member of 'Driver::Impl' may lock the driver mutex.
 //
 // ============================================================================
-module;
+#include <srcc/CG/CodeGen.hh>
+#include <srcc/Core/Core.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Core/Utils.hh>
+#include <srcc/Driver/Driver.hh>
+#include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/Sema.hh>
+#include <srcc/Macros.hh>
 
-#include <algorithm>
-#include <filesystem>
-#include <future>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/ThreadPool.h>
+
+#include <algorithm>
+#include <filesystem>
+#include <future>
 #include <mutex>
 #include <print>
 #include <ranges>
-#include <srcc/Macros.hh>
 #include <unordered_set>
 
-module srcc.driver;
-import srcc;
-import srcc.ast;
-import srcc.langopts;
-import srcc.frontend.verifier;
-import srcc.frontend.parser;
-import srcc.frontend.sema;
-import srcc.token;
-import srcc.codegen;
-
+namespace srcc {
+class ParsedModule;
+}
 using namespace srcc;
 
 // ============================================================================
@@ -67,7 +67,7 @@ public:
 struct Driver::Impl : DiagsProducer<> {
     Options opts;
     DriverThreadPool thread_pool;
-    SmallVector<File::Path> files;
+    SmallVector<fs::Path> files;
     Context ctx;
     std::mutex mutex;
     bool compiled = false;
@@ -90,7 +90,7 @@ struct Driver::Impl : DiagsProducer<> {
     }
 
     /// Parse a file and return the parsed module.
-    auto ParseFile(const File::Path& path, bool verify) -> ParsedModule*;
+    auto ParseFile(fs::PathRef path, bool verify) -> ParsedModule*;
 };
 
 int Driver::Impl::run_job() {
@@ -137,9 +137,9 @@ int Driver::Impl::run_job() {
     // horrible linker errors.
     // FIXME: Use inode instead?
     else {
-        std::unordered_set<File::Path> file_uniquer;
+        std::unordered_set<fs::Path> file_uniquer;
         for (const auto& f : files) {
-            if (not fs::exists(f)) {
+            if (not fs::File::Exists(f)) {
                 Error("File '{}' does not exist", f);
                 continue;
             }
@@ -323,7 +323,7 @@ int Driver::Impl::run_job() {
     );
 }
 
-auto Driver::Impl::ParseFile(const File::Path& path, bool verify) -> ParsedModule* {
+auto Driver::Impl::ParseFile(fs::PathRef path, bool verify) -> ParsedModule* {
     auto engine = verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
     auto& f = ctx.get_file(path);
     return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr).release();
@@ -354,7 +354,7 @@ Driver::Driver(Options opts) : impl(new Impl{opts}) {}
 
 void Driver::add_file(std::string_view file_path) {
     std::unique_lock _{impl->mutex};
-    impl->files.push_back(File::Path(file_path));
+    impl->files.push_back(fs::Path(file_path));
 }
 
 int Driver::run_job() {

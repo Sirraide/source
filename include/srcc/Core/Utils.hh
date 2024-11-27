@@ -1,17 +1,12 @@
-module;
+#ifndef SRCC_CORE_UTILS_HH
+#define SRCC_CORE_UTILS_HH
 
-#include <chrono>
-#include <cmath>
-#include <expected>
-#include <filesystem>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/FoldingSet.h>
-#include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Alignment.h>
@@ -20,17 +15,21 @@ module;
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
+
+#include <base/Base.hh>
+#include <base/Colours.hh>
+#include <base/Text.hh>
+
+#include <chrono>
+#include <cmath>
+#include <expected>
+#include <filesystem>
 #include <print>
 #include <ranges>
 #include <source_location>
-#include <srcc/Macros.hh>
 #include <string>
 
-export module srcc.utils;
-export import base;
-export import base.colours;
-
-export namespace srcc {
+namespace srcc {
 using namespace base;
 
 using llvm::cast;
@@ -291,10 +290,7 @@ public:
     [[nodiscard]] constexpr operator StringRef() const { return val; }
 };
 
-auto operator+=(std::string& s, String str) -> std::string& {
-    s += str.value();
-    return s;
-}
+auto operator+=(std::string& s, String str) -> std::string&;
 
 class StoredInteger;
 class IntegerStorage {
@@ -339,16 +335,14 @@ public:
 using SmallUnrenderedString = SmallString<128>;
 
 // Strip colours from an unrendered string.
-auto StripColours(const SmallUnrenderedString& s) -> std::string {
-    return text::RenderColours(false, s.str().str());
-}
+auto StripColours(const SmallUnrenderedString& s) -> std::string;
 } // namespace srcc
 
 // Rarely used helpers go here.
 //
 // We use the 'utils' namespace of 'base' for this to avoid creating
 // ambiguity between the two so we can just write e.g. 'utils::Escape'.
-export namespace base::utils {
+namespace base::utils {
 /// Escape non-printable characters in a string.
 auto Escape(llvm::StringRef str, bool escape_quotes = false) -> std::string;
 
@@ -393,14 +387,7 @@ using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
 /// This parameter is moved-from because we’ll never use the
 /// same error more than once anyway.
-auto FormatError(llvm::Error& e) -> std::string {
-    std::string text;
-    llvm::handleAllErrors(std::move(e), [&](const llvm::ErrorInfoBase& e) {
-        if (not text.empty()) text += "; ";
-        text += e.message();
-    });
-    return text;
-}
+auto FormatError(llvm::Error& e) -> std::string;
 
 /// Negate a predicate.
 [[nodiscard]] auto Not(auto Predicate) {
@@ -482,34 +469,4 @@ struct std::formatter<std::filesystem::path> : std::formatter<std::string> {
     }
 };
 
-module :private;
-using namespace srcc;
-
-auto base::utils::Escape(StringRef str, bool escape_quotes) -> std::string {
-    std::string s;
-    for (auto c : str) {
-        switch (c) {
-            case '\n': s += "\\n"; break;
-            case '\r': s += "\\r"; break;
-            case '\t': s += "\\t"; break;
-            case '\v': s += "\\v"; break;
-            case '\f': s += "\\f"; break;
-            case '\a': s += "\\a"; break;
-            case '\b': s += "\\b"; break;
-            case '\\': s += "\\\\"; break;
-            case '\0': s += "\\0"; break;
-            case '"':
-                if (escape_quotes) s += "\\\"";
-                else s += c;
-                break;
-            default:
-                if (llvm::isPrint(c)) s += c;
-                else s += std::format("\\x{:02x}", static_cast<u8>(c));
-        }
-    }
-    return s;
-}
-
-auto base::utils::NumberWidth(usz number, usz base) -> usz {
-    return number == 0 ? 1 : usz(std::log(number) / std::log(base) + 1);
-}
+#endif // SRCC_CORE_UTILS_HH

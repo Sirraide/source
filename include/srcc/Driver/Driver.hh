@@ -1,11 +1,10 @@
-module;
+#ifndef SRCC_DRIVER_HH
+#define SRCC_DRIVER_HH
 
 #include <srcc/Macros.hh>
+#include <srcc/Core/Utils.hh>
 
-export module srcc.driver;
-import srcc.utils;
-
-export namespace srcc {
+namespace srcc {
 class Driver;
 enum struct Action : u8;
 }
@@ -102,3 +101,5 @@ public:
     /// \return 0 on success, non-zero on failure.
     int run_job();
 };
+
+#endif // SRCC_DRIVER_HH

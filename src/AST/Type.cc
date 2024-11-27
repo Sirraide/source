@@ -1,14 +1,12 @@
-module;
+#include <srcc/AST/AST.hh>
+#include <srcc/AST/Stmt.hh>
+#include <srcc/AST/Type.hh>
 
 #include <llvm/Support/MathExtras.h>
+
 #include <memory>
 #include <print>
-#include <srcc/Macros.hh>
 
-module srcc.ast;
-import srcc;
-import base.colours;
-import :type;
 using namespace srcc;
 
 // ============================================================================
@@ -510,4 +508,3 @@ void StructType::finalise(
         getTrailingObjects<FieldDecl*>()
     );
 }
-

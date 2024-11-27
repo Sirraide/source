@@ -1,22 +1,22 @@
-module;
+#ifndef SRCC_AST_EVAL_HH
+#define SRCC_AST_EVAL_HH
 
 #include <llvm/ADT/PointerIntPair.h>
 #include <memory>
 #include <optional>
 #include <srcc/Macros.hh>
 #include <variant>
+#include <srcc/Core/Utils.hh>
+#include <srcc/AST/Type.hh>
 
-export module srcc.ast:eval;
-import srcc;
-import :type;
-
-export namespace srcc {
+namespace srcc {
 class Stmt;
 class ProcDecl;
 class StrLitExpr;
+class TranslationUnit;
 }
 
-export namespace srcc::eval {
+namespace srcc::eval {
 class LValue;
 class Reference;
 class Slice;
@@ -40,7 +40,7 @@ namespace srcc::eval {
 class EvaluationContext;
 }
 
-enum struct srcc::eval::LifetimeState : u8 {
+enum struct srcc::eval::LifetimeState : base::u8 {
     Uninitialised,
     Initialised,
 };
@@ -207,9 +207,11 @@ public:
 };
 
 template <>
-struct std::formatter<eval::Value> : std::formatter<std::string_view> {
+struct std::formatter<srcc::eval::Value> : std::formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(const eval::Value& val, FormatContext& ctx) const {
+    auto format(const srcc::eval::Value& val, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{val.print().str()}, ctx);
     }
 };
+
+#endif // SRCC_AST_EVAL_HH

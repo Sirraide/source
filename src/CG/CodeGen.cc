@@ -1,4 +1,6 @@
-module;
+#include <srcc/CG/CodeGen.hh>
+#include <srcc/Core/Constants.hh>
+#include <srcc/Macros.hh>
 
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/ConstantFold.h>
@@ -9,20 +11,16 @@ module;
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
-#include <memory>
-#include <ranges>
-#include <srcc/Macros.hh>
 
-module srcc.codegen;
-import srcc;
-import srcc.token;
-import srcc.constants;
+#include <memory>
+
 using namespace srcc;
+namespace Intrinsic = llvm::Intrinsic;
+
 using llvm::BasicBlock;
 using llvm::ConstantInt;
 using llvm::IRBuilder;
 using llvm::Value;
-namespace Intrinsic = llvm::Intrinsic;
 
 // ============================================================================
 //  Helpers
@@ -466,7 +464,7 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
             return;
         }
 
-        case ValueCategory::MRValue: {
+        case Expr::MRValue: {
             // Default initialiser here is a memset to 0.
             if (isa<DefaultInitExpr>(init)) {
                 builder.CreateMemSet(

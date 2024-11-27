@@ -1,24 +1,22 @@
-module;
+#ifndef SRCC_AST_HH
+#define SRCC_AST_HH
+
+#include <srcc/AST/Eval.hh>
+#include <srcc/AST/Stmt.hh>
+#include <srcc/Core/Core.hh>
+#include <srcc/Core/Location.hh>
+#include <srcc/Core/Utils.hh>
+#include <srcc/Macros.hh>
 
 #include <clang/Frontend/ASTUnit.h>
-#include <llvm/ADT/TinyPtrVector.h>
+
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
-#include <llvm/Support/TrailingObjects.h>
-#include <srcc/Macros.hh>
 
-export module srcc.ast;
-export import :enums;
-export import :eval;
-export import :stmt;
-export import :type;
-import srcc;
-import srcc.langopts;
-import srcc.constants;
-import srcc.ast.printer;
+#include <base/DSA.hh>
 
-export namespace srcc {
+namespace srcc {
 class ImportHandle;
 class TranslationUnit;
 }
@@ -42,23 +40,12 @@ class srcc::ImportHandle : public llvm::PointerUnion<TranslationUnit*, clang::AS
     ImportHandle& operator=(const ImportHandle&) = default;
 
 public:
-    explicit ImportHandle(std::unique_ptr<TranslationUnit> h)
-        : PointerUnion(h.get()),
-          shared_handle{std::shared_ptr(std::move(h))} {}
-
-    explicit ImportHandle(std::unique_ptr<clang::ASTUnit> h)
-        : PointerUnion(h.get()),
-          shared_handle{std::shared_ptr(std::move(h))} {}
-
+    explicit ImportHandle(std::unique_ptr<TranslationUnit> h);
+    explicit ImportHandle(std::unique_ptr<clang::ASTUnit> h);
     ImportHandle(ImportHandle&&) = default;
     ImportHandle& operator=(ImportHandle&&) = default;
 
-    auto copy(String logical_name, Location loc) -> ImportHandle {
-        auto h = *this;
-        h.import_name = logical_name;
-        h.import_location = loc;
-        return h;
-    }
+    auto copy(String logical_name, Location loc) -> ImportHandle;
 
     auto logical_name() const -> String { return import_name; }
     auto location() const -> Location { return import_location; }
@@ -163,14 +150,8 @@ public:
     FoldingSet<TemplateType> template_types;
 
     /// Create a new module.
-    static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr {
-        Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
-        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, name, is_module});
-    }
-
-    static auto CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
-        return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, "", true});
-    }
+    static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr;
+    static auto CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr;
 
     /// Deserialise a module.
     static auto Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr;
@@ -215,7 +196,7 @@ public:
     }
 
     /// Create a new scope.
-    template <typename ScopeTy = Scope, typename ...Args>
+    template <typename ScopeTy = Scope, typename... Args>
     auto create_scope(Args&&... args) -> ScopeTy* {
         all_scopes.emplace_back(new ScopeTy{std::forward<Args>(args)...});
         return static_cast<ScopeTy*>(all_scopes.back().get());
@@ -237,17 +218,13 @@ public:
     auto save(StringRef s) -> String { return String::Save(saver, s); }
 
     /// Save a constant in the module.
-    auto save(eval::Value val) -> eval::Value* {
-        evaluated_constants.push_back(std::make_unique<eval::Value>(std::move(val)));
-        return evaluated_constants.back().get();
-    }
+    auto save(eval::Value val) -> eval::Value*;
 
     /// Store an integer in the module.
-    auto store_int(APInt value) -> StoredInteger {
-        return integers.front().store_int(std::move(value));
-    }
+    auto store_int(APInt value) -> StoredInteger;
 
     /// Serialise this module to a memory buffer
     void serialise(SmallVectorImpl<char>& buffer) const;
 };
 
+#endif // SRCC_AST_HH

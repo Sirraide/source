@@ -211,12 +211,10 @@ execute_process(
 ## ============================================================================
 ## Add a library.
 function (add_srcc_library name path_name)
-    file(GLOB_RECURSE _modules_${name} lib/${path_name}/*.ccm)
+    file(GLOB_RECURSE _headers_${name} include/srcc/${path_name}/*.hh)
     file(GLOB_RECURSE _sources_${name} src/${path_name}/*.cc)
     add_library(srcc-${name} STATIC ${_sources_${name}})
-    target_sources(srcc-${name} PUBLIC
-        FILE_SET CXX_MODULES FILES ${_modules_${name}}
-    )
+    target_sources(srcc-${name} PUBLIC FILE_SET HEADERS FILES ${_headers_${name}})
 
     ## Link to options and core library.
     target_link_libraries(srcc-${name} PRIVATE options srcc-core)
@@ -233,13 +231,9 @@ endfunction()
 ## This is what everything else depends on so we handle it separately
 ## since it must be built first.
 file(GLOB_RECURSE _headers_core include/*.hh)
-file(GLOB_RECURSE _modules_core lib/Core/*.ccm)
 file(GLOB_RECURSE _sources_core src/Core/*.cc)
 add_library(srcc-core STATIC ${_sources_core})
-target_sources(srcc-core PUBLIC
-    FILE_SET HEADERS     FILES ${_headers_core}
-    FILE_SET CXX_MODULES FILES ${_modules_core}
-)
+target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 
 target_link_libraries(srcc-core PRIVATE options)
 
@@ -256,14 +250,10 @@ add_srcc_library(driver Driver LINK srcc-ast srcc-frontend srcc-codegen)
 ## ============================================================================
 ## Do NOT recurse here; only top-level files are part of the main driver
 ## executable only.
-file(GLOB _driver_modules lib/*.ccm)
 file(GLOB _driver_sources src/*.cc)
 
 ## Add the executable.
 add_clang_executable(srcc ${_driver_sources})
-target_sources(srcc PUBLIC
-    FILE_SET CXX_MODULES FILES ${_driver_modules}
-)
 
 ## Link everything together.
 target_link_libraries(srcc PRIVATE options srcc-core srcc-driver)

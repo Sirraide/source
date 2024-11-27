@@ -1,20 +1,18 @@
-module;
+#ifndef SRCC_FRONTEND_SEMA_HH
+#define SRCC_FRONTEND_SEMA_HH
+
+#include <srcc/AST/AST.hh>
+#include <srcc/ClangForward.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Frontend/Parser.hh>
+#include <srcc/Macros.hh>
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/TinyPtrVector.h>
+
 #include <ranges>
-#include <srcc/ClangForward.hh>
-#include <srcc/Macros.hh>
 
-export module srcc.frontend.sema;
-import srcc;
-import srcc.utils;
-import srcc.ast;
-import srcc.token;
-import srcc.langopts;
-import srcc.frontend.parser;
-
-export namespace srcc {
+namespace srcc {
 class ModuleLoader;
 class Sema;
 }
@@ -662,11 +660,12 @@ private:
     void Translate();
 
     /// Statements.
-#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed)->Decl*;
-#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
+#define PARSE_TREE_LEAF_EXPR(Name) auto Translate## Name(Parsed## Name* parsed)->Ptr<Stmt>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate## Name(Parsed## Name* parsed)->Decl*;
+#define PARSE_TREE_LEAF_STMT(Name) auto Translate## Name(Parsed## Name* parsed)->Ptr<Stmt>;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
+
 
     auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
 
@@ -702,3 +701,5 @@ private:
                 ctx.diags().add_extra_location(i->inst_loc, "in instantiation of '{}'", i->pattern->name);
     }
 };
+
+#endif // SRCC_FRONTEND_SEMA_HH

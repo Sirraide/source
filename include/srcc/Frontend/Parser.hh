@@ -1,17 +1,17 @@
-module;
+#ifndef SRCC_FRONTEND_PARSER_HH
+#define SRCC_FRONTEND_PARSER_HH
+
+#include <srcc/AST/Type.hh>
+#include <srcc/Core/Core.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Core/Token.hh>
+#include <srcc/Macros.hh>
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/TrailingObjects.h>
-#include <srcc/Macros.hh>
 
-export module srcc.frontend.parser;
-import srcc.ast;
-import srcc.token;
-import srcc;
-import srcc.utils;
-
-export namespace srcc {
+namespace srcc {
 class Parser;
 class ParsedModule;
 class ParsedStmt;
@@ -80,7 +80,7 @@ public:
 //  Statements
 // ============================================================================
 /// Root of the parse tree hierarchy.
-class srcc::ParsedStmt : public ParseTreeNodeBase {
+class srcc::ParsedStmt {
     struct Printer;
     friend Printer;
 
@@ -612,8 +612,7 @@ class srcc::Parser : DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Parser);
 
 public:
-    /// Type of the callback used to handle comment tokens.
-    using CommentTokenCallback = std::function<void(const Token&)>;
+    using CommentTokenCallback = VerifyDiagnosticsEngine::CommentTokenCallback;
 
 private:
     friend DiagsProducer;
@@ -743,3 +742,5 @@ private:
     /// Read all tokens from a file.
     static void ReadTokens(TokenStream& s, const File& file, CommentTokenCallback cb);
 };
+
+#endif // SRCC_FRONTEND_PARSER_HH

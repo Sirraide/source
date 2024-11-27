@@ -1,13 +1,11 @@
-module;
+#ifndef SRCC_AST_PRINTER_HH
+#define SRCC_AST_PRINTER_HH
 
-#include <print>
 #include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <base/Colours.hh>
 
-export module srcc.ast.printer;
-import srcc.utils;
-import base.colours;
-
-export namespace srcc {
+namespace srcc {
 template <typename NodeType>
 class PrinterBase;
 }
@@ -25,29 +23,30 @@ protected:
     bool use_colour() const { return use_colour_; }
 
     template <typename Node = NodeType>
-    void PrintChildren(this auto&& This, std::type_identity_t<ArrayRef<Node*>> children) {
+    void PrintChildren(this auto&& self, std::type_identity_t<ArrayRef<Node*>> children) {
         if (children.empty()) return;
-        auto& leading = This.leading;
+        auto& leading = self.leading;
 
         // Print all but the last.
         const auto size = leading.size();
         leading += "│ ";
         const auto current = StringRef{leading}.take_front(size);
         for (auto c : children.drop_back(1)) {
-            This.print("%1({}├─)", current);
-            This.Print(c);
+            self.print("%1({}├─)", current);
+            self.Print(c);
         }
 
         // Print the preheader of the last.
         leading.resize(size);
-        This.print("%1({}└─)", StringRef{leading});
+        self.print("%1({}└─)", StringRef{leading});
 
         // Print the last one.
         leading += "  ";
-        This.Print(children.back());
+        self.Print(children.back());
 
         // And reset the leading text.
         leading.resize(size);
     }
 };
 
+#endif // SRCC_AST_PRINTER_HH

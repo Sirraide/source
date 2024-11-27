@@ -1,16 +1,18 @@
-module;
+#include <srcc/AST/Enums.hh>
+#include <srcc/AST/Printer.hh>
+#include <srcc/AST/Type.hh>
+#include <srcc/Core/Utils.hh>
+#include <srcc/Frontend/Parser.hh>
+#include <srcc/Macros.hh>
+
+#include <llvm/ADT/SmallString.h>
 
 #include <algorithm>
-#include <llvm/ADT/SmallString.h>
 #include <memory>
 #include <print>
 #include <ranges>
-#include <srcc/Macros.hh>
 #include <utility>
 
-module srcc.frontend.parser;
-import srcc.ast.printer;
-import base.colours;
 using namespace srcc;
 
 #define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })

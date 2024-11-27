@@ -1,5 +1,3 @@
-module;
-
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
@@ -8,12 +6,8 @@ module;
 #include <ranges>
 #include <srcc/ClangForward.hh>
 #include <srcc/Macros.hh>
+#include <srcc/Frontend/Sema.hh>
 
-module srcc.frontend.sema;
-import srcc.utils;
-import srcc.ast;
-import srcc.token;
-import base.fs;
 using namespace srcc;
 
 #define TRY(expression) ({              \
@@ -306,10 +300,10 @@ auto ModuleLoader::LoadModuleFromArchive(
     if (not name.ends_with(".mod")) filename += ".mod";
 
     // Try to find the module in the search path.
-    base::File::Path path;
+    fs::Path path;
     for (auto& base : module_search_paths) {
-        auto combined = base::File::Path{base} / filename;
-        if (base::File::Exists(combined)) {
+        auto combined = fs::Path{base} / filename;
+        if (fs::File::Exists(combined)) {
             path = std::move(combined);
             break;
         }
@@ -1923,8 +1917,8 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
-    // for a ProcDecl, we only translate, not the body; the latter is handled later
-    // on.
+    // for a ProcDecl, we only translate the procedure type, not the body; the latter
+    // is handled when we actually get to it later on.
     //
     // This translation only applies to *some* decls. It is allowed to do nothing,
     // but if it does fail, then we can’t process the rest of this scope.

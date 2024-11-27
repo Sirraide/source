@@ -63,7 +63,7 @@
 <expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
-<prefix> ::= "-" | "+" | "not" | "~"
+<prefix> ::= "-" | "+" | NOT | "~"
 <if-body> ::= [ THEN ] <stmt>
 <binary> ::= // TODO: list all binary operators here.
 

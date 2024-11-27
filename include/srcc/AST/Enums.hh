@@ -1,11 +1,13 @@
-module;
-#include <base/Assert.hh>
-#include <format>
-export module srcc.ast:enums;
-import srcc.utils;
-using namespace srcc;
+#ifndef SRCC_AST_ENUMS_HH
+#define SRCC_AST_ENUMS_HH
 
-export namespace srcc {
+#include <srcc/Core/Utils.hh>
+
+#include <base/Assert.hh>
+
+#include <format>
+
+namespace srcc {
 class TranslationUnit;
 enum class BuiltinKind : u8;
 enum class CallingConvention : u8;
@@ -38,7 +40,7 @@ enum class ScopeKind : u8;
 /// know that determining its type caused an error, we also model
 /// it as dependence. Unlike other forms of dependence, error
 /// dependence is never resolved once set.
-enum class srcc::Dependence : u8 {
+enum class srcc::Dependence : base::u8 {
     /// This expression is not dependent.
     None = 0,
 
@@ -66,7 +68,7 @@ enum class srcc::Dependence : u8 {
 };
 
 /// Parameter intents.
-enum class srcc::Intent : u8 {
+enum class srcc::Intent : base::u8 {
     /// The parameter is moved into the callee, who takes ownership
     /// of it. This may be lowered to a copy for small types, or to
     /// pass-by-reference for larger ones.
@@ -92,7 +94,7 @@ enum class srcc::Intent : u8 {
 };
 
 /// Builtin types.
-enum class srcc::BuiltinKind : u8 {
+enum class srcc::BuiltinKind : base::u8 {
     Void,
     Dependent,
     ErrorDependent,
@@ -104,14 +106,14 @@ enum class srcc::BuiltinKind : u8 {
     UnresolvedOverloadSet,
 };
 
-export namespace srcc {
+namespace srcc {
 constexpr auto operator|(Dependence a, Dependence b) -> Dependence { return Dependence(u8(a) | u8(b)); }
-constexpr auto operator|= (Dependence& a, Dependence b) -> Dependence& { return a = a | b; }
+constexpr auto operator|=(Dependence& a, Dependence b) -> Dependence& { return a = a | b; }
 constexpr bool operator&(Dependence a, Dependence b) { return Dependence(u8(a) & u8(b)) != Dependence::None; }
 } // namespace srcc
 
 /// Linkage of a global entity.
-enum class srcc::Linkage : u8 {
+enum class srcc::Linkage : base::u8 {
     Internal,   ///< Not accessible outside this module.
     Exported,   ///< Exported from the module.
     Imported,   ///< Imported from another module.
@@ -120,19 +122,19 @@ enum class srcc::Linkage : u8 {
 };
 
 /// Mangling scheme of a global entity.
-enum class srcc::Mangling : u8 {
+enum class srcc::Mangling : base::u8 {
     None,   ///< Do not mangle this at all.
     Source, ///< Mangling this using our language rules.
     CXX,    ///< Use C++’s name mangling rules.
 };
 
 /// Calling convention of a function.
-enum class srcc::CallingConvention : u8 {
+enum class srcc::CallingConvention : base::u8 {
     Source, ///< Default calling convention.
     Native, ///< Native calling convention for C and C++ interop.
 };
 
-enum class srcc::ValueCategory : u8 {
+enum class srcc::ValueCategory : base::u8 {
     /// Scalar rvalue, i.e. an rvalue that is passed in registers
     /// and available as an SSA variable. This is everything that
     /// we can construct w/o needing a memory location.
@@ -157,7 +159,7 @@ enum class srcc::ValueCategory : u8 {
     DValue,
 };
 
-enum class srcc::OverflowBehaviour : u8 {
+enum class srcc::OverflowBehaviour : base::u8 {
     /// Abort the program.
     Trap,
 
@@ -165,26 +167,29 @@ enum class srcc::OverflowBehaviour : u8 {
     Wrap,
 };
 
-enum class srcc::ScopeKind : u8 {
+enum class srcc::ScopeKind : base::u8 {
     Block,
     Procedure,
     Struct,
 };
 
 template <>
-struct std::formatter<Intent> : std::formatter<std::string_view> {
+struct std::formatter<srcc::Intent> : std::formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(Intent i, FormatContext& ctx) const {
+    auto format(srcc::Intent i, FormatContext& ctx) const {
         auto s = [i] -> std::string_view {
             switch (i) {
-                case Intent::Move: return "move";
-                case Intent::In: return "in";
-                case Intent::Out: return "out";
-                case Intent::Inout: return "inout";
-                case Intent::Copy: return "copy";
+                using enum srcc::Intent;
+                case Move: return "move";
+                case In: return "in";
+                case Out: return "out";
+                case Inout: return "inout";
+                case Copy: return "copy";
             }
             return "<invalid intent>";
         }();
         return std::formatter<std::string_view>::format(s, ctx);
     }
 };
+
+#endif // SRCC_AST_ENUMS_HH

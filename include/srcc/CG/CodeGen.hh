@@ -1,17 +1,17 @@
-module;
+#ifndef SRCC_CG_HH
+#define SRCC_CG_HH
 
-#include <base/Assert.hh>
+#include <srcc/AST/AST.hh>
+#include <srcc/Core/Diagnostics.hh>
+#include <srcc/Macros.hh>
+
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Target/TargetMachine.h>
-#include <srcc/Macros.hh>
 
-export module srcc.codegen;
-import srcc.token;
-import srcc.ast;
-import srcc;
+#include <base/Assert.hh>
 
-export namespace srcc {
+namespace srcc {
 class CodeGen;
 }
 
@@ -100,8 +100,9 @@ private:
     void Emit();
     auto Emit(Stmt* stmt) -> llvm::Value*;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->llvm::Value*;
+#define AST_STMT_LEAF(Class) auto Emit## Class(Class* stmt)->llvm::Value*;
 #include "srcc/AST.inc"
+
 
     auto EmitArithmeticOrComparisonOperator(Tk op, llvm::Value* lhs, llvm::Value* rhs, Location loc) -> llvm::Value*;
     auto EmitClosure(ProcDecl* proc) -> llvm::Constant*;
@@ -176,3 +177,5 @@ private:
         llvm::function_ref<void()> emit_body
     );
 };
+
+#endif // SRCC_CG_HH

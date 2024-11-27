@@ -1,13 +1,8 @@
-module;
+#include <srcc/AST/AST.hh>
+#include <srcc/AST/Stmt.hh>
 
 #include <memory>
 #include <ranges>
-#include <srcc/Macros.hh>
-#include <type_traits>
-
-module srcc.ast;
-import srcc;
-import :stmt;
 
 using namespace srcc;
 

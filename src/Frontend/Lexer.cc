@@ -1,12 +1,8 @@
-module;
-
 #include <llvm/ADT/StringExtras.h>
 #include <print>
 #include <srcc/Macros.hh>
+#include <srcc/Frontend/Parser.hh>
 
-module srcc.frontend.parser;
-import srcc.token;
-import srcc.utils;
 using namespace srcc;
 
 // ===========================================================================
@@ -102,12 +98,12 @@ bool Parser::IsKeyword(Tk t) {
 // ========================================================================
 struct Lexer {
     TokenStream& tokens;
-    const File& f;
+    const srcc::File& f;
     Parser::CommentTokenCallback comment_token_handler;
     const char* curr;
     const char* const end;
 
-    Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb);
+    Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallback cb);
 
     auto tok() -> Token& { return tokens.back(); }
 
@@ -161,7 +157,7 @@ void Parser::ReadTokens(TokenStream& s, const File& file, CommentTokenCallback c
     Lexer(s, file, std::move(cb));
 }
 
-Lexer::Lexer(TokenStream& into, const File& f, Parser::CommentTokenCallback cb)
+Lexer::Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallback cb)
     : tokens{into},
       f{f},
       comment_token_handler{std::move(cb)},

@@ -1,15 +1,15 @@
-#include <clopts.hh>
+#include <srcc/Core/Utils.hh>
+#include <srcc/Driver/Driver.hh>
+
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Signals.h>
+
+#include <clopts.hh>
 #include <thread>
 
 #ifdef __linux__
 #    include <csignal>
 #endif
-
-import srcc;
-import srcc.utils;
-import srcc.driver;
 
 using namespace srcc;
 
@@ -75,7 +75,6 @@ int main(int argc, char** argv) {
                     : colour_opt == "always" ? true
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
-
 #ifdef __linux__
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
     InitSignalHandlers();
@@ -113,7 +112,7 @@ int main(int argc, char** argv) {
     //    `eval` is not used.)
 
     // Create driver.
-    Driver driver{{
+    Driver driver{{// clang-format off
         .module_output_path = opts.get_or<"--mo">("."),
         .output_file_name = opts.get_or<"-o">(""),
         .module_search_paths = std::move(module_search_paths),
@@ -133,7 +132,7 @@ int main(int argc, char** argv) {
         .colours = use_colour,
         .overflow_checking = not opts.get<"-fno-overflow-checks">(),
         .import_runtime = not opts.get<"--noruntime">()
-    }};
+    }}; // clang-format on
 
     // Add files.
     driver.add_file(*opts.get<"file">());
