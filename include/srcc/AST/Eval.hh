@@ -22,6 +22,7 @@ class Reference;
 class Slice;
 class Value;
 class Memory;
+class ByteCode;
 enum struct LifetimeState : u8;
 
 /// Attempt to evaluate a statement.
@@ -38,6 +39,7 @@ auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain = true) -> std::opt
 
 namespace srcc::eval {
 class EvaluationContext;
+class Compiler;
 }
 
 enum struct srcc::eval::LifetimeState : base::u8 {

@@ -226,9 +226,8 @@ public:
 
     /// \return True on success, false on failure.
     [[nodiscard]] bool Eval(Value& out, Stmt* stmt);
-#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval## Class(Value& out, Class* expr);
+#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval##Class(Value& out, Class* expr);
 #include "srcc/AST.inc"
-
 
     /// Check if we’re in a function.
     [[nodiscard]] bool InFunction() { return not stack.empty(); }
@@ -446,7 +445,6 @@ bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
 #include "../../include/srcc/AST.inc"
-
     }
     Unreachable("Invalid statement kind");
 }
@@ -1338,16 +1336,181 @@ bool EvaluationContext::EvalWhileStmt(Value& out, WhileStmt* expr) {
 }
 
 // ============================================================================
+//  Compiler
+// ============================================================================
+enum class Op : u8 {
+    PushI8,  // i8 value
+    PushI16, // i16 value
+    PushI32, // i32 value
+    PushI64, // i64 value
+};
+
+class eval::ByteCode {
+    std::vector<std::byte> bytes;
+
+public:
+    struct Reader {
+        std::span<const std::byte> bytes;
+
+        [[nodiscard]] bool at_end() const { return bytes.empty(); }
+
+        template <typename T>
+        requires std::is_enum_v<T>
+        auto read() -> T { return T(read<std::underlying_type_t<T>>()); }
+
+        template <std::integral T>
+        auto read() -> T { return ReadTrivial<T>(); }
+
+    private:
+        template <typename T>
+        requires std::is_trivially_copyable_v<T>
+        auto ReadTrivial() -> T {
+            Assert(bytes.size_bytes() >= sizeof(T), "Invalid byte code access");
+            T t;
+            std::memcpy(&t, bytes.data(), sizeof(T));
+            bytes = bytes.subspan(sizeof(T));
+            return t;
+        }
+    };
+
+    void dump();
+
+    auto reader() -> Reader { return Reader{bytes}; }
+
+    template <typename... Vals>
+    void op(Op op, Vals... vals) {
+        EmplaceBytes(op);
+        (EmplaceBytes(vals), ...);
+    }
+
+private:
+    template <typename T>
+    requires std::is_enum_v<T>
+    void EmplaceBytes(T t) { EmplaceBytes(+t); }
+
+    template <std::integral T>
+    void EmplaceBytes(T t) {
+        auto* ptr = reinterpret_cast<std::byte*>(&t);
+        bytes.insert(bytes.end(), ptr, ptr + sizeof(T));
+    }
+};
+
+class eval::Compiler : DiagsProducer<bool> {
+    TranslationUnit& tu;
+    Location entry;
+    bool complain;
+    ByteCode code;
+
+public:
+    Compiler(TranslationUnit& tu, Location entry, bool complain)
+        : tu(tu), entry(entry), complain(complain) {}
+
+    bool CompileStmt(Stmt* stmt);
+#define AST_STMT_LEAF(Class) [[nodiscard]] bool Compile##Class(Class* expr);
+#include "srcc/AST.inc"
+
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) {
+            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
+
+            /*
+            // Print call stack, but take care not to recurse infinitely here.
+            if (level != Diagnostic::Level::Note) {
+                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
+                    frame.call_loc,
+                    "In call to '{}' here",
+                    frame.proc.get()->name
+                );
+            }*/
+        }
+    }
+
+    void OpI8(i8 value) { code.op(Op::PushI8, value); }
+    void OpI16(i16 value) { code.op(Op::PushI16, value); }
+    void OpI32(i32 value) { code.op(Op::PushI32, value); }
+    void OpI64(i64 value) { code.op(Op::PushI64, value); }
+
+    void PrintBytecode() { code.dump(); }
+};
+
+bool Compiler::CompileStmt(Stmt* stmt) {
+    Assert(not stmt->dependent(), "Evaluating dependent statement?");
+    switch (stmt->kind()) {
+        default:
+            ICE(stmt->location(), "TODO: Constant interpreter support for this thing:");
+            diags().flush();
+            stmt->dump_color();
+            return false;
+
+        case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
+    }
+    Unreachable();
+}
+
+void ByteCode::dump() {
+    auto Print = [](StringRef opcode, auto ...vals) {
+        std::string operands;
+        ((operands += std::format("{}, ", vals)), ...);
+        if (not operands.empty()) operands.resize(operands.size() - 2);
+        std::println("    {:<5} {}", opcode, operands);
+    };
+
+    Reader r{bytes};
+    std::println("bytecode:");
+    while (not r.at_end()) {
+        switch (r.read<Op>()) {
+            case Op::PushI8: Print("i8", r.read<i8>()); continue;
+            case Op::PushI16: Print("i16", r.read<i16>()); continue;
+            case Op::PushI32: Print("i32", r.read<i32>()); continue;
+            case Op::PushI64: Print("i64", r.read<i64>()); continue;
+        }
+        Unreachable("Invalid opcode");
+    }
+}
+
+/*using K = Stmt::Kind;
+#define AST_STMT_LEAF(node) \
+case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
+#include "../../include/srcc/AST.inc"*/
+
+// ============================================================================
+//  AST Node Compilation
+// ============================================================================
+bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
+    switch (expr->type->size(tu).bits()) {
+        default: return ICE(
+            expr->location(),
+            "TODO: Weird IntLitExpr w/ size {}",
+            expr->type->size(tu).bits()
+        );
+
+        case 8: OpI8(i8(expr->storage.inline_value().value())); break;
+        case 16: OpI16(i16(expr->storage.inline_value().value())); break;
+        case 32: OpI32(i32(expr->storage.inline_value().value())); break;
+        case 64: OpI64(i64(expr->storage.inline_value().value())); break;
+    }
+    return true;
+}
+
+// ============================================================================
 //  API
 // ============================================================================
-auto srcc::eval::Evaluate(
+auto eval::Evaluate(
     TranslationUnit& tu,
     Stmt* stmt,
     bool complain
 ) -> std::optional<Value> {
-    EvaluationContext C{tu, stmt->location(), complain};
+    Compiler C{tu, stmt->location(), complain};
+    C.CompileStmt(stmt);
+    C.PrintBytecode();
+    std::exit(42);
+    /*EvaluationContext C{tu, stmt->location(), complain};
     Value val = {};
     if (not C.Eval(val, stmt)) return std::nullopt;
-    return std::move(val);
+    return std::move(val);*/
 }
 

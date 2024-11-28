@@ -236,6 +236,7 @@ add_library(srcc-core STATIC ${_sources_core})
 target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 
 target_link_libraries(srcc-core PRIVATE options)
+target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
 
 ## ============================================================================
 ##  Other libraries

@@ -24,7 +24,7 @@ constexpr bool IsOctal(char c) { return c >= '0' and c <= '7'; }
 constexpr bool IsHex(char c) { return llvm::isHexDigit(c); }
 
 // All keywords.
-const StringMap<Tk> keywords = {
+const llvm::StringMap<Tk> keywords = {
     {"alias", Tk::Alias},
     {"and", Tk::And},
     {"as!", Tk::AsBang},
