@@ -1343,6 +1343,7 @@ enum class Op : u8 {
     PushI16, // i16 value
     PushI32, // i32 value
     PushI64, // i64 value
+    PushStr, // isz size, i8* data
 };
 
 class eval::ByteCode {
@@ -1359,6 +1360,10 @@ public:
         auto read() -> T { return T(read<std::underlying_type_t<T>>()); }
 
         template <std::integral T>
+        auto read() -> T { return ReadTrivial<T>(); }
+
+        template <typename T>
+        requires std::is_pointer_v<T>
         auto read() -> T { return ReadTrivial<T>(); }
 
     private:
@@ -1379,17 +1384,24 @@ public:
 
     template <typename... Vals>
     void op(Op op, Vals... vals) {
-        EmplaceBytes(op);
-        (EmplaceBytes(vals), ...);
+        Add(op);
+        (Add(vals), ...);
     }
 
 private:
     template <typename T>
     requires std::is_enum_v<T>
-    void EmplaceBytes(T t) { EmplaceBytes(+t); }
+    void Add(T t) { AddTrivial(t); }
+
+    template <typename T>
+    void Add(T* t) { AddTrivial(t); }
 
     template <std::integral T>
-    void EmplaceBytes(T t) {
+    void Add(T t) { AddTrivial(t); }
+
+    template <typename T>
+    requires std::is_trivially_copyable_v<T>
+    void AddTrivial(T t) {
         auto* ptr = reinterpret_cast<std::byte*>(&t);
         bytes.insert(bytes.end(), ptr, ptr + sizeof(T));
     }
@@ -1433,6 +1445,7 @@ public:
     void OpI16(i16 value) { code.op(Op::PushI16, value); }
     void OpI32(i32 value) { code.op(Op::PushI32, value); }
     void OpI64(i64 value) { code.op(Op::PushI64, value); }
+    void OpStr(StringRef value) { code.op(Op::PushStr, isz(value.size()), value.data()); }
 
     void PrintBytecode() { code.dump(); }
 };
@@ -1446,15 +1459,27 @@ bool Compiler::CompileStmt(Stmt* stmt) {
             stmt->dump_color();
             return false;
 
+        // TODO: For discarded-value expressions, all elements pushed during their
+        // evaluation should be gone again after we’re done; we need to implement
+        // this by adding a ValueExpr AST node which pops the value it produces
+        // after it is evaluated.
+
         case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
+        case Stmt::Kind::StrLitExpr: return CompileStrLitExpr(cast<StrLitExpr>(stmt));
     }
     Unreachable();
 }
 
 void ByteCode::dump() {
-    auto Print = [](StringRef opcode, auto ...vals) {
+    static auto FormatVal = []<typename T>(T val) -> std::string {
+        if constexpr (std::integral<T>) return std::to_string(val);
+        else if constexpr (utils::is<T, StringRef>) return std::format("\"{}\"", utils::Escape(val));
+        else static_assert(false, "Invalid value type");
+    };
+
+    static auto Print = [](StringRef opcode, auto ...vals) {
         std::string operands;
-        ((operands += std::format("{}, ", vals)), ...);
+        ((operands += std::format("{}, ", FormatVal(vals))), ...);
         if (not operands.empty()) operands.resize(operands.size() - 2);
         std::println("    {:<5} {}", opcode, operands);
     };
@@ -1467,6 +1492,12 @@ void ByteCode::dump() {
             case Op::PushI16: Print("i16", r.read<i16>()); continue;
             case Op::PushI32: Print("i32", r.read<i32>()); continue;
             case Op::PushI64: Print("i64", r.read<i64>()); continue;
+            case Op::PushStr: {
+                auto sz = usz(r.read<isz>());
+                auto ptr = r.read<const char*>();
+                Print("str", StringRef(ptr, sz));
+                continue;
+            }
         }
         Unreachable("Invalid opcode");
     }
@@ -1493,6 +1524,11 @@ bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
         case 32: OpI32(i32(expr->storage.inline_value().value())); break;
         case 64: OpI64(i64(expr->storage.inline_value().value())); break;
     }
+    return true;
+}
+
+bool Compiler::CompileStrLitExpr(StrLitExpr* expr) {
+    OpStr(expr->value);
     return true;
 }
 
