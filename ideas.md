@@ -53,7 +53,61 @@ a string a character or substring (e.g. `if "foo" in s { ... }`).
 
 ## Bits
 Add a `bit` data type. It differs from `i1` in that it is packed, i.e. a `bit[32]` is 4 bytes,
-whereas an `i1[32]` is 32 bytes.
+whereas an `i1[32]` is 32 bytes. 
+
+Bit struct members are also packed by default, e.g. the size of this struct:
+```c#
+struct S {
+    bit a;
+    bit b;
+    bit c;
+}
+```
+is 1 byte.
+
+Taking the address of a `bit`, much like taking the address of a packed struct member, is not
+supported. The `align` attribute (see below) can be used to change that.
+
+Note that taking the address of a `bit` *variable* (whether local or static) is allowed since we 
+can always allocate those in such a way that they are aligned properly. It is very unlikely that
+someone will ever allocate so many `bit`s in a single *stack frame* that they’d benefit from
+packing, and if they do, they can just use a `bit` array instead.
+
+An integer can be indexed using the subscript operator to extract a bit or range of bits, e.g.
+```c#
+i64     x = 4;
+bit     b = x[2];      // Get the 3rd bit.
+bit[10] bs = x[..<10]; // Get the first 10 bits.
+```
+
+## `bool`
+`bool`s are stored in memory as though they were values of type `bit`. The only difference between
+the two is semantics.
+
+## `align`
+This attribute specifying a custom alignment for a struct field; this is always in bytes, e.g.
+```c#
+struct S {
+    i8 a align(8); // Aligned to 8 bytes.
+}
+```
+
+If `align` is specified without a parameter, the type’s natural alignment is used. This may seem
+useless at first, but it can be used to force alignment in packed structs or to align a field
+of type `bit` or `bool` to a byte boundary:
+```c#
+struct S {
+    bit a align; // Aligned to 1 byte. The address of this can now be taken.
+}
+```
+
+Taking the address of a packed struct member is only supported if `align` is used to set its
+alignment to at least the natural alignment of the type. Conversely, if `align` is used in a
+non-packed struct to set a field’s alignment to less than the natural alignment of the type,
+the field’s address can no longer be taken.
+
+Whether the field *happens* to be aligned properly even if its alignment is set to less than
+the natural alignment is irrelevant since the compiler may reorder fields.
 
 ## Optionals
 If possible, option types (`?`) should use the padding bits of the value type to store whether the 

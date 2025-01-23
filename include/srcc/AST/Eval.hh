@@ -39,7 +39,6 @@ auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain = true) -> std::opt
 
 namespace srcc::eval {
 class EvaluationContext;
-class Compiler;
 }
 
 enum struct srcc::eval::LifetimeState : base::u8 {

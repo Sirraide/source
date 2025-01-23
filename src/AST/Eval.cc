@@ -2,11 +2,14 @@
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Core/Diagnostics.hh>
+#include <srcc/Core/Serialisation.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
+
+#include <base/Serialisation.hh>
 
 #include <optional>
 #include <print>
@@ -88,6 +91,164 @@ auto Value::value_category() const -> ValueCategory {
     });
 }
 
+auto LValue::print() const -> SmallUnrenderedString {
+    return SmallUnrenderedString("<lvalue>");
+}
+
+namespace {
+// ============================================================================
+//  Operations
+// ============================================================================
+enum class Op : u8 {
+    /// Return the topmost stack element as a 64-bit integer as the
+    /// evaluation result.
+    ///
+    /// i64 value
+    EvalRetI8,
+    EvalRetI16,
+    EvalRetI32,
+    EvalRetI64,
+    EvalRetAPInt,
+
+    /// Push a 64-bit integer onto the stack.
+    ///
+    /// i64 value
+    PushI8,
+    PushI16,
+    PushI32,
+    PushI64,
+    PushAPInt,
+};
+
+// ============================================================================
+//  Bytecode compiler.
+// ============================================================================
+struct Compiler : DiagsProducer<bool> {
+    TranslationUnit& tu;
+    bool complain;
+    ByteBuffer code{};
+    ByteWriter writer{code};
+
+    Compiler(TranslationUnit& tu, bool complain) : tu(tu), complain(complain) {}
+
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) {
+            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
+
+            /*// Print call stack, but take care not to recurse infinitely here.
+            if (level != Diagnostic::Level::Note) {
+                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
+                    frame.call_loc,
+                    "In call to '{}' here",
+                    frame.proc.get()->name
+                );
+            }*/
+        }
+    }
+
+#define AST_STMT_LEAF(Class) [[nodiscard]] bool Compile##Class(Class* node);
+#include <srcc/AST.inc>
+
+    [[nodiscard]] bool CompileStmt(Stmt* stmt);
+};
+
+bool Compiler::CompileStmt(Stmt* stmt) {
+    switch (stmt->kind()) {
+        default: return ICE(stmt->location(), "Don’t know how to evaluate this");
+        case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
+    }
+}
+
+bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
+    switch (expr->type->size(tu).bits()) {
+        case 8: writer << Op::PushI8 << i8(expr->storage.inline_value().value()); break;
+        case 16: writer << Op::PushI16 << i16(expr->storage.inline_value().value()); break;
+        case 32: writer << Op::PushI32 << i32(expr->storage.inline_value().value()); break;
+        case 64: writer << Op::PushI64 << i64(expr->storage.inline_value().value()); break;
+        default: writer << Op::PushAPInt << expr->storage.value(); break;
+    }
+    return true;
+}
+
+// ============================================================================
+//  Evaluator.
+// ============================================================================
+class Stack {
+    ByteBuffer data;
+    ByteWriter writer{data};
+
+public:
+    template <typename T>
+    void operator<<(const T& t) {
+        writer << t;
+    }
+
+    template <typename T>
+    auto pop() -> T {
+        Assert(data.size() >= sizeof(T), "Invalid stack access");
+        T t;
+        std::memcpy(&t, data.data() + data.size() - sizeof(T), sizeof(T));
+        data.resize(data.size() - sizeof(T));
+        return t;
+    }
+};
+
+class Evaluator {
+    TranslationUnit& tu;
+    Stack s;
+
+    // Non-trivial objects are stored separately and represented on
+    // the stack as IDs.
+    SmallVector<APInt, 16> integer_storage;
+    using IntegerId = u32;
+
+public:
+    Evaluator(TranslationUnit& tu) : tu(tu) {}
+    auto run(ByteReader code) -> Value {
+        for (;;) {
+            switch (code.read<Op>()) {
+                // Pushing integers.
+                case Op::PushI8: s << code.read<i8>(); break;
+                case Op::PushI16: s << code.read<i16>(); break;
+                case Op::PushI32: s << code.read<i32>(); break;
+                case Op::PushI64: s << code.read<i64>(); break;
+                case Op::PushAPInt: {
+                    s << IntegerId(integer_storage.size());
+                    integer_storage.push_back(code.read<APInt>());
+                } break;
+
+                // Returning integers.
+                case Op::EvalRetI8: return Value{APInt(8, s.pop<u8>()), tu.I8Ty};
+                case Op::EvalRetI16: return Value{APInt(16, s.pop<u16>()), tu.I16Ty};
+                case Op::EvalRetI32: return Value{APInt(32, s.pop<u32>()), tu.I32Ty};
+                case Op::EvalRetI64: return Value{APInt(64, s.pop<u64>()), tu.I64Ty};
+                case Op::EvalRetAPInt: return Value{integer_storage[s.pop<IntegerId>()], tu.I64Ty};
+            }
+        }
+    }
+};
+} // namespace
+
+// ============================================================================
+//  API
+// ============================================================================
+auto eval::Evaluate(
+    TranslationUnit& tu,
+    Stmt* stmt,
+    bool complain
+) -> std::optional<Value> {
+    Compiler c{tu, complain};
+    if (!c.CompileStmt(stmt)) return std::nullopt;
+    Evaluator e{tu};
+    return e.run(ByteReader{c.code});
+}
+
+#pragma clang diagnostic ignored "-Wcomment"
+/*
 // ============================================================================
 //  Evaluation State
 // ============================================================================
@@ -130,8 +291,8 @@ class srcc::eval::EvaluationContext : DiagsProducer<bool> {
 
     public:
         static auto Create() -> std::unique_ptr<Executor>;
-    };*/
-    /*std::unique_ptr<Executor> cached_executor;*/
+    };#1#
+    /*std::unique_ptr<Executor> cached_executor;#1#
 
 public:
     TranslationUnit& tu;
@@ -255,7 +416,7 @@ public:
     }
 
     /// Get the JIT executor.
-    /*auto Executor() -> Executor&;*/
+    /*auto Executor() -> Executor&;#1#
 };
 
 // ============================================================================
@@ -542,7 +703,7 @@ bool EvaluationContext::PerformVarInit(LValue& addr, Expr* init, Location loc) {
 /*auto EvaluationContext::Executor() -> class Executor& {
     if (not cached_executor.has_value()) cached_executor.emplace();
     return *cached_executor;
-}*/
+}#1#
 
 // ============================================================================
 //  Executor
@@ -582,7 +743,7 @@ bool EvaluationContext::PerformVarInit(LValue& addr, Expr* init, Location loc) {
 
     // Create the executor.
     return std::unique_ptr<Executor>(new Executor(std::move(ctx), std::move(*jit)));
-}*/
+}#1#
 
 // ============================================================================
 //  Evaluation
@@ -1437,7 +1598,7 @@ public:
                     "In call to '{}' here",
                     frame.proc.get()->name
                 );
-            }*/
+            }#1#
         }
     }
 
@@ -1459,13 +1620,9 @@ bool Compiler::CompileStmt(Stmt* stmt) {
             stmt->dump_color();
             return false;
 
-        // TODO: For discarded-value expressions, all elements pushed during their
-        // evaluation should be gone again after we’re done; we need to implement
-        // this by adding a ValueExpr AST node which pops the value it produces
-        // after it is evaluated.
-
         case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
         case Stmt::Kind::StrLitExpr: return CompileStrLitExpr(cast<StrLitExpr>(stmt));
+        case Stmt::Kind::BlockExpr: return CompileBlockExpr(cast<BlockExpr>(stmt));
     }
     Unreachable();
 }
@@ -1506,11 +1663,16 @@ void ByteCode::dump() {
 /*using K = Stmt::Kind;
 #define AST_STMT_LEAF(node) \
 case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
-#include "../../include/srcc/AST.inc"*/
+#include "../../include/srcc/AST.inc"#1#
 
 // ============================================================================
 //  AST Node Compilation
 // ============================================================================
+bool Compiler::CompileBlockExpr(BlockExpr* expr){
+
+}
+
+
 bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
     switch (expr->type->size(tu).bits()) {
         default: return ICE(
@@ -1547,6 +1709,6 @@ auto eval::Evaluate(
     /*EvaluationContext C{tu, stmt->location(), complain};
     Value val = {};
     if (not C.Eval(val, stmt)) return std::nullopt;
-    return std::move(val);*/
+    return std::move(val);#1#
 }
-
+*/

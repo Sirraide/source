@@ -18,6 +18,7 @@
 
 #include <base/Base.hh>
 #include <base/Colours.hh>
+#include <base/Serialisation.hh>
 #include <base/Text.hh>
 
 #include <chrono>
@@ -28,6 +29,11 @@
 #include <ranges>
 #include <source_location>
 #include <string>
+
+static_assert(
+    CHAR_BIT == 8,
+    "Targets where a byte is not 8 bits are not and will not be supported"
+);
 
 namespace srcc {
 using namespace base;
@@ -120,7 +126,9 @@ auto ref(SmallVectorImpl<T>& vec) -> MutableArrayRef<T> {
 /// to be explicit as to whether we want bits or bytes, which is
 /// useful for avoiding mistakes.
 class Size {
-    usz raw;
+    LIBBASE_SERIALISE(raw);
+
+    u64 raw;
 
     static_assert(CHAR_BIT == 8);
     constexpr explicit Size(usz raw) : raw{raw} {}
@@ -288,6 +296,7 @@ public:
 
     /// Get the string.
     [[nodiscard]] constexpr operator StringRef() const { return val; }
+    [[nodiscard]] constexpr operator std::string_view() const { return val; }
 };
 
 auto operator+=(std::string& s, String str) -> std::string&;
@@ -341,34 +350,8 @@ auto StripColours(const SmallUnrenderedString& s) -> std::string;
 // Rarely used helpers go here.
 //
 // We use the 'utils' namespace of 'base' for this to avoid creating
-// ambiguity between the two so we can just write e.g. 'utils::Escape'.
+// ambiguity between the two.
 namespace base::utils {
-/// Escape non-printable characters in a string.
-auto Escape(llvm::StringRef str, bool escape_quotes = false) -> std::string;
-
-/// Escape elements in a range that need escaping.
-template <typename Range>
-auto escaped(Range&& r, bool escape_quotes) {
-    return vws::transform(std::forward<Range>(r), [&, escape_quotes](auto&& el) {
-        return Escape(el, escape_quotes);
-    });
-}
-
-/// Surround each element of a range with quotes.
-template <typename Range>
-auto quoted(Range&& r, bool quote_always = false) {
-    return vws::transform(std::forward<Range>(r), [&, quote_always](auto&& el) {
-        if (el.contains('\"') or quote_always) return std::format("\"{}\"", el);
-        return std::forward<decltype(el)>(el);
-    });
-}
-
-/// Escape and quote elements in a range.
-template <typename Range>
-auto quote_escaped(Range&& r, bool quote_always = false) {
-    return quoted(escaped(std::forward<Range>(r), true), quote_always);
-}
-
 /// Format string that also stores the source location of the caller.
 template <typename... Args>
 struct FStringWithSrcLocImpl {
