@@ -100,6 +100,11 @@ namespace {
 //  Operations
 // ============================================================================
 enum class Op : u8 {
+    /// Call a bytecode function.
+    ///
+    /// uptr callee
+    CallInternal,
+
     /// Return the topmost stack element as a 64-bit integer as the
     /// evaluation result.
     ///
@@ -159,8 +164,20 @@ struct Compiler : DiagsProducer<bool> {
 bool Compiler::CompileStmt(Stmt* stmt) {
     switch (stmt->kind()) {
         default: return ICE(stmt->location(), "Don’t know how to evaluate this");
+        case Stmt::Kind::CallExpr: return CompileCallExpr(cast<CallExpr>(stmt));
         case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
     }
+}
+
+bool Compiler::CompileCallExpr(CallExpr* expr) {
+    for (auto arg : expr->args())
+        if (not CompileStmt(arg))
+            return false;
+
+    if (auto proc = dyn_cast<ProcRefExpr>(expr->callee->strip_parens()))
+        writer << Op::CallInternal << uptr(proc->decl);
+
+    return true;
 }
 
 bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
@@ -195,11 +212,28 @@ public:
         data.resize(data.size() - sizeof(T));
         return t;
     }
+
+    auto reset_to(usz pos) {
+        Assert(pos >= data.size(), "Resetting a stack cannot be used to grow it");
+        data.resize(pos);
+    }
+
+    auto size() -> usz { return data.size(); }
 };
 
-class Evaluator {
+class Evaluator : DiagsProducer<bool> {
+    friend DiagsProducer;
+
+    struct Frame {
+        ByteReader code;
+        usz stack_pos_on_entry;
+
+        explicit Frame(Stack& s, const ByteBuffer& code) : code{code}, stack_pos_on_entry{s.size()} {}
+    };
+
     TranslationUnit& tu;
     Stack s;
+    const bool complain;
 
     // Non-trivial objects are stored separately and represented on
     // the stack as IDs.
@@ -207,19 +241,29 @@ class Evaluator {
     using IntegerId = u32;
 
 public:
-    Evaluator(TranslationUnit& tu) : tu(tu) {}
-    auto run(ByteReader code) -> Value {
+    Evaluator(TranslationUnit& tu, bool complain) : tu(tu), complain(complain) {}
+    auto run(Location loc, ByteReader entry_point) -> std::optional<Value> {
+        SmallVector<Frame> call_stack;
+        call_stack.emplace_back(s, entry_point);
+        auto* code = &entry_point;
+
+        auto PushFrame = [&](const ByteBuffer& byte_code) {
+            call_stack.emplace_back()
+        }
+
         for (;;) {
-            switch (code.read<Op>()) {
-                // Pushing integers.
-                case Op::PushI8: s << code.read<i8>(); break;
-                case Op::PushI16: s << code.read<i16>(); break;
-                case Op::PushI32: s << code.read<i32>(); break;
-                case Op::PushI64: s << code.read<i64>(); break;
-                case Op::PushAPInt: {
-                    s << IntegerId(integer_storage.size());
-                    integer_storage.push_back(code.read<APInt>());
-                } break;
+            switch (code->read<Op>()) {
+                // Calling a function.
+                case Op::CallInternal: {
+                    auto proc = reinterpret_cast<ProcDecl*>(code->read<uptr>());
+                    auto it = tu.byte_code.find(proc);
+                    if (it != tu.byte_code.end()) {
+
+                    }
+
+                    ICE(loc, "TODO: Evaluate call");
+                    return std::nullopt;
+                }
 
                 // Returning integers.
                 case Op::EvalRetI8: return Value{APInt(8, s.pop<u8>()), tu.I8Ty};
@@ -227,8 +271,27 @@ public:
                 case Op::EvalRetI32: return Value{APInt(32, s.pop<u32>()), tu.I32Ty};
                 case Op::EvalRetI64: return Value{APInt(64, s.pop<u64>()), tu.I64Ty};
                 case Op::EvalRetAPInt: return Value{integer_storage[s.pop<IntegerId>()], tu.I64Ty};
+
+                // Pushing integers.
+                case Op::PushI8: s << code->read<i8>(); break;
+                case Op::PushI16: s << code->read<i16>(); break;
+                case Op::PushI32: s << code->read<i32>(); break;
+                case Op::PushI64: s << code->read<i64>(); break;
+                case Op::PushAPInt: {
+                    s << IntegerId(integer_storage.size());
+                    integer_storage.push_back(code->read<APInt>());
+                } break;
             }
         }
+    }
+
+private:
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) diags().diag(level, where, fmt, std::forward<Args>(args)...);
     }
 };
 } // namespace
@@ -236,15 +299,18 @@ public:
 // ============================================================================
 //  API
 // ============================================================================
-auto eval::Evaluate(
-    TranslationUnit& tu,
+auto VM::eval(
     Stmt* stmt,
     bool complain
 ) -> std::optional<Value> {
-    Compiler c{tu, complain};
+    // Compile the statement.
+    auto buffer = CompileSingleStmt(stmt, complain);
+    if (not buffer) return std::nullopt;
+
+    Compiler c{owner(), complain};
     if (!c.CompileStmt(stmt)) return std::nullopt;
-    Evaluator e{tu};
-    return e.run(ByteReader{c.code});
+    Evaluator e{owner(), complain};
+    return e.run(stmt->location(), ByteReader{c.code});
 }
 
 #pragma clang diagnostic ignored "-Wcomment"

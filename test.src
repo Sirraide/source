@@ -1,0 +1,6 @@
+program foo;
+
+proc foo = 42;
+
+var x = eval foo();
+

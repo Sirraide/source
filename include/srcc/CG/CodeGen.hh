@@ -2,6 +2,7 @@
 #define SRCC_CG_HH
 
 #include <srcc/AST/AST.hh>
+#include <srcc/CG/IR.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Macros.hh>
 
@@ -11,113 +12,77 @@
 
 #include <base/Assert.hh>
 
-namespace srcc {
+namespace srcc::cg {
 class CodeGen;
 }
 
-class srcc::CodeGen : DiagsProducer<std::nullptr_t> {
+class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
+    LIBBASE_IMMOVABLE(CodeGen);
     struct Mangler;
     friend DiagsProducer;
 
-    llvm::TargetMachine& machine;
-    TranslationUnit& M;
-    std::unique_ptr<llvm::Module> llvm;
-    StringMap<llvm::Constant*> strings;
-    DenseMap<LocalDecl*, llvm::Value*> locals;
-    DenseMap<ProcDecl*, std::string> mangled_names;
-    DenseMap<llvm::Type*, llvm::FunctionCallee> exp_funcs;
-    llvm::IRBuilder<> builder;
-    llvm::Function* curr_func{};
+    Size word_size;
+    Opt<ir::Proc*> assert_handler;
+    Opt<ir::Proc*> overflow_handler;
+    Opt<ir::Proc*> printf;
+    DenseMap<LocalDecl*, ir::Value*> locals;
+    DenseMap<ProcDecl*, String> mangled_names;
+    ir::Proc* curr_proc = nullptr;
 
-    llvm::IntegerType* const IntTy;
-    llvm::IntegerType* const I1Ty;
-    llvm::IntegerType* const I8Ty;
-    llvm::PointerType* const PtrTy;
-    llvm::IntegerType* const FFIIntTy;
-    llvm::StructType* const SliceTy;
-    llvm::StructType* const ClosureTy;
-    llvm::Type* const VoidTy;
-
-    Opt<llvm::FunctionCallee> assert_failure_handler;
-    Opt<llvm::FunctionCallee> overflow_handler;
-
-    CodeGen(llvm::TargetMachine& machine, TranslationUnit& M);
+protected:
+    CodeGen(TranslationUnit& tu, Size word_size) : Builder{tu}, word_size{word_size} {}
 
 public:
-    static auto Emit(llvm::TargetMachine& machine, TranslationUnit& M) -> std::unique_ptr<llvm::Module> {
-        CodeGen CG{machine, M};
-        CG.Emit();
-        return std::move(CG.llvm);
-    }
-
-    static int EmitModuleOrProgram(
-        llvm::TargetMachine& machine,
-        TranslationUnit& tu,
-        llvm::Module& compiled,
-        ArrayRef<std::string> additional_objects,
-        StringRef program_file_name_override = ""
-    );
-
-    static void OptimiseModule(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
-
     /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return M.context().diags(); }
+    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
 private:
-    class EnterFunction {
-        SRCC_IMMOVABLE(EnterFunction);
+    class EnterProcedure {
+        SRCC_IMMOVABLE(EnterProcedure);
 
         CodeGen& CG;
-        llvm::Function* old_func;
-        llvm::IRBuilder<>::InsertPointGuard guard;
+        ir::Proc* old_func;
+        InsertPointGuard guard;
 
     public:
-        EnterFunction(CodeGen& CG, llvm::Function* func);
-        ~EnterFunction() { CG.curr_func = old_func; }
+        EnterProcedure(CodeGen& CG, ir::Proc* func);
+        ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
     auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
     auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
 
-    template <typename Ty = llvm::Type>
-    auto ConvertType(Type ty, bool array_elem = false) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty, array_elem)); }
-    auto ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type*;
-    auto ConvertTypeForMem(Type ty) -> llvm::Type*;
-    auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
+    void CreateArithFailure(ir::Value* cond, Tk op, Location loc, String name = "integer overflow");
 
-    void CreateArithFailure(llvm::Value* cond, Tk op, Location loc, StringRef name = "integer overflow");
+    /// Create a call expression, splitting arguments into registers as needed.
+    auto CreateCall(ir::Value* callee, ArrayRef<ir::Value*> raw_args);
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         M.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
-    auto DeclareAssertFailureHandler() -> llvm::FunctionCallee;
-    auto DeclareArithmeticFailureHandler() -> llvm::FunctionCallee;
-    auto DeclareProcedure(ProcDecl* proc) -> llvm::FunctionCallee;
-    auto DefineExp(llvm::Type* ty) -> llvm::FunctionCallee;
+    auto DeclareAssertFailureHandler() -> ir::Value*;
+    auto DeclareArithmeticFailureHandler() -> ir::Value*;
+    auto DeclarePrintf() -> ir::Value*;
+    auto DeclareProcedure(ProcDecl* proc) -> ir::Proc*;
+    auto DefineExp(Type ty) -> ir::Proc*;
 
-    void Emit();
-    auto Emit(Stmt* stmt) -> llvm::Value*;
+    void Emit(ArrayRef<ProcDecl*> procs);
+    auto Emit(Stmt* stmt) -> ir::Value*;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit## Class(Class* stmt)->llvm::Value*;
+#define AST_STMT_LEAF(Class) auto Emit## Class(Class* stmt)->ir::Value*;
 #include "srcc/AST.inc"
 
 
-    auto EmitArithmeticOrComparisonOperator(Tk op, llvm::Value* lhs, llvm::Value* rhs, Location loc) -> llvm::Value*;
-    auto EmitClosure(ProcDecl* proc) -> llvm::Constant*;
+    auto EmitArithmeticOrComparisonOperator(Tk op, ir::Value* lhs, ir::Value* rhs, Location loc) -> ir::Value*;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(const eval::Value& val) -> llvm::Constant*;
+    auto EmitValue(const eval::Value& val) -> ir::Value*;
 
     void EmitLocal(LocalDecl* decl);
 
-    auto EnterBlock(llvm::BasicBlock* bb) -> llvm::BasicBlock*;
-
-    /// Same as CreateGlobalStringPtr(), but is interned.
-    auto GetStringPtr(StringRef s) -> llvm::Constant*;
-
-    /// Create a constant slice for a string.
-    auto GetStringSlice(StringRef s) -> llvm::Constant*;
+    auto EnterBlock(std::unique_ptr<ir::Block> bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
+    auto EnterBlock(ir::Block* bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
 
     /// Create a conditional branch and join block.
     ///
@@ -131,9 +96,15 @@ private:
     ///
     /// \return The join block.
     auto If(
-        llvm::Value* cond,
+        ir::Value* cond,
+        ArrayRef<ir::Value*> args,
         llvm::function_ref<void()> emit_body
-    ) -> llvm::BasicBlock*;
+    ) -> ir::Block*;
+
+    auto If(
+        ir::Value* cond,
+        llvm::function_ref<void()> emit_body
+    ) { return If(cond, {}, emit_body); }
 
     /// Create a branch that can return a value.
     ///
@@ -153,29 +124,84 @@ private:
     /// \return A PHI node that contains the values of both branches, or
     /// null if there is no else branch or if either branch returns null.
     auto If(
-        llvm::Value* cond,
-        llvm::function_ref<llvm::Value*()> emit_then,
-        llvm::function_ref<llvm::Value*()> emit_else
-    ) -> llvm::PHINode*;
+        ir::Value* cond,
+        llvm::function_ref<ir::Value*()> emit_then,
+        llvm::function_ref<ir::Value*()> emit_else
+    ) -> ir::Block*;
 
     /// Create an infinite loop.
     ///
-    /// The block before the condition block from which the loop is
-    /// first entered is passed as a parameter to the callback.
-    void Loop(llvm::function_ref<void(llvm::BasicBlock*)> emit_body);
+    /// The arguments, as well as the values returned from the callback,
+    /// are passed to the condition block of the loop. The callback may
+    /// return an empty vector if the loop is infinite or has no arguments.
+    void Loop(
+        ArrayRef<ir::Value*> block_args,
+        llvm::function_ref<SmallVector<ir::Value*>()> emit_body
+    );
 
-    auto MakeInt(const APInt& val) -> llvm::ConstantInt*;
-    auto MakeInt(u64 integer) -> llvm::ConstantInt*;
-    auto MangledName(ProcDecl* proc) -> StringRef;
+    auto MangledName(ProcDecl* proc) -> String;
 
     /// Initialise a variable or memory location.
-    void PerformVariableInitialisation(llvm::Value* addr, Expr* init);
+    void PerformVariableInitialisation(ir::Value* addr, Expr* init);
 
     /// Create a while loop.
     void While(
-        llvm::function_ref<llvm::Value*()> emit_cond,
+        llvm::function_ref<ir::Value*()> emit_cond,
         llvm::function_ref<void()> emit_body
     );
+};
+
+
+class srcc::cg::CGLLVM : public CodeGen {
+    llvm::TargetMachine& machine;
+    std::unique_ptr<llvm::Module> llvm;
+    StringMap<llvm::Constant*> strings;
+    llvm::IRBuilder<> builder;
+
+    llvm::IntegerType* const IntTy;
+    llvm::IntegerType* const I1Ty;
+    llvm::IntegerType* const I8Ty;
+    llvm::PointerType* const PtrTy;
+    llvm::IntegerType* const FFIIntTy;
+    llvm::StructType* const SliceTy;
+    llvm::StructType* const ClosureTy;
+    llvm::Type* const VoidTy;
+
+    bool finalised = false;
+
+public:
+    CGLLVM(TranslationUnit& tu, llvm::TargetMachine& machine);
+
+private:
+    /// Perform any finalisation steps that need to be run after all code has been emitted.
+    void finalise();
+
+    /// Functions that create instructions.
+    auto CreateBool(bool value) -> ir::Value* override;
+    auto CreateCall(ir::Value* callee, ArrayRef<ir::Value*> args) -> ir::Value* override;
+    auto CreateEmptySlice() -> ir::Value* override;
+    auto CreateICmp(Tk op, ir::Value* a, ir::Value* b) -> ir::Value* override;
+    auto CreateInt(const APInt& val) -> ir::Value* override;
+    auto CreateInt(i64 val, Type type) -> ir::Value* override;
+    auto CreateIMul(ir::Value* a, ir::Value* b) -> ir::Value* override;
+    auto CreatePtrAdd(ir::Value* ptr, ir::Value* offs, bool inbounds) -> ir::Value* override;
+    auto CreateStringSlice(StringRef s) -> ir::Value* override;
+    void CreateUnreachable() override;
+
+    static void OptimiseModule(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& compiled);
+    static int EmitModuleOrProgram(
+        llvm::TargetMachine& machine,
+        TranslationUnit& tu,
+        llvm::Module& compiled,
+        ArrayRef<std::string> additional_objects,
+        StringRef program_file_name_override = ""
+    );
+
+    auto GetStringPtr(StringRef s) -> llvm::Constant*;
+
+    template <typename Ty = llvm::Type>
+    auto ConvertType(Type ty, bool array_elem = false) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty, array_elem)); }
+    auto ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type*;
 };
 
 #endif // SRCC_CG_HH

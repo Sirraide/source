@@ -61,6 +61,10 @@ struct Context::Impl {
 
     /// Whether to use coloured output.
     std::atomic<bool> enable_colours = true;
+
+    /// For saving strings.
+    llvm::BumpPtrAllocator alloc;
+    llvm::StringSaver saver{alloc};
 };
 
 SRCC_DEFINE_HIDDEN_IMPL(Context);
@@ -177,7 +181,7 @@ auto Context::get_file(fs::PathRef path) -> const File& {
     );
 
     auto mem = File::LoadFileData(can);
-    auto f = new File(*this, can, path.string(), std::move(mem), u16(impl->files.size()));
+    auto f = new File(*this, can, String::Save(impl->saver, path.string()), std::move(mem), u16(impl->files.size()));
     impl->files.emplace_back(f);
     impl->files_by_path[std::move(can)] = f;
     return *f;
@@ -270,12 +274,12 @@ void srcc::File::WriteOrDie(void* data, usz size, fs::PathRef file) {
 srcc::File::File(
     Context& ctx,
     fs::Path path,
-    std::string name,
+    String name,
     std::unique_ptr<llvm::MemoryBuffer> contents,
     u16 id
 ) : ctx(ctx),
     file_path(std::move(path)),
-    file_name(std::move(name)),
+    file_name(name),
     contents(std::move(contents)),
     id(id) {}
 

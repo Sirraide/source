@@ -1,13 +1,16 @@
 #ifndef SRCC_AST_EVAL_HH
 #define SRCC_AST_EVAL_HH
 
+#include <srcc/AST/Type.hh>
+#include <srcc/Core/Serialisation.hh>
+#include <srcc/Core/Utils.hh>
+#include <srcc/Macros.hh>
+
 #include <llvm/ADT/PointerIntPair.h>
+
 #include <memory>
 #include <optional>
-#include <srcc/Macros.hh>
 #include <variant>
-#include <srcc/Core/Utils.hh>
-#include <srcc/AST/Type.hh>
 
 namespace srcc {
 class Stmt;
@@ -22,19 +25,71 @@ class Reference;
 class Slice;
 class Value;
 class Memory;
-class ByteCode;
 enum struct LifetimeState : u8;
 
-/// Attempt to evaluate a statement.
-///
-/// Callers must check dependence before this is called; attempting
-/// to evaluate a dependent statement will assert.
-///
-/// \param tu Translation unit that the statement belongs to.
-/// \param stmt Statement to evaluate.
-/// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
-/// \return The value of the statement, if it can be evaluated.
-auto Evaluate(TranslationUnit& tu, Stmt* stmt, bool complain = true) -> std::optional<Value>;
+/// Virtual machine used for constant evaluation; one of these is
+/// created for every translation unit and reused across constant
+/// evaluations.
+class VM {
+    LIBBASE_IMMOVABLE(VM);
+
+    /// Machine word.
+    using word = uptr;
+
+    /// Address space that stores either code or data.
+    class AddressSpace {
+        ByteBuffer mem;
+
+    public:
+        void contains(word ptr);
+    };
+
+    /// Start of executable memory.
+    static constexpr word MemExecStart = 0x10000;
+
+    /// Start of data memory.
+    ///
+    /// This is 1 << 30 on 32-bit systems and 1 << 46 on 64-bit systems.
+    static constexpr word MemDataStart = 1 << std::min<word>(46, Size::Of<word>().bits() - 2);
+
+public:
+    /// Maximum number of registers.
+    static constexpr usz MaxRegisters =  1 << 16;
+
+private:
+    /// The tu that this vm belongs to.
+    TranslationUnit& owner_tu;
+
+    /// Executable memory; this is where procedures and constant
+    /// expressions are allocated.
+    AddressSpace mem_exec;
+
+    /// Data memory; this is for constant data.
+    AddressSpace mem_data;
+
+    /// VM registers.
+    std::vector<word> registers;
+
+public:
+    explicit VM(TranslationUnit& owner_tu) : owner_tu{owner_tu}, registers(MaxRegisters) {}
+
+    /// Attempt to evaluate a statement.
+    ///
+    /// Callers must check dependence before this is called; attempting
+    /// to evaluate a dependent statement will assert.
+    ///
+    /// \param stmt Statement to evaluate.
+    /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
+    /// \return The value of the statement, if it can be evaluated.
+    [[nodiscard]] auto eval(Stmt* stmt, bool complain = true) -> std::optional<Value>;
+
+    /// Get the translation unit that owns this vm.
+    [[nodiscard]] auto owner() -> TranslationUnit& { return owner_tu; }
+
+private:
+    /// Compile a statement and return a memory buffer containing the byte code.
+    auto CompileSingleStmt(Stmt* stmt, bool complain) -> std::optional<ByteBuffer>;
+};
 } // namespace srcc::eval
 
 namespace srcc::eval {

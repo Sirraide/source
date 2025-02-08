@@ -1294,6 +1294,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     auto CheckVarargs = [&](SmallVectorImpl<Expr*>& actual_args, ArrayRef<Expr*> varargs) {
         bool ok = true;
         for (auto a : varargs) {
+            // Codegen is not set up to handle variadic arguments that are larger than a word,
+            // so reject these here. If you need one of those, then seriously, wtf are you doing.
             if (
                 a->type == Types::IntTy or
                 a->type == Types::BoolTy or

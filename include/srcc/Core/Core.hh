@@ -86,7 +86,7 @@ class srcc::File {
     fs::Path file_path;
 
     /// The name of the file as specified on the command line.
-    std::string file_name;
+    String file_name;
 
     /// The contents of the file.
     std::unique_ptr<llvm::MemoryBuffer> contents;
@@ -111,7 +111,7 @@ public:
     [[nodiscard]] auto file_id() const { return id; }
 
     /// Get the short file name.
-    [[nodiscard]] auto name() const -> StringRef { return file_name; }
+    [[nodiscard]] auto name() const -> String { return file_name; }
 
     /// Get the file path.
     [[nodiscard]] auto path() const -> fs::PathRef { return file_path; }
@@ -140,7 +140,7 @@ private:
     explicit File(
         Context& ctx,
         fs::Path path,
-        std::string name,
+        String name,
         std::unique_ptr<llvm::MemoryBuffer> contents,
         u16 id
     );

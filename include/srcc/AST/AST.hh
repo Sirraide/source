@@ -5,6 +5,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Core/Core.hh>
 #include <srcc/Core/Location.hh>
+#include <srcc/Core/Serialisation.hh>
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
@@ -121,6 +122,9 @@ public:
     /// Cached template instantiations.
     DenseMap<ProcDecl*, llvm::SmallDenseMap<ProcType*, ProcDecl*>> template_instantiations;
 
+    /// Compile-time virtual machine for constant evaluation.
+    eval::VM vm{*this};
+
     /// LLVM context for this module.
     llvm::LLVMContext llvm_context;
 
@@ -139,7 +143,7 @@ public:
     Type I32Ty;
     Type I64Ty;
     Type I128Ty;
-    Type StrLitTy;
+    SliceType* StrLitTy;
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;

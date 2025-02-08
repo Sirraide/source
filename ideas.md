@@ -10,7 +10,7 @@ A parameter can only have at most one of these intents:
               to at least once. Note: outparameters may not alias.
   - `inout` = Like `out`, except that its value may be read before it is written. Note: inout
               parameters may not alias with any other parameters.
-  - `copy`  = Pass by value; the object behaves like a local variable in the callee.
+  - `var`  = Pass by value; the object behaves like a local variable in the callee.
   - `ref`   = Pass by reference; this is only valid in procedure *types* and indicates whether
               a parameter ends up being passed by reference. This is a very low-level (and sometimes
               platform-dependent) feature that should generally not be used. Maybe only allow this in
@@ -307,3 +307,40 @@ the parser.
 Allow setting compile options, what files to compile, what libraries to link
 etc. etc. using pragmas within the source code (MSVC-style, a bit). The (if
 somewhat lofty) goal would be to just... not require a build system at all.
+
+## Bit patterns for optional types.
+A bit pattern of length `n` is *possible* for a type `T` if `T.bits` is exactly `n`. Any
+other pattern is called *impossible*.
+
+A possible bit pattern is *valid* for a type `T` under the following conditions, and an
+invalid pattern is one that is not *valid*:
+- If `T` is an integer or floating-point type, any possible pattern is valid.
+- If `T` is a pointer or reference type, the platform null pointer is invalid, any other
+  possible pattern is valid.
+- If `T` is a range type, any possible pattern is valid.
+- If `T` is a closure type, any pattern where the function pointer is the platform null
+  pointer is invalid.
+- If `T` is a struct type, any bit pattern resulting from an invocation of a constructor
+  of `T` followed by any number of member function calls that are passed valid arguments
+  and the setting of any public members, in any order or repeated combination of the two,
+  to any valid bit patterns is valid. 
+
+(idea: choose an invalid pattern as the nil value if possible)
+
+## Idea for formatting and syntax highlighting
+‘Decorated parse tree’, i.e. optionally (or always, it oughtn’t be too expensive), Sema
+builds a one-to-one mapping from parse tree nodes to AST nodes so that people can both
+use the parse tree for syntactic information and also known e.g. what an identifer actually
+is.
+
+This way, we also don’t have to worry about preserving too much syntactic sugar in Sema
+(we do still have to preserve type sugar for diagnostics, but that’s a different matter);
+e.g. we can collapse constant expressions and `static if`s to their evaluated value.
+
+The mapping can either be a pointer in every parse tree node or an external map.
+
+
+
+## TODOS:
+- Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
+  since 'in' parameters are immutable by default.
