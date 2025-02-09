@@ -79,9 +79,8 @@ AST_TYPE_LEAF(TemplateType)
 
 #undef AST_STMT_LEAF
 #undef AST_STMT
-#undef AST_STMT_LEAF
-#undef AST_STMT
+#undef AST_INIT_LEAF
+#undef AST_DECL_LEAF
 #undef AST_TYPE_LEAF
 #undef AST_TYPE
 #undef AST_NODE
-#undef AST_DECL_LEAF
