@@ -108,6 +108,7 @@ int Driver::Impl::run_job() {
 
     // Disable colours in verify mode.
     ctx.enable_colours(opts.colours and not opts.verify);
+    ctx.enable_short_filenames(opts.short_filenames);
 
     // Verifier can only run in sema/parse/lex mode.
     if (

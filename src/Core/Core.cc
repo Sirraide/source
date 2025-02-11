@@ -62,6 +62,9 @@ struct Context::Impl {
     /// Whether to use coloured output.
     std::atomic<bool> enable_colours = true;
 
+    /// Whether to use short filenames.
+    std::atomic<bool> short_filenames = false;
+
     /// For saving strings.
     llvm::BumpPtrAllocator alloc;
     llvm::StringSaver saver{alloc};
@@ -155,15 +158,23 @@ void Context::enable_colours(bool enable) {
     impl->enable_colours.store(enable, std::memory_order_release);
 }
 
+void Context::enable_short_filenames(bool enable) {
+    impl->short_filenames.store(enable, std::memory_order_release);
+}
+
 auto Context::eval_steps() const -> u64 {
     return impl->eval_steps.load(std::memory_order_relaxed);
 }
 
 auto Context::file(usz idx) const -> const File* {
     std::unique_lock _{impl->context_mutex};
-
     if (idx >= impl->files.size()) return nullptr;
     return impl->files[idx].get();
+}
+
+auto Context::file_name(i32 id) const -> String {
+    auto* f = file(usz(id));
+    return use_short_filenames() ? f->short_name() : f->name();
 }
 
 auto Context::get_file(fs::PathRef path) -> const File& {
@@ -207,6 +218,10 @@ void Context::set_eval_steps(u64 steps) {
 
 bool Context::use_colours() const {
     return impl->enable_colours.load(std::memory_order_acquire);
+}
+
+bool Context::use_short_filenames() const {
+    return impl->short_filenames.load(std::memory_order_acquire);
 }
 
 // ============================================================================
@@ -281,7 +296,9 @@ srcc::File::File(
     file_path(std::move(path)),
     file_name(name),
     contents(std::move(contents)),
-    id(id) {}
+    id(id) {
+    short_file_name = String::CreateUnsafe(stream{name}.take_back_until_any("/\\"));
+}
 
 auto srcc::File::LoadFileData(fs::PathRef path) -> std::unique_ptr<llvm::MemoryBuffer> {
     auto buf = llvm::MemoryBuffer::getFile(

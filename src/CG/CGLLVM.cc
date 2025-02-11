@@ -264,7 +264,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
             // Get file, line, and column. Don’t require a valid location here as
             // this is also called from within implicitly generated code.
             if (auto lc = a.location().seek_line_column(cg.tu.context())) {
-                auto name = cg.tu.context().file(a.location().file_id)->name();
+                auto name = cg.tu.context().file_name(a.location().file_id);
                 args.push_back(llvm::ConstantStruct::get(SliceTy, {InternStringPtr(name), MakeInt(i64(name.size()))}));
                 args.push_back(MakeInt(i64(lc->line)));
                 args.push_back(MakeInt(i64(lc->col)));

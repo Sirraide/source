@@ -1,5 +1,5 @@
-// R      %srcc --ir   %s
-// R[//L] %srcc --llvm %s
+// R      %srcc --short-filenames --ir   %s
+// R[//L] %srcc --short-filenames --llvm %s
 program test;
 
 proc foo(in int a, in int b) {
@@ -7,29 +7,30 @@ proc foo(in int a, in int b) {
     assert a > 42, "a should be greater than 42";
 }
 
-// p nolit .
 // * proc _S3fooFvxixiE (in int %0, in int %1) {
 // + entry:
 // +     %2 = icmp eq %0, %1
 // +     br %2 to bb2 else bb1
 // +
 // + bb1:
-// re+   abort at .* __src_assert_fail(s"a == b", nil)
+// +     abort at <assert.src:6:5> __src_assert_fail(s"a == b", nil)
 // +
 // + bb2:
 // +     %3 = icmp sgt %0, int 42
 // +     br %3 to bb4 else bb3
 // +
 // + bb3:
-// re+   abort at .* __src_assert_fail(s"a > 42", s"a should be greater than 42")
+// +     abort at <assert.src:7:5> __src_assert_fail(s"a > 42", s"a should be greater than 42")
 // +
 // + bb4:
 // +     ret
 // + }
 
-//L *   @1 = private unnamed_addr constant [7 x i8] c"a == b\00", align 1
-//L *   @2 = private unnamed_addr constant [7 x i8] c"a > 42\00", align 1
-//L *   @3 = private unnamed_addr constant [28 x i8] c"a should be greater than 42\00", align 1
+//L * @0 = private unnamed_addr constant [11 x i8] c"assert.src\00", align 1
+//L * @1 = private unnamed_addr constant [7 x i8] c"a == b\00", align 1
+//L * @2 = private unnamed_addr constant [7 x i8] c"a > 42\00", align 1
+//L * @3 = private unnamed_addr constant [28 x i8] c"a should be greater than 42\00", align 1
+//L +
 
 //L * define private fastcc void @_S3fooFvxixiE(i64 %0, i64 %1) {
 //L + entry:
@@ -37,7 +38,7 @@ proc foo(in int a, in int b) {
 //L +   br i1 %2, label %bb2, label %bb1
 //L +
 //L + bb1:
-//L +   call fastcc void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 18 }, i64 5, i64 5, { ptr, i64 } { ptr @1, i64 6 }, { ptr, i64 } zeroinitializer)
+//L +   call fastcc void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 10 }, i64 6, i64 5, { ptr, i64 } { ptr @1, i64 6 }, { ptr, i64 } zeroinitializer)
 //L +   unreachable
 //L +
 //L + bb2:
@@ -45,7 +46,7 @@ proc foo(in int a, in int b) {
 //L +   br i1 %3, label %bb4, label %bb3
 //L +
 //L + bb3:
-//L +   call fastcc void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 18 }, i64 6, i64 5, { ptr, i64 } { ptr @2, i64 6 }, { ptr, i64 } { ptr @3, i64 27 })
+//L +   call fastcc void @__src_assert_fail({ ptr, i64 } { ptr @0, i64 10 }, i64 7, i64 5, { ptr, i64 } { ptr @2, i64 6 }, { ptr, i64 } { ptr @3, i64 27 })
 //L +   unreachable
 //L +
 //L + bb4:

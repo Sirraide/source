@@ -1,4 +1,0 @@
-// R tail -n 1 %s
-// p nolit .
-// re+   abort at .+ __src_assert_fail(s"a == b", nil)
-abort at </home/ae/projects/Source/test/CG/assert.src:6:5> __src_assert_fail(s"a == b", nil)

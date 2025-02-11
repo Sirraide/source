@@ -910,7 +910,7 @@ void Sema::ReportOverloadResolutionFailure(
         if (lc) {
             message += std::format(
                 "\f%b(at) {}:{}:{}",
-                ctx.file(loc.file_id)->name(),
+                ctx.file_name(loc.file_id),
                 lc->line,
                 lc->col
             );

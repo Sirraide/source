@@ -41,6 +41,7 @@ using options = clopts< // clang-format off
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
+    flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
 
     // Features.
     // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
@@ -133,7 +134,8 @@ int main(int argc, char** argv) {
         .verify = opts.get<"--verify">(),
         .colours = use_colour,
         .overflow_checking = not opts.get<"-fno-overflow-checks">(),
-        .import_runtime = not opts.get<"--noruntime">()
+        .import_runtime = not opts.get<"--noruntime">(),
+        .short_filenames = opts.get<"--short-filenames">(),
     }}; // clang-format on
 
     // Add files.

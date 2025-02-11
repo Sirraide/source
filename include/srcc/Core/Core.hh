@@ -26,6 +26,7 @@ struct LangOpts;
 } // namespace srcc
 
 /// All members of 'Context' are thread-safe.
+/// FIXME: Move all the members up into this and remove Impl.
 class srcc::Context {
     SRCC_DECLARE_HIDDEN_IMPL(Context);
 
@@ -42,11 +43,17 @@ public:
     /// Enable or disable coloured output.
     void enable_colours(bool enable);
 
+    /// Enable or disable short filenames.
+    void enable_short_filenames(bool enable);
+
     /// Get the number of steps the constant evaluator can run for.
     [[nodiscard]] auto eval_steps() const -> u64;
 
     /// Get a file by index. Returns nullptr if the index is out of bounds.
     [[nodiscard]] auto file(usz idx) const -> const File*;
+
+    /// Get the appropriate filename for a file id.
+    [[nodiscard]] auto file_name(i32 id) const -> String;
 
     /// Get a file from disk.
     ///
@@ -67,6 +74,9 @@ public:
 
     /// Whether to enable coloured output.
     [[nodiscard]] bool use_colours() const;
+
+    /// Whether to enable short filenames.
+    [[nodiscard]] bool use_short_filenames() const;
 };
 
 struct srcc::LangOpts {
@@ -87,6 +97,7 @@ class srcc::File {
 
     /// The name of the file as specified on the command line.
     String file_name;
+    String short_file_name;
 
     /// The contents of the file.
     std::unique_ptr<llvm::MemoryBuffer> contents;
@@ -115,6 +126,9 @@ public:
 
     /// Get the file path.
     [[nodiscard]] auto path() const -> fs::PathRef { return file_path; }
+
+    /// Get the short file name.
+    [[nodiscard]] auto short_name() const -> String { return short_file_name; }
 
     /// Get the size of the file.
     [[nodiscard]] auto size() const -> isz { return isz(contents->getBufferSize()); }

@@ -100,7 +100,7 @@ auto FormatDiagnostic(
 
         // Even if the location is invalid, print the file name if we can.
         if (auto f = ctx.file(diag.where.file_id))
-            out += std::format("\n  in %b(\002{}\003:<invalid location>)\n\n", f->name());
+            out += std::format("\n  in %b(\002{}\003:<invalid location>)\n\n", ctx.file_name(f->file_id()));
 
         PrintExtraData();
         return out;
@@ -150,10 +150,9 @@ auto FormatDiagnostic(
         previous_loc.value().file_id != diag.where.file_id
     ) {
         auto PrintLocation = [&](Location loc, LocInfoShort l) {
-            const auto& file = *ctx.file(loc.file_id);
             out += std::format(
                 "at %b4(\002{}\003):{}:{}\n",
-                file.name(),
+                ctx.file_name(loc.file_id),
                 l.line,
                 l.col
             );

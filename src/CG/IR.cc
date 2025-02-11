@@ -461,7 +461,7 @@ void Printer::DumpInst(Inst* i) {
             String file;
             i64 line, col;
             if (auto lc = a->location().seek_line_column(tu.context())) {
-                file = tu.context().file(a->location().file_id)->name();
+                file = tu.context().file_name(a->location().file_id);
                 line = i64(lc->line);
                 col = i64(lc->col);
             } else {

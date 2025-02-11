@@ -91,6 +91,10 @@ public:
 
         /// Whether to implicitly import the runtime module.
         bool import_runtime : 1;
+
+        /// Whether to use short filenames (e.g. 'foo.src' instead of
+        /// 'path/to/foo.src').
+        bool short_filenames : 1;
     };
 
     /// Create a new driver.
