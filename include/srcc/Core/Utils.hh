@@ -277,6 +277,9 @@ public:
     /// Get the string value as a std::string_view.
     [[nodiscard]] constexpr auto sv() const -> std::string_view { return val; }
 
+    /// Take the first n characters of the string.
+    [[nodiscard]] constexpr auto take(usz n) const -> String { return CreateUnsafe(val.take_front(n)); }
+
     /// Get the string value.
     [[nodiscard]] constexpr auto value() const -> StringRef { return val; }
 

@@ -1,10 +1,10 @@
 // R %srcc --llvm %s
 program test;
 
-proc sink (int) {}
-proc sink (bool) {}
+proc sink (in int) {}
+proc sink (in bool) {}
 
-proc arith_checked (int a, int b) {
+proc arith_checked (in int a, in int b) {
     sink(a + b);
     sink(a - b);
     sink(a * b);
@@ -18,7 +18,7 @@ proc arith_checked (int a, int b) {
     sink(a <<< b);
 }
 
-proc arith (int a, int b) {
+proc arith (in int a, in int b) {
     sink(a +~ b);
     sink(a -~ b);
     sink(a *~ b);
@@ -43,7 +43,7 @@ proc arith (int a, int b) {
     sink(a != b);
 }
 
-proc exp (int a, int b) {
+proc exp (in int a, in int b) {
     sink(a ** b);
 }
 

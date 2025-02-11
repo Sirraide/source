@@ -207,8 +207,8 @@ public:
 class Inst : public Managed {
     friend Builder;
 
-    const Op op;
     ArrayRef<Value*> arguments;
+    const Op op;
 
 protected:
     Inst(Builder& b, Op op, ArrayRef<Value*> args);
@@ -281,19 +281,25 @@ struct BranchTarget {
 class BranchInst : public Inst {
     friend Builder;
 
-    BranchTarget then_block{}, else_block{};
+    // Arguments are stored as: [cond, then_args..., else_args...] or [then_args...]
+    u32 then_args_num;
+    Block* then_block;
+    Block* else_block;
 
-    BranchInst(Builder& b, BranchTarget dest) : Inst{b, Op::Br, {}}, then_block(dest) {}
-    BranchInst(Builder& b, Value* cond, BranchTarget then_block, BranchTarget else_block)
-        : Inst{b, Op::Br, {cond}}, then_block{then_block}, else_block{else_block} {}
+    BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget else_);
 
 public:
     auto cond() const -> Value* { return is_conditional() ? args().front() : nullptr; }
-    bool is_conditional() const { return not args().empty(); }
-    auto target() const -> const BranchTarget& { return then_block; }
-    auto target_else() const -> const BranchTarget& { return else_block; }
+    auto else_() const -> Block* { return else_block; }
+    auto else_args() const -> ArrayRef<Value*> { return is_conditional() ? BlockArgs().drop_front(then_args_num) : ArrayRef<Value*>{}; }
+    bool is_conditional() const { return else_block != nullptr; }
+    auto then() const -> Block* { return then_block; }
+    auto then_args() const -> ArrayRef<Value*> { return BlockArgs().take_front(then_args_num); }
 
     static bool classof(const Inst* v) { return v->opcode() == Op::Br; }
+
+private:
+    auto BlockArgs() const -> ArrayRef<Value*> { return args().drop_front(is_conditional() ? 1 : 0); }
 };
 
 class InstValue : public ManagedValue {

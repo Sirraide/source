@@ -1,7 +1,7 @@
 // R %srcc --llvm %s
 program test;
 
-proc foo(int a, int b) {
+proc foo(in int a, in int b) {
     assert a == b;
     assert a > 42, "a should be greater than 42";
 }

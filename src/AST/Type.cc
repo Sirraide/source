@@ -447,7 +447,7 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
             else out += ", ";
             if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
             out += p.type->print();
-            if (number_params) out += std::format(" %8(\033%{})", i);
+            if (number_params) out += std::format(" %4(\033%{})", i);
         }
         out += "\033)";
     }
