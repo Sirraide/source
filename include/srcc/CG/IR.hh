@@ -19,17 +19,16 @@ enum class Op : u8 {
     AShr,
     Br,
     Call,
-    CondBr,
     ICmpEq,
     ICmpNe,
-    ICmpULt,
-    ICmpULe,
-    ICmpUGe,
-    ICmpUGt,
-    ICmpSLt,
-    ICmpSLe,
     ICmpSGe,
     ICmpSGt,
+    ICmpSLe,
+    ICmpSLt,
+    ICmpUGe,
+    ICmpUGt,
+    ICmpULe,
+    ICmpULt,
     IMul,
     Load,
     LShr,
@@ -44,9 +43,9 @@ enum class Op : u8 {
     Shl,
     SMulOv,
     SRem,
+    SSubOv,
     Store,
     Sub,
-    SSubOv,
     Trunc,
     UDiv,
     Unreachable,
@@ -65,17 +64,16 @@ enum class BuiltinConstantKind : u8 {
 class Value {
 public:
     enum class Kind : u8 {
-        Alloca,
         Argument,
-        Extract,
-        SmallInt,
-        LargeInt,
-        InstValue,
-        BuiltinConstant,
         Block,
-        Slice,
-        StringData,
+        BuiltinConstant,
+        Extract,
+        InstValue,
+        LargeInt,
         Proc,
+        Slice,
+        SmallInt,
+        StringData,
     };
 
 private:
@@ -110,30 +108,39 @@ protected:
 class BuiltinConstant : public ManagedValue {
     friend Builder;
 
-    BuiltinConstantKind value;
+public:
+    const BuiltinConstantKind id;
 
-    BuiltinConstant(BuiltinConstantKind val, Type ty) : ManagedValue{Kind::BuiltinConstant, ty}, value{val} {}
+private:
+    BuiltinConstant(BuiltinConstantKind val, Type ty) : ManagedValue{Kind::BuiltinConstant, ty}, id{val} {}
+
+public:
+    static bool classof(const Value* v) { return v->kind() == Kind::BuiltinConstant; }
 };
 
 class SmallInt : public ManagedValue {
     friend Builder;
 
-    i64 value;
+    i64 val;
 
-    SmallInt(i64 val, Type ty = Types::IntTy) : ManagedValue{Kind::SmallInt, ty}, value{val} {}
+    SmallInt(i64 val, Type ty = Types::IntTy) : ManagedValue{Kind::SmallInt, ty}, val{val} {}
 
 public:
+    auto value() const -> i64 { return val; }
+
     static bool classof(const Value* v) { return v->kind() == Kind::SmallInt; }
 };
 
 class LargeInt : public Value {
     friend Builder;
 
-    APInt value;
+    APInt val;
 
-    LargeInt(APInt val, Type ty = Types::IntTy) : Value{Kind::LargeInt, ty}, value{std::move(val)} {}
+    LargeInt(APInt val, Type ty = Types::IntTy) : Value{Kind::LargeInt, ty}, val{std::move(val)} {}
 
 public:
+    auto value() const -> const APInt& { return val; }
+
     static bool classof(const Value* v) { return v->kind() == Kind::LargeInt; }
 };
 
@@ -153,11 +160,13 @@ public:
 class StringData : public ManagedValue {
     friend Builder;
 
-    String value;
+    String val;
 
-    StringData(String val, Type ty) : ManagedValue{Kind::StringData, ty}, value{val} {}
+    StringData(String val, Type ty) : ManagedValue{Kind::StringData, ty}, val{val} {}
 
 public:
+    auto value() const -> String { return val; }
+
     static bool classof(const Value* v) { return v->kind() == Kind::StringData; }
 };
 
@@ -181,12 +190,15 @@ public:
 class Extract : public ManagedValue {
     friend Builder;
 
-    Value* aggregate;
+    Value* arg;
     u32 idx;
 
-    Extract(Value* agg, u32 idx, Type ty) : ManagedValue{Kind::Extract, ty}, aggregate{agg}, idx{idx} {}
+    Extract(Value* agg, u32 idx, Type ty) : ManagedValue{Kind::Extract, ty}, arg{agg}, idx{idx} {}
 
 public:
+    auto aggregate() const -> Value* { return arg; }
+    auto index() const -> u32 { return idx; }
+
     static bool classof(const Value* v) { return v->kind() == Kind::Extract; }
 };
 
@@ -273,8 +285,15 @@ class BranchInst : public Inst {
 
     BranchInst(Builder& b, BranchTarget dest) : Inst{b, Op::Br, {}}, then_block(dest) {}
     BranchInst(Builder& b, Value* cond, BranchTarget then_block, BranchTarget else_block)
-        : Inst{b, Op::CondBr, {cond}}, then_block{then_block}, else_block{else_block} {}
+        : Inst{b, Op::Br, {cond}}, then_block{then_block}, else_block{else_block} {}
 
+public:
+    auto cond() const -> Value* { return is_conditional() ? args().front() : nullptr; }
+    bool is_conditional() const { return not args().empty(); }
+    auto target() const -> const BranchTarget& { return then_block; }
+    auto target_else() const -> const BranchTarget& { return else_block; }
+
+    static bool classof(const Inst* v) { return v->opcode() == Op::Br; }
 };
 
 class InstValue : public ManagedValue {
@@ -297,35 +316,43 @@ class Block : public Value {
     friend Proc;
 
     Proc* p = nullptr;
-    SmallVector<Inst*> instructions;
+    SmallVector<Inst*> insts;
     SmallVector<Type, 6> arg_types;
-    SmallVector<Argument*> args;
+    SmallVector<Argument*> arg_vals;
 
     Block() : Value(Kind::Block, Types::VoidTy) {}
 
 public:
-    auto arg(u32 idx) -> Argument* { return args[idx]; }
+    auto arg(u32 idx) -> Argument* { return arg_vals[idx]; }
+    auto arguments() -> ArrayRef<Argument*> { return arg_vals; }
+    auto argument_types() -> ArrayRef<Type> { return arg_types; }
     bool closed() const;
+    auto instructions() const -> ArrayRef<Inst*> { return insts; }
     auto parent() -> Proc* { return p; }
+
     static bool classof(const Value* v) { return v->kind() == Kind::Block; }
 };
 
 class Proc : public Value {
     friend Builder;
 
-    String name;
+    String mangled_name;
     ProcType* ty;
     Linkage link;
-    SmallVector<std::unique_ptr<Block>> blocks;
+    SmallVector<std::unique_ptr<Block>> body;
     SmallVector<Argument*> arguments;
 
-    Proc(String name, ProcType* ty, Linkage link) : Value{Kind::Proc, ty}, name{name}, ty{ty}, link{link} {}
+    Proc(String mangled_name, ProcType* ty, Linkage link)
+        : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
 public:
     auto add(std::unique_ptr<Block> b) -> Block*;
     auto args(Builder& b) -> ArrayRef<Argument*>;
-    auto empty() const -> bool { return blocks.empty(); }
-    auto entry() const -> Block* { return blocks.empty() ? nullptr : blocks.front().get(); }
+    auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
+    auto empty() const -> bool { return body.empty(); }
+    auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
+    auto name() const -> String { return mangled_name; }
+    auto type() const -> ProcType* { return ty; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::Proc; }
 };
@@ -352,7 +379,7 @@ public:
 
 private:
     llvm::BumpPtrAllocator alloc;
-    StringMap<std::unique_ptr<Proc>> procs;
+    llvm::MapVector<StringRef, std::unique_ptr<Proc>> procs;
     DenseMap<i64, SmallInt*> small_ints;
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Types::BoolTy};
@@ -363,7 +390,12 @@ public:
 
     Builder(TranslationUnit& tu);
 
+    auto procedures() const {
+        return vws::all(procs) | vws::transform([](auto& e) -> Proc* { return e.second.get(); });
+    }
+
     auto Allocate(usz sz, usz align) -> void* { return alloc.Allocate(sz, align); }
+    auto Dump() -> SmallUnrenderedString;
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
 
@@ -380,7 +412,7 @@ public:
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
     void CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block);
     auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
-    auto CreateInt(APInt val) -> Value*;
+    auto CreateInt(APInt val, Type type) -> Value*;
     auto CreateInt(i64 val, Type type = Types::IntTy) -> Value*;
     auto CreateIMul(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateICmpEq(Value* a, Value* b) -> Value*;

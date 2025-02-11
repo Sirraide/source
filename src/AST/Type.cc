@@ -62,7 +62,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
             }
             Unreachable();
         },
-        [&](const IntType* ty) { return Align{u64(std::min<isz>(64, llvm::PowerOf2Ceil(ty->bit_width().bytes())))}; },
+        [&](const IntType* ty) { return Align{std::min<u64>(64, llvm::PowerOf2Ceil(u64(ty->bit_width().bytes())))}; },
         [&](const ProcType*) { return Align{8}; }, // FIXME: Get alignment from context.
         [&](const ReferenceType*) { return Align{8}; }, // FIXME: Get alignment from context.
         [&](const SliceType*) { return Align{8}; }, // FIXME: Get alignment from context.
@@ -203,31 +203,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 
         case Kind::ProcType: {
             auto proc = cast<ProcType>(this);
-            out += "%1(proc";
-
-            // Add params.
-            const auto& params = proc->params();
-            if (not params.empty()) {
-                out += " (";
-                bool first = true;
-                for (const auto& p : params) {
-                    if (first) first = false;
-                    else out += ", ";
-                    if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
-                    out += p.type->print();
-                }
-                out += "\033)";
-            }
-
-            // Add attributes.
-            if (proc->cconv() == CallingConvention::Native) out += " native";
-            if (proc->variadic()) out += " variadic";
-
-            // Add return type.
-            if (not proc->ret()->is_void())
-                out += std::format(" -> {}", proc->ret()->print());
-
-            out += ")";
+            out += proc->print("");
         } break;
 
         case Kind::ReferenceType: {
@@ -452,6 +428,42 @@ void ProcType::Profile(
         ID.AddPointer(t.type.as_opaque_ptr());
     }
 }
+
+auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    out += "%1(proc";
+
+    // Add name.
+    if (not proc_name.empty())
+        out += std::format(" %2({})", proc_name);
+
+    // Add params.
+    const auto& ps = params();
+    if (not ps.empty()) {
+        out += " (";
+        bool first = true;
+        for (const auto& [i, p] : enumerate(ps)) {
+            if (first) first = false;
+            else out += ", ";
+            if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
+            out += p.type->print();
+            if (number_params) out += std::format(" %8(\033%{})", i);
+        }
+        out += "\033)";
+    }
+
+    // Add attributes.
+    if (cconv() == CallingConvention::Native) out += " native";
+    if (variadic()) out += " variadic";
+
+    // Add return type.
+    if (not ret()->is_void())
+        out += std::format(" -> {}", ret()->print());
+
+    out += ")";
+    return out;
+}
+
 
 auto TemplateType::Get(TranslationUnit& tu, TemplateTypeDecl* decl) -> TemplateType* {
     auto CreateNew = [&] { return new (tu) TemplateType{decl}; };

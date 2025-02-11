@@ -7,6 +7,7 @@
 #include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Alignment.h>
@@ -396,6 +397,14 @@ struct std::formatter<llvm::Align> : formatter<srcc::usz> {
     template <typename FormatContext>
     auto format(llvm::Align align, FormatContext& ctx) const {
         return formatter<srcc::usz>::format(align.value(), ctx);
+    }
+};
+
+template <>
+struct std::formatter<llvm::APInt> : formatter<std::string> {
+    template <typename FormatContext>
+    auto format(const llvm::APInt& i, FormatContext& ctx) const {
+        return formatter<std::string>::format(llvm::toString(i, 10, true), ctx);
     }
 };
 

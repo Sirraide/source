@@ -302,6 +302,15 @@ int Driver::Impl::run_job() {
     // Don’t try and codegen if there was an error.
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
+
+    // Run codegen.
+    cg::CodeGen cg{*tu, Size::Bits(64)};
+    for (auto p : tu->procs) cg.emit(p);
+    if (a == Action::DumpIR) {
+        std::print("{}", text::RenderColours(opts.colours, cg.dump().str()));
+        return 0;
+    }
+
     std::exit(42);
     /*auto ir_module = cg::CodeGen::Emit(*machine, *tu);
     if (ctx.diags().has_error()) return 1;

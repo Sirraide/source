@@ -93,6 +93,25 @@ auto CodeGen::DeclareArithmeticFailureHandler() -> Value* {
     return overflow_handler.value();
 }
 
+auto CodeGen::DeclarePrintf() -> ir::Value* {
+    if (not printf) {
+        printf = GetOrCreateProc(
+            "printf",
+            Linkage::Imported,
+            ProcType::Get(
+                tu,
+                tu.FFIIntTy,
+                {{Intent::Copy, ReferenceType::Get(tu, tu.I8Ty)}},
+                CallingConvention::Native,
+                true
+            )
+        );
+    }
+
+    return printf.value();
+}
+
+
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto name = MangledName(proc);
     return GetOrCreateProc(name, proc->linkage, proc->proc_type());
@@ -164,7 +183,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     });
 
     // Handle overflow.
-    auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())));
+    auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())), ty);
     auto is_min = CreateICmpEq(lhs, min_value);
     CreateArithFailure(is_min, Tk::StarStar, Location());
 
@@ -649,7 +668,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         case Tk::Slash:
         case Tk::Percent: {
             CheckDivByZero();
-            auto int_min = CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())));
+            auto int_min = CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
             auto minus_one = CreateInt(-1, ty);
             auto check_lhs = CreateICmpEq(lhs, int_min);
             auto check_rhs = CreateICmpEq(rhs, minus_one);
@@ -828,7 +847,7 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {
 }
 
 auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
-    return CreateInt(expr->storage.value());
+    return CreateInt(expr->storage.value(), expr->type);
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
@@ -930,13 +949,13 @@ auto CodeGen::EmitValue(const eval::Value& val) -> Value* { // clang-format off
         [&](ProcDecl* proc) -> Value* { return DeclareProcedure(proc); },
         [&](std::monostate) -> Value* { return nullptr; },
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
-        [&](const APInt& value) -> Value* { return CreateInt(value); },
+        [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
         [&](const eval::LValue& lval) -> Value* { return lval.base.visit(LValueEmitter); },
         [&](this auto& self, const eval::Reference& ref) -> Value* {
             auto base = self(ref.lvalue);
             return CreatePtrAdd(
                 base,
-                CreateInt(ref.offset * u64(ref.lvalue.type->array_size(tu).bytes())),
+                CreateInt(ref.offset * u64(ref.lvalue.type->array_size(tu).bytes()), Types::IntTy),
                 true
             );
         },
@@ -944,7 +963,7 @@ auto CodeGen::EmitValue(const eval::Value& val) -> Value* { // clang-format off
         [&](this auto& Self, const eval::Slice& slice) -> Value* {
             return CreateSlice(
                 Self(slice.data),
-                Self(slice.size)
+                CreateInt(slice.size, Types::IntTy)
             );
         }
     }; // clang-format on

@@ -36,6 +36,12 @@ public:
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
+    /// Dump the IR module.
+    auto dump() -> SmallUnrenderedString { return Dump(); }
+
+    /// Emit a procedure.
+    void emit(ProcDecl* proc) { EmitProcedure(proc); }
+
 private:
     class EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);

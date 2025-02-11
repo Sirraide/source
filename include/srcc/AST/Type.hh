@@ -203,6 +203,7 @@ private:
     Size bits;
 
     explicit constexpr IntType(Size bit_width) : TypeBase{Kind::IntType}, bits{bit_width} {
+        Assert(bits >= Size::Bits(1), "Cannot create integer type with bit width 0");
         Assert(bits <= MaxBits, "Bit width too large: {}", bits);
     }
 
@@ -413,6 +414,9 @@ public:
 
     /// Get the parameter types of this procedure type.
     auto params() const -> ArrayRef<ParamTypeData> { return {getTrailingObjects<ParamTypeData>(), num_params}; }
+
+    /// Print the proc type, optionally with a name.
+    auto print(StringRef proc_name = "", bool number_params = false) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }

@@ -17,6 +17,9 @@ enum struct srcc::Action : srcc::u8 {
     /// Dump the contents of the module.
     DumpModule,
 
+    /// Run codegen and dump our codegen IR.
+    DumpIR,
+
     /// Print tokens.
     DumpTokens,
 

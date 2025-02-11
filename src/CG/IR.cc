@@ -15,7 +15,7 @@ template <std::derived_from<Inst> InstTy, typename... Args>
 auto Builder::CreateImpl(Args&&... args) -> Inst* {
     Assert(insert_point, "No insert point");
     auto i = new (*this) InstTy(*this, LIBBASE_FWD(args)...);
-    insert_point->instructions.push_back(i);
+    insert_point->insts.push_back(i);
     return i;
 }
 
@@ -60,7 +60,7 @@ auto Builder::CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block> {
     auto b = std::unique_ptr<Block>(new Block);
     append_range(b->arg_types, args);
     for (auto [i, ty] : enumerate(b->arg_types))
-        b->args.push_back(new (*this) Argument(b.get(), u32(i), ty));
+        b->arg_vals.push_back(new (*this) Argument(b.get(), u32(i), ty));
     return b;
 }
 
@@ -102,8 +102,9 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
     Todo("Extract a value from this type");
 }
 
-auto Builder::CreateInt(APInt val) -> Value* {
-    auto m = std::unique_ptr<LargeInt>(new LargeInt(std::move(val), IntType::Get(tu, Size::Bits(val.getBitWidth()))));
+auto Builder::CreateInt(APInt val, Type type) -> Value* {
+    if (type->size(tu) <= Size::Bits(64)) return CreateInt(i64(val.getZExtValue()), type);
+    auto m = std::unique_ptr<LargeInt>(new LargeInt(std::move(val), type));
     large_ints.push_back(std::move(m));
     return large_ints.back().get();
 }
@@ -277,15 +278,19 @@ auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     return proc.get();
 }
 
+auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
+    auto proc = procs.find(name);
+    return proc == procs.end() ? nullptr : proc->second.get();
+}
+
 auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
     return new (*this) InstValue(i, ty, idx);
 }
 
 bool Block::closed() const {
-    if (instructions.empty()) return false;
-    switch (instructions.back()->opcode()) {
+    if (insts.empty()) return false;
+    switch (insts.back()->opcode()) {
         case Op::Br:
-        case Op::CondBr:
         case Op::Ret:
         case Op::Unreachable:
             return true;
@@ -299,8 +304,8 @@ Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : op{op}, arguments{args.co
 
 auto Proc::add(std::unique_ptr<Block> b) -> Block* {
     b->p = this;
-    blocks.push_back(std::move(b));
-    return blocks.back().get();
+    body.push_back(std::move(b));
+    return body.back().get();
 }
 
 auto Proc::args(Builder& b) -> ArrayRef<Argument*> {
@@ -312,4 +317,249 @@ auto Proc::args(Builder& b) -> ArrayRef<Argument*> {
         arguments.push_back(new (b) Argument(this, u32(i), param_ty));
     }
     return arguments;
+}
+
+/// ====================================================================
+///  Printing
+/// ====================================================================
+namespace {
+class Printer {
+public:
+    SmallUnrenderedString out;
+    DenseMap<Argument*, i64> arg_ids;
+    DenseMap<Block*, i64> block_ids;
+    DenseMap<Inst*, i64> inst_ids;
+
+    Printer(Builder& b);
+    void DumpInst(Inst* i);
+    auto DumpValue(Value* b) -> SmallUnrenderedString;
+
+    auto Id(auto& map, auto* ptr) -> i64 {
+        auto it = map.find(ptr);
+        return it == map.end() ? -1 : it->second;
+    }
+};
+}
+
+auto Builder::Dump() -> SmallUnrenderedString {
+    return std::move(Printer{*this}.out);
+}
+
+Printer::Printer(Builder& b) {
+    for (const auto& proc : b.procedures()) {
+        if (not out.empty()) out += "\n";
+        out += proc->type()->print(proc->name(), true);
+
+        // Stop if there is no body.
+        if (proc->empty()) {
+            out += "%1(;)\n";
+            continue;
+        }
+
+        // Number all blocks and instructions.
+        i64 temp = 0;
+        arg_ids.clear();
+        block_ids.clear();
+        inst_ids.clear();
+        for (const auto& arg : proc->args(b))
+            arg_ids[arg] = temp++;
+        for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
+            block_ids[b] = id;
+            for (const auto& arg : b->arguments()) arg_ids[arg] = temp++;
+            for (const auto& i : b->instructions()) inst_ids[i] = temp++;
+        }
+
+        // Print the procedure body.
+        out += " %1({)\n";
+        for (const auto& [i, b] : enumerate(proc->blocks())) {
+            out += i == 0 ? "%3(entry" : std::format("%3(bb{}", i);
+            if (not b->arguments().empty()) {
+                out += std::format(" ({}\033)", utils::join_as(b->argument_types(), [&](Type ty) {
+                    return std::format("{} \033%{}", ty->print(), temp++);
+                }));
+            }
+            out += ":)\n";
+            for (const auto& inst : b->instructions())
+                DumpInst(inst);
+        }
+        out += "%1(})\n";
+    }
+}
+
+void Printer::DumpInst(Inst* i) {
+    out += "    %1(";
+    defer { out += ")\n"; };
+
+    auto Target = [&](const BranchTarget& t) {
+        out += std::format("%3(bb{})", Id(block_ids, t.dest));
+        if (not t.args.empty()) {
+            out += std::format(
+                "({}\033)",
+                utils::join_as(t.args, [&](Value* v) { return DumpValue(v); })
+            );
+        }
+    };
+
+    auto IntCast = [&](StringRef name) {
+        auto c = cast<ICast>(i);
+        out += std::format(
+            "%8(\033%{}) = %1({}) {} to {}",
+            Id(inst_ids, i),
+            name,
+            DumpValue(c->args()[0]),
+            c->cast_result_type()
+        );
+    };
+
+    auto Simple = [&](StringRef name, bool has_value = true) {
+        if (has_value) out += std::format("%8(\033%{}) = ", Id(inst_ids, i));
+        out += std::format(
+            "%1({}){}{}",
+            name,
+            i->args().empty() ? ""sv : " "sv,
+            utils::join_as(i->args(), [&](Value* v) { return DumpValue(v); } )
+        );
+    };
+
+    switch (i->opcode()) {
+        // Special instructions.
+        case Op::Alloca: {
+            auto a = cast<Alloca>(i);
+            out += std::format("%8(\033%{}) = %1(alloca) {}", Id(inst_ids, i), a->allocated_type());
+        } break;
+
+        case Op::Br: {
+            auto b = cast<BranchInst>(i);
+            if (b->is_conditional()) {
+                out += std::format("%1(br) {} to ", DumpValue(b->cond()));
+                Target(b->target());
+                out += " else ";
+                Target(b->target_else());
+            } else {
+                out += std::format("%1(br) ");
+                Target(b->target());
+            }
+        } break;
+
+        case Op::Load: {
+            auto m = cast<MemInst>(i);
+            out += std::format(
+                "%8(\033%{}) = %1(load) {}, {}, align %5({})",
+                Id(inst_ids, i),
+                m->memory_type(),
+                DumpValue(m->args()[0]),
+                m->align()
+            );
+        } break;
+
+        case Op::Store: {
+            auto m = cast<MemInst>(i);
+            out += std::format(
+                "%1(store) {} to {}, {}, align %5({})",
+                m->memory_type(),
+                DumpValue(m->args()[0]),
+                DumpValue(m->args()[1]),
+                m->align()
+            );
+        } break;
+
+        // Integer conversions.
+        case Op::SExt: IntCast("sext"); break;
+        case Op::Trunc: IntCast("trunc"); break;
+        case Op::ZExt: IntCast("zext"); break;
+
+        // Generic instructions.
+        case Op::Add: Simple("add"); break;
+        case Op::And: Simple("and"); break;
+        case Op::AShr: Simple("ashr"); break;
+        case Op::Call: Simple("call"); break;
+        case Op::ICmpEq: Simple("icmp eq"); break;
+        case Op::ICmpNe: Simple("icmp ne"); break;
+        case Op::ICmpULt: Simple("icmp ult"); break;
+        case Op::ICmpULe: Simple("icmp ule"); break;
+        case Op::ICmpUGe: Simple("icmp uge"); break;
+        case Op::ICmpUGt: Simple("icmp ugt"); break;
+        case Op::ICmpSLt: Simple("icmp slt"); break;
+        case Op::ICmpSLe: Simple("icmp sle"); break;
+        case Op::ICmpSGe: Simple("icmp sge"); break;
+        case Op::ICmpSGt: Simple("icmp sgt"); break;
+        case Op::IMul: Simple("imul"); break;
+        case Op::LShr: Simple("lshr"); break;
+        case Op::MemZero: Simple("mem zero", false); break;
+        case Op::Or: Simple("or"); break;
+        case Op::PtrAdd: Simple("ptradd"); break;
+        case Op::Ret: Simple("ret", false); break;
+        case Op::SAddOv: Simple("sadd ov"); break;
+        case Op::SDiv: Simple("sdiv"); break;
+        case Op::Select: Simple("select"); break;
+        case Op::Shl: Simple("shl"); break;
+        case Op::SMulOv: Simple("smul ov"); break;
+        case Op::SRem: Simple("srem"); break;
+        case Op::Sub: Simple("sub"); break;
+        case Op::SSubOv: Simple("ssub ov"); break;
+        case Op::UDiv: Simple("udiv"); break;
+        case Op::Unreachable: Simple("unreachable", false); break;
+        case Op::URem: Simple("urem"); break;
+        case Op::Xor: Simple("xor"); break;
+    }
+}
+
+auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    switch (v->kind()) {
+        case Value::Kind::Argument:
+            out += std::format("%4(\033%{})", Id(arg_ids, cast<Argument>(v)));
+            break;
+
+        case Value::Kind::Block:
+            out += std::format("%3(bb{})", Id(block_ids, cast<Block>(v)));
+            break;
+
+        case Value::Kind::BuiltinConstant: {
+            auto c = cast<BuiltinConstant>(v);
+            switch (c->id) {
+                case BuiltinConstantKind::True: out += "true"; break;
+                case BuiltinConstantKind::False: out += "false"; break;
+                case BuiltinConstantKind::Nil: out += "nil"; break;
+                case BuiltinConstantKind::Poison: out += "poison"; break;
+            }
+        } break;
+
+        case Value::Kind::Extract: {
+            auto e = cast<Extract>(v);
+            out += std::format("{}[%5({})]", DumpValue(e->aggregate()), e->index());
+        } break;
+
+        case Value::Kind::InstValue: {
+            auto i = cast<InstValue>(v);
+            if (i->index() == 0) out += std::format("%8(\033%{})", Id(inst_ids, i->inst()));
+            else out += std::format("%8(\033%{}:{})", Id(inst_ids, i->inst()), i->index());
+        } break;
+
+        case Value::Kind::LargeInt: {
+            auto l = cast<LargeInt>(v);
+            out += std::format("{} %5({})", l->type(), l->value());
+        } break;
+
+        case Value::Kind::Proc: {
+            auto p = cast<Proc>(v);
+            out += std::format("%2({})", p->name());
+        } break;
+
+        case Value::Kind::Slice: {
+            auto s = cast<Slice>(v);
+            out += std::format("{} (%5({}), %5({}))", s->type(), DumpValue(s->data), DumpValue(s->size));
+        } break;
+
+        case Value::Kind::SmallInt: {
+            auto s = cast<SmallInt>(v);
+            out += std::format("{} %5({})", v->type(), s->value());
+        } break;
+
+        case Value::Kind::StringData: {
+            auto str = cast<StringData>(v);
+            out += std::format("%3(\"\002{}\003\")", utils::Escape(str->value(), true));
+        } break;
+    }
+    return out;
 }
