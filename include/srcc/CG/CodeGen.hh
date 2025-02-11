@@ -121,13 +121,13 @@ private:
     /// The builder is positioned at the end of the join block after this
     /// returns.
     ///
-    /// \return A PHI node that contains the values of both branches, or
-    /// null if there is no else branch or if either branch returns null.
+    /// \return The argument values of the join block, which correspond to
+    /// the values returned from emit_then and emit_else.
     auto If(
         ir::Value* cond,
         llvm::function_ref<ir::Value*()> emit_then,
         llvm::function_ref<ir::Value*()> emit_else
-    ) -> ir::Block*;
+    ) -> ArrayRef<ir::Argument*>;
 
     /// Create an infinite loop.
     ///

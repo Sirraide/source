@@ -231,7 +231,7 @@ auto CodeGen::If(
     Value* cond,
     llvm::function_ref<Value*()> emit_then,
     llvm::function_ref<Value*()> emit_else
-) -> Block* {
+) -> ArrayRef<ir::Argument*> {
     Assert(emit_then and emit_else, "Both branches must return a value for this overload");
     auto bb_then = CreateBlock();
     auto bb_else = CreateBlock();
@@ -255,7 +255,9 @@ auto CodeGen::If(
         CreateBr(bb_join.get(), else_val ? ArrayRef{else_val} : ArrayRef<Value*>{});
 
     // Finally, return the join block.
-    return EnterBlock(std::move(bb_join));
+    auto args = bb_join->arguments();
+    EnterBlock(std::move(bb_join));
+    return args;
 }
 
 auto CodeGen::If(Value* cond, ArrayRef<Value*> args, llvm::function_ref<void()> emit_then) -> Block* {
@@ -286,7 +288,7 @@ void CodeGen::Loop(
     ArrayRef<Value*> block_args,
     llvm::function_ref<SmallVector<Value*>()> emit_body
 ) {
-    auto bb_cond = EnterBlock(CreateBlock(block_args));
+    auto bb_cond = EnterBlock(CreateBlock(block_args), block_args);
     auto vals = emit_body();
 
     Assert(
@@ -526,7 +528,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 Emit(expr->lhs),
                 [&] { return Emit(expr->rhs); },
                 [&] { return CreateBool(false); }
-            );
+            )[0];
         }
 
         // Convert 'x or y' to 'if x then true else y'.
@@ -535,7 +537,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 Emit(expr->lhs),
                 [&] { return CreateBool(true); },
                 [&] { return Emit(expr->rhs); }
-            );
+            )[0];
         }
 
         // Assignment.
@@ -839,11 +841,12 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
 }
 
 auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {
-    return If(
+    auto args = If(
         Emit(stmt->cond),
         [&] { return Emit(stmt->then); },
         stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<Value*()>{}
     );
+    return args.empty() ? nullptr : args.front();
 }
 
 auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {

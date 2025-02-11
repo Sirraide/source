@@ -99,7 +99,7 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
         Unreachable("Invalid index for slice type");
     }
 
-    Todo("Extract a value from this type");
+    Todo("Extract a value from this type: {}", aggregate->type());
 }
 
 auto Builder::CreateInt(APInt val, Type type) -> Value* {
@@ -340,6 +340,8 @@ public:
     DenseMap<Argument*, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Inst*, i64> inst_ids;
+    llvm::DenseSet<Argument*> proc_args;
+    Proc* curr_proc{};
 
     Printer(Builder& b);
     void DumpInst(Inst* i);
@@ -358,7 +360,8 @@ auto Builder::Dump() -> SmallUnrenderedString {
 }
 
 Printer::Printer(Builder& b) {
-    for (const auto& proc : b.procedures()) {
+    for (auto* proc : b.procedures()) {
+        curr_proc = proc;
         if (not out.empty()) out += "\n";
         out += proc->type()->print(proc->name(), true);
 
@@ -373,12 +376,17 @@ Printer::Printer(Builder& b) {
         arg_ids.clear();
         block_ids.clear();
         inst_ids.clear();
-        for (const auto& arg : proc->args(b))
+
+        for (auto* arg : proc->args(b)) {
             arg_ids[arg] = temp++;
+            proc_args.insert(arg);
+        }
+
         for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
             block_ids[b] = id;
-            for (const auto& arg : b->arguments()) arg_ids[arg] = temp++;
-            for (const auto& i : b->instructions())
+            for (auto* arg : b->arguments())
+                arg_ids[arg] = temp++;
+            for (auto* i : b->instructions())
                 if (ReturnsValue(i))
                     inst_ids[i] = temp++;
         }
@@ -386,14 +394,14 @@ Printer::Printer(Builder& b) {
         // Print the procedure body.
         out += " %1({)\n";
         for (const auto& [i, b] : enumerate(proc->blocks())) {
-            out += i == 0 ? "%3(entry)%1(" : std::format("%3(bb{})%1(", i);
+            out += i == 0 ? "%3(entry)%1(" : std::format("\n%3(bb{})%1(", i);
             if (not b->arguments().empty()) {
-                out += std::format("({}\033)", utils::join_as(b->argument_types(), [&](Type ty) {
-                    return std::format("{} \033%{}", ty->print(), temp++);
+                out += std::format("({}\033)", utils::join_as(b->arguments(), [&](Argument* arg) {
+                    return std::format("{} %3(\033%{})", b->argument_types()[arg->index()], arg_ids.at(arg));
                 }));
             }
             out += ":)\n";
-            for (const auto& inst : b->instructions())
+            for (auto* inst : b->instructions())
                 DumpInst(inst);
         }
         out += "%1(})\n";
@@ -462,7 +470,7 @@ void Printer::DumpInst(Inst* i) {
                 out += std::format("%1(call) {} {}", ret, DumpValue(proc));
             } else {
                 out += std::format(
-                    "%1(call) {} {}({})",
+                    "%1(call) {} {}({}\033)",
                     ret,
                     DumpValue(proc),
                     utils::join_as(args, [&](Value* v) { return DumpValue(v); } )
@@ -550,13 +558,13 @@ bool Printer::ReturnsValue(Inst* i) {
     }
 }
 
-
 auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
     SmallUnrenderedString out;
     switch (v->kind()) {
-        case Value::Kind::Argument:
-            out += std::format("%4(\033%{})", Id(arg_ids, cast<Argument>(v)));
-            break;
+        case Value::Kind::Argument: {
+            auto arg = cast<Argument>(v);
+            out += std::format("%{}(\033%{})", proc_args.contains(arg) ? '4' : '3', Id(arg_ids, arg));
+        } break;
 
         case Value::Kind::Block:
             out += std::format("%3(bb{})", Id(block_ids, cast<Block>(v)));
