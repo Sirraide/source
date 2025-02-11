@@ -7,31 +7,31 @@ proc foo(in int a, in int b) {
     assert a > 42, "a should be greater than 42";
 }
 
+// p nolit .
 // * proc _S3fooFvxixiE (in int %0, in int %1) {
 // + entry:
 // +     %2 = icmp eq %0, %1
 // +     br %2 to bb2 else bb1
 // +
 // + bb1:
-// +     abort at <test/CG/assert.src:5:5> __src_assert_fail(s"a == b", nil)
+// re+   abort at .* __src_assert_fail(s"a == b", nil)
 // +
 // + bb2:
 // +     %3 = icmp sgt %0, int 42
 // +     br %3 to bb4 else bb3
 // +
 // + bb3:
-// +     abort at <test/CG/assert.src:6:5> __src_assert_fail(s"a > 42", s"a should be greater than 42")
+// re+   abort at .* __src_assert_fail(s"a > 42", s"a should be greater than 42")
 // +
 // + bb4:
 // +     ret
 // + }
 
-//L * @0 = private unnamed_addr constant [19 x i8] c"test/CG/assert.src\00", align 1
-//L * @1 = private unnamed_addr constant [7 x i8] c"a == b\00", align 1
-//L * @2 = private unnamed_addr constant [7 x i8] c"a > 42\00", align 1
-//L * @3 = private unnamed_addr constant [28 x i8] c"a should be greater than 42\00", align 1
+//L *   @1 = private unnamed_addr constant [7 x i8] c"a == b\00", align 1
+//L *   @2 = private unnamed_addr constant [7 x i8] c"a > 42\00", align 1
+//L *   @3 = private unnamed_addr constant [28 x i8] c"a should be greater than 42\00", align 1
 
-//L + define private fastcc void @_S3fooFvxixiE(i64 %0, i64 %1) {
+//L * define private fastcc void @_S3fooFvxixiE(i64 %0, i64 %1) {
 //L + entry:
 //L +   %2 = icmp eq i64 %0, %1
 //L +   br i1 %2, label %bb2, label %bb1

@@ -32,9 +32,9 @@ public:
     operator llvm::raw_fd_ostream&() { return stream; }
 };
 
-/*
+
 // Largely copied and adapted from Clang.
-void CodeGen::OptimiseModule(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
+void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
     llvm::CGSCCAnalysisManager CGAM;
@@ -54,7 +54,7 @@ void CodeGen::OptimiseModule(llvm::TargetMachine& machine, TranslationUnit&, llv
     MPM.run(m, MAM);
 }
 
-int CodeGen::EmitModuleOrProgram(
+int cg::CodeGen::write_to_file(
     llvm::TargetMachine& machine,
     TranslationUnit& tu,
     llvm::Module& m,
@@ -165,5 +165,5 @@ int CodeGen::EmitModuleOrProgram(
     );
     return code;
 }
-*/
+
 

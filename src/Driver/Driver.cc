@@ -319,9 +319,8 @@ int Driver::Impl::run_job() {
     auto ir_module = cg.emit_llvm(*machine);
     if (ctx.diags().has_error()) return 1;
 
-    /*
     // Run the optimiser before potentially dumping the module.
-    if (opts.opt_level) cg::CodeGen::OptimiseModule(*machine, *tu, *ir_module);*/
+    if (opts.opt_level) cg.optimise(*machine, *tu, *ir_module);
 
     // Emit LLVM IR.
     if (a == Action::EmitLLVM) {
@@ -329,15 +328,14 @@ int Driver::Impl::run_job() {
         return 0;
     }
 
-    std::exit(42);
-    /*
-    return cg::CodeGen::EmitModuleOrProgram(
+    // Finally, emit the module.
+    return cg.write_to_file(
         *machine,
         *tu,
         *ir_module,
         opts.link_objects,
         opts.output_file_name
-    );*/
+    );
 }
 
 auto Driver::Impl::ParseFile(fs::PathRef path, bool verify) -> ParsedModule* {

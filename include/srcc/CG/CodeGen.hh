@@ -50,6 +50,18 @@ public:
     /// Emit LLVM IR.
     auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
+    /// Optimise a module.
+    void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
+
+    /// Write the module to a file.
+    int write_to_file(
+        llvm::TargetMachine& machine,
+        TranslationUnit& tu,
+        llvm::Module& m,
+        ArrayRef<std::string> additional_objects,
+        StringRef program_file_name_override
+    );
+
 private:
     class EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);
