@@ -300,8 +300,6 @@ bool Block::closed() const {
     }
 }
 
-Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.alloc)}, op{op} {}
-
 BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget else_)
     : Inst(b, Op::Br, [&] {
           SmallVector<Value*, 16> args{};
@@ -312,6 +310,18 @@ BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget 
       }()),
       then_args_num(u32(then.args.size())), then_block(then.dest), else_block(else_.dest) {}
 
+Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.alloc)}, op{op} {}
+
+bool Inst::has_multiple_results() const {
+    switch (op) {
+        case Op::SAddOv:
+        case Op::SMulOv:
+        case Op::SSubOv:
+            return true;
+        default:
+            return false;
+    }
+}
 
 auto Proc::add(std::unique_ptr<Block> b) -> Block* {
     b->p = this;
@@ -340,7 +350,6 @@ public:
     DenseMap<Argument*, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Inst*, i64> inst_ids;
-    llvm::DenseSet<Argument*> proc_args;
     Proc* curr_proc{};
 
     Printer(Builder& b);
@@ -377,11 +386,7 @@ Printer::Printer(Builder& b) {
         block_ids.clear();
         inst_ids.clear();
 
-        for (auto* arg : proc->args(b)) {
-            arg_ids[arg] = temp++;
-            proc_args.insert(arg);
-        }
-
+        for (auto* arg : proc->args(b)) arg_ids[arg] = temp++;
         for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
             block_ids[b] = id;
             for (auto* arg : b->arguments())
@@ -563,7 +568,7 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
     switch (v->kind()) {
         case Value::Kind::Argument: {
             auto arg = cast<Argument>(v);
-            out += std::format("%{}(\033%{})", proc_args.contains(arg) ? '4' : '3', Id(arg_ids, arg));
+            out += std::format("%{}(\033%{})", isa<Proc>(arg->parent()) ? '4' : '3', Id(arg_ids, arg));
         } break;
 
         case Value::Kind::Block:
@@ -586,20 +591,9 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
         } break;
 
         case Value::Kind::InstValue: {
-            static constexpr auto SingleResult = [](Inst* i) -> bool {
-                switch (i->opcode()) {
-                    case Op::SAddOv:
-                    case Op::SMulOv:
-                    case Op::SSubOv:
-                        return false;
-                    default:
-                        return true;
-                }
-            };
-
             auto i = cast<InstValue>(v);
-            if (SingleResult(i->inst())) out += std::format("%8(\033%{})", Id(inst_ids, i->inst()));
-            else out += std::format("%8(\033%{}:{})", Id(inst_ids, i->inst()), i->index());
+            if (i->inst()->has_multiple_results()) out += std::format("%8(\033%{}:{})", Id(inst_ids, i->inst()), i->index());
+            else out += std::format("%8(\033%{})", Id(inst_ids, i->inst()));
         } break;
 
         case Value::Kind::LargeInt: {

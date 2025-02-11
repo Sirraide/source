@@ -28,6 +28,7 @@
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/ThreadPool.h>
@@ -306,24 +307,30 @@ int Driver::Impl::run_job() {
     // Run codegen.
     cg::CodeGen cg{*tu, Size::Bits(64)};
     for (auto p : tu->procs) cg.emit(p);
+    if (ctx.diags().has_error()) return 1;
+
+    // Dump IR.
     if (a == Action::DumpIR) {
         std::print("{}", text::RenderColours(opts.colours, cg.dump().str()));
         return 0;
     }
 
-    std::exit(42);
-    /*auto ir_module = cg::CodeGen::Emit(*machine, *tu);
+    // Run LLVM lowering.
+    auto ir_module = cg.emit_llvm(*machine);
     if (ctx.diags().has_error()) return 1;
 
+    /*
     // Run the optimiser before potentially dumping the module.
-    if (opts.opt_level) cg::CodeGen::OptimiseModule(*machine, *tu, *ir_module);
+    if (opts.opt_level) cg::CodeGen::OptimiseModule(*machine, *tu, *ir_module);*/
 
-    // Emit LLVM IR, if requested.
+    // Emit LLVM IR.
     if (a == Action::EmitLLVM) {
         ir_module->print(llvm::outs(), nullptr);
         return 0;
     }
 
+    std::exit(42);
+    /*
     return cg::CodeGen::EmitModuleOrProgram(
         *machine,
         *tu,

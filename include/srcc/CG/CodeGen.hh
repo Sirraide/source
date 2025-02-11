@@ -15,12 +15,15 @@
 
 namespace srcc::cg {
 class CodeGen;
+class LLVMCodeGen;
+class VMCodeGen;
 }
 
 class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
     LIBBASE_IMMOVABLE(CodeGen);
     struct Mangler;
     friend DiagsProducer;
+    friend LLVMCodeGen;
 
     Size word_size;
     Opt<ir::Proc*> assert_handler;
@@ -41,6 +44,9 @@ public:
 
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }
+
+    /// Emit LLVM IR.
+    auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
 private:
     class EnterProcedure {

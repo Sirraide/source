@@ -215,7 +215,9 @@ protected:
 
 public:
     [[nodiscard]] auto args() const -> ArrayRef<Value*> { return arguments; }
+    [[nodiscard]] bool has_multiple_results() const;
     [[nodiscard]] auto opcode() const { return op; }
+    [[nodiscard]] auto operator[](usz idx) { return arguments[idx]; }
 };
 
 /// Allocas are separate instructions because their operand is a type.
@@ -357,6 +359,7 @@ public:
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
+    auto linkage() const -> Linkage { return link; }
     auto name() const -> String { return mangled_name; }
     auto type() const -> ProcType* { return ty; }
 
