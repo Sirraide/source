@@ -128,26 +128,26 @@ auto ref(SmallVectorImpl<T>& vec) -> MutableArrayRef<T> {
 class Size {
     LIBBASE_SERIALISE(raw);
 
-    u64 raw;
+    i64 raw;
 
     static_assert(CHAR_BIT == 8);
-    constexpr explicit Size(usz raw) : raw{raw} {}
+    constexpr explicit Size(isz raw) : raw{raw} {}
 
 public:
     constexpr Size() : raw{0} {}
-    explicit Size(Align align) : raw{align.value() * 8} {}
+    explicit Size(Align align) : raw{i64(align.value()) * 8} {}
 
     [[nodiscard]] static constexpr Size Bits(std::unsigned_integral auto bits) { return Size{bits}; }
     [[nodiscard]] static constexpr Size Bytes(std::unsigned_integral auto bytes) { return Size{bytes * 8}; }
 
     [[nodiscard]] static constexpr Size Bits(std::signed_integral auto bits) {
         Assert(bits >= 0, "Size cannot be negative");
-        return Size{usz(bits)};
+        return Size{i64(bits)};
     }
 
     [[nodiscard]] static constexpr Size Bytes(std::signed_integral auto bytes) {
         Assert(bytes >= 0, "Size cannot be negative");
-        return Size{usz(bytes) * 8};
+        return Size{i64(bytes) * 8};
     }
 
     template <typename Ty>
@@ -165,20 +165,20 @@ public:
     }
 
     [[nodiscard]] constexpr Size aligned(Size align) const { return Size{alignTo(bytes(), Align(align.bytes()))}; }
-    [[nodiscard]] constexpr Size as_bytes() const { return Size::Bytes(bytes()); }
-    [[nodiscard]] constexpr auto bits() const -> usz { return raw; }
-    [[nodiscard]] constexpr auto bytes() const -> usz { return llvm::alignToPowerOf2(raw, 8) / 8; }
+    [[nodiscard]] constexpr Size as_bytes() const { return Bytes(bytes()); }
+    [[nodiscard]] constexpr auto bits() const -> i64 { return raw; }
+    [[nodiscard]] constexpr auto bytes() const -> i64 { return llvm::alignToPowerOf2(raw, 8) / 8; }
 
     constexpr Size operator+=(Size rhs) { return Size{raw += rhs.raw}; }
     constexpr Size operator-=(Size rhs) { return Size{raw -= rhs.raw}; }
-    constexpr Size operator*=(usz rhs) { return Size{raw *= rhs}; }
+    constexpr Size operator*=(i64 rhs) { return Size{raw *= rhs}; }
 
 private:
     /// Only provided for Size*Integer since that basically means scaling a size. Multiplying
     /// two sizes w/ one another doesn’t make sense, so that operation is not provided.
-    [[nodiscard]] friend constexpr Size operator*(Size lhs, usz rhs) { return Size{lhs.raw * rhs}; }
-    [[nodiscard]] friend constexpr Size operator*(usz lhs, Size rhs) { return Size{lhs * rhs.raw}; }
-    [[nodiscard]] friend constexpr auto operator/(Size lhs, Size rhs) -> usz { return lhs.raw / rhs.raw; }
+    [[nodiscard]] friend constexpr Size operator*(Size lhs, i64 rhs) { return Size{lhs.raw * rhs}; }
+    [[nodiscard]] friend constexpr Size operator*(i64 lhs, Size rhs) { return Size{lhs * rhs.raw}; }
+    [[nodiscard]] friend constexpr auto operator/(Size lhs, Size rhs) -> i64 { return lhs.raw / rhs.raw; }
     [[nodiscard]] friend constexpr Size operator+(Size lhs, Size rhs) { return Size{lhs.raw + rhs.raw}; }
     [[nodiscard]] friend constexpr bool operator==(Size lhs, Size rhs) = default;
     [[nodiscard]] friend constexpr auto operator<=>(Size lhs, Size rhs) = default;

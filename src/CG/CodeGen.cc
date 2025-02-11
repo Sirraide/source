@@ -16,8 +16,8 @@ void CodeGen::CreateArithFailure(Value* cond, Tk op, Location loc, String name) 
         Value *file, *line, *col;
         if (auto lc = loc.seek_line_column(tu.context())) {
             file = CreateString(tu.context().file(loc.file_id)->name());
-            line = CreateInt(lc->line);
-            col = CreateInt(lc->col);
+            line = CreateInt(i64(lc->line));
+            col = CreateInt(i64(lc->col));
         } else {
             file = CreateNil(tu.StrLitTy);
             line = CreateInt(0);
@@ -43,7 +43,7 @@ auto CodeGen::DeclareAssertFailureHandler() -> Value* {
         //     u8[] message
         // ) -> noreturn
         //
-        // TODO: Declare this in the
+        // TODO: Declare this in the preamble.
         assert_handler = GetOrCreateProc(
             "__src_assert_fail",
             Linkage::Imported,
@@ -117,7 +117,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     EnterProcedure _(*this, proc);
 
     // Values that we’ll need.
-    auto minus_one = CreateInt(u64(-1), ty);
+    auto minus_one = CreateInt(-1, ty);
     auto zero = CreateInt(0, ty);
     auto one = CreateInt(1, ty);
     auto args = proc->args(*this);
@@ -169,7 +169,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     CreateArithFailure(is_min, Tk::StarStar, Location());
 
     // Emit the multiplication loop.
-    Loop({lhs, rhs}, [&] {
+    Loop({lhs, rhs}, [&] -> SmallVector<Value*> {
         auto val = insert_point->arg(0);
         auto exp = insert_point->arg(1);
         If(CreateICmpEq(exp, zero), [&] { CreateReturn(val); });
@@ -205,7 +205,7 @@ CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::Proc* proc)
 
     // Create the entry block if it doesn’t exist yet.
     if (proc->empty())
-    CG.EnterBlock(CreateBlock());
+    CG.EnterBlock(CG.CreateBlock());
 }
 
 auto CodeGen::If(
@@ -542,7 +542,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
             if (tu.lang_opts().overflow_checking) {
                 auto size = is_slice
                               ? CreateExtractValue(range, 1)
-                              : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
+                              : CreateInt(cast<ArrayType>(expr->lhs->type)->dimension());
 
                 CreateArithFailure(
                     CreateICmpUGe(index, size),
@@ -772,7 +772,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
             return CreateExtractValue(slice, 1);
         }
 
-        case AK::TypeAlign: return CreateInt(cast<TypeExpr>(expr->operand)->value->align(tu).value());
+        case AK::TypeAlign: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->align(tu).value()));
         case AK::TypeArraySize: return CreateInt(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes());
         case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
         case AK::TypeBytes: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bytes());
@@ -936,12 +936,13 @@ auto CodeGen::EmitValue(const eval::Value& val) -> Value* { // clang-format off
             auto base = self(ref.lvalue);
             return CreatePtrAdd(
                 base,
-                CreateInt(ref.offset * ref.lvalue.type->array_size(tu).bytes())
+                CreateInt(ref.offset * u64(ref.lvalue.type->array_size(tu).bytes())),
+                true
             );
         },
 
         [&](this auto& Self, const eval::Slice& slice) -> Value* {
-            return llvm::ConstantStruct::getAnon(
+            return CreateSlice(
                 Self(slice.data),
                 Self(slice.size)
             );

@@ -32,6 +32,7 @@ public:
     operator llvm::raw_fd_ostream&() { return stream; }
 };
 
+/*
 // Largely copied and adapted from Clang.
 void CodeGen::OptimiseModule(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
     llvm::LoopAnalysisManager LAM;
@@ -164,4 +165,5 @@ int CodeGen::EmitModuleOrProgram(
     );
     return code;
 }
+*/
 

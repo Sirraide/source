@@ -62,7 +62,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
             }
             Unreachable();
         },
-        [&](const IntType* ty) { return Align{std::min<usz>(64, llvm::PowerOf2Ceil(ty->bit_width().bytes()))}; },
+        [&](const IntType* ty) { return Align{u64(std::min<isz>(64, llvm::PowerOf2Ceil(ty->bit_width().bytes())))}; },
         [&](const ProcType*) { return Align{8}; }, // FIXME: Get alignment from context.
         [&](const ReferenceType*) { return Align{8}; }, // FIXME: Get alignment from context.
         [&](const SliceType*) { return Align{8}; }, // FIXME: Get alignment from context.
@@ -284,7 +284,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
         }
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
-            return arr->elem()->array_size(tu) * usz(arr->dimension());
+            return arr->elem()->array_size(tu) * arr->dimension();
         }
 
         case Kind::TemplateType: Unreachable("Requested size of dependent type");

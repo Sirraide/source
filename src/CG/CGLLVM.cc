@@ -3,6 +3,7 @@
 
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 
+/*
 using namespace srcc;
 using namespace srcc::cg;
 
@@ -93,7 +94,7 @@ auto CodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
 }
 
 CGLLVM::CGLLVM(TranslationUnit& tu, llvm::TargetMachine& machine)
-    : CodeGen{tu, Size::Bits(64) /* FIXME: Don’t hard-code this */}, machine{machine},
+    : CodeGen{tu, Size::Bits(64) /* FIXME: Don’t hard-code this #1#}, machine{machine},
       llvm{std::make_unique<llvm::Module>(tu.name, tu.llvm_context)},
       builder{tu.llvm_context},
       IntTy{builder.getInt64Ty()},
@@ -181,3 +182,4 @@ auto CGLLVM::CreateStringSlice(StringRef s) -> SRValue {
 void CGLLVM::CreateUnreachable() {
     builder.CreateUnreachable();
 }
+*/

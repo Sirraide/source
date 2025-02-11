@@ -5,7 +5,7 @@ using namespace srcc;
 using namespace srcc::cg;
 using namespace srcc::cg::ir;
 
-auto ManagedValue::operator new(usz sz, Builder& b) -> void* {
+auto Managed::operator new(usz sz, Builder& b) -> void* {
     return b.Allocate(sz, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
@@ -57,7 +57,7 @@ auto Builder::CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block> {
 }
 
 auto Builder::CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block> {
-    auto b = std::make_unique<Block>();
+    auto b = std::unique_ptr<Block>(new Block);
     append_range(b->arg_types, args);
     for (auto [i, ty] : enumerate(b->arg_types))
         b->args.push_back(new (*this) Argument(b.get(), u32(i), ty));
@@ -103,7 +103,7 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
 }
 
 auto Builder::CreateInt(APInt val) -> Value* {
-    auto m = std::make_unique<LargeInt>(std::move(val), IntType::Get(tu, Size::Bits(val.getBitWidth())));
+    auto m = std::unique_ptr<LargeInt>(new LargeInt(std::move(val), IntType::Get(tu, Size::Bits(val.getBitWidth()))));
     large_ints.push_back(std::move(m));
     return large_ints.back().get();
 }
@@ -220,6 +220,10 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
     return CreateSpecialGetVal<ICast>(to_type, Op::ZExt, to_type, i);
 }
 
+auto Builder::CreateSlice(Value* data, Value* size) -> Slice* {
+    return new (*this) Slice(SliceType::Get(tu, cast<ReferenceType>(data->type())->elem()), data, size);
+}
+
 auto Builder::CreateSMulOverflow(Value* a, Value* b) -> OverflowResult {
     auto i = Create(Op::SMulOv, {a, b});
     return {Result(i, a->type(), 0), Result(i, Types::BoolTy, 1)};
@@ -240,7 +244,7 @@ void Builder::CreateStore(Value* val, Value* ptr) {
 
 auto Builder::CreateString(String s) -> Slice* {
     auto data = new (*this) StringData(s, ReferenceType::Get(tu, tu.StrLitTy->elem()));
-    auto size = CreateInt(s.size(), Types::IntTy);
+    auto size = CreateInt(i64(s.size()), Types::IntTy);
     return new (*this) Slice(tu.StrLitTy, data, size);
 }
 
@@ -269,7 +273,7 @@ auto Builder::CreateXor(Value* a, Value* b) -> Value* {
 auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     auto& proc = procs[s.value()];
     if (proc) return proc.get();
-    proc = std::make_unique<Proc>(s, ty, link);
+    proc = std::unique_ptr<Proc>(new Proc(s, ty, link));
     return proc.get();
 }
 
@@ -279,7 +283,7 @@ auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
 
 bool Block::closed() const {
     if (instructions.empty()) return false;
-    switch (instructions.back()->opcode) {
+    switch (instructions.back()->opcode()) {
         case Op::Br:
         case Op::CondBr:
         case Op::Ret:

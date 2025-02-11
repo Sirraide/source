@@ -15,6 +15,7 @@
 #include <print>
 #include <ranges>
 
+
 using namespace srcc;
 using namespace srcc::eval;
 
@@ -94,7 +95,7 @@ auto Value::value_category() const -> ValueCategory {
 auto LValue::print() const -> SmallUnrenderedString {
     return SmallUnrenderedString("<lvalue>");
 }
-
+/*
 namespace {
 // ============================================================================
 //  Operations
@@ -144,14 +145,14 @@ struct Compiler : DiagsProducer<bool> {
         if (complain) {
             tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
 
-            /*// Print call stack, but take care not to recurse infinitely here.
+            /#1#/ Print call stack, but take care not to recurse infinitely here.
             if (level != Diagnostic::Level::Note) {
                 for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
                     frame.call_loc,
                     "In call to '{}' here",
                     frame.proc.get()->name
                 );
-            }*/
+            }#1#
         }
     }
 
@@ -312,6 +313,12 @@ auto VM::eval(
     Evaluator e{owner(), complain};
     return e.run(stmt->location(), ByteReader{c.code});
 }
+*/
+
+
+
+
+
 
 #pragma clang diagnostic ignored "-Wcomment"
 /*

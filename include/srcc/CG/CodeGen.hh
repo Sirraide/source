@@ -6,9 +6,10 @@
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Macros.hh>
 
+/*
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
-#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetMachine.h>*/
 
 #include <base/Assert.hh>
 
@@ -29,10 +30,9 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
     DenseMap<ProcDecl*, String> mangled_names;
     ir::Proc* curr_proc = nullptr;
 
-protected:
+public:
     CodeGen(TranslationUnit& tu, Size word_size) : Builder{tu}, word_size{word_size} {}
 
-public:
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
@@ -49,17 +49,11 @@ private:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
-    auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
-
     void CreateArithFailure(ir::Value* cond, Tk op, Location loc, String name = "integer overflow");
-
-    /// Create a call expression, splitting arguments into registers as needed.
-    auto CreateCall(ir::Value* callee, ArrayRef<ir::Value*> raw_args);
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        M.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+        tu.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
     auto DeclareAssertFailureHandler() -> ir::Value*;
@@ -152,7 +146,7 @@ private:
 };
 
 
-class srcc::cg::CGLLVM : public CodeGen {
+/*class srcc::cg::CGLLVM : public CodeGen {
     llvm::TargetMachine& machine;
     std::unique_ptr<llvm::Module> llvm;
     StringMap<llvm::Constant*> strings;
@@ -199,9 +193,12 @@ private:
 
     auto GetStringPtr(StringRef s) -> llvm::Constant*;
 
+    auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID;
+    auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes;
+
     template <typename Ty = llvm::Type>
     auto ConvertType(Type ty, bool array_elem = false) -> Ty* { return cast<Ty>(ConvertTypeImpl(ty, array_elem)); }
     auto ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type*;
-};
+};*/
 
 #endif // SRCC_CG_HH

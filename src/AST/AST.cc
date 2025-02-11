@@ -45,8 +45,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
       I16Ty{Type::UnsafeNull()},
       I32Ty{Type::UnsafeNull()},
       I64Ty{Type::UnsafeNull()},
-      I128Ty{Type::UnsafeNull()},
-      StrLitTy{Type::UnsafeNull()} {
+      I128Ty{Type::UnsafeNull()} {
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
     I16Ty = IntType::Get(*this, Size::Bits(16));

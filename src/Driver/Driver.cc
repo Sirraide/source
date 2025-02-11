@@ -302,11 +302,12 @@ int Driver::Impl::run_job() {
     // Don’t try and codegen if there was an error.
     Assert(not opts.verify, "Cannot verify codegen");
     if (ctx.diags().has_error()) return 1;
-    auto ir_module = CodeGen::Emit(*machine, *tu);
+    std::exit(42);
+    /*auto ir_module = cg::CodeGen::Emit(*machine, *tu);
     if (ctx.diags().has_error()) return 1;
 
     // Run the optimiser before potentially dumping the module.
-    if (opts.opt_level) CodeGen::OptimiseModule(*machine, *tu, *ir_module);
+    if (opts.opt_level) cg::CodeGen::OptimiseModule(*machine, *tu, *ir_module);
 
     // Emit LLVM IR, if requested.
     if (a == Action::EmitLLVM) {
@@ -314,13 +315,13 @@ int Driver::Impl::run_job() {
         return 0;
     }
 
-    return CodeGen::EmitModuleOrProgram(
+    return cg::CodeGen::EmitModuleOrProgram(
         *machine,
         *tu,
         *ir_module,
         opts.link_objects,
         opts.output_file_name
-    );
+    );*/
 }
 
 auto Driver::Impl::ParseFile(fs::PathRef path, bool verify) -> ParsedModule* {

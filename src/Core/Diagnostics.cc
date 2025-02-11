@@ -112,7 +112,7 @@ auto FormatDiagnostic(
 
     // Split the line into everything before the range, the range itself,
     // and everything after.
-    std::string before(line_start, col_offs);
+    std::string before(line_start, usz(col_offs));
     std::string range(line_start + col_offs, std::min<u64>(diag.where.len, u64(line_end - (line_start + col_offs))));
     auto after = line_start + col_offs + diag.where.len > line_end
                    ? std::string{}
@@ -533,7 +533,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
             if (relative) comment.drop().trim_front();
 
             // Parse the offset.
-            auto offset = Parse<u64>(comment.take_while(llvm::isDigit));
+            auto offset = Parse<i64>(comment.take_while(llvm::isDigit));
             if (not offset.has_value()) return Error(
                 tok.location,
                 "Invalid line offset in expected diagnostic: '{}'\n",
@@ -551,7 +551,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
             }
 
             // Sanity check.
-            if (where.line < 1 or where.line > usz(where.file->size())) return Error(
+            if (where.line < 1 or where.line > where.file->size()) return Error(
                 tok.location,
                 "Invalid computed line offset in expected diagnostic: '{}'\n",
                 offset.error()

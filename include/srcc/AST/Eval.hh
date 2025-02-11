@@ -27,7 +27,7 @@ class Value;
 class Memory;
 enum struct LifetimeState : u8;
 
-/// Virtual machine used for constant evaluation; one of these is
+/*/// Virtual machine used for constant evaluation; one of these is
 /// created for every translation unit and reused across constant
 /// evaluations.
 class VM {
@@ -89,7 +89,7 @@ public:
 private:
     /// Compile a statement and return a memory buffer containing the byte code.
     auto CompileSingleStmt(Stmt* stmt, bool complain) -> std::optional<ByteBuffer>;
-};
+};*/
 } // namespace srcc::eval
 
 namespace srcc::eval {
@@ -269,5 +269,12 @@ struct std::formatter<srcc::eval::Value> : std::formatter<std::string_view> {
         return std::formatter<std::string_view>::format(std::string_view{val.print().str()}, ctx);
     }
 };
+
+namespace srcc::eval {
+[[deprecated("Remove this and implement a proper VM")]]
+inline std::optional<Value> Evaluate(TranslationUnit&, Stmt*, bool complain = true) {
+    if (complain) std::println(stderr, "TODO: Implement VM");
+    return std::nullopt;
+}}
 
 #endif // SRCC_AST_EVAL_HH

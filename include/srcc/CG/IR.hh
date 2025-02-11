@@ -97,13 +97,14 @@ public:
     [[nodiscard]] auto type() const { return ty; }
 };
 
-class ManagedValue : public Value {
-protected:
-    ManagedValue(Kind k, Type ty) : Value{k, ty} {}
-
-public:
+struct Managed {
     void* operator new(usz) = delete;
     void* operator new(usz, Builder&);
+};
+
+class ManagedValue : public Value, public Managed {
+protected:
+    ManagedValue(Kind k, Type ty) : Value{k, ty} {}
 };
 
 class BuiltinConstant : public ManagedValue {
@@ -191,13 +192,13 @@ public:
 
 /// Instructions don’t have types because they don’t correspond to values; rather
 /// an instruction can have multiple result values.
-class Inst {
-    friend TrailingObjects;
+class Inst : public Managed {
     friend Builder;
 
     const Op op;
     ArrayRef<Value*> arguments;
 
+protected:
     Inst(Builder& b, Op op, ArrayRef<Value*> args);
 
 public:
@@ -242,8 +243,8 @@ class MemInst : public Inst {
     Type mem_type;
     Align alignment;
 
-    MemInst(Builder& b, Op op, Type mem_type, Align alignment, ArrayRef<Value*> args)
-        : Inst{b, op, args}, mem_type{mem_type}, alignment{alignment} {}
+    MemInst(Builder& b, Op op, Type mem_type, Align alignment, Value* ptr, Value* val = nullptr)
+        : Inst{b, op, val ? ArrayRef{ptr, val} : ArrayRef{ptr}}, mem_type{mem_type}, alignment{alignment} {}
 
 public:
     [[nodiscard]] auto align() const { return alignment; }
@@ -405,6 +406,7 @@ public:
     auto CreateSelect(Value* cond, Value* then_val, Value* else_val) -> Value*;
     auto CreateShl(Value* a, Value* b) -> Value*;
     auto CreateSICast(Value* i, Type to_type) -> Value*;
+    auto CreateSlice(Value* data, Value* size) -> Slice*;
     auto CreateSMulOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSRem(Value* a, Value* b) -> Value*;
     auto CreateSSubOverflow(Value* a, Value* b) -> OverflowResult;

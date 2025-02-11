@@ -231,7 +231,7 @@ public:
 private:
     struct DecodedLocation {
         const File* file;
-        usz line;
+        i64 line;
         constexpr auto operator<=>(const DecodedLocation&) const = default;
     };
 

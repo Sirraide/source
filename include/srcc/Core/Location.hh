@@ -12,14 +12,14 @@ struct LocInfoShort;
 
 /// A short decoded source location.
 struct srcc::LocInfoShort {
-    usz line;
-    usz col;
+    i64 line;
+    i64 col;
 };
 
 /// A decoded source location.
 struct srcc::LocInfo {
-    usz line;
-    usz col;
+    i64 line;
+    i64 col;
     const char* line_start;
     const char* line_end;
 
