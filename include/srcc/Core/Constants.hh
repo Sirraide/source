@@ -2,11 +2,18 @@
 #define SRCC_CORE_CONSTANTS_HH
 
 #include <srcc/Core/Utils.hh>
+#include <array>
 
 namespace srcc::constants {
 constexpr String ProgramEntryPoint = "__src_main";
 constexpr String ModuleEntryPointPrefix = "__src_static_init.";
 constexpr String ModuleSectionNamePrefix = ".__src_module_description.";
+constexpr String AssertFailureHandlerName = "__src_assert_fail";
+constexpr String ArithmeticFailureHandlerName = "__src_int_arith_error";
+constexpr std::array AbortHandlers{
+    AssertFailureHandlerName,
+    ArithmeticFailureHandlerName,
+};
 
 auto EntryPointName(StringRef ModuleName) -> std::string;
 auto ModuleDescriptionSectionName(StringRef ModuleName) -> std::string;

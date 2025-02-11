@@ -33,6 +33,8 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
     DenseMap<ProcDecl*, String> mangled_names;
     ir::Proc* curr_proc = nullptr;
 
+    struct InvertTy {} static constexpr Invert;
+
 public:
     CodeGen(TranslationUnit& tu, Size word_size) : Builder{tu}, word_size{word_size} {}
 
@@ -61,7 +63,7 @@ private:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    void CreateArithFailure(ir::Value* cond, Tk op, Location loc, String name = "integer overflow");
+    void CreateArithFailure(ir::Value* failure_cond, Tk op, Location loc, String name = "integer overflow");
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -149,6 +151,12 @@ private:
 
     /// Initialise a variable or memory location.
     void PerformVariableInitialisation(ir::Value* addr, Expr* init);
+
+    /// Opposite of If().
+    void Unless(
+        ir::Value* cond,
+        llvm::function_ref<void()> emit_else
+    );
 
     /// Create a while loop.
     void While(

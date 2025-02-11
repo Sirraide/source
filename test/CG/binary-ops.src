@@ -1,4 +1,4 @@
-// R %srcc --llvm %s
+// R %srcc --ir %s
 program test;
 
 proc sink (in int) {}
@@ -47,318 +47,227 @@ proc exp (in int a, in int b) {
     sink(a ** b);
 }
 
-// * define private fastcc void @_S13arith_checkedFviiE(i64 %0, i64 %1) {
+// * proc _S13arith_checkedFvxixiE (in int %0, in int %1) {
 // + entry:
-// +   %2 = alloca i64, align 8
-// +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 8
-// +   store i64 %1, ptr %3, align 8
-// +   %l2sr = load i64, ptr %2, align 8
-// +   %l2sr1 = load i64, ptr %3, align 8
-// +   %4 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %l2sr, i64 %l2sr1)
-// +   %5 = extractvalue { i64, i1 } %4, 1
-// +   br i1 %5, label %6, label %7
+// +     %2 = sadd ov %0, %1
+// +     br %2:1 to bb1 else bb2
 // +
-// + 6:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 8, i64 10, { ptr, i64 } { ptr @1, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb1:
+// re+   abort at .* __src_int_arith_error(s"+", s"integer overflow")
 // +
-// + 7:
-// +   %8 = extractvalue { i64, i1 } %4, 0
-// +   call fastcc void @_S4sinkFviE(i64 %8)
-// +   %l2sr2 = load i64, ptr %2, align 8
-// +   %l2sr3 = load i64, ptr %3, align 8
-// +   %9 = call { i64, i1 } @llvm.ssub.with.overflow.i64(i64 %l2sr2, i64 %l2sr3)
-// +   %10 = extractvalue { i64, i1 } %9, 1
-// +   br i1 %10, label %11, label %12
+// + bb2:
+// +     call void _S4sinkFvxiE(%2:0)
+// +     %3 = ssub ov %0, %1
+// +     br %3:1 to bb3 else bb4
 // +
-// + 11:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 9, i64 10, { ptr, i64 } { ptr @3, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb3:
+// re+   abort at .* __src_int_arith_error(s"-", s"integer overflow")
 // +
-// + 12:
-// +   %13 = extractvalue { i64, i1 } %9, 0
-// +   call fastcc void @_S4sinkFviE(i64 %13)
-// +   %l2sr4 = load i64, ptr %2, align 8
-// +   %l2sr5 = load i64, ptr %3, align 8
-// +   %14 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %l2sr4, i64 %l2sr5)
-// +   %15 = extractvalue { i64, i1 } %14, 1
-// +   br i1 %15, label %16, label %17
+// + bb4:
+// +     call void _S4sinkFvxiE(%3:0)
+// +     %4 = smul ov %0, %1
+// +     br %4:1 to bb5 else bb6
 // +
-// + 16:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 10, i64 10, { ptr, i64 } { ptr @4, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb5:
+// re+   abort at .* __src_int_arith_error(s"*", s"integer overflow")
 // +
-// + 17:
-// +   %18 = extractvalue { i64, i1 } %14, 0
-// +   call fastcc void @_S4sinkFviE(i64 %18)
-// +   %l2sr6 = load i64, ptr %2, align 8
-// +   %l2sr7 = load i64, ptr %3, align 8
-// +   %19 = icmp eq i64 %l2sr7, 0
-// +   br i1 %19, label %20, label %21
+// + bb6:
+// +     call void _S4sinkFvxiE(%4:0)
+// +     %5 = icmp eq %1, int 0
+// +     br %5 to bb7 else bb8
 // +
-// + 20:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 12, i64 10, { ptr, i64 } { ptr @5, i64 1 }, { ptr, i64 } { ptr @6, i64 16 })
-// +   unreachable
+// + bb7:
+// re+   abort at .* __src_int_arith_error(s"/", s"division by zero")
 // +
-// + 21:
-// +   %22 = icmp eq i64 %l2sr6, -9223372036854775808
-// +   %23 = icmp eq i64 %l2sr7, -1
-// +   %24 = and i1 %22, %23
-// +   br i1 %24, label %25, label %26
+// + bb8:
+// +     %6 = icmp eq %0, int -9223372036854775808
+// +     %7 = icmp eq %1, int -1
+// +     %8 = and %6, %7
+// +     br %8 to bb9 else bb10
 // +
-// + 25:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 12, i64 10, { ptr, i64 } { ptr @5, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb9:
+// re+   abort at .* __src_int_arith_error(s"/", s"integer overflow")
 // +
-// + 26:
-// +   %27 = sdiv i64 %l2sr6, %l2sr7
-// +   call fastcc void @_S4sinkFviE(i64 %27)
-// +   %l2sr8 = load i64, ptr %2, align 8
-// +   %l2sr9 = load i64, ptr %3, align 8
-// +   %28 = icmp eq i64 %l2sr9, 0
-// +   br i1 %28, label %29, label %30
+// + bb10:
+// +     %9 = sdiv %0, %1
+// +     call void _S4sinkFvxiE(%9)
+// +     %10 = icmp eq %1, int 0
+// +     br %10 to bb11 else bb12
 // +
-// + 29:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 13, i64 10, { ptr, i64 } { ptr @7, i64 1 }, { ptr, i64 } { ptr @6, i64 16 })
-// +   unreachable
+// + bb11:
+// re+   abort at .* __src_int_arith_error(s"%", s"division by zero")
 // +
-// + 30:
-// +   %31 = icmp eq i64 %l2sr8, -9223372036854775808
-// +   %32 = icmp eq i64 %l2sr9, -1
-// +   %33 = and i1 %31, %32
-// +   br i1 %33, label %34, label %35
+// + bb12:
+// +     %11 = icmp eq %0, int -9223372036854775808
+// +     %12 = icmp eq %1, int -1
+// +     %13 = and %11, %12
+// +     br %13 to bb13 else bb14
 // +
-// + 34:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 13, i64 10, { ptr, i64 } { ptr @7, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb13:
+// re+   abort at .* __src_int_arith_error(s"%", s"integer overflow")
 // +
-// + 35:
-// +   %36 = srem i64 %l2sr8, %l2sr9
-// +   call fastcc void @_S4sinkFviE(i64 %36)
-// +   %l2sr10 = load i64, ptr %2, align 8
-// +   %l2sr11 = load i64, ptr %3, align 8
-// +   %37 = icmp eq i64 %l2sr11, 0
-// +   br i1 %37, label %38, label %39
+// + bb14:
+// +     %14 = srem %0, %1
+// +     call void _S4sinkFvxiE(%14)
+// +     %15 = icmp eq %1, int 0
+// +     br %15 to bb15 else bb16
 // +
-// + 38:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 14, i64 10, { ptr, i64 } { ptr @8, i64 2 }, { ptr, i64 } { ptr @6, i64 16 })
-// +   unreachable
+// + bb15:
+// re+   abort at .* __src_int_arith_error(s":/", s"division by zero")
 // +
-// + 39:
-// +   %40 = udiv i64 %l2sr10, %l2sr11
-// +   call fastcc void @_S4sinkFviE(i64 %40)
-// +   %l2sr12 = load i64, ptr %2, align 8
-// +   %l2sr13 = load i64, ptr %3, align 8
-// +   %41 = icmp eq i64 %l2sr13, 0
-// +   br i1 %41, label %42, label %43
+// + bb16:
+// +     %16 = udiv %0, %1
+// +     call void _S4sinkFvxiE(%16)
+// +     %17 = icmp eq %1, int 0
+// +     br %17 to bb17 else bb18
 // +
-// + 42:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 15, i64 10, { ptr, i64 } { ptr @9, i64 2 }, { ptr, i64 } { ptr @6, i64 16 })
-// +   unreachable
+// + bb17:
+// re+   abort at .* __src_int_arith_error(s":%", s"division by zero")
 // +
-// + 43:
-// +   %44 = urem i64 %l2sr12, %l2sr13
-// +   call fastcc void @_S4sinkFviE(i64 %44)
-// +   %l2sr14 = load i64, ptr %2, align 8
-// +   %l2sr15 = load i64, ptr %3, align 8
-// +   %45 = icmp uge i64 %l2sr15, 64
-// +   br i1 %45, label %46, label %47
+// + bb18:
+// +     %18 = urem %0, %1
+// +     call void _S4sinkFvxiE(%18)
+// +     %19 = icmp uge %1, int 64
+// +     br %19 to bb19 else bb20
 // +
-// + 46:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 17, i64 10, { ptr, i64 } { ptr @10, i64 2 }, { ptr, i64 } { ptr @11, i64 30 })
-// +   unreachable
+// + bb19:
+// re+   abort at .* __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
 // +
-// + 47:
-// +   %48 = shl i64 %l2sr14, %l2sr15
-// +   %49 = ashr i64 %l2sr14, 63
-// +   %50 = ashr i64 %48, 63
-// +   %51 = icmp ne i64 %49, %50
-// +   br i1 %51, label %52, label %53
+// + bb20:
+// +     %20 = shl %0, %1
+// +     %21 = ashr %0, int 63
+// +     %22 = ashr %20, int 63
+// +     %23 = icmp ne %21, %22
+// +     br %23 to bb21 else bb22
 // +
-// + 52:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 17, i64 10, { ptr, i64 } { ptr @10, i64 2 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb21:
+// re+   abort at .* __src_int_arith_error(s"<<", s"integer overflow")
 // +
-// + 53:
-// +   call fastcc void @_S4sinkFviE(i64 %48)
-// +   %l2sr16 = load i64, ptr %2, align 8
-// +   %l2sr17 = load i64, ptr %3, align 8
-// +   %54 = icmp uge i64 %l2sr17, 64
-// +   br i1 %54, label %55, label %56
+// + bb22:
+// +     call void _S4sinkFvxiE(%20)
+// +     %24 = icmp uge %1, int 64
+// +     br %24 to bb23 else bb24
 // +
-// + 55:
-// +   call void @__src_int_arith_error({ ptr, i64 } { ptr @0, i64 47 }, i64 18, i64 10, { ptr, i64 } { ptr @12, i64 3 }, { ptr, i64 } { ptr @11, i64 30 })
-// +   unreachable
+// + bb23:
+// re+   abort at .* __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
 // +
-// + 56:
-// +   %57 = shl i64 %l2sr16, %l2sr17
-// +   call fastcc void @_S4sinkFviE(i64 %57)
-// +   ret void
+// + bb24:
+// +     %25 = shl %0, %1
+// +     call void _S4sinkFvxiE(%25)
+// +     ret
 // + }
 
-// * define private fastcc void @_S5arithFviiE(i64 %0, i64 %1) {
+// * proc _S5arithFvxixiE (in int %0, in int %1) {
 // + entry:
-// +   %2 = alloca i64, align 8
-// +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 8
-// +   store i64 %1, ptr %3, align 8
-// +   %l2sr = load i64, ptr %2, align 8
-// +   %l2sr1 = load i64, ptr %3, align 8
-// +   %4 = add i64 %l2sr, %l2sr1
-// +   call fastcc void @_S4sinkFviE(i64 %4)
-// +   %l2sr2 = load i64, ptr %2, align 8
-// +   %l2sr3 = load i64, ptr %3, align 8
-// +   %5 = sub i64 %l2sr2, %l2sr3
-// +   call fastcc void @_S4sinkFviE(i64 %5)
-// +   %l2sr4 = load i64, ptr %2, align 8
-// +   %l2sr5 = load i64, ptr %3, align 8
-// +   %6 = mul i64 %l2sr4, %l2sr5
-// +   call fastcc void @_S4sinkFviE(i64 %6)
-// +   %l2sr6 = load i64, ptr %2, align 8
-// +   %l2sr7 = load i64, ptr %3, align 8
-// +   %7 = ashr i64 %l2sr6, %l2sr7
-// +   call fastcc void @_S4sinkFviE(i64 %7)
-// +   %l2sr8 = load i64, ptr %2, align 8
-// +   %l2sr9 = load i64, ptr %3, align 8
-// +   %8 = lshr i64 %l2sr8, %l2sr9
-// +   call fastcc void @_S4sinkFviE(i64 %8)
-// +   %l2sr10 = load i64, ptr %2, align 8
-// +   %l2sr11 = load i64, ptr %3, align 8
-// +   %9 = and i64 %l2sr10, %l2sr11
-// +   call fastcc void @_S4sinkFviE(i64 %9)
-// +   %l2sr12 = load i64, ptr %2, align 8
-// +   %l2sr13 = load i64, ptr %3, align 8
-// +   %10 = or i64 %l2sr12, %l2sr13
-// +   call fastcc void @_S4sinkFviE(i64 %10)
-// +   %l2sr14 = load i64, ptr %2, align 8
-// +   %l2sr15 = load i64, ptr %3, align 8
-// +   %slt = icmp slt i64 %l2sr14, %l2sr15
-// +   call fastcc void @_S4sinkFvbE(i1 %slt)
-// +   %l2sr16 = load i64, ptr %2, align 8
-// +   %l2sr17 = load i64, ptr %3, align 8
-// +   %sle = icmp sle i64 %l2sr16, %l2sr17
-// +   call fastcc void @_S4sinkFvbE(i1 %sle)
-// +   %l2sr18 = load i64, ptr %2, align 8
-// +   %l2sr19 = load i64, ptr %3, align 8
-// +   %sgt = icmp sgt i64 %l2sr18, %l2sr19
-// +   call fastcc void @_S4sinkFvbE(i1 %sgt)
-// +   %l2sr20 = load i64, ptr %2, align 8
-// +   %l2sr21 = load i64, ptr %3, align 8
-// +   %sge = icmp sge i64 %l2sr20, %l2sr21
-// +   call fastcc void @_S4sinkFvbE(i1 %sge)
-// +   %l2sr22 = load i64, ptr %2, align 8
-// +   %l2sr23 = load i64, ptr %3, align 8
-// +   %ult = icmp ult i64 %l2sr22, %l2sr23
-// +   call fastcc void @_S4sinkFvbE(i1 %ult)
-// +   %l2sr24 = load i64, ptr %2, align 8
-// +   %l2sr25 = load i64, ptr %3, align 8
-// +   %ule = icmp ule i64 %l2sr24, %l2sr25
-// +   call fastcc void @_S4sinkFvbE(i1 %ule)
-// +   %l2sr26 = load i64, ptr %2, align 8
-// +   %l2sr27 = load i64, ptr %3, align 8
-// +   %ugt = icmp ugt i64 %l2sr26, %l2sr27
-// +   call fastcc void @_S4sinkFvbE(i1 %ugt)
-// +   %l2sr28 = load i64, ptr %2, align 8
-// +   %l2sr29 = load i64, ptr %3, align 8
-// +   %uge = icmp uge i64 %l2sr28, %l2sr29
-// +   call fastcc void @_S4sinkFvbE(i1 %uge)
-// +   %l2sr30 = load i64, ptr %2, align 8
-// +   %l2sr31 = load i64, ptr %3, align 8
-// +   %eq = icmp eq i64 %l2sr30, %l2sr31
-// +   call fastcc void @_S4sinkFvbE(i1 %eq)
-// +   %l2sr32 = load i64, ptr %2, align 8
-// +   %l2sr33 = load i64, ptr %3, align 8
-// +   %ne = icmp ne i64 %l2sr32, %l2sr33
-// +   call fastcc void @_S4sinkFvbE(i1 %ne)
-// +   ret void
+// +     %2 = add %0, %1
+// +     call void _S4sinkFvxiE(%2)
+// +     %3 = sub %0, %1
+// +     call void _S4sinkFvxiE(%3)
+// +     %4 = imul %0, %1
+// +     call void _S4sinkFvxiE(%4)
+// +     %5 = ashr %0, %1
+// +     call void _S4sinkFvxiE(%5)
+// +     %6 = lshr %0, %1
+// +     call void _S4sinkFvxiE(%6)
+// +     %7 = and %0, %1
+// +     call void _S4sinkFvxiE(%7)
+// +     %8 = or %0, %1
+// +     call void _S4sinkFvxiE(%8)
+// +     %9 = icmp slt %0, %1
+// +     call void _S4sinkFvxbE(%9)
+// +     %10 = icmp sle %0, %1
+// +     call void _S4sinkFvxbE(%10)
+// +     %11 = icmp sgt %0, %1
+// +     call void _S4sinkFvxbE(%11)
+// +     %12 = icmp sge %0, %1
+// +     call void _S4sinkFvxbE(%12)
+// +     %13 = icmp ult %0, %1
+// +     call void _S4sinkFvxbE(%13)
+// +     %14 = icmp ule %0, %1
+// +     call void _S4sinkFvxbE(%14)
+// +     %15 = icmp ugt %0, %1
+// +     call void _S4sinkFvxbE(%15)
+// +     %16 = icmp uge %0, %1
+// +     call void _S4sinkFvxbE(%16)
+// +     %17 = icmp eq %0, %1
+// +     call void _S4sinkFvxbE(%17)
+// +     %18 = icmp ne %0, %1
+// +     call void _S4sinkFvxbE(%18)
+// +     ret
 // + }
 
-// * define private fastcc void @_S3expFviiE(i64 %0, i64 %1) {
+// * proc _S3expFvxixiE (in int %0, in int %1) {
 // + entry:
-// +   %2 = alloca i64, align 8
-// +   %3 = alloca i64, align 8
-// +   store i64 %0, ptr %2, align 8
-// +   store i64 %1, ptr %3, align 8
-// +   %l2sr = load i64, ptr %2, align 8
-// +   %l2sr1 = load i64, ptr %3, align 8
-// +   %4 = call i64 @__srcc_exp_i64(i64 %l2sr, i64 %l2sr1)
-// +   call fastcc void @_S4sinkFviE(i64 %4)
-// +   ret void
+// +     %2 = call int __srcc_exp_i64(%0, %1)
+// +     call void _S4sinkFvxiE(%2)
+// +     ret
 // + }
-
-// * define private fastcc i64 @__srcc_exp_i64(i64 %0, i64 %1) #2 {
+// +
+// + proc __srcc_exp_i64 (in int %0, in int %1) -> int {
 // + entry:
-// +   %2 = icmp eq i64 %1, 0
-// +   br i1 %2, label %3, label %4
+// +     %2 = icmp eq %1, int 0
+// +     br %2 to bb1 else bb2
 // +
-// + 3:
-// +   ret i64 1
+// + bb1:
+// +     ret int 1
 // +
-// + 4:
-// +   %5 = icmp eq i64 %0, 0
-// +   br i1 %5, label %6, label %10
+// + bb2:
+// +     %3 = icmp eq %0, int 0
+// +     br %3 to bb3 else bb6
 // +
-// + 6:
-// +   %7 = icmp slt i64 %1, 0
-// +   br i1 %7, label %8, label %9
+// + bb3:
+// +     %4 = icmp slt %1, int 0
+// +     br %4 to bb4 else bb5
 // +
-// + 8:
-// +   call void @__src_int_arith_error({ ptr, i64 } zeroinitializer, i64 0, i64 0, { ptr, i64 } { ptr @13, i64 2 }, { ptr, i64 } { ptr @6, i64 16 })
-// +   unreachable
+// + bb4:
+// +     abort at <<builtin>:0:0> __src_int_arith_error(s"**", s"attempting to raise 0 to a negative power")
 // +
-// + 9:
-// +   ret i64 0
+// + bb5:
+// +     ret int 0
 // +
-// + 10:
-// +   %11 = icmp slt i64 %1, 0
-// +   br i1 %11, label %12, label %20
+// + bb6:
+// +     %5 = icmp slt %1, int 0
+// +     br %5 to bb7 else bb10
 // +
-// + 12:
-// +   %13 = icmp eq i64 %0, -1
-// +   br i1 %13, label %14, label %17
+// + bb7:
+// +     %6 = icmp eq %0, int -1
+// +     br %6 to bb8 else bb9
 // +
-// + 14:
-// +   %15 = trunc i64 %1 to i1
-// +   %16 = select i1 %15, i64 -1, i64 1
-// +   ret i64 %16
+// + bb8:
+// +     %7 = trunc %1 to i1
+// +     %8 = select %7, int -1, int 1
+// +     ret %8
 // +
-// + 17:
-// +   %18 = icmp eq i64 %0, 1
-// +   %19 = select i1 %18, i64 1, i64 0
-// +   ret i64 %19
+// + bb9:
+// +     %9 = icmp eq %0, int 1
+// +     %10 = select %9, int 1, int 0
+// +     ret %10
 // +
-// + 20:
-// +   %21 = icmp eq i64 %0, -9223372036854775808
-// +   br i1 %21, label %22, label %23
+// + bb10:
+// +     %11 = icmp eq %0, int -9223372036854775808
+// +     br %11 to bb11 else bb12
 // +
-// + 22:
-// +   call void @__src_int_arith_error({ ptr, i64 } zeroinitializer, i64 0, i64 0, { ptr, i64 } { ptr @13, i64 2 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb11:
+// +     abort at <<builtin>:0:0> __src_int_arith_error(s"**", s"integer overflow")
 // +
-// + 23:
-// +   br label %24
+// + bb12:
+// +     br bb13(%0, %1)
 // +
-// + 24:
-// +   %25 = phi i64 [ %0, %23 ], [ %34, %33 ]
-// +   %26 = phi i64 [ %1, %23 ], [ %35, %33 ]
-// +   %27 = icmp eq i64 %26, 0
-// +   br i1 %27, label %28, label %29
+// + bb13(int %12, int %13):
+// +     %14 = icmp eq %13, int 0
+// +     br %14 to bb14 else bb15
 // +
-// + 28:
-// +   ret i64 %25
+// + bb14:
+// +     ret %12
 // +
-// + 29:
-// +   %30 = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 %25, i64 %0)
-// +   %31 = extractvalue { i64, i1 } %30, 1
-// +   br i1 %31, label %32, label %33
+// + bb15:
+// +     %15 = smul ov %12, %0
+// +     br %15:1 to bb16 else bb17
 // +
-// + 32:
-// +   call void @__src_int_arith_error({ ptr, i64 } zeroinitializer, i64 0, i64 0, { ptr, i64 } { ptr @4, i64 1 }, { ptr, i64 } { ptr @2, i64 16 })
-// +   unreachable
+// + bb16:
+// +     abort at <<builtin>:0:0> __src_int_arith_error(s"*", s"integer overflow")
 // +
-// + 33:
-// +   %34 = extractvalue { i64, i1 } %30, 0
-// +   %35 = sub i64 %26, 1
-// +   br label %24
+// + bb17:
+// +     %16 = sub %13, int 1
+// +     br bb13(%15:0, %16)
 // + }

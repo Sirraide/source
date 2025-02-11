@@ -9,91 +9,15 @@ using namespace srcc::cg;
 using ir::Value;
 using ir::Block;
 
-void CodeGen::CreateArithFailure(Value* cond, Tk op, Location loc, String name) {
-    If(cond, [&] {
-        // Get file, line, and column. Don’t require a valid location here as
-        // this is also called from within implicitly generated code.
-        Value *file, *line, *col;
-        if (auto lc = loc.seek_line_column(tu.context())) {
-            file = CreateString(tu.context().file(loc.file_id)->name());
-            line = CreateInt(i64(lc->line));
-            col = CreateInt(i64(lc->col));
-        } else {
-            file = CreateNil(tu.StrLitTy);
-            line = CreateInt(0);
-            col = CreateInt(0);
-        }
-
-        // Emit the failure handler.
-        auto handler = DeclareArithmeticFailureHandler();
+void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, String name) {
+    If(failure_cond, [&] {
         auto op_token = CreateString(Spelling(op));
         auto operation = CreateString(name);
-        CreateCall(handler, {file, line, col, op_token, operation});
-        CreateUnreachable();
+        CreateAbort(constants::ArithmeticFailureHandlerName, loc, op_token, operation);
     });
 }
 
-auto CodeGen::DeclareAssertFailureHandler() -> Value* {
-    if (not assert_handler) {
-        // proc __src_assert_fail (
-        //     u8[] file,
-        //     int line,
-        //     int col,
-        //     u8[] cond,
-        //     u8[] message
-        // ) -> noreturn
-        //
-        // TODO: Declare this in the preamble.
-        assert_handler = GetOrCreateProc(
-            "__src_assert_fail",
-            Linkage::Imported,
-            ProcType::Get(
-                tu,
-                Types::NoReturnTy,
-                {
-                    {Intent::In, tu.StrLitTy},
-                    {Intent::In, Types::IntTy},
-                    {Intent::In, Types::IntTy},
-                    {Intent::In, tu.StrLitTy},
-                    {Intent::In, tu.StrLitTy},
-                }
-            )
-        );
-    }
-
-    return assert_handler.value();
-}
-
-auto CodeGen::DeclareArithmeticFailureHandler() -> Value* {
-    if (not overflow_handler) {
-        // proc __src_int_arith_error (
-        //    u8[] file,
-        //    int line,
-        //    int col,
-        //    u8[] operator,
-        //    u8[] operation,
-        // ) -> noreturn
-        overflow_handler = GetOrCreateProc(
-            "__src_int_arith_error",
-            Linkage::Imported,
-            ProcType::Get(
-                tu,
-                Types::NoReturnTy,
-                {
-                    {Intent::In, tu.StrLitTy},
-                    {Intent::In, Types::IntTy},
-                    {Intent::In, Types::IntTy},
-                    {Intent::In, tu.StrLitTy},
-                    {Intent::In, tu.StrLitTy},
-                }
-            )
-        );
-    }
-
-    return overflow_handler.value();
-}
-
-auto CodeGen::DeclarePrintf() -> ir::Value* {
+auto CodeGen::DeclarePrintf() -> Value* {
     if (not printf) {
         printf = GetOrCreateProc(
             "printf",
@@ -299,6 +223,21 @@ void CodeGen::Loop(
     if (not insert_point->closed()) CreateBr(bb_cond, vals);
 }
 
+void CodeGen::Unless(Value* cond, llvm::function_ref<void()> emit_else) {
+    // Create the blocks and branch to the body.
+    auto else_ = CreateBlock();
+    auto join = CreateBlock();
+    CreateCondBr(cond, {join, {}}, {else_, {}});
+
+    // Emit the body and close the block.
+    EnterBlock(std::move(else_));
+    emit_else();
+    if (not insert_point->closed()) CreateBr(join.get(), {});
+
+    // Add the join block.
+    EnterBlock(std::move(join));
+}
+
 void CodeGen::While(
     llvm::function_ref<Value*()> emit_cond,
     llvm::function_ref<void()> emit_body
@@ -499,22 +438,12 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
         return {};
     }
 
-    If(Emit(expr->cond), [&] {
-        // Emit failure handler and args.
-        auto failure_handler = DeclareAssertFailureHandler();
-        auto file = CreateString(tu.context().file(expr->location().file_id)->name());
-        auto line = CreateInt(loc->line);
-        auto col = CreateInt(loc->col);
-        auto cond_str = CreateString(expr->cond->location().text(tu.context()));
-
-        // Emit the message if there is one.
+    Unless(Emit(expr->cond), [&] {
         Value* msg{};
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateNil(tu.StrLitTy);
-
-        // Call it.
-        CreateCall(failure_handler, {file, line, col, cond_str, msg});
-        CreateUnreachable();
+        auto cond_str = CreateString(expr->cond->location().text(tu.context()));
+        CreateAbort(constants::AssertFailureHandlerName, expr->location(), cond_str, msg);
     });
 
     return {};

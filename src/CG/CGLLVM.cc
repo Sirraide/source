@@ -25,6 +25,8 @@ class cg::LLVMCodeGen : DiagsProducer<std::nullptr_t>, llvm::IRBuilder<> {
     llvm::StructType* const SliceTy;
     llvm::StructType* const ClosureTy;
     llvm::Type* const VoidTy;
+    llvm::FunctionType* const AbortHandlerTy;
+    StringMap<llvm::FunctionCallee> abort_handlers;
 
     struct BlockInfo {
         llvm::BasicBlock* block;
@@ -50,6 +52,8 @@ private:
     auto DeclareProc(ir::Proc* proc) -> llvm::FunctionCallee;
     auto Emit(ir::Inst& i) -> llvm::Value*;
     auto Emit(ir::Value* v) -> llvm::Value*;
+    auto InternStringPtr(StringRef value) -> llvm::Constant*;
+    auto MakeInt(i64 value) -> llvm::ConstantInt*;
 };
 
 LLVMCodeGen::LLVMCodeGen(llvm::TargetMachine& target, CodeGen& cg)
@@ -62,9 +66,19 @@ LLVMCodeGen::LLVMCodeGen(llvm::TargetMachine& target, CodeGen& cg)
       FFIIntTy{llvm::Type::getIntNTy(cg.tu.llvm_context, 32)}, // FIXME: Get size from target.
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
-      VoidTy{getVoidTy()} {
+      VoidTy{getVoidTy()},
+      AbortHandlerTy{llvm::FunctionType::get(VoidTy, {SliceTy, IntTy, IntTy, SliceTy, SliceTy}, false)} {
     llvm->setTargetTriple(machine.getTargetTriple().str());
     llvm->setDataLayout(machine.createDataLayout());
+
+    // Create abort handlers.
+    for (auto a : constants::AbortHandlers) {
+        auto callee = abort_handlers[a] = llvm->getOrInsertFunction(a, AbortHandlerTy);
+        auto h = cast<llvm::Function>(callee.getCallee());
+        h->setDoesNotReturn();
+        h->setDoesNotThrow();
+        h->setCallingConv(llvm::CallingConv::Fast);
+    }
 }
 
 auto CodeGen::emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module> {
@@ -243,6 +257,30 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         using ir::Op;
 
         // Special instructions.
+        case Op::Abort: {
+            auto a = cast<ir::AbortInst>(i);
+            SmallVector<llvm::Value*> args;
+
+            // Get file, line, and column. Don’t require a valid location here as
+            // this is also called from within implicitly generated code.
+            if (auto lc = a.location().seek_line_column(cg.tu.context())) {
+                auto name = cg.tu.context().file(a.location().file_id)->name();
+                args.push_back(llvm::ConstantStruct::get(SliceTy, {InternStringPtr(name), MakeInt(i64(name.size()))}));
+                args.push_back(MakeInt(i64(lc->line)));
+                args.push_back(MakeInt(i64(lc->col)));
+            } else {
+                args.push_back(llvm::Constant::getNullValue(SliceTy));
+                args.push_back(MakeInt(0));
+                args.push_back(MakeInt(0));
+            }
+
+            for (auto arg : a.args()) args.push_back(Emit(arg));
+            auto c = CreateCall(abort_handlers.at(a.handler_name()), args);
+            c->setCallingConv(llvm::CallingConv::Fast);
+            CreateUnreachable();
+            return {};
+        }
+
         case Op::Alloca: {
             auto ty = cast<ir::Alloca>(i).allocated_type();
             auto a = CreateAlloca(ConvertTypeForMem(ty));
@@ -408,12 +446,18 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             return getIntN(u32(i->type()->size(cg.tu).bits()), u64(i->value()));
         }
 
-        case K::StringData: {
-            auto s = cast<ir::StringData>(v)->value();
-            if (auto it = strings.find(s); it != strings.end()) return it->second;
-            return strings[s] = CreateGlobalString(s);
-        }
+        case K::StringData:
+            return InternStringPtr(cast<ir::StringData>(v)->value());
     }
 
     Unreachable("Invalid value kind: {}", +v->kind());
+}
+
+auto LLVMCodeGen::InternStringPtr(StringRef value) -> llvm::Constant* {
+    if (auto it = strings.find(value); it != strings.end()) return it->second;
+    return strings[value] = CreateGlobalString(value);
+}
+
+auto LLVMCodeGen::MakeInt(i64 value) -> llvm::ConstantInt* {
+    return llvm::ConstantInt::get(IntTy, u64(value));
 }

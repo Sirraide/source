@@ -32,6 +32,10 @@ auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> Value* {
     return new (*this) InstValue(Create(op, vals), ty, 0);
 }
 
+void Builder::CreateAbort(String handler, Location loc, Value* msg1, Value* msg2)  {
+    CreateImpl<AbortInst>(handler, loc, ArrayRef{msg1, msg2});
+}
+
 auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
     auto add = CreateAndGetVal(Op::Add, a->type(), {a, b});
     add->nowrap = nowrap;
@@ -290,6 +294,7 @@ auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
 bool Block::closed() const {
     if (insts.empty()) return false;
     switch (insts.back()->opcode()) {
+        case Op::Abort:
         case Op::Br:
         case Op::Ret:
         case Op::Unreachable:
@@ -346,6 +351,7 @@ auto Proc::args(Builder& b) -> ArrayRef<Argument*> {
 namespace {
 class Printer {
 public:
+    TranslationUnit& tu;
     SmallUnrenderedString out;
     DenseMap<Argument*, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
@@ -368,7 +374,7 @@ auto Builder::Dump() -> SmallUnrenderedString {
     return std::move(Printer{*this}.out);
 }
 
-Printer::Printer(Builder& b) {
+Printer::Printer(Builder& b) : tu{b.tu} {
     for (auto* proc : b.procedures()) {
         curr_proc = proc;
         if (not out.empty()) out += "\n";
@@ -449,6 +455,31 @@ void Printer::DumpInst(Inst* i) {
 
     switch (i->opcode()) {
         // Special instructions.
+        case Op::Abort: {
+            auto a = cast<AbortInst>(i);
+
+            String file;
+            i64 line, col;
+            if (auto lc = a->location().seek_line_column(tu.context())) {
+                file = tu.context().file(a->location().file_id)->name();
+                line = i64(lc->line);
+                col = i64(lc->col);
+            } else {
+                file = "<builtin>";
+                line = 0;
+                col = 0;
+            }
+
+            out += std::format(
+                "%1(abort) at %6(<{}:{}:{}>) %2({})({}\033)",
+                file,
+                line,
+                col,
+                a->handler_name(),
+                utils::join_as(a->args(), [&](Value* v) { return DumpValue(v); } )
+            );
+        } break;
+
         case Op::Alloca: {
             auto a = cast<Alloca>(i);
             out += std::format("%1(alloca) {}", a->allocated_type());
@@ -546,6 +577,7 @@ void Printer::DumpInst(Inst* i) {
 
 bool Printer::ReturnsValue(Inst* i) {
     switch (i->opcode()) {
+        case Op::Abort:
         case Op::Br:
         case Op::MemZero:
         case Op::Ret:

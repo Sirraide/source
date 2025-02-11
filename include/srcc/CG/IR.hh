@@ -13,6 +13,7 @@ class SmallInt;
 class Builder;
 
 enum class Op : u8 {
+    Abort,
     Add,
     Alloca,
     And,
@@ -271,6 +272,25 @@ public:
     }
 };
 
+/// An 'abort' instruction is used to call a failure handler, such as for
+/// assertion failure and integer overflow. This is a separate instruction
+/// to simplify the implementation of such handlers at compile time.
+class AbortInst : public Inst {
+    friend Builder;
+
+    String handler;
+    Location loc;
+
+    AbortInst(Builder& b, String handler, Location loc, ArrayRef<Value*> args)
+        : Inst{b, Op::Abort, args}, handler{handler}, loc{loc} {}
+
+public:
+    [[nodiscard]] auto handler_name() const { return handler; }
+    [[nodiscard]] auto location() const { return loc; }
+
+    static bool classof(const Inst* v) { return v->opcode() == Op::Abort; }
+};
+
 struct BranchTarget {
     Block* dest{};
     ArrayRef<Value*> args{};
@@ -408,6 +428,7 @@ public:
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
 
+    void CreateAbort(String handler, Location loc, Value* msg1, Value* msg2);
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateAlloca(Type ty) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
