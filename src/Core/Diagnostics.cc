@@ -212,7 +212,7 @@ auto RenderDiagnostics(
     ArrayRef<Diagnostic> backlog,
     usz cols
 ) -> std::string {
-    bool use_colours = ctx.use_colours();
+    bool use_colours = ctx.use_colours;
 
     // Subtract 2 here for the leading character and the space after it.
     auto cols_rem = cols - 2;
@@ -444,7 +444,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             EmitDiagnostics();
 
             stream << text::RenderColours(
-                ctx.use_colours(),
+                ctx.use_colours,
                 std::format(
                     "\n%b(%{}(Error:) Too many errors emitted (> {}\033). Not showing any more errors.)\n",
                     Colour(Diagnostic::Level::Error),
@@ -453,7 +453,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             );
 
             stream << text::RenderColours(
-                ctx.use_colours(),
+                ctx.use_colours,
                 std::format(
                     "%b(%{}(Note:) Use '--error-limit <limit>' to show more errors.)\n",
                     Colour(Diagnostic::Level::Note)
@@ -476,7 +476,7 @@ VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : Diagnosti
     // Colours are disabled in verify mode, so save whether
     // we *actually* want to use colours (in the output of
     // the verifier).
-    enable_colours = ctx.use_colours();
+    enable_colours = ctx.use_colours;
 
     // Nested engine for reporting errors.
     diags_reporter = StreamingDiagnosticsEngine::Create(ctx);

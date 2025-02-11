@@ -102,7 +102,7 @@ auto TranslationUnit::CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
 }
 
 void TranslationUnit::dump() const {
-    bool c = context().use_colours();
+    bool c = context().use_colours;
 
     // Print preamble.
     utils::Print(c, "%1({}) %2({})\n", is_module ? "Module" : "Program", name);

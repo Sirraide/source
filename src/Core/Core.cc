@@ -31,47 +31,7 @@ using namespace srcc;
 // ============================================================================
 //  Context
 // ============================================================================
-struct Context::Impl {
-    llvm::LLVMContext llvm;
-
-    /// Optimisation level.
-    int opt_level = 0;
-
-    /// Constant evaluator steps.
-    std::atomic<u64> eval_steps = 1 << 20;
-
-    /// Module dir.
-    fs::Path module_dir;
-
-    /// Diagnostics engine.
-    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_engine;
-
-    /// Mutex used by API functions that may mutate the context.
-    std::recursive_mutex context_mutex;
-
-    /// Files loaded by the context.
-    std::vector<std::unique_ptr<File>> files;
-    std::unordered_map<fs::Path, File*> files_by_path; // FIXME: use inode number instead.
-
-    /// Mutex used for printing diagnostics.
-    mutable std::recursive_mutex diags_mutex;
-
-    /// Whether there was an error.
-    mutable std::atomic<bool> errored = false;
-
-    /// Whether to use coloured output.
-    std::atomic<bool> enable_colours = true;
-
-    /// Whether to use short filenames.
-    std::atomic<bool> short_filenames = false;
-
-    /// For saving strings.
-    llvm::BumpPtrAllocator alloc;
-    llvm::StringSaver saver{alloc};
-};
-
-SRCC_DEFINE_HIDDEN_IMPL(Context);
-Context::Context() : impl(new Impl) {
+Context::Context() {
     static std::once_flag init;
     std::call_once(init, [] {
         llvm::InitializeAllTargetInfos();
@@ -106,7 +66,7 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 
     // Get feature flags.
     std::string features;
-    if (impl->opt_level == 4) {
+    if (opt_level == 4) {
         StringMap<bool> feature_map = llvm::sys::getHostCPUFeatures();
         for (auto& [feature, enabled] : feature_map)
             if (enabled)
@@ -120,7 +80,7 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 
     // Get CPU.
     std::string cpu;
-    if (impl->opt_level == 4) cpu = llvm::sys::getHostCPUName();
+    if (opt_level == 4) cpu = llvm::sys::getHostCPUName();
     if (cpu.empty()) cpu = "generic";
 
     // Target options.
@@ -128,7 +88,7 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 
     // Get opt level.
     llvm::CodeGenOptLevel opt;
-    switch (impl->opt_level) {
+    switch (opt_level) {
         case 0: opt = llvm::CodeGenOptLevel::None; break;
         case 1: opt = llvm::CodeGenOptLevel::Less; break;
         case 2: opt = llvm::CodeGenOptLevel::Default; break;
@@ -150,78 +110,51 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 }
 
 auto Context::diags() const -> DiagnosticsEngine& {
-    Assert(impl->diags_engine, "Diagnostics engine not set!");
-    return *impl->diags_engine;
-}
-
-void Context::enable_colours(bool enable) {
-    impl->enable_colours.store(enable, std::memory_order_release);
-}
-
-void Context::enable_short_filenames(bool enable) {
-    impl->short_filenames.store(enable, std::memory_order_release);
-}
-
-auto Context::eval_steps() const -> u64 {
-    return impl->eval_steps.load(std::memory_order_relaxed);
+    Assert(diags_engine, "Diagnostics engine not set!");
+    return *diags_engine;
 }
 
 auto Context::file(usz idx) const -> const File* {
-    std::unique_lock _{impl->context_mutex};
-    if (idx >= impl->files.size()) return nullptr;
-    return impl->files[idx].get();
+    if (idx >= files.size()) return nullptr;
+    return files[idx].get();
 }
 
 auto Context::file_name(i32 id) const -> String {
     auto* f = file(usz(id));
-    return use_short_filenames() ? f->short_name() : f->name();
+    return use_short_filenames ? f->short_name() : f->name();
 }
 
 auto Context::get_file(fs::PathRef path) -> const File& {
-    std::unique_lock _{impl->context_mutex};
-
     auto can = canonical(path);
-    if (auto it = impl->files_by_path.find(can); it != impl->files_by_path.end())
+    if (auto it = files_by_path.find(can); it != files_by_path.end())
         return *it->second;
 
     static constexpr usz MaxFiles = std::numeric_limits<u16>::max();
     Assert(
-        impl->files.size() < MaxFiles,
+        files.size() < MaxFiles,
         "Sorry, that’s too many files for us! (max is {})",
         MaxFiles
     );
 
     auto mem = File::LoadFileData(can);
-    auto f = new File(*this, can, String::Save(impl->saver, path.string()), std::move(mem), u16(impl->files.size()));
-    impl->files.emplace_back(f);
-    impl->files_by_path[std::move(can)] = f;
+    auto f = new File(*this, can, String::Save(saver, path.string()), std::move(mem), u16(files.size()));
+    files.emplace_back(f);
+    files_by_path[std::move(can)] = f;
     return *f;
 }
 
-void Context::_initialise_context_(fs::Path module_path, int opt_level) {
-    impl->module_dir = std::move(module_path);
-    impl->opt_level = opt_level;
+void Context::_initialise_context_(fs::Path module_path, int optimisation_level) {
+    module_dir = std::move(module_path);
+    opt_level = optimisation_level;
 }
 
 auto Context::module_path() const -> fs::PathRef {
-    return impl->module_dir;
+    return module_dir;
 }
 
 void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
-    if (impl->diags_engine) impl->diags_engine->flush();
-    impl->diags_engine = std::move(diags);
-}
-
-void Context::set_eval_steps(u64 steps) {
-    impl->eval_steps.store(steps, std::memory_order_relaxed);
-}
-
-bool Context::use_colours() const {
-    return impl->enable_colours.load(std::memory_order_acquire);
-}
-
-bool Context::use_short_filenames() const {
-    return impl->short_filenames.load(std::memory_order_acquire);
+    if (diags_engine) diags_engine->flush();
+    diags_engine = std::move(diags);
 }
 
 // ============================================================================

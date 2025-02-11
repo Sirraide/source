@@ -6,6 +6,7 @@
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
@@ -25,12 +26,37 @@ class File;
 struct LangOpts;
 } // namespace srcc
 
-/// All members of 'Context' are thread-safe.
-/// FIXME: Move all the members up into this and remove Impl.
 class srcc::Context {
-    SRCC_DECLARE_HIDDEN_IMPL(Context);
+    /// Module dir.
+    fs::Path module_dir;
+
+    /// Diagnostics engine.
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_engine;
+
+    /// Files loaded by the context.
+    std::vector<std::unique_ptr<File>> files;
+    std::unordered_map<fs::Path, File*> files_by_path; // FIXME: use inode number instead.
+
+    /// Whether there was an error.
+    mutable bool errored = false;
+
+    /// For saving strings.
+    llvm::BumpPtrAllocator alloc;
+    llvm::StringSaver saver{alloc};
 
 public:
+    /// Constant evaluator steps.
+    u64 eval_steps = 1 << 20;
+
+    /// Optimisation level.
+    int opt_level = 0;
+
+    /// Whether to use coloured output.
+    bool use_colours = true;
+
+    /// Whether to use short filenames.
+    bool use_short_filenames = false;
+
     /// Create a new context with default options.
     explicit Context();
 
@@ -39,15 +65,6 @@ public:
 
     /// Get diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine&;
-
-    /// Enable or disable coloured output.
-    void enable_colours(bool enable);
-
-    /// Enable or disable short filenames.
-    void enable_short_filenames(bool enable);
-
-    /// Get the number of steps the constant evaluator can run for.
-    [[nodiscard]] auto eval_steps() const -> u64;
 
     /// Get a file by index. Returns nullptr if the index is out of bounds.
     [[nodiscard]] auto file(usz idx) const -> const File*;
@@ -68,15 +85,6 @@ public:
 
     /// Set the diagnostics engine.
     void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);
-
-    /// Set the maximum step count for the constant evaluator.
-    void set_eval_steps(u64 steps);
-
-    /// Whether to enable coloured output.
-    [[nodiscard]] bool use_colours() const;
-
-    /// Whether to enable short filenames.
-    [[nodiscard]] bool use_short_filenames() const;
 };
 
 struct srcc::LangOpts {

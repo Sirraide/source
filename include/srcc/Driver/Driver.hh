@@ -1,8 +1,9 @@
 #ifndef SRCC_DRIVER_HH
 #define SRCC_DRIVER_HH
 
-#include <srcc/Macros.hh>
 #include <srcc/Core/Utils.hh>
+#include <srcc/Frontend/Parser.hh>
+#include <srcc/Macros.hh>
 
 namespace srcc {
 class Driver;
@@ -41,9 +42,7 @@ enum struct srcc::Action : srcc::u8 {
     Sema,
 };
 
-class srcc::Driver {
-    SRCC_DECLARE_HIDDEN_IMPL(Driver);
-
+class srcc::Driver : DiagsProducer<> {
 public:
     struct Options {
         /// The path to a directory where modules should be stored.
@@ -68,9 +67,6 @@ public:
         /// How many errors are printed before we stop printing them
         /// altogether. Set to 0 to disable.
         u32 error_limit;
-
-        /// Number of threads to use for compilation.
-        u32 num_threads;
 
         /// Optimisation level.
         u8 opt_level;
@@ -97,8 +93,15 @@ public:
         bool short_filenames : 1;
     };
 
+private:
+    Options opts;
+    SmallVector<fs::Path> files;
+    Context ctx;
+    bool compiled = false;
+
+public:
     /// Create a new driver.
-    explicit Driver(Options opts);
+    explicit Driver(Options opts) : opts{std::move(opts)} {}
 
     /// Add a file to the list of files to compile.
     void add_file(std::string_view file_path);
@@ -107,6 +110,21 @@ public:
     ///
     /// \return 0 on success, non-zero on failure.
     int run_job();
+
+private:
+    template <typename... Args>
+    void Diag(Diagnostic::Level level, Location loc, std::format_string<Args...> fmt, Args&&... args) {
+        ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    int Error(std::format_string<Args...> fmt, Args&&... args) {
+        Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
+        return 1;
+    }
+
+    /// Parse a file and return the parsed module.
+    auto ParseFile(fs::PathRef path, bool verify) -> ParsedModule::Ptr;
 };
 
 #endif // SRCC_DRIVER_HH

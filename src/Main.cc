@@ -26,7 +26,6 @@ using options = clopts< // clang-format off
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
-    experimental::short_option<"-j", "Number of threads to use for compilation", std::int64_t>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
 
     // General flags.
@@ -128,7 +127,6 @@ int main(int argc, char** argv) {
         .action = action,
         .eval_steps = u64(opts.get_or<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get_or<"--error-limit">(20)),
-        .num_threads = u32(opts.get_or<"-j">(std::thread::hardware_concurrency())),
         .opt_level = u8(opts.get_or<"-O">(0)),
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),

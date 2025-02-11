@@ -23,7 +23,7 @@ using namespace srcc;
 //  Parse Tree
 // ============================================================================
 void ParsedModule::dump() const {
-    bool c = context().use_colours();
+    bool c = context().use_colours;
 
     // Print preamble.
     utils::Print(c, "%1({}) {}\n", is_module ? "Module" : "Program", name);

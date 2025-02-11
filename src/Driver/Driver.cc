@@ -46,55 +46,11 @@ class ParsedModule;
 }
 using namespace srcc;
 
-// ============================================================================
-//  Internals
-// ============================================================================
-class DriverThreadPool {
-    std::optional<llvm::StdThreadPool> thread_pool;
+void Driver::add_file(std::string_view file_path) {
+    files.push_back(fs::Path(file_path));
+}
 
-public:
-    DriverThreadPool(u32 num_threads) {
-        if (num_threads != 1) thread_pool.emplace(llvm::ThreadPoolStrategy(num_threads));
-    }
-
-    /// Run a task asynchronously.
-    template <typename Task>
-    auto run(Task task) -> std::shared_future<decltype(task())>;
-
-    /// Wait for all tasks to finish.
-    void wait();
-};
-
-struct Driver::Impl : DiagsProducer<> {
-    Options opts;
-    DriverThreadPool thread_pool;
-    SmallVector<fs::Path> files;
-    Context ctx;
-    std::mutex mutex;
-    bool compiled = false;
-
-    Impl(Options opts)
-        : opts(opts),
-          thread_pool(opts.num_threads) {}
-
-    int run_job();
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, Location loc, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    int Error(std::format_string<Args...> fmt, Args&&... args) {
-        Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
-        return 1;
-    }
-
-    /// Parse a file and return the parsed module.
-    auto ParseFile(fs::PathRef path, bool verify) -> ParsedModule*;
-};
-
-int Driver::Impl::run_job() {
+int Driver::run_job() {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
     auto a = opts.action;
@@ -107,8 +63,7 @@ int Driver::Impl::run_job() {
     defer { ctx.diags().flush(); };
 
     // Disable colours in verify mode.
-    ctx.enable_colours(opts.colours and not opts.verify);
-    ctx.enable_short_filenames(opts.short_filenames);
+    ctx.use_colours = opts.colours and not opts.verify;
 
     // Verifier can only run in sema/parse/lex mode.
     if (
@@ -128,7 +83,8 @@ int Driver::Impl::run_job() {
     lang_opts.overflow_checking = opts.overflow_checking;
 
     // Forward options to context.
-    ctx.set_eval_steps(opts.eval_steps);
+    ctx.eval_steps = opts.eval_steps;
+    ctx.use_short_filenames = opts.short_filenames;
 
     // Handle this first; it only supports 1 file.
     if (a == Action::DumpModule) {
@@ -215,20 +171,8 @@ int Driver::Impl::run_job() {
     }
 
     // Parse files in parallel.
-    SmallVector<std::shared_future<ParsedModule*>> futures;
-    for (const auto& f : files) futures.push_back(thread_pool.run([&] {
-        return ParseFile(f, opts.verify);
-    }));
-
-    // Wait for all modules to be parsed.
-    thread_pool.wait();
-
-    // Collect modules.
-    SmallVector<std::unique_ptr<ParsedModule>> parsed_modules;
-    for (auto& f : futures) {
-        auto ptr = f.get();
-        parsed_modules.emplace_back(ptr);
-    }
+    SmallVector<ParsedModule::Ptr> parsed_modules;
+    for (const auto& f : files) parsed_modules.push_back(ParseFile(f, opts.verify));
 
     // Dump parse tree.
     if (a == Action::Parse) {
@@ -339,41 +283,8 @@ int Driver::Impl::run_job() {
     );
 }
 
-auto Driver::Impl::ParseFile(fs::PathRef path, bool verify) -> ParsedModule* {
+auto Driver::ParseFile(fs::PathRef path, bool verify) -> ParsedModule::Ptr {
     auto engine = verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
     auto& f = ctx.get_file(path);
-    return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr).release();
-}
-
-template <typename Task>
-auto DriverThreadPool::run(Task task) -> std::shared_future<decltype(task())> {
-    // If we’re using more than one thread, run this normally.
-    if (thread_pool.has_value()) return thread_pool->async(std::move(task));
-
-    // Otherwise, run it on the main thread.
-    using RetVal = decltype(task());
-    std::promise<RetVal> promise;
-    promise.set_value(task());
-    return promise.get_future();
-}
-
-void DriverThreadPool::wait() {
-    // No-op if we’re in single-threaded mode.
-    if (thread_pool.has_value()) thread_pool->wait();
-}
-
-// ============================================================================
-//  API
-// ============================================================================
-SRCC_DEFINE_HIDDEN_IMPL(Driver);
-Driver::Driver(Options opts) : impl(new Impl{opts}) {}
-
-void Driver::add_file(std::string_view file_path) {
-    std::unique_lock _{impl->mutex};
-    impl->files.push_back(fs::Path(file_path));
-}
-
-int Driver::run_job() {
-    std::unique_lock _{impl->mutex};
-    return impl->run_job();
+    return Parser::Parse(f, verify ? engine->comment_token_callback() : nullptr);
 }
