@@ -165,15 +165,6 @@ include(AddLLVM)
 include(AddClang)
 include(HandleLLVMOptions)
 
-## FIXME: This is a hack.
-## Use llvm-config to get all LLVM libraries.
-execute_process(
-    COMMAND "${LLVM_TOOLS_BINARY_DIR}/llvm-config" --libs
-    OUTPUT_VARIABLE SOURCE_LLVM_LIBS
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    COMMAND_ERROR_IS_FATAL ANY
-)
-
 include_directories(SYSTEM
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
@@ -184,9 +175,21 @@ link_directories(${LLVM_LIBRARY_DIRS})
 
 separate_arguments(llvm_libs)
 target_link_libraries(options INTERFACE
-    ${SOURCE_LLVM_LIBS}
     tinfo
-    clang clangTooling clangASTMatchers
+
+    LLVMCore
+    LLVMPasses
+    LLVMSupport
+    LLVMTarget
+    LLVMTargetParser
+    LLVMX86AsmParser
+    LLVMX86CodeGen
+
+    clang
+    clangBasic
+    clangFrontend
+    clangSema
+    clangTooling
 )
 
 ## Global definitions.
