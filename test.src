@@ -1,6 +1,5 @@
 program foo;
-
-proc foo = 42;
-
-var x = eval foo();
-
+proc s {
+	int x;
+	eval x + 3;
+}

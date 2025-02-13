@@ -1435,6 +1435,7 @@ auto Parser::ParseType() -> Ptr<ParsedStmt> {
 }
 
 auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt> {
+    // FIXME: This should just get merged into the expression parser.
     switch (tok->type) {
         default: return ty;
         case Tk::LBrack: {

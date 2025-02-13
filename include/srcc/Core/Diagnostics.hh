@@ -4,6 +4,7 @@
 #include <srcc/Core/Location.hh>
 #include <srcc/Core/Token.hh>
 #include <srcc/Core/Utils.hh>
+#include <srcc/Core/Core.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>

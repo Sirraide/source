@@ -425,6 +425,9 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             return CreateExtractValue(inst, i->index());
         }
 
+        case K::InvalidLocalReference:
+            Unreachable("Should only exist in constant evaluation");
+
         case K::LargeInt:
             return getInt(cast<ir::LargeInt>(v)->value());
 

@@ -38,7 +38,7 @@ auto CodeGen::DeclarePrintf() -> Value* {
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto name = MangledName(proc);
-    return GetOrCreateProc(name, proc->linkage, proc->proc_type());
+    return GetOrCreateProc(proc, name);
 }
 
 auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
@@ -425,7 +425,7 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     case K::node: Unreachable("Cannot emit " SRCC_STR(node));
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Emit, node)(cast<node>(stmt));
-#include "srcc/AST.inc"
+#include "../../include/srcc/AST.inc"
     }
 
     Unreachable("Unknown statement kind");
@@ -787,7 +787,10 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
-    return locals.at(expr->decl);
+    auto l = locals.find(expr->decl);
+    if (l != locals.end()) return l->second;
+    Assert(compiling_for_vm, "Invalid local ref outside of constant evaluation?");
+    return CreateInvalidLocalReference(expr);
 }
 
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {
@@ -900,4 +903,25 @@ auto CodeGen::EmitValue(const eval::Value& val) -> Value* { // clang-format off
         }
     }; // clang-format on
     return val.visit(V);
+}
+
+auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
+    tempset compiling_for_vm = true;
+
+    // Create a new procedure for this statement.
+    auto ret_ty = isa<Expr>(stmt) ? cast<Expr>(stmt)->type : Types::VoidTy;
+    auto proc = GetOrCreateProc(
+        constants::VMEntryPointName,
+        Linkage::Internal,
+        ProcType::Get(tu, ret_ty, {})
+    );
+
+    // And emit it as its body, returning the statement’s value
+    // if it has one.
+    EnterProcedure _(*this, proc);
+    auto val = Emit(stmt);
+    if (not insert_point->closed())
+        CreateReturn(val and val->type() != Types::VoidTy ? val : nullptr);
+
+    return proc;
 }

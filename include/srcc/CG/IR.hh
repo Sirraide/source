@@ -12,6 +12,11 @@ class Proc;
 class SmallInt;
 class Builder;
 
+enum class AbortReason : u8 {
+    AssertionFailed,
+    ArithmeticError,
+};
+
 enum class Op : u8 {
     Abort,
     Add,
@@ -70,6 +75,7 @@ public:
         BuiltinConstant,
         Extract,
         InstValue,
+        InvalidLocalReference,
         LargeInt,
         Proc,
         Slice,
@@ -278,14 +284,14 @@ public:
 class AbortInst : public Inst {
     friend Builder;
 
-    String handler;
+    AbortReason reason;
     Location loc;
 
-    AbortInst(Builder& b, String handler, Location loc, ArrayRef<Value*> args)
-        : Inst{b, Op::Abort, args}, handler{handler}, loc{loc} {}
+    AbortInst(Builder& b, AbortReason reason, Location loc, ArrayRef<Value*> args)
+        : Inst{b, Op::Abort, args}, reason{reason}, loc{loc} {}
 
 public:
-    [[nodiscard]] auto handler_name() const { return handler; }
+    [[nodiscard]] auto abort_reason() const { return reason; }
     [[nodiscard]] auto location() const { return loc; }
 
     static bool classof(const Inst* v) { return v->opcode() == Op::Abort; }
@@ -339,6 +345,23 @@ public:
     static bool classof(const Value* v) { return v->kind() == Kind::InstValue; }
 };
 
+/// Used in constant evaluation to mark references to local variables
+/// that are declared outside the current constant evaluation context;
+/// such references emit an error if execution actually reaches them.
+class InvalidLocalReference : public ManagedValue {
+    friend Builder;
+
+    LocalRefExpr* reference;
+
+    InvalidLocalReference(LocalRefExpr* ref, Type ref_ty)
+        : ManagedValue{Kind::InvalidLocalReference, ref_ty}, reference{ref} {}
+
+public:
+    [[nodiscard]] auto referenced_local() const -> LocalRefExpr* { return reference; }
+
+    static bool classof(const Value* v) { return v->kind() == Kind::InvalidLocalReference; }
+};
+
 class Block : public Value {
     friend Builder;
     friend Proc;
@@ -369,14 +392,16 @@ class Proc : public Value {
     Linkage link;
     SmallVector<std::unique_ptr<Block>> body;
     SmallVector<Argument*> arguments;
+    ProcDecl* associated_decl;
 
+public:
     Proc(String mangled_name, ProcType* ty, Linkage link)
         : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
-public:
     auto add(std::unique_ptr<Block> b) -> Block*;
     auto args(Builder& b) -> ArrayRef<Argument*>;
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
+    auto decl() const -> ProcDecl* { return associated_decl; }
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
     auto linkage() const -> Linkage { return link; }
@@ -427,58 +452,60 @@ public:
     auto Dump() -> SmallUnrenderedString;
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
+    auto GetOrCreateProc(ProcDecl* proc, String mangled_name) -> Proc*;
 
-    void CreateAbort(String handler, Location loc, Value* msg1, Value* msg2);
+    auto CreateAShr(Value* a, Value* b) -> Value*;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateAlloca(Type ty) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
-    auto CreateAShr(Value* a, Value* b) -> Value*;
     auto CreateBlock() -> std::unique_ptr<Block> { return CreateBlock(ArrayRef<Type>{}); }
-    auto CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block>;
     auto CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block>;
+    auto CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block>;
     auto CreateBlock(Proc* proc, ArrayRef<Type> args) -> Block*;
     auto CreateBool(bool value) -> Value*;
-    void CreateBr(Block* dest, ArrayRef<Value*> args);
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
-    void CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block);
     auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
-    auto CreateInt(APInt val, Type type) -> Value*;
-    auto CreateInt(i64 val, Type type = Types::IntTy) -> Value*;
-    auto CreateIMul(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateICmpEq(Value* a, Value* b) -> Value*;
     auto CreateICmpNe(Value* a, Value* b) -> Value*;
-    auto CreateICmpULt(Value* a, Value* b) -> Value*;
-    auto CreateICmpULe(Value* a, Value* b) -> Value*;
-    auto CreateICmpUGe(Value* a, Value* b) -> Value*;
-    auto CreateICmpUGt(Value* a, Value* b) -> Value*;
-    auto CreateICmpSLt(Value* a, Value* b) -> Value*;
-    auto CreateICmpSLe(Value* a, Value* b) -> Value*;
     auto CreateICmpSGe(Value* a, Value* b) -> Value*;
     auto CreateICmpSGt(Value* a, Value* b) -> Value*;
-    auto CreateLoad(Type ty, Value* ptr) -> Value*;
+    auto CreateICmpSLe(Value* a, Value* b) -> Value*;
+    auto CreateICmpSLt(Value* a, Value* b) -> Value*;
+    auto CreateICmpUGe(Value* a, Value* b) -> Value*;
+    auto CreateICmpUGt(Value* a, Value* b) -> Value*;
+    auto CreateICmpULe(Value* a, Value* b) -> Value*;
+    auto CreateICmpULt(Value* a, Value* b) -> Value*;
+    auto CreateIMul(Value* a, Value* b, bool nowrap = false) -> Value*;
+    auto CreateInt(APInt val, Type type) -> Value*;
+    auto CreateInt(i64 val, Type type = Types::IntTy) -> Value*;
+    auto CreateInvalidLocalReference(LocalRefExpr* ref) -> Value*;
     auto CreateLShr(Value* a, Value* b) -> Value*;
-    void CreateMemZero(Value* addr, Value* bytes);
+    auto CreateLoad(Type ty, Value* ptr) -> Value*;
     auto CreateNil(Type ty) -> Value*;
     auto CreateOr(Value* a, Value* b) -> Value*;
     auto CreatePoison(Type ty) -> Value*;
     auto CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value*;
-    void CreateReturn(Value* val = nullptr);
     auto CreateSAddOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSDiv(Value* a, Value* b) -> Value*;
-    auto CreateSelect(Value* cond, Value* then_val, Value* else_val) -> Value*;
-    auto CreateShl(Value* a, Value* b) -> Value*;
     auto CreateSICast(Value* i, Type to_type) -> Value*;
-    auto CreateSlice(Value* data, Value* size) -> Slice*;
     auto CreateSMulOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSRem(Value* a, Value* b) -> Value*;
     auto CreateSSubOverflow(Value* a, Value* b) -> OverflowResult;
-    void CreateStore(Value* val, Value* ptr);
+    auto CreateSelect(Value* cond, Value* then_val, Value* else_val) -> Value*;
+    auto CreateShl(Value* a, Value* b) -> Value*;
+    auto CreateSlice(Value* data, Value* size) -> Slice*;
     auto CreateString(String s) -> Slice*;
     auto CreateSub(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateUDiv(Value* a, Value* b) -> Value*;
-    void CreateUnreachable();
     auto CreateURem(Value* a, Value* b) -> Value*;
     auto CreateXor(Value* a, Value* b) -> Value*;
+    void CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2);
+    void CreateBr(Block* dest, ArrayRef<Value*> args);
+    void CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block);
+    void CreateMemZero(Value* addr, Value* bytes);
+    void CreateReturn(Value* val = nullptr);
+    void CreateStore(Value* val, Value* ptr);
+    void CreateUnreachable();
 
 private:
     template <std::derived_from<Inst> InstTy, typename ...Args>

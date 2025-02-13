@@ -2,6 +2,7 @@
 #define SRCC_AST_EVAL_HH
 
 #include <srcc/AST/Type.hh>
+#include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
@@ -13,6 +14,9 @@
 #include <variant>
 
 namespace srcc {
+namespace cg::ir {
+class Proc;
+}
 class Stmt;
 class ProcDecl;
 class StrLitExpr;
@@ -20,6 +24,7 @@ class TranslationUnit;
 }
 
 namespace srcc::eval {
+class EmitProcedure;
 class LValue;
 class Reference;
 class Slice;
@@ -27,30 +32,41 @@ class Value;
 class Memory;
 enum struct LifetimeState : u8;
 
-/*/// Virtual machine used for constant evaluation; one of these is
+/// Virtual machine used for constant evaluation; one of these is
 /// created for every translation unit and reused across constant
 /// evaluations.
 class VM {
     LIBBASE_IMMOVABLE(VM);
+    friend EmitProcedure;
+
+public:
+    class Compiler;
 
     /// Machine word.
-    using word = uptr;
+    using Word = uptr;
 
+    /// Address of a block within a function.
+    using BlockAddr = u32;
+
+    /// Data or code pointer.
+    using Pointer = Word;
+
+private:
     /// Address space that stores either code or data.
     class AddressSpace {
         ByteBuffer mem;
 
     public:
-        void contains(word ptr);
+        void contains(Word ptr);
     };
 
     /// Start of executable memory.
-    static constexpr word MemExecStart = 0x10000;
+    static constexpr Word MemExecStart = 0x10000;
 
     /// Start of data memory.
     ///
     /// This is 1 << 30 on 32-bit systems and 1 << 46 on 64-bit systems.
-    static constexpr word MemDataStart = 1 << std::min<word>(46, Size::Of<word>().bits() - 2);
+    static constexpr Word MemDataStart = Word(1) << std::min<Word>(46, Size::Of<Word>().bits() - 2);
 
 public:
     /// Maximum number of registers.
@@ -68,10 +84,22 @@ private:
     AddressSpace mem_data;
 
     /// VM registers.
-    std::vector<word> registers;
+    std::vector<Word> registers;
+
+    /// Symbol table containing all linked procedures.
+    StringMap<Pointer> procedure_table;
+
+    /// Pointers to strings of unresolved symbols.
+    ///
+    /// These are heap-allocated so we can store a single pointer in
+    /// the bytecode, which matches the size of a pointer in the VM.
+
+    /// Compiler used to add new procedures to the VM.
+    std::unique_ptr<Compiler> compiler;
 
 public:
-    explicit VM(TranslationUnit& owner_tu) : owner_tu{owner_tu}, registers(MaxRegisters) {}
+    explicit VM(TranslationUnit& owner_tu);
+    ~VM();
 
     /// Attempt to evaluate a statement.
     ///
@@ -85,11 +113,11 @@ public:
 
     /// Get the translation unit that owns this vm.
     [[nodiscard]] auto owner() -> TranslationUnit& { return owner_tu; }
-
+/*
 private:
     /// Compile a statement and return a memory buffer containing the byte code.
-    auto CompileSingleStmt(Stmt* stmt, bool complain) -> std::optional<ByteBuffer>;
-};*/
+    auto CompileSingleStmt(Stmt* stmt, bool complain) -> std::optional<ByteBuffer>;*/
+};
 } // namespace srcc::eval
 
 namespace srcc::eval {
@@ -269,12 +297,5 @@ struct std::formatter<srcc::eval::Value> : std::formatter<std::string_view> {
         return std::formatter<std::string_view>::format(std::string_view{val.print().str()}, ctx);
     }
 };
-
-namespace srcc::eval {
-[[deprecated("Remove this and implement a proper VM")]]
-inline std::optional<Value> Evaluate(TranslationUnit&, Stmt*, bool complain = true) {
-    if (complain) std::println(stderr, "TODO: Implement VM");
-    return std::nullopt;
-}}
 
 #endif // SRCC_AST_EVAL_HH

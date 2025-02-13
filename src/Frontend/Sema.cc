@@ -1333,7 +1333,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // If the type is 'type', then this is actually an initialiser call.
         if (callee_expr->type == Types::TypeTy) {
-            auto type = eval::Evaluate(*M, callee_expr);
+            auto type = M->vm.eval(callee_expr);
             if (not type) return ICE(
                 callee_expr->location(),
                 "Failed to evaluate expression designating a type"
@@ -1569,7 +1569,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     if (arg->dependent()) return eval;
 
     // If the expression is not dependent, evaluate it now.
-    auto value = eval::Evaluate(*M, arg);
+    auto value = M->vm.eval(arg);
     if (not value.has_value()) {
         eval->set_errored();
         return eval;
@@ -1797,7 +1797,7 @@ auto Sema::BuildStaticIfExpr(
 
     // Otherwise, check this now.
     if (not MakeSRValue(Types::BoolTy, cond, "Condition", "static if")) return {};
-    auto val = eval::Evaluate(*M, cond);
+    auto val = M->vm.eval(cond);
     if (not val) {
         Error(loc, "Condition of 'static if' must be a constant expression");
         return {};

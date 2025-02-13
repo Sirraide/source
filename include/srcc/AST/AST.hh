@@ -123,7 +123,7 @@ public:
     DenseMap<ProcDecl*, llvm::SmallDenseMap<ProcType*, ProcDecl*>> template_instantiations;
 
     /// Compile-time virtual machine for constant evaluation.
-    /*eval::VM vm{*this};*/
+    eval::VM vm{*this};
 
     /// LLVM context for this module.
     llvm::LLVMContext llvm_context;

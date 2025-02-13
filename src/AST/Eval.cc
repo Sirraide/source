@@ -1,6 +1,7 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
+#include <srcc/CG/CodeGen.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
 #include <srcc/Macros.hh>
@@ -15,9 +16,9 @@
 #include <print>
 #include <ranges>
 
-
 using namespace srcc;
 using namespace srcc::eval;
+namespace ir = cg::ir;
 
 struct Closure {
     ProcDecl* decl;
@@ -95,1693 +96,658 @@ auto Value::value_category() const -> ValueCategory {
 auto LValue::print() const -> SmallUnrenderedString {
     return SmallUnrenderedString("<lvalue>");
 }
-/*
+
 namespace {
+#define INTEGER_OP(name) \
+    name,                \
+        name##I8 = name, \
+        name##I16,       \
+        name##I32,       \
+        name##I64,       \
+        name##APInt
+
+#define TYPED_OP(name) \
+    INTEGER_OP(name),  \
+        name##Bool,    \
+        name##Closure, \
+        name##Ptr,     \
+        name##Slice,   \
+        name##Type
+
+#define INTEGER_EXT(X, i)       \
+    X(I8ToI16, i##8, i##16)     \
+    X(I8ToI32, i##8, i##32)     \
+    X(I8ToI64, i##8, i##64)     \
+    X(I8ToAPInt, i##8, APInt)   \
+    X(I16ToI32, i##16, i##32)   \
+    X(I16ToI64, i##16, i##64)   \
+    X(I16ToAPInt, i##16, APInt) \
+    X(I32ToI64, i##32, i##64)   \
+    X(I32ToAPInt, i##32, APInt) \
+    X(I64ToAPInt, i##64, APInt) \
+    X(APIntToAPInt, APInt, APInt)
+
+#define INTEGER_TRUNC(X)           \
+    X(TruncI8ToAPInt, i8, APInt)   \
+    X(TruncI16ToI8, i16, i8)       \
+    X(TruncI16ToAPInt, i16, APInt) \
+    X(TruncI32ToI8, i32, i8)       \
+    X(TruncI32ToI16, i32, i16)     \
+    X(TruncI32ToAPInt, i32, APInt) \
+    X(TruncI64ToI8, i64, i8)       \
+    X(TruncI64ToI16, i64, i16)     \
+    X(TruncI64ToI32, i64, i32)     \
+    X(TruncI64ToAPInt, i32, APInt) \
+    X(TruncAPIntToI8, APInt, i8)   \
+    X(TruncAPIntToI16, APInt, i16) \
+    X(TruncAPIntToI32, APInt, i32) \
+    X(TruncAPIntToI64, APInt, i64) \
+    X(TruncAPIntToAPInt, APInt, APInt)
+
 // ============================================================================
 //  Operations
 // ============================================================================
+/// Bytecode operations.
+///
+/// Each opcode is a single byte. The function of an opcode is
+/// described by a comment above it, and a list of its operands
+/// is given at the end of the comment. The operands may either
+/// be source-level types (e.g. u8[]), or compiler-internal types
+/// (e.g. Location).
+///
+/// When a vm procedure is executed, it reserves space for its
+/// arguments, basic block arguments, and any temporaries produced
+/// by its instructions. Instead of pushing and popping values off
+/// a stack, each instruction that produces a value is mapped to
+/// a slot in the frame.
+///
+/// If a subsequent instruction then references a value produced
+/// by a prior instruction, it can simply access that instruction’s
+/// slot in the frame. This allows us to deal with the fact that
+/// an instruction’s values may be referenced multiple times throughout
+/// the function.
+///
+/// An ‘I’ denotes immediate operands, and an ‘F’ denotes operands
+/// that reference frame slots. A declaration of the form ‘X, Y -> Z’
+/// means that the instruction takes two operands of type X and Y,
+/// and its result is a value of type Z.
+///
+/// Immediate arguments always precede frame arguments.
 enum class Op : u8 {
-    /// Call a bytecode function.
+    /// Abort evaluation due to a constraint violation (e.g. a failed
+    /// assertion or integer overflow).
     ///
-    /// uptr callee
-    CallInternal,
+    /// F: u8[], u8[]
+    /// I: AbortReason, Location
+    Abort,
 
-    /// Return the topmost stack element as a 64-bit integer as the
-    /// evaluation result.
+    /// Integer addition.
     ///
-    /// i64 value
-    EvalRetI8,
-    EvalRetI16,
-    EvalRetI32,
-    EvalRetI64,
-    EvalRetAPInt,
+    /// F: iX, iX -> iX
+    INTEGER_OP(Add),
 
-    /// Push a 64-bit integer onto the stack.
+    /// Integer bitwise AND.
     ///
-    /// i64 value
-    PushI8,
-    PushI16,
-    PushI32,
-    PushI64,
-    PushAPInt,
-};
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(And),
 
-// ============================================================================
-//  Bytecode compiler.
-// ============================================================================
-struct Compiler : DiagsProducer<bool> {
-    TranslationUnit& tu;
-    bool complain;
-    ByteBuffer code{};
-    ByteWriter writer{code};
+    /// Integer arithmetic shift right.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(AShr),
 
-    Compiler(TranslationUnit& tu, bool complain) : tu(tu), complain(complain) {}
+    /// Unconditional branch.
+    ///
+    /// I: BlockAddr
+    Branch,
 
-    /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+/// Integer conversions.
+///
+/// F: iX -> iY
+#define X(name, ...) SExt##name,
+    INTEGER_EXT(X, i)
+#undef X
+#define X(name, ...) ZExt##name,
+        INTEGER_EXT(X, i)
+#undef X
 
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) {
-            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
+    /// Integer comparison.
+    ///
+    /// F: iX, iX -> bool
+    INTEGER_OP(CmpEq),
+    INTEGER_OP(CmpNe),
+    INTEGER_OP(CmpSLt),
+    INTEGER_OP(CmpULt),
+    INTEGER_OP(CmpSGt),
+    INTEGER_OP(CmpUGt),
+    INTEGER_OP(CmpSLe),
+    INTEGER_OP(CmpULe),
+    INTEGER_OP(CmpSGe),
+    INTEGER_OP(CmpUGe),
 
-            /#1#/ Print call stack, but take care not to recurse infinitely here.
-            if (level != Diagnostic::Level::Note) {
-                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
-                    frame.call_loc,
-                    "In call to '{}' here",
-                    frame.proc.get()->name
-                );
-            }#1#
-        }
-    }
+    /// Conditional branch.
+    ///
+    /// F: bool
+    /// I: BlockAddr, BlockAddr
+    CondBranch,
 
-#define AST_STMT_LEAF(Class) [[nodiscard]] bool Compile##Class(Class* node);
-#include <srcc/AST.inc>
+    /// Direct call to a procedure.
+    ///
+    /// The arguments are determine by the procedure type and
+    /// remain on the stack after the call.
+    ///
+    /// F: [any...] -> [any...]
+    /// I: Pointer
+    DirectCall,
 
-    [[nodiscard]] bool CompileStmt(Stmt* stmt);
-};
+    /// Load a value.
+    ///
+    /// F: Pointer -> any
+    TYPED_OP(Load),
 
-bool Compiler::CompileStmt(Stmt* stmt) {
-    switch (stmt->kind()) {
-        default: return ICE(stmt->location(), "Don’t know how to evaluate this");
-        case Stmt::Kind::CallExpr: return CompileCallExpr(cast<CallExpr>(stmt));
-        case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
-    }
-}
+    /// Integer logical shift right.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(LShr),
 
-bool Compiler::CompileCallExpr(CallExpr* expr) {
-    for (auto arg : expr->args())
-        if (not CompileStmt(arg))
-            return false;
+    /// Set memory to 0.
+    ///
+    /// F: Pointer
+    /// I: i64
+    MemZero,
 
-    if (auto proc = dyn_cast<ProcRefExpr>(expr->callee->strip_parens()))
-        writer << Op::CallInternal << uptr(proc->decl);
+    /// Integer multiplication.
+    INTEGER_OP(Mul),
 
-    return true;
-}
+    /// Integer bitwise OR.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(Or),
 
-bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
-    switch (expr->type->size(tu).bits()) {
-        case 8: writer << Op::PushI8 << i8(expr->storage.inline_value().value()); break;
-        case 16: writer << Op::PushI16 << i16(expr->storage.inline_value().value()); break;
-        case 32: writer << Op::PushI32 << i32(expr->storage.inline_value().value()); break;
-        case 64: writer << Op::PushI64 << i64(expr->storage.inline_value().value()); break;
-        default: writer << Op::PushAPInt << expr->storage.value(); break;
-    }
-    return true;
-}
+    /// Pointer addition.
+    ///
+    /// F: Pointer, i64 -> Pointer
+    PtrAdd,
 
-// ============================================================================
-//  Evaluator.
-// ============================================================================
-class Stack {
-    ByteBuffer data;
-    ByteWriter writer{data};
+    /// Push an integer.
+    ///
+    /// F: _ -> iX
+    INTEGER_OP(Push),
 
-public:
-    template <typename T>
-    void operator<<(const T& t) {
-        writer << t;
-    }
+    /// Return a value.
+    ///
+    /// F: any
+    TYPED_OP(Ret),
 
-    template <typename T>
-    auto pop() -> T {
-        Assert(data.size() >= sizeof(T), "Invalid stack access");
-        T t;
-        std::memcpy(&t, data.data() + data.size() - sizeof(T), sizeof(T));
-        data.resize(data.size() - sizeof(T));
-        return t;
-    }
+    /// Return from a function without a return value.
+    RetVoid,
 
-    auto reset_to(usz pos) {
-        Assert(pos >= data.size(), "Resetting a stack cannot be used to grow it");
-        data.resize(pos);
-    }
+    /// Integer addition with overflow checking.
+    ///
+    /// F: iX, iX -> iX, bool
+    INTEGER_OP(SAddOv),
 
-    auto size() -> usz { return data.size(); }
-};
+    /// Signed integer division.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(SDiv),
 
-class Evaluator : DiagsProducer<bool> {
-    friend DiagsProducer;
+    /// Select between two values.
+    ///
+    /// F: bool, any, any -> any
+    Select,
 
-    struct Frame {
-        ByteReader code;
-        usz stack_pos_on_entry;
+    /// Integer left shift.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(Shl),
 
-        explicit Frame(Stack& s, const ByteBuffer& code) : code{code}, stack_pos_on_entry{s.size()} {}
-    };
+    /// Signed multiplication with overflow checking.
+    ///
+    /// F: iX, iX -> iX, bool
+    INTEGER_OP(SMulOv),
 
-    TranslationUnit& tu;
-    Stack s;
-    const bool complain;
+    /// Signed integer remainder.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(SRem),
 
-    // Non-trivial objects are stored separately and represented on
-    // the stack as IDs.
-    SmallVector<APInt, 16> integer_storage;
-    using IntegerId = u32;
+    /// Signed subtraction with overflow checking.
+    ///
+    /// F: iX, iX -> iX, bool
+    INTEGER_OP(SSubOv),
 
-public:
-    Evaluator(TranslationUnit& tu, bool complain) : tu(tu), complain(complain) {}
-    auto run(Location loc, ByteReader entry_point) -> std::optional<Value> {
-        SmallVector<Frame> call_stack;
-        call_stack.emplace_back(s, entry_point);
-        auto* code = &entry_point;
+    /// Store a value.
+    ///
+    /// F: Pointer, any
+    TYPED_OP(Store),
 
-        auto PushFrame = [&](const ByteBuffer& byte_code) {
-            call_stack.emplace_back()
-        }
+    /// Integer subtraction.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(Sub),
 
-        for (;;) {
-            switch (code->read<Op>()) {
-                // Calling a function.
-                case Op::CallInternal: {
-                    auto proc = reinterpret_cast<ProcDecl*>(code->read<uptr>());
-                    auto it = tu.byte_code.find(proc);
-                    if (it != tu.byte_code.end()) {
+/// Integer truncation.
+///
+/// F: iX -> iY
+#define X(name, ...) name,
+    INTEGER_TRUNC(X)
+#undef X
 
-                    }
+    /// Unsigned integer division.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(UDiv),
 
-                    ICE(loc, "TODO: Evaluate call");
-                    return std::nullopt;
-                }
+    /// Unreachable instruction.
+    Unreachable,
 
-                // Returning integers.
-                case Op::EvalRetI8: return Value{APInt(8, s.pop<u8>()), tu.I8Ty};
-                case Op::EvalRetI16: return Value{APInt(16, s.pop<u16>()), tu.I16Ty};
-                case Op::EvalRetI32: return Value{APInt(32, s.pop<u32>()), tu.I32Ty};
-                case Op::EvalRetI64: return Value{APInt(64, s.pop<u64>()), tu.I64Ty};
-                case Op::EvalRetAPInt: return Value{integer_storage[s.pop<IntegerId>()], tu.I64Ty};
+    /// Call to a procedure that has not been compiled yet.
+    ///
+    /// F: [any...] -> [any...]
+    /// I: String
+    UnresolvedCall,
 
-                // Pushing integers.
-                case Op::PushI8: s << code->read<i8>(); break;
-                case Op::PushI16: s << code->read<i16>(); break;
-                case Op::PushI32: s << code->read<i32>(); break;
-                case Op::PushI64: s << code->read<i64>(); break;
-                case Op::PushAPInt: {
-                    s << IntegerId(integer_storage.size());
-                    integer_storage.push_back(code->read<APInt>());
-                } break;
-            }
-        }
-    }
+    /// Unsigned integer remainder.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(URem),
 
-private:
-    /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) diags().diag(level, where, fmt, std::forward<Args>(args)...);
-    }
+    /// Integer bitwise XOR.
+    ///
+    /// F: iX, iX -> iX
+    INTEGER_OP(Xor),
 };
 } // namespace
 
 // ============================================================================
-//  API
+//  Compiler
 // ============================================================================
+/// A compile-time string constant.
+///
+/// The bytecode doesn’t persist across compiler invocations, so we
+/// can just store strings as a pointer+size. This type is used to
+/// simplify serialisation thereof.
+///
+/// We don’t serialise String itself like this because we don’t want
+/// to accidentally serialise pointers elsewhere in the compiler.
+struct CTString {
+    String value;
+
+    void deserialise(ByteReader& r) {
+        auto data = reinterpret_cast<const char*>(r.read<uptr>());
+        auto size = r.read<u64>();
+        value = String::CreateUnsafe(StringRef{data, size});
+    }
+
+    void serialise(ByteWriter& w) const {
+        w << uptr(value.data()) << u64(value.size());
+    }
+};
+
+class VM::Compiler : DiagsProducer<bool> {
+    friend DiagsProducer;
+
+public:
+    VM& vm;
+    cg::CodeGen cg{vm.owner(), Size::Bits(64)}; // TODO: Use target word size.
+    Location l;
+    bool complain = true;
+
+    Compiler(VM& vm) : vm{vm} {}
+    bool compile(Stmt* stmt, bool complain);
+
+private:
+    /// Get the diagnostics engine.
+    [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return vm.owner().context().diags(); }
+
+    template <typename... Args>
+    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) vm.owner().context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
+    void CompileProcedure(ir::Proc* proc);
+};
+
+class eval::EmitProcedure {
+    VM::Compiler& c;
+    ByteBuffer temporary;
+    ByteWriter code{temporary};
+
+    /// Total size of the stack frame for this procedure.
+    u32 frame_size = 0;
+
+    /// Offset to the slot for the temporary(s) produced
+    /// by an instruction.
+    DenseMap<ir::Inst*, u32> frame_offsets{};
+
+public:
+    EmitProcedure(VM::Compiler& c) : c{c} {}
+
+    void compile(ir::Inst* i);
+
+private:
+    void Emit(ir::Value* val);
+    void EmitAll(ArrayRef<ir::Value*> vals);
+    void EmitBlockAddress(ir::Block* b);
+};
+
+VM::~VM() = default;
+VM::VM(TranslationUnit& owner_tu) : owner_tu{owner_tu}, registers(MaxRegisters) {
+    compiler.reset(new Compiler(*this));
+}
+
 auto VM::eval(
     Stmt* stmt,
     bool complain
 ) -> std::optional<Value> {
-    // Compile the statement.
-    auto buffer = CompileSingleStmt(stmt, complain);
-    if (not buffer) return std::nullopt;
+    using OptVal = std::optional<Value>;
 
-    Compiler c{owner(), complain};
-    if (!c.CompileStmt(stmt)) return std::nullopt;
-    Evaluator e{owner(), complain};
-    return e.run(stmt->location(), ByteReader{c.code});
-}
-*/
-
-
-
-
-
-
-#pragma clang diagnostic ignored "-Wcomment"
-/*
-// ============================================================================
-//  Evaluation State
-// ============================================================================
-struct StackFrame {
-    /// This is *not* a map to lvalues because some locals
-    /// (e.g. small 'in' parameters, are *not* lvalues!)
-    using LocalsMap = DenseMap<LocalDecl*, Value>;
-
-    StackFrame(const StackFrame&) = delete;
-    StackFrame& operator=(const StackFrame&) = delete;
-    StackFrame(StackFrame&&) = default;
-    StackFrame& operator=(StackFrame&&) = default;
-
-    StackFrame() = default;
-    StackFrame(Ptr<ProcDecl> proc, LocalsMap&& locals, Location loc)
-        : proc{proc}, call_loc{loc}, locals{std::move(locals)} {}
-
-    /// The procedure that this frame belongs to.
-    Ptr<ProcDecl> proc;
-
-    /// Location of the call that pushed this frame.
-    Location call_loc;
-
-    /// The local variables and parameters allocated in this frame.
-    LocalsMap locals;
-
-    /// The return value, if any.
-    Value return_value;
-};
-
-class srcc::eval::EvaluationContext : DiagsProducer<bool> {
-    /*class Executor {
-        std::unique_ptr<llvm::orc::ThreadSafeContext> ctx;
-        std::unique_ptr<llvm::orc::LLJIT> jit;
-
-        Executor(
-            std::unique_ptr<llvm::orc::ThreadSafeContext> ctx,
-            std::unique_ptr<llvm::orc::LLJIT> jit
-        ) : ctx{std::move(ctx)}, jit{std::move(jit)} {}
-
-    public:
-        static auto Create() -> std::unique_ptr<Executor>;
-    };#1#
-    /*std::unique_ptr<Executor> cached_executor;#1#
-
-public:
-    TranslationUnit& tu;
-    bool complain;
-    SmallVector<StackFrame, 16> stack;
-    llvm::BumpPtrAllocator memory;
-
-private:
-    u64 steps = 0;
-    const u64 max_steps = tu.context().eval_steps();
-    Location entry_loc;
-
-public:
-    class PushStackFrame {
-        SRCC_IMMOVABLE(PushStackFrame);
-        EvaluationContext& ctx;
-
-    public:
-        PushStackFrame(
-            EvaluationContext& ctx,
-            ProcDecl* proc,
-            StackFrame::LocalsMap&& locals,
-            Location loc
-        ) : ctx{ctx} { ctx.stack.emplace_back(proc, std::move(locals), loc); }
-        ~PushStackFrame() { ctx.stack.pop_back(); }
-    };
-
-    EvaluationContext(TranslationUnit& tu, Location entry_loc, bool complain)
-        : tu{tu}, complain{complain}, entry_loc{entry_loc} {
-        // Push a fake stack frame in case we need to deal with
-        // local variables at the top level.
-        stack.emplace_back();
-    }
-
-    /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
-
-    auto AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue&;
-    auto AllocateMemory(Type ty) -> Memory*;
-    auto AllocateMemory(Size size, Align align) -> Memory*;
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) {
-            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
-
-            // Print call stack, but take care not to recurse infinitely here.
-            if (level != Diagnostic::Level::Note) {
-                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
-                    frame.call_loc,
-                    "In call to '{}' here",
-                    frame.proc.get()->name
-                );
+    // Fast paths for common values.
+    if (auto e = dyn_cast<Expr>(stmt)) {
+        e = e->strip_parens();
+        auto val = e->visit(utils::Overloaded{// clang-format off
+            [](auto*) -> OptVal { return std::nullopt; },
+            [](IntLitExpr* i) -> OptVal { return Value{i->storage.value(), i->type}; },
+            [](BoolLitExpr* b) -> OptVal { return Value(b->value); },
+            [](TypeExpr* t) -> OptVal { return Value{t->value}; },
+            [](ProcRefExpr* p) -> OptVal { return Value{p->decl}; },
+            [&](StrLitExpr* s) -> OptVal {
+                return Value{
+                    Slice{
+                        Reference{LValue{s->value, owner().StrLitTy, s->location(), false}, APInt::getZero(64)},
+                        APInt(u32(Types::IntTy->size(owner()).bits()), s->value.size(), false),
+                    },
+                    owner().StrLitTy,
+                };
             }
-        }
+        }); // clang-format on
+
+        // If we got a value, just return it.
+        if (val.has_value()) return val;
     }
 
-    /// Get the current stack frame.
-    [[nodiscard]] auto CurrFrame() -> StackFrame& {
-        Assert(not stack.empty(), "No stack frame");
-        return stack.back();
-    }
-
-    /// Check and diagnose for invalid memory accesses.
-    [[nodiscard]] bool CheckMemoryAccess(const LValue& lval, Size size, bool write, Location access_loc);
-
-    /// Print the contents of a stack frame for debugging.
-    void DumpFrame(StackFrame& frame);
-
-    /// Get a slice as a raw memory buffer.
-    [[nodiscard]] auto GetMemoryBuffer(const Slice& slice, Location loc) -> std::optional<ArrayRef<char>>;
-
-    /// Read from memory.
-    [[nodiscard]] bool LoadMemory(const LValue& lval, void* into, Size size, Location load_loc);
-
-    /// Read from memory.
-    template <typename Ty>
-    requires std::is_trivially_copyable_v<Ty>
-    [[nodiscard]] bool LoadMemory(const LValue& lval, Ty& into, Location load_loc) {
-        return LoadMemory(lval, &into, Size::Of<Ty>(), load_loc);
-    }
-
-    /// Write into memory.
-    [[nodiscard]] bool StoreMemory(const LValue& lval, const void* from, Size size, Location store_loc);
-
-    /// Write into memory.
-    template <typename Ty>
-    requires std::is_trivially_copyable_v<Ty>
-    [[nodiscard]] bool StoreMemory(const LValue& lval, const Ty& from, Location store_loc) {
-        return StoreMemory(lval, &from, Size::Of<Ty>(), store_loc);
-    }
-
-    /// \return True on success, false on failure.
-    [[nodiscard]] bool Eval(Value& out, Stmt* stmt);
-#define AST_STMT_LEAF(Class) [[nodiscard]] bool Eval##Class(Value& out, Class* expr);
-#include "srcc/AST.inc"
-
-    /// Check if we’re in a function.
-    [[nodiscard]] bool InFunction() { return not stack.empty(); }
-
-    /// Create a string.
-    [[nodiscard]] auto MakeString(String s, Location l) -> Value;
-
-    /// Perform an assignment to an already live variable.
-    [[nodiscard]] bool PerformAssign(LValue& addr, Expr* init, Location loc);
-
-    /// Initialise a variable.
-    [[nodiscard]] bool PerformVarInit(LValue& addr, Expr* init, Location loc);
-
-    /// Report an error that involves accessing memory.
-    template <typename... Args>
-    bool ReportMemoryError(
-        const LValue& lval,
-        Location access_loc,
-        std::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        Error(access_loc, fmt, std::forward<Args>(args)...);
-        Note(lval.loc, "Of variable declared here");
-        return false;
-    }
-
-    /// Get the JIT executor.
-    /*auto Executor() -> Executor&;#1#
-};
-
-// ============================================================================
-//  LValue/Memory
-// ============================================================================
-void LValue::dump(bool use_colour) const {
-    std::print("{}", text::RenderColours(use_colour, print().str()));
-}
-
-auto LValue::print() const -> SmallUnrenderedString {
-    SmallUnrenderedString out;
-    utils::Overloaded V{// clang-format off
-        [&](String s) { out += std::format("%3(\"{}\")", s); },
-        [&](const Memory* mem) {
-            out += std::format(
-                "<memory:%4({}):%3({})",
-                mem->size(),
-                mem->alive() ? "alive"sv : "dead"sv
-            );
-
-            if (mem->alive() and type == Types::IntTy) {
-                i64 value;
-                std::memcpy(&value, mem->data(), sizeof(i64));
-                out += std::format(" value:%5({})", value);
-            }
-
-            out += ">";
-        }
-    }; // clang-format on
-    base.visit(V);
-    return out;
-}
-
-auto EvaluationContext::AllocateVar(StackFrame::LocalsMap& locals, LocalDecl* l) -> LValue& {
-    // For large integers, over-allocate so we can store multiples of words.
-    Memory* mem;
-    if (isa<IntType>(l->type)) {
-        mem = AllocateMemory(
-            l->type->size(tu).aligned(Align::Of<u64>()),
-            Align::Of<u64>()
-        );
-    } else {
-        mem = AllocateMemory(l->type);
-    }
-
-    return locals.try_emplace(l, LValue{mem, l->type, l->location()}).first->second.cast<LValue>();
-}
-
-auto EvaluationContext::AllocateMemory(Type ty) -> Memory* {
-    auto ty_sz = ty->size(tu);
-    auto ty_align = ty->align(tu);
-    return AllocateMemory(ty_sz, ty_align);
-}
-
-auto EvaluationContext::AllocateMemory(Size size, Align align) -> Memory* {
-    auto data = memory.Allocate(size.bytes(), align);
-    auto mem = memory.Allocate<Memory>();
-    return ::new (mem) Memory{size, data};
-}
-
-bool EvaluationContext::CheckMemoryAccess(
-    const LValue& lval,
-    Size size,
-    bool write,
-    Location loc
-) {
-    auto mem = lval.base.get<Memory*>();
-    if (mem->dead()) return ReportMemoryError(
-        lval,
-        loc,
-        "Accessing memory outside of its lifetime"
-    );
-
-    if (size.bytes() > mem->size().bytes()) return ReportMemoryError(
-        lval,
-        loc,
-        "Out-of-bounds {} of size {} (total size: {})",
-        write ? "write" : "read",
-        mem->size() - size,
-        size
-    );
-
-    return true;
-}
-
-auto EvaluationContext::GetMemoryBuffer(
-    const Slice& slice,
-    Location loc
-) -> std::optional<ArrayRef<char>> {
-    using Ret = std::optional<ArrayRef<char>>;
-    auto size = slice.size.getZExtValue();
-    auto offs = slice.data.offset.getZExtValue();
-    auto V = utils::Overloaded{
-        // clang-format off
-        [&](String s) -> Ret {
-            if (s.size() < size + offs) {
-                // TODO: improve error.
-                Error(loc, "Out-of-bounds access to string literal");
-                return std::nullopt;
-            }
-
-            return ArrayRef{s.data() + offs, size};
-        },
-
-        [&](const Memory* mem) -> Ret {
-            if (not CheckMemoryAccess(slice.data.lvalue, Size::Bytes(offs + size), false, loc)) return std::nullopt;
-            return ArrayRef{static_cast<const char*>(mem->data()) + offs, size};
-        },
-    }; // clang-format on
-    return slice.data.lvalue.base.visit(V);
-}
-
-bool EvaluationContext::LoadMemory(
-    const LValue& lval,
-    void* into,
-    Size size_to_load,
-    Location loc
-) {
-    TRY(CheckMemoryAccess(lval, size_to_load, false, loc));
-    std::memcpy(into, lval.base.get<Memory*>()->data(), size_to_load.bytes());
-    return true;
-}
-
-bool EvaluationContext::StoreMemory(
-    const LValue& lv,
-    const void* from,
-    Size size_to_write,
-    Location loc
-) {
-    auto mem = lv.base.get<Memory*>();
-
-    // Check that we can store into this.
-    TRY(CheckMemoryAccess(lv, size_to_write, true, loc));
-    if (not lv.modifiable)
-        return ReportMemoryError(lv, loc, "Attempting to write into read-only memory.");
-
-    // Dew it.
-    std::memcpy(mem->data(), from, size_to_write.bytes());
-    return true;
-}
-
-void Memory::destroy() {
-    data_and_state.setInt(LifetimeState::Uninitialised);
-}
-
-void Memory::init() {
-    data_and_state.setInt(LifetimeState::Initialised);
-
-    // Clear in any case since this starts the lifetime of this thing.
-    zero();
-}
-
-void Memory::zero() {
-    std::memset(data(), 0, size().bytes());
-}
-
-// ============================================================================
-//  Helpers
-// ============================================================================
-void EvaluationContext::DumpFrame(StackFrame& frame) {
-    if (not frame.proc) return;
-    std::println("In procedure '{}'", frame.proc.get()->name);
-    for (auto& [decl, lval] : frame.locals) {
-        std::print("  {} -> ", decl->name);
-        lval.dump(true);
-        std::print("\n");
-    }
-    std::print("\n");
-}
-
-bool EvaluationContext::Eval(Value& out, Stmt* stmt) {
-    if (steps++ > max_steps) {
-        Error(entry_loc, "Exceeded maximum compile-time evaluation steps ({})", max_steps);
-        Remark("You can raise the maximum using the '--eval-steps' flag");
-        return false;
-    }
-
-    if (stmt->dependent()) {
-        ICE(stmt->location(), "Cannot evaluate dependent statement");
-        return false;
-    }
-
-    // TODO: Add a max steps variable to prevent infinite loops.
-
-    switch (stmt->kind()) {
-        using K = Stmt::Kind;
-#define AST_STMT_LEAF(node) \
-    case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
-#include "../../include/srcc/AST.inc"
-    }
-    Unreachable("Invalid statement kind");
-}
-
-auto EvaluationContext::MakeString(String s, Location l) -> Value {
-    return Value{
-        Slice{
-            Reference{LValue{s, tu.StrLitTy, l}, APInt::getZero(64)},
-            APInt(u32(Types::IntTy->size(tu).bits()), s.size(), false),
-        },
-        tu.StrLitTy,
-    };
-}
-
-bool EvaluationContext::PerformAssign(LValue& addr, Expr* init, Location loc) {
-    auto mem = addr.base.get<Memory*>();
-
-    // For builtin types, Sema will have ensured that the RHS is
-    // an srvalue of the same type.
-    switch (addr.type->value_category()) {
-        case ValueCategory::MRValue: Todo("Initialise mrvalue");
-        case ValueCategory::LValue: Todo("Initialise lvalue");
-        case ValueCategory::DValue:
-            ICE(addr.loc, "Dependent value in constant evaluation");
-            return false;
-
-        case ValueCategory::SRValue: {
-            auto InitBuiltin = [&]<typename T>(T get_value(Value&)) {
-                Assert(init->value_category == Expr::SRValue);
-                if (isa<DefaultInitExpr>(init)) {
-                    mem->zero();
-                    return true;
-                }
-
-                Value val;
-                TryEval(val, init);
-                return StoreMemory(addr, get_value(val), init->location());
-            };
-
-            if (addr.type == Types::IntTy) return InitBuiltin(
-                +[](Value& v) { return v.cast<APInt>().getZExtValue(); }
-            );
-
-            if (addr.type == Types::BoolTy) return InitBuiltin(
-                +[](Value& v) { return v.cast<bool>(); }
-            );
-
-            if (isa<IntType>(addr.type.ptr())) {
-                if (isa<DefaultInitExpr>(init)) {
-                    mem->zero();
-                    return true;
-                }
-
-                Value val;
-                TryEval(val, init);
-                auto& ai = val.cast<APInt>();
-                auto data = ai.getRawData();
-                auto size = ai.getNumWords() * Size::Of<u64>();
-                return StoreMemory(addr, data, size, loc);
-            }
-
-            if (isa<ProcType>(addr.type)) {
-                Assert(init->value_category == Expr::SRValue);
-                Value closure;
-                TryEval(closure, init);
-                return StoreMemory(addr, Closure{closure.cast<ProcDecl*>()}, init->location());
-            }
-
-            return Error(
-                loc,
-                "Unsupported variable type in constant evaluation: '{}'",
-                addr.type
-            );
-        }
-    }
-
-    Unreachable();
-}
-
-bool EvaluationContext::PerformVarInit(LValue& addr, Expr* init, Location loc) {
-    auto* mem = addr.base.get<Memory*>();
-    Assert(mem->dead(), "Already initialised?");
-
-    // TODO: Handle intents.
-
-    mem->init();
-    if (not PerformAssign(addr, init, loc)) {
-        mem->destroy();
-        return false;
-    }
-
-    return true;
-}
-
-/*auto EvaluationContext::Executor() -> class Executor& {
-    if (not cached_executor.has_value()) cached_executor.emplace();
-    return *cached_executor;
-}#1#
-
-// ============================================================================
-//  Executor
-// ============================================================================
-/*auto EvaluationContext::Executor::Create() -> std::unique_ptr<Executor> {
-    auto ctx = std::make_unique<llvm::orc::ThreadSafeContext>(std::make_unique<llvm::LLVMContext>());
-
-    // Get the target machine.
-    auto tm_builder = llvm::orc::JITTargetMachineBuilder::detectHost();
-    if (auto e = tm_builder.takeError()) Unreachable("Failed to get native target: {}", e);
-
-    // Create the jit.
-    auto jit_builder = std::make_unique<llvm::orc::LLJITBuilder>();
-    jit_builder->setJITTargetMachineBuilder(std::move(*tm_builder));
-
-    // Try to enable debugging support. Ignore any failures here.
-    jit_builder->setPrePlatformSetup([](llvm::orc::LLJIT& j) {
-        llvm::consumeError(llvm::orc::enableDebuggerSupport(j));
-        return llvm::Error::success();
-    });
-
-    // Dew it.
-    auto jit = jit_builder->create();
-    if (auto e = jit.takeError()) Unreachable("Failed to create native executor: {}", e);
-
-    // Load runtime.
-    //
-    // FIXME: Replace this with our own runtime once we have one.
-    // FIXME: Have some way of importing the C runtime portably.
-    auto rt = llvm::orc::DynamicLibrarySearchGenerator::Load(
-        "/usr/lib/libc.so.6",
-        jit->get()->getDataLayout().getGlobalPrefix()
-    );
-
-    if (auto e = rt.takeError()) Unreachable("Failed to load runtime: {}", e);
-    jit->get()->getMainJITDylib().addGenerator(std::move(*rt));
-
-    // Create the executor.
-    return std::unique_ptr<Executor>(new Executor(std::move(ctx), std::move(*jit)));
-}#1#
-
-// ============================================================================
-//  Evaluation
-// ============================================================================
-bool EvaluationContext::EvalAssertExpr(Value& out, AssertExpr* expr) {
-    TryEval(out, expr->cond);
-
-    // If the assertion fails, print the message if there is one and
-    // if it is a constant expression.
-    if (not out.cast<bool>()) {
-        if (auto m = expr->message.get_or_null(); m and Eval(out, m)) {
-            auto sl = out.cast<Slice>();
-            auto mem = GetMemoryBuffer(sl, m->location());
-            if (mem == std::nullopt) return false;
-            Error(
-                expr->location(),
-                "Assertion failed:\f'{}': {}",
-                expr->cond->location().text(tu.context()),
-                StringRef{mem->data(), mem->size()}
-            );
-        } else {
-            Error(
-                expr->location(),
-                "Assertion failed:\f'{}'",
-                expr->cond->location().text(tu.context())
-            );
-        }
-
-        // Try to decompose the message to print a more helpful error.
-        if (
-            auto bin = dyn_cast<BinaryExpr>(expr->cond->strip_parens());
-            bin and
-            (bin->op == Tk::EqEq or bin->op == Tk::Neq)
-        ) {
-            Value left, right;
-            Assert(Eval(left, bin->lhs));
-            Assert(Eval(right, bin->rhs));
-            Remark(
-                "\rHelp: Comparison evaluates to '{} {} {}'",
-                left,
-                Spelling(bin->op),
-                right
-            );
-        }
-
-        return false;
-    }
-
-    // Assertion returns void.
-    out = {};
-    return true;
-}
-
-bool EvaluationContext::EvalBinaryExpr(Value& out, BinaryExpr* expr) {
-    using enum OverflowBehaviour;
-
-    // Some operators need special handling because not every
-    // operand may be evaluated.
-    switch (expr->op) {
-        default: break;
-        case Tk::And:
-        case Tk::Or:
-            return ICE(expr->location(), "TODO: Handle 'and' and 'or' properly");
-
-        // This, as ever, is just variable initialisation.
-        case Tk::Assign: {
-            TryEval(out, expr->lhs);
-            return PerformAssign(out.cast<LValue>(), expr->rhs, expr->location());
-        }
-    }
-
-    // Any other operators require us to evaluate both sides.
-    Value lhs, rhs;
-    TryEval(lhs, expr->lhs);
-    TryEval(rhs, expr->rhs);
-
-    auto EvalAndCheckOverflow = [&]( // clang-format off
-        APInt (APInt::* op)(const APInt&, bool&) const,
-        OverflowBehaviour ob
-    ) { // clang-format on
-        auto& left = lhs.cast<APInt>();
-        auto& right = rhs.cast<APInt>();
-
-        bool overflow = false;
-        out = {(left.*op)(right, overflow), lhs.type()};
-
-        // Handle overflow.
-        if (not overflow) return true;
-        switch (ob) {
-            case Wrap: return true;
-            case Trap: {
-                return Error(
-                    expr->location(),
-                    "Integer overflow in calculation\f'{} {} {}'",
-                    toString(left, 10, true),
-                    expr->op,
-                    toString(right, 10, true)
-                );
-            }
-        }
-
-        Unreachable();
-    };
-
-    auto EvalUnchecked = [&](APInt (APInt::*op)(const APInt&) const) {
-        out = {(lhs.cast<APInt>().*op)(rhs.cast<APInt>()), lhs.type()};
-        return true;
-    };
-
-    auto EvalCompare = [&](bool (APInt::*op)(const APInt&) const) {
-        out = (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
-        return true;
-    };
-
-    auto EvalInPlace = [&]<typename T = void>(T (APInt::*op)(const APInt&)) {
-        (lhs.cast<APInt>().*op)(rhs.cast<APInt>());
-        out = std::move(lhs);
-        return true;
-    };
-
-    switch (expr->op) {
-        default: Unreachable("Invalid operator: {}", expr->op);
-
-        // Array or slice subscript.
-        case Tk::LBrack: return ICE(expr->location(), "Array/slice subscript not supported yet");
-        case Tk::In: return ICE(expr->location(), "Operator 'in' not yet implemented");
-
-        // APInt doesn’t support this, so we have to do it ourselves.
-        case Tk::StarStar: {
-            auto base = lhs.cast<APInt>();
-            auto exp = rhs.cast<APInt>();
-            auto One = [&] { return APInt::getOneBitSet(base.getBitWidth(), 0); };
-            auto Zero = [&] { return APInt::getZero(base.getBitWidth()); };
-            auto MinusOne = [&] { return APInt::getAllOnes(base.getBitWidth()); };
-
-            // Anything to the power of 0, including 0 itself, is 1,
-            // *by definition*.
-            if (exp.isZero()) {
-                out = {One(), lhs.type()};
-                return true;
-            }
-
-            // 0 to the power of a positive number is 0, and 0 to the
-            // power of a negative number is undefined.
-            if (base.isZero()) {
-                if (exp.isNegative()) {
-                    Error(
-                        expr->location(),
-                        "Undefined operation: 0 ** {}",
-                        toString(exp, 10, true)
-                    );
-
-                    Remark(
-                        "\r\vTaking 0 to the power of a negative number would "
-                        "require division by zero, which is not defined for "
-                        "integers."
-                    );
-
-                    return false;
-                }
-
-                out = {Zero(), lhs.type()};
-                return true;
-            }
-
-            // If the exponent is negative, the result will be a fraction,
-            // which collapses to 0 because this is integer arithmetic,
-            // unless the base is 1, in which case the result is always 1,
-            // or if the base is -1, in which case the result is -1 instead
-            // if the exponent is odd.
-            //
-            // Check for this first so we avoid having to negate 'base' in
-            // this case if it happens to be INT_MIN.
-            if (exp.isNegative()) {
-                if (base.isOne()) out = {One(), lhs.type()};
-                else if (base.isAllOnes()) out = {exp[0] ? MinusOne() : One(), lhs.type()};
-                else out = {Zero(), lhs.type()};
-                return true;
-            }
-
-            // If the base is negative, the result will be negative if the
-            // exponent is odd, and positive otherwise.
-            // FIXME: I don’t think we need this negation dance here?
-            bool negate = base.isNegative();
-            if (negate) {
-                // If base is INT_MIN, then its negation is not representable;
-                // furthermore, we only get here if the exponent is positive,
-                // which means that exponentiation would result in an even
-                // larger value, which means that this overflows either way.
-                if (base.isMinSignedValue()) Error(
-                    expr->location(),
-                    "Integer overflow in calculation\f'{} ** {}'",
-                    toString(base, 10, true),
-                    toString(exp, 10, true)
-                );
-
-                // Otherwise, the negation is fine.
-                base.negate();
-            }
-
-            // Finally, both the base and exponent are positive here; we
-            // can now perform the calculation.
-            out = {One(), lhs.type()};
-            auto& res = out.cast<APInt>();
-            for (auto i = exp; i != 0; --i) {
-                bool overflow = false;
-                res = res.smul_ov(base, overflow);
-                if (overflow) {
-                    if (negate) base.negate();
-                    return Error(
-                        expr->location(),
-                        "Integer overflow in calculation\f'{} ** {}'",
-                        toString(base, 10, true),
-                        toString(exp, 10, true)
-                    );
-                }
-            }
-
-            // Negate if necessary.
-            //
-            // This is always fine since the smallest negative number is
-            // always greater in magnitude than the largest positive number
-            // because of how two’s complement works.
-            if (negate and exp[0]) res.negate();
-            return true;
-        }
-
-        // These operations can overflow.
-        case Tk::Star: return EvalAndCheckOverflow(&APInt::smul_ov, Trap);
-        case Tk::Slash: return EvalAndCheckOverflow(&APInt::sdiv_ov, Trap);
-        case Tk::StarTilde: return EvalAndCheckOverflow(&APInt::smul_ov, Wrap);
-        case Tk::Plus: return EvalAndCheckOverflow(&APInt::sadd_ov, Trap);
-        case Tk::PlusTilde: return EvalAndCheckOverflow(&APInt::sadd_ov, Wrap);
-        case Tk::Minus: return EvalAndCheckOverflow(&APInt::ssub_ov, Trap);
-        case Tk::MinusTilde: return EvalAndCheckOverflow(&APInt::ssub_ov, Wrap);
-        case Tk::ShiftLeft: return EvalAndCheckOverflow(&APInt::sshl_ov, Trap);
-        case Tk::ShiftLeftLogical: return EvalAndCheckOverflow(&APInt::ushl_ov, Trap);
-
-        // These physically can’t.
-        case Tk::ColonSlash: return EvalUnchecked(&APInt::udiv);
-        case Tk::ColonPercent: return EvalUnchecked(&APInt::urem);
-        case Tk::Percent: return EvalUnchecked(&APInt::srem);
-
-        // For these, we can avoid allocating a new APInt.
-        case Tk::ShiftRight: return EvalInPlace(&APInt::ashrInPlace);
-        case Tk::ShiftRightLogical: return EvalInPlace(&APInt::lshrInPlace);
-        case Tk::Ampersand: return EvalInPlace(&APInt::operator&=);
-        case Tk::VBar: return EvalInPlace(&APInt::operator|=);
-
-        // Comparison operators.
-        case Tk::ULt: return EvalCompare(&APInt::ult);
-        case Tk::UGt: return EvalCompare(&APInt::ugt);
-        case Tk::ULe: return EvalCompare(&APInt::ule);
-        case Tk::UGe: return EvalCompare(&APInt::uge);
-        case Tk::SLt: return EvalCompare(&APInt::slt);
-        case Tk::SGt: return EvalCompare(&APInt::sgt);
-        case Tk::SLe: return EvalCompare(&APInt::sle);
-        case Tk::SGe: return EvalCompare(&APInt::sge);
-
-        // Equality comparison.
-        case Tk::EqEq: {
-            out = lhs == rhs;
-            return true;
-        }
-
-        case Tk::Neq: {
-            out = lhs != rhs;
-            return true;
-        }
-
-        // Exclusive or.
-        // This needs special handling because it’s supported for both bools and ints.
-        case Tk::Xor:
-            return ICE(expr->location(), "Unsupported operator in constant evaluation: 'xor'");
-
-        // Assignment operators.
-        case Tk::PlusEq:
-        case Tk::PlusTildeEq:
-        case Tk::MinusEq:
-        case Tk::MinusTildeEq:
-        case Tk::StarEq:
-        case Tk::StarTildeEq:
-        case Tk::StarStarEq:
-        case Tk::SlashEq:
-        case Tk::PercentEq:
-        case Tk::ShiftLeftEq:
-        case Tk::ShiftLeftLogicalEq:
-        case Tk::ShiftRightEq:
-        case Tk::ShiftRightLogicalEq: {
-            return ICE(expr->location(), "Compound assignment operators not supported yet");
-        }
-    }
-}
-
-bool EvaluationContext::EvalBlockExpr(Value& out, BlockExpr* block) {
-    // FIXME: Once we have destructors, this information should
-    // just be available in the BlockExpr.
-    struct VariableRAII {
-        SRCC_IMMOVABLE(VariableRAII);
-        SmallVector<Memory*> locals_to_destroy;
-        VariableRAII() = default;
-        ~VariableRAII() {
-            for (auto v : locals_to_destroy)
-                v->destroy();
-        }
-    } initialised_vars;
-
-    out = {};
-    for (auto s : block->stmts()) {
-        Value val;
-
-        // Variables need to be initialised.
-        if (auto l = dyn_cast<LocalDecl>(s)) {
-            auto& loc = AllocateVar(CurrFrame().locals, l);
-            if (not PerformVarInit(loc, l->init.get(), l->location()))
-                return false;
-            initialised_vars.locals_to_destroy.push_back(loc.base.get<Memory*>());
-        }
-
-        // Any other decls can be skipped.
-        if (isa<Decl>(s)) continue;
-
-        // Anything else needs to be evaluated.
-        TryEval(val, s);
-        if (s == block->return_expr()) out = std::exchange(val, {});
-    }
-    return true;
-}
-
-bool EvaluationContext::EvalBoolLitExpr(Value& out, BoolLitExpr* expr) {
-    out = expr->value;
-    return true;
-}
-
-bool EvaluationContext::EvalBuiltinCallExpr(Value& out, BuiltinCallExpr* builtin) {
-    switch (builtin->builtin) {
-        case BuiltinCallExpr::Builtin::Print: {
-            for (auto arg : builtin->args()) {
-                TryEval(out, arg);
-
-                // String.
-                if (auto slice = out.dyn_cast<Slice>()) {
-                    auto mem = GetMemoryBuffer(*slice, arg->location());
-                    if (mem == std::nullopt) return false;
-                    std::print("{}", StringRef{mem->data(), mem->size()});
-                    continue;
-                }
-
-                // Integer.
-                if (auto int_val = out.dyn_cast<APInt>()) {
-                    std::print("{}", toString(*int_val, 10, true));
-                    continue;
-                }
-
-                // Bool.
-                if (auto bool_val = out.dyn_cast<bool>()) {
-                    std::print("{}", *bool_val);
-                    continue;
-                }
-
-                Unreachable("Invalid value in __srcc_print call");
-            }
-
-            return true;
-        }
-    }
-
-    Unreachable("Invalid builtin kind");
-}
-
-bool EvaluationContext::EvalBuiltinMemberAccessExpr(Value& out, BuiltinMemberAccessExpr* expr) {
-    switch (expr->access_kind) {
-        using AK = BuiltinMemberAccessExpr::AccessKind;
-        case AK::SliceData: {
-            TryEval(out, expr->operand);
-            auto data = std::move(out.dyn_cast<Slice>()->data);
-            out = {std::move(data), expr->type};
-            return true;
-        }
-
-        case AK::SliceSize: {
-            TryEval(out, expr->operand);
-            auto size = out.dyn_cast<Slice>()->size;
-            out = {size, expr->type};
-            return true;
-        }
-
-        case AK::TypeAlign: {
-            auto te = cast<TypeExpr>(expr->operand);
-            out = i64(te->value->align(tu).value());
-            return true;
-        }
-
-        case AK::TypeBits: {
-            auto te = cast<TypeExpr>(expr->operand);
-            out = i64(te->value->size(tu).bits());
-            return true;
-        }
-
-        case AK::TypeBytes: {
-            auto te = cast<TypeExpr>(expr->operand);
-            out = i64(te->value->size(tu).bytes());
-            return true;
-        }
-
-        case AK::TypeArraySize: {
-            auto te = cast<TypeExpr>(expr->operand);
-            out = i64(te->value->array_size(tu).bytes());
-            return true;
-        }
-
-        case AK::TypeName: {
-            auto te = cast<TypeExpr>(expr->operand);
-            out = MakeString(tu.save(StripColours(te->value->print())), expr->location());
-            return true;
-        }
-    }
-    Unreachable();
-}
-
-bool EvaluationContext::EvalCallExpr(Value& out, CallExpr* call) {
-    TryEval(out, call->callee);
-    auto proc = out.cast<ProcDecl*>();
-    auto args = call->args();
-
-    // If we have a body, just evaluate it.
-    if (auto body = proc->body().get_or_null()) {
-        StackFrame::LocalsMap locals;
-
-        // Allocate and initialise local variables and initialise them. Do
-        // this before we set up the stack frame, otherwise, we’ll try to
-        // access the locals in the new frame before we’re done setting them
-        // up.
-        //
-        // For small 'in' parameters that are passed by value, just save the
-        // actual value in the parameter slot.
-        for (auto [i, p] : enumerate(proc->params())) {
-            auto InitVarFromRValue = [&] {
-                auto& addr = AllocateVar(locals, p);
-                return PerformVarInit(addr, args[i], p->location());
-            };
-
-            auto UseValueAsVar = [&](bool lvalue = true) {
-                Value v;
-                TryEval(v, args[i]);
-
-                // Verify that this is an lvalue and adjust the location.
-                if (lvalue) {
-                    Assert(v.isa<LValue>(), "{} arg must be an lvalue", p->intent());
-                    auto lval = v.cast<LValue>();
-                    lval.loc = p->location();
-                    locals.try_emplace(p, lval);
-                    return true;
-                }
-
-                // If it is an rvalue, just bind the parameter to it.
-                locals.try_emplace(p, std::move(v));
-                return true;
-            };
-
-            switch (p->intent()) {
-                // These are lvalues.
-                case Intent::Out:
-                case Intent::Inout:
-                    TRY(UseValueAsVar());
-                    break;
-
-                // Copy always passes by rvalue and creates a variable
-                // in the callee.
-                case Intent::Copy:
-                    TRY(InitVarFromRValue());
-                    break;
-
-                // Move may pass by rvalue or lvalue; if lvalue, that lvalue
-                // becomes the variable; if rvalue, a variable is created in
-                // the callee.
-                case Intent::Move:
-                    if (p->type->pass_by_rvalue(proc->cconv(), p->intent())) TRY(InitVarFromRValue());
-                    else TRY(UseValueAsVar());
-                    break;
-
-                // 'in' is similar, except that no variable is created in the
-                // callee either way.
-                case Intent::In: {
-                    TRY(UseValueAsVar(not p->type->pass_by_rvalue(proc->cconv(), p->intent())));
-
-                    // If this was an lvalue, make it readonly, and remember to reset
-                    // it when we return from this if we actually made it readonly.
-                    if (auto lv = locals[p].dyn_cast<LValue>()) lv->make_readonly();
-                } break;
-            }
-        }
-
-        // Set up stack.
-        PushStackFrame _{*this, proc, std::move(locals), call->location()};
-
-        // Dew it.
-        TryEval(out, body);
-        out = CurrFrame().return_value;
-        return true;
-    }
-
-    // FIXME: We can only call functions defined in this module; calling
-    // external functions would only be possible if we had the module providing
-    // them present as a shared library (explore generating a shared library
-    // and throwing it in /tmp)
-    //
-    // TODO: Otherwise, try to perform an external call.
-    return Error(call->location(), "Sorry, can’t call external functions at compile-time yet");
-}
-
-bool EvaluationContext::EvalCastExpr(Value& out, CastExpr* cast) {
-    TryEval(out, cast->arg);
-    switch (cast->kind) {
-        case CastExpr::LValueToSRValue: {
-            auto lvalue = out.cast<LValue>();
-
-            // Builtin int.
-            if (lvalue.type == Types::IntTy) {
-                i64 value;
-                TRY(LoadMemory(lvalue, value, cast->location()));
-                out = value;
-                return true;
-            }
-
-            // (Potentially) large integer.
-            if (auto i = dyn_cast<IntType>(lvalue.type.ptr())) {
-                SmallVector<u64> words;
-                words.resize(lvalue.type->size(tu).aligned(Align::Of<u64>()) / Size::Of<u64>());
-                if (not LoadMemory(lvalue, words.data(), lvalue.type->size(tu), cast->location()))
-                    return false;
-                out = {APInt{unsigned(i->bit_width().bits()), unsigned(words.size()), words.data()}, lvalue.type};
-                return true;
-            }
-
-            // Bool.
-            if (lvalue.type == Types::BoolTy) {
-                bool value;
-                TRY(LoadMemory(lvalue, value, cast->location()));
-                out = value;
-                return true;
-            }
-
-            // Closures.
-            if (isa<ProcType>(lvalue.type)) {
-                Closure cl;
-                TRY(LoadMemory(lvalue, cl, cast->location()));
-                out = cl.decl;
-                return true;
-            }
-
-            ICE(
-                cast->location(),
-                "Sorry, we don’t support lvalue->srvalue conversion of '{}' yet",
-                lvalue.type
-            );
-
-            return false;
-        }
-
-        case CastExpr::Integral: {
-            auto adjusted = out.cast<APInt>().sextOrTrunc(unsigned(cast->type->size(tu).bits()));
-            out = {adjusted, cast->type};
-            return true;
-        }
-    }
-
-    Unreachable("Invalid cast");
-}
-
-bool EvaluationContext::EvalConstExpr(Value& out, ConstExpr* constant) {
-    out = *constant->value;
-    return true;
-}
-
-bool EvaluationContext::EvalDefaultInitExpr(Value& out, DefaultInitExpr* expr) {
-    Todo();
-}
-
-bool EvaluationContext::EvalEvalExpr(Value& out, EvalExpr* eval) {
-    EvaluationContext C{tu, eval->location(), complain};
-    return C.Eval(out, eval->stmt);
-}
-
-bool EvaluationContext::EvalFieldDecl(Value&, FieldDecl*) {
-    Unreachable("Invalid evaluation target");
-}
-
-bool EvaluationContext::EvalIfExpr(Value& out, IfExpr* expr) {
-    TryEval(out, expr->cond);
-
-    // Always reset to an empty value if this isn’t supposed
-    // to yield anything.
-    defer {
-        if (not expr->has_yield()) out = {};
-    };
-
-    if (out.cast<bool>()) return Eval(out, expr->then);
-    if (auto e = expr->else_.get_or_null()) return Eval(out, e);
-    return true;
-}
-
-bool EvaluationContext::EvalIntLitExpr(Value& out, IntLitExpr* int_lit) {
-    out = {int_lit->storage.value(), int_lit->type};
-    return true;
-}
-
-bool EvaluationContext::EvalLocalDecl(Value&, LocalDecl* ld) {
-    Error(ld->location(), "Local variable is not a constant expression");
-    return false;
-}
-
-bool EvaluationContext::EvalLocalRefExpr(Value& out, LocalRefExpr* local) {
-    // Walk up the stack until we find an entry for this variable; note
-    // that the same function may be present in multiple frames, so just
-    // find the nearest one.
-    for (auto& frame : vws::reverse(stack)) {
-        auto it = frame.locals.find(local->decl);
-        if (it != frame.locals.end()) {
-            out = it->second;
-            return true;
-        }
-    }
-
-    // This should never happen since we always create all
-    // locals when we set up the stack frame.
-    Unreachable("Local variable not found: {}", local->decl->name);
-}
-
-bool EvaluationContext::EvalMemberAccessExpr(Value& out, MemberAccessExpr* expr) {
-    Todo();
-}
-
-bool EvaluationContext::EvalOverloadSetExpr(Value&, OverloadSetExpr*) {
-    // FIXME: A function that returns an overload set should be fine
-    // so long as it is only called at compile-time.
-    Unreachable("Evaluating unresolved overload set?");
-}
-
-bool EvaluationContext::EvalParenExpr(Value& out, ParenExpr* expr) {
-    return Eval(out, expr->expr);
-}
-
-bool EvaluationContext::EvalParamDecl(Value& out, ParamDecl* ld) {
-    return EvalLocalDecl(out, ld);
-}
-
-bool EvaluationContext::EvalProcDecl(Value&, ProcDecl*) {
-    Unreachable("Never evaluated");
-}
-
-bool EvaluationContext::EvalTemplateTypeDecl(Value&, TemplateTypeDecl*) {
-    Unreachable("Syntactically impossible to get here");
-}
-
-bool EvaluationContext::EvalProcRefExpr(Value& out, ProcRefExpr* proc_ref) {
-    out = proc_ref->decl;
-    return true;
-}
-
-bool EvaluationContext::EvalStaticIfExpr(Value&, StaticIfExpr*) {
-    // This node is always dependent, so getting here in the
-    // first place should be impossible.
-    Unreachable("Evaluating dependent 'static if' expression?");
-}
-
-bool EvaluationContext::EvalStrLitExpr(Value& out, StrLitExpr* str_lit) {
-    out = MakeString(str_lit->value, str_lit->location());
-    return true;
-}
-
-bool EvaluationContext::EvalStructInitExpr(Value&, StructInitExpr*) {
-    Unreachable("Evaluating struct initialiser without memory location?");
-}
-
-bool EvaluationContext::EvalReturnExpr(Value& out, ReturnExpr* expr) {
-    Assert(CurrFrame().return_value.isa<std::monostate>(), "Return value already set!");
-    out = {};
-    if (auto val = expr->value.get_or_null()) return Eval(CurrFrame().return_value, val);
-    return true;
-}
-
-bool EvaluationContext::EvalTypeExpr(Value& out, TypeExpr* expr) {
-    out = expr->value;
-    return true;
-}
-
-bool EvaluationContext::EvalTypeDecl(Value& out, TypeDecl* expr) {
-    out = expr->type;
-    return true;
-}
-
-bool EvaluationContext::EvalUnaryExpr(Value& out, UnaryExpr* expr) {
-    TryEval(out, expr->arg);
-    if (expr->postfix) return ICE(expr->location(), "Postfix unary operators not supported yet");
-    switch (expr->op) {
-        default: Unreachable("Invalid prefix operator: {}", expr->op);
-
-        // Boolean negation.
-        case Tk::Not: {
-            out = not out.cast<bool>();
-            return true;
-        }
-
-        // Arithmetic operators.
-        case Tk::Minus: {
-            auto& i = out.cast<APInt>();
-            // This can overflow if this is INT_MIN.
-            if (i.isMinSignedValue()) {
-                Error(
-                    expr->location(),
-                    "Integer overflow in calculation\f'- {}'",
-                    toString(i, 10, true)
-                );
-
-                Remark(
-                    "\vThe {}-bit value '{}', the smallest representable negative value, "
-                    "has no positive {}-bit counterpart because of two’s complement.",
-                    i.getBitWidth(),
-                    toString(i, 10, true),
-                    i.getBitWidth()
-                );
-
-                return false;
-            }
-
-            i.negate();
-            return true;
-        }
-
-        case Tk::Plus: return true;
-        case Tk::Tilde: {
-            out.cast<APInt>().flipAllBits();
-            return true;
-        }
-
-        case Tk::MinusMinus:
-        case Tk::PlusPlus: {
-            return ICE(expr->location(), "Increment/decrement operators not supported yet");
-        }
-    }
-}
-
-bool EvaluationContext::EvalWhileStmt(Value& out, WhileStmt* expr) {
-    defer { out = {}; };
-    for (;;) {
-        if (not Eval(out, expr->cond)) return false;
-        if (not out.cast<bool>()) return true;
-        if (not Eval(out, expr->body)) return false;
-    }
-}
-
-// ============================================================================
-//  Compiler
-// ============================================================================
-enum class Op : u8 {
-    PushI8,  // i8 value
-    PushI16, // i16 value
-    PushI32, // i32 value
-    PushI64, // i64 value
-    PushStr, // isz size, i8* data
-};
-
-class eval::ByteCode {
-    std::vector<std::byte> bytes;
-
-public:
-    struct Reader {
-        std::span<const std::byte> bytes;
-
-        [[nodiscard]] bool at_end() const { return bytes.empty(); }
-
-        template <typename T>
-        requires std::is_enum_v<T>
-        auto read() -> T { return T(read<std::underlying_type_t<T>>()); }
-
-        template <std::integral T>
-        auto read() -> T { return ReadTrivial<T>(); }
-
-        template <typename T>
-        requires std::is_pointer_v<T>
-        auto read() -> T { return ReadTrivial<T>(); }
-
-    private:
-        template <typename T>
-        requires std::is_trivially_copyable_v<T>
-        auto ReadTrivial() -> T {
-            Assert(bytes.size_bytes() >= sizeof(T), "Invalid byte code access");
-            T t;
-            std::memcpy(&t, bytes.data(), sizeof(T));
-            bytes = bytes.subspan(sizeof(T));
-            return t;
-        }
-    };
-
-    void dump();
-
-    auto reader() -> Reader { return Reader{bytes}; }
-
-    template <typename... Vals>
-    void op(Op op, Vals... vals) {
-        Add(op);
-        (Add(vals), ...);
-    }
-
-private:
-    template <typename T>
-    requires std::is_enum_v<T>
-    void Add(T t) { AddTrivial(t); }
-
-    template <typename T>
-    void Add(T* t) { AddTrivial(t); }
-
-    template <std::integral T>
-    void Add(T t) { AddTrivial(t); }
-
-    template <typename T>
-    requires std::is_trivially_copyable_v<T>
-    void AddTrivial(T t) {
-        auto* ptr = reinterpret_cast<std::byte*>(&t);
-        bytes.insert(bytes.end(), ptr, ptr + sizeof(T));
-    }
-};
-
-class eval::Compiler : DiagsProducer<bool> {
-    TranslationUnit& tu;
-    Location entry;
-    bool complain;
-    ByteCode code;
-
-public:
-    Compiler(TranslationUnit& tu, Location entry, bool complain)
-        : tu(tu), entry(entry), complain(complain) {}
-
-    bool CompileStmt(Stmt* stmt);
-#define AST_STMT_LEAF(Class) [[nodiscard]] bool Compile##Class(Class* expr);
-#include "srcc/AST.inc"
-
-    /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) {
-            tu.context().diags().diag(level, where, fmt, std::forward<Args>(args)...);
-
-            /*
-            // Print call stack, but take care not to recurse infinitely here.
-            if (level != Diagnostic::Level::Note) {
-                for (auto& frame : ref(stack).drop_front() | vws::reverse) Note(
-                    frame.call_loc,
-                    "In call to '{}' here",
-                    frame.proc.get()->name
-                );
-            }#1#
-        }
-    }
-
-    void OpI8(i8 value) { code.op(Op::PushI8, value); }
-    void OpI16(i16 value) { code.op(Op::PushI16, value); }
-    void OpI32(i32 value) { code.op(Op::PushI32, value); }
-    void OpI64(i64 value) { code.op(Op::PushI64, value); }
-    void OpStr(StringRef value) { code.op(Op::PushStr, isz(value.size()), value.data()); }
-
-    void PrintBytecode() { code.dump(); }
-};
-
-bool Compiler::CompileStmt(Stmt* stmt) {
-    Assert(not stmt->dependent(), "Evaluating dependent statement?");
-    switch (stmt->kind()) {
-        default:
-            ICE(stmt->location(), "TODO: Constant interpreter support for this thing:");
-            diags().flush();
-            stmt->dump_color();
-            return false;
-
-        case Stmt::Kind::IntLitExpr: return CompileIntLitExpr(cast<IntLitExpr>(stmt));
-        case Stmt::Kind::StrLitExpr: return CompileStrLitExpr(cast<StrLitExpr>(stmt));
-        case Stmt::Kind::BlockExpr: return CompileBlockExpr(cast<BlockExpr>(stmt));
-    }
-    Unreachable();
-}
-
-void ByteCode::dump() {
-    static auto FormatVal = []<typename T>(T val) -> std::string {
-        if constexpr (std::integral<T>) return std::to_string(val);
-        else if constexpr (utils::is<T, StringRef>) return std::format("\"{}\"", utils::Escape(val));
-        else static_assert(false, "Invalid value type");
-    };
-
-    static auto Print = [](StringRef opcode, auto ...vals) {
-        std::string operands;
-        ((operands += std::format("{}, ", FormatVal(vals))), ...);
-        if (not operands.empty()) operands.resize(operands.size() - 2);
-        std::println("    {:<5} {}", opcode, operands);
-    };
-
-    Reader r{bytes};
-    std::println("bytecode:");
-    while (not r.at_end()) {
-        switch (r.read<Op>()) {
-            case Op::PushI8: Print("i8", r.read<i8>()); continue;
-            case Op::PushI16: Print("i16", r.read<i16>()); continue;
-            case Op::PushI32: Print("i32", r.read<i32>()); continue;
-            case Op::PushI64: Print("i64", r.read<i64>()); continue;
-            case Op::PushStr: {
-                auto sz = usz(r.read<isz>());
-                auto ptr = r.read<const char*>();
-                Print("str", StringRef(ptr, sz));
-                continue;
-            }
-        }
-        Unreachable("Invalid opcode");
-    }
-}
-
-/*using K = Stmt::Kind;
-#define AST_STMT_LEAF(node) \
-case K::node: return SRCC_CAT(Eval, node)(out, cast<node>(stmt));
-#include "../../include/srcc/AST.inc"#1#
-
-// ============================================================================
-//  AST Node Compilation
-// ============================================================================
-bool Compiler::CompileBlockExpr(BlockExpr* expr){
-
-}
-
-
-bool Compiler::CompileIntLitExpr(IntLitExpr* expr) {
-    switch (expr->type->size(tu).bits()) {
-        default: return ICE(
-            expr->location(),
-            "TODO: Weird IntLitExpr w/ size {}",
-            expr->type->size(tu).bits()
-        );
-
-        case 8: OpI8(i8(expr->storage.inline_value().value())); break;
-        case 16: OpI16(i16(expr->storage.inline_value().value())); break;
-        case 32: OpI32(i32(expr->storage.inline_value().value())); break;
-        case 64: OpI64(i64(expr->storage.inline_value().value())); break;
-    }
-    return true;
-}
-
-bool Compiler::CompileStrLitExpr(StrLitExpr* expr) {
-    OpStr(expr->value);
-    return true;
-}
-
-// ============================================================================
-//  API
-// ============================================================================
-auto eval::Evaluate(
-    TranslationUnit& tu,
-    Stmt* stmt,
-    bool complain
-) -> std::optional<Value> {
-    Compiler C{tu, stmt->location(), complain};
-    C.CompileStmt(stmt);
-    C.PrintBytecode();
+    // Otherwise, we need to do this the complicated way. Compile the statement.
+    Compiler c{*this};
+    if (not c.compile(stmt, complain)) return std::nullopt;
     std::exit(42);
-    /*EvaluationContext C{tu, stmt->location(), complain};
-    Value val = {};
-    if (not C.Eval(val, stmt)) return std::nullopt;
-    return std::move(val);#1#
 }
-*/
+
+bool VM::Compiler::compile(Stmt* stmt, bool complain) {
+    tempset this->complain = complain;
+    tempset l = stmt->location();
+    auto proc = cg.emit_stmt_as_proc_for_vm(stmt);
+
+    // Codegen may have emitted intrinsics, e.g. exponentiation functions;
+    // we need to compile and link these in if they’re present.
+    for (auto p : cg.procedures()) {
+        if (
+            p == proc or
+            proc->empty() or
+            vm.procedure_table.contains(proc->name())
+        ) continue;
+        Todo("Emit procedure here");
+    }
+
+    // Compile the procedure.
+    CompileProcedure(proc);
+    std::exit(43);
+}
+
+void VM::Compiler::CompileProcedure(ir::Proc* proc) {
+    EmitProcedure ep{*this};
+    for (auto* b : proc->blocks()) {
+        for (auto* i : b->instructions()) {
+            ep.compile(i);
+        }
+    }
+
+    std::exit(44);
+}
+
+void EmitProcedure::compile(ir::Inst* i) {
+    auto SizedBinOp = [&](Op BaseOp) {
+        switch (i->args()[0]->type()->size(c.vm.owner())) {
+            case 8: code << Op(+BaseOp + 0); break;
+            case 16: code << Op(+BaseOp + 1); break;
+            case 32: code << Op(+BaseOp + 2); break;
+            case 64: code << Op(+BaseOp + 3); break;
+            default: code << Op(+BaseOp + 4); break;
+        }
+        EmitAll(i->args());
+    };
+
+    auto IntOp = [&](Type ty, Op BaseOp) {
+        switch (ty->size(c.vm.owner()).bits()) {
+            case 8: return Op(+BaseOp + 0);
+            case 16: return Op(+BaseOp + 1);
+            case 32: return Op(+BaseOp + 2);
+            case 64: return Op(+BaseOp + 3);
+            default: Unreachable("Invalid size for type 'int'");
+        }
+    };
+
+#define COMPILE_TYPED_OP(type, op)                                                     \
+    do {                                                                               \
+        Type ty = type;                                                                \
+        switch (ty->type_kind) {                                                       \
+            using K = TypeBase::Kind;                                                  \
+            case K::ArrayType: Todo();                                                 \
+            case K::BuiltinType:                                                       \
+                switch (cast<BuiltinType>(ty)->builtin_kind()) {                       \
+                    case BuiltinKind::Deduced:                                         \
+                    case BuiltinKind::Dependent:                                       \
+                    case BuiltinKind::ErrorDependent:                                  \
+                    case BuiltinKind::NoReturn:                                        \
+                    case BuiltinKind::UnresolvedOverloadSet:                           \
+                    case BuiltinKind::Void:                                            \
+                        Unreachable();                                                 \
+                                                                                       \
+                    case BuiltinKind::Bool: code << Op::op##Bool; break;               \
+                    case BuiltinKind::Int: code << IntOp(Types::IntTy, Op::op); break; \
+                    case BuiltinKind::Type: code << Op::op##Type; break;               \
+                }                                                                      \
+                break;                                                                 \
+                                                                                       \
+            case K::IntType: code << IntOp(ty, Op::op); break;                         \
+            case K::ProcType: code << Op::op##Closure; break;                          \
+            case K::ReferenceType: code << Op::op##Ptr; break;                         \
+            case K::SliceType: code << Op::op##Slice; break;                           \
+            case K::StructType: Todo();                                                \
+            case K::TemplateType: Unreachable();                                       \
+        }                                                                              \
+    } while (false)
+
+#define COMPILE_EXT(Cast)                                          \
+    do {                                                           \
+        auto s1 = i->args()[0]->type()->size(c.vm.owner()).bits(); \
+        auto s2 = i->args()[1]->type()->size(c.vm.owner()).bits(); \
+        switch (s1) {                                              \
+            case 8:                                                \
+                switch (s2) {                                      \
+                    case 16: code << Op::Cast##I8ToI16; break;     \
+                    case 32: code << Op::Cast##I8ToI32; break;     \
+                    case 64: code << Op::Cast##I8ToI64; break;     \
+                    default: code << Op::Cast##I8ToAPInt; break;   \
+                }                                                  \
+                break;                                             \
+            case 16:                                               \
+                switch (s2) {                                      \
+                    case 32: code << Op::Cast##I16ToI32; break;    \
+                    case 64: code << Op::Cast##I16ToI64; break;    \
+                    default: code << Op::Cast##I16ToAPInt; break;  \
+                }                                                  \
+                break;                                             \
+            case 32:                                               \
+                switch (s2) {                                      \
+                    case 64: code << Op::Cast##I32ToI64; break;    \
+                    default: code << Op::Cast##I32ToAPInt; break;  \
+                }                                                  \
+                break;                                             \
+            case 64: code << Op::Cast##I64ToAPInt; break;          \
+            default: code << Op::Cast##APIntToAPInt; break;        \
+        }                                                          \
+    } while (false)
+
+    switch (i->opcode()) {
+        using IR = ir::Op;
+
+        // Special instructions.
+        case IR::Abort: {
+            auto a = cast<ir::AbortInst>(i);
+            code << Op::Abort << a->abort_reason() << a->location().encode();
+            EmitAll(a->args());
+        } break;
+
+        // FIXME: Store stack slots in the Proc instead of alloca instructions.
+        case IR::Alloca: {
+            Todo("IR Alloca");
+        } break;
+
+        // Branch to a different position in this function.
+        case IR::Br: {
+            auto b = cast<ir::BranchInst>(i);
+            if (not b->then_args().empty()) Todo("Then args");
+            if (not b->else_args().empty()) Todo("Else args");
+
+            // Conditional branch.
+            if (b->cond()) {
+                code << Op::CondBranch;
+                EmitBlockAddress(b->then());
+                EmitBlockAddress(b->else_());
+                Emit(b->cond());
+            }
+
+            // Unconditional branch.
+            else {
+                code << Op::Branch;
+                EmitBlockAddress(b->then());
+            }
+        } break;
+
+        case IR::Call: {
+            auto proc = i->args().front();
+            auto args = i->args().drop_front(1);
+
+            // Emit procedure.
+            if (auto p = dyn_cast<ir::Proc>(proc)) {
+                // Procedure is already linked into the VM; call it directly.
+                if (auto it = c.vm.procedure_table.find(p->name()); it != c.vm.procedure_table.end()) {
+                    code << Op::DirectCall << it->second;
+                }
+
+                // Procedure hasn’t been resolved yet.
+                else {
+                    code << Op::UnresolvedCall << CTString(p->name());
+                }
+            } else {
+                Todo("Indirect calls");
+            }
+
+            // Emit call args.
+            EmitAll(args);
+        } break;
+
+        case IR::Load: {
+            auto m = cast<ir::MemInst>(i);
+            COMPILE_TYPED_OP(m->memory_type(), Load);
+        }
+
+        case IR::MemZero: {
+            auto addr = i->args().front();
+            code << Op::MemZero << i64(cast<ir::SmallInt>(i->args().back())->value());
+            Emit(addr);
+        } break;
+
+        case IR::PtrAdd: {
+            code << Op::PtrAdd;
+            EmitAll(i->args());
+        } break;
+
+        case IR::Ret: {
+            if (i->args().empty()) code << Op::RetVoid;
+            else {
+                COMPILE_TYPED_OP(i->args()[0]->type(), Ret);
+                Emit(i->args()[0]);
+            }
+        } break;
+
+        case IR::Select: {
+            code << Op::Select;
+            Emit(i->args()[0]);
+            Emit(i->args()[1]);
+            Emit(i->args()[2]);
+        } break;
+
+        case IR::Store: {
+            auto m = cast<ir::MemInst>(i);
+            COMPILE_TYPED_OP(m->memory_type(), Store);
+            EmitAll(i->args());
+        } break;
+
+        case IR::Trunc: {
+            auto s1 = i->args()[0]->type()->size(c.vm.owner()).bits();
+            auto s2 = i->args()[1]->type()->size(c.vm.owner()).bits(); // clang-format off
+            switch (s1) {
+                case 8: code << Op::TruncI8ToAPInt; break;
+                case 16: switch (s2) {
+                    case 8: code << Op::TruncI16ToI8; break;
+                    default: code << Op::TruncI16ToAPInt; break;
+                } break;
+                case 32: switch (s2) {
+                    case 8: code << Op::TruncI32ToI8; break;
+                    case 16: code << Op::TruncI32ToI16; break;
+                    default: code << Op::TruncI32ToAPInt; break;
+                } break;
+                case 64: switch (s2) {
+                    case 8: code << Op::TruncI64ToI8; break;
+                    case 16: code << Op::TruncI64ToI16; break;
+                    case 32: code << Op::TruncI64ToI32; break;
+                    default: code << Op::TruncI64ToAPInt; break;
+                } break;
+                default: switch (s2) {
+                    case 8: code << Op::TruncAPIntToI8; break;
+                    case 16: code << Op::TruncAPIntToI16; break;
+                    case 32: code << Op::TruncAPIntToI32; break;
+                    case 64: code << Op::TruncAPIntToI64; break;
+                    default: code << Op::TruncAPIntToAPInt; break;
+                } break;
+            } // clang-format on
+        } break;
+
+        case IR::Unreachable:
+            code << Op::Unreachable;
+            break;
+
+        // Binary operations.
+        case IR::Add: SizedBinOp(Op::Add); break;
+        case IR::And: SizedBinOp(Op::And); break;
+        case IR::AShr: SizedBinOp(Op::AShr); break;
+        case IR::ICmpEq: SizedBinOp(Op::CmpEq); break;
+        case IR::ICmpNe: SizedBinOp(Op::CmpNe); break;
+        case IR::ICmpSGe: SizedBinOp(Op::CmpSGe); break;
+        case IR::ICmpSGt: SizedBinOp(Op::CmpSGt); break;
+        case IR::ICmpSLe: SizedBinOp(Op::CmpSLe); break;
+        case IR::ICmpSLt: SizedBinOp(Op::CmpSLt); break;
+        case IR::ICmpUGe: SizedBinOp(Op::CmpUGe); break;
+        case IR::ICmpUGt: SizedBinOp(Op::CmpUGt); break;
+        case IR::ICmpULe: SizedBinOp(Op::CmpULe); break;
+        case IR::ICmpULt: SizedBinOp(Op::CmpULt); break;
+        case IR::IMul: SizedBinOp(Op::Mul); break;
+        case IR::LShr: SizedBinOp(Op::LShr); break;
+        case IR::Or: SizedBinOp(Op::Or); break;
+        case IR::SAddOv: SizedBinOp(Op::SAddOv); break;
+        case IR::SDiv: SizedBinOp(Op::SDiv); break;
+        case IR::SExt: COMPILE_EXT(SExt); break;
+        case IR::Shl: SizedBinOp(Op::Shl); break;
+        case IR::SMulOv: SizedBinOp(Op::SMulOv); break;
+        case IR::SRem: SizedBinOp(Op::SRem); break;
+        case IR::SSubOv: SizedBinOp(Op::SSubOv); break;
+        case IR::Sub: SizedBinOp(Op::Sub); break;
+        case IR::UDiv: SizedBinOp(Op::UDiv); break;
+        case IR::URem: SizedBinOp(Op::URem); break;
+        case IR::Xor: SizedBinOp(Op::Xor); break;
+        case IR::ZExt: COMPILE_EXT(ZExt); break;
+    }
+}

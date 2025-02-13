@@ -228,6 +228,25 @@ function (add_srcc_library name path_name)
     target_link_libraries(srcc-${name} PRIVATE ${ARG_LINK})
 endfunction()
 
+
+## FIXME: Library layering is non-existent at the moment due to the fact that
+## constant evaluation depends on codegen, so we’ve thrown it out the window
+## for the time being.
+file(GLOB_RECURSE _headers_core include/*.hh)
+file(GLOB_RECURSE _sources_core
+    src/AST/*.cc
+    src/CG/*.cc
+    src/Core/*.cc
+    src/Driver/*.cc
+    src/Frontend/*.cc
+)
+
+add_library(srcc-core STATIC ${_sources_core})
+target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
+
+target_link_libraries(srcc-core PRIVATE options)
+target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
+#[[
 ## ============================================================================
 ##  Core library
 ## ============================================================================
@@ -241,13 +260,14 @@ target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 target_link_libraries(srcc-core PRIVATE options)
 target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
 
+
 ## ============================================================================
 ##  Other libraries
 ## ============================================================================
 add_srcc_library(ast AST)
-add_srcc_library(frontend Frontend LINK srcc-ast)
 add_srcc_library(codegen CG LINK srcc-ast)
-add_srcc_library(driver Driver LINK srcc-ast srcc-frontend srcc-codegen)
+add_srcc_library(frontend Frontend LINK srcc-ast srcc-codegen)
+add_srcc_library(driver Driver LINK srcc-ast srcc-frontend srcc-codegen)]]
 
 ## ============================================================================
 ##  Compiler executable
@@ -260,7 +280,7 @@ file(GLOB _driver_sources src/*.cc)
 add_clang_executable(srcc ${_driver_sources})
 
 ## Link everything together.
-target_link_libraries(srcc PRIVATE options srcc-core srcc-driver)
+target_link_libraries(srcc PRIVATE options srcc-core)
 
 ## Tests
 include(CTest)

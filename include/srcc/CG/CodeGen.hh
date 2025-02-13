@@ -2,14 +2,10 @@
 #define SRCC_CG_HH
 
 #include <srcc/AST/AST.hh>
+#include <srcc/AST/Eval.hh>
 #include <srcc/CG/IR.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Macros.hh>
-
-/*
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Target/TargetMachine.h>*/
 
 #include <base/Assert.hh>
 
@@ -19,7 +15,8 @@ class LLVMCodeGen;
 class VMCodeGen;
 }
 
-class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
+class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
+    , public ir::Builder {
     LIBBASE_IMMOVABLE(CodeGen);
     struct Mangler;
     friend DiagsProducer;
@@ -32,23 +29,28 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, ir::Builder {
     DenseMap<LocalDecl*, ir::Value*> locals;
     DenseMap<ProcDecl*, String> mangled_names;
     ir::Proc* curr_proc = nullptr;
-
-    struct InvertTy {} static constexpr Invert;
+    bool compiling_for_vm = false;
 
 public:
     CodeGen(TranslationUnit& tu, Size word_size) : Builder{tu}, word_size{word_size} {}
 
     /// Get the diagnostics engine.
-    auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+    [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
     /// Dump the IR module.
-    auto dump() -> SmallUnrenderedString { return Dump(); }
+    [[nodiscard]] auto dump() -> SmallUnrenderedString { return Dump(); }
 
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }
 
+    /// Emit a statement into a separate procedure.
+    ///
+    /// This is used exclusively to prepare a statement for
+    /// constant evaluation.
+    [[nodiscard]] auto emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc*;
+
     /// Emit LLVM IR.
-    auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
+    [[nodiscard]] auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
     /// Optimise a module.
     void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
@@ -91,9 +93,8 @@ private:
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> ir::Value*;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit## Class(Class* stmt)->ir::Value*;
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->ir::Value*;
 #include "srcc/AST.inc"
-
 
     auto EmitArithmeticOrComparisonOperator(Tk op, ir::Value* lhs, ir::Value* rhs, Location loc) -> ir::Value*;
     void EmitProcedure(ProcDecl* proc);
@@ -176,7 +177,6 @@ private:
         llvm::function_ref<void()> emit_body
     );
 };
-
 
 /*class srcc::cg::CGLLVM : public CodeGen {
     llvm::TargetMachine& machine;

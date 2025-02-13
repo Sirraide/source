@@ -233,7 +233,7 @@ int Driver::run_job() {
     if (a == Action::Eval) {
         // TODO: Static initialisation.
         if (ctx.diags().has_error()) return 1;
-        auto res = eval::Evaluate(*tu, tu->file_scope_block);
+        auto res = tu->vm.eval(tu->file_scope_block);
         return res.has_value() ? 0 : 1;
     }
 

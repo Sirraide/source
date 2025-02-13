@@ -119,6 +119,12 @@ auto Builder::CreateInt(i64 val, Type type) -> Value* {
     return i;
 }
 
+auto Builder::CreateInvalidLocalReference(LocalRefExpr* ref) -> Value* {
+    // The actual type of this is a reference type since local refs are lvalues.
+    auto ref_ty = ReferenceType::Get(tu, ref->type);
+    return new (*this) InvalidLocalReference(ref, ref_ty);
+}
+
 auto Builder::CreateIMul(Value* a, Value* b, bool nowrap) -> Value* {
     auto i = CreateAndGetVal(Op::IMul, a->type(), {a, b});
     i->nowrap = nowrap;
@@ -280,6 +286,12 @@ auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     if (proc) return proc.get();
     proc = std::unique_ptr<Proc>(new Proc(s, ty, link));
     return proc.get();
+}
+
+auto Builder::GetOrCreateProc(ProcDecl* proc, String mangled_name) -> Proc* {
+    auto ir_proc = GetOrCreateProc(mangled_name, proc->linkage, proc->proc_type());
+    ir_proc->associated_decl = proc;
+    return ir_proc;
 }
 
 auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
@@ -626,6 +638,16 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
             auto i = cast<InstValue>(v);
             if (i->inst()->has_multiple_results()) out += std::format("%8(\033%{}:{})", Id(inst_ids, i->inst()), i->index());
             else out += std::format("%8(\033%{})", Id(inst_ids, i->inst()));
+        } break;
+
+        case Value::Kind::InvalidLocalReference: {
+            auto i = cast<InvalidLocalReference>(v);
+            auto d = i->referenced_local()->decl;
+            out += std::format(
+                "<invalid access to %2({})::%8({})>",
+                d->parent->name,
+                d->name
+            );
         } break;
 
         case Value::Kind::LargeInt: {
