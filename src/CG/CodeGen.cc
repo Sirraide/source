@@ -13,7 +13,7 @@ void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, Strin
     If(failure_cond, [&] {
         auto op_token = CreateString(Spelling(op));
         auto operation = CreateString(name);
-        CreateAbort(constants::ArithmeticFailureHandlerName, loc, op_token, operation);
+        CreateAbort(ir::AbortReason::ArithmeticError, loc, op_token, operation);
     });
 }
 
@@ -63,7 +63,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     auto minus_one = CreateInt(-1, ty);
     auto zero = CreateInt(0, ty);
     auto one = CreateInt(1, ty);
-    auto args = proc->args(*this);
+    auto args = proc->args();
     auto lhs = args[0];
     auto rhs = args[1];
 
@@ -107,9 +107,11 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     });
 
     // Handle overflow.
-    auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())), ty);
-    auto is_min = CreateICmpEq(lhs, min_value);
-    CreateArithFailure(is_min, Tk::StarStar, Location());
+    if (tu.lang_opts().overflow_checking) {
+        auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())), ty);
+        auto is_min = CreateICmpEq(lhs, min_value);
+        CreateArithFailure(is_min, Tk::StarStar, Location());
+    }
 
     // Emit the multiplication loop.
     Loop({lhs, rhs}, [&] -> SmallVector<Value*> {
@@ -443,7 +445,7 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateNil(tu.StrLitTy);
         auto cond_str = CreateString(expr->cond->location().text(tu.context()));
-        CreateAbort(constants::AssertFailureHandlerName, expr->location(), cond_str, msg);
+        CreateAbort(ir::AbortReason::AssertionFailed, expr->location(), cond_str, msg);
     });
 
     return {};
@@ -534,7 +536,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         auto (Builder::*build_unchecked)(Value*, Value*, bool) -> Value*,
         auto (Builder::*build_overflow)(Value*, Value*) -> ir::OverflowResult
     ) -> Value* {
-        if (not tu.lang_opts().overflow_checking) (this->*build_unchecked)(lhs, rhs, true);
+        if (not tu.lang_opts().overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
         auto [val, overflow] = (this->*build_overflow)(lhs, rhs);
         CreateArithFailure(overflow, op, loc);
         return val;
@@ -822,7 +824,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     for (auto l : proc->locals) EmitLocal(l);
 
     // Initialise parameters.
-    for (auto [a, p] : zip(curr_proc->args(*this), proc->params())) {
+    for (auto [a, p] : zip(curr_proc->args(), proc->params())) {
         if (not LocalNeedsAlloca(p)) locals[p] = a;
         else CreateStore(a, locals.at(p));
     }

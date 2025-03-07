@@ -339,7 +339,63 @@ e.g. we can collapse constant expressions and `static if`s to their evaluated va
 
 The mapping can either be a pointer in every parse tree node or an external map.
 
+## Properties
+Syntax ideas:
+```c#
+struct S {
+    int x: get = 4;
+    int x: get = 4; set = value * 2;
 
+    int x { get = 4 }
+    int x { get = 4; set = value * 2; }
+
+    property int x: get = 4;
+    property int x: get = 4; set = value * 2;
+
+    // Note: this
+    int x: get = 4; set = value;
+    // is short for
+    int x: get { return 4 }; set (int value) { .x = value * 2 };
+}
+```
+
+Maybe also add something like ‘PutForwards’ from the web idl spec:
+```
+struct A { int x; }
+struct B {
+    // E.g.
+    A a: set forward x
+    // would be equivalent to
+    A a: set (int value) { a.x = value }
+}
+```
+
+Also allow setting a type for the getter, e.g.
+```c#
+// Note: ‘String’ and ‘StringView’ are strawman syntax.
+struct S {
+    String x: get -> StringView = x; set = value;
+} 
+```
+
+Shorthand default syntax borrowed from C#:
+```c#
+struct S {
+    int x: get; set = 4; // getter just returns the value.
+    int x: get = 4; set; // setter just sets the value.
+}
+```
+I.e. if a property setter or getter is trivial, you can just write `set;`
+or `get;` to get the default implementation. This is different from writing
+no getter or setter at all, because that makes the property writeonly or readonly,
+respectively. Making both trivial is possible for ABI stability reasons, but it’s
+discouraged.
+
+A property has a backing field iff the properties name is referenced by
+the getter or setter (in which case it refers to the backing field instead).
+
+To perform a recursive call to a setter or getter, call unqualified `set()` 
+or `get()` from within a setter. 
 
 ## TODOS:
 - Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural

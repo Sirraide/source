@@ -1,5 +1,6 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/CG/IR.hh>
+#include <srcc/Core/Constants.hh>
 
 using namespace srcc;
 using namespace srcc::cg;
@@ -32,8 +33,8 @@ auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> Value* {
     return new (*this) InstValue(Create(op, vals), ty, 0);
 }
 
-void Builder::CreateAbort(String handler, Location loc, Value* msg1, Value* msg2)  {
-    CreateImpl<AbortInst>(handler, loc, ArrayRef{msg1, msg2});
+void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2)  {
+    CreateImpl<AbortInst>(reason, loc, ArrayRef{msg1, msg2});
 }
 
 auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
@@ -285,6 +286,15 @@ auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     auto& proc = procs[s.value()];
     if (proc) return proc.get();
     proc = std::unique_ptr<Proc>(new Proc(s, ty, link));
+
+    // Initialise arguments.
+    for (auto [i, p] : enumerate(ty->params())) {
+        Type param_ty = p.type->pass_by_lvalue(ty->cconv(), p.intent)
+                          ? ReferenceType::Get(tu, p.type)
+                          : p.type;
+        proc->arguments.push_back(new (*this) Argument(proc.get(), u32(i), param_ty));
+    }
+
     return proc.get();
 }
 
@@ -301,6 +311,14 @@ auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
 
 auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
     return new (*this) InstValue(i, ty, idx);
+}
+
+auto AbortInst::handler_name() const -> String {
+    switch (abort_reason()) {
+        case AbortReason::AssertionFailed: return constants::AssertFailureHandlerName;
+        case AbortReason::ArithmeticError: return constants::ArithmeticFailureHandlerName;
+    }
+    Unreachable();
 }
 
 bool Block::closed() const {
@@ -330,13 +348,71 @@ BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget 
 Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.alloc)}, op{op} {}
 
 bool Inst::has_multiple_results() const {
+    return result_types().size() > 1;
+}
+
+auto Inst::result_types() const -> SmallVector<Type, 2> {
+    using V = SmallVector<Type, 2>;
     switch (op) {
+        case Op::Abort:
+        case Op::Br:
+        case Op::MemZero:
+        case Op::Ret:
+        case Op::Store:
+        case Op::Unreachable:
+            return {};
+
+        case Op::Alloca:
+            return {cast<Alloca>(this)->allocated_type()};
+
+        case Op::Call: {
+            auto t = cast<ProcType>(arguments[0]->type())->ret();
+            return t == Types::VoidTy or t == Types::NoReturnTy ? V{} : V{t};
+        }
+
+        case Op::Load:
+            return {cast<MemInst>(this)->memory_type()};
+
+        case Op::Select:
+            return {arguments[1]->type()};
+
+        case Op::SExt:
+        case Op::Trunc:
+        case Op::ZExt:
+            return {cast<ICast>(this)->cast_result_type()};
+
         case Op::SAddOv:
         case Op::SMulOv:
         case Op::SSubOv:
-            return true;
-        default:
-            return false;
+            return {arguments[0]->type(), Types::BoolTy};
+
+        case Op::Add:
+        case Op::And:
+        case Op::AShr:
+        case Op::IMul:
+        case Op::LShr:
+        case Op::Or:
+        case Op::PtrAdd:
+        case Op::SDiv:
+        case Op::Shl:
+        case Op::SRem:
+        case Op::Sub:
+        case Op::UDiv:
+        case Op::URem:
+        case Op::Xor:
+            return {arguments[0]->type()};
+
+        case Op::ICmpEq:
+        case Op::ICmpNe:
+        case Op::ICmpSGe:
+        case Op::ICmpSGt:
+        case Op::ICmpSLe:
+        case Op::ICmpSLt:
+        case Op::ICmpUGe:
+        case Op::ICmpUGt:
+        case Op::ICmpULe:
+        case Op::ICmpULt:
+            return {Types::BoolTy};
     }
 }
 
@@ -344,17 +420,6 @@ auto Proc::add(std::unique_ptr<Block> b) -> Block* {
     b->p = this;
     body.push_back(std::move(b));
     return body.back().get();
-}
-
-auto Proc::args(Builder& b) -> ArrayRef<Argument*> {
-    if (not arguments.empty() or ty->params().empty()) return arguments;
-    for (auto [i, p] : enumerate(ty->params())) {
-        Type param_ty = p.type->pass_by_lvalue(ty->cconv(), p.intent)
-                          ? ReferenceType::Get(b.tu, p.type)
-                          : p.type;
-        arguments.push_back(new (b) Argument(this, u32(i), param_ty));
-    }
-    return arguments;
 }
 
 /// ====================================================================
@@ -404,7 +469,7 @@ Printer::Printer(Builder& b) : tu{b.tu} {
         block_ids.clear();
         inst_ids.clear();
 
-        for (auto* arg : proc->args(b)) arg_ids[arg] = temp++;
+        for (auto* arg : proc->args()) arg_ids[arg] = temp++;
         for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
             block_ids[b] = id;
             for (auto* arg : b->arguments())
@@ -588,23 +653,7 @@ void Printer::DumpInst(Inst* i) {
 }
 
 bool Printer::ReturnsValue(Inst* i) {
-    switch (i->opcode()) {
-        case Op::Abort:
-        case Op::Br:
-        case Op::MemZero:
-        case Op::Ret:
-        case Op::Store:
-        case Op::Unreachable:
-            return false;
-
-        case Op::Call: {
-            auto ret = cast<ProcType>(i->args().front()->type())->ret();
-            return ret != Types::VoidTy and ret != Types::NoReturnTy;
-        }
-
-        default:
-            return true;
-    }
+    return not i->result_types().empty();
 }
 
 auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {

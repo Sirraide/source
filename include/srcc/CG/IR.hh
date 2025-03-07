@@ -4,6 +4,19 @@
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Token.hh>
 
+#define SRCC_IR_VALUE_KINDS(X) \
+    X(Argument)                \
+    X(Block)                   \
+    X(BuiltinConstant)         \
+    X(Extract)                 \
+    X(InstValue)               \
+    X(InvalidLocalReference)   \
+    X(LargeInt)                \
+    X(Proc)                    \
+    X(Slice)                   \
+    X(SmallInt)                \
+    X(StringData) \
+
 /// IR used during codegen before LLVM IR or VM bytecode is emitted.
 namespace srcc::cg::ir {
 class Value;
@@ -70,17 +83,9 @@ enum class BuiltinConstantKind : u8 {
 class Value {
 public:
     enum class Kind : u8 {
-        Argument,
-        Block,
-        BuiltinConstant,
-        Extract,
-        InstValue,
-        InvalidLocalReference,
-        LargeInt,
-        Proc,
-        Slice,
-        SmallInt,
-        StringData,
+#define X(k) k,
+        SRCC_IR_VALUE_KINDS(X)
+#undef X
     };
 
 private:
@@ -100,6 +105,9 @@ protected:
 public:
     [[nodiscard]] auto kind() const { return k; }
     [[nodiscard]] auto type() const { return ty; }
+
+    template <typename Visitor>
+    auto visit(Visitor&& visitor) const -> decltype(auto);
 };
 
 struct Managed {
@@ -224,6 +232,7 @@ public:
     [[nodiscard]] auto args() const -> ArrayRef<Value*> { return arguments; }
     [[nodiscard]] bool has_multiple_results() const;
     [[nodiscard]] auto opcode() const { return op; }
+    [[nodiscard]] auto result_types() const -> SmallVector<Type, 2>;
     [[nodiscard]] auto operator[](usz idx) { return arguments[idx]; }
 };
 
@@ -292,6 +301,7 @@ class AbortInst : public Inst {
 
 public:
     [[nodiscard]] auto abort_reason() const { return reason; }
+    [[nodiscard]] auto handler_name() const -> String;
     [[nodiscard]] auto location() const { return loc; }
 
     static bool classof(const Inst* v) { return v->opcode() == Op::Abort; }
@@ -392,14 +402,14 @@ class Proc : public Value {
     Linkage link;
     SmallVector<std::unique_ptr<Block>> body;
     SmallVector<Argument*> arguments;
-    ProcDecl* associated_decl;
+    ProcDecl* associated_decl = nullptr;
 
-public:
     Proc(String mangled_name, ProcType* ty, Linkage link)
         : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
+public:
     auto add(std::unique_ptr<Block> b) -> Block*;
-    auto args(Builder& b) -> ArrayRef<Argument*>;
+    auto args() const -> ArrayRef<Argument*> { return arguments; }
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
     auto decl() const -> ProcDecl* { return associated_decl; }
     auto empty() const -> bool { return body.empty(); }
@@ -415,6 +425,14 @@ struct OverflowResult {
     Value* value;
     Value* overflow;
 };
+
+template <typename Visitor>
+auto Value::visit(Visitor&& visitor) const -> decltype(auto) {
+#define X(k) if (auto v = dyn_cast<k>(this)) return visitor(v);
+    SRCC_IR_VALUE_KINDS(X)
+#undef X
+    Unreachable();
+}
 
 class Builder {
     friend Inst;

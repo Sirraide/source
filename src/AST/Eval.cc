@@ -364,6 +364,7 @@ enum class Op : u8 {
 // ============================================================================
 //  Compiler
 // ============================================================================
+namespace {
 /// A compile-time string constant.
 ///
 /// The bytecode doesn’t persist across compiler invocations, so we
@@ -385,6 +386,7 @@ struct CTString {
         w << uptr(value.data()) << u64(value.size());
     }
 };
+} // namespace
 
 class VM::Compiler : DiagsProducer<bool> {
     friend DiagsProducer;
@@ -411,26 +413,97 @@ private:
 };
 
 class eval::EmitProcedure {
+    // First byte of an instruction operand.
+    enum class OpValue : u8 {
+        /// The literal integer '0'.
+        Lit0,
+
+        /// The literal integer '1'.
+        Lit1,
+
+        /// The literal integer '2'.
+        Lit2,
+
+        /// Small integer constant (<= 64 bits).
+        ///
+        /// Followed by an inline u64 value.
+        /// TODO: Inline value should be a VarInt.
+        SmallInt,
+
+        /// Value added to inline frame offsets.
+        InlineOffs,
+
+        /// Value used to indicate a large frame offset follows.
+        ///
+        /// Followed by a ByteOffset.
+        /// TODO: Should the ByteOffset be stored as a VarInt?
+        LargeOffs = 255,
+
+        /// Maximum inline frame offset, inclusive.
+        MaxInlineOffs = LargeOffs - 3 - 1,
+    };
+
+    enum class FrameOffset : u32;
+    enum class CodeOffset : u32;
+    enum class Temporary : u64;
+
     VM::Compiler& c;
-    ByteBuffer temporary;
-    ByteWriter code{temporary};
+    ByteBuffer code_buffer;
+    ByteWriter code{code_buffer};
+
+    /// The procedure we’re compiling.
+    ir::Proc* proc;
 
     /// Total size of the stack frame for this procedure.
-    u32 frame_size = 0;
+    Size frame_size;
+
+    /// Minimum required alignment for the stack frame.
+    Align frame_alignment{1};
 
     /// Offset to the slot for the temporary(s) produced
-    /// by an instruction.
-    DenseMap<ir::Inst*, u32> frame_offsets{};
+    /// by an instruction, as well as procedure and basic
+    /// block arguments.
+    ///
+    /// They key are the lower 32 bits of the instruction
+    /// or parent of the argument and the index of the
+    /// value produced by the instruction.
+    DenseMap<Temporary, FrameOffset> frame_offsets{};
+
+    /// Start of each basic block.
+    DenseMap<ir::Block*, CodeOffset> block_offsets{};
+
+    /// Fixups for block addresses.
+    SmallVector<std::pair<u64, ir::Block*>> block_fixups{};
 
 public:
-    EmitProcedure(VM::Compiler& c) : c{c} {}
-
-    void compile(ir::Inst* i);
+    EmitProcedure(VM::Compiler& c, ir::Proc* proc) : c{c}, proc{proc} {}
+    void compile();
 
 private:
-    void Emit(ir::Value* val);
-    void EmitAll(ArrayRef<ir::Value*> vals);
-    void EmitBlockAddress(ir::Block* b);
+    /// Allocate a type in the stack frame.
+    [[nodiscard]] auto Allocate(Type ty) -> FrameOffset;
+
+    /// Compile an instruction.
+    void Compile(ir::Inst* i);
+
+    void EmitOperands(ArrayRef<ir::Value*> vals);
+    void EncodeBlockAddress(ir::Block* b);
+    void EncodeOperand(ir::Value* val);
+
+    [[nodiscard]] static auto EncodeTemporary(
+        utils::is_same<ir::Inst*, ir::Value*> auto parent,
+        u32 idx
+    ) -> Temporary {
+        return Temporary(u64(uptr(parent)) << 32 | idx);
+    }
+
+    [[nodiscard]] static auto EncodeTemporary(ir::Argument* v) -> Temporary {
+        return EncodeTemporary(v->parent(), v->index());
+    }
+
+    [[nodiscard]] static auto EncodeTemporary(ir::InstValue* v) -> Temporary {
+        return EncodeTemporary(v->inst(), v->index());
+    }
 };
 
 VM::~VM() = default;
@@ -496,26 +569,51 @@ bool VM::Compiler::compile(Stmt* stmt, bool complain) {
 }
 
 void VM::Compiler::CompileProcedure(ir::Proc* proc) {
-    EmitProcedure ep{*this};
-    for (auto* b : proc->blocks()) {
-        for (auto* i : b->instructions()) {
-            ep.compile(i);
-        }
-    }
-
+    EmitProcedure ep{*this, proc};
+    ep.compile();
     std::exit(44);
 }
 
-void EmitProcedure::compile(ir::Inst* i) {
+void EmitProcedure::compile() {
+    // Allocate call args.
+    for (auto a : proc->args())
+        frame_offsets[EncodeTemporary(a->parent(), a->index())] = Allocate(a->type());
+
+    // Allocate block args.
+    for (auto b : proc->blocks())
+        for (auto a : b->arguments())
+            frame_offsets[EncodeTemporary(a->parent(), a->index())] = Allocate(a->type());
+
+    // Compile blocks.
+    for (auto* b : proc->blocks()) {
+        block_offsets[b] = CodeOffset(code_buffer.size());
+        for (auto* i : b->instructions()) Compile(i);
+    }
+
+    // Ensure that we can actually represent this.
+    Assert(
+        code_buffer.size() <= std::numeric_limits<std::underlying_type_t<CodeOffset>>::max(),
+        "Sorry, the procedure '{}' is too big for the VM: {} bytes",
+        proc->name(),
+        code_buffer.size()
+    );
+
+    // Fix up block addresses.
+    for (auto [offs, block] : block_fixups)
+        // FIXME: Writer should really have a seek() function.
+        memcpy(code_buffer.data() + offs, &block_offsets.at(block), sizeof(CodeOffset));
+}
+
+void EmitProcedure::Compile(ir::Inst* i) {
     auto SizedBinOp = [&](Op BaseOp) {
-        switch (i->args()[0]->type()->size(c.vm.owner())) {
+        switch (i->args()[0]->type()->size(c.vm.owner()).bits()) {
             case 8: code << Op(+BaseOp + 0); break;
             case 16: code << Op(+BaseOp + 1); break;
             case 32: code << Op(+BaseOp + 2); break;
             case 64: code << Op(+BaseOp + 3); break;
             default: code << Op(+BaseOp + 4); break;
         }
-        EmitAll(i->args());
+        EmitOperands(i->args());
     };
 
     auto IntOp = [&](Type ty, Op BaseOp) {
@@ -590,6 +688,11 @@ void EmitProcedure::compile(ir::Inst* i) {
         }                                                          \
     } while (false)
 
+    // Allocate instruction args.
+    for (auto [idx, ty] : enumerate(i->result_types()))
+        frame_offsets[EncodeTemporary(i, u32(idx))] = Allocate(ty);
+
+    // Compile the instruction.
     switch (i->opcode()) {
         using IR = ir::Op;
 
@@ -597,7 +700,7 @@ void EmitProcedure::compile(ir::Inst* i) {
         case IR::Abort: {
             auto a = cast<ir::AbortInst>(i);
             code << Op::Abort << a->abort_reason() << a->location().encode();
-            EmitAll(a->args());
+            EmitOperands(a->args());
         } break;
 
         // FIXME: Store stack slots in the Proc instead of alloca instructions.
@@ -614,15 +717,15 @@ void EmitProcedure::compile(ir::Inst* i) {
             // Conditional branch.
             if (b->cond()) {
                 code << Op::CondBranch;
-                EmitBlockAddress(b->then());
-                EmitBlockAddress(b->else_());
-                Emit(b->cond());
+                EncodeBlockAddress(b->then());
+                EncodeBlockAddress(b->else_());
+                EncodeOperand(b->cond());
             }
 
             // Unconditional branch.
             else {
                 code << Op::Branch;
-                EmitBlockAddress(b->then());
+                EncodeBlockAddress(b->then());
             }
         } break;
 
@@ -646,44 +749,44 @@ void EmitProcedure::compile(ir::Inst* i) {
             }
 
             // Emit call args.
-            EmitAll(args);
+            EmitOperands(args);
         } break;
 
         case IR::Load: {
             auto m = cast<ir::MemInst>(i);
             COMPILE_TYPED_OP(m->memory_type(), Load);
-        }
+        } break;
 
         case IR::MemZero: {
             auto addr = i->args().front();
             code << Op::MemZero << i64(cast<ir::SmallInt>(i->args().back())->value());
-            Emit(addr);
+            EncodeOperand(addr);
         } break;
 
         case IR::PtrAdd: {
             code << Op::PtrAdd;
-            EmitAll(i->args());
+            EmitOperands(i->args());
         } break;
 
         case IR::Ret: {
             if (i->args().empty()) code << Op::RetVoid;
             else {
                 COMPILE_TYPED_OP(i->args()[0]->type(), Ret);
-                Emit(i->args()[0]);
+                EncodeOperand(i->args()[0]);
             }
         } break;
 
         case IR::Select: {
             code << Op::Select;
-            Emit(i->args()[0]);
-            Emit(i->args()[1]);
-            Emit(i->args()[2]);
+            EncodeOperand(i->args()[0]);
+            EncodeOperand(i->args()[1]);
+            EncodeOperand(i->args()[2]);
         } break;
 
         case IR::Store: {
             auto m = cast<ir::MemInst>(i);
             COMPILE_TYPED_OP(m->memory_type(), Store);
-            EmitAll(i->args());
+            EmitOperands(i->args());
         } break;
 
         case IR::Trunc: {
@@ -749,5 +852,101 @@ void EmitProcedure::compile(ir::Inst* i) {
         case IR::URem: SizedBinOp(Op::URem); break;
         case IR::Xor: SizedBinOp(Op::Xor); break;
         case IR::ZExt: COMPILE_EXT(ZExt); break;
+    }
+}
+
+auto EmitProcedure::Allocate(Type ty) -> FrameOffset {
+    auto align = ty->align(c.vm.owner());
+    auto size = ty->size(c.vm.owner()).as_bytes();
+
+    // Align the frame to the byte’s alignment.
+    frame_size.align(align);
+
+    // Record the offset for later.
+    auto offs = frame_size.bytes();
+
+    // Check that this actually fits in the frame.
+    Assert(
+        u64(offs) <= u64(std::numeric_limits<std::underlying_type_t<FrameOffset>>::max()),
+        "Sorry, a stack frame containing {} bytes is too large for this compiler",
+        offs
+    );
+
+    // And increment the frame past the object; also update
+    // the alignment requirement if it has increased.
+    frame_size += size;
+    frame_alignment = std::max(frame_alignment, align);
+    return FrameOffset(offs);
+}
+
+// Value encoder.
+void EmitProcedure::EncodeOperand(ir::Value* val) {
+    auto EncodeFrameOffs = [&](FrameOffset offs) {
+        if (+offs <= +OpValue::MaxInlineOffs) {
+            code << OpValue(+offs + +OpValue::InlineOffs);
+        } else {
+            code << OpValue::LargeOffs;
+            code << offs;
+        }
+    };
+
+    auto EncodeSmallInteger = [&](u64 value) {
+        if (value == +OpValue::Lit0) code << OpValue::Lit0;
+        else if (value == +OpValue::Lit1) code << OpValue::Lit1;
+        else if (value == +OpValue::Lit2) code << OpValue::Lit2;
+        else {
+            code << OpValue::SmallInt;
+            code << value;
+        }
+    };
+
+    switch (val->kind()) {
+        using VK = ir::Value::Kind;
+
+        case VK::Argument:
+            EncodeFrameOffs(frame_offsets.at(EncodeTemporary(cast<ir::Argument>(val))));
+            break;
+
+        case VK::InstValue:
+            EncodeFrameOffs(frame_offsets.at(EncodeTemporary(cast<ir::InstValue>(val))));
+            break;
+
+        // The only instructions that can refer to blocks are branches,
+        // and those use immediate operands.
+        case VK::Block:
+            Unreachable("Not supported as frame operand");
+
+        case VK::BuiltinConstant:
+            switch (cast<ir::BuiltinConstant>(val)->id) {
+                case ir::BuiltinConstantKind::True: EncodeSmallInteger(1); break;
+                case ir::BuiltinConstantKind::False: EncodeSmallInteger(0); break;
+                case ir::BuiltinConstantKind::Nil: Todo("Encode nil value of type '{}'", val->type());
+                case ir::BuiltinConstantKind::Poison: Todo("Encode poison value");
+            }
+            break;
+
+        case VK::SmallInt:
+            EncodeSmallInteger(u64(cast<ir::SmallInt>(val)->value()));
+            break;
+
+        case VK::Extract: Todo();
+        case VK::InvalidLocalReference: Todo();
+        case VK::LargeInt: Todo();
+        case VK::Proc: Todo();
+        case VK::Slice: Todo();
+        case VK::StringData: Todo();
+    }
+}
+
+void EmitProcedure::EmitOperands(ArrayRef<ir::Value*> vals) {
+    for (auto v : vals) EncodeOperand(v);
+}
+
+void EmitProcedure::EncodeBlockAddress(ir::Block* b) {
+    if (auto offs = block_offsets.find(b); offs != block_offsets.end()) {
+        code << offs->second;
+    } else {
+        block_fixups.emplace_back(code_buffer.size(), b);
+        code << CodeOffset(0);
     }
 }
