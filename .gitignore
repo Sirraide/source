@@ -7,8 +7,8 @@
 /out/
 /srcc
 /srcc.exe
-/srcc-astgen
-/srcc-astgen.exe
+/vm-tablegen
+/vm-tablegen.exe
 
 ## Compiled modules.
 /modules/*

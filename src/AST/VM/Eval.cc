@@ -15,6 +15,7 @@
 #include <optional>
 #include <print>
 #include <ranges>
+
 #include "VMInternal.hh"
 
 using namespace srcc;
@@ -193,6 +194,9 @@ private:
     /// Compile an instruction.
     void Compile(ir::Inst* i);
 
+#define SRCC_VM_OP_BUILDERS
+#include "Ops.inc"
+
     void EmitOperands(ArrayRef<ir::Value*> vals);
     void EncodeBlockAddress(ir::Block* b);
     void EncodeOperand(ir::Value* val);
@@ -251,9 +255,9 @@ auto VM::eval(
     // Otherwise, we need to do this the complicated way. Compile the statement.
     Compiler c{*this};
     auto compiled = c.compile(stmt, complain);
-    PrintByteCode(compiled.code);
+    PrintByteCode(owner(), compiled.code);
     std::exit(42);
-    //return ExecuteProcedure(compiled, complain);
+    // return ExecuteProcedure(compiled, complain);
 }
 
 auto VM::Compiler::compile(Stmt* stmt, bool complain) -> VMProc {
@@ -314,56 +318,44 @@ auto EmitProcedure::compile() -> VMProc {
 }
 
 void EmitProcedure::Compile(ir::Inst* i) {
-    auto SizedBinOp = [&](Op BaseOp) {
-        switch (i->args()[0]->type()->size(c.vm.owner()).bits()) {
-            case 8: code << Op(+BaseOp + 0); break;
-            case 16: code << Op(+BaseOp + 1); break;
-            case 32: code << Op(+BaseOp + 2); break;
-            case 64: code << Op(+BaseOp + 3); break;
-            default: code << Op(+BaseOp + 4); break;
-        }
-        EmitOperands(i->args());
-    };
+#define INT_OP(op)                                           \
+    switch (ty->size(c.vm.owner()).bits()) {                 \
+        case 8: code << Op::op##I8; break;                   \
+        case 16: code << Op::op##I16; break;                 \
+        case 32: code << Op::op##I32; break;                 \
+        case 64: code << Op::op##I64; break;                 \
+        default: Unreachable("Invalid size for type 'int'"); \
+    }
 
-    auto IntOp = [&](Type ty, Op BaseOp) {
-        switch (ty->size(c.vm.owner()).bits()) {
-            case 8: return Op(+BaseOp + 0);
-            case 16: return Op(+BaseOp + 1);
-            case 32: return Op(+BaseOp + 2);
-            case 64: return Op(+BaseOp + 3);
-            default: Unreachable("Invalid size for type 'int'");
-        }
-    };
-
-#define COMPILE_TYPED_OP(type, op)                                                     \
-    do {                                                                               \
-        Type ty = type;                                                                \
-        switch (ty->type_kind) {                                                       \
-            using K = TypeBase::Kind;                                                  \
-            case K::ArrayType: Todo();                                                 \
-            case K::BuiltinType:                                                       \
-                switch (cast<BuiltinType>(ty)->builtin_kind()) {                       \
-                    case BuiltinKind::Deduced:                                         \
-                    case BuiltinKind::Dependent:                                       \
-                    case BuiltinKind::ErrorDependent:                                  \
-                    case BuiltinKind::NoReturn:                                        \
-                    case BuiltinKind::UnresolvedOverloadSet:                           \
-                    case BuiltinKind::Void:                                            \
-                        Unreachable();                                                 \
-                                                                                       \
-                    case BuiltinKind::Bool: code << Op::op##Bool; break;               \
-                    case BuiltinKind::Int: code << IntOp(Types::IntTy, Op::op); break; \
-                    case BuiltinKind::Type: code << Op::op##Type; break;               \
-                }                                                                      \
-                break;                                                                 \
-                                                                                       \
-            case K::IntType: code << IntOp(ty, Op::op); break;                         \
-            case K::ProcType: code << Op::op##Closure; break;                          \
-            case K::ReferenceType: code << Op::op##Ptr; break;                         \
-            case K::SliceType: code << Op::op##Slice; break;                           \
-            case K::StructType: Todo();                                                \
-            case K::TemplateType: Unreachable();                                       \
-        }                                                                              \
+#define COMPILE_TYPED_OP(type, op)                                       \
+    do {                                                                 \
+        Type ty = type;                                                  \
+        switch (ty->type_kind) {                                         \
+            using K = TypeBase::Kind;                                    \
+            case K::ArrayType: Todo();                                   \
+            case K::BuiltinType:                                         \
+                switch (cast<BuiltinType>(ty)->builtin_kind()) {         \
+                    case BuiltinKind::Deduced:                           \
+                    case BuiltinKind::Dependent:                         \
+                    case BuiltinKind::ErrorDependent:                    \
+                    case BuiltinKind::NoReturn:                          \
+                    case BuiltinKind::UnresolvedOverloadSet:             \
+                    case BuiltinKind::Void:                              \
+                        Unreachable();                                   \
+                                                                         \
+                    case BuiltinKind::Bool: code << Op::op##Bool; break; \
+                    case BuiltinKind::Int: INT_OP(op); break;            \
+                    case BuiltinKind::Type: code << Op::op##Type; break; \
+                }                                                        \
+                break;                                                   \
+                                                                         \
+            case K::IntType: INT_OP(op); break;                          \
+            case K::ProcType: code << Op::op##Closure; break;            \
+            case K::ReferenceType: code << Op::op##Pointer; break;       \
+            case K::SliceType: code << Op::op##Slice; break;             \
+            case K::StructType: Todo();                                  \
+            case K::TemplateType: Unreachable();                         \
+        }                                                                \
     } while (false)
 
 #define COMPILE_EXT(Cast)                                          \
@@ -486,7 +478,7 @@ void EmitProcedure::Compile(ir::Inst* i) {
         } break;
 
         case IR::Select: {
-            code << Op::Select;
+            COMPILE_TYPED_OP(i->args()[1]->type(), Select);
             EncodeOperand(i->args()[0]);
             EncodeOperand(i->args()[1]);
             EncodeOperand(i->args()[2]);
@@ -533,33 +525,33 @@ void EmitProcedure::Compile(ir::Inst* i) {
             break;
 
         // Binary operations.
-        case IR::Add: SizedBinOp(Op::Add); break;
-        case IR::And: SizedBinOp(Op::And); break;
-        case IR::AShr: SizedBinOp(Op::AShr); break;
-        case IR::ICmpEq: SizedBinOp(Op::CmpEq); break;
-        case IR::ICmpNe: SizedBinOp(Op::CmpNe); break;
-        case IR::ICmpSGe: SizedBinOp(Op::CmpSGe); break;
-        case IR::ICmpSGt: SizedBinOp(Op::CmpSGt); break;
-        case IR::ICmpSLe: SizedBinOp(Op::CmpSLe); break;
-        case IR::ICmpSLt: SizedBinOp(Op::CmpSLt); break;
-        case IR::ICmpUGe: SizedBinOp(Op::CmpUGe); break;
-        case IR::ICmpUGt: SizedBinOp(Op::CmpUGt); break;
-        case IR::ICmpULe: SizedBinOp(Op::CmpULe); break;
-        case IR::ICmpULt: SizedBinOp(Op::CmpULt); break;
-        case IR::IMul: SizedBinOp(Op::Mul); break;
-        case IR::LShr: SizedBinOp(Op::LShr); break;
-        case IR::Or: SizedBinOp(Op::Or); break;
-        case IR::SAddOv: SizedBinOp(Op::SAddOv); break;
-        case IR::SDiv: SizedBinOp(Op::SDiv); break;
+        case IR::Add: CreateAdd(i->args()); break;
+        case IR::And: CreateAnd(i->args()); break;
+        case IR::AShr: CreateAShr(i->args()); break;
+        case IR::ICmpEq: CreateEq(i->args()); break;
+        case IR::ICmpNe: CreateNe(i->args()); break;
+        case IR::ICmpSGe: CreateSGe(i->args()); break;
+        case IR::ICmpSGt: CreateSGt(i->args()); break;
+        case IR::ICmpSLe: CreateSLe(i->args()); break;
+        case IR::ICmpSLt: CreateSLt(i->args()); break;
+        case IR::ICmpUGe: CreateUGe(i->args()); break;
+        case IR::ICmpUGt: CreateUGt(i->args()); break;
+        case IR::ICmpULe: CreateULe(i->args()); break;
+        case IR::ICmpULt: CreateULt(i->args()); break;
+        case IR::IMul: CreateMul(i->args()); break;
+        case IR::LShr: CreateLShr(i->args()); break;
+        case IR::Or: CreateOr(i->args()); break;
+        case IR::SAddOv: CreateSAddOv(i->args()); break;
+        case IR::SDiv: CreateSDiv(i->args()); break;
         case IR::SExt: COMPILE_EXT(SExt); break;
-        case IR::Shl: SizedBinOp(Op::Shl); break;
-        case IR::SMulOv: SizedBinOp(Op::SMulOv); break;
-        case IR::SRem: SizedBinOp(Op::SRem); break;
-        case IR::SSubOv: SizedBinOp(Op::SSubOv); break;
-        case IR::Sub: SizedBinOp(Op::Sub); break;
-        case IR::UDiv: SizedBinOp(Op::UDiv); break;
-        case IR::URem: SizedBinOp(Op::URem); break;
-        case IR::Xor: SizedBinOp(Op::Xor); break;
+        case IR::Shl: CreateShl(i->args()); break;
+        case IR::SMulOv: CreateSMulOv(i->args()); break;
+        case IR::SRem: CreateSRem(i->args()); break;
+        case IR::SSubOv: CreateSSubOv(i->args()); break;
+        case IR::Sub: CreateSub(i->args()); break;
+        case IR::UDiv: CreateUDiv(i->args()); break;
+        case IR::URem: CreateURem(i->args()); break;
+        case IR::Xor: CreateXor(i->args()); break;
         case IR::ZExt: COMPILE_EXT(ZExt); break;
     }
 }

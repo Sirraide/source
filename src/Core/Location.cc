@@ -28,6 +28,17 @@ Location::Location(Location a, Location b) {
     return l;
 }
 
+auto Location::info_or_builtin(const Context& ctx) const -> std::tuple<String, i64, i64> {
+    String file = "<builtin>";
+    i64 line{}, col{};
+    if (auto lc = seek_line_column(ctx)) {
+        file = ctx.file_name(file_id);
+        line = i64(lc->line);
+        col = i64(lc->col);
+    }
+    return {file, line, col};
+}
+
 bool Location::seekable(const Context& ctx) const {
     auto* f = ctx.file(file_id);
     if (not f) return false;

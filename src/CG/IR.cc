@@ -534,19 +534,7 @@ void Printer::DumpInst(Inst* i) {
         // Special instructions.
         case Op::Abort: {
             auto a = cast<AbortInst>(i);
-
-            String file;
-            i64 line, col;
-            if (auto lc = a->location().seek_line_column(tu.context())) {
-                file = tu.context().file_name(a->location().file_id);
-                line = i64(lc->line);
-                col = i64(lc->col);
-            } else {
-                file = "<builtin>";
-                line = 0;
-                col = 0;
-            }
-
+            auto [file, line, col] = a->location().info_or_builtin(tu.context());
             out += std::format(
                 "%1(abort) at %6(<{}:{}:{}>) %2({})({}\033)",
                 file,

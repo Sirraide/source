@@ -1,3 +1,8 @@
+#include <srcc/AST/AST.hh>
+#include <srcc/CG/IR.hh>
+#include <srcc/Core/Constants.hh>
+#include <srcc/Core/Utils.hh>
+
 #include "VMInternal.hh"
 
 using namespace srcc;
@@ -17,9 +22,10 @@ using namespace srcc::eval;
 
 namespace {
 struct Printer {
+    const TranslationUnit& tu;
     ByteReader code;
     std::string out;
-    Printer(const ByteBuffer& code_buffer) : code(code_buffer) { }
+    Printer(const TranslationUnit& tu, const ByteBuffer& code_buffer) : tu(tu), code(code_buffer) { }
 
     template <typename ...Args>
     void P(std::format_string<Args...> fmt, Args&& ...args) {
@@ -29,9 +35,11 @@ struct Printer {
     void print();
 
     auto GetFrameOffset(OpValue val) -> FrameOffset;
-    template <typename IntTy> void PrintSmallIntValue();
-    template <typename IntTy> void PrintSmallIntegerBinOp(std::string_view name);
-    template <typename IntTy> void PrintSmallIntegerUnOp(std::string_view name);
+    void PrintOperand();
+    void PrintImmAbortReason();
+    void PrintImmLocation();
+    void PrintImmBlock();
+    void PrintImmI64();
 };
 
 auto Printer::GetFrameOffset(OpValue op) -> FrameOffset {
@@ -39,72 +47,44 @@ auto Printer::GetFrameOffset(OpValue op) -> FrameOffset {
     return code.read<FrameOffset>();
 }
 
-template <typename IntTy>
-void Printer::PrintSmallIntValue() {
+void Printer::PrintOperand() {
     auto op = code.read<OpValue>();
-    if (op == OpValue::Lit0 or op == OpValue::Lit1 or op == OpValue::Lit2) P("%5({})", IntTy(+op));
+    if (op == OpValue::Lit0 or op == OpValue::Lit1 or op == OpValue::Lit2) P("%5({})", i64(+op));
     else if (op == OpValue::SmallInt) return P("%5({})", code.read<u64>());
     else P("%8(@{})", +GetFrameOffset(op));
 }
 
-template <typename IntTy>
-void Printer::PrintSmallIntegerBinOp(std::string_view name) {
-    P("%1({}) ", name);
-    PrintSmallIntValue<IntTy>();
-    P(", ");
-    PrintSmallIntValue<IntTy>();
+void Printer::PrintImmAbortReason() {
+    P("%2({})", constants::AbortHandlers[+code.read<cg::ir::AbortReason>()]);
 }
 
-template <typename IntTy>
-void Printer::PrintSmallIntegerUnOp(std::string_view name) {
-    P("%1({}) ", name);
-    PrintSmallIntValue<IntTy>();
+void Printer::PrintImmLocation() {
+    auto [file, line, col] = Location::Decode(code.read<Location::Encoded>()).info_or_builtin(tu.context());
+    P("%5(<{}:{}:{}>)", file, line, col);
+}
+
+void Printer::PrintImmBlock() {
+    P("%4({:#0X})", +code.read<CodeOffset>());
+}
+
+void Printer::PrintImmI64() {
+    P("%5({})", code.read<i64>());
 }
 
 void Printer::print() {
     while (code.size() != 0) { // TODO: Add an empty() function.
         P("    ");
         defer { P("\n"); };
-
-        auto op = code.read<Op>();
-        switch (op) {
-            INTEGER_BIN_OP(Add, "add");
-            INTEGER_BIN_OP(And, "and");
-            INTEGER_BIN_OP(AShr, "ashr");
-            INTEGER_BIN_OP(CmpEq, "cmp.eq");
-            INTEGER_BIN_OP(CmpNe, "cmp.ne");
-            INTEGER_BIN_OP(CmpSLt, "cmp.slt");
-            INTEGER_BIN_OP(CmpULt, "cmp.ult");
-            INTEGER_BIN_OP(CmpSGt, "cmp.sgt");
-            INTEGER_BIN_OP(CmpUGt, "cmp.ugt");
-            INTEGER_BIN_OP(CmpSLe, "cmp.sle");
-            INTEGER_BIN_OP(CmpULe, "cmp.ule");
-            INTEGER_BIN_OP(CmpSGe, "cmp.sge");
-            INTEGER_BIN_OP(CmpUGe, "cmp.uge");
-            INTEGER_BIN_OP(LShr, "lshr");
-            INTEGER_BIN_OP(Mul, "mul");
-            INTEGER_BIN_OP(Or, "or");
-            INTEGER_BIN_OP(SAddOv, "sadd.ov");
-            INTEGER_BIN_OP(SDiv, "sdiv");
-            INTEGER_BIN_OP(Shl, "shl");
-            INTEGER_BIN_OP(SMulOv, "smul.ov");
-            INTEGER_BIN_OP(SRem, "srem");
-            INTEGER_BIN_OP(SSubOv, "ssub.ov");
-            INTEGER_BIN_OP(Sub, "sub");
-            INTEGER_BIN_OP(UDiv, "udiv");
-            INTEGER_BIN_OP(URem, "urem");
-            INTEGER_BIN_OP(Xor, "xor");
-            INTEGER_UN_OP(Load, "load");
-            INTEGER_UN_OP(Store, "store");
-            INTEGER_UN_OP(Ret, "ret");
-            default: Todo("Print op: {}", +op);
+        switch (code.read<Op>()) {
+#define SRCC_VM_OP_PRINTERS
+#include "Ops.inc"
         }
     }
 }
 }
 
-void eval::PrintByteCode(const ByteBuffer& code_buffer) {
-    Printer p{code_buffer};
+void eval::PrintByteCode(const TranslationUnit& tu, const ByteBuffer& code_buffer) {
+    Printer p{tu, code_buffer};
     p.print();
     return std::print("{}", text::RenderColours(true, p.out));
 }

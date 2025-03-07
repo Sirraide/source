@@ -28,6 +28,8 @@ struct srcc::LocInfo {
 
 /// A source range in a file.
 struct srcc::Location {
+    using Encoded = u64;
+
     u32 pos{};
     u16 len{};
     u16 file_id{};
@@ -61,7 +63,10 @@ struct srcc::Location {
     [[nodiscard]] bool operator==(const Location& other) const = default;
 
     /// Encode a location as a 64-bit number.
-    [[nodiscard]] u64 encode() const { return std::bit_cast<u64>(*this); }
+    [[nodiscard]] auto encode() const -> Encoded { return std::bit_cast<Encoded>(*this); }
+
+    /// Get file line and column or return <builtin:0:0> if invalid.
+    [[nodiscard]] auto info_or_builtin(const Context& ctx) const -> std::tuple<String, i64, i64>;
 
     [[nodiscard]] bool is_valid() const { return len != 0; }
 
@@ -78,7 +83,7 @@ struct srcc::Location {
     [[nodiscard]] auto text(const Context& ctx) const -> String;
 
     /// Decode a source location from a 64-bit number.
-    static auto Decode(u64 loc) -> Location {
+    static auto Decode(Encoded loc) -> Location {
         return std::bit_cast<Location>(loc);
     }
 

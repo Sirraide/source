@@ -228,6 +228,7 @@ function (add_srcc_library name path_name)
     target_link_libraries(srcc-${name} PRIVATE ${ARG_LINK})
 endfunction()
 
+add_subdirectory(tools)
 
 ## FIXME: Library layering is non-existent at the moment due to the fact that
 ## constant evaluation depends on codegen, so we’ve thrown it out the window
