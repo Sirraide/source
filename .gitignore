@@ -14,5 +14,8 @@
 /modules/*
 !/modules/.gitkeep
 
+## Temporary files.
+/test.src
+
 ## Valgrind.
 callgrind.out.*

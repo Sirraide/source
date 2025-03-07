@@ -29,6 +29,7 @@ class LValue;
 class Reference;
 class Slice;
 class Value;
+class VMProc;
 class Memory;
 enum struct LifetimeState : u8;
 
@@ -113,6 +114,9 @@ public:
 
     /// Get the translation unit that owns this vm.
     [[nodiscard]] auto owner() -> TranslationUnit& { return owner_tu; }
+
+private:
+    auto ExecuteProcedure(const VMProc& proc, bool complain) -> std::optional<Value>;
 /*
 private:
     /// Compile a statement and return a memory buffer containing the byte code.

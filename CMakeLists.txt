@@ -234,6 +234,7 @@ endfunction()
 ## for the time being.
 file(GLOB_RECURSE _headers_core include/*.hh)
 file(GLOB_RECURSE _sources_core
+    src/*.hh
     src/AST/*.cc
     src/CG/*.cc
     src/Core/*.cc

@@ -1,5 +1,0 @@
-program foo;
-proc s {
-	int x;
-	eval x + 3;
-}
