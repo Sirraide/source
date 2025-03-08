@@ -9,7 +9,6 @@ endif()
 ##  Global CMake Variables.
 ## ============================================================================
 set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## ============================================================================
@@ -210,6 +209,25 @@ execute_process(
 ]]
 
 ## ============================================================================
+##  Tablegen
+## ============================================================================
+add_subdirectory(tools)
+
+macro(srcc_tablegen file)
+    add_custom_command(
+        OUTPUT "${PROJECT_SOURCE_DIR}/${file}.inc"
+        COMMAND $<TARGET_FILE:vm-tablegen>
+            "${PROJECT_SOURCE_DIR}/${file}.td"
+            -o "${PROJECT_SOURCE_DIR}/${file}.inc"
+        DEPENDS "${PROJECT_SOURCE_DIR}/${file}.td"
+    )
+
+    list(APPEND SRCC_TABLEGEN_OUTPUTS "${PROJECT_SOURCE_DIR}/${file}.inc")
+endmacro()
+
+srcc_tablegen(src/AST/VM/Ops)
+
+## ============================================================================
 ##  Helper Functions
 ## ============================================================================
 ## Add a library.
@@ -228,8 +246,6 @@ function (add_srcc_library name path_name)
     target_link_libraries(srcc-${name} PRIVATE ${ARG_LINK})
 endfunction()
 
-add_subdirectory(tools)
-
 ## FIXME: Library layering is non-existent at the moment due to the fact that
 ## constant evaluation depends on codegen, so we’ve thrown it out the window
 ## for the time being.
@@ -243,7 +259,7 @@ file(GLOB_RECURSE _sources_core
     src/Frontend/*.cc
 )
 
-add_library(srcc-core STATIC ${_sources_core})
+add_library(srcc-core STATIC ${_sources_core} ${SRCC_TABLEGEN_OUTPUTS})
 target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 
 target_link_libraries(srcc-core PRIVATE options)
@@ -283,6 +299,7 @@ add_clang_executable(srcc ${_driver_sources})
 
 ## Link everything together.
 target_link_libraries(srcc PRIVATE options srcc-core)
+set_target_properties(srcc PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR})
 
 ## Tests
 include(CTest)
