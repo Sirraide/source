@@ -179,12 +179,12 @@ class srcc::eval::SRValue {
 
 public:
     SRValue() = default;
-    SRValue(cg::ir::Proc* proc);
-    SRValue(bool b) : value{b}, ty{Types::BoolTy} {}
-    SRValue(Type ty) : value{ty}, ty{Types::TypeTy} {}
-    SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
-    SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
-    SRValue(i64 val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
+    explicit SRValue(cg::ir::Proc* proc);
+    explicit SRValue(bool b) : value{b}, ty{Types::BoolTy} {}
+    explicit SRValue(Type ty) : value{ty}, ty{Types::TypeTy} {}
+    explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
+    explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
+    explicit SRValue(i64 val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
 
     /// Check if two values hold the same value.
     bool operator==(const SRValue& other) const;

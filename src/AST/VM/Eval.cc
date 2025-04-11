@@ -77,12 +77,12 @@ auto HashTemporary(ir::Argument* a) -> Temporary {
 auto HashTemporary(ir::InstValue* i) -> Temporary {
     return HashTemporary(i->inst(), i->index());
 }
-}
+} // namespace
 
 // ============================================================================
 //  Memory
 // ============================================================================
-namespace{
+namespace {
 class HostMemoryMap {
     struct Mapping {
         /// The offset in the virtual host memory address space.
@@ -222,10 +222,12 @@ private:
     void BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
     bool EvalLoop();
     auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
+    auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
     auto FFIType(Type ty) -> ffi_type*;
+    bool FFIStoreArg(void* ptr, const SRValue& val);
     auto GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void*;
     auto LoadSRValue(const SRValue& ptr) -> std::optional<SRValue>;
-    auto LoadSRValue(void* mem, Type ty) -> std::optional<SRValue>;
+    auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
     void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
     bool StoreSRValue(const SRValue& ptr, const SRValue& val);
     bool StoreSRValue(void* ptr, const SRValue& val);
@@ -494,7 +496,7 @@ auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<S
         auto align = v.type()->align(vm.owner());
         auto sz = v.type()->size(vm.owner());
         auto mem = alloc.Allocate(sz.bytes(), align.value().bytes());
-        if (not StoreSRValue(mem, v)) return std::nullopt;
+        if (not FFIStoreArg(mem, v)) return std::nullopt;
         arg_values.push_back(mem);
     }
 
@@ -518,8 +520,19 @@ auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<S
     );
 
     // Retrieve the return value.
-    return LoadSRValue(ret_storage.data(), proc->type()->ret());
+    return FFILoadRes(ret_storage.data(), proc->type()->ret());
 }
+
+auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
+    // FIXME: This just doesn’t work because we have 3 address spaces; we need to
+    // merge them into a single address space (split the 64-bit address space into
+    // 3 big areas, that should be enough space).
+    if (isa<ReferenceType>(ty)) Todo("Convert pointer back to a virtual pointer");
+
+    // FIXME: This doesn’t work if the host and target are different...
+    return LoadSRValue(mem, ty);
+}
+
 
 auto Eval::FFIType(Type ty) -> ffi_type* {
     switch (ty->kind()) {
@@ -568,6 +581,23 @@ auto Eval::FFIType(Type ty) -> ffi_type* {
     }
 
     Unreachable();
+}
+
+bool Eval::FFIStoreArg(void* ptr, const SRValue& val) {
+    // We need to convert virtual pointers to host pointers here.
+    //
+    // We also have no idea how the function we’re calling is going to
+    // use the pointer we hand it, so just be permissive with the access
+    // mode (i.e. pretend we require 0 bytes and that it’s readonly).
+    if (val.isa<Pointer>()) {
+        auto native = GetMemoryPointer(val, Size{}, true);
+        if (not native) return false;
+        std::memcpy(ptr, &native, sizeof(native));
+        return true;
+    }
+
+    // TODO: This doesn’t work if the host and target are different...
+    return StoreSRValue(ptr, val);
 }
 
 auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void* {
@@ -619,9 +649,60 @@ auto Eval::LoadSRValue(const SRValue& ptr) -> std::optional<SRValue> {
     return LoadSRValue(mem, ty);
 }
 
-auto Eval::LoadSRValue(void* mem, Type ty) -> std::optional<SRValue> {
-    ICE(entry, "TODO: Load SRValue of type {}", ty);
-    return std::nullopt;
+auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
+    auto Load = [&]<typename T> -> T {
+        static_assert(std::is_trivially_copyable_v<T>);
+        T v;
+        std::memcpy(&v, mem, sizeof(v));
+        return v;
+    };
+
+    switch (ty->kind()) {
+        case TypeBase::Kind::TemplateType:
+            Unreachable();
+
+        case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::SliceType:
+        case TypeBase::Kind::StructType:
+        case TypeBase::Kind::ProcType:
+            ICE(entry, "TODO: Load SRValue of type '{}'", ty);
+            return std::nullopt;
+
+        case TypeBase::Kind::ReferenceType:
+            return SRValue(Load.operator()<Pointer>(), ty);
+
+        case TypeBase::Kind::IntType:
+            switch (cast<IntType>(ty)->bit_width().bits()) {
+                case 8: return SRValue(APInt(8, Load.operator()<u8>()), ty);
+                case 16: return SRValue(APInt(16, Load.operator()<u16>()), ty);
+                case 32: return SRValue(APInt(32, Load.operator()<u32>()), ty);
+                case 64: return SRValue(APInt(64, Load.operator()<u64>()), ty);
+                default:
+                    ICE(entry, "TODO: Load SRValue of type '{}'", ty);
+                    return std::nullopt;
+            }
+
+        case TypeBase::Kind::BuiltinType:
+            switch (cast<BuiltinType>(ty)->builtin_kind()) {
+                case BuiltinKind::Deduced:
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::UnresolvedOverloadSet:
+                    Unreachable();
+
+                case BuiltinKind::Void: return SRValue();
+                case BuiltinKind::Bool: return SRValue(Load.operator()<bool>());
+                case BuiltinKind::Type: return SRValue(Type(Load.operator()<TypeBase*>()));
+                case BuiltinKind::Int:
+                    Assert(ty->size(vm.owner()).bits() == 64); // TODO: Support non-64 bit platforms.
+                    return SRValue(APInt(64, Load.operator()<u64>()), ty);
+            }
+
+            Unreachable();
+    }
+
+    Unreachable();
 }
 
 void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
@@ -649,8 +730,30 @@ bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
 }
 
 bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
-    ICE(entry, "TODO: Store SRValue of type {}", val.type());
-    return false;
+    auto Store = [&]<typename T>(T v) {
+        static_assert(std::is_trivially_copyable_v<T>);
+        std::memcpy(ptr, &v, sizeof(v));
+        return true;
+    };
+
+    return val.visit(utils::Overloaded{ // clang-format off
+        [&](bool b) { return Store(b); },
+        [&](std::monostate) { return ICE(entry, "I don’t think we can get here?"); },
+        [&](ir::Proc*) { return ICE(entry, "TODO: Store closure in memory"); },
+        [&](Type ty) { return Store(ty.ptr()); },
+        [&](Pointer p) { return Store(p.encode()); },
+        [&](const APInt& i) {
+            switch (i.getBitWidth()) {
+                case 8: return Store(u8(i.getSExtValue()));
+                case 16: return Store(u16(i.getSExtValue()));
+                case 32: return Store(u32(i.getSExtValue()));
+                case 64: return Store(u64(i.getSExtValue()));
+                default:
+                    ICE(entry, "Unsupported integer type in FFI call: {}", i);
+                    return false;
+            }
+        },
+    }); // clang-format on
 }
 
 auto Eval::Temp(ir::Argument* i) -> SRValue& {
