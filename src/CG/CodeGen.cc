@@ -247,16 +247,16 @@ void CodeGen::While(
     auto bb_cond = CreateBlock();
     auto bb_body = CreateBlock();
     auto bb_end = CreateBlock();
+    auto cond = bb_cond.get();
 
     // Emit condition.
-    CreateBr(bb_cond.get(), {});
     EnterBlock(std::move(bb_cond));
     CreateCondBr(emit_cond(), bb_body, bb_end);
 
     // Emit body.
     EnterBlock(std::move(bb_body));
     emit_body();
-    CreateBr(bb_cond.get(), {});
+    CreateBr(cond);
 
     // Continue after the loop.
     EnterBlock(std::move(bb_end));

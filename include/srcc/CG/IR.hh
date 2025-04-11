@@ -484,7 +484,7 @@ public:
     auto CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block>;
     auto CreateBlock(Proc* proc, ArrayRef<Type> args) -> Block*;
     auto CreateBool(bool value) -> Value*;
-    auto CreateBr(Block* dest, ArrayRef<Value*> args) -> void;
+    auto CreateBr(Block* dest, ArrayRef<Value*> args = {}) -> void;
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
     auto CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) -> void;
     auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
