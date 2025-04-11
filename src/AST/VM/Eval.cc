@@ -64,14 +64,14 @@ namespace {
 /// Encoded temporary value.
 enum struct Temporary : u64;
 
-auto HashTemporary(utils::is<ir::Inst, ir::Block> auto* i, u32 n) -> Temporary {
+auto HashTemporary(void* i, u32 n) -> Temporary {
     // Only use the low 32 bits of the pointer; if you need more than that
     // then seriously what is wrong with you?
     return Temporary(uptr(i) << 32 | uptr(n));
 }
 
 auto HashTemporary(ir::Argument* a) -> Temporary {
-    return HashTemporary(cast<ir::Block>(a->parent()), a->index());
+    return HashTemporary(a->parent(), a->index());
 }
 
 auto HashTemporary(ir::InstValue* i) -> Temporary {
@@ -227,7 +227,7 @@ private:
     auto FFIType(Type ty) -> ffi_type*;
     bool FFIStoreArg(void* ptr, const SRValue& val);
     auto GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void*;
-    auto LoadSRValue(const SRValue& ptr) -> std::optional<SRValue>;
+    auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
     void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
     bool StoreSRValue(const SRValue& ptr, const SRValue& val);
@@ -351,16 +351,20 @@ bool Eval::EvalLoop() {
                     cg.emit(callee->decl());
                 }
 
+                // Get the temporary for the return value *before* pushing a new frame.
+                SRValue* ret = nullptr;
+                if (not i->result_types().empty()) ret = &Temp(i);
+
                 // Enter the stack frame.
                 PushFrame(callee, args);
 
                 // Set the return value slot to the call’s temporary.
-                if (not i->result_types().empty()) call_stack.back().ret = &Temp(i);
+                call_stack.back().ret = ret;
             } break;
 
             case ir::Op::Load: {
                 auto l = cast<ir::MemInst>(i);
-                auto v = LoadSRValue(Val(l->ptr()));
+                auto v = LoadSRValue(Val(l->ptr()), l->memory_type());
                 if (not v) return false;
                 Temp(l) = std::move(v.value());
             } break;
@@ -621,7 +625,7 @@ auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool reado
 
     // This is a pointer to the stack.
     if (p.is_stack_ptr()) {
-        if (p.value() + accessible_size.bytes() >= stack.size()) {
+        if (p.value() + accessible_size.bytes() > stack.size()) {
             Error(entry, "Out-of-bounds memory access");
             return nullptr;
         }
@@ -651,8 +655,7 @@ auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool reado
     return nullptr;
 }
 
-auto Eval::LoadSRValue(const SRValue& ptr) -> std::optional<SRValue> {
-    auto ty = cast<ReferenceType>(ptr.type())->elem();
+auto Eval::LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue> {
     auto sz = ty->size(vm.owner());
     auto mem = GetMemoryPointer(ptr, sz, true);
     if (not mem) return std::nullopt;
@@ -719,7 +722,12 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
     Assert(not proc->empty());
     auto& frame = call_stack.emplace_back(proc);
     frame.stack_base = stack.size();
-    for (auto a : proc->args()) frame.temporaries[HashTemporary(a)] = {};
+
+    // Initialise call arguments.
+    for (auto [p, a] : zip(proc->args(), args))
+        frame.temporaries[HashTemporary(p)] = Val(a);
+
+    // Allocate temporaries for instructions and block arguments.
     for (auto b : proc->blocks()) {
         for (auto a : b->arguments()) frame.temporaries[HashTemporary(a)] = {};
         for (auto i : b->instructions()) {
@@ -728,7 +736,9 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
             }
         }
     }
-    BranchTo(proc->entry(), args);
+
+    // Branch to the entry block.
+    BranchTo(proc->entry(), {});
 }
 
 bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
@@ -767,11 +777,11 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
 }
 
 auto Eval::Temp(ir::Argument* i) -> SRValue& {
-    return call_stack.back().temporaries[HashTemporary(i)];
+    return const_cast<SRValue&>(call_stack.back().temporaries.at(HashTemporary(i)));
 }
 
 auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
-    return call_stack.back().temporaries[HashTemporary(i, idx)];
+    return const_cast<SRValue&>(call_stack.back().temporaries.at(HashTemporary(i, idx)));
 }
 
 auto Eval::Val(ir::Value* v) -> const SRValue& {

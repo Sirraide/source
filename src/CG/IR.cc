@@ -84,7 +84,7 @@ void Builder::CreateBr(Block* dest, ArrayRef<Value*> args) {
 auto Builder::CreateCall(Value* callee, ArrayRef<Value*> args) -> Value* {
     SmallVector operands{callee};
     append_range(operands, args);
-    return CreateAndGetVal(Op::Call, callee->type(), operands);
+    return CreateAndGetVal(Op::Call, cast<ProcType>(callee->type())->ret(), operands);
 }
 
 void Builder::CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) {
@@ -727,8 +727,17 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
     return out;
 }
 
-auto Proc::dump(TranslationUnit& tu) -> SmallUnrenderedString {
+void Inst::dump(TranslationUnit& tu) {
+    Printer p{tu};
+    p.DumpInst(this);
+    p.out += "\n";
+    std::print("{}", text::RenderColours(true, p.out.str()));
+}
+
+
+void Proc::dump(TranslationUnit& tu) {
     Printer p{tu};
     p.DumpProc(this);
-    return std::move(p.out);
+    p.out += "\n";
+    std::print("{}", text::RenderColours(true, p.out.str()));
 }

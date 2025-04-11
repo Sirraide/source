@@ -229,6 +229,7 @@ protected:
     Inst(Builder& b, Op op, ArrayRef<Value*> args);
 
 public:
+    void dump(TranslationUnit& tu);
     [[nodiscard]] auto args() const -> ArrayRef<Value*> { return arguments; }
     [[nodiscard]] bool has_multiple_results() const;
     [[nodiscard]] auto opcode() const { return op; }
@@ -413,7 +414,7 @@ public:
     auto args() const -> ArrayRef<Argument*> { return arguments; }
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
     auto decl() const -> ProcDecl* { return associated_decl; }
-    auto dump(TranslationUnit& tu) -> SmallUnrenderedString;
+    void dump(TranslationUnit& tu);
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
     auto linkage() const -> Linkage { return link; }
