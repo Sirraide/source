@@ -198,7 +198,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            out += std::format("%6(i{})", int_ty->bit_width());
+            out += std::format("%6(i{:i})", int_ty->bit_width());
         } break;
 
         case Kind::ProcType: {
@@ -513,7 +513,7 @@ void StructType::finalise(
     bits = struct_bits;
     computed_size = sz;
     computed_alignment = align;
-    computed_array_size = sz.aligned(align);
+    computed_array_size = sz.align(align);
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),

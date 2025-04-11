@@ -71,10 +71,10 @@ auto CallExpr::Create(
 
 ConstExpr::ConstExpr(
     TranslationUnit& tu,
-    eval::Value value,
+    eval::SRValue value,
     Location location,
     Ptr<Stmt> stmt
-) : Expr{Kind::ConstExpr, value.type(), value.value_category(), location},
+) : Expr{Kind::ConstExpr, value.type(), SRValue, location},
     value{tu.save(std::move(value))},
     stmt{stmt} {}
 

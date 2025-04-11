@@ -400,3 +400,23 @@ or `get()` from within a setter.
 ## TODOS:
 - Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
   since 'in' parameters are immutable by default.
+
+## Effect system?
+Maybe something like:
+```
+proc foo() [io] { ... }
+```
+`unsafe` could just be another effect. Might be useful to constrain what functions can do (but
+have a way of opting out of it maybe; I feel like this is more useful for libraries than executables).
+
+## Semicolons
+Semicolons *need* to be separators, not terminators, because of cases such as:
+```
+int x = if a then b else c;
+```
+if semicolons were terminators, we’d either need separate `if` statement and expression productions,
+or the above would have to be
+```
+int x = if a then b; else c;;
+```
+which is just gross.

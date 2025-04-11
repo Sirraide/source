@@ -68,7 +68,7 @@ LLVMCodeGen::LLVMCodeGen(llvm::TargetMachine& target, CodeGen& cg)
       ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
       VoidTy{getVoidTy()},
       AbortHandlerTy{llvm::FunctionType::get(VoidTy, {SliceTy, IntTy, IntTy, SliceTy, SliceTy}, false)} {
-    llvm->setTargetTriple(machine.getTargetTriple().str());
+    llvm->setTargetTriple(machine.getTargetTriple());
     llvm->setDataLayout(machine.createDataLayout());
 
     // Create abort handlers.
@@ -104,6 +104,10 @@ auto LLVMCodeGen::finalise() -> std::unique_ptr<llvm::Module> {
 //  Helpers
 // ============================================================================
 namespace {
+auto ConvertAlign(Align a) -> llvm::Align {
+    return llvm::Align{a.value().bytes()};
+}
+
 auto ConvertCC(CallingConvention cc) -> llvm::CallingConv::ID {
     switch (cc) {
         case CallingConvention::Source: return llvm::CallingConv::Fast;
@@ -284,7 +288,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         case Op::Alloca: {
             auto ty = cast<ir::Alloca>(i).allocated_type();
             auto a = CreateAlloca(ConvertTypeForMem(ty));
-            a->setAlignment(std::max(a->getAlign(), ty->align(cg.tu)));
+            a->setAlignment(std::max(a->getAlign(), ConvertAlign(ty->align(cg.tu))));
             return a;
         }
 
@@ -333,17 +337,17 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         case Op::Load: {
             auto m = cast<ir::MemInst>(i);
             auto ty = ConvertTypeForMem(m.memory_type());
-            return CreateAlignedLoad(ty, Emit(m.ptr()), m.align());
+            return CreateAlignedLoad(ty, Emit(m.ptr()), ConvertAlign(m.align()));
         }
 
         case Op::MemZero: {
             auto zero = getInt8(0);
-            return CreateMemSet(Emit(i[0]), zero, Emit(i[1]), i[0]->type()->align(cg.tu));
+            return CreateMemSet(Emit(i[0]), zero, Emit(i[1]), ConvertAlign(i[0]->type()->align(cg.tu)));
         }
 
         case Op::Store: {
             auto m = cast<ir::MemInst>(i);
-            return CreateAlignedStore(Emit(m.value()), Emit(m.ptr()), m.align());
+            return CreateAlignedStore(Emit(m.value()), Emit(m.ptr()), ConvertAlign(m.align()));
         }
 
         // Cast instructions.

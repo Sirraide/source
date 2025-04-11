@@ -22,17 +22,16 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
     friend DiagsProducer;
     friend LLVMCodeGen;
 
-    Size word_size;
-    Opt<ir::Proc*> assert_handler;
-    Opt<ir::Proc*> overflow_handler;
     Opt<ir::Proc*> printf;
     DenseMap<LocalDecl*, ir::Value*> locals;
     DenseMap<ProcDecl*, String> mangled_names;
     ir::Proc* curr_proc = nullptr;
-    bool compiling_for_vm = false;
+    Size word_size;
+    LangOpts lang_opts;
 
 public:
-    CodeGen(TranslationUnit& tu, Size word_size) : Builder{tu}, word_size{word_size} {}
+    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
+        : Builder{tu}, word_size{word_size}, lang_opts{lang_opts} {}
 
     /// Get the diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
@@ -98,7 +97,7 @@ private:
 
     auto EmitArithmeticOrComparisonOperator(Tk op, ir::Value* lhs, ir::Value* rhs, Location loc) -> ir::Value*;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(const eval::Value& val) -> ir::Value*;
+    auto EmitValue(const eval::SRValue& val) -> ir::Value*;
 
     void EmitLocal(LocalDecl* decl);
 

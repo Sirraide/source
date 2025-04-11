@@ -402,7 +402,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 break;
 
             case Kind::IntType:
-                out += std::format("%6(i{})", cast<ParsedIntType>(type)->bit_width);
+                out += std::format("%6(i{:i})", cast<ParsedIntType>(type)->bit_width);
                 break;
 
             case Kind::ProcType: {

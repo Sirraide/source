@@ -91,6 +91,9 @@ struct srcc::LangOpts {
     // Enable overflow checking. When disabled, overflow is
     // undefined behaviour instead.
     bool overflow_checking : 1 = true;
+
+    /// We’re compiling for constant evaluation.
+    bool constant_eval : 1 = false;
 };
 
 /// A file in the context.

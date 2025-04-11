@@ -374,14 +374,14 @@ public:
 class srcc::ConstExpr final : public Expr {
 public:
     /// Constant value.
-    eval::Value* value;
+    eval::SRValue* value;
 
     /// Evaluated statement. May be unset if this was created artificially.
     Ptr<Stmt> stmt;
 
     ConstExpr(
         TranslationUnit& tu,
-        eval::Value value,
+        eval::SRValue value,
         Location location,
         Ptr<Stmt> stmt = {}
     );

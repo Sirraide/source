@@ -114,7 +114,7 @@ auto Builder::CreateInt(APInt val, Type type) -> Value* {
     return large_ints.back().get();
 }
 
-auto Builder::CreateInt(i64 val, Type type) -> Value* {
+auto Builder::CreateInt(u64 val, Type type) -> Value* {
     auto& i = small_ints[val];
     if (not i) i = new (*this) SmallInt(val, type);
     return i;
@@ -345,7 +345,7 @@ BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget 
       }()),
       then_args_num(u32(then.args.size())), then_block(then.dest), else_block(else_.dest) {}
 
-Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.alloc)}, op{op} {}
+Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.tu.allocator())}, op{op} {}
 
 bool Inst::has_multiple_results() const {
     return result_types().size() > 1;

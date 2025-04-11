@@ -2133,7 +2133,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
         Note(
             parsed->loc,
             "The maximum supported integer type is {}, "
-            "which is smaller than an %6(i{}), which would "
+            "which is smaller than an %6(i{:i}), which would "
             "be required to store a value of {}",
             IntType::Get(*M, IntType::MaxBits),
             bits,
@@ -2369,7 +2369,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 
         // Otherwise, add the field and adjust our size and alignment.
         // TODO: Optimise layout if this isn’t meant for FFI.
-        size.align(ty->align(*M));
+        size = size.align(ty->align(*M));
         fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
         size += ty->size(*M);
         align = std::max(align, ty->align(*M));
@@ -2455,7 +2455,7 @@ auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
 
 auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
     if (parsed->bit_width > IntType::MaxBits) {
-        Error(parsed->loc, "The maximum integer type is %6(i{})", IntType::MaxBits);
+        Error(parsed->loc, "The maximum integer type is %6(i{:i})", IntType::MaxBits);
         return IntType::Get(*M, IntType::MaxBits);
     }
     return IntType::Get(*M, parsed->bit_width);

@@ -211,6 +211,7 @@ execute_process(
 ## ============================================================================
 ##  Tablegen
 ## ============================================================================
+#[[
 add_subdirectory(tools)
 
 macro(srcc_tablegen file)
@@ -219,13 +220,16 @@ macro(srcc_tablegen file)
         COMMAND $<TARGET_FILE:vm-tablegen>
             "${PROJECT_SOURCE_DIR}/${file}.td"
             -o "${PROJECT_SOURCE_DIR}/${file}.inc"
-        DEPENDS "${PROJECT_SOURCE_DIR}/${file}.td"
+        DEPENDS
+            vm-tablegen
+            "${PROJECT_SOURCE_DIR}/${file}.td"
     )
 
     list(APPEND SRCC_TABLEGEN_OUTPUTS "${PROJECT_SOURCE_DIR}/${file}.inc")
 endmacro()
 
 srcc_tablegen(src/AST/VM/Ops)
+]]
 
 ## ============================================================================
 ##  Helper Functions
@@ -259,7 +263,7 @@ file(GLOB_RECURSE _sources_core
     src/Frontend/*.cc
 )
 
-add_library(srcc-core STATIC ${_sources_core} ${SRCC_TABLEGEN_OUTPUTS})
+add_library(srcc-core STATIC ${_sources_core} #[[${SRCC_TABLEGEN_OUTPUTS}]])
 target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 
 target_link_libraries(srcc-core PRIVATE options)

@@ -10,241 +10,486 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
 
-#include <base/Serialisation.hh>
-
 #include <optional>
 #include <print>
 #include <ranges>
-
-#include "VMInternal.hh"
 
 using namespace srcc;
 using namespace srcc::eval;
 namespace ir = cg::ir;
 
-struct Closure {
-    ProcDecl* decl;
-    void* env = nullptr;
-};
-
-#define TRY(x)                    \
-    do {                          \
-        if (not(x)) return false; \
-    } while (0)
-#define TryEval(...) TRY(Eval(__VA_ARGS__))
-
 // ============================================================================
 //  Value
 // ============================================================================
-Value::Value(ProcDecl* proc)
+SRValue::SRValue(ir::Proc* proc)
     : value(proc),
-      ty(proc->type) {}
+      ty(proc->type()) {}
 
-Value::Value(Slice slice, Type ty)
-    : value(std::move(slice)),
-      ty(ty) {}
-
-bool Value::operator==(const Value& other) const {
+bool SRValue::operator==(const SRValue& other) const {
     if (value.index() != other.value.index()) return false;
     return visit(utils::Overloaded{
         [&](bool b) { return b == other.cast<bool>(); },
         [&](std::monostate) { return other.isa<std::monostate>(); },
-        [&](ProcDecl* proc) { return proc == other.cast<ProcDecl*>(); },
+        [&](ir::Proc* proc) { return proc == other.cast<ir::Proc*>(); },
         [&](Type ty) { return ty == other.cast<Type>(); },
-        [&](const LValue& lval) { return lval == other.cast<LValue>(); },
         [&](const APInt& i) { return i == other.cast<APInt>(); },
-        [&](const Slice& s) { return s == other.cast<Slice>(); },
-        [&](const Reference& r) { return r == other.cast<Reference>(); },
+        [&](Pointer ptr) { return ptr == other.cast<Pointer>(); },
     });
 }
 
-void Value::dump(bool use_colour) const {
+void SRValue::dump(bool use_colour) const {
     std::print("{}", text::RenderColours(use_colour, print().str()));
 }
 
-auto Value::print() const -> SmallUnrenderedString {
+auto SRValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
-    utils::Overloaded V{// clang-format off
+    utils::Overloaded V{
         [&](bool) { out += std::format("%1({})", value.get<bool>()); },
-        [&](std::monostate) { },
-        [&](ProcDecl* proc) { out += std::format("%2({})", proc->name); },
+        [&](std::monostate) {},
+        [&](ir::Proc* proc) { out += std::format("%2({})", proc->name()); },
         [&](Type ty) { out += ty->print(); },
-        [&](const LValue& lval) { out += lval.print(); },
         [&](const APInt& value) { out += std::format("%5({})", toString(value, 10, true)); },
-        [&](const Slice&) { out += "<slice>"; },
-        [&](this auto& Self, const Reference& ref) {
-            Self(ref.lvalue);
-            out += std::format("%1(@)%5({})", toString(ref.offset, 10, true));
-        }
-    }; // clang-format on
+        [&](Pointer ptr) { out += std::format("%4({})", ptr.encode()); },
+    };
 
     visit(V);
     return out;
 }
 
-auto Value::value_category() const -> ValueCategory {
-    return value.visit(utils::Overloaded{
-        [](std::monostate) { return Expr::SRValue; },
-        [](bool) { return Expr::SRValue; },
-        [](ProcDecl*) { return Expr::SRValue; },
-        [](Slice) { return Expr::SRValue; },
-        [](Type) { return Expr::SRValue; },
-        [](const APInt&) { return Expr::SRValue; },
-        [](const LValue&) { return Expr::LValue; },
-        [](const Reference&) { return Expr::LValue; },
-    });
-}
-
-auto LValue::print() const -> SmallUnrenderedString {
-    return SmallUnrenderedString("<lvalue>");
-}
-
 // ============================================================================
-//  Compiler
+//  Constant Evaluator
 // ============================================================================
 namespace {
-/// A compile-time string constant.
-///
-/// The bytecode doesn’t persist across compiler invocations, so we
-/// can just store strings as a pointer+size. This type is used to
-/// simplify serialisation thereof.
-///
-/// We don’t serialise String itself like this because we don’t want
-/// to accidentally serialise pointers elsewhere in the compiler.
-struct CTString {
-    String value;
+/// Encoded temporary value.
+enum struct Temporary : u64;
 
-    void deserialise(ByteReader& r) {
-        auto data = reinterpret_cast<const char*>(r.read<uptr>());
-        auto size = r.read<u64>();
-        value = String::CreateUnsafe(StringRef{data, size});
-    }
+auto HashTemporary(utils::is<ir::Inst, ir::Block> auto* i, u32 n) -> Temporary {
+    // Only use the low 32 bits of the pointer; if you need more than that
+    // then seriously what is wrong with you?
+    return Temporary(uptr(i) << 32 | uptr(n));
+}
 
-    void serialise(ByteWriter& w) const {
-        w << uptr(value.data()) << u64(value.size());
-    }
-};
+auto HashTemporary(ir::Argument* a) -> Temporary {
+    return HashTemporary(cast<ir::Block>(a->parent()), a->index());
+}
+
+auto HashTemporary(ir::InstValue* i) -> Temporary {
+    return HashTemporary(i->inst(), i->index());
+}
 } // namespace
 
-class VM::Compiler : DiagsProducer<bool> {
+class eval::Eval : DiagsProducer<bool> {
     friend DiagsProducer;
 
-public:
+    /// A procedure on the stack.
+    struct StackFrame {
+        /// Procedure to which this frame belongs.
+        ir::Proc* proc{};
+
+        /// Instruction pointer for this procedure.
+        ArrayRef<ir::Inst*>::iterator ip{};
+
+        /// Temporary values for each instruction.
+        DenseMap<Temporary, SRValue> temporaries;
+
+        /// Other materialised temporaries (literal integers etc.)
+        StableVector<SRValue> materialised_values;
+
+        /// Stack size at the start of this procedure.
+        usz stack_base{};
+
+        /// Return value slot.
+        SRValue* ret{};
+    };
+
     VM& vm;
+    cg::CodeGen cg;
+    ByteBuffer stack;
+    SmallVector<StackFrame, 4> call_stack;
+    const SRValue true_val{true};
+    const SRValue false_val{false};
+    Location entry;
+    const bool complain;
 
-    // FIXME: This should be stored in the VM instead.
-    cg::CodeGen cg{vm.owner(), Size::Bits(64)}; // TODO: Use target word size.
-    Location l;
-    bool complain = true;
+public:
+    Eval(VM& vm, bool complain);
 
-    Compiler(VM& vm) : vm{vm} {}
-    auto compile(Stmt* stmt, bool complain) -> VMProc;
+    [[nodiscard]] auto eval(Stmt* s) -> std::optional<SRValue>;
 
 private:
-    /// Get the diagnostics engine.
-    [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return vm.owner().context().diags(); }
+    auto diags() const -> DiagnosticsEngine& { return vm.owner().context().diags(); }
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) vm.owner().context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    bool Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+        return false;
     }
 
-    auto CompileProcedure(ir::Proc* proc) -> VMProc;
+    auto AdjustLangOpts(LangOpts l) -> LangOpts;
+    void BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
+    bool EvalLoop();
+    auto GetMemoryPointer(const SRValue& ptr, Size accessible_size) -> void*;
+    auto LoadSRValue(const SRValue& ptr) -> std::optional<SRValue>;
+    void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
+    bool StoreSRValue(const SRValue& ptr, const SRValue& val);
+    auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
+    auto Temp(ir::Argument* i) -> SRValue&;
+    auto Val(ir::Value* v) -> const SRValue&;
 };
 
-class eval::EmitProcedure {
-    enum class Temporary : u64;
+Eval::Eval(VM& vm, bool complain)
+    : vm{vm},
+      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts()), Size::Of<void*>()},
+      complain{complain} {}
 
-    VM::Compiler& c;
-    ByteBuffer code_buffer;
-    ByteWriter code{code_buffer};
-
-    /// The procedure we’re compiling.
-    ir::Proc* proc;
-
-    /// Total size of the stack frame for this procedure.
-    Size frame_size;
-
-    /// Minimum required alignment for the stack frame.
-    Align frame_alignment{1};
-
-    /// Offset to the slot for the temporary(s) produced
-    /// by an instruction, as well as procedure and basic
-    /// block arguments.
-    ///
-    /// They key are the lower 32 bits of the instruction
-    /// or parent of the argument and the index of the
-    /// value produced by the instruction.
-    DenseMap<Temporary, FrameOffset> frame_offsets{};
-
-    /// Start of each basic block.
-    DenseMap<ir::Block*, CodeOffset> block_offsets{};
-
-    /// Fixups for block addresses.
-    SmallVector<std::pair<u64, ir::Block*>> block_fixups{};
-
-public:
-    EmitProcedure(VM::Compiler& c, ir::Proc* proc) : c{c}, proc{proc} {}
-    auto compile() -> VMProc;
-
-private:
-    /// Allocate a type in the stack frame.
-    [[nodiscard]] auto Allocate(Type ty) -> FrameOffset;
-
-    /// Compile an instruction.
-    void Compile(ir::Inst* i);
-
-#define SRCC_VM_OP_BUILDERS
-#include "Ops.inc"
-
-    void EmitOperands(ArrayRef<ir::Value*> vals);
-    void EncodeBlockAddress(ir::Block* b);
-    void EncodeOperand(ir::Value* val);
-
-    [[nodiscard]] static auto EncodeTemporary(
-        utils::is_same<ir::Inst*, ir::Value*> auto parent,
-        u32 idx
-    ) -> Temporary {
-        return Temporary(u64(uptr(parent)) << 32 | idx);
-    }
-
-    [[nodiscard]] static auto EncodeTemporary(ir::Argument* v) -> Temporary {
-        return EncodeTemporary(v->parent(), v->index());
-    }
-
-    [[nodiscard]] static auto EncodeTemporary(ir::InstValue* v) -> Temporary {
-        return EncodeTemporary(v->inst(), v->index());
-    }
-};
-
-VM::~VM() = default;
-VM::VM(TranslationUnit& owner_tu) : owner_tu{owner_tu}, registers(MaxRegisters) {
-    compiler.reset(new Compiler(*this));
+auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
+    l.constant_eval = true;
+    l.overflow_checking = true;
+    return l;
 }
+
+void Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
+    call_stack.back().ip = block->instructions().begin();
+    for (auto [slot, arg] : zip(block->arguments(), args))
+        Temp(slot) = Val(arg);
+}
+
+bool Eval::EvalLoop() {
+    auto CastOp = [&](ir::ICast* i, APInt (APInt::*op)(unsigned width) const) {
+        auto val = Val(i->args()[0]);
+        auto to_wd = i->cast_result_type()->size(vm.owner());
+        auto result = (val.cast<APInt>().*op)(u32(to_wd.bits()));
+        Temp(i) = SRValue{std::move(result), i->cast_result_type()};
+    };
+
+    auto CmpOp = [&](ir::Inst* i, llvm::function_ref<bool(const APInt& lhs, const APInt& rhs)> op) {
+        auto& lhs = Val(i->args()[0]);
+        auto& rhs = Val(i->args()[1]);
+        auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
+        Temp(i) = SRValue{result};
+    };
+
+    auto IntOp = [&](ir::Inst* i, llvm::function_ref<APInt(const APInt& lhs, const APInt& rhs)> op) {
+        auto& lhs = Val(i->args()[0]);
+        auto& rhs = Val(i->args()[1]);
+        auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
+        Temp(i) = SRValue{std::move(result), lhs.type()};
+    };
+
+    auto OvOp = [&](ir::Inst* i, APInt (APInt::*op)(const APInt& RHS, bool& Overflow) const) {
+        auto& lhs = Val(i->args()[0]);
+        auto& rhs = Val(i->args()[1]);
+        bool overflow = false;
+        auto result = (lhs.cast<APInt>().*op)(rhs.cast<APInt>(), overflow);
+        Temp(i, 0) = SRValue{std::move(result), lhs.type()};
+        Temp(i, 1) = SRValue{overflow};
+    };
+
+    for (;;) {
+        switch (auto i = *call_stack.back().ip++; i->opcode()) {
+            case ir::Op::Abort: {
+                if (not complain) return false;
+                auto& a = *cast<ir::AbortInst>(i);
+                auto& msg1 = Val(a[0]);
+                auto& msg2 = Val(a[1]);
+                auto reason_str = [&] -> std::string_view {
+                    switch (a.abort_reason()) {
+                        case ir::AbortReason::AssertionFailed: return "Assertion failed";
+                        case ir::AbortReason::ArithmeticError: return "Arithmetic error";
+                    }
+                    Unreachable();
+                }();
+
+                std::string msg{reason_str};
+                if (not msg1.empty()) msg += std::format(" '{}'", msg1.print());
+                if (not msg2.empty()) msg += std::format(": {}", msg2.print());
+                return Error(a.location(), "{}", msg);
+            }
+
+            case ir::Op::Alloca: {
+                auto a = cast<ir::Alloca>(i);
+                auto sz = Size::Bytes(stack.size());
+                auto ty = a->allocated_type();
+                sz = sz.align(ty->align(vm.owner()));
+                Temp(i) = SRValue(Pointer::Stack(PointerValue(stack.size())), a->result_types()[0]);
+                sz += ty->size(vm.owner());
+                stack.resize(sz.bytes());
+            } break;
+
+            case ir::Op::Br: {
+                auto b = cast<ir::BranchInst>(i);
+                if (b->is_conditional()) {
+                    auto& cond = Val(b->cond());
+                    if (cond.cast<bool>()) BranchTo(b->then(), b->then_args());
+                    else BranchTo(b->else_(), b->else_args());
+                } else {
+                    BranchTo(b->then(), b->then_args());
+                }
+            } break;
+
+            case ir::Op::Call: {
+                auto callee = dyn_cast<ir::Proc>(i->args()[0]);
+                if (not callee) return ICE(entry, "Indirect calls at compile time are not supported yet");
+
+                // Compile the procedure now if we haven’t done that yet.
+                if (callee->empty()) {
+                    Assert(callee->decl(), "Generated procedure has no body?");
+                    if (not callee->decl()->body()) return ICE(
+                        entry,
+                        "Calling external procedures at compile time is not supported yet"
+                    );
+
+                    cg.emit(callee->decl());
+                }
+
+                // Enter the stack frame.
+                PushFrame(callee, i->args().drop_front(1));
+
+                // Set the return value slot to the call’s temporary.
+                if (not i->result_types().empty()) call_stack.back().ret = &Temp(i);
+            } break;
+
+            case ir::Op::Load: {
+                auto l = cast<ir::MemInst>(i);
+                auto v = LoadSRValue(Val(l->ptr()));
+                if (not v) return false;
+                Temp(l) = std::move(v.value());
+            } break;
+
+            case ir::Op::MemZero: {
+                auto addr = Val(i->args()[0]);
+                auto size = Size::Bytes(Val(i->args()[1]).cast<APInt>().getZExtValue());
+                auto ptr = GetMemoryPointer(addr, size);
+                if (not ptr) return false;
+                std::memset(ptr, 0, size.bytes());
+            } break;
+
+            case ir::Op::PtrAdd: {
+                auto ptr = Val(i->args()[0]);
+                auto offs = Val(i->args()[1]);
+                Temp(i) = SRValue(ptr.cast<Pointer>() + offs.cast<APInt>().getZExtValue(), ptr.type());
+            } break;
+
+            case ir::Op::Ret: {
+                // Save the return value in the return slot.
+                if (not i->args().empty()) {
+                    Assert(call_stack.back().ret, "Return value slot not set?");
+                    *call_stack.back().ret = Val(i->args()[0]);
+                }
+
+                // Clean up local variables.
+                stack.resize(call_stack.back().stack_base);
+                call_stack.pop_back();
+
+                // If we’re returning from the last stack frame, we’re done.
+                if (call_stack.empty()) return true;
+            } break;
+
+            case ir::Op::Select: {
+                auto cond = Val(i->args()[0]);
+                Temp(i) = cond.cast<bool>() ? Val(i->args()[1]) : Val(i->args()[2]);
+            } break;
+
+            case ir::Op::Store: {
+                auto s = cast<ir::MemInst>(i);
+                auto ptr = Val(s->ptr());
+                auto val = Val(s->value());
+                if (not StoreSRValue(ptr, val)) return false;
+            } break;
+
+            case ir::Op::Unreachable:
+                return Error(entry, "Unreachable code reached");
+
+            // Integer conversions.
+            case ir::Op::SExt: CastOp(cast<ir::ICast>(i), &APInt::sext); break;
+            case ir::Op::Trunc: CastOp(cast<ir::ICast>(i), &APInt::trunc); break;
+            case ir::Op::ZExt: CastOp(cast<ir::ICast>(i), &APInt::zext); break;
+
+            // Comparison operations.
+            case ir::Op::ICmpEq: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs == rhs; }); break;
+            case ir::Op::ICmpNe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs != rhs; }); break;
+            case ir::Op::ICmpSGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sge(rhs); }); break;
+            case ir::Op::ICmpSGt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sgt(rhs); }); break;
+            case ir::Op::ICmpSLe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sle(rhs); }); break;
+            case ir::Op::ICmpSLt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.slt(rhs); }); break;
+            case ir::Op::ICmpUGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.uge(rhs); }); break;
+            case ir::Op::ICmpUGt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ugt(rhs); }); break;
+            case ir::Op::ICmpULe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ule(rhs); }); break;
+            case ir::Op::ICmpULt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ult(rhs); }); break;
+
+            // Arithmetic and logical operations.
+            case ir::Op::Add: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs + rhs; }); break;
+            case ir::Op::And: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs & rhs; }); break;
+            case ir::Op::AShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ashr(rhs); }); break;
+            case ir::Op::IMul: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs * rhs; }); break;
+            case ir::Op::LShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.lshr(rhs); }); break;
+            case ir::Op::Or: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs | rhs; }); break;
+            case ir::Op::SDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sdiv(rhs); }); break;
+            case ir::Op::Shl: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.shl(rhs); }); break;
+            case ir::Op::SRem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.srem(rhs); }); break;
+            case ir::Op::Sub: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs - rhs; }); break;
+            case ir::Op::UDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.udiv(rhs); }); break;
+            case ir::Op::URem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.urem(rhs); }); break;
+            case ir::Op::Xor: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs ^ rhs; }); break;
+
+            // Checked arithmetic operations.
+            case ir::Op::SAddOv: OvOp(i, &APInt::sadd_ov); break;
+            case ir::Op::SMulOv: OvOp(i, &APInt::smul_ov); break;
+            case ir::Op::SSubOv: OvOp(i, &APInt::ssub_ov); break;
+        }
+    }
+}
+
+auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size) -> void* {
+    auto p = ptr.cast<Pointer>();
+    if (not p.is_stack_ptr()) {
+        ICE(entry, "TODO: Access heap or internal pointer");
+        return nullptr;
+    }
+
+    auto vm = p.vm_ptr();
+    if (vm.is_null()) {
+        Error(entry, "Attempted to dereference 'nil'");
+        return nullptr;
+    }
+
+    if (vm.non_null_value() + accessible_size.bytes() >= stack.size()) {
+        Error(entry, "Out-of-bounds stack access");
+        return nullptr;
+    }
+
+    return stack.data() + vm.non_null_value();
+}
+
+auto Eval::LoadSRValue(const SRValue& ptr) -> std::optional<SRValue> {
+    auto ty = cast<ReferenceType>(ptr.type())->elem();
+    auto sz = ty->size(vm.owner());
+    auto mem = GetMemoryPointer(ptr, sz);
+    if (not mem) return std::nullopt;
+    ICE(entry, "TODO: Load SRValue of type {}", ty);
+    return std::nullopt;
+}
+
+void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
+    Assert(not proc->empty());
+    auto& frame = call_stack.emplace_back(proc);
+    frame.stack_base = stack.size();
+    for (auto a : proc->args()) frame.temporaries[HashTemporary(a)] = {};
+    for (auto b : proc->blocks()) {
+        for (auto a : b->arguments()) frame.temporaries[HashTemporary(a)] = {};
+        for (auto i : b->instructions()) {
+            for (auto [n, _] : enumerate(i->result_types())) {
+                frame.temporaries[HashTemporary(i, u32(n))] = {};
+            }
+        }
+    }
+    BranchTo(proc->entry(), args);
+}
+
+bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
+    auto ty = val.type();
+    auto sz = ty->size(vm.owner());
+    auto mem = GetMemoryPointer(ptr, sz);
+    if (not mem) return false;
+    ICE(entry, "TODO: Store SRValue of type {}", ty);
+    return false;
+}
+
+auto Eval::Temp(ir::Argument* i) -> SRValue& {
+    return call_stack.back().temporaries[HashTemporary(i)];
+}
+
+auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
+    return call_stack.back().temporaries[HashTemporary(i, idx)];
+}
+
+auto Eval::Val(ir::Value* v) -> const SRValue& {
+    auto Materialise = [&](SRValue val) -> const SRValue& {
+        return call_stack.back().materialised_values.push_back(std::move(val));
+    };
+
+    switch (v->kind()) {
+        using K = ir::Value::Kind;
+        case K::Block: Unreachable("Can’t take address of basic block");
+        case K::Extract: Todo();
+        case K::InvalidLocalReference: Todo();
+        case K::LargeInt: Todo();
+        case K::Proc: Todo();
+        case K::Slice: Todo();
+        case K::StringData: Todo();
+
+        case K::Argument:
+            return Temp(cast<ir::Argument>(v));
+
+        case K::BuiltinConstant: {
+            switch (cast<ir::BuiltinConstant>(v)->id) {
+                case ir::BuiltinConstantKind::True: return true_val;
+                case ir::BuiltinConstantKind::False: return false_val;
+                case ir::BuiltinConstantKind::Poison: Unreachable("Should not exist in checked mode");
+                case ir::BuiltinConstantKind::Nil: Todo("Materialise nil");
+            }
+            Unreachable();
+        }
+
+        case K::InstValue: {
+            auto ival = cast<ir::InstValue>(v);
+            return Temp(ival->inst(), ival->index());
+        }
+
+        case K::SmallInt: {
+            auto i = cast<ir::SmallInt>(v);
+            auto wd = u32(i->type()->size(vm.owner()).bits());
+            return Materialise(SRValue{APInt(wd, u64(i->value())), i->type()});
+        }
+    }
+
+    Unreachable();
+}
+
+auto Eval::eval(Stmt* s) -> std::optional<SRValue> {
+    // Compile the procedure.
+    entry = s->location();
+    auto proc = cg.emit_stmt_as_proc_for_vm(s);
+
+    // Set up a stack frame for it.
+    SRValue res;
+    PushFrame(proc, {});
+    call_stack.back().ret = &res;
+
+    // Dew it.
+    if (not EvalLoop()) return std::nullopt;
+    return std::move(res);
+}
+
+// ============================================================================
+//  VM API
+// ============================================================================
+VM::~VM() = default;
+VM::VM(TranslationUnit& owner_tu) : owner_tu{owner_tu} {}
 
 auto VM::eval(
     Stmt* stmt,
     bool complain
-) -> std::optional<Value> {
-    using OptVal = std::optional<Value>;
+) -> std::optional<SRValue> {
+    using OptVal = std::optional<SRValue>;
 
     // Fast paths for common values.
     if (auto e = dyn_cast<Expr>(stmt)) {
         e = e->strip_parens();
         auto val = e->visit(utils::Overloaded{// clang-format off
             [](auto*) -> OptVal { return std::nullopt; },
-            [](IntLitExpr* i) -> OptVal { return Value{i->storage.value(), i->type}; },
-            [](BoolLitExpr* b) -> OptVal { return Value(b->value); },
-            [](TypeExpr* t) -> OptVal { return Value{t->value}; },
-            [](ProcRefExpr* p) -> OptVal { return Value{p->decl}; },
+            [](IntLitExpr* i) -> OptVal { return SRValue{i->storage.value(), i->type}; },
+            [](BoolLitExpr* b) -> OptVal { return SRValue(b->value); },
+            [](TypeExpr* t) -> OptVal { return SRValue{t->value}; },
             [&](StrLitExpr* s) -> OptVal {
-                return Value{
-                    Slice{
+                Todo();
+                /*return Value{
+                    SliceVal{
                         Reference{LValue{s->value, owner().StrLitTy, s->location(), false}, APInt::getZero(64)},
                         APInt(u32(Types::IntTy->size(owner()).bits()), s->value.size(), false),
                     },
                     owner().StrLitTy,
-                };
+                };*/
             }
         }); // clang-format on
 
@@ -253,401 +498,6 @@ auto VM::eval(
     }
 
     // Otherwise, we need to do this the complicated way. Compile the statement.
-    Compiler c{*this};
-    auto compiled = c.compile(stmt, complain);
-    PrintByteCode(owner(), compiled.code);
-    std::exit(42);
-    // return ExecuteProcedure(compiled, complain);
-}
-
-auto VM::Compiler::compile(Stmt* stmt, bool complain) -> VMProc {
-    tempset this->complain = complain;
-    tempset l = stmt->location();
-    auto proc = cg.emit_stmt_as_proc_for_vm(stmt);
-
-    // Codegen may have emitted intrinsics, e.g. exponentiation functions;
-    // we need to compile and link these in if they’re present.
-    for (auto p : cg.procedures()) {
-        if (
-            p == proc or
-            proc->empty() or
-            vm.procedure_table.contains(proc->name())
-        ) continue;
-        Todo("Emit procedure here");
-    }
-
-    // Compile the procedure.
-    return CompileProcedure(proc);
-}
-
-auto VM::Compiler::CompileProcedure(ir::Proc* proc) -> VMProc {
-    EmitProcedure ep{*this, proc};
-    return ep.compile();
-}
-
-auto EmitProcedure::compile() -> VMProc {
-    // Allocate call args.
-    for (auto a : proc->args())
-        frame_offsets[EncodeTemporary(a->parent(), a->index())] = Allocate(a->type());
-
-    // Allocate block args.
-    for (auto b : proc->blocks())
-        for (auto a : b->arguments())
-            frame_offsets[EncodeTemporary(a->parent(), a->index())] = Allocate(a->type());
-
-    // Compile blocks.
-    for (auto* b : proc->blocks()) {
-        block_offsets[b] = CodeOffset(code_buffer.size());
-        for (auto* i : b->instructions()) Compile(i);
-    }
-
-    // Ensure that we can actually represent this.
-    Assert(
-        code_buffer.size() <= std::numeric_limits<std::underlying_type_t<CodeOffset>>::max(),
-        "Sorry, the procedure '{}' is too big for the VM: {} bytes",
-        proc->name(),
-        code_buffer.size()
-    );
-
-    // Fix up block addresses.
-    for (auto [offs, block] : block_fixups)
-        // FIXME: Writer should really have a seek() function.
-        memcpy(code_buffer.data() + offs, &block_offsets.at(block), sizeof(CodeOffset));
-
-    return VMProc{std::move(code_buffer), frame_size, frame_alignment};
-}
-
-void EmitProcedure::Compile(ir::Inst* i) {
-#define INT_OP(op)                                           \
-    switch (ty->size(c.vm.owner()).bits()) {                 \
-        case 8: code << Op::op##I8; break;                   \
-        case 16: code << Op::op##I16; break;                 \
-        case 32: code << Op::op##I32; break;                 \
-        case 64: code << Op::op##I64; break;                 \
-        default: Unreachable("Invalid size for type 'int'"); \
-    }
-
-#define COMPILE_TYPED_OP(type, op)                                       \
-    do {                                                                 \
-        Type ty = type;                                                  \
-        switch (ty->type_kind) {                                         \
-            using K = TypeBase::Kind;                                    \
-            case K::ArrayType: Todo();                                   \
-            case K::BuiltinType:                                         \
-                switch (cast<BuiltinType>(ty)->builtin_kind()) {         \
-                    case BuiltinKind::Deduced:                           \
-                    case BuiltinKind::Dependent:                         \
-                    case BuiltinKind::ErrorDependent:                    \
-                    case BuiltinKind::NoReturn:                          \
-                    case BuiltinKind::UnresolvedOverloadSet:             \
-                    case BuiltinKind::Void:                              \
-                        Unreachable();                                   \
-                                                                         \
-                    case BuiltinKind::Bool: code << Op::op##Bool; break; \
-                    case BuiltinKind::Int: INT_OP(op); break;            \
-                    case BuiltinKind::Type: code << Op::op##Type; break; \
-                }                                                        \
-                break;                                                   \
-                                                                         \
-            case K::IntType: INT_OP(op); break;                          \
-            case K::ProcType: code << Op::op##Closure; break;            \
-            case K::ReferenceType: code << Op::op##Pointer; break;       \
-            case K::SliceType: code << Op::op##Slice; break;             \
-            case K::StructType: Todo();                                  \
-            case K::TemplateType: Unreachable();                         \
-        }                                                                \
-    } while (false)
-
-#define COMPILE_EXT(Cast)                                          \
-    do {                                                           \
-        auto s1 = i->args()[0]->type()->size(c.vm.owner()).bits(); \
-        auto s2 = i->args()[1]->type()->size(c.vm.owner()).bits(); \
-        switch (s1) {                                              \
-            case 8:                                                \
-                switch (s2) {                                      \
-                    case 16: code << Op::Cast##I8ToI16; break;     \
-                    case 32: code << Op::Cast##I8ToI32; break;     \
-                    case 64: code << Op::Cast##I8ToI64; break;     \
-                    default: code << Op::Cast##I8ToAPInt; break;   \
-                }                                                  \
-                break;                                             \
-            case 16:                                               \
-                switch (s2) {                                      \
-                    case 32: code << Op::Cast##I16ToI32; break;    \
-                    case 64: code << Op::Cast##I16ToI64; break;    \
-                    default: code << Op::Cast##I16ToAPInt; break;  \
-                }                                                  \
-                break;                                             \
-            case 32:                                               \
-                switch (s2) {                                      \
-                    case 64: code << Op::Cast##I32ToI64; break;    \
-                    default: code << Op::Cast##I32ToAPInt; break;  \
-                }                                                  \
-                break;                                             \
-            case 64: code << Op::Cast##I64ToAPInt; break;          \
-            default: code << Op::Cast##APIntToAPInt; break;        \
-        }                                                          \
-    } while (false)
-
-    // Allocate instruction args.
-    for (auto [idx, ty] : enumerate(i->result_types()))
-        frame_offsets[EncodeTemporary(i, u32(idx))] = Allocate(ty);
-
-    // Compile the instruction.
-    switch (i->opcode()) {
-        using IR = ir::Op;
-
-        // Special instructions.
-        case IR::Abort: {
-            auto a = cast<ir::AbortInst>(i);
-            code << Op::Abort << a->abort_reason() << a->location().encode();
-            EmitOperands(a->args());
-        } break;
-
-        // FIXME: Store stack slots in the Proc instead of alloca instructions.
-        case IR::Alloca: {
-            Todo("IR Alloca");
-        } break;
-
-        // Branch to a different position in this function.
-        case IR::Br: {
-            auto b = cast<ir::BranchInst>(i);
-            if (not b->then_args().empty()) Todo("Then args");
-            if (not b->else_args().empty()) Todo("Else args");
-
-            // Conditional branch.
-            if (b->cond()) {
-                code << Op::CondBranch;
-                EncodeBlockAddress(b->then());
-                EncodeBlockAddress(b->else_());
-                EncodeOperand(b->cond());
-            }
-
-            // Unconditional branch.
-            else {
-                code << Op::Branch;
-                EncodeBlockAddress(b->then());
-            }
-        } break;
-
-        case IR::Call: {
-            auto proc = i->args().front();
-            auto args = i->args().drop_front(1);
-
-            // Emit procedure.
-            if (auto p = dyn_cast<ir::Proc>(proc)) {
-                // Procedure is already linked into the VM; call it directly.
-                if (auto it = c.vm.procedure_table.find(p->name()); it != c.vm.procedure_table.end()) {
-                    code << Op::DirectCall << it->second;
-                }
-
-                // Procedure hasn’t been resolved yet.
-                else {
-                    code << Op::UnresolvedCall << CTString(p->name());
-                }
-            } else {
-                Todo("Indirect calls");
-            }
-
-            // Emit call args.
-            EmitOperands(args);
-        } break;
-
-        case IR::Load: {
-            auto m = cast<ir::MemInst>(i);
-            COMPILE_TYPED_OP(m->memory_type(), Load);
-        } break;
-
-        case IR::MemZero: {
-            auto addr = i->args().front();
-            code << Op::MemZero << i64(cast<ir::SmallInt>(i->args().back())->value());
-            EncodeOperand(addr);
-        } break;
-
-        case IR::PtrAdd: {
-            code << Op::PtrAdd;
-            EmitOperands(i->args());
-        } break;
-
-        case IR::Ret: {
-            if (i->args().empty()) code << Op::RetVoid;
-            else {
-                COMPILE_TYPED_OP(i->args()[0]->type(), Ret);
-                EncodeOperand(i->args()[0]);
-            }
-        } break;
-
-        case IR::Select: {
-            COMPILE_TYPED_OP(i->args()[1]->type(), Select);
-            EncodeOperand(i->args()[0]);
-            EncodeOperand(i->args()[1]);
-            EncodeOperand(i->args()[2]);
-        } break;
-
-        case IR::Store: {
-            auto m = cast<ir::MemInst>(i);
-            COMPILE_TYPED_OP(m->memory_type(), Store);
-            EmitOperands(i->args());
-        } break;
-
-        case IR::Trunc: {
-            auto s1 = i->args()[0]->type()->size(c.vm.owner()).bits();
-            auto s2 = i->args()[1]->type()->size(c.vm.owner()).bits(); // clang-format off
-            switch (s1) {
-                case 8: code << Op::TruncI8ToAPInt; break;
-                case 16: switch (s2) {
-                    case 8: code << Op::TruncI16ToI8; break;
-                    default: code << Op::TruncI16ToAPInt; break;
-                } break;
-                case 32: switch (s2) {
-                    case 8: code << Op::TruncI32ToI8; break;
-                    case 16: code << Op::TruncI32ToI16; break;
-                    default: code << Op::TruncI32ToAPInt; break;
-                } break;
-                case 64: switch (s2) {
-                    case 8: code << Op::TruncI64ToI8; break;
-                    case 16: code << Op::TruncI64ToI16; break;
-                    case 32: code << Op::TruncI64ToI32; break;
-                    default: code << Op::TruncI64ToAPInt; break;
-                } break;
-                default: switch (s2) {
-                    case 8: code << Op::TruncAPIntToI8; break;
-                    case 16: code << Op::TruncAPIntToI16; break;
-                    case 32: code << Op::TruncAPIntToI32; break;
-                    case 64: code << Op::TruncAPIntToI64; break;
-                    default: code << Op::TruncAPIntToAPInt; break;
-                } break;
-            } // clang-format on
-        } break;
-
-        case IR::Unreachable:
-            code << Op::Unreachable;
-            break;
-
-        // Binary operations.
-        case IR::Add: CreateAdd(i->args()); break;
-        case IR::And: CreateAnd(i->args()); break;
-        case IR::AShr: CreateAShr(i->args()); break;
-        case IR::ICmpEq: CreateEq(i->args()); break;
-        case IR::ICmpNe: CreateNe(i->args()); break;
-        case IR::ICmpSGe: CreateSGe(i->args()); break;
-        case IR::ICmpSGt: CreateSGt(i->args()); break;
-        case IR::ICmpSLe: CreateSLe(i->args()); break;
-        case IR::ICmpSLt: CreateSLt(i->args()); break;
-        case IR::ICmpUGe: CreateUGe(i->args()); break;
-        case IR::ICmpUGt: CreateUGt(i->args()); break;
-        case IR::ICmpULe: CreateULe(i->args()); break;
-        case IR::ICmpULt: CreateULt(i->args()); break;
-        case IR::IMul: CreateMul(i->args()); break;
-        case IR::LShr: CreateLShr(i->args()); break;
-        case IR::Or: CreateOr(i->args()); break;
-        case IR::SAddOv: CreateSAddOv(i->args()); break;
-        case IR::SDiv: CreateSDiv(i->args()); break;
-        case IR::SExt: COMPILE_EXT(SExt); break;
-        case IR::Shl: CreateShl(i->args()); break;
-        case IR::SMulOv: CreateSMulOv(i->args()); break;
-        case IR::SRem: CreateSRem(i->args()); break;
-        case IR::SSubOv: CreateSSubOv(i->args()); break;
-        case IR::Sub: CreateSub(i->args()); break;
-        case IR::UDiv: CreateUDiv(i->args()); break;
-        case IR::URem: CreateURem(i->args()); break;
-        case IR::Xor: CreateXor(i->args()); break;
-        case IR::ZExt: COMPILE_EXT(ZExt); break;
-    }
-}
-
-auto EmitProcedure::Allocate(Type ty) -> FrameOffset {
-    auto align = ty->align(c.vm.owner());
-    auto size = ty->size(c.vm.owner()).as_bytes();
-
-    // Align the frame to the byte’s alignment.
-    frame_size.align(align);
-
-    // Record the offset for later.
-    auto offs = frame_size.bytes();
-
-    // Check that this actually fits in the frame.
-    Assert(
-        u64(offs) <= u64(std::numeric_limits<std::underlying_type_t<FrameOffset>>::max()),
-        "Sorry, a stack frame containing {} bytes is too large for this compiler",
-        offs
-    );
-
-    // And increment the frame past the object; also update
-    // the alignment requirement if it has increased.
-    frame_size += size;
-    frame_alignment = std::max(frame_alignment, align);
-    return FrameOffset(offs);
-}
-
-// Value encoder.
-void EmitProcedure::EncodeOperand(ir::Value* val) {
-    auto EncodeFrameOffs = [&](FrameOffset offs) {
-        if (+offs <= +OpValue::MaxInlineOffs) {
-            code << OpValue(+offs + +OpValue::InlineOffs);
-        } else {
-            code << OpValue::LargeOffs;
-            code << offs;
-        }
-    };
-
-    auto EncodeSmallInteger = [&](u64 value) {
-        if (value == +OpValue::Lit0) code << OpValue::Lit0;
-        else if (value == +OpValue::Lit1) code << OpValue::Lit1;
-        else if (value == +OpValue::Lit2) code << OpValue::Lit2;
-        else {
-            code << OpValue::SmallInt;
-            code << value;
-        }
-    };
-
-    switch (val->kind()) {
-        using VK = ir::Value::Kind;
-
-        case VK::Argument:
-            EncodeFrameOffs(frame_offsets.at(EncodeTemporary(cast<ir::Argument>(val))));
-            break;
-
-        case VK::InstValue:
-            EncodeFrameOffs(frame_offsets.at(EncodeTemporary(cast<ir::InstValue>(val))));
-            break;
-
-        // The only instructions that can refer to blocks are branches,
-        // and those use immediate operands.
-        case VK::Block:
-            Unreachable("Not supported as frame operand");
-
-        case VK::BuiltinConstant:
-            switch (cast<ir::BuiltinConstant>(val)->id) {
-                case ir::BuiltinConstantKind::True: EncodeSmallInteger(1); break;
-                case ir::BuiltinConstantKind::False: EncodeSmallInteger(0); break;
-                case ir::BuiltinConstantKind::Nil: Todo("Encode nil value of type '{}'", val->type());
-                case ir::BuiltinConstantKind::Poison: Todo("Encode poison value");
-            }
-            break;
-
-        case VK::SmallInt:
-            EncodeSmallInteger(u64(cast<ir::SmallInt>(val)->value()));
-            break;
-
-        case VK::Extract: Todo();
-        case VK::InvalidLocalReference: Todo();
-        case VK::LargeInt: Todo();
-        case VK::Proc: Todo();
-        case VK::Slice: Todo();
-        case VK::StringData: Todo();
-    }
-}
-
-void EmitProcedure::EmitOperands(ArrayRef<ir::Value*> vals) {
-    for (auto v : vals) EncodeOperand(v);
-}
-
-void EmitProcedure::EncodeBlockAddress(ir::Block* b) {
-    if (auto offs = block_offsets.find(b); offs != block_offsets.end()) {
-        code << offs->second;
-    } else {
-        block_fixups.emplace_back(code_buffer.size(), b);
-        code << CodeOffset(0);
-    }
+    Eval e{*this, complain};
+    return e.eval(stmt);
 }

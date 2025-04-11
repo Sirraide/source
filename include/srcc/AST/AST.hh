@@ -89,7 +89,7 @@ private:
     llvm::StringSaver saver{alloc};
 
     /// Used to store evaluated constant expressions.
-    SmallVector<std::unique_ptr<eval::Value>> evaluated_constants;
+    SmallVector<std::unique_ptr<eval::SRValue>> evaluated_constants;
 
     /// All scopes in this TU.
     std::vector<std::unique_ptr<Scope>> all_scopes;
@@ -222,7 +222,7 @@ public:
     auto save(StringRef s) -> String { return String::Save(saver, s); }
 
     /// Save a constant in the module.
-    auto save(eval::Value val) -> eval::Value*;
+    auto save(eval::SRValue val) -> eval::SRValue*;
 
     /// Store an integer in the module.
     auto store_int(APInt value) -> StoredInteger;

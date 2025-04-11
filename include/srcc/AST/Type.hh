@@ -204,7 +204,7 @@ private:
 
     explicit constexpr IntType(Size bit_width) : TypeBase{Kind::IntType}, bits{bit_width} {
         Assert(bits >= Size::Bits(1), "Cannot create integer type with bit width 0");
-        Assert(bits <= MaxBits, "Bit width too large: {}", bits);
+        Assert(bits <= MaxBits, "Bit width too large: {:i}", bits);
     }
 
 public:

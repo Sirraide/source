@@ -60,7 +60,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     EnterProcedure _(*this, proc);
 
     // Values that we’ll need.
-    auto minus_one = CreateInt(-1, ty);
+    auto minus_one = CreateInt(u64(-1), ty);
     auto zero = CreateInt(0, ty);
     auto one = CreateInt(1, ty);
     auto args = proc->args();
@@ -75,7 +75,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     // If base == 0.
     If(CreateICmpEq(lhs, zero), [&] {
         // If exp < 0, then error.
-        if (tu.lang_opts().overflow_checking) {
+        if (lang_opts.overflow_checking) {
             CreateArithFailure(
                 CreateICmpSLt(rhs, zero),
                 Tk::StarStar,
@@ -107,7 +107,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     });
 
     // Handle overflow.
-    if (tu.lang_opts().overflow_checking) {
+    if (lang_opts.overflow_checking) {
         auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())), ty);
         auto is_min = CreateICmpEq(lhs, min_value);
         CreateArithFailure(is_min, Tk::StarStar, Location());
@@ -491,10 +491,10 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
             auto index = Emit(expr->rhs);
 
             // Check that the index is in bounds.
-            if (tu.lang_opts().overflow_checking) {
+            if (lang_opts.overflow_checking) {
                 auto size = is_slice
                               ? CreateExtractValue(range, 1)
-                              : CreateInt(cast<ArrayType>(expr->lhs->type)->dimension());
+                              : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
 
                 CreateArithFailure(
                     CreateICmpUGe(index, size),
@@ -536,7 +536,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         auto (Builder::*build_unchecked)(Value*, Value*, bool) -> Value*,
         auto (Builder::*build_overflow)(Value*, Value*) -> ir::OverflowResult
     ) -> Value* {
-        if (not tu.lang_opts().overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
+        if (not lang_opts.overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
         auto [val, overflow] = (this->*build_overflow)(lhs, rhs);
         CreateArithFailure(overflow, op, loc);
         return val;
@@ -602,7 +602,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         case Tk::Percent: {
             CheckDivByZero();
             auto int_min = CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
-            auto minus_one = CreateInt(-1, ty);
+            auto minus_one = CreateInt(u64(-1), ty);
             auto check_lhs = CreateICmpEq(lhs, int_min);
             auto check_rhs = CreateICmpEq(rhs, minus_one);
             CreateArithFailure(CreateAnd(check_lhs, check_rhs), op, loc);
@@ -724,7 +724,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
             return CreateExtractValue(slice, 1);
         }
 
-        case AK::TypeAlign: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->align(tu).value()));
+        case AK::TypeAlign: return CreateInt(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes());
         case AK::TypeArraySize: return CreateInt(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes());
         case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
         case AK::TypeBytes: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bytes());
@@ -791,7 +791,7 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
     auto l = locals.find(expr->decl);
     if (l != locals.end()) return l->second;
-    Assert(compiling_for_vm, "Invalid local ref outside of constant evaluation?");
+    Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
     return CreateInvalidLocalReference(expr);
 }
 
@@ -872,43 +872,20 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
     return nullptr;
 }
 
-auto CodeGen::EmitValue(const eval::Value& val) -> Value* { // clang-format off
-    utils::Overloaded LValueEmitter {
-        [&](String s) -> Value* { return CreateString(s); },
-        [&](eval::Memory* m) -> Value* {
-            Assert(m->alive());
-            Todo("Emit memory");
-        }
-    };
-
+auto CodeGen::EmitValue(const eval::SRValue& val) -> Value* { // clang-format off
     utils::Overloaded V {
         [&](bool b) -> Value* { return CreateBool(b); },
         [&](ProcDecl* proc) -> Value* { return DeclareProcedure(proc); },
         [&](std::monostate) -> Value* { return nullptr; },
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
-        [&](const eval::LValue& lval) -> Value* { return lval.base.visit(LValueEmitter); },
-        [&](this auto& self, const eval::Reference& ref) -> Value* {
-            auto base = self(ref.lvalue);
-            return CreatePtrAdd(
-                base,
-                CreateInt(ref.offset * u64(ref.lvalue.type->array_size(tu).bytes()), Types::IntTy),
-                true
-            );
-        },
-
-        [&](this auto& Self, const eval::Slice& slice) -> Value* {
-            return CreateSlice(
-                Self(slice.data),
-                CreateInt(slice.size, Types::IntTy)
-            );
-        }
+        [](eval::Pointer) -> Value* { Todo("Materialise compile-time allocation"); },
     }; // clang-format on
     return val.visit(V);
 }
 
 auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
-    tempset compiling_for_vm = true;
+    Assert(bool(lang_opts.constant_eval));
 
     // Create a new procedure for this statement.
     auto ret_ty = isa<Expr>(stmt) ? cast<Expr>(stmt)->type : Types::VoidTy;

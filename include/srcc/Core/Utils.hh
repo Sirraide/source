@@ -21,6 +21,7 @@
 #include <base/Colours.hh>
 #include <base/Serialisation.hh>
 #include <base/Text.hh>
+#include <base/Size.hh>
 
 #include <chrono>
 #include <cmath>
@@ -45,7 +46,6 @@ using llvm::dyn_cast;
 using llvm::dyn_cast_if_present;
 using llvm::isa;
 
-using llvm::Align;
 using llvm::APInt;
 using llvm::ArrayRef;
 using llvm::DenseMap;
@@ -120,81 +120,6 @@ template <typename T>
 auto ref(SmallVectorImpl<T>& vec) -> MutableArrayRef<T> {
     return MutableArrayRef<T>(vec);
 }
-
-/// Used to represent the size of a type.
-///
-/// This is just a wrapper around an integer, but it requires us
-/// to be explicit as to whether we want bits or bytes, which is
-/// useful for avoiding mistakes.
-class Size {
-    LIBBASE_SERIALISE(raw);
-
-    i64 raw;
-
-    static_assert(CHAR_BIT == 8);
-    constexpr explicit Size(isz raw) : raw{raw} {}
-
-public:
-    constexpr Size() : raw{0} {}
-    explicit Size(Align align) : raw{i64(align.value()) * 8} {}
-
-    [[nodiscard]] static constexpr Size Bits(std::unsigned_integral auto bits) { return Size{bits}; }
-    [[nodiscard]] static constexpr Size Bytes(std::unsigned_integral auto bytes) { return Size{bytes * 8}; }
-
-    [[nodiscard]] static constexpr Size Bits(std::signed_integral auto bits) {
-        Assert(bits >= 0, "Size cannot be negative");
-        return Size{i64(bits)};
-    }
-
-    [[nodiscard]] static constexpr Size Bytes(std::signed_integral auto bytes) {
-        Assert(bytes >= 0, "Size cannot be negative");
-        return Size{i64(bytes) * 8};
-    }
-
-    template <typename Ty>
-    [[nodiscard]] static consteval Size Of() { return Bytes(sizeof(Ty)); }
-
-    /// Return this size aligned to a given alignment.
-    [[nodiscard]] Size aligned(Align align) const {
-        return Bytes(alignTo(bytes(), align));
-    }
-
-    /// Align this to a given alignment.
-    Size& align(Align align) {
-        *this = aligned(align);
-        return *this;
-    }
-
-    [[nodiscard]] constexpr Size aligned(Size align) const { return Size{alignTo(bytes(), Align(align.bytes()))}; }
-    [[nodiscard]] constexpr Size as_bytes() const { return Bytes(bytes()); }
-    [[nodiscard]] constexpr auto bits() const -> i64 { return raw; }
-    [[nodiscard]] constexpr auto bytes() const -> i64 { return llvm::alignToPowerOf2(raw, 8) / 8; }
-
-    constexpr Size operator+=(Size rhs) { return Size{raw += rhs.raw}; }
-    constexpr Size operator-=(Size rhs) { return Size{raw -= rhs.raw}; }
-    constexpr Size operator*=(i64 rhs) { return Size{raw *= rhs}; }
-
-private:
-    /// Only provided for Size*Integer since that basically means scaling a size. Multiplying
-    /// two sizes w/ one another doesn’t make sense, so that operation is not provided.
-    [[nodiscard]] friend constexpr Size operator*(Size lhs, i64 rhs) { return Size{lhs.raw * rhs}; }
-    [[nodiscard]] friend constexpr Size operator*(i64 lhs, Size rhs) { return Size{lhs * rhs.raw}; }
-    [[nodiscard]] friend constexpr auto operator/(Size lhs, Size rhs) -> i64 { return lhs.raw / rhs.raw; }
-    [[nodiscard]] friend constexpr Size operator+(Size lhs, Size rhs) { return Size{lhs.raw + rhs.raw}; }
-    [[nodiscard]] friend constexpr bool operator==(Size lhs, Size rhs) = default;
-    [[nodiscard]] friend constexpr auto operator<=>(Size lhs, Size rhs) = default;
-
-    /// This needs to check for underflow.
-    [[nodiscard]] friend constexpr Size operator-(Size lhs, Size rhs) {
-        Assert(lhs.raw >= rhs.raw, "Size underflow");
-        return Size{lhs.raw - rhs.raw};
-    }
-
-    /// For libassert.
-    [[nodiscard]] friend auto operator<<(std::ostream& os, Size sz) -> std::ostream& {
-        return os << sz.bits();
-    }
-};
 
 /// A string that is saved somewhere.
 ///
@@ -408,14 +333,6 @@ struct std::formatter<llvm::APInt> : formatter<std::string> {
     template <typename FormatContext>
     auto format(const llvm::APInt& i, FormatContext& ctx) const {
         return formatter<std::string>::format(llvm::toString(i, 10, true), ctx);
-    }
-};
-
-template <>
-struct std::formatter<srcc::Size> : formatter<srcc::usz> {
-    template <typename FormatContext>
-    auto format(srcc::Size sz, FormatContext& ctx) const {
-        return formatter<srcc::usz>::format(sz.bits(), ctx);
     }
 };
 

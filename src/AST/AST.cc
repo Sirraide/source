@@ -118,8 +118,8 @@ void TranslationUnit::dump() const {
     }
 }
 
-auto TranslationUnit::save(eval::Value val) -> eval::Value* {
-    evaluated_constants.push_back(std::make_unique<eval::Value>(std::move(val)));
+auto TranslationUnit::save(eval::SRValue val) -> eval::SRValue* {
+    evaluated_constants.push_back(std::make_unique<eval::SRValue>(std::move(val)));
     return evaluated_constants.back().get();
 }
 
@@ -287,7 +287,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto f = cast<FieldDecl>(e);
             PrintBasicHeader(e, "FieldDecl");
             print(
-                " {} %5({}) %1(offs) %3({})\n",
+                " {} %5({}) %1(offs) %3({:y})\n",
                 f->type->print(),
                 f->name,
                 f->offset
@@ -424,7 +424,7 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(td, "TypeDecl");
             if (auto s = dyn_cast<StructType>(td->type.ptr())) {
                 print(
-                    " %1(struct %3({}) size %3({})/%3({}) align %3({}))\n",
+                    " %1(struct %3({}) size %3({:y})/%3({:y}) align %3({}))\n",
                     s->name(),
                     s->size(),
                     s->array_size(),

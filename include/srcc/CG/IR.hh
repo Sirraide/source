@@ -136,12 +136,12 @@ public:
 class SmallInt : public ManagedValue {
     friend Builder;
 
-    i64 val;
+    u64 val;
 
-    SmallInt(i64 val, Type ty = Types::IntTy) : ManagedValue{Kind::SmallInt, ty}, val{val} {}
+    SmallInt(u64 val, Type ty = Types::IntTy) : ManagedValue{Kind::SmallInt, ty}, val{val} {}
 
 public:
-    auto value() const -> i64 { return val; }
+    auto value() const -> u64 { return val; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::SmallInt; }
 };
@@ -388,6 +388,7 @@ public:
     auto arguments() -> ArrayRef<Argument*> { return arg_vals; }
     auto argument_types() -> ArrayRef<Type> { return arg_types; }
     bool closed() const;
+    auto front() -> Inst* { return insts.front(); }
     auto instructions() const -> ArrayRef<Inst*> { return insts; }
     auto parent() -> Proc* { return p; }
 
@@ -447,12 +448,12 @@ public:
         ~InsertPointGuard() { b.insert_point = saved_insert_point; }
     };
 
+
     TranslationUnit& tu;
 
 private:
-    llvm::BumpPtrAllocator alloc;
     llvm::MapVector<StringRef, std::unique_ptr<Proc>> procs;
-    DenseMap<i64, SmallInt*> small_ints;
+    DenseMap<u64, SmallInt*> small_ints;
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Types::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Types::BoolTy};
@@ -466,13 +467,14 @@ public:
         return vws::all(procs) | vws::transform([](auto& e) -> Proc* { return e.second.get(); });
     }
 
-    auto Allocate(usz sz, usz align) -> void* { return alloc.Allocate(sz, align); }
+    auto Allocate(usz sz, usz align) -> void* { return tu.allocate(sz, align); }
     auto Dump() -> SmallUnrenderedString;
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
     auto GetOrCreateProc(ProcDecl* proc, String mangled_name) -> Proc*;
 
     auto CreateAShr(Value* a, Value* b) -> Value*;
+    auto CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) -> void;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateAlloca(Type ty) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
@@ -481,7 +483,9 @@ public:
     auto CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block>;
     auto CreateBlock(Proc* proc, ArrayRef<Type> args) -> Block*;
     auto CreateBool(bool value) -> Value*;
+    auto CreateBr(Block* dest, ArrayRef<Value*> args) -> void;
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
+    auto CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) -> void;
     auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
     auto CreateICmpEq(Value* a, Value* b) -> Value*;
     auto CreateICmpNe(Value* a, Value* b) -> Value*;
@@ -495,14 +499,16 @@ public:
     auto CreateICmpULt(Value* a, Value* b) -> Value*;
     auto CreateIMul(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateInt(APInt val, Type type) -> Value*;
-    auto CreateInt(i64 val, Type type = Types::IntTy) -> Value*;
+    auto CreateInt(u64 val, Type type = Types::IntTy) -> Value*;
     auto CreateInvalidLocalReference(LocalRefExpr* ref) -> Value*;
     auto CreateLShr(Value* a, Value* b) -> Value*;
     auto CreateLoad(Type ty, Value* ptr) -> Value*;
+    auto CreateMemZero(Value* addr, Value* bytes) -> void;
     auto CreateNil(Type ty) -> Value*;
     auto CreateOr(Value* a, Value* b) -> Value*;
     auto CreatePoison(Type ty) -> Value*;
     auto CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value*;
+    auto CreateReturn(Value* val = nullptr) -> void;
     auto CreateSAddOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSDiv(Value* a, Value* b) -> Value*;
     auto CreateSICast(Value* i, Type to_type) -> Value*;
@@ -512,18 +518,13 @@ public:
     auto CreateSelect(Value* cond, Value* then_val, Value* else_val) -> Value*;
     auto CreateShl(Value* a, Value* b) -> Value*;
     auto CreateSlice(Value* data, Value* size) -> Slice*;
+    auto CreateStore(Value* val, Value* ptr) -> void;
     auto CreateString(String s) -> Slice*;
     auto CreateSub(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateUDiv(Value* a, Value* b) -> Value*;
     auto CreateURem(Value* a, Value* b) -> Value*;
+    auto CreateUnreachable() -> void;
     auto CreateXor(Value* a, Value* b) -> Value*;
-    void CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2);
-    void CreateBr(Block* dest, ArrayRef<Value*> args);
-    void CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block);
-    void CreateMemZero(Value* addr, Value* bytes);
-    void CreateReturn(Value* val = nullptr);
-    void CreateStore(Value* val, Value* ptr);
-    void CreateUnreachable();
 
 private:
     template <std::derived_from<Inst> InstTy, typename ...Args>
