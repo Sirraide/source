@@ -26,9 +26,9 @@ void ParsedModule::dump() const {
     bool c = context().use_colours;
 
     // Print preamble.
-    utils::Print(c, "%1({}) {}\n", is_module ? "Module" : "Program", name);
+    utils::Print(c, "%1({}%) {}\n", is_module ? "Module" : "Program", name);
     for (auto i : imports) std::print(
-        "%1(Import) %4(<{}>) %1(as) %4({})\n",
+        "%1(Import%) %4(<{}>%) %1(as%) %4({}%)\n",
         i.linkage_name,
         i.import_name
     );
@@ -211,7 +211,7 @@ struct ParsedStmt::Printer : PrinterBase<ParsedStmt> {
 void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) {
     auto lc = module ? s->loc.seek_line_column(module->context()) : std::nullopt;
     print(
-        "%1({}) %4({}) %5(<{}:{}>)",
+        "%1({}%) %4({}%) %5(<{}:{}>%)",
         name,
         static_cast<void*>(s),
         lc ? lc->line : 0,
@@ -229,7 +229,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::ProcType:
         case Kind::SliceType:
         case Kind::TemplateType:
-            print("%1(Type) {}\n", s->dump_as_type());
+            print("%1(Type%) {}\n", s->dump_as_type());
             break;
 
         case Kind::AssertExpr: {
@@ -253,14 +253,14 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::BinaryExpr: {
             auto& b = *cast<ParsedBinaryExpr>(s);
             PrintHeader(s, "BinaryExpr", false);
-            print("%1({})\n", b.op);
+            print("%1({}%)\n", b.op);
             SmallVector<ParsedStmt*, 2> children{b.lhs, b.rhs};
             PrintChildren(children);
         } break;
 
         case Kind::BoolLitExpr: {
             PrintHeader(s, "BoolLitExpr", false);
-            print("%1({})\n", cast<ParsedBoolLitExpr>(s)->value);
+            print("%1({}%)\n", cast<ParsedBoolLitExpr>(s)->value);
         } break;
 
         case Kind::CallExpr: {
@@ -276,7 +276,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(s);
             PrintHeader(s, "DeclRefExpr", false);
-            print("%8({})\n", utils::join(d.names(), "::"));
+            print("%8({}%)\n", utils::join(d.names(), "::"));
         } break;
 
         case Kind::EvalExpr: {
@@ -294,7 +294,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::FieldDecl: {
             auto& f = *cast<ParsedFieldDecl>(s);
             PrintHeader(s, "FieldDecl", false);
-            print("%5({}) {}\n", f.name, f.type->dump_as_type());
+            print("%5({}%) {}\n", f.name, f.type->dump_as_type());
         } break;
 
         case Kind::IfExpr: {
@@ -309,21 +309,21 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::IntLitExpr: {
             PrintHeader(s, "IntLitExpr", false);
             auto val = cast<ParsedIntLitExpr>(s)->storage.str(false);
-            print("%5({})\n", val);
+            print("%5({}%)\n", val);
         } break;
 
         case Kind::MemberExpr: {
             auto& m = *cast<ParsedMemberExpr>(s);
             PrintHeader(s, "MemberExpr", false);
-            print("%8({})\n", m.member);
+            print("%8({}%)\n", m.member);
             PrintChildren(m.base);
         } break;
 
         case Kind::LocalDecl: {
             auto& p = *cast<ParsedLocalDecl>(s);
             PrintHeader(s, "LocalDecl", false);
-            print("%4({}){}", p.name, p.name.empty() ? "" : " ");
-            if (p.intent != Intent::Move) print("%1({}) ", p.intent);
+            print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
+            if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
             print("{}\n", p.type->dump_as_type());
             if (p.init) PrintChildren(p.init.get());
         } break;
@@ -337,7 +337,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             auto& p = *cast<ParsedProcDecl>(s);
             PrintHeader(s, "ProcDecl", false);
             print(
-                "%2({}){}{}\n",
+                "%2({}%){}{}\n",
                 p.name,
                 p.name.empty() ? ""sv : " "sv,
                 p.type->dump_as_type()
@@ -352,7 +352,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::StrLitExpr: {
             auto& str = *cast<ParsedStrLitExpr>(s);
             PrintHeader(s, "StrLitExpr", false);
-            print("%3(\"\002{}\003\")\n", utils::Escape(str.value));
+            print("%3(\"{}\"%)\n", utils::Escape(str.value, true, true));
         } break;
 
         case Kind::ReturnExpr: {
@@ -364,14 +364,14 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::StructDecl: {
             auto& d = *cast<ParsedStructDecl>(s);
             PrintHeader(s, "StructDecl", false);
-            print("%6({})\n", d.name);
+            print("%6({}%)\n", d.name);
             PrintChildren<ParsedFieldDecl>(d.fields());
         } break;
 
         case Kind::UnaryExpr: {
             auto& u = *cast<ParsedUnaryExpr>(s);
             PrintHeader(s, "UnaryExpr", false);
-            print("%1({})\n", u.op);
+            print("%1({}%)\n", u.op);
             PrintChildren(u.arg);
         } break;
 
@@ -402,7 +402,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 break;
 
             case Kind::IntType:
-                out += std::format("%6(i{:i})", cast<ParsedIntType>(type)->bit_width);
+                out += std::format("%6(i{:i}%)", cast<ParsedIntType>(type)->bit_width);
                 break;
 
             case Kind::ProcType: {
@@ -420,31 +420,31 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                         Append(param.type);
                     }
 
-                    out += "\033)";
+                    out += ")";
                 }
 
                 if (p->attrs.native) out += " native";
                 if (p->attrs.extern_) out += " extern";
                 if (p->attrs.nomangle) out += " nomangle";
 
-                out += " -> )";
+                out += " -> %)";
                 Append(p->ret_type);
             } break;
 
             case Kind::SliceType: {
                 auto s = cast<ParsedSliceType>(type);
                 Append(s->elem);
-                out += "%1([])";
+                out += "%1([]%)";
             } break;
 
             case Kind::TemplateType: {
                 auto t = cast<ParsedTemplateType>(type);
-                out += std::format("%3(${})", t->name);
+                out += std::format("%3(${}%)", t->name);
             } break;
 
             case Kind::DeclRefExpr: {
                 auto d = cast<ParsedDeclRefExpr>(type);
-                out += std::format("%8({})", utils::join(d->names(), "::"));
+                out += std::format("%8({}%)", utils::join(d->names(), "::"));
             } break;
 
             default:
@@ -756,7 +756,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::Else:
         case Tk::Elif:
         case Tk::Then:
-            return Error("Unexpected '%1({})'", tok->type);
+            return Error("Unexpected '%1({}%)'", tok->type);
 
         // <expr-prefix> ::= <prefix> <expr>
         case Tk::Minus:
@@ -775,7 +775,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::Static: {
             auto static_loc = Next();
             if (At(Tk::If)) lhs = ParseIf(true);
-            else return Error("Expected '%1(if)' after '%1(static)'");
+            else return Error("Expected '%1(if%)' after '%1(static%)'");
             if (auto l = lhs.get()) l->loc = {static_loc, l->loc};
         } break;
 
@@ -851,7 +851,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             lhs = ParseExpr();
             if (not Consume(rparen, Tk::RParen)) {
-                Error("Expected '\033)'");
+                Error("Expected ')'");
                 SkipTo(Tk::RParen, Tk::Semicolon);
                 if (not Consume(rparen, Tk::RParen)) return {};
             }
@@ -980,12 +980,12 @@ void Parser::ParseFile() {
 void Parser::ParseHeader() {
     auto module = ConsumeContextual(mod->program_or_module_loc, "module");
     if (not module and not ConsumeContextual(mod->program_or_module_loc, "program")) {
-        Error("Expected '%1(program)' or '%1(module)' directive at start of file");
+        Error("Expected '%1(program%)' or '%1(module%)' directive at start of file");
         return SkipPast(Tk::Semicolon);
     }
 
     if (not At(Tk::Identifier)) {
-        Error("Expected identifier after '%1({})'", module ? "module" : "program");
+        Error("Expected identifier after '%1({}%)'", module ? "module" : "program");
         return SkipPast(Tk::Semicolon);
     }
 
@@ -1015,7 +1015,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // neither of which is a ParenExpr.
     if (isa<ParsedParenExpr>(cond)) Warn(
         cond->loc,
-        "Unnecessary parentheses around '%1(if)' condition"
+        "Unnecessary parentheses around '%1(if%)' condition"
     );
 
     // 'then' is optional.
@@ -1029,7 +1029,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // only happens in one place outside of the preamble, viz. in the
     // loop in ParseStmts()).
     if (At(Tk::Semicolon) and LookAhead().is(Tk::Elif, Tk::Else)) {
-        Error("Semicolon before '%1({})' is not allowed", LookAhead().type);
+        Error("Semicolon before '%1({}%)' is not allowed", LookAhead().type);
         Next();
     }
 
@@ -1037,7 +1037,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // we just warn on that. ;Þ
     if (At(Tk::Else) and LookAhead().is(Tk::If)) Warn(
         {tok->location, LookAhead().location},
-        "Use '%1(elif)' instead of '%1(else if)'"
+        "Use '%1(elif%)' instead of '%1(else if%)'"
     );
 
     // Same with 'else static if'.
@@ -1047,14 +1047,14 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
         LookAhead(2).is(Tk::If)
     ) Warn( //
         {tok->location, LookAhead(2).location},
-        "Use '%1(static elif)' instead of '%1(else static if)'"
+        "Use '%1(static elif%)' instead of '%1(else static if%)'"
     );
 
     // Recover from redundant 'static' here.
     if (At(Tk::Static) and LookAhead().is(Tk::Else)) {
         Error(
             {tok->location, LookAhead().location},
-            "'%1(static else)' is invalid"
+            "'%1(static else%)' is invalid"
         );
         Next();
     }
@@ -1193,7 +1193,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     if (sig.attrs.extern_ != not bool(body)) Error(
         sig.proc_loc,
-        "Procedure that is{} declared '%1(extern)' must{} have a body",
+        "Procedure that is{} declared '%1(extern%)' must{} have a body",
         sig.attrs.extern_ ? ""sv : " not"sv,
         sig.attrs.extern_ ? " not"sv : ""sv
     );
@@ -1283,7 +1283,7 @@ bool Parser::ParseSignature(
                     name = tok->text;
                     end = Next();
                 } else if (not At(Tk::Comma, Tk::RParen)) {
-                    Error("Expected parameter name, '%1(,)', or '%1(\033))'");
+                    Error("Expected parameter name, '%1(,%)', or '%1()%)'");
                     if (IsKeyword(tok->type)) Remark(
                         "'%1({})' is not a valid parameter name because it is "
                         "a reserved word.",
@@ -1299,13 +1299,13 @@ bool Parser::ParseSignature(
                 Next();
             }
         } while (Consume(Tk::Comma));
-        if (not Consume(Tk::RParen)) Error("Expected '\033)'");
+        if (not Consume(Tk::RParen)) Error("Expected ')'");
     }
 
     // Parse attributes.
     auto ParseAttr = [&](bool& attr, StringRef value) {
         if (Location loc; ConsumeContextual(loc, value)) {
-            if (attr) Warn(loc, "Duplicate '%1({})' attribute", value);
+            if (attr) Warn(loc, "Duplicate '%1({}%)' attribute", value);
             attr = true;
             return true;
         }
@@ -1342,10 +1342,10 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
             // Complain if this isn’t a module, but parse it anyway.
             if (not mod->is_module) {
-                Error(loc, "'%1(export)' is only allowed in modules");
+                Error(loc, "'%1(export%)' is only allowed in modules");
                 Note(stream.begin()->location,
                      "If you meant to create a module (i.e. a static or shared "
-                     "library\033), use '%1(module)' instead of '%1(program)'");
+                     "library), use '%1(module%)' instead of '%1(program%)'");
             }
 
             // It’s easier to parse any statement and then disallow
@@ -1356,7 +1356,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
             // Avoid forcing Sema to deal with unwrapping nested
             // export declarations.
-            if (isa<ParsedExportDecl>(decl)) return Error({loc, decl->loc}, "'%1(export export)' is invalid");
+            if (isa<ParsedExportDecl>(decl)) return Error({loc, decl->loc}, "'%1(export export%)' is invalid");
 
             // The decl must have a name to be exportable.
             if (decl->name.empty()) return Error(decl->loc, "Anonymous declarations cannot be exported");
@@ -1395,7 +1395,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     // Name.
     String name = tok->text;
     if (not Consume(Tk::Identifier)) {
-        Error("Expected identifier after '%1(struct)'");
+        Error("Expected identifier after '%1(struct%)'");
         SkipTo(Tk::Semicolon);
         return {};
     }

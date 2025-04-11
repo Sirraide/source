@@ -92,15 +92,19 @@ auto FormatDiagnostic(
     if (not l.has_value()) {
         // Print the message.
         out += std::format(
-            "%b(%{}({}:) {})",
+            "%b(%{}({}:%) {}%)",
             Colour(diag.level),
             Name(diag.level),
             diag.msg
         );
 
         // Even if the location is invalid, print the file name if we can.
-        if (auto f = ctx.file(diag.where.file_id))
-            out += std::format("\n  in %b(\002{}\003:<invalid location>)\n\n", ctx.file_name(f->file_id()));
+        if (auto f = ctx.file(diag.where.file_id)) {
+            out += std::format(
+                "\n  in %b({}:<invalid location>)\n\n",
+                utils::Escape(ctx.file_name(f->file_id()), false, true)
+            );
+        }
 
         PrintExtraData();
         return out;
@@ -136,7 +140,7 @@ auto FormatDiagnostic(
 
     // Print the diagnostic name and message.
     out += std::format(
-        "%b(%{}({}:) {})\n",
+        "%b(%{}({}:%) {}%)\n",
         Colour(diag.level),
         Name(diag.level),
         diag.msg
@@ -151,8 +155,8 @@ auto FormatDiagnostic(
     ) {
         auto PrintLocation = [&](Location loc, LocInfoShort l) {
             out += std::format(
-                "at %b4(\002{}\003):{}:{}\n",
-                ctx.file_name(loc.file_id),
+                "at %b4({}%):{}:{}\n",
+                utils::Escape(ctx.file_name(loc.file_id), false, true),
                 l.line,
                 l.col
             );
@@ -182,9 +186,9 @@ auto FormatDiagnostic(
     // Print the line up to the start of the location, the range in the right
     // colour, and the rest of the line.
     // TODO: Proper underlines: \033[1;58:5:1;4:3m
-    out += std::format("%b({} |) \002{}\003", line, before);
-    out += std::format("%b8(\002{}\003)", range);
-    out += std::format("\002{}\003\n", after);
+    out += std::format("%b({} |%) {}", line, utils::Escape(before, false, true));
+    out += std::format("%b8({}%)", utils::Escape(range, false, true));
+    out += std::format("{}\n", utils::Escape(after, false, true));
 
     // Determine the number of digits in the line number.
     const auto digits = std::to_string(line).size();
@@ -197,7 +201,7 @@ auto FormatDiagnostic(
 
     // Finally, underline the range.
     out += std::format(
-        "%{}b({})",
+        "%{}b({}%)",
         Colour(diag.level),
         std::string(range_wd, '~')
     );
@@ -446,7 +450,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             stream << text::RenderColours(
                 ctx.use_colours,
                 std::format(
-                    "\n%b(%{}(Error:) Too many errors emitted (> {}\033). Not showing any more errors.)\n",
+                    "\n%b(%{}(Error:%) Too many errors emitted (> {}). Not showing any more errors.%)\n",
                     Colour(Diagnostic::Level::Error),
                     printed - 1
                 )
@@ -455,7 +459,7 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
             stream << text::RenderColours(
                 ctx.use_colours,
                 std::format(
-                    "%b(%{}(Note:) Use '--error-limit <limit>' to show more errors.)\n",
+                    "%b(%{}(Note:%) Use '--error-limit <limit>' to show more errors.%)\n",
                     Colour(Diagnostic::Level::Note)
                 )
             );
@@ -600,7 +604,7 @@ bool VerifyDiagnosticsEngine::verify() {
         ok = false;
         print(
             stderr,
-            "%b(%1(Error:) Cannot specify both 'expected-no-diagnostics' and expected diagnostics.)\n"
+            "%b(%1(Error:%) Cannot specify both 'expected-no-diagnostics' and expected diagnostics.%)\n"
         );
     }
 
@@ -609,8 +613,8 @@ bool VerifyDiagnosticsEngine::verify() {
         ok = false;
         print(
             stderr,
-            "%b(%1(Error:) Expected at least one 'expected-' directive. Use "
-            "'expected-no-diagnostics' if no diagnostics are expected.)\n"
+            "%b(%1(Error:%) Expected at least one 'expected-' directive. Use "
+            "'expected-no-diagnostics' if no diagnostics are expected.%)\n"
         );
     }
 
@@ -639,22 +643,22 @@ bool VerifyDiagnosticsEngine::verify() {
     // Complain about every diagnostic that remains.
     if (not expected_diags.empty()) {
         ok = false;
-        print(stderr, "%b(Expected diagnostics that were not seen:)\n");
+        print(stderr, "%b(Expected diagnostics that were not seen:%)\n");
         for (const auto& expected : expected_diags) {
             if (expected.loc) {
                 print(
                     stderr,
-                    "  %b({}:{})",
+                    "  %b({}:{}%)",
                     expected.loc.value().file->path(),
                     expected.loc.value().line
                 );
             } else {
-                print(stderr, "  %b(anywhere)");
+                print(stderr, "  %b(anywhere%)");
             }
 
             print(
                 stderr,
-                " %b(%{}({}:)) {}\n",
+                " %b(%{}({}:%)%) {}\n",
                 Colour(expected.level),
                 Name(expected.level),
                 expected.text
@@ -665,10 +669,10 @@ bool VerifyDiagnosticsEngine::verify() {
     // And about every diagnostic that we didn’t expect.
     if (not seen_diags.empty()) {
         ok = false;
-        print(stderr, "%b(Unexpected diagnostics:)\n");
+        print(stderr, "%b(Unexpected diagnostics:%)\n");
         for (const auto& seen : seen_diags) print(
             stderr,
-            "  %b({}:{} %{}({}:)) {}\n",
+            "  %b({}:{} %{}({}:%)%) {}\n",
             seen.loc.file->path(),
             seen.loc.line,
             Colour(seen.diag.level),

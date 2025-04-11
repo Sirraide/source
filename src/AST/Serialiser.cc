@@ -286,7 +286,7 @@ auto Deserialiser::DeserialiseFromArchive(
     auto Err = [&]<typename... Args>(std::string message) -> std::nullopt_t {
         Error(
             import_loc,
-            "Error reading module '{}' ({}\033): {}",
+            "Error reading module '{}' ({}): {}",
             name,
             path,
             message

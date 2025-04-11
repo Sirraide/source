@@ -243,7 +243,7 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     if (init.invalid()) {
         Error(
             e->location(),
-            "{} of '%1({})' must be of type\f'{}', but was '{}'",
+            "{} of '%1({}%)' must be of type\f'{}', but was '{}'",
             elem_name,
             op,
             ty,
@@ -368,13 +368,13 @@ public:
         if (auto dre = dyn_cast<LocalRefExpr>(res->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
             S.Error(
                 res->location(),
-                "Cannot pass parameter of intent %1({}) to a parameter with intent %1({})",
+                "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
                 cast<ParamDecl>(dre->decl)->intent(),
                 intent
             );
             S.Note(dre->decl->location(), "Parameter declared here");
         } else {
-            S.Error(res->location(), "Cannot bind this expression to an %1({}) parameter.", intent);
+            S.Error(res->location(), "Cannot bind this expression to an %1({}%) parameter.", intent);
         }
         S.Remark("Try storing this in a variable first.");
         return false;
@@ -397,7 +397,7 @@ public:
     bool report_same_type_lvalue_required(Intent intent) {
         S.Error(
             res->location(),
-            "Cannot pass type {} to %1({}) parameter of type {}",
+            "Cannot pass type {} to %1({}%) parameter of type {}",
             res->type,
             intent,
             target_type
@@ -807,7 +807,7 @@ void Sema::ReportOverloadResolutionFailure(
 
             [&](const TempSubstRes::DeductionAmbiguous& a) {
                 out += std::format(
-                    "Template deduction mismatch for parameter %3(${}):\n"
+                    "Template deduction mismatch for parameter %3(${}%):\n"
                     "{}#{}: Deduced as {}\n"
                     "{}#{}: Deduced as {}",
                     a.ttd->name,
@@ -840,7 +840,7 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::ArgumentCountMismatch) {
                 Error(
                     call_loc,
-                    "Procedure '%2({})' expects {} argument{}, got {}",
+                    "Procedure '%2({}%)' expects {} argument{}, got {}",
                     c.name(),
                     ty->params().size(),
                     ty->params().size() == 1 ? "" : "s",
@@ -882,7 +882,7 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::UndeducedReturnType) {
                 Error(call_loc, "Cannot call procedure before its return type has been deduced");
                 Note(c.location(), "Declared here");
-                Remark("\rTry specifying the return type explicitly: '%1(->) <type>'");
+                Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
             }
         }; // clang-format on
         c.status.visit(V);
@@ -890,7 +890,7 @@ void Sema::ReportOverloadResolutionFailure(
     }
 
     // Otherwise, we need to print all overloads, and why they failed.
-    std::string message = std::format("%b(Candidates:)\n");
+    std::string message = std::format("%b(Candidates:%)\n");
 
     // Compute the width of the number field.
     u32 width = u32(std::to_string(candidates.size()).size());
@@ -899,7 +899,7 @@ void Sema::ReportOverloadResolutionFailure(
     for (auto [i, c] : enumerate(candidates)) {
         // Print the type.
         message += std::format(
-            "  %b({}.) \v{}",
+            "  %b({}.%) \v{}",
             i + 1,
             c.type_for_diagnostic()
         );
@@ -909,7 +909,7 @@ void Sema::ReportOverloadResolutionFailure(
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
-                "\f%b(at) {}:{}:{}",
+                "\f%b(at%) {}:{}:{}",
                 ctx.file_name(loc.file_id),
                 lc->line,
                 lc->col
@@ -919,11 +919,11 @@ void Sema::ReportOverloadResolutionFailure(
         message += "\n";
     }
 
-    message += std::format("\n\r%b(Failure Reason:)");
+    message += std::format("\n\r%b(Failure Reason:%)");
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
-        message += std::format("\n  %b({:>{}}.) ", i + 1, width);
+        message += std::format("\n  %b({:>{}}.%) ", i + 1, width);
         auto V = utils::Overloaded{// clang-format off
             [&] (const Candidate::Viable& v) {
                 // If the badness is equal to the final badness,
@@ -992,7 +992,7 @@ void Sema::ReportOverloadResolutionFailure(
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'%2({})'", candidates.front().name()),
+        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().name()),
         std::move(message),
     });
 }
@@ -1051,7 +1051,7 @@ auto Sema::BuildBinaryExpr(
         } else {
             Error(
                 loc,
-                "Invalid operation: %1({}) between {} and {}",
+                "Invalid operation: %1({}%) between {} and {}",
                 Spelling(op),
                 lhs->type,
                 rhs->type
@@ -1068,7 +1068,7 @@ auto Sema::BuildBinaryExpr(
     auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<BinaryExpr> {
         auto Check = [&](std::string_view which, Expr* e) {
             if (e->type->is_integer()) return true;
-            Error(e->location(), "{} of %1({}) must be an integer", which, Spelling(op));
+            Error(e->location(), "{} of %1({}%) must be an integer", which, Spelling(op));
             return false;
         };
 
@@ -1653,7 +1653,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     // Permitting MRValues here is non-trivial.
     if (common_ty->value_category() == Expr::MRValue) return ICE(
         loc,
-        "Sorry, we don’t support returning a value of type '{}' from an '%1(if)' expression yet.",
+        "Sorry, we don’t support returning a value of type '{}' from an '%1(if%)' expression yet.",
         common_ty
     );
 
@@ -2133,7 +2133,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
         Note(
             parsed->loc,
             "The maximum supported integer type is {}, "
-            "which is smaller than an %6(i{:i}), which would "
+            "which is smaller than an %6(i{:i}%), which would "
             "be required to store a value of {}",
             IntType::Get(*M, IntType::MaxBits),
             bits,
@@ -2317,7 +2317,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     // Diagnose invalid combinations of attributes.
     if (attrs.native and attrs.nomangle) Error(
         parsed->loc,
-        "'%1(native)' procedures should not be declared '%1(nomangle)'"
+        "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
     );
 
     // Add the procedure to the module and the parent scope.
@@ -2455,7 +2455,7 @@ auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
 
 auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
     if (parsed->bit_width > IntType::MaxBits) {
-        Error(parsed->loc, "The maximum integer type is %6(i{:i})", IntType::MaxBits);
+        Error(parsed->loc, "The maximum integer type is %6(i{:i}%)", IntType::MaxBits);
         return IntType::Get(*M, IntType::MaxBits);
     }
     return IntType::Get(*M, parsed->bit_width);

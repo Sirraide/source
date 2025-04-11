@@ -32,13 +32,13 @@ protected:
         leading += "│ ";
         const auto current = StringRef{leading}.take_front(size);
         for (auto c : children.drop_back(1)) {
-            self.print("%1({}├─)", current);
+            self.print("%1({}├─%)", current);
             self.Print(c);
         }
 
         // Print the preheader of the last.
         leading.resize(size);
-        self.print("%1({}└─)", StringRef{leading});
+        self.print("%1({}└─%)", StringRef{leading});
 
         // Print the last one.
         leading += "  ";

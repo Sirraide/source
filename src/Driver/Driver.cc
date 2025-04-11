@@ -88,7 +88,7 @@ int Driver::run_job() {
 
     // Handle this first; it only supports 1 file.
     if (a == Action::DumpModule) {
-        if (files.size() != 1) return Error("'%3(--dump-module)' requires exactly one file");
+        if (files.size() != 1) return Error("'%3(--dump-module%)' requires exactly one file");
     }
 
     // Otherwise, check for duplicate TUs as they would create

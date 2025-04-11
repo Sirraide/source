@@ -105,7 +105,7 @@ void TranslationUnit::dump() const {
     bool c = context().use_colours;
 
     // Print preamble.
-    utils::Print(c, "%1({}) %2({})\n", is_module ? "Module" : "Program", name);
+    utils::Print(c, "%1({}%) %2({}%)\n", is_module ? "Module" : "Program", name);
 
     // Print content.
     if (imported()) {
@@ -145,7 +145,7 @@ struct Stmt::Printer : PrinterBase<Stmt> {
 
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     print(
-        "%1({}) %4({}) %5(<{}>)",
+        "%1({}%) %4({}%) %5(<{}>%)",
         name,
         static_cast<void*>(s),
         s->loc.pos
@@ -196,7 +196,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::BinaryExpr: {
             auto b = cast<BinaryExpr>(e);
-            PrintBasicNode(e, "BinaryExpr", [&] { print("%1({})", b->op); });
+            PrintBasicNode(e, "BinaryExpr", [&] { print("%1({}%)", b->op); });
             SmallVector<Stmt*, 2> children{b->lhs, b->rhs};
             PrintChildren(children);
         } break;
@@ -207,13 +207,13 @@ void Stmt::Printer::Print(Stmt* e) {
             break;
 
         case Kind::BoolLitExpr:
-            PrintBasicNode(e, "BoolLitExpr", [&] { print("%1({})", cast<BoolLitExpr>(e)->value); });
+            PrintBasicNode(e, "BoolLitExpr", [&] { print("%1({}%)", cast<BoolLitExpr>(e)->value); });
             break;
 
         case Kind::BuiltinCallExpr: {
             auto& c = *cast<BuiltinCallExpr>(e);
             PrintBasicNode(e, "BuiltinCallExpr", [&] {
-                print("%2({})", [&] -> std::string_view {
+                print("%2({}%)", [&] -> std::string_view {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
                         case B::Print: return "__srcc_print";
@@ -242,7 +242,7 @@ void Stmt::Printer::Print(Stmt* e) {
                     }
                     return "<invalid>";
                 }();
-                print("%3({})", kind);
+                print("%3({}%)", kind);
             });
             PrintChildren(m.operand);
         } break;
@@ -287,7 +287,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto f = cast<FieldDecl>(e);
             PrintBasicHeader(e, "FieldDecl");
             print(
-                " {} %5({}) %1(offs) %3({:y})\n",
+                " {} %5({}%) %1(offs%) %3({:y}%)\n",
                 f->type->print(),
                 f->name,
                 f->offset
@@ -307,7 +307,7 @@ void Stmt::Printer::Print(Stmt* e) {
             // always unsigned (because negative literals don’t exist;
             // unary minus is just an operator).
             auto i = cast<IntLitExpr>(e);
-            auto PrintValue = [&] { print("%5({})", i->storage.str(false)); };
+            auto PrintValue = [&] { print("%5({}%)", i->storage.str(false)); };
             PrintBasicNode(e, "IntLitExpr", PrintValue);
         } break;
 
@@ -317,11 +317,11 @@ void Stmt::Printer::Print(Stmt* e) {
             auto d = cast<LocalDecl>(e);
             auto PrintNameAndType = [&] {
                 print(
-                    "%{}({})",
+                    "%{}({}%)",
                     is_param ? '4' : '8',
                     d->name
                 );
-                if (is_param) print(" %1({})", cast<ParamDecl>(d)->intent());
+                if (is_param) print(" %1({}%)", cast<ParamDecl>(d)->intent());
                 print(" {}", d->type->print());
             };
 
@@ -332,7 +332,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::LocalRefExpr: {
             auto d = cast<LocalRefExpr>(e);
             bool is_param = d->decl->kind() == Kind::ParamDecl;
-            auto PrintName = [&] { print("%{}({})", is_param ? '4' : '8', d->decl->name); };
+            auto PrintName = [&] { print("%{}({}%)", is_param ? '4' : '8', d->decl->name); };
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
@@ -359,7 +359,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ProcDecl: {
             auto p = cast<ProcDecl>(e);
             PrintBasicHeader(p, "ProcDecl");
-            print(" %2({}) {}", p->name, p->type->print());
+            print(" %2({}%) {}", p->name, p->type->print());
 
             if (p->errored()) print(" errored");
             if (p->instantiated_from) print(" instantiation");
@@ -386,7 +386,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ProcRefExpr: {
             auto p = cast<ProcRefExpr>(e);
             PrintBasicHeader(p, "ProcRefExpr");
-            print(" %2({})\n", p->decl->name);
+            print(" %2({}%)\n", p->decl->name);
 
             tempset print_procedure_bodies = false;
             PrintChildren(p->decl);
@@ -404,7 +404,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::StrLitExpr: {
             PrintBasicHeader(e, "StrLitExpr");
-            print(" %3(\"\002{}\003\")\n", utils::Escape(cast<StrLitExpr>(e)->value));
+            print(" %3(\"{}\"%)\n", utils::Escape(cast<StrLitExpr>(e)->value), true, true);
         } break;
 
         case Kind::StructInitExpr: {
@@ -416,7 +416,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::TemplateTypeDecl: {
             auto t = cast<TemplateTypeDecl>(e);
             PrintBasicHeader(t, "TemplateTypeDecl");
-            print(" %3(${})\n", t->name);
+            print(" %3(${}%)\n", t->name);
         } break;
 
         case Kind::TypeDecl: {
@@ -424,7 +424,7 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(td, "TypeDecl");
             if (auto s = dyn_cast<StructType>(td->type.ptr())) {
                 print(
-                    " %1(struct %3({}) size %3({:y})/%3({:y}) align %3({}))\n",
+                    " %1(struct %3({}%) size %3({:y}%)/%3({:y}%) align %3({}%)%)\n",
                     s->name(),
                     s->size(),
                     s->array_size(),
@@ -436,7 +436,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 children.append(s->scope()->inits.begin(), s->scope()->inits.end());
                 PrintChildren(children);
             } else {
-                print("%3({}) = {}\n", td->name, td->type->print());
+                print("%3({}%) = {}\n", td->name, td->type->print());
             }
         } break;
 
@@ -447,7 +447,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::UnaryExpr: {
             auto u = cast<UnaryExpr>(e);
-            PrintBasicNode(e, "UnaryExpr", [&] { print("%1({})", u->op); });
+            PrintBasicNode(e, "UnaryExpr", [&] { print("%1({}%)", u->op); });
             PrintChildren(u->arg);
         } break;
 

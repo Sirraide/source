@@ -33,18 +33,18 @@ void SRValue::dump(bool use_colour) const {
 auto SRValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
-        [&](bool) { out += std::format("%1({})", value.get<bool>()); },
+        [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
-        [&](ir::Proc* proc) { out += std::format("%2({})", proc->name()); },
+        [&](ir::Proc* proc) { out += std::format("%2({}%)", proc->name()); },
         [&](Type ty) { out += ty->print(); },
-        [&](const APInt& value) { out += std::format("%5({})", toString(value, 10, true)); },
-        [&](Pointer ptr) { out += std::format("%4({})", reinterpret_cast<void*>(ptr.encode())); },
+        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
+        [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
         [&](this auto& self, const SRSlice& slice) {
-        out += "%1(\033(";
+        out += "%1((";
         self(slice.data);
         out += ", ";
         self(slice.size);
-        out += "\033))";
+        out += ")%)";
     }
     };
 

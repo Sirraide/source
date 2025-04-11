@@ -179,26 +179,26 @@ auto TypeBase::print() const -> SmallUnrenderedString {
     switch (kind()) {
         case Kind::ArrayType: {
             auto* arr = cast<ArrayType>(this);
-            out += std::format("{}%1([%5({})])", arr->elem()->print(), arr->dimension());
+            out += std::format("{}%1([%5({}%)]%)", arr->elem()->print(), arr->dimension());
         } break;
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
-                case BuiltinKind::Bool: out += "%6(bool)"; break;
-                case BuiltinKind::Deduced: out += "%6(var)"; break;
-                case BuiltinKind::Dependent: out += "%6(<dependent type>)"; break;
-                case BuiltinKind::ErrorDependent: out += "%6(<error>)"; break;
-                case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>)"; break;
-                case BuiltinKind::Int: out += "%6(int)"; break;
-                case BuiltinKind::NoReturn: out += "%6(noreturn)"; break;
-                case BuiltinKind::Type: out += "%6(type)"; break;
-                case BuiltinKind::Void: out += "%6(void)"; break;
+                case BuiltinKind::Bool: out += "%6(bool%)"; break;
+                case BuiltinKind::Deduced: out += "%6(var%)"; break;
+                case BuiltinKind::Dependent: out += "%6(<dependent type>%)"; break;
+                case BuiltinKind::ErrorDependent: out += "%6(<error>%)"; break;
+                case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; break;
+                case BuiltinKind::Int: out += "%6(int%)"; break;
+                case BuiltinKind::NoReturn: out += "%6(noreturn%)"; break;
+                case BuiltinKind::Type: out += "%6(type%)"; break;
+                case BuiltinKind::Void: out += "%6(void%)"; break;
             }
         } break;
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            out += std::format("%6(i{:i})", int_ty->bit_width());
+            out += std::format("%6(i{:i}%)", int_ty->bit_width());
         } break;
 
         case Kind::ProcType: {
@@ -208,22 +208,22 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 
         case Kind::ReferenceType: {
             auto* ref = cast<ReferenceType>(this);
-            out += std::format("%1(ref) {}", ref->elem()->print());
+            out += std::format("%1(ref%) {}", ref->elem()->print());
         } break;
 
         case Kind::SliceType: {
             auto* slice = cast<SliceType>(this);
-            out += std::format("{}%1([])", slice->elem()->print());
+            out += std::format("{}%1([]%)", slice->elem()->print());
         } break;
 
         case Kind::StructType: {
             auto* s = cast<StructType>(this);
-            out += std::format("%6({})", s->name());
+            out += std::format("%6({}%)", s->name());
         } break;
 
         case Kind::TemplateType: {
             auto* tt = cast<TemplateType>(this);
-            out += std::format("%3({})", tt->template_decl()->name);
+            out += std::format("%3({}%)", tt->template_decl()->name);
         } break;
     }
 
@@ -435,7 +435,7 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
 
     // Add name.
     if (not proc_name.empty())
-        out += std::format(" %2({})", proc_name);
+        out += std::format(" %2({}%)", proc_name);
 
     // Add params.
     const auto& ps = params();
@@ -447,9 +447,9 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
             else out += ", ";
             if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
             out += p.type->print();
-            if (number_params) out += std::format(" %4(\033%{})", i);
+            if (number_params) out += std::format(" %4(%%{}%)", i);
         }
-        out += "\033)";
+        out += ")";
     }
 
     // Add attributes.
@@ -460,7 +460,7 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
     if (not ret()->is_void())
         out += std::format(" -> {}", ret()->print());
 
-    out += ")";
+    out += "%)";
     return out;
 }
 

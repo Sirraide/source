@@ -462,14 +462,14 @@ void Printer::Dump(Builder& b) {
 
 void Printer::DumpInst(Inst* i) {
     out += "    %1(";
-    if (ReturnsValue(i)) out += std::format("%8(\033%{}) = ", Id(inst_ids, i));
-    defer { out += ")\n"; };
+    if (ReturnsValue(i)) out += std::format("%8(%%{}%) = ", Id(inst_ids, i));
+    defer { out += "%)\n"; };
 
     auto Target = [&](Block* dest, ArrayRef<Value*> args) {
-        out += std::format("%3(bb{})", Id(block_ids, dest));
+        out += std::format("%3(bb{}%)", Id(block_ids, dest));
         if (not args.empty()) {
             out += std::format(
-                "({}\033)",
+                "({})",
                 utils::join_as(args, [&](Value* v) { return DumpValue(v); })
             );
         }
@@ -478,7 +478,7 @@ void Printer::DumpInst(Inst* i) {
     auto IntCast = [&](StringRef name) {
         auto c = cast<ICast>(i);
         out += std::format(
-            "%1({}) {} to {}",
+            "%1({}%) {} to {}",
             name,
             DumpValue(c->args()[0]),
             c->cast_result_type()
@@ -487,7 +487,7 @@ void Printer::DumpInst(Inst* i) {
 
     auto Simple = [&](StringRef name) {
         out += std::format(
-            "%1({}){}{}",
+            "%1({}%){}{}",
             name,
             i->args().empty() ? ""sv : " "sv,
             utils::join_as(i->args(), [&](Value* v) { return DumpValue(v); } )
@@ -500,7 +500,7 @@ void Printer::DumpInst(Inst* i) {
             auto a = cast<AbortInst>(i);
             auto [file, line, col] = a->location().info_or_builtin(tu.context());
             out += std::format(
-                "%1(abort) at %6(<{}:{}:{}>) %2({})({}\033)",
+                "%1(abort%) at %6(<{}:{}:{}>%) %2({}%)({})",
                 file,
                 line,
                 col,
@@ -511,18 +511,18 @@ void Printer::DumpInst(Inst* i) {
 
         case Op::Alloca: {
             auto a = cast<Alloca>(i);
-            out += std::format("%1(alloca) {}", a->allocated_type());
+            out += std::format("%1(alloca%) {}", a->allocated_type());
         } break;
 
         case Op::Br: {
             auto b = cast<BranchInst>(i);
             if (b->is_conditional()) {
-                out += std::format("%1(br) {} to ", DumpValue(b->cond()));
+                out += std::format("%1(br%) {} to ", DumpValue(b->cond()));
                 Target(b->then(), b->then_args());
                 out += " else ";
                 Target(b->else_(), b->else_args());
             } else {
-                out += std::format("%1(br) ");
+                out += std::format("%1(br%) ");
                 Target(b->then(), b->then_args());
             }
         } break;
@@ -532,10 +532,10 @@ void Printer::DumpInst(Inst* i) {
             auto args = i->args().drop_front(1);
             auto ret = cast<ProcType>(proc->type())->ret();
             if (args.empty()) {
-                out += std::format("%1(call) {} {}", ret, DumpValue(proc));
+                out += std::format("%1(call%) {} {}", ret, DumpValue(proc));
             } else {
                 out += std::format(
-                    "%1(call) {} {}({}\033)",
+                    "%1(call%) {} {}({})",
                     ret,
                     DumpValue(proc),
                     utils::join_as(args, [&](Value* v) { return DumpValue(v); } )
@@ -546,7 +546,7 @@ void Printer::DumpInst(Inst* i) {
         case Op::Load: {
             auto m = cast<MemInst>(i);
             out += std::format(
-                "%1(load) {}, {}, align %5({})",
+                "%1(load%) {}, {}, align %5({}%)",
                 m->memory_type(),
                 DumpValue(m->args()[0]),
                 m->align()
@@ -556,7 +556,7 @@ void Printer::DumpInst(Inst* i) {
         case Op::Store: {
             auto m = cast<MemInst>(i);
             out += std::format(
-                "%1(store) {} to {}, {}, align %5({})",
+                "%1(store%) {} to {}, {}, align %5({}%)",
                 m->memory_type(),
                 DumpValue(m->args()[0]),
                 DumpValue(m->args()[1]),
@@ -611,7 +611,7 @@ void Printer::DumpProc(Proc* proc) {
 
     // Stop if there is no body.
     if (proc->empty()) {
-        out += "%1(;)\n";
+        out += "%1(;%)\n";
         return;
     }
 
@@ -632,19 +632,19 @@ void Printer::DumpProc(Proc* proc) {
     }
 
     // Print the procedure body.
-    out += " %1({)\n";
+    out += " %1({%)\n";
     for (const auto& [i, b] : enumerate(proc->blocks())) {
-        out += i == 0 ? "%3(entry)%1(" : std::format("\n%3(bb{})%1(", i);
+        out += i == 0 ? "%3(entry%)%1(" : std::format("\n%3(bb{}%)%1(", i);
         if (not b->arguments().empty()) {
-            out += std::format("({}\033)", utils::join_as(b->arguments(), [&](Argument* arg) {
-                return std::format("{} %3(\033%{})", b->argument_types()[arg->index()], arg_ids.at(arg));
+            out += std::format("({})", utils::join_as(b->arguments(), [&](Argument* arg) {
+                return std::format("{} %3(%%{}%)", b->argument_types()[arg->index()], arg_ids.at(arg));
             }));
         }
-        out += ":)\n";
+        out += ":%)\n";
         for (auto* inst : b->instructions())
             DumpInst(inst);
     }
-    out += "%1(})\n";
+    out += "%1(}%)\n";
 }
 
 bool Printer::ReturnsValue(Inst* i) {
@@ -656,11 +656,11 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
     switch (v->kind()) {
         case Value::Kind::Argument: {
             auto arg = cast<Argument>(v);
-            out += std::format("%{}(\033%{})", isa<Proc>(arg->parent()) ? '4' : '3', Id(arg_ids, arg));
+            out += std::format("%{}(%%{}%)", isa<Proc>(arg->parent()) ? '4' : '3', Id(arg_ids, arg));
         } break;
 
         case Value::Kind::Block:
-            out += std::format("%3(bb{})", Id(block_ids, cast<Block>(v)));
+            out += std::format("%3(bb{}%)", Id(block_ids, cast<Block>(v)));
             break;
 
         case Value::Kind::BuiltinConstant: {
@@ -675,20 +675,20 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
 
         case Value::Kind::Extract: {
             auto e = cast<Extract>(v);
-            out += std::format("{}[%5({})]", DumpValue(e->aggregate()), e->index());
+            out += std::format("{}[%5({}%)]", DumpValue(e->aggregate()), e->index());
         } break;
 
         case Value::Kind::InstValue: {
             auto i = cast<InstValue>(v);
-            if (i->inst()->has_multiple_results()) out += std::format("%8(\033%{}:{})", Id(inst_ids, i->inst()), i->index());
-            else out += std::format("%8(\033%{})", Id(inst_ids, i->inst()));
+            if (i->inst()->has_multiple_results()) out += std::format("%8(%%{}:{}%)", Id(inst_ids, i->inst()), i->index());
+            else out += std::format("%8(%%{}%)", Id(inst_ids, i->inst()));
         } break;
 
         case Value::Kind::InvalidLocalReference: {
             auto i = cast<InvalidLocalReference>(v);
             auto d = i->referenced_local()->decl;
             out += std::format(
-                "<invalid access to %2({})::%8({})>",
+                "<invalid access to %2({}%)::%8({}%)>",
                 d->parent->name,
                 d->name
             );
@@ -696,32 +696,32 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
 
         case Value::Kind::LargeInt: {
             auto l = cast<LargeInt>(v);
-            out += std::format("{} %5({})", l->type(), l->value());
+            out += std::format("{} %5({}%)", l->type(), l->value());
         } break;
 
         case Value::Kind::Proc: {
             auto p = cast<Proc>(v);
-            out += std::format("%2({})", p->name());
+            out += std::format("%2({}%)", p->name());
         } break;
 
         case Value::Kind::Slice: {
             auto s = cast<Slice>(v);
             if (auto sz = dyn_cast<SmallInt>(s->size); sz and isa<StringData>(s->data)) {
                 auto str = cast<StringData>(s->data);
-                out += std::format("s%3(\"\002{}\003\")", utils::Escape(str->value().take(usz(sz->value())), true));
+                out += std::format("s%3(\"{}\"%)", utils::Escape(str->value().take(usz(sz->value())), true, true));
             } else {
-                out += std::format("{} (%5({}), %5({})\033)", s->type(), DumpValue(s->data), DumpValue(s->size));
+                out += std::format("{} (%5({}%), %5({}%))", s->type(), DumpValue(s->data), DumpValue(s->size));
             }
         } break;
 
         case Value::Kind::SmallInt: {
             auto s = cast<SmallInt>(v);
-            out += std::format("{} %5({})", v->type(), i64(s->value()));
+            out += std::format("{} %5({}%)", v->type(), i64(s->value()));
         } break;
 
         case Value::Kind::StringData: {
             auto str = cast<StringData>(v);
-            out += std::format("&%3(\"\002{}\003\")", utils::Escape(str->value(), true));
+            out += std::format("&%3(\"{}\"%)", utils::Escape(str->value(), true, true));
         } break;
     }
     return out;
