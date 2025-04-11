@@ -140,6 +140,11 @@ public:
     }
 };
 
+struct SRSlice {
+    Pointer data;
+    APInt size;
+};
+
 /// Virtual machine used for constant evaluation; one of these is
 /// created for every translation unit and reused across constant
 /// evaluations.
@@ -174,20 +179,23 @@ public:
 
 /// A compile-time srvalue.
 class srcc::eval::SRValue {
-    Variant<cg::ir::Proc*, APInt, bool, Type, Pointer, std::monostate> value{std::monostate{}};
+    // Note: std::monostate is used to store the 'nil' value of any type that has one.
+    Variant<cg::ir::Proc*, APInt, bool, Type, Pointer, SRSlice, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
 public:
     SRValue() = default;
     explicit SRValue(cg::ir::Proc* proc);
+    explicit SRValue(std::monostate, Type ty) : ty{ty} {}
     explicit SRValue(bool b) : value{b}, ty{Types::BoolTy} {}
     explicit SRValue(Type ty) : value{ty}, ty{Types::TypeTy} {}
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
+    explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
     explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     explicit SRValue(i64 val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
 
     /// Check if two values hold the same value.
-    bool operator==(const SRValue& other) const;
+    bool operator==(const SRValue& other) const = default;
 
     /// cast<>() the contained value.
     template <typename Ty>
@@ -206,7 +214,7 @@ public:
     void dump(bool use_colour = true) const;
     void dump_colour() const { dump(true); }
 
-    /// Check if the value is empty. This is also used to represent '()'.
+    /// Check if the value is empty, aka 'nil', aka '()'.
     auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
 
     /// isa<>() on the contained value.

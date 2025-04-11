@@ -26,18 +26,6 @@ SRValue::SRValue(ir::Proc* proc)
     : value(proc),
       ty(proc->type()) {}
 
-bool SRValue::operator==(const SRValue& other) const {
-    if (value.index() != other.value.index()) return false;
-    return visit(utils::Overloaded{
-        [&](bool b) { return b == other.cast<bool>(); },
-        [&](std::monostate) { return other.isa<std::monostate>(); },
-        [&](ir::Proc* proc) { return proc == other.cast<ir::Proc*>(); },
-        [&](Type ty) { return ty == other.cast<Type>(); },
-        [&](const APInt& i) { return i == other.cast<APInt>(); },
-        [&](Pointer ptr) { return ptr == other.cast<Pointer>(); },
-    });
-}
-
 void SRValue::dump(bool use_colour) const {
     std::print("{}", text::RenderColours(use_colour, print().str()));
 }
@@ -50,7 +38,14 @@ auto SRValue::print() const -> SmallUnrenderedString {
         [&](ir::Proc* proc) { out += std::format("%2({})", proc->name()); },
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { out += std::format("%5({})", toString(value, 10, true)); },
-        [&](Pointer ptr) { out += std::format("%4({})", ptr.encode()); },
+        [&](Pointer ptr) { out += std::format("%4({})", reinterpret_cast<void*>(ptr.encode())); },
+        [&](this auto& self, const SRSlice& slice) {
+        out += "%1(\033(";
+        self(slice.data);
+        out += ", ";
+        self(slice.size);
+        out += "\033))";
+    }
     };
 
     visit(V);
@@ -203,7 +198,7 @@ class eval::Eval : DiagsProducer<bool> {
     const SRValue true_val{true};
     const SRValue false_val{false};
     Location entry;
-    const bool complain;
+    bool complain;
 
 public:
     Eval(VM& vm, bool complain);
@@ -226,7 +221,8 @@ private:
     auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
     auto FFIType(Type ty) -> ffi_type*;
     bool FFIStoreArg(void* ptr, const SRValue& val);
-    auto GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void*;
+    auto GetMemoryPointer(Pointer ptr, Size accessible_size, bool readonly) -> void*;
+    auto GetStringData(const SRValue& val) -> std::string;
     auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
     void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
@@ -301,8 +297,8 @@ bool Eval::EvalLoop() {
                 }();
 
                 std::string msg{reason_str};
-                if (not msg1.empty()) msg += std::format(" '{}'", msg1.print());
-                if (not msg2.empty()) msg += std::format(": {}", msg2.print());
+                if (not msg1.empty()) msg += std::format(" '{}'", GetStringData(msg1));
+                if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
                 return Error(a.location(), "{}", msg);
             }
 
@@ -368,7 +364,7 @@ bool Eval::EvalLoop() {
             case ir::Op::MemZero: {
                 auto addr = Val(i->args()[0]);
                 auto size = Size::Bytes(Val(i->args()[1]).cast<APInt>().getZExtValue());
-                auto ptr = GetMemoryPointer(addr, size, false);
+                auto ptr = GetMemoryPointer(addr.cast<Pointer>(), size, false);
                 if (not ptr) return false;
                 std::memset(ptr, 0, size.bytes());
             } break;
@@ -534,7 +530,6 @@ auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
     return LoadSRValue(mem, ty);
 }
 
-
 auto Eval::FFIType(Type ty) -> ffi_type* {
     switch (ty->kind()) {
         case TypeBase::Kind::TemplateType:
@@ -591,7 +586,7 @@ bool Eval::FFIStoreArg(void* ptr, const SRValue& val) {
     // use the pointer we hand it, so just be permissive with the access
     // mode (i.e. pretend we require 1 byte and that it’s readonly).
     if (val.isa<Pointer>()) {
-        auto native = GetMemoryPointer(val, Size::Bytes(1), true);
+        auto native = GetMemoryPointer(val.cast<Pointer>(), Size::Bytes(1), true);
         if (not native) return false;
         std::memcpy(ptr, &native, sizeof(native));
         return true;
@@ -601,9 +596,7 @@ bool Eval::FFIStoreArg(void* ptr, const SRValue& val) {
     return StoreSRValue(ptr, val);
 }
 
-auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void* {
-    auto p = ptr.cast<Pointer>();
-
+auto Eval::GetMemoryPointer(Pointer p, Size accessible_size, bool readonly) -> void* {
     // Requesting 0 bytes is problematic because that might cause us
     // to recognise a pointer as part of the wrong memory region if
     // 2 regions are directly adjacent. Accesses that don’t know how
@@ -651,9 +644,23 @@ auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool reado
     return nullptr;
 }
 
+auto Eval::GetStringData(const SRValue& val) -> std::string {
+    auto sl = val.dyn_cast<SRSlice>();
+    if (not sl or val.type() != vm.owner().StrLitTy) return "<invalid>";
+
+    // Suppress memory errors if the pointer is invalid.
+    tempset complain = false;
+    auto sz = Size::Bytes(sl->size.getZExtValue());
+    auto mem = GetMemoryPointer(sl->data, sz, true);
+    if (not mem) return "<invalid>";
+
+    // We got a valid pointer+size; extract the string data.
+    return utils::Escape(std::string_view{static_cast<const char*>(mem), sz.bytes()});
+}
+
 auto Eval::LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue> {
     auto sz = ty->size(vm.owner());
-    auto mem = GetMemoryPointer(ptr, sz, true);
+    auto mem = GetMemoryPointer(ptr.cast<Pointer>(), sz, true);
     if (not mem) return std::nullopt;
     return LoadSRValue(mem, ty);
 }
@@ -740,7 +747,7 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
 bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
     auto ty = val.type();
     auto sz = ty->size(vm.owner());
-    auto mem = GetMemoryPointer(ptr, sz, false);
+    auto mem = GetMemoryPointer(ptr.cast<Pointer>(), sz, false);
     if (not mem) return false;
     return StoreSRValue(mem, val);
 }
@@ -752,7 +759,8 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         return true;
     };
 
-    return val.visit(utils::Overloaded{ // clang-format off
+    auto v = utils::Overloaded{
+        // clang-format off
         [&](bool b) { return Store(b); },
         [&](std::monostate) { return ICE(entry, "I don’t think we can get here?"); },
         [&](ir::Proc*) { return ICE(entry, "TODO: Store closure in memory"); },
@@ -769,7 +777,14 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
                     return false;
             }
         },
-    }); // clang-format on
+        [&](this auto& self, const SRSlice& sl) -> bool {
+            if (not self(sl.data)) return false;
+            ptr = static_cast<char*>(ptr) + sizeof(Pointer{}.encode());
+            return self(sl.size);
+        },
+    }; // clang-format on
+
+    return val.visit(v);
 }
 
 auto Eval::Temp(ir::Argument* i) -> SRValue& {
@@ -792,7 +807,13 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
         case K::InvalidLocalReference: Todo();
         case K::LargeInt: Todo();
         case K::Proc: Todo();
-        case K::Slice: Todo();
+        case K::Slice: {
+            auto sl = cast<ir::Slice>(v);
+            auto ptr = Val(sl->data);
+            auto sz = Val(sl->size);
+            return Materialise(SRValue(SRSlice{ptr.cast<Pointer>(), sz.cast<APInt>()}, sl->type()));
+        }
+
         case K::StringData: {
             auto s = cast<ir::StringData>(v);
             auto ptr = host_memory.create_map(s->value().data(), Size::Bytes(s->value().size()));
@@ -807,7 +828,7 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
                 case ir::BuiltinConstantKind::True: return true_val;
                 case ir::BuiltinConstantKind::False: return false_val;
                 case ir::BuiltinConstantKind::Poison: Unreachable("Should not exist in checked mode");
-                case ir::BuiltinConstantKind::Nil: Todo("Materialise nil");
+                case ir::BuiltinConstantKind::Nil: return Materialise(SRValue(std::monostate{}, v->type()));
             }
             Unreachable();
         }

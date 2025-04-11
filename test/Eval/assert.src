@@ -14,4 +14,4 @@ proc foo($T a, T b) {
 }
 
 eval foo(1, 1);
-eval foo(1, 2); // expected-note: In call to 'foo' here
+eval foo(1, 2);

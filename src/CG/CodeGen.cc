@@ -880,6 +880,7 @@ auto CodeGen::EmitValue(const eval::SRValue& val) -> Value* { // clang-format of
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
         [](eval::Pointer) -> Value* { Todo("Materialise compile-time allocation"); },
+        [](eval::SRSlice) ->Value* { Todo("Materialise slice"); },
     }; // clang-format on
     return val.visit(V);
 }
