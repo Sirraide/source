@@ -101,7 +101,7 @@ auto FormatDiagnostic(
         // Even if the location is invalid, print the file name if we can.
         if (auto f = ctx.file(diag.where.file_id)) {
             out += std::format(
-                "\n  in %b({}:<invalid location>)\n\n",
+                "\n  in %b({}:<invalid location>%)\n\n",
                 utils::Escape(ctx.file_name(f->file_id()), false, true)
             );
         }
@@ -488,11 +488,11 @@ VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : Diagnosti
 
 /// Decode location so we don’t have to do that every time we check a
 /// diagnostic. We can’t do anything if the source location is not valid.
-auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> DecodedLocation {
+auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> Opt<DecodedLocation> {
     auto file = ctx.file(loc.file_id);
     auto decoded = loc.seek_line_column(ctx);
-    Assert(file and decoded.has_value(), "Verify-diagnostics-mode requires valid source locations.");
-    return {file, decoded->line};
+    if (file and decoded.has_value()) return DecodedLocation{file, decoded->line};
+    return std::nullopt;
 }
 
 /// This is called by the lexer when a comment token is encountered.
@@ -638,7 +638,7 @@ bool VerifyDiagnosticsEngine::verify() {
     }
 
     // Erase all diagnostics that were seen.
-    llvm::erase_if(expected_diags, [](const ExpectedDiagnostic& ed) { return ed.count == 0; });
+    erase_if(expected_diags, [](const ExpectedDiagnostic& ed) { return ed.count == 0; });
 
     // Complain about every diagnostic that remains.
     if (not expected_diags.empty()) {
@@ -649,8 +649,8 @@ bool VerifyDiagnosticsEngine::verify() {
                 print(
                     stderr,
                     "  %b({}:{}%)",
-                    expected.loc.value().file->path(),
-                    expected.loc.value().line
+                    expected.loc->file->path(),
+                    expected.loc->line
                 );
             } else {
                 print(stderr, "  %b(anywhere%)");
@@ -670,15 +670,19 @@ bool VerifyDiagnosticsEngine::verify() {
     if (not seen_diags.empty()) {
         ok = false;
         print(stderr, "%b(Unexpected diagnostics:%)\n");
-        for (const auto& seen : seen_diags) print(
-            stderr,
-            "  %b({}:{} %{}({}:%)%) {}\n",
-            seen.loc.file->path(),
-            seen.loc.line,
-            Colour(seen.diag.level),
-            Name(seen.diag.level),
-            seen.diag.msg
-        );
+        for (const auto& seen : seen_diags) {
+            std::string loc;
+            if (seen.loc) loc = std::format("{}:{}", seen.loc->file->path(), seen.loc->line);
+            else loc = "<invalid>";
+            print(
+                stderr,
+                "  %b({} %{}({}:%)%) {}\n",
+                loc,
+                Colour(seen.diag.level),
+                Name(seen.diag.level),
+                seen.diag.msg
+            );
+        }
     }
 
     // Verification succeeds if we have seen all expected diagnostics.

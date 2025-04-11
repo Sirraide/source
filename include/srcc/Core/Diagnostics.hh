@@ -239,13 +239,13 @@ private:
     struct ExpectedDiagnostic {
         Diagnostic::Level level;
         std::string text;
-        Opt<DecodedLocation> loc;
+        std::optional<DecodedLocation> loc;
         u32 count;
     };
 
     struct SeenDiagnostic {
         Diagnostic diag;
-        DecodedLocation loc;
+        std::optional<DecodedLocation> loc;
     };
 
     SmallVector<SeenDiagnostic, 0> seen_diags;
@@ -293,7 +293,7 @@ private:
         diags_reporter->diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
-    auto DecodeLocation(Location loc) -> DecodedLocation;
+    auto DecodeLocation(Location loc) -> Opt<DecodedLocation>;
     void HandleCommentToken(const Token& tok);
 };
 

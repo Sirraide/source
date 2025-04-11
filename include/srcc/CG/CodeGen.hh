@@ -76,7 +76,21 @@ private:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    void CreateArithFailure(ir::Value* failure_cond, Tk op, Location loc, String name = "integer overflow");
+    void CreateArithFailure(
+        ir::Value* failure_cond,
+        Tk op,
+        Location loc,
+        String name = "integer overflow"
+    );
+
+    auto CreateBinop(
+        ir::Value* lhs,
+        ir::Value* rhs,
+        Location loc,
+        Tk op,
+        auto (Builder::*build_unchecked)(ir::Value*, ir::Value*, bool)->ir::Value*,
+        auto (Builder::*build_overflow)(ir::Value*, ir::Value*)->ir::OverflowResult
+    );
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

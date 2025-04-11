@@ -6,8 +6,8 @@
 
 using namespace srcc;
 using namespace srcc::cg;
-using ir::Value;
 using ir::Block;
+using ir::Value;
 
 void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, String name) {
     If(failure_cond, [&] {
@@ -15,6 +15,20 @@ void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, Strin
         auto operation = CreateString(name);
         CreateAbort(ir::AbortReason::ArithmeticError, loc, op_token, operation);
     });
+}
+
+auto CodeGen::CreateBinop(
+    Value* lhs,
+    Value* rhs,
+    Location loc,
+    Tk op,
+    auto (Builder::*build_unchecked)(Value*, Value*, bool)->Value*,
+    auto (Builder::*build_overflow)(Value*, Value*)->ir::OverflowResult
+) {
+    if (not lang_opts.overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
+    auto [val, overflow] = (this->*build_overflow)(lhs, rhs);
+    CreateArithFailure(overflow, op, loc);
+    return val;
 }
 
 auto CodeGen::DeclarePrintf() -> Value* {
@@ -34,7 +48,6 @@ auto CodeGen::DeclarePrintf() -> Value* {
 
     return printf.value();
 }
-
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto name = MangledName(proc);
@@ -150,7 +163,7 @@ CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::Proc* proc)
 
     // Create the entry block if it doesn’t exist yet.
     if (proc->empty())
-    CG.EnterBlock(CG.CreateBlock());
+        CG.EnterBlock(CG.CreateBlock());
 }
 
 auto CodeGen::If(
@@ -532,15 +545,12 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         CreateArithFailure(check, op, loc, "division by zero");
     };
 
-    auto CreateCheckedBinop = [&](
-        auto (Builder::*build_unchecked)(Value*, Value*, bool) -> Value*,
-        auto (Builder::*build_overflow)(Value*, Value*) -> ir::OverflowResult
+    auto CreateCheckedBinop = [&]( // clang-format off
+        auto (Builder::*build_unchecked)(Value*, Value*, bool)->Value*,
+        auto (Builder::*build_overflow)(Value*, Value*)->ir::OverflowResult
     ) -> Value* {
-        if (not lang_opts.overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
-        auto [val, overflow] = (this->*build_overflow)(lhs, rhs);
-        CreateArithFailure(overflow, op, loc);
-        return val;
-    };
+        return CreateBinop(lhs, rhs, loc, op, build_unchecked, build_overflow);
+    }; // clang-format on
 
     switch (op) {
         default: Todo("Codegen for '{}'", op);
@@ -861,7 +871,25 @@ auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
     return nullptr;
 }
 
-auto CodeGen::EmitUnaryExpr(UnaryExpr*) -> Value* { Todo(); }
+auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
+    if (expr->postfix) {
+        switch (expr->op) {
+            default: Todo("Emit postfix '{}'", expr->op);
+        }
+    }
+
+    switch (expr->op) {
+        default: Todo("Emit prefix '{}'", expr->op);
+        case Tk::Minus: return CreateBinop(
+            CreateInt(0, expr->type),
+            Emit(expr->arg),
+            expr->location(),
+            expr->op,
+            &Builder::CreateSub,
+            &Builder::CreateSSubOverflow
+        );
+    }
+}
 
 auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
     While(

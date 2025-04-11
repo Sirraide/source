@@ -178,10 +178,10 @@ class eval::Eval : DiagsProducer<bool> {
         ArrayRef<ir::Inst*>::iterator ip{};
 
         /// Temporary values for each instruction.
-        DenseMap<Temporary, SRValue> temporaries;
+        DenseMap<Temporary, SRValue> temporaries{};
 
         /// Other materialised temporaries (literal integers etc.)
-        StableVector<SRValue> materialised_values;
+        StableVector<SRValue> materialised_values{};
 
         /// Stack size at the start of this procedure.
         usz stack_base{};
@@ -297,7 +297,7 @@ bool Eval::EvalLoop() {
                 }();
 
                 std::string msg{reason_str};
-                if (not msg1.empty()) msg += std::format(" '{}'", GetStringData(msg1));
+                if (not msg1.empty()) msg += std::format(": '{}'", GetStringData(msg1));
                 if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
                 return Error(a.location(), "{}", msg);
             }
@@ -723,7 +723,7 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
 
 void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
     Assert(not proc->empty());
-    auto& frame = call_stack.emplace_back(proc);
+    StackFrame frame{proc};
     frame.stack_base = stack.size();
 
     // Initialise call arguments.
@@ -739,6 +739,10 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
             }
         }
     }
+
+    // Now that we’ve set up the frame, add it to the stack; we need
+    // to do this *after* we initialise the call arguments above.
+    call_stack.push_back(std::move(frame));
 
     // Branch to the entry block.
     BranchTo(proc->entry(), {});
