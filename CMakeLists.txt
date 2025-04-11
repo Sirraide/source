@@ -175,6 +175,7 @@ link_directories(${LLVM_LIBRARY_DIRS})
 separate_arguments(llvm_libs)
 target_link_libraries(options INTERFACE
     tinfo
+    ffi
 
     LLVMCore
     LLVMPasses

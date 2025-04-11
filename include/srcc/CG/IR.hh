@@ -413,6 +413,7 @@ public:
     auto args() const -> ArrayRef<Argument*> { return arguments; }
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
     auto decl() const -> ProcDecl* { return associated_decl; }
+    auto dump(TranslationUnit& tu) -> SmallUnrenderedString;
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
     auto linkage() const -> Linkage { return link; }

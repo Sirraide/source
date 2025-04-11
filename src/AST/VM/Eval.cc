@@ -10,6 +10,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
 
+#include <ffi.h>
 #include <optional>
 #include <print>
 #include <ranges>
@@ -57,7 +58,7 @@ auto SRValue::print() const -> SmallUnrenderedString {
 }
 
 // ============================================================================
-//  Constant Evaluator
+//  Helpers
 // ============================================================================
 namespace {
 /// Encoded temporary value.
@@ -76,8 +77,99 @@ auto HashTemporary(ir::Argument* a) -> Temporary {
 auto HashTemporary(ir::InstValue* i) -> Temporary {
     return HashTemporary(i->inst(), i->index());
 }
+}
+
+// ============================================================================
+//  Memory
+// ============================================================================
+namespace{
+class HostMemoryMap {
+    struct Mapping {
+        /// The offset in the virtual host memory address space.
+        Pointer vptr;
+
+        /// The actual compiler memory that this maps to.
+        const void* host_ptr;
+
+        /// Size of the map.
+        Size size;
+
+        /// Create a new mapping.
+        Mapping(Pointer vptr, const void* host_ptr, Size size)
+            : vptr(vptr), host_ptr(host_ptr), size(size) {
+            Assert(vptr.is_host_ptr());
+        }
+
+        /// Check if this mapping contains the given host memory range.
+        [[nodiscard]] bool contains(const void* ptr, Size req) const {
+            return ptr >= host_ptr and static_cast<const char*>(ptr) + req.bytes() <= end();
+        }
+
+        /// Check if this mapping contains the given virtual memory range.
+        [[nodiscard]] bool contains(Pointer ptr, Size req) const {
+            return ptr >= vptr and ptr + req.bytes() <= vend();
+        }
+
+        /// Get the end of the mapping (exclusive).
+        [[nodiscard]] auto end() const -> const void* {
+            return static_cast<const char*>(host_ptr) + size.bytes();
+        }
+
+        /// Get the end of the virtual mapping (exclusive).
+        [[nodiscard]] auto vend() const -> Pointer {
+            return vptr + size.bytes();
+        }
+
+        /// Translate a pointer in host memory to a virtual pointer.
+        [[nodiscard]] auto map(const void* ptr) const -> Pointer {
+            Assert(contains(ptr, Size{}));
+            return vptr + usz(static_cast<const char*>(ptr) - static_cast<const char*>(host_ptr));
+        }
+
+        /// Translate a virtual pointer to a pointer in host memory.
+        [[nodiscard]] auto map(Pointer ptr) const -> const void* {
+            Assert(contains(ptr, Size{}));
+            return static_cast<const char*>(host_ptr) + usz(ptr - vptr);
+        }
+    };
+
+    /// Mapped memory ranges, sorted by host memory pointer.
+    SmallVector<Mapping> maps;
+
+    /// Total mapped memory.
+    Size end;
+
+public:
+    /// Create a virtual mapping for the given memory range; if the range
+    /// is already mapped, return the existing mapping.
+    [[nodiscard]] auto create_map(const void* data, Size size, Align a = {}) -> Pointer;
+
+    /// Map a virtual pointer to the corresponding host pointer.
+    [[nodiscard]] auto lookup(Pointer ptr, Size size) -> const void* {
+        Assert(ptr.is_host_ptr() and not ptr.is_null_ptr());
+        auto it = find_if(maps, [&](const Mapping& m) { return m.contains(ptr, size); });
+        if (it != maps.end()) return it->map(ptr);
+        return nullptr;
+    }
+};
 } // namespace
 
+auto HostMemoryMap::create_map(const void* data, Size size, Align a) -> Pointer {
+    auto it = find_if(maps, [&](const Mapping& m) { return m.contains(data, size); });
+    if (it != maps.end()) return it->map(data);
+
+    // Allocate virtual memory.
+    end = end.align(a);
+    auto start = end;
+    end += size;
+
+    // Store the mapping.
+    return maps.emplace_back(Pointer::Host(start.bytes()), data, size).map(data);
+}
+
+// ============================================================================
+//  Evaluator
+// ============================================================================
 class eval::Eval : DiagsProducer<bool> {
     friend DiagsProducer;
 
@@ -106,6 +198,7 @@ class eval::Eval : DiagsProducer<bool> {
     cg::CodeGen cg;
     ByteBuffer stack;
     SmallVector<StackFrame, 4> call_stack;
+    HostMemoryMap host_memory;
     const SRValue true_val{true};
     const SRValue false_val{false};
     Location entry;
@@ -128,10 +221,14 @@ private:
     auto AdjustLangOpts(LangOpts l) -> LangOpts;
     void BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
     bool EvalLoop();
-    auto GetMemoryPointer(const SRValue& ptr, Size accessible_size) -> void*;
+    auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
+    auto FFIType(Type ty) -> ffi_type*;
+    auto GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void*;
     auto LoadSRValue(const SRValue& ptr) -> std::optional<SRValue>;
+    auto LoadSRValue(void* mem, Type ty) -> std::optional<SRValue>;
     void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
     bool StoreSRValue(const SRValue& ptr, const SRValue& val);
+    bool StoreSRValue(void* ptr, const SRValue& val);
     auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
     auto Temp(ir::Argument* i) -> SRValue&;
     auto Val(ir::Value* v) -> const SRValue&;
@@ -211,7 +308,7 @@ bool Eval::EvalLoop() {
                 auto sz = Size::Bytes(stack.size());
                 auto ty = a->allocated_type();
                 sz = sz.align(ty->align(vm.owner()));
-                Temp(i) = SRValue(Pointer::Stack(PointerValue(stack.size())), a->result_types()[0]);
+                Temp(i) = SRValue(Pointer::Stack(stack.size()), a->result_types()[0]);
                 sz += ty->size(vm.owner());
                 stack.resize(sz.bytes());
             } break;
@@ -229,11 +326,20 @@ bool Eval::EvalLoop() {
 
             case ir::Op::Call: {
                 auto callee = dyn_cast<ir::Proc>(i->args()[0]);
+                auto args = i->args().drop_front(1);
                 if (not callee) return ICE(entry, "Indirect calls at compile time are not supported yet");
 
                 // Compile the procedure now if we haven’t done that yet.
                 if (callee->empty()) {
-                    Assert(callee->decl(), "Generated procedure has no body?");
+                    // This is an external procedure declared by the compiler.
+                    if (not callee->decl()) {
+                        auto res = FFICall(callee, args);
+                        if (not res) return false;
+                        Temp(i) = std::move(res.value());
+                        break;
+                    }
+
+                    // This is a function declared in this program.
                     if (not callee->decl()->body()) return ICE(
                         entry,
                         "Calling external procedures at compile time is not supported yet"
@@ -243,7 +349,7 @@ bool Eval::EvalLoop() {
                 }
 
                 // Enter the stack frame.
-                PushFrame(callee, i->args().drop_front(1));
+                PushFrame(callee, args);
 
                 // Set the return value slot to the call’s temporary.
                 if (not i->result_types().empty()) call_stack.back().ret = &Temp(i);
@@ -259,7 +365,7 @@ bool Eval::EvalLoop() {
             case ir::Op::MemZero: {
                 auto addr = Val(i->args()[0]);
                 auto size = Size::Bytes(Val(i->args()[1]).cast<APInt>().getZExtValue());
-                auto ptr = GetMemoryPointer(addr, size);
+                auto ptr = GetMemoryPointer(addr, size, false);
                 if (not ptr) return false;
                 std::memset(ptr, 0, size.bytes());
             } break;
@@ -340,32 +446,180 @@ bool Eval::EvalLoop() {
     }
 }
 
-auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size) -> void* {
-    auto p = ptr.cast<Pointer>();
-    if (not p.is_stack_ptr()) {
-        ICE(entry, "TODO: Access heap or internal pointer");
-        return nullptr;
+auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue> {
+    auto ret = FFIType(proc->type()->ret());
+    if (not ret) return std::nullopt;
+    SmallVector<ffi_type*> arg_types;
+    for (auto a : args) {
+        auto arg_ty = FFIType(cast<ir::Value>(a)->type());
+        if (not arg_ty) return std::nullopt;
+        arg_types.push_back(arg_ty);
     }
 
-    auto vm = p.vm_ptr();
-    if (vm.is_null()) {
+    ffi_cif cif{};
+    ffi_status status{};
+    if (proc->type()->variadic()) {
+        status = ffi_prep_cif_var(
+            &cif,
+            FFI_DEFAULT_ABI,
+            unsigned(proc->args().size()),
+            unsigned(args.size()),
+            ret,
+            arg_types.data()
+        );
+    } else {
+        status = ffi_prep_cif(
+            &cif,
+            FFI_DEFAULT_ABI,
+            unsigned(args.size()),
+            ret,
+            arg_types.data()
+        );
+    }
+
+    if (status != 0) {
+        Error(entry, "Failed to prepare FFI call");
+        return std::nullopt;
+    }
+
+    // Prepare space for the return type.
+    SmallVector<std::byte, 64> ret_storage;
+    ret_storage.resize(proc->type()->ret()->size(vm.owner()).bytes());
+
+    // Store the arguments to memory.
+    SmallVector<void*> arg_values;
+    llvm::BumpPtrAllocator alloc;
+    for (auto a : args) {
+        auto& v = Val(a);
+        auto align = v.type()->align(vm.owner());
+        auto sz = v.type()->size(vm.owner());
+        auto mem = alloc.Allocate(sz.bytes(), align.value().bytes());
+        if (not StoreSRValue(mem, v)) return std::nullopt;
+        arg_values.push_back(mem);
+    }
+
+    // Obtain the procedure address.
+    auto [it, not_found] = vm.native_symbols.try_emplace(proc, nullptr);
+    if (not_found) {
+        auto sym = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(std::string{proc->name().sv()});
+        if (not sym) {
+            Error(entry, "Failed to find symbol for FFI call to '{}'", proc->name());
+            return std::nullopt;
+        }
+        it->second = sym;
+    }
+
+    // Perform the call.
+    ffi_call(
+        &cif,
+        reinterpret_cast<void (*)()>(it->second),
+        ret_storage.data(),
+        arg_values.data()
+    );
+
+    // Retrieve the return value.
+    return LoadSRValue(ret_storage.data(), proc->type()->ret());
+}
+
+auto Eval::FFIType(Type ty) -> ffi_type* {
+    switch (ty->kind()) {
+        case TypeBase::Kind::TemplateType:
+            Unreachable();
+
+        case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::SliceType:
+        case TypeBase::Kind::StructType:
+        case TypeBase::Kind::ProcType:
+            ICE(entry, "Cannot call native function with value of type '{}'", ty);
+            return nullptr;
+
+        case TypeBase::Kind::ReferenceType:
+            return &ffi_type_pointer;
+
+        case TypeBase::Kind::IntType:
+            switch (cast<IntType>(ty)->bit_width().bits()) {
+                case 8: return &ffi_type_sint8;
+                case 16: return &ffi_type_sint16;
+                case 32: return &ffi_type_sint32;
+                case 64: return &ffi_type_sint64;
+                default:
+                    ICE(entry, "Unsupported integer type in FFI call: {}", ty);
+                    return nullptr;
+            }
+
+        case TypeBase::Kind::BuiltinType:
+            switch (cast<BuiltinType>(ty)->builtin_kind()) {
+                case BuiltinKind::Deduced:
+                case BuiltinKind::Dependent:
+                case BuiltinKind::ErrorDependent:
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::UnresolvedOverloadSet:
+                    Unreachable();
+
+                case BuiltinKind::Void: return &ffi_type_void;
+                case BuiltinKind::Bool: return &ffi_type_uint8;
+                case BuiltinKind::Type: return &ffi_type_pointer;
+                case BuiltinKind::Int:
+                    Assert(ty->size(vm.owner()).bits() == 64); // TODO: Support non-64 bit platforms.
+                    return &ffi_type_sint64;
+            }
+
+            Unreachable();
+    }
+
+    Unreachable();
+}
+
+auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void* {
+    auto p = ptr.cast<Pointer>();
+
+    // This is the null pointer in some address space.
+    if (p.is_null_ptr()) {
         Error(entry, "Attempted to dereference 'nil'");
         return nullptr;
     }
 
-    if (vm.non_null_value() + accessible_size.bytes() >= stack.size()) {
-        Error(entry, "Out-of-bounds stack access");
-        return nullptr;
+    // This is a pointer to the stack.
+    if (p.is_stack_ptr()) {
+        if (p.value() + accessible_size.bytes() >= stack.size()) {
+            Error(entry, "Out-of-bounds memory access");
+            return nullptr;
+        }
+
+        return stack.data() + p.value();
     }
 
-    return stack.data() + vm.non_null_value();
+    // This is a readonly pointer to host memory.
+    if (p.is_host_ptr()) {
+        if (not readonly) {
+            Error(entry, "Attempted to write to readonly memory");
+            return nullptr;
+        }
+
+        auto host_ptr = host_memory.lookup(p, accessible_size);
+        if (not host_ptr) {
+            Error(entry, "Out-of-bounds or invalid memory read");
+            return nullptr;
+        }
+
+        // This is fine because we already checked that we’re only
+        // doing this for readonly access.
+        return const_cast<void*>(host_ptr);
+    }
+
+    ICE(entry, "Accessing heap memory isn’t supported yet");
+    return nullptr;
 }
 
 auto Eval::LoadSRValue(const SRValue& ptr) -> std::optional<SRValue> {
     auto ty = cast<ReferenceType>(ptr.type())->elem();
     auto sz = ty->size(vm.owner());
-    auto mem = GetMemoryPointer(ptr, sz);
+    auto mem = GetMemoryPointer(ptr, sz, true);
     if (not mem) return std::nullopt;
+    return LoadSRValue(mem, ty);
+}
+
+auto Eval::LoadSRValue(void* mem, Type ty) -> std::optional<SRValue> {
     ICE(entry, "TODO: Load SRValue of type {}", ty);
     return std::nullopt;
 }
@@ -389,9 +643,13 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
 bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
     auto ty = val.type();
     auto sz = ty->size(vm.owner());
-    auto mem = GetMemoryPointer(ptr, sz);
+    auto mem = GetMemoryPointer(ptr, sz, false);
     if (not mem) return false;
-    ICE(entry, "TODO: Store SRValue of type {}", ty);
+    return StoreSRValue(mem, val);
+}
+
+bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
+    ICE(entry, "TODO: Store SRValue of type {}", val.type());
     return false;
 }
 
@@ -416,7 +674,11 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
         case K::LargeInt: Todo();
         case K::Proc: Todo();
         case K::Slice: Todo();
-        case K::StringData: Todo();
+        case K::StringData: {
+            auto s = cast<ir::StringData>(v);
+            auto ptr = host_memory.create_map(s->value().data(), Size::Bytes(s->value().size()));
+            return Materialise(SRValue(ptr, v->type()));
+        }
 
         case K::Argument:
             return Temp(cast<ir::Argument>(v));

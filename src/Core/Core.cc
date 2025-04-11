@@ -7,6 +7,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Process.h>
@@ -47,6 +48,15 @@ Context::Context() {
         };
 
         llvm::cl::ParseCommandLineOptions(2, args, "", &llvm::errs(), nullptr);
+
+        // Load libc (as all LLVM functions, this returns false on success...).
+        static constexpr auto libc_path = "libc.so.6";
+        std::string err_msg;
+        Assert(
+            not llvm::sys::DynamicLibrary::LoadLibraryPermanently(libc_path, &err_msg),
+            "Failed to load libc: {}",
+            err_msg
+        );
     });
 }
 

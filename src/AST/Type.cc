@@ -260,7 +260,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
         }
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
-            return arr->elem()->array_size(tu) * arr->dimension();
+            return arr->elem()->array_size(tu) * u64(arr->dimension());
         }
 
         case Kind::TemplateType: Unreachable("Requested size of dependent type");

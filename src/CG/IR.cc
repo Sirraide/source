@@ -108,7 +108,7 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
 }
 
 auto Builder::CreateInt(APInt val, Type type) -> Value* {
-    if (type->size(tu) <= Size::Bits(64)) return CreateInt(i64(val.getZExtValue()), type);
+    if (type->size(tu) <= Size::Bits(64)) return CreateInt(val.getZExtValue(), type);
     auto m = std::unique_ptr<LargeInt>(new LargeInt(std::move(val), type));
     large_ints.push_back(std::move(m));
     return large_ints.back().get();
@@ -256,7 +256,7 @@ void Builder::CreateStore(Value* val, Value* ptr) {
 
 auto Builder::CreateString(String s) -> Slice* {
     auto data = new (*this) StringData(s, ReferenceType::Get(tu, tu.StrLitTy->elem()));
-    auto size = CreateInt(i64(s.size()), Types::IntTy);
+    auto size = CreateInt(s.size(), Types::IntTy);
     return new (*this) Slice(tu.StrLitTy, data, size);
 }
 
@@ -435,8 +435,10 @@ public:
     DenseMap<Inst*, i64> inst_ids;
     Proc* curr_proc{};
 
-    Printer(Builder& b);
+    Printer(TranslationUnit& tu) : tu{tu} {}
+    void Dump(Builder& b);
     void DumpInst(Inst* i);
+    void DumpProc(Proc* p);
     auto DumpValue(Value* b) -> SmallUnrenderedString;
     bool ReturnsValue(Inst* i);
 
@@ -448,52 +450,14 @@ public:
 }
 
 auto Builder::Dump() -> SmallUnrenderedString {
-    return std::move(Printer{*this}.out);
+    Printer p{tu};
+    p.Dump(*this);
+    return std::move(p.out);
 }
 
-Printer::Printer(Builder& b) : tu{b.tu} {
-    for (auto* proc : b.procedures()) {
-        curr_proc = proc;
-        if (not out.empty()) out += "\n";
-        out += proc->type()->print(proc->name(), true);
-
-        // Stop if there is no body.
-        if (proc->empty()) {
-            out += "%1(;)\n";
-            continue;
-        }
-
-        // Number all blocks and instructions.
-        i64 temp = 0;
-        arg_ids.clear();
-        block_ids.clear();
-        inst_ids.clear();
-
-        for (auto* arg : proc->args()) arg_ids[arg] = temp++;
-        for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
-            block_ids[b] = id;
-            for (auto* arg : b->arguments())
-                arg_ids[arg] = temp++;
-            for (auto* i : b->instructions())
-                if (ReturnsValue(i))
-                    inst_ids[i] = temp++;
-        }
-
-        // Print the procedure body.
-        out += " %1({)\n";
-        for (const auto& [i, b] : enumerate(proc->blocks())) {
-            out += i == 0 ? "%3(entry)%1(" : std::format("\n%3(bb{})%1(", i);
-            if (not b->arguments().empty()) {
-                out += std::format("({}\033)", utils::join_as(b->arguments(), [&](Argument* arg) {
-                    return std::format("{} %3(\033%{})", b->argument_types()[arg->index()], arg_ids.at(arg));
-                }));
-            }
-            out += ":)\n";
-            for (auto* inst : b->instructions())
-                DumpInst(inst);
-        }
-        out += "%1(})\n";
-    }
+void Printer::Dump(Builder& b) {
+    for (auto* proc : b.procedures())
+        DumpProc(proc);
 }
 
 void Printer::DumpInst(Inst* i) {
@@ -640,6 +604,49 @@ void Printer::DumpInst(Inst* i) {
     }
 }
 
+void Printer::DumpProc(Proc* proc) {
+    curr_proc = proc;
+    if (not out.empty()) out += "\n";
+    out += proc->type()->print(proc->name(), true);
+
+    // Stop if there is no body.
+    if (proc->empty()) {
+        out += "%1(;)\n";
+        return;
+    }
+
+    // Number all blocks and instructions.
+    i64 temp = 0;
+    arg_ids.clear();
+    block_ids.clear();
+    inst_ids.clear();
+
+    for (auto* arg : proc->args()) arg_ids[arg] = temp++;
+    for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
+        block_ids[b] = id;
+        for (auto* arg : b->arguments())
+            arg_ids[arg] = temp++;
+        for (auto* i : b->instructions())
+            if (ReturnsValue(i))
+                inst_ids[i] = temp++;
+    }
+
+    // Print the procedure body.
+    out += " %1({)\n";
+    for (const auto& [i, b] : enumerate(proc->blocks())) {
+        out += i == 0 ? "%3(entry)%1(" : std::format("\n%3(bb{})%1(", i);
+        if (not b->arguments().empty()) {
+            out += std::format("({}\033)", utils::join_as(b->arguments(), [&](Argument* arg) {
+                return std::format("{} %3(\033%{})", b->argument_types()[arg->index()], arg_ids.at(arg));
+            }));
+        }
+        out += ":)\n";
+        for (auto* inst : b->instructions())
+            DumpInst(inst);
+    }
+    out += "%1(})\n";
+}
+
 bool Printer::ReturnsValue(Inst* i) {
     return not i->result_types().empty();
 }
@@ -718,4 +725,10 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
         } break;
     }
     return out;
+}
+
+auto Proc::dump(TranslationUnit& tu) -> SmallUnrenderedString {
+    Printer p{tu};
+    p.DumpProc(this);
+    return std::move(p.out);
 }

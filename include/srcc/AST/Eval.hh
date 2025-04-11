@@ -29,129 +29,114 @@ class Eval;
 class SRValue;
 enum struct LifetimeState : u8;
 
-class PointerValue {
-    uptr data{};
-
-public:
-    PointerValue() = default;
-    PointerValue(usz stack_offs) : data(stack_offs + 1) {}
-
-    /// Create a stack pointer from a raw pointer.
-    static auto FromRawValue(uptr raw) -> PointerValue {
-        PointerValue sp{};
-        sp.data = raw;
-        return sp;
-    }
-
-    /// Get the encoded value.
-    [[nodiscard]] auto encoded() const -> uptr { return data; }
-
-    /// Check if this is the null pointer.
-    [[nodiscard]] bool is_null() const { return data == 0; }
-
-    /// Get the value provided it isn’t null.
-    [[nodiscard]] auto non_null_value() const {
-        Assert(not is_null());
-        return data - 1;
-    }
-};
-} // namespace srcc::eval
-
-template <>
-struct llvm::PointerLikeTypeTraits<srcc::eval::PointerValue> {
-    // We can shift the value over to free up some bits.
-    static constexpr int NumLowBitsAvailable = 4;
-
-    static void* getAsVoidPointer(srcc::eval::PointerValue p) {
-        return reinterpret_cast<void*>(p.encoded() << NumLowBitsAvailable);
-    }
-
-    static auto getFromVoidPointer(void* p) -> srcc::eval::PointerValue {
-        return srcc::eval::PointerValue{reinterpret_cast<srcc::uptr>(p) >> NumLowBitsAvailable};
-    }
-};
-
-namespace srcc::eval {
-/// Pointer to compile-time data.
-///
-/// This can be a stack/heap pointer (i.e. a PointerValue), which
-/// is an index into one of two big arrays of bytes, or an actual
-/// pointer to compiler-internal data (e.g. a string literal).
+/// Virtual pointer to compile-time data.
 ///
 /// We want to be able to pass numbers that behave like actual
 /// pointers (e.g. you can cast them to integers, add 1, cast
 /// them back, and then still dereference them); this means we
-/// can’t have any metadata in the actual pointer, so we instead
-/// store a list of valid memory ranges (for the heap and compiler
-/// data) in the evaluator. The stack pointer is just one contiguous
-/// array.
+/// can’t have any metadata in the actual pointer, so instead
+/// these ‘pointers’ are really virtual memory addresses that
+/// map to various internal buffers and data.
 class Pointer {
-    /// The int is only used to distinguish between stack and heap pointers.
-    using DataTy = llvm::PointerIntPair<llvm::PointerUnion<PointerValue, void*>, 1>;
-    DataTy data;
+public:
+    enum struct AddressSpace : u8 {
+        Stack,
+        Heap,
+        Host,
+    };
 
-    Pointer(PointerValue val, bool stack_pointer) : data{val, stack_pointer} {}
+private:
+    /// Pointer value.
+    uptr ptr : sizeof(void*) * 8 - 2 = 0;
+
+    /// Pointer address space.
+    uptr aspace : 2 = 0;
+
+    /// The actual numeric value that is stored is 1 + the actual
+    /// offset to make sure that the null pointer is never valid;
+    /// this also means that we need to subtract 1 when converting
+    /// to an integer or retrieving the actual pointer.
+    Pointer(uptr p, AddressSpace k) : ptr(p + 1), aspace(u8(k)) {}
 
 public:
     Pointer() = default;
-    Pointer(void* ptr) : data{ptr} {}
 
     /// Create a Pointer from its raw encoding.
     static auto FromRaw(uptr raw) -> Pointer {
-        Pointer p{};
-        p.data = DataTy::getFromOpaqueValue(reinterpret_cast<void*>(raw));
-        return p;
+        return std::bit_cast<Pointer>(raw);
     }
 
     /// Create a heap pointer.
-    static auto Heap(PointerValue p) -> Pointer { return {p, false}; }
+    static auto Heap(usz virtual_offs) -> Pointer {
+        return {virtual_offs, AddressSpace::Heap};
+    }
+
+    /// Return a pointer to host memory.
+    static auto Host(usz virtual_offs) -> Pointer {
+        return Pointer{virtual_offs, AddressSpace::Host};
+    }
 
     /// Create a stack pointer.
-    static auto Stack(PointerValue p) -> Pointer { return {p, true}; }
+    static auto Stack(usz stack_offs) -> Pointer {
+        return {stack_offs, AddressSpace::Stack};
+    }
+
+    /// Get the address space of this pointer.
+    [[nodiscard]] auto address_space() const -> AddressSpace {
+        return AddressSpace(aspace);
+    }
 
     /// Encode the pointer in a uintptr_t.
     [[nodiscard]] auto encode() const -> uptr {
-        return reinterpret_cast<uptr>(data.getOpaqueValue());
-    }
-
-    /// Whether this points to compiler-internal data.
-    [[nodiscard]] auto internal_ptr() const -> void* {
-        Assert(not is_vm_ptr());
-        return cast<void*>(data.getPointer());
+        return std::bit_cast<uptr>(*this);
     }
 
     /// Whether this is a heap pointer.
     [[nodiscard]] bool is_heap_ptr() const {
-        return is_vm_ptr() and not is_stack_ptr();
+        return address_space() == AddressSpace::Heap;
+    }
+
+    /// Whether this points to the VM stack or heap.
+    [[nodiscard]] bool is_host_ptr() const {
+        return address_space() == AddressSpace::Host;
+    }
+
+    /// Whether this is the null pointer.
+    [[nodiscard]] bool is_null_ptr() const {
+        return ptr == 0;
     }
 
     /// Whether this is a stack pointer.
     [[nodiscard]] bool is_stack_ptr() const {
-        return is_vm_ptr() and bool(data.getInt());
+        return address_space() == AddressSpace::Stack;
     }
 
-    /// Whether this points to the VM stack or heap.
-    [[nodiscard]] bool is_vm_ptr() const {
-        return isa<PointerValue>(data.getPointer());
-    }
-
-    /// Get the VM pointer value.
-    [[nodiscard]] auto vm_ptr() const -> PointerValue {
-        Assert(is_vm_ptr());
-        return cast<PointerValue>(data.getPointer());
+    /// Get the actual pointer value.
+    [[nodiscard]] auto value() const -> usz {
+        return ptr - 1;
     }
 
     /// Offset this pointer by an integer.
     [[nodiscard]] auto operator+(usz offs) const -> Pointer {
         Pointer p{*this};
-        if (is_vm_ptr()) p.data.setPointer(PointerValue::FromRawValue(vm_ptr().encoded() + offs));
-        else p.data.setPointer(static_cast<char*>(internal_ptr()) + offs);
+        p.ptr += offs;
         return p;
+    }
+
+    /// Compute the difference between two pointers.
+    [[nodiscard]] auto operator-(Pointer other) const -> usz {
+        return ptr - other.ptr;
+    }
+
+    /// Compare two pointers in the same address space.
+    [[nodiscard]] auto operator<=>(const Pointer& other) const {
+        Assert(address_space() == other.address_space());
+        return ptr <=> other.ptr;
     }
 
     /// Check if two pointers are the same.
     [[nodiscard]] auto operator==(const Pointer& other) const -> bool {
-        return data.getOpaqueValue() == other.data.getOpaqueValue();
+        return encode() == other.encode();
     }
 };
 
@@ -164,6 +149,9 @@ class VM {
 
     /// The tu that this vm belongs to.
     TranslationUnit& owner_tu;
+
+    /// Symbol table for native procedures.
+    DenseMap<cg::ir::Proc*, void*> native_symbols;
 
 public:
     explicit VM(TranslationUnit& owner_tu);
