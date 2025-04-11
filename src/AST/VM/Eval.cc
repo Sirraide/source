@@ -97,6 +97,7 @@ class HostMemoryMap {
         /// Create a new mapping.
         Mapping(Pointer vptr, const void* host_ptr, Size size)
             : vptr(vptr), host_ptr(host_ptr), size(size) {
+            Assert(size.bytes() != 0);
             Assert(vptr.is_host_ptr());
         }
 
@@ -588,9 +589,9 @@ bool Eval::FFIStoreArg(void* ptr, const SRValue& val) {
     //
     // We also have no idea how the function we’re calling is going to
     // use the pointer we hand it, so just be permissive with the access
-    // mode (i.e. pretend we require 0 bytes and that it’s readonly).
+    // mode (i.e. pretend we require 1 byte and that it’s readonly).
     if (val.isa<Pointer>()) {
-        auto native = GetMemoryPointer(val, Size{}, true);
+        auto native = GetMemoryPointer(val, Size::Bytes(1), true);
         if (not native) return false;
         std::memcpy(ptr, &native, sizeof(native));
         return true;
@@ -602,6 +603,15 @@ bool Eval::FFIStoreArg(void* ptr, const SRValue& val) {
 
 auto Eval::GetMemoryPointer(const SRValue& ptr, Size accessible_size, bool readonly) -> void* {
     auto p = ptr.cast<Pointer>();
+
+    // Requesting 0 bytes is problematic because that might cause us
+    // to recognise a pointer as part of the wrong memory region if
+    // 2 regions are directly adjacent. Accesses that don’t know how
+    // many bytes they’re going to access must request at least 1 byte.
+    //
+    // Zero-sized types and accesses should have been eliminated entirely
+    // during codegen; we’re not equipped to deal with them here.
+    Assert(accessible_size.bytes() != 0, "Must request at least 1 byte");
 
     // This is the null pointer in some address space.
     if (p.is_null_ptr()) {
