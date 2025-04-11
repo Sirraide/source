@@ -331,7 +331,9 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
 
             // Call the function.
             // TODO: C calling convention.
-            return CreateCall(callee, llvm_args);
+            auto c =  CreateCall(callee, llvm_args);
+            c->setCallingConv(ConvertCC(cast<ProcType>(proc->type())->cconv()));
+            return c;
         }
 
         case Op::Load: {
@@ -361,7 +363,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         case Op::SSubOv: return CreateBinaryIntrinsic(intrin::ssub_with_overflow, Emit(i[0]), Emit(i[1]));
 
         // Basic instructions.
-        case Op::Add: return CreateAdd(Emit(i[0]), Emit(i[1]));
+        case Op::Add: return CreateAdd(Emit(i[0]), Emit(i[1]), "", not cg.lang_opts.overflow_checking, not cg.lang_opts.overflow_checking);
         case Op::And: return CreateAnd(Emit(i[0]), Emit(i[1]));
         case Op::AShr: return CreateAShr(Emit(i[0]), Emit(i[1]));
         case Op::ICmpEq: return CreateICmpEQ(Emit(i[0]), Emit(i[1]));
@@ -374,16 +376,16 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         case Op::ICmpUGt: return CreateICmpUGT(Emit(i[0]), Emit(i[1]));
         case Op::ICmpULe: return CreateICmpULE(Emit(i[0]), Emit(i[1]));
         case Op::ICmpULt: return CreateICmpULT(Emit(i[0]), Emit(i[1]));
-        case Op::IMul: return CreateMul(Emit(i[0]), Emit(i[1]));
+        case Op::IMul: return CreateMul(Emit(i[0]), Emit(i[1]), "", not cg.lang_opts.overflow_checking, not cg.lang_opts.overflow_checking);
         case Op::LShr: return CreateLShr(Emit(i[0]), Emit(i[1]));
         case Op::Or: return CreateOr(Emit(i[0]), Emit(i[1]));
-        case Op::PtrAdd: return CreatePtrAdd(Emit(i[0]), Emit(i[1]));
+        case Op::PtrAdd: return CreatePtrAdd(Emit(i[0]), Emit(i[1]), "", i.inbounds);
         case Op::Ret: return CreateRet(i.args().empty() ? nullptr : Emit(i[0]));
         case Op::SDiv: return CreateSDiv(Emit(i[0]), Emit(i[1]));
         case Op::Select: return CreateSelect(Emit(i[0]), Emit(i[1]), Emit(i[2]));
-        case Op::Shl: return CreateShl(Emit(i[0]), Emit(i[1]));
+        case Op::Shl: return CreateShl(Emit(i[0]), Emit(i[1]), "", not cg.lang_opts.overflow_checking, not cg.lang_opts.overflow_checking);
         case Op::SRem: return CreateSRem(Emit(i[0]), Emit(i[1]));
-        case Op::Sub: return CreateSub(Emit(i[0]), Emit(i[1]));
+        case Op::Sub: return CreateSub(Emit(i[0]), Emit(i[1]), "", not cg.lang_opts.overflow_checking, not cg.lang_opts.overflow_checking);
         case Op::UDiv: return CreateUDiv(Emit(i[0]), Emit(i[1]));
         case Op::Unreachable: return CreateUnreachable();
         case Op::URem: return CreateURem(Emit(i[0]), Emit(i[1]));

@@ -14,17 +14,17 @@ __srcc_print(caller(foo), "\n");
 // +   ret void
 // + }
 
-// * define private fastcc i64 @_S3fooFiE() {
-// + entry:
-// +   ret i64 42
-// + }
-
 // * define private fastcc i64 @_S6callerFiFiEE({ ptr, ptr } %0) {
 // + entry:
 // +   %1 = alloca { ptr, ptr }, align 8
 // +   store { ptr, ptr } %0, ptr %1, align 8
-// +   %l2sr = load { ptr, ptr }, ptr %1, align 8
-// +   %2 = extractvalue { ptr, ptr } %l2sr, 0
-// +   %3 = call fastcc i64 %2()
-// +   ret i64 %3
+// +   %2 = load { ptr, ptr }, ptr %1, align 8
+// +   %3 = extractvalue { ptr, ptr } %2, 0
+// +   %4 = call fastcc i64 %3()
+// +   ret i64 %4
+// + }
+
+// * define private fastcc i64 @_S3fooFiE() {
+// + entry:
+// +   ret i64 42
 // + }

@@ -53,7 +53,7 @@ proc exp (in int a, in int b) {
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// re+   abort at .* __src_int_arith_error(s"+", s"integer overflow")
+// re+   abort at .* __src_int_arith_error(s"\+", s"integer overflow")
 // +
 // + bb2:
 // +     call void _S4sinkFvxiE(%2:0)
@@ -69,7 +69,7 @@ proc exp (in int a, in int b) {
 // +     br %4:1 to bb5 else bb6
 // +
 // + bb5:
-// re+   abort at .* __src_int_arith_error(s"*", s"integer overflow")
+// re+   abort at .* __src_int_arith_error(s"\*", s"integer overflow")
 // +
 // + bb6:
 // +     call void _S4sinkFvxiE(%4:0)

@@ -23,86 +23,86 @@ x(2, 1, false);
 // +   store i64 %0, ptr %3, align 8
 // +   store i64 %1, ptr %4, align 8
 // +   store i1 %2, ptr %5, align 1
-// +   %l2sr = load i1, ptr %5, align 1
-// +   br i1 %l2sr, label %6, label %8
+// +   %6 = load i1, ptr %5, align 1
+// +   br i1 %6, label %bb1, label %bb2
 // +
-// + 6:
+// + bb1:
 // +   %7 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
-// +   br label %10
+// +   br label %bb3
 // +
-// + 8:
-// +   %9 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
-// +   br label %10
+// + bb2:
+// +   %8 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
+// +   br label %bb3
 // +
-// + 10:
-// +   %l2sr1 = load i1, ptr %5, align 1
-// +   br i1 %l2sr1, label %11, label %12
+// + bb3:
+// +   %9 = load i1, ptr %5, align 1
+// +   br i1 %9, label %bb4, label %bb5
 // +
-// + 11:
-// +   br label %13
+// + bb4:
+// +   br label %bb6
 // +
-// + 12:
-// +   br label %13
+// + bb5:
+// +   br label %bb6
 // +
-// + 13:
-// +   %14 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %11 ], [ { ptr @2, i64 10 }, %12 ]
-// +   %15 = extractvalue { ptr, i64 } %14, 0
-// +   %16 = extractvalue { ptr, i64 } %14, 1
-// +   %17 = trunc i64 %16 to i32
-// +   %18 = call i32 (ptr, ...) @printf(ptr @0, i32 %17, ptr %15)
-// +   %l2sr2 = load i1, ptr %5, align 1
-// +   br i1 %l2sr2, label %19, label %20
+// + bb6:
+// +   %10 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %bb4 ], [ { ptr @2, i64 10 }, %bb5 ]
+// +   %11 = extractvalue { ptr, i64 } %10, 1
+// +   %12 = trunc i64 %11 to i32
+// +   %13 = extractvalue { ptr, i64 } %10, 0
+// +   %14 = call i32 (ptr, ...) @printf(ptr @0, i32 %12, ptr %13)
+// +   %15 = load i1, ptr %5, align 1
+// +   br i1 %15, label %bb7, label %bb8
 // +
-// + 19:
-// +   br label %21
+// + bb7:
+// +   br label %bb9
 // +
-// + 20:
-// +   br label %21
+// + bb8:
+// +   br label %bb9
 // +
-// + 21:
-// +   %22 = phi ptr [ %5, %19 ], [ %5, %20 ]
-// +   %l2sr3 = load i64, ptr %3, align 8
-// +   %l2sr4 = load i64, ptr %4, align 8
-// +   %slt = icmp slt i64 %l2sr3, %l2sr4
-// +   br i1 %slt, label %23, label %24
+// + bb9:
+// +   %16 = phi ptr [ %5, %bb7 ], [ %5, %bb8 ]
+// +   %17 = load i64, ptr %3, align 8
+// +   %18 = load i64, ptr %4, align 8
+// +   %19 = icmp slt i64 %17, %18
+// +   br i1 %19, label %bb10, label %bb11
 // +
-// + 23:
-// +   br label %25
+// + bb10:
+// +   br label %bb12
 // +
-// + 24:
-// +   br label %25
+// + bb11:
+// +   br label %bb12
 // +
-// + 25:
-// +   %26 = phi i1 [ false, %23 ], [ true, %24 ]
-// +   store i1 %26, ptr %22, align 1
-// +   %l2sr5 = load i1, ptr %5, align 1
-// +   br i1 %l2sr5, label %27, label %29
+// + bb12:
+// +   %20 = phi i1 [ false, %bb10 ], [ true, %bb11 ]
+// +   store i1 %20, ptr %16, align 1
+// +   %21 = load i1, ptr %5, align 1
+// +   br i1 %21, label %bb13, label %bb14
 // +
-// + 27:
-// +   %28 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
-// +   br label %31
+// + bb13:
+// +   %22 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
+// +   br label %bb15
 // +
-// + 29:
-// +   %30 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
-// +   br label %31
+// + bb14:
+// +   %23 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
+// +   br label %bb15
 // +
-// + 31:
-// +   %l2sr6 = load i1, ptr %5, align 1
-// +   br i1 %l2sr6, label %32, label %33
+// + bb15:
+// +   %24 = load i1, ptr %5, align 1
+// +   br i1 %24, label %bb16, label %bb17
 // +
-// + 32:
-// +   br label %34
+// + bb16:
+// +   br label %bb18
 // +
-// + 33:
-// +   br label %34
+// + bb17:
+// +   br label %bb18
 // +
-// + 34:
-// +   %35 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %32 ], [ { ptr @2, i64 10 }, %33 ]
-// +   %36 = extractvalue { ptr, i64 } %35, 0
-// +   %37 = extractvalue { ptr, i64 } %35, 1
-// +   %38 = trunc i64 %37 to i32
-// +   %39 = call i32 (ptr, ...) @printf(ptr @0, i32 %38, ptr %36)
-// +   %40 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @3)
+// + bb18:
+// +   %25 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %bb16 ], [ { ptr @2, i64 10 }, %bb17 ]
+// +   %26 = extractvalue { ptr, i64 } %25, 1
+// +   %27 = trunc i64 %26 to i32
+// +   %28 = extractvalue { ptr, i64 } %25, 0
+// +   %29 = call i32 (ptr, ...) @printf(ptr @0, i32 %27, ptr %28)
+// +   %30 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @3)
 // +   ret void
 // + }
 proc x(int a, int b, bool d) {

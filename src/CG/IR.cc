@@ -29,7 +29,7 @@ auto Builder::Create(Op op, ArrayRef<Value*> vals) -> Inst* {
     return CreateImpl<Inst>(op, vals);
 }
 
-auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> Value* {
+auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValue* {
     return new (*this) InstValue(Create(op, vals), ty, 0);
 }
 
@@ -39,7 +39,7 @@ void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* 
 
 auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
     auto add = CreateAndGetVal(Op::Add, a->type(), {a, b});
-    add->nowrap = nowrap;
+    add->inst()->nowrap = nowrap;
     return add;
 }
 
@@ -128,7 +128,7 @@ auto Builder::CreateInvalidLocalReference(LocalRefExpr* ref) -> Value* {
 
 auto Builder::CreateIMul(Value* a, Value* b, bool nowrap) -> Value* {
     auto i = CreateAndGetVal(Op::IMul, a->type(), {a, b});
-    i->nowrap = nowrap;
+    i->inst()->nowrap = nowrap;
     return i;
 }
 
@@ -199,7 +199,7 @@ auto Builder::CreatePoison(Type ty) -> Value* {
 auto Builder::CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value* {
     Assert(isa<ReferenceType>(ptr->type()), "First argument to ptradd must be a pointer");
     auto i = CreateAndGetVal(Op::PtrAdd, ptr->type(), {ptr, offs});
-    i->inbounds = inbounds;
+    i->inst()->inbounds = inbounds;
     return i;
 }
 
@@ -229,7 +229,7 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
     auto to = to_type->size(tu).bits();
     if (from == to) return i;
     if (from > to) return CreateSpecialGetVal<ICast>(to_type, Op::Trunc, to_type, i);
-    return CreateSpecialGetVal<ICast>(to_type, Op::ZExt, to_type, i);
+    return CreateSpecialGetVal<ICast>(to_type, Op::SExt, to_type, i);
 }
 
 auto Builder::CreateSlice(Value* data, Value* size) -> Slice* {
@@ -262,7 +262,7 @@ auto Builder::CreateString(String s) -> Slice* {
 
 auto Builder::CreateSub(Value* a, Value* b, bool nowrap) -> Value* {
     auto i = CreateAndGetVal(Op::Sub, a->type(), {a, b});
-    i->nowrap = nowrap;
+    i->inst()->nowrap = nowrap;
     return i;
 }
 
@@ -716,7 +716,7 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
 
         case Value::Kind::SmallInt: {
             auto s = cast<SmallInt>(v);
-            out += std::format("{} %5({})", v->type(), s->value());
+            out += std::format("{} %5({})", v->type(), i64(s->value()));
         } break;
 
         case Value::Kind::StringData: {

@@ -90,13 +90,6 @@ public:
 
 private:
     Kind k;
-
-public:
-    // Not all of these are meaningful for every value.
-    bool nowrap : 1 = false;
-    bool inbounds : 1 = false;
-
-private:
     Type ty;
 
 protected:
@@ -229,6 +222,10 @@ protected:
     Inst(Builder& b, Op op, ArrayRef<Value*> args);
 
 public:
+    // Not all of these are meaningful for every instruction.
+    bool nowrap : 1 = false;
+    bool inbounds : 1 = false;
+
     void dump(TranslationUnit& tu);
     [[nodiscard]] auto args() const -> ArrayRef<Value*> { return arguments; }
     [[nodiscard]] bool has_multiple_results() const;
@@ -455,10 +452,12 @@ public:
 
 private:
     llvm::MapVector<StringRef, std::unique_ptr<Proc>> procs;
-    DenseMap<u64, SmallInt*> small_ints;
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Types::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Types::BoolTy};
+
+    // Can’t use DenseMap because -1 is a valid value...
+    std::unordered_map<u64, SmallInt*> small_ints;
 
 public:
     Block* insert_point = nullptr;
@@ -536,7 +535,7 @@ private:
     auto CreateSpecialGetVal(Type val_ty, Args&&... args) -> Value*;
 
     auto Create(Op op, ArrayRef<Value*> vals) -> Inst*;
-    auto CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> Value*;
+    auto CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValue*;
     auto Result(Inst* i, Type ty, u32 idx) -> InstValue*;
 };
 }
