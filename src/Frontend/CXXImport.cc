@@ -77,7 +77,7 @@ auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
 
     if (auto n = dyn_cast<clang::NamedDecl>(D)) {
         S.Error(
-            ImportSourceLocation(D->getBeginLoc()),
+            ImportSourceLocation(n->getLocation()),
             "Importing declaration of '{}' from C++ is not supported",
             n->getQualifiedNameAsString()
         );
@@ -109,21 +109,11 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     if (D->getOwningModule()) return {};
 
     // Do not import language builtins.
-    //
-    // Note: Clang treats C standard library functions (e.g. 'puts') as
-    // builtins as well, but those count as ‘library builtins’.
-    switch (clang::Builtin::ID(D->getBuiltinID())) {
-        // Ignore everything we don’t know what to do with.
-        default:
+    if (auto ID = D->getBuiltinID()) {
+        // Note: Clang treats C standard library functions (e.g. 'puts') as
+        // builtins as well, but those count as ‘library builtins’.
+        if (not AST.getASTContext().BuiltinInfo.isPredefinedLibFunction(ID))
             return {};
-
-            // Import library builtins only.
-#define BUILTIN(ID, ...)
-#define LIBBUILTIN(ID, ...) case clang::Builtin::BI##ID:
-#include "clang/Basic/Builtins.inc"
-
-        case clang::Builtin::NotBuiltin:
-            break;
     }
 
     // Import the type.

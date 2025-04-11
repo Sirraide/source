@@ -334,20 +334,16 @@ bool Eval::EvalLoop() {
 
                 // Compile the procedure now if we haven’t done that yet.
                 if (callee->empty()) {
-                    // This is an external procedure declared by the compiler.
-                    if (not callee->decl()) {
+                    // This is an external procedure.
+                    if (not callee->decl() or callee->decl()->is_imported()) {
                         auto res = FFICall(callee, args);
                         if (not res) return false;
                         Temp(i) = std::move(res.value());
                         break;
                     }
 
-                    // This is a function declared in this program.
-                    if (not callee->decl()->body()) return ICE(
-                        entry,
-                        "Calling external procedures at compile time is not supported yet"
-                    );
-
+                    // This is not imported, so it must have a body.
+                    Assert(callee->decl() and callee->decl()->body());
                     cg.emit(callee->decl());
                 }
 

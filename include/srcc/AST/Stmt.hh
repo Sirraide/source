@@ -836,6 +836,10 @@ protected:
         type{type} {}
 
 public:
+    [[nodiscard]] bool is_imported() const {
+        return linkage == Linkage::Imported or linkage == Linkage::Reexported;
+    }
+
     static bool classof(const Stmt* e) { return e->kind() >= Kind::ProcDecl; }
 };
 
