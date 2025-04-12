@@ -220,9 +220,6 @@ public:
     /// Create a the 'empty' or 'nil' value of a given type.
     static auto Empty(TranslationUnit& tu, Type ty) -> SRValue;
 
-    /// Check if two values hold the same value.
-    bool operator==(const SRValue& other) const = default;
-
     /// cast<>() the contained value.
     template <typename Ty>
     auto cast() -> Ty& { return std::get<Ty>(value); }
@@ -242,6 +239,9 @@ public:
 
     /// Check if the value is empty, aka 'nil', aka '()'.
     auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
+
+    /// Get the index of the contained value.
+    auto index() const -> usz { return value.index(); }
 
     /// isa<>() on the contained value.
     template <typename Ty>

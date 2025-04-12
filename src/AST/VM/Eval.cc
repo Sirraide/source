@@ -260,6 +260,7 @@ private:
 
     auto AdjustLangOpts(LangOpts l) -> LangOpts;
     void BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
+    auto Eq(const SRValue& a, const SRValue& b) -> std::optional<bool>;
     bool EvalLoop();
     auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
     auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
@@ -307,6 +308,25 @@ void Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
     // Now, copy in the values.
     for (auto [slot, arg] : zip(block->arguments(), copy))
         Temp(slot) = std::move(arg);
+}
+
+auto Eval::Eq(const SRValue& a, const SRValue& b) -> std::optional<bool> {
+    if (a.index() != b.index()) return false;
+
+    // If this is not a slice, simply delegate to operator==.
+    auto s1 = a.dyn_cast<SRSlice>();
+    if (not s1) return a.visit([&]<typename T>(const T& t) { return t == b.cast<T>(); });
+
+    // Otherwise, check if they’re the same size.
+    auto s2 = &b.cast<SRSlice>();
+    if (s1->size != s2->size) return false;
+
+    // If so, get the memory pointers and compare them.
+    auto sz = Size::Bytes(s1->size.getZExtValue());
+    auto m1 = GetMemoryPointer(s1->data, sz, true);
+    auto m2 = GetMemoryPointer(s2->data, sz, true);
+    if (not m1 or not m2) return std::nullopt;
+    return std::memcmp(m1, m2, sz.bytes()) == 0;
 }
 
 bool Eval::EvalLoop() {
@@ -484,8 +504,15 @@ bool Eval::EvalLoop() {
             case ir::Op::ZExt: CastOp(cast<ir::ICast>(i), &APInt::zext); break;
 
             // Equality comparison operators. These are supported for ALL types.
-            case ir::Op::ICmpEq: Temp(i) = SRValue(Val(i->args()[0]) == Val(i->args()[1])); break;
-            case ir::Op::ICmpNe: Temp(i) = SRValue(Val(i->args()[0]) != Val(i->args()[1])); break;
+            case ir::Op::ICmpEq:
+                if (auto v = Eq(Val(i->args()[0]), Val(i->args()[1]))) Temp(i) = SRValue(v.value());
+                else return false;
+                break;
+
+            case ir::Op::ICmpNe:
+                if (auto v = Eq(Val(i->args()[0]), Val(i->args()[1]))) Temp(i) = SRValue(not v.value());
+                else return false;
+                break;
 
             // Comparison operations.
             case ir::Op::ICmpSGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sge(rhs); }); break;
