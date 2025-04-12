@@ -254,7 +254,7 @@ proc exp (in int a, in int b) {
 // +     br bb13(%0, %1)
 // +
 // + bb13(int %12, int %13):
-// +     %14 = icmp eq %13, int 0
+// +     %14 = icmp eq %13, int 1
 // +     br %14 to bb14 else bb15
 // +
 // + bb14:

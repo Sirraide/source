@@ -88,6 +88,7 @@ auto Builder::CreateCall(Value* callee, ArrayRef<Value*> args) -> Value* {
 }
 
 void Builder::CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) {
+    Assert(cond->type() == Types::BoolTy, "Branch condition must be a bool");
     CreateImpl<BranchInst>(cond, then_block, else_block);
 }
 

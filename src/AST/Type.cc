@@ -120,7 +120,7 @@ bool TypeBase::can_init_from_no_args() const {
 }
 
 void TypeBase::dump(bool use_colour) const {
-    std::print("{}", text::RenderColours(use_colour, print().str()));
+    std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
 bool TypeBase::is_integer() const {

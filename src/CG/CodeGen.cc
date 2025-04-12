@@ -130,7 +130,7 @@ auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
     Loop({lhs, rhs}, [&] -> SmallVector<Value*> {
         auto val = insert_point->arg(0);
         auto exp = insert_point->arg(1);
-        If(CreateICmpEq(exp, zero), [&] { CreateReturn(val); });
+        If(CreateICmpEq(exp, one), [&] { CreateReturn(val); });
 
         // Computation (and overflow check).
         auto new_val = EmitArithmeticOrComparisonOperator(Tk::Star, val, lhs, Location());

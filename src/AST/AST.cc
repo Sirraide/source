@@ -270,7 +270,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::ConstExpr: {
             auto c = cast<ConstExpr>(e);
-            PrintBasicNode(e, "ConstExpr", [&] { c->value->dump(use_colour()); });
+            PrintBasicNode(e, "ConstExpr", [&] { print("{}", c->value->print()); });
             if (c->stmt) PrintChildren(c->stmt.get());
         } break;
 

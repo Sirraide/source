@@ -26,13 +26,53 @@ SRValue::SRValue(ir::Proc* proc)
     : value(proc),
       ty(proc->type()) {}
 
+auto SRValue::Empty(Type ty) -> SRValue {
+    switch (ty->kind()) {
+        case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::StructType:
+        case TypeBase::Kind::TemplateType:
+            Unreachable("Not an SRValue");
+
+        case TypeBase::Kind::ProcType:
+            Todo();
+
+        case TypeBase::Kind::SliceType:
+            return SRValue(SRSlice(), ty);
+
+        case TypeBase::Kind::ReferenceType:
+            return SRValue(Pointer(), ty);
+
+        case TypeBase::Kind::IntType:
+            return SRValue(APInt::getZero(u32(::cast<IntType>(ty)->bit_width().bits())), ty);
+
+        case TypeBase::Kind::BuiltinType:
+            switch (::cast<BuiltinType>(ty)->builtin_kind()) {
+                case BuiltinKind::NoReturn:
+                case BuiltinKind::UnresolvedOverloadSet:
+                case BuiltinKind::ErrorDependent:
+                case BuiltinKind::Deduced:
+                case BuiltinKind::Dependent:
+                    Unreachable();
+
+                case BuiltinKind::Bool: return SRValue(false);
+                case BuiltinKind::Int: return SRValue(APInt::getZero(64), ty); // FIXME: Get size from context.
+                case BuiltinKind::Void: return SRValue();
+                case BuiltinKind::Type: return SRValue(Types::VoidTy);
+            }
+
+            Unreachable();
+    }
+
+    Unreachable();
+}
+
 void SRValue::dump(bool use_colour) const {
-    std::print("{}", text::RenderColours(use_colour, print().str()));
+    std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
 auto SRValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
-    utils::Overloaded V{
+    utils::Overloaded V{// clang-format off
         [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
         [&](ir::Proc* proc) { out += std::format("%2({}%)", proc->name()); },
@@ -40,13 +80,13 @@ auto SRValue::print() const -> SmallUnrenderedString {
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
         [&](this auto& self, const SRSlice& slice) {
-        out += "%1((";
-        self(slice.data);
-        out += ", ";
-        self(slice.size);
-        out += ")%)";
-    }
-    };
+            out += "%1((";
+            self(slice.data);
+            out += ", ";
+            self(slice.size);
+            out += ")%)";
+        }
+    }; // clang-format on
 
     visit(V);
     return out;
@@ -246,8 +286,22 @@ auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
 
 void Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
     call_stack.back().ip = block->instructions().begin();
-    for (auto [slot, arg] : zip(block->arguments(), args))
-        Temp(slot) = Val(arg);
+
+    // Copy out the argument values our of their slots in case we’re doing
+    // something horrible like
+    //
+    //   bb1(int %1, int %2):
+    //     ...
+    //   br bb1(%2, %1)
+    //
+    // in which case simply assigning %2 to %1 would override the old value
+    // of the latter before it can be used.
+    SmallVector<SRValue, 6> copy;
+    for (auto arg : args) copy.push_back(Val(arg));
+
+    // Now, copy in the values.
+    for (auto [slot, arg] : zip(block->arguments(), copy))
+        Temp(slot) = std::move(arg);
 }
 
 bool Eval::EvalLoop() {
@@ -270,6 +324,13 @@ bool Eval::EvalLoop() {
         auto& rhs = Val(i->args()[1]);
         auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
         Temp(i) = SRValue{std::move(result), lhs.type()};
+    };
+
+    auto IntOrBoolOp = [&](ir::Inst* i, auto op) {
+        auto& lhs = Val(i->args()[0]);
+        auto& rhs = Val(i->args()[1]);
+        if (lhs.isa<bool>()) Temp(i) = SRValue{bool(op(lhs.cast<bool>(), rhs.cast<bool>()))};
+        else Temp(i) = SRValue{op(lhs.cast<APInt>(), rhs.cast<APInt>()), lhs.type()};
     };
 
     auto OvOp = [&](ir::Inst* i, APInt (APInt::*op)(const APInt& RHS, bool& Overflow) const) {
@@ -410,9 +471,11 @@ bool Eval::EvalLoop() {
             case ir::Op::Trunc: CastOp(cast<ir::ICast>(i), &APInt::trunc); break;
             case ir::Op::ZExt: CastOp(cast<ir::ICast>(i), &APInt::zext); break;
 
+            // Equality comparison operators. These are supported for ALL types.
+            case ir::Op::ICmpEq: Temp(i) = SRValue(Val(i->args()[0]) == Val(i->args()[1])); break;
+            case ir::Op::ICmpNe: Temp(i) = SRValue(Val(i->args()[0]) != Val(i->args()[1])); break;
+
             // Comparison operations.
-            case ir::Op::ICmpEq: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs == rhs; }); break;
-            case ir::Op::ICmpNe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs != rhs; }); break;
             case ir::Op::ICmpSGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sge(rhs); }); break;
             case ir::Op::ICmpSGt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sgt(rhs); }); break;
             case ir::Op::ICmpSLe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sle(rhs); }); break;
@@ -422,20 +485,22 @@ bool Eval::EvalLoop() {
             case ir::Op::ICmpULe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ule(rhs); }); break;
             case ir::Op::ICmpULt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ult(rhs); }); break;
 
-            // Arithmetic and logical operations.
+            // Logical operations.
+            case ir::Op::And: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs & rhs; }); break;
+            case ir::Op::Or: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs | rhs; }); break;
+            case ir::Op::Xor: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs ^ rhs; }); break;
+
+            // Arithmetic operations.
             case ir::Op::Add: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs + rhs; }); break;
-            case ir::Op::And: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs & rhs; }); break;
             case ir::Op::AShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ashr(rhs); }); break;
             case ir::Op::IMul: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs * rhs; }); break;
             case ir::Op::LShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.lshr(rhs); }); break;
-            case ir::Op::Or: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs | rhs; }); break;
             case ir::Op::SDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sdiv(rhs); }); break;
             case ir::Op::Shl: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.shl(rhs); }); break;
             case ir::Op::SRem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.srem(rhs); }); break;
             case ir::Op::Sub: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs - rhs; }); break;
             case ir::Op::UDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.udiv(rhs); }); break;
             case ir::Op::URem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.urem(rhs); }); break;
-            case ir::Op::Xor: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs ^ rhs; }); break;
 
             // Checked arithmetic operations.
             case ir::Op::SAddOv: OvOp(i, &APInt::sadd_ov); break;
@@ -651,6 +716,7 @@ auto Eval::GetStringData(const SRValue& val) -> std::string {
     // Suppress memory errors if the pointer is invalid.
     tempset complain = false;
     auto sz = Size::Bytes(sl->size.getZExtValue());
+    if (sz.bytes() == 0) return "";
     auto mem = GetMemoryPointer(sl->data, sz, true);
     if (not mem) return "<invalid>";
 
@@ -832,7 +898,7 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
                 case ir::BuiltinConstantKind::True: return true_val;
                 case ir::BuiltinConstantKind::False: return false_val;
                 case ir::BuiltinConstantKind::Poison: Unreachable("Should not exist in checked mode");
-                case ir::BuiltinConstantKind::Nil: return Materialise(SRValue(std::monostate{}, v->type()));
+                case ir::BuiltinConstantKind::Nil: return Materialise(SRValue::Empty(v->type()));
             }
             Unreachable();
         }
