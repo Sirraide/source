@@ -118,14 +118,13 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     }
 }
 
-bool Sema::IntegerLiteralFitsInType(IntLitExpr* i, Type ty) {
+bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
     if (not ty->is_integer()) return false;
     auto to_bits //
         = ty == Types::IntTy
             ? Types::IntTy->size(*M)
             : cast<IntType>(ty)->bit_width();
-
-    return Size::Bits(i->storage.value().getActiveBits()) <= to_bits;
+    return Size::Bits(i.getSignificantBits()) <= to_bits;
 }
 
 auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult {
@@ -654,17 +653,25 @@ bool Sema::BuildInitialiser(
 
         // For integers, we can use the common type rule.
         case TypeBase::Kind::IntType: {
-            // If the rhs is an integer literal that fits in the type of
-            // the lhs, convert it. If it doesn’t fit, the type must be
-            // larger, so give up.
-            if (auto lit = dyn_cast<IntLitExpr>(a->strip_parens())) {
-                if (IntegerLiteralFitsInType(lit, var_type)) {
+            // If this is a (possibly parenthesised and negated) integer
+            // that fits in the type of the lhs, convert it. If it doesn’t
+            // fit, the type must be larger, so give up.
+            Expr* lit = a;
+            for (;;) {
+                lit = lit->strip_parens();
+                auto u = dyn_cast<UnaryExpr>(lit);
+                if (not u or u->op != Tk::Minus) break;
+                lit = u->arg;
+            }
+
+            // If we ultimately found a literal, evaluate the original expression.
+            if (isa_and_present<IntLitExpr>(lit)) {
+                auto val = M->vm.eval(a, false);
+                if (val and IntegerFitsInType(val->cast<APInt>(), var_type)) {
                     // Integer literals are srvalues so no need fo l2r conv here.
                     init.apply(Conversion::IntegralCast(var_type));
                     return true;
                 }
-
-                return init.report_type_mismatch();
             }
 
             // Otherwise, if both are sized integer types, and the initialiser
@@ -2121,7 +2128,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
     auto small = val.tryZExtValue();
     if (small.has_value()) return new (*M) IntLitExpr(
         Types::IntTy,
-        M->store_int(APInt(u32(Types::IntTy->size(*M).bits()), u64(*small), true)),
+        M->store_int(APInt(u32(Types::IntTy->size(*M).bits()), u64(*small), false)),
         parsed->loc
     );
 

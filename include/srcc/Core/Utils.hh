@@ -45,6 +45,7 @@ using llvm::cast_if_present;
 using llvm::dyn_cast;
 using llvm::dyn_cast_if_present;
 using llvm::isa;
+using llvm::isa_and_present;
 
 using llvm::APInt;
 using llvm::ArrayRef;

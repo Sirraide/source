@@ -801,16 +801,12 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
             return SRValue(SRSlice{ptr, std::move(sz)}, ty);
         }
 
-        case TypeBase::Kind::IntType:
-            switch (cast<IntType>(ty)->bit_width().bits()) {
-                case 8: return SRValue(APInt(8, Load.operator()<u8>()), ty);
-                case 16: return SRValue(APInt(16, Load.operator()<u16>()), ty);
-                case 32: return SRValue(APInt(32, Load.operator()<u32>()), ty);
-                case 64: return SRValue(APInt(64, Load.operator()<u64>()), ty);
-                default:
-                    ICE(entry, "TODO: Load SRValue of type '{}'", ty);
-                    return std::nullopt;
-            }
+        case TypeBase::Kind::IntType: {
+            auto wd = u32(cast<IntType>(ty)->bit_width().bits());
+            APInt i{wd, 0};
+            LoadIntFromMemory(i, static_cast<const u8*>(mem), u32(ty->size(vm.owner()).bytes()));
+            return SRValue(std::move(i), ty);
+        }
 
         case TypeBase::Kind::BuiltinType:
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
@@ -893,15 +889,8 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](Pointer p) { return Store(p.encode()); },
         [&](const SRClosure& cl) -> bool { return Store(cl); },
         [&](const APInt& i) {
-            switch (i.getBitWidth()) {
-                case 8: return Store(u8(i.getSExtValue()));
-                case 16: return Store(u16(i.getSExtValue()));
-                case 32: return Store(u32(i.getSExtValue()));
-                case 64: return Store(u64(i.getSExtValue()));
-                default:
-                    ICE(entry, "TODO: Store SRValue of type {}", val.type());
-                    return false;
-            }
+            StoreIntToMemory(i, static_cast<u8*>(ptr), u32(val.type()->size(vm.owner()).bytes()));
+            return true;
         },
         [&](this auto& self, const SRSlice& sl) -> bool {
             if (not self(sl.data)) return false;

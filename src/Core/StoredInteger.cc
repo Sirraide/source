@@ -13,7 +13,7 @@ auto IntegerStorage::store_int(APInt integer) -> StoredInteger {
         return si;
     }
 
-    auto* i = new APInt(integer);
+    auto* i = new APInt(std::move(integer));
     si.data = reinterpret_cast<uintptr_t>(i);
     saved.emplace_back(i);
     return si;

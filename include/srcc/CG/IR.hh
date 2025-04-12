@@ -96,6 +96,7 @@ protected:
     Value(Kind k, Type ty) : k{k}, ty{ty} {}
 
 public:
+    [[nodiscard]] auto as_int(TranslationUnit& tu) -> std::optional<APInt>;
     [[nodiscard]] auto kind() const { return k; }
     [[nodiscard]] auto type() const { return ty; }
 
@@ -455,9 +456,6 @@ private:
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Types::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Types::BoolTy};
-
-    // Can’t use DenseMap because -1 is a valid value...
-    std::unordered_map<u64, SmallInt*> small_ints;
 
 public:
     Block* insert_point = nullptr;

@@ -568,7 +568,7 @@ private:
     }
 
     /// Check if an integer literal can be stored in a given type.
-    bool IntegerLiteralFitsInType(IntLitExpr* i, Type ty);
+    bool IntegerFitsInType(const APInt& i, Type ty);
 
     /// Use LookUpName() instead.
     auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult;

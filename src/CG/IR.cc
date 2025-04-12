@@ -33,7 +33,7 @@ auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValu
     return new (*this) InstValue(Create(op, vals), ty, 0);
 }
 
-void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2)  {
+void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) {
     CreateImpl<AbortInst>(reason, loc, ArrayRef{msg1, msg2});
 }
 
@@ -125,9 +125,7 @@ auto Builder::CreateInt(APInt val, Type type) -> Value* {
 }
 
 auto Builder::CreateInt(u64 val, Type type) -> Value* {
-    auto& i = small_ints[val];
-    if (not i) i = new (*this) SmallInt(val, type);
-    return i;
+    return new (*this) SmallInt(val, type);
 }
 
 auto Builder::CreateInvalidLocalReference(LocalRefExpr* ref) -> Value* {
@@ -237,7 +235,7 @@ auto Builder::CreateShl(Value* a, Value* b) -> Value* {
 auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
     auto from = i->type()->size(tu).bits();
     auto to = to_type->size(tu).bits();
-    if (from == to) return i;
+    if (i->type() == to_type) return i;
     if (from > to) return CreateSpecialGetVal<ICast>(to_type, Op::Trunc, to_type, i);
     return CreateSpecialGetVal<ICast>(to_type, Op::SExt, to_type, i);
 }
@@ -432,6 +430,15 @@ auto Proc::add(std::unique_ptr<Block> b) -> Block* {
     return body.back().get();
 }
 
+auto Value::as_int(TranslationUnit& tu) -> std::optional<APInt> {
+    if (not isa<SmallInt, LargeInt>(this)) return std::nullopt;
+    auto wd = u32(type()->size(tu).bits());
+    APInt val{wd, 0};
+    if (auto s = dyn_cast<SmallInt>(this)) val = s->value();
+    else val = cast<LargeInt>(this)->value();
+    return val;
+}
+
 /// ====================================================================
 ///  Printing
 /// ====================================================================
@@ -457,7 +464,7 @@ public:
         return it == map.end() ? -1 : it->second;
     }
 };
-}
+} // namespace
 
 auto Builder::Dump() -> SmallUnrenderedString {
     Printer p{tu};
@@ -500,7 +507,7 @@ void Printer::DumpInst(Inst* i) {
             "%1({}%){}{}",
             name,
             i->args().empty() ? ""sv : " "sv,
-            utils::join_as(i->args(), [&](Value* v) { return DumpValue(v); } )
+            utils::join_as(i->args(), [&](Value* v) { return DumpValue(v); })
         );
     };
 
@@ -515,7 +522,7 @@ void Printer::DumpInst(Inst* i) {
                 line,
                 col,
                 a->handler_name(),
-                utils::join_as(a->args(), [&](Value* v) { return DumpValue(v); } )
+                utils::join_as(a->args(), [&](Value* v) { return DumpValue(v); })
             );
         } break;
 
@@ -548,7 +555,7 @@ void Printer::DumpInst(Inst* i) {
                     "%1(call%) {} {}({})",
                     ret,
                     DumpValue(proc),
-                    utils::join_as(args, [&](Value* v) { return DumpValue(v); } )
+                    utils::join_as(args, [&](Value* v) { return DumpValue(v); })
                 );
             }
         } break;
@@ -726,7 +733,11 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
 
         case Value::Kind::SmallInt: {
             auto s = cast<SmallInt>(v);
-            out += std::format("{} %5({}%)", v->type(), i64(s->value()));
+            out += std::format(
+                "{} %5({}%)",
+                v->type(),
+                APInt(u32(v->type()->size(tu).bits()), u64(s->value()))
+            );
         } break;
 
         case Value::Kind::StringData: {
@@ -743,7 +754,6 @@ void Inst::dump(TranslationUnit& tu) {
     p.out += "\n";
     std::print("{}", text::RenderColours(true, p.out.str()));
 }
-
 
 void Proc::dump(TranslationUnit& tu) {
     Printer p{tu};

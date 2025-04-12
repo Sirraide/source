@@ -539,8 +539,13 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
 
 auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, Location loc) -> Value* {
     using enum OverflowBehaviour;
-    Assert(lhs->type() == rhs->type(), "Sema should have converted these to the same type");
     auto ty = rhs->type();
+    Assert(
+        lhs->type() == ty,
+        "Sema should have converted these to the same type: {}, {}",
+        lhs->type(),
+        ty
+    );
 
     auto CheckDivByZero = [&] {
         auto check = CreateICmpEq(rhs, CreateInt(0, ty));
@@ -750,11 +755,11 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::TypeName: return CreateString(tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
         case AK::TypeMaxVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
-            return CreateInt(APInt::getSignedMaxValue(ty->size(tu).bits()), ty);
+            return CreateInt(APInt::getSignedMaxValue(u32(ty->size(tu).bits())), ty);
         }
         case AK::TypeMinVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
-            return CreateInt(APInt::getSignedMinValue(ty->size(tu).bits()), ty);
+            return CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
         }
     }
 }
@@ -897,14 +902,33 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
 
     switch (expr->op) {
         default: Todo("Emit prefix '{}'", expr->op);
-        case Tk::Minus: return CreateBinop(
-            CreateInt(0, expr->type),
-            Emit(expr->arg),
-            expr->location(),
-            expr->op,
-            &Builder::CreateSub,
-            &Builder::CreateSSubOverflow
-        );
+        case Tk::Minus: {
+            auto a = Emit(expr->arg);
+
+            // Because of how literals are parsed, we can get into an annoying
+            // corner case with this operator: e.g. if the user declares an i64
+            // and attempts to initialise it with -9223372036854775808, we overflow
+            // because the value 9223372036854775808 is not a valid signed integer,
+            // even though -9223372036854775808 *is* valid. Be nice and special-case
+            // this here.
+            if (
+                auto val = a->as_int(tu);
+                val and *val - 1 == APInt::getSignedMaxValue(u32(a->type()->size(tu).bits()))
+            ) {
+                val->negate();
+                return CreateInt(std::move(*val), expr->type);
+            }
+
+            // Otherwise, emit '0 - val'.
+            return CreateBinop(
+                CreateInt(0, expr->type),
+                a,
+                expr->location(),
+                expr->op,
+                &Builder::CreateSub,
+                &Builder::CreateSSubOverflow
+            );
+        }
     }
 }
 
