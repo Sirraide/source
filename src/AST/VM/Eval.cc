@@ -861,13 +861,14 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](Pointer p) { return Store(p.encode()); },
         [&](const SRClosure& cl) -> bool { return Store(cl); },
         [&](const APInt& i) {
+            llvm::LoadIntFromMemory()
             switch (i.getBitWidth()) {
                 case 8: return Store(u8(i.getSExtValue()));
                 case 16: return Store(u16(i.getSExtValue()));
                 case 32: return Store(u32(i.getSExtValue()));
                 case 64: return Store(u64(i.getSExtValue()));
                 default:
-                    ICE(entry, "Unsupported integer type in FFI call: {}", i);
+                    ICE(entry, "Unsupported integer type in FFI call: {}", val.type());
                     return false;
             }
         },

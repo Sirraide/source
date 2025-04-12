@@ -477,7 +477,7 @@ public:
     auto CreateAShr(Value* a, Value* b) -> Value*;
     auto CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) -> void;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
-    auto CreateAlloca(Type ty) -> Value*;
+    auto CreateAlloca(ir::Proc* parent, Type ty) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
     auto CreateBlock() -> std::unique_ptr<Block> { return CreateBlock(ArrayRef<Type>{}); }
     auto CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block>;

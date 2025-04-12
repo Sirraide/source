@@ -43,8 +43,17 @@ auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
     return add;
 }
 
-auto Builder::CreateAlloca(Type ty) -> Value* {
-    return CreateSpecialGetVal<Alloca>(ReferenceType::Get(tu, ty), ty);
+auto Builder::CreateAlloca(Proc* parent, Type ty) -> Value* {
+    Assert(parent, "Alloca without parent procedure?");
+    auto a = new (*this) Alloca(*this, ty);
+
+    // Insert the alloca in the entry block, after any other allocas.
+    auto it = parent->entry()->insts.begin();
+    while (it != parent->entry()->insts.end() and isa<Alloca>(*it)) ++it;
+    parent->entry()->insts.insert(it, a);
+
+    // Return the allocated value.
+    return new (*this) InstValue(a, ReferenceType::Get(tu, ty), 0);
 }
 
 auto Builder::CreateAnd(Value* a, Value* b) -> Value* {

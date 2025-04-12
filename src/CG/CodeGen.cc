@@ -653,8 +653,12 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
     Value* ret = nullptr;
     for (auto s : expr->stmts()) {
         // Initialise variables.
+        //
+        // The variable may not exist yet if e.g. we started evaluating a block
+        // in the middle of a function at compile-time.
         if (auto var = dyn_cast<LocalDecl>(s)) {
             Assert(var->init, "Sema should always create an initialiser for local vars");
+            if (not locals.contains(var)) EmitLocal(var);
             PerformVariableInitialisation(locals.at(var), var->init.get());
         }
 
@@ -795,7 +799,7 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
-    if (LocalNeedsAlloca(decl)) locals[decl] = CreateAlloca(decl->type);
+    if (LocalNeedsAlloca(decl)) locals[decl] = CreateAlloca(curr_proc, decl->type);
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
