@@ -49,11 +49,10 @@ Context::Context() {
 
         llvm::cl::ParseCommandLineOptions(2, args, "", &llvm::errs(), nullptr);
 
-        // Load libc (as all LLVM functions, this returns false on success...).
-        static constexpr auto libc_path = "libc.so.6";
+        // Open the current process as a library.
         std::string err_msg;
         Assert(
-            not llvm::sys::DynamicLibrary::LoadLibraryPermanently(libc_path, &err_msg),
+            not llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr, &err_msg),
             "Failed to load libc: {}",
             err_msg
         );
