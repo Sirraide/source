@@ -48,9 +48,9 @@ public:
     ImportHandle& operator=(ImportHandle&&) = default;
 
     auto copy(String logical_name, Location loc) -> ImportHandle;
-
     auto logical_name() const -> String { return import_name; }
     auto location() const -> Location { return import_location; }
+    auto ptr() -> PointerUnion<TranslationUnit*, clang::ASTUnit*> { return *this; }
 };
 
 /// Representation of a single program or module. NOT thread-safe.

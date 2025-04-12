@@ -168,10 +168,10 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
             case NotFound: {
                 auto it = M->imports.find(first);
                 if (it == M->imports.end()) return res;
-                if (it->second.is<TranslationUnit*>()) Todo();
+                if (isa<TranslationUnit*>(it->second.ptr())) Todo();
 
                 // We found an imported C++ header; do a C++ lookup.
-                auto hdr = it->second.get<clang::ASTUnit*>();
+                auto hdr = dyn_cast<clang::ASTUnit*>(it->second.ptr());
                 return LookUpCXXName(hdr, names.drop_front());
             } break;
         }
