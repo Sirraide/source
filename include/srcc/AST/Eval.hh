@@ -203,6 +203,9 @@ public:
 
 /// A compile-time srvalue.
 class srcc::eval::SRValue {
+    /// FIXME: Some of these (e.g. Pointer) are utterly useless to the rest of the compiler;
+    /// move this class (and SRClosure, SRSlice, Pointer) into Eval.cc and create a separate
+    /// SRValue class that doesn’t contain those types and translate between the two in VM::eval().
     Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
