@@ -2,6 +2,8 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 
+#include <clang/Basic/TargetInfo.h>
+
 #include <llvm/Support/MathExtras.h>
 
 #include <memory>
@@ -44,17 +46,18 @@ void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
+// TODO: Cache type size and alignment in the TU.
 auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
     return visit(utils::Overloaded{
         [&](const ArrayType* ty) -> Align { return ty->elem()->align(tu); },
         [&](const BuiltinType* ty) -> Align {
             switch (ty->builtin_kind()) {
                 case BuiltinKind::Bool: return Align{1};
-                case BuiltinKind::Int: return Align{8}; // FIXME: Get alignment from context.
+                case BuiltinKind::Int: return tu.target().int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
-                case BuiltinKind::Type: return Align::Of<Type>();
-                case BuiltinKind::UnresolvedOverloadSet: return Align{8};
+                case BuiltinKind::Type: return Align::Of<Type>(); // This is a compile-time only type.
+                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_align();;
                 case BuiltinKind::ErrorDependent: return Align{1}; // Dummy value.
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Dependent:
@@ -62,10 +65,10 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
             }
             Unreachable();
         },
-        [&](const IntType* ty) { return Align{std::min<u64>(64, llvm::PowerOf2Ceil(u64(ty->bit_width().bytes())))}; },
-        [&](const ProcType*) { return Align{8}; }, // FIXME: Get alignment from context.
-        [&](const ReferenceType*) { return Align{8}; }, // FIXME: Get alignment from context.
-        [&](const SliceType*) { return Align{8}; }, // FIXME: Get alignment from context.
+        [&](const IntType* ty) { return tu.target().int_align(ty); },
+        [&](const ProcType*) { return tu.target().closure_align(); },
+        [&](const ReferenceType*) { return tu.target().ptr_align(); },
+        [&](const SliceType*) { return tu.target().slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->align();
@@ -235,9 +238,9 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
-                case BuiltinKind::Int: return Size::Bytes(8); // FIXME: Get size from context.
+                case BuiltinKind::Int: return tu.target().int_size();
                 case BuiltinKind::Type: return Size::Of<Type>();
-                case BuiltinKind::UnresolvedOverloadSet: return Size::Bytes(16); // FIXME: Get size from context.
+                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_size();
 
                 case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
@@ -250,14 +253,15 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::ReferenceType: return Size::Bytes(8); // FIXME: Get pointer size from context.
+        case Kind::ReferenceType: return tu.target().ptr_size();
         case Kind::IntType: return cast<IntType>(this)->bit_width();
-        case Kind::ProcType: return Size::Bytes(16);  // FIXME: Get closure size from context.
-        case Kind::SliceType: return Size::Bytes(16); // FIXME: Get slice size from context.
+        case Kind::ProcType: return tu.target().closure_size();
+        case Kind::SliceType: return tu.target().slice_size();
         case Kind::StructType: {
             auto s = cast<StructType>(this);
             return s->size();
         }
+
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
             return arr->elem()->array_size(tu) * u64(arr->dimension());

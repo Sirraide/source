@@ -4,7 +4,10 @@
 #include <srcc/Core/Constants.hh>
 #include <srcc/Core/Core.hh>
 
+#include <clang/Frontend/CompilerInstance.h>
+
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/TargetParser/Host.h>
 
 using namespace srcc;
 
@@ -46,6 +49,21 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
       I32Ty{Type::UnsafeNull()},
       I64Ty{Type::UnsafeNull()},
       I128Ty{Type::UnsafeNull()} {
+    // Get information about the compilation target from Clang.
+    {
+        std::array args {
+            "-x",
+            "c++",
+            "foo.cc"
+        };
+
+        clang::CompilerInstance ci;
+        ci.createDiagnostics(*llvm::vfs::getRealFileSystem());
+        Assert(clang::CompilerInvocation::CreateFromArgs(ci.getInvocation(), args, ci.getDiagnostics()));
+        Assert(ci.createTarget());
+        tgt.TI = ci.getTargetPtr();
+    }
+
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
     I16Ty = IntType::Get(*this, Size::Bits(16));
@@ -54,14 +72,13 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     I128Ty = IntType::Get(*this, Size::Bits(128));
 
     // Initialise FFI types.
-    // TODO: Get type size from Clang.
-    FFIBoolTy = I8Ty;
-    FFICharTy = I8Ty;
-    FFIShortTy = I16Ty;
-    FFIIntTy = I32Ty;
-    FFILongTy = I64Ty;
-    FFILongLongTy = I64Ty;
-    FFISizeTy = FFILongTy;
+    FFIBoolTy = IntType::Get(*this, Size::Bits(target().TI->getBoolWidth()));
+    FFICharTy = IntType::Get(*this, Size::Bits(target().TI->getCharWidth()));
+    FFIShortTy = IntType::Get(*this, Size::Bits(target().TI->getShortWidth()));
+    FFIIntTy = IntType::Get(*this, Size::Bits(target().TI->getIntWidth()));
+    FFILongTy = IntType::Get(*this, Size::Bits(target().TI->getLongWidth()));
+    FFILongLongTy = IntType::Get(*this, Size::Bits(target().TI->getLongLongWidth()));
+    FFISizeTy = IntType::Get(*this, Size::Bits(target().TI->getTypeWidth(target().TI->getSizeType())));
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);

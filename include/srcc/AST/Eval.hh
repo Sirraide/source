@@ -218,7 +218,7 @@ public:
     explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
 
     /// Create a the 'empty' or 'nil' value of a given type.
-    static auto Empty(Type ty) -> SRValue;
+    static auto Empty(TranslationUnit& tu, Type ty) -> SRValue;
 
     /// Check if two values hold the same value.
     bool operator==(const SRValue& other) const = default;

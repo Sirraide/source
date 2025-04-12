@@ -9,6 +9,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/Basic/TargetInfo.h>
 #include <clang/Frontend/ASTUnit.h>
 
 #include <llvm/IR/LLVMContext.h>
@@ -61,9 +62,35 @@ public:
     struct Deserialiser;
     using Ptr = std::unique_ptr<TranslationUnit>;
 
+    class Target {
+        friend TranslationUnit;
+        llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
+
+    public:
+        [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
+        [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
+        [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
+        [[nodiscard]] auto int_size() const -> Size { return ptr_size(); }
+        [[nodiscard]] auto int_align(const IntType* ty) const -> Align {
+            return Align(TI->getBitIntAlign(u32(ty->bit_width().bits())) / 8);
+        }
+
+        [[nodiscard]] auto int_size(const IntType* ty) const -> Size {
+            return Size::Bits(TI->getBitIntWidth(u32(ty->bit_width().bits())));
+        }
+
+        [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
+        [[nodiscard]] auto ptr_size() const -> Size { return Size::Bits(TI->PointerWidth); }
+        [[nodiscard]] auto slice_align() const -> Align { return std::max(ptr_align(), int_align()); }
+        [[nodiscard]] auto slice_size() const -> Size { return ptr_size().align(int_align()) + int_size(); }
+    };
+
 private:
     /// Context that owns this module.
     Context& ctx;
+
+    /// Target information.
+    Target tgt;
 
     /// Language options for this module.
     LangOpts language_opts;
@@ -229,6 +256,9 @@ public:
 
     /// Serialise this module to a memory buffer
     void serialise(SmallVectorImpl<char>& buffer) const;
+
+    /// Get the target info.
+    auto target() const -> const Target& { return tgt; }
 };
 
 #endif // SRCC_AST_HH

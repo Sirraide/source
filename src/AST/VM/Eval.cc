@@ -22,7 +22,7 @@ namespace ir = cg::ir;
 // ============================================================================
 //  Value
 // ============================================================================
-auto SRValue::Empty(Type ty) -> SRValue {
+auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::StructType:
@@ -51,7 +51,7 @@ auto SRValue::Empty(Type ty) -> SRValue {
                     Unreachable();
 
                 case BuiltinKind::Bool: return SRValue(false);
-                case BuiltinKind::Int: return SRValue(APInt::getZero(64), ty); // FIXME: Get size from context.
+                case BuiltinKind::Int: return SRValue(APInt::getZero(u32(Types::IntTy->size(tu).bits())), ty);
                 case BuiltinKind::Void: return SRValue();
                 case BuiltinKind::Type: return SRValue(Types::VoidTy);
             }
@@ -861,7 +861,6 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](Pointer p) { return Store(p.encode()); },
         [&](const SRClosure& cl) -> bool { return Store(cl); },
         [&](const APInt& i) {
-            llvm::LoadIntFromMemory()
             switch (i.getBitWidth()) {
                 case 8: return Store(u8(i.getSExtValue()));
                 case 16: return Store(u16(i.getSExtValue()));
@@ -935,7 +934,7 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
                 case ir::BuiltinConstantKind::True: return true_val;
                 case ir::BuiltinConstantKind::False: return false_val;
                 case ir::BuiltinConstantKind::Poison: Unreachable("Should not exist in checked mode");
-                case ir::BuiltinConstantKind::Nil: return Materialise(SRValue::Empty(v->type()));
+                case ir::BuiltinConstantKind::Nil: return Materialise(SRValue::Empty(vm.owner(), v->type()));
             }
             Unreachable();
         }

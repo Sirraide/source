@@ -2,6 +2,8 @@
 #include <srcc/Core/Constants.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/Basic/TargetInfo.h>
+
 #include <memory>
 
 using namespace srcc;
@@ -734,7 +736,10 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
 
         case AK::SliceSize: {
             auto slice = Emit(expr->operand);
-            if (expr->lvalue()) return CreateLoad(Types::IntTy, CreatePtrAdd(slice, CreateInt(8, Types::IntTy), true)); // FIXME: Magic number.
+            if (expr->lvalue()) {
+                auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Types::IntTy);
+                return CreateLoad(Types::IntTy, CreatePtrAdd(slice, ptr_sz, true));
+            }
             return CreateExtractValue(slice, 1);
         }
 

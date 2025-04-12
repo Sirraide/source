@@ -63,7 +63,7 @@ LLVMCodeGen::LLVMCodeGen(llvm::TargetMachine& target, CodeGen& cg)
       I1Ty{getInt1Ty()},
       I8Ty{getInt8Ty()},
       PtrTy{getPtrTy()},
-      FFIIntTy{llvm::Type::getIntNTy(cg.tu.llvm_context, 32)}, // FIXME: Get size from target.
+      FFIIntTy{cast<llvm::IntegerType>(ConvertType(cg.tu.FFIIntTy))},
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
       VoidTy{getVoidTy()},
