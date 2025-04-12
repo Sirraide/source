@@ -281,7 +281,7 @@ private:
 
 Eval::Eval(VM& vm, bool complain)
     : vm{vm},
-      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts()), Size::Of<void*>()},
+      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts()), vm.owner().target().ptr_size()},
       complain{complain} {}
 
 auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
@@ -1010,16 +1010,6 @@ auto VM::eval(
             [](IntLitExpr* i) -> OptVal { return SRValue{i->storage.value(), i->type}; },
             [](BoolLitExpr* b) -> OptVal { return SRValue(b->value); },
             [](TypeExpr* t) -> OptVal { return SRValue{t->value}; },
-            [&](StrLitExpr* s) -> OptVal {
-                Todo();
-                /*return Value{
-                    SliceVal{
-                        Reference{LValue{s->value, owner().StrLitTy, s->location(), false}, APInt::getZero(64)},
-                        APInt(u32(Types::IntTy->size(owner()).bits()), s->value.size(), false),
-                    },
-                    owner().StrLitTy,
-                };*/
-            }
         }); // clang-format on
 
         // If we got a value, just return it.
