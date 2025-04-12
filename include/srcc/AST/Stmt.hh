@@ -284,6 +284,8 @@ public:
         TypeBits,
         TypeBytes,
         TypeName,
+        TypeMaxVal,
+        TypeMinVal,
     };
 
     Expr* operand;

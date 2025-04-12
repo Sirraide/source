@@ -1,12 +1,14 @@
+#include <srcc/ClangForward.hh>
+#include <srcc/Frontend/Sema.hh>
+#include <srcc/Macros.hh>
+
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
+
 #include <print>
 #include <ranges>
-#include <srcc/ClangForward.hh>
-#include <srcc/Macros.hh>
-#include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
 
@@ -1264,6 +1266,8 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case AK::TypeBits: return Types::IntTy;
             case AK::TypeBytes: return Types::IntTy;
             case AK::TypeName: return M->StrLitTy;
+            case AK::TypeMaxVal: return cast<TypeExpr>(operand)->value;
+            case AK::TypeMinVal: return cast<TypeExpr>(operand)->value;
         }
         Unreachable();
     }();
@@ -2194,14 +2198,19 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     static constexpr auto AlreadyDiagnosed = AK(255);
     auto kind = [&] -> Opt<AK> {
         using Switch = llvm::StringSwitch<Opt<AK>>;
-        if (isa<TypeExpr>(base)) return Switch(parsed->member)
-            .Case("align", AK::TypeAlign)
-            .Case("arrsize", AK::TypeArraySize)
-            .Case("bits", AK::TypeBits)
-            .Case("bytes", AK::TypeBytes)
-            .Case("name", AK::TypeName)
-            .Case("size", AK::TypeBytes)
-            .Default(std::nullopt);
+        if (auto te = dyn_cast<TypeExpr>(base)) {
+            auto is_int = te->value->is_integer();
+            return Switch(parsed->member)
+                .Case("align", AK::TypeAlign)
+                .Case("arrsize", AK::TypeArraySize)
+                .Case("bits", AK::TypeBits)
+                .Case("bytes", AK::TypeBytes)
+                .Case("name", AK::TypeName)
+                .Case("size", AK::TypeBytes)
+                .Case("min", is_int ? Opt<AK>(AK::TypeMinVal) : std::nullopt)
+                .Case("max", is_int ? Opt<AK>(AK::TypeMaxVal) : std::nullopt)
+                .Default(std::nullopt);
+        }
 
         if (isa<SliceType>(base->type)) return Switch(parsed->member)
             .Case("data", AK::SliceData)

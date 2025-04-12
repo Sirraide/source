@@ -1,0 +1,7 @@
+// V %srcc --sema --verify %s
+program test;
+
+eval assert int.min == (1 <<< 63);
+eval assert int.max == -((1 <<< 63) + 1);
+eval assert int.min == 7; // expected-error: Assertion failed: 'int.min == 7'
+eval assert int.max == -43; // expected-error: Assertion failed: 'int.max == -43'

@@ -256,6 +256,8 @@ void Stmt::Printer::Print(Stmt* e) {
                         case AK::TypeBits: return "bits";
                         case AK::TypeBytes: return "bytes";
                         case AK::TypeName: return "name";
+                        case AK::TypeMaxVal: return "max";
+                        case AK::TypeMinVal: return "min";
                     }
                     return "<invalid>";
                 }();

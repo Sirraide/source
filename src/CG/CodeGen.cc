@@ -748,6 +748,14 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
         case AK::TypeBytes: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bytes());
         case AK::TypeName: return CreateString(tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
+        case AK::TypeMaxVal: {
+            auto ty = cast<TypeExpr>(expr->operand)->value;
+            return CreateInt(APInt::getSignedMaxValue(ty->size(tu).bits()), ty);
+        }
+        case AK::TypeMinVal: {
+            auto ty = cast<TypeExpr>(expr->operand)->value;
+            return CreateInt(APInt::getSignedMinValue(ty->size(tu).bits()), ty);
+        }
     }
 }
 

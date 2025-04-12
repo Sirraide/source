@@ -899,7 +899,7 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
                 case 32: return Store(u32(i.getSExtValue()));
                 case 64: return Store(u64(i.getSExtValue()));
                 default:
-                    ICE(entry, "Unsupported integer type in FFI call: {}", val.type());
+                    ICE(entry, "TODO: Store SRValue of type {}", val.type());
                     return false;
             }
         },
