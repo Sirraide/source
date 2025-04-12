@@ -22,10 +22,6 @@ namespace ir = cg::ir;
 // ============================================================================
 //  Value
 // ============================================================================
-SRValue::SRValue(ir::Proc* proc)
-    : value(proc),
-      ty(proc->type()) {}
-
 auto SRValue::Empty(Type ty) -> SRValue {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
@@ -85,7 +81,14 @@ auto SRValue::print() const -> SmallUnrenderedString {
             out += ", ";
             self(slice.size);
             out += ")%)";
-        }
+        },
+        [&](this auto& self, const SRClosure& slice) {
+            out += "%1((";
+            self(slice.proc);
+            out += ", ";
+            self(slice.env);
+            out += ")%)";
+        },
     }; // clang-format on
 
     visit(V);
@@ -234,6 +237,7 @@ class eval::Eval : DiagsProducer<bool> {
     cg::CodeGen cg;
     ByteBuffer stack;
     SmallVector<StackFrame, 4> call_stack;
+    SmallVector<ir::Proc*> procedure_indices;
     HostMemoryMap host_memory;
     const SRValue true_val{true};
     const SRValue false_val{false};
@@ -265,6 +269,7 @@ private:
     auto GetStringData(const SRValue& val) -> std::string;
     auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
+    auto MakeProcPtr(ir::Proc* proc) -> Pointer;
     void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
     bool StoreSRValue(const SRValue& ptr, const SRValue& val);
     bool StoreSRValue(void* ptr, const SRValue& val);
@@ -385,11 +390,17 @@ bool Eval::EvalLoop() {
             } break;
 
             case ir::Op::Call: {
-                auto callee = dyn_cast<ir::Proc>(i->args()[0]);
+                auto closure = Val(i->args()[0]).cast<SRClosure>();
                 auto args = i->args().drop_front(1);
-                if (not callee) return ICE(entry, "Indirect calls at compile time are not supported yet");
+
+                // Check that this is a valid call target.
+                if (closure.proc.is_null_ptr() or not closure.proc.is_proc_ptr())
+                    return Error(entry, "Attempted to call non-procedure");
+                if (not closure.env.is_null_ptr())
+                    return ICE(entry, "TODO: Call to procedure with environment");
 
                 // Compile the procedure now if we haven’t done that yet.
+                auto callee = procedure_indices[closure.proc.value()];
                 if (callee->empty()) {
                     // This is an external procedure.
                     if (not callee->decl() or callee->decl()->is_imported()) {
@@ -732,6 +743,7 @@ auto Eval::LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue> {
 }
 
 auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
+    /// FIXME: Load and Store assume that e.g. the pointer size on the host and target are the same.
     auto Load = [&]<typename T> -> T {
         static_assert(std::is_trivially_copyable_v<T>);
         T v;
@@ -741,17 +753,21 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
 
     switch (ty->kind()) {
         case TypeBase::Kind::TemplateType:
+        case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::StructType:
             Unreachable();
 
-        case TypeBase::Kind::ArrayType:
-        case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::StructType:
         case TypeBase::Kind::ProcType:
-            ICE(entry, "TODO: Load SRValue of type '{}'", ty);
-            return std::nullopt;
+            return SRValue(Load.operator()<SRClosure>(), ty);
 
         case TypeBase::Kind::ReferenceType:
             return SRValue(Load.operator()<Pointer>(), ty);
+
+        case TypeBase::Kind::SliceType: {
+            auto ptr = Load.operator()<Pointer>();
+            auto sz = LoadSRValue(static_cast<const char*>(mem) + sizeof(Pointer), Types::IntTy)->cast<APInt>();
+            return SRValue(SRSlice{ptr, std::move(sz)}, ty);
+        }
 
         case TypeBase::Kind::IntType:
             switch (cast<IntType>(ty)->bit_width().bits()) {
@@ -785,6 +801,13 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
     }
 
     Unreachable();
+}
+
+auto Eval::MakeProcPtr(ir::Proc* proc) -> Pointer {
+    auto it = find(procedure_indices, proc);
+    if (it != procedure_indices.end()) return Pointer::Proc(u32(it - procedure_indices.begin()));
+    procedure_indices.push_back(proc);
+    return Pointer::Proc(u32(procedure_indices.size() - 1));
 }
 
 void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
@@ -836,6 +859,7 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](ir::Proc*) { return ICE(entry, "TODO: Store closure in memory"); },
         [&](Type ty) { return Store(ty.ptr()); },
         [&](Pointer p) { return Store(p.encode()); },
+        [&](const SRClosure& cl) -> bool { return Store(cl); },
         [&](const APInt& i) {
             switch (i.getBitWidth()) {
                 case 8: return Store(u8(i.getSExtValue()));
@@ -873,10 +897,22 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
     switch (v->kind()) {
         using K = ir::Value::Kind;
         case K::Block: Unreachable("Can’t take address of basic block");
-        case K::Extract: Todo();
         case K::InvalidLocalReference: Todo();
         case K::LargeInt: Todo();
-        case K::Proc: Todo();
+        case K::Proc: {
+            auto p = cast<ir::Proc>(v);
+            return Materialise(SRValue{SRClosure(MakeProcPtr(p), Pointer()), v->type()});
+        }
+
+        case K::Extract: {
+            auto e = cast<ir::Extract>(v);
+            auto agg = Val(e->aggregate()).cast<SRSlice>();
+            auto idx = e->index();
+            if (idx == 0) return Materialise(SRValue(agg.data, e->type()));
+            if (idx == 1) return Materialise(SRValue(agg.size, e->type()));
+            Unreachable();
+        }
+
         case K::Slice: {
             auto sl = cast<ir::Slice>(v);
             auto ptr = Val(sl->data);

@@ -40,9 +40,17 @@ enum struct LifetimeState : u8;
 class Pointer {
 public:
     enum struct AddressSpace : u8 {
+        /// Pointer to a value on the stack.
         Stack,
+
+        /// Pointer to a value on the heap.
         Heap,
+
+        /// Pointer to readonly host memory.
         Host,
+
+        /// Used to represent pointers to procedures.
+        Proc,
     };
 
 private:
@@ -76,6 +84,10 @@ public:
         return Pointer{virtual_offs, AddressSpace::Host};
     }
 
+    static auto Proc(u32 idx) -> Pointer {
+        return Pointer{idx, AddressSpace::Proc};
+    }
+
     /// Create a stack pointer.
     static auto Stack(usz stack_offs) -> Pointer {
         return {stack_offs, AddressSpace::Stack};
@@ -104,6 +116,11 @@ public:
     /// Whether this is the null pointer.
     [[nodiscard]] bool is_null_ptr() const {
         return ptr == 0;
+    }
+
+    /// Whether this is a procedure.
+    [[nodiscard]] bool is_proc_ptr() const {
+        return address_space() == AddressSpace::Proc;
     }
 
     /// Whether this is a stack pointer.
@@ -140,10 +157,15 @@ public:
     }
 };
 
+struct SRClosure {
+    Pointer proc;
+    Pointer env;
+    bool operator==(const SRClosure& other) const = default;
+};
+
 struct SRSlice {
     Pointer data;
     APInt size;
-
     bool operator==(const SRSlice& other) const = default;
 };
 
@@ -181,7 +203,7 @@ public:
 
 /// A compile-time srvalue.
 class srcc::eval::SRValue {
-    Variant<cg::ir::Proc*, APInt, bool, Type, Pointer, SRSlice, std::monostate> value{std::monostate{}};
+    Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, std::monostate> value{std::monostate{}};
     Type ty{Types::VoidTy};
 
 public:
@@ -191,6 +213,7 @@ public:
     explicit SRValue(Type ty) : value{ty}, ty{Types::TypeTy} {}
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
     explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
+    explicit SRValue(SRClosure closure, Type ty) : value{closure}, ty{ty} {}
     explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
 

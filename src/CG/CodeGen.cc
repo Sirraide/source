@@ -909,6 +909,7 @@ auto CodeGen::EmitValue(const eval::SRValue& val) -> Value* { // clang-format of
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
         [](eval::Pointer) -> Value* { Todo("Materialise compile-time allocation"); },
         [](eval::SRSlice) ->Value* { Todo("Materialise slice"); },
+        [](eval::SRClosure) ->Value* { Todo("Materialise closure"); },
     }; // clang-format on
     return val.visit(V);
 }
