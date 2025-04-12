@@ -347,7 +347,8 @@ bool Eval::EvalLoop() {
         Temp(i, 1) = SRValue{overflow};
     };
 
-    for (;;) {
+    const u64 max_steps = vm.owner().context().eval_steps ?: std::numeric_limits<u64>::max();
+    for (u64 steps = 0; steps < max_steps; steps++) {
         switch (auto i = *call_stack.back().ip++; i->opcode()) {
             case ir::Op::Abort: {
                 if (not complain) return false;
@@ -519,6 +520,10 @@ bool Eval::EvalLoop() {
             case ir::Op::SSubOv: OvOp(i, &APInt::ssub_ov); break;
         }
     }
+
+    Error(entry, "Exceeded maximum compile-time evaluation steps");
+    Remark("You can increase the limit by passing '--eval-steps=N';\fthe current value is {}.", max_steps);
+    return false;
 }
 
 auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue> {
