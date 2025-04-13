@@ -17,3 +17,7 @@ struct {; // expected-error: Expected identifier after 'struct'
 struct }; // expected-error: Expected identifier after 'struct'
 struct a { int } // expected-error: Expected identifier
 struct b { int x; int } // expected-error: Expected identifier
+
+struct C {
+    int x // expected-error: Expected ';'
+}

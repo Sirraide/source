@@ -672,16 +672,14 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     );
 }
 
-void Parser::ExpectSemicolon() {
-    if (Consume(Tk::Semicolon)) return;
-    if (tok == stream.begin()) {
-        Error("Expected ';'");
-        return;
+bool Parser::ExpectSemicolon() {
+    if (Consume(Tk::Semicolon)) return true;
+    if (tok == stream.begin()) Error("Expected ';'");
+    else {
+        auto prev = tok - 1;
+        Error(prev->location.after(), "Expected ';'");
     }
-
-    // Issue the error after the previous token.
-    auto prev = tok - 1;
-    Error(prev->location.after(), "Expected ';'");
+    return false;
 }
 
 auto Parser::LookAhead(usz n) -> Token& {
@@ -1432,7 +1430,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
         }
 
         fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), {ty.get()->loc, tok->location}});
-        if (not ExpectAndConsume(Tk::Semicolon, "Expected ';'")) SkipTo(Tk::Semicolon);
+        if (not ExpectSemicolon()) SkipTo(Tk::RBrace, Tk::Semicolon);
     }
 
     if (not Consume(Tk::RBrace)) Error("Expected '}}'");
