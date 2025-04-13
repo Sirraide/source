@@ -111,23 +111,28 @@ class srcc::File {
     String short_file_name;
 
     /// The contents of the file.
-    std::unique_ptr<llvm::MemoryBuffer> contents;
+    std::unique_ptr<llvm::MemoryBuffer> buffer;
 
     /// The id of the file.
     const i32 id;
 
 public:
     /// Get an iterator to the beginning of the file.
-    [[nodiscard]] auto begin() const { return contents->getBufferStart(); }
+    [[nodiscard]] auto begin() const { return buffer->getBufferStart(); }
 
     /// Get the owning context.
     [[nodiscard]] auto context() const -> Context& { return ctx; }
 
+    /// Get the file contents.
+    [[nodiscard]] auto contents() const -> String {
+        return String::CreateUnsafe(StringRef(data(), usz(size())));
+    }
+
     /// Get the file data.
-    [[nodiscard]] auto data() const -> const char* { return contents->getBufferStart(); }
+    [[nodiscard]] auto data() const -> const char* { return buffer->getBufferStart(); }
 
     /// Get an iterator to the end of the file.
-    [[nodiscard]] auto end() const { return contents->getBufferEnd(); }
+    [[nodiscard]] auto end() const { return buffer->getBufferEnd(); }
 
     /// Get the id of this file.
     [[nodiscard]] auto file_id() const { return id; }
@@ -142,7 +147,7 @@ public:
     [[nodiscard]] auto short_name() const -> String { return short_file_name; }
 
     /// Get the size of the file.
-    [[nodiscard]] auto size() const -> isz { return isz(contents->getBufferSize()); }
+    [[nodiscard]] auto size() const -> isz { return isz(buffer->getBufferSize()); }
 
     /// Get a temporary file path.
     [[nodiscard]] static auto TempPath(StringRef extension) -> fs::Path;

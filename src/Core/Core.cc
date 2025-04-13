@@ -237,7 +237,7 @@ srcc::File::File(
 ) : ctx(ctx),
     file_path(std::move(path)),
     file_name(name),
-    contents(std::move(contents)),
+    buffer(std::move(contents)),
     id(id) {
     short_file_name = String::CreateUnsafe(stream{name}.take_back_until_any("/\\"));
 }

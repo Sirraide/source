@@ -3,7 +3,22 @@
 
 using namespace srcc;
 
-/// Create a new location that spans two locations.
+/// Get the line+column position of a character in a source file; if the
+/// location points to a '\n' character, treat it as part of the previous
+/// line.
+static void SeekLineColumn(LocInfoShort& info, const char* data, u32 pos) {
+    info.line = 1;
+    info.col = 1;
+    for (const char *d = data, *end = data + pos; d < end; d++) {
+        if (*d == '\n') {
+            info.line++;
+            info.col = 1;
+        } else {
+            info.col++;
+        }
+    }
+}
+
 Location::Location(Location a, Location b) {
     if (a.file_id != b.file_id) return;
     if (not a.is_valid() or not b.is_valid()) return;
@@ -11,7 +26,11 @@ Location::Location(Location a, Location b) {
     len = u16(std::max<u32>(a.pos + a.len, b.pos + b.len) - pos);
 }
 
-/// Contract a source location to the left.
+auto Location::after() const -> Location {
+    Location l = {pos + len, 1, file_id};
+    return l.is_valid() ? l : *this;
+}
+
 [[nodiscard]] auto Location::contract_left(isz amount) const -> Location {
     if (amount > len) return {};
     Location l = *this;
@@ -19,7 +38,6 @@ Location::Location(Location a, Location b) {
     return l;
 }
 
-/// Contract a source location to the right.
 [[nodiscard]] auto Location::contract_right(isz amount) const -> Location {
     if (amount > len) return {};
     Location l = *this;
@@ -45,36 +63,26 @@ bool Location::seekable(const Context& ctx) const {
     return pos + len <= f->size() + 1 and is_valid();
 }
 
-/// Seek to a source location. The location must be valid.
 auto Location::seek(const Context& ctx) const -> std::optional<LocInfo> {
     if (not seekable(ctx)) return std::nullopt;
     LocInfo info{};
-
-    // Get the file that the location is in.
     const auto* f = ctx.file(file_id);
-
-    // Seek back to the start of the line.
     const char* const data = f->data();
-    info.line_start = data + pos;
-    while (info.line_start > data and *info.line_start != '\n') info.line_start--;
-    if (*info.line_start == '\n') info.line_start++;
+    SeekLineColumn(info, data, pos);
 
-    // Seek forward to the end of the line.
-    const char* const end = data + f->size();
-    info.line_end = data + pos;
-    while (info.line_end < end and *info.line_end != '\n') info.line_end++;
+    // Get everything before the range.
+    stream s{data, pos};
+    info.before = String::CreateUnsafe(s.take_back_until_any("\r\n"));
 
-    // Determine the line and column number.
-    info.line = 1;
-    info.col = 1;
-    for (const char* d = data; d < data + pos; d++) {
-        if (*d == '\n') {
-            info.line++;
-            info.col = 1;
-        } else {
-            info.col++;
-        }
-    }
+    // If the position is directly on a '\n', then we treat this as being
+    // at the very end of the previous line, so stop here.
+    if (data[pos] == '\n' or data[pos] == '\r') return info;
+
+    // Next, get everything in and after the range.
+    s = stream{f->contents()};
+    s.drop(pos);
+    info.range = String::CreateUnsafe(s.take(len));
+    info.after = String::CreateUnsafe(s.take_until('\n'));
 
     // Done!
     return info;
@@ -85,26 +93,7 @@ auto Location::seek(const Context& ctx) const -> std::optional<LocInfo> {
 auto Location::seek_line_column(const Context& ctx) const -> std::optional<LocInfoShort> {
     if (not seekable(ctx)) return std::nullopt;
     LocInfoShort info{};
-
-    // Get the file that the location is in.
-    const auto* f = ctx.file(file_id);
-
-    // Seek back to the start of the line.
-    const char* const data = f->data();
-
-    // Determine the line and column number.
-    info.line = 1;
-    info.col = 1;
-    for (const char* d = data; d < data + pos; d++) {
-        if (*d == '\n') {
-            info.line++;
-            info.col = 1;
-        } else {
-            info.col++;
-        }
-    }
-
-    // Done!
+    SeekLineColumn(info, ctx.file(file_id)->data(), pos);
     return info;
 }
 
@@ -114,7 +103,6 @@ auto Location::text(const Context& ctx) const -> String {
     return String::CreateUnsafe(StringRef{f->data(), usz(f->size())}.substr(pos, len));
 }
 
-/// Shift a source location to the left.
 [[nodiscard]] auto Location::operator<<(isz amount) const -> Location {
     Location l = *this;
     if (not is_valid()) return l;
@@ -122,21 +110,18 @@ auto Location::text(const Context& ctx) const -> String {
     return l;
 }
 
-/// Shift a source location to the right.
 [[nodiscard]] auto Location::operator>>(isz amount) const -> Location {
     Location l = *this;
     l.pos = std::max(pos, u32(pos + u32(amount)));
     return l;
 }
 
-/// Extend a source location to the left.
 [[nodiscard]] auto Location::operator<<=(isz amount) const -> Location {
     Location l = *this << amount;
     l.len = std::max(l.len, u16(l.len + amount));
     return l;
 }
 
-/// Extend a source location to the right.
 [[nodiscard]] auto Location::operator>>=(isz amount) const -> Location {
     Location l = *this;
     l.len = std::max(l.len, u16(l.len + amount));

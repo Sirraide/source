@@ -17,13 +17,8 @@ struct srcc::LocInfoShort {
 };
 
 /// A decoded source location.
-struct srcc::LocInfo {
-    i64 line;
-    i64 col;
-    const char* line_start;
-    const char* line_end;
-
-    auto short_info() const -> LocInfoShort { return {line, col}; }
+struct srcc::LocInfo : LocInfoShort {
+    String before, range, after;
 };
 
 /// A source range in a file.
@@ -52,6 +47,9 @@ struct srcc::Location {
 
     /// Extend a source location to the right.
     [[nodiscard]] auto operator>>=(isz amount) const -> Location;
+
+    /// Get the location of the character right after this location.
+    [[nodiscard]] auto after() const -> Location;
 
     /// Contract a source location to the left.
     [[nodiscard]] auto contract_left(isz amount) const -> Location;

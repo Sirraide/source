@@ -110,24 +110,10 @@ auto FormatDiagnostic(
         return out;
     }
 
-    // If the location is valid, get the line, line number, and column number.
-    const auto [line, col, line_start, line_end] = *l;
-    auto col_offs = col - 1;
-
-    // Split the line into everything before the range, the range itself,
-    // and everything after.
-    std::string before(line_start, usz(col_offs));
-    std::string range(line_start + col_offs, std::min<u64>(diag.where.len, u64(line_end - (line_start + col_offs))));
-    auto after = line_start + col_offs + diag.where.len > line_end
-                   ? std::string{}
-                   : std::string(line_start + col_offs + diag.where.len, line_end);
-
-    // Replace tabs with spaces. We need to do this *after* splitting
-    // because this invalidates the offsets. Also escape any parentheses
-    // in the source text.
-    utils::ReplaceAll(before, "\t", "    ");
-    utils::ReplaceAll(range, "\t", "    ");
-    utils::ReplaceAll(after, "\t", "    ");
+    // Replace tabs with spaces.
+    auto before = stream(l->before).replace("\n", "    ");
+    auto range = stream(l->range).replace("\n", "    ");
+    auto after = stream(l->after).replace("\n", "    ");
     auto before_wd = TextWidth(text::ToUTF32(before));
     auto range_wd = TextWidth(text::ToUTF32(range));
 
@@ -164,7 +150,7 @@ auto FormatDiagnostic(
 
         // Print main location.
         out += "  ";
-        PrintLocation(diag.where, l->short_info());
+        PrintLocation(diag.where, static_cast<LocInfoShort>(*l));
 
         // Print extra locations.
         for (const auto& [note, extra] : diag.extra_locations) {
@@ -186,24 +172,24 @@ auto FormatDiagnostic(
     // Print the line up to the start of the location, the range in the right
     // colour, and the rest of the line.
     // TODO: Proper underlines: \033[1;58:5:1;4:3m
-    out += std::format("%b({} |%) {}", line, utils::Escape(before, false, true));
-    out += std::format("%b8({}%)", utils::Escape(range, false, true));
-    out += std::format("{}\n", utils::Escape(after, false, true));
+    out += std::format("%b({} |%) {}", l->line, utils::Escape(before, false, true));
+    if (not range.empty()) out += std::format("%b8({}%)", utils::Escape(range, false, true));
+    if (not after.empty()) out += utils::Escape(after, false, true);
+    out += "\n";
 
     // Determine the number of digits in the line number.
-    const auto digits = std::to_string(line).size();
+    const auto digits = std::to_string(l->line).size();
 
     // Underline the range. For that, we first pad the line based on the number
     // of digits in the line number and append more spaces to line us up with
     // the range.
-    for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++)
-        out += " ";
+    for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++) out += ' ';
 
-    // Finally, underline the range.
+    // Finally, underline the range. The range may be empty, so underline at least 1 character.
     out += std::format(
         "%{}b({}%)",
         Colour(diag.level),
-        std::string(range_wd, '~')
+        std::string(std::max<usz>(range_wd, 1), '~')
     );
 
     // And print any extra data.

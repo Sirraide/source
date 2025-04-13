@@ -4,10 +4,10 @@ proc foo {
     int;
     int b;
     int c, d; // expected-error: A declaration must declare a single variable
-    int e
+    int e;
     int f;
     var g;
     var h = 1;
-    int i = 2
-    var j = h
+    int i = 2;
+    var j = h;
 }
