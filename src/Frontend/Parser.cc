@@ -672,6 +672,18 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     );
 }
 
+void Parser::ExpectSemicolon() {
+    if (Consume(Tk::Semicolon)) return;
+    if (tok == stream.begin()) {
+        Error("Expected ';'");
+        return;
+    }
+
+    // Issue the error after the previous token.
+    auto prev = tok - 1;
+    Error(prev->location.after(), "Expected ';'");
+}
+
 auto Parser::LookAhead(usz n) -> Token& {
     usz curr = usz(tok - stream.begin());
     if (n + curr >= stream.size()) return stream.back();
@@ -1155,6 +1167,8 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
         Error("A declaration must declare a single variable");
         SkipTo(Tk::Semicolon);
     }
+
+    ExpectSemicolon();
     return decl;
 }
 
@@ -1500,4 +1514,3 @@ auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
         }
     }
 }
-

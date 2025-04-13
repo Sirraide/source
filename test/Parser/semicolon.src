@@ -1,0 +1,19 @@
+// V %srcc --parse --verify %s
+program test;
+
+
+{
+    int y // expected-error: Expected ';'
+    int z // expected-error: Expected ';'
+}
+
+{
+    // These comments are purposefully on the previous line to test that we
+    // handle source locations right on the '\n' character properly.
+    // expected-error@+1: Expected ';'
+    int x
+
+    int
+    // expected-error@+1: Expected ';'
+    y
+}

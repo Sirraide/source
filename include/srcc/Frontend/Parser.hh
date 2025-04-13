@@ -718,6 +718,9 @@ private:
         return false;
     }
 
+    /// Consume a semicolon and issue an error on the previous line if it is missing.
+    void ExpectSemicolon();
+
     /// Check if a token is a keyword (implemented in the lexer).
     bool IsKeyword(Tk t);
 
