@@ -11,7 +11,6 @@ namespace srcc {
 class TranslationUnit;
 enum class BuiltinKind : u8;
 enum class CallingConvention : u8;
-enum class Dependence : u8;
 enum class ExprKind : u8;
 enum class Intent : u8;
 enum class Linkage : u8;
@@ -20,52 +19,6 @@ enum class ValueCategory : u8;
 enum class OverflowBehaviour : u8;
 enum class ScopeKind : u8;
 } // namespace srcc
-
-/// Expression dependence.
-///
-/// An expression is *dependent* if it references a template
-/// parameter or contains a dependent subexpression; this has
-/// two main ramifications.
-///
-/// We may not be able to fully analyse the expression until
-/// we instantiate it; this means we can’t check its type (or
-/// use its value if it’s a constant expression) until then.
-///
-/// We have to create a copy of the expression to instantiate
-/// any dependent subexpressions, even if the expression itself
-/// is neither type nor value dependent.
-///
-/// Lastly, because error recovery is pretty similar to dependence,
-/// i.e. we don’t want to try and typecheck an expression if we
-/// know that determining its type caused an error, we also model
-/// it as dependence. Unlike other forms of dependence, error
-/// dependence is never resolved once set.
-enum class srcc::Dependence : base::u8 {
-    /// This expression is not dependent.
-    None = 0,
-
-    /// This expression is dependent in some way.
-    ///
-    /// If only this bit is set, then this expression contains
-    /// dependent code that needs to be instantiated during
-    /// template instantiation.
-    Instantiation = 1,
-
-    /// The value of this expression is dependent.
-    ValueDependent = 1 << 1,
-    Value = ValueDependent | Instantiation,
-
-    /// The type of this expression is dependent.
-    TypeDependent = 1 << 2,
-    Type = TypeDependent | Instantiation,
-
-    /// Combination of value and type dependence.
-    ValueAndType = Value | Type,
-
-    /// This expression contains an error.
-    ErrorDependent = 1 << 7,
-    Error = ErrorDependent | Instantiation,
-};
 
 /// Parameter intents.
 enum class srcc::Intent : base::u8 {
@@ -96,8 +49,6 @@ enum class srcc::Intent : base::u8 {
 /// Builtin types.
 enum class srcc::BuiltinKind : base::u8 {
     Void,
-    Dependent,
-    ErrorDependent,
     NoReturn,
     Bool,
     Int,
@@ -105,12 +56,6 @@ enum class srcc::BuiltinKind : base::u8 {
     Type,
     UnresolvedOverloadSet,
 };
-
-namespace srcc {
-constexpr auto operator|(Dependence a, Dependence b) -> Dependence { return Dependence(u8(a) | u8(b)); }
-constexpr auto operator|=(Dependence& a, Dependence b) -> Dependence& { return a = a | b; }
-constexpr bool operator&(Dependence a, Dependence b) { return Dependence(u8(a) & u8(b)) != Dependence::None; }
-} // namespace srcc
 
 /// Linkage of a global entity.
 enum class srcc::Linkage : base::u8 {
@@ -154,9 +99,6 @@ enum class srcc::ValueCategory : base::u8 {
     ///
     /// These roughly correspond to glvalues in C++.
     LValue,
-
-    /// Dependent, don’t know yet.
-    DValue,
 };
 
 enum class srcc::OverflowBehaviour : base::u8 {

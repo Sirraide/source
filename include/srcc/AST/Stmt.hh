@@ -43,9 +43,6 @@ private:
     /// The kind of this statement.
     const Kind stmt_kind;
 
-    /// Whether this statement is dependent, and how.
-    Dependence dep = Dependence::None;
-
     /// Source location of this statement.
     Location loc;
 
@@ -57,15 +54,6 @@ public:
     void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead");
     void* operator new(usz size, TranslationUnit& tu);
 
-    /// Get whether this statement is dependent.
-    bool dependent() const { return dependence() != Dependence::None; }
-
-    /// Get the dependence of this statement.
-    auto dependence() const -> Dependence { return dep; }
-
-    /// Check if this statement contains an error.
-    bool errored() const { return dependence() & Dependence::ErrorDependent; }
-
     /// Dump the statement.
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
@@ -76,22 +64,12 @@ public:
     /// Get the source location of this statement.
     auto location() const -> Location { return loc; }
 
-    /// Set the dependence of this statement.
-    void set_dependence(Dependence d) { dep = d; }
-
-    /// Mark this node as errored.
-    void set_errored() { dep |= Dependence::Error; }
-
-    /// Check if this is type-dependent.
-    bool type_dependent() const { return dependence() & Dependence::TypeDependent; }
+    /// Get the type of this if it is an expression and Void otherwise.
+    auto type_or_void() const -> Type;
 
     /// Visit this statement.
     template <typename Visitor>
     auto visit(Visitor&& v) -> decltype(auto);
-
-protected:
-    /// Compute the dependence of this expression.
-    void ComputeDependence();
 };
 
 class srcc::WhileStmt : public Stmt {
@@ -103,9 +81,7 @@ public:
         Expr* cond,
         Stmt* body,
         Location location
-    ) : Stmt{Kind::WhileStmt, location}, cond{cond}, body{body} {
-        ComputeDependence();
-    }
+    ) : Stmt{Kind::WhileStmt, location}, cond{cond}, body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
 };
@@ -157,12 +133,10 @@ public:
         Ptr<Expr> message,
         bool is_static,
         Location location
-    ) : Expr{Kind::AssertExpr, Types::VoidTy, SRValue, location},
+    ) : Expr{Kind::AssertExpr, Type::VoidTy, SRValue, location},
         cond{cond},
         message{message},
-        is_static{is_static} {
-        ComputeDependence();
-    }
+        is_static{is_static} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::AssertExpr; }
 };
@@ -183,9 +157,7 @@ public:
     ) : Expr{Kind::BinaryExpr, type, cat, location},
         op{op},
         lhs{lhs},
-        rhs{rhs} {
-        ComputeDependence();
-    }
+        rhs{rhs} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BinaryExpr; }
 };
@@ -232,7 +204,7 @@ public:
     BoolLitExpr(
         bool value,
         Location location
-    ) : Expr{Kind::BoolLitExpr, Types::BoolTy, SRValue, location}, value{value} {}
+    ) : Expr{Kind::BoolLitExpr, Type::BoolTy, SRValue, location}, value{value} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
 };
@@ -299,9 +271,7 @@ public:
         Location location
     ) : Expr{Kind::BuiltinMemberAccessExpr, type, cat, location},
         operand{operand},
-        access_kind{kind} {
-        ComputeDependence();
-    }
+        access_kind{kind} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinMemberAccessExpr; }
 };
@@ -366,9 +336,7 @@ public:
     ) : Expr{Kind::CastExpr, type, SRValue, location},
         arg{expr},
         kind{kind},
-        implicit{implicit} {
-        ComputeDependence();
-    }
+        implicit{implicit} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::CastExpr; }
 };
@@ -397,7 +365,7 @@ public:
     DefaultInitExpr(
         Type type,
         Location location
-    ) : Expr{Kind::DefaultInitExpr, type, type->value_category(), location} {}
+    ) : Expr{Kind::DefaultInitExpr, type, type->rvalue_category(), location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
 };
@@ -411,9 +379,7 @@ public:
     EvalExpr(
         Stmt* stmt,
         Location location
-    ) : Expr{Kind::EvalExpr, Types::DependentTy, DValue, location}, stmt{stmt} {
-        ComputeDependence();
-    }
+    ) : Expr{Kind::EvalExpr, stmt->type_or_void(), LValue /* dummy */, location}, stmt{stmt} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
 };
@@ -437,12 +403,10 @@ public:
         cond{cond},
         then{then},
         else_{else_},
-        is_static{is_static} {
-        ComputeDependence();
-    }
+        is_static{is_static} {}
 
     [[nodiscard]] bool has_yield() const {
-        return type != Types::VoidTy and type != Types::NoReturnTy;
+        return type != Type::VoidTy and type != Type::NoReturnTy;
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IfExpr; }
@@ -508,9 +472,7 @@ public:
     ParenExpr(
         Expr* expr,
         Location location
-    ) : Expr{Kind::ParenExpr, expr->type, expr->value_category, location}, expr{expr} {
-        ComputeDependence();
-    }
+    ) : Expr{Kind::ParenExpr, expr->type, expr->value_category, location}, expr{expr} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParenExpr; }
 };
@@ -527,33 +489,6 @@ public:
     auto return_type() const -> Type;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
-};
-
-class srcc::StaticIfExpr final : public Expr {
-public:
-    Expr* cond;
-
-    // Making the body of a 'static if' ‘dependent’ or deferring instantiation
-    // in some other way is *really* complicated. Instead, we take a page out
-    // of D’s book and simply... don’t translate the body until we know which
-    // branch we actually want.
-    ParsedStmt* then;
-    Ptr<ParsedStmt> else_;
-
-    StaticIfExpr(
-        Expr* cond,
-        ParsedStmt* then,
-        Ptr<ParsedStmt> else_,
-        Location location
-    ) : Expr{Kind::StaticIfExpr, Types::DependentTy, DValue, location},
-        cond{cond},
-        then{then},
-        else_{else_} {
-        Assert(cond->dependent(), "Non-dependent StaticIfExpr???");
-        ComputeDependence();
-    }
-
-    static bool classof(const Stmt* e) { return e->kind() == Kind::StaticIfExpr; }
 };
 
 class srcc::StrLitExpr final : public Expr {
@@ -607,7 +542,7 @@ public:
     TypeExpr(
         Type type,
         Location location
-    ) : Expr{Kind::TypeExpr, Types::TypeTy, SRValue, location}, value{type} { ComputeDependence(); }
+    ) : Expr{Kind::TypeExpr, Type::TypeTy, SRValue, location}, value{type} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeExpr; }
 };
 
@@ -622,13 +557,11 @@ public:
         bool implicit = false
     ) : Expr{
             Kind::ReturnExpr,
-            Types::NoReturnTy,
+            Type::NoReturnTy,
             SRValue,
             location,
         },
-        value{value}, implicit{implicit} {
-        ComputeDependence();
-    }
+        value{value}, implicit{implicit} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ReturnExpr; }
 };
@@ -649,9 +582,7 @@ public:
     ) : Expr{Kind::UnaryExpr, type, val, location},
         op{op},
         arg{arg},
-        postfix{postfix} {
-        ComputeDependence();
-    }
+        postfix{postfix} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::UnaryExpr; }
 };
@@ -662,6 +593,7 @@ public:
 class srcc::Decl : public Stmt {
 public:
     String name;
+    bool is_valid = true;
 
 protected:
     Decl(
@@ -671,6 +603,20 @@ protected:
     ) : Stmt{kind, location}, name{name} {}
 
 public:
+
+    /// Mark this declaration as invalid and return itself for convenience.
+    ///
+    /// We prefer this over simply discarding it from the AST since decls
+    /// may be referenced in other places. If a decl is ‘invalid’, then its
+    /// type should be considered nonsense.
+    auto set_invalid() -> Decl* {
+        is_valid = false;
+        return this;
+    }
+
+    /// Check whether this declaration is valid.
+    [[nodiscard]] bool valid() const { return is_valid; }
+
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::FieldDecl;
     }
@@ -761,23 +707,21 @@ protected:
         Type type,
         String name,
         ProcDecl* parent,
-        Ptr<Expr> init,
         Location location
     ) : Decl{k, name, location},
         parent{parent},
-        type{type},
-        init{init} {
-        ComputeDependence();
-    }
+        type{type} {}
 
 public:
     LocalDecl(
         Type type,
         String name,
         ProcDecl* parent,
-        Ptr<Expr> init,
         Location location
-    ) : LocalDecl{Kind::LocalDecl, type, name, parent, init, location} {}
+    ) : LocalDecl{Kind::LocalDecl, type, name, parent, location} {}
+
+    /// Set the initialiser of this declaration.
+    void set_init(Ptr<Expr> expr) { init = expr; }
 
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::LocalDecl and e->kind() <= Kind::ParamDecl;
@@ -795,7 +739,7 @@ public:
         u32 index,
         bool with_param,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, param->type, name, parent, nullptr, location},
+    ) : LocalDecl{Kind::ParamDecl, param->type, name, parent, location},
         idx{index},
         with{with_param} {}
 

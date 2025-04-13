@@ -36,19 +36,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     : ctx{ctx},
       language_opts{opts},
       name{save(name)},
-      is_module{is_module},
-      FFIBoolTy{Type::UnsafeNull()},
-      FFICharTy{Type::UnsafeNull()},
-      FFIShortTy{Type::UnsafeNull()},
-      FFIIntTy{Type::UnsafeNull()},
-      FFILongTy{Type::UnsafeNull()},
-      FFILongLongTy{Type::UnsafeNull()},
-      FFISizeTy{Type::UnsafeNull()},
-      I8Ty{Type::UnsafeNull()},
-      I16Ty{Type::UnsafeNull()},
-      I32Ty{Type::UnsafeNull()},
-      I64Ty{Type::UnsafeNull()},
-      I128Ty{Type::UnsafeNull()} {
+      is_module{is_module} {
     // Get information about the compilation target from Clang.
     {
         std::array args {
@@ -100,7 +88,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     // cannot be overloaded, so it doesn’t need to be mangled.
     initialiser_proc = ProcDecl::Create(
         *this,
-        ProcType::Get(*this, Types::VoidTy),
+        ProcType::Get(*this, Type::VoidTy),
         is_module ? save(constants::EntryPointName(name)) : constants::ProgramEntryPoint,
         is_module ? Linkage::Internal : Linkage::Exported,
         Mangling::None,
@@ -189,13 +177,10 @@ void Stmt::Printer::PrintBasicNode(
                 case ValueCategory::SRValue: Unreachable();
                 case ValueCategory::MRValue: print(" mrvalue"); break;
                 case ValueCategory::LValue: print(" lvalue"); break;
-                case ValueCategory::DValue: print(" dvalue"); break;
             }
         }
     }
 
-    if (s->errored()) print(" has-error");
-    if (s->dependent()) print(" dependent");
     print("\n");
 }
 
@@ -380,7 +365,6 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(p, "ProcDecl");
             print(" %2({}%) {}", p->name, p->type->print());
 
-            if (p->errored()) print(" errored");
             if (p->instantiated_from) print(" instantiation");
             if (p->linkage == Linkage::Exported or p->linkage == Linkage::Reexported) print(" exported");
             if (p->linkage == Linkage::Imported or p->linkage == Linkage::Reexported) print(" imported");
@@ -415,10 +399,6 @@ void Stmt::Printer::Print(Stmt* e) {
             auto ret = cast<ReturnExpr>(e);
             PrintBasicNode(e, "ReturnExpr", [&] { if (ret->implicit) print("implicit"); }, false);
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
-        } break;
-
-        case Kind::StaticIfExpr: {
-            PrintBasicNode(e, "StaticIfExpr");
         } break;
 
         case Kind::StrLitExpr: {

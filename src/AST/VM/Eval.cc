@@ -45,15 +45,13 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
             switch (::cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::UnresolvedOverloadSet:
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
                     Unreachable();
 
                 case BuiltinKind::Bool: return SRValue(false);
-                case BuiltinKind::Int: return SRValue(APInt::getZero(u32(Types::IntTy->size(tu).bits())), ty);
+                case BuiltinKind::Int: return SRValue(APInt::getZero(u32(Type::IntTy->size(tu).bits())), ty);
                 case BuiltinKind::Void: return SRValue();
-                case BuiltinKind::Type: return SRValue(Types::VoidTy);
+                case BuiltinKind::Type: return SRValue(Type::VoidTy);
             }
 
             Unreachable();
@@ -667,8 +665,6 @@ auto Eval::FFIType(Type ty) -> ffi_type* {
         case TypeBase::Kind::BuiltinType:
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::UnresolvedOverloadSet:
                     Unreachable();
@@ -797,7 +793,7 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
 
         case TypeBase::Kind::SliceType: {
             auto ptr = Load.operator()<Pointer>();
-            auto sz = LoadSRValue(static_cast<const char*>(mem) + sizeof(Pointer), Types::IntTy)->cast<APInt>();
+            auto sz = LoadSRValue(static_cast<const char*>(mem) + sizeof(Pointer), Type::IntTy)->cast<APInt>();
             return SRValue(SRSlice{ptr, std::move(sz)}, ty);
         }
 
@@ -811,8 +807,6 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
         case TypeBase::Kind::BuiltinType:
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::UnresolvedOverloadSet:
                     Unreachable();

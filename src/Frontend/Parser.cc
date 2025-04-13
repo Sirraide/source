@@ -658,7 +658,7 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     // If no return type was provided, default to 'void' here.
     if (sig.ret.invalid()) {
         sig.ret = new (*this) ParsedBuiltinType(
-            Types::VoidTy.ptr(),
+            Type::VoidTy,
             sig.proc_loc
         );
     }
@@ -1189,7 +1189,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // if this is a '= <expr>' declaration.
     if (sig.ret.invalid()) {
         sig.ret = new (*this) ParsedBuiltinType(
-            At(Tk::Assign) ? Types::DeducedTy.ptr() : Types::VoidTy.ptr(),
+            At(Tk::Assign) ? Type::DeducedTy.ptr() : Type::VoidTy.ptr(),
             sig.proc_loc
         );
     }
@@ -1466,7 +1466,7 @@ auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt> {
 }
 
 auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
-    auto Builtin = [&](BuiltinType* ty) {
+    auto Builtin = [&](Type ty) {
         return new (*this) ParsedBuiltinType(ty, Next());
     };
 
@@ -1474,10 +1474,10 @@ auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
         default: return Error("Expected type");
 
         // <type-prim> ::= BOOL | INT | VOID | VAR
-        case Tk::Bool: return Builtin(Types::BoolTy.ptr());
-        case Tk::Int: return Builtin(Types::IntTy.ptr());
-        case Tk::Void: return Builtin(Types::VoidTy.ptr());
-        case Tk::Var: return Builtin(Types::DeducedTy.ptr());
+        case Tk::Bool: return Builtin(Type::BoolTy);
+        case Tk::Int: return Builtin(Type::IntTy);
+        case Tk::Void: return Builtin(Type::VoidTy);
+        case Tk::Var: return Builtin(Type::DeducedTy);
 
         // INTEGER_TYPE
         case Tk::IntegerType:

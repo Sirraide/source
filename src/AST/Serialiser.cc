@@ -119,7 +119,7 @@ void Serialiser::SerialiseTemplateTypeDecl(const TemplateTypeDecl*) {
 
 auto Serialiser::SerialiseType(Type ty) -> u64 {
     // Avoid serialising the same type twice.
-    auto it = type_indices.find(ty.as_opaque_ptr());
+    auto it = type_indices.find(ty.ptr());
     if (it != type_indices.end()) return it->second;
 
     // First, ensure types that this depends on are serialised.
@@ -152,7 +152,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
 
     // The current index will be the index of this type.
     auto idx = u64(type_indices.size());
-    type_indices[ty.as_opaque_ptr()] = idx;
+    type_indices[ty.ptr()] = idx;
 
     // Next, serialise the type.
     Writer W{types_buffer};
@@ -439,15 +439,13 @@ void Deserialiser::DeserialiseType() {
 
         case TypeBase::Kind::BuiltinType: {
             switch (Read<BuiltinKind>()) {
-                case BuiltinKind::Void: deserialised_types.push_back(Types::VoidTy); return;
-                case BuiltinKind::Dependent: deserialised_types.push_back(Types::DependentTy); return;
-                case BuiltinKind::ErrorDependent: deserialised_types.push_back(Types::ErrorDependentTy); return;
-                case BuiltinKind::NoReturn: deserialised_types.push_back(Types::NoReturnTy); return;
-                case BuiltinKind::Bool: deserialised_types.push_back(Types::BoolTy); return;
-                case BuiltinKind::Int: deserialised_types.push_back(Types::IntTy); return;
-                case BuiltinKind::Deduced: deserialised_types.push_back(Types::DeducedTy); return;
-                case BuiltinKind::Type: deserialised_types.push_back(Types::TypeTy); return;
-                case BuiltinKind::UnresolvedOverloadSet: deserialised_types.push_back(Types::UnresolvedOverloadSetTy); return;
+                case BuiltinKind::Void: deserialised_types.push_back(Type::VoidTy); return;
+                case BuiltinKind::NoReturn: deserialised_types.push_back(Type::NoReturnTy); return;
+                case BuiltinKind::Bool: deserialised_types.push_back(Type::BoolTy); return;
+                case BuiltinKind::Int: deserialised_types.push_back(Type::IntTy); return;
+                case BuiltinKind::Deduced: deserialised_types.push_back(Type::DeducedTy); return;
+                case BuiltinKind::Type: deserialised_types.push_back(Type::TypeTy); return;
+                case BuiltinKind::UnresolvedOverloadSet: deserialised_types.push_back(Type::UnresolvedOverloadSetTy); return;
             }
 
             Unreachable("Invalid builtin type");

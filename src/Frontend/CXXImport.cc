@@ -166,7 +166,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             switch (cast<clang::BuiltinType>(T)->getKind()) {
                 using K = clang::BuiltinType::Kind;
                 default: return std::nullopt;
-                case K::Void: return Types::VoidTy;
+                case K::Void: return Type::VoidTy;
                 case K::Bool: return S.M->FFIBoolTy;
 
                 case K::SChar:
@@ -217,7 +217,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             auto FPT = cast<clang::FunctionProtoType>(T);
             if (FPT->getCallConv() != clang::CallingConv::CC_C) return std::nullopt;
 
-            auto Ret = FPT->getExtInfo().getNoReturn() ? Types::NoReturnTy : ImportType(FPT->getReturnType());
+            auto Ret = FPT->getExtInfo().getNoReturn() ? Type::NoReturnTy : ImportType(FPT->getReturnType());
             if (not Ret) return std::nullopt;
 
             SmallVector<ParamTypeData, 6> Params;

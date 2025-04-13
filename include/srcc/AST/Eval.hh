@@ -207,18 +207,18 @@ class srcc::eval::SRValue {
     /// move this class (and SRClosure, SRSlice, Pointer) into Eval.cc and create a separate
     /// SRValue class that doesn’t contain those types and translate between the two in VM::eval().
     Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, std::monostate> value{std::monostate{}};
-    Type ty{Types::VoidTy};
+    Type ty{Type::VoidTy};
 
 public:
     SRValue() = default;
     explicit SRValue(cg::ir::Proc* proc);
-    explicit SRValue(std::same_as<bool> auto b) : value{b}, ty{Types::BoolTy} {}
-    explicit SRValue(Type ty) : value{ty}, ty{Types::TypeTy} {}
+    explicit SRValue(std::same_as<bool> auto b) : value{b}, ty{Type::BoolTy} {}
+    explicit SRValue(Type ty) : value{ty}, ty{Type::TypeTy} {}
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
     explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
     explicit SRValue(SRClosure closure, Type ty) : value{closure}, ty{ty} {}
     explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
-    explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Types::IntTy} {}
+    explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Type::IntTy} {}
 
     /// Create a the 'empty' or 'nil' value of a given type.
     static auto Empty(TranslationUnit& tu, Type ty) -> SRValue;

@@ -321,8 +321,6 @@ void CodeGen::Mangler::Append(Type ty) {
         void operator()(IntType* i) { M.name += std::format("I{}", i->bit_width().bits()); }
         void operator()(BuiltinType* b) {
             switch (b->builtin_kind()) {
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::Deduced:
                 case BuiltinKind::Type:
                 case BuiltinKind::UnresolvedOverloadSet:
@@ -387,8 +385,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 //  Initialisation.
 // ============================================================================
 void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
-    switch (init->type->value_category()) {
-        case Expr::DValue: Unreachable("Dependent initialiser in codegen?");
+    switch (init->type->rvalue_category()) {
         case Expr::LValue: Unreachable("Initialisation from lvalue?");
 
         // Emit + store.
@@ -435,7 +432,6 @@ void CodeGen::Emit(ArrayRef<ProcDecl*> procs) {
 }
 
 auto CodeGen::Emit(Stmt* stmt) -> Value* {
-    Assert(not stmt->dependent(), "Cannot emit dependent statement");
     switch (stmt->kind()) {
         using K = Stmt::Kind;
 #define AST_DECL_LEAF(node) \
@@ -697,14 +693,14 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
                     CreateCall(printf, {str_format, size, data});
                 }
 
-                else if (a->type == Types::IntTy) {
+                else if (a->type == Type::IntTy) {
                     Assert(a->value_category == Expr::SRValue);
                     auto int_format = CreateString("%" PRId64)->data;
                     auto val = Emit(a);
                     CreateCall(printf, {int_format, val});
                 }
 
-                else if (a->type == Types::BoolTy) {
+                else if (a->type == Type::BoolTy) {
                     Assert(a->value_category == Expr::SRValue);
                     auto bool_format = CreateString("%s")->data;
                     auto val = Emit(a);
@@ -742,8 +738,8 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::SliceSize: {
             auto slice = Emit(expr->operand);
             if (expr->lvalue()) {
-                auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Types::IntTy);
-                return CreateLoad(Types::IntTy, CreatePtrAdd(slice, ptr_sz, true));
+                auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Type::IntTy);
+                return CreateLoad(Type::IntTy, CreatePtrAdd(slice, ptr_sz, true));
             }
             return CreateExtractValue(slice, 1);
         }
@@ -795,7 +791,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
 }
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
-    Assert(stmt->type->value_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
+    Assert(stmt->type->rvalue_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
     return CreateNil(stmt->type);
 }
 
@@ -873,10 +869,6 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     auto val = expr->value.get_or_null();
     CreateReturn(val ? Emit(val) : nullptr);
     return {};
-}
-
-auto CodeGen::EmitStaticIfExpr(StaticIfExpr*) -> Value* {
-    Unreachable();
 }
 
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
@@ -959,7 +951,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
     Assert(bool(lang_opts.constant_eval));
 
     // Create a new procedure for this statement.
-    auto ret_ty = isa<Expr>(stmt) ? cast<Expr>(stmt)->type : Types::VoidTy;
+    auto ret_ty = isa<Expr>(stmt) ? cast<Expr>(stmt)->type : Type::VoidTy;
     auto proc = GetOrCreateProc(
         constants::VMEntryPointName,
         Linkage::Internal,
@@ -971,7 +963,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
     EnterProcedure _(*this, proc);
     auto val = Emit(stmt);
     if (not insert_point->closed())
-        CreateReturn(val and val->type() != Types::VoidTy ? val : nullptr);
+        CreateReturn(val and val->type() != Type::VoidTy ? val : nullptr);
 
     return proc;
 }

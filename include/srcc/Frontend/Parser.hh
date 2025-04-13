@@ -116,9 +116,9 @@ public:
 // ============================================================================
 class srcc::ParsedBuiltinType final : public ParsedStmt {
 public:
-    BuiltinType* const ty;
+    Type ty;
 
-    ParsedBuiltinType(BuiltinType* ty, Location loc)
+    ParsedBuiltinType(Type ty, Location loc)
         : ParsedStmt{Kind::BuiltinType, loc},
           ty{ty} {}
 

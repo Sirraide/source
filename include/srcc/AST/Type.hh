@@ -15,25 +15,23 @@ class Scope;
 class StructScope;
 class TemplateTypeDecl;
 class TranslationUnit;
-class Types;
 struct ParamTypeData;
 class Expr;
 class Decl;
 class FieldDecl;
 class TypeDecl;
+struct BuiltinTypes;
 
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
 
-template <typename Wrapped>
-class TypeWrapper;
-using Type = TypeWrapper<TypeBase>;
+class Type;
 class TypeLoc;
 
 /// Casting.
-template <typename To, typename From> auto cast(TypeWrapper<From> from) -> TypeWrapper<To>;
-template <typename To, typename From> auto dyn_cast(TypeWrapper<From> from) -> std::optional<TypeWrapper<To>>;
-template <typename To, typename From> auto isa(TypeWrapper<From> from) -> bool;
+/*template <typename To> auto cast(Type from) -> To*;
+template <typename To> auto dyn_cast(Type from) -> To*;
+template <typename... Ts> auto isa(Type from) -> bool;*/
 } // namespace srcc
 
 /// Scope that stores declarations.
@@ -84,18 +82,13 @@ class srcc::StructScope : public Scope {
 public:
     /// Initialiser declarations.
     SmallVector<Decl*> inits;
-
 };
 
-/// Type of an expression or declaration.
-///
-/// Types are immutable, so it’s fine to pass them by non-`const`
-/// reference or pointer in most cases.
+/// Base class for all types.
 class srcc::TypeBase {
     SRCC_IMMOVABLE(TypeBase);
 
-    template <typename Wrapped>
-    friend class TypeWrapper;
+    friend Type;
 
 public:
     enum struct Kind : u8 {
@@ -105,10 +98,9 @@ public:
     };
 
     const Kind type_kind;
-    Dependence dep = Dependence::None;
 
 protected:
-    explicit constexpr TypeBase(Kind kind, Dependence dep = Dependence::None) : type_kind{kind}, dep{dep} {}
+    explicit constexpr TypeBase(Kind kind) : type_kind{kind} {}
 
 public:
     // Only allow allocating these in the module.
@@ -116,73 +108,69 @@ public:
     void* operator new(usz size, TranslationUnit& mod);
 
     /// Get the alignment of this type.
-    LLVM_READONLY auto align(TranslationUnit& tu) const -> Align;
+    [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
 
     /// Get the size of this type when stored in an array.
-    LLVM_READONLY auto array_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
     /// an initialiser with no arguments.
-    LLVM_READONLY bool can_init_from_no_args() const;
+    [[nodiscard]] bool can_init_from_no_args() const;
 
     /// Get whether this type has a default initialiser.
-    LLVM_READONLY bool can_default_init() const;
-
-    /// Get the dependence of this type.
-    auto dependence() const -> Dependence { return dep; }
-
-    /// Check if this is dependent.
-    bool dependent() const { return dep != Dependence::None; }
+    [[nodiscard]] bool can_default_init() const;
 
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
     void dump_colour() const;
 
-    /// Check if this type contains an error.
-    bool errored() const { return dep & Dependence::Error; }
-
-    /// Get the kind of this type.
-    auto kind() const -> Kind { return type_kind; }
-
     /// Check if this is 'int' or a sized integer.
-    LLVM_READONLY bool is_integer() const;
+    [[nodiscard]] bool is_integer() const;
+
+    /// Whether values of this type are mrvalues.
+    [[nodiscard]] bool is_mrvalue() const { return not is_srvalue(); }
+
+    /// Whether values of this type are srvalues.
+    [[nodiscard]] bool is_srvalue() const;
 
     /// Check if this type is the builtin 'void' type.
-    LLVM_READONLY bool is_void() const;
+    [[nodiscard]] bool is_void() const;
 
     /// Whether this type should be passed as an lvalue given a specific intent.
-    LLVM_READONLY bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
+    [[nodiscard]] bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
         return not pass_by_rvalue(cc, intent);
     }
 
     /// Whether this type should be passed as an rvalue given a specific intent.
-    LLVM_READONLY bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
+    [[nodiscard]] bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
 
     /// Get a string representation of this type.
-    LLVM_READONLY auto print() const -> SmallUnrenderedString;
+    [[nodiscard]] auto print() const -> SmallUnrenderedString;
+
+    /// Get what kind of rvalue this type produced.
+    [[nodiscard]] auto rvalue_category() const -> ValueCategory {
+        return is_srvalue() ? ValueCategory::SRValue : ValueCategory::MRValue;
+    }
 
     /// Get the size of this type. This does NOT include tail padding!
-    LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
-
-    /// Get the value category that an expression with this type
-    /// has by default. This will usually be some kind of rvalue.
-    LLVM_READONLY auto value_category() const -> ValueCategory;
+    [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
 
     /// Visit this type.
     template <typename Visitor>
     auto visit(Visitor&& v) const -> decltype(auto);
 
-protected:
-    void ComputeDependence();
+    /// Get the type kind.
+    [[nodiscard]] auto kind() const -> Kind { return type_kind; }
 };
 
 class srcc::BuiltinType final : public TypeBase {
-    friend Types;
+    friend BuiltinTypes;
+
     const BuiltinKind b_kind;
 
-    explicit constexpr BuiltinType(BuiltinKind kind, Dependence dep = Dependence::None)
-        : TypeBase{Kind::BuiltinType, dep}, b_kind{kind} {}
+    explicit constexpr BuiltinType(BuiltinKind kind)
+        : TypeBase{Kind::BuiltinType}, b_kind{kind} {}
 
 public:
     /// Get the kind of this builtin type.
@@ -194,7 +182,7 @@ public:
 
 class srcc::IntType final : public TypeBase
     , public FoldingSetNode {
-    friend Types;
+    friend Type;
 
 public:
     static constexpr Size MaxBits = Size::Bits(u64(llvm::IntegerType::MAX_INT_BITS));
@@ -218,63 +206,53 @@ public:
 };
 
 /// A type together with qualifiers.
-template <typename Wrapped = srcc::TypeBase>
-class srcc::TypeWrapper {
-    template <typename> friend class TypeWrapper;
+class srcc::Type {
+    TypeBase* pointer = nullptr;
 
 public:
-    using WrappedType = Wrapped;
-
-private:
-    WrappedType* pointer;
-
-    TypeWrapper() = default;
-
-public:
-    constexpr TypeWrapper(WrappedType* t) : pointer{t} { Check(); }
-
-    template <std::derived_from<WrappedType> Derived>
-    TypeWrapper(Derived* derived) : pointer{derived} { Check(); }
-
-    template <std::derived_from<WrappedType> Derived>
-    TypeWrapper(TypeWrapper<Derived> derived) : pointer{derived.ptr()} { Check(); }
-
-    TypeWrapper(std::nullptr_t) = SRCC_DELETED("Use `TypeWrapper::UnsafeNull()` if you must");
-
-    /// Get this as an opaque pointer.
-    auto as_opaque_ptr() const -> void* { return pointer; }
+    explicit constexpr Type() = default;
+    constexpr Type(TypeBase* t) : pointer{t} {}
 
     /// Get the type pointer.
-    auto ptr() const -> WrappedType* { return pointer; }
+    [[nodiscard]] auto ptr() const -> TypeBase* { return pointer; }
 
     /// Access the type pointer.
-    auto operator->() const -> WrappedType* { return pointer; }
+    [[nodiscard]] auto operator->() const -> TypeBase* { return pointer; }
 
     /// Check if two types are equal.
-    template <typename T>
-    auto operator==(TypeWrapper<T> other) const -> bool { return pointer == other.pointer; }
-    auto operator==(const TypeBase* ty) const -> bool { return pointer == ty; }
+    [[nodiscard]] auto operator==(Type ty) const -> bool { return pointer == ty.pointer; }
+    [[nodiscard]] auto operator==(const TypeBase* ty) const -> bool { return pointer == ty; }
 
-    /// Construct a `TypeWrapper` from an opaque pointer.
-    static auto FromOpaquePointer(void* ptr) -> TypeWrapper {
-        return TypeWrapper{static_cast<WrappedType*>(ptr)};
-    }
+    /// Check whether this holds a valid type.
+    [[nodiscard]] explicit operator bool() const { return pointer != nullptr; }
 
-    /// Construct a null `TypeWrapper`.
-    ///
-    /// This should be used very sparingly; a type that is passed
-    /// to a function or returned from one must never be null; this
-    /// is only to allow late initialisation of fields.
-    static constexpr auto UnsafeNull() -> TypeWrapper {
-        TypeWrapper t;
-        t.pointer = nullptr;
-        return t;
-    }
+    static const Type VoidTy;
+    static const Type NoReturnTy;
+    static const Type BoolTy;
+    static const Type IntTy;
+    static const Type DeducedTy;
+    static const Type TypeTy;
+    static const Type UnresolvedOverloadSetTy;
+};
 
-private:
-    constexpr void Check() {
-        Assert(pointer, "Null type pointer can only be constructed with `TypeWrapper::UnsafeNull()`");
-    }
+template <>
+struct llvm::PointerLikeTypeTraits<srcc::Type> {
+    static constexpr int NumLowBitsAvailable = PointerLikeTypeTraits<srcc::TypeBase*>::NumLowBitsAvailable;
+    static constexpr bool isPtrLike = true;
+    static auto getAsVoidPointer(srcc::Type t) -> void* { return t.ptr(); }
+    static auto getFromVoidPointer(void* p) -> srcc::Type { return srcc::Type{static_cast<srcc::TypeBase*>(p)}; }
+};
+
+template <>
+struct llvm::simplify_type<srcc::Type> {
+    using SimpleType = srcc::TypeBase*;
+    static SimpleType getSimplifiedValue(srcc::Type v) { return v.ptr(); }
+};
+
+template <>
+struct llvm::simplify_type<const srcc::Type> {
+    using SimpleType = srcc::TypeBase*;
+    static SimpleType getSimplifiedValue(srcc::Type v) { return v.ptr(); }
 };
 
 class srcc::TypeLoc {
@@ -283,53 +261,6 @@ public:
     Location loc;
     TypeLoc(Type ty, Location loc) : ty{ty}, loc{loc} {}
     TypeLoc(Expr* e);
-};
-
-// Specialisation that uses the null state to represent a null type.
-template <typename Ty>
-class srcc::Opt<srcc::TypeWrapper<Ty>> {
-    using Type = TypeWrapper<Ty>;
-    Type val;
-
-public:
-    constexpr Opt() : val{Type::UnsafeNull()} {}
-    constexpr Opt(std::nullptr_t) : Opt() {}
-    constexpr Opt(std::nullopt_t) : Opt() {}
-    constexpr Opt(Type ty) : val{ty} {}
-    constexpr Opt(Ty* ty) : val{ty} {}
-
-    constexpr bool has_value() const { return val != Type::UnsafeNull(); }
-    constexpr auto value() const -> Type {
-        Assert(has_value());
-        return val;
-    }
-
-    constexpr auto value() -> Type& {
-        Assert(has_value());
-        return val;
-    }
-
-    constexpr explicit operator bool() const { return has_value(); }
-};
-
-// The const_cast here is fine because we never modify types anyway.
-#define BUILTIN_TYPE(Name, ...)                                                              \
-private:                                                                                     \
-    static constexpr BuiltinType Name##TyImpl{BuiltinKind::Name __VA_OPT__(, ) __VA_ARGS__}; \
-public:                                                                                      \
-    static constexpr TypeWrapper<BuiltinType> Name##Ty = const_cast<BuiltinType*>(&Name##Ty##Impl)
-
-// FIXME: Eliminate 'TypeWrapper' in favour of a single 'Type' class and move these there?
-class srcc::Types {
-    BUILTIN_TYPE(Void);
-    BUILTIN_TYPE(Dependent, Dependence::Type);
-    BUILTIN_TYPE(ErrorDependent, Dependence::Type | Dependence::Error);
-    BUILTIN_TYPE(NoReturn);
-    BUILTIN_TYPE(Bool);
-    BUILTIN_TYPE(Int);
-    BUILTIN_TYPE(Deduced);
-    BUILTIN_TYPE(Type);
-    BUILTIN_TYPE(UnresolvedOverloadSet);
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {
@@ -356,7 +287,6 @@ class srcc::ArrayType final : public SingleElementTypeBase
         i64 size
     ) : SingleElementTypeBase{Kind::ArrayType, elem}, elems{size} {
         Assert(size >= 0, "Negative array size?");
-        ComputeDependence();
     }
 
 public:
@@ -371,9 +301,7 @@ public:
 
 class srcc::ReferenceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit ReferenceType(Type elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {
-        ComputeDependence();
-    }
+    explicit ReferenceType(Type elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
@@ -440,8 +368,6 @@ public:
         bool variadic = false
     ) -> ProcType*;
 
-    static auto GetInvalid(TranslationUnit& tu) -> ProcType*;
-
     static void Profile(
         FoldingSetNodeID& ID,
         Type return_type,
@@ -455,9 +381,7 @@ public:
 
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {
-        ComputeDependence();
-    }
+    explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
@@ -476,7 +400,7 @@ class srcc::StructType final : public TypeBase
 public:
     struct Bits {
         bool default_initialiser : 1 = false;
-        bool init_from_no_args : 1 = false;
+        bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
     };
 
@@ -587,9 +511,7 @@ class srcc::TemplateType final : public TypeBase
     TemplateTypeDecl* decl;
     explicit TemplateType(TemplateTypeDecl* decl)
         : TypeBase{Kind::TemplateType},
-          decl{decl} {
-        ComputeDependence();
-    }
+          decl{decl} {}
 
 public:
     auto template_decl() const -> TemplateTypeDecl* { return decl; }
@@ -616,10 +538,10 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     Unreachable();
 }
 
-template <typename Ty>
-struct std::formatter<srcc::TypeWrapper<Ty>> : std::formatter<std::string_view> {
+template <>
+struct std::formatter<srcc::Type> : std::formatter<std::string_view> {
     template <typename FormatContext>
-    auto format(srcc::TypeWrapper<Ty> t, FormatContext& ctx) const {
+    auto format(srcc::Type t, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
     }
 };
@@ -632,20 +554,20 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
     }
 };
 
-template <typename To, typename From>
-auto srcc::cast(srcc::TypeWrapper<From> from) -> srcc::TypeWrapper<To> {
-    return srcc::TypeWrapper<To>{llvm::cast<To>(from.ptr())};
+/*
+template <typename To>
+auto srcc::cast(srcc::Type from) -> To* {
+    return llvm::cast<To>(from.ptr());
 }
 
-template <typename To, typename From>
-auto srcc::dyn_cast(srcc::TypeWrapper<From> from) -> std::optional<srcc::TypeWrapper<To>> {
-    if (auto* c = llvm::dyn_cast<To>(from.ptr())) return srcc::TypeWrapper<To>{c};
-    return std::nullopt;
+template <typename To>
+auto srcc::dyn_cast(srcc::Type from) -> To* {
+    return llvm::dyn_cast<To>(from.ptr());
 }
 
-template <typename To, typename From>
-auto srcc::isa(srcc::TypeWrapper<From> from) -> bool {
-    return llvm::isa<To>(from.ptr());
-}
+template <typename... Ts>
+auto srcc::isa(srcc::Type from) -> bool {
+    return llvm::isa<Ts...>(from.ptr());
+}*/
 
 #endif // SRCC_AST_TYPE_HH

@@ -11,6 +11,24 @@
 
 using namespace srcc;
 
+struct srcc::BuiltinTypes {
+    static constexpr BuiltinType VoidTyImpl{BuiltinKind::Void};
+    static constexpr BuiltinType NoReturnTyImpl{BuiltinKind::NoReturn};
+    static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
+    static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
+    static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced};
+    static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
+    static constexpr BuiltinType UnresolvedOverloadSetTyImpl{BuiltinKind::UnresolvedOverloadSet};
+};
+
+constexpr Type Type::VoidTy{const_cast<BuiltinType*>(&BuiltinTypes::VoidTyImpl)};
+constexpr Type Type::NoReturnTy{const_cast<BuiltinType*>(&BuiltinTypes::NoReturnTyImpl)};
+constexpr Type Type::BoolTy{const_cast<BuiltinType*>(&BuiltinTypes::BoolTyImpl)};
+constexpr Type Type::IntTy{const_cast<BuiltinType*>(&BuiltinTypes::IntTyImpl)};
+constexpr Type Type::DeducedTy{const_cast<BuiltinType*>(&BuiltinTypes::DeducedTyImpl)};
+constexpr Type Type::TypeTy{const_cast<BuiltinType*>(&BuiltinTypes::TypeTyImpl)};
+constexpr Type Type::UnresolvedOverloadSetTy{const_cast<BuiltinType*>(&BuiltinTypes::UnresolvedOverloadSetTyImpl)};
+
 // ============================================================================
 //  Helpers
 // ============================================================================
@@ -58,10 +76,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
                 case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Type: return Align::Of<Type>(); // This is a compile-time only type.
                 case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_align();;
-                case BuiltinKind::ErrorDependent: return Align{1}; // Dummy value.
-                case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                    Unreachable("Requested alignment of dependent type");
+                case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
             }
             Unreachable();
         },
@@ -91,7 +106,6 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
                 case BuiltinKind::Void:
-                case BuiltinKind::ErrorDependent:
                     return true;
 
                 case BuiltinKind::UnresolvedOverloadSet:
@@ -100,8 +114,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
                     return false;
 
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                    Unreachable("Querying property of dependent type");
+                    Unreachable("Querying property of deduced type");
             }
             Unreachable();
         },
@@ -127,8 +140,29 @@ void TypeBase::dump(bool use_colour) const {
 }
 
 bool TypeBase::is_integer() const {
-    return this == Types::IntTy or isa<IntType>(this);
+    return this == Type::IntTy or isa<IntType>(this);
 }
+
+bool TypeBase::is_srvalue() const {
+    switch (type_kind) {
+        case Kind::BuiltinType:
+        case Kind::SliceType:
+        case Kind::ReferenceType:
+        case Kind::IntType:
+        case Kind::ProcType:
+            return true;
+
+        case Kind::ArrayType:
+        case Kind::StructType:
+            return false;
+
+        case Kind::TemplateType:
+            Unreachable();
+    }
+
+    Unreachable("Invalid type kind");
+}
+
 
 bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and
@@ -175,6 +209,8 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
                 [](TemplateType*) -> bool { Unreachable(); }             // Should never be called for these.
             }); // clang-format on
     }
+
+    Unreachable();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
@@ -189,8 +225,6 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: out += "%6(bool%)"; break;
                 case BuiltinKind::Deduced: out += "%6(var%)"; break;
-                case BuiltinKind::Dependent: out += "%6(<dependent type>%)"; break;
-                case BuiltinKind::ErrorDependent: out += "%6(<error>%)"; break;
                 case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; break;
                 case BuiltinKind::Int: out += "%6(int%)"; break;
                 case BuiltinKind::NoReturn: out += "%6(noreturn%)"; break;
@@ -242,14 +276,12 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
                 case BuiltinKind::Type: return Size::Of<Type>();
                 case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_size();
 
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
                     return Size();
 
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                    Unreachable("Requested size of dependent type");
+                    Unreachable("Requested size of deduced type");
             }
         }
 
@@ -273,58 +305,6 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
     Unreachable("Invalid type kind");
 }
 
-auto TypeBase::value_category() const -> ValueCategory {
-    switch (type_kind) {
-        case Kind::BuiltinType: {
-            switch (cast<BuiltinType>(this)->builtin_kind()) {
-                // 'void' is our unit type; 'noreturn' is never instantiated
-                // by definition, so just making it an srvalue is fine.
-                case BuiltinKind::Void:
-                case BuiltinKind::NoReturn:
-                case BuiltinKind::Bool:
-                case BuiltinKind::Int:
-                case BuiltinKind::Type:
-                case BuiltinKind::UnresolvedOverloadSet:
-                    return Expr::SRValue;
-
-                // Don’t know yet.
-                case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
-                    return Expr::DValue;
-            }
-
-            Unreachable("Invalid builtin kind");
-        }
-
-        // It’s not worth it to try and construct arrays in registers.
-        case Kind::ArrayType: return Expr::MRValue;
-
-        // Slices are a pointer+size, which our ABI just passes in registers.
-        case Kind::SliceType: return Expr::SRValue;
-
-        // Structs are always passed in memory.
-        // TODO: Only if they’re big, have a non-trivial ctor,
-        //       or are not trivially copyable/movable.
-        case Kind::StructType: return Expr::MRValue;
-
-        // Pointers are just scalars.
-        case Kind::ReferenceType: return Expr::SRValue;
-
-        // Integers may end up being rather large (e.g. i1024), but
-        // that’s for the backend to deal with.
-        case Kind::IntType: return Expr::SRValue;
-
-        // Closures are srvalues.
-        case Kind::ProcType: return Expr::SRValue;
-
-        // Dependent.
-        case Kind::TemplateType: return Expr::DValue;
-    }
-
-    Unreachable("Invalid type kind");
-}
-
 // ============================================================================
 //  Types
 // ============================================================================
@@ -334,7 +314,7 @@ auto ArrayType::Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType* {
 }
 
 void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
-    ID.AddPointer(elem.as_opaque_ptr());
+    ID.AddPointer(elem.ptr());
     ID.AddInteger(size);
 }
 
@@ -353,7 +333,7 @@ auto ReferenceType::Get(TranslationUnit& mod, Type elem) -> ReferenceType* {
 }
 
 void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
-    ID.AddPointer(elem.as_opaque_ptr());
+    ID.AddPointer(elem.ptr());
 }
 
 auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType* {
@@ -394,10 +374,6 @@ auto ProcType::Get(
     );
 }
 
-auto ProcType::GetInvalid(TranslationUnit& tu) -> ProcType* {
-    return Get(tu, Types::ErrorDependentTy, {});
-}
-
 ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
@@ -413,7 +389,6 @@ ProcType::ProcType(
         param_types.size(),
         getTrailingObjects<ParamTypeData>()
     );
-    ComputeDependence();
 }
 
 void ProcType::Profile(
@@ -425,11 +400,11 @@ void ProcType::Profile(
 ) {
     ID.AddInteger(+cc);
     ID.AddBoolean(is_variadic);
-    ID.AddPointer(return_type.as_opaque_ptr());
+    ID.AddPointer(return_type.ptr());
     ID.AddInteger(param_types.size());
     for (const auto& t : param_types) {
         ID.AddInteger(+t.intent);
-        ID.AddPointer(t.type.as_opaque_ptr());
+        ID.AddPointer(t.type.ptr());
     }
 }
 
@@ -484,7 +459,7 @@ auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {
 }
 
 void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
-    ID.AddPointer(elem.as_opaque_ptr());
+    ID.AddPointer(elem.ptr());
 }
 
 auto StructType::Create(

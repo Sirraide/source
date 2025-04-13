@@ -62,34 +62,35 @@ auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
     return e;
 }
 
-auto Sema::CheckVariableType(Type ty, Location loc) -> Type {
+Type Sema::AdjustVariableType(Type ty, Location loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
-    if (ty == Types::DeducedTy) {
+    if (ty == Type::DeducedTy) {
         Error(loc, "Type deduction is not allowed here");
-        return Types::ErrorDependentTy;
+        return Type();
     }
 
-    if (ty == Types::NoReturnTy or ty == Types::TypeTy) {
+    if (ty == Type::NoReturnTy or ty == Type::TypeTy) {
         Error(loc, "Cannot declare a variable of type '{}'", ty);
-        return Types::ErrorDependentTy;
+        return Type();
     }
 
-    if (ty == Types::UnresolvedOverloadSetTy) {
+    if (ty == Type::UnresolvedOverloadSetTy) {
         Error(loc, "Unresolved overload set in parameter declaration");
-        return Types::ErrorDependentTy;
+        return Type();
     }
 
-    if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
+    if (auto s = dyn_cast_if_present<StructType>(ty.ptr()); s and not s->is_complete()) {
         Error(loc, "Declaring a variable of type '{}' before it is complete", ty);
         Note(s->decl()->location(), "'{}' declared here", ty);
-        return Types::ErrorDependentTy;
+        return Type();
     }
 
     return ty;
 }
 
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
+    if (not d->valid()) return nullptr;
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
@@ -121,8 +122,8 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
 bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
     if (not ty->is_integer()) return false;
     auto to_bits //
-        = ty == Types::IntTy
-            ? Types::IntTy->size(*M)
+        = ty == Type::IntTy
+            ? Type::IntTy->size(*M)
             : cast<IntType>(ty)->bit_width();
     return Size::Bits(i.getSignificantBits()) <= to_bits;
 }
@@ -567,8 +568,8 @@ bool Sema::BuildInitialiser(
     CallingConvention cc,
     bool in_call
 ) {
-    Assert(not var_type->dependent(), "Initialising dependent variable?");
-    Assert(not a->dependent(), "Dependent initialiser?");
+    Assert(var_type, "Null type in initialisation?");
+    Assert(a, "Initialiser must not be null");
 
     // If the intent resolves to pass by reference, then we
     // need to bind to it; the type must match exactly for
@@ -583,7 +584,7 @@ bool Sema::BuildInitialiser(
     if (a->type == var_type) {
         // We’re passing by value. For srvalue types, convert lvalues
         // to srvalues here.
-        if (a->type->value_category() == Expr::SRValue) {
+        if (a->type->rvalue_category() == Expr::SRValue) {
             if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
             return true;
         }
@@ -614,7 +615,7 @@ bool Sema::BuildInitialiser(
             // This is *not* the same algorithm as overload resolution, because
             // the types must match exactly here, and we also need to check the
             // return type.
-            if (a->type == Types::UnresolvedOverloadSetTy) {
+            if (a->type == Type::UnresolvedOverloadSetTy) {
                 auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
                 if (not p_proc_type) return init.report_type_mismatch();
 
@@ -678,7 +679,7 @@ bool Sema::BuildInitialiser(
             // is smaller, we can convert it as well.
             auto ivar = cast<IntType>(var_type);
             auto iinit = dyn_cast<IntType>(a->type);
-            if (not iinit or iinit.value()->bit_width() > ivar->bit_width()) return init.report_type_mismatch();
+            if (not iinit or iinit->bit_width() > ivar->bit_width()) return init.report_type_mismatch();
             init.apply(Conversion::LValueToSRValue());
             init.apply(Conversion::IntegralCast(var_type));
             return true;
@@ -689,8 +690,6 @@ bool Sema::BuildInitialiser(
             switch (cast<BuiltinType>(var_type)->builtin_kind()) {
                 case BuiltinKind::UnresolvedOverloadSet:
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
                 case BuiltinKind::NoReturn:
                     Unreachable("A variable of this type should not exist: {}", var_type);
 
@@ -750,8 +749,8 @@ auto Sema::BuildInitialiser(
 }
 
 auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
-    var_type = CheckVariableType(var_type, loc);
-    if (var_type == Types::ErrorDependentTy) return nullptr;
+    var_type = AdjustVariableType(var_type, loc);
+    if (not var_type) return nullptr;
 
     // Easy case: no arguments.
     if (args.empty()) {
@@ -1010,21 +1009,16 @@ void Sema::ReportOverloadResolutionFailure(
 //  Building nodes.
 // ============================================================================
 auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr> {
-    // Condition must be a bool.
-    if (not cond->dependent()) {
-        if (not MakeSRValue(Types::BoolTy, cond, "Condition", "assert"))
-            return {};
-    }
+    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "assert"))
+        return {};
 
     // Message must be a string literal.
     // TODO: Allow other string-like expressions.
-    if (auto m = msg.get_or_null(); m and not m->dependent()) {
-        if (not isa<StrLitExpr>(m)) return Error(
-            m->location(),
-            "Assertion message must be a string literal",
-            m->type
-        );
-    }
+    if (auto m = msg.get_or_null(); m and not isa<StrLitExpr>(m)) return Error(
+        m->location(),
+        "Assertion message must be a string literal",
+        m->type
+    );
 
     return new (*M) AssertExpr(cond, std::move(msg), false, loc);
 }
@@ -1084,14 +1078,8 @@ auto Sema::BuildBinaryExpr(
         // Both operands must be integers.
         if (not Check("Left operand", lhs) or not Check("Right operand", rhs)) return nullptr;
         if (not ConvertToCommonType()) return nullptr;
-        return Build(comparison ? Types::BoolTy : lhs->type);
+        return Build(comparison ? Type::BoolTy : lhs->type);
     };
-
-    // If either operand is dependent, then we can’t do much.
-    if (lhs->dependent() or rhs->dependent()) return Build(
-        Types::DependentTy,
-        DValue
-    );
 
     // Otherwise, each builtin operator needs custom handling.
     switch (op) {
@@ -1105,7 +1093,7 @@ auto Sema::BuildBinaryExpr(
                 lhs->type
             );
 
-            if (not MakeSRValue(Types::IntTy, rhs, "Index", "[]")) return {};
+            if (not MakeSRValue(Type::IntTy, rhs, "Index", "[]")) return {};
 
             // Arrays need to be in memory before we can do anything
             // with them; slices are srvalues and should be loaded
@@ -1155,16 +1143,16 @@ auto Sema::BuildBinaryExpr(
         case Tk::EqEq:
         case Tk::Neq: {
             if (not ConvertToCommonType()) return nullptr;
-            return Build(Types::BoolTy);
+            return Build(Type::BoolTy);
         }
 
         // Logical operator.
         case Tk::And:
         case Tk::Or:
         case Tk::Xor: {
-            if (not MakeSRValue(Types::BoolTy, lhs, "Left operand", Spelling(op))) return {};
-            if (not MakeSRValue(Types::BoolTy, rhs, "Right operand", Spelling(op))) return {};
-            return Build(Types::BoolTy);
+            if (not MakeSRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
+            if (not MakeSRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
+            return Build(Type::BoolTy);
         }
 
         // Assignment.
@@ -1199,7 +1187,7 @@ auto Sema::BuildBinaryExpr(
                 );
 
                 // The RHS an RValue.
-                if (rhs->type->value_category() == MRValue) return ICE(
+                if (rhs->type->rvalue_category() == MRValue) return ICE(
                     rhs->location(),
                     "Sorry, assignment to a variable of type '{}' is not yet supported",
                     rhs->type
@@ -1208,7 +1196,7 @@ auto Sema::BuildBinaryExpr(
                 rhs = LValueToSRValue(rhs);
 
                 // For arithmetic operations, both sides must be ints.
-                if (lhs->type != Types::IntTy) Error(
+                if (lhs->type != Type::IntTy) Error(
                     lhs->location(),
                     "Compound assignment operator '{}' is not supported for type '{}'",
                     Spelling(op),
@@ -1239,11 +1227,10 @@ auto Sema::BuildBuiltinCallExpr(
             SmallVector<Expr*> actual_args{args};
             if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
-                if (arg->dependent()) continue;
                 if (
                     arg->type != M->StrLitTy and
-                    arg->type != Types::IntTy and
-                    arg->type != Types::BoolTy
+                    arg->type != Type::IntTy and
+                    arg->type != Type::BoolTy
                 ) return Error( //
                     arg->location(),
                     "__srcc_print only accepts i8[] and integers, but got {}",
@@ -1251,7 +1238,7 @@ auto Sema::BuildBuiltinCallExpr(
                 );
                 arg = LValueToSRValue(arg);
             }
-            return BuiltinCallExpr::Create(*M, builtin, Types::VoidTy, actual_args, call_loc);
+            return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
         }
     }
 
@@ -1267,11 +1254,11 @@ auto Sema::BuildBuiltinMemberAccessExpr(
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
             case AK::SliceData: return ReferenceType::Get(*M, cast<SliceType>(operand->type)->elem());
-            case AK::SliceSize: return Types::IntTy;
-            case AK::TypeAlign: return Types::IntTy;
-            case AK::TypeArraySize: return Types::IntTy;
-            case AK::TypeBits: return Types::IntTy;
-            case AK::TypeBytes: return Types::IntTy;
+            case AK::SliceSize: return Type::IntTy;
+            case AK::TypeAlign: return Type::IntTy;
+            case AK::TypeArraySize: return Type::IntTy;
+            case AK::TypeBits: return Type::IntTy;
+            case AK::TypeBytes: return Type::IntTy;
             case AK::TypeName: return M->StrLitTy;
             case AK::TypeMaxVal: return cast<TypeExpr>(operand)->value;
             case AK::TypeMinVal: return cast<TypeExpr>(operand)->value;
@@ -1289,18 +1276,6 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
-    // Build a call expression that we can resolve later, usually
-    // because the callee is dependent.
-    auto BuildDependentCallExpr = [&](Expr* callee) {
-        return CallExpr::Create(
-            *M,
-            Types::DependentTy,
-            callee,
-            args,
-            loc
-        );
-    };
-
     // Check variadic arguments.
     auto CheckVarargs = [&](SmallVectorImpl<Expr*>& actual_args, ArrayRef<Expr*> varargs) {
         bool ok = true;
@@ -1308,9 +1283,9 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             // Codegen is not set up to handle variadic arguments that are larger than a word,
             // so reject these here. If you need one of those, then seriously, wtf are you doing.
             if (
-                a->type == Types::IntTy or
-                a->type == Types::BoolTy or
-                a->type == Types::NoReturnTy or
+                a->type == Type::IntTy or
+                a->type == Type::BoolTy or
+                a->type == Type::NoReturnTy or
                 (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
                 isa<ReferenceType>(a->type)
             ) {
@@ -1327,10 +1302,6 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         return ok;
     };
 
-    // Calls with dependent arguments are checked when they’re instantiated.
-    if (rgs::any_of(args, [](Expr* e) { return e->dependent(); }))
-        return BuildDependentCallExpr(callee_expr);
-
     // If this is not a procedure reference or overload set, then we don’t
     // need to perform overload resolution nor template instantiation, so
     // just typecheck the arguments directly.
@@ -1338,12 +1309,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     if (not isa<OverloadSetExpr, ProcRefExpr>(callee_no_parens)) {
         auto ty = dyn_cast<ProcType>(callee_expr->type.ptr());
 
-        // If this is not a literal procedure and still dependent, then we
-        // can’t check this yet.
-        if (callee_expr->dependent()) return BuildDependentCallExpr(callee_expr);
-
         // If the type is 'type', then this is actually an initialiser call.
-        if (callee_expr->type == Types::TypeTy) {
+        if (callee_expr->type == Type::TypeTy) {
             auto type = M->vm.eval(callee_expr);
             if (not type) return ICE(
                 callee_expr->location(),
@@ -1409,10 +1376,12 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // and deduction failure only is not an error. Random errors during
     // deduction are hard errors.
     SmallVector<Candidate, 4> candidates;
-    bool dependent = false;
 
     // Add a candidate to the overload set.
     auto AddCandidate = [&](ProcDecl* proc) -> bool {
+        if (not proc->valid())
+            return false;
+
         // Candidate is a template.
         if (not proc->is_template()) {
             candidates.emplace_back(proc);
@@ -1425,14 +1394,12 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         for (auto arg : args) types.emplace_back(arg->type, arg->location());
 
         // Perform template substitution.
-        auto res = SubstituteTemplate(proc, types, callee_expr->location());
+        ICE(proc->location(), "TODO: Substitute template");
+        return false;
+        /*auto res = SubstituteTemplate(proc, types, callee_expr->location());
         if (res.data.is<TempSubstRes::Error>()) return false;
-        if (
-            auto subst = res.data.get_if<TempSubstRes::Success>();
-            subst and subst->type->dependent()
-        ) dependent = true;
         candidates.emplace_back(proc, std::move(res));
-        return true;
+        return true;*/
     };
 
     // Collect all candidates.
@@ -1443,12 +1410,6 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         if (not rgs::all_of(os->overloads(), AddCandidate)) return {};
     }
 
-    // If any of the candidates are still dependent, we’re either in
-    // a nested template, or there was an error; either way, we can’t
-    // instantiate anything right now, so defer overload resolution
-    // until we can.
-    if (dependent) return BuildDependentCallExpr(callee_expr);
-
     // Check if a single candidate is viable. Returns false if there
     // is a fatal error that prevents overload resolution entirely.
     auto CheckCandidate = [&](Candidate& c) -> bool {
@@ -1457,7 +1418,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // If the candidate’s return type is deduced, we’re trying to
         // call it before it has been fully analysed. Disallow this.
-        if (ty->ret() == Types::DeducedTy and not c.is_template()) {
+        if (ty->ret() == Type::DeducedTy and not c.is_template()) {
             c.status = Candidate::UndeducedReturnType{};
             return true;
         }
@@ -1533,7 +1494,9 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // Instantiate it now if it is a template.
         if (auto* temp = c->proc.get_if<Candidate::TemplateInfo>()) {
-            auto& subst = temp->res.data.get<TempSubstRes::Success>();
+            ICE(temp->pattern->location(), "TODO: Instantiate template");
+            return nullptr;
+            /*auto& subst = temp->res.data.get<TempSubstRes::Success>();
             auto inst = InstantiateTemplate(
                 temp->pattern,
                 subst.type,
@@ -1543,7 +1506,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
             // And call it.
             if (not inst) return nullptr;
-            final_callee = inst.get();
+            final_callee = inst.get();*/
         }
 
         // Otherwise, just grab the procedure.
@@ -1577,14 +1540,10 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     // Always create an EvalExpr to represent this in the AST.
     auto eval = new (*M) EvalExpr(arg, loc);
-    if (arg->dependent()) return eval;
 
     // If the expression is not dependent, evaluate it now.
     auto value = M->vm.eval(arg);
-    if (not value.has_value()) {
-        eval->set_errored();
-        return eval;
-    }
+    if (not value.has_value()) return eval;
 
     // And cache the value for later.
     return new (*M) ConstExpr(*M, std::move(*value), loc, eval);
@@ -1604,10 +1563,10 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     };
 
     // Degenerate case: the condition does not return.
-    if (cond->type == Types::NoReturnTy) return Build(Types::NoReturnTy, Expr::SRValue);
+    if (cond->type == Type::NoReturnTy) return Build(Type::NoReturnTy, Expr::SRValue);
 
     // Condition must be a bool.
-    if (not cond->dependent() and not MakeSRValue(Types::BoolTy, cond, "Condition", "if"))
+    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "if"))
         return {};
 
     // If there is no else branch, or if either branch is not an expression,
@@ -1616,28 +1575,24 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
         not else_ or
         not isa<Expr>(then) or
         not isa<Expr>(else_.get())
-    ) return Build(Types::VoidTy, Expr::SRValue);
+    ) return Build(Type::VoidTy, Expr::SRValue);
 
     // Otherwise, if either branch is dependent, we can’t determine the type yet.
     auto t = cast<Expr>(then);
     auto e = cast<Expr>(else_.get());
-    if (t->type_dependent() or e->type_dependent()) return Build(
-        Types::DependentTy,
-        Expr::DValue
-    );
 
     // Next, if either branch is 'noreturn', the type of the 'if' is the type
     // of the other branch (unless both are noreturn, in which case the type
     // is just 'noreturn').
-    if (t->type == Types::NoReturnTy or e->type == Types::NoReturnTy) {
-        bool both = t->type == Types::NoReturnTy and e->type == Types::NoReturnTy;
+    if (t->type == Type::NoReturnTy or e->type == Type::NoReturnTy) {
+        bool both = t->type == Type::NoReturnTy and e->type == Type::NoReturnTy;
         return Build(
-            both                           ? Types::NoReturnTy
-            : t->type == Types::NoReturnTy ? e->type
-                                           : t->type,
-            both                           ? Expr::SRValue
-            : t->type == Types::NoReturnTy ? e->value_category
-                                           : t->value_category
+            both                          ? Type::NoReturnTy
+            : t->type == Type::NoReturnTy ? e->type
+                                          : t->type,
+            both                          ? Expr::SRValue
+            : t->type == Type::NoReturnTy ? e->value_category
+                                          : t->value_category
         );
     }
 
@@ -1653,16 +1608,16 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     // that type.
     // TODO: Actually implement calculating the common type; for now
     //       we just use 'void' if the types don’t match.
-    auto common_ty = t->type == e->type ? t->type : Types::VoidTy;
+    auto common_ty = t->type == e->type ? t->type : Type::VoidTy;
 
     // We don’t convert lvalues to rvalues in this case because neither
     // side will actually be used if there is no common type.
     // TODO: If there is no common type, both sides need to be marked
     //       as discarded.
-    if (common_ty == Types::VoidTy) return Build(Types::VoidTy, Expr::SRValue);
+    if (common_ty == Type::VoidTy) return Build(Type::VoidTy, Expr::SRValue);
 
     // Permitting MRValues here is non-trivial.
-    if (common_ty->value_category() == Expr::MRValue) return ICE(
+    if (common_ty->rvalue_category() == Expr::MRValue) return ICE(
         loc,
         "Sorry, we don’t support returning a value of type '{}' from an '%1(if%)' expression yet.",
         common_ty
@@ -1674,45 +1629,6 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
 }
 
-auto Sema::BuildLocalDecl(
-    ProcScopeInfo& proc,
-    Type ty,
-    String name,
-    Ptr<Expr> init,
-    Location loc
-) -> LocalDecl* {
-    // Deduce the type from the initialiser, if need be.
-    if (ty == Types::DeducedTy) {
-        if (init) ty = init.get()->type;
-        else {
-            Error(loc, "Type inference requires an initialiser");
-            ty = Types::ErrorDependentTy;
-        }
-    }
-
-    // Adjust after inference.
-    ty = CheckVariableType(ty, loc);
-
-    // Then, perform initialisation.
-    //
-    // If this fails, the initialiser is simply discarded; we can
-    // still continue analysing this though as most of sema doesn’t
-    // care about variable initialisers.
-    if (not ty->dependent()) {
-        if (auto i = init.get_or_null()) {
-            if (auto init_expr = BuildInitialiser(ty, i, i->location()))
-                init = init_expr;
-        }
-
-        // If we have no initialiser, create an empty initialiser.
-        else { init = BuildInitialiser(ty, {}, loc); }
-    }
-
-    auto param = new (*M) LocalDecl(CheckVariableType(ty, loc), name, proc.proc, init, loc);
-    DeclareLocal(param);
-    return param;
-}
-
 auto Sema::BuildParamDecl(
     ProcScopeInfo& proc,
     const ParamTypeData* param,
@@ -1722,6 +1638,7 @@ auto Sema::BuildParamDecl(
     Location loc
 ) -> ParamDecl* {
     auto decl = new (*M) ParamDecl(param, name, proc.proc, index, with_param, loc);
+    if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
 }
@@ -1733,14 +1650,14 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     // Make sure all paths return a value. First, if the body is
     // 'noreturn', then that means we never actually get here.
     auto body_ret = body->type;
-    if (body_ret->dependent() or body_ret == Types::NoReturnTy) return body;
+    if (body_ret == Type::NoReturnTy) return body;
 
     // Next, a function marked as returning void requires no checking
     // and is allowed to not return at all; invalid return expressions
     // are checked when we first encounter them.
     //
     // We do, however, need to synthesise a return statement in that case.
-    if (proc->return_type() == Types::VoidTy) {
+    if (proc->return_type() == Type::VoidTy) {
         Assert(isa<BlockExpr>(body));
         auto ret = BuildReturnExpr(nullptr, body->location(), true);
         return BlockExpr::Create(*M, nullptr, {body, ret}, body->location());
@@ -1756,21 +1673,18 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
 }
 
 auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr* {
-    if (value.present() and value.get()->dependent())
-        return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
-
     // Perform return type deduction.
     auto proc = curr_proc().proc;
-    if (proc->return_type() == Types::DeducedTy) {
+    if (proc->return_type() == Type::DeducedTy) {
         auto proc_type = proc->proc_type();
-        Type deduced = Types::VoidTy;
+        Type deduced = Type::VoidTy;
         if (auto val = value.get_or_null()) deduced = val->type;
         proc->type = ProcType::AdjustRet(*M, proc_type, deduced);
     }
 
     // Or complain if the type doesn’t match.
-    else if (not proc->return_type()->dependent()) {
-        Type ret = value.invalid() ? Types::VoidTy : value.get()->type;
+    else {
+        Type ret = value.invalid() ? Type::VoidTy : value.get()->type;
         if (ret != proc->return_type()) Error(
             loc,
             "Return type '{}' does not match procedure return type '{}'",
@@ -1779,15 +1693,11 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         );
     }
 
-    // Stop here if the procedure type is still dependent.
-    if (proc->return_type()->dependent())
-        return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
-
     // Perform any necessary conversions.
     if (auto val = value.get_or_null()) {
-        if (val->type == Types::VoidTy) {
+        if (val->type == Type::VoidTy) {
             // Nop.
-        } else if (val->type == Types::IntTy or isa<IntType>(val->type)) {
+        } else if (val->type == Type::IntTy or isa<IntType>(val->type)) {
             value = LValueToSRValue(val);
         } else {
             ICE(loc, "Cannot compile this return type yet: {}", val->type);
@@ -1803,11 +1713,8 @@ auto Sema::BuildStaticIfExpr(
     Ptr<ParsedStmt> else_,
     Location loc
 ) -> Ptr<Stmt> {
-    // If the condition is dependent, defer this until later.
-    if (cond->dependent()) return new (*M) StaticIfExpr(cond, then, else_, loc);
-
     // Otherwise, check this now.
-    if (not MakeSRValue(Types::BoolTy, cond, "Condition", "static if")) return {};
+    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "static if")) return {};
     auto val = M->vm.eval(cond);
     if (not val) {
         Error(loc, "Condition of 'static if' must be a constant expression");
@@ -1816,7 +1723,6 @@ auto Sema::BuildStaticIfExpr(
 
     // If there is no else clause, and the condition is false, return
     // an empty statement.
-    // TODO: Add an 'EmptyExpr' node.
     auto cond_val = val->cast<bool>();
     if (not cond_val and not else_) return new (*M) ConstExpr(*M, {}, loc, nullptr);
 
@@ -1834,7 +1740,6 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
 
-    if (operand->dependent()) return Build(Types::DependentTy, Expr::DValue);
     if (postfix) return ICE(loc, "Postfix unary operators are not yet implemented");
 
     // Handle prefix operators.
@@ -1843,16 +1748,16 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 
         // Boolean negation.
         case Tk::Not: {
-            if (not MakeSRValue(Types::BoolTy, operand, "Operand", "not")) return {};
-            return Build(Types::BoolTy, Expr::SRValue);
+            if (not MakeSRValue(Type::BoolTy, operand, "Operand", "not")) return {};
+            return Build(Type::BoolTy, Expr::SRValue);
         }
 
         // Arithmetic operators.
         case Tk::Minus:
         case Tk::Plus:
         case Tk::Tilde: {
-            if (not MakeSRValue(Types::IntTy, operand, "Operand", Spelling(op))) return {};
-            return Build(Types::IntTy, Expr::SRValue);
+            if (not MakeSRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
+            return Build(Type::IntTy, Expr::SRValue);
         }
 
         // Increment and decrement.
@@ -1866,23 +1771,20 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
             );
 
             // Operand must be an integer.
-            if (operand->type != Types::IntTy) return Error(
+            if (operand->type != Type::IntTy) return Error(
                 operand->location(),
                 "Operand of '{}' must be an integer",
                 Spelling(op)
             );
 
             // Result is an lvalue.
-            return Build(Types::IntTy, Expr::LValue);
+            return Build(Type::IntTy, Expr::LValue);
         }
     }
 }
 
 auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt> {
-    if (
-        not cond->dependent() and
-        not MakeSRValue(Types::BoolTy, cond, "Condition", "while")
-    ) return {};
+    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "while")) return {};
     return new (*M) WhileStmt(cond, body, loc);
 }
 
@@ -1922,7 +1824,6 @@ void Sema::Translate() {
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, Location{});
 
     // File scope block should never be dependent.
-    M->file_scope_block->set_dependence(Dependence::None);
     M->initialiser_proc->finalise(BuildProcBody(M->initialiser_proc, M->file_scope_block), curr_proc().locals);
 }
 
@@ -2127,8 +2028,8 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
     auto val = parsed->storage.value();
     auto small = val.tryZExtValue();
     if (small.has_value()) return new (*M) IntLitExpr(
-        Types::IntTy,
-        M->store_int(APInt(u32(Types::IntTy->size(*M).bits()), u64(*small), false)),
+        Type::IntTy,
+        M->store_int(APInt(u32(Type::IntTy->size(*M).bits()), u64(*small), false)),
         parsed->loc
     );
 
@@ -2162,10 +2063,6 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
-    if (base->type->dependent()) return ICE(
-        parsed->loc,
-        "TODO: DependentMemberAccessExpr"
-    );
 
     // Struct member access.
     if (auto s = dyn_cast<StructType>(base->type.ptr())) {
@@ -2242,23 +2139,57 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
+    auto decl = new (*M) LocalDecl(
+        TranslateType(parsed->type),
+        parsed->name,
+        curr_proc().proc,
+        parsed->loc
+    );
+
+    // Add the declaration to the current scope.
+    DeclareLocal(decl);
+
+    // Don’t even bother with the initialiser if the type is ill-formed.
+    if (not decl->type)
+        return decl->set_invalid();
+
+    // Translate the initialiser.
     Ptr<Expr> init;
-    auto ty = TranslateType(parsed->type);
     if (auto val = parsed->init.get_or_null()) {
         init = TranslateExpr(val);
 
         // If the initialiser is invalid, we can get bogus errors
         // if the variable type is deduced, so give up in that case.
-        if (not init and ty == Types::DeducedTy) return nullptr;
+        if (not init and decl->type == Type::DeducedTy)
+            return decl->set_invalid();
     }
 
-    return BuildLocalDecl(
-        curr_proc(),
-        ty,
-        parsed->name,
-        init,
-        parsed->loc
-    );
+    // Deduce the type from the initialiser, if need be.
+    if (decl->type == Type::DeducedTy) {
+        if (init) decl->type = init.get()->type;
+        else {
+            Error(decl->location(), "Type inference requires an initialiser");
+            decl->type = Type::VoidTy;
+            return decl->set_invalid();
+        }
+    }
+
+    // Now that the type has been deduced (if necessary), we can check
+    // if we can even create a variable of this type.
+    decl->type = AdjustVariableType(decl->type, decl->location());
+    if (not decl->type) return decl->set_invalid();
+
+    // Then, perform initialisation.
+    //
+    // If this fails, the initialiser is simply discarded; we can
+    // still continue analysing this though as most of sema doesn’t
+    // care about variable initialisers.
+    decl->set_init(BuildInitialiser(
+        decl->type,
+        init ? init.get() : ArrayRef<Expr*>{},
+        init ? init.get()->location() : decl->location()
+    ));
+    return decl;
 }
 
 auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
@@ -2266,7 +2197,7 @@ auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl
     if (parsed->body) {
         EnterProcedure _{*this, decl};
         auto res = TranslateProcBody(decl, parsed);
-        if (res.invalid()) decl->set_errored();
+        if (res.invalid()) decl->set_invalid();
         else decl->finalise(res, curr_proc().locals);
     }
 
@@ -2294,9 +2225,11 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     auto body = TranslateExpr(parsed->body.get());
     if (body.invalid()) {
         // If we’re attempting to deduce the return type of this procedure,
-        // but the body contains an error, then set the return type to errored.
-        if (decl->return_type() == Types::DeducedTy)
-            decl->type = ProcType::AdjustRet(*M, decl->proc_type(), Types::ErrorDependentTy);
+        // but the body contains an error, just set it to void.
+        if (decl->return_type() == Type::DeducedTy) {
+            decl->type = ProcType::AdjustRet(*M, decl->proc_type(), Type::VoidTy);
+            decl->set_invalid();
+        }
         return nullptr;
     }
 
@@ -2313,15 +2246,25 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
     EnterScope scope{*this, ScopeKind::Procedure};
     SmallVector<TemplateTypeDecl*> ttds;
 
+    // Diagnose invalid combinations of attributes.
+    auto attrs = parsed->type->attrs;
+    if (attrs.native and attrs.nomangle) Error(
+        parsed->loc,
+        "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
+    );
+
+    // Convert the type.
+    auto type = TranslateProcType(parsed->type, &ttds);
+    auto ty = cast_if_present<ProcType>(type);
+    if (not ty) ty = ProcType::Get(*M, Type::VoidTy);
+
     // Create the declaration. A top-level procedure is not considered
     // 'nested' inside the initialiser procedure, which means that this
     // is only local if the procedure stack contains at least 3 entries
     // (the initialiser, our parent, and us).
-    auto attrs = parsed->type->attrs;
-    auto type = TranslateProcType(parsed->type, &ttds);
     auto proc = ProcDecl::Create(
         *M,
-        type,
+        ty,
         parsed->name,
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,
         attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
@@ -2330,11 +2273,8 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         ttds
     );
 
-    // Diagnose invalid combinations of attributes.
-    if (attrs.native and attrs.nomangle) Error(
-        parsed->loc,
-        "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
-    );
+    // Don’t e.g. diagnose calls to this if the type is invalid.
+    if (not type) proc->set_invalid();
 
     // Add the procedure to the module and the parent scope.
     proc_decl_map[parsed] = proc;
@@ -2347,8 +2287,12 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
 auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
-#define PARSE_TREE_LEAF_TYPE(node) \
-    case K::node: return BuildTypeExpr(TranslateType(parsed), parsed->loc);
+#define PARSE_TREE_LEAF_TYPE(node)             \
+    case K::node: {                            \
+        auto ty = TranslateType(parsed);       \
+        if (not ty) return {};                 \
+        return BuildTypeExpr(ty, parsed->loc); \
+    }
 #define PARSE_TREE_LEAF_NODE(node) \
     case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
 #include "srcc/ParseTree.inc"
@@ -2374,12 +2318,12 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
     SmallVector<FieldDecl*> fields;
     StructType::Bits bits;
     for (auto f : parsed->fields()) {
-        auto ty = CheckVariableType(TranslateType(f->type), f->loc);
+        auto ty = AdjustVariableType(TranslateType(f->type), f->loc);
 
         // If the field’s type is invalid, we can’t query any of its
-        // properties, so just insert an error field and continue.
-        if (ty == Types::ErrorDependentTy) {
-            fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
+        // properties, so just insert a dummy field and continue.
+        if (not ty) {
+            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name, f->loc))->set_invalid();
             continue;
         }
 
@@ -2479,7 +2423,7 @@ auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
-    if (not res) return Types::ErrorDependentTy;
+    if (not res) return Type();
 
     // Template type.
     if (auto ttd = dyn_cast<TemplateTypeDecl>(res.decls.front()))
@@ -2491,13 +2435,13 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
 
     Error(parsed->loc, "'{}' does not name a type", utils::join(parsed->names(), "::"));
     Note(res.decls.front()->location(), "Declared here");
-    return Types::ErrorDependentTy;
+    return Type();
 }
 
 auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     SmallVectorImpl<TemplateTypeDecl*>* ttds
-) -> ProcType* {
+) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -2509,7 +2453,7 @@ auto Sema::TranslateProcType(
             "Sorry, that’s too many parameters (max is {})",
             std::numeric_limits<u16>::max()
         );
-        return ProcType::GetInvalid(*M);
+        return Type();
     }
 
     // We may have to handle template parameters here.
@@ -2602,44 +2546,42 @@ auto Sema::TranslateProcType(
         // a procedure definition), type translation will handle that case
         // and return an error.
         else {
-            auto ty = TranslateType(a.type);
-            if (ty == Types::DeducedTy) {
-                Error(a.type->loc, "'{}' is not a valid type for a procedure argument", Types::DeducedTy);
-                ty = Types::ErrorDependentTy;
-            }
+            auto ty = AdjustVariableType(TranslateType(a.type, Type::VoidTy), a.type->loc);
             params.emplace_back(a.intent, ty);
         }
     }
 
     return ProcType::Get(
         *M,
-        TranslateType(parsed->ret_type),
+        TranslateType(parsed->ret_type, Type::VoidTy),
         params,
         parsed->attrs.native ? CallingConvention::Native : CallingConvention::Source
     );
 }
 
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
-    auto ty = CheckVariableType(TranslateType(parsed->elem), parsed->loc);
+    auto ty = AdjustVariableType(TranslateType(parsed->elem), parsed->loc);
     return SliceType::Get(*M, ty);
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
     Error(parsed->loc, "A template type declaration is only allowed in the parameter list of a procedure");
-    return Types::ErrorDependentTy;
+    return Type();
 }
 
-auto Sema::TranslateType(ParsedStmt* parsed) -> Type {
+auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
+    Type t;
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
-        case K::BuiltinType: return TranslateBuiltinType(cast<ParsedBuiltinType>(parsed));
-        case K::IntType: return TranslateIntType(cast<ParsedIntType>(parsed));
-        case K::SliceType: return TranslateSliceType(cast<ParsedSliceType>(parsed));
-        case K::TemplateType: return TranslateTemplateType(cast<ParsedTemplateType>(parsed));
-        case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
-        case K::ProcType: return TranslateProcType(cast<ParsedProcType>(parsed));
-        default:
-            Error(parsed->loc, "Expected type");
-            return Types::ErrorDependentTy;
+        case K::BuiltinType: t = TranslateBuiltinType(cast<ParsedBuiltinType>(parsed)); break;
+        case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
+        case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
+        case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
+        case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
+        case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
+        default: Error(parsed->loc, "Expected type"); break;
     }
+
+    if (not t) t = fallback;
+    return t;
 }

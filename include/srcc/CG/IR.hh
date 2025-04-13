@@ -132,7 +132,7 @@ class SmallInt : public ManagedValue {
 
     u64 val;
 
-    SmallInt(u64 val, Type ty = Types::IntTy) : ManagedValue{Kind::SmallInt, ty}, val{val} {}
+    SmallInt(u64 val, Type ty = Type::IntTy) : ManagedValue{Kind::SmallInt, ty}, val{val} {}
 
 public:
     auto value() const -> u64 { return val; }
@@ -145,7 +145,7 @@ class LargeInt : public Value {
 
     APInt val;
 
-    LargeInt(APInt val, Type ty = Types::IntTy) : Value{Kind::LargeInt, ty}, val{std::move(val)} {}
+    LargeInt(APInt val, Type ty = Type::IntTy) : Value{Kind::LargeInt, ty}, val{std::move(val)} {}
 
 public:
     auto value() const -> const APInt& { return val; }
@@ -380,7 +380,7 @@ class Block : public Value {
     SmallVector<Type, 6> arg_types;
     SmallVector<Argument*> arg_vals;
 
-    Block() : Value(Kind::Block, Types::VoidTy) {}
+    Block() : Value(Kind::Block, Type::VoidTy) {}
 
 public:
     auto arg(u32 idx) -> Argument* { return arg_vals[idx]; }
@@ -454,8 +454,8 @@ public:
 private:
     llvm::MapVector<StringRef, std::unique_ptr<Proc>> procs;
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
-    BuiltinConstant true_val{BuiltinConstantKind::True, Types::BoolTy};
-    BuiltinConstant false_val{BuiltinConstantKind::False, Types::BoolTy};
+    BuiltinConstant true_val{BuiltinConstantKind::True, Type::BoolTy};
+    BuiltinConstant false_val{BuiltinConstantKind::False, Type::BoolTy};
 
 public:
     Block* insert_point = nullptr;
@@ -498,7 +498,7 @@ public:
     auto CreateICmpULt(Value* a, Value* b) -> Value*;
     auto CreateIMul(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateInt(APInt val, Type type) -> Value*;
-    auto CreateInt(u64 val, Type type = Types::IntTy) -> Value*;
+    auto CreateInt(u64 val, Type type = Type::IntTy) -> Value*;
     auto CreateInvalidLocalReference(LocalRefExpr* ref) -> Value*;
     auto CreateLShr(Value* a, Value* b) -> Value*;
     auto CreateLoad(Type ty, Value* ptr) -> Value*;

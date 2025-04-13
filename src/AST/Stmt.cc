@@ -24,8 +24,6 @@ BuiltinCallExpr::BuiltinCallExpr(
     Location location
 ) : Expr{Kind::BuiltinCallExpr, return_type, SRValue, location}, builtin{kind}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<Expr*>());
-    ComputeDependence();
-
     // Determine value category.
     switch (builtin) {
         // SRValue.
@@ -51,10 +49,9 @@ CallExpr::CallExpr(
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
-) : Expr{Kind::CallExpr, type, type->value_category(), location},
+) : Expr{Kind::CallExpr, type, type->rvalue_category(), location},
     callee{callee}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<Expr*>());
-    ComputeDependence();
 }
 
 auto CallExpr::Create(
@@ -87,8 +84,6 @@ BlockExpr::BlockExpr(
     num_stmts{u32(stmts.size())},
     scope{parent_scope} {
     std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<Stmt*>());
-    ComputeDependence();
-
     // The value category of this is that of the return expr.
     if (auto e = return_expr()) value_category = e->value_category;
 }
@@ -100,7 +95,7 @@ auto BlockExpr::Create(
     Location location
 ) -> BlockExpr* {
     auto last = stmts.empty() ? nullptr : dyn_cast_if_present<Expr>(stmts.back());
-    auto type = last ? last->type : Types::VoidTy;
+    auto type = last ? last->type : Type::VoidTy;
     auto size = totalSizeToAlloc<Stmt*>(stmts.size());
     auto mem = mod.allocate(size, alignof(BlockExpr));
     return ::new (mem) BlockExpr{parent_scope, type, stmts, location};
@@ -119,8 +114,6 @@ auto Expr::strip_parens() -> Expr* {
 
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
-    ComputeDependence();
-
     // If this is a parameter that is passed as an rvalue, and the intent is 'In',
     // then we only have an rvalue in the callee (other intents may be passed by
     // value as well, but still create variables in the callee).
@@ -134,18 +127,15 @@ MemberAccessExpr::MemberAccessExpr(
     Location location
 ) : Expr{Kind::MemberAccessExpr, field->type, LValue, location},
     base{base},
-    field{field} {
-    ComputeDependence();
-}
+    field{field} {}
 
 OverloadSetExpr::OverloadSetExpr(
     ArrayRef<Decl*> decls,
     Location location
-) : Expr{Kind::OverloadSetExpr, Types::UnresolvedOverloadSetTy, SRValue, location},
+) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, SRValue, location},
     num_overloads{u32(decls.size())} {
     auto proc_decls = decls | vws::transform([](auto d) { return cast<ProcDecl>(d); });
     std::uninitialized_copy(proc_decls.begin(), proc_decls.end(), getTrailingObjects<ProcDecl*>());
-    ComputeDependence();
 }
 
 auto OverloadSetExpr::Create(
@@ -171,9 +161,7 @@ ProcRefExpr::ProcRefExpr(
     ProcDecl* decl,
     Location location
 ) : Expr(Kind::ProcRefExpr, decl->type, SRValue, location),
-    decl{decl} {
-    ComputeDependence();
-}
+    decl{decl} {}
 
 auto ProcRefExpr::return_type() const -> Type {
     return decl->return_type();
@@ -185,6 +173,11 @@ auto StrLitExpr::Create(
     Location location
 ) -> StrLitExpr* {
     return new (mod) StrLitExpr{mod.StrLitTy, value, location};
+}
+
+auto Stmt::type_or_void() const -> Type {
+    if (auto e = dyn_cast<Expr>(this)) return e->type;
+    return Type::VoidTy;
 }
 
 // ============================================================================
@@ -242,12 +235,10 @@ void ProcDecl::finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> vars) {
     Assert(locals.size() >= param_count(), "Missing parameter declarations!");
     for (auto l : locals.take_front(proc_type()->params().size()))
         Assert(isa<ParamDecl>(l), "Parameters must be ParamDecls");
-
-    ComputeDependence();
 }
 
 auto ProcDecl::proc_type() const -> ProcType* {
-    return cast<ProcType>(type).ptr();
+    return cast<ProcType>(type);
 }
 
 auto ProcDecl::return_type() -> Type {
@@ -258,9 +249,8 @@ StructInitExpr::StructInitExpr(
     StructType* ty,
     ArrayRef<Expr*> fields,
     Location location
-) : Expr{Kind::StructInitExpr, ty, ty->value_category(), location} {
+) : Expr{Kind::StructInitExpr, ty, ty->rvalue_category(), location} {
     std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects<Expr*>());
-    ComputeDependence();
 }
 
 auto StructInitExpr::Create(
@@ -282,7 +272,6 @@ TemplateTypeDecl::TemplateTypeDecl(
 ) : Decl{Kind::TemplateTypeDecl, name, location},
     num_deduced_indices{u32(deduced_indices.size())} {
     std::uninitialized_copy_n(deduced_indices.begin(), deduced_indices.size(), getTrailingObjects<u32>());
-    ComputeDependence();
 }
 
 auto TemplateTypeDecl::Create(

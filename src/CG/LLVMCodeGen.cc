@@ -140,10 +140,11 @@ auto LLVMCodeGen::ConvertType(Type ty, bool array_elem) -> Ty* {
 }
 
 auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
+    Assert(ty, "Null type in codegen");
     switch (ty->kind()) {
         case TypeBase::Kind::SliceType: return SliceTy;
         case TypeBase::Kind::ReferenceType: return PtrTy;
-        case TypeBase::Kind::ProcType: return ConvertProcType(cast<ProcType>(ty).ptr());
+        case TypeBase::Kind::ProcType: return ConvertProcType(cast<ProcType>(ty));
         case TypeBase::Kind::IntType: return getIntNTy(u32(cast<IntType>(ty)->bit_width().bits()));
 
         case TypeBase::Kind::ArrayType: {
@@ -157,9 +158,7 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Dependent:
-                case BuiltinKind::ErrorDependent:
-                    Unreachable("Dependent type in codegen?");
+                    Unreachable("Deduced type in codegen?");
 
                 case BuiltinKind::UnresolvedOverloadSet:
                     Unreachable("Unresolved overload set type in codegen?");

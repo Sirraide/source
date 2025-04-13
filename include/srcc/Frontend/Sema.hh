@@ -517,8 +517,8 @@ private:
     /// attempt to build an empty initialiser.
     auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
 
-    /// Adjust a type for use in a variable declaration.
-    [[nodiscard]] auto CheckVariableType(Type ty, Location loc) -> Type;
+    /// Check that a type is valid for a variable declaration.
+    [[nodiscard]] Type AdjustVariableType(Type ty, Location loc);
 
     /// Apply a conversion to an expression.
     [[nodiscard]] auto ApplyConversion(Expr* e, Conversion conv) -> Expr*;
@@ -647,7 +647,6 @@ private:
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
-    auto BuildLocalDecl(ProcScopeInfo& proc, Type ty, String name, Ptr<Expr> init, Location loc) -> LocalDecl*;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
@@ -686,12 +685,11 @@ private:
     auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
-    auto TranslateType(ParsedStmt* stmt) -> Type;
-
+    auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
     auto TranslateProcType(
         ParsedProcType* parsed,
         SmallVectorImpl<TemplateTypeDecl*>* ttds = nullptr
-    ) -> ProcType*;
+    ) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

@@ -110,6 +110,10 @@ public:
         return value;
     }
 
+    auto get_or(Ty* def) const -> Ty* {
+        return value ? value : def;
+    }
+
     auto get_or_null() const -> Ty* { return value; }
 
     auto invalid() const -> bool { return not present(); }

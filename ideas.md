@@ -397,10 +397,6 @@ the getter or setter (in which case it refers to the backing field instead).
 To perform a recursive call to a setter or getter, call unqualified `set()` 
 or `get()` from within a setter. 
 
-## TODOS:
-- Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
-  since 'in' parameters are immutable by default.
-
 ## Effect system?
 Maybe something like:
 ```
@@ -409,7 +405,17 @@ proc foo() [io] { ... }
 `unsafe` could just be another effect. Might be useful to constrain what functions can do (but
 have a way of opting out of it maybe; I feel like this is more useful for libraries than executables).
 
-## Semicolons
+# Failed Ideas
+## Renaming copy to var
+(This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this 
+is probably an error. Allowing this would just be too weird...)
+
+- Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
+  since 'in' parameters are immutable by default.~~ 
+
+## Semicolons as separators
+(This doesn’t work because it would require us to write a `;` after `}`, which is just dumb.)
+
 Semicolons *need* to be separators, not terminators, because of cases such as:
 ```
 int x = if a then b else c;

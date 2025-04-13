@@ -97,7 +97,7 @@ auto Builder::CreateCall(Value* callee, ArrayRef<Value*> args) -> Value* {
 }
 
 void Builder::CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) {
-    Assert(cond->type() == Types::BoolTy, "Branch condition must be a bool");
+    Assert(cond->type() == Type::BoolTy, "Branch condition must be a bool");
     CreateImpl<BranchInst>(cond, then_block, else_block);
 }
 
@@ -110,7 +110,7 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
 
     if (auto s = dyn_cast<SliceType>(aggregate->type().ptr())) {
         if (idx == 0) return new (*this) Extract(aggregate, 0, ReferenceType::Get(tu, s->elem()));
-        if (idx == 1) return new (*this) Extract(aggregate, 1, Types::IntTy);
+        if (idx == 1) return new (*this) Extract(aggregate, 1, Type::IntTy);
         Unreachable("Invalid index for slice type");
     }
 
@@ -141,43 +141,43 @@ auto Builder::CreateIMul(Value* a, Value* b, bool nowrap) -> Value* {
 }
 
 auto Builder::CreateICmpEq(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpEq, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpEq, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpNe(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpNe, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpNe, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpULt(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpULt, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpULt, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpULe(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpULe, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpULe, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpUGt(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpUGt, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpUGt, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpUGe(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpUGe, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpUGe, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpSLt(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpSLt, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpSLt, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpSLe(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpSLe, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpSLe, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpSGt(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpSGt, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpSGt, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateICmpSGe(Value* a, Value* b) -> Value* {
-    return CreateAndGetVal(Op::ICmpSGe, Types::BoolTy, {a, b});
+    return CreateAndGetVal(Op::ICmpSGe, Type::BoolTy, {a, b});
 }
 
 auto Builder::CreateLoad(Type ty, Value* ptr) -> Value* {
@@ -217,7 +217,7 @@ void Builder::CreateReturn(Value* val) {
 
 auto Builder::CreateSAddOverflow(Value* a, Value* b) -> OverflowResult {
     auto i = Create(Op::SAddOv, {a, b});
-    return {Result(i, a->type(), 0), Result(i, Types::BoolTy, 1)};
+    return {Result(i, a->type(), 0), Result(i, Type::BoolTy, 1)};
 }
 
 auto Builder::CreateSDiv(Value* a, Value* b) -> Value* {
@@ -246,7 +246,7 @@ auto Builder::CreateSlice(Value* data, Value* size) -> Slice* {
 
 auto Builder::CreateSMulOverflow(Value* a, Value* b) -> OverflowResult {
     auto i = Create(Op::SMulOv, {a, b});
-    return {Result(i, a->type(), 0), Result(i, Types::BoolTy, 1)};
+    return {Result(i, a->type(), 0), Result(i, Type::BoolTy, 1)};
 }
 
 auto Builder::CreateSRem(Value* a, Value* b) -> Value* {
@@ -255,7 +255,7 @@ auto Builder::CreateSRem(Value* a, Value* b) -> Value* {
 
 auto Builder::CreateSSubOverflow(Value* a, Value* b) -> OverflowResult {
     auto i = Create(Op::SSubOv, {a, b});
-    return {Result(i, a->type(), 0), Result(i, Types::BoolTy, 1)};
+    return {Result(i, a->type(), 0), Result(i, Type::BoolTy, 1)};
 }
 
 void Builder::CreateStore(Value* val, Value* ptr) {
@@ -264,7 +264,7 @@ void Builder::CreateStore(Value* val, Value* ptr) {
 
 auto Builder::CreateString(String s) -> Slice* {
     auto data = new (*this) StringData(s, ReferenceType::Get(tu, tu.StrLitTy->elem()));
-    auto size = CreateInt(s.size(), Types::IntTy);
+    auto size = CreateInt(s.size(), Type::IntTy);
     return new (*this) Slice(tu.StrLitTy, data, size);
 }
 
@@ -279,7 +279,7 @@ auto Builder::CreateUDiv(Value* a, Value* b) -> Value* {
 }
 
 void Builder::CreateUnreachable() {
-    CreateAndGetVal(Op::Unreachable, Types::VoidTy, {});
+    CreateAndGetVal(Op::Unreachable, Type::VoidTy, {});
 }
 
 auto Builder::CreateURem(Value* a, Value* b) -> Value* {
@@ -375,7 +375,7 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
 
         case Op::Call: {
             auto t = cast<ProcType>(arguments[0]->type())->ret();
-            return t == Types::VoidTy or t == Types::NoReturnTy ? V{} : V{t};
+            return t == Type::VoidTy or t == Type::NoReturnTy ? V{} : V{t};
         }
 
         case Op::Load:
@@ -392,7 +392,7 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
         case Op::SAddOv:
         case Op::SMulOv:
         case Op::SSubOv:
-            return {arguments[0]->type(), Types::BoolTy};
+            return {arguments[0]->type(), Type::BoolTy};
 
         case Op::Add:
         case Op::And:
@@ -420,7 +420,7 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
         case Op::ICmpUGt:
         case Op::ICmpULe:
         case Op::ICmpULt:
-            return {Types::BoolTy};
+            return {Type::BoolTy};
     }
 }
 
