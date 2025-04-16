@@ -306,12 +306,6 @@ auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     return proc.get();
 }
 
-auto Builder::GetOrCreateProc(ProcDecl* proc, String mangled_name) -> Proc* {
-    auto ir_proc = GetOrCreateProc(mangled_name, proc->linkage, proc->proc_type());
-    ir_proc->associated_decl = proc;
-    return ir_proc;
-}
-
 auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
     auto proc = procs.find(name);
     return proc == procs.end() ? nullptr : proc->second.get();

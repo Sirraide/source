@@ -1,0 +1,72 @@
+// R %srcc --ir %s
+program test;
+
+proc a (void a, void b) {}
+proc b { a(void(), void()); }
+proc c { return void(); }
+
+void e;
+void f;
+e = f;
+f = e;
+e;
+e;
+
+proc h = void();
+proc i = h();
+proc j { return h() }
+
+proc calls {
+    void g = b();
+    g = c();
+    a(i(), j());
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+
+// * proc _S1aFvvvE {
+// + entry:
+// +     ret
+// + }
+
+// * proc _S1bFvE {
+// + entry:
+// +     call void _S1aFvvvE
+// +     ret
+// + }
+
+// * proc _S1cFvE {
+// + entry:
+// +     ret
+// + }
+
+// * proc _S1hFvE {
+// + entry:
+// +     ret
+// + }
+
+// * proc _S1iFvE {
+// + entry:
+// +     call void _S1hFvE
+// +     ret
+// + }
+
+// * proc _S1jFvE {
+// + entry:
+// +     call void _S1hFvE
+// +     ret
+// + }
+
+// * proc _S5callsFvE {
+// + entry:
+// +     call void _S1bFvE
+// +     call void _S1cFvE
+// +     call void _S1iFvE
+// +     call void _S1jFvE
+// +     call void _S1aFvvvE
+// +     ret
+// + }
+

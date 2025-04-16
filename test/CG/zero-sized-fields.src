@@ -1,0 +1,38 @@
+// R %srcc --ir %s
+program test;
+
+struct zero {};
+struct s {
+    zero a;
+    zero b;
+    zero c;
+};
+
+proc a() extern -> zero;
+proc b() extern -> zero;
+proc c() extern -> zero;
+
+s d;
+s(zero(), zero(), zero());
+
+proc call {
+    s(a(), b(), c());
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+
+// * proc _S1aFT4zeroE;
+// * proc _S1bFT4zeroE;
+// * proc _S1cFT4zeroE;
+
+// * proc _S4callFvE {
+// + entry:
+// +     call void _S1aFT4zeroE
+// +     call void _S1bFT4zeroE
+// +     call void _S1cFT4zeroE
+// +     ret
+// + }

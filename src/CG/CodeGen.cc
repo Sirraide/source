@@ -52,8 +52,42 @@ auto CodeGen::DeclarePrintf() -> Value* {
 }
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
+    auto ty = proc->proc_type();
+    bool has_zero_sized_params = any_of(proc->param_types(), [&](const ParamTypeData& ty) {
+        return IsZeroSizedType(ty.type);
+    });
+
+    // Filter out any zero-sized arguments.
+    if (IsZeroSizedType(proc->return_type()) or has_zero_sized_params) {
+        SmallVector<ParamTypeData> sized;
+        if (has_zero_sized_params) {
+            auto map = std::make_unique<ArgumentMapping>();
+            u32 ir_index = 0;
+            for (auto [i, ty] : enumerate(proc->param_types())) {
+                if (not IsZeroSizedType(ty.type)) {
+                    map->map(u32(i), ir_index++);
+                    sized.push_back(ty);
+                }
+            }
+            argument_mapping[proc] = std::move(map);
+        } else {
+            sized = SmallVector<ParamTypeData>(proc->proc_type()->params());
+        }
+
+        ty = ProcType::Get(
+            tu,
+            IsZeroSizedType(proc->return_type()) ? Type::VoidTy : proc->return_type(),
+            sized,
+            ty->cconv(),
+            ty->variadic()
+        );
+    }
+
+    // Create the procedure.
     auto name = MangledName(proc);
-    return GetOrCreateProc(proc, name);
+    auto ir_proc = GetOrCreateProc(name, proc->linkage, ty);
+    ir_proc->associated_decl = proc;
+    return ir_proc;
 }
 
 auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
@@ -168,6 +202,19 @@ CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::Proc* proc)
         CG.EnterBlock(CG.CreateBlock());
 }
 
+auto CodeGen::GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument> {
+    if (proc->decl()) {
+        auto map = argument_mapping[proc->decl()].get();
+        if (map) {
+            auto mapped = map->map(index);
+            if (not mapped) return {};
+            index = *mapped;
+        }
+    }
+
+    return proc->args()[index];
+}
+
 auto CodeGen::If(
     Value* cond,
     llvm::function_ref<Value*()> emit_then,
@@ -219,7 +266,12 @@ auto CodeGen::If(Value* cond, ArrayRef<Value*> args, llvm::function_ref<void()> 
     return EnterBlock(std::move(join));
 }
 
-bool LocalNeedsAlloca(LocalDecl* local) {
+bool CodeGen::IsZeroSizedType(Type ty) {
+    return ty->size(tu) == Size();
+}
+
+bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
+    if (IsZeroSizedType(local->type)) return false;
     auto p = dyn_cast<ParamDecl>(local);
     if (not p) return true;
     return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
@@ -306,6 +358,8 @@ void CodeGen::Mangler::Append(StringRef s) {
 // mangling codes can *end* with a number without requirding a
 // separator).
 void CodeGen::Mangler::Append(Type ty) {
+    // FIXME: Throw out name mangling entirely and instead maintain a mapping
+    // to automatically generated names in the module.
     struct Visitor {
         Mangler& M;
 
@@ -352,7 +406,8 @@ void CodeGen::Mangler::Append(Type ty) {
         }
 
         void operator()(StructType* ty) {
-            Todo();
+            if (ty->name().empty()) Todo();
+            M.name += std::format("T{}{}", ty->name().size(), ty->name());
         }
     };
 
@@ -383,6 +438,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 //  Initialisation.
 // ============================================================================
 void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
+    Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
     switch (init->type->rvalue_category()) {
         case Expr::LValue: Unreachable("Initialisation from lvalue?");
 
@@ -403,11 +459,17 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
             if (auto lit = dyn_cast<StructInitExpr>(init)) {
                 auto s = lit->struct_type();
                 for (auto [field, val] : zip(s->fields(), lit->values())) {
+                    if (IsZeroSizedType(field->type)) {
+                        Emit(val);
+                        continue;
+                    }
+
                     auto offs = CreatePtrAdd(
                         addr,
                         CreateInt(field->offset.bytes()),
                         true
                     );
+
                     PerformVariableInitialisation(offs, val);
                 }
                 return;
@@ -483,7 +545,8 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         // Assignment.
         case Tk::Assign: {
             auto addr = Emit(expr->lhs);
-            PerformVariableInitialisation(addr, expr->rhs);
+            if (IsZeroSizedType(expr->lhs->type)) Emit(expr->rhs);
+            else PerformVariableInitialisation(addr, expr->rhs);
             return addr;
         }
 
@@ -659,8 +722,12 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
         // in the middle of a function at compile-time.
         if (auto var = dyn_cast<LocalDecl>(s)) {
             Assert(var->init, "Sema should always create an initialiser for local vars");
-            if (not locals.contains(var)) EmitLocal(var);
-            PerformVariableInitialisation(locals.at(var), var->init.get());
+            if (IsZeroSizedType(var->type)) {
+                Emit(var->init.get());
+            } else {
+                if (not locals.contains(var)) EmitLocal(var);
+                PerformVariableInitialisation(locals.at(var), var->init.get());
+            }
         }
 
         // Can’t emit other declarations here.
@@ -764,8 +831,14 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
     auto callee = Emit(expr->callee);
 
     // Then the arguments.
+    //
+    // Don’t add zero-sized arguments to the call, but take care
+    // to still emit them since they may have side effects.
     SmallVector<Value*> args;
-    for (auto arg : expr->args()) args.push_back(Emit(arg));
+    for (auto arg : expr->args()) {
+        auto v = Emit(arg);
+        if (not IsZeroSizedType(arg->type)) args.push_back(v);
+    }
 
     // This handles calling convention lowering etc.
     return CreateCall(callee, args);
@@ -776,6 +849,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     switch (expr->kind) {
         case CastExpr::LValueToSRValue:
             Assert(expr->arg->value_category == Expr::LValue);
+            if (IsZeroSizedType(expr->type)) return nullptr;
             return CreateLoad(expr->type, val);
 
         case CastExpr::Integral:
@@ -790,6 +864,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
 }
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
+    if (IsZeroSizedType(stmt->type)) return nullptr;
     Assert(stmt->type->rvalue_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
     return CreateNil(stmt->type);
 }
@@ -816,6 +891,7 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
+    if (IsZeroSizedType(expr->type)) return nullptr;
     auto l = locals.find(expr->decl);
     if (l != locals.end()) return l->second;
     Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
@@ -850,9 +926,11 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     for (auto l : proc->locals) EmitLocal(l);
 
     // Initialise parameters.
-    for (auto [a, p] : zip(curr_proc->args(), proc->params())) {
-        if (not LocalNeedsAlloca(p)) locals[p] = a;
-        else CreateStore(a, locals.at(p));
+    for (auto [i, p] : enumerate(proc->params())) {
+        auto arg = GetArg(curr_proc, u32(i)).get_or_null();
+        if (not arg) continue;
+        if (not LocalNeedsAlloca(p)) locals[p] = arg;
+        else CreateStore(arg, locals.at(p));
     }
 
     // Emit the body.
@@ -865,7 +943,9 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     auto val = expr->value.get_or_null();
-    CreateReturn(val ? Emit(val) : nullptr);
+    auto ret_val = val ? Emit(val) : nullptr;
+    if (val and IsZeroSizedType(val->type)) ret_val = nullptr;
+    CreateReturn(ret_val);
     return {};
 }
 
@@ -873,7 +953,12 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
     return CreateString(expr->value);
 }
 
-auto CodeGen::EmitStructInitExpr(StructInitExpr*) -> Value* {
+auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> Value* {
+    if (IsZeroSizedType(e->type)) {
+        for (auto v : e->values()) Emit(v);
+        return nullptr;
+    }
+
     Unreachable("Emitting struct initialiser without memory location?");
 }
 

@@ -24,6 +24,7 @@ class Block;
 class Proc;
 class SmallInt;
 class Builder;
+class ArgumentMapping;
 
 enum class AbortReason : u8 {
     AssertionFailed,
@@ -402,12 +403,13 @@ class Proc : public Value {
     Linkage link;
     SmallVector<std::unique_ptr<Block>> body;
     SmallVector<Argument*> arguments;
-    ProcDecl* associated_decl = nullptr;
 
     Proc(String mangled_name, ProcType* ty, Linkage link)
         : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
 public:
+    ProcDecl* associated_decl = nullptr;
+
     auto add(std::unique_ptr<Block> b) -> Block*;
     auto args() const -> ArrayRef<Argument*> { return arguments; }
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
@@ -470,12 +472,11 @@ public:
     auto Dump() -> SmallUnrenderedString;
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
-    auto GetOrCreateProc(ProcDecl* proc, String mangled_name) -> Proc*;
 
     auto CreateAShr(Value* a, Value* b) -> Value*;
     auto CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) -> void;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
-    auto CreateAlloca(ir::Proc* parent, Type ty) -> Value*;
+    auto CreateAlloca(Proc* parent, Type ty) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
     auto CreateBlock() -> std::unique_ptr<Block> { return CreateBlock(ArrayRef<Type>{}); }
     auto CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block>;

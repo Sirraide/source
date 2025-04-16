@@ -1,0 +1,16 @@
+// R %srcc --ir %s
+program test;
+
+struct zero {};
+struct s {
+    zero a;
+    zero b;
+    zero c;
+};
+
+eval assert void.bytes == 0;
+eval assert void.bits == 0;
+eval assert zero.bytes == 0;
+eval assert zero.bits == 0;
+eval assert s.bytes == 0;
+eval assert s.bits == 0;
