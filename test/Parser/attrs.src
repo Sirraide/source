@@ -16,3 +16,9 @@ proc a extern {} // expected-error: Procedure that is declared 'extern' must not
 proc a extern native {} // expected-error: Procedure that is declared 'extern' must not have a body
 proc a native extern {} // expected-error: Procedure that is declared 'extern' must not have a body
 proc a native extern nomangle {} // expected-error: Procedure that is declared 'extern' must not have a body
+
+proc a -> void native {} // expected-error: Expected '{', '=', or ';'
+proc a -> void junk {} // expected-error: Expected '{', '=', or ';'
+
+proc a extern -> void native; // expected-error: Expected '{', '=', or ';'
+proc a extern -> void junk; // expected-error: Expected '{', '=', or ';'

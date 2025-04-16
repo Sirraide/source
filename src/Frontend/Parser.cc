@@ -1195,12 +1195,22 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         );
     }
 
-    // Parse body.
+    // If the next token can’t introduce a body, skip any intervening junk
+    // that the user may have put here.
+    if (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign)) {
+        Error("Expected '{{', '=', or ';'");
+        do Next();
+        while (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign, Tk::Eof));
+    }
+
+    // Parse the body.
     Ptr<ParsedStmt> body;
     if (Consume(Tk::Assign)) {
         body = ParseExpr();
         if (not Consume(Tk::Semicolon)) Error("Expected ';'");
-    } else if (not At(Tk::Semicolon)) {
+    } else if (Consume(Tk::Semicolon)) {
+        // Nothing.
+    } else if (At(Tk::LBrace)) {
         body = ParseBlock();
     }
 
