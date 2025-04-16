@@ -77,7 +77,7 @@
 <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" } "}"
 <signature>   ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-<proc-attrs>  ::= { "native" | "extern" | "nomangle" }
+<proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
 <param-decl>  ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 <intent>      ::= IN | OUT | INOUT | COPY

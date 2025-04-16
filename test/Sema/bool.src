@@ -2,12 +2,12 @@
 
 program test;
 
-proc sink (bool) { } // expected-note: Parameter declared here
+proc sink (bool) { } // expected-note: In argument to parameter declared here
 
 sink(true);
 sink(false);
 sink(true or false);
-sink(0); // expected-error: Argument of type 'int' does not match expected type 'bool'
+sink(0); // expected-error: Cannot convert expression of type 'int' to 'bool'
 sink(true or 0); // expected-error: Right operand of 'or' must be of type 'bool', but was 'int'
 sink(0 or false); // expected-error: Left operand of 'or' must be of type 'bool', but was 'int'
 sink(true and 0); // expected-error: Right operand of 'and' must be of type 'bool', but was 'int'

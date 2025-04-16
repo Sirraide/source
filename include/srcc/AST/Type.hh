@@ -527,7 +527,7 @@ template <>
 struct std::formatter<srcc::Type> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(srcc::Type t, FormatContext& ctx) const {
-        return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
+        return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
     }
 };
 
@@ -535,7 +535,7 @@ template <std::derived_from<srcc::TypeBase> Ty>
 struct std::formatter<Ty*> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(Ty* t, FormatContext& ctx) const {
-        return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
+        return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
     }
 };
 

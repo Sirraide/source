@@ -426,6 +426,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 if (p->attrs.native) out += " native";
                 if (p->attrs.extern_) out += " extern";
                 if (p->attrs.nomangle) out += " nomangle";
+                if (p->attrs.variadic) out += " variadic";
 
                 out += " -> %)";
                 Append(p->ret_type);
@@ -1232,7 +1233,7 @@ bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* d
 
 // <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-// <proc-attrs> ::= { "native" | "extern" | "nomangle" }
+// <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
 // <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 bool Parser::ParseSignatureImpl(
     SmallVectorImpl<ParsedLocalDecl*>* decls
@@ -1345,7 +1346,8 @@ bool Parser::ParseSignatureImpl(
     while (
         ParseAttr(sig.attrs.extern_, "extern") or
         ParseAttr(sig.attrs.native, "native") or
-        ParseAttr(sig.attrs.nomangle, "nomangle")
+        ParseAttr(sig.attrs.nomangle, "nomangle") or
+        ParseAttr(sig.attrs.variadic, "variadic")
     );
 
     // Parse return type.

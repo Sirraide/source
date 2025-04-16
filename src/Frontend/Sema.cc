@@ -830,8 +830,7 @@ auto Sema::SubstituteTemplate(
     ArrayRef<TypeLoc> input_types
 ) -> SubstitutionInfo& {
     auto params = proc_template->pattern->type->param_types();
-    Assert(input_types.size() >= params.size(), "Not enough arguments");
-    input_types = input_types.take_front(params.size());
+    Assert(input_types.size() == params.size(), "Template argument count mismatch");
 
     // Check if this has already been substituted.
     auto& substs = template_substitutions[proc_template];
@@ -909,6 +908,192 @@ auto Sema::SubstituteTemplate(
 // ============================================================================
 //  Overloading.
 // ============================================================================
+bool Sema::Candidate::has_valid_proc_type() const {
+    return status.is< // clang-format off
+        Viable,
+        LValueIntentMismatch,
+        SameTypeLValueRequired,
+        TypeMismatch,
+        NestedResolutionFailure
+    >(); // clang-format on
+}
+
+bool Sema::Candidate::is_variadic() const {
+    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->proc_type()->variadic();
+    return cast<ProcTemplateDecl>(decl)->pattern->type->attrs.variadic;
+}
+
+auto Sema::Candidate::param_count() const -> usz {
+    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->param_count();
+    return cast<ProcTemplateDecl>(decl)->pattern->params().size();
+}
+
+auto Sema::Candidate::param_loc(usz index) const -> Location {
+    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->params()[index]->location();
+    return cast<ProcTemplateDecl>(decl)->pattern->type->param_types()[index].type->loc;
+}
+
+auto Sema::Candidate::proc_type() const -> ProcType* {
+    Assert(has_valid_proc_type(), "proc_type() cannot be used if template substitution failed");
+    auto d = dyn_cast<ProcDecl>(decl);
+    if (d) return d->proc_type();
+    return subst->success()->type;
+}
+
+auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
+    auto d = dyn_cast<ProcDecl>(decl);
+    if (d) return d->proc_type()->print();
+    if (subst and subst->success()) return subst->success()->type->print();
+    return SmallUnrenderedString("(template)");
+}
+
+auto Sema::PerformOverloadResolution(
+    OverloadSetExpr* overload_set,
+    ArrayRef<Expr*> args,
+    Location call_loc
+) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
+    // Since this may also entail template substitution etc. we always
+    // treat calls as requiring overload resolution even if there is
+    // only a single ‘overload’.
+    //
+    // FIXME: This doesn’t work for indirect calls.
+    //
+    // Source does have a restricted form of SFINAE: deduction failure
+    // and deduction failure only is not an error. Random errors during
+    // deduction are hard errors.
+    SmallVector<Candidate, 4> candidates;
+
+    // Add a candidate to the overload set.
+    auto AddCandidate = [&](Decl* proc) -> bool {
+        if (not proc->valid())
+            return false;
+
+        // Add the candidate.
+        auto& c = candidates.emplace_back(proc);
+
+        // Argument count mismatch is not allowed, unless the
+        // function is variadic.
+        auto param_count = c.param_count();
+        if (args.size() != param_count) {
+            if (args.size() < param_count or not c.is_variadic()) {
+                c.status = Candidate::ArgumentCountMismatch{};
+                return true;
+            }
+        }
+
+        // Candidate is a regular procedure.
+        auto templ = dyn_cast<ProcTemplateDecl>(proc);
+        if (not templ) return true;
+
+        // Candidate is a template. Check that we have enough arguments
+        // to perform
+        SmallVector<TypeLoc, 6> types;
+        for (auto arg : args | vws::take(param_count)) types.emplace_back(arg->type, arg->location());
+        c.subst = &SubstituteTemplate(templ, types);
+
+        // If there was a hard error, abort overload resolution entirely.
+        if (c.subst->data.is<SubstitutionInfo::Error>()) return false;
+
+        // Otherwise, ee can still try and continue with overload resolution.
+        if (not c.subst->success()) c.status = Candidate::DeductionError{};
+        return true;
+    };
+
+    // Collect all candidates.
+    if (auto proc = dyn_cast<ProcRefExpr>(overload_set)) {
+        if (not AddCandidate(proc->decl)) return {};
+    } else {
+        auto os = cast<OverloadSetExpr>(overload_set);
+        if (not rgs::all_of(os->overloads(), AddCandidate)) return {};
+    }
+
+    // Check if a single candidate is viable. Returns false if there
+    // is a fatal error that prevents overload resolution entirely.
+    auto CheckCandidate = [&](Candidate& c) -> bool {
+        auto ty = c.proc_type();
+        auto params = ty->params();
+
+        // Check that we can initialise each parameter with its
+        // corresponding argument. Variadic arguments are checked
+        // later when the call is built.
+        for (auto [i, a] : enumerate(args.take_front(params.size()))) {
+            // Candidate may have become invalid in the meantime.
+            auto st = c.status.get_if<Candidate::Viable>();
+            if (not st) break;
+
+            // Check the next parameter.
+            auto& p = params[i];
+            st->conversions.emplace_back();
+            OverloadInitContext init{*this, c, u32(i)};
+            if (not BuildInitialiser(init, p.type, a, p.intent, ty->cconv(), true)) return false;
+        }
+
+        // No fatal error.
+        return true;
+    };
+
+    // Check each candidate, computing viability etc.
+    for (auto& c : candidates) {
+        if (not c.viable()) continue;
+        if (not CheckCandidate(c)) return {};
+    }
+
+    // Find the best viable unique overload, if there is one.
+    Ptr<Candidate> best;
+    bool ambiguous = false;
+    auto viable = candidates | vws::filter(&Candidate::viable);
+    for (auto& c : viable) {
+        // First viable candidate.
+        if (not best) {
+            best = &c;
+            continue;
+        }
+
+        // We already have a candidate. If the badness of this
+        // one is better, then it becomes the new best candidate.
+        if (c.badness() < best.get()->badness()) {
+            best = &c;
+            ambiguous = false;
+        }
+
+        // Otherwise, if its badness is the same, we have an
+        // ambiguous candidate; else, ignore it entirely.
+        else if (c.badness() == best.get()->badness())
+            ambiguous = true;
+    }
+
+    // If overload resolution was ambiguous, then we don’t have
+    // a best candidate.
+    u32 badness = best.get_or_null() ? best.get()->badness() : 0;
+    if (ambiguous) best = {};
+
+    // We found a single best candidate!
+    if (auto c = best.get_or_null()) {
+        ProcDecl* final_callee;
+
+        // Instantiate it now if it is a template.
+        if (c->subst) {
+            auto inst = InstantiateTemplate(*c->subst, call_loc);
+            if (not inst or not inst->is_valid) return {};
+            final_callee = inst;
+        } else {
+            final_callee = cast<ProcDecl>(c->decl);
+        }
+
+        // Now is the time to apply the argument conversions.
+        SmallVector<Expr*> actual_args;
+        actual_args.reserve(args.size());
+        for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
+            actual_args.emplace_back(ApplyConversionSequence(args[i], conv));
+
+        return {final_callee, std::move(actual_args)};
+    }
+
+    // Overload resolution failed. :(
+    ReportOverloadResolutionFailure(candidates, args, call_loc, badness);
+    return {};
+}
+
 void Sema::ReportOverloadResolutionFailure(
     ArrayRef<Candidate> candidates,
     ArrayRef<Expr*> call_args,
@@ -947,40 +1132,43 @@ void Sema::ReportOverloadResolutionFailure(
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
     if (candidates.size() == 1) {
-        auto c = candidates.front();
-        auto ty = c.type();
+        const auto& c = candidates.front();
         auto Ctx = [&](usz idx) {
             return ImmediateInitContext{
                 *this,
                 call_args[idx],
-                ty->params()[idx].type,
+                c.proc_type()->params()[idx].type,
             };
         };
 
-        auto V = utils::Overloaded{// clang-format off
+        auto V = utils::Overloaded{
+            // clang-format off
             [](const Candidate::Viable&) { Unreachable(); },
             [&](Candidate::ArgumentCountMismatch) {
                 Error(
                     call_loc,
                     "Procedure '%2({}%)' expects {} argument{}, got {}",
-                    c.decl()->name,
-                    ty->params().size(),
-                    ty->params().size() == 1 ? "" : "s",
+                    c.decl->name,
+                    c.param_count(),
+                    c.param_count() == 1 ? "" : "s",
                     call_args.size()
                 );
-                Note(c.decl()->location(), "Declared here");
+                Note(c.decl->location(), "Declared here");
             },
 
-            [&](Candidate::InvalidTemplate) {
+            [&](Candidate::DeductionError) {
+                Assert(c.subst, "DeductionError requires a SubstitutionInfo");
                 std::string extra;
-                FormatTempSubstFailure(*cast<SubstitutionInfo*>(c.candidate), extra, "  ");
+                FormatTempSubstFailure(*c.subst, extra, "  ");
                 Error(call_loc, "Template argument substitution failed");
                 Remark("\r{}", extra);
-                Note(c.decl()->location(), "Declared here");
+                Note(c.decl->location(), "Declared here");
             },
 
             [&](Candidate::LValueIntentMismatch m) {
-                Ctx(m.mismatch_index).report_lvalue_intent_mismatch(ty->params()[m.mismatch_index].intent);
+                Ctx(m.mismatch_index).report_lvalue_intent_mismatch(
+                    c.proc_type()->params()[m.mismatch_index].intent
+                );
             },
 
             [&](Candidate::NestedResolutionFailure) {
@@ -988,7 +1176,9 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::SameTypeLValueRequired m) {
-                Ctx(m.mismatch_index).report_same_type_lvalue_required(ty->params()[m.mismatch_index].intent);
+                Ctx(m.mismatch_index).report_same_type_lvalue_required(
+                    c.proc_type()->params()[m.mismatch_index].intent
+                );
             },
 
             [&](Candidate::TypeMismatch m) {
@@ -996,16 +1186,10 @@ void Sema::ReportOverloadResolutionFailure(
                     call_args[m.mismatch_index]->location(),
                     "Argument of type '{}' does not match expected type '{}'",
                     call_args[m.mismatch_index]->type,
-                    ty->params()[m.mismatch_index].type
+                    c.proc_type()->params()[m.mismatch_index].type
                 );
                 Note(c.param_loc(m.mismatch_index), "Parameter declared here");
             },
-
-            [&](Candidate::UndeducedReturnType) {
-                Error(call_loc, "Cannot call procedure before its return type has been deduced");
-                Note(c.decl()->location(), "Declared here");
-                Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
-            }
         }; // clang-format on
         c.status.visit(V);
         return;
@@ -1020,14 +1204,10 @@ void Sema::ReportOverloadResolutionFailure(
     // First, print all overloads.
     for (auto [i, c] : enumerate(candidates)) {
         // Print the type.
-        message += std::format(
-            "  %b({}.%) \v{}",
-            i + 1,
-            not c.is_template() or c.viable() ? c.type()->print() : SmallUnrenderedString("(template)")
-        );
+        message += std::format("  %b({}.%) \v{}", i + 1, c.type_for_diagnostic());
 
         // And include the location if it is valid.
-        auto loc = c.decl()->location();
+        auto loc = c.decl->location();
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
@@ -1053,7 +1233,8 @@ void Sema::ReportOverloadResolutionFailure(
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
         message += std::format("\n  %b({:>{}}.%) ", i + 1, width);
-        auto V = utils::Overloaded{// clang-format off
+        auto V = utils::Overloaded{
+            // clang-format off
             [&] (const Candidate::Viable& v) {
                 // Don’t print that a candidate conflicts with itself...
                 auto ambiguous = ambiguous_indices;
@@ -1068,22 +1249,23 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::ArgumentCountMismatch) {
-                auto params = c.type()->params();
+                auto params = c.param_count();
                 message += std::format(
                     "Expected {} arg{}, got {}",
-                    params.size(),
-                    params.size() == 1 ? "" : "s",
+                    params,
+                    params == 1 ? "" : "s",
                     call_args.size()
                 );
             },
 
-            [&](Candidate::InvalidTemplate) {
+            [&](Candidate::DeductionError) {
+                Assert(c.subst, "DeductionError requires a SubstitutionInfo");
                 message += "Template argument substitution failed";
-                FormatTempSubstFailure(*cast<SubstitutionInfo*>(c.candidate), message, "        ");
+                FormatTempSubstFailure(*c.subst, message, "        ");
             },
 
             [&](Candidate::LValueIntentMismatch m) {
-                auto& p = c.type()->params()[m.mismatch_index];
+                auto& p = c.proc_type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -1100,13 +1282,13 @@ void Sema::ReportOverloadResolutionFailure(
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
-                    c.type()->params()[t.mismatch_index].type,
+                    c.proc_type()->params()[t.mismatch_index].type,
                     call_args[t.mismatch_index]->type
                 );
             },
 
             [&](Candidate::SameTypeLValueRequired m) {
-                auto& p = c.type()->params()[m.mismatch_index];
+                auto& p = c.proc_type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -1114,10 +1296,6 @@ void Sema::ReportOverloadResolutionFailure(
                     p.type
                 );
             },
-
-            [&](Candidate::UndeducedReturnType) {
-                message += "Return type has not been deduced yet";
-            }
         }; // clang-format on
         c.status.visit(V);
     }
@@ -1125,7 +1303,7 @@ void Sema::ReportOverloadResolutionFailure(
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().decl()->name),
+        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().decl->name),
         std::move(message),
     });
 }
@@ -1401,251 +1579,127 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 }
 
 auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
-    // Check variadic arguments.
-    auto CheckVarargs = [&](SmallVectorImpl<Expr*>& actual_args, ArrayRef<Expr*> varargs) {
-        bool ok = true;
-        for (auto a : varargs) {
-            // Codegen is not set up to handle variadic arguments that are larger than a word,
-            // so reject these here. If you need one of those, then seriously, wtf are you doing.
-            if (
-                a->type == Type::IntTy or
-                a->type == Type::BoolTy or
-                a->type == Type::NoReturnTy or
-                (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
-                isa<ReferenceType>(a->type)
-            ) {
-                actual_args.push_back(LValueToSRValue(a));
-            } else {
-                ok = false;
-                Error(
-                    a->location(),
-                    "Passing a value of type '{}' as a varargs argument is not supported",
-                    a->type
-                );
-            }
-        }
-        return ok;
-    };
-
-    // If this is not a procedure reference or overload set, then we don’t
-    // need to perform overload resolution nor template instantiation, so
-    // just typecheck the arguments directly.
+    // If this is an overload set, perform overload resolution.
+    Expr* resolved_callee = nullptr;
+    SmallVector<Expr*> converted_args;
     auto callee_no_parens = callee_expr->strip_parens();
-    if (not isa<OverloadSetExpr, ProcRefExpr>(callee_no_parens)) {
-        auto ty = dyn_cast<ProcType>(callee_expr->type.ptr());
+    if (auto os = dyn_cast<OverloadSetExpr>(callee_no_parens)) {
+        ProcDecl* d{};
+        std::tie(d, converted_args) = PerformOverloadResolution(os, args, loc);
+        if (not d) return nullptr;
+        resolved_callee = CreateReference(d, loc).get();
+    }
 
-        // If the type is 'type', then this is actually an initialiser call.
-        if (callee_expr->type == Type::TypeTy) {
-            auto type = M->vm.eval(callee_expr);
-            if (not type) return ICE(
-                callee_expr->location(),
-                "Failed to evaluate expression designating a type"
-            );
-
-            return BuildInitialiser(
-                type.value().cast<Type>(),
-                args,
-                loc
-            );
-        }
-
-        // If does not have procedure type, then we can’t call it.
-        if (not ty) return Error(
+    // If the ‘callee’ is a type, then this is an initialiser call.
+    else if (isa<TypeExpr>(callee_no_parens)) {
+        auto type = M->vm.eval(callee_expr);
+        if (not type) return ICE(
             callee_expr->location(),
-            "Expression of type '{}' is not callable",
-            callee_expr->type
+            "Failed to evaluate expression designating a type"
         );
 
+        return BuildInitialiser(
+            type.value().cast<Type>(),
+            args,
+            loc
+        );
+    }
+
+    // If the type of this is a procedure, then we can skip overload
+    // resolution. While this also means we have some code duplication,
+    // we don’t have to build conversion sequences here and can instead
+    // apply them immediately, and overload resolution also wouldn’t
+    // work for indirect calls since for those we don’t have a reference
+    // to the procedure declaration.
+    else if (auto ty = dyn_cast<ProcType>(callee_expr->type)) {
+        resolved_callee = LValueToSRValue(callee_expr);
+
         // Check arg count.
-        if (ty->params().size() != args.size()) {
-            return Error(
+        auto params = ty->params().size();
+        auto argn = args.size();
+        if (ty->variadic() ? params > argn : params != argn) {
+            auto decl = dyn_cast<ProcRefExpr>(callee_no_parens);
+            Error(
                 loc,
-                "Procedure expects {} argument{}, got {}",
+                "Procedure{} expects {} argument{}, got {}",
+                decl and not decl->decl->name.empty() ? std::format(" '{}'", decl->decl->name) : "",
                 ty->params().size(),
                 ty->params().size() == 1 ? "" : "s",
                 args.size()
             );
-        }
 
-        // Check each parameter.
-        SmallVector<Expr*> actual_args;
-        actual_args.reserve(args.size());
-        for (auto [p, a] : zip(ty->params(), args)) {
-            auto arg = TRY(BuildInitialiser(p.type, a, p.intent, ty->cconv()));
-            actual_args.push_back(arg);
-        }
-
-        // And check variadic arguments.
-        if (not CheckVarargs(actual_args, args.drop_front(ty->params().size())))
+            if (decl) Note(decl->decl->location(), "Declared here");
             return nullptr;
-
-        // And create the call.
-        return CallExpr::Create(
-            *M,
-            ty->ret(),
-            LValueToSRValue(callee_expr),
-            actual_args,
-            loc
-        );
-    }
-
-    // Otherwise, perform overload resolution and instantiation.
-    //
-    // Since this may also entail template substitution etc. we always
-    // treat calls as requiring overload resolution even if there is
-    // only a single ‘overload’.
-    //
-    // FIXME: This doesn’t work for indirect calls.
-    //
-    // Source does have a restricted form of SFINAE: deduction failure
-    // and deduction failure only is not an error. Random errors during
-    // deduction are hard errors.
-    SmallVector<Candidate, 4> candidates;
-
-    // Add a candidate to the overload set.
-    auto AddCandidate = [&](Decl* proc) -> bool {
-        if (not proc->valid())
-            return false;
-
-        // Candidate is a regular procedure.
-        auto p = dyn_cast<ProcTemplateDecl>(proc);
-        if (not p) {
-            candidates.emplace_back(cast<ProcDecl>(proc));
-            return true;
         }
 
-        // Candidate is a template.
-        SmallVector<TypeLoc, 6> types;
-        for (auto arg : args) types.emplace_back(arg->type, arg->location());
-        auto& subst = SubstituteTemplate(p, types);
-        if (subst.data.is<SubstitutionInfo::Error>()) return false;
-        auto c = candidates.emplace_back(&subst);
-        if (not subst.success()) c.status = Candidate::InvalidTemplate{};
-        return true;
-    };
+        // Convert each non-variadic parameter.
+        converted_args.reserve(args.size());
+        for (auto [i, p, a] : enumerate(ty->params(), args.take_front(ty->params().size()))) {
+            auto arg = BuildInitialiser(p.type, a, p.intent, ty->cconv());
 
-    // Collect all candidates.
-    if (auto proc = dyn_cast<ProcRefExpr>(callee_no_parens)) {
-        if (not AddCandidate(proc->decl)) return {};
-    } else {
-        auto os = cast<OverloadSetExpr>(callee_no_parens);
-        if (not rgs::all_of(os->overloads(), AddCandidate)) return {};
-    }
-
-    // Check if a single candidate is viable. Returns false if there
-    // is a fatal error that prevents overload resolution entirely.
-    auto CheckCandidate = [&](Candidate& c) -> bool {
-        auto ty = c.type();
-        auto params = ty->params();
-
-        // If the candidate’s return type is deduced, we’re trying to
-        // call it before it has been fully analysed. Disallow this.
-        if (ty->ret() == Type::DeducedTy) {
-            c.status = Candidate::UndeducedReturnType{};
-            return true;
-        }
-
-        // Argument count mismatch is not allowed, unless the
-        // function is variadic.
-        //
-        // TODO: Default arguments.
-        if (args.size() != params.size()) {
-            if (args.size() < params.size() or not ty->variadic()) {
-                c.status = Candidate::ArgumentCountMismatch{};
-                return true;
+            // Point to the procedure if this is a direct call.
+            if (not arg and isa<ProcRefExpr>(callee_no_parens)) {
+                auto proc = cast<ProcRefExpr>(callee_no_parens);
+                auto param_decl = proc->decl->params()[i];
+                if (param_decl->name.empty()) Note(param_decl->location(), "In argument to parameter declared here");
+                else Note(param_decl->location(), "In argument to parameter '{}'", param_decl->name);
+                return nullptr;
             }
+
+            converted_args.push_back(arg.get());
         }
-
-        // Check that we can initialise each parameter with its
-        // corresponding argument. Variadic arguments are checked
-        // later when the call is built.
-        for (auto [i, a] : enumerate(args.take_front(params.size()))) {
-            // Candidate may have become invalid in the meantime.
-            auto st = c.status.get_if<Candidate::Viable>();
-            if (not st) break;
-
-            // Check the next parameter.
-            auto& p = params[i];
-            st->conversions.emplace_back();
-            OverloadInitContext init{*this, c, u32(i)};
-            if (not BuildInitialiser(init, p.type, a, p.intent, ty->cconv(), true)) return false;
-        }
-
-        // No fatal error.
-        return true;
-    };
-
-    // Check each candidate, computing viability etc.
-    for (auto& c : candidates) {
-        if (not c.viable()) continue;
-        if (not CheckCandidate(c)) return {};
     }
 
-    // Find the best viable unique overload, if there is one.
-    Ptr<Candidate> best;
-    bool ambiguous = false;
-    auto viable = candidates | vws::filter(&Candidate::viable);
-    for (auto& c : viable) {
-        // First viable candidate.
-        if (not best) {
-            best = &c;
-            continue;
-        }
-
-        // We already have a candidate. If the badness of this
-        // one is better, then it becomes the new best candidate.
-        if (c.badness() < best.get()->badness()) {
-            best = &c;
-            ambiguous = false;
-        }
-
-        // Otherwise, if its badness is the same, we have an
-        // ambiguous candidate; else, ignore it entirely.
-        else if (c.badness() == best.get()->badness())
-            ambiguous = true;
-    }
-
-    // If overload resolution was ambiguous, then we don’t have
-    // a best candidate.
-    u32 badness = best.get_or_null() ? best.get()->badness() : 0;
-    if (ambiguous) best = {};
-
-    // We found a single best candidate!
-    if (auto c = best.get_or_null()) {
-        ProcDecl* final_callee;
-
-        // Instantiate it now if it is a template.
-        if (auto* temp = dyn_cast<SubstitutionInfo*>(c->candidate)) {
-            auto inst = InstantiateTemplate(*temp, loc);
-            if (not inst or not inst->is_valid) return nullptr;
-            final_callee = inst;
-        } else {
-            final_callee = cast<ProcDecl*>(c->candidate);
-        }
-
-        // Now is the time to apply the argument conversions.
-        SmallVector<Expr*> actual_args;
-        actual_args.reserve(args.size());
-        for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
-            actual_args.emplace_back(ApplyConversionSequence(args[i], conv));
-
-        // And check variadic arguments.
-        if (not CheckVarargs(actual_args, args.drop_front(final_callee->proc_type()->params().size())))
-            return nullptr;
-
-        // Finally, create the call.
-        return CallExpr::Create(
-            *M,
-            final_callee->return_type(),
-            CreateReference(final_callee, callee_expr->location()).get(),
-            actual_args,
-            loc
+    // Otherwise, we have no idea how to call this thing.
+    else {
+        return Error(
+            callee_expr->location(),
+            "Expression of type '{}' is not callable",
+            callee_expr->type
         );
     }
 
-    // Overload resolution failed. :(
-    ReportOverloadResolutionFailure(candidates, args, loc, badness);
-    return nullptr;
+    // And check variadic arguments.
+    auto ty = cast<ProcType>(resolved_callee->type);
+    for (auto a : args.drop_front(ty->params().size())) {
+        // Codegen is not set up to handle variadic arguments that are larger
+        // than a word, so reject these here. If you need one of those, then
+        // seriously, wtf are you doing.
+        if (
+            a->type == Type::IntTy or
+            a->type == Type::BoolTy or
+            a->type == Type::NoReturnTy or
+            (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
+            isa<ReferenceType>(a->type)
+        ) {
+            converted_args.push_back(LValueToSRValue(a));
+        } else {
+            Error(
+                a->location(),
+                "Passing a value of type '{}' as a varargs argument is not supported",
+                a->type
+            );
+        }
+    }
+
+    // Check that we can even call this at this point.
+    if (ty->ret() == Type::DeducedTy) {
+        Error(loc, "Cannot call procedure before its return type has been deduced");
+        if (auto p = dyn_cast<ProcRefExpr>(resolved_callee->strip_parens())) {
+            Note(p->decl->location(), "Declared here");
+            Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
+        }
+        return nullptr;
+    }
+
+    // Finally, create the call.
+    return CallExpr::Create(
+        *M,
+        cast<ProcType>(resolved_callee->type)->ret(),
+        resolved_callee,
+        converted_args,
+        loc
+    );
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
@@ -1931,6 +1985,31 @@ auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt
 // ============================================================================
 //  Translation Driver
 // ============================================================================
+Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
+    : info{S, proc} {
+    Assert(proc->scope, "Entering procedure without scope?");
+    S.proc_stack.emplace_back(&info);
+}
+
+Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind) : S{S} {
+    Assert(not S.scope_stack.empty(), "Should not be used for the global scope");
+    scope = S.M->create_scope(S.curr_scope(), kind);
+    S.scope_stack.push_back(scope);
+}
+
+Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
+    if (not scope) return;
+
+    // Allow entering the global scope multiple times; this is a bit
+    // of a hack admittedly...
+    Assert(
+        S.scope_stack.empty() or S.curr_scope() != scope,
+        "Entering the same scope twice in a row; this is probably a bug"
+    );
+
+    S.scope_stack.push_back(scope);
+}
+
 auto Sema::Translate(
     const LangOpts& opts,
     ArrayRef<ParsedModule::Ptr> modules,
@@ -1947,9 +2026,6 @@ auto Sema::Translate(
 }
 
 void Sema::Translate() {
-    // Initialise sema.
-    scope_stack.push_back(M->create_scope(nullptr));
-
     // Take ownership of any resources of the parsed modules.
     for (auto& p : parsed_modules) {
         M->add_allocator(std::move(p->string_alloc));
@@ -1958,15 +2034,24 @@ void Sema::Translate() {
             parsed_template_deduction_infos[decl] = std::move(info);
     }
 
-    // Collect all statements and translate them.
-    M->initialiser_proc->scope = global_scope();
+    // Set up scope stacks.
+    M->initialiser_proc->scope = M->create_scope(nullptr);
     EnterProcedure _{*this, M->initialiser_proc};
+
+    // Collect all statements and translate them.
     SmallVector<Stmt*> top_level_stmts;
     for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, Location{});
 
     // File scope block should never be dependent.
-    M->initialiser_proc->finalise(BuildProcBody(M->initialiser_proc, M->file_scope_block), curr_proc().locals);
+    M->initialiser_proc->finalise(
+        BuildProcBody(M->initialiser_proc, M->file_scope_block),
+        curr_proc().locals
+    );
+
+    // Sanity check.
+    Assert(proc_stack.size() == 1);
+    Assert(scope_stack.size() == 1);
 }
 
 void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {

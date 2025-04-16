@@ -76,15 +76,8 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         Scope* scope = nullptr;
 
     public:
-        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block)
-            : S{S} {
-            scope = S.M->create_scope(S.curr_scope(), kind);
-            S.scope_stack.push_back(scope);
-        }
-
-        EnterScope(Sema& S, Scope* scope) : S{S} {
-            S.scope_stack.push_back(scope);
-        }
+        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block);
+        EnterScope(Sema& S, Scope* scope);
 
         /// Pop the scope if it is still active.
         ~EnterScope() {
@@ -120,19 +113,12 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         ProcScopeInfo(Sema& S, ProcDecl* proc) : proc{proc}, es{S, proc->scope} {}
     };
 
-    template <std::derived_from<ProcScopeInfo> ScopeInfo = ProcScopeInfo>
     class [[nodiscard]] EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);
-        ScopeInfo info;
+        ProcScopeInfo info;
 
     public:
-        template <typename... Args>
-        explicit EnterProcedure(Sema& S, ProcDecl* proc, Args&&... args)
-            : info{S, proc, std::forward<Args>(args)...} {
-            Assert(proc->scope, "Entering procedure without scope?");
-            S.proc_stack.emplace_back(&info);
-        }
-
+        explicit EnterProcedure(Sema& S, ProcDecl* proc);
         ~EnterProcedure() { info.es.S.proc_stack.pop_back(); }
     };
 
@@ -265,7 +251,12 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         struct Error {};
 
         /// What happened.
-        Variant<Success, DeductionFailed, DeductionAmbiguous, Error> data = Error{};
+        Variant< // clang-format off
+            Success,
+            DeductionFailed,
+            DeductionAmbiguous,
+            Error
+        > data = Error{}; // clang-format on
 
         SubstitutionInfo() = default;
         SubstitutionInfo(ProcTemplateDecl* pattern, SmallVector<Type> input_types)
@@ -276,6 +267,9 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
 
     /// Overload resolution candidate.
     struct Candidate {
+        LIBBASE_MOVE_ONLY(Candidate);
+
+    public:
         // Viable candidate.
         struct Viable {
             // The conversion sequences that need to be applied to each
@@ -287,11 +281,13 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
             u32 badness = 0;
         };
 
-        // Candidate for which the argument count didn’t match the parameter count.
+        // Candidate for which the argument count didn’t match the parameter
+        // count. This is also used if we don’t have enough template parameters,
+        // in which case NO SubstitutionInfo object will be created.
         struct ArgumentCountMismatch {};
 
-        // A candidate for which deduction failed entirely.
-        struct InvalidTemplate {};
+        // There was an error during deduction, but we do have a SubstitutionInfo object.
+        struct DeductionError {};
 
         // An lvalue was required by the parameter intent, but an
         // rvalue found.
@@ -325,49 +321,38 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
             u32 mismatch_index;
         };
 
-        // Candidate that is called before it is fully defined. This can
-        // happen due to e.g. recursion.
-        struct UndeducedReturnType {};
-
         // The procedure (template) that this candidate represents.
-        llvm::PointerUnion<ProcDecl*, SubstitutionInfo*> candidate;
+        Decl* decl;
+
+        // Substitution for this template if this is one. This may not
+        // exist in some error cases.
+        SubstitutionInfo* subst = nullptr;
 
         // Whether this candidate is still viable, or why not.
         using Status = Variant< // clang-format off
             Viable,
             ArgumentCountMismatch,
-            InvalidTemplate,
+            DeductionError,
             LValueIntentMismatch,
             NestedResolutionFailure,
             SameTypeLValueRequired,
-            TypeMismatch,
-            UndeducedReturnType
+            TypeMismatch
         >; // clang-format on
         Status status = Viable{};
 
-        Candidate(ProcDecl* p) : candidate{p} {}
-        Candidate(SubstitutionInfo* info) : candidate{info} {}
+        Candidate(Decl* p) : decl{p} {
+            Assert((isa<ProcDecl, ProcTemplateDecl>(p)));
+        }
 
         auto badness() const -> u32 { return status.get<Viable>().badness; }
-        bool is_template() const { return isa<SubstitutionInfo*>(candidate); }
+        auto param_count() const -> usz;
+        auto param_loc(usz index) const -> Location;
+        auto proc_type() const -> ProcType*;
+        auto type_for_diagnostic() const -> SmallUnrenderedString;
+        bool has_valid_proc_type() const;
+        bool is_template() const { return isa<ProcTemplateDecl>(decl); }
+        bool is_variadic() const;
         bool viable() const { return status.is<Viable>(); }
-
-        auto decl() const -> Decl* {
-            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc;
-            return cast<SubstitutionInfo*>(candidate)->pattern;
-        }
-
-        auto param_loc(usz index) const -> Location {
-            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc->params()[index]->location();
-            return cast<SubstitutionInfo*>(candidate)->pattern->pattern->type->param_types()[index].type->loc;
-        }
-
-        auto type() const -> ProcType* {
-            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc->proc_type();
-            auto s = cast<SubstitutionInfo*>(candidate)->success();
-            Assert(s, "Requesting type of failed substitution?");
-            return cast<SubstitutionInfo*>(candidate)->success()->type;
-        }
     };
 
     Context& ctx;
@@ -566,7 +551,11 @@ private:
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
 
     /// Resolve an overload set.
-    auto PerformOverloadResolution();
+    auto PerformOverloadResolution(
+        OverloadSetExpr* overload_set,
+        ArrayRef<Expr*> args,
+        Location call_loc
+    ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);

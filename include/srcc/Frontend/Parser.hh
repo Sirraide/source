@@ -157,6 +157,7 @@ struct ParsedProcAttrs {
     bool extern_ = false;
     bool nomangle = false;
     bool native = false;
+    bool variadic = false;
 };
 
 class srcc::ParsedProcType final : public ParsedStmt
