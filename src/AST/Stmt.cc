@@ -1,5 +1,6 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Stmt.hh>
+#include <srcc/Frontend/Parser.hh>
 
 #include <memory>
 #include <ranges>
@@ -134,8 +135,7 @@ OverloadSetExpr::OverloadSetExpr(
     Location location
 ) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, SRValue, location},
     num_overloads{u32(decls.size())} {
-    auto proc_decls = decls | vws::transform([](auto d) { return cast<ProcDecl>(d); });
-    std::uninitialized_copy(proc_decls.begin(), proc_decls.end(), getTrailingObjects<ProcDecl*>());
+    std::uninitialized_copy(decls.begin(), decls.end(), getTrailingObjects<Decl*>());
 }
 
 auto OverloadSetExpr::Create(
@@ -143,7 +143,7 @@ auto OverloadSetExpr::Create(
     ArrayRef<Decl*> decls,
     Location location
 ) -> OverloadSetExpr* {
-    auto size = totalSizeToAlloc<ProcDecl*>(decls.size());
+    auto size = totalSizeToAlloc<Decl*>(decls.size());
     auto mem = tu.allocate(size, alignof(OverloadSetExpr));
     return ::new (mem) OverloadSetExpr{decls, location};
 }
@@ -190,18 +190,10 @@ ProcDecl::ProcDecl(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
-    ArrayRef<TemplateTypeDecl*> template_params,
     Location location
 ) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
-    num_template_params{u32(template_params.size())},
     parent{parent} {
     owner->procs.push_back(this);
-
-    std::uninitialized_copy_n(
-        template_params.begin(),
-        template_params.size(),
-        getTrailingObjects<TemplateTypeDecl*>()
-    );
 }
 
 auto ProcDecl::Create(
@@ -211,19 +203,15 @@ auto ProcDecl::Create(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
-    Location location,
-    ArrayRef<TemplateTypeDecl*> template_params
+    Location location
 ) -> ProcDecl* {
-    auto size = totalSizeToAlloc<TemplateTypeDecl*>(template_params.size());
-    auto mem = tu.allocate(size, alignof(ProcDecl));
-    return ::new (mem) ProcDecl{
+    return new (tu) ProcDecl{
         &tu,
         type,
         name,
         linkage,
         mangling,
         parent,
-        template_params,
         location,
     };
 }
@@ -245,6 +233,31 @@ auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
 }
 
+ProcTemplateDecl::ProcTemplateDecl(
+    TranslationUnit& tu,
+    ParsedProcDecl* pattern,
+    Ptr<ProcDecl> parent,
+    Location location
+) : Decl{Kind::ProcTemplateDecl, pattern->name, location},
+    owner(&tu), parent{parent}, pattern{pattern} {}
+
+auto ProcTemplateDecl::Create(
+    TranslationUnit& tu,
+    ParsedProcDecl* pattern,
+    Ptr<ProcDecl> parent
+) -> ProcTemplateDecl* {
+    return new (tu) ProcTemplateDecl{
+        tu,
+        pattern,
+        parent,
+        pattern->loc,
+    };
+}
+
+auto ProcTemplateDecl::instantiations() -> ArrayRef<ProcDecl*> {
+    return owner->template_instantiations[this];
+}
+
 StructInitExpr::StructInitExpr(
     StructType* ty,
     ArrayRef<Expr*> fields,
@@ -263,26 +276,6 @@ auto StructInitExpr::Create(
     auto size = totalSizeToAlloc<Expr*>(fields.size());
     auto mem = tu.allocate(size, alignof(StructInitExpr));
     return ::new (mem) StructInitExpr{type, fields, location};
-}
-
-TemplateTypeDecl::TemplateTypeDecl(
-    String name,
-    ArrayRef<u32> deduced_indices,
-    Location location
-) : Decl{Kind::TemplateTypeDecl, name, location},
-    num_deduced_indices{u32(deduced_indices.size())} {
-    std::uninitialized_copy_n(deduced_indices.begin(), deduced_indices.size(), getTrailingObjects<u32>());
-}
-
-auto TemplateTypeDecl::Create(
-    TranslationUnit& tu,
-    String name,
-    ArrayRef<u32> deduced_indices,
-    Location location
-) -> TemplateTypeDecl* {
-    auto size = totalSizeToAlloc<u32>(deduced_indices.size());
-    auto mem = tu.allocate(size, alignof(TemplateTypeDecl));
-    return ::new (mem) TemplateTypeDecl{name, deduced_indices, location};
 }
 
 // ============================================================================

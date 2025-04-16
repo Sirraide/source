@@ -55,7 +55,8 @@ struct TranslationUnit::Serialiser {
     void SerialiseLocalDecl(const LocalDecl*);
     void SerialiseParamDecl(const ParamDecl*);
     void SerialiseProcDecl(const ProcDecl* proc);
-    void SerialiseTemplateTypeDecl(const TemplateTypeDecl*);
+    void SerialiseProcTemplateDecl(const ProcTemplateDecl* proc);
+    void SerialiseTemplateTypeParamDecl(const TemplateTypeParamDecl*);
     auto SerialiseType(Type ty) -> u64;
     void SerialiseTypeDecl(const TypeDecl*);
 };
@@ -63,7 +64,7 @@ struct TranslationUnit::Serialiser {
 Serialiser::Serialiser(const TranslationUnit& M, SmallVectorImpl<char>& buffer)
     : M{M},
       buffer{buffer} {
-    for (const auto& exports : M.exports.decls)
+    for (const auto& exports : M.exports.decls_by_name)
         for (auto d : exports.second)
             SerialiseDecl(d);
 
@@ -113,8 +114,12 @@ void Serialiser::SerialiseProcDecl(const ProcDecl* proc) {
     for (auto& param : proc->params()) SerialiseDecl(param);
 }
 
-void Serialiser::SerialiseTemplateTypeDecl(const TemplateTypeDecl*) {
+void Serialiser::SerialiseProcTemplateDecl(const ProcTemplateDecl*) {
     Todo();
+}
+
+void Serialiser::SerialiseTemplateTypeParamDecl(const TemplateTypeParamDecl*) {
+    Unreachable("Should not exist in the AST");
 }
 
 auto Serialiser::SerialiseType(Type ty) -> u64 {
@@ -141,9 +146,6 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             SerialiseType(proc->ret());
             for (const auto& p : proc->params()) SerialiseType(p.type);
         } break;
-
-        case TypeBase::Kind::TemplateType:
-            Todo();
 
         case TypeBase::Kind::StructType: {
             Todo();
@@ -193,10 +195,6 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
         }
 
         case TypeBase::Kind::StructType: {
-            Todo();
-        }
-
-        case TypeBase::Kind::TemplateType: {
             Todo();
         }
     }
@@ -261,7 +259,8 @@ struct TranslationUnit::Deserialiser : DefaultDiagsProducer<> {
     auto DeserialiseLocalDecl() -> Decl*;
     auto DeserialiseParamDecl() -> Decl*;
     auto DeserialiseProcDecl() -> Decl*;
-    auto DeserialiseTemplateTypeDecl() -> Decl*;
+    auto DeserialiseProcTemplateDecl() -> Decl*;
+    auto DeserialiseTemplateTypeParamDecl() -> Decl*;
     void DeserialiseType();
     auto DeserialiseTypeDecl() -> Decl*;
 };
@@ -273,7 +272,7 @@ auto Deserialiser::Deserialise() -> TranslationUnit::Ptr {
     for (u64 i = 0; i < serialised_types; i++) DeserialiseType();
     for (u64 i = 0; i < serialised_decls; i++) {
         auto decl = DeserialiseDecl();
-        M->exports.decls[decl->name].push_back(decl);
+        M->exports.decls_by_name[decl->name].push_back(decl);
     }
     return std::move(M);
 }
@@ -407,12 +406,16 @@ auto Deserialiser::DeserialiseProcDecl() -> Decl* {
     return proc;
 }
 
+auto Deserialiser::DeserialiseProcTemplateDecl() -> Decl* {
+    Todo();
+}
+
 auto Deserialiser::DeserialiseParamDecl() -> Decl* {
     Todo();
 }
 
-auto Deserialiser::DeserialiseTemplateTypeDecl() -> Decl* {
-    Todo();
+auto Deserialiser::DeserialiseTemplateTypeParamDecl() -> Decl* {
+    Unreachable("Should not exist in AST");
 }
 
 void Deserialiser::DeserialiseType() {
@@ -460,10 +463,6 @@ void Deserialiser::DeserialiseType() {
             for (u64 i = 0; i < num_params; i++) param_types.emplace_back(Read<Intent>(), ReadType());
             deserialised_types.push_back(ProcType::Get(*M, ret, param_types, cc, variadic));
             return;
-        }
-
-        case TypeBase::Kind::TemplateType: {
-            Todo();
         }
 
         case TypeBase::Kind::StructType: {

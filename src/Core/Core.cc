@@ -106,7 +106,7 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 
     // Create machine.
     std::unique_ptr<llvm::TargetMachine> machine{target->createTargetMachine(
-        triple,
+        llvm::Triple(triple),
         cpu,               // Target CPU
         features,          // Features.
         opts,              // Options.

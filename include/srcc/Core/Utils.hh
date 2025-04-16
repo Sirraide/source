@@ -326,6 +326,13 @@ void Print(bool use_colours, std::format_string<Args...> fmt, Args&&... args) {
 } // namespace base::utils
 
 template <>
+struct std::hash<srcc::String> {
+    auto operator()(srcc::String s) const noexcept -> size_t {
+        return std::hash<std::string_view>{}(s.sv());
+    }
+};
+
+template <>
 struct std::formatter<llvm::Align> : formatter<srcc::usz> {
     template <typename FormatContext>
     auto format(llvm::Align align, FormatContext& ctx) const {

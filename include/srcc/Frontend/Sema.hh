@@ -67,17 +67,13 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
     friend TemplateInstantiator;
     friend Importer;
 
-public:
-    using TemplateArguments = DenseMap<TemplateTypeDecl*, TypeBase*>;
-
-private:
     /// RAII Object to push and pop a scope.
     class [[nodiscard]] EnterScope {
     public:
         Sema& S;
 
     private:
-        Scope* scope;
+        Scope* scope = nullptr;
 
     public:
         EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block)
@@ -122,23 +118,6 @@ private:
         const EnterScope es;
 
         ProcScopeInfo(Sema& S, ProcDecl* proc) : proc{proc}, es{S, proc->scope} {}
-    };
-
-    struct InstantiationScopeInfo : ProcScopeInfo {
-        ProcDecl* pattern;
-        DenseMap<Decl*, Decl*> instantiated_decls;
-        Location inst_loc;
-
-        InstantiationScopeInfo(
-            Sema& S,
-            ProcDecl* pattern,
-            ProcDecl* instantiation,
-            Location inst_loc
-        ) : ProcScopeInfo{S, instantiation}, pattern{pattern}, inst_loc{inst_loc} {}
-
-        static bool classof(const ProcScopeInfo* info) {
-            return info->proc->instantiated_from != nullptr;
-        }
     };
 
     template <std::derived_from<ProcScopeInfo> ScopeInfo = ProcScopeInfo>
@@ -233,20 +212,36 @@ private:
     };
 
     /// The result of substituting a procedure type before template instantiation.
-    struct TempSubstRes {
+    struct SubstitutionInfo {
+        LIBBASE_IMMOVABLE(SubstitutionInfo);
+
+        /// The template that was substituted.
+        ProcTemplateDecl* pattern;
+
+        /// Canonical arguments provided by the user.
+        SmallVector<Type> input_types;
+
         /// Substitution was successful.
         struct Success {
-            /// The substituted type.
+            /// The substituted procedure type.
             ProcType* type;
 
-            /// The template argument list for instantiation.
-            TemplateArguments args;
+            /// Procedure scope to use for instantiation.
+            Scope* scope;
+
+            /// The instantiated procedure, if we have already instantiated it.
+            ProcDecl* instantiation = nullptr;
+
+            Success(
+                ProcType* type,
+                Scope* scope
+            ) : type{type}, scope{scope} {}
         };
 
         /// Deduction failed entirely for a TDD.
         struct DeductionFailed {
-            /// The TTD that we failed to deduce.
-            TemplateTypeDecl* ttd;
+            /// The parameter that we failed to deduce.
+            String param;
 
             /// The index of the parameter in which we tried to
             /// perform deduction.
@@ -256,8 +251,8 @@ private:
         /// The type of a TDD decl was deduced to be two different types
         /// in two different parameters.
         struct DeductionAmbiguous {
-            /// The TTD that we failed to deduce.
-            TemplateTypeDecl* ttd;
+            /// The name of the parameter that we failed to deduce.
+            String param;
 
             /// The two parameters that caused the ambiguity.
             u32 first, second;
@@ -272,13 +267,14 @@ private:
         /// What happened.
         Variant<Success, DeductionFailed, DeductionAmbiguous, Error> data = Error{};
 
-        TempSubstRes() = default;
-        TempSubstRes(Success&& s) : data{std::move(s)} {}
-        TempSubstRes(DeductionFailed&& f) : data{std::move(f)} {}
-        TempSubstRes(DeductionAmbiguous&& a) : data{std::move(a)} {}
+        SubstitutionInfo() = default;
+        SubstitutionInfo(ProcTemplateDecl* pattern, SmallVector<Type> input_types)
+            : pattern{pattern}, input_types{std::move(input_types)} {}
+
+        auto success() -> Success* { return data.get_if<Success>(); }
     };
 
-    // Overload resolution candidate.
+    /// Overload resolution candidate.
     struct Candidate {
         // Viable candidate.
         struct Viable {
@@ -333,15 +329,8 @@ private:
         // happen due to e.g. recursion.
         struct UndeducedReturnType {};
 
-        // Info about a yet to be instantiated template.
-        struct TemplateInfo {
-            ProcDecl* pattern;
-            TempSubstRes res;
-        };
-
         // The procedure (template) that this candidate represents.
-        using ProcInfo = Variant<ProcDecl*, TemplateInfo>;
-        ProcInfo proc;
+        llvm::PointerUnion<ProcDecl*, SubstitutionInfo*> candidate;
 
         // Whether this candidate is still viable, or why not.
         using Status = Variant< // clang-format off
@@ -356,55 +345,29 @@ private:
         >; // clang-format on
         Status status = Viable{};
 
-        Candidate(ProcDecl* p) : proc{p} {}
-        Candidate(ProcDecl* pattern, TempSubstRes&& res)
-            : proc{TemplateInfo{pattern, std::move(res)}} {
-            if (not res.data.is<TempSubstRes::Success>())
-                status = InvalidTemplate{};
-        }
+        Candidate(ProcDecl* p) : candidate{p} {}
+        Candidate(SubstitutionInfo* info) : candidate{info} {}
 
         auto badness() const -> u32 { return status.get<Viable>().badness; }
+        bool is_template() const { return isa<SubstitutionInfo*>(candidate); }
+        auto name() const -> String { return decl()->name; }
+        auto location() const -> Location { return decl()->location(); }
+        bool viable() const { return status.is<Viable>(); }
 
-        bool is_template() const { return proc.is<TemplateInfo>(); }
-
-        auto name() const -> String {
-            return decl()->name;
-        }
-
-        auto location() const -> Location {
-            return decl()->location();
+        auto decl() const -> Decl* {
+            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc;
+            return cast<SubstitutionInfo*>(candidate)->pattern;
         }
 
         auto param_loc(usz index) const -> Location {
-            return decl()->params()[index]->location();
+            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc->params()[index]->location();
+            return cast<SubstitutionInfo*>(candidate)->pattern->pattern->type->param_types()[index].type->loc;
         }
 
-        auto type() -> ProcType* {
+        auto type() const -> ProcType* {
             Assert(viable(), "Requesting type of non-viable candidate?");
-            return proc.visit(utils::Overloaded{// clang-format off
-                [](ProcDecl* p) { return p->proc_type(); },
-                [](TemplateInfo& ti) { return ti.res.data.get<TempSubstRes::Success>().type; }
-            }); // clang-format on
-        }
-
-        auto type_for_diagnostic() const -> ProcType* {
-            return proc.visit(utils::Overloaded{// clang-format off
-                [](ProcDecl* p) { return p->proc_type(); },
-                [](const TemplateInfo& ti) {
-                    if (auto* s = ti.res.data.get_if<TempSubstRes::Success>()) return s->type;
-                    return ti.pattern->proc_type();
-                }
-            }); // clang-format on
-        }
-
-        bool viable() { return status.is<Viable>(); }
-
-    private:
-        auto decl() const -> ProcDecl* {
-            return proc.visit(utils::Overloaded{// clang-format off
-                [](ProcDecl* p) { return p; },
-                [](const TemplateInfo& ti) { return ti.pattern; }
-            }); // clang-format on
+            if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc->proc_type();
+            return cast<SubstitutionInfo*>(candidate)->success()->type;
         }
     };
 
@@ -418,12 +381,18 @@ private:
     /// Stack of active scopes.
     SmallVector<Scope*> scope_stack;
 
-    /// Map from parsed procedures to their declarations.
-    DenseMap<ParsedProcDecl*, ProcDecl*> proc_decl_map;
+    /// Template deduction information for each template.
+    DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> parsed_template_deduction_infos;
 
     /// C++ decls that have already been imported (or that
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
+
+    /// Cached template substitutions.
+    DenseMap<ProcTemplateDecl*, SmallVector<std::unique_ptr<SubstitutionInfo>>> template_substitutions;
+
+    /// Map from instantiations to their substitutions.
+    DenseMap<ProcDecl*, usz> template_substitution_indices;
 
     explicit Sema(Context& ctx) : ctx(ctx) {}
 
@@ -533,17 +502,17 @@ private:
     void DeclareLocal(LocalDecl* d);
 
     /// Perform template deduction.
-    ///
-    /// Returns Types::ErrorDependentTy on deduction failure, and
-    /// an empty optional on a hard error.
     auto DeduceType(
-        TemplateTypeDecl* ty,
-        Type param,
-        Type arg
-    ) -> Opt<Type>;
+        ParsedStmt* parsed_type,
+        u32 parsed_type_index,
+        ArrayRef<TypeLoc> input_types
+    ) -> Type;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
+
+    /// Get the substitution info for a template.
+    auto GetTemplateSubstitutionInfo(ProcDecl* instantiation) -> SubstitutionInfo&;
 
     /// Ensure that an expression is an srvalue of the given type. This is
     /// mainly used for expressions involving operators.
@@ -553,19 +522,7 @@ private:
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
 
     /// Instantiate a procedure template.
-    auto InstantiateTemplate(
-        ProcDecl* proc,
-        ProcType* substituted_type,
-        TemplateArguments& args,
-        Location inst_loc
-    ) -> Ptr<ProcDecl>;
-
-    /// Traverse scopes of procedures that we’re instantiating.
-    auto InstantiationStack() {
-        return proc_stack                                   //
-             | vws::filter(InstantiationScopeInfo::classof) //
-             | vws::transform([](auto x) { return static_cast<InstantiationScopeInfo*>(x); });
-    }
+    auto InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl*;
 
     /// Check if an integer literal can be stored in a given type.
     bool IntegerFitsInType(const APInt& i, Type ty);
@@ -628,10 +585,9 @@ private:
 
     /// Substitute types in a procedure template.
     auto SubstituteTemplate(
-        ProcDecl* proc_template,
-        ArrayRef<TypeLoc> input_types,
-        Location inst_loc
-    ) -> TempSubstRes;
+        ProcTemplateDecl* proc_template,
+        ArrayRef<TypeLoc> input_types
+    ) -> SubstitutionInfo&;
 
     /// Try to perform variable initialisation and return the result if
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
@@ -648,6 +604,7 @@ private:
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
+    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, String name, Location loc, ParsedProcAttrs attrs) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
@@ -659,21 +616,20 @@ private:
     void Translate();
 
     /// Statements.
-#define PARSE_TREE_LEAF_EXPR(Name) auto Translate## Name(Parsed## Name* parsed)->Ptr<Stmt>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate## Name(Parsed## Name* parsed)->Decl*;
-#define PARSE_TREE_LEAF_STMT(Name) auto Translate## Name(Parsed## Name* parsed)->Ptr<Stmt>;
+#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed)->Decl*;
+#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
-
 
     auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
 
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
-    auto TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt>;
-    auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl>;
+    auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedLocalDecl*> decls) -> ProcDecl*;
+    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedLocalDecl*> decls) -> Ptr<Stmt>;
+    auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
     auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
     auto TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
@@ -686,17 +642,11 @@ private:
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
-    auto TranslateProcType(
-        ParsedProcType* parsed,
-        SmallVectorImpl<TemplateTypeDecl*>* ttds = nullptr
-    ) -> Type;
+    auto TranslateProcType(ParsedProcType* parsed) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-        if (lvl != Diagnostic::Level::Note)
-            for (auto i : InstantiationStack() | vws::reverse)
-                ctx.diags().add_extra_location(i->inst_loc, "in instantiation of '{}'", i->pattern->name);
     }
 };
 

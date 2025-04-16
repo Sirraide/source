@@ -13,12 +13,13 @@
 namespace srcc {
 class Scope;
 class StructScope;
-class TemplateTypeDecl;
+class TemplateTypeParamDecl;
 class TranslationUnit;
 struct ParamTypeData;
 class Expr;
 class Decl;
 class FieldDecl;
+class ProcTemplateDecl;
 class TypeDecl;
 struct BuiltinTypes;
 
@@ -29,9 +30,6 @@ class Type;
 class TypeLoc;
 
 /// Casting.
-/*template <typename To> auto cast(Type from) -> To*;
-template <typename To> auto dyn_cast(Type from) -> To*;
-template <typename... Ts> auto isa(Type from) -> bool;*/
 } // namespace srcc
 
 /// Scope that stores declarations.
@@ -58,11 +56,14 @@ protected:
 
 public:
     /// Declarations in this scope.
-    StringMap<llvm::TinyPtrVector<Decl*>> decls;
+    StringMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
 
     virtual ~Scope(); // Defaulted out-of-line.
 
-    /// Check if this is a procedure scope.
+    /// Get a flat list of all declarations in this scope.
+    auto decls();
+
+    /// Check if this is a specific kind of scope.
     bool is_block_scope() const { return kind == ScopeKind::Block; }
     bool is_proc_scope() const { return kind == ScopeKind::Procedure; }
     bool is_struct_scope() const { return kind == ScopeKind::Struct; }
@@ -504,22 +505,6 @@ public:
     auto size() const -> Size { return computed_size; }
 
     static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
-};
-
-class srcc::TemplateType final : public TypeBase
-    , public FoldingSetNode {
-    TemplateTypeDecl* decl;
-    explicit TemplateType(TemplateTypeDecl* decl)
-        : TypeBase{Kind::TemplateType},
-          decl{decl} {}
-
-public:
-    auto template_decl() const -> TemplateTypeDecl* { return decl; }
-
-    void Profile(FoldingSetNodeID& ID) const { Profile(ID, decl); }
-    static auto Get(TranslationUnit& mod, TemplateTypeDecl* decl) -> TemplateType*;
-    static void Profile(FoldingSetNodeID& ID, TemplateTypeDecl* decl);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::TemplateType; }
 };
 
 /// Visit this type.

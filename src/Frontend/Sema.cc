@@ -35,8 +35,8 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // And make sure to check for duplicates. Duplicate declarations
     // are usually allowed, but we forbid redeclaring e.g. (template)
     // parameters.
-    auto& ds = scope->decls[d->name];
-    if (not ds.empty() and isa<FieldDecl, ParamDecl, TemplateTypeDecl>(d)) {
+    auto& ds = scope->decls_by_name[d->name];
+    if (not ds.empty() and isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
         Error(d->location(), "Redeclaration of '{}'", d->name);
         Note(ds.front()->location(), "Previous declaration was here");
     } else {
@@ -94,6 +94,7 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
+        case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*M, d, loc);
         case Stmt::Kind::TypeDecl: return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
         case Stmt::Kind::LocalDecl:
         case Stmt::Kind::ParamDecl:
@@ -104,11 +105,7 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
 void Sema::DeclareLocal(LocalDecl* d) {
     Assert(d->parent == curr_proc().proc, "Must EnterProcedure before adding a local variable");
     curr_proc().locals.push_back(d);
-
-    // If the current procedure is a template instantiation, do not
-    // add this to the procedure scope again since it’s the same one.
-    if (not isa<InstantiationScopeInfo>(curr_proc()))
-        AddDeclToScope(curr_scope(), d);
+    AddDeclToScope(curr_scope(), d);
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -182,11 +179,11 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
     // For all elements but the last, we have to look up scopes.
     for (auto name : names.drop_front().drop_back()) {
         // Perform lookup.
-        auto it = in_scope->decls.find(name);
-        if (it == in_scope->decls.end()) return LookupResult(name);
+        auto it = in_scope->decls_by_name.find(name);
+        if (it == in_scope->decls_by_name.end()) return LookupResult(name);
 
         // The declaration must not be ambiguous.
-        Assert(not in_scope->decls.empty(), "Invalid scope entry");
+        Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
         if (it->second.size() != 1) return LookupResult::Ambiguous(name, it->second);
 
         // The declaration must reference a scope.
@@ -205,15 +202,15 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_o
     if (name.empty()) return LookupResult(name);
     while (in_scope) {
         // Look up the name in the this scope.
-        auto it = in_scope->decls.find(name);
-        if (it == in_scope->decls.end()) {
+        auto it = in_scope->decls_by_name.find(name);
+        if (it == in_scope->decls_by_name.end()) {
             if (this_scope_only) break;
             in_scope = in_scope->parent();
             continue;
         }
 
         // Found something.
-        Assert(not in_scope->decls.empty(), "Invalid scope entry");
+        Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
         if (it->second.size() == 1) return LookupResult::Success(it->second.front());
         return LookupResult::Ambiguous(name, it->second);
     }
@@ -601,9 +598,6 @@ bool Sema::BuildInitialiser(
 
     // We need to perform conversion. What we do here depends on the type.
     switch (var_type->kind()) {
-        case TypeBase::Kind::TemplateType:
-            Unreachable("Attempting to initialise dependent type?");
-
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::ReferenceType:
@@ -626,14 +620,14 @@ bool Sema::BuildInitialiser(
                 // Check non-templates first to avoid storing template substitution
                 // for all of them.
                 for (auto [j, o] : enumerate(overloads)) {
-                    if (o->is_template()) continue;
+                    if (isa<ProcTemplateDecl>(o)) continue;
 
                     // We have a match!
                     //
                     // The internal consistency of an overload set was already verified
                     // when the corresponding declarations were added to their scope, so
                     // if one of them matches, it is the only one that matches.
-                    if (o->type == var_type) {
+                    if (cast<ProcDecl>(o)->type == var_type) {
                         init.apply(Conversion::SelectOverload(u16(j)));
                         return true;
                     }
@@ -641,7 +635,7 @@ bool Sema::BuildInitialiser(
 
                 // Otherwise, we need to try and instantiate templates in this overload set.
                 for (auto o : overloads) {
-                    if (not o->is_template()) continue;
+                    if (not isa<ProcTemplateDecl>(o)) continue;
                     Todo("Instantiate template in nested overload set");
                 }
 
@@ -791,6 +785,128 @@ auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
 }
 
 // ============================================================================
+//  Templates.
+// ============================================================================
+auto Sema::DeduceType(
+    ParsedStmt* parsed_type,
+    u32 parsed_type_index,
+    ArrayRef<TypeLoc> input_types
+) -> Type {
+    if (isa<ParsedTemplateType>(parsed_type))
+        return input_types[parsed_type_index].ty;
+
+    // TODO: Support more complicated deduction.
+    return Type();
+}
+
+auto Sema::InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl* {
+    auto s = info.success();
+    Assert(s, "Instantiating failed substitution?");
+    if (s->instantiation) return s->instantiation;
+
+    // Translate the declaration proper.
+    s->instantiation = BuildProcDeclInitial(
+        s->scope,
+        s->type,
+        info.pattern->name,
+        info.pattern->location(),
+        info.pattern->pattern->type->attrs
+    );
+
+    // Remember what pattern we were instantiated from.
+    s->instantiation->instantiated_from = info.pattern;
+    M->template_instantiations[info.pattern].push_back(s->instantiation);
+
+    // Translate the body and record the instantiation.
+    return TranslateProc(
+        s->instantiation,
+        info.pattern->pattern->body,
+        info.pattern->pattern->params()
+    );
+}
+
+auto Sema::SubstituteTemplate(
+    ProcTemplateDecl* proc_template,
+    ArrayRef<TypeLoc> input_types
+) -> SubstitutionInfo& {
+    auto params = proc_template->pattern->type->param_types();
+    Assert(input_types.size() >= params.size(), "Not enough arguments");
+    input_types = input_types.take_front(params.size());
+
+    // Check if this has already been substituted.
+    auto& substs = template_substitutions[proc_template];
+    auto inst = find_if(substs, [&](auto& info) {
+        return equal(info->input_types, input_types, [](Type a, TypeLoc b) {
+            return a == b.ty;
+        });
+    });
+
+    // We’ve substituted this template with these inputs before.
+    if (inst != substs.end()) return *inst->get();
+
+    // Otherwise, perform template deduction now.
+    using Deduced = std::pair<u32, TypeLoc>;
+    HashMap<String, Deduced> deduced;
+    auto& info = *substs.emplace_back(
+        std::make_unique<SubstitutionInfo>(
+            proc_template,
+            input_types | vws::transform(&TypeLoc::ty) | rgs::to<SmallVector<Type>>()
+        )
+    );
+
+    // First, handle all deduction sites.
+    auto& template_info = parsed_template_deduction_infos.at(proc_template->pattern);
+    for (const auto& [name, indices] : template_info) {
+        for (auto i : indices) {
+            auto parsed = proc_template->pattern->type->param_types()[i];
+            Type ty = DeduceType(parsed.type, i, input_types);
+            if (not ty) {
+                info.data = SubstitutionInfo::DeductionFailed{
+                    M->save(name),
+                    i
+                };
+
+                return info;
+            }
+
+            // If the type has not been deduced yet, remember it.
+            auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {ty, parsed.type->loc}});
+            if (inserted) continue;
+
+            // Otherwise, check that the deduction result is the same.
+            if (it->second.second.ty != ty) {
+                info.data = SubstitutionInfo::DeductionAmbiguous{
+                    name,
+                    it->second.first,
+                    u32(i),
+                    it->second.second.ty,
+                    ty,
+                };
+
+                return info;
+            }
+        }
+    }
+
+    // Create a scope for the procedure and save the template arguments there.
+    EnterScope scope{*this, ScopeKind::Procedure};
+    for (auto [name, d] : deduced)
+        AddDeclToScope(scope.get(), new (*M) TemplateTypeParamDecl(name, d.second));
+
+    // Now that that is done, we can convert the type properly.
+    auto ty = TranslateType(proc_template->pattern->type);
+
+    // Mark that we’re done substituting.
+    for (auto d : scope.get()->decls())
+        cast<TemplateTypeParamDecl>(d)->in_substitution = false;
+
+    // Store the type for later if substitution succeeded.
+    if (not ty) return info;
+    info.data = SubstitutionInfo::Success{cast<ProcType>(ty), scope.get()};
+    return info;
+}
+
+// ============================================================================
 //  Overloading.
 // ============================================================================
 void Sema::ReportOverloadResolutionFailure(
@@ -799,7 +915,7 @@ void Sema::ReportOverloadResolutionFailure(
     Location call_loc,
     u32 final_badness
 ) {
-    auto FormatTempSubstFailure = [&](const Candidate::TemplateInfo& ti, std::string& out, std::string_view indent) {
+    /*auto FormatTempSubstFailure = [&](const SubstitutionInfo& ti, std::string& out, std::string_view indent) {
         ti.res.data.visit(utils::Overloaded{// clang-format off
             [](const TempSubstRes::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
             [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
@@ -828,13 +944,14 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             }
         }); // clang-format on
-    };
+    };*/
 
+    /*
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
     if (candidates.size() == 1) {
         auto c = candidates.front();
-        auto ty = c.type_for_diagnostic();
+        auto ty = c.type();
         auto Ctx = [&](usz idx) {
             return ImmediateInitContext{
                 *this,
@@ -849,20 +966,21 @@ void Sema::ReportOverloadResolutionFailure(
                 Error(
                     call_loc,
                     "Procedure '%2({}%)' expects {} argument{}, got {}",
-                    c.name(),
+                    c.proc->name,
                     ty->params().size(),
                     ty->params().size() == 1 ? "" : "s",
                     call_args.size()
                 );
-                Note(c.location(), "Declared here");
+                Note(c.proc->location(), "Declared here");
             },
 
             [&](Candidate::InvalidTemplate) {
-                std::string extra;
-                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), extra, "  ");
+                Todo();
+                /*std::string extra;
+                FormatTempSubstFailure(GetTemplateSubstitutionInfo(c.proc), extra, "  ");
                 Error(call_loc, "Template argument substitution failed");
                 Remark("\r{}", extra);
-                Note(c.location(), "Declared here");
+                Note(c.location(), "Declared here");#1#
             },
 
             [&](Candidate::LValueIntentMismatch m) {
@@ -889,7 +1007,7 @@ void Sema::ReportOverloadResolutionFailure(
 
             [&](Candidate::UndeducedReturnType) {
                 Error(call_loc, "Cannot call procedure before its return type has been deduced");
-                Note(c.location(), "Declared here");
+                Note(c.proc->location(), "Declared here");
                 Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
             }
         }; // clang-format on
@@ -909,11 +1027,11 @@ void Sema::ReportOverloadResolutionFailure(
         message += std::format(
             "  %b({}.%) \v{}",
             i + 1,
-            c.type_for_diagnostic()
+            c.proc->type
         );
 
         // And include the location if it is valid.
-        auto loc = c.location();
+        auto loc = c.proc->location();
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
@@ -943,7 +1061,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::ArgumentCountMismatch) {
-                auto params = c.type_for_diagnostic()->params();
+                auto params = c.proc->proc_type()->params();
                 message += std::format(
                     "Expected {} arg{}, got {}",
                     params.size(),
@@ -953,12 +1071,13 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::InvalidTemplate) {
-                message += "Template argument substitution failed";
-                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");
+                Todo();
+                /*message += "Template argument substitution failed";
+                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");#1#
             },
 
             [&](Candidate::LValueIntentMismatch m) {
-                auto& p = c.type_for_diagnostic()->params()[m.mismatch_index];
+                auto& p = c.proc->proc_type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -975,13 +1094,13 @@ void Sema::ReportOverloadResolutionFailure(
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
-                    c.type_for_diagnostic()->params()[t.mismatch_index].type,
+                    c.proc->proc_type()->params()[t.mismatch_index].type,
                     call_args[t.mismatch_index]->type
                 );
             },
 
             [&](Candidate::SameTypeLValueRequired m) {
-                auto& p = c.type_for_diagnostic()->params()[m.mismatch_index];
+                auto& p = c.proc->proc_type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -995,14 +1114,16 @@ void Sema::ReportOverloadResolutionFailure(
             }
         }; // clang-format on
         c.status.visit(V);
-    }
+    }*/
 
-    ctx.diags().report(Diagnostic{
+    Error(call_loc, "Overload resolution failed");
+
+    /*ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().name()),
+        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().proc->name),
         std::move(message),
-    });
+    });*/
 }
 
 // ============================================================================
@@ -1378,28 +1499,25 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     SmallVector<Candidate, 4> candidates;
 
     // Add a candidate to the overload set.
-    auto AddCandidate = [&](ProcDecl* proc) -> bool {
+    auto AddCandidate = [&](Decl* proc) -> bool {
         if (not proc->valid())
             return false;
 
-        // Candidate is a template.
-        if (not proc->is_template()) {
-            candidates.emplace_back(proc);
+        // Candidate is a regular procedure.
+        auto p = dyn_cast<ProcTemplateDecl>(proc);
+        if (not p) {
+            candidates.emplace_back(cast<ProcDecl>(proc));
             return true;
         }
 
-        // Collect the types of all arguments (and their locations for
-        // diagnostics) for substitution.
+        // Candidate is a template.
         SmallVector<TypeLoc, 6> types;
         for (auto arg : args) types.emplace_back(arg->type, arg->location());
-
-        // Perform template substitution.
-        ICE(proc->location(), "TODO: Substitute template");
-        return false;
-        /*auto res = SubstituteTemplate(proc, types, callee_expr->location());
-        if (res.data.is<TempSubstRes::Error>()) return false;
-        candidates.emplace_back(proc, std::move(res));
-        return true;*/
+        auto& subst = SubstituteTemplate(p, types);
+        if (subst.data.is<SubstitutionInfo::Error>()) return false;
+        auto c = candidates.emplace_back(&subst);
+        if (not subst.success()) c.status = Candidate::InvalidTemplate{};
+        return true;
     };
 
     // Collect all candidates.
@@ -1418,7 +1536,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
         // If the candidate’s return type is deduced, we’re trying to
         // call it before it has been fully analysed. Disallow this.
-        if (ty->ret() == Type::DeducedTy and not c.is_template()) {
+        if (ty->ret() == Type::DeducedTy) {
             c.status = Candidate::UndeducedReturnType{};
             return true;
         }
@@ -1493,24 +1611,13 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         ProcDecl* final_callee;
 
         // Instantiate it now if it is a template.
-        if (auto* temp = c->proc.get_if<Candidate::TemplateInfo>()) {
-            ICE(temp->pattern->location(), "TODO: Instantiate template");
-            return nullptr;
-            /*auto& subst = temp->res.data.get<TempSubstRes::Success>();
-            auto inst = InstantiateTemplate(
-                temp->pattern,
-                subst.type,
-                subst.args,
-                callee_expr->location()
-            );
-
-            // And call it.
-            if (not inst) return nullptr;
-            final_callee = inst.get();*/
+        if (auto* temp = dyn_cast<SubstitutionInfo*>(c->candidate)) {
+            auto inst = InstantiateTemplate(*temp, loc);
+            if (not inst or not inst->is_valid) return nullptr;
+            final_callee = inst;
+        } else {
+            final_callee = cast<ProcDecl*>(c->candidate);
         }
-
-        // Otherwise, just grab the procedure.
-        else { final_callee = c->proc.get<ProcDecl*>(); }
 
         // Now is the time to apply the argument conversions.
         SmallVector<Expr*> actual_args;
@@ -1641,6 +1748,35 @@ auto Sema::BuildParamDecl(
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
+}
+
+auto Sema::BuildProcDeclInitial(
+    Scope* proc_scope,
+    ProcType* ty,
+    String name,
+    Location loc,
+    ParsedProcAttrs attrs
+) -> ProcDecl* {
+    // Create the declaration. A top-level procedure is not considered
+    // 'nested' inside the initialiser procedure, which means that this
+    // is only local if the procedure stack contains at least 3 entries
+    // (the initialiser, our parent, and us).
+    auto proc = ProcDecl::Create(
+        *M,
+        ty,
+        name,
+        attrs.extern_ ? Linkage::Imported : Linkage::Internal,
+        attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
+        proc_stack.size() >= 3 ? proc_stack.back()->proc : nullptr,
+        loc
+    );
+
+    // Don’t e.g. diagnose calls to this if the type is invalid.
+    if (not ty) proc->set_invalid();
+
+    // Add the procedure to the module and the parent scope.
+    proc->scope = proc_scope;
+    return proc;
 }
 
 auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
@@ -1814,6 +1950,8 @@ void Sema::Translate() {
     for (auto& p : parsed_modules) {
         M->add_allocator(std::move(p->string_alloc));
         M->add_integer_storage(std::move(p->integers));
+        for (auto& [decl, info] : p->template_deduction_infos)
+            parsed_template_deduction_infos[decl] = std::move(info);
     }
 
     // Collect all statements and translate them.
@@ -1976,10 +2114,12 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     if (auto exp = dyn_cast<ParsedExportDecl>(parsed))
         return TranslateEntireDecl(d, exp->decl);
 
-    // Ignore this if there was a problem w/ the procedure type.
+    // Ignore this if there was a problem w/ the procedure type. Also,
+    // if this is a template, there is nothing more to be done here.
     if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
         if (not d) return nullptr;
-        return TranslateProc(cast<ProcDecl>(d), proc);
+        if (isa<ProcTemplateDecl>(d)) return d;
+        return TranslateProc(cast<ProcDecl>(d), proc->body, proc->params());
     }
 
     // Complete struct declarations.
@@ -2192,24 +2332,33 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     return decl;
 }
 
-auto Sema::TranslateProc(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
-    // Translate the body if there is one.
-    if (parsed->body) {
-        EnterProcedure _{*this, decl};
-        auto res = TranslateProcBody(decl, parsed);
-        if (res.invalid()) decl->set_invalid();
-        else decl->finalise(res, curr_proc().locals);
-    }
+auto Sema::TranslateProc(
+    ProcDecl* decl,
+    Ptr<ParsedStmt> body,
+    ArrayRef<ParsedLocalDecl*> decls
+) -> ProcDecl* {
+    if (not body) return decl;
 
+    // Translate the body.
+    EnterProcedure _{*this, decl};
+    auto res = TranslateProcBody(decl, body.get(), decls);
+
+    // If there was an error, mark the procedure as errored.
+    if (res.invalid()) decl->set_invalid();
+    else decl->finalise(res, curr_proc().locals);
     return decl;
 }
 
-auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt> {
-    Assert(parsed->body);
+auto Sema::TranslateProcBody(
+    ProcDecl* decl,
+    ParsedStmt* parsed_body,
+    ArrayRef<ParsedLocalDecl*> decls
+) -> Ptr<Stmt> {
+    Assert(parsed_body);
 
     // Translate parameters.
     auto ty = decl->proc_type();
-    for (auto [i, pair] : enumerate(zip(ty->params(), parsed->params()))) {
+    for (auto [i, pair] : enumerate(zip(ty->params(), decls))) {
         auto [param_info, parsed_decl] = pair;
         BuildParamDecl(
             curr_proc(),
@@ -2222,7 +2371,7 @@ auto Sema::TranslateProcBody(ProcDecl* decl, ParsedProcDecl* parsed) -> Ptr<Stmt
     }
 
     // Translate body.
-    auto body = TranslateExpr(parsed->body.get());
+    auto body = TranslateExpr(parsed_body);
     if (body.invalid()) {
         // If we’re attempting to deduce the return type of this procedure,
         // but the body contains an error, just set it to void.
@@ -2242,10 +2391,7 @@ auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
 
 /// Perform initial type checking on a procedure, enough to enable calls
 /// to it to be translated, but without touching its body, if there is one.
-auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
-    EnterScope scope{*this, ScopeKind::Procedure};
-    SmallVector<TemplateTypeDecl*> ttds;
-
+auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // Diagnose invalid combinations of attributes.
     auto attrs = parsed->type->attrs;
     if (attrs.native and attrs.nomangle) Error(
@@ -2253,34 +2399,23 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<ProcDecl> {
         "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
     );
 
+    // If this is a template, we can’t do much right now.
+    auto it = parsed_template_deduction_infos.find(parsed);
+    auto is_template = it != parsed_template_deduction_infos.end();
+    if (is_template) {
+        auto decl = ProcTemplateDecl::Create(*M, parsed, curr_proc().proc);
+        AddDeclToScope(curr_scope(), decl);
+        return decl;
+    }
+
     // Convert the type.
-    auto type = TranslateProcType(parsed->type, &ttds);
+    EnterScope scope{*this, ScopeKind::Procedure};
+    auto type = TranslateProcType(parsed->type);
     auto ty = cast_if_present<ProcType>(type);
     if (not ty) ty = ProcType::Get(*M, Type::VoidTy);
-
-    // Create the declaration. A top-level procedure is not considered
-    // 'nested' inside the initialiser procedure, which means that this
-    // is only local if the procedure stack contains at least 3 entries
-    // (the initialiser, our parent, and us).
-    auto proc = ProcDecl::Create(
-        *M,
-        ty,
-        parsed->name,
-        attrs.extern_ ? Linkage::Imported : Linkage::Internal,
-        attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
-        proc_stack.size() >= 3 ? proc_stack.back()->proc : nullptr,
-        parsed->loc,
-        ttds
-    );
-
-    // Don’t e.g. diagnose calls to this if the type is invalid.
-    if (not type) proc->set_invalid();
-
-    // Add the procedure to the module and the parent scope.
-    proc_decl_map[parsed] = proc;
-    proc->scope = scope.get();
-    AddDeclToScope(scope.get()->parent(), proc);
-    return proc;
+    auto decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
+    AddDeclToScope(scope.get()->parent(), decl);
+    return decl;
 }
 
 /// Dispatch to translate a statement.
@@ -2426,8 +2561,8 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     if (not res) return Type();
 
     // Template type.
-    if (auto ttd = dyn_cast<TemplateTypeDecl>(res.decls.front()))
-        return TemplateType::Get(*M, ttd);
+    if (auto ttd = dyn_cast<TemplateTypeParamDecl>(res.decls.front()))
+        return ttd->arg_type();
 
     // Type decl (struct or type alias).
     if (auto s = dyn_cast<TypeDecl>(res.decls.front()))
@@ -2438,10 +2573,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     return Type();
 }
 
-auto Sema::TranslateProcType(
-    ParsedProcType* parsed,
-    SmallVectorImpl<TemplateTypeDecl*>* ttds
-) -> Type {
+auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -2456,99 +2588,10 @@ auto Sema::TranslateProcType(
         return Type();
     }
 
-    // We may have to handle template parameters here.
-    //
-    // In Source, template parameters are declared using a template type
-    // token, e.g. '$type', in the parameter list of a function declaration;
-    // these declarations serve a twofold purpose:
-    //
-    //    1. To introduce a new template parameter.
-    //    2. To signify where that parameter should be deduced.
-    //
-    // The first is self-explanatory. The second has to do with the fact that
-    // we sometimes want to enforce that certain arguments have the exact same
-    // type, and sometimes, we just want the parameters to have the same type,
-    // i.e. we want to permit implicit conversions at the call site.
-    //
-    // To accomplish this, a template type is deduced from a parameter, iff that
-    // parameter’s type is a template type that uses the '$' sigil. Consider:
-    //
-    //   proc foo (T a, $T b, $T c) { ... }
-    //
-    // In this procedure, all of 'a', 'b', and 'c' will have the same type, that
-    // being 'T'. However, what type 'T' actually is will be deduced from the
-    // arguments passed in for 'b' and 'c' only. Furthermore, template parameters
-    // are order-independent, since we sometimes want to be able to deduce a
-    // parameter at an occurrence other than its first. Thus, consider the call:
-    //
-    //   foo(1 as i16, 2 as i32, 3 as i32)
-    //
-    // This succeeds because the type of 'T' is deduced to be 'i32' for both 'b'
-    // and 'c', and the 'i16' passed for 'a' is converted to 'i32' accordingly;
-    // next, consider:
-    //
-    //   foo(1 as i16, 2 as i16, 3 as i32)
-    //
-    // This call fails because we can’t deduce a type for 'T' that satisfies both
-    // 'b' and 'c'.
-    if (ttds) {
-        struct TemplateDecl {
-            String name;
-            Location loc;
-            SmallVector<u32, 1> deduced_indices;
-        };
-
-        // Template decl by template parameter name.
-        StringMap<TemplateDecl> template_param_decls{};
-
-        // First, do a prescan to collect template type defs.
-        for (auto [i, p] : enumerate(parsed->param_types())) {
-            if (auto ptt = dyn_cast<ParsedTemplateType>(p.type)) {
-                auto& td = template_param_decls[ptt->name];
-                if (td.deduced_indices.empty()) {
-                    td.loc = ptt->loc;
-                    td.name = ptt->name;
-                }
-                td.deduced_indices.push_back(u32(i));
-            }
-        }
-
-        // Then build all the template type decls.
-        for (const auto& entry : template_param_decls) {
-            auto& td = entry.getValue();
-            Assert(not td.deduced_indices.empty(), "Undeduced parameter?");
-            auto ttd = ttds->emplace_back(TemplateTypeDecl::Create(*M, td.name, td.deduced_indices, td.loc));
-            AddDeclToScope(curr_scope(), ttd);
-        }
-    }
-
-    // Then, compute the actual parameter types.
     SmallVector<ParamTypeData, 10> params;
     for (auto a : parsed->param_types()) {
-        // Template types encountered here introduce a template parameter
-        // instead of referencing one, so we process them manually as the
-        // usual translation machinery isn’t equipped to handle template
-        // definitions.
-        //
-        // At this point, the only thing in the scope here should be the
-        // template parameters, so lookup should never find anything else.
-        if (auto ptt = dyn_cast<ParsedTemplateType>(a.type); ptt and ttds) {
-            auto res = LookUpUnqualifiedName(curr_scope(), ptt->name, true);
-            Assert(res.successful(), "Template parameter should have been declared earlier");
-            Assert(res.decls.size() == 1 and isa<TemplateTypeDecl>(res.decls.front()));
-            params.emplace_back(a.intent, TemplateType::Get(*M, cast<TemplateTypeDecl>(res.decls.front())));
-        }
-
-        // Anything else is parsed as a regular type.
-        //
-        // If this is a template parameter that occurs in a context where
-        // it is not allowed (e.g. in a function type that is not part of
-        // a procedure definition), type translation will handle that case
-        // and return an error.
-        else {
-            auto ty = AdjustVariableType(TranslateType(a.type, Type::VoidTy), a.type->loc);
-            params.emplace_back(a.intent, ty);
-        }
+        auto ty = AdjustVariableType(TranslateType(a.type, Type::VoidTy), a.type->loc);
+        params.emplace_back(a.intent, ty);
     }
 
     return ProcType::Get(
@@ -2565,8 +2608,11 @@ auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
-    Error(parsed->loc, "A template type declaration is only allowed in the parameter list of a procedure");
-    return Type();
+    auto res = LookUpUnqualifiedName(curr_scope(), parsed->name, true);
+    if (not res) Error(parsed->loc, "Deduced template type cannot occur here");
+    auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
+    if (not ty->in_substitution) Error(parsed->loc, "Deduced template type cannot occur here");
+    return ty->arg_type();
 }
 
 auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {

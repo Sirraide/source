@@ -314,7 +314,6 @@ void CodeGen::Mangler::Append(Type ty) {
             t->elem()->visit(*this);
         }
 
-        void operator()(TemplateType*) { Unreachable("Mangling dependent type?"); }
         void operator()(SliceType* sl) { ElemTy("S", sl); }
         void operator()(ArrayType* arr) { ElemTy(std::format("A{}", arr->dimension()), arr); }
         void operator()(ReferenceType* ref) { ElemTy("R", ref); }
@@ -361,7 +360,6 @@ void CodeGen::Mangler::Append(Type ty) {
 }
 
 auto CodeGen::MangledName(ProcDecl* proc) -> String {
-    Assert(not proc->is_template(), "Mangling template?");
     if (proc->mangling == Mangling::None) return proc->name;
 
     // Maybe we’ve already cached this?
@@ -438,7 +436,7 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     case K::node: Unreachable("Cannot emit " SRCC_STR(node));
 #define AST_STMT_LEAF(node) \
     case K::node: return SRCC_CAT(Emit, node)(cast<node>(stmt));
-#include "../../include/srcc/AST.inc"
+#include "srcc/AST.inc"
     }
 
     Unreachable("Unknown statement kind");
@@ -758,6 +756,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
             return CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
         }
     }
+    Unreachable();
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
@@ -836,7 +835,6 @@ auto CodeGen::EmitParenExpr(ParenExpr* expr) -> Value* {
 }
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
-    if (proc->is_template()) return;
     locals.clear();
 
     // Create the procedure.

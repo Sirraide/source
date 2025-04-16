@@ -26,7 +26,6 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::StructType:
-        case TypeBase::Kind::TemplateType:
             Unreachable("Not an SRValue");
 
         case TypeBase::Kind::ProcType:
@@ -638,9 +637,6 @@ auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
 
 auto Eval::FFIType(Type ty) -> ffi_type* {
     switch (ty->kind()) {
-        case TypeBase::Kind::TemplateType:
-            Unreachable();
-
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::StructType:
@@ -780,7 +776,6 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
     };
 
     switch (ty->kind()) {
-        case TypeBase::Kind::TemplateType:
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::StructType:
             Unreachable();

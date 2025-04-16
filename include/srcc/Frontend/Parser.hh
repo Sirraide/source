@@ -19,6 +19,10 @@ struct LexedTokenStream;
 struct ImportedModule;
 struct ParsedParameter;
 
+/// The list of parameter indices, for each template parameter,
+/// in which that template parameter is deduced.
+using TemplateParamDeductionInfo = HashMap<String, llvm::SmallDenseSet<u32>>;
+
 #define PARSE_TREE_NODE(node) class SRCC_CAT(Parsed, node);
 #include "srcc/ParseTree.inc"
 } // namespace srcc
@@ -46,6 +50,9 @@ public:
 
     /// Top-level statements.
     SmallVector<ParsedStmt*> top_level;
+
+    /// Template deduction information for each template.
+    DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> template_deduction_infos;
 
     /// The name of this program or module.
     Location name_loc;
@@ -616,10 +623,28 @@ public:
 
 private:
     friend DiagsProducer;
+
+    struct Signature {
+        SmallVector<ParsedParameter, 10> param_types;
+        TemplateParamDeductionInfo deduction_info;
+        Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
+        String name;
+        Location proc_loc;
+        Location tok_after_proc;
+        ParsedProcAttrs attrs;
+
+        // Mark that a template parameter is deduced in the parameter
+        // that is currently being parsed.
+        void add_deduced_template_param(String name) {
+            deduction_info[name].insert(u32(param_types.size()));
+        }
+    };
+
     ParsedModule::Ptr mod;
     TokenStream stream;
     TokenStream::iterator tok;
     Context& ctx;
+    Signature* current_signature = nullptr;
 
 public:
     /// Parse a file.
@@ -644,15 +669,6 @@ public:
     auto module() -> ParsedModule& { return *mod; }
 
 private:
-    struct Signature {
-        SmallVector<ParsedParameter, 10> param_types;
-        Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
-        String name;
-        Location proc_loc;
-        Location tok_after_proc;
-        ParsedProcAttrs attrs;
-    };
-
     explicit Parser(const File& file)
         : mod{std::make_unique<ParsedModule>(file)},
           stream{*mod->string_alloc},
@@ -670,6 +686,7 @@ private:
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
+    bool ParseSignatureImpl(SmallVectorImpl<ParsedLocalDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     void ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts);
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;

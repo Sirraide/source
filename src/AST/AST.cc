@@ -30,6 +30,12 @@ auto ImportHandle::copy(String logical_name, Location loc) -> ImportHandle {
 }
 
 // ============================================================================
+//  Target
+// ============================================================================
+TranslationUnit::Target::Target() = default;
+TranslationUnit::Target::~Target() = default;
+
+// ============================================================================
 //  TU
 // ============================================================================
 TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module)
@@ -38,19 +44,17 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
       name{save(name)},
       is_module{is_module} {
     // Get information about the compilation target from Clang.
-    {
-        std::array args {
-            "-x",
-            "c++",
-            "foo.cc"
-        };
+    std::array args {
+        "-x",
+        "c++",
+        "foo.cc"
+    };
 
-        clang::CompilerInstance ci;
-        ci.createDiagnostics(*llvm::vfs::getRealFileSystem());
-        Assert(clang::CompilerInvocation::CreateFromArgs(ci.getInvocation(), args, ci.getDiagnostics()));
-        Assert(ci.createTarget());
-        tgt.TI = ci.getTargetPtr();
-    }
+    tgt.ci = std::make_unique<clang::CompilerInstance>();
+    tgt.ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
+    Assert(clang::CompilerInvocation::CreateFromArgs(tgt.ci->getInvocation(), args, tgt.ci->getDiagnostics()));
+    Assert(tgt.ci->createTarget());
+    tgt.TI = tgt.ci->getTargetPtr();
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
@@ -99,7 +103,8 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
 
 auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr {
     Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
-    return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, name, is_module});
+    auto m = new TranslationUnit{ctx, opts, name, is_module};
+    return std::unique_ptr<TranslationUnit>(m);
 }
 
 auto TranslationUnit::CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
@@ -114,7 +119,7 @@ void TranslationUnit::dump() const {
 
     // Print content.
     if (imported()) {
-        for (auto& list : exports.decls)
+        for (auto& list : exports.decls_by_name)
             for (auto d : list.second)
                 d->dump(c);
     } else {
@@ -137,6 +142,7 @@ auto TranslationUnit::store_int(APInt value) -> StoredInteger {
 // ============================================================================
 struct Stmt::Printer : PrinterBase<Stmt> {
     bool print_procedure_bodies = true;
+    bool print_instantiations = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
     void Print(Stmt* E);
     void PrintBasicHeader(Stmt* s, StringRef name);
@@ -352,7 +358,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto o = cast<OverloadSetExpr>(e);
             PrintBasicNode(e, "OverloadSetExpr");
             tempset print_procedure_bodies = false;
-            PrintChildren<ProcDecl>(o->overloads());
+            PrintChildren<Decl>(o->overloads());
         } break;
 
         case Kind::ParenExpr: {
@@ -373,17 +379,23 @@ void Stmt::Printer::Print(Stmt* e) {
             if (not print_procedure_bodies) break;
 
             // Print template parameters and parameters.
-            SmallVector<Stmt*> children{p->template_params()};
-            children.append(p->params().begin(), p->params().end());
+            SmallVector<Stmt*> children;
+            if (p->instantiated_from) children.push_back(p->instantiated_from);
+            append_range(children, p->params());
+
+            // Take care we don’t recursively print ourselves when printing our parent.
+            tempset print_instantiations = false;
 
             // And the body, if there is one.
             if (auto body = p->body().get_or_null()) children.push_back(body);
-
-            // Also, print instantiations.
-            for (auto inst : p->owner->template_instantiations[p])
-                children.push_back(inst.second);
-
             PrintChildren(children);
+        } break;
+
+        case Kind::ProcTemplateDecl: {
+            auto p = cast<ProcTemplateDecl>(e);
+            PrintBasicHeader(p, "ProcTemplateDecl");
+            print(" %2({}%)\n", p->name);
+            if (print_instantiations) PrintChildren<ProcDecl>(p->instantiations());
         } break;
 
         case Kind::ProcRefExpr: {
@@ -412,10 +424,10 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren<Expr>(s->values());
         } break;
 
-        case Kind::TemplateTypeDecl: {
-            auto t = cast<TemplateTypeDecl>(e);
-            PrintBasicHeader(t, "TemplateTypeDecl");
-            print(" %3(${}%)\n", t->name);
+        case Kind::TemplateTypeParamDecl: {
+            auto t = cast<TemplateTypeParamDecl>(e);
+            PrintBasicHeader(t, "TemplateTypeParamDecl");
+            print(" %3(${}%) %1(type%) {}\n", t->name, t->arg_type());
         } break;
 
         case Kind::TypeDecl: {

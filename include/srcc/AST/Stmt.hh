@@ -21,6 +21,7 @@ namespace srcc {
 #include "srcc/AST.inc"
 
 class ParsedStmt;
+class ParsedProcDecl;
 } // namespace srcc
 
 // ============================================================================
@@ -446,10 +447,10 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::MemberAccessExpr; }
 };
 class srcc::OverloadSetExpr final : public Expr
-    , TrailingObjects<OverloadSetExpr, ProcDecl*> {
+    , TrailingObjects<OverloadSetExpr, Decl*> {
     friend TrailingObjects;
     const u32 num_overloads;
-    auto numTrailingObjects(OverloadToken<ProcDecl*>) -> usz { return num_overloads; }
+    auto numTrailingObjects(OverloadToken<Decl*>) -> usz { return num_overloads; }
 
     OverloadSetExpr(ArrayRef<Decl*> overloads, Location location);
 
@@ -460,7 +461,7 @@ public:
         Location location
     ) -> OverloadSetExpr*;
 
-    auto overloads() -> ArrayRef<ProcDecl*> { return {getTrailingObjects<ProcDecl*>(), num_overloads}; }
+    auto overloads() -> ArrayRef<Decl*> { return {getTrailingObjects<Decl*>(), num_overloads}; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
 };
@@ -637,34 +638,26 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
 };
 
-class srcc::TemplateTypeDecl final : public Decl
-    , llvm::TrailingObjects<TemplateTypeDecl, u32> {
-    friend TrailingObjects;
-    u32 num_deduced_indices;
-    auto numTrailingObjects(OverloadToken<u32>) -> usz { return num_deduced_indices; }
-
-    TemplateTypeDecl(
-        String name,
-        ArrayRef<u32> deduced_indices,
-        Location location
-    );
+class srcc::TemplateTypeParamDecl final : public Decl {
+    Type ty;
 
 public:
-    static auto Create(
-        TranslationUnit& tu,
+    // Whether we’re currently substituting the type of the declaration that this
+    // belongs to. This is used to allow translation of '$T' only in the parameter
+    // list of a template.
+    //
+    // Note that this is only true during the *substitution* phase.
+    bool in_substitution = true;
+
+    TemplateTypeParamDecl(
         String name,
-        ArrayRef<u32> deduced_indices,
-        Location location
-    ) -> TemplateTypeDecl*;
+        TypeLoc tl
+    ) : Decl{Kind::TemplateTypeParamDecl, name, tl.loc}, ty{tl.ty} {}
 
-    /// Get the indices of any parameters of the procedure that this
-    /// declaration belongs to from which the type of this declaration
-    /// shall be deduced.
-    auto deduced_indices() -> ArrayRef<u32> {
-        return {getTrailingObjects<u32>(), num_deduced_indices};
-    }
+    /// Get the template argument type bound to this parameter.
+    auto arg_type() -> Type { return ty; }
 
-    static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeDecl; }
+    static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeParamDecl; }
 };
 
 // A struct or type alias decl.
@@ -786,16 +779,11 @@ public:
         return linkage == Linkage::Imported or linkage == Linkage::Reexported;
     }
 
-    static bool classof(const Stmt* e) { return e->kind() >= Kind::ProcDecl; }
+    static bool classof(const Stmt* e) { return e->kind() >= Kind::LocalDecl; }
 };
 
 /// Procedure declaration.
-class srcc::ProcDecl final : public ObjectDecl
-    , llvm::TrailingObjects<ProcDecl, TemplateTypeDecl*> {
-    friend TrailingObjects;
-    const u32 num_template_params;
-    auto numTrailingObjects(OverloadToken<TemplateTypeDecl*>) -> usz { return num_template_params; }
-
+class srcc::ProcDecl final : public ObjectDecl {
     /// Not set if this is e.g. external.
     Ptr<Stmt> body_stmt;
 
@@ -812,7 +800,7 @@ public:
     ArrayRef<LocalDecl*> locals;
 
     /// The template this was instantiated from.
-    ProcDecl* instantiated_from = nullptr;
+    ProcTemplateDecl* instantiated_from = nullptr;
 
 private:
     ProcDecl(
@@ -822,7 +810,6 @@ private:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        ArrayRef<TemplateTypeDecl*> template_params,
         Location location
     );
 
@@ -834,8 +821,7 @@ public:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        Location location,
-        ArrayRef<TemplateTypeDecl*> template_params = {}
+        Location location
     ) -> ProcDecl*;
 
     /// Get the procedure body.
@@ -850,9 +836,6 @@ public:
     /// \param locals The declarations for all parameters and
     ///        local variables of this procedure.
     void finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> locals);
-
-    /// Whether this is a template.
-    bool is_template() const { return num_template_params > 0; }
 
     /// Get the parameter declarations.
     auto params() const -> ArrayRef<ParamDecl*> {
@@ -874,13 +857,47 @@ public:
     /// Get the procedure's return type.
     auto return_type() -> Type;
 
-    /// Get the template parameters.
-    auto template_params() -> ArrayRef<TemplateTypeDecl*> {
-        return {getTrailingObjects<TemplateTypeDecl*>(), num_template_params};
-    }
-
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };
+
+/// Procedure template declaration.
+class srcc::ProcTemplateDecl final : public Decl {
+public:
+    TranslationUnit* owner;
+
+    /// May be null if this is a top-level procedure.
+    Ptr<ProcDecl> parent;
+
+    /// Pattern to instantiate.
+    ParsedProcDecl* pattern;
+
+private:
+    ProcTemplateDecl(
+        TranslationUnit& tu,
+        ParsedProcDecl* pattern,
+        Ptr<ProcDecl> parent,
+        Location location
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        ParsedProcDecl* pattern,
+        Ptr<ProcDecl> parent
+    ) -> ProcTemplateDecl*;
+
+    /// Get all instantiations of this template.
+    auto instantiations() -> ArrayRef<ProcDecl*>;
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ProcTemplateDecl; }
+};
+
+// This can only be defined here because it needs to know how big 'Decl' is.
+inline auto srcc::Scope::decls() {
+    return decls_by_name
+        | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; })
+        | vws::join;
+}
 
 /// Visit this statement.
 template <typename Visitor>

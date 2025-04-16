@@ -88,7 +88,6 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->align();
         },
-        [&](const TemplateType*) -> Align { Unreachable("Requested size of dependent type"); },
     });
 } // clang-format on
 
@@ -123,7 +122,6 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
         [&](const ReferenceType*) { return false; },
         [&](const SliceType*) { return true; },
         [&](const StructType* ty) { return (ty->*struct_predicate)(); },
-        [&](const TemplateType*) -> bool { Unreachable("Querying property of dependent type"); },
     });
 } // clang-format on
 
@@ -155,9 +153,6 @@ bool TypeBase::is_srvalue() const {
         case Kind::ArrayType:
         case Kind::StructType:
             return false;
-
-        case Kind::TemplateType:
-            Unreachable();
     }
 
     Unreachable("Invalid type kind");
@@ -206,7 +201,6 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
                 [](ReferenceType*) { return true; },                     // References are small.
                 [](SliceType*) { return true; },                         // Slices are two pointers.
                 [](StructType*) { return false; },                       // Pass structs by reference (TODO: small ones by value).
-                [](TemplateType*) -> bool { Unreachable(); }             // Should never be called for these.
             }); // clang-format on
     }
 
@@ -257,11 +251,6 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             auto* s = cast<StructType>(this);
             out += std::format("%6({}%)", s->name());
         } break;
-
-        case Kind::TemplateType: {
-            auto* tt = cast<TemplateType>(this);
-            out += std::format("%3({}%)", tt->template_decl()->name);
-        } break;
     }
 
     return out;
@@ -298,8 +287,6 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             auto arr = cast<ArrayType>(this);
             return arr->elem()->array_size(tu) * u64(arr->dimension());
         }
-
-        case Kind::TemplateType: Unreachable("Requested size of dependent type");
     }
 
     Unreachable("Invalid type kind");
@@ -441,16 +428,6 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
 
     out += "%)";
     return out;
-}
-
-
-auto TemplateType::Get(TranslationUnit& tu, TemplateTypeDecl* decl) -> TemplateType* {
-    auto CreateNew = [&] { return new (tu) TemplateType{decl}; };
-    return GetOrCreateType(tu.template_types, CreateNew, decl);
-}
-
-void TemplateType::Profile(FoldingSetNodeID& ID, TemplateTypeDecl* decl) {
-    ID.AddPointer(decl);
 }
 
 auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {

@@ -177,7 +177,6 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
             Unreachable("Unknown builtin type");
         }
 
-        case TypeBase::Kind::TemplateType: Unreachable("TemplateType in codegen?");
         case TypeBase::Kind::StructType: {
             auto s = cast<StructType>(ty);
             auto sz = array_elem ? s->array_size() : s->size();

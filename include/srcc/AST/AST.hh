@@ -63,8 +63,13 @@ public:
     using Ptr = std::unique_ptr<TranslationUnit>;
 
     class Target {
+        LIBBASE_IMMOVABLE(Target);
+
         friend TranslationUnit;
+        std::unique_ptr<clang::CompilerInstance> ci;
         llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
+        Target();
+        ~Target();
 
     public:
         [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
@@ -90,7 +95,7 @@ private:
     Context& ctx;
 
     /// Target information.
-    Target tgt;
+    Target tgt{};
 
     /// Language options for this module.
     LangOpts language_opts;
@@ -146,8 +151,8 @@ public:
     /// Declarations exported from this module.
     Scope exports{nullptr};
 
-    /// Cached template instantiations.
-    DenseMap<ProcDecl*, llvm::SmallDenseMap<ProcType*, ProcDecl*>> template_instantiations;
+    /// Template instantiations by template.
+    DenseMap<ProcTemplateDecl*, SmallVector<ProcDecl*>> template_instantiations;
 
     /// Compile-time virtual machine for constant evaluation.
     eval::VM vm{*this};
@@ -178,7 +183,6 @@ public:
     FoldingSet<ReferenceType> reference_types;
     FoldingSet<ProcType> proc_types;
     FoldingSet<SliceType> slice_types;
-    FoldingSet<TemplateType> template_types;
 
     /// Create a new module.
     static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr;

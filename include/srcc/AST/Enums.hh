@@ -110,8 +110,13 @@ enum class srcc::OverflowBehaviour : base::u8 {
 };
 
 enum class srcc::ScopeKind : base::u8 {
+    /// A block expression.
     Block,
+
+    /// A block expression that is also the body of a procedure definition.
     Procedure,
+
+    /// A struct declaration.
     Struct,
 };
 

@@ -1210,7 +1210,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         sig.attrs.extern_ ? " not"sv : ""sv
     );
 
-    return ParsedProcDecl::Create(
+    auto proc = ParsedProcDecl::Create(
         *this,
         sig.name,
         CreateType(sig),
@@ -1218,16 +1218,28 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         body,
         sig.name.empty() ? sig.proc_loc : sig.tok_after_proc
     );
+
+    if (not sig.deduction_info.empty())
+        mod->template_deduction_infos[proc] = std::move(sig.deduction_info);
+
+    return proc;
+}
+
+bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls) {
+    tempset current_signature = &sig;
+    return ParseSignatureImpl(decls);
 }
 
 // <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-attrs> ::= { "native" | "extern" | "nomangle" }
 // <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
-bool Parser::ParseSignature(
-    Signature& sig,
+bool Parser::ParseSignatureImpl(
     SmallVectorImpl<ParsedLocalDecl*>* decls
 ) {
+    Assert(current_signature);
+    auto& sig = *current_signature;
+
     // Yeet 'proc'.
     sig.proc_loc = Next();
 
@@ -1268,6 +1280,11 @@ bool Parser::ParseSignature(
                 type = CreateType(inner);
                 name = inner.name;
                 name_loc = inner.tok_after_proc;
+
+                // For all template parameters that appear in the signature,
+                // add the index of the parameter that is the signature.
+                for (const auto& p : inner.deduction_info)
+                    sig.add_deduced_template_param(p.first);
             }
 
             // Otherwise, parse a regular type and a name if we’re
@@ -1486,8 +1503,11 @@ auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
 
         // TEMPLATE-TYPE
         case Tk::TemplateType: {
+            if (not current_signature) return Error("'{}' is not allowed here; try removing the '$'", tok->text);
+
             // Drop the '$' from the type.
             auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
+            current_signature->add_deduced_template_param(ty->name);
             Next();
             return ty;
         }
