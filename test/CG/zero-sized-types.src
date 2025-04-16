@@ -22,10 +22,36 @@ proc calls {
     a(i(), j());
 }
 
+proc interleaved1 (in int a, void b, in int c, void d) = a | c;
+proc interleaved2 (int a, void b, int c, void d) = a | c;
+interleaved1(2, void(), 3, void());
+interleaved2(2, void(), 3, void());
+
 // * proc __src_main {
 // + entry:
+// +     %0 = call int _S12interleaved1FixivxivE(int 2, int 3)
+// +     %1 = call int _S12interleaved2FiivivE(int 2, int 3)
 // +     ret
 // + }
+
+// * proc _S12interleaved1FixivxivE (in int %0, in int %1) -> int {
+// + entry:
+// +     %2 = or %0, %1
+// +     ret %2
+// + }
+
+// * proc _S12interleaved2FiivivE (int %0, int %1) -> int {
+// + entry:
+// +     %2 = alloca int
+// +     %3 = alloca int
+// +     store int to %2, %0, align 8
+// +     store int to %3, %1, align 8
+// +     %4 = load int, %2, align 8
+// +     %5 = load int, %3, align 8
+// +     %6 = or %4, %5
+// +     ret %6
+// + }
+
 
 // * proc _S1aFvvvE {
 // + entry:
