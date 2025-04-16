@@ -11,7 +11,7 @@ proc foo(var x) { // expected-error: Type deduction is not allowed here
     int i = 2;
     var j = i;
     var k = j;
-    var q = x;
+    var q = x; // expected-error: Unknown symbol 'x'
 
     // Check that we don’t scream about type inference requiring an
     // initialiser if there is one, but we fail to translate it.

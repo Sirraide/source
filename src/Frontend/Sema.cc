@@ -80,12 +80,6 @@ Type Sema::AdjustVariableType(Type ty, Location loc) {
         return Type();
     }
 
-    if (auto s = dyn_cast_if_present<StructType>(ty.ptr()); s and not s->is_complete()) {
-        Error(loc, "Declaring a variable of type '{}' before it is complete", ty);
-        Note(s->decl()->location(), "'{}' declared here", ty);
-        return Type();
-    }
-
     return ty;
 }
 
@@ -123,6 +117,16 @@ bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
             ? Type::IntTy->size(*M)
             : cast<IntType>(ty)->bit_width();
     return Size::Bits(i.getSignificantBits()) <= to_bits;
+}
+
+bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
+    if (auto s = dyn_cast_if_present<StructType>(ty.ptr()))
+        return s->is_complete();
+
+    if (not ty)
+        return null_type_is_complete;
+
+    return true;
 }
 
 auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult {
@@ -362,6 +366,11 @@ public:
 
     auto location() const -> Location { return loc; }
 
+    bool report_incomplete_type() {
+        S.Error(res->location(), "Cannot create instance of incomplete type '{}", res->type);
+        return false;
+    }
+
     bool report_lvalue_intent_mismatch(Intent intent) {
         // If this is itself a parameter, issue a better error.
         if (auto dre = dyn_cast<LocalRefExpr>(res->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
@@ -441,6 +450,11 @@ public:
         }
     }
 
+    bool report_incomplete_type() {
+        c.status = Candidate::IncompleteType(u32(param_index));
+        return true; // Not a fatal error.
+    }
+
     bool report_lvalue_intent_mismatch(Intent) {
         c.status = Candidate::LValueIntentMismatch{u32(param_index)};
         return true; // Not a fatal error.
@@ -469,6 +483,7 @@ public:
         : ImmediateInitContext{S, e, target_type, e->location()} {}
 
     bool report_lvalue_intent_mismatch(Intent) { return false; }
+    bool report_incomplete_type() { return false; }
     bool report_nested_resolution_failure() { return false; }
     bool report_type_mismatch() { return false; }
     bool report_same_type_lvalue_required(Intent) { return false; }
@@ -567,6 +582,9 @@ bool Sema::BuildInitialiser(
 ) {
     Assert(var_type, "Null type in initialisation?");
     Assert(a, "Initialiser must not be null");
+
+    // The type we’re initialising must be complete.
+    if (not IsCompleteType(var_type)) return init.report_incomplete_type();
 
     // If the intent resolves to pass by reference, then we
     // need to bind to it; the type must match exactly for
@@ -745,6 +763,11 @@ auto Sema::BuildInitialiser(
 auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
     var_type = AdjustVariableType(var_type, loc);
     if (not var_type) return nullptr;
+    if (not IsCompleteType(var_type)) return Error(
+        loc,
+        "Cannot create an instance of incomplete type '{}'",
+        var_type
+    );
 
     // Easy case: no arguments.
     if (args.empty()) {
@@ -755,7 +778,7 @@ auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -
             var_type
         );
 
-        return Error(loc, "Type '{}' has requires a non-empty initialiser", var_type);
+        return Error(loc, "Type '{}' requires a non-empty initialiser", var_type);
     }
 
     // If there is exactly one argument, delegate to the rest of the
@@ -1165,6 +1188,10 @@ void Sema::ReportOverloadResolutionFailure(
                 Note(c.decl->location(), "Declared here");
             },
 
+            [&](Candidate::IncompleteType i) {
+                Ctx(i.param_index).report_incomplete_type();
+            },
+
             [&](Candidate::LValueIntentMismatch m) {
                 Ctx(m.mismatch_index).report_lvalue_intent_mismatch(
                     c.proc_type()->params()[m.mismatch_index].intent
@@ -1255,6 +1282,14 @@ void Sema::ReportOverloadResolutionFailure(
                     params,
                     params == 1 ? "" : "s",
                     call_args.size()
+                );
+            },
+
+            [&](Candidate::IncompleteType i) {
+                message += std::format(
+                    "Cannot initialise param #{} because its type '{}' is still incomplete here",
+                    c.param_loc(i.param_index),
+                    c.proc_type()->params()[i.param_index].type
                 );
             },
 
@@ -2406,7 +2441,16 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     // Now that the type has been deduced (if necessary), we can check
     // if we can even create a variable of this type.
     decl->type = AdjustVariableType(decl->type, decl->location());
-    if (not decl->type) return decl->set_invalid();
+    bool complete = IsCompleteType(decl->type);
+    if (not decl->type or not complete) {
+        if (not complete) Error(
+            decl->location(),
+            "Cannot declare variable of type '{}' that has not been fully defined yet",
+            decl->type
+        );
+
+        return decl->set_invalid();
+    }
 
     // Then, perform initialisation.
     //
@@ -2503,6 +2547,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     auto ty = cast_if_present<ProcType>(type);
     if (not ty) ty = ProcType::Get(*M, Type::VoidTy);
     auto decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
+    if (not type) decl->set_invalid();
     AddDeclToScope(scope.get()->parent(), decl);
     return decl;
 }
@@ -2546,7 +2591,16 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 
         // If the field’s type is invalid, we can’t query any of its
         // properties, so just insert a dummy field and continue.
-        if (not ty) {
+        bool complete = IsCompleteType(ty);
+        if (not ty or not complete) {
+            // TODO: Allow this and instead actually perform recursive translation and
+            // cycle checking.
+            if (not complete) Error(
+                f->loc,
+                "Cannot declare field of type '{}' that has not been fully defined yet",
+                ty
+            );
+
             fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name, f->loc))->set_invalid();
             continue;
         }
@@ -2678,11 +2732,32 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     }
 
     SmallVector<ParamTypeData, 10> params;
+    bool ok = true;
     for (auto a : parsed->param_types()) {
-        auto ty = AdjustVariableType(TranslateType(a.type, Type::VoidTy), a.type->loc);
+        auto ty = TranslateType(a.type);
+
+        // Diagnose this here, but don’t do anything about it; this is only
+        // harmful if we emit LLVM IR for it, and we won’t be getting there
+        // anyway because of this error.
+        if (ty and parsed->attrs.native) {
+            if (ty == Type::VoidTy) Error(
+                a.type->loc,
+                "Passing '%1(void%)' to a '%1(native%)' procedure is not supported"
+            );
+
+            else if (ty->size(*M) == Size()) Error(
+                a.type->loc,
+                "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
+                ty
+            );
+        }
+
+        ty = AdjustVariableType(ty, a.type->loc);
+        if (not ty) ok = false;
         params.emplace_back(a.intent, ty);
     }
 
+    if (not ok) return Type();
     return ProcType::Get(
         *M,
         TranslateType(parsed->ret_type, Type::VoidTy),

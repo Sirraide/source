@@ -1,0 +1,17 @@
+// R %srcc --sema --verify %s
+program test;
+
+proc a (void x) {}
+proc b (void x) native {} // expected-error: Passing 'void' to a 'native' procedure is not supported
+
+proc c -> void {}
+proc d native -> void {}
+
+struct zero {}
+
+proc a (zero x) {}
+proc b (zero x) native {} // expected-error: Passing zero-sized type 'zero' to a 'native' procedure is not supported
+
+// FIXME: returning structs is currently not implemented
+// proc c -> zero { return zero(); }
+// proc d native -> zero { return zero(); }

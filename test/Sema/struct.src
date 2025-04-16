@@ -12,9 +12,9 @@ struct S {
 
 S a;
 S b;
-S2 c; // expected-error: Declaring a variable of type 'S2' before it is complete
+S2 c; // expected-error: Cannot declare variable of type 'S2' that has not been fully defined yet
 
-struct S2 { // expected-note: 'S2' declared here
+struct S2 {
     S a;
     S b;
 }
@@ -37,14 +37,14 @@ struct ZeroSized {
     void b;
 }
 
-struct Recursive { // expected-note: 'Recursive' declared here
-    Recursive r; // expected-error: Declaring a variable of type 'Recursive' before it is complete
+struct Recursive {
+    Recursive r; // expected-error: Cannot declare field of type 'Recursive' that has not been fully defined yet
 }
 
 struct MutuallyRecursive1 {
-    MutuallyRecursive2 r; // expected-error: Declaring a variable of type 'MutuallyRecursive2' before it is complete
+    MutuallyRecursive2 r; // expected-error: Cannot declare field of type 'MutuallyRecursive2' that has not been fully defined yet
 }
 
-struct MutuallyRecursive2 { // expected-note: 'MutuallyRecursive2' declared here
+struct MutuallyRecursive2 {
     MutuallyRecursive1 r;
 }

@@ -1,1 +1,2 @@
 - Store children to be printed in printer
+- Remove 'Alloca' as an instruction and store stack allocations in a 'FrameData' struct instead.

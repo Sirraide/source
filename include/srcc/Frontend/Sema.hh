@@ -307,6 +307,11 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
             u32 mismatch_index;
         };
 
+        // Type was incomplete.
+        struct IncompleteType {
+            u32 param_index;
+        };
+
         // An lvalue parameter requires a value of the same type to be
         // passed, but that wasn’t the case.
         struct SameTypeLValueRequired {
@@ -332,6 +337,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         using Status = Variant< // clang-format off
             Viable,
             ArgumentCountMismatch,
+            IncompleteType,
             DeductionError,
             LValueIntentMismatch,
             NestedResolutionFailure,
@@ -507,6 +513,9 @@ private:
 
     /// Check if an integer literal can be stored in a given type.
     bool IntegerFitsInType(const APInt& i, Type ty);
+
+    /// Check that we have a complete type.
+    [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
 
     /// Use LookUpName() instead.
     auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult;
