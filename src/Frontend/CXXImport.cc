@@ -198,7 +198,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::Pointer: {
             auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return std::nullopt;
-            return ReferenceType::Get(*S.M, *Elem);
+            return PtrType::Get(*S.M, *Elem);
         }
 
         case K::BitInt: {

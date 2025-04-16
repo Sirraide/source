@@ -34,7 +34,7 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
         case TypeBase::Kind::SliceType:
             return SRValue(SRSlice(), ty);
 
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
             return SRValue(Pointer(), ty);
 
         case TypeBase::Kind::IntType:
@@ -629,7 +629,7 @@ auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
     // FIXME: This just doesn’t work because we have 3 address spaces; we need to
     // merge them into a single address space (split the 64-bit address space into
     // 3 big areas, that should be enough space).
-    if (isa<ReferenceType>(ty)) Todo("Convert pointer back to a virtual pointer");
+    if (isa<PtrType>(ty)) Todo("Convert pointer back to a virtual pointer");
 
     // FIXME: This doesn’t work if the host and target are different...
     return LoadSRValue(mem, ty);
@@ -644,7 +644,7 @@ auto Eval::FFIType(Type ty) -> ffi_type* {
             ICE(entry, "Cannot call native function with value of type '{}'", ty);
             return nullptr;
 
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
             return &ffi_type_pointer;
 
         case TypeBase::Kind::IntType:
@@ -783,7 +783,7 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
         case TypeBase::Kind::ProcType:
             return SRValue(Load.operator()<SRClosure>(), ty);
 
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
             return SRValue(Load.operator()<Pointer>(), ty);
 
         case TypeBase::Kind::SliceType: {

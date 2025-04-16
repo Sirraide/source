@@ -53,7 +53,7 @@ auto Builder::CreateAlloca(Proc* parent, Type ty) -> Value* {
     parent->entry()->insts.insert(it, a);
 
     // Return the allocated value.
-    return new (*this) InstValue(a, ReferenceType::Get(tu, ty), 0);
+    return new (*this) InstValue(a, PtrType::Get(tu, ty), 0);
 }
 
 auto Builder::CreateAnd(Value* a, Value* b) -> Value* {
@@ -109,7 +109,7 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
     }
 
     if (auto s = dyn_cast<SliceType>(aggregate->type().ptr())) {
-        if (idx == 0) return new (*this) Extract(aggregate, 0, ReferenceType::Get(tu, s->elem()));
+        if (idx == 0) return new (*this) Extract(aggregate, 0, PtrType::Get(tu, s->elem()));
         if (idx == 1) return new (*this) Extract(aggregate, 1, Type::IntTy);
         Unreachable("Invalid index for slice type");
     }
@@ -130,7 +130,7 @@ auto Builder::CreateInt(u64 val, Type type) -> Value* {
 
 auto Builder::CreateInvalidLocalReference(LocalRefExpr* ref) -> Value* {
     // The actual type of this is a reference type since local refs are lvalues.
-    auto ref_ty = ReferenceType::Get(tu, ref->type);
+    auto ref_ty = PtrType::Get(tu, ref->type);
     return new (*this) InvalidLocalReference(ref, ref_ty);
 }
 
@@ -205,7 +205,7 @@ auto Builder::CreatePoison(Type ty) -> Value* {
 }
 
 auto Builder::CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value* {
-    Assert(isa<ReferenceType>(ptr->type()), "First argument to ptradd must be a pointer");
+    Assert(isa<PtrType>(ptr->type()), "First argument to ptradd must be a pointer");
     auto i = CreateAndGetVal(Op::PtrAdd, ptr->type(), {ptr, offs});
     i->inst()->inbounds = inbounds;
     return i;
@@ -241,7 +241,7 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
 }
 
 auto Builder::CreateSlice(Value* data, Value* size) -> Slice* {
-    return new (*this) Slice(SliceType::Get(tu, cast<ReferenceType>(data->type())->elem()), data, size);
+    return new (*this) Slice(SliceType::Get(tu, cast<PtrType>(data->type())->elem()), data, size);
 }
 
 auto Builder::CreateSMulOverflow(Value* a, Value* b) -> OverflowResult {
@@ -263,7 +263,7 @@ void Builder::CreateStore(Value* val, Value* ptr) {
 }
 
 auto Builder::CreateString(String s) -> Slice* {
-    auto data = new (*this) StringData(s, ReferenceType::Get(tu, tu.StrLitTy->elem()));
+    auto data = new (*this) StringData(s, PtrType::Get(tu, tu.StrLitTy->elem()));
     auto size = CreateInt(s.size(), Type::IntTy);
     return new (*this) Slice(tu.StrLitTy, data, size);
 }
@@ -298,7 +298,7 @@ auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
     // Initialise arguments.
     for (auto [i, p] : enumerate(ty->params())) {
         Type param_ty = p.type->pass_by_lvalue(ty->cconv(), p.intent)
-                          ? ReferenceType::Get(tu, p.type)
+                          ? PtrType::Get(tu, p.type)
                           : p.type;
         proc->arguments.push_back(new (*this) Argument(proc.get(), u32(i), param_ty));
     }

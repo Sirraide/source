@@ -275,7 +275,7 @@ public:
     auto elem() const -> Type { return element_type; }
 
     static bool classof(const TypeBase* e) {
-        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::ReferenceType;
+        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::PtrType;
     }
 };
 
@@ -300,15 +300,15 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
 };
 
-class srcc::ReferenceType final : public SingleElementTypeBase
+class srcc::PtrType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit ReferenceType(Type elem) : SingleElementTypeBase{Kind::ReferenceType, elem} {}
+    explicit PtrType(Type elem) : SingleElementTypeBase{Kind::PtrType, elem} {}
 
 public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(TranslationUnit& mod, Type elem) -> ReferenceType*;
+    static auto Get(TranslationUnit& mod, Type elem) -> PtrType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::ReferenceType; }
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::PtrType; }
 };
 
 /// Parts of a parameter that are relevant for the procedure type.

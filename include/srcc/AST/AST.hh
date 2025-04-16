@@ -180,7 +180,7 @@ public:
     /// Type caches.
     FoldingSet<ArrayType> array_types;
     FoldingSet<IntType> int_types;
-    FoldingSet<ReferenceType> reference_types;
+    FoldingSet<PtrType> ptr_types;
     FoldingSet<ProcType> proc_types;
     FoldingSet<SliceType> slice_types;
 

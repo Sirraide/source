@@ -136,7 +136,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             break;
 
         case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
         case TypeBase::Kind::ArrayType:
             SerialiseType(cast<SingleElementTypeBase>(ty)->elem());
             break;
@@ -161,7 +161,7 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
     W << ty->kind();
     switch (ty->kind()) {
         case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
             W << SerialiseType(cast<SingleElementTypeBase>(ty)->elem());
             return idx;
 
@@ -425,8 +425,8 @@ void Deserialiser::DeserialiseType() {
             deserialised_types.push_back(SliceType::Get(*M, ReadType()));
             return;
 
-        case TypeBase::Kind::ReferenceType:
-            deserialised_types.push_back(ReferenceType::Get(*M, ReadType()));
+        case TypeBase::Kind::PtrType:
+            deserialised_types.push_back(PtrType::Get(*M, ReadType()));
             return;
 
         case TypeBase::Kind::IntType:

@@ -143,7 +143,7 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
     Assert(ty, "Null type in codegen");
     switch (ty->kind()) {
         case TypeBase::Kind::SliceType: return SliceTy;
-        case TypeBase::Kind::ReferenceType: return PtrTy;
+        case TypeBase::Kind::PtrType: return PtrTy;
         case TypeBase::Kind::ProcType: return ConvertProcType(cast<ProcType>(ty));
         case TypeBase::Kind::IntType: return getIntNTy(u32(cast<IntType>(ty)->bit_width().bits()));
 

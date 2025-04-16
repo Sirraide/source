@@ -600,7 +600,7 @@ bool Sema::BuildInitialiser(
     switch (var_type->kind()) {
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::ReferenceType:
+        case TypeBase::Kind::PtrType:
             return init.report_type_mismatch();
 
         case TypeBase::Kind::ProcType:
@@ -1556,7 +1556,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     auto type = [&] -> Type {
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::SliceData: return ReferenceType::Get(*M, cast<SliceType>(operand->type)->elem());
+            case AK::SliceData: return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
             case AK::SliceSize: return Type::IntTy;
             case AK::TypeAlign: return Type::IntTy;
             case AK::TypeArraySize: return Type::IntTy;
@@ -1670,7 +1670,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             a->type == Type::BoolTy or
             a->type == Type::NoReturnTy or
             (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
-            isa<ReferenceType>(a->type)
+            isa<PtrType>(a->type)
         ) {
             converted_args.push_back(LValueToSRValue(a));
         } else {

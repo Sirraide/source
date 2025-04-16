@@ -82,7 +82,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
         },
         [&](const IntType* ty) { return tu.target().int_align(ty); },
         [&](const ProcType*) { return tu.target().closure_align(); },
-        [&](const ReferenceType*) { return tu.target().ptr_align(); },
+        [&](const PtrType*) { return tu.target().ptr_align(); },
         [&](const SliceType*) { return tu.target().slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
@@ -119,7 +119,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
         },
         [&](const IntType*) { return true; },
         [&](const ProcType*) { return false; },
-        [&](const ReferenceType*) { return false; },
+        [&](const PtrType*) { return false; },
         [&](const SliceType*) { return true; },
         [&](const StructType* ty) { return (ty->*struct_predicate)(); },
     });
@@ -145,7 +145,7 @@ bool TypeBase::is_srvalue() const {
     switch (type_kind) {
         case Kind::BuiltinType:
         case Kind::SliceType:
-        case Kind::ReferenceType:
+        case Kind::PtrType:
         case Kind::IntType:
         case Kind::ProcType:
             return true;
@@ -198,7 +198,7 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
                 [](BuiltinType*) { return true; },                       // All builtin types are small.
                 [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
                 [](ProcType*) { return true; },                          // Closures are two pointers.
-                [](ReferenceType*) { return true; },                     // References are small.
+                [](PtrType*) { return true; },                           // Pointers are small.
                 [](SliceType*) { return true; },                         // Slices are two pointers.
                 [](StructType*) { return false; },                       // Pass structs by reference (TODO: small ones by value).
             }); // clang-format on
@@ -237,9 +237,9 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += proc->print("");
         } break;
 
-        case Kind::ReferenceType: {
-            auto* ref = cast<ReferenceType>(this);
-            out += std::format("%1(ref%) {}", ref->elem()->print());
+        case Kind::PtrType: {
+            auto* ref = cast<PtrType>(this);
+            out += std::format("{}%1(^%)", ref->elem()->print());
         } break;
 
         case Kind::SliceType: {
@@ -274,7 +274,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::ReferenceType: return tu.target().ptr_size();
+        case Kind::PtrType: return tu.target().ptr_size();
         case Kind::IntType: return cast<IntType>(this)->bit_width();
         case Kind::ProcType: return tu.target().closure_size();
         case Kind::SliceType: return tu.target().slice_size();
@@ -314,12 +314,12 @@ void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
     ID.AddInteger(bits.bits());
 }
 
-auto ReferenceType::Get(TranslationUnit& mod, Type elem) -> ReferenceType* {
-    auto CreateNew = [&] { return new (mod) ReferenceType{elem}; };
-    return GetOrCreateType(mod.reference_types, CreateNew, elem);
+auto PtrType::Get(TranslationUnit& mod, Type elem) -> PtrType* {
+    auto CreateNew = [&] { return new (mod) PtrType{elem}; };
+    return GetOrCreateType(mod.ptr_types, CreateNew, elem);
 }
 
-void ReferenceType::Profile(FoldingSetNodeID& ID, Type elem) {
+void PtrType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.ptr());
 }
 

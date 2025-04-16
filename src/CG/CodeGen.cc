@@ -41,7 +41,7 @@ auto CodeGen::DeclarePrintf() -> Value* {
             ProcType::Get(
                 tu,
                 tu.FFIIntTy,
-                {{Intent::Copy, ReferenceType::Get(tu, tu.I8Ty)}},
+                {{Intent::Copy, PtrType::Get(tu, tu.I8Ty)}},
                 CallingConvention::Native,
                 true
             )
@@ -316,7 +316,7 @@ void CodeGen::Mangler::Append(Type ty) {
 
         void operator()(SliceType* sl) { ElemTy("S", sl); }
         void operator()(ArrayType* arr) { ElemTy(std::format("A{}", arr->dimension()), arr); }
-        void operator()(ReferenceType* ref) { ElemTy("R", ref); }
+        void operator()(PtrType* ref) { ElemTy("R", ref); }
         void operator()(IntType* i) { M.name += std::format("I{}", i->bit_width().bits()); }
         void operator()(BuiltinType* b) {
             switch (b->builtin_kind()) {
@@ -729,7 +729,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::SliceData: {
             auto slice = Emit(expr->operand);
             auto stype = cast<SliceType>(expr->operand->type);
-            if (expr->lvalue()) return CreateLoad(ReferenceType::Get(tu, stype->elem()), slice);
+            if (expr->lvalue()) return CreateLoad(PtrType::Get(tu, stype->elem()), slice);
             return CreateExtractValue(slice, 0);
         }
 
