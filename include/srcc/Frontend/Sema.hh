@@ -350,8 +350,6 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
 
         auto badness() const -> u32 { return status.get<Viable>().badness; }
         bool is_template() const { return isa<SubstitutionInfo*>(candidate); }
-        auto name() const -> String { return decl()->name; }
-        auto location() const -> Location { return decl()->location(); }
         bool viable() const { return status.is<Viable>(); }
 
         auto decl() const -> Decl* {
@@ -365,8 +363,9 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         }
 
         auto type() const -> ProcType* {
-            Assert(viable(), "Requesting type of non-viable candidate?");
             if (auto proc = dyn_cast<ProcDecl*>(candidate)) return proc->proc_type();
+            auto s = cast<SubstitutionInfo*>(candidate)->success();
+            Assert(s, "Requesting type of failed substitution?");
             return cast<SubstitutionInfo*>(candidate)->success()->type;
         }
     };
@@ -510,9 +509,6 @@ private:
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
-
-    /// Get the substitution info for a template.
-    auto GetTemplateSubstitutionInfo(ProcDecl* instantiation) -> SubstitutionInfo&;
 
     /// Ensure that an expression is an srvalue of the given type. This is
     /// mainly used for expressions involving operators.

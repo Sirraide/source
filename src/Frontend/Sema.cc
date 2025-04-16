@@ -915,26 +915,24 @@ void Sema::ReportOverloadResolutionFailure(
     Location call_loc,
     u32 final_badness
 ) {
-    /*auto FormatTempSubstFailure = [&](const SubstitutionInfo& ti, std::string& out, std::string_view indent) {
-        ti.res.data.visit(utils::Overloaded{// clang-format off
-            [](const TempSubstRes::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
-            [](TempSubstRes::Error) { Unreachable("Should have bailed out earlier on hard error"); },
-            [&](TempSubstRes::DeductionFailed f) {
+    auto FormatTempSubstFailure = [&](const SubstitutionInfo& info, std::string& out, std::string_view indent) {
+        info.data.visit(utils::Overloaded{// clang-format off
+            [](const SubstitutionInfo::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
+            [](SubstitutionInfo::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+            [&](SubstitutionInfo::DeductionFailed f) {
                 out += std::format(
-                    "In param #{}: cannot deduce ${} in {} from {}",
+                    "In param #{}: could not infer ${}",
                     f.param_index + 1,
-                    f.ttd->name,
-                    ti.pattern->param_types()[f.param_index].type,
-                    call_args[f.param_index]->type
+                    f.param
                 );
             },
 
-            [&](const TempSubstRes::DeductionAmbiguous& a) {
+            [&](const SubstitutionInfo::DeductionAmbiguous& a) {
                 out += std::format(
-                    "Template deduction mismatch for parameter %3(${}%):\n"
-                    "{}#{}: Deduced as {}\n"
-                    "{}#{}: Deduced as {}",
-                    a.ttd->name,
+                    "Inference mismatch for template parameter %3(${}%):\n"
+                    "{}#{}: Inferred as {}\n"
+                    "{}#{}: Inferred as {}",
+                    a.param,
                     indent,
                     a.first,
                     a.first_type,
@@ -944,9 +942,8 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             }
         }); // clang-format on
-    };*/
+    };
 
-    /*
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
     if (candidates.size() == 1) {
@@ -966,21 +963,20 @@ void Sema::ReportOverloadResolutionFailure(
                 Error(
                     call_loc,
                     "Procedure '%2({}%)' expects {} argument{}, got {}",
-                    c.proc->name,
+                    c.decl()->name,
                     ty->params().size(),
                     ty->params().size() == 1 ? "" : "s",
                     call_args.size()
                 );
-                Note(c.proc->location(), "Declared here");
+                Note(c.decl()->location(), "Declared here");
             },
 
             [&](Candidate::InvalidTemplate) {
-                Todo();
-                /*std::string extra;
-                FormatTempSubstFailure(GetTemplateSubstitutionInfo(c.proc), extra, "  ");
+                std::string extra;
+                FormatTempSubstFailure(*cast<SubstitutionInfo*>(c.candidate), extra, "  ");
                 Error(call_loc, "Template argument substitution failed");
                 Remark("\r{}", extra);
-                Note(c.location(), "Declared here");#1#
+                Note(c.decl()->location(), "Declared here");
             },
 
             [&](Candidate::LValueIntentMismatch m) {
@@ -988,7 +984,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::NestedResolutionFailure) {
-                Todo("Report this");
+                Error(call_loc, "Failed to resolve nested overload set");
             },
 
             [&](Candidate::SameTypeLValueRequired m) {
@@ -1007,7 +1003,7 @@ void Sema::ReportOverloadResolutionFailure(
 
             [&](Candidate::UndeducedReturnType) {
                 Error(call_loc, "Cannot call procedure before its return type has been deduced");
-                Note(c.proc->location(), "Declared here");
+                Note(c.decl()->location(), "Declared here");
                 Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
             }
         }; // clang-format on
@@ -1027,11 +1023,11 @@ void Sema::ReportOverloadResolutionFailure(
         message += std::format(
             "  %b({}.%) \v{}",
             i + 1,
-            c.proc->type
+            not c.is_template() or c.viable() ? c.type()->print() : SmallUnrenderedString("(template)")
         );
 
         // And include the location if it is valid.
-        auto loc = c.proc->location();
+        auto loc = c.decl()->location();
         auto lc = loc.seek_line_column(ctx);
         if (lc) {
             message += std::format(
@@ -1047,21 +1043,32 @@ void Sema::ReportOverloadResolutionFailure(
 
     message += std::format("\n\r%b(Failure Reason:%)");
 
+    // Collect ambiguous candidates.
+    SmallVector<u32> ambiguous_indices;
+    for (auto [i, c] : enumerate(candidates))
+        if (auto v = c.status.get_if<Candidate::Viable>())
+            if (v->badness == final_badness)
+                ambiguous_indices.push_back(u32(i + 1));
+
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
         message += std::format("\n  %b({:>{}}.%) ", i + 1, width);
         auto V = utils::Overloaded{// clang-format off
             [&] (const Candidate::Viable& v) {
-                // If the badness is equal to the final badness,
-                // then this candidate was ambiguous. Otherwise,
-                // another candidate was simply better.
+                // Don’t print that a candidate conflicts with itself...
+                auto ambiguous = ambiguous_indices;
+                erase(ambiguous, u32(i + 1));
+
+                // If the badness is equal to the final badness, then
+                // this candidate was ambiguous. Otherwise, another
+                // candidate was simply better.
                 message += v.badness == final_badness
-                    ? std::format("Ambiguous (matches as well as another candidate; score: {})"sv, v.badness)
-                    : std::format("Not selected (another candidate matches better; score: {})"sv, v.badness);
+                    ? std::format("Ambiguous (with {})", utils::join(ambiguous, ", ", "#{}"))
+                    : std::format("Another candidate was a better match", v.badness);
             },
 
             [&](Candidate::ArgumentCountMismatch) {
-                auto params = c.proc->proc_type()->params();
+                auto params = c.type()->params();
                 message += std::format(
                     "Expected {} arg{}, got {}",
                     params.size(),
@@ -1071,13 +1078,12 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::InvalidTemplate) {
-                Todo();
-                /*message += "Template argument substitution failed";
-                FormatTempSubstFailure(c.proc.get<Candidate::TemplateInfo>(), message, "        ");#1#
+                message += "Template argument substitution failed";
+                FormatTempSubstFailure(*cast<SubstitutionInfo*>(c.candidate), message, "        ");
             },
 
             [&](Candidate::LValueIntentMismatch m) {
-                auto& p = c.proc->proc_type()->params()[m.mismatch_index];
+                auto& p = c.type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -1087,20 +1093,20 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](const Candidate::NestedResolutionFailure& n) {
-                Todo("Report this");
+                Error(call_loc, "Failed to nested overload set");
             },
 
             [&](Candidate::TypeMismatch t) {
                 message += std::format(
                     "Arg #{} should be '{}' but was '{}'",
                     t.mismatch_index + 1,
-                    c.proc->proc_type()->params()[t.mismatch_index].type,
+                    c.type()->params()[t.mismatch_index].type,
                     call_args[t.mismatch_index]->type
                 );
             },
 
             [&](Candidate::SameTypeLValueRequired m) {
-                auto& p = c.proc->proc_type()->params()[m.mismatch_index];
+                auto& p = c.type()->params()[m.mismatch_index];
                 message += std::format(
                     "Arg #{}: {} {} requires an lvalue of the same type",
                     m.mismatch_index + 1,
@@ -1114,16 +1120,14 @@ void Sema::ReportOverloadResolutionFailure(
             }
         }; // clang-format on
         c.status.visit(V);
-    }*/
+    }
 
-    Error(call_loc, "Overload resolution failed");
-
-    /*ctx.diags().report(Diagnostic{
+    ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().proc->name),
+        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().decl()->name),
         std::move(message),
-    });*/
+    });
 }
 
 // ============================================================================

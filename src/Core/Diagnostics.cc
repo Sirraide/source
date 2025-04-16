@@ -279,7 +279,7 @@ auto RenderDiagnostics(
                         if (c == '\f') s.push_back(' ');
                         else if (c != '\v') s.push_back(c);
                     }
-                    buffer += stream{s.str()}.trim().text();
+                    buffer += stream{s.str()}.text();
                     buffer += "\n";
                 }
 
