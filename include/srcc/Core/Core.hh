@@ -37,9 +37,6 @@ class srcc::Context {
     std::vector<std::unique_ptr<File>> files;
     std::unordered_map<fs::Path, File*> files_by_path; // FIXME: use inode number instead.
 
-    /// Whether there was an error.
-    mutable bool errored = false;
-
     /// For saving strings.
     llvm::BumpPtrAllocator alloc;
     llvm::StringSaver saver{alloc};
