@@ -9,6 +9,7 @@
     X(Block)                   \
     X(BuiltinConstant)         \
     X(Extract)                 \
+    X(FrameSlot)               \
     X(InstValue)               \
     X(InvalidLocalReference)   \
     X(LargeInt)                \
@@ -34,7 +35,6 @@ enum class AbortReason : u8 {
 enum class Op : u8 {
     Abort,
     Add,
-    Alloca,
     And,
     AShr,
     Br,
@@ -212,6 +212,24 @@ public:
     static bool classof(const Value* v) { return v->kind() == Kind::Extract; }
 };
 
+/// A stack slot that is allocated on function entry.
+class FrameSlot : public ManagedValue {
+    friend Builder;
+
+    Proc* p;
+    Type ty;
+
+    FrameSlot(TranslationUnit& tu, Proc* parent, Type ty)
+        : ManagedValue{Kind::FrameSlot, PtrType::Get(tu, ty)}, p{parent}, ty{ty} {}
+
+public:
+    [[nodiscard]] auto allocated_type() const { return ty; }
+    [[nodiscard]] auto parent() const -> Proc* { return p; }
+
+    static bool classof(const Value* v) { return v->kind() == Kind::FrameSlot; }
+};
+
+
 /// Instructions don’t have types because they don’t correspond to values; rather
 /// an instruction can have multiple result values.
 class Inst : public Managed {
@@ -234,20 +252,6 @@ public:
     [[nodiscard]] auto opcode() const { return op; }
     [[nodiscard]] auto result_types() const -> SmallVector<Type, 2>;
     [[nodiscard]] auto operator[](usz idx) { return arguments[idx]; }
-};
-
-/// Allocas are separate instructions because their operand is a type.
-class Alloca : public Inst {
-    friend Builder;
-
-    Type ty;
-
-    Alloca(Builder& b, Type ty) : Inst{b, Op::Alloca, {}}, ty{ty} {}
-
-public:
-    [[nodiscard]] auto allocated_type() const { return ty; }
-
-    static bool classof(const Inst* v) { return v->opcode() == Op::Alloca; }
 };
 
 /// Integral cast instructions also take a type.
@@ -404,6 +408,7 @@ class Proc : public Value {
     Linkage link;
     SmallVector<std::unique_ptr<Block>> body;
     SmallVector<Argument*> arguments;
+    SmallVector<FrameSlot*> frame_info;
 
     Proc(String mangled_name, ProcType* ty, Linkage link)
         : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
@@ -418,6 +423,7 @@ public:
     void dump(TranslationUnit& tu);
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
+    auto frame() const -> ArrayRef<FrameSlot*> { return frame_info; }
     auto linkage() const -> Linkage { return link; }
     auto name() const -> String { return mangled_name; }
     auto type() const -> ProcType* { return ty; }

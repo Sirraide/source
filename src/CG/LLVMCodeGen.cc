@@ -35,6 +35,7 @@ class cg::LLVMCodeGen : DiagsProducer<std::nullptr_t>, llvm::IRBuilder<> {
 
     DenseMap<ir::Block*, BlockInfo> blocks;
     DenseMap<ir::Inst*, llvm::Value*> instructions;
+    DenseMap<ir::FrameSlot*, llvm::AllocaInst*> frame_slots;
     llvm::Function* curr_func = nullptr;
 
 public:
@@ -251,6 +252,15 @@ void LLVMCodeGen::emit(ir::Proc* proc) {
         blocks[b] = {bb, args};
     }
 
+    // Emit the stack slots.
+    SetInsertPoint(blocks[proc->entry()].block);
+    for (auto f : proc->frame()) {
+        auto ty = f->allocated_type();
+        auto a = CreateAlloca(ConvertTypeForMem(ty));
+        a->setAlignment(std::max(a->getAlign(), ConvertAlign(ty->align(cg.tu))));
+        frame_slots[f] = a;
+    }
+
     // Finally, emit every block.
     for (auto b : proc->blocks()) {
         SetInsertPoint(blocks[b].block);
@@ -287,13 +297,6 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
             c->setCallingConv(llvm::CallingConv::Fast);
             CreateUnreachable();
             return {};
-        }
-
-        case Op::Alloca: {
-            auto ty = cast<ir::Alloca>(i).allocated_type();
-            auto a = CreateAlloca(ConvertTypeForMem(ty));
-            a->setAlignment(std::max(a->getAlign(), ConvertAlign(ty->align(cg.tu))));
-            return a;
         }
 
         case Op::Br: {
@@ -428,6 +431,7 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             return CreateExtractValue(Emit(e->aggregate()), e->index());
         }
 
+        case K::FrameSlot: return frame_slots.at(cast<ir::FrameSlot>(v));
         case K::InstValue: {
             auto i = cast<ir::InstValue>(v);
             auto inst = instructions.at(i->inst());

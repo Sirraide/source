@@ -45,15 +45,9 @@ auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
 
 auto Builder::CreateAlloca(Proc* parent, Type ty) -> Value* {
     Assert(parent, "Alloca without parent procedure?");
-    auto a = new (*this) Alloca(*this, ty);
-
-    // Insert the alloca in the entry block, after any other allocas.
-    auto it = parent->entry()->insts.begin();
-    while (it != parent->entry()->insts.end() and isa<Alloca>(*it)) ++it;
-    parent->entry()->insts.insert(it, a);
-
-    // Return the allocated value.
-    return new (*this) InstValue(a, PtrType::Get(tu, ty), 0);
+    auto a = new (*this) FrameSlot(tu, parent, ty);
+    parent->frame_info.push_back(a);
+    return a;
 }
 
 auto Builder::CreateAnd(Value* a, Value* b) -> Value* {
@@ -368,9 +362,6 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
         case Op::Unreachable:
             return {};
 
-        case Op::Alloca:
-            return {cast<Alloca>(this)->allocated_type()};
-
         case Op::Call: {
             auto t = cast<ProcType>(arguments[0]->type())->ret();
             return t == Type::VoidTy or t == Type::NoReturnTy ? V{} : V{t};
@@ -420,6 +411,8 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
         case Op::ICmpULt:
             return {Type::BoolTy};
     }
+
+    Unreachable();
 }
 
 auto Proc::add(std::unique_ptr<Block> b) -> Block* {
@@ -448,6 +441,7 @@ public:
     DenseMap<Argument*, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Inst*, i64> inst_ids;
+    DenseMap<FrameSlot*, i64> frame_ids;
     Proc* curr_proc{};
 
     Printer(TranslationUnit& tu) : tu{tu} {}
@@ -522,11 +516,6 @@ void Printer::DumpInst(Inst* i) {
                 a->handler_name(),
                 utils::join_as(a->args(), [&](Value* v) { return DumpValue(v); })
             );
-        } break;
-
-        case Op::Alloca: {
-            auto a = cast<Alloca>(i);
-            out += std::format("%1(alloca%) {}", a->allocated_type());
         } break;
 
         case Op::Br: {
@@ -637,6 +626,7 @@ void Printer::DumpProc(Proc* proc) {
     inst_ids.clear();
 
     for (auto* arg : proc->args()) arg_ids[arg] = temp++;
+    for (auto* arg : proc->frame()) frame_ids[arg] = temp++;
     for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
         block_ids[b] = id;
         for (auto* arg : b->arguments())
@@ -648,6 +638,14 @@ void Printer::DumpProc(Proc* proc) {
 
     // Print the procedure body.
     out += " %1({%)\n";
+
+    // Print frame allocations.
+    for (auto* f : proc->frame())
+        out += std::format("    %8(%%{}%) %1(=%) {}\n", Id(frame_ids, f), f->allocated_type());
+    if (not proc->frame().empty())
+        out += "\n";
+
+    // Print blocks and instructions.
     for (const auto& [i, b] : enumerate(proc->blocks())) {
         out += i == 0 ? "%3(entry%)%1(" : std::format("\n%3(bb{}%)%1(", i);
         if (not b->arguments().empty()) {
@@ -691,6 +689,11 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
         case Value::Kind::Extract: {
             auto e = cast<Extract>(v);
             out += std::format("{}[%5({}%)]", DumpValue(e->aggregate()), e->index());
+        } break;
+
+        case Value::Kind::FrameSlot: {
+            auto f = cast<FrameSlot>(v);
+            out += std::format("%8(%%{}%)", Id(frame_ids, f));
         } break;
 
         case Value::Kind::InstValue: {

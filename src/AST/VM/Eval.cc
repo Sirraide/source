@@ -97,21 +97,13 @@ auto SRValue::print() const -> SmallUnrenderedString {
 // ============================================================================
 namespace {
 /// Encoded temporary value.
+///
+/// This represents an encoded form of a temporary value that is guaranteed
+/// to be unique *per procedure*.
 enum struct Temporary : u64;
-
-auto HashTemporary(void* i, u32 n) -> Temporary {
-    // Only use the low 32 bits of the pointer; if you need more than that
-    // then seriously what is wrong with you?
-    return Temporary(uptr(i) << 32 | uptr(n));
-}
-
-auto HashTemporary(ir::Argument* a) -> Temporary {
-    return HashTemporary(a->parent(), a->index());
-}
-
-auto HashTemporary(ir::InstValue* i) -> Temporary {
-    return HashTemporary(i->inst(), i->index());
-}
+auto Encode(ir::Argument* a) -> Temporary { return Temporary(u64(a)); }
+auto Encode(ir::FrameSlot* f) -> Temporary { return Temporary(u64(f)); }
+auto Encode(ir::Inst* i, u32 val) -> Temporary { return Temporary(u64(i) << 32 | val); }
 } // namespace
 
 // ============================================================================
@@ -273,6 +265,7 @@ private:
     bool StoreSRValue(void* ptr, const SRValue& val);
     auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
     auto Temp(ir::Argument* i) -> SRValue&;
+    auto Temp(ir::FrameSlot* f) -> SRValue&;
     auto Val(ir::Value* v) -> const SRValue&;
 };
 
@@ -385,16 +378,6 @@ bool Eval::EvalLoop() {
                 if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
                 return Error(a.location(), "{}", msg);
             }
-
-            case ir::Op::Alloca: {
-                auto a = cast<ir::Alloca>(i);
-                auto sz = Size::Bytes(stack.size());
-                auto ty = a->allocated_type();
-                sz = sz.align(ty->align(vm.owner()));
-                Temp(i) = SRValue(Pointer::Stack(stack.size()), a->result_types()[0]);
-                sz += ty->size(vm.owner());
-                stack.resize(sz.bytes());
-            } break;
 
             case ir::Op::Br: {
                 auto b = cast<ir::BranchInst>(i);
@@ -834,14 +817,24 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
 
     // Initialise call arguments.
     for (auto [p, a] : zip(proc->args(), args))
-        frame.temporaries[HashTemporary(p)] = Val(a);
+        frame.temporaries[Encode(p)] = Val(a);
+
+    // Allocate frame slots.
+    auto sz = Size::Bytes(stack.size());
+    for (auto f : proc->frame()) {
+        auto ty = f->allocated_type();
+        sz = sz.align(ty->align(vm.owner()));
+        frame.temporaries[Encode(f)] = SRValue(Pointer::Stack(sz.bytes()), f->type());
+        sz += ty->size(vm.owner());
+    }
+    stack.resize(sz.bytes());
 
     // Allocate temporaries for instructions and block arguments.
     for (auto b : proc->blocks()) {
-        for (auto a : b->arguments()) frame.temporaries[HashTemporary(a)] = {};
+        for (auto a : b->arguments()) frame.temporaries[Encode(a)] = {};
         for (auto i : b->instructions()) {
             for (auto [n, _] : enumerate(i->result_types())) {
-                frame.temporaries[HashTemporary(i, u32(n))] = {};
+                frame.temporaries[Encode(i, u32(n))] = {};
             }
         }
     }
@@ -892,11 +885,15 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
 }
 
 auto Eval::Temp(ir::Argument* i) -> SRValue& {
-    return const_cast<SRValue&>(call_stack.back().temporaries.at(HashTemporary(i)));
+    return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i)));
+}
+
+auto Eval::Temp(ir::FrameSlot* f) -> SRValue& {
+    return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(f)));
 }
 
 auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
-    return const_cast<SRValue&>(call_stack.back().temporaries.at(HashTemporary(i, idx)));
+    return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i, idx)));
 }
 
 auto Eval::Val(ir::Value* v) -> const SRValue& {
@@ -922,6 +919,9 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
             if (idx == 1) return Materialise(SRValue(agg.size, e->type()));
             Unreachable();
         }
+
+        case K::FrameSlot:
+            return Temp(cast<ir::FrameSlot>(v));
 
         case K::Slice: {
             auto sl = cast<ir::Slice>(v);
