@@ -191,6 +191,15 @@ void Stmt::Printer::PrintBasicNode(
 }
 
 void Stmt::Printer::Print(Stmt* e) {
+    auto VCLowercase = [&](ValueCategory v) -> String {
+        switch (v) {
+            case ValueCategory::SRValue: return "srvalue";
+            case ValueCategory::MRValue: return "mrvalue";
+            case ValueCategory::LValue: return "lvalue";
+        }
+        return "<invalid value category>";
+    };
+
     // FIXME: Should be a visitor.
     switch (e->kind()) {
         case Kind::AssertExpr: {
@@ -225,6 +234,7 @@ void Stmt::Printer::Print(Stmt* e) {
                     switch (c.builtin) {
                         using B = BuiltinCallExpr::Builtin;
                         case B::Print: return "__srcc_print";
+                        case B::Unreachable: return "__srcc_unreachable";
                     }
 
                     return "<invalid>";
@@ -273,6 +283,7 @@ void Stmt::Printer::Print(Stmt* e) {
             switch (c->kind) {
                 case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
+                case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
             }
             print("\n");
             PrintChildren(c->arg);

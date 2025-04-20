@@ -47,8 +47,24 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
 auto Sema::ApplyConversion(Expr* e, Conversion conv) -> Expr* {
     switch (conv.kind) {
         using K = Conversion::Kind;
+        case K::IntegralCast: return new (*M) CastExpr(
+            conv.ty_and_val.type(),
+            CastExpr::Integral,
+            e,
+            e->location(),
+            true
+        );
+
         case K::LValueToSRValue: return LValueToSRValue(e);
-        case K::IntegralCast: return new (*M) CastExpr(conv.ty, CastExpr::Integral, e, e->location(), true);
+        case K::MaterialisePoison: return new (*M) CastExpr(
+            conv.ty_and_val.type(),
+            CastExpr::MaterialisePoisonValue,
+            e,
+            e->location(),
+            true,
+            conv.ty_and_val.value_category()
+        );
+
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.index];
             return CreateReference(proc, e->location()).get();
@@ -437,16 +453,16 @@ public:
         switch (conv.kind) {
             using K = Conversion::Kind;
 
-            // The simplest thing we can do. This is only here so we can
-            // allow overloading on lvalue vs rvalue.
-            case K::LValueToSRValue: s.badness++; break;
+            // These are actual type conversions.
+            case K::IntegralCast:
+            case K::MaterialisePoison:
+                s.badness++;
+                break;
 
-            // Other simple conversions have a badness score of 2.
-            case K::IntegralCast: s.badness += 2; break;
-
-            // This is essentially a no-op because we 'have' to select one
-            // of them anyway, as we can't just pass an overload set around.
-            case K::SelectOverload: break;
+            // These don’t perform type conversion.
+            case K::LValueToSRValue:
+            case K::SelectOverload:
+                break;
         }
     }
 
@@ -583,6 +599,17 @@ bool Sema::BuildInitialiser(
     Assert(var_type, "Null type in initialisation?");
     Assert(a, "Initialiser must not be null");
 
+    // As a special case, 'noreturn' can be converted to *any* type (and value
+    // category). This is because 'noreturn' means we never actually reach the
+    // point in the program where the value would be needed, so it’s fine to just
+    // pretend that we have one.
+    if (a->type == Type::NoReturnTy) {
+        auto cat = var_type->pass_value_category(cc, intent);
+        if (var_type != Type::NoReturnTy or a->value_category != cat)
+            init.apply(Conversion::Poison(var_type, cat));
+        return true;
+    }
+
     // The type we’re initialising must be complete.
     if (not IsCompleteType(var_type)) return init.report_incomplete_type();
 
@@ -702,7 +729,6 @@ bool Sema::BuildInitialiser(
             switch (cast<BuiltinType>(var_type)->builtin_kind()) {
                 case BuiltinKind::UnresolvedOverloadSet:
                 case BuiltinKind::Deduced:
-                case BuiltinKind::NoReturn:
                     Unreachable("A variable of this type should not exist: {}", var_type);
 
                 // The only type that can initialise these is the exact
@@ -712,6 +738,7 @@ bool Sema::BuildInitialiser(
                 case BuiltinKind::Void:
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
+                case BuiltinKind::NoReturn:
                 case BuiltinKind::Type:
                     return init.report_type_mismatch();
             }
@@ -1408,13 +1435,22 @@ auto Sema::BuildBinaryExpr(
 
     auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<BinaryExpr> {
         auto Check = [&](std::string_view which, Expr* e) {
-            if (e->type->is_integer()) return true;
+            if (e->type->is_integer() or e->type == Type::NoReturnTy) return true;
             Error(e->location(), "{} of %1({}%) must be an integer", which, Spelling(op));
             return false;
         };
 
-        // Both operands must be integers.
-        if (not Check("Left operand", lhs) or not Check("Right operand", rhs)) return nullptr;
+        // Either operand must be an integer.
+        bool lhs_int = lhs->type->is_integer();
+        bool rhs_int = rhs->type->is_integer();
+        if (not lhs_int and not rhs_int) return Error(
+            loc,
+            "Unsupported %1({}%) of '{}' and '{}'",
+            Spelling(op),
+            lhs->type,
+            rhs->type
+        );
+
         if (not ConvertToCommonType()) return nullptr;
         return Build(comparison ? Type::BoolTy : lhs->type);
     };
@@ -1558,6 +1594,12 @@ auto Sema::BuildBuiltinCallExpr(
     ArrayRef<Expr*> args,
     Location call_loc
 ) -> Ptr<BuiltinCallExpr> {
+    auto ForbidArgs = [&](StringRef builtin_name) {
+        if (args.size() == 0) return true;
+        Error(call_loc, "{} takes no arguments", builtin_name);
+        return false;
+    };
+
     switch (builtin) {
         // __srcc_print takes a sequence of arguments and prints them all;
         // the arguments must be strings or integers.
@@ -1577,6 +1619,11 @@ auto Sema::BuildBuiltinCallExpr(
                 arg = LValueToSRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
+        }
+
+        case BuiltinCallExpr::Builtin::Unreachable: {
+            if (not ForbidArgs("__srcc_unreachable")) return nullptr;
+            return BuiltinCallExpr::Create(*M, builtin, Type::NoReturnTy, {}, call_loc);
         }
     }
 
@@ -2178,6 +2225,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
         using B = BuiltinCallExpr::Builtin;
         auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front())
                       .Case("__srcc_print", B::Print)
+                      .Case("__srcc_unreachable", B::Unreachable)
                       .Default(std::nullopt);
 
         // We have a builtin!

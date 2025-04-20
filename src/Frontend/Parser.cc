@@ -872,6 +872,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
         case Tk::Int:
         case Tk::IntegerType:
+        case Tk::NoReturn:
         case Tk::Void:
         case Tk::Var:
         case Tk::TemplateType:
@@ -1505,6 +1506,7 @@ auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
         // <type-prim> ::= BOOL | INT | VOID | VAR
         case Tk::Bool: return Builtin(Type::BoolTy);
         case Tk::Int: return Builtin(Type::IntTy);
+        case Tk::NoReturn: return Builtin(Type::NoReturnTy);
         case Tk::Void: return Builtin(Type::VoidTy);
         case Tk::Var: return Builtin(Type::DeducedTy);
 

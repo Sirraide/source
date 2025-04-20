@@ -223,6 +223,12 @@ auto LLVMCodeGen::DeclareProc(ir::Proc* proc) -> llvm::FunctionCallee {
 
 void LLVMCodeGen::emit(ir::Proc* proc) {
     curr_func = cast<llvm::Function>(DeclareProc(proc).getCallee());
+
+    // Propagate 'noreturn'.
+    if (proc->type()->ret() == Type::NoReturnTy)
+        curr_func->setDoesNotReturn();
+
+    // Stop here if there is no function body.
     if (proc->empty()) return;
     blocks.clear();
     instructions.clear();

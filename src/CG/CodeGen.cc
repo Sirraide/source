@@ -53,6 +53,7 @@ auto CodeGen::DeclarePrintf() -> Value* {
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto ty = proc->proc_type();
+    bool noreturn = proc->return_type() == Type::NoReturnTy;
     bool has_zero_sized_params = any_of(proc->param_types(), [&](const ParamTypeData& ty) {
         return IsZeroSizedType(ty.type);
     });
@@ -74,9 +75,13 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
             sized = SmallVector<ParamTypeData>(proc->proc_type()->params());
         }
 
+        // Convert zero-sized return types to void, but keep noreturn so we
+        // can add the appropriate attribute when converting to LLVM IR.
+        auto ret = proc->return_type();
+        if (not noreturn and IsZeroSizedType(ret)) ret = Type::VoidTy;
         ty = ProcType::Get(
             tu,
-            IsZeroSizedType(proc->return_type()) ? Type::VoidTy : proc->return_type(),
+            ret,
             sized,
             ty->cconv(),
             ty->variadic()
@@ -185,7 +190,7 @@ auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, ArrayRef<Value*> args) -> Bl
 auto CodeGen::EnterBlock(Block* bb, ArrayRef<Value*> args) -> Block* {
     // If there is a current block, and it is not closed, branch to the newly
     // inserted block, unless that block is the function’s entry block.
-    if (insert_point and not insert_point->closed() and curr_proc->entry() != bb)
+    if (insert_point and not insert_point->closed() and not bb->is_entry())
         CreateBr(bb, args);
 
     // Finally, position the builder at the end of the block.
@@ -783,6 +788,12 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
             }
             return nullptr;
         }
+
+        case BuiltinCallExpr::Builtin::Unreachable: {
+            CreateUnreachable();
+            EnterBlock(CreateBlock());
+            return nullptr;
+        }
     }
 
     Unreachable("Unknown builtin");
@@ -847,13 +858,20 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
+        case CastExpr::Integral:
+            return CreateSICast(val, expr->type);
+
         case CastExpr::LValueToSRValue:
             Assert(expr->arg->value_category == Expr::LValue);
             if (IsZeroSizedType(expr->type)) return nullptr;
             return CreateLoad(expr->type, val);
 
-        case CastExpr::Integral:
-            return CreateSICast(val, expr->type);
+        case CastExpr::MaterialisePoisonValue:
+            return CreatePoison(
+                expr->value_category == Expr::SRValue
+                    ? expr->type
+                    : PtrType::Get(tu, Type::VoidTy)
+            );
     }
 
     Unreachable();

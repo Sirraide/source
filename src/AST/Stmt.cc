@@ -29,6 +29,7 @@ BuiltinCallExpr::BuiltinCallExpr(
     switch (builtin) {
         // SRValue.
         case Builtin::Print:
+        case Builtin::Unreachable:
             break;
     }
 }
@@ -276,15 +277,4 @@ auto StructInitExpr::Create(
     auto size = totalSizeToAlloc<Expr*>(fields.size());
     auto mem = tu.allocate(size, alignof(StructInitExpr));
     return ::new (mem) StructInitExpr{type, fields, location};
-}
-
-// ============================================================================
-//  Enum -> String
-// ============================================================================
-auto EnumToStr(BuiltinCallExpr::Builtin b) -> String {
-    switch (b) {
-        case BuiltinCallExpr::Builtin::Print: return "__srcc_print";
-    }
-
-    return "<invalid builtin>";
 }

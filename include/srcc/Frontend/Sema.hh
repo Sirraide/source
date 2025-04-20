@@ -127,21 +127,23 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         enum struct Kind : u8 {
             LValueToSRValue,
             IntegralCast,
-            SelectOverload
+            SelectOverload,
+            MaterialisePoison,
         };
 
         Kind kind;
         union {
-            Type ty;
+            TypeAndValueCategory ty_and_val;
             u16 index{};
         };
 
         Conversion(Kind kind) : kind{kind} {}
-        Conversion(Kind kind, Type ty) : kind{kind}, ty{ty} {}
+        Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, ty_and_val{ty, val} {}
         Conversion(Kind kind, u16 index) : kind{kind}, index{index} {}
 
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
+        static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u16 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
     };
 

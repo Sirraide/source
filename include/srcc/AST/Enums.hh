@@ -99,6 +99,9 @@ enum class srcc::ValueCategory : base::u8 {
     ///
     /// These roughly correspond to glvalues in C++.
     LValue,
+
+    // NOTE: Update TypeAndValueCategory if new categories require
+    // us to use more than 2 bits to store this.
 };
 
 enum class srcc::OverflowBehaviour : base::u8 {

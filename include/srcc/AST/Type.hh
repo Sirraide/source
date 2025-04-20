@@ -27,6 +27,7 @@ struct BuiltinTypes;
 #include "srcc/AST.inc"
 
 class Type;
+class TypeAndValueCategory;
 class TypeLoc;
 
 /// Casting.
@@ -86,7 +87,10 @@ public:
 };
 
 /// Base class for all types.
-class srcc::TypeBase {
+///
+/// The 'alignas(8)' is required to ensure that we have some low bits
+/// available in the pointer for other purposes.
+class alignas(8) srcc::TypeBase {
     SRCC_IMMOVABLE(TypeBase);
 
     friend Type;
@@ -145,6 +149,14 @@ public:
 
     /// Whether this type should be passed as an rvalue given a specific intent.
     [[nodiscard]] bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
+
+    /// Get the value category that should be used to pass this as a parameter.
+    [[nodiscard]] auto pass_value_category(
+        CallingConvention cc,
+        Intent intent
+    ) const -> ValueCategory {
+        return pass_by_lvalue(cc, intent) ? ValueCategory::LValue : rvalue_category();
+    }
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
@@ -254,6 +266,40 @@ template <>
 struct llvm::simplify_type<const srcc::Type> {
     using SimpleType = srcc::TypeBase*;
     static SimpleType getSimplifiedValue(srcc::Type v) { return v.ptr(); }
+};
+
+class srcc::TypeAndValueCategory {
+    llvm::PointerIntPair<TypeBase*, 2, ValueCategory> data;
+
+public:
+    /// Create a new type and value category pair.
+    TypeAndValueCategory(Type ty, ValueCategory val)
+        : data{ty.ptr(), val} {
+        Assert(ty, "Cannot create type and value category with null type");
+    }
+
+    /// Create a void SRValue pair.
+    TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::SRValue) {}
+
+    /// Get the type.
+    [[nodiscard]] auto type() const -> Type { return data.getPointer(); }
+
+    /// Get the value category.
+    [[nodiscard]] auto value_category() const -> ValueCategory {
+        return data.getInt();
+    }
+};
+
+template <>
+struct llvm::simplify_type<srcc::TypeAndValueCategory> {
+    using SimpleType = srcc::TypeBase*;
+    static SimpleType getSimplifiedValue(srcc::TypeAndValueCategory v) { return v.type().ptr(); }
+};
+
+template <>
+struct llvm::simplify_type<const srcc::TypeAndValueCategory> {
+    using SimpleType = srcc::TypeBase*;
+    static SimpleType getSimplifiedValue(srcc::TypeAndValueCategory v) { return v.type().ptr(); }
 };
 
 class srcc::TypeLoc {

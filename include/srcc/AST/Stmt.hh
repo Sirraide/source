@@ -216,7 +216,8 @@ class srcc::BuiltinCallExpr final : public Expr
 
 public:
     enum struct Builtin : u8 {
-        Print // __builtin_print
+        Print,       // __srcc_print
+        Unreachable, // __srcc_unreachable
     };
 
     const Builtin builtin;
@@ -320,6 +321,9 @@ public:
 
         /// Cast an srvalue integer to an srvalue integer.
         Integral,
+
+        /// Materialise a poison value of the given type.
+        MaterialisePoisonValue,
     };
 
     using enum CastKind;
@@ -333,8 +337,9 @@ public:
         CastKind kind,
         Expr* expr,
         Location location,
-        bool implicit = false
-    ) : Expr{Kind::CastExpr, type, SRValue, location},
+        bool implicit = false,
+        ValueCategory value_category = SRValue
+    ) : Expr{Kind::CastExpr, type, value_category, location},
         arg{expr},
         kind{kind},
         implicit{implicit} {}
@@ -604,7 +609,6 @@ protected:
     ) : Stmt{kind, location}, name{name} {}
 
 public:
-
     /// Mark this declaration as invalid and return itself for convenience.
     ///
     /// We prefer this over simply discarding it from the AST since decls

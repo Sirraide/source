@@ -337,6 +337,10 @@ bool Block::closed() const {
     }
 }
 
+bool Block::is_entry() const {
+    return p and p->entry() == this;
+}
+
 BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget else_)
     : Inst(b, Op::Br, [&] {
           SmallVector<Value*, 16> args{};

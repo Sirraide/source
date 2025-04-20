@@ -390,7 +390,8 @@ public:
     bool closed() const;
     auto front() -> Inst* { return insts.front(); }
     auto instructions() const -> ArrayRef<Inst*> { return insts; }
-    auto parent() -> Proc* { return p; }
+    bool is_entry() const;
+    auto parent() const -> Proc* { return p; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::Block; }
 };
