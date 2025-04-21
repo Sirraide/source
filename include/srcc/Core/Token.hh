@@ -226,6 +226,9 @@ public:
     /// Get an iterator to the end of the token stream.
     [[nodiscard]] auto end() { return tokens.end(); }
 
+    /// Remove the last token from the stream.
+    void pop() { tokens.pop_back(); }
+
     /// Save a string in the stream.
     ///
     /// \param str The string to store.

@@ -89,3 +89,10 @@
 <type-qualified> ::= <type> { <qualifier> }
 <qualifier> ::= "[" "]"
 <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
+
+// ============================================================================
+//  Pragmas
+// ============================================================================
+// These are handled by the lexer and may thus appear anywhere.
+<pragma> ::= <pragma-include>
+<pragma-include> ::= PRAGMA "include" STRING-LITERAL

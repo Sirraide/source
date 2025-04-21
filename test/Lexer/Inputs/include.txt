@@ -1,0 +1,5 @@
+// File extension is .txt so this is not picked up as a test.
+
+123
+foo
+"bar"

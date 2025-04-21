@@ -134,22 +134,7 @@ auto Context::file_name(i32 id) const -> String {
 }
 
 auto Context::get_file(fs::PathRef path) -> const File& {
-    auto can = canonical(path);
-    if (auto it = files_by_path.find(can); it != files_by_path.end())
-        return *it->second;
-
-    static constexpr usz MaxFiles = std::numeric_limits<u16>::max();
-    Assert(
-        files.size() < MaxFiles,
-        "Sorry, that’s too many files for us! (max is {})",
-        MaxFiles
-    );
-
-    auto mem = File::LoadFileData(can);
-    auto f = new File(*this, can, String::Save(saver, path.string()), std::move(mem), u16(files.size()));
-    files.emplace_back(f);
-    files_by_path[std::move(can)] = f;
-    return *f;
+    return try_get_file(path).value();
 }
 
 void Context::_initialise_context_(fs::Path module_path, int optimisation_level) {
@@ -165,6 +150,33 @@ void Context::set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags) {
     if (diags_engine) diags_engine->flush();
     diags_engine = std::move(diags);
 }
+
+auto Context::try_get_file(fs::PathRef path) -> Result<const File&> {
+    std::error_code ec;
+    auto can = canonical(path, ec);
+    if (ec) return Error(
+        "Failed to canonicalise file path '{}': {}",
+        path,
+        ec.message()
+    );
+
+    if (auto it = files_by_path.find(can); it != files_by_path.end())
+        return *it->second;
+
+    static constexpr usz MaxFiles = std::numeric_limits<u16>::max();
+    Assert(
+        files.size() < MaxFiles,
+        "Sorry, that’s too many files for us! (max is {})",
+        MaxFiles
+    );
+
+    auto mem = Try(File::LoadFileData(can));
+    auto f = new File(*this, can, String::Save(saver, path.string()), std::move(mem), u16(files.size()));
+    files.emplace_back(f);
+    files_by_path[std::move(can)] = f;
+    return *f;
+}
+
 
 // ============================================================================
 //  File
@@ -242,14 +254,14 @@ srcc::File::File(
     short_file_name = String::CreateUnsafe(stream{name}.take_back_until_any("/\\"));
 }
 
-auto srcc::File::LoadFileData(fs::PathRef path) -> std::unique_ptr<llvm::MemoryBuffer> {
+auto srcc::File::LoadFileData(fs::PathRef path) -> Result<std::unique_ptr<llvm::MemoryBuffer>> {
     auto buf = llvm::MemoryBuffer::getFile(
         path.string(),
         true,
         false
     );
 
-    if (auto ec = buf.getError()) Fatal(
+    if (auto ec = buf.getError()) return Error(
         "Could not load file '{}': {}",
         path,
         ec.message()

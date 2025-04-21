@@ -82,6 +82,11 @@ public:
 
     /// Set the diagnostics engine.
     void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);
+
+    /// Attempt to get a file from disk.
+    ///
+    /// This will load the file the first time it is requested.
+    [[nodiscard]] auto try_get_file(fs::PathRef path) -> Result<const File&>;
 };
 
 struct srcc::LangOpts {
@@ -159,6 +164,11 @@ public:
     /// Write to a file on disk and terminate on error.
     static void WriteOrDie(void* data, usz size, fs::PathRef file);
 
+    /// Two files are equal if they’re the same file.
+    [[nodiscard]] friend auto operator==(const File& a, const File& b) -> bool {
+        return a.file_id() == b.file_id();
+    }
+
 private:
     /// The context is the only thing that can create files.
     friend Context;
@@ -173,7 +183,7 @@ private:
     );
 
     /// Load a file from disk.
-    static auto LoadFileData(fs::PathRef path) -> std::unique_ptr<llvm::MemoryBuffer>;
+    static auto LoadFileData(fs::PathRef path) -> Result<std::unique_ptr<llvm::MemoryBuffer>>;
 };
 
 #endif // SRCC_CORE_HH

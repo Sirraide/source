@@ -102,6 +102,7 @@ struct Lexer {
     Parser::CommentTokenCallback comment_token_handler;
     const char* curr;
     const char* const end;
+    bool in_pragma = false;
 
     Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallback cb);
 
@@ -134,6 +135,7 @@ struct Lexer {
     auto CurrOffs() -> u32;
     auto CurrLoc() -> Location;
     void HandleCommentToken();
+    void HandlePragma();
     void LexCXXHeaderName();
     void LexEscapedId();
     void LexIdentifierRest(bool dollar);
@@ -173,6 +175,7 @@ auto Lexer::CurrLoc() -> Location { return {CurrOffs(), 1, u16(f.file_id())}; }
 auto Lexer::CurrOffs() -> u32 { return u32(curr - f.data()); }
 
 void Lexer::Next() {
+    Assert(not in_pragma, "May not allocate tokens while handling pragma");
     tokens.allocate();
     NextImpl();
 }
@@ -367,6 +370,70 @@ void Lexer::HandleCommentToken() {
     while (KeepSkipping()) curr++;
 }
 
+/// <pragma> ::= <pragma-include>
+/// <pragma-include> ::= PRAGMA "include" STRING-LITERAL
+void Lexer::HandlePragma() {
+    tempset in_pragma = true;
+
+    // Yeet 'pragma'.
+    auto pragma_loc = tok().location;
+    NextImpl();
+
+    // Next token must be an identifier.
+    if (tok().type != Tk::Identifier) {
+        Error(pragma_loc, "Expected identifier after 'pragma'");
+        return;
+    }
+
+    // Include pragma.
+    if (tok().text == "include") {
+        NextImpl();
+        if (tok().type != Tk::StringLiteral) {
+            Error(pragma_loc, "Expected string literal after 'pragma include'");
+            return;
+        }
+
+        // Search for the file.
+        auto file = f.path().parent_path() / tok().text.sv();
+        auto res = f.context().try_get_file(file);
+        if (not res) {
+            Error(pragma_loc, "{}", res.error());
+            return;
+        }
+
+        // Prevent a file from including itself.
+        //
+        // No, this doesn’t work if there is more than one level of recursion,
+        // but this feature is only supposed to be used very sparingly anyways.
+        auto& new_f = res.value();
+        if (f == new_f) {
+            Error(
+                tok().location,
+                "File '{}' may not include itself",
+                f.context().file_name(f.file_id())
+            );
+            return;
+        }
+
+        // Drop the current token entirely.
+        tokens.pop();
+
+        // Lex the entire file.
+        Lexer(tokens, new_f, comment_token_handler);
+
+        // Drop the EOF token it produced.
+        tokens.pop();
+        return;
+    }
+
+    Error(
+        pragma_loc,
+        "Unknown pragma '{}'",
+        tok().text
+    );
+}
+
+
 void Lexer::SkipWhitespace() {
     while (llvm::isSpace(Curr())) curr++;
 }
@@ -375,11 +442,20 @@ void Lexer::LexIdentifierRest(bool dollar) {
     tok().type = dollar ? Tk::TemplateType : Tk::Identifier;
     while (IsContinue(Curr())) curr++;
     FinishText();
-    if (dollar) return;
+
+    // Inside of pragmas, treat keywords and integer types as raw identifiers.
+    if (dollar or in_pragma) return;
 
     // Keywords.
     if (auto k = keywords.find(tok().text); k != keywords.end()) {
         tok().type = k->second;
+
+        // Handle pragmas.
+        if (tok().type == Tk::Pragma) {
+            HandlePragma();
+            Next();
+            return;
+        }
 
         // Handle "for~".
         if (tok().type == Tk::For and Eat('~')) {

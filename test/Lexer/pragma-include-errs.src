@@ -1,0 +1,7 @@
+// %srcc --short-filenames --tokens --verify %s
+
+pragma foo // expected-error: Unknown pragma 'foo'
+pragma include 4 // expected-error: Expected string literal after 'pragma include'
+pragma include "pragma-include-errs.src" // expected-error: File 'pragma-include-errs.src' may not include itself
+pragma include "." // expected-error: Is a directory
+pragma include "does not exist" // expected-error: No such file or directory
