@@ -17,7 +17,7 @@ proc d -> x {
 
 proc e -> x {
     var a = d();
-    return d();
+    return (d());
 }
 
 proc f {

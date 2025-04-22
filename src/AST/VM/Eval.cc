@@ -1003,7 +1003,6 @@ auto VM::eval(
 
     // Fast paths for common values.
     if (auto e = dyn_cast<Expr>(stmt)) {
-        e = e->strip_parens();
         auto val = e->visit(utils::Overloaded{// clang-format off
             [](auto*) -> OptVal { return std::nullopt; },
             [](IntLitExpr* i) -> OptVal { return SRValue{i->storage.value(), i->type}; },

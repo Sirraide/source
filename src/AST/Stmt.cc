@@ -108,12 +108,6 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts().back());
 }
 
-auto Expr::strip_parens() -> Expr* {
-    auto paren = dyn_cast<ParenExpr>(this);
-    if (not paren) return this;
-    return paren->expr->strip_parens();
-}
-
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
     // If this is a parameter that is passed as an rvalue, and the intent is 'In',

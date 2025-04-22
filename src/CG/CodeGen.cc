@@ -921,10 +921,6 @@ auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
     Unreachable("Emitting unresolved overload set?");
 }
 
-auto CodeGen::EmitParenExpr(ParenExpr* expr) -> Value* {
-    return Emit(expr->expr);
-}
-
 void CodeGen::EmitProcedure(ProcDecl* proc) {
     locals.clear();
 

@@ -565,7 +565,7 @@ auto Sema::BuildConversionSequence(
             ConversionSequenceOrDiags::Diags diags;
 
             // If this is itself a parameter, issue a better error.
-            if (auto dre = dyn_cast<LocalRefExpr>(a->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
+            if (auto dre = dyn_cast<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
                 diags.push_back(CreateError(
                     init_loc,
                     "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
@@ -626,7 +626,7 @@ auto Sema::BuildConversionSequence(
 
                 // Instantiate templates and simply match function types otherwise; we
                 // don’t need to do anything fancier here.
-                auto overloads = cast<OverloadSetExpr>(a->strip_parens())->overloads();
+                auto overloads = cast<OverloadSetExpr>(a)->overloads();
 
                 // Check non-templates first to avoid storing template substitution
                 // for all of them.
@@ -669,7 +669,6 @@ auto Sema::BuildConversionSequence(
             // fit, the type must be larger, so give up.
             Expr* lit = a;
             for (;;) {
-                lit = lit->strip_parens();
                 auto u = dyn_cast<UnaryExpr>(lit);
                 if (not u or u->op != Tk::Minus) break;
                 lit = u->arg;
@@ -1460,7 +1459,7 @@ auto Sema::BuildBinaryExpr(
             // LHS must be an lvalue.
             if (lhs->value_category != LValue) {
                 // Issue a better diagnostic for 'in' parameters.
-                if (auto ref = dyn_cast<LocalRefExpr>(lhs->strip_parens())) {
+                if (auto ref = dyn_cast<LocalRefExpr>(lhs)) {
                     if (
                         auto param = dyn_cast<ParamDecl>(ref->decl);
                         param and param->intent() == Intent::In
@@ -1567,8 +1566,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // If this is an overload set, perform overload resolution.
     Expr* resolved_callee = nullptr;
     SmallVector<Expr*> converted_args;
-    auto callee_no_parens = callee_expr->strip_parens();
-    if (auto os = dyn_cast<OverloadSetExpr>(callee_no_parens)) {
+    if (auto os = dyn_cast<OverloadSetExpr>(callee_expr)) {
         ProcDecl* d{};
         std::tie(d, converted_args) = PerformOverloadResolution(os, args, loc);
         if (not d) return nullptr;
@@ -1576,7 +1574,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     }
 
     // If the ‘callee’ is a type, then this is an initialiser call.
-    else if (isa<TypeExpr>(callee_no_parens)) {
+    else if (isa<TypeExpr>(callee_expr)) {
         auto type = M->vm.eval(callee_expr);
         if (not type) return ICE(
             callee_expr->location(),
@@ -1603,7 +1601,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         auto params = ty->params().size();
         auto argn = args.size();
         if (ty->variadic() ? params > argn : params != argn) {
-            auto decl = dyn_cast<ProcRefExpr>(callee_no_parens);
+            auto decl = dyn_cast<ProcRefExpr>(callee_expr);
             Error(
                 loc,
                 "Procedure{} expects {} argument{}, got {}",
@@ -1623,8 +1621,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             auto arg = BuildInitialiser(p.type, a, a->location(), true, p.intent, ty->cconv());
 
             // Point to the procedure if this is a direct call.
-            if (not arg and isa<ProcRefExpr>(callee_no_parens)) {
-                auto proc = cast<ProcRefExpr>(callee_no_parens);
+            if (not arg and isa<ProcRefExpr>(callee_expr)) {
+                auto proc = cast<ProcRefExpr>(callee_expr);
                 NoteParameter(*this, proc->decl, u32(i));
                 return nullptr;
             }
@@ -1668,7 +1666,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // Check that we can even call this at this point.
     if (ty->ret() == Type::DeducedTy) {
         Error(loc, "Cannot call procedure before its return type has been deduced");
-        if (auto p = dyn_cast<ProcRefExpr>(resolved_callee->strip_parens())) {
+        if (auto p = dyn_cast<ProcRefExpr>(resolved_callee)) {
             Note(p->decl->location(), "Declared here");
             Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
         }
@@ -2379,7 +2377,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
-    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
+    return TranslateExpr(parsed->inner);
 }
 
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {

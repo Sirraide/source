@@ -373,11 +373,6 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren<Decl>(o->overloads());
         } break;
 
-        case Kind::ParenExpr: {
-            PrintBasicNode(e, "ParenExpr");
-            PrintChildren(cast<ParenExpr>(e)->expr);
-        } break;
-
         case Kind::ProcDecl: {
             auto p = cast<ProcDecl>(e);
             PrintBasicHeader(p, "ProcDecl");

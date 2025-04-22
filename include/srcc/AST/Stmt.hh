@@ -115,9 +115,6 @@ public:
     /// Check if this expression is an rvalue.
     [[nodiscard]] bool rvalue() const { return not lvalue(); }
 
-    /// Look through parentheses.
-    [[nodiscard]] auto strip_parens() -> Expr*;
-
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::AssertExpr and e->kind() <= Kind::UnaryExpr;
     }
@@ -483,18 +480,6 @@ public:
     auto overloads() -> ArrayRef<Decl*> { return {getTrailingObjects<Decl*>(), num_overloads}; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
-};
-
-class srcc::ParenExpr final : public Expr {
-public:
-    Expr* expr;
-
-    ParenExpr(
-        Expr* expr,
-        Location location
-    ) : Expr{Kind::ParenExpr, expr->type, expr->value_category, location}, expr{expr} {}
-
-    static bool classof(const Stmt* e) { return e->kind() == Kind::ParenExpr; }
 };
 
 class srcc::ProcRefExpr final : public Expr {
