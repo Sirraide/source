@@ -182,6 +182,10 @@ auto Builder::CreateLShr(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::LShr, a->type(), {a, b});
 }
 
+void Builder::CreateMemCopy(Value* to, Value* from, Value* bytes) {
+    Create(Op::MemCopy, {to, from, bytes});
+}
+
 void Builder::CreateMemZero(Value* addr, Value* bytes) {
     Create(Op::MemZero, {addr, bytes});
 }
@@ -356,6 +360,7 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
     switch (op) {
         case Op::Abort:
         case Op::Br:
+        case Op::MemCopy:
         case Op::MemZero:
         case Op::Ret:
         case Op::Store:
@@ -589,7 +594,8 @@ void Printer::DumpInst(Inst* i) {
         case Op::ICmpSGt: Simple("icmp sgt"); break;
         case Op::IMul: Simple("imul"); break;
         case Op::LShr: Simple("lshr"); break;
-        case Op::MemZero: Simple("mem zero"); break;
+        case Op::MemCopy: Simple("copy"); break;
+        case Op::MemZero: Simple("zero"); break;
         case Op::Or: Simple("or"); break;
         case Op::PtrAdd: Simple("ptradd"); break;
         case Op::Ret: Simple("ret"); break;

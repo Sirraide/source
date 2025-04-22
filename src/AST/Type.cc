@@ -158,10 +158,14 @@ bool TypeBase::is_srvalue() const {
     Unreachable("Invalid type kind");
 }
 
-
 bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and
            cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
+}
+
+bool TypeBase::move_is_copy() const {
+    // This will have to change once we have destructors.
+    return true;
 }
 
 bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {

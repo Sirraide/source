@@ -349,6 +349,11 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
             return CreateAlignedLoad(ty, Emit(m.ptr()), ConvertAlign(m.align()));
         }
 
+        case Op::MemCopy: {
+            auto a = ConvertAlign(cast<PtrType>(i[0]->type())->elem()->align(cg.tu));
+            return CreateMemCpy(Emit(i[0]), a, Emit(i[1]), a, Emit(i[2]));
+        }
+
         case Op::MemZero: {
             auto zero = getInt8(0);
             return CreateMemSet(Emit(i[0]), zero, Emit(i[1]), ConvertAlign(i[0]->type()->align(cg.tu)));

@@ -631,12 +631,16 @@ bool Sema::BuildInitialiser(
             return true;
         }
 
-        // Otherwise, we expect an mrvalue here.
+        // If we have an mrvalue, use it directly.
         if (a->value_category == Expr::MRValue) return true;
+
+        // Otherwise, we have an lvalue here that we need to move from; if
+        // moving is the same as copying, just leave it as it.
+        if (a->type->move_is_copy()) return true;
         ICE(
             a->location(),
-            "TODO: {} a struct by copy",
-            in_call ? "Passing" : "Assigning"
+            "TODO: Moving a value of type '{}'",
+            var_type
         );
         return false;
     }
@@ -1971,15 +1975,11 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     }
 
     // Perform any necessary conversions.
-    if (auto val = value.get_or_null()) {
-        if (val->type == Type::VoidTy) {
-            // Nop.
-        } else if (val->type->rvalue_category() == Expr::SRValue) {
-            value = LValueToSRValue(val);
-        } else {
-            ICE(loc, "Cannot compile this return type yet: {}", val->type);
-        }
-    }
+    //
+    // If the type is zero-sized, there is no need to do anything since we’ll
+    // drop it anyway.
+    if (auto val = value.get_or_null(); val and val->type->size(*M) != Size())
+        value = BuildInitialiser(proc->return_type(), {val}, loc);
 
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
 }

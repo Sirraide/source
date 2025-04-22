@@ -142,6 +142,9 @@ public:
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
+    /// Whether moving this type is the same as a copy.
+    [[nodiscard]] bool move_is_copy() const;
+
     /// Whether this type should be passed as an lvalue given a specific intent.
     [[nodiscard]] bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
         return not pass_by_rvalue(cc, intent);

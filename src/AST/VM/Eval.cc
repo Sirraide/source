@@ -434,6 +434,16 @@ bool Eval::EvalLoop() {
                 Temp(l) = std::move(v.value());
             } break;
 
+            case ir::Op::MemCopy: {
+                auto& dest = Val(i->args()[0]);
+                auto& src = Val(i->args()[1]);
+                auto size = Size::Bytes(Val(i->args()[2]).cast<APInt>().getZExtValue());
+                auto dest_ptr = GetMemoryPointer(dest.cast<Pointer>(), size, false);
+                auto src_ptr = GetMemoryPointer(src.cast<Pointer>(), size, true);
+                if (not dest_ptr or not src_ptr) return false;
+                std::memcpy(dest_ptr, src_ptr, size.bytes());
+            } break;
+
             case ir::Op::MemZero: {
                 auto addr = Val(i->args()[0]);
                 auto size = Size::Bytes(Val(i->args()[1]).cast<APInt>().getZExtValue());

@@ -1,0 +1,56 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+struct x { i64 a; }
+
+var a = x(1);
+var b = a;
+
+struct y { i64 a; i64 b; i64 c; }
+
+var c = y(1, 2, 3);
+var d = c;
+
+// * proc __src_main {
+// +     %0 = x
+// +     %1 = x
+// +     %2 = y
+// +     %3 = y
+// +
+// + entry:
+// +     %4 = ptradd %0, int 0
+// +     %5 = sext int 1 to i64
+// +     store i64 to %4, %5, align 8
+// +     copy %1, %0, int 8
+// +     %6 = ptradd %2, int 0
+// +     %7 = sext int 1 to i64
+// +     store i64 to %6, %7, align 8
+// +     %8 = ptradd %2, int 8
+// +     %9 = sext int 2 to i64
+// +     store i64 to %8, %9, align 8
+// +     %10 = ptradd %2, int 16
+// +     %11 = sext int 3 to i64
+// +     store i64 to %10, %11, align 8
+// +     copy %3, %2, int 24
+// +     ret
+// + }
+
+//L + define fastcc void @__src_main() {
+//L + entry:
+//L +   %0 = alloca [8 x i8], align 8
+//L +   %1 = alloca [8 x i8], align 8
+//L +   %2 = alloca [24 x i8], align 8
+//L +   %3 = alloca [24 x i8], align 8
+//L +   %4 = getelementptr inbounds i8, ptr %0, i64 0
+//L +   store i64 1, ptr %4, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %1, ptr align 8 %0, i64 8, i1 false)
+//L +   %5 = getelementptr inbounds i8, ptr %2, i64 0
+//L +   store i64 1, ptr %5, align 8
+//L +   %6 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   store i64 2, ptr %6, align 8
+//L +   %7 = getelementptr inbounds i8, ptr %2, i64 16
+//L +   store i64 3, ptr %7, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %3, ptr align 8 %2, i64 24, i1 false)
+//L +   ret void
+//L + }

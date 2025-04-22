@@ -255,6 +255,8 @@ void CodeGen::While(
 // ============================================================================
 // Mangling codes:
 //
+// TODO: Yeet all of this; we don’t need name mangling because of how our modules
+// work (keep a pretty name in the IR and generate some random nonsense for LLVM IR).
 struct CodeGen::Mangler {
     CodeGen& CG;
     std::string name;
@@ -361,7 +363,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
     Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
     switch (init->type->rvalue_category()) {
-        case Expr::LValue: Unreachable("Initialisation from lvalue?");
+        case Expr::LValue: Unreachable();
 
         // Emit + store.
         case Expr::SRValue: {
@@ -373,6 +375,13 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
             // Default initialiser here is a memset to 0.
             if (isa<DefaultInitExpr>(init)) {
                 CreateMemZero(addr, CreateInt(init->type->size(tu).bytes()));
+                return;
+            }
+
+            // If the initialiser is an lvalue, emit a memcpy. This is used for
+            // structs that are trivially copyable.
+            if (init->value_category == Expr::LValue) {
+                CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()));
                 return;
             }
 
@@ -861,7 +870,9 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {
-    Todo();
+    auto base = Emit(expr->base);
+    if (IsZeroSizedType(expr->type)) return base;
+    return CreatePtrAdd(base, CreateInt(expr->field->offset.bytes()), true);
 }
 
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {

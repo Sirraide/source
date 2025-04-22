@@ -52,6 +52,7 @@ enum class Op : u8 {
     IMul,
     Load,
     LShr,
+    MemCopy,
     MemZero,
     Or,
     PtrAdd,
@@ -510,6 +511,7 @@ public:
     auto CreateInvalidLocalReference(LocalRefExpr* ref) -> Value*;
     auto CreateLShr(Value* a, Value* b) -> Value*;
     auto CreateLoad(Type ty, Value* ptr) -> Value*;
+    auto CreateMemCopy(Value* to, Value* from, Value* bytes) -> void;
     auto CreateMemZero(Value* addr, Value* bytes) -> void;
     auto CreateNil(Type ty) -> Value*;
     auto CreateOr(Value* a, Value* b) -> Value*;

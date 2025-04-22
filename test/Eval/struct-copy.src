@@ -1,0 +1,11 @@
+// R %srcc --eval %s
+program test;
+
+struct y { i64 a; i64 b; i64 c; }
+
+var c = y(1, 2, 3);
+var d = c;
+
+assert d.a == 1;
+assert d.b == 2;
+assert d.c == 3;
