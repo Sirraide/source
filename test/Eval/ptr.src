@@ -1,0 +1,17 @@
+// R %srcc --eval %s
+program test;
+
+int i;
+int^ a = &i;
+int^^ b = &a;
+
+a = ^b;
+^a = 4;
+assert i == 4;
+assert ^a == 4;
+assert ^^b == 4;
+
+^^b = 5;
+assert i == 5;
+assert ^a == 5;
+assert ^^b == 5;

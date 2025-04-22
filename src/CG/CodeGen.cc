@@ -936,6 +936,14 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
 
     switch (expr->op) {
         default: Todo("Emit prefix '{}'", expr->op);
+
+        // These are both no-ops at the IR level and only affect the type
+        // of the expression.
+        case Tk::Ampersand:
+        case Tk::Caret:
+            return Emit(expr->arg);
+
+        // Negate an integer.
         case Tk::Minus: {
             auto a = Emit(expr->arg);
 
