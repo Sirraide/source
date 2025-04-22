@@ -246,6 +246,12 @@ public:
     static const Type DeducedTy;
     static const Type TypeTy;
     static const Type UnresolvedOverloadSetTy;
+
+private:
+    /// For libassert.
+    friend auto operator<<(std::ostream& os, Type ty) -> std::ostream& {
+        return os << text::RenderColours(false, ty->print().str());
+    }
 };
 
 template <>

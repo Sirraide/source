@@ -1,0 +1,144 @@
+// R %srcc --ir --short-filenames %s
+program test;
+
+proc sink (in int) {}
+proc exp (in int a, in int b) {
+    sink(a ** b);
+    sink(a ** b);
+    sink(a ** b);
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvxiE (in int %0) {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S3expFvxixiE (in int %0, in int %1) {
+// + entry:
+// +     %2 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
+// +     call void _S4sinkFvxiE(%2)
+// +     %3 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
+// +     call void _S4sinkFvxiE(%3)
+// +     %4 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
+// +     call void _S4sinkFvxiE(%4)
+// +     ret
+// + }
+// +
+// + proc _S$12__srcc_exp_iFixix3iE (in int %0, copy int %1) -> int {
+// +     %2 = int
+// +     %3 = int
+// +
+// + entry:
+// +     store int to %2, %1, align 8
+// +     %4 = load int, %2, align 8
+// +     %5 = icmp eq %4, int 0
+// +     br %5 to bb1 else bb2
+// +
+// + bb1:
+// +     ret int 1
+// +
+// + bb2:
+// +     %6 = icmp eq %0, int 0
+// +     br %6 to bb3 else bb6
+// +
+// + bb3:
+// +     %7 = load int, %2, align 8
+// +     %8 = icmp sge %7, int 0
+// +     br %8 to bb5 else bb4
+// +
+// + bb4:
+// +     abort at <preamble.src:11:9> __src_assert_fail(s"exp >= 0", s"attempting to raise 0 to a negative power")
+// +
+// + bb5:
+// +     ret int 0
+// +
+// + bb6:
+// +     %9 = load int, %2, align 8
+// +     %10 = icmp slt %9, int 0
+// +     br %10 to bb7 else bb20
+// +
+// + bb7:
+// +     %11 = ssub ov int 0, int 1
+// +     br %11:1 to bb8 else bb9
+// +
+// + bb8:
+// +     abort at <preamble.src:20:20> __src_int_arith_error(s"-", s"integer overflow")
+// +
+// + bb9:
+// +     %12 = icmp eq %0, %11:0
+// +     br %12 to bb10 else bb16
+// +
+// + bb10:
+// +     %13 = load int, %2, align 8
+// +     %14 = and %13, int 1
+// +     %15 = icmp ne %14, int 0
+// +     br %15 to bb11 else bb14
+// +
+// + bb11:
+// +     %16 = ssub ov int 0, int 1
+// +     br %16:1 to bb12 else bb13
+// +
+// + bb12:
+// +     abort at <preamble.src:20:52> __src_int_arith_error(s"-", s"integer overflow")
+// +
+// + bb13:
+// +     br bb15(%16:0)
+// +
+// + bb14:
+// +     br bb15(int 1)
+// +
+// + bb15(int %17):
+// +     ret %17
+// +
+// + bb16:
+// +     %18 = icmp eq %0, int 1
+// +     br %18 to bb17 else bb18
+// +
+// + bb17:
+// +     br bb19(int 1)
+// +
+// + bb18:
+// +     br bb19(int 0)
+// +
+// + bb19(int %19):
+// +     ret %19
+// +
+// + bb20:
+// +     store int to %3, %0, align 8
+// +     br bb21
+// +
+// + bb21:
+// +     %20 = load int, %2, align 8
+// +     %21 = icmp ne %20, int 1
+// +     br %21 to bb22 else bb27
+// +
+// + bb22:
+// +     %22 = load int, %3, align 8
+// +     %23 = smul ov %22, %0
+// +     br %23:1 to bb23 else bb24
+// +
+// + bb23:
+// +     abort at <preamble.src:27:9> __src_int_arith_error(s"*", s"integer overflow")
+// +
+// + bb24:
+// +     store int to %3, %23:0, align 8
+// +     %24 = load int, %2, align 8
+// +     %25 = ssub ov %24, int 1
+// +     br %25:1 to bb25 else bb26
+// +
+// + bb25:
+// +     abort at <preamble.src:28:9> __src_int_arith_error(s"-", s"integer overflow")
+// +
+// + bb26:
+// +     store int to %2, %25:0, align 8
+// +     br bb21
+// +
+// + bb27:
+// +     %26 = load int, %3, align 8
+// +     ret %26
+// + }

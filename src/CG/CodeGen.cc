@@ -95,94 +95,6 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     return ir_proc;
 }
 
-auto CodeGen::DefineExp(Type ty) -> ir::Proc* {
-    // Check if we’ve emitted this before.
-    auto name = std::format("__srcc_exp_i{}", ty->size(tu).bits());
-    if (auto existing = GetExistingProc(name).get_or_null()) return existing;
-
-    // If not, create it now.
-    auto proc = GetOrCreateProc(
-        tu.save(name),
-        Linkage::Merge,
-        ProcType::Get(
-            tu,
-            ty,
-            {{Intent::In, ty}, {Intent::In, ty}}
-        )
-    );
-
-    EnterProcedure _(*this, proc);
-
-    // Values that we’ll need.
-    auto minus_one = CreateInt(u64(-1), ty);
-    auto zero = CreateInt(0, ty);
-    auto one = CreateInt(1, ty);
-    auto args = proc->args();
-    auto lhs = args[0];
-    auto rhs = args[1];
-
-    // x ** 0 = 1.
-    If(CreateICmpEq(rhs, zero), [&] {
-        CreateReturn(one);
-    });
-
-    // If base == 0.
-    If(CreateICmpEq(lhs, zero), [&] {
-        // If exp < 0, then error.
-        if (lang_opts.overflow_checking) {
-            CreateArithFailure(
-                CreateICmpSLt(rhs, zero),
-                Tk::StarStar,
-                Location(),
-                "attempting to raise 0 to a negative power"
-            );
-        } else {
-            If(CreateICmpSLt(rhs, zero), [&] {
-                CreateReturn(CreatePoison(ty));
-            });
-        }
-
-        // Otherwise, return 0.
-        CreateReturn(zero);
-    });
-
-    // If exp < 0.
-    If(CreateICmpSLt(rhs, zero), [&] {
-        // If base == -1, then return 1 if exp is even, -1 if odd.
-        If(CreateICmpEq(lhs, minus_one), [&] {
-            auto is_odd = CreateSICast(rhs, IntType::Get(tu, Size::Bits(1)));
-            auto result = CreateSelect(is_odd, minus_one, one);
-            CreateReturn(result);
-        });
-
-        // If base == 1, then return 1, otherwise 0.
-        auto cmp = CreateICmpEq(lhs, one);
-        CreateReturn(CreateSelect(cmp, one, zero));
-    });
-
-    // Handle overflow.
-    if (lang_opts.overflow_checking) {
-        auto min_value = CreateInt(APInt::getSignedMinValue(unsigned(ty->size(tu).bits())), ty);
-        auto is_min = CreateICmpEq(lhs, min_value);
-        CreateArithFailure(is_min, Tk::StarStar, Location());
-    }
-
-    // Emit the multiplication loop.
-    Loop({lhs, rhs}, [&] -> SmallVector<Value*> {
-        auto val = insert_point->arg(0);
-        auto exp = insert_point->arg(1);
-        If(CreateICmpEq(exp, one), [&] { CreateReturn(val); });
-
-        // Computation (and overflow check).
-        auto new_val = EmitArithmeticOrComparisonOperator(Tk::Star, val, lhs, Location());
-        auto new_exp = CreateSub(exp, one);
-        return {new_val, new_exp};
-    });
-
-    // No return here since we return in the loop.
-    return proc;
-}
-
 auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, ArrayRef<Value*> args) -> Block* {
     return EnterBlock(curr_proc->add(std::move(bb)), args);
 }
@@ -225,7 +137,11 @@ auto CodeGen::If(
     llvm::function_ref<Value*()> emit_then,
     llvm::function_ref<Value*()> emit_else
 ) -> ArrayRef<ir::Argument*> {
-    Assert(emit_then and emit_else, "Both branches must return a value for this overload");
+    if (not emit_else) {
+        If(cond, emit_then);
+        return {};
+    }
+
     auto bb_then = CreateBlock();
     auto bb_else = CreateBlock();
     CreateCondBr(cond, bb_then, bb_else);
@@ -587,6 +503,34 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 CreateIMul(CreateInt(elem_size.bytes()), index),
                 true
             );
+
+        }
+
+        // Arithmetic assignment operators.
+        case Tk::PlusEq:
+        case Tk::PlusTildeEq:
+        case Tk::MinusEq:
+        case Tk::MinusTildeEq:
+        case Tk::StarEq:
+        case Tk::StarTildeEq:
+        case Tk::StarStarEq:
+        case Tk::SlashEq:
+        case Tk::PercentEq:
+        case Tk::ShiftLeftEq:
+        case Tk::ShiftLeftLogicalEq:
+        case Tk::ShiftRightEq:
+        case Tk::ShiftRightLogicalEq: {
+            auto lvalue = Emit(expr->lhs);
+            auto lhs = CreateLoad(expr->lhs->type, lvalue);
+            auto rhs = Emit(expr->rhs);
+            auto res = EmitArithmeticOrComparisonOperator(
+                StripAssignment(expr->op),
+                lhs,
+                rhs,
+                expr->location()
+            );
+            CreateStore(res, lvalue);
+            return lvalue;
         }
 
         // Anything else.
@@ -711,10 +655,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         }
 
         // This is lowered to a call to a compiler-generated function.
-        case Tk::StarStar: {
-            auto func = DefineExp(ty);
-            return CreateCall(func, {lhs, rhs});
-        }
+        case Tk::StarStar: Unreachable("Sema should have converted this to a call");
     }
 }
 

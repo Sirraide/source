@@ -1402,10 +1402,27 @@ auto Sema::BuildBinaryExpr(
     Expr* lhs,
     Expr* rhs,
     Location loc
-) -> Ptr<BinaryExpr> {
+) -> Ptr<Expr> {
     using enum ValueCategory;
     auto Build = [&](Type ty, ValueCategory cat = SRValue) {
         return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
+    };
+
+    auto CheckIntegral = [&] -> bool {
+        // Either operand must be an integer.
+        bool lhs_int = lhs->type->is_integer();
+        bool rhs_int = rhs->type->is_integer();
+        if (not lhs_int and not rhs_int) {
+            Error(
+                loc,
+                "Unsupported %1({}%) of '{}' and '{}'",
+                Spelling(op),
+                lhs->type,
+                rhs->type
+            );
+            return false;
+        }
+        return true;
     };
 
     auto ConvertToCommonType = [&] {
@@ -1434,24 +1451,7 @@ auto Sema::BuildBinaryExpr(
     };
 
     auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<BinaryExpr> {
-        auto Check = [&](std::string_view which, Expr* e) {
-            if (e->type->is_integer() or e->type == Type::NoReturnTy) return true;
-            Error(e->location(), "{} of %1({}%) must be an integer", which, Spelling(op));
-            return false;
-        };
-
-        // Either operand must be an integer.
-        bool lhs_int = lhs->type->is_integer();
-        bool rhs_int = rhs->type->is_integer();
-        if (not lhs_int and not rhs_int) return Error(
-            loc,
-            "Unsupported %1({}%) of '{}' and '{}'",
-            Spelling(op),
-            lhs->type,
-            rhs->type
-        );
-
-        if (not ConvertToCommonType()) return nullptr;
+        if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
         return Build(comparison ? Type::BoolTy : lhs->type);
     };
 
@@ -1482,8 +1482,15 @@ auto Sema::BuildBinaryExpr(
         // TODO: Allow for slices and arrays.
         case Tk::In: return ICE(loc, "Operator 'in' not yet implemented");
 
+        // This is implemented as a function template.
+        case Tk::StarStar: {
+            if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
+            auto ref = LookUpName(global_scope(), String("__srcc_exp_i"), loc, true);
+            if (not ref) return nullptr;
+            return BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
+        }
+
         // Arithmetic operation.
-        case Tk::StarStar:
         case Tk::Star:
         case Tk::Slash:
         case Tk::Percent:

@@ -1,3 +1,6 @@
 // V %srcc --sema --verify %s
+program test;
+
+proc exit extern -> noreturn;
 
 proc a { exit() + exit(); } // expected-error: Unsupported + of 'noreturn' and 'noreturn'

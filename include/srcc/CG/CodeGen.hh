@@ -123,7 +123,6 @@ private:
     auto DeclareArithmeticFailureHandler() -> ir::Value*;
     auto DeclarePrintf() -> ir::Value*;
     auto DeclareProcedure(ProcDecl* proc) -> ir::Proc*;
-    auto DefineExp(Type ty) -> ir::Proc*;
 
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> ir::Value*;

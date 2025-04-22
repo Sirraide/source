@@ -1,4 +1,4 @@
-// R %srcc --ir %s
+// R %srcc --ir --short-filenames %s
 program test;
 
 proc sink (in int) {}
@@ -43,17 +43,28 @@ proc arith (in int a, in int b) {
     sink(a != b);
 }
 
-proc exp (in int a, in int b) {
-    sink(a ** b);
-}
-
-// * proc _S13arith_checkedFvxixiE (in int %0, in int %1) {
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvxiE (in int %0) {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvxbE (in bool %0) {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S13arith_checkedFvxixiE (in int %0, in int %1) {
 // + entry:
 // +     %2 = sadd ov %0, %1
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// re+   abort at .* __src_int_arith_error(s"\+", s"integer overflow")
+// +     abort at <binary-ops.src:8:10> __src_int_arith_error(s"+", s"integer overflow")
 // +
 // + bb2:
 // +     call void _S4sinkFvxiE(%2:0)
@@ -61,7 +72,7 @@ proc exp (in int a, in int b) {
 // +     br %3:1 to bb3 else bb4
 // +
 // + bb3:
-// re+   abort at .* __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <binary-ops.src:9:10> __src_int_arith_error(s"-", s"integer overflow")
 // +
 // + bb4:
 // +     call void _S4sinkFvxiE(%3:0)
@@ -69,7 +80,7 @@ proc exp (in int a, in int b) {
 // +     br %4:1 to bb5 else bb6
 // +
 // + bb5:
-// re+   abort at .* __src_int_arith_error(s"\*", s"integer overflow")
+// +     abort at <binary-ops.src:10:10> __src_int_arith_error(s"*", s"integer overflow")
 // +
 // + bb6:
 // +     call void _S4sinkFvxiE(%4:0)
@@ -77,7 +88,7 @@ proc exp (in int a, in int b) {
 // +     br %5 to bb7 else bb8
 // +
 // + bb7:
-// re+   abort at .* __src_int_arith_error(s"/", s"division by zero")
+// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"division by zero")
 // +
 // + bb8:
 // +     %6 = icmp eq %0, int -9223372036854775808
@@ -86,7 +97,7 @@ proc exp (in int a, in int b) {
 // +     br %8 to bb9 else bb10
 // +
 // + bb9:
-// re+   abort at .* __src_int_arith_error(s"/", s"integer overflow")
+// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"integer overflow")
 // +
 // + bb10:
 // +     %9 = sdiv %0, %1
@@ -95,7 +106,7 @@ proc exp (in int a, in int b) {
 // +     br %10 to bb11 else bb12
 // +
 // + bb11:
-// re+   abort at .* __src_int_arith_error(s"%", s"division by zero")
+// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"division by zero")
 // +
 // + bb12:
 // +     %11 = icmp eq %0, int -9223372036854775808
@@ -104,7 +115,7 @@ proc exp (in int a, in int b) {
 // +     br %13 to bb13 else bb14
 // +
 // + bb13:
-// re+   abort at .* __src_int_arith_error(s"%", s"integer overflow")
+// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"integer overflow")
 // +
 // + bb14:
 // +     %14 = srem %0, %1
@@ -113,7 +124,7 @@ proc exp (in int a, in int b) {
 // +     br %15 to bb15 else bb16
 // +
 // + bb15:
-// re+   abort at .* __src_int_arith_error(s":/", s"division by zero")
+// +     abort at <binary-ops.src:14:10> __src_int_arith_error(s":/", s"division by zero")
 // +
 // + bb16:
 // +     %16 = udiv %0, %1
@@ -122,7 +133,7 @@ proc exp (in int a, in int b) {
 // +     br %17 to bb17 else bb18
 // +
 // + bb17:
-// re+   abort at .* __src_int_arith_error(s":%", s"division by zero")
+// +     abort at <binary-ops.src:15:10> __src_int_arith_error(s":%", s"division by zero")
 // +
 // + bb18:
 // +     %18 = urem %0, %1
@@ -131,7 +142,7 @@ proc exp (in int a, in int b) {
 // +     br %19 to bb19 else bb20
 // +
 // + bb19:
-// re+   abort at .* __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
+// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
 // +
 // + bb20:
 // +     %20 = shl %0, %1
@@ -141,7 +152,7 @@ proc exp (in int a, in int b) {
 // +     br %23 to bb21 else bb22
 // +
 // + bb21:
-// re+   abort at .* __src_int_arith_error(s"<<", s"integer overflow")
+// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"integer overflow")
 // +
 // + bb22:
 // +     call void _S4sinkFvxiE(%20)
@@ -149,15 +160,15 @@ proc exp (in int a, in int b) {
 // +     br %24 to bb23 else bb24
 // +
 // + bb23:
-// re+   abort at .* __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
+// +     abort at <binary-ops.src:18:10> __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
 // +
 // + bb24:
 // +     %25 = shl %0, %1
 // +     call void _S4sinkFvxiE(%25)
 // +     ret
 // + }
-
-// * proc _S5arithFvxixiE (in int %0, in int %1) {
+// +
+// + proc _S5arithFvxixiE (in int %0, in int %1) {
 // + entry:
 // +     %2 = add %0, %1
 // +     call void _S4sinkFvxiE(%2)
@@ -194,80 +205,4 @@ proc exp (in int a, in int b) {
 // +     %18 = icmp ne %0, %1
 // +     call void _S4sinkFvxbE(%18)
 // +     ret
-// + }
-
-// * proc _S3expFvxixiE (in int %0, in int %1) {
-// + entry:
-// +     %2 = call int __srcc_exp_i64(%0, %1)
-// +     call void _S4sinkFvxiE(%2)
-// +     ret
-// + }
-// +
-// + proc __srcc_exp_i64 (in int %0, in int %1) -> int {
-// + entry:
-// +     %2 = icmp eq %1, int 0
-// +     br %2 to bb1 else bb2
-// +
-// + bb1:
-// +     ret int 1
-// +
-// + bb2:
-// +     %3 = icmp eq %0, int 0
-// +     br %3 to bb3 else bb6
-// +
-// + bb3:
-// +     %4 = icmp slt %1, int 0
-// +     br %4 to bb4 else bb5
-// +
-// + bb4:
-// +     abort at <<builtin>:0:0> __src_int_arith_error(s"**", s"attempting to raise 0 to a negative power")
-// +
-// + bb5:
-// +     ret int 0
-// +
-// + bb6:
-// +     %5 = icmp slt %1, int 0
-// +     br %5 to bb7 else bb10
-// +
-// + bb7:
-// +     %6 = icmp eq %0, int -1
-// +     br %6 to bb8 else bb9
-// +
-// + bb8:
-// +     %7 = trunc %1 to i1
-// +     %8 = select %7, int -1, int 1
-// +     ret %8
-// +
-// + bb9:
-// +     %9 = icmp eq %0, int 1
-// +     %10 = select %9, int 1, int 0
-// +     ret %10
-// +
-// + bb10:
-// +     %11 = icmp eq %0, int -9223372036854775808
-// +     br %11 to bb11 else bb12
-// +
-// + bb11:
-// +     abort at <<builtin>:0:0> __src_int_arith_error(s"**", s"integer overflow")
-// +
-// + bb12:
-// +     br bb13(%0, %1)
-// +
-// + bb13(int %12, int %13):
-// +     %14 = icmp eq %13, int 1
-// +     br %14 to bb14 else bb15
-// +
-// + bb14:
-// +     ret %12
-// +
-// + bb15:
-// +     %15 = smul ov %12, %0
-// +     br %15:1 to bb16 else bb17
-// +
-// + bb16:
-// +     abort at <<builtin>:0:0> __src_int_arith_error(s"*", s"integer overflow")
-// +
-// + bb17:
-// +     %16 = sub %13, int 1
-// +     br bb13(%15:0, %16)
 // + }

@@ -15,6 +15,7 @@ namespace srcc {
 enum struct Tk : u8;
 struct Token;
 class TokenStream;
+auto StripAssignment(Tk t) -> Tk;
 auto Spelling(Tk t) -> String;
 }
 

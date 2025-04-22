@@ -150,6 +150,26 @@ auto srcc::Spelling(Tk t) -> String {
     Unreachable();
 }
 
+/// Remove the assignment part of an operator.
+auto srcc::StripAssignment(Tk t) -> Tk {
+    switch (t) {
+        case Tk::PlusEq: return Tk::Plus;
+        case Tk::PlusTildeEq: return Tk::PlusTilde;
+        case Tk::MinusEq: return Tk::Minus;
+        case Tk::MinusTildeEq: return Tk::MinusTilde;
+        case Tk::StarEq: return Tk::Star;
+        case Tk::StarTildeEq: return Tk::StarTilde;
+        case Tk::StarStarEq: return Tk::StarStar;
+        case Tk::SlashEq: return Tk::Slash;
+        case Tk::PercentEq: return Tk::Percent;
+        case Tk::ShiftLeftEq: return Tk::ShiftLeft;
+        case Tk::ShiftRightEq: return Tk::ShiftRight;
+        case Tk::ShiftLeftLogicalEq: return Tk::ShiftLeftLogical;
+        case Tk::ShiftRightLogicalEq: return Tk::ShiftRightLogical;
+        default: return t;
+    }
+}
+
 auto Token::spelling(const Context& ctx) const -> String {
     switch (type) {
         default: return Spelling(type);                    // Always spelt the same way.

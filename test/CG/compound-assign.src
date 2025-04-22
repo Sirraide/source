@@ -1,0 +1,139 @@
+// R %srcc --ir --short-filenames %s
+program test;
+
+proc x (int a, in int b) {
+    a += b;
+    a +~= b;
+    a -= b;
+    a -~= b;
+    a *= b;
+    a *~= b;
+    a /= b;
+    a %= b;
+    a <<= b;
+    a >>= b;
+    a <<<= b;
+    a >>>= b;
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1xFvixiE (int %0, in int %1) {
+// +     %2 = int
+// +
+// + entry:
+// +     store int to %2, %0, align 8
+// +     %3 = load int, %2, align 8
+// +     %4 = sadd ov %3, %1
+// +     br %4:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at <compound-assign.src:5:5> __src_int_arith_error(s"+", s"integer overflow")
+// +
+// + bb2:
+// +     store int to %2, %4:0, align 8
+// +     %5 = load int, %2, align 8
+// +     %6 = add %5, %1
+// +     store int to %2, %6, align 8
+// +     %7 = load int, %2, align 8
+// +     %8 = ssub ov %7, %1
+// +     br %8:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at <compound-assign.src:7:5> __src_int_arith_error(s"-", s"integer overflow")
+// +
+// + bb4:
+// +     store int to %2, %8:0, align 8
+// +     %9 = load int, %2, align 8
+// +     %10 = sub %9, %1
+// +     store int to %2, %10, align 8
+// +     %11 = load int, %2, align 8
+// +     %12 = smul ov %11, %1
+// +     br %12:1 to bb5 else bb6
+// +
+// + bb5:
+// +     abort at <compound-assign.src:9:5> __src_int_arith_error(s"*", s"integer overflow")
+// +
+// + bb6:
+// +     store int to %2, %12:0, align 8
+// +     %13 = load int, %2, align 8
+// +     %14 = imul %13, %1
+// +     store int to %2, %14, align 8
+// +     %15 = load int, %2, align 8
+// +     %16 = icmp eq %1, int 0
+// +     br %16 to bb7 else bb8
+// +
+// + bb7:
+// +     abort at <compound-assign.src:11:5> __src_int_arith_error(s"/", s"division by zero")
+// +
+// + bb8:
+// +     %17 = icmp eq %15, int -9223372036854775808
+// +     %18 = icmp eq %1, int -1
+// +     %19 = and %17, %18
+// +     br %19 to bb9 else bb10
+// +
+// + bb9:
+// +     abort at <compound-assign.src:11:5> __src_int_arith_error(s"/", s"integer overflow")
+// +
+// + bb10:
+// +     %20 = sdiv %15, %1
+// +     store int to %2, %20, align 8
+// +     %21 = load int, %2, align 8
+// +     %22 = icmp eq %1, int 0
+// +     br %22 to bb11 else bb12
+// +
+// + bb11:
+// +     abort at <compound-assign.src:12:5> __src_int_arith_error(s"%", s"division by zero")
+// +
+// + bb12:
+// +     %23 = icmp eq %21, int -9223372036854775808
+// +     %24 = icmp eq %1, int -1
+// +     %25 = and %23, %24
+// +     br %25 to bb13 else bb14
+// +
+// + bb13:
+// +     abort at <compound-assign.src:12:5> __src_int_arith_error(s"%", s"integer overflow")
+// +
+// + bb14:
+// +     %26 = srem %21, %1
+// +     store int to %2, %26, align 8
+// +     %27 = load int, %2, align 8
+// +     %28 = icmp uge %1, int 64
+// +     br %28 to bb15 else bb16
+// +
+// + bb15:
+// +     abort at <compound-assign.src:13:5> __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
+// +
+// + bb16:
+// +     %29 = shl %27, %1
+// +     %30 = ashr %27, int 63
+// +     %31 = ashr %29, int 63
+// +     %32 = icmp ne %30, %31
+// +     br %32 to bb17 else bb18
+// +
+// + bb17:
+// +     abort at <compound-assign.src:13:5> __src_int_arith_error(s"<<", s"integer overflow")
+// +
+// + bb18:
+// +     store int to %2, %29, align 8
+// +     %33 = load int, %2, align 8
+// +     %34 = ashr %33, %1
+// +     store int to %2, %34, align 8
+// +     %35 = load int, %2, align 8
+// +     %36 = icmp uge %1, int 64
+// +     br %36 to bb19 else bb20
+// +
+// + bb19:
+// +     abort at <compound-assign.src:15:5> __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
+// +
+// + bb20:
+// +     %37 = shl %35, %1
+// +     store int to %2, %37, align 8
+// +     %38 = load int, %2, align 8
+// +     %39 = lshr %38, %1
+// +     store int to %2, %39, align 8
+// +     ret
+// + }

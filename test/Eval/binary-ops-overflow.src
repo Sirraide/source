@@ -10,9 +10,7 @@ eval 1 <<< 111111; // expected-error: Arithmetic error: '<<<': shift amount exce
 eval (1 <<< 63) - 1; // expected-error: Arithmetic error: '-': integer overflow
 eval -(1 <<< 63)   ; // expected-error: Arithmetic error: '-': integer overflow
 
-// FIXME: The locations of these errors are reported in the implicitly generated
-// '**' function; this should be fixed once we it as an actual template in the
-// preamble (which doesn’t exist yet).
+// The source locations for these are in the preamble.
 eval 100 ** 100;   // expected-error@*: Arithmetic error: '*': integer overflow
-eval 0 ** -1;      // expected-error@*: Arithmetic error: '**': attempting to raise 0 to a negative power
-eval 0 ** -100;    // expected-error@*: Arithmetic error: '**': attempting to raise 0 to a negative power
+eval 0 ** -1;      // expected-error@*: Assertion failed: 'exp >= 0': attempting to raise 0 to a negative power
+eval 0 ** -100;    // expected-error@*: Assertion failed: 'exp >= 0': attempting to raise 0 to a negative power
