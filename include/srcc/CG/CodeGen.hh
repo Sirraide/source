@@ -126,6 +126,7 @@ private:
 
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> ir::Value*;
+    auto EmitCallExpr(CallExpr* call, ir::Value* mrvalue_slot) -> ir::Value*;
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->ir::Value*;
 #include "srcc/AST.inc"
@@ -141,6 +142,9 @@ private:
 
     /// Get a (mapped) procedure argument.
     auto GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument>;
+
+    /// Check whether a procedure has an indirect return type.
+    bool HasIndirectReturn(ProcType* type);
 
     /// Create a conditional branch and join block.
     ///

@@ -53,18 +53,33 @@ auto CodeGen::DeclarePrintf() -> Value* {
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto ty = proc->proc_type();
-    bool noreturn = proc->return_type() == Type::NoReturnTy;
-    bool has_zero_sized_params = any_of(proc->param_types(), [&](const ParamTypeData& ty) {
+    bool noreturn = ty->ret() == Type::NoReturnTy;
+    bool has_zero_sized_params = any_of(ty->params(), [&](const ParamTypeData& ty) {
         return IsZeroSizedType(ty.type);
     });
 
-    // Filter out any zero-sized arguments.
-    if (IsZeroSizedType(proc->return_type()) or has_zero_sized_params) {
+    // If the procedure returns an MRValue, we need to pass a pointer
+    // to construct it into.
+    bool has_indirect_return = HasIndirectReturn(ty);
+
+    // Only rebuild the procedure type if we actually need to change
+    // something.
+    if (
+        (ty->ret() != Type::VoidTy and IsZeroSizedType(ty->ret())) or
+        has_zero_sized_params or
+        has_indirect_return
+    ) {
         SmallVector<ParamTypeData> sized;
-        if (has_zero_sized_params) {
+        u32 ir_index = 0;
+
+        if (has_indirect_return) {
+            ir_index = 1;
+            sized.push_back({Intent::In, PtrType::Get(tu, ty->ret())});
+        }
+
+        if (has_indirect_return or has_zero_sized_params) {
             auto map = std::make_unique<ArgumentMapping>();
-            u32 ir_index = 0;
-            for (auto [i, ty] : enumerate(proc->param_types())) {
+            for (auto [i, ty] : enumerate(ty->params())) {
                 if (not IsZeroSizedType(ty.type)) {
                     map->map(u32(i), ir_index++);
                     sized.push_back(ty);
@@ -72,13 +87,13 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
             }
             argument_mapping[proc] = std::move(map);
         } else {
-            sized = SmallVector<ParamTypeData>(proc->proc_type()->params());
+            append_range(sized, ty->params());
         }
 
         // Convert zero-sized return types to void, but keep noreturn so we
         // can add the appropriate attribute when converting to LLVM IR.
-        auto ret = proc->return_type();
-        if (not noreturn and IsZeroSizedType(ret)) ret = Type::VoidTy;
+        auto ret = ty->ret();
+        if (has_indirect_return or (not noreturn and IsZeroSizedType(ret))) ret = Type::VoidTy;
         ty = ProcType::Get(
             tu,
             ret,
@@ -92,6 +107,9 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     auto name = MangledName(proc);
     auto ir_proc = GetOrCreateProc(name, proc->linkage, ty);
     ir_proc->associated_decl = proc;
+
+    // Remember the *original* return type.
+    if (has_indirect_return) ir_proc->indirect_ret_type = proc->return_type();
     return ir_proc;
 }
 
@@ -130,6 +148,11 @@ auto CodeGen::GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument> {
     }
 
     return proc->args()[index];
+}
+
+bool CodeGen::HasIndirectReturn(ProcType* type) {
+    if (IsZeroSizedType(type->ret())) return false;
+    return type->ret()->rvalue_category() == ValueCategory::MRValue;
 }
 
 auto CodeGen::If(
@@ -385,6 +408,12 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
                 return;
             }
 
+            // If the initialiser is a call, pass the address to it.
+            if (auto call = dyn_cast<CallExpr>(init)) {
+                EmitCallExpr(call, addr);
+                return;
+            }
+
             // Structs are otherwise constructed field by field.
             if (auto lit = dyn_cast<StructInitExpr>(init)) {
                 auto s = lit->struct_type();
@@ -512,7 +541,6 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 CreateIMul(CreateInt(elem_size.bytes()), index),
                 true
             );
-
         }
 
         // Arithmetic assignment operators.
@@ -788,14 +816,28 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
+    return EmitCallExpr(expr, nullptr);
+}
+
+auto CodeGen::EmitCallExpr(CallExpr* expr, Value* mrvalue_slot) -> Value* {
+    // If the caller didn’t provide a space to store the return value into,
+    // make one up (this can happen if we don’t do anything with the return
+    // value).
+    auto ty = cast<ProcType>(expr->callee->type);
+    if (HasIndirectReturn(ty) and not mrvalue_slot)
+        mrvalue_slot = CreateAlloca(curr_proc, ty->ret());
+
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
 
-    // Then the arguments.
-    //
-    // Don’t add zero-sized arguments to the call, but take care
-    // to still emit them since they may have side effects.
+    // Add the return value pointer first if there is one.
     SmallVector<Value*> args;
+    if (mrvalue_slot) args.push_back(mrvalue_slot);
+
+    // Evaluate the arguments and add them to the call.
+    //
+    // Don’t add zero-sized arguments, but take care to still emit
+    // them since they may have side effects.
     for (auto arg : expr->args()) {
         auto v = Emit(arg);
         if (not IsZeroSizedType(arg->type)) args.push_back(v);
@@ -915,6 +957,13 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
+    if (curr_proc->indirect_ret_type) {
+        auto slot = curr_proc->args().front();
+        PerformVariableInitialisation(slot, expr->value.get());
+        CreateReturn();
+        return nullptr;
+    }
+
     auto val = expr->value.get_or_null();
     auto ret_val = val ? Emit(val) : nullptr;
     if (val and IsZeroSizedType(val->type)) ret_val = nullptr;

@@ -416,6 +416,7 @@ class Proc : public Value {
 
 public:
     ProcDecl* associated_decl = nullptr;
+    Type indirect_ret_type;
 
     auto add(std::unique_ptr<Block> b) -> Block*;
     auto args() const -> ArrayRef<Argument*> { return arguments; }

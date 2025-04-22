@@ -1,12 +1,12 @@
-// R %srcc --ir %s
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
 program test;
 
 struct x { int a; }
 
 proc a extern -> x;
 proc b = x(1);
-proc c -> x {
-    int a = 1;
+proc c(int a) -> x {
     return x(a);
 }
 
@@ -14,3 +14,115 @@ proc d -> x {
     var a = x(1);
     return a;
 }
+
+proc e -> x {
+    var a = d();
+    return d();
+}
+
+proc f {
+    d();
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1aFT1xE (in x^ %0);
+// +
+// + proc _S1bFT1xE (in x^ %0) {
+// + entry:
+// +     %1 = ptradd %0, int 0
+// +     store int to %1, int 1, align 8
+// +     ret
+// + }
+// +
+// + proc _S1cFT1xiE (in x^ %0, int %1) {
+// +     %2 = int
+// +
+// + entry:
+// +     store int to %2, %1, align 8
+// +     %3 = ptradd %0, int 0
+// +     %4 = load int, %2, align 8
+// +     store int to %3, %4, align 8
+// +     ret
+// + }
+// +
+// + proc _S1dFT1xE (in x^ %0) {
+// +     %1 = x
+// +
+// + entry:
+// +     %2 = ptradd %1, int 0
+// +     store int to %2, int 1, align 8
+// +     copy %0, %1, int 8
+// +     ret
+// + }
+// +
+// + proc _S1eFT1xE (in x^ %0) {
+// +     %1 = x
+// +
+// + entry:
+// +     call void _S1dFT1xE(%1)
+// +     call void _S1dFT1xE(%0)
+// +     ret
+// + }
+// +
+// + proc _S1fFvE {
+// +     %0 = x
+// +
+// + entry:
+// +     call void _S1dFT1xE(%0)
+// +     ret
+// + }
+
+//L * define fastcc void @__src_main() {
+//L + entry:
+//L +   ret void
+//L + }
+//L +
+//L + declare fastcc void @_S1aFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none))
+//L +
+//L + define private fastcc void @_S1bFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
+//L + entry:
+//L +   %1 = getelementptr inbounds i8, ptr %0, i64 0
+//L +   store i64 1, ptr %1, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1cFT1xiE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i64 %1) {
+//L + entry:
+//L +   %2 = alloca i64, align 8
+//L +   store i64 %1, ptr %2, align 8
+//L +   %3 = getelementptr inbounds i8, ptr %0, i64 0
+//L +   %4 = load i64, ptr %2, align 8
+//L +   store i64 %4, ptr %3, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1dFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
+//L + entry:
+//L +   %1 = alloca [8 x i8], align 8
+//L +   %2 = getelementptr inbounds i8, ptr %1, i64 0
+//L +   store i64 1, ptr %2, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 %1, i64 8, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+//L +
+//L + define private fastcc void @_S1eFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
+//L + entry:
+//L +   %1 = alloca [8 x i8], align 8
+//L +   call fastcc void @_S1dFT1xE(ptr %1)
+//L +   call fastcc void @_S1dFT1xE(ptr %0)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1fFvE() {
+//L + entry:
+//L +   %0 = alloca [8 x i8], align 8
+//L +   call fastcc void @_S1dFT1xE(ptr %0)
+//L +   ret void
+//L + }

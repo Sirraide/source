@@ -229,6 +229,18 @@ void LLVMCodeGen::emit(ir::Proc* proc) {
     if (proc->type()->ret() == Type::NoReturnTy)
         curr_func->setDoesNotReturn();
 
+    // Add sret to the first parameter if need be.
+    if (proc->indirect_ret_type) {
+        llvm::AttrBuilder attrs{llvm->getContext()};
+        attrs.addStructRetAttr(ConvertTypeForMem(proc->indirect_ret_type));
+        attrs.addAttribute(llvm::Attribute::DeadOnUnwind);
+        attrs.addAttribute(llvm::Attribute::NoAlias);
+        attrs.addAttribute(llvm::Attribute::Writable);
+        attrs.addCapturesAttr(llvm::CaptureInfo::none());
+        attrs.addAlignmentAttr(ConvertAlign(proc->indirect_ret_type->align(cg.tu)));
+        curr_func->addParamAttrs(0, attrs);
+    }
+
     // Stop here if there is no function body.
     if (proc->empty()) return;
     blocks.clear();
