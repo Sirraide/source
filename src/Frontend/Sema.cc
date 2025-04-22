@@ -44,40 +44,6 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     }
 }
 
-auto Sema::ApplyConversion(Expr* e, Conversion conv) -> Expr* {
-    switch (conv.kind) {
-        using K = Conversion::Kind;
-        case K::IntegralCast: return new (*M) CastExpr(
-            conv.ty_and_val.type(),
-            CastExpr::Integral,
-            e,
-            e->location(),
-            true
-        );
-
-        case K::LValueToSRValue: return LValueToSRValue(e);
-        case K::MaterialisePoison: return new (*M) CastExpr(
-            conv.ty_and_val.type(),
-            CastExpr::MaterialisePoisonValue,
-            e,
-            e->location(),
-            true,
-            conv.ty_and_val.value_category()
-        );
-
-        case K::SelectOverload: {
-            auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.index];
-            return CreateReference(proc, e->location()).get();
-        }
-    }
-    Unreachable("Invalid conversion");
-}
-
-auto Sema::ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr* {
-    for (auto& c : seq) e = ApplyConversion(e, c);
-    return e;
-}
-
 Type Sema::AdjustVariableType(Type ty, Location loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
@@ -362,148 +328,76 @@ auto ModuleLoader::load(
 // ============================================================================
 //  Initialisation.
 // ============================================================================
-// Initialisation context that applies conversions and diagnoses
-// failures to do so immediately.
-class Sema::ImmediateInitContext {
-    Sema& S;
-    Type target_type;
-    Location loc;
+auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) -> Expr* {
+    switch (conv.kind) {
+        using K = Conversion::Kind;
+        default: Unreachable();
+        case K::IntegralCast: return new (*M) CastExpr(
+            conv.type(),
+            CastExpr::Integral,
+            e,
+            loc,
+            true
+        );
 
-public:
-    Expr* res;
+        case K::LValueToSRValue: return LValueToSRValue(e);
+        case K::MaterialisePoison: return new (*M) CastExpr(
+            conv.type(),
+            CastExpr::MaterialisePoisonValue,
+            e,
+            loc,
+            true,
+            conv.value_category()
+        );
 
-    ImmediateInitContext(Sema& S, Expr* e, Type target_type, Location loc = {})
-        : S{S},
-          target_type{target_type},
-          loc{loc == Location() ? e->location() : loc},
-          res{e} {}
-
-    void apply(Conversion c) { res = S.ApplyConversion(res, c); }
-
-    auto location() const -> Location { return loc; }
-
-    bool report_incomplete_type() {
-        S.Error(res->location(), "Cannot create instance of incomplete type '{}", res->type);
-        return false;
-    }
-
-    bool report_lvalue_intent_mismatch(Intent intent) {
-        // If this is itself a parameter, issue a better error.
-        if (auto dre = dyn_cast<LocalRefExpr>(res->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
-            S.Error(
-                res->location(),
-                "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
-                cast<ParamDecl>(dre->decl)->intent(),
-                intent
-            );
-            S.Note(dre->decl->location(), "Parameter declared here");
-        } else {
-            S.Error(res->location(), "Cannot bind this expression to an %1({}%) parameter.", intent);
+        case K::SelectOverload: {
+            auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
+            return CreateReference(proc, loc).get();
         }
-        S.Remark("Try storing this in a variable first.");
-        return false;
     }
+}
 
-    bool report_nested_resolution_failure() {
-        Todo("Report this");
-    }
+void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc) {
+    switch (conv.kind) {
+        using K = Conversion::Kind;
+        case K::DefaultInit: {
+            Assert(exprs.empty());
+            exprs.push_back(new (*M) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
+            return;
+        }
 
-    bool report_type_mismatch() {
-        S.Error(
-            res->location(),
-            "Cannot convert expression of type '{}' to '{}'",
-            res->type,
-            target_type
-        );
-        return false;
-    }
+        case K::IntegralCast:
+        case K::LValueToSRValue:
+        case K::MaterialisePoison:
+        case K::SelectOverload: {
+            Assert(exprs.size() == 1);
+            exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
+            return;
+        }
 
-    bool report_same_type_lvalue_required(Intent intent) {
-        S.Error(
-            res->location(),
-            "Cannot pass type {} to %1({}%) parameter of type {}",
-            res->type,
-            intent,
-            target_type
-        );
-        return false;
-    }
-
-    auto result() -> Expr* { return res; }
-};
-
-// Initialisation context that converts conversion failures into
-// making an overload not viable.
-class Sema::OverloadInitContext {
-    [[maybe_unused]] Sema& S;
-    Candidate& c;
-    u32 param_index;
-
-public:
-    OverloadInitContext(Sema& S, Candidate& c, u32 param_index)
-        : S{S},
-          c{c},
-          param_index{param_index} {}
-
-    void apply(Conversion conv) {
-        auto& s = c.status.get<Candidate::Viable>();
-        s.conversions.back().push_back(conv);
-
-        // Don’t forget to increment the badness so we can actually rank them.
-        switch (conv.kind) {
-            using K = Conversion::Kind;
-
-            // These are actual type conversions.
-            case K::IntegralCast:
-            case K::MaterialisePoison:
-                s.badness++;
-                break;
-
-            // These don’t perform type conversion.
-            case K::LValueToSRValue:
-            case K::SelectOverload:
-                break;
+        case K::StructInit: {
+            auto& data = conv.data.get<Conversion::StructInitData>();
+            for (auto [e, seq] : zip(exprs, data.field_convs)) e = ApplyConversionSequence(e, seq, loc);
+            auto e = StructInitExpr::Create(*M, data.ty, exprs, loc);
+            exprs.clear();
+            exprs.push_back(e);
+            return;
         }
     }
 
-    bool report_incomplete_type() {
-        c.status = Candidate::IncompleteType(u32(param_index));
-        return true; // Not a fatal error.
-    }
+    Unreachable("Invalid conversion");
+}
 
-    bool report_lvalue_intent_mismatch(Intent) {
-        c.status = Candidate::LValueIntentMismatch{u32(param_index)};
-        return true; // Not a fatal error.
-    }
-
-    bool report_nested_resolution_failure() {
-        c.status = Candidate::NestedResolutionFailure{u32(param_index)};
-        return true; // Not a fatal error.
-    }
-
-    bool report_same_type_lvalue_required(Intent) {
-        c.status = Candidate::SameTypeLValueRequired{u32(param_index)};
-        return true; // Not a fatal error.
-    }
-
-    bool report_type_mismatch() {
-        c.status = Candidate::TypeMismatch{u32(param_index)};
-        return true; // Not a fatal error.
-    }
-};
-
-// Init context that doesn’t report a diagnostic when initialisation fails.
-class Sema::TentativeInitContext : public ImmediateInitContext {
-public:
-    TentativeInitContext(Sema& S, Expr* e, Type target_type)
-        : ImmediateInitContext{S, e, target_type, e->location()} {}
-
-    bool report_lvalue_intent_mismatch(Intent) { return false; }
-    bool report_incomplete_type() { return false; }
-    bool report_nested_resolution_failure() { return false; }
-    bool report_type_mismatch() { return false; }
-    bool report_same_type_lvalue_required(Intent) { return false; }
-};
+auto Sema::ApplyConversionSequence(
+    ArrayRef<Expr*> exprs,
+    const ConversionSequence& seq,
+    Location loc
+) -> Expr* {
+    SmallVector<Expr*, 4> exprs_copy{exprs};
+    for (auto& c : seq.conversions) ApplyConversion(exprs_copy, c, loc);
+    Assert(exprs_copy.size() == 1, "Conversion sequence should only produce one expression");
+    return exprs_copy.front();
+}
 
 // There are three ways of initialising a struct type:
 //
@@ -540,21 +434,33 @@ auto Sema::BuildAggregateInitialiser(
     StructType* s,
     ArrayRef<Expr*> args,
     Location loc
-) -> Ptr<Expr> {
+) -> ConversionSequenceOrDiags {
     // First case: option 1 or 2.
-    if (not s->initialisers().empty()) {
-        return ICE(loc, "TODO: Call struct initialiser");
-    }
+    if (not s->initialisers().empty())
+        return CreateICE(loc, "TODO: Call struct initialiser");
 
     // Second case: option 3. Option 2 is handled before we get here,
     // i.e. at this point, we know we’re building a literal initialiser.
     Assert(not args.empty(), "Should have called BuildDefaultInitialiser() instead");
     Assert(s->has_literal_init(), "Should have rejected before we ever get here");
 
-    // For this initialiser, the number of arguments must match the number
-    // of fields in the struct.
+    // Recursively build an initialiser for each element that the user provided.
+    std::vector<ConversionSequence> field_seqs;
+    for (auto [field, arg] : zip(s->fields(), args)) {
+        auto seq = BuildConversionSequence(field->type, arg, arg->location());
+        if (not seq.result.has_value()) {
+            auto note = field->name.empty()
+                ? CreateNote(field->location(), "In initialiser for field declared here")
+                : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
+            seq.result.error().push_back(std::move(note));
+            return seq;
+        }
+        field_seqs.push_back(std::move(seq.result.value()));
+    }
+
+    // For now, the number of arguments must match the number of fields in the struct.
     if (s->fields().size() != args.size()) {
-        Error(
+        auto err = CreateError(
             loc,
             "Struct '{}' has {} field{}, but got {} argument{}",
             Type{s},
@@ -564,62 +470,120 @@ auto Sema::BuildAggregateInitialiser(
             args.size() == 1 ? "" : "s"
         );
 
-        Remark(
+        err.extra =
             "\vIf you want to be able to initialise the struct using fewer "
             "arguments, either define an initialisation procedure or provide "
-            "default values for the remaining fields."
-        );
+            "default values for the remaining fields.";
 
-        return {};
+        return err;
     }
 
-    // Recursively build an initialiser for each element.
-    SmallVector<Expr*> inits;
-    for (auto [field, arg] : zip(s->fields(), args)) {
-        auto init = BuildInitialiser(field->type, arg, arg->location());
-        if (init) inits.push_back(init.get());
-        else {
-            Note(field->location(), "In initialiser for field '{}'", field->name);
-            return {};
-        }
-    }
-
-    return StructInitExpr::Create(*M, s, inits, loc);
+    ConversionSequence seq;
+    seq.add(Conversion::StructInit(Conversion::StructInitData{s, std::move(field_seqs)}));
+    return seq;
 }
 
-template <typename InitContext>
-bool Sema::BuildInitialiser(
-    InitContext& init,
+auto Sema::BuildConversionSequence(
     Type var_type,
-    Expr* a,
+    ArrayRef<Expr*> args,
+    Location init_loc,
     Intent intent,
     CallingConvention cc,
     bool in_call
-) {
+) -> ConversionSequenceOrDiags {
     Assert(var_type, "Null type in initialisation?");
-    Assert(a, "Initialiser must not be null");
+    ConversionSequence seq;
 
     // As a special case, 'noreturn' can be converted to *any* type (and value
     // category). This is because 'noreturn' means we never actually reach the
     // point in the program where the value would be needed, so it’s fine to just
     // pretend that we have one.
-    if (a->type == Type::NoReturnTy) {
+    auto a = args.empty() ? nullptr : args.front();
+    if (a and a->type == Type::NoReturnTy) {
         auto cat = var_type->pass_value_category(cc, intent);
         if (var_type != Type::NoReturnTy or a->value_category != cat)
-            init.apply(Conversion::Poison(var_type, cat));
-        return true;
+            seq.add(Conversion::Poison(var_type, cat));
+        return seq;
     }
 
     // The type we’re initialising must be complete.
-    if (not IsCompleteType(var_type)) return init.report_incomplete_type();
+    if (not IsCompleteType(var_type)) return CreateError(
+        init_loc,
+        "Cannot create instance of incomplete type '{}'",
+        var_type
+    );
+
+    // If there are no arguments, this is default initialisation.
+    if (args.empty()) {
+        if (var_type->can_default_init()) {
+            seq.add(Conversion::DefaultInit(var_type));
+            return seq;
+        }
+
+        if (var_type->can_init_from_no_args()) return CreateICE(
+            init_loc,
+            "TODO: non-default empty initialisation of '{}'",
+            var_type
+        );
+
+        return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
+    }
+
+    // There are only few (classes of) types that support initialisation
+    // from more than one argument.
+    if (args.size() > 1) {
+        if (isa<ArrayType>(var_type)) return CreateICE(args.front()->location(), "TODO: Array initialiser");
+        if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, init_loc);
+        return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
+    }
+
+    // Ok, we have exactly one argument.
+    auto TypeMismatch = [&] {
+        return CreateError(
+            init_loc,
+            "Cannot convert expression of type '{}' to '{}'",
+            a->type,
+            var_type
+        );
+    };
 
     // If the intent resolves to pass by reference, then we
     // need to bind to it; the type must match exactly for
     // that.
     if (in_call and var_type->pass_by_lvalue(cc, intent)) {
-        if (a->type != var_type) return init.report_same_type_lvalue_required(intent);
-        if (not a->lvalue()) return init.report_lvalue_intent_mismatch(intent);
-        return true;
+        // If we’re passing by lvalue, the type must match exactly.
+        if (a->type != var_type) return CreateError(
+            init_loc,
+            "Cannot pass type {} to %1({}%) parameter of type {}",
+            a->type,
+            intent,
+            var_type
+        );
+
+        // If the argument is not an lvalue, try to explain what the issue is.
+        if (not a->lvalue()) {
+            ConversionSequenceOrDiags::Diags diags;
+
+            // If this is itself a parameter, issue a better error.
+            if (auto dre = dyn_cast<LocalRefExpr>(a->strip_parens()); dre and isa<ParamDecl>(dre->decl)) {
+                diags.push_back(CreateError(
+                    init_loc,
+                    "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
+                    cast<ParamDecl>(dre->decl)->intent(),
+                    intent
+                ));
+                diags.push_back(CreateNote(dre->decl->location(), "Parameter declared here"));
+            } else {
+                diags.push_back(CreateError(init_loc, "Cannot bind this expression to an %1({}%) parameter.", intent));
+            }
+
+            diags.back().extra = "Try storing this in a variable first.";
+            return diags;
+        }
+
+        // Otherwise, we have an lvalue of the same type; there is nothing
+        // to be done here.
+        return seq;
     }
 
     // Type matches exactly.
@@ -627,22 +591,17 @@ bool Sema::BuildInitialiser(
         // We’re passing by value. For srvalue types, convert lvalues
         // to srvalues here.
         if (a->type->rvalue_category() == Expr::SRValue) {
-            if (a->lvalue()) init.apply(Conversion::LValueToSRValue());
-            return true;
+            if (a->lvalue()) seq.add(Conversion::LValueToSRValue());
+            return seq;
         }
 
         // If we have an mrvalue, use it directly.
-        if (a->value_category == Expr::MRValue) return true;
+        if (a->value_category == Expr::MRValue) return seq;
 
         // Otherwise, we have an lvalue here that we need to move from; if
         // moving is the same as copying, just leave it as it.
-        if (a->type->move_is_copy()) return true;
-        ICE(
-            a->location(),
-            "TODO: Moving a value of type '{}'",
-            var_type
-        );
-        return false;
+        if (a->type->move_is_copy()) return seq;
+        return CreateICE(a->location(), "TODO: Moving a value of type '{}'", var_type);
     }
 
     // We need to perform conversion. What we do here depends on the type.
@@ -650,7 +609,10 @@ bool Sema::BuildInitialiser(
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
-            return init.report_type_mismatch();
+            return TypeMismatch();
+
+        case TypeBase::Kind::StructType:
+            return BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc);
 
         case TypeBase::Kind::ProcType:
             // Type is an overload set; attempt to convert it.
@@ -660,7 +622,7 @@ bool Sema::BuildInitialiser(
             // return type.
             if (a->type == Type::UnresolvedOverloadSetTy) {
                 auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
-                if (not p_proc_type) return init.report_type_mismatch();
+                if (not p_proc_type) return TypeMismatch();
 
                 // Instantiate templates and simply match function types otherwise; we
                 // don’t need to do anything fancier here.
@@ -677,8 +639,8 @@ bool Sema::BuildInitialiser(
                     // when the corresponding declarations were added to their scope, so
                     // if one of them matches, it is the only one that matches.
                     if (cast<ProcDecl>(o)->type == var_type) {
-                        init.apply(Conversion::SelectOverload(u16(j)));
-                        return true;
+                        seq.add(Conversion::SelectOverload(u16(j)));
+                        return seq;
                     }
                 }
 
@@ -689,11 +651,16 @@ bool Sema::BuildInitialiser(
                 }
 
                 // None of the overloads matched.
-                return init.report_nested_resolution_failure();
+                return CreateError(
+                    init_loc,
+                    "Overload set for '{}' does not contain a procedure of type '{}'",
+                    overloads.front()->name,
+                    var_type
+                );
             }
 
             // Otherwise, the types don’t match.
-            return init.report_type_mismatch();
+            return TypeMismatch();
 
         // For integers, we can use the common type rule.
         case TypeBase::Kind::IntType: {
@@ -713,8 +680,8 @@ bool Sema::BuildInitialiser(
                 auto val = M->vm.eval(a, false);
                 if (val and IntegerFitsInType(val->cast<APInt>(), var_type)) {
                     // Integer literals are srvalues so no need fo l2r conv here.
-                    init.apply(Conversion::IntegralCast(var_type));
-                    return true;
+                    seq.add(Conversion::IntegralCast(var_type));
+                    return seq;
                 }
             }
 
@@ -722,18 +689,17 @@ bool Sema::BuildInitialiser(
             // is smaller, we can convert it as well.
             auto ivar = cast<IntType>(var_type);
             auto iinit = dyn_cast<IntType>(a->type);
-            if (not iinit or iinit->bit_width() > ivar->bit_width()) return init.report_type_mismatch();
-            init.apply(Conversion::LValueToSRValue());
-            init.apply(Conversion::IntegralCast(var_type));
-            return true;
+            if (not iinit or iinit->bit_width() > ivar->bit_width()) return TypeMismatch();
+            seq.add(Conversion::LValueToSRValue());
+            seq.add(Conversion::IntegralCast(var_type));
+            return seq;
         }
 
         // For builtin types, it depends.
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(var_type)->builtin_kind()) {
-                case BuiltinKind::UnresolvedOverloadSet:
                 case BuiltinKind::Deduced:
-                    Unreachable("A variable of this type should not exist: {}", var_type);
+                    return CreateError(init_loc, "Type deduction is not allowed here");
 
                 // The only type that can initialise these is the exact
                 // same type, so complain (integer literals are not of
@@ -744,32 +710,11 @@ bool Sema::BuildInitialiser(
                 case BuiltinKind::Int:
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Type:
-                    return init.report_type_mismatch();
+                case BuiltinKind::UnresolvedOverloadSet:
+                    return TypeMismatch();
             }
 
             Unreachable();
-        }
-
-        case TypeBase::Kind::StructType: {
-            // FIXME: HACK.
-            //
-            // TODO: Do we want to support implicit conversions to struct types
-            // in calls and tentative conversion? Note that if the type of the
-            // argument *is* a struct type, this is already supported by the
-            // check for type identity above.
-            if constexpr (utils::is<InitContext, ImmediateInitContext>) {
-                auto result = BuildAggregateInitialiser(
-                    cast<StructType>(var_type.ptr()),
-                    a,
-                    init.location()
-                );
-
-                if (not result) return false;
-                init.res = result.get();
-                return true;
-            } else {
-                return init.report_type_mismatch();
-            }
         }
     }
 
@@ -778,64 +723,27 @@ bool Sema::BuildInitialiser(
 
 auto Sema::BuildInitialiser(
     Type var_type,
-    Expr* arg,
+    ArrayRef<Expr*> args,
+    Location loc,
+    bool in_call,
     Intent intent,
-    CallingConvention cc,
-    Location loc
+    CallingConvention cc
 ) -> Ptr<Expr> {
-    // Passing in 'arg' and 'var_type' twice here is unavoidable because
-    // InitContexts generally don't store either; it’s just this one that
-    // does...
-    ImmediateInitContext init{*this, arg, var_type, loc};
-    if (not BuildInitialiser(init, var_type, arg, intent, cc, true)) return nullptr;
-    return init.result();
-}
+    auto seq_or_err = BuildConversionSequence(var_type, args, loc, intent, cc, in_call);
 
-auto Sema::BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
-    var_type = AdjustVariableType(var_type, loc);
-    if (not var_type) return nullptr;
-    if (not IsCompleteType(var_type)) return Error(
-        loc,
-        "Cannot create an instance of incomplete type '{}'",
-        var_type
-    );
+    // The conversion succeeded.
+    if (seq_or_err.result.has_value())
+        return ApplyConversionSequence(args, seq_or_err.result.value(), loc);
 
-    // Easy case: no arguments.
-    if (args.empty()) {
-        if (var_type->can_default_init()) return new (*M) DefaultInitExpr(var_type, loc);
-        if (var_type->can_init_from_no_args()) return ICE(
-            loc,
-            "TODO: non-default empty initialisation of '{}'",
-            var_type
-        );
-
-        return Error(loc, "Type '{}' requires a non-empty initialiser", var_type);
-    }
-
-    // If there is exactly one argument, delegate to the rest of the
-    // initialisation machinery.
-    if (args.size() == 1) {
-        ImmediateInitContext init{*this, args.front(), var_type, loc};
-        if (not BuildInitialiser(init, var_type, args.front(), {}, {}, false)) return {};
-        return init.result();
-    }
-
-    // There are only few (classes of) types that support initialisation
-    // from more than one argument. We only support immediate initialisation
-    // of these for now.
-    if (isa<ArrayType>(var_type)) return ICE(loc, "TODO: Array initialiser");
-    if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, loc);
-    return Error(
-        loc,
-        "Cannot create a value of type '{}' from more than one argument",
-        var_type
-    );
+    // There was an error.
+    for (auto& d : seq_or_err.result.error()) diags().report(std::move(d));
+    return nullptr;
 }
 
 auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
-    TentativeInitContext init{*this, arg, var_type};
-    if (not BuildInitialiser(init, var_type, arg)) return nullptr;
-    return init.result();
+    auto seq_or_err = BuildConversionSequence(var_type, {arg}, arg->location());
+    if (not seq_or_err.result.has_value()) return nullptr;
+    return ApplyConversionSequence({arg}, seq_or_err.result.value(), arg->location());
 }
 
 // ============================================================================
@@ -963,13 +871,7 @@ auto Sema::SubstituteTemplate(
 //  Overloading.
 // ============================================================================
 bool Sema::Candidate::has_valid_proc_type() const {
-    return status.is< // clang-format off
-        Viable,
-        LValueIntentMismatch,
-        SameTypeLValueRequired,
-        TypeMismatch,
-        NestedResolutionFailure
-    >(); // clang-format on
+    return status.is<Viable, ParamInitFailed>();
 }
 
 bool Sema::Candidate::is_variadic() const {
@@ -999,6 +901,54 @@ auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
     if (d) return d->proc_type()->print();
     if (subst and subst->success()) return subst->success()->type->print();
     return SmallUnrenderedString("(template)");
+}
+
+u32 Sema::ConversionSequence::badness() {
+    u32 badness = 0;
+    for (auto& conv : conversions) {
+        switch (conv.kind) {
+            using K = Conversion::Kind;
+
+            // These don’t perform type conversion.
+            case K::LValueToSRValue:
+            case K::SelectOverload:
+            case K::DefaultInit:
+                break;
+
+            // These are actual type conversions.
+            case K::IntegralCast:
+            case K::MaterialisePoison:
+                badness++;
+                break;
+
+            // These contain other conversions.
+            case K::StructInit: {
+                auto& data = conv.data.get<Conversion::StructInitData>();
+                for (auto& seq : data.field_convs) badness += seq.badness();
+            } break;
+        }
+    }
+    return badness;
+}
+
+static void NoteParameter(Sema& S, Decl* proc, u32 i) {
+    Location loc;
+    String name;
+
+    if (auto d = dyn_cast<ProcDecl>(proc)) {
+        auto p = d->params()[i];
+        loc = p->location();
+        name = p->name;
+    } else if (auto d = dyn_cast<ProcTemplateDecl>(proc)) {
+        auto p = d->pattern->params()[i];
+        loc = p->loc;
+        name = p->name;
+    } else {
+        return;
+    }
+
+    if (name.empty()) S.Note(loc, "In argument to parameter declared here");
+    else S.Note(loc, "In argument to parameter '{}'", name);
 }
 
 auto Sema::PerformOverloadResolution(
@@ -1077,9 +1027,24 @@ auto Sema::PerformOverloadResolution(
 
             // Check the next parameter.
             auto& p = params[i];
-            st->conversions.emplace_back();
-            OverloadInitContext init{*this, c, u32(i)};
-            if (not BuildInitialiser(init, p.type, a, p.intent, ty->cconv(), true)) return false;
+            auto seq_or_err = BuildConversionSequence(
+                p.type,
+                {a},
+                a->location(),
+                p.intent,
+                ty->cconv(),
+                true
+            );
+
+            // If this failed, stop checking this candidate.
+            if (not seq_or_err.result.has_value()) {
+                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.result.error()), u32(i)};
+                break;
+            }
+
+            // Otherwise, store the sequence for later and keep going.
+            st->conversions.push_back(std::move(seq_or_err.result.value()));
+            st->badness += st->conversions.back().badness();
         }
 
         // No fatal error.
@@ -1138,8 +1103,7 @@ auto Sema::PerformOverloadResolution(
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
-            actual_args.emplace_back(ApplyConversionSequence(args[i], conv));
-
+            actual_args.emplace_back(ApplyConversionSequence(args[i], conv, args[i]->location()));
         return {final_callee, std::move(actual_args)};
     }
 
@@ -1149,7 +1113,7 @@ auto Sema::PerformOverloadResolution(
 }
 
 void Sema::ReportOverloadResolutionFailure(
-    ArrayRef<Candidate> candidates,
+    MutableArrayRef<Candidate> candidates,
     ArrayRef<Expr*> call_args,
     Location call_loc,
     u32 final_badness
@@ -1186,15 +1150,7 @@ void Sema::ReportOverloadResolutionFailure(
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
     if (candidates.size() == 1) {
-        const auto& c = candidates.front();
-        auto Ctx = [&](usz idx) {
-            return ImmediateInitContext{
-                *this,
-                call_args[idx],
-                c.proc_type()->params()[idx].type,
-            };
-        };
-
+        auto& c = candidates.front();
         auto V = utils::Overloaded{
             // clang-format off
             [](const Candidate::Viable&) { Unreachable(); },
@@ -1219,34 +1175,9 @@ void Sema::ReportOverloadResolutionFailure(
                 Note(c.decl->location(), "Declared here");
             },
 
-            [&](Candidate::IncompleteType i) {
-                Ctx(i.param_index).report_incomplete_type();
-            },
-
-            [&](Candidate::LValueIntentMismatch m) {
-                Ctx(m.mismatch_index).report_lvalue_intent_mismatch(
-                    c.proc_type()->params()[m.mismatch_index].intent
-                );
-            },
-
-            [&](Candidate::NestedResolutionFailure) {
-                Error(call_loc, "Failed to resolve nested overload set");
-            },
-
-            [&](Candidate::SameTypeLValueRequired m) {
-                Ctx(m.mismatch_index).report_same_type_lvalue_required(
-                    c.proc_type()->params()[m.mismatch_index].intent
-                );
-            },
-
-            [&](Candidate::TypeMismatch m) {
-                Error(
-                    call_args[m.mismatch_index]->location(),
-                    "Argument of type '{}' does not match expected type '{}'",
-                    call_args[m.mismatch_index]->type,
-                    c.proc_type()->params()[m.mismatch_index].type
-                );
-                Note(c.param_loc(m.mismatch_index), "Parameter declared here");
+            [&](Candidate::ParamInitFailed& p) {
+                for (auto& d : p.diags) diags().report(std::move(d));
+                NoteParameter(*this, c.decl, p.param_index);
             },
         }; // clang-format on
         c.status.visit(V);
@@ -1316,51 +1247,14 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             },
 
-            [&](Candidate::IncompleteType i) {
-                message += std::format(
-                    "Cannot initialise param #{} because its type '{}' is still incomplete here",
-                    c.param_loc(i.param_index),
-                    c.proc_type()->params()[i.param_index].type
-                );
+            [&](Candidate::ParamInitFailed&) {
+                message += "TODO: Format this";
             },
 
             [&](Candidate::DeductionError) {
                 Assert(c.subst, "DeductionError requires a SubstitutionInfo");
                 message += "Template argument substitution failed";
                 FormatTempSubstFailure(*c.subst, message, "        ");
-            },
-
-            [&](Candidate::LValueIntentMismatch m) {
-                auto& p = c.proc_type()->params()[m.mismatch_index];
-                message += std::format(
-                    "Arg #{}: {} {} requires an lvalue of the same type",
-                    m.mismatch_index + 1,
-                    p.intent,
-                    p.type
-                );
-            },
-
-            [&](const Candidate::NestedResolutionFailure& n) {
-                Error(call_loc, "Failed to nested overload set");
-            },
-
-            [&](Candidate::TypeMismatch t) {
-                message += std::format(
-                    "Arg #{} should be '{}' but was '{}'",
-                    t.mismatch_index + 1,
-                    c.proc_type()->params()[t.mismatch_index].type,
-                    call_args[t.mismatch_index]->type
-                );
-            },
-
-            [&](Candidate::SameTypeLValueRequired m) {
-                auto& p = c.proc_type()->params()[m.mismatch_index];
-                message += std::format(
-                    "Arg #{}: {} {} requires an lvalue of the same type",
-                    m.mismatch_index + 1,
-                    p.intent,
-                    p.type
-                );
             },
         }; // clang-format on
         c.status.visit(V);
@@ -1722,14 +1616,12 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // Convert each non-variadic parameter.
         converted_args.reserve(args.size());
         for (auto [i, p, a] : enumerate(ty->params(), args.take_front(ty->params().size()))) {
-            auto arg = BuildInitialiser(p.type, a, p.intent, ty->cconv());
+            auto arg = BuildInitialiser(p.type, a, a->location(), true, p.intent, ty->cconv());
 
             // Point to the procedure if this is a direct call.
             if (not arg and isa<ProcRefExpr>(callee_no_parens)) {
                 auto proc = cast<ProcRefExpr>(callee_no_parens);
-                auto param_decl = proc->decl->params()[i];
-                if (param_decl->name.empty()) Note(param_decl->location(), "In argument to parameter declared here");
-                else Note(param_decl->location(), "In argument to parameter '{}'", param_decl->name);
+                NoteParameter(*this, proc->decl, u32(i));
                 return nullptr;
             }
 
@@ -1966,12 +1858,15 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     // Or complain if the type doesn’t match.
     else {
         Type ret = value.invalid() ? Type::VoidTy : value.get()->type;
-        if (ret != proc->return_type()) Error(
-            loc,
-            "Return type '{}' does not match procedure return type '{}'",
-            ret,
-            proc->return_type()
-        );
+        if (ret != proc->return_type()) {
+            value = nullptr;
+            Error(
+                loc,
+                "Return type '{}' does not match procedure return type '{}'",
+                ret,
+                proc->return_type()
+            );
+        }
     }
 
     // Perform any necessary conversions.
@@ -2522,16 +2417,7 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     // Now that the type has been deduced (if necessary), we can check
     // if we can even create a variable of this type.
     decl->type = AdjustVariableType(decl->type, decl->location());
-    bool complete = IsCompleteType(decl->type);
-    if (not decl->type or not complete) {
-        if (not complete) Error(
-            decl->location(),
-            "Cannot declare variable of type '{}' that has not been fully defined yet",
-            decl->type
-        );
-
-        return decl->set_invalid();
-    }
+    if (not decl->type) return decl->set_invalid();
 
     // Then, perform initialisation.
     //
@@ -2678,7 +2564,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
             // cycle checking.
             if (not complete) Error(
                 f->loc,
-                "Cannot declare field of type '{}' that has not been fully defined yet",
+                "Cannot declare field of incomplete type '{}'",
                 ty
             );
 

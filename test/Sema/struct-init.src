@@ -53,3 +53,15 @@ var x = NestedLiteralInit2(NestedLiteralInit1(1), 1);
 var y = NestedLiteralInit2(1, NestedLiteralInit1(1));
 var z = NestedLiteralInit2(1, 1);
 }
+
+{
+struct x { i64 a; }
+struct y {
+    i64 a; // expected-note: In initialiser for field 'a'
+    i64 b;
+    i64 c;
+}
+
+var a = x(1);
+y d = a; // expected-error: Cannot convert expression of type 'x' to 'i64'
+}

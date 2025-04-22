@@ -1,10 +1,11 @@
 #ifndef SRCC_CORE_DIAGNOSTICS_HH
 #define SRCC_CORE_DIAGNOSTICS_HH
 
+#include <srcc/Core/Core.hh>
+#include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Core/Token.hh>
 #include <srcc/Core/Utils.hh>
-#include <srcc/Core/Core.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
@@ -14,6 +15,8 @@ class Diagnostic;
 class DiagnosticsEngine;
 class StreamingDiagnosticsEngine;
 class VerifyDiagnosticsEngine;
+
+class DiagsProducerBase;
 
 template <typename ErrRetTy>
 class DiagsProducer;
@@ -30,13 +33,14 @@ class srcc::Diagnostic {
 public:
     /// Diagnostic severity.
     enum struct Level : u8 {
+        Ignored, ///< Do not emit this.
         Note,    ///< Informational note.
         Warning, ///< Warning, but no hard error.
         Error,   ///< Hard error. Program is ill-formed.
         ICE,     ///< Internal compiler error. Usually used for things we don’t support yet.
     };
 
-    Level level;
+    Level level = Level::Ignored;
     Location where;
 
     /// Main diagnostic message.
@@ -47,6 +51,9 @@ public:
 
     /// Extra locations to print.
     SmallVector<std::pair<std::string, Location>, 0> extra_locations;
+
+    /// Create an empty diagnostic.
+    Diagnostic() = default;
 
     /// Create a diagnostic.
     Diagnostic(Level lvl, Location where, std::string msg, std::string extra = "");
@@ -61,9 +68,51 @@ public:
     ) : Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)} {}
 };
 
+/// Mixin to provide helpers for creating errors.
+class srcc::DiagsProducerBase {
+public:
+    template <typename... Args>
+    static auto CreateError(
+        Location where,
+        std::format_string<Args...> fmt,
+        Args&&... args
+    ) -> Diagnostic {
+        return Diagnostic(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    static auto CreateICE(
+        Location where,
+        std::format_string<Args...> fmt,
+        Args&&... args
+    ) -> Diagnostic {
+        return Diagnostic(Diagnostic::Level::ICE, where, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    static auto CreateNote(
+        Location where,
+        std::format_string<Args...> fmt,
+        Args&&... args
+    ) -> Diagnostic {
+        return Diagnostic(Diagnostic::Level::Note, where, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    static auto CreateWarning(
+        Location where,
+        std::format_string<Args...> fmt,
+        Args&&... args
+    ) -> Diagnostic {
+        return Diagnostic(Diagnostic::Level::Warning, where, fmt, std::forward<Args>(args)...);
+    }
+};
+
 /// Mixin to provide helper functions to issue diagnostics.
 template <typename ErrRetTy = void>
-class srcc::DiagsProducer {
+class srcc::DiagsProducer : public DiagsProducerBase {
+    using Base = DiagsProducerBase;
+
 public:
     template <typename... Args>
     auto Error(
@@ -72,7 +121,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> ErrRetTy {
-        This.Diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        This.diags().report(Base::CreateError(where, fmt, std::forward<Args>(args)...));
         return ErrRetTy();
     }
 
@@ -83,7 +132,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> ErrRetTy {
-        This.Diag(Diagnostic::Level::ICE, where, fmt, std::forward<Args>(args)...);
+        This.diags().report(Base::CreateICE(where, fmt, std::forward<Args>(args)...));
         return ErrRetTy();
     }
 
@@ -94,7 +143,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.Diag(Diagnostic::Level::Note, loc, fmt, std::forward<Args>(args)...);
+        This.diags().report(Base::CreateNote(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
@@ -104,7 +153,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.Diag(Diagnostic::Level::Warning, loc, fmt, std::forward<Args>(args)...);
+        This.diags().report(Base::CreateWarning(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>

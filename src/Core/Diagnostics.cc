@@ -15,6 +15,7 @@ using namespace srcc;
 static auto Colour(Diagnostic::Level kind) -> char {
     using Level = Diagnostic::Level;
     switch (kind) {
+        case Level::Ignored: Unreachable();
         case Level::ICE: return '5';
         case Level::Warning: return '3';
         case Level::Note: return '2';
@@ -27,6 +28,7 @@ static auto Colour(Diagnostic::Level kind) -> char {
 static auto Name(Diagnostic::Level kind) -> std::string_view {
     using Level = Diagnostic::Level;
     switch (kind) {
+        case Level::Ignored: Unreachable();
         case Level::ICE: return "Internal Compiler Error";
         case Level::Error: return "Error";
         case Level::Warning: return "Warning";
@@ -376,6 +378,7 @@ Diagnostic::Diagnostic(Level lvl, Location where, std::string msg, std::string e
 //  Streaming Diagnostics Engine
 // ============================================================================
 void DiagnosticsEngine::report(Diagnostic&& diag) {
+    if (diag.level == Diagnostic::Level::Ignored) return;
     if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
         error_flag.store(true, std::memory_order_relaxed);
     report_impl(std::move(diag));

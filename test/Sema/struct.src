@@ -12,7 +12,7 @@ struct S {
 
 S a;
 S b;
-S2 c; // expected-error: Cannot declare variable of type 'S2' that has not been fully defined yet
+S2 c; // expected-error: Cannot create instance of incomplete type 'S2'
 
 struct S2 {
     S a;
@@ -38,11 +38,11 @@ struct ZeroSized {
 }
 
 struct Recursive {
-    Recursive r; // expected-error: Cannot declare field of type 'Recursive' that has not been fully defined yet
+    Recursive r; // expected-error: Cannot declare field of incomplete type 'Recursive'
 }
 
 struct MutuallyRecursive1 {
-    MutuallyRecursive2 r; // expected-error: Cannot declare field of type 'MutuallyRecursive2' that has not been fully defined yet
+    MutuallyRecursive2 r; // expected-error: Cannot declare field of incomplete type 'MutuallyRecursive2'
 }
 
 struct MutuallyRecursive2 {

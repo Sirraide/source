@@ -1,9 +1,8 @@
 // V %srcc --sema --verify %s
 program test;
 
-// expected-note@+2: Parameter declared here
-// expected-note@+1: Declared here
-proc add($T a, T b) = a + b;
+// expected-note@+1: In argument to parameter 'b'
+proc add($T a, T b) = a + b; // expected-note: Declared here
 proc add2(T a, $T b) = a + b;
 proc add3($T a, $T b) = a + b; // expected-note: Declared here
 proc add4($T a, $U b) = a + b; // expected-error: Invalid operation: + between int and bool
@@ -14,6 +13,6 @@ add3(1, 2);
 add4(1, 2);
 
 add(1); // expected-error: Procedure 'add' expects 2 arguments, got 1
-add(1, true); // expected-error: Argument of type 'bool' does not match expected type 'int'
+add(1, true); // expected-error: Cannot convert expression of type 'bool' to 'int'
 add3(1, true); // expected-error: Template argument substitution failed
 add4(1, true);

@@ -55,7 +55,7 @@ private:
     auto LoadModuleFromArchive(StringRef name, Location import_loc) -> Opt<ImportHandle>;
 };
 
-class srcc::Sema : DiagsProducer<std::nullptr_t> {
+class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
 
     class Importer;
@@ -122,33 +122,68 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         ~EnterProcedure() { info.es.S.proc_stack.pop_back(); }
     };
 
+    /// A (possibly empty) sequence of conversions applied to a type.
+    struct ConversionSequence;
+
     /// A conversion from one type to another.
     struct Conversion {
+        struct StructInitData {
+            StructType* ty;
+            std::vector<ConversionSequence> field_convs;
+        };
+
         enum struct Kind : u8 {
-            LValueToSRValue,
+            DefaultInit,
             IntegralCast,
-            SelectOverload,
+            LValueToSRValue,
             MaterialisePoison,
+            SelectOverload,
+            StructInit,
         };
 
         Kind kind;
-        union {
-            TypeAndValueCategory ty_and_val;
-            u16 index{};
-        };
+        Variant< // clang-format off
+            TypeAndValueCategory,
+            StructInitData,
+            u32
+        > data; // clang-format on
 
         Conversion(Kind kind) : kind{kind} {}
-        Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, ty_and_val{ty, val} {}
-        Conversion(Kind kind, u16 index) : kind{kind}, index{index} {}
+        Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
+        Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
+        Conversion(Kind kind, StructInitData conversions) : kind{kind}, data{std::move(conversions)} {}
 
+        static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
-        static auto SelectOverload(u16 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
+        static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
+        static auto StructInit(StructInitData conversions) -> Conversion {
+            return Conversion{Kind::StructInit, std::move(conversions)};
+        }
+
+        Type type() const { return data.get<TypeAndValueCategory>().type(); }
+        auto value_category() const -> ValueCategory {
+            return data.get<TypeAndValueCategory>().value_category();
+        }
     };
 
-    /// A (possibly empty) sequence of conversions applied to a type.
-    using ConversionSequence = SmallVector<Conversion, 1>;
+    struct ConversionSequence {
+        SmallVector<Conversion, 1> conversions;
+        void add(Conversion conv) { conversions.push_back(std::move(conv)); }
+        u32 badness();
+    };
+
+    /// Result of building a conversion sequence.
+    struct ConversionSequenceOrDiags {
+        using Diags = SmallVector<Diagnostic, 2>;
+        std::expected<ConversionSequence, Diags> result;
+        ConversionSequenceOrDiags(ConversionSequence result) : result{result} {}
+        ConversionSequenceOrDiags(Diags diags) : result{std::unexpected(std::move(diags))} {}
+        ConversionSequenceOrDiags(Diagnostic diag) : result{std::unexpected(Diags{})} {
+            result.error().push_back(std::move(diag));
+        }
+    };
 
     /// The result of name lookup.
     struct LookupResult {
@@ -291,41 +326,10 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         // There was an error during deduction, but we do have a SubstitutionInfo object.
         struct DeductionError {};
 
-        // An lvalue was required by the parameter intent, but an
-        // rvalue found.
-        struct LValueIntentMismatch {
-            // Index of the argument which caused the mismatch.
-            u32 mismatch_index;
-        };
-
-        // One of the arguments is an overload set, and we failed
-        // to match any of the overloads against a parameter. This
-        // has information about why each of the overloads didn’t
-        // match. Because this only performs a subset of overload
-        // resolution, it only needs to deal with a subset of failure
-        // reasons.
-        struct NestedResolutionFailure {
-            // Index of the argument which contains this overload set.
-            u32 mismatch_index;
-        };
-
-        // Type was incomplete.
-        struct IncompleteType {
+        // We failed to initialise a parameter.
+        struct ParamInitFailed {
+            ConversionSequenceOrDiags::Diags diags;
             u32 param_index;
-        };
-
-        // An lvalue parameter requires a value of the same type to be
-        // passed, but that wasn’t the case.
-        struct SameTypeLValueRequired {
-            // Index of the argument which caused the mismatch.
-            u32 mismatch_index;
-        };
-
-        // Candidate for which there was something wrong with the arguments;
-        // used for generic argument-related failures.
-        struct TypeMismatch {
-            // Which argument rendered it not viable.
-            u32 mismatch_index;
         };
 
         // The procedure (template) that this candidate represents.
@@ -339,12 +343,8 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
         using Status = Variant< // clang-format off
             Viable,
             ArgumentCountMismatch,
-            IncompleteType,
-            DeductionError,
-            LValueIntentMismatch,
-            NestedResolutionFailure,
-            SameTypeLValueRequired,
-            TypeMismatch
+            ParamInitFailed,
+            DeductionError
         >; // clang-format on
         Status status = Viable{};
 
@@ -424,10 +424,28 @@ private:
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
 
+    /// Check that a type is valid for a variable declaration.
+    [[nodiscard]] Type AdjustVariableType(Type ty, Location loc);
+
+    /// Apply a conversion to an expression or list of expressions.
+    void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc);
+    [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, Location loc) -> Expr*;
+
+    /// Apply a conversion sequence to an expression.
+    [[nodiscard]] auto ApplyConversionSequence(
+        ArrayRef<Expr*> exprs,
+        const ConversionSequence& seq,
+        Location loc
+    ) -> Expr*;
+
     /// Build an initialiser for an aggregate type.
     ///
     /// This should not be called directly; call BuildInitialiser() instead.
-    auto BuildAggregateInitialiser(StructType* s, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
+    auto BuildAggregateInitialiser(
+        StructType* s,
+        ArrayRef<Expr*> args,
+        Location loc
+    ) -> ConversionSequenceOrDiags;
 
     /// Build an rvalue that can initialise a variable using a
     /// list of arguments.
@@ -436,17 +454,18 @@ private:
     /// if there is one; in all other cases, leave it as 'Move'
     /// because that is the default for assignment.
     ///
-    /// The expression that results from the conversion is an rvalue
-    /// suitable for initialising a variable of the given type iff it
-    /// is an srvalue, or an expression that, when provided with a
-    /// memory location, evaluates an mrvalue into that location.
+    /// The expression returned from this is suitable for initialising
+    /// a variable of the given type, i.e. codegen knows what to do with
+    /// it as the argument to PerformVariableInitialisation().
     ///
     /// \param ctx The initialisation context; this determines whether
     ///   any required conversions are applied immediately, or deferred
     ///   until a later point in time.
     ///
     /// \param var_type The type of the variable to be initialised.
-    /// \param arg The argument to initialise it with.
+    /// \param args The initialisation arguments; can be empty for default
+    ///    initialisation.
+    ///
     /// \param intent If the variable is a parameter, its intent.
     ///
     /// \param cc If this is an argument to a call, the calling convention
@@ -455,39 +474,24 @@ private:
     /// \param in_call Whether this is argument passing.
     ///
     /// \return Whether initialisation was successful.
-    template <typename InitContext>
-    bool BuildInitialiser(
-        InitContext& ctx,
+    auto BuildConversionSequence(
         Type var_type,
-        Expr* arg,
+        ArrayRef<Expr*> args,
+        Location init_loc,
         Intent intent = Intent::Move,
         CallingConvention cc = CallingConvention::Source,
         bool in_call = false
-    );
+    ) -> ConversionSequenceOrDiags;
 
-    /// Build and initialiser immediately, returning the
-    /// computed initialiser or nullptr on error.
+    /// Overload of BuildInitialiser() that builds the initialiser immediately.
     auto BuildInitialiser(
         Type var_type,
-        Expr* arg,
-        Intent intent,
-        CallingConvention cc,
-        Location loc = {}
+        ArrayRef<Expr*> args,
+        Location loc,
+        bool in_call = false,
+        Intent intent = Intent::Move,
+        CallingConvention cc = CallingConvention::Source
     ) -> Ptr<Expr>;
-
-    /// Build an initialiser immediately. 'args' can be empty to
-    /// attempt to build an empty initialiser.
-    auto BuildInitialiser(Type var_type, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
-
-    /// Check that a type is valid for a variable declaration.
-    [[nodiscard]] Type AdjustVariableType(Type ty, Location loc);
-
-    /// Apply a conversion to an expression.
-    [[nodiscard]] auto ApplyConversion(Expr* e, Conversion conv) -> Expr*;
-
-    /// Apply a conversion sequence to an expression.
-    [[nodiscard]] auto ApplyConversionSequence(Expr* e, ConversionSequence& seq) -> Expr*;
-
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
@@ -574,7 +578,7 @@ private:
 
     /// Issue an error about overload resolution failure.
     void ReportOverloadResolutionFailure(
-        ArrayRef<Candidate> candidates,
+        MutableArrayRef<Candidate> candidates,
         ArrayRef<Expr*> call_args,
         Location call_loc,
         u32 final_badness
