@@ -2094,15 +2094,28 @@ Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
 
 auto Sema::Translate(
     const LangOpts& opts,
-    ArrayRef<ParsedModule::Ptr> modules,
+    ParsedModule::Ptr preamble,
+    SmallVector<ParsedModule::Ptr> modules,
     StringMap<ImportHandle> imported_modules
 ) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
     Sema S{first->context()};
-    S.M = TranslationUnit::Create(first->context(), opts, first->name, first->is_module);
-    S.parsed_modules = modules;
+
+    // Create the TU.
+    S.M = TranslationUnit::Create(
+        first->context(),
+        opts,
+        first->name,
+        first->is_module
+    );
+
+    // Take ownership of the modules.
+    if (preamble) S.parsed_modules.push_back(std::move(preamble));
+    for (auto& m : modules) S.parsed_modules.push_back(std::move(m));
     S.M->imports = std::move(imported_modules);
+
+    // Translate it.
     S.Translate();
     return std::move(S.M);
 }

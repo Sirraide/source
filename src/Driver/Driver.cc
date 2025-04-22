@@ -170,7 +170,11 @@ int Driver::run_job() {
         return ctx.diags().has_error();
     }
 
-    // Parse files in parallel.
+    // Parse the preamble.
+    ParsedModule::Ptr preamble;
+    if (fs::File::Exists(opts.preamble_path)) preamble = ParseFile(opts.preamble_path, opts.verify);
+
+    // Parse files.
     SmallVector<ParsedModule::Ptr> parsed_modules;
     for (const auto& f : files) parsed_modules.push_back(ParseFile(f, opts.verify));
 
@@ -221,7 +225,13 @@ int Driver::run_job() {
     // module descriptions multiple times might not be a bottleneck (but C++
     // headers probably would be...).~~ Irrelevant. We need to import them into
     // the module that uses them anyway.
-    auto tu = Sema::Translate(lang_opts, parsed_modules, std::move(imported));
+    auto tu = Sema::Translate(
+        lang_opts,
+        std::move(preamble),
+        std::move(parsed_modules),
+        std::move(imported)
+    );
+
     if (a == Action::Sema) {
         ctx.diags().flush();
         if (opts.verify) return Verify();

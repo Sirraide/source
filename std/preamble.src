@@ -1,0 +1,33 @@
+__srcc_preamble__
+
+/// Implementation of '**' for builtin integer types.
+proc __srcc_exp_i (in $T base, copy $T exp) -> T {
+    // Anything to the power of 0 is 1.
+    if exp == 0 then return 1;
+
+    // Raising 0 to any non-negative power is 0. Raising 0 to a negative
+    // power is an error since that is just division by zero.
+    if base == 0 {
+        assert exp >= 0, "attempting to raise 0 to a negative power";
+        return 0;
+    }
+
+    // Raising to a negative power.
+    //
+    // For any number that isn't -1 or 1, this results in a fraction in
+    // the interval (-1, 1), which for integers is just 0.
+    if exp < 0 {
+        if base == -1 return (if exp & 1 != 0 then -1 else 1);
+        return if base == 1 then 1 else 0;
+    }
+
+    // Perform the exponentiation.
+    var v = base;
+    while exp != 1 {
+        v *= base;
+        exp -= 1;
+    }
+
+    // We're done once 'exp' is 1.
+    return v;
+}

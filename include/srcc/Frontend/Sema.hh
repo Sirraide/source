@@ -365,7 +365,7 @@ class srcc::Sema : DiagsProducer<std::nullptr_t> {
 
     Context& ctx;
     TranslationUnit::Ptr M;
-    ArrayRef<ParsedModule::Ptr> parsed_modules;
+    SmallVector<ParsedModule::Ptr> parsed_modules;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
@@ -394,7 +394,8 @@ public:
     /// @return The combined module, or `nullptr` if there was an error.
     [[nodiscard]] static auto Translate(
         const LangOpts& opts,
-        ArrayRef<ParsedModule::Ptr> modules,
+        ParsedModule::Ptr preamble,
+        SmallVector<ParsedModule::Ptr> modules,
         StringMap<ImportHandle> imported_modules
     ) -> TranslationUnit::Ptr;
 

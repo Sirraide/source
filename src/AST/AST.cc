@@ -213,7 +213,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         case Kind::BinaryExpr: {
             auto b = cast<BinaryExpr>(e);
-            PrintBasicNode(e, "BinaryExpr", [&] { print("%1({}%)", b->op); });
+            PrintBasicNode(e, "BinaryExpr", [&] { print("%1({}%)", utils::Escape(Spelling(b->op), false, true)); });
             SmallVector<Stmt*, 2> children{b->lhs, b->rhs};
             PrintChildren(children);
         } break;

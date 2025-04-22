@@ -988,8 +988,14 @@ void Parser::ParseFile() {
 }
 
 // <header> ::= ( "program" | "module" ) <module-name> ";"
+//   [ext]     | __srcc_preamble__
 // <module-name> ::= IDENTIFIER
 void Parser::ParseHeader() {
+    // Keep the preamble as a non-module to disallow e.g. 'export' since
+    // it may end up being included in a program.
+    if (ConsumeContextual(mod->program_or_module_loc, "__srcc_preamble__"))
+        return;
+
     auto module = ConsumeContextual(mod->program_or_module_loc, "module");
     if (not module and not ConsumeContextual(mod->program_or_module_loc, "program")) {
         Error("Expected '%1(program%)' or '%1(module%)' directive at start of file");

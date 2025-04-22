@@ -24,6 +24,7 @@ Location::Location(Location a, Location b) {
     if (not a.is_valid() or not b.is_valid()) return;
     pos = std::min<u32>(a.pos, b.pos);
     len = u16(std::max<u32>(a.pos + a.len, b.pos + b.len) - pos);
+    file_id = a.file_id;
 }
 
 auto Location::after() const -> Location {

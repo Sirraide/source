@@ -51,6 +51,9 @@ public:
         /// Output file name override. Only valid for programs.
         std::string output_file_name;
 
+        /// Preamble to include at the start of every module or program.
+        std::string preamble_path;
+
         /// Directories to search for modules.
         std::vector<std::string> module_search_paths;
 

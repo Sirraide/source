@@ -24,6 +24,7 @@ using options = clopts< // clang-format off
     option<"--mo", "Path to a directory where compiled modules will be placed (default: '.')">,
     option<"-o", "Override the default output file name">,
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
+    option<"--preamble", "Override preamble">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
@@ -117,6 +118,7 @@ int main(int argc, char** argv) {
     Driver driver{{// clang-format off
         .module_output_path = opts.get_or<"--mo">("."),
         .output_file_name = opts.get_or<"-o">(""),
+        .preamble_path = opts.get_or<"--preamble">(SOURCE_PROJECT_DIR_NAME "/std/preamble.src"),
         .module_search_paths = std::move(module_search_paths),
 
         .link_objects = std::vector<std::string>{
