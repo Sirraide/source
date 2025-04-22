@@ -66,6 +66,17 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) : Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)} {}
+
+    /// Render diagnostics to text.
+    ///
+    /// \p render_colours If false, keep formatting codes in the
+    ///    output rather than rendering it.
+    static auto Render(
+        const Context& ctx,
+        ArrayRef<Diagnostic> diagnostics,
+        usz cols,
+        bool render_colours = true
+    ) -> std::string;
 };
 
 /// Mixin to provide helpers for creating errors.

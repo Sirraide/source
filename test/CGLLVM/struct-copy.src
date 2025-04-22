@@ -36,7 +36,7 @@ var d = c;
 // +     ret
 // + }
 
-//L + define fastcc void @__src_main() {
+//L * define fastcc void @__src_main() {
 //L + entry:
 //L +   %0 = alloca [8 x i8], align 8
 //L +   %1 = alloca [8 x i8], align 8

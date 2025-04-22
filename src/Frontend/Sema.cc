@@ -1247,8 +1247,9 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             },
 
-            [&](Candidate::ParamInitFailed&) {
-                message += "TODO: Format this";
+            [&](Candidate::ParamInitFailed& i) {
+                message += std::format("In argument to parameter #{}:\n", i.param_index);
+                message += utils::Indent(Diagnostic::Render(ctx, i.diags, diags().cols() - 5, false), 2);
             },
 
             [&](Candidate::DeductionError) {
@@ -1260,6 +1261,9 @@ void Sema::ReportOverloadResolutionFailure(
         c.status.visit(V);
     }
 
+    // Remove a trailing newline because rendering nested diagnostics
+    // sometimes adds one too many.
+    if (message.back() == '\n') message.pop_back();
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,

@@ -37,7 +37,7 @@ static auto Name(Diagnostic::Level kind) -> std::string_view {
     Unreachable();
 }
 
-auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
+static auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
     static constexpr usz TabSize = 4;
     static constexpr std::u32string_view Tab = U"    ";
 
@@ -59,13 +59,13 @@ auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
     return {std::move(buf), sz};
 }
 
-auto TextWidth(std::u32string_view data) -> usz {
+static auto TextWidth(std::u32string_view data) -> usz {
     u32stream text{data};
     auto [_, sz] = TakeColumns(text, std::numeric_limits<usz>::max());
     return sz;
 }
 
-auto FormatDiagnostic(
+static auto FormatDiagnostic(
     const Context& ctx,
     const Diagnostic& diag,
     Opt<Location> previous_loc
@@ -199,10 +199,11 @@ auto FormatDiagnostic(
     return out;
 }
 
-auto RenderDiagnostics(
+auto Diagnostic::Render(
     const Context& ctx,
     ArrayRef<Diagnostic> backlog,
-    usz cols
+    usz cols,
+    bool render_colours
 ) -> std::string {
     bool use_colours = ctx.use_colours;
 
@@ -219,7 +220,8 @@ auto RenderDiagnostics(
     Opt<Location> previous_loc;
     for (auto [di, diag] : enumerate(backlog)) {
         // Render the diagnostic text.
-        auto out = text::RenderColours(use_colours, FormatDiagnostic(ctx, diag, previous_loc));
+        auto out = FormatDiagnostic(ctx, diag, previous_loc);
+        if (render_colours) out = text::RenderColours(use_colours, out);
 
         // Then, indent everything properly.
         auto lines = stream{out}.split("\n");
@@ -406,7 +408,7 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     if (backlog.empty()) return;
     if (printed) stream << "\n";
     printed++;
-    stream << RenderDiagnostics(ctx, backlog, cols());
+    stream << Diagnostic::Render(ctx, backlog, cols());
     backlog.clear();
 }
 
