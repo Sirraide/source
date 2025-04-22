@@ -8,6 +8,10 @@ proc exp (in int a, in int b) {
     sink(a ** b);
 }
 
+proc exp_ass (copy int a, in int b) {
+    a **= b;
+}
+
 // * proc __src_main {
 // + entry:
 // +     ret
@@ -141,4 +145,21 @@ proc exp (in int a, in int b) {
 // + bb27:
 // +     %26 = load int, %3, align 8
 // +     ret %26
+// + }
+// +
+// + proc _S7exp_assFvx3ixiE (copy int %0, in int %1) {
+// +     %2 = int
+// +
+// + entry:
+// +     store int to %2, %0, align 8
+// +     %3 = call int^ _S$19__srcc_exp_assign_iFRix2ixiE(%2, %1)
+// +     ret
+// + }
+// +
+// + proc _S$19__srcc_exp_assign_iFRix2ixiE (inout int %0, in int %1) -> int^ {
+// + entry:
+// +     %2 = load int, %0, align 8
+// +     %3 = call int _S$12__srcc_exp_iFixix3iE(%2, %1)
+// +     store int to %0, %3, align 8
+// +     ret %0
 // + }

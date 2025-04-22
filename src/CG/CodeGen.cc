@@ -799,6 +799,9 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
+        case CastExpr::Deref:
+            return val; // This is a no-op like prefix '^'.
+
         case CastExpr::Integral:
             return CreateSICast(val, expr->type);
 

@@ -314,13 +314,16 @@ public:
 class srcc::CastExpr final : public Expr {
 public:
     enum class CastKind : u8 {
+        /// Convert an srvalue 'T^' to an lvalue 'T'.
+        Deref,
+
+        /// Cast an srvalue integer to an srvalue integer.
+        Integral,
+
         /// Convert an lvalue to an srvalue.
         ///
         /// This is only valid for types that can be srvalues.
         LValueToSRValue,
-
-        /// Cast an srvalue integer to an srvalue integer.
-        Integral,
 
         /// Materialise a poison value of the given type.
         MaterialisePoisonValue,
@@ -343,6 +346,17 @@ public:
         arg{expr},
         kind{kind},
         implicit{implicit} {}
+
+    static auto Dereference(TranslationUnit& tu, Expr* expr) -> CastExpr* {
+        return new (tu) CastExpr{
+            cast<PtrType>(expr->type)->elem(),
+            Deref,
+            expr,
+            expr->location(),
+            true,
+            LValue
+        };
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::CastExpr; }
 };

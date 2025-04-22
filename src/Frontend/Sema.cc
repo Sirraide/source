@@ -1455,8 +1455,8 @@ auto Sema::BuildBinaryExpr(
         return Build(comparison ? Type::BoolTy : lhs->type);
     };
 
-    auto BuildExpCall = [&] -> Ptr<Expr> {
-        auto ref = LookUpName(global_scope(), String("__srcc_exp_i"), loc, true);
+    auto BuildExpCall = [&](String exp_fun) -> Ptr<Expr> {
+        auto ref = LookUpName(global_scope(), exp_fun, loc, true);
         if (not ref) return nullptr;
         return BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
     };
@@ -1491,7 +1491,7 @@ auto Sema::BuildBinaryExpr(
         // This is implemented as a function template.
         case Tk::StarStar: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-            return BuildExpCall();
+            return BuildExpCall("__srcc_exp_i");
         }
 
         // Arithmetic operation.
@@ -1584,8 +1584,8 @@ auto Sema::BuildBinaryExpr(
             if (not rhs) return nullptr;
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
-            // '**=' is a bit annoying since we can’t evaluate the lhs twice here.
-            return ICE(loc, "TODO: Support '**='");
+            // '**=' requires a separate function since it needs to return the lhs.
+            return CastExpr::Dereference(*M, TRY(BuildExpCall("__srcc_exp_assign_i")));
         }
     }
 }
@@ -1974,7 +1974,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     if (auto val = value.get_or_null()) {
         if (val->type == Type::VoidTy) {
             // Nop.
-        } else if (val->type == Type::IntTy or isa<IntType>(val->type)) {
+        } else if (val->type->rvalue_category() == Expr::SRValue) {
             value = LValueToSRValue(val);
         } else {
             ICE(loc, "Cannot compile this return type yet: {}", val->type);

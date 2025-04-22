@@ -15,3 +15,8 @@ assert ^^b == 4;
 assert i == 5;
 assert ^a == 5;
 assert ^^b == 5;
+
+int j = 4;
+int k = 5;
+j **= k;
+assert j == 1024;

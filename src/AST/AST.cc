@@ -281,6 +281,7 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(c, "CastExpr");
             print(" {} ", c->type->print());
             switch (c->kind) {
+                case CastExpr::Deref: print("deref"); break;
                 case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
