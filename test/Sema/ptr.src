@@ -1,0 +1,24 @@
+// V %srcc --sema --verify %s
+program test;
+
+int i;
+int^ a = &i;
+int^^ b = &a;
+
+a = i; // expected-error: Cannot convert expression of type 'int' to 'int^'
+b = i; // expected-error: Cannot convert expression of type 'int' to 'int^^'
+b = a; // expected-error: Cannot convert expression of type 'int^' to 'int^^'
+a = b; // expected-error: Cannot convert expression of type 'int^^' to 'int^'
+a = ^b;
+^a;
+^^b;
+^^a; // expected-error: Cannot dereference value of non-pointer type 'int'
+^^^b; // expected-error: Cannot dereference value of non-pointer type 'int'
+&^a;
+^&a;
+&1; // expected-error: Cannot take address of non-lvalue
+^1; // expected-error: Cannot dereference value of non-pointer type 'int'
+a = &1; // expected-error: Cannot take address of non-lvalue
+a = &(if true then i else i);
+a = &(if true then 1 else i); // expected-error: Cannot take address of non-lvalue
+a = &(if true then i else 2); // expected-error: Cannot take address of non-lvalue

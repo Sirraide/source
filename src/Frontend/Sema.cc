@@ -2023,6 +2023,25 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
     switch (op) {
         default: Unreachable("Invalid unary operator: {}", op);
 
+        // Lvalue -> Pointer
+        case Tk::Ampersand: {
+            if (not operand->lvalue()) return Error(loc, "Cannot take address of non-lvalue");
+            return Build(PtrType::Get(*M, operand->type), Expr::SRValue);
+        }
+
+        // Pointer -> Lvalue.
+        case Tk::Caret: {
+            auto ptr = dyn_cast<PtrType>(operand->type);
+            if (not ptr) return Error(
+                loc,
+                "Cannot dereference value of non-pointer type '{}'",
+                operand->type
+            );
+
+            operand = LValueToSRValue(operand);
+            return Build(ptr->elem(), Expr::LValue);
+        }
+
         // Boolean negation.
         case Tk::Not: {
             if (not MakeSRValue(Type::BoolTy, operand, "Operand", "not")) return {};
@@ -2828,8 +2847,15 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     );
 }
 
+auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
+    auto ty = AdjustVariableType(TranslateType(stmt->elem), stmt->loc);
+    if (not ty) return Type();
+    return PtrType::Get(*M, ty);
+}
+
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
     auto ty = AdjustVariableType(TranslateType(parsed->elem), parsed->loc);
+    if (not ty) return Type();
     return SliceType::Get(*M, ty);
 }
 
@@ -2846,11 +2872,12 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
         case K::BuiltinType: t = TranslateBuiltinType(cast<ParsedBuiltinType>(parsed)); break;
+        case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
         case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
+        case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
+        case K::PtrType: t = TranslatePtrType(cast<ParsedPtrType>(parsed)); break;
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
-        case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
-        case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
         default: Error(parsed->loc, "Expected type"); break;
     }
 

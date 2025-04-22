@@ -1,0 +1,15 @@
+// V %srcc --parse --verify %s
+// expected-no-diagnostics
+program test;
+
+int^ a;
+int^^^^^ b;
+&a;
+^b;
+&^&^&^&^a;
+&&a;
+^^b;
+&&&a;
+^^^b;
+a&b;
+a&&b;

@@ -227,6 +227,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::BuiltinType:
         case Kind::IntType:
         case Kind::ProcType:
+        case Kind::PtrType:
         case Kind::SliceType:
         case Kind::TemplateType:
             print("%1(Type%) {}\n", s->dump_as_type());
@@ -432,6 +433,12 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 Append(p->ret_type);
             } break;
 
+            case Kind::PtrType: {
+                auto p = cast<ParsedPtrType>(type);
+                Append(p->elem);
+                out += "%1(^%)";
+            } break;
+
             case Kind::SliceType: {
                 auto s = cast<ParsedSliceType>(type);
                 Append(s->elem);
@@ -591,8 +598,10 @@ constexpr bool IsPostfix(Tk t) {
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
+        case Tk::Ampersand:
         case Tk::Assert:
         case Tk::Bool:
+        case Tk::Caret:
         case Tk::Eval:
         case Tk::False:
         case Tk::Identifier:
@@ -770,6 +779,8 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             return Error("Unexpected '%1({}%)'", tok->type);
 
         // <expr-prefix> ::= <prefix> <expr>
+        case Tk::Ampersand:
+        case Tk::Caret:
         case Tk::Minus:
         case Tk::Plus:
         case Tk::Not:
@@ -896,6 +907,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             ParsedIntType,
             ParsedBuiltinType,
             ParsedProcType,
+            ParsedPtrType,
             ParsedTemplateType,
             ParsedParenExpr
         >(lhs.get())) return ParseVarDecl(lhs.get()); // clang-format on
@@ -1486,6 +1498,11 @@ auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt> {
     // FIXME: This should just get merged into the expression parser.
     switch (tok->type) {
         default: return ty;
+        case Tk::Caret: {
+            ty = new (*this) ParsedPtrType(ty, {ty->loc, Next()});
+            return ParseTypeRest(ty);
+        }
+
         case Tk::LBrack: {
             Next();
             Location loc;

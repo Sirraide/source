@@ -639,6 +639,7 @@ private:
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
+    auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
     auto TranslateProcType(ParsedProcType* parsed) -> Type;
 
     template <typename... Args>
