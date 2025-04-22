@@ -1455,6 +1455,12 @@ auto Sema::BuildBinaryExpr(
         return Build(comparison ? Type::BoolTy : lhs->type);
     };
 
+    auto BuildExpCall = [&] -> Ptr<Expr> {
+        auto ref = LookUpName(global_scope(), String("__srcc_exp_i"), loc, true);
+        if (not ref) return nullptr;
+        return BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
+    };
+
     // Otherwise, each builtin operator needs custom handling.
     switch (op) {
         default: Unreachable("Invalid binary operator: {}", op);
@@ -1485,9 +1491,7 @@ auto Sema::BuildBinaryExpr(
         // This is implemented as a function template.
         case Tk::StarStar: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-            auto ref = LookUpName(global_scope(), String("__srcc_exp_i"), loc, true);
-            if (not ref) return nullptr;
-            return BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
+            return BuildExpCall();
         }
 
         // Arithmetic operation.
@@ -1552,46 +1556,36 @@ auto Sema::BuildBinaryExpr(
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
             // LHS must be an lvalue.
-            if (lhs->value_category != LValue) return Error(
-                lhs->location(),
-                "Invalid target for assignment"
-            );
+            if (lhs->value_category != LValue) {
+                // Issue a better diagnostic for 'in' parameters.
+                if (auto ref = dyn_cast<LocalRefExpr>(lhs->strip_parens())) {
+                    if (
+                        auto param = dyn_cast<ParamDecl>(ref->decl);
+                        param and param->intent() == Intent::In
+                    ) return Error(lhs->location(), "Cannot assign to '%1(in%)' parameter");
+                }
 
-            // Compound assignment.
-            if (op != Tk::Assign) {
-                // The right-hand side has to be convertible to the left, hand
-                if (lhs->type != rhs->type) return Error(
-                    loc,
-                    "Cannot assign '{}' to '{}'",
-                    rhs->type,
-                    lhs->type
-                );
-
-                // The RHS an RValue.
-                if (rhs->type->rvalue_category() == MRValue) return ICE(
-                    rhs->location(),
-                    "Sorry, assignment to a variable of type '{}' is not yet supported",
-                    rhs->type
-                );
-
-                rhs = LValueToSRValue(rhs);
-
-                // For arithmetic operations, both sides must be ints.
-                if (lhs->type != Type::IntTy) Error(
+                return Error(
                     lhs->location(),
-                    "Compound assignment operator '{}' is not supported for type '{}'",
-                    Spelling(op),
-                    lhs->type
+                    "Invalid target for assignment"
                 );
+            }
 
-                // The LHS is returned as an lvalue.
+            // Regular assignment.
+            if (op == Tk::Assign) {
+                if (auto init = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null()) rhs = init;
+                else return nullptr;
                 return Build(lhs->type, LValue);
             }
 
-            // Delegate to initialisation.
-            if (auto init = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null()) rhs = init;
-            else return nullptr;
-            return Build(lhs->type, LValue);
+            // Compound assignment.
+            if (not CheckIntegral()) return nullptr;
+            rhs = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null();
+            if (not rhs) return nullptr;
+            if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
+
+            // '**=' is a bit annoying since we can’t evaluate the lhs twice here.
+            return ICE(loc, "TODO: Support '**='");
         }
     }
 }

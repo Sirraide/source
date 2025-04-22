@@ -1,0 +1,6 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc x (in int a) {
+    a = 3; // expected-error: Cannot assign to 'in' parameter
+}

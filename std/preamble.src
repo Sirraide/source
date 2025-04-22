@@ -31,3 +31,9 @@ proc __srcc_exp_i (in $T base, copy $T exp) -> T {
     // We're done once 'exp' is 1.
     return v;
 }
+
+/// Implementation of '**=' for builtin integer types.
+// proc __srcc_exp_assign_i (inout $T base, copy $T exp) -> T^ {
+//     base = base ** exp;
+//     return &base;
+// }
