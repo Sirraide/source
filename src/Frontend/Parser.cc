@@ -881,6 +881,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedParenExpr{lhs.get(), {lparen, rparen}};
         } break;
 
+        case Tk::Bool:
         case Tk::Int:
         case Tk::IntegerType:
         case Tk::NoReturn:

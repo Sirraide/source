@@ -1,0 +1,13 @@
+// V %srcc --sema --verify %s
+program test;
+
+bool a = true;
+bool b = true;
+
+if a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?
+while a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?
+assert a = b; // expected-warning: Assignment in condition. Did you mean to write '=='?
+
+if a == b {}
+while a == b {}
+assert a == b;

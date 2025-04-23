@@ -223,6 +223,17 @@ auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
     return new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
 }
 
+bool Sema::MakeCondition(Expr*& e, StringRef op) {
+    if (auto ass = dyn_cast<BinaryExpr>(e); ass and ass->op == Tk::Assign)
+        Warn(e->location(), "Assignment in condition. Did you mean to write '=='?");
+
+    if (not MakeSRValue(Type::BoolTy, e, "Condition", op))
+        return false;
+
+    return true;
+}
+
+
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     auto init = TryBuildInitialiser(ty, e);
     if (init.invalid()) {
@@ -1275,8 +1286,7 @@ void Sema::ReportOverloadResolutionFailure(
 //  Building nodes.
 // ============================================================================
 auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr> {
-    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "assert"))
-        return {};
+    if (not MakeCondition(cond, "assert")) return {};
 
     // Message must be a string literal.
     // TODO: Allow other string-like expressions.
@@ -1712,8 +1722,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     if (cond->type == Type::NoReturnTy) return Build(Type::NoReturnTy, Expr::SRValue);
 
     // Condition must be a bool.
-    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "if"))
-        return {};
+    if (not MakeCondition(cond, "if")) return {};
 
     // If there is no else branch, or if either branch is not an expression,
     // the type of the 'if' is 'void'.
@@ -1888,7 +1897,7 @@ auto Sema::BuildStaticIfExpr(
     Location loc
 ) -> Ptr<Stmt> {
     // Otherwise, check this now.
-    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "static if")) return {};
+    if (not MakeCondition(cond, "static if")) return {};
     auto val = M->vm.eval(cond);
     if (not val) {
         Error(loc, "Condition of 'static if' must be a constant expression");
@@ -1977,7 +1986,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 }
 
 auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt> {
-    if (not MakeSRValue(Type::BoolTy, cond, "Condition", "while")) return {};
+    if (not MakeCondition(cond, "while")) return {};
     return new (*M) WhileStmt(cond, body, loc);
 }
 

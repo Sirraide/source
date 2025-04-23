@@ -508,9 +508,12 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
+    /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
+    [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
+
     /// Ensure that an expression is an srvalue of the given type. This is
     /// mainly used for expressions involving operators.
-    bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+    [[nodiscard]] bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
