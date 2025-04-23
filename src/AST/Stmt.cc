@@ -70,7 +70,7 @@ auto CallExpr::Create(
 
 ConstExpr::ConstExpr(
     TranslationUnit& tu,
-    eval::SRValue value,
+    eval::RValue value,
     Location location,
     Ptr<Stmt> stmt
 ) : Expr{Kind::ConstExpr, value.type(), SRValue, location},

@@ -133,7 +133,7 @@ private:
 
     auto EmitArithmeticOrComparisonOperator(Tk op, ir::Value* lhs, ir::Value* rhs, Location loc) -> ir::Value*;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(const eval::SRValue& val) -> ir::Value*;
+    auto EmitValue(const eval::RValue& val) -> ir::Value*;
 
     void EmitLocal(LocalDecl* decl);
 

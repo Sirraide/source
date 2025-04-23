@@ -20,11 +20,229 @@ using namespace srcc::eval;
 namespace ir = cg::ir;
 
 #define Val(x) (*({auto _v = ValImpl(x); if (not _v) return {}; _v.get(); }))
-#define TRY(x) do { if (not (x)) return {}; } while (false)
+#define TRY(x)                 \
+    do {                       \
+        if (not(x)) return {}; \
+    } while (false)
 
 // ============================================================================
-//  Value
+//  SRValue Representation
 // ============================================================================
+namespace {
+
+/// Virtual pointer to compile-time data.
+///
+/// We want to be able to pass numbers that behave like actual
+/// pointers (e.g. you can cast them to integers, add 1, cast
+/// them back, and then still dereference them); this means we
+/// can’t have any metadata in the actual pointer, so instead
+/// these ‘pointers’ are really virtual memory addresses that
+/// map to various internal buffers and data.
+class Pointer {
+public:
+    enum struct AddressSpace : u8 {
+        /// Pointer to a value on the stack.
+        Stack,
+
+        /// Pointer to a value on the heap.
+        Heap,
+
+        /// Pointer to readonly host memory.
+        Host,
+
+        /// Used to represent pointers to procedures.
+        Proc,
+    };
+
+private:
+    /// Pointer value.
+    uptr ptr : sizeof(void*) * 8 - 2 = 0;
+
+    /// Pointer address space.
+    uptr aspace : 2 = 0;
+
+    /// The actual numeric value that is stored is 1 + the actual
+    /// offset to make sure that the null pointer is never valid;
+    /// this also means that we need to subtract 1 when converting
+    /// to an integer or retrieving the actual pointer.
+    Pointer(uptr p, AddressSpace k) : ptr(p + 1), aspace(u8(k)) {}
+
+public:
+    Pointer() = default;
+
+    /// Create a Pointer from its raw encoding.
+    static auto FromRaw(uptr raw) -> Pointer {
+        return std::bit_cast<Pointer>(raw);
+    }
+
+    /// Create a heap pointer.
+    static auto Heap(usz virtual_offs) -> Pointer {
+        return {virtual_offs, AddressSpace::Heap};
+    }
+
+    /// Return a pointer to host memory.
+    static auto Host(usz virtual_offs) -> Pointer {
+        return Pointer{virtual_offs, AddressSpace::Host};
+    }
+
+    static auto Proc(u32 idx) -> Pointer {
+        return Pointer{idx, AddressSpace::Proc};
+    }
+
+    /// Create a stack pointer.
+    static auto Stack(usz stack_offs) -> Pointer {
+        return {stack_offs, AddressSpace::Stack};
+    }
+
+    /// Get the address space of this pointer.
+    [[nodiscard]] auto address_space() const -> AddressSpace {
+        return AddressSpace(aspace);
+    }
+
+    /// Encode the pointer in a uintptr_t.
+    [[nodiscard]] auto encode() const -> uptr {
+        return std::bit_cast<uptr>(*this);
+    }
+
+    /// Whether this is a heap pointer.
+    [[nodiscard]] bool is_heap_ptr() const {
+        return address_space() == AddressSpace::Heap;
+    }
+
+    /// Whether this points to the VM stack or heap.
+    [[nodiscard]] bool is_host_ptr() const {
+        return address_space() == AddressSpace::Host;
+    }
+
+    /// Whether this is the null pointer.
+    [[nodiscard]] bool is_null_ptr() const {
+        return ptr == 0;
+    }
+
+    /// Whether this is a procedure.
+    [[nodiscard]] bool is_proc_ptr() const {
+        return address_space() == AddressSpace::Proc;
+    }
+
+    /// Whether this is a stack pointer.
+    [[nodiscard]] bool is_stack_ptr() const {
+        return address_space() == AddressSpace::Stack;
+    }
+
+    /// Get the actual pointer value.
+    [[nodiscard]] auto value() const -> usz {
+        return ptr - 1;
+    }
+
+    /// Offset this pointer by an integer.
+    [[nodiscard]] auto operator+(usz offs) const -> Pointer {
+        Pointer p{*this};
+        p.ptr += offs;
+        return p;
+    }
+
+    /// Compute the difference between two pointers.
+    [[nodiscard]] auto operator-(Pointer other) const -> usz {
+        return ptr - other.ptr;
+    }
+
+    /// Compare two pointers in the same address space.
+    [[nodiscard]] auto operator<=>(const Pointer& other) const {
+        Assert(address_space() == other.address_space());
+        return ptr <=> other.ptr;
+    }
+
+    /// Check if two pointers are the same.
+    [[nodiscard]] auto operator==(const Pointer& other) const -> bool {
+        return encode() == other.encode();
+    }
+};
+
+struct SRClosure {
+    Pointer proc;
+    Pointer env;
+    bool operator==(const SRClosure& other) const = default;
+};
+
+struct SRSlice {
+    Pointer data;
+    APInt size;
+    bool operator==(const SRSlice& other) const = default;
+};
+
+/// A compile-time srvalue.
+///
+/// This is essentially a value that can be stored in a VM ‘virtual register’.
+class SRValue {
+    Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, std::monostate> value{std::monostate{}};
+    Type ty{Type::VoidTy};
+
+public:
+    SRValue() = default;
+    explicit SRValue(ir::Proc* proc);
+    explicit SRValue(std::same_as<bool> auto b) : value{b}, ty{Type::BoolTy} {}
+    explicit SRValue(Type ty) : value{ty}, ty{Type::TypeTy} {}
+    explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
+    explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
+    explicit SRValue(SRClosure closure, Type ty) : value{closure}, ty{ty} {}
+    explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
+    explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Type::IntTy} {}
+
+    /// Create a the 'empty' or 'nil' value of a given type.
+    static auto Empty(TranslationUnit& tu, Type ty) -> SRValue;
+
+    /// cast<>() the contained value.
+    template <typename Ty>
+    auto cast() -> Ty& { return std::get<Ty>(value); }
+
+    template <typename Ty>
+    auto cast() const -> const Ty& { return std::get<Ty>(value); }
+
+    /// dyn_cast<>() the contained value.
+    template <typename Ty>
+    auto dyn_cast() const -> const Ty* {
+        return std::holds_alternative<Ty>(value) ? &std::get<Ty>(value) : nullptr;
+    }
+
+    /// Print this value.
+    void dump(bool use_colour = true) const;
+    void dump_colour() const { dump(true); }
+
+    /// Check if the value is empty, aka 'nil', aka '()'.
+    auto empty() const -> bool { return std::holds_alternative<std::monostate>(value); }
+
+    /// Get the index of the contained value.
+    auto index() const -> usz { return value.index(); }
+
+    /// isa<>() on the contained value.
+    template <typename Ty>
+    auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
+
+    /// Print the value to a string.
+    auto print() const -> SmallUnrenderedString;
+
+    /// Get the type of the value.
+    auto type() const -> Type { return ty; }
+
+    /// Run a visitor over this value.
+    template <typename Self, typename Visitor>
+    auto visit(this Self&& self, Visitor&& visitor) -> decltype(auto) {
+        return std::visit(
+            std::forward<Visitor>(visitor),
+            std::forward_like<Self>(self.value)
+        );
+    }
+};
+} // namespace
+
+template <>
+struct std::formatter<SRValue> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(const SRValue& val, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(std::string_view{val.print().str()}, ctx);
+    }
+};
+
 auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
@@ -68,7 +286,8 @@ void SRValue::dump(bool use_colour) const {
 
 auto SRValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
-    utils::Overloaded V{// clang-format off
+    utils::Overloaded V{
+        // clang-format off
         [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
         [&](ir::Proc* proc) { out += std::format("%2({}%)", proc->name()); },
@@ -91,6 +310,20 @@ auto SRValue::print() const -> SmallUnrenderedString {
         },
     }; // clang-format on
 
+    visit(V);
+    return out;
+}
+
+auto RValue::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    utils::Overloaded V{
+        // clang-format off
+        [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
+        [&](std::monostate) {},
+        [&](Type ty) { out += ty->print(); },
+        [&](MRValue* ) { out += "<aggregate value>"; },
+        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
+    }; // clang-format on
     visit(V);
     return out;
 }
@@ -1026,23 +1259,30 @@ VM::VM(TranslationUnit& owner_tu) : owner_tu{owner_tu} {}
 auto VM::eval(
     Stmt* stmt,
     bool complain
-) -> std::optional<SRValue> {
-    using OptVal = std::optional<SRValue>;
+) -> std::optional<RValue> { // clang-format off
+    using OptVal = std::optional<RValue>;
 
     // Fast paths for common values.
     if (auto e = dyn_cast<Expr>(stmt)) {
-        auto val = e->visit(utils::Overloaded{// clang-format off
+        auto val = e->visit(utils::Overloaded{
             [](auto*) -> OptVal { return std::nullopt; },
-            [](IntLitExpr* i) -> OptVal { return SRValue{i->storage.value(), i->type}; },
-            [](BoolLitExpr* b) -> OptVal { return SRValue(b->value); },
-            [](TypeExpr* t) -> OptVal { return SRValue{t->value}; },
-        }); // clang-format on
+            [](IntLitExpr* i) -> OptVal { return RValue{i->storage.value(), i->type}; },
+            [](BoolLitExpr* b) -> OptVal { return RValue(b->value); },
+            [](TypeExpr* t) -> OptVal { return RValue{t->value}; },
+        });
 
         // If we got a value, just return it.
         if (val.has_value()) return val;
     }
 
-    // Otherwise, we need to do this the complicated way. Compile the statement.
+    // Otherwise, we need to do this the complicated way. Evaluate the statement.
     Eval e{*this, complain};
-    return e.eval(stmt);
-}
+    auto res = e.eval(stmt);
+    if (not res.has_value()) return std::nullopt;
+    return res->visit(utils::Overloaded{
+        [&](auto&&) { return RValue(); },
+        [&](APInt& t) { return RValue(std::move(t), res->type()); },
+        [&](bool b) { return RValue(b); },
+        [&](Type ty) { return RValue(ty); },
+    });
+} // clang-format on

@@ -128,8 +128,8 @@ void TranslationUnit::dump() const {
     }
 }
 
-auto TranslationUnit::save(eval::SRValue val) -> eval::SRValue* {
-    evaluated_constants.push_back(std::make_unique<eval::SRValue>(std::move(val)));
+auto TranslationUnit::save(eval::RValue val) -> eval::RValue* {
+    evaluated_constants.push_back(std::make_unique<eval::RValue>(std::move(val)));
     return evaluated_constants.back().get();
 }
 

@@ -1042,16 +1042,13 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
     return nullptr;
 }
 
-auto CodeGen::EmitValue(const eval::SRValue& val) -> Value* { // clang-format off
+auto CodeGen::EmitValue(const eval::RValue& val) -> Value* { // clang-format off
     utils::Overloaded V {
         [&](bool b) -> Value* { return CreateBool(b); },
-        [&](ProcDecl* proc) -> Value* { return DeclareProcedure(proc); },
         [&](std::monostate) -> Value* { return nullptr; },
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
-        [](eval::Pointer) -> Value* { Todo("Materialise compile-time allocation"); },
-        [](eval::SRSlice) ->Value* { Todo("Materialise slice"); },
-        [](eval::SRClosure) ->Value* { Todo("Materialise closure"); },
+        [&](eval::MRValue*) -> Value* { Todo("Emit mrvalue"); }
     }; // clang-format on
     return val.visit(V);
 }
