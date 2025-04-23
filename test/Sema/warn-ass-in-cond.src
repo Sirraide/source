@@ -3,10 +3,13 @@ program test;
 
 bool a = true;
 bool b = true;
+int c;
 
 if a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?
 while a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?
 assert a = b; // expected-warning: Assignment in condition. Did you mean to write '=='?
+static if c = 0 {} // expected-warning: Assignment in condition. Did you mean to write '=='?
+                   // expected-error@-1: Condition of 'static if' must be of type 'bool', but was 'int'
 
 if a == b {}
 while a == b {}

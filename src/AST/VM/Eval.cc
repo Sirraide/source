@@ -19,6 +19,9 @@ using namespace srcc;
 using namespace srcc::eval;
 namespace ir = cg::ir;
 
+#define Val(x) (*({auto _v = ValImpl(x); if (not _v) return {}; _v.get(); }))
+#define TRY(x) do { if (not (x)) return {}; } while (false)
+
 // ============================================================================
 //  Value
 // ============================================================================
@@ -247,26 +250,26 @@ private:
         return false;
     }
 
-    auto AdjustLangOpts(LangOpts l) -> LangOpts;
-    void BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
-    auto Eq(const SRValue& a, const SRValue& b) -> std::optional<bool>;
-    bool EvalLoop();
-    auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
-    auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
-    auto FFIType(Type ty) -> ffi_type*;
-    bool FFIStoreArg(void* ptr, const SRValue& val);
-    auto GetMemoryPointer(Pointer ptr, Size accessible_size, bool readonly) -> void*;
-    auto GetStringData(const SRValue& val) -> std::string;
-    auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
-    auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
-    auto MakeProcPtr(ir::Proc* proc) -> Pointer;
-    void PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
-    bool StoreSRValue(const SRValue& ptr, const SRValue& val);
-    bool StoreSRValue(void* ptr, const SRValue& val);
-    auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
-    auto Temp(ir::Argument* i) -> SRValue&;
-    auto Temp(ir::FrameSlot* f) -> SRValue&;
-    auto Val(ir::Value* v) -> const SRValue&;
+    [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
+    [[nodiscard]] bool BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
+    [[nodiscard]] auto Eq(const SRValue& a, const SRValue& b) -> std::optional<bool>;
+    [[nodiscard]] bool EvalLoop();
+    [[nodiscard]] auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
+    [[nodiscard]] auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
+    [[nodiscard]] auto FFIType(Type ty) -> ffi_type*;
+    [[nodiscard]] bool FFIStoreArg(void* ptr, const SRValue& val);
+    [[nodiscard]] auto GetMemoryPointer(Pointer ptr, Size accessible_size, bool readonly) -> void*;
+    [[nodiscard]] auto GetStringData(const SRValue& val) -> std::string;
+    [[nodiscard]] auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
+    [[nodiscard]] auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
+    [[nodiscard]] auto MakeProcPtr(ir::Proc* proc) -> Pointer;
+    [[nodiscard]] bool PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
+    [[nodiscard]] bool StoreSRValue(const SRValue& ptr, const SRValue& val);
+    [[nodiscard]] bool StoreSRValue(void* ptr, const SRValue& val);
+    [[nodiscard]] auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
+    [[nodiscard]] auto Temp(ir::Argument* i) -> SRValue&;
+    [[nodiscard]] auto Temp(ir::FrameSlot* f) -> SRValue&;
+    [[nodiscard]] auto ValImpl(ir::Value* v) -> Ptr<const SRValue>;
 };
 
 Eval::Eval(VM& vm, bool complain)
@@ -280,7 +283,7 @@ auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
     return l;
 }
 
-void Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
+bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
     call_stack.back().ip = block->instructions().begin();
 
     // Copy out the argument values our of their slots in case we’re doing
@@ -298,6 +301,8 @@ void Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
     // Now, copy in the values.
     for (auto [slot, arg] : zip(block->arguments(), copy))
         Temp(slot) = std::move(arg);
+
+    return true;
 }
 
 auto Eval::Eq(const SRValue& a, const SRValue& b) -> std::optional<bool> {
@@ -320,41 +325,58 @@ auto Eval::Eq(const SRValue& a, const SRValue& b) -> std::optional<bool> {
 }
 
 bool Eval::EvalLoop() {
-    auto CastOp = [&](ir::ICast* i, APInt (APInt::*op)(unsigned width) const) {
-        auto val = Val(i->args()[0]);
+    auto CastOp = [&] [[nodiscard]] (
+        ir::ICast* i,
+        APInt (APInt::*op)(unsigned width) const
+    ) -> bool {
+        auto& val = Val(i->args()[0]);
         auto to_wd = i->cast_result_type()->size(vm.owner());
         auto result = (val.cast<APInt>().*op)(u32(to_wd.bits()));
         Temp(i) = SRValue{std::move(result), i->cast_result_type()};
+        return true;
     };
 
-    auto CmpOp = [&](ir::Inst* i, llvm::function_ref<bool(const APInt& lhs, const APInt& rhs)> op) {
+    auto CmpOp = [&] [[nodiscard]] (
+        ir::Inst* i,
+        llvm::function_ref<bool(const APInt& lhs, const APInt& rhs)> op
+    ) -> bool {
         auto& lhs = Val(i->args()[0]);
         auto& rhs = Val(i->args()[1]);
         auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
         Temp(i) = SRValue{result};
+        return true;
     };
 
-    auto IntOp = [&](ir::Inst* i, llvm::function_ref<APInt(const APInt& lhs, const APInt& rhs)> op) {
+    auto IntOp = [&] [[nodiscard]] (
+        ir::Inst* i,
+        llvm::function_ref<APInt(const APInt& lhs, const APInt& rhs)> op
+    ) -> bool {
         auto& lhs = Val(i->args()[0]);
         auto& rhs = Val(i->args()[1]);
         auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
         Temp(i) = SRValue{std::move(result), lhs.type()};
+        return true;
     };
 
-    auto IntOrBoolOp = [&](ir::Inst* i, auto op) {
+    auto IntOrBoolOp = [&] [[nodiscard]] (ir::Inst* i, auto op) -> bool {
         auto& lhs = Val(i->args()[0]);
         auto& rhs = Val(i->args()[1]);
         if (lhs.isa<bool>()) Temp(i) = SRValue{bool(op(lhs.cast<bool>(), rhs.cast<bool>()))};
         else Temp(i) = SRValue{op(lhs.cast<APInt>(), rhs.cast<APInt>()), lhs.type()};
+        return true;
     };
 
-    auto OvOp = [&](ir::Inst* i, APInt (APInt::*op)(const APInt& RHS, bool& Overflow) const) {
+    auto OvOp = [&] [[nodiscard]] (
+        ir::Inst* i,
+        APInt (APInt::*op)(const APInt& RHS, bool& Overflow) const
+    ) -> bool {
         auto& lhs = Val(i->args()[0]);
         auto& rhs = Val(i->args()[1]);
         bool overflow = false;
         auto result = (lhs.cast<APInt>().*op)(rhs.cast<APInt>(), overflow);
         Temp(i, 0) = SRValue{std::move(result), lhs.type()};
         Temp(i, 1) = SRValue{overflow};
+        return true;
     };
 
     const u64 max_steps = vm.owner().context().eval_steps ?: std::numeric_limits<u64>::max();
@@ -383,15 +405,15 @@ bool Eval::EvalLoop() {
                 auto b = cast<ir::BranchInst>(i);
                 if (b->is_conditional()) {
                     auto& cond = Val(b->cond());
-                    if (cond.cast<bool>()) BranchTo(b->then(), b->then_args());
-                    else BranchTo(b->else_(), b->else_args());
+                    if (cond.cast<bool>()) TRY(BranchTo(b->then(), b->then_args()));
+                    else TRY(BranchTo(b->else_(), b->else_args()));
                 } else {
-                    BranchTo(b->then(), b->then_args());
+                    TRY(BranchTo(b->then(), b->then_args()));
                 }
             } break;
 
             case ir::Op::Call: {
-                auto closure = Val(i->args()[0]).cast<SRClosure>();
+                auto& closure = Val(i->args()[0]).cast<SRClosure>();
                 auto args = i->args().drop_front(1);
 
                 // Check that this is a valid call target.
@@ -421,7 +443,7 @@ bool Eval::EvalLoop() {
                 if (not i->result_types().empty()) ret = &Temp(i);
 
                 // Enter the stack frame.
-                PushFrame(callee, args);
+                TRY(PushFrame(callee, args));
 
                 // Set the return value slot to the call’s temporary.
                 call_stack.back().ret = ret;
@@ -445,7 +467,7 @@ bool Eval::EvalLoop() {
             } break;
 
             case ir::Op::MemZero: {
-                auto addr = Val(i->args()[0]);
+                auto& addr = Val(i->args()[0]);
                 auto size = Size::Bytes(Val(i->args()[1]).cast<APInt>().getZExtValue());
                 auto ptr = GetMemoryPointer(addr.cast<Pointer>(), size, false);
                 if (not ptr) return false;
@@ -453,8 +475,8 @@ bool Eval::EvalLoop() {
             } break;
 
             case ir::Op::PtrAdd: {
-                auto ptr = Val(i->args()[0]);
-                auto offs = Val(i->args()[1]);
+                auto& ptr = Val(i->args()[0]);
+                auto& offs = Val(i->args()[1]);
                 Temp(i) = SRValue(ptr.cast<Pointer>() + offs.cast<APInt>().getZExtValue(), ptr.type());
             } break;
 
@@ -474,14 +496,14 @@ bool Eval::EvalLoop() {
             } break;
 
             case ir::Op::Select: {
-                auto cond = Val(i->args()[0]);
+                auto& cond = Val(i->args()[0]);
                 Temp(i) = cond.cast<bool>() ? Val(i->args()[1]) : Val(i->args()[2]);
             } break;
 
             case ir::Op::Store: {
                 auto s = cast<ir::MemInst>(i);
-                auto ptr = Val(s->ptr());
-                auto val = Val(s->value());
+                auto& ptr = Val(s->ptr());
+                auto& val = Val(s->value());
                 if (not StoreSRValue(ptr, val)) return false;
             } break;
 
@@ -489,9 +511,9 @@ bool Eval::EvalLoop() {
                 return Error(entry, "Unreachable code reached");
 
             // Integer conversions.
-            case ir::Op::SExt: CastOp(cast<ir::ICast>(i), &APInt::sext); break;
-            case ir::Op::Trunc: CastOp(cast<ir::ICast>(i), &APInt::trunc); break;
-            case ir::Op::ZExt: CastOp(cast<ir::ICast>(i), &APInt::zext); break;
+            case ir::Op::SExt: TRY(CastOp(cast<ir::ICast>(i), &APInt::sext)); break;
+            case ir::Op::Trunc: TRY(CastOp(cast<ir::ICast>(i), &APInt::trunc)); break;
+            case ir::Op::ZExt: TRY(CastOp(cast<ir::ICast>(i), &APInt::zext)); break;
 
             // Equality comparison operators. These are supported for ALL types.
             case ir::Op::ICmpEq:
@@ -505,36 +527,36 @@ bool Eval::EvalLoop() {
                 break;
 
             // Comparison operations.
-            case ir::Op::ICmpSGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sge(rhs); }); break;
-            case ir::Op::ICmpSGt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sgt(rhs); }); break;
-            case ir::Op::ICmpSLe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sle(rhs); }); break;
-            case ir::Op::ICmpSLt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.slt(rhs); }); break;
-            case ir::Op::ICmpUGe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.uge(rhs); }); break;
-            case ir::Op::ICmpUGt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ugt(rhs); }); break;
-            case ir::Op::ICmpULe: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ule(rhs); }); break;
-            case ir::Op::ICmpULt: CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ult(rhs); }); break;
+            case ir::Op::ICmpSGe: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sge(rhs); })); break;
+            case ir::Op::ICmpSGt: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sgt(rhs); })); break;
+            case ir::Op::ICmpSLe: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sle(rhs); })); break;
+            case ir::Op::ICmpSLt: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.slt(rhs); })); break;
+            case ir::Op::ICmpUGe: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.uge(rhs); })); break;
+            case ir::Op::ICmpUGt: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ugt(rhs); })); break;
+            case ir::Op::ICmpULe: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ule(rhs); })); break;
+            case ir::Op::ICmpULt: TRY(CmpOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ult(rhs); })); break;
 
             // Logical operations.
-            case ir::Op::And: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs & rhs; }); break;
-            case ir::Op::Or: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs | rhs; }); break;
-            case ir::Op::Xor: IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs ^ rhs; }); break;
+            case ir::Op::And: TRY(IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs & rhs; })); break;
+            case ir::Op::Or: TRY(IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs | rhs; })); break;
+            case ir::Op::Xor: TRY(IntOrBoolOp(i, [](const auto& lhs, const auto& rhs) { return lhs ^ rhs; })); break;
 
             // Arithmetic operations.
-            case ir::Op::Add: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs + rhs; }); break;
-            case ir::Op::AShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ashr(rhs); }); break;
-            case ir::Op::IMul: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs * rhs; }); break;
-            case ir::Op::LShr: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.lshr(rhs); }); break;
-            case ir::Op::SDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sdiv(rhs); }); break;
-            case ir::Op::Shl: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.shl(rhs); }); break;
-            case ir::Op::SRem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.srem(rhs); }); break;
-            case ir::Op::Sub: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs - rhs; }); break;
-            case ir::Op::UDiv: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.udiv(rhs); }); break;
-            case ir::Op::URem: IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.urem(rhs); }); break;
+            case ir::Op::Add: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs + rhs; })); break;
+            case ir::Op::AShr: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.ashr(rhs); })); break;
+            case ir::Op::IMul: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs * rhs; })); break;
+            case ir::Op::LShr: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.lshr(rhs); })); break;
+            case ir::Op::SDiv: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.sdiv(rhs); })); break;
+            case ir::Op::Shl: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.shl(rhs); })); break;
+            case ir::Op::SRem: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.srem(rhs); })); break;
+            case ir::Op::Sub: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs - rhs; })); break;
+            case ir::Op::UDiv: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.udiv(rhs); })); break;
+            case ir::Op::URem: TRY(IntOp(i, [](const APInt& lhs, const APInt& rhs) { return lhs.urem(rhs); })); break;
 
             // Checked arithmetic operations.
-            case ir::Op::SAddOv: OvOp(i, &APInt::sadd_ov); break;
-            case ir::Op::SMulOv: OvOp(i, &APInt::smul_ov); break;
-            case ir::Op::SSubOv: OvOp(i, &APInt::ssub_ov); break;
+            case ir::Op::SAddOv: TRY(OvOp(i, &APInt::sadd_ov)); break;
+            case ir::Op::SMulOv: TRY(OvOp(i, &APInt::smul_ov)); break;
+            case ir::Op::SSubOv: TRY(OvOp(i, &APInt::ssub_ov)); break;
         }
     }
 
@@ -820,7 +842,7 @@ auto Eval::MakeProcPtr(ir::Proc* proc) -> Pointer {
     return Pointer::Proc(u32(procedure_indices.size() - 1));
 }
 
-void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
+bool Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
     Assert(not proc->empty());
     StackFrame frame{proc};
     frame.stack_base = stack.size();
@@ -854,7 +876,7 @@ void Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
     call_stack.push_back(std::move(frame));
 
     // Branch to the entry block.
-    BranchTo(proc->entry(), {});
+    return BranchTo(proc->entry(), {});
 }
 
 bool Eval::StoreSRValue(const SRValue& ptr, const SRValue& val) {
@@ -906,15 +928,14 @@ auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
     return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i, idx)));
 }
 
-auto Eval::Val(ir::Value* v) -> const SRValue& {
-    auto Materialise = [&](SRValue val) -> const SRValue& {
-        return call_stack.back().materialised_values.push_back(std::move(val));
+auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
+    auto Materialise = [&](SRValue val) -> const SRValue* {
+        return &call_stack.back().materialised_values.push_back(std::move(val));
     };
 
     switch (v->kind()) {
         using K = ir::Value::Kind;
         case K::Block: Unreachable("Can’t take address of basic block");
-        case K::InvalidLocalReference: Todo();
         case K::LargeInt: Todo();
         case K::Proc: {
             auto p = cast<ir::Proc>(v);
@@ -923,20 +944,27 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
 
         case K::Extract: {
             auto e = cast<ir::Extract>(v);
-            auto agg = Val(e->aggregate()).cast<SRSlice>();
+            auto& agg = Val(e->aggregate()).cast<SRSlice>();
             auto idx = e->index();
             if (idx == 0) return Materialise(SRValue(agg.data, e->type()));
             if (idx == 1) return Materialise(SRValue(agg.size, e->type()));
             Unreachable();
         }
 
+        case K::InvalidLocalReference: {
+            auto l = cast<ir::InvalidLocalReference>(v)->referenced_local();
+            Error(l->location(), "Cannot access variable declared outside the current evaluation context");
+            Note(l->decl->location(), "Variable declared here");
+            return nullptr;
+        }
+
         case K::FrameSlot:
-            return Temp(cast<ir::FrameSlot>(v));
+            return &Temp(cast<ir::FrameSlot>(v));
 
         case K::Slice: {
             auto sl = cast<ir::Slice>(v);
-            auto ptr = Val(sl->data);
-            auto sz = Val(sl->size);
+            auto& ptr = Val(sl->data);
+            auto& sz = Val(sl->size);
             return Materialise(SRValue(SRSlice{ptr.cast<Pointer>(), sz.cast<APInt>()}, sl->type()));
         }
 
@@ -947,12 +975,12 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
         }
 
         case K::Argument:
-            return Temp(cast<ir::Argument>(v));
+            return &Temp(cast<ir::Argument>(v));
 
         case K::BuiltinConstant: {
             switch (cast<ir::BuiltinConstant>(v)->id) {
-                case ir::BuiltinConstantKind::True: return true_val;
-                case ir::BuiltinConstantKind::False: return false_val;
+                case ir::BuiltinConstantKind::True: return &true_val;
+                case ir::BuiltinConstantKind::False: return &false_val;
                 case ir::BuiltinConstantKind::Poison: Unreachable("Should not exist in checked mode");
                 case ir::BuiltinConstantKind::Nil: return Materialise(SRValue::Empty(vm.owner(), v->type()));
             }
@@ -961,7 +989,7 @@ auto Eval::Val(ir::Value* v) -> const SRValue& {
 
         case K::InstValue: {
             auto ival = cast<ir::InstValue>(v);
-            return Temp(ival->inst(), ival->index());
+            return &Temp(ival->inst(), ival->index());
         }
 
         case K::SmallInt: {
@@ -981,7 +1009,7 @@ auto Eval::eval(Stmt* s) -> std::optional<SRValue> {
 
     // Set up a stack frame for it.
     SRValue res;
-    PushFrame(proc, {});
+    TRY(PushFrame(proc, {}));
     call_stack.back().ret = &res;
 
     // Dew it.

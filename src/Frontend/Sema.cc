@@ -1899,10 +1899,7 @@ auto Sema::BuildStaticIfExpr(
     // Otherwise, check this now.
     if (not MakeCondition(cond, "static if")) return {};
     auto val = M->vm.eval(cond);
-    if (not val) {
-        Error(loc, "Condition of 'static if' must be a constant expression");
-        return {};
-    }
+    if (not val) return {};
 
     // If there is no else clause, and the condition is false, return
     // an empty statement.
