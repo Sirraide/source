@@ -321,7 +321,7 @@ auto RValue::print() const -> SmallUnrenderedString {
         [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
-        [&](MRValue* ) { out += "<aggregate value>"; },
+        [&](MRValue) { out += "<aggregate value>"; },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
     }; // clang-format on
     visit(V);
@@ -348,25 +348,33 @@ auto Encode(ir::Inst* i, u32 val) -> Temporary { return Temporary(u64(i) << 32 |
 namespace {
 class HostMemoryMap {
     struct Mapping {
+        friend HostMemoryMap;
         /// The offset in the virtual host memory address space.
         Pointer vptr;
 
         /// The actual compiler memory that this maps to.
-        const void* host_ptr;
+        void* host_ptr;
 
         /// Size of the map.
         Size size;
 
+        /// Whether the memory is read-only.
+        bool readonly;
+
+    private:
         /// Create a new mapping.
-        Mapping(Pointer vptr, const void* host_ptr, Size size)
-            : vptr(vptr), host_ptr(host_ptr), size(size) {
+        Mapping(Pointer vptr, void* host_ptr, Size size, bool readonly)
+            : vptr(vptr), host_ptr(host_ptr), size(size), readonly(readonly) {
             Assert(size.bytes() != 0);
             Assert(vptr.is_host_ptr());
         }
 
+    public:
         /// Check if this mapping contains the given host memory range.
-        [[nodiscard]] bool contains(const void* ptr, Size req) const {
-            return ptr >= host_ptr and static_cast<const char*>(ptr) + req.bytes() <= end();
+        [[nodiscard]] bool contains(const void* ptr, Size req, bool rdonly) const {
+            return (rdonly or not readonly) and
+                   ptr >= host_ptr and
+                   static_cast<const char*>(ptr) + req.bytes() <= end();
         }
 
         /// Check if this mapping contains the given virtual memory range.
@@ -386,14 +394,14 @@ class HostMemoryMap {
 
         /// Translate a pointer in host memory to a virtual pointer.
         [[nodiscard]] auto map(const void* ptr) const -> Pointer {
-            Assert(contains(ptr, Size{}));
+            Assert(contains(ptr, Size{}, readonly));
             return vptr + usz(static_cast<const char*>(ptr) - static_cast<const char*>(host_ptr));
         }
 
         /// Translate a virtual pointer to a pointer in host memory.
-        [[nodiscard]] auto map(Pointer ptr) const -> const void* {
+        [[nodiscard]] auto map(Pointer ptr) const -> void* {
             Assert(contains(ptr, Size{}));
-            return static_cast<const char*>(host_ptr) + usz(ptr - vptr);
+            return static_cast<char*>(host_ptr) + usz(ptr - vptr);
         }
     };
 
@@ -406,20 +414,20 @@ class HostMemoryMap {
 public:
     /// Create a virtual mapping for the given memory range; if the range
     /// is already mapped, return the existing mapping.
-    [[nodiscard]] auto create_map(const void* data, Size size, Align a = {}) -> Pointer;
+    [[nodiscard]] auto create_map(void* data, Size size, Align a, bool readonly) -> Pointer;
 
     /// Map a virtual pointer to the corresponding host pointer.
-    [[nodiscard]] auto lookup(Pointer ptr, Size size) -> const void* {
+    [[nodiscard]] auto lookup(Pointer ptr, Size size) -> std::pair<void*, bool> {
         Assert(ptr.is_host_ptr() and not ptr.is_null_ptr());
         auto it = find_if(maps, [&](const Mapping& m) { return m.contains(ptr, size); });
-        if (it != maps.end()) return it->map(ptr);
-        return nullptr;
+        if (it != maps.end()) return {it->map(ptr), it->readonly};
+        return {};
     }
 };
 } // namespace
 
-auto HostMemoryMap::create_map(const void* data, Size size, Align a) -> Pointer {
-    auto it = find_if(maps, [&](const Mapping& m) { return m.contains(data, size); });
+auto HostMemoryMap::create_map(void* data, Size size, Align a, bool readonly) -> Pointer {
+    auto it = find_if(maps, [&](const Mapping& m) { return m.contains(data, size, readonly); });
     if (it != maps.end()) return it->map(data);
 
     // Allocate virtual memory.
@@ -428,7 +436,7 @@ auto HostMemoryMap::create_map(const void* data, Size size, Align a) -> Pointer 
     end += size;
 
     // Store the mapping.
-    return maps.emplace_back(Pointer::Host(start.bytes()), data, size).map(data);
+    return maps.emplace_back(Mapping(Pointer::Host(start.bytes()), data, size, readonly)).map(data);
 }
 
 // ============================================================================
@@ -472,7 +480,7 @@ class eval::Eval : DiagsProducer<bool> {
 public:
     Eval(VM& vm, bool complain);
 
-    [[nodiscard]] auto eval(Stmt* s) -> std::optional<SRValue>;
+    [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
 
 private:
     auto diags() const -> DiagnosticsEngine& { return vm.owner().context().diags(); }
@@ -970,22 +978,20 @@ auto Eval::GetMemoryPointer(Pointer p, Size accessible_size, bool readonly) -> v
         return stack.data() + p.value();
     }
 
-    // This is a readonly pointer to host memory.
+    // This is a pointer to host memory.
     if (p.is_host_ptr()) {
-        if (not readonly) {
-            Error(entry, "Attempted to write to readonly memory");
-            return nullptr;
-        }
-
-        auto host_ptr = host_memory.lookup(p, accessible_size);
+        auto [host_ptr, rdonly] = host_memory.lookup(p, accessible_size);
         if (not host_ptr) {
             Error(entry, "Out-of-bounds or invalid memory read");
             return nullptr;
         }
 
-        // This is fine because we already checked that we’re only
-        // doing this for readonly access.
-        return const_cast<void*>(host_ptr);
+        if (rdonly and not readonly) {
+            Error(entry, "Attempted to write to readonly memory");
+            return nullptr;
+        }
+
+        return host_ptr;
     }
 
     ICE(entry, "Accessing heap memory isn’t supported yet");
@@ -1194,17 +1200,23 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
         case K::FrameSlot:
             return &Temp(cast<ir::FrameSlot>(v));
 
+        case K::GlobalConstant: {
+            auto s = cast<ir::GlobalConstant>(v);
+            auto ptr = host_memory.create_map(
+                const_cast<char*>(s->value().data()),
+                Size::Bytes(s->value().size()),
+                Align(),
+                true
+            );
+
+            return Materialise(SRValue(ptr, v->type()));
+        }
+
         case K::Slice: {
             auto sl = cast<ir::Slice>(v);
             auto& ptr = Val(sl->data);
             auto& sz = Val(sl->size);
             return Materialise(SRValue(SRSlice{ptr.cast<Pointer>(), sz.cast<APInt>()}, sl->type()));
-        }
-
-        case K::StringData: {
-            auto s = cast<ir::StringData>(v);
-            auto ptr = host_memory.create_map(s->value().data(), Size::Bytes(s->value().size()));
-            return Materialise(SRValue(ptr, v->type()));
         }
 
         case K::Argument:
@@ -1235,7 +1247,7 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
     Unreachable();
 }
 
-auto Eval::eval(Stmt* s) -> std::optional<SRValue> {
+auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     // Compile the procedure.
     entry = s->location();
     auto proc = cg.emit_stmt_as_proc_for_vm(s);
@@ -1245,9 +1257,25 @@ auto Eval::eval(Stmt* s) -> std::optional<SRValue> {
     TRY(PushFrame(proc, {}));
     call_stack.back().ret = &res;
 
-    // Dew it.
-    if (not EvalLoop()) return std::nullopt;
-    return std::move(res);
+    // If statement returns an mrvalue, allocate one and set it
+    // as the first argument to the call.
+    auto ty = s->type_or_void();
+    if (ty->rvalue_category() == Expr::MRValue) {
+        auto mrv = vm.allocate_mrvalue(ty);
+        auto ptr = host_memory.create_map(mrv.data(), mrv.size(), ty->align(vm.owner()), false);
+        call_stack.back().temporaries[Encode(proc->args()[0])] = SRValue(ptr, PtrType::Get(vm.owner(), ty));
+        TRY(EvalLoop());
+        return RValue(mrv, ty);
+    }
+
+    // Otherwise, just extract the srvalue from the return slot.
+    TRY(EvalLoop());
+    return res.visit(utils::Overloaded{
+        [&](auto&&) { return RValue(); },
+        [&](APInt& t) { return RValue(std::move(t), res.type()); },
+        [&](bool b) { return RValue(b); },
+        [&](Type t) { return RValue(t); },
+    });
 }
 
 // ============================================================================
@@ -1255,6 +1283,14 @@ auto Eval::eval(Stmt* s) -> std::optional<SRValue> {
 // ============================================================================
 VM::~VM() = default;
 VM::VM(TranslationUnit& owner_tu) : owner_tu{owner_tu} {}
+
+auto VM::allocate_mrvalue(Type ty) -> MRValue {
+    auto sz = ty->size(owner());
+    auto align = ty->align(owner());
+    auto mem = owner().allocate(sz.bytes(), align.value().bytes());
+    std::memset(mem, 0, sz.bytes());
+    return MRValue(mem, sz);
+}
 
 auto VM::eval(
     Stmt* stmt,
@@ -1277,12 +1313,5 @@ auto VM::eval(
 
     // Otherwise, we need to do this the complicated way. Evaluate the statement.
     Eval e{*this, complain};
-    auto res = e.eval(stmt);
-    if (not res.has_value()) return std::nullopt;
-    return res->visit(utils::Overloaded{
-        [&](auto&&) { return RValue(); },
-        [&](APInt& t) { return RValue(std::move(t), res->type()); },
-        [&](bool b) { return RValue(b); },
-        [&](Type ty) { return RValue(ty); },
-    });
+    return e.eval(stmt);
 } // clang-format on

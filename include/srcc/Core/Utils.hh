@@ -160,6 +160,10 @@ public:
         return s;
     }
 
+    [[nodiscard]] static constexpr auto CreateUnsafe(const char* data, usz sz) {
+        return CreateUnsafe(StringRef(data, sz));
+    }
+
     /// Save it in a string saver; this is how you’re supposed to create these.
     [[nodiscard]] static auto Save(llvm::StringSaver& ss, StringRef s) {
         return CreateUnsafe(ss.save(s));

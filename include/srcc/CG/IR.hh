@@ -10,13 +10,13 @@
     X(BuiltinConstant)         \
     X(Extract)                 \
     X(FrameSlot)               \
+    X(GlobalConstant)          \
     X(InstValue)               \
     X(InvalidLocalReference)   \
     X(LargeInt)                \
     X(Proc)                    \
     X(Slice)                   \
-    X(SmallInt)                \
-    X(StringData) \
+    X(SmallInt)
 
 /// IR used during codegen before LLVM IR or VM bytecode is emitted.
 namespace srcc::cg::ir {
@@ -168,17 +168,22 @@ public:
     static bool classof(const Value* v) { return v->kind() == Kind::Slice; }
 };
 
-class StringData : public ManagedValue {
+class GlobalConstant : public ManagedValue {
     friend Builder;
 
     String val;
+    Align a;
+    bool string = false;
 
-    StringData(String val, Type ty) : ManagedValue{Kind::StringData, ty}, val{val} {}
+    GlobalConstant(String val, Type ty, Align a)
+        : ManagedValue{Kind::GlobalConstant, ty}, val{val}, a{a} {}
 
 public:
-    auto value() const -> String { return val; }
+    [[nodiscard]] auto align() const -> Align { return a;  }
+    [[nodiscard]] bool is_string() const { return string; }
+    [[nodiscard]] auto value() const -> String { return val; }
 
-    static bool classof(const Value* v) { return v->kind() == Kind::StringData; }
+    static bool classof(const Value* v) { return v->kind() == Kind::GlobalConstant; }
 };
 
 class Argument : public ManagedValue {
@@ -464,6 +469,7 @@ public:
 
 private:
     llvm::MapVector<StringRef, std::unique_ptr<Proc>> procs;
+    SmallVector<GlobalConstant*> global_consts;
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Type::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Type::BoolTy};
@@ -473,6 +479,7 @@ public:
 
     Builder(TranslationUnit& tu);
 
+    auto global_constants() const -> ArrayRef<GlobalConstant*> { return global_consts; }
     auto procedures() const {
         return vws::all(procs) | vws::transform([](auto& e) -> Proc* { return e.second.get(); });
     }
@@ -496,6 +503,8 @@ public:
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
     auto CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) -> void;
     auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
+    auto CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant*;
+    auto CreateGlobalStringSlice(String s) -> Slice*;
     auto CreateICmpEq(Value* a, Value* b) -> Value*;
     auto CreateICmpNe(Value* a, Value* b) -> Value*;
     auto CreateICmpSGe(Value* a, Value* b) -> Value*;
@@ -529,7 +538,6 @@ public:
     auto CreateShl(Value* a, Value* b) -> Value*;
     auto CreateSlice(Value* data, Value* size) -> Slice*;
     auto CreateStore(Value* val, Value* ptr) -> void;
-    auto CreateString(String s) -> Slice*;
     auto CreateSub(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateUDiv(Value* a, Value* b) -> Value*;
     auto CreateURem(Value* a, Value* b) -> Value*;

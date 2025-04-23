@@ -1,0 +1,36 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+struct x { int y; }
+
+eval x(1);
+x a = eval x(1);
+
+// * @0 = { 01, 00, 00, 00, 00, 00, 00, 00 }, align 8
+// +
+// + proc __src_main {
+// +     %0 = x
+// +
+// + entry:
+// +     copy %0, @0, int 8
+// +     ret
+// + }
+
+//L * @0 = private unnamed_addr constant [8 x i8] c"\01\00\00\00\00\00\00\00", align 8
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L +
+//L + define fastcc void @__src_main() {
+//L + entry:
+//L +   %0 = alloca [8 x i8], align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 @0, i64 8, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1

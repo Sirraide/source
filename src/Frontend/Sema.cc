@@ -1694,15 +1694,19 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
-    // Always create an EvalExpr to represent this in the AST.
-    auto eval = new (*M) EvalExpr(arg, loc);
+    // An eval expression returns an rvalue.
+    if (auto e = dyn_cast<Expr>(arg)) {
+        auto init = BuildInitialiser(arg->type_or_void(), e, loc);
+        if (not init) return nullptr;
+        arg = init.get();
+    }
 
     // If the expression is not dependent, evaluate it now.
     auto value = M->vm.eval(arg);
-    if (not value.has_value()) return eval;
+    if (not value.has_value()) return nullptr;
 
     // And cache the value for later.
-    return new (*M) ConstExpr(*M, std::move(*value), loc, eval);
+    return new (*M) ConstExpr(*M, std::move(*value), loc, arg);
 }
 
 auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr> {

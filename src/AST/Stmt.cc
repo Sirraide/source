@@ -73,7 +73,7 @@ ConstExpr::ConstExpr(
     eval::RValue value,
     Location location,
     Ptr<Stmt> stmt
-) : Expr{Kind::ConstExpr, value.type(), SRValue, location},
+) : Expr{Kind::ConstExpr, value.type(), value.isa<eval::MRValue>() ? MRValue : SRValue, location},
     value{tu.save(std::move(value))},
     stmt{stmt} {}
 

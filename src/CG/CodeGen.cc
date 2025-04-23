@@ -13,8 +13,8 @@ using ir::Value;
 
 void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, String name) {
     If(failure_cond, [&] {
-        auto op_token = CreateString(Spelling(op));
-        auto operation = CreateString(name);
+        auto op_token = CreateGlobalStringSlice(Spelling(op));
+        auto operation = CreateGlobalStringSlice(name);
         CreateAbort(ir::AbortReason::ArithmeticError, loc, op_token, operation);
     });
 }
@@ -414,6 +414,20 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
                 return;
             }
 
+            // If the initialiser is a constant expression, create a global constant for it.
+            //
+            // Yes, this means that this is basically an lvalue that we’re copying from;
+            // the only reason the language treats it as an mrvalue is because it would
+            // logically be rather weird to be able to take the address of an evaluated
+            // struct literal (but not of other rvalues).
+            if (auto ce = dyn_cast<ConstExpr>(init)) {
+                // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
+                auto mrv = ce->value->cast<eval::MRValue>();
+                auto c = CreateGlobalConstantPtr(init->type, String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()));
+                CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()));
+                return;
+            }
+
             // Structs are otherwise constructed field by field.
             if (auto lit = dyn_cast<StructInitExpr>(init)) {
                 auto s = lit->struct_type();
@@ -474,7 +488,7 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
         Value* msg{};
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateNil(tu.StrLitTy);
-        auto cond_str = CreateString(expr->cond->location().text(tu.context()));
+        auto cond_str = CreateGlobalStringSlice(expr->cond->location().text(tu.context()));
         CreateAbort(ir::AbortReason::AssertionFailed, expr->location(), cond_str, msg);
     });
 
@@ -734,7 +748,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
             for (auto a : expr->args()) {
                 if (a->type == tu.StrLitTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto str_format = CreateString("%.*s")->data;
+                    auto str_format = CreateGlobalStringSlice("%.*s")->data;
                     auto slice = Emit(a);
                     auto data = CreateExtractValue(slice, 0);
                     auto size = CreateSICast(CreateExtractValue(slice, 1), tu.FFIIntTy);
@@ -743,16 +757,16 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
 
                 else if (a->type == Type::IntTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto int_format = CreateString("%" PRId64)->data;
+                    auto int_format = CreateGlobalStringSlice("%" PRId64)->data;
                     auto val = Emit(a);
                     CreateCall(printf, {int_format, val});
                 }
 
                 else if (a->type == Type::BoolTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto bool_format = CreateString("%s")->data;
+                    auto bool_format = CreateGlobalStringSlice("%s")->data;
                     auto val = Emit(a);
-                    auto str = CreateSelect(val, CreateString("true")->data, CreateString("false")->data);
+                    auto str = CreateSelect(val, CreateGlobalStringSlice("true")->data, CreateGlobalStringSlice("false")->data);
                     CreateCall(printf, {bool_format, str});
                 }
 
@@ -802,7 +816,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::TypeArraySize: return CreateInt(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes());
         case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
         case AK::TypeBytes: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bytes());
-        case AK::TypeName: return CreateString(tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
+        case AK::TypeName: return CreateGlobalStringSlice(tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
         case AK::TypeMaxVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
             return CreateInt(APInt::getSignedMaxValue(u32(ty->size(tu).bits())), ty);
@@ -968,7 +982,7 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
-    return CreateString(expr->value);
+    return CreateGlobalStringSlice(expr->value);
 }
 
 auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> Value* {
@@ -1048,7 +1062,7 @@ auto CodeGen::EmitValue(const eval::RValue& val) -> Value* { // clang-format off
         [&](std::monostate) -> Value* { return nullptr; },
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
-        [&](eval::MRValue*) -> Value* { Todo("Emit mrvalue"); }
+        [&](eval::MRValue) -> Value* { return nullptr; } // This only happens if the value is unused.
     }; // clang-format on
     return val.visit(V);
 }
@@ -1056,20 +1070,31 @@ auto CodeGen::EmitValue(const eval::RValue& val) -> Value* { // clang-format off
 auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
     Assert(bool(lang_opts.constant_eval));
 
+    // Create a return value parameter if need be.
+    auto ty = stmt->type_or_void();
+    bool has_indirect_return = ty->rvalue_category() == Expr::MRValue;
+    ParamTypeData arg{Intent::In, PtrType::Get(tu, ty)};
+    ArrayRef<ParamTypeData> args;
+    if (has_indirect_return) {
+        ty = Type::VoidTy;
+        args = arg;
+    }
+
     // Create a new procedure for this statement.
-    auto ret_ty = isa<Expr>(stmt) ? cast<Expr>(stmt)->type : Type::VoidTy;
     auto proc = GetOrCreateProc(
         constants::VMEntryPointName,
         Linkage::Internal,
-        ProcType::Get(tu, ret_ty, {})
+        ProcType::Get(tu, ty, args)
     );
 
-    // And emit it as its body, returning the statement’s value
-    // if it has one.
-    EnterProcedure _(*this, proc);
-    auto val = Emit(stmt);
-    if (not insert_point->closed())
-        CreateReturn(val and val->type() != Type::VoidTy ? val : nullptr);
+    // Inform the procedure about whether we’re returning indirectly.
+    if (has_indirect_return) proc->indirect_ret_type = Type::VoidTy;
 
+    // Sema has already ensured that this is an initialiser, so throw it
+    // into a return expression to handle MRValues.
+    ReturnExpr re{dyn_cast<Expr>(stmt), stmt->location(), true};
+    EnterProcedure _(*this, proc);
+    Emit(isa<Expr>(stmt) ? &re : stmt);
+    if (not insert_point->closed()) CreateReturn();
     return proc;
 }

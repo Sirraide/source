@@ -260,9 +260,16 @@ void Builder::CreateStore(Value* val, Value* ptr) {
     CreateImpl<MemInst>(Op::Store, val->type(), val->type()->align(tu), ptr, val);
 }
 
-auto Builder::CreateString(String s) -> Slice* {
-    auto data = new (*this) StringData(s, PtrType::Get(tu, tu.StrLitTy->elem()));
+auto Builder::CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant* {
+    auto g = new (*this) GlobalConstant(s, PtrType::Get(tu, ty), ty->align(tu));
+    global_consts.push_back(g);
+    return g;
+}
+
+auto Builder::CreateGlobalStringSlice(String s) -> Slice* {
+    auto data = CreateGlobalConstantPtr(tu.I8Ty, s);
     auto size = CreateInt(s.size(), Type::IntTy);
+    data->string = true;
     return new (*this) Slice(tu.StrLitTy, data, size);
 }
 
@@ -443,6 +450,7 @@ class Printer {
 public:
     TranslationUnit& tu;
     SmallUnrenderedString out;
+    DenseMap<GlobalConstant*, i64> global_ids;
     DenseMap<Argument*, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Inst*, i64> inst_ids;
@@ -470,6 +478,19 @@ auto Builder::Dump() -> SmallUnrenderedString {
 }
 
 void Printer::Dump(Builder& b) {
+    for (auto [i, g] : enumerate(b.global_constants())) {
+        global_ids[g] = i64(i);
+        out += std::format("%3(@{}%) %1(=%) ", i);
+        if (g->is_string()) out += std::format("%3(\"{}\"%)", utils::Escape(g->value(), true, true));
+        else {
+            out += "%1({%) %5(";
+            out += utils::join(g->value(), "%1(,%) ", "{:02X}");
+            out += "%) %1(}, align %)";
+            out += std::format("%5({}%)", g->align());
+        }
+        out += "\n";
+    }
+
     for (auto* proc : b.procedures())
         DumpProc(proc);
 }
@@ -702,6 +723,11 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
             out += std::format("%8(%%{}%)", Id(frame_ids, f));
         } break;
 
+        case Value::Kind::GlobalConstant: {
+            auto c = cast<GlobalConstant>(v);
+            out += std::format("%3(@{}%)", Id(global_ids, c));
+        } break;
+
         case Value::Kind::InstValue: {
             auto i = cast<InstValue>(v);
             if (i->inst()->has_multiple_results()) out += std::format("%8(%%{}:{}%)", Id(inst_ids, i->inst()), i->index());
@@ -730,8 +756,13 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
 
         case Value::Kind::Slice: {
             auto s = cast<Slice>(v);
-            if (auto sz = dyn_cast<SmallInt>(s->size); sz and isa<StringData>(s->data)) {
-                auto str = cast<StringData>(s->data);
+            if (
+                auto sz = dyn_cast<SmallInt>(s->size);
+                sz and
+                isa<GlobalConstant>(s->data) and
+                cast<GlobalConstant>(s->data)->is_string()
+            ) {
+                auto str = cast<GlobalConstant>(s->data);
                 out += std::format("s%3(\"{}\"%)", utils::Escape(str->value().take(usz(sz->value())), true, true));
             } else {
                 out += std::format("{} (%5({}%), %5({}%))", s->type(), DumpValue(s->data), DumpValue(s->size));
@@ -745,11 +776,6 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
                 v->type(),
                 APInt(u32(v->type()->size(tu).bits()), u64(s->value()))
             );
-        } break;
-
-        case Value::Kind::StringData: {
-            auto str = cast<StringData>(v);
-            out += std::format("&%3(\"{}\"%)", utils::Escape(str->value(), true, true));
         } break;
     }
     return out;

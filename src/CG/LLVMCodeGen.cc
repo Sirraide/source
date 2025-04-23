@@ -449,6 +449,14 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
         }
 
         case K::FrameSlot: return frame_slots.at(cast<ir::FrameSlot>(v));
+        case K::GlobalConstant: {
+            auto g = cast<ir::GlobalConstant>(v);
+            if (g->is_string()) return InternStringPtr(g->value());
+            auto c = CreateGlobalString(g->value(), "", 0, nullptr, false);
+            c->setAlignment(ConvertAlign(g->align()));
+            return c;
+        }
+
         case K::InstValue: {
             auto i = cast<ir::InstValue>(v);
             auto inst = instructions.at(i->inst());
@@ -479,9 +487,6 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             auto i = cast<ir::SmallInt>(v);
             return getIntN(u32(i->type()->size(cg.tu).bits()), u64(i->value()));
         }
-
-        case K::StringData:
-            return InternStringPtr(cast<ir::StringData>(v)->value());
     }
 
     Unreachable("Invalid value kind: {}", +v->kind());
