@@ -447,8 +447,13 @@ private:
         Location loc
     ) -> ConversionSequenceOrDiags;
 
-    /// Build an rvalue that can initialise a variable using a
-    /// list of arguments.
+    /// Build a conversion sequence that can be applied to a list
+    /// of arguments to create an expression that can initialise
+    /// a variable of type \p var_type.
+    ///
+    /// The value is *usually* an rvalue, but it may be an lvalue
+    /// if we’re e.g. copying structs since that will be lowered
+    /// to a memcpy.
     ///
     /// During parameter initialisation, pass the parameter intent
     /// if there is one; in all other cases, leave it as 'Move'
@@ -458,14 +463,11 @@ private:
     /// a variable of the given type, i.e. codegen knows what to do with
     /// it as the argument to PerformVariableInitialisation().
     ///
-    /// \param ctx The initialisation context; this determines whether
-    ///   any required conversions are applied immediately, or deferred
-    ///   until a later point in time.
-    ///
     /// \param var_type The type of the variable to be initialised.
     /// \param args The initialisation arguments; can be empty for default
     ///    initialisation.
     ///
+    /// \param init_loc Location to report diagnostics at.
     /// \param intent If the variable is a parameter, its intent.
     ///
     /// \param cc If this is an argument to a call, the calling convention
@@ -492,6 +494,7 @@ private:
         Intent intent = Intent::Move,
         CallingConvention cc = CallingConvention::Source
     ) -> Ptr<Expr>;
+
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
