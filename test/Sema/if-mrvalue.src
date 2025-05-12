@@ -1,0 +1,11 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+struct s { i64 x; }
+
+if true then s(1);
+if true {} else s(1);
+s x = if true then s(2) else s(2);
+s y = if true then x else s(2);
+s z = if true then s(2) else x;

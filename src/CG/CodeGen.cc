@@ -385,35 +385,25 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 // ============================================================================
 void CodeGen::EmitInitialiser(Value* addr, Expr* init) {
     Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
-    switch (init->type->rvalue_category()) {
-        case Expr::LValue: Unreachable();
-
-        // Emit + store.
-        case Expr::SRValue: {
-            Assert(init->value_category == Expr::SRValue);
-            CreateStore(Emit(init), addr);
-            return;
-        }
-
-        case Expr::MRValue: {
-            // If the initialiser is an lvalue, emit a memcpy. This is used for
-            // structs that are trivially copyable.
-            if (init->value_category == Expr::LValue) {
-                CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()));
-                return;
-            }
-
-            Assert(init->value_category == Expr::MRValue);
-            EmitMRValue(addr, init);
-            return;
-        }
+    if (init->type->is_srvalue()) {
+        Assert(init->value_category == Expr::SRValue);
+        CreateStore(Emit(init), addr);
+    } else {
+        EmitMRValue(addr, init);
     }
-
-    Unreachable();
 }
 
 void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
     Assert(addr, "Emitting mrvalue without address?");
+
+    // We support treating lvalues as mrvalues.
+    if (init->value_category == Expr::LValue) {
+        CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()));
+        return;
+    }
+
+    // Otherwise, we need to emit an mrvalue; only select kinds of expressions
+    // can produce mrvalues; we need to handle each of them here.
     init->visit(utils::Overloaded{
         [&](auto*) { ICE(init->location(), "Invalid mrvalue"); },
 
@@ -439,6 +429,9 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
 
         // Default initialiser here is a memset to 0.
         [&](DefaultInitExpr* e) { CreateMemZero(addr, CreateInt(e->type->size(tu).bytes())); },
+
+        // If expressions can be mrvalues if either branch is an mrvalue.
+        [&](IfExpr* e) { EmitIfExpr(e, addr); },
 
         // Structs literals are emitted field by field.
         [&](StructInitExpr* e) {
@@ -926,6 +919,15 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {
         stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<Value*()>{}
     );
     return args.empty() ? nullptr : args.front();
+}
+
+auto CodeGen::EmitIfExpr(IfExpr* stmt, Value* mrvalue_slot) -> Value* {
+    (void) If(
+        Emit(stmt->cond),
+        [&] { EmitMRValue(mrvalue_slot, cast<Expr>(stmt->then));  return nullptr; },
+        [&] { EmitMRValue(mrvalue_slot, cast<Expr>(stmt->else_.get())); return nullptr; }
+    );
+    return nullptr;
 }
 
 auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {

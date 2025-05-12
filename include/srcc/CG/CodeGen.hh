@@ -128,6 +128,7 @@ private:
     auto Emit(Stmt* stmt) -> ir::Value*;
     auto EmitCallExpr(CallExpr* call, ir::Value* mrvalue_slot) -> ir::Value*;
     auto EmitBlockExpr(BlockExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
+    auto EmitIfExpr(IfExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->ir::Value*;
 #include "srcc/AST.inc"

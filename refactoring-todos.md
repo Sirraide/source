@@ -7,7 +7,6 @@
   - For templates, just store the tokens that make up the template (similarly to what Flang does)
 
 - MRValues 
-  Add 'EmitMRValue(Value* into, Expr* mrvalue)' to codegen to handle
-    `x = if a then s(1) else s(2)`, `x = { s(1); }`, etc. Move the mrvalue code
-    in PerformVariableInitialisation() into this function and rename the former
-    to EmitInitialiser()
+  - Currently, we just allow lvalues where mrvalues are expected and then expect codegen to handle
+    it; if this ever causes problems, we need to instead create a `StructCopyExpr` or sth like that
+    which has an lvalue subexpression and which is an mrvalue that codegen can create a memcpy for.

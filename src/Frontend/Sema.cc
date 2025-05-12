@@ -1775,14 +1775,16 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     //       as discarded.
     if (common_ty == Type::VoidTy) return Build(Type::VoidTy, Expr::SRValue);
 
-    // Permitting MRValues here is non-trivial.
-    if (common_ty->rvalue_category() == Expr::MRValue) return ICE(
-        loc,
-        "Sorry, we don’t support returning a value of type '{}' from an '%1(if%)' expression yet.",
-        common_ty
-    );
+    // If we get here and the type is an mrvalue type, then we either have two
+    // mrvalues or an mrvalue and an lvalue; either way, codegen knows how to
+    // emit an lvalue as an mrvalue, so for types that are trivially copyable,
+    // we don’t need to do anything here.
+    if (common_ty->rvalue_category() == Expr::MRValue) {
+        if (common_ty->move_is_copy()) return Build(common_ty, Expr::MRValue);
+        return ICE(loc, "TODO: Move a value of type '{}'", common_ty);
+    }
 
-    // Make sure both sides are rvalues.
+    // The type is an srvalue type. Make sure both sides are srvalues.
     t = LValueToSRValue(t);
     e = LValueToSRValue(e);
     return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
