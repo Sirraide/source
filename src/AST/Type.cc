@@ -150,9 +150,13 @@ bool TypeBase::is_srvalue() const {
         case Kind::ProcType:
             return true;
 
+        // Zero-sized arrays are invalid, so treat all arrays as mrvalues.
         case Kind::ArrayType:
-        case Kind::StructType:
             return false;
+
+        // Zero-sized types are passed around as 'void', which is an srvalue.
+        case Kind::StructType:
+            return cast<StructType>(this)->size() == Size();
     }
 
     Unreachable("Invalid type kind");
@@ -204,7 +208,7 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
                 [](ProcType*) { return true; },                          // Closures are two pointers.
                 [](PtrType*) { return true; },                           // Pointers are small.
                 [](SliceType*) { return true; },                         // Slices are two pointers.
-                [](StructType*) { return false; },                       // Pass structs by reference (TODO: small ones by value).
+                [](StructType* s) { return s->is_srvalue(); },           // Pass structs by reference (TODO: small ones by value).
             }); // clang-format on
     }
 

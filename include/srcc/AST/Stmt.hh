@@ -62,11 +62,17 @@ public:
     /// Get the kind of this statement.
     Kind kind() const { return stmt_kind; }
 
+    /// Get whether this is an mrvalue.
+    bool is_mrvalue() const { return value_category_or_srvalue() == ValueCategory::MRValue; }
+
     /// Get the source location of this statement.
     auto location() const -> Location { return loc; }
 
     /// Get the type of this if it is an expression and Void otherwise.
     auto type_or_void() const -> Type;
+
+    /// Get the value category if this is an expression and SRValue otherwise.
+    auto value_category_or_srvalue() const -> ValueCategory;
 
     /// Visit this statement.
     template <typename Visitor>

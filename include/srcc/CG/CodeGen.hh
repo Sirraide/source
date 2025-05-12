@@ -127,6 +127,7 @@ private:
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> ir::Value*;
     auto EmitCallExpr(CallExpr* call, ir::Value* mrvalue_slot) -> ir::Value*;
+    auto EmitBlockExpr(BlockExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->ir::Value*;
 #include "srcc/AST.inc"
@@ -135,7 +136,12 @@ private:
     void EmitProcedure(ProcDecl* proc);
     auto EmitValue(const eval::RValue& val) -> ir::Value*;
 
+    /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
+    void EmitInitialiser(ir::Value* addr, Expr* init);
     void EmitLocal(LocalDecl* decl);
+
+    /// Emit an mrvalue into a memory location.
+    void EmitMRValue(ir::Value* addr, Expr* init);
 
     auto EnterBlock(std::unique_ptr<ir::Block> bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
     auto EnterBlock(ir::Block* bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
@@ -209,9 +215,6 @@ private:
     );
 
     auto MangledName(ProcDecl* proc) -> String;
-
-    /// Initialise a variable or memory location.
-    void PerformVariableInitialisation(ir::Value* addr, Expr* init);
 
     /// Opposite of If().
     void Unless(

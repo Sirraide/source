@@ -5,3 +5,9 @@
 
 - Serialisation refactor:
   - For templates, just store the tokens that make up the template (similarly to what Flang does)
+
+- MRValues 
+  Add 'EmitMRValue(Value* into, Expr* mrvalue)' to codegen to handle
+    `x = if a then s(1) else s(2)`, `x = { s(1); }`, etc. Move the mrvalue code
+    in PerformVariableInitialisation() into this function and rename the former
+    to EmitInitialiser()

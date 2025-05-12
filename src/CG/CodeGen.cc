@@ -383,24 +383,19 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 // ============================================================================
 //  Initialisation.
 // ============================================================================
-void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
+void CodeGen::EmitInitialiser(Value* addr, Expr* init) {
     Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
     switch (init->type->rvalue_category()) {
         case Expr::LValue: Unreachable();
 
         // Emit + store.
         case Expr::SRValue: {
+            Assert(init->value_category == Expr::SRValue);
             CreateStore(Emit(init), addr);
             return;
         }
 
         case Expr::MRValue: {
-            // Default initialiser here is a memset to 0.
-            if (isa<DefaultInitExpr>(init)) {
-                CreateMemZero(addr, CreateInt(init->type->size(tu).bytes()));
-                return;
-            }
-
             // If the initialiser is an lvalue, emit a memcpy. This is used for
             // structs that are trivially copyable.
             if (init->value_category == Expr::LValue) {
@@ -408,53 +403,62 @@ void CodeGen::PerformVariableInitialisation(Value* addr, Expr* init) {
                 return;
             }
 
-            // If the initialiser is a call, pass the address to it.
-            if (auto call = dyn_cast<CallExpr>(init)) {
-                EmitCallExpr(call, addr);
-                return;
-            }
-
-            // If the initialiser is a constant expression, create a global constant for it.
-            //
-            // Yes, this means that this is basically an lvalue that we’re copying from;
-            // the only reason the language treats it as an mrvalue is because it would
-            // logically be rather weird to be able to take the address of an evaluated
-            // struct literal (but not of other rvalues).
-            if (auto ce = dyn_cast<ConstExpr>(init)) {
-                // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
-                auto mrv = ce->value->cast<eval::MRValue>();
-                auto c = CreateGlobalConstantPtr(init->type, String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()));
-                CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()));
-                return;
-            }
-
-            // Structs are otherwise constructed field by field.
-            if (auto lit = dyn_cast<StructInitExpr>(init)) {
-                auto s = lit->struct_type();
-                for (auto [field, val] : zip(s->fields(), lit->values())) {
-                    if (IsZeroSizedType(field->type)) {
-                        Emit(val);
-                        continue;
-                    }
-
-                    auto offs = CreatePtrAdd(
-                        addr,
-                        CreateInt(field->offset.bytes()),
-                        true
-                    );
-
-                    PerformVariableInitialisation(offs, val);
-                }
-                return;
-            }
-
-            // Anything else here is nonsense.
-            ICE(init->location(), "Unsupported initialiser");
+            Assert(init->value_category == Expr::MRValue);
+            EmitMRValue(addr, init);
             return;
         }
     }
 
     Unreachable();
+}
+
+void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
+    Assert(addr, "Emitting mrvalue without address?");
+    init->visit(utils::Overloaded{
+        [&](auto*) { ICE(init->location(), "Invalid mrvalue"); },
+
+        // Blocks can be mrvalues if the last expression is an mrvalue.
+        [&](BlockExpr* e) { EmitBlockExpr(e, addr); },
+
+        // If the initialiser is a call, pass the address to it.
+        [&](CallExpr* e) { EmitCallExpr(e, addr); },
+
+        // If the initialiser is a constant expression, create a global constant for it.
+        //
+        // Yes, this means that this is basically an lvalue that we’re copying from;
+        // the only reason the language treats it as an mrvalue is because it would
+        // logically be rather weird to be able to take the address of an evaluated
+        // struct literal (but not of other rvalues).
+        //
+        // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
+        [&](ConstExpr* e) {
+            auto mrv = e->value->cast<eval::MRValue>();
+            auto c = CreateGlobalConstantPtr(init->type, String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()));
+            CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()));
+        },
+
+        // Default initialiser here is a memset to 0.
+        [&](DefaultInitExpr* e) { CreateMemZero(addr, CreateInt(e->type->size(tu).bytes())); },
+
+        // Structs literals are emitted field by field.
+        [&](StructInitExpr* e) {
+            auto s = e->struct_type();
+            for (auto [field, val] : zip(s->fields(), e->values())) {
+                if (IsZeroSizedType(field->type)) {
+                    Emit(val);
+                    continue;
+                }
+
+                auto offs = CreatePtrAdd(
+                    addr,
+                    CreateInt(field->offset.bytes()),
+                    true
+                );
+
+                EmitInitialiser(offs, val);
+            }
+        }
+    });
 }
 
 // ============================================================================
@@ -465,6 +469,7 @@ void CodeGen::Emit(ArrayRef<ProcDecl*> procs) {
 }
 
 auto CodeGen::Emit(Stmt* stmt) -> Value* {
+    Assert(not stmt->is_mrvalue(), "Should call EmitMRValue() instead");
     switch (stmt->kind()) {
         using K = Stmt::Kind;
 #define AST_DECL_LEAF(node) \
@@ -519,7 +524,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         case Tk::Assign: {
             auto addr = Emit(expr->lhs);
             if (IsZeroSizedType(expr->lhs->type)) Emit(expr->rhs);
-            else PerformVariableInitialisation(addr, expr->rhs);
+            else EmitInitialiser(addr, expr->rhs);
             return addr;
         }
 
@@ -711,6 +716,10 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
 }
 
 auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
+    return EmitBlockExpr(expr, nullptr);
+}
+
+auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value* mrvalue_slot) -> Value* {
     Value* ret = nullptr;
     for (auto s : expr->stmts()) {
         // Initialise variables.
@@ -723,16 +732,29 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
                 Emit(var->init.get());
             } else {
                 if (not locals.contains(var)) EmitLocal(var);
-                PerformVariableInitialisation(locals.at(var), var->init.get());
+                EmitInitialiser(locals.at(var), var->init.get());
             }
         }
 
         // Can’t emit other declarations here.
         if (isa<Decl>(s)) continue;
 
-        // Emit statement.
-        auto val = Emit(s);
-        if (s == expr->return_expr()) ret = val;
+        // This is the expression we need to return from the block.
+        if (s == expr->return_expr()) {
+            if (s->is_mrvalue()) EmitMRValue(mrvalue_slot, cast<Expr>(s));
+            else ret = Emit(s);
+        }
+
+        // This is an mrvalue expression that is not the return value; we
+        // allow these here, but we need to provide stack space for them.
+        else if (s->is_mrvalue()) {
+            auto e = cast<Expr>(s);
+            auto l = CreateAlloca(curr_proc, e->type);
+            EmitMRValue(l, e);
+        }
+
+        // Otherwise, this is a regular statement or expression.
+        else { Emit(s); }
     }
     return ret;
 }
@@ -834,12 +856,8 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value* mrvalue_slot) -> Value* {
-    // If the caller didn’t provide a space to store the return value into,
-    // make one up (this can happen if we don’t do anything with the return
-    // value).
     auto ty = cast<ProcType>(expr->callee->type);
-    if (HasIndirectReturn(ty) and not mrvalue_slot)
-        mrvalue_slot = CreateAlloca(curr_proc, ty->ret());
+    Assert(HasIndirectReturn(ty) == bool(mrvalue_slot));
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
@@ -969,7 +987,7 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
     if (curr_proc->indirect_ret_type) {
         auto slot = curr_proc->args().front();
-        PerformVariableInitialisation(slot, expr->value.get());
+        EmitInitialiser(slot, expr->value.get());
         CreateReturn();
         return nullptr;
     }

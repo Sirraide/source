@@ -175,6 +175,11 @@ auto Stmt::type_or_void() const -> Type {
     return Type::VoidTy;
 }
 
+auto Stmt::value_category_or_srvalue() const -> ValueCategory {
+    if (auto e = dyn_cast<Expr>(this)) return e->value_category;
+    return Expr::SRValue;
+}
+
 // ============================================================================
 //  Declarations
 // ============================================================================
