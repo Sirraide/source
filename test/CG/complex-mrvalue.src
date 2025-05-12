@@ -36,12 +36,10 @@ proc d (in bool x) {
 // +     %1 = s
 // +
 // + entry:
-// +     %2 = ptradd %1, int 0
+// +     %2 = sext int 1 to i64
+// +     store i64 to %1, %2, align 8
 // +     %3 = sext int 1 to i64
-// +     store i64 to %2, %3, align 8
-// +     %4 = ptradd %0, int 0
-// +     %5 = sext int 1 to i64
-// +     store i64 to %4, %5, align 8
+// +     store i64 to %0, %3, align 8
 // +     ret
 // + }
 // +
@@ -52,30 +50,26 @@ proc d (in bool x) {
 // +     br %1 to bb1 else bb2
 // +
 // + bb1:
-// +     %3 = ptradd %2, int 0
-// +     %4 = sext int 1 to i64
-// +     store i64 to %3, %4, align 8
+// +     %3 = sext int 1 to i64
+// +     store i64 to %2, %3, align 8
 // +     br bb3
 // +
 // + bb2:
-// +     %5 = ptradd %2, int 0
-// +     %6 = sext int 2 to i64
-// +     store i64 to %5, %6, align 8
+// +     %4 = sext int 2 to i64
+// +     store i64 to %2, %4, align 8
 // +     br bb3
 // +
 // + bb3:
 // +     br %1 to bb4 else bb5
 // +
 // + bb4:
-// +     %7 = ptradd %0, int 0
-// +     %8 = sext int 1 to i64
-// +     store i64 to %7, %8, align 8
+// +     %5 = sext int 1 to i64
+// +     store i64 to %0, %5, align 8
 // +     br bb6
 // +
 // + bb5:
-// +     %9 = ptradd %0, int 0
-// +     %10 = sext int 2 to i64
-// +     store i64 to %9, %10, align 8
+// +     %6 = sext int 2 to i64
+// +     store i64 to %0, %6, align 8
 // +     br bb6
 // +
 // + bb6:
@@ -89,9 +83,8 @@ proc d (in bool x) {
 // +     br %1 to bb1 else bb2
 // +
 // + bb1:
-// +     %3 = ptradd %2, int 0
-// +     %4 = sext int 1 to i64
-// +     store i64 to %3, %4, align 8
+// +     %3 = sext int 1 to i64
+// +     store i64 to %2, %3, align 8
 // +     br bb3
 // +
 // + bb2:
@@ -102,9 +95,8 @@ proc d (in bool x) {
 // +     br %1 to bb4 else bb5
 // +
 // + bb4:
-// +     %5 = ptradd %0, int 0
-// +     %6 = sext int 2 to i64
-// +     store i64 to %5, %6, align 8
+// +     %4 = sext int 2 to i64
+// +     store i64 to %0, %4, align 8
 // +     br bb6
 // +
 // + bb5:
@@ -123,9 +115,8 @@ proc d (in bool x) {
 // +     %5 = s
 // +
 // + entry:
-// +     %6 = ptradd %1, int 0
-// +     %7 = sext int 1 to i64
-// +     store i64 to %6, %7, align 8
+// +     %6 = sext int 1 to i64
+// +     store i64 to %1, %6, align 8
 // +     copy %2, %1, int 8
 // +     br %0 to bb1 else bb2
 // +
@@ -135,14 +126,13 @@ proc d (in bool x) {
 // + bb2:
 // +     br bb3(%2)
 // +
-// + bb3(s^ %8):
-// +     copy %3, %8, int 8
+// + bb3(s^ %7):
+// +     copy %3, %7, int 8
 // +     br %0 to bb4 else bb5
 // +
 // + bb4:
-// +     %9 = ptradd %4, int 0
-// +     %10 = sext int 1 to i64
-// +     store i64 to %9, %10, align 8
+// +     %8 = sext int 1 to i64
+// +     store i64 to %4, %8, align 8
 // +     br bb6
 // +
 // + bb5:
@@ -157,9 +147,8 @@ proc d (in bool x) {
 // +     br bb9
 // +
 // + bb8:
-// +     %11 = ptradd %5, int 0
-// +     %12 = sext int 1 to i64
-// +     store i64 to %11, %12, align 8
+// +     %9 = sext int 1 to i64
+// +     store i64 to %5, %9, align 8
 // +     br bb9
 // +
 // + bb9:
@@ -180,10 +169,8 @@ proc d (in bool x) {
 //L + define private fastcc void @_S1aFT1sE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
 //L + entry:
 //L +   %1 = alloca [8 x i8], align 8
-//L +   %2 = getelementptr inbounds i8, ptr %1, i64 0
-//L +   store i64 1, ptr %2, align 8
-//L +   %3 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   store i64 1, ptr %3, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   store i64 1, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
@@ -193,26 +180,22 @@ proc d (in bool x) {
 //L +   br i1 %1, label %bb1, label %bb2
 //L +
 //L + bb1:                                              ; preds = %entry
-//L +   %3 = getelementptr inbounds i8, ptr %2, i64 0
-//L +   store i64 1, ptr %3, align 8
+//L +   store i64 1, ptr %2, align 8
 //L +   br label %bb3
 //L +
 //L + bb2:                                              ; preds = %entry
-//L +   %4 = getelementptr inbounds i8, ptr %2, i64 0
-//L +   store i64 2, ptr %4, align 8
+//L +   store i64 2, ptr %2, align 8
 //L +   br label %bb3
 //L +
 //L + bb3:                                              ; preds = %bb2, %bb1
 //L +   br i1 %1, label %bb4, label %bb5
 //L +
 //L + bb4:                                              ; preds = %bb3
-//L +   %5 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   store i64 1, ptr %5, align 8
+//L +   store i64 1, ptr %0, align 8
 //L +   br label %bb6
 //L +
 //L + bb5:                                              ; preds = %bb3
-//L +   %6 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   store i64 2, ptr %6, align 8
+//L +   store i64 2, ptr %0, align 8
 //L +   br label %bb6
 //L +
 //L + bb6:                                              ; preds = %bb5, %bb4
@@ -225,8 +208,7 @@ proc d (in bool x) {
 //L +   br i1 %1, label %bb1, label %bb2
 //L +
 //L + bb1:                                              ; preds = %entry
-//L +   %3 = getelementptr inbounds i8, ptr %2, i64 0
-//L +   store i64 1, ptr %3, align 8
+//L +   store i64 1, ptr %2, align 8
 //L +   br label %bb3
 //L +
 //L + bb2:                                              ; preds = %entry
@@ -237,8 +219,7 @@ proc d (in bool x) {
 //L +   br i1 %1, label %bb4, label %bb5
 //L +
 //L + bb4:                                              ; preds = %bb3
-//L +   %4 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   store i64 2, ptr %4, align 8
+//L +   store i64 2, ptr %0, align 8
 //L +   br label %bb6
 //L +
 //L + bb5:                                              ; preds = %bb3
@@ -256,8 +237,7 @@ proc d (in bool x) {
 //L +   %3 = alloca [8 x i8], align 8
 //L +   %4 = alloca [8 x i8], align 8
 //L +   %5 = alloca [8 x i8], align 8
-//L +   %6 = getelementptr inbounds i8, ptr %1, i64 0
-//L +   store i64 1, ptr %6, align 8
+//L +   store i64 1, ptr %1, align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %2, ptr align 8 %1, i64 8, i1 false)
 //L +   br i1 %0, label %bb1, label %bb2
 //L +
@@ -268,13 +248,12 @@ proc d (in bool x) {
 //L +   br label %bb3
 //L +
 //L + bb3:                                              ; preds = %bb2, %bb1
-//L +   %7 = phi ptr [ %1, %bb1 ], [ %2, %bb2 ]
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %3, ptr align 8 %7, i64 8, i1 false)
+//L +   %6 = phi ptr [ %1, %bb1 ], [ %2, %bb2 ]
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %3, ptr align 8 %6, i64 8, i1 false)
 //L +   br i1 %0, label %bb4, label %bb5
 //L +
 //L + bb4:                                              ; preds = %bb3
-//L +   %8 = getelementptr inbounds i8, ptr %4, i64 0
-//L +   store i64 1, ptr %8, align 8
+//L +   store i64 1, ptr %4, align 8
 //L +   br label %bb6
 //L +
 //L + bb5:                                              ; preds = %bb3
@@ -289,8 +268,7 @@ proc d (in bool x) {
 //L +   br label %bb9
 //L +
 //L + bb8:                                              ; preds = %bb6
-//L +   %9 = getelementptr inbounds i8, ptr %5, i64 0
-//L +   store i64 1, ptr %9, align 8
+//L +   store i64 1, ptr %5, align 8
 //L +   br label %bb9
 //L +
 //L + bb9:                                              ; preds = %bb8, %bb7

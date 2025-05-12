@@ -33,8 +33,7 @@ proc f {
 // +
 // + proc _S1bFT1xE (in x^ %0) {
 // + entry:
-// +     %1 = ptradd %0, int 0
-// +     store int to %1, int 1, align 8
+// +     store int to %0, int 1, align 8
 // +     ret
 // + }
 // +
@@ -43,9 +42,8 @@ proc f {
 // +
 // + entry:
 // +     store int to %2, %1, align 8
-// +     %3 = ptradd %0, int 0
-// +     %4 = load int, %2, align 8
-// +     store int to %3, %4, align 8
+// +     %3 = load int, %2, align 8
+// +     store int to %0, %3, align 8
 // +     ret
 // + }
 // +
@@ -53,8 +51,7 @@ proc f {
 // +     %1 = x
 // +
 // + entry:
-// +     %2 = ptradd %1, int 0
-// +     store int to %2, int 1, align 8
+// +     store int to %1, int 1, align 8
 // +     copy %0, %1, int 8
 // +     ret
 // + }
@@ -85,8 +82,7 @@ proc f {
 //L +
 //L + define private fastcc void @_S1bFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
 //L + entry:
-//L +   %1 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   store i64 1, ptr %1, align 8
+//L +   store i64 1, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
@@ -94,17 +90,15 @@ proc f {
 //L + entry:
 //L +   %2 = alloca i64, align 8
 //L +   store i64 %1, ptr %2, align 8
-//L +   %3 = getelementptr inbounds i8, ptr %0, i64 0
-//L +   %4 = load i64, ptr %2, align 8
-//L +   store i64 %4, ptr %3, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   store i64 %3, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
 //L + define private fastcc void @_S1dFT1xE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
 //L + entry:
 //L +   %1 = alloca [8 x i8], align 8
-//L +   %2 = getelementptr inbounds i8, ptr %1, i64 0
-//L +   store i64 1, ptr %2, align 8
+//L +   store i64 1, ptr %1, align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 %1, i64 8, i1 false)
 //L +   ret void
 //L + }
@@ -126,3 +120,6 @@ proc f {
 //L +   call fastcc void @_S1dFT1xE(ptr %0)
 //L +   ret void
 //L + }
+//L +
+//L + attributes #0 = { noreturn nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }

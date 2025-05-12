@@ -11,32 +11,39 @@ struct B {
     A b;
 };
 
-// * define private fastcc void @_S1fFvE() {
-// + entry:
-// +   %0 = alloca [16 x i8], align 8
-// +   %1 = alloca [32 x i8], align 8
-// +   %2 = getelementptr inbounds i8, ptr %0, i64 0
-// +   store i64 1, ptr %2, align 8
-// +   %3 = getelementptr inbounds i8, ptr %0, i64 8
-// +   store i64 2, ptr %3, align 8
-// +   %4 = getelementptr inbounds i8, ptr %1, i64 0
-// +   %5 = getelementptr inbounds i8, ptr %4, i64 0
-// +   store i64 3, ptr %5, align 8
-// +   %6 = getelementptr inbounds i8, ptr %4, i64 8
-// +   store i64 4, ptr %6, align 8
-// +   %7 = getelementptr inbounds i8, ptr %1, i64 16
-// +   %8 = getelementptr inbounds i8, ptr %7, i64 0
-// +   store i64 5, ptr %8, align 8
-// +   %9 = getelementptr inbounds i8, ptr %7, i64 8
-// +   store i64 6, ptr %9, align 8
-// +   ret void
-// + }
 proc f {
     A a = A(1, 2);
     B b = B(A(3, 4), A(5, 6));
 }
 
-// * define private fastcc void @_S1gFvE() {
+proc g {
+    A a;
+    B b;
+}
+
+// * define fastcc void @__src_main() {
+// + entry:
+// +   ret void
+// + }
+// +
+// + define private fastcc void @_S1fFvE() {
+// + entry:
+// +   %0 = alloca [16 x i8], align 8
+// +   %1 = alloca [32 x i8], align 8
+// +   store i64 1, ptr %0, align 8
+// +   %2 = getelementptr inbounds i8, ptr %0, i64 8
+// +   store i64 2, ptr %2, align 8
+// +   store i64 3, ptr %1, align 8
+// +   %3 = getelementptr inbounds i8, ptr %1, i64 8
+// +   store i64 4, ptr %3, align 8
+// +   %4 = getelementptr inbounds i8, ptr %1, i64 16
+// +   store i64 5, ptr %4, align 8
+// +   %5 = getelementptr inbounds i8, ptr %4, i64 8
+// +   store i64 6, ptr %5, align 8
+// +   ret void
+// + }
+// +
+// + define private fastcc void @_S1gFvE() {
 // + entry:
 // +   %0 = alloca [16 x i8], align 8
 // +   %1 = alloca [32 x i8], align 8
@@ -44,7 +51,9 @@ proc f {
 // +   call void @llvm.memset.p0.i64(ptr align 8 %1, i8 0, i64 32, i1 false)
 // +   ret void
 // + }
-proc g {
-    A a;
-    B b;
-}
+// +
+// + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+// + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+// +
+// + attributes #0 = { noreturn nounwind }
+// + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }

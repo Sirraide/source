@@ -204,6 +204,11 @@ auto Builder::CreatePoison(Type ty) -> Value* {
 
 auto Builder::CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value* {
     Assert(isa<PtrType>(ptr->type()), "First argument to ptradd must be a pointer");
+
+    // This is really common in struct initialisers, so optimise for it.
+    if (auto lit = dyn_cast<SmallInt>(offs); lit and lit->value() == 0)
+        return ptr;
+
     auto i = CreateAndGetVal(Op::PtrAdd, ptr->type(), {ptr, offs});
     i->inst()->inbounds = inbounds;
     return i;
