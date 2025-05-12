@@ -719,6 +719,23 @@ auto Parser::Parse(
     return std::move(P.mod);
 }
 
+// <expr-assert> ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
+auto Parser::ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr> {
+    auto start = Next();
+    auto cond = TryParseExpr();
+
+    // Message is optional.
+    Ptr<ParsedStmt> message;
+    if (Consume(Tk::Comma)) message = ParseExpr();
+
+    return new (*this) ParsedAssertExpr{
+        cond,
+        message,
+        is_compile_time,
+        {start, message ? message.get()->loc : cond->loc},
+    };
+}
+
 auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     auto loc = Next();
 
@@ -797,27 +814,21 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         // Compile-time expressions.
         case Tk::Hash: {
             auto hash_loc = Next();
-            if (At(Tk::If)) lhs = ParseIf(true);
-            else if (At(Tk::Elif, Tk::Else)) return Error("Unexpected '%1(#{}%)'", tok->type);
-            else return Error("Expected '%1(if%)' after '%1(#%)'");
+            switch (tok->type) {
+                default: return Error("'%1(#%)' should be followed by one of: '%1(if%)', '%1(assert%)'");
+                case Tk::If: lhs = ParseIf(true); break;
+                case Tk::Assert: lhs = ParseAssert(true); break;
+                case Tk::Elif:
+                case Tk::Else:
+                    return Error("Unexpected '%1(#{}%)'", tok->type);
+            }
             if (auto l = lhs.get_or_null()) l->loc = {hash_loc, l->loc};
         } break;
 
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
-        case Tk::Assert: {
-            auto start = Next();
-            auto cond = TryParseExpr();
-
-            // Message is optional.
-            Ptr<ParsedStmt> message;
-            if (Consume(Tk::Comma)) message = ParseExpr();
-
-            lhs = new (*this) ParsedAssertExpr{
-                cond,
-                message,
-                {start, message ? message.get()->loc : cond->loc},
-            };
-        } break;
+        case Tk::Assert:
+            lhs = ParseAssert(false);
+            break;
 
         // <expr-block> ::= "{" { <stmt> } "}"
         case Tk::LBrace:
@@ -1028,7 +1039,7 @@ void Parser::ParseHeader() {
     Consume(Tk::Semicolon);
 }
 
-// <expr-if> ::= [ STATIC] IF <expr> <if-body> { ELIF <expr> <if-body> } [ ELSE <expr> ]
+// <expr-if> ::= [ "#" ] IF <expr> <if-body> { [ "#" ] ELIF <expr> <if-body> } [ [ "#" ] ELSE <if-body> ]
 // <if-body> ::= [ THEN ] <expr>
 auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.

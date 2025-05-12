@@ -8,9 +8,9 @@ struct s {
     zero c;
 };
 
-eval assert void.bytes == 0;
-eval assert void.bits == 0;
-eval assert zero.bytes == 0;
-eval assert zero.bits == 0;
-eval assert s.bytes == 0;
-eval assert s.bits == 0;
+#assert void.bytes == 0;
+#assert void.bits == 0;
+#assert zero.bytes == 0;
+#assert zero.bits == 0;
+#assert s.bytes == 0;
+#assert s.bits == 0;

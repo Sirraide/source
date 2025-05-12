@@ -233,12 +233,17 @@ class srcc::ParsedAssertExpr final : public ParsedStmt {
 public:
     ParsedStmt* cond;
     Ptr<ParsedStmt> message;
+    bool is_compile_time;
 
     ParsedAssertExpr(
         ParsedStmt* cond,
         Ptr<ParsedStmt> message,
+        bool is_compile_time,
         Location location
-    ) : ParsedStmt{Kind::AssertExpr, location}, cond{cond}, message{std::move(message)} {}
+    ) : ParsedStmt{Kind::AssertExpr, location},
+        cond{cond},
+        message{std::move(message)},
+        is_compile_time{is_compile_time} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::AssertExpr; }
 };
@@ -686,6 +691,7 @@ private:
           ctx{file.context()} {}
 
     /// Each of these corresponds to a production in the grammar.
+    auto ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr>;
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;

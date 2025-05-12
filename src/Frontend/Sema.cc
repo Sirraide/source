@@ -84,6 +84,15 @@ void Sema::DeclareLocal(LocalDecl* d) {
     AddDeclToScope(curr_scope(), d);
 }
 
+auto Sema::Evaluate(Stmt* s, Location loc) -> Ptr<Expr> {
+    // Evaluate the expression.
+    auto value = M->vm.eval(s);
+    if (not value.has_value()) return nullptr;
+
+    // And cache the value for later.
+    return new (*M) ConstExpr(*M, std::move(*value), loc, s);
+}
+
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     switch (d->kind()) {
         default: return {};
@@ -1285,7 +1294,12 @@ void Sema::ReportOverloadResolutionFailure(
 // ============================================================================
 //  Building nodes.
 // ============================================================================
-auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr> {
+auto Sema::BuildAssertExpr(
+    Expr* cond,
+    Ptr<Expr> msg,
+    bool is_compile_time,
+    Location loc
+) -> Ptr<Expr> {
     if (not MakeCondition(cond, "assert")) return {};
 
     // Message must be a string literal.
@@ -1296,7 +1310,9 @@ auto Sema::BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<Asser
         m->type
     );
 
-    return new (*M) AssertExpr(cond, std::move(msg), false, loc);
+    auto a = new (*M) AssertExpr(cond, std::move(msg), false, loc);
+    if (not is_compile_time) return a;
+    return Evaluate(a, loc);
 }
 
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
@@ -1701,12 +1717,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
         arg = init.get();
     }
 
-    // If the expression is not dependent, evaluate it now.
-    auto value = M->vm.eval(arg);
-    if (not value.has_value()) return nullptr;
-
-    // And cache the value for later.
-    return new (*M) ConstExpr(*M, std::move(*value), loc, arg);
+    return Evaluate(arg, loc);
 }
 
 auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr> {
@@ -2128,7 +2139,7 @@ auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
-    return BuildAssertExpr(cond, msg, parsed->loc);
+    return BuildAssertExpr(cond, msg, parsed->is_compile_time, parsed->loc);
 }
 
 auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Stmt> {

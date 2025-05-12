@@ -109,7 +109,7 @@ if true {} else {} else {}; // expected-error: Unexpected 'else'
 #if true {} #elif true {} #elif true; // expected-error: Expected expression
 #if true {} #else {} #else {}; // expected-error: Unexpected '#else'
 
-#var x; // expected-error: Expected 'if' after '#'
-##; // expected-error: Expected 'if' after '#'
+#var x; // expected-error: '#' should be followed by one of: 'if', 'assert'
+##; // expected-error: '#' should be followed by one of: 'if', 'assert'
 if true #then 4; // expected-error: '#then' is invalid; write 'then' instead
 #if true #then 4; // expected-error: '#then' is invalid; write 'then' instead

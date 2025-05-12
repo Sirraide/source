@@ -508,6 +508,10 @@ private:
         ArrayRef<TypeLoc> input_types
     ) -> Type;
 
+    /// Evaluate a statement, returning the result as a ConstExpr on success
+    /// and nullptr on failure.
+    auto Evaluate(Stmt* e, Location loc) -> Ptr<Expr>;
+
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
@@ -602,7 +606,7 @@ private:
     auto TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr>;
 
     /// Building AST nodes; called after translation and template instantiation.
-    auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, Location loc) -> Ptr<AssertExpr>;
+    auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, Location loc) -> Ptr<Expr>;
     auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<Expr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;

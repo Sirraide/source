@@ -48,7 +48,7 @@
          | <expr-return>
          | <expr-subscript>
 
-<expr-assert>    ::= ASSERT <expr> [ "," <expr> ]
+<expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>
 <expr-block>     ::= "{" <stmts>  "}"
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
