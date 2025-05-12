@@ -34,8 +34,7 @@ range<i13> x;
 // +
 // + entry:
 // +     store range<int> to %1, %0, align 8
-// +     %2 = add int 4, int 1
-// +     ret (int 3, %2)
+// +     ret (int 3, int 5)
 // + }
 // +
 // + proc _S1bFqiqiE (range<int> %0) -> range<int> {
@@ -54,15 +53,13 @@ range<i13> x;
 // +
 // + entry:
 // +     store range<int> to %0, nil, align 8
-// +     %4 = add int 2, int 1
-// +     store range<int> to %1, (int 1, %4), align 8
-// +     %5 = add int 2, int 1
-// +     store range<int> to %2, (int 1, %5), align 8
-// +     %6 = load int, %2, align 8
-// +     %7 = ptradd %2, int 8
-// +     %8 = load int, %7, align 8
-// +     %9 = add %8, int 1
-// +     store range<int> to %3, (%6, %9), align 8
+// +     store range<int> to %1, (int 1, int 3), align 8
+// +     store range<int> to %2, (int 1, int 3), align 8
+// +     %4 = load int, %2, align 8
+// +     %5 = ptradd %2, int 8
+// +     %6 = load int, %5, align 8
+// +     %7 = add %6, int 1
+// +     store range<int> to %3, (%4, %7), align 8
 // +     ret
 // + }
 // +

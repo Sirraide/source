@@ -571,6 +571,7 @@ private:
 
     auto Create(Op op, ArrayRef<Value*> vals) -> Inst*;
     auto CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValue*;
+    auto Fold(Value* lhs, Value* rhs, llvm::function_ref<u64(u64, u64)> op) -> Value*;
     auto Result(Inst* i, Type ty, u32 idx) -> InstValue*;
 };
 }

@@ -19,17 +19,13 @@ var d = c;
 // +     %3 = y
 // +
 // + entry:
-// +     %4 = sext int 1 to i64
-// +     store i64 to %0, %4, align 8
+// +     store i64 to %0, i64 1, align 8
 // +     copy %1, %0, int 8
-// +     %5 = sext int 1 to i64
-// +     store i64 to %2, %5, align 8
-// +     %6 = ptradd %2, int 8
-// +     %7 = sext int 2 to i64
-// +     store i64 to %6, %7, align 8
-// +     %8 = ptradd %2, int 16
-// +     %9 = sext int 3 to i64
-// +     store i64 to %8, %9, align 8
+// +     store i64 to %2, i64 1, align 8
+// +     %4 = ptradd %2, int 8
+// +     store i64 to %4, i64 2, align 8
+// +     %5 = ptradd %2, int 16
+// +     store i64 to %5, i64 3, align 8
 // +     copy %3, %2, int 24
 // +     ret
 // + }

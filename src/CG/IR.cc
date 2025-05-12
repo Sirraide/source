@@ -6,6 +6,11 @@ using namespace srcc;
 using namespace srcc::cg;
 using namespace srcc::cg::ir;
 
+#define TRY_FOLD_INT(...)                                                                \
+    do {                                                                                 \
+        if (auto v = Fold(a, b, [&](u64 lhs, u64 rhs) { return __VA_ARGS__; })) return v; \
+    } while (false)
+
 auto Managed::operator new(usz sz, Builder& b) -> void* {
     return b.Allocate(sz, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
@@ -38,6 +43,7 @@ void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* 
 }
 
 auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
+    TRY_FOLD_INT(lhs + rhs);
     auto add = CreateAndGetVal(Op::Add, a->type(), {a, b});
     add->inst()->nowrap = nowrap;
     return add;
@@ -255,6 +261,14 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
     auto from = i->type()->size(tu).bits();
     auto to = to_type->size(tu).bits();
     if (i->type() == to_type) return i;
+
+    // Fold the cast if possible; casts of literals are rather common.
+    if (auto v = dyn_cast<SmallInt>(i)) return CreateInt(
+        APInt(unsigned(from), v->value()).sextOrTrunc(unsigned(to)).getZExtValue(),
+        to_type
+    );
+
+    // Create a cast operation.
     if (from > to) return CreateSpecialGetVal<ICast>(to_type, Op::Trunc, to_type, i);
     return CreateSpecialGetVal<ICast>(to_type, Op::SExt, to_type, i);
 }
@@ -295,6 +309,7 @@ auto Builder::CreateGlobalStringSlice(String s) -> Slice* {
 }
 
 auto Builder::CreateSub(Value* a, Value* b, bool nowrap) -> Value* {
+    TRY_FOLD_INT(lhs - rhs);
     auto i = CreateAndGetVal(Op::Sub, a->type(), {a, b});
     i->inst()->nowrap = nowrap;
     return i;
@@ -314,6 +329,17 @@ auto Builder::CreateURem(Value* a, Value* b) -> Value* {
 
 auto Builder::CreateXor(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::Xor, a->type(), {a, b});
+}
+
+auto Builder::Fold(
+    Value* a,
+    Value* b,
+    llvm::function_ref<u64(u64, u64)> op
+) -> Value* {
+    auto lhs = dyn_cast<SmallInt>(a);
+    auto rhs = dyn_cast<SmallInt>(b);
+    if (lhs and rhs) return CreateInt(op(lhs->value(), rhs->value()), a->type());
+    return nullptr;
 }
 
 auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {

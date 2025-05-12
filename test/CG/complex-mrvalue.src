@@ -36,10 +36,8 @@ proc d (in bool x) {
 // +     %1 = s
 // +
 // + entry:
-// +     %2 = sext int 1 to i64
-// +     store i64 to %1, %2, align 8
-// +     %3 = sext int 1 to i64
-// +     store i64 to %0, %3, align 8
+// +     store i64 to %1, i64 1, align 8
+// +     store i64 to %0, i64 1, align 8
 // +     ret
 // + }
 // +
@@ -50,26 +48,22 @@ proc d (in bool x) {
 // +     br %1 to bb1 else bb2
 // +
 // + bb1:
-// +     %3 = sext int 1 to i64
-// +     store i64 to %2, %3, align 8
+// +     store i64 to %2, i64 1, align 8
 // +     br bb3
 // +
 // + bb2:
-// +     %4 = sext int 2 to i64
-// +     store i64 to %2, %4, align 8
+// +     store i64 to %2, i64 2, align 8
 // +     br bb3
 // +
 // + bb3:
 // +     br %1 to bb4 else bb5
 // +
 // + bb4:
-// +     %5 = sext int 1 to i64
-// +     store i64 to %0, %5, align 8
+// +     store i64 to %0, i64 1, align 8
 // +     br bb6
 // +
 // + bb5:
-// +     %6 = sext int 2 to i64
-// +     store i64 to %0, %6, align 8
+// +     store i64 to %0, i64 2, align 8
 // +     br bb6
 // +
 // + bb6:
@@ -83,8 +77,7 @@ proc d (in bool x) {
 // +     br %1 to bb1 else bb2
 // +
 // + bb1:
-// +     %3 = sext int 1 to i64
-// +     store i64 to %2, %3, align 8
+// +     store i64 to %2, i64 1, align 8
 // +     br bb3
 // +
 // + bb2:
@@ -95,8 +88,7 @@ proc d (in bool x) {
 // +     br %1 to bb4 else bb5
 // +
 // + bb4:
-// +     %4 = sext int 2 to i64
-// +     store i64 to %0, %4, align 8
+// +     store i64 to %0, i64 2, align 8
 // +     br bb6
 // +
 // + bb5:
@@ -115,8 +107,7 @@ proc d (in bool x) {
 // +     %5 = s
 // +
 // + entry:
-// +     %6 = sext int 1 to i64
-// +     store i64 to %1, %6, align 8
+// +     store i64 to %1, i64 1, align 8
 // +     copy %2, %1, int 8
 // +     br %0 to bb1 else bb2
 // +
@@ -126,13 +117,12 @@ proc d (in bool x) {
 // + bb2:
 // +     br bb3(%2)
 // +
-// + bb3(s^ %7):
-// +     copy %3, %7, int 8
+// + bb3(s^ %6):
+// +     copy %3, %6, int 8
 // +     br %0 to bb4 else bb5
 // +
 // + bb4:
-// +     %8 = sext int 1 to i64
-// +     store i64 to %4, %8, align 8
+// +     store i64 to %4, i64 1, align 8
 // +     br bb6
 // +
 // + bb5:
@@ -147,8 +137,7 @@ proc d (in bool x) {
 // +     br bb9
 // +
 // + bb8:
-// +     %9 = sext int 1 to i64
-// +     store i64 to %5, %9, align 8
+// +     store i64 to %5, i64 1, align 8
 // +     br bb9
 // +
 // + bb9:
