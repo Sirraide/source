@@ -61,6 +61,7 @@ const llvm::StringMap<Tk> keywords = {
     {"or", Tk::Or},
     {"pragma", Tk::Pragma},
     {"proc", Tk::Proc},
+    {"range", Tk::Range},
     {"return", Tk::Return},
     {"static", Tk::Static},
     {"struct", Tk::Struct},

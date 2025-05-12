@@ -18,6 +18,7 @@ using namespace srcc;
 #define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })
 #define TryParseExpr(...) TRY(ParseExpr() __VA_OPT__(, ) __VA_ARGS__)
 #define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(, ) __VA_ARGS__)
+#define TryParseType(...) TRY(ParseType() __VA_OPT__(, ) __VA_ARGS__)
 
 // ============================================================================
 //  Parse Tree
@@ -228,6 +229,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::IntType:
         case Kind::ProcType:
         case Kind::PtrType:
+        case Kind::RangeType:
         case Kind::SliceType:
         case Kind::TemplateType:
             print("%1(Type%) {}\n", s->dump_as_type());
@@ -439,6 +441,13 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 out += "%1(^%)";
             } break;
 
+            case Kind::RangeType: {
+                auto s = cast<ParsedRangeType>(type);
+                out += "%6(range%)%1(<%)";
+                Append(s->elem);
+                out += "%1(>%)";
+            } break;
+
             case Kind::SliceType: {
                 auto s = cast<ParsedSliceType>(type);
                 Append(s->elem);
@@ -618,6 +627,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Plus:
         case Tk::PlusPlus:
         case Tk::Proc:
+        case Tk::Range:
         case Tk::RBrace:
         case Tk::Return:
         case Tk::Static:
@@ -898,6 +908,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         case Tk::Int:
         case Tk::IntegerType:
         case Tk::NoReturn:
+        case Tk::Range:
         case Tk::Void:
         case Tk::Var:
         case Tk::TemplateType:
@@ -1548,7 +1559,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     return ParsedStructDecl::Create(*this, name, fields, struct_loc);
 }
 
-// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified>
+// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
 // <type-qualified> ::= <type> { <qualifier> }
 // <qualifier> ::= "[" "]"
 auto Parser::ParseType() -> Ptr<ParsedStmt> {
@@ -1615,6 +1626,19 @@ auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
         // <expr-decl-ref>
         case Tk::Identifier:
             return ParseDeclRefExpr();
+
+        // <type-range> ::= RANGE "<" <type> ">"
+        case Tk::Range: {
+            Location loc = Next(), end{};
+            if (not Consume(Tk::SLt)) Error("Expected '%1(<%)' after '%1(range%)'");
+            auto ty = TryParseType();
+            if (not Consume(end, Tk::SGt)) {
+                Error("Expected '%1(>%)'");
+                SkipTo(Tk::Semicolon, Tk::SGt);
+                Consume(end, Tk::SGt);
+            }
+            return new (*this) ParsedRangeType(ty, {loc, end});
+        }
 
         // <signature>
         case Tk::Proc: {

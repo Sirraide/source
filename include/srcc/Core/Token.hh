@@ -69,6 +69,7 @@ enum struct srcc::Tk : base::u8 {
     Or,
     Pragma,
     Proc,
+    Range,
     Return,
     Static,
     Struct,

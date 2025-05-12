@@ -2787,6 +2787,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
         case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
         case K::PtrType: t = TranslatePtrType(cast<ParsedPtrType>(parsed)); break;
+        case K::RangeType: Todo();
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
         default: Error(parsed->loc, "Expected type"); break;

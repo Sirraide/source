@@ -1,0 +1,20 @@
+// V %srcc --parse --verify %s
+program test;
+
+range<int>;
+range int>; // expected-error: Expected '<' after 'range'
+range<int; // expected-error: Expected '>'
+range<i32[]>;
+range<int,int>; // expected-error: Expected '>'
+
+// expected-error@+2: Expected '<' after 'range'
+// expected-error@+1: Expected type
+range;
+
+// expected-error@+2: Expected '<' after 'range'
+// expected-error@+1: Expected '>'
+range i8;
+
+// expected-error@+2: Expected '<' after 'range'
+// expected-error@+1: Expected '>'
+range i32[];

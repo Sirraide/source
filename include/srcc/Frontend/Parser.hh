@@ -202,6 +202,17 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::PtrType; }
 };
 
+class srcc::ParsedRangeType final : public ParsedStmt {
+public:
+    ParsedStmt* elem;
+
+    ParsedRangeType(ParsedStmt* elem, Location loc)
+        : ParsedStmt{Kind::RangeType, loc}, elem{elem} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::RangeType; }
+};
+
+
 class srcc::ParsedSliceType final : public ParsedStmt {
 public:
     ParsedStmt* elem;
