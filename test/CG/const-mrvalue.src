@@ -8,20 +8,16 @@ eval x(1);
 x a = eval x(1);
 
 // * @0 = { 01, 00, 00, 00, 00, 00, 00, 00 }, align 8
-// + @1 = { 01, 00, 00, 00, 00, 00, 00, 00 }, align 8
 // +
 // + proc __src_main {
 // +     %0 = x
-// +     %1 = x
 // +
 // + entry:
-// +     copy %1, @0, int 8
-// +     copy %0, @1, int 8
+// +     copy %0, @0, int 8
 // +     ret
 // + }
 
 //L * @0 = private unnamed_addr constant [8 x i8] c"\01\00\00\00\00\00\00\00", align 8
-//L + @1 = private unnamed_addr constant [8 x i8] c"\01\00\00\00\00\00\00\00", align 8
 //L +
 //L + ; Function Attrs: noreturn nounwind
 //L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
@@ -32,9 +28,7 @@ x a = eval x(1);
 //L + define fastcc void @__src_main() {
 //L + entry:
 //L +   %0 = alloca [8 x i8], align 8
-//L +   %1 = alloca [8 x i8], align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %1, ptr align 8 @0, i64 8, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 @1, i64 8, i1 false)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 @0, i64 8, i1 false)
 //L +   ret void
 //L + }
 //L +

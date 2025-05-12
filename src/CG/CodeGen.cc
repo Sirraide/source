@@ -736,8 +736,9 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value* mrvalue_slot) -> Value* {
             }
         }
 
-        // Can’t emit other declarations here.
-        if (isa<Decl>(s)) continue;
+        // Emitting any other declarations is a no-op. So is emitting constant
+        // expressions that are unused.
+        if (isa<ConstExpr, Decl>(s)) continue;
 
         // This is the expression we need to return from the block.
         if (s == expr->return_expr()) {
