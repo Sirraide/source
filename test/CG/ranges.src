@@ -1,0 +1,144 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+proc a (range<int> x) = 3..=4;
+proc b (range<int> x) = 3..<4;
+
+proc f1 {
+    range<int> a;
+    range<int> b = 1..=2;
+    var c = 1..=2;
+    var d = c.start..=c.end;
+}
+
+proc f2 {
+    range<int> a;
+    range<int> b = 1..<2;
+    var c = 1..<2;
+    var d = c.start..<c.end;
+}
+
+range<i13> x;
+
+// * proc __src_main {
+// +     %0 = range<i13>
+// +
+// + entry:
+// +     store range<i13> to %0, nil, align 2
+// +     ret
+// + }
+// +
+// + proc _S1aFqiqiE (range<int> %0) -> range<int> {
+// +     %1 = range<int>
+// +
+// + entry:
+// +     store range<int> to %1, %0, align 8
+// +     %2 = add int 4, int 1
+// +     ret (int 3, %2)
+// + }
+// +
+// + proc _S1bFqiqiE (range<int> %0) -> range<int> {
+// +     %1 = range<int>
+// +
+// + entry:
+// +     store range<int> to %1, %0, align 8
+// +     ret (int 3, int 4)
+// + }
+// +
+// + proc _S2f1FvE {
+// +     %0 = range<int>
+// +     %1 = range<int>
+// +     %2 = range<int>
+// +     %3 = range<int>
+// +
+// + entry:
+// +     store range<int> to %0, nil, align 8
+// +     %4 = add int 2, int 1
+// +     store range<int> to %1, (int 1, %4), align 8
+// +     %5 = add int 2, int 1
+// +     store range<int> to %2, (int 1, %5), align 8
+// +     %6 = load int, %2, align 8
+// +     %7 = ptradd %2, int 8
+// +     %8 = load int, %7, align 8
+// +     %9 = add %8, int 1
+// +     store range<int> to %3, (%6, %9), align 8
+// +     ret
+// + }
+// +
+// + proc _S2f2FvE {
+// +     %0 = range<int>
+// +     %1 = range<int>
+// +     %2 = range<int>
+// +     %3 = range<int>
+// +
+// + entry:
+// +     store range<int> to %0, nil, align 8
+// +     store range<int> to %1, (int 1, int 2), align 8
+// +     store range<int> to %2, (int 1, int 2), align 8
+// +     %4 = load int, %2, align 8
+// +     %5 = ptradd %2, int 8
+// +     %6 = load int, %5, align 8
+// +     store range<int> to %3, (%4, %6), align 8
+// +     ret
+// + }
+
+//L * define fastcc void @__src_main() {
+//L + entry:
+//L +   %0 = alloca { i13, i13 }, align 8
+//L +   store { i13, i13 } zeroinitializer, ptr %0, align 2
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc { i64, i64 } @_S1aFqiqiE({ i64, i64 } %0) {
+//L + entry:
+//L +   %1 = alloca { i64, i64 }, align 8
+//L +   store { i64, i64 } %0, ptr %1, align 8
+//L +   ret { i64, i64 } { i64 3, i64 5 }
+//L + }
+//L +
+//L + define private fastcc { i64, i64 } @_S1bFqiqiE({ i64, i64 } %0) {
+//L + entry:
+//L +   %1 = alloca { i64, i64 }, align 8
+//L +   store { i64, i64 } %0, ptr %1, align 8
+//L +   ret { i64, i64 } { i64 3, i64 4 }
+//L + }
+//L +
+//L + define private fastcc void @_S2f1FvE() {
+//L + entry:
+//L +   %0 = alloca { i64, i64 }, align 8
+//L +   %1 = alloca { i64, i64 }, align 8
+//L +   %2 = alloca { i64, i64 }, align 8
+//L +   %3 = alloca { i64, i64 }, align 8
+//L +   store { i64, i64 } zeroinitializer, ptr %0, align 8
+//L +   store { i64, i64 } { i64 1, i64 3 }, ptr %1, align 8
+//L +   store { i64, i64 } { i64 1, i64 3 }, ptr %2, align 8
+//L +   %4 = load i64, ptr %2, align 8
+//L +   %5 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %6 = load i64, ptr %5, align 8
+//L +   %7 = add i64 %6, 1
+//L +   %8 = insertvalue { i64, i64 } undef, i64 %4, 0
+//L +   %9 = insertvalue { i64, i64 } %8, i64 %7, 1
+//L +   store { i64, i64 } %9, ptr %3, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S2f2FvE() {
+//L + entry:
+//L +   %0 = alloca { i64, i64 }, align 8
+//L +   %1 = alloca { i64, i64 }, align 8
+//L +   %2 = alloca { i64, i64 }, align 8
+//L +   %3 = alloca { i64, i64 }, align 8
+//L +   store { i64, i64 } zeroinitializer, ptr %0, align 8
+//L +   store { i64, i64 } { i64 1, i64 2 }, ptr %1, align 8
+//L +   store { i64, i64 } { i64 1, i64 2 }, ptr %2, align 8
+//L +   %4 = load i64, ptr %2, align 8
+//L +   %5 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %6 = load i64, ptr %5, align 8
+//L +   %7 = insertvalue { i64, i64 } undef, i64 %4, 0
+//L +   %8 = insertvalue { i64, i64 } %7, i64 %6, 1
+//L +   store { i64, i64 } %8, ptr %3, align 8
+//L +   ret void
+//L + }
+//L +
+//L + attributes #0 = { noreturn nounwind }

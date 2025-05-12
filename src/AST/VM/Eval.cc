@@ -174,7 +174,7 @@ struct SRSlice {
 ///
 /// This is essentially a value that can be stored in a VM ‘virtual register’.
 class SRValue {
-    Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, std::monostate> value{std::monostate{}};
+    Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, Range, std::monostate> value{std::monostate{}};
     Type ty{Type::VoidTy};
 
 public:
@@ -185,6 +185,7 @@ public:
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
     explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
     explicit SRValue(SRClosure closure, Type ty) : value{closure}, ty{ty} {}
+    explicit SRValue(Range range, Type ty) : value{std::move(range)}, ty{ty} {}
     explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Type::IntTy} {}
 
@@ -244,6 +245,10 @@ struct std::formatter<SRValue> : std::formatter<std::string_view> {
 };
 
 auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
+    auto Zero = [] (Type type) {
+        return APInt::getZero(u32(::cast<IntType>(type)->bit_width().bits()));
+    };
+
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::StructType:
@@ -252,6 +257,11 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
         case TypeBase::Kind::ProcType:
             Todo();
 
+        case TypeBase::Kind::RangeType: {
+            auto t = ::cast<RangeType>(ty);
+            return SRValue(Range(Zero(t), Zero(t)), ty);
+        }
+
         case TypeBase::Kind::SliceType:
             return SRValue(SRSlice(), ty);
 
@@ -259,7 +269,7 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
             return SRValue(Pointer(), ty);
 
         case TypeBase::Kind::IntType:
-            return SRValue(APInt::getZero(u32(::cast<IntType>(ty)->bit_width().bits())), ty);
+            return SRValue(Zero(ty), ty);
 
         case TypeBase::Kind::BuiltinType:
             switch (::cast<BuiltinType>(ty)->builtin_kind()) {
@@ -294,6 +304,11 @@ auto SRValue::print() const -> SmallUnrenderedString {
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
+        [&](this auto& self, const Range& range) {
+            self(range.start);
+            out += "%1(..%)";
+            self(range.end);
+        },
         [&](this auto& self, const SRSlice& slice) {
             out += "%1((";
             self(slice.data);
@@ -323,6 +338,11 @@ auto RValue::print() const -> SmallUnrenderedString {
         [&](Type ty) { out += ty->print(); },
         [&](MRValue) { out += "<aggregate value>"; },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
+        [&](this auto& self, const Range& range) {
+            self(range.start);
+            out += "%1(..%)";
+            self(range.end);
+        },
     }; // clang-format on
     visit(V);
     return out;
@@ -894,6 +914,7 @@ auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
 auto Eval::FFIType(Type ty) -> ffi_type* {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::StructType:
         case TypeBase::Kind::ProcType:
@@ -1040,6 +1061,13 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
         case TypeBase::Kind::PtrType:
             return SRValue(Load.operator()<Pointer>(), ty);
 
+        case TypeBase::Kind::RangeType: {
+            auto elem = cast<RangeType>(ty)->elem();
+            auto start = LoadSRValue(mem, elem)->cast<APInt>();
+            auto end = LoadSRValue(static_cast<const char*>(mem) + elem->array_size(vm.owner()).bytes(), elem)->cast<APInt>();
+            return SRValue(Range{std::move(start), std::move(end)}, ty);
+        }
+
         case TypeBase::Kind::SliceType: {
             auto ptr = Load.operator()<Pointer>();
             auto sz = LoadSRValue(static_cast<const char*>(mem) + sizeof(Pointer), Type::IntTy)->cast<APInt>();
@@ -1145,6 +1173,13 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
             StoreIntToMemory(i, static_cast<u8*>(ptr), u32(val.type()->size(vm.owner()).bytes()));
             return true;
         },
+        [&](const Range& range) {
+            auto elem = cast<RangeType>(val.type())->elem();
+            auto size = elem->size(vm.owner());
+            StoreIntToMemory(range.start, static_cast<u8*>(ptr), u32(size.bytes()));
+            StoreIntToMemory(range.end, static_cast<u8*>(ptr) + elem->array_size(vm.owner()).bytes(), u32(size.bytes()));
+            return true;
+        },
         [&](this auto& self, const SRSlice& sl) -> bool {
             if (not self(sl.data)) return false;
             ptr = static_cast<char*>(ptr) + sizeof(Pointer{}.encode());
@@ -1183,10 +1218,20 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
 
         case K::Extract: {
             auto e = cast<ir::Extract>(v);
-            auto& agg = Val(e->aggregate()).cast<SRSlice>();
-            auto idx = e->index();
-            if (idx == 0) return Materialise(SRValue(agg.data, e->type()));
-            if (idx == 1) return Materialise(SRValue(agg.size, e->type()));
+            auto& val = Val(e->aggregate());
+
+            if (auto* slice = val.dyn_cast<SRSlice>()) {
+                auto idx = e->index();
+                if (idx == 0) return Materialise(SRValue(slice->data, e->type()));
+                if (idx == 1) return Materialise(SRValue(slice->size, e->type()));
+            }
+
+            if (auto* slice = val.dyn_cast<Range>()) {
+                auto idx = e->index();
+                if (idx == 0) return Materialise(SRValue(slice->start, e->type()));
+                if (idx == 1) return Materialise(SRValue(slice->end, e->type()));
+            }
+
             Unreachable();
         }
 
@@ -1210,6 +1255,13 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
             );
 
             return Materialise(SRValue(ptr, v->type()));
+        }
+
+        case K::Range: {
+            auto sl = cast<ir::Range>(v);
+            auto& start = Val(sl->start);
+            auto& end = Val(sl->end);
+            return Materialise(SRValue(Range{start.cast<APInt>(), end.cast<APInt>()}, sl->type()));
         }
 
         case K::Slice: {

@@ -650,6 +650,7 @@ private:
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
     auto TranslateIntType(ParsedIntType* parsed) -> Type;
     auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;
+    auto TranslateRangeType(ParsedRangeType* parsed) -> Type;
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;

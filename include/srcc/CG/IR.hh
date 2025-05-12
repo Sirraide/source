@@ -15,6 +15,7 @@
     X(InvalidLocalReference)   \
     X(LargeInt)                \
     X(Proc)                    \
+    X(Range)                   \
     X(Slice)                   \
     X(SmallInt)
 
@@ -153,6 +154,22 @@ public:
     auto value() const -> const APInt& { return val; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::LargeInt; }
+};
+
+// Note: Merging Range and Slice seems tempting, but it doesn’t actually help at all.
+// TODO: Maybe represent this and slice as *instructions* with 2 result values; that would
+//       get us split slices rather than aggregate values for free in LLVM.
+class Range : public ManagedValue {
+    friend Builder;
+
+
+    Range(Type ty, Value* start, Value* end) : ManagedValue{Kind::Range, ty}, start{start}, end{end} {}
+
+public:
+    Value* const start;
+    Value* const end;
+
+    static bool classof(const Value* v) { return v->kind() == Kind::Range; }
 };
 
 class Slice : public ManagedValue {
@@ -527,6 +544,7 @@ public:
     auto CreateOr(Value* a, Value* b) -> Value*;
     auto CreatePoison(Type ty) -> Value*;
     auto CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value*;
+    auto CreateRange(Value* start, Value* end) -> Value*;
     auto CreateReturn(Value* val = nullptr) -> void;
     auto CreateSAddOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSDiv(Value* a, Value* b) -> Value*;

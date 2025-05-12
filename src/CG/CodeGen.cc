@@ -351,6 +351,11 @@ void CodeGen::Mangler::Append(Type ty) {
             M.name += "E";
         }
 
+        void operator()(RangeType* r) {
+            M.name += "q";
+            r->elem()->visit(*this);
+        }
+
         void operator()(StructType* ty) {
             if (ty->name().empty()) Todo();
             M.name += std::format("T{}{}", ty->name().size(), ty->name());
@@ -536,8 +541,8 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
             // Check that the index is in bounds.
             if (lang_opts.overflow_checking) {
                 auto size = is_slice
-                              ? CreateExtractValue(range, 1)
-                              : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
+                    ? CreateExtractValue(range, 1)
+                    : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
 
                 CreateArithFailure(
                     CreateICmpUGe(index, size),
@@ -703,6 +708,10 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
             return res;
         }
 
+        // Range expressions.
+        case Tk::DotDotLess: return CreateRange(lhs, rhs);
+        case Tk::DotDotEq: return CreateRange(lhs, CreateAdd(rhs, CreateInt(1, rhs->type())));
+
         // This is lowered to a call to a compiler-generated function.
         case Tk::StarStar: Unreachable("Sema should have converted this to a call");
     }
@@ -815,17 +824,34 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
         case AK::SliceData: {
             auto slice = Emit(expr->operand);
             auto stype = cast<SliceType>(expr->operand->type);
-            if (expr->lvalue()) return CreateLoad(PtrType::Get(tu, stype->elem()), slice);
+            if (expr->operand->lvalue()) return CreateLoad(PtrType::Get(tu, stype->elem()), slice);
             return CreateExtractValue(slice, 0);
         }
 
         case AK::SliceSize: {
             auto slice = Emit(expr->operand);
-            if (expr->lvalue()) {
+            if (expr->operand->lvalue()) {
                 auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Type::IntTy);
                 return CreateLoad(Type::IntTy, CreatePtrAdd(slice, ptr_sz, true));
             }
             return CreateExtractValue(slice, 1);
+        }
+
+        case AK::RangeStart: {
+            auto range = Emit(expr->operand);
+            auto elem = cast<RangeType>(expr->operand->type)->elem();
+            if (expr->operand->lvalue()) return CreateLoad(elem, range);
+            return CreateExtractValue(range, 0);
+        }
+
+        case AK::RangeEnd: {
+            auto range = Emit(expr->operand);
+            auto elem = cast<RangeType>(expr->operand->type)->elem();
+            if (expr->operand->lvalue()) {
+                auto offs = CreateInt(elem->array_size(tu).bytes(), Type::IntTy);
+                return CreateLoad(Type::IntTy, CreatePtrAdd(range, offs, true));
+            }
+            return CreateExtractValue(range, 1);
         }
 
         case AK::TypeAlign: return CreateInt(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes());
@@ -1083,7 +1109,10 @@ auto CodeGen::EmitValue(const eval::RValue& val) -> Value* { // clang-format off
         [&](std::monostate) -> Value* { return nullptr; },
         [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
-        [&](eval::MRValue) -> Value* { return nullptr; } // This only happens if the value is unused.
+        [&](eval::MRValue) -> Value* { return nullptr; }, // This only happens if the value is unused.
+        [&](this auto& self, const eval::Range& range) -> Value* {
+            return CreateRange(self(range.start), self(range.end));
+        }
     }; // clang-format on
     return val.visit(V);
 }

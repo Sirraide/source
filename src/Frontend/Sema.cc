@@ -242,7 +242,6 @@ bool Sema::MakeCondition(Expr*& e, StringRef op) {
     return true;
 }
 
-
 bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     auto init = TryBuildInitialiser(ty, e);
     if (init.invalid()) {
@@ -627,6 +626,7 @@ auto Sema::BuildConversionSequence(
     // We need to perform conversion. What we do here depends on the type.
     switch (var_type->kind()) {
         case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
             return TypeMismatch();
@@ -1421,6 +1421,13 @@ auto Sema::BuildBinaryExpr(
             return BuildExpCall("__srcc_exp_i");
         }
 
+        // Range construction.
+        case Tk::DotDotEq:
+        case Tk::DotDotLess: {
+            if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
+            return Build(RangeType::Get(*M, lhs->type));
+        }
+
         // Arithmetic operation.
         case Tk::Star:
         case Tk::Slash:
@@ -1566,15 +1573,26 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     auto type = [&] -> Type {
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::SliceData: return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
-            case AK::SliceSize: return Type::IntTy;
-            case AK::TypeAlign: return Type::IntTy;
-            case AK::TypeArraySize: return Type::IntTy;
-            case AK::TypeBits: return Type::IntTy;
-            case AK::TypeBytes: return Type::IntTy;
-            case AK::TypeName: return M->StrLitTy;
-            case AK::TypeMaxVal: return cast<TypeExpr>(operand)->value;
-            case AK::TypeMinVal: return cast<TypeExpr>(operand)->value;
+            case AK::SliceSize:
+            case AK::TypeAlign:
+            case AK::TypeArraySize:
+            case AK::TypeBits:
+            case AK::TypeBytes:
+                return Type::IntTy;
+
+            case AK::TypeName:
+                return M->StrLitTy;
+
+            case AK::RangeStart:
+            case AK::RangeEnd:
+                return cast<RangeType>(operand->type)->elem();
+
+            case AK::TypeMaxVal:
+            case AK::TypeMinVal:
+                return cast<TypeExpr>(operand)->value;
+
+            case AK::SliceData:
+                return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
     }();
@@ -2386,6 +2404,11 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
             .Case("size", AK::SliceSize)
             .Default(std::nullopt);
 
+        if (isa<RangeType>(base->type)) return Switch(parsed->member)
+            .Case("start", AK::RangeStart)
+            .Case("end", AK::RangeEnd)
+            .Default(std::nullopt);
+
         Error(parsed->loc, "Cannot perform member access on type '{}'", base->type);
         return AlreadyDiagnosed;
     }();
@@ -2764,6 +2787,23 @@ auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
     return PtrType::Get(*M, ty);
 }
 
+auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
+    auto ty = TranslateType(parsed->elem);
+    if (not ty) return Type();
+
+    // Only ranges of integers are supported.
+    if (not ty->is_integer()) {
+        Error(
+            parsed->loc,
+            "Range element type must be an integer, but was '%1({}%)'",
+            ty
+        );
+        return Type();
+    }
+
+    return RangeType::Get(*M, ty);
+}
+
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
     auto ty = AdjustVariableType(TranslateType(parsed->elem), parsed->loc);
     if (not ty) return Type();
@@ -2787,7 +2827,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
         case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
         case K::PtrType: t = TranslatePtrType(cast<ParsedPtrType>(parsed)); break;
-        case K::RangeType: Todo();
+        case K::RangeType: t = TranslateRangeType(cast<ParsedRangeType>(parsed)); break;
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
         default: Error(parsed->loc, "Expected type"); break;

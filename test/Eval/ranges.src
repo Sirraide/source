@@ -1,0 +1,10 @@
+// R %srcc --eval %s
+program test;
+
+proc a = 3..=4;
+proc b = 3..<4;
+
+#assert a().start == 3;
+#assert a().end == 5;
+#assert b().start == 3;
+#assert b().end == 4;

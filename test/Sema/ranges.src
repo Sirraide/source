@@ -1,0 +1,26 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f1 {
+    range<int> a;
+    range<int> b = 1..=2;
+    var c = 1..=2;
+
+    proc pf (range<int> x) = 3..=4;
+
+    range<int[]> d; // expected-error: Range element type must be an integer, but was 'int[]'
+    range<int^> e; // expected-error: Range element type must be an integer, but was 'int^'
+}
+
+proc f2 {
+    range<int> a;
+    range<int> b = 1..<2;
+    var c = 1..<2;
+
+    proc pf (range<int> x) = 3..<4;
+
+    range<int[]> d; // expected-error: Range element type must be an integer, but was 'int[]'
+    range<int^> e; // expected-error: Range element type must be an integer, but was 'int^'
+}
+
+range<i13> x;

@@ -102,9 +102,21 @@ auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
         Unreachable("Invalid index for slice");
     }
 
+    if (auto s = dyn_cast<Range>(aggregate)) {
+        if (idx == 0) return s->start;
+        if (idx == 1) return s->end;
+        Unreachable("Invalid index for range");
+    }
+
     if (auto s = dyn_cast<SliceType>(aggregate->type().ptr())) {
         if (idx == 0) return new (*this) Extract(aggregate, 0, PtrType::Get(tu, s->elem()));
         if (idx == 1) return new (*this) Extract(aggregate, 1, Type::IntTy);
+        Unreachable("Invalid index for slice type");
+    }
+
+    if (auto s = dyn_cast<RangeType>(aggregate->type().ptr())) {
+        if (idx == 0) return new (*this) Extract(aggregate, 0, s->elem());
+        if (idx == 1) return new (*this) Extract(aggregate, 1, s->elem());
         Unreachable("Invalid index for slice type");
     }
 
@@ -212,6 +224,10 @@ auto Builder::CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value* {
     auto i = CreateAndGetVal(Op::PtrAdd, ptr->type(), {ptr, offs});
     i->inst()->inbounds = inbounds;
     return i;
+}
+
+auto Builder::CreateRange(Value* start, Value* end) -> Value* {
+    return new (*this) Range(RangeType::Get(tu, start->type()), start, end);
 }
 
 void Builder::CreateReturn(Value* val) {
@@ -757,6 +773,11 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
         case Value::Kind::Proc: {
             auto p = cast<Proc>(v);
             out += std::format("%2({}%)", p->name());
+        } break;
+
+        case Value::Kind::Range: {
+            auto s = cast<Range>(v);
+            out += std::format("%1(({}, {})%)", DumpValue(s->start), DumpValue(s->end));
         } break;
 
         case Value::Kind::Slice: {

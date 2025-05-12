@@ -252,6 +252,8 @@ void Stmt::Printer::Print(Stmt* e) {
                     switch (m.access_kind) {
                         case AK::SliceData: return "data";
                         case AK::SliceSize: return "size";
+                        case AK::RangeStart: return "start";
+                        case AK::RangeEnd: return "end";
                         case AK::TypeAlign: return "align";
                         case AK::TypeArraySize: return "arrsize";
                         case AK::TypeBits: return "bits";

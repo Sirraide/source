@@ -47,9 +47,27 @@ public:
     [[nodiscard]] auto operator<=>(const MRValue& other) const = default;
 };
 
+/// Evaluated range.
+struct Range {
+    APInt start;
+    APInt end;
+
+    Range(APInt start,  APInt end)
+        : start(std::move(start)), end(std::move(end)) {}
+
+    [[nodiscard]] bool operator==(const Range& other) const {
+        // operator== asserts that the bit width are the same, so we
+        // don’t use it directly here.
+        auto Eq = [](const APInt& a, const APInt& b) {
+            return a.getBitWidth() == b.getBitWidth() and a == b;
+        };
+        return Eq(start, other.start) and Eq(end, other.end);
+    }
+};
+
 /// Evaluated rvalue.
 class RValue {
-    Variant<APInt, bool, Type, MRValue, std::monostate> value;
+    Variant<APInt, Range, bool, Type, MRValue, std::monostate> value;
     Type ty{Type::VoidTy};
 
 public:
@@ -58,6 +76,7 @@ public:
     RValue(bool val) : value(val), ty(Type::BoolTy) {}
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
     RValue(MRValue val, Type ty) : value(val), ty(ty) {}
+    RValue(Range range,  Type ty) : value(range), ty(ty) {}
 
     /// cast<>() the contained value.
     template <typename Ty>

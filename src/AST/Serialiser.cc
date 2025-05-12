@@ -141,6 +141,8 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             SerialiseType(cast<SingleElementTypeBase>(ty)->elem());
             break;
 
+        case TypeBase::Kind::RangeType: Todo();
+
         case TypeBase::Kind::ProcType: {
             auto proc = cast<ProcType>(ty);
             SerialiseType(proc->ret());
@@ -179,6 +181,8 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
             W << arr->dimension();
             return idx;
         }
+
+        case TypeBase::Kind::RangeType: Todo();
 
         case TypeBase::Kind::ProcType: {
             auto proc = cast<ProcType>(ty);
@@ -454,6 +458,7 @@ void Deserialiser::DeserialiseType() {
             Unreachable("Invalid builtin type");
         }
 
+        case TypeBase::Kind::RangeType: Todo();
         case TypeBase::Kind::ProcType: {
             SmallVector<ParamTypeData, 6> param_types;
             auto cc = Read<CallingConvention>();

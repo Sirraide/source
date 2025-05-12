@@ -435,6 +435,18 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ProcType; }
 };
 
+class srcc::RangeType final : public SingleElementTypeBase
+    , public FoldingSetNode {
+    explicit RangeType(Type elem) : SingleElementTypeBase{Kind::RangeType, elem} {}
+
+public:
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
+    static auto Get(TranslationUnit& mod, Type elem) -> RangeType*;
+    static void Profile(FoldingSetNodeID& ID, Type elem);
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::RangeType; }
+};
+
+
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
     explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}

@@ -83,6 +83,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
         [&](const IntType* ty) { return tu.target().int_align(ty); },
         [&](const ProcType*) { return tu.target().closure_align(); },
         [&](const PtrType*) { return tu.target().ptr_align(); },
+        [&](const RangeType* ty) { return ty->elem()->align(tu); },
         [&](const SliceType*) { return tu.target().slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
@@ -93,6 +94,7 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
 
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
     if (auto s = dyn_cast<StructType>(this)) return s->array_size();
+    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(tu) * 2;
     return size(tu);
 }
 
@@ -120,6 +122,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
         [&](const IntType*) { return true; },
         [&](const ProcType*) { return false; },
         [&](const PtrType*) { return false; },
+        [&](const RangeType*) { return true; },
         [&](const SliceType*) { return true; },
         [&](const StructType* ty) { return (ty->*struct_predicate)(); },
     });
@@ -144,10 +147,11 @@ bool TypeBase::is_integer() const {
 bool TypeBase::is_srvalue() const {
     switch (type_kind) {
         case Kind::BuiltinType:
-        case Kind::SliceType:
-        case Kind::PtrType:
         case Kind::IntType:
         case Kind::ProcType:
+        case Kind::PtrType:
+        case Kind::RangeType:
+        case Kind::SliceType:
             return true;
 
         // Zero-sized arrays are invalid, so treat all arrays as mrvalues.
@@ -207,6 +211,7 @@ bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
                 [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
                 [](ProcType*) { return true; },                          // Closures are two pointers.
                 [](PtrType*) { return true; },                           // Pointers are small.
+                [](RangeType*) { return true; },                         // Ranges are two integers.
                 [](SliceType*) { return true; },                         // Slices are two pointers.
                 [](StructType* s) { return s->is_srvalue(); },           // Pass structs by reference (TODO: small ones by value).
             }); // clang-format on
@@ -250,6 +255,11 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += std::format("{}%1(^%)", ref->elem()->print());
         } break;
 
+        case Kind::RangeType: {
+            auto* range = cast<RangeType>(this);
+            out += std::format("%6(range%)%1(<%){}%1(>%)", range->elem()->print());
+        } break;
+
         case Kind::SliceType: {
             auto* slice = cast<SliceType>(this);
             out += std::format("{}%1([]%)", slice->elem()->print());
@@ -282,10 +292,15 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::PtrType: return tu.target().ptr_size();
         case Kind::IntType: return cast<IntType>(this)->bit_width();
+        case Kind::PtrType: return tu.target().ptr_size();
         case Kind::ProcType: return tu.target().closure_size();
         case Kind::SliceType: return tu.target().slice_size();
+        case Kind::RangeType: {
+            auto elem = cast<RangeType>(this)->elem();
+            return elem->array_size(tu) + elem->size(tu);
+        }
+
         case Kind::StructType: {
             auto s = cast<StructType>(this);
             return s->size();
@@ -436,6 +451,15 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
 
     out += "%)";
     return out;
+}
+
+auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
+    auto CreateNew = [&] { return new (mod) RangeType{elem}; };
+    return GetOrCreateType(mod.range_types, CreateNew, elem);
+}
+
+void RangeType::Profile(FoldingSetNodeID& ID, Type elem) {
+    ID.AddPointer(elem.ptr());
 }
 
 auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {

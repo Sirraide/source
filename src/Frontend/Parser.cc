@@ -531,6 +531,10 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::VBar:
             return 82;
 
+        case Tk::DotDotEq:
+        case Tk::DotDotLess:
+            return 81;
+
         case Tk::ULt:
         case Tk::UGt:
         case Tk::ULe:
@@ -934,6 +938,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             ParsedProcType,
             ParsedPtrType,
             ParsedTemplateType,
+            ParsedRangeType,
             ParsedParenExpr
         >(lhs.get())) return ParseVarDecl(lhs.get()); // clang-format on
         return lhs;

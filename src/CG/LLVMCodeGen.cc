@@ -148,6 +148,11 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
         case TypeBase::Kind::ProcType: return ConvertProcType(cast<ProcType>(ty));
         case TypeBase::Kind::IntType: return getIntNTy(u32(cast<IntType>(ty)->bit_width().bits()));
 
+        case TypeBase::Kind::RangeType: {
+            auto elem = ConvertTypeForMem(cast<RangeType>(ty)->elem());
+            return llvm::StructType::get(llvm->getContext(), {elem, elem});
+        }
+
         case TypeBase::Kind::ArrayType: {
             // FIXME: This doesn’t handle structs correctly at the moment.
             // FIXME: Is the above FIXME still relevant?
@@ -192,7 +197,6 @@ auto LLVMCodeGen::ConvertTypeForMem(Type ty) -> llvm::Type* {
     if (isa<ProcType>(ty)) return ClosureTy; // Convert procedure types to closures.
     return ConvertType(ty);
 }
-
 
 auto LLVMCodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
     // Easy case, we can do what we want here.
@@ -474,6 +478,13 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             auto callee = DeclareProc(cast<ir::Proc>(v));
             auto f = cast<llvm::Function>(callee.getCallee());
             return llvm::ConstantStruct::get(ClosureTy, {f, llvm::ConstantPointerNull::get(PtrTy)});
+        }
+
+        case K::Range: {
+            auto s = cast<ir::Range>(v);
+            auto sv0 = llvm::UndefValue::get(ConvertType(s->type()));
+            auto sv1 = CreateInsertValue(sv0, Emit(s->start), 0);
+            return CreateInsertValue(sv1, Emit(s->end), 1);
         }
 
         case K::Slice: {

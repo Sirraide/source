@@ -182,6 +182,7 @@ public:
     FoldingSet<IntType> int_types;
     FoldingSet<PtrType> ptr_types;
     FoldingSet<ProcType> proc_types;
+    FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
 
     /// Create a new module.

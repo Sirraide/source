@@ -256,6 +256,8 @@ public:
     enum struct AccessKind : u8 {
         SliceData,
         SliceSize,
+        RangeStart,
+        RangeEnd,
         TypeAlign,
         TypeArraySize,
         TypeBits,
