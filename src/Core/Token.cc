@@ -39,6 +39,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::For: return "for";
         case Tk::ForReverse: return "for~";
         case Tk::Goto: return "goto";
+        case Tk::Hash: return "#";
         case Tk::If: return "if";
         case Tk::In: return "in";
         case Tk::Init: return "init";

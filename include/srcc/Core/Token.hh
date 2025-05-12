@@ -131,6 +131,7 @@ enum struct srcc::Tk : base::u8 {
     Ampersand,
     VBar,
     Tilde,
+    Hash,
     Bang,
     Assign,
     DotDot,

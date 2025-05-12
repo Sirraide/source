@@ -1,18 +1,18 @@
 // V %srcc --sema --verify %s
 program test;
 
-static if true {} else {}
-static if false {} else {}
-static if true {}
-static if false {}
-static if true {} else { 4 = 5; }
-static if false { 4 = 5 } else {}
+#if true {} #else {}
+#if false {} #else {}
+#if true {}
+#if false {}
+#if true {} #else { 4 = 5; }
+#if false { 4 = 5 } #else {}
 
-int x = static if true 1 else "foobar";
-int y = static if false "foobar" else 1;
-int z = static if true 1;
+int x = #if true 1 #else "foobar";
+int y = #if false "foobar" #else 1;
+int z = #if true 1;
 
-static if false {} else { 4 = 5; } // expected-error: Invalid target for assignment
-static if true { 4 = 5 } else {} // expected-error: Invalid target for assignment
+#if false {} #else { 4 = 5; } // expected-error: Invalid target for assignment
+#if true { 4 = 5 } #else {} // expected-error: Invalid target for assignment
 
-int w = static if false 1; // expected-error: Cannot convert expression of type 'void' to 'int'
+int w = #if false 1; // expected-error: Cannot convert expression of type 'void' to 'int'

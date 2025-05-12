@@ -1903,7 +1903,7 @@ auto Sema::BuildStaticIfExpr(
     Location loc
 ) -> Ptr<Stmt> {
     // Otherwise, check this now.
-    if (not MakeCondition(cond, "static if")) return {};
+    if (not MakeCondition(cond, "#if")) return {};
     auto val = M->vm.eval(cond);
     if (not val) return {};
 

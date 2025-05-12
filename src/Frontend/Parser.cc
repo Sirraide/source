@@ -604,6 +604,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Caret:
         case Tk::Eval:
         case Tk::False:
+        case Tk::Hash:
         case Tk::Identifier:
         case Tk::If:
         case Tk::Int:
@@ -793,12 +794,13 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
         } break;
 
-        // Static assert, and static if.
-        case Tk::Static: {
-            auto static_loc = Next();
+        // Compile-time expressions.
+        case Tk::Hash: {
+            auto hash_loc = Next();
             if (At(Tk::If)) lhs = ParseIf(true);
-            else return Error("Expected '%1(if%)' after '%1(static%)'");
-            if (auto l = lhs.get()) l->loc = {static_loc, l->loc};
+            else if (At(Tk::Elif, Tk::Else)) return Error("Unexpected '%1(#{}%)'", tok->type);
+            else return Error("Expected '%1(if%)' after '%1(#%)'");
+            if (auto l = lhs.get_or_null()) l->loc = {hash_loc, l->loc};
         } break;
 
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
@@ -1049,6 +1051,12 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
         "Unnecessary parentheses around '%1(if%)' condition"
     );
 
+    // '#then' is nonsense. Just drop the hash sign.
+    if (At(Tk::Hash) and LookAhead().is(Tk::Then)) {
+        Error("'%1(#then%)' is invalid; write '%1(then%)' instead");
+        Next();
+    }
+
     // 'then' is optional.
     Consume(Tk::Then);
     auto body = TryParseStmt(SkipTo(Tk::Semicolon));
@@ -1059,43 +1067,86 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // we should discard the semicolon more difficult (currently, this
     // only happens in one place outside of the preamble, viz. in the
     // loop in ParseStmts()).
-    if (At(Tk::Semicolon) and LookAhead().is(Tk::Elif, Tk::Else)) {
-        Error("Semicolon before '%1({}%)' is not allowed", LookAhead().type);
+    if ( // clang-format off
+        At(Tk::Semicolon) and (
+            LookAhead().is(Tk::Elif, Tk::Else) or
+           (LookAhead().is(Tk::Hash) and LookAhead(2).is(Tk::Elif, Tk::Else))
+        )
+    ) { // clang-format on
+        bool hash = LookAhead().is(Tk::Hash);
+        auto& tok = hash ? LookAhead(2) : LookAhead(1);
+        Error("Semicolon before '%1({}{}%)' is not allowed", hash ? "#" : "", tok.type);
         Next();
     }
 
-    // 'else if' actually parses just fine, but I like 'elif' more so
-    // we just warn on that. ;Þ
-    if (At(Tk::Else) and LookAhead().is(Tk::If)) Warn(
-        {tok->location, LookAhead().location},
-        "Use '%1(elif%)' instead of '%1(else if%)'"
-    );
+    // '#if' must be paired with '#else'/'#elif'
+    bool hash = At(Tk::Hash);
+    if (hash and LookAhead().is(Tk::Else, Tk::Elif)) {
+        Next();
+        if (not is_static) {
+            hash = false;
+            Error(
+                std::prev(tok)->location,
+                "'%1(if%)' must be paired with '%1({0}%)', not '%1(#{0}%)'",
+                tok->type
+            );
+        }
+    }
 
-    // Same with 'else static if'.
-    if (
-        At(Tk::Else) and
-        LookAhead(1).is(Tk::Static) and
-        LookAhead(2).is(Tk::If)
-    ) Warn( //
-        {tok->location, LookAhead(2).location},
-        "Use '%1(static elif%)' instead of '%1(else static if%)'"
-    );
+    // Parse an else branch if there is one.
+    Ptr<ParsedStmt> else_;
 
-    // Recover from redundant 'static' here.
-    if (At(Tk::Static) and LookAhead().is(Tk::Else)) {
-        Error(
-            {tok->location, LookAhead().location},
-            "'%1(static else%)' is invalid"
+    // Handle invalid uses of 'else'.
+    if (Consume(Tk::Else)) {
+        bool correct_to_elif = false;
+
+        // Correct '(#)else if' to '(#)elif'.
+        if (At(Tk::If)) {
+            correct_to_elif = true;
+            Error(
+                hash ? Location{std::prev(tok)->location, tok->location} : tok->location,
+                "Use '%1({0}elif%)' instead of '%1({0}else if%)'",
+                hash ? "#" : ""
+            );
+        }
+
+        // Diagnose '(#)else #if' and '#else #if'.
+        else if (At(Tk::Hash) and LookAhead().is(Tk::If)) {
+            correct_to_elif = true;
+            Error(
+                Location{std::prev(tok, hash ? 2 : 1)->location, LookAhead().location},
+                "'%1({}else #if%)' is invalid; did you mean '%1({}elif%)'",
+                hash ? "#" : "",
+                is_static ? "#" : ""
+            );
+            Next(); // Yeet '#'.
+        }
+
+        // '#if' must be paired with '#else'.
+        else if (is_static and not hash) {
+            Error(
+                std::prev(tok)->location,
+                "'%1(#if%)' must be paired with '%1(#else%)'"
+            );
+        }
+
+        // After recovering from whatever nonsense the user potentially gave us,
+        // actually parse the else clause.
+        if (correct_to_elif) else_ = ParseIf(is_static);
+        else else_ = ParseStmt();
+    }
+
+    // For elif, just check for a missing hash.
+    else if (At(Tk::Elif)) {
+        if (is_static and not hash) Error(
+            tok->location,
+            "'%1(#if%)' must be paired with '%1(#elif%)'"
         );
-        Next();
+
+        else_ = ParseIf(is_static);
     }
 
-    // Parse the else/elif branch.
-    bool elif_is_static = At(Tk::Static) and LookAhead().is(Tk::Elif);
-    if (elif_is_static) Consume(Tk::Static);
-    auto else_ = At(Tk::Elif)      ? ParseIf(elif_is_static)
-               : Consume(Tk::Else) ? ParseStmt()
-                                   : nullptr;
+    // Finally, build the expression.
     return new (*this) ParsedIfExpr{
         cond,
         body,

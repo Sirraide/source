@@ -20,27 +20,51 @@ if true then 1 else 2;
 
 (if true a else b) = 42;
 
-static if 1 {}
-static if {} {}
-static if true then {}
-static if true {} elif true {} elif true 4;
-static if true {} elif true {} elif true {} else {}
-static if true 7 elif true 7 elif true 7 else {}
-x = static if true then 1 else 2;
-(static if true a else b) = 42;
-static if true {} static elif true {} elif true 4;
-static if true {} elif true {} static elif true {} else {};
-if true {} static elif true {} elif true 4;
-if true {} elif true {} static elif true {} else {};
+#if 1 {}
+#if {} {}
+#if true then {}
+#if true {} #elif true {} #elif true 4;
+#if true {} #elif true {} #elif true {} #else {}
+#if true 7 #elif true 7 #elif true 7 #else {}
+x = #if true then 1 #else 2;
+(#if true a #else b) = 42;
+#if true {} #elif true {} #elif true 4;
+#if true {} #elif true {} #elif true {} #else {};
+#if true {} #elif true {} #elif true 4;
+#if true {} #elif true {} #elif true {} #else {};
 
-if (true) {} // expected-warning: Unnecessary parentheses around 'if' condition
-if true {} else if {} {} // expected-warning: Use 'elif' instead of 'else if'
+#if true {} elif true {} elif true 4; // expected-error 2: '#if' must be paired with '#elif'
+x = #if true then 1 else 2; // expected-error: '#if' must be paired with '#else'
+(#if true a else b) = 42;  // expected-error: '#if' must be paired with '#else'
+#if true {} #elif true {} elif true 4; // expected-error: '#if' must be paired with '#elif'
+if true {} #elif true {} elif true 4; // expected-error: 'if' must be paired with 'elif', not '#elif'
 
-// Warn about this since it’s clunky.
-static if 4 {} else static if 4 {} else {} // expected-warning: Use 'static elif' instead of 'else static if'
-static if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'static elif' instead of 'else static if'
-if 4 {} else static if 4 {} else {} // expected-warning: Use 'static elif' instead of 'else static if'
-if 4 {} elif 4 {} else static if 4 {} // expected-warning: Use 'static elif' instead of 'else static if'
+// expected-error@+2 2: '#if' must be paired with '#elif'
+// expected-error@+1: '#if' must be paired with '#else'
+#if true {} elif true {} elif true {} else {}
+
+// expected-error@+2 2: '#if' must be paired with '#elif'
+// expected-error@+1: '#if' must be paired with '#else'
+#if true 7 elif true 7 elif true 7 else {}
+
+// expected-error@+2: '#if' must be paired with '#elif'
+// expected-error@+1: '#if' must be paired with '#else'
+#if true {} elif true {} #elif true {} else {};
+
+if true {} elif true {} #elif true {} else {}; // expected-error: 'if' must be paired with 'elif', not '#elif'
+if (true) {}; // expected-warning: Unnecessary parentheses around 'if' condition
+if true {} else if {} {}; // expected-error: Use 'elif' instead of 'else if'
+
+// expected-error@+2: 'else #if' is invalid; did you mean '#elif'
+// expected-error@+1: '#if' must be paired with '#else'
+#if 4 {} else #if 4 {} else {};
+
+// expected-error@+2: 'else #if' is invalid; did you mean '#elif'
+// expected-error@+1: '#if' must be paired with '#elif'
+#if 4 {} elif 4 {} else #if 4 {};
+
+if 4 {} else #if 4 {} else {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
+if 4 {} elif 4 {} else #if 4 {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 
 if true then 1; else 2; // expected-error: Semicolon before 'else' is not allowed
 if true {}
@@ -51,6 +75,17 @@ if true 7
     ; elif true 7  // expected-error: Semicolon before 'elif' is not allowed
     ; elif true 7  // expected-error: Semicolon before 'elif' is not allowed
     ; else {};     // expected-error: Semicolon before 'else' is not allowed
+
+#if true then 1; #else 2; // expected-error: Semicolon before '#else' is not allowed
+#if true {}
+    ; #elif true {} // expected-error: Semicolon before '#elif' is not allowed
+    ; #elif true {} // expected-error: Semicolon before '#elif' is not allowed
+    ; #else {};     // expected-error: Semicolon before '#else' is not allowed
+#if true 7
+    ; #elif true 7  // expected-error: Semicolon before '#elif' is not allowed
+    ; #elif true 7  // expected-error: Semicolon before '#elif' is not allowed
+    ; #else {};     // expected-error: Semicolon before '#else' is not allowed
+
 x = if true {};
 x = if true then 1;
 x = if true 1;
@@ -60,12 +95,21 @@ if then; // expected-error: Unexpected 'then'
 if else; // expected-error: Unexpected 'else'
 else; // expected-error: Unexpected 'else'
 elif; // expected-error: Unexpected 'elif'
+#if; // expected-error: Expected expression
+#if then; // expected-error: Unexpected 'then'
+#if #else; // expected-error: Unexpected '#else'
+#else; // expected-error: Unexpected '#else'
+#elif; // expected-error: Unexpected '#elif'
+
 if true 7 elif true 7 elif true; // expected-error: Expected expression
 if true {} elif true {} elif true; // expected-error: Expected expression
 if true {} else {} else {}; // expected-error: Unexpected 'else'
 
-static if true 7 elif true 7 elif true 7 static else {}; // expected-error: 'static else' is invalid
-if true 7 elif true 7 elif true 7 static else {}; // expected-error: 'static else' is invalid
+#if true 7 #elif true 7 #elif true; // expected-error: Expected expression
+#if true {} #elif true {} #elif true; // expected-error: Expected expression
+#if true {} #else {} #else {}; // expected-error: Unexpected '#else'
 
-static static; // expected-error: Expected 'if' after 'static'
-static if 4 {} static static elif 4 {}; // expected-error: Expected 'if' after 'static'
+#var x; // expected-error: Expected 'if' after '#'
+##; // expected-error: Expected 'if' after '#'
+if true #then 4; // expected-error: '#then' is invalid; write 'then' instead
+#if true #then 4; // expected-error: '#then' is invalid; write 'then' instead

@@ -225,6 +225,7 @@ void Lexer::NextImpl() {
         case '&': ty = Tk::Ampersand; break;
         case '|': ty = Tk::VBar; break;
         case '~': ty = Tk::Tilde; break;
+        case '#': ty = Tk::Hash; break;
 
         // Two-character tokens.
         case '%': ty = Eat('=') ? Tk::PercentEq : Tk::Percent; break;

@@ -4,7 +4,7 @@ program test;
 int a; // expected-note 2: Variable declared here
 eval a; // expected-error: Cannot access variable declared outside the current evaluation context
 
-static if a == 0 {} // expected-error: Cannot access variable declared outside the current evaluation context
+#if a == 0 {} // expected-error: Cannot access variable declared outside the current evaluation context
 
 // The variable can appear in the evaluation if it is never accessed.
 eval false and a == 0;
