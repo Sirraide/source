@@ -5,18 +5,16 @@
 #include <srcc/Core/Token.hh>
 
 #define SRCC_IR_VALUE_KINDS(X) \
+    X(Aggregate)               \
     X(Argument)                \
     X(Block)                   \
     X(BuiltinConstant)         \
-    X(Extract)                 \
     X(FrameSlot)               \
     X(GlobalConstant)          \
     X(InstValue)               \
     X(InvalidLocalReference)   \
     X(LargeInt)                \
     X(Proc)                    \
-    X(Range)                   \
-    X(Slice)                   \
     X(SmallInt)
 
 /// IR used during codegen before LLVM IR or VM bytecode is emitted.
@@ -92,11 +90,16 @@ public:
     };
 
 private:
-    Kind k;
     Type ty;
 
 protected:
-    Value(Kind k, Type ty) : k{k}, ty{ty} {}
+    u32 value_bits;
+
+private:
+    Kind k;
+
+protected:
+    Value(Kind k, Type ty, u32 bits = 0) : ty{ty}, value_bits{bits}, k{k} {}
 
 public:
     [[nodiscard]] auto as_int(TranslationUnit& tu) -> std::optional<APInt>;
@@ -114,7 +117,7 @@ struct Managed {
 
 class ManagedValue : public Value, public Managed {
 protected:
-    ManagedValue(Kind k, Type ty) : Value{k, ty} {}
+    ManagedValue(Kind k, Type ty, u32 bits = 0) : Value{k, ty, bits} {}
 };
 
 class BuiltinConstant : public ManagedValue {
@@ -156,33 +159,36 @@ public:
     static bool classof(const Value* v) { return v->kind() == Kind::LargeInt; }
 };
 
-// Note: Merging Range and Slice seems tempting, but it doesn’t actually help at all.
-// TODO: Maybe represent this and slice as *instructions* with 2 result values; that would
-//       get us split slices rather than aggregate values for free in LLVM.
-class Range : public ManagedValue {
+/// Aggregate ‘value’.
+///
+/// An aggregate value is really just a bundle of values; this is how
+/// we represent ARValues in the IR. This representation is transient
+/// in that any uses of aggregates are instead converted to operations
+/// on the underlying value range, e.g. when passing an aggregate to
+/// a function, each value is passed individually.
+///
+/// Aggregates only exist in codegen; they are created by operations that
+/// produce ARValues and never make it into the final IR for evaluation or
+/// LLVM code generation. This simplifies both the VM and ensures that we
+/// don’t end up producing actual LLVM aggregate temporaries because the
+/// optimiser is not designed to handle those.
+class Aggregate final : public ManagedValue, TrailingObjects<Aggregate, Value*> {
     friend Builder;
+    friend TrailingObjects;
 
+    StructLayout* struct_layout;
 
-    Range(Type ty, Value* start, Value* end) : ManagedValue{Kind::Range, ty}, start{start}, end{end} {}
+    Aggregate(Type ty, StructLayout* layout)
+        : ManagedValue{Kind::Aggregate, ty, u32(layout->fields().size())},
+          struct_layout{layout} {}
 
 public:
-    Value* const start;
-    Value* const end;
-
-    static bool classof(const Value* v) { return v->kind() == Kind::Range; }
-};
-
-class Slice : public ManagedValue {
-    friend Builder;
-
-
-    Slice(Type ty, Value* data, Value* size) : ManagedValue{Kind::Slice, ty}, data{data}, size{size} {}
-
-public:
-    Value* const data;
-    Value* const size;
-
-    static bool classof(const Value* v) { return v->kind() == Kind::Slice; }
+    auto field(u32 idx) -> Value* { return fields()[idx]; }
+    auto fields() -> ArrayRef<Value*> { return {getTrailingObjects(), value_bits}; }
+    auto layout() const -> StructLayout* { return struct_layout; }
+    auto numTrailingObjects(OverloadToken<Value*>) -> u32 { return value_bits; }
+    auto type() const -> Type = SRCC_DELETED("Aggregates do not have a type");
+    static bool classof(const Value* v) { return v->kind() == Kind::Aggregate; }
 };
 
 class GlobalConstant : public ManagedValue {
@@ -220,33 +226,20 @@ public:
     static bool classof(const Value* v) { return v->kind() == Kind::Argument; }
 };
 
-class Extract : public ManagedValue {
-    friend Builder;
-
-    Value* arg;
-    u32 idx;
-
-    Extract(Value* agg, u32 idx, Type ty) : ManagedValue{Kind::Extract, ty}, arg{agg}, idx{idx} {}
-
-public:
-    auto aggregate() const -> Value* { return arg; }
-    auto index() const -> u32 { return idx; }
-
-    static bool classof(const Value* v) { return v->kind() == Kind::Extract; }
-};
-
 /// A stack slot that is allocated on function entry.
 class FrameSlot : public ManagedValue {
     friend Builder;
 
     Proc* p;
     Type ty;
+    Align alignment;
 
-    FrameSlot(TranslationUnit& tu, Proc* parent, Type ty)
-        : ManagedValue{Kind::FrameSlot, PtrType::Get(tu, ty)}, p{parent}, ty{ty} {}
+    FrameSlot(TranslationUnit& tu, Proc* parent, Type ty, Align align)
+        : ManagedValue{Kind::FrameSlot, PtrType::Get(tu, ty)}, p{parent}, ty{ty}, alignment{align} {}
 
 public:
     [[nodiscard]] auto allocated_type() const { return ty; }
+    [[nodiscard]] auto align() const { return alignment; }
     [[nodiscard]] auto parent() const -> Proc* { return p; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::FrameSlot; }
@@ -260,9 +253,10 @@ class Inst : public Managed {
 
     ArrayRef<Value*> arguments;
     const Op op;
+    Align alignment = {}; // Not meaningful for all instructions.
 
 protected:
-    Inst(Builder& b, Op op, ArrayRef<Value*> args);
+    Inst(Builder& b, Op op, ArrayRef<Value*> args, Align align = {});
 
 public:
     // Not all of these are meaningful for every instruction.
@@ -270,6 +264,7 @@ public:
     bool inbounds : 1 = false;
 
     void dump(TranslationUnit& tu);
+    [[nodiscard]] auto align() const { return alignment; }
     [[nodiscard]] auto args() const -> ArrayRef<Value*> { return arguments; }
     [[nodiscard]] bool has_multiple_results() const;
     [[nodiscard]] auto opcode() const { return op; }
@@ -298,13 +293,11 @@ class MemInst : public Inst {
     friend Builder;
 
     Type mem_type;
-    Align alignment;
 
     MemInst(Builder& b, Op op, Type mem_type, Align alignment, Value* ptr, Value* val = nullptr)
-        : Inst{b, op, val ? ArrayRef{ptr, val} : ArrayRef{ptr}}, mem_type{mem_type}, alignment{alignment} {}
+        : Inst{b, op, val ? ArrayRef{ptr, val} : ArrayRef{ptr}, alignment}, mem_type{mem_type} {}
 
 public:
-    [[nodiscard]] auto align() const { return alignment; }
     [[nodiscard]] auto memory_type() const { return mem_type; }
     [[nodiscard]] auto ptr() const { return args()[0]; }
     [[nodiscard]] auto value() const { return args()[1]; }
@@ -426,6 +419,21 @@ public:
 class Proc : public Value {
     friend Builder;
 
+public:
+    struct ParamAttrs {
+        // Used by sret/byval; only one of those is valid at a time
+        // anyway, so we only need one type.
+        Type ty;
+
+        bool ll_sret : 1 = false;
+        bool ll_byval : 1 = false;
+        bool ll_signext : 1 = false;
+        bool ll_zeroext : 1 = false;
+    };
+
+    using ParamAttrMap = llvm::SmallDenseMap<u32, ParamAttrs>;
+
+private:
     String mangled_name;
     ProcType* ty;
     Linkage link;
@@ -437,16 +445,18 @@ class Proc : public Value {
         : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
 public:
+    ParamAttrMap param_attrs;
     ProcDecl* associated_decl = nullptr;
-    Type indirect_ret_type;
 
     auto add(std::unique_ptr<Block> b) -> Block*;
     auto args() const -> ArrayRef<Argument*> { return arguments; }
+    auto attributes(u32 param_idx) const -> ParamAttrs;
     auto blocks() const {  return vws::all(body) | vws::transform([](auto& b) { return b.get(); }); }
     auto decl() const -> ProcDecl* { return associated_decl; }
     void dump(TranslationUnit& tu);
     auto empty() const -> bool { return body.empty(); }
     auto entry() const -> Block* { return body.empty() ? nullptr : body.front().get(); }
+    bool has_indirect_return() const { return attributes(0).ll_sret; }
     auto frame() const -> ArrayRef<FrameSlot*> { return frame_info; }
     auto linkage() const -> Linkage { return link; }
     auto name() const -> String { return mangled_name; }
@@ -481,7 +491,6 @@ public:
         ~InsertPointGuard() { b.insert_point = saved_insert_point; }
     };
 
-
     TranslationUnit& tu;
 
 private:
@@ -490,6 +499,9 @@ private:
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Type::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Type::BoolTy};
+    DenseMap<u32, StructLayout*> range_layouts;
+    StructLayout* slice_layout{};
+    StructLayout* closure_layout{};
 
 public:
     Block* insert_point = nullptr;
@@ -502,14 +514,19 @@ public:
     }
 
     auto Allocate(usz sz, usz align) -> void* { return tu.allocate(sz, align); }
+    auto CreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
     auto Dump() -> SmallUnrenderedString;
+    auto GetAggregateLayout(Type ty) -> StructLayout*;
     auto GetExistingProc(StringRef name) -> Ptr<Proc>;
     auto GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc*;
+    auto LoadAggregate(StructLayout* layout, Value* ptr) -> Aggregate*;
+    void StoreAggregate(Value* ptr, StructLayout* layout, ArrayRef<Value*> fields);
 
     auto CreateAShr(Value* a, Value* b) -> Value*;
-    auto CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) -> void;
+    auto CreateAbort(AbortReason reason, Location loc, Aggregate* msg1, Aggregate* msg2) -> void;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
-    auto CreateAlloca(Proc* parent, Type ty) -> Value*;
+    auto CreateAlloca(Proc* parent, Type ty, Align align = {}) -> Value*;
+    auto CreateAlloca(Proc* parent, Size sz, Align align) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
     auto CreateBlock() -> std::unique_ptr<Block> { return CreateBlock(ArrayRef<Type>{}); }
     auto CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block>;
@@ -518,10 +535,10 @@ public:
     auto CreateBool(bool value) -> Value*;
     auto CreateBr(Block* dest, ArrayRef<Value*> args = {}) -> void;
     auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
+    auto CreateClosure(Proc* proc, Value* env = nullptr) -> Aggregate*;
     auto CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) -> void;
-    auto CreateExtractValue(Value* aggregate, u32 idx) -> Value*;
     auto CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant*;
-    auto CreateGlobalStringSlice(String s) -> Slice*;
+    auto CreateGlobalStringSlice(String s) -> Aggregate*;
     auto CreateICmpEq(Value* a, Value* b) -> Value*;
     auto CreateICmpNe(Value* a, Value* b) -> Value*;
     auto CreateICmpSGe(Value* a, Value* b) -> Value*;
@@ -538,13 +555,14 @@ public:
     auto CreateInvalidLocalReference(LocalRefExpr* ref) -> Value*;
     auto CreateLShr(Value* a, Value* b) -> Value*;
     auto CreateLoad(Type ty, Value* ptr) -> Value*;
-    auto CreateMemCopy(Value* to, Value* from, Value* bytes) -> void;
-    auto CreateMemZero(Value* addr, Value* bytes) -> void;
+    auto CreateMemCopy(Value* to, Value* from, Value* bytes, Align align) -> void;
+    auto CreateMemZero(Value* addr, Value* bytes, Align align) -> void;
     auto CreateNil(Type ty) -> Value*;
     auto CreateOr(Value* a, Value* b) -> Value*;
     auto CreatePoison(Type ty) -> Value*;
     auto CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value*;
-    auto CreateRange(Value* start, Value* end) -> Value*;
+    auto CreatePtrAdd(Value* ptr, Size offs, bool inbounds = true) -> Value*;
+    auto CreateRange(Value* start, Value* end) -> Aggregate*;
     auto CreateReturn(Value* val = nullptr) -> void;
     auto CreateSAddOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSDiv(Value* a, Value* b) -> Value*;
@@ -554,13 +572,14 @@ public:
     auto CreateSSubOverflow(Value* a, Value* b) -> OverflowResult;
     auto CreateSelect(Value* cond, Value* then_val, Value* else_val) -> Value*;
     auto CreateShl(Value* a, Value* b) -> Value*;
-    auto CreateSlice(Value* data, Value* size) -> Slice*;
-    auto CreateStore(Value* val, Value* ptr) -> void;
+    auto CreateSlice(Value* data, Value* size) -> Aggregate*;
+    auto CreateStore(Type ty, Value* val, Value* ptr) -> void;
     auto CreateSub(Value* a, Value* b, bool nowrap = false) -> Value*;
     auto CreateUDiv(Value* a, Value* b) -> Value*;
     auto CreateURem(Value* a, Value* b) -> Value*;
     auto CreateUnreachable() -> void;
     auto CreateXor(Value* a, Value* b) -> Value*;
+    auto CreateZExt(Value* a, Type ty) -> Value*;
 
 private:
     template <std::derived_from<Inst> InstTy, typename ...Args>
@@ -570,6 +589,7 @@ private:
     auto CreateSpecialGetVal(Type val_ty, Args&&... args) -> Value*;
 
     auto Create(Op op, ArrayRef<Value*> vals) -> Inst*;
+    auto CreateAggregate(Type ty, StructLayout* layout, ArrayRef<Value*> vals) -> Aggregate*;
     auto CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValue*;
     auto Fold(Value* lhs, Value* rhs, llvm::function_ref<u64(u64, u64)> op) -> Value*;
     auto Result(Inst* i, Type ty, u32 idx) -> InstValue*;

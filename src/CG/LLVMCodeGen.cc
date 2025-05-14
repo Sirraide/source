@@ -24,6 +24,7 @@ class cg::LLVMCodeGen : DiagsProducer<std::nullptr_t>, llvm::IRBuilder<> {
     llvm::IntegerType* const FFIIntTy;
     llvm::StructType* const SliceTy;
     llvm::StructType* const ClosureTy;
+    llvm::StructType* const AbortHandlerArgTy;
     llvm::Type* const VoidTy;
     llvm::FunctionType* const AbortHandlerTy;
     StringMap<llvm::FunctionCallee> abort_handlers;
@@ -67,8 +68,9 @@ LLVMCodeGen::LLVMCodeGen(llvm::TargetMachine& target, CodeGen& cg)
       FFIIntTy{cast<llvm::IntegerType>(ConvertType(cg.tu.FFIIntTy))},
       SliceTy{llvm::StructType::get(PtrTy, IntTy)},
       ClosureTy{llvm::StructType::get(PtrTy, PtrTy)},
+      AbortHandlerArgTy{llvm::StructType::get(SliceTy, IntTy, IntTy, SliceTy, SliceTy)},
       VoidTy{getVoidTy()},
-      AbortHandlerTy{llvm::FunctionType::get(VoidTy, {SliceTy, IntTy, IntTy, SliceTy, SliceTy}, false)} {
+      AbortHandlerTy{llvm::FunctionType::get(VoidTy, {PtrTy}, false)} {
     llvm->setTargetTriple(machine.getTargetTriple());
     llvm->setDataLayout(machine.createDataLayout());
 
@@ -161,6 +163,13 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
             return llvm::ArrayType::get(elem, u64(arr->dimension()));
         }
 
+        case TypeBase::Kind::IRAggregateType: {
+            SmallVector<llvm::Type*> fields;
+            for (auto f : cast<IRAggregateType>(ty)->layout()->fields())
+                fields.push_back(ConvertTypeForMem(f.ty));
+            return llvm::StructType::get(llvm->getContext(), fields);
+        }
+
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(ty)->builtin_kind()) {
                 case BuiltinKind::Deduced:
@@ -185,7 +194,7 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
 
         case TypeBase::Kind::StructType: {
             auto s = cast<StructType>(ty);
-            auto sz = array_elem ? s->array_size() : s->size();
+            auto sz = array_elem ? s->layout()->array_size() : s->layout()->size();
             return llvm::ArrayType::get(I8Ty, u64(sz.bytes()));
         }
     }
@@ -199,18 +208,12 @@ auto LLVMCodeGen::ConvertTypeForMem(Type ty) -> llvm::Type* {
 }
 
 auto LLVMCodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
-    // Easy case, we can do what we want here.
-    // TODO: hard case: implement the C ABI.
-    // if (ty->cconv() == CallingConvention::Source) {
     auto ret = ConvertType(ty->ret());
     SmallVector<llvm::Type*> args;
     for (const auto& p : ty->params()) {
-        // Parameters that are passed by reference are just 'ptr's.
-        if (p.type->pass_by_lvalue(ty->cconv(), p.intent)) args.push_back(PtrTy);
-        else args.push_back(ConvertTypeForMem(p.type));
+        args.push_back(ConvertType(p.type));
     }
     return llvm::FunctionType::get(ret, args, ty->variadic());
-    //}
 }
 
 // ============================================================================
@@ -233,16 +236,31 @@ void LLVMCodeGen::emit(ir::Proc* proc) {
     if (proc->type()->ret() == Type::NoReturnTy)
         curr_func->setDoesNotReturn();
 
-    // Add sret to the first parameter if need be.
-    if (proc->indirect_ret_type) {
+    // Process attributes.
+    for (auto [i, a] : proc->param_attrs) {
         llvm::AttrBuilder attrs{llvm->getContext()};
-        attrs.addStructRetAttr(ConvertTypeForMem(proc->indirect_ret_type));
-        attrs.addAttribute(llvm::Attribute::DeadOnUnwind);
-        attrs.addAttribute(llvm::Attribute::NoAlias);
-        attrs.addAttribute(llvm::Attribute::Writable);
-        attrs.addCapturesAttr(llvm::CaptureInfo::none());
-        attrs.addAlignmentAttr(ConvertAlign(proc->indirect_ret_type->align(cg.tu)));
-        curr_func->addParamAttrs(0, attrs);
+
+        if (a.ll_sret) {
+            attrs.addStructRetAttr(ConvertTypeForMem(a.ty));
+            attrs.addAttribute(llvm::Attribute::DeadOnUnwind);
+            attrs.addAttribute(llvm::Attribute::NoAlias);
+            attrs.addAttribute(llvm::Attribute::Writable);
+            attrs.addCapturesAttr(llvm::CaptureInfo::none());
+            attrs.addAlignmentAttr(ConvertAlign(a.ty->align(cg.tu)));
+        }
+
+        if (a.ll_byval) {
+            attrs.addByValAttr(ConvertTypeForMem(a.ty));
+            attrs.addAttribute(llvm::Attribute::NoUndef);
+            attrs.addAttribute(llvm::Attribute::NoAlias);
+            attrs.addCapturesAttr(llvm::CaptureInfo::none());
+            attrs.addAlignmentAttr(ConvertAlign(a.ty->align(cg.tu)));
+        }
+
+        if (a.ll_signext) attrs.addAttribute(llvm::Attribute::SExt);
+        if (a.ll_zeroext) attrs.addAttribute(llvm::Attribute::ZExt);
+
+        curr_func->addParamAttrs(i, attrs);
     }
 
     // Stop here if there is no function body.
@@ -273,7 +291,7 @@ void LLVMCodeGen::emit(ir::Proc* proc) {
     for (auto f : proc->frame()) {
         auto ty = f->allocated_type();
         auto a = CreateAlloca(ConvertTypeForMem(ty));
-        a->setAlignment(std::max(a->getAlign(), ConvertAlign(ty->align(cg.tu))));
+        a->setAlignment(std::max(a->getAlign(), ConvertAlign(f->align())));
         frame_slots[f] = a;
     }
 
@@ -299,17 +317,27 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
             // this is also called from within implicitly generated code.
             if (auto lc = a.location().seek_line_column(cg.tu.context())) {
                 auto name = cg.tu.context().file_name(a.location().file_id);
-                args.push_back(llvm::ConstantStruct::get(SliceTy, {InternStringPtr(name), MakeInt(i64(name.size()))}));
+                args.push_back(InternStringPtr(name));
+                args.push_back(MakeInt(i64(name.size())));
                 args.push_back(MakeInt(i64(lc->line)));
                 args.push_back(MakeInt(i64(lc->col)));
             } else {
-                args.push_back(llvm::Constant::getNullValue(SliceTy));
+                args.push_back(llvm::ConstantPointerNull::get(getPtrTy()));
+                args.push_back(MakeInt(0));
                 args.push_back(MakeInt(0));
                 args.push_back(MakeInt(0));
             }
 
             for (auto arg : a.args()) args.push_back(Emit(arg));
-            auto c = CreateCall(abort_handlers.at(a.handler_name()), args);
+            auto stack_val = CreateAlloca(AbortHandlerArgTy);
+            Size offs;
+            for (auto arg : args) {
+                auto ptr = CreatePtrAdd(stack_val, getInt64(offs.bytes()));
+                CreateStore(arg, ptr);
+                offs += Size::Bytes(8);
+            }
+
+            auto c = CreateCall(abort_handlers.at(a.handler_name()), stack_val);
             c->setCallingConv(llvm::CallingConv::Fast);
             CreateUnreachable();
             return {};
@@ -366,18 +394,26 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         }
 
         case Op::MemCopy: {
-            auto a = ConvertAlign(cast<PtrType>(i[0]->type())->elem()->align(cg.tu));
+            auto a = ConvertAlign(i.align());
             return CreateMemCpy(Emit(i[0]), a, Emit(i[1]), a, Emit(i[2]));
         }
 
         case Op::MemZero: {
             auto zero = getInt8(0);
-            return CreateMemSet(Emit(i[0]), zero, Emit(i[1]), ConvertAlign(i[0]->type()->align(cg.tu)));
+            return CreateMemSet(Emit(i[0]), zero, Emit(i[1]), ConvertAlign(i.align()));
         }
 
         case Op::Store: {
             auto m = cast<ir::MemInst>(i);
             return CreateAlignedStore(Emit(m.value()), Emit(m.ptr()), ConvertAlign(m.align()));
+        }
+
+        case Op::Ret: {
+            if (i.args().empty()) return CreateRetVoid();
+            if (i.args().size() == 1) return CreateRet(Emit(i[0]));
+            SmallVector<llvm::Value*> args;
+            for (auto a : i.args())  args.push_back(Emit(a));
+            return CreateAggregateRet(args.data(), u32(args.size()));
         }
 
         // Cast instructions.
@@ -408,7 +444,6 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         case Op::LShr: return CreateLShr(Emit(i[0]), Emit(i[1]));
         case Op::Or: return CreateOr(Emit(i[0]), Emit(i[1]));
         case Op::PtrAdd: return CreatePtrAdd(Emit(i[0]), Emit(i[1]), "", i.inbounds);
-        case Op::Ret: return CreateRet(i.args().empty() ? nullptr : Emit(i[0]));
         case Op::SDiv: return CreateSDiv(Emit(i[0]), Emit(i[1]));
         case Op::Select: return CreateSelect(Emit(i[0]), Emit(i[1]), Emit(i[2]));
         case Op::Shl: return CreateShl(Emit(i[0]), Emit(i[1]), "", not cg.lang_opts.overflow_checking, not cg.lang_opts.overflow_checking);
@@ -426,6 +461,10 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
 auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
     switch (v->kind()) {
         using K = ir::Value::Kind;
+
+        case K::Aggregate:
+            Unreachable("Aggregates should never make it out of codegen");
+
         case K::Argument: {
             auto arg = cast<ir::Argument>(v);
             if (isa<ir::Proc>(arg->parent())) return curr_func->getArg(arg->index());
@@ -445,11 +484,6 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             }
 
             Unreachable();
-        }
-
-        case K::Extract: {
-            auto e = cast<ir::Extract>(v);
-            return CreateExtractValue(Emit(e->aggregate()), e->index());
         }
 
         case K::FrameSlot: return frame_slots.at(cast<ir::FrameSlot>(v));
@@ -478,20 +512,6 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
             auto callee = DeclareProc(cast<ir::Proc>(v));
             auto f = cast<llvm::Function>(callee.getCallee());
             return llvm::ConstantStruct::get(ClosureTy, {f, llvm::ConstantPointerNull::get(PtrTy)});
-        }
-
-        case K::Range: {
-            auto s = cast<ir::Range>(v);
-            auto sv0 = llvm::UndefValue::get(ConvertType(s->type()));
-            auto sv1 = CreateInsertValue(sv0, Emit(s->start), 0);
-            return CreateInsertValue(sv1, Emit(s->end), 1);
-        }
-
-        case K::Slice: {
-            auto s = cast<ir::Slice>(v);
-            auto sv0 = llvm::UndefValue::get(SliceTy);
-            auto sv1 = CreateInsertValue(sv0, Emit(s->data), 0);
-            return CreateInsertValue(sv1, Emit(s->size), 1);
         }
 
         case K::SmallInt: {

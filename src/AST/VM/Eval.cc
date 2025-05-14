@@ -158,23 +158,11 @@ public:
     }
 };
 
-struct SRClosure {
-    Pointer proc;
-    Pointer env;
-    bool operator==(const SRClosure& other) const = default;
-};
-
-struct SRSlice {
-    Pointer data;
-    APInt size;
-    bool operator==(const SRSlice& other) const = default;
-};
-
 /// A compile-time srvalue.
 ///
 /// This is essentially a value that can be stored in a VM ‘virtual register’.
 class SRValue {
-    Variant<APInt, bool, Type, Pointer, SRClosure, SRSlice, Range, std::monostate> value{std::monostate{}};
+    Variant<APInt, bool, Type, Pointer, std::monostate> value{std::monostate{}};
     Type ty{Type::VoidTy};
 
 public:
@@ -183,11 +171,11 @@ public:
     explicit SRValue(std::same_as<bool> auto b) : value{b}, ty{Type::BoolTy} {}
     explicit SRValue(Type ty) : value{ty}, ty{Type::TypeTy} {}
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
-    explicit SRValue(SRSlice slice, Type ty) : value{slice}, ty{ty} {}
-    explicit SRValue(SRClosure closure, Type ty) : value{closure}, ty{ty} {}
-    explicit SRValue(Range range, Type ty) : value{std::move(range)}, ty{ty} {}
     explicit SRValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}}, ty{Type::IntTy} {}
+
+    /// Compare SRValues for equality.
+    bool operator==(const SRValue&) const = default;
 
     /// Create a the 'empty' or 'nil' value of a given type.
     static auto Empty(TranslationUnit& tu, Type ty) -> SRValue;
@@ -251,19 +239,12 @@ auto SRValue::Empty(TranslationUnit& tu, Type ty) -> SRValue {
 
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::IRAggregateType:
         case TypeBase::Kind::StructType:
-            Unreachable("Not an SRValue");
-
-        case TypeBase::Kind::ProcType:
-            Todo();
-
-        case TypeBase::Kind::RangeType: {
-            auto t = ::cast<RangeType>(ty);
-            return SRValue(Range(Zero(t), Zero(t)), ty);
-        }
-
+        case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
-            return SRValue(SRSlice(), ty);
+        case TypeBase::Kind::ProcType:
+            Unreachable("Not an SRValue");
 
         case TypeBase::Kind::PtrType:
             return SRValue(Pointer(), ty);
@@ -304,25 +285,6 @@ auto SRValue::print() const -> SmallUnrenderedString {
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
-        [&](this auto& self, const Range& range) {
-            self(range.start);
-            out += "%1(..%)";
-            self(range.end);
-        },
-        [&](this auto& self, const SRSlice& slice) {
-            out += "%1((";
-            self(slice.data);
-            out += ", ";
-            self(slice.size);
-            out += ")%)";
-        },
-        [&](this auto& self, const SRClosure& slice) {
-            out += "%1((";
-            self(slice.proc);
-            out += ", ";
-            self(slice.env);
-            out += ")%)";
-        },
     }; // clang-format on
 
     visit(V);
@@ -520,7 +482,7 @@ private:
     [[nodiscard]] auto FFIType(Type ty) -> ffi_type*;
     [[nodiscard]] bool FFIStoreArg(void* ptr, const SRValue& val);
     [[nodiscard]] auto GetMemoryPointer(Pointer ptr, Size accessible_size, bool readonly) -> void*;
-    [[nodiscard]] auto GetStringData(const SRValue& val) -> std::string;
+    [[nodiscard]] auto GetStringData(const SRValue& data, const SRValue& size) -> std::string;
     [[nodiscard]] auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto MakeProcPtr(ir::Proc* proc) -> Pointer;
@@ -568,21 +530,7 @@ bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
 
 auto Eval::Eq(const SRValue& a, const SRValue& b) -> std::optional<bool> {
     if (a.index() != b.index()) return false;
-
-    // If this is not a slice, simply delegate to operator==.
-    auto s1 = a.dyn_cast<SRSlice>();
-    if (not s1) return a.visit([&]<typename T>(const T& t) { return t == b.cast<T>(); });
-
-    // Otherwise, check if they’re the same size.
-    auto s2 = &b.cast<SRSlice>();
-    if (s1->size != s2->size) return false;
-
-    // If so, get the memory pointers and compare them.
-    auto sz = Size::Bytes(s1->size.getZExtValue());
-    auto m1 = GetMemoryPointer(s1->data, sz, true);
-    auto m2 = GetMemoryPointer(s2->data, sz, true);
-    if (not m1 or not m2) return std::nullopt;
-    return std::memcmp(m1, m2, sz.bytes()) == 0;
+    return a.visit([&]<typename T>(const T& t) { return t == b.cast<T>(); });
 }
 
 bool Eval::EvalLoop() {
@@ -646,8 +594,10 @@ bool Eval::EvalLoop() {
             case ir::Op::Abort: {
                 if (not complain) return false;
                 auto& a = *cast<ir::AbortInst>(i);
-                auto& msg1 = Val(a[0]);
-                auto& msg2 = Val(a[1]);
+                auto& msg1_data = Val(a[0]);
+                auto& msg1_size = Val(a[1]);
+                auto& msg2_data = Val(a[2]);
+                auto& msg2_size = Val(a[3]);
                 auto reason_str = [&] -> std::string_view {
                     switch (a.abort_reason()) {
                         case ir::AbortReason::AssertionFailed: return "Assertion failed";
@@ -657,8 +607,8 @@ bool Eval::EvalLoop() {
                 }();
 
                 std::string msg{reason_str};
-                if (not msg1.empty()) msg += std::format(": '{}'", GetStringData(msg1));
-                if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
+                if (msg1_data.empty()) msg += std::format(": '{}'", GetStringData(msg1_data, msg1_size));
+                if (msg2_data.empty()) msg += std::format(": {}", GetStringData(msg2_data, msg2_size));
                 return Error(a.location(), "{}", msg);
             }
 
@@ -674,17 +624,15 @@ bool Eval::EvalLoop() {
             } break;
 
             case ir::Op::Call: {
-                auto& closure = Val(i->args()[0]).cast<SRClosure>();
+                auto& proc = Val(i->args()[0]).cast<Pointer>();
                 auto args = i->args().drop_front(1);
 
                 // Check that this is a valid call target.
-                if (closure.proc.is_null_ptr() or not closure.proc.is_proc_ptr())
+                if (proc.is_null_ptr() or not proc.is_proc_ptr())
                     return Error(entry, "Attempted to call non-procedure");
-                if (not closure.env.is_null_ptr())
-                    return ICE(entry, "TODO: Call to procedure with environment");
 
                 // Compile the procedure now if we haven’t done that yet.
-                auto callee = procedure_indices[closure.proc.value()];
+                auto callee = procedure_indices[proc.value()];
                 if (callee->empty()) {
                     // This is an external procedure.
                     if (not callee->decl() or callee->decl()->is_imported()) {
@@ -914,6 +862,7 @@ auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
 auto Eval::FFIType(Type ty) -> ffi_type* {
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::IRAggregateType:
         case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::StructType:
@@ -1019,15 +968,12 @@ auto Eval::GetMemoryPointer(Pointer p, Size accessible_size, bool readonly) -> v
     return nullptr;
 }
 
-auto Eval::GetStringData(const SRValue& val) -> std::string {
-    auto sl = val.dyn_cast<SRSlice>();
-    if (not sl or val.type() != vm.owner().StrLitTy) return "<invalid>";
-
+auto Eval::GetStringData(const SRValue& data, const SRValue& size) -> std::string {
     // Suppress memory errors if the pointer is invalid.
     tempset complain = false;
-    auto sz = Size::Bytes(sl->size.getZExtValue());
+    auto sz = Size::Bytes(size.cast<APInt>().getZExtValue());
     if (sz.bytes() == 0) return "";
-    auto mem = GetMemoryPointer(sl->data, sz, true);
+    auto mem = GetMemoryPointer(data.cast<Pointer>(), sz, true);
     if (not mem) return "<invalid>";
 
     // We got a valid pointer+size; extract the string data.
@@ -1052,27 +998,15 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
 
     switch (ty->kind()) {
         case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::IRAggregateType:
+        case TypeBase::Kind::ProcType:
+        case TypeBase::Kind::RangeType:
+        case TypeBase::Kind::SliceType:
         case TypeBase::Kind::StructType:
             Unreachable();
 
-        case TypeBase::Kind::ProcType:
-            return SRValue(Load.operator()<SRClosure>(), ty);
-
         case TypeBase::Kind::PtrType:
             return SRValue(Load.operator()<Pointer>(), ty);
-
-        case TypeBase::Kind::RangeType: {
-            auto elem = cast<RangeType>(ty)->elem();
-            auto start = LoadSRValue(mem, elem)->cast<APInt>();
-            auto end = LoadSRValue(static_cast<const char*>(mem) + elem->array_size(vm.owner()).bytes(), elem)->cast<APInt>();
-            return SRValue(Range{std::move(start), std::move(end)}, ty);
-        }
-
-        case TypeBase::Kind::SliceType: {
-            auto ptr = Load.operator()<Pointer>();
-            auto sz = LoadSRValue(static_cast<const char*>(mem) + sizeof(Pointer), Type::IntTy)->cast<APInt>();
-            return SRValue(SRSlice{ptr, std::move(sz)}, ty);
-        }
 
         case TypeBase::Kind::IntType: {
             auto wd = u32(cast<IntType>(ty)->bit_width().bits());
@@ -1168,22 +1102,9 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](ir::Proc*) { return ICE(entry, "TODO: Store closure in memory"); },
         [&](Type ty) { return Store(ty.ptr()); },
         [&](Pointer p) { return Store(p.encode()); },
-        [&](const SRClosure& cl) -> bool { return Store(cl); },
         [&](const APInt& i) {
             StoreIntToMemory(i, static_cast<u8*>(ptr), u32(val.type()->size(vm.owner()).bytes()));
             return true;
-        },
-        [&](const Range& range) {
-            auto elem = cast<RangeType>(val.type())->elem();
-            auto size = elem->size(vm.owner());
-            StoreIntToMemory(range.start, static_cast<u8*>(ptr), u32(size.bytes()));
-            StoreIntToMemory(range.end, static_cast<u8*>(ptr) + elem->array_size(vm.owner()).bytes(), u32(size.bytes()));
-            return true;
-        },
-        [&](this auto& self, const SRSlice& sl) -> bool {
-            if (not self(sl.data)) return false;
-            ptr = static_cast<char*>(ptr) + sizeof(Pointer{}.encode());
-            return self(sl.size);
         },
     }; // clang-format on
 
@@ -1209,30 +1130,12 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
 
     switch (v->kind()) {
         using K = ir::Value::Kind;
+        case K::Aggregate: Unreachable("Aggregates should never make it out of codegen");
         case K::Block: Unreachable("Can’t take address of basic block");
         case K::LargeInt: Todo();
         case K::Proc: {
             auto p = cast<ir::Proc>(v);
-            return Materialise(SRValue{SRClosure(MakeProcPtr(p), Pointer()), v->type()});
-        }
-
-        case K::Extract: {
-            auto e = cast<ir::Extract>(v);
-            auto& val = Val(e->aggregate());
-
-            if (auto* slice = val.dyn_cast<SRSlice>()) {
-                auto idx = e->index();
-                if (idx == 0) return Materialise(SRValue(slice->data, e->type()));
-                if (idx == 1) return Materialise(SRValue(slice->size, e->type()));
-            }
-
-            if (auto* slice = val.dyn_cast<Range>()) {
-                auto idx = e->index();
-                if (idx == 0) return Materialise(SRValue(slice->start, e->type()));
-                if (idx == 1) return Materialise(SRValue(slice->end, e->type()));
-            }
-
-            Unreachable();
+            return Materialise(SRValue{MakeProcPtr(p), v->type()});
         }
 
         case K::InvalidLocalReference: {
@@ -1255,20 +1158,6 @@ auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
             );
 
             return Materialise(SRValue(ptr, v->type()));
-        }
-
-        case K::Range: {
-            auto sl = cast<ir::Range>(v);
-            auto& start = Val(sl->start);
-            auto& end = Val(sl->end);
-            return Materialise(SRValue(Range{start.cast<APInt>(), end.cast<APInt>()}, sl->type()));
-        }
-
-        case K::Slice: {
-            auto sl = cast<ir::Slice>(v);
-            auto& ptr = Val(sl->data);
-            auto& sz = Val(sl->size);
-            return Materialise(SRValue(SRSlice{ptr.cast<Pointer>(), sz.cast<APInt>()}, sl->type()));
         }
 
         case K::Argument:

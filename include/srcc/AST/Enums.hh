@@ -81,11 +81,30 @@ enum class srcc::CallingConvention : base::u8 {
 
 enum class srcc::ValueCategory : base::u8 {
     /// Scalar rvalue, i.e. an rvalue that is passed in registers
-    /// and available as an SSA variable. This is everything that
-    /// we can construct w/o needing a memory location.
+    /// and available as an SSA variable, be it in codegen, in the
+    /// IR, in LLVM, or in the compile-time VM.
     ///
     /// These roughly correspond to scalar prvalues in C++.
     SRValue,
+
+    /// Aggregate rvalue, i.e. an rvalue that is too large to fit
+    /// in a single (virtual) register, but small enough to where
+    /// we don’t want to pass it in memory; this includes builtin
+    /// types that consist of more than one element, such as slices,
+    /// closures, and ranges, as well as small class types that
+    /// don’t require a memory location to be constructed or
+    /// destroyed.
+    ///
+    /// The closest equivalent to this in C++ would probably be
+    /// small class types that are ‘trivial for the purpose of calls’
+    /// as defined by the Itanium ABI.
+    ///
+    /// Note that large integers are kind of in a weird place here:
+    /// they are SRValues as both LLVM and our VM treat them as if
+    /// they were ‘registers’, but ABIs treat them as ARValues or
+    /// even SRValues; we consider them SRValues and then simply
+    /// reuse some ARValue/MRValue code paths for them in codegen.
+    ARValue,
 
     /// Class rvalues, i.e. an rvalue (usually of class type) that
     /// needs a memory location to construct into.

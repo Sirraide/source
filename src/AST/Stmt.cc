@@ -114,7 +114,8 @@ LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
     // then we only have an rvalue in the callee (other intents may be passed by
     // value as well, but still create variables in the callee).
     auto p = dyn_cast<ParamDecl>(decl);
-    if (p and p->is_rvalue_in_parameter()) value_category = SRValue;
+    if (p and p->intent() == Intent::In and not decl->type->is_mrvalue())
+        value_category = decl->type->rvalue_category();
 }
 
 MemberAccessExpr::MemberAccessExpr(
@@ -145,11 +146,6 @@ auto OverloadSetExpr::Create(
 
 auto ParamDecl::intent() const -> Intent {
     return parent->param_types()[idx].intent;
-}
-
-bool ParamDecl::is_rvalue_in_parameter() const {
-    auto i = intent();
-    return i == Intent::In and type->pass_by_rvalue(parent->proc_type()->cconv(), i);
 }
 
 ProcRefExpr::ProcRefExpr(

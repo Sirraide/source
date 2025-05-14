@@ -18,7 +18,7 @@ a = &(if true then i else i);
 // +     %2 = int^^
 // +
 // + entry:
-// +     store int to %0, nil, align 8
+// +     zero %0, int 8
 // +     store int^ to %1, %0, align 8
 // +     store int^^ to %2, %1, align 8
 // +     %3 = load int^^, %2, align 8

@@ -226,9 +226,8 @@ auto Sema::LookUpName(
     return res;
 }
 
-auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
-    if (expr->value_category == Expr::SRValue) return expr;
-    Assert(expr->value_category == Expr::LValue);
+auto Sema::LValueToRValue(Expr* expr) -> Expr* {
+    if (expr->rvalue()) return expr;
     return new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
 }
 
@@ -236,13 +235,13 @@ bool Sema::MakeCondition(Expr*& e, StringRef op) {
     if (auto ass = dyn_cast<BinaryExpr>(e); ass and ass->op == Tk::Assign)
         Warn(e->location(), "Assignment in condition. Did you mean to write '=='?");
 
-    if (not MakeSRValue(Type::BoolTy, e, "Condition", op))
+    if (not MakeRValue(Type::BoolTy, e, "Condition", op))
         return false;
 
     return true;
 }
 
-bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
+bool Sema::MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     auto init = TryBuildInitialiser(ty, e);
     if (init.invalid()) {
         Error(
@@ -257,7 +256,7 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     }
 
     // Make sure it’s an srvalue.
-    e = LValueToSRValue(init.get());
+    e = LValueToRValue(init.get());
     return true;
 }
 
@@ -359,7 +358,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             true
         );
 
-        case K::LValueToSRValue: return LValueToSRValue(e);
+        case K::LValueToRValue: return LValueToRValue(e);
         case K::MaterialisePoison: return new (*M) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
@@ -386,7 +385,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         }
 
         case K::IntegralCast:
-        case K::LValueToSRValue:
+        case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::SelectOverload: {
             Assert(exprs.size() == 1);
@@ -519,9 +518,11 @@ auto Sema::BuildConversionSequence(
     // pretend that we have one.
     auto a = args.empty() ? nullptr : args.front();
     if (a and a->type == Type::NoReturnTy) {
-        auto cat = var_type->pass_value_category(cc, intent);
-        if (var_type != Type::NoReturnTy or a->value_category != cat)
-            seq.add(Conversion::Poison(var_type, cat));
+        if (in_call) {
+            auto cat = var_type->pass_by_reference(intent) ? ValueCategory::LValue : var_type->rvalue_category();
+            if (var_type != Type::NoReturnTy or a->value_category != cat)
+                seq.add(Conversion::Poison(var_type, cat));
+        }
         return seq;
     }
 
@@ -569,7 +570,7 @@ auto Sema::BuildConversionSequence(
     // If the intent resolves to pass by reference, then we
     // need to bind to it; the type must match exactly for
     // that.
-    if (in_call and var_type->pass_by_lvalue(cc, intent)) {
+    if (in_call and var_type->pass_by_reference(intent)) {
         // If we’re passing by lvalue, the type must match exactly.
         if (a->type != var_type) return CreateError(
             init_loc,
@@ -607,10 +608,10 @@ auto Sema::BuildConversionSequence(
 
     // Type matches exactly.
     if (a->type == var_type) {
-        // We’re passing by value. For srvalue types, convert lvalues
-        // to srvalues here.
-        if (a->type->rvalue_category() == Expr::SRValue) {
-            if (a->lvalue()) seq.add(Conversion::LValueToSRValue());
+        // We’re passing by value. For srvalue/arvalue types, convert lvalues
+        // to rvalues here.
+        if (!a->type->is_mrvalue()) {
+            if (a->lvalue()) seq.add(Conversion::LValueToRValue());
             return seq;
         }
 
@@ -625,6 +626,9 @@ auto Sema::BuildConversionSequence(
 
     // We need to perform conversion. What we do here depends on the type.
     switch (var_type->kind()) {
+        case TypeBase::Kind::IRAggregateType:
+            Unreachable();
+
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
@@ -709,7 +713,7 @@ auto Sema::BuildConversionSequence(
             auto ivar = cast<IntType>(var_type);
             auto iinit = dyn_cast<IntType>(a->type);
             if (not iinit or iinit->bit_width() > ivar->bit_width()) return TypeMismatch();
-            seq.add(Conversion::LValueToSRValue());
+            seq.add(Conversion::LValueToRValue());
             seq.add(Conversion::IntegralCast(var_type));
             return seq;
         }
@@ -929,7 +933,7 @@ u32 Sema::ConversionSequence::badness() {
             using K = Conversion::Kind;
 
             // These don’t perform type conversion.
-            case K::LValueToSRValue:
+            case K::LValueToRValue:
             case K::SelectOverload:
             case K::DefaultInit:
                 break;
@@ -1372,8 +1376,8 @@ auto Sema::BuildBinaryExpr(
         }
 
         // Now they’re the same type, so ensure both are srvalues.
-        lhs = LValueToSRValue(lhs);
-        rhs = LValueToSRValue(rhs);
+        lhs = LValueToRValue(lhs);
+        rhs = LValueToRValue(rhs);
         return true;
     };
 
@@ -1400,13 +1404,13 @@ auto Sema::BuildBinaryExpr(
                 lhs->type
             );
 
-            if (not MakeSRValue(Type::IntTy, rhs, "Index", "[]")) return {};
+            if (not MakeRValue(Type::IntTy, rhs, "Index", "[]")) return {};
 
             // Arrays need to be in memory before we can do anything
             // with them; slices are srvalues and should be loaded
             // whole.
             if (isa<ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
-            else lhs = LValueToSRValue(lhs);
+            else lhs = LValueToRValue(lhs);
 
             // A subscripting operation yields an lvalue.
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
@@ -1425,7 +1429,7 @@ auto Sema::BuildBinaryExpr(
         case Tk::DotDotEq:
         case Tk::DotDotLess: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-            return Build(RangeType::Get(*M, lhs->type));
+            return Build(RangeType::Get(*M, lhs->type), ARValue);
         }
 
         // Arithmetic operation.
@@ -1469,8 +1473,8 @@ auto Sema::BuildBinaryExpr(
         case Tk::And:
         case Tk::Or:
         case Tk::Xor: {
-            if (not MakeSRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
-            if (not MakeSRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
             return Build(Type::BoolTy);
         }
 
@@ -1551,7 +1555,7 @@ auto Sema::BuildBuiltinCallExpr(
                     "__srcc_print only accepts i8[] and integers, but got {}",
                     arg->type
                 );
-                arg = LValueToSRValue(arg);
+                arg = LValueToRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
         }
@@ -1573,11 +1577,14 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     auto type = [&] -> Type {
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::SliceSize:
             case AK::TypeAlign:
             case AK::TypeArraySize:
             case AK::TypeBits:
             case AK::TypeBytes:
+                return Type::IntTy;
+
+            case AK::SliceSize:
+                operand = LValueToRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1585,6 +1592,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
+                operand = LValueToRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1592,6 +1600,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
+                operand = LValueToRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
@@ -1599,7 +1608,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
     return new (*M) BuiltinMemberAccessExpr{
         type,
-        Expr::SRValue,
+        type->rvalue_category(),
         operand,
         ak,
         loc
@@ -1639,7 +1648,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // work for indirect calls since for those we don’t have a reference
     // to the procedure declaration.
     else if (auto ty = dyn_cast<ProcType>(callee_expr->type)) {
-        resolved_callee = LValueToSRValue(callee_expr);
+        resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
         auto params = ty->params().size();
@@ -1697,7 +1706,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
             isa<PtrType>(a->type)
         ) {
-            converted_args.push_back(LValueToSRValue(a));
+            converted_args.push_back(LValueToRValue(a));
         } else {
             Error(
                 a->location(),
@@ -1814,8 +1823,8 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     }
 
     // The type is an srvalue type. Make sure both sides are srvalues.
-    t = LValueToSRValue(t);
-    e = LValueToSRValue(e);
+    t = LValueToRValue(t);
+    e = LValueToRValue(e);
     return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
 }
 
@@ -1976,13 +1985,13 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
                 operand->type
             );
 
-            operand = LValueToSRValue(operand);
+            operand = LValueToRValue(operand);
             return Build(ptr->elem(), Expr::LValue);
         }
 
         // Boolean negation.
         case Tk::Not: {
-            if (not MakeSRValue(Type::BoolTy, operand, "Operand", "not")) return {};
+            if (not MakeRValue(Type::BoolTy, operand, "Operand", "not")) return {};
             return Build(Type::BoolTy, Expr::SRValue);
         }
 
@@ -1990,7 +1999,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         case Tk::Minus:
         case Tk::Plus:
         case Tk::Tilde: {
-            if (not MakeSRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
             return Build(Type::IntTy, Expr::SRValue);
         }
 
@@ -2597,9 +2606,8 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
     // of the struct’s size, and alignment.
     // FIXME: Move most of this logic into some BuildStructType() function.
     EnterScope _{*this, s->scope()};
-    Size size{};
-    Align align{1};
     SmallVector<FieldDecl*> fields;
+    SmallVector<Type> field_types;
     StructType::Bits bits;
     for (auto f : parsed->fields()) {
         auto ty = AdjustVariableType(TranslateType(f->type), f->loc);
@@ -2616,18 +2624,24 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
                 ty
             );
 
-            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name, f->loc))->set_invalid();
+            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, std::nullopt, f->name, f->loc))->set_invalid();
             continue;
         }
 
-        // Otherwise, add the field and adjust our size and alignment.
-        // TODO: Optimise layout if this isn’t meant for FFI.
-        size = size.align(ty->align(*M));
-        fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
-        size += ty->size(*M);
-        align = std::max(align, ty->align(*M));
+        // If this field is sized, add it to the layout.
+        UnsignedOrNone field_index{std::nullopt};
+        if (ty->size(*M) != Size()) {
+            field_index = u32(field_types.size());
+            field_types.push_back(ty);
+        }
+
+        // And declare the field.
+        fields.push_back(new (*M) FieldDecl(ty, field_index, f->name, f->loc));
         AddDeclToScope(s->scope(), fields.back());
     }
+
+    // Create the layout.
+    auto layout = StructLayout::Create(*M, field_types);
 
     // TODO: Initialisers are declared out-of-line, but they should
     // have been picked up during initial translation when we find
@@ -2658,7 +2672,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
     }
 
     // Finally, mark the struct as complete.
-    s->finalise(fields, size, align, bits);
+    s->finalise(layout, fields, bits);
     return decl;
 }
 

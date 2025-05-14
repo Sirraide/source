@@ -10,30 +10,53 @@
 #include <base/Assert.hh>
 
 namespace srcc::cg {
+class CallLowering;
 class CodeGen;
 class LLVMCodeGen;
 class VMCodeGen;
-class ArgumentMapping;
 }
 
-class srcc::cg::ArgumentMapping {
-    LIBBASE_IMMOVABLE(ArgumentMapping);
+class srcc::cg::CallLowering {
+    LIBBASE_IMMOVABLE(CallLowering);
 
-    llvm::SmallDenseMap<u32, u32> indices;
+protected:
+    CodeGen& CG;
+    CallLowering(CodeGen& cg) : CG(cg) {}
 
 public:
-    ArgumentMapping() = default;
+    virtual ~CallLowering() = default;
 
-    /// Map an index to another index
-    auto map(u32 a, u32 b) { indices[a] = b; }
+    /// Adjust a procedure type and convert it to something that conforms with
+    /// the target ABI.
+    [[nodiscard]] virtual auto adjust_procedure_type(
+        ProcDecl* decl,
+        ProcType* ty
+    ) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> = 0;
 
-    /// Get the IR arg index that a AST arg maps to; if nullopt is
-    /// returned, this argument should simply be dropped.
-    auto map(u32 idx) const -> std::optional<u32> {
-        auto it = indices.find(idx);
-        if (it == indices.end()) return std::nullopt;
-        return it->second;
-    }
+    /// Whether this type must be returned indirectly by passing a pointer
+    /// to a preallocated memory buffer to the function.
+    [[nodiscard]] virtual bool has_indirect_return(ProcType* ty) = 0;
+
+    /// Emit a call to a source-level procedure.
+    ///
+    /// Perform any necessary processing required to convert the logical arguments
+    /// to a function into something that conforms with the calling convention.
+    ///
+    /// \param ty The source-level type of the procedure being called.
+    /// \param callee The procedure being called, possibly indirectly.
+    /// \param mrvalue_slot Slot for the return value; must be non-null iff
+    ///    has_indirect_return() returns true for \p ty.
+    /// \param args Source-level call arguments.
+    /// \return The result of the call.
+    [[nodiscard]] virtual auto lower_call(
+        ProcType* ty,
+        ir::Aggregate* callee,
+        ir::Value* mrvalue_slot,
+        ArrayRef<ir::Value*> args
+    ) -> ir::Value* = 0;
+
+    /// Emit logical parameters.
+    virtual void lower_params(ir::Proc* proc) = 0;
 };
 
 class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
@@ -42,18 +65,21 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
+    friend CallLowering;
 
+public:
     Opt<ir::Proc*> printf;
     DenseMap<LocalDecl*, ir::Value*> locals;
+    DenseMap<ProcDecl*, ir::Proc*> declared_procs;
     DenseMap<ProcDecl*, String> mangled_names;
-    DenseMap<ProcDecl*, std::unique_ptr<const ArgumentMapping>> argument_mapping;
     ir::Proc* curr_proc = nullptr;
     Size word_size;
     LangOpts lang_opts;
 
-public:
-    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
-        : Builder{tu}, word_size{word_size}, lang_opts{lang_opts} {}
+    // Call lowering implementation. One of these exists for every calling convention.
+    DenseMap<CallingConvention, std::unique_ptr<CallLowering>> call_lowering;
+
+    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size);
 
     /// Get the diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
@@ -85,7 +111,6 @@ public:
         StringRef program_file_name_override
     );
 
-private:
     class EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);
 
@@ -113,6 +138,9 @@ private:
         auto (Builder::*build_unchecked)(ir::Value*, ir::Value*, bool)->ir::Value*,
         auto (Builder::*build_overflow)(ir::Value*, ir::Value*)->ir::OverflowResult
     );
+
+    auto CreateNativeCallLowering_X86_64_Linux() -> std::unique_ptr<CallLowering>;
+    auto CreateSourceCallLowering_X86_64_Linux() -> std::unique_ptr<CallLowering>;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -146,12 +174,6 @@ private:
 
     auto EnterBlock(std::unique_ptr<ir::Block> bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
     auto EnterBlock(ir::Block* bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
-
-    /// Get a (mapped) procedure argument.
-    auto GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument>;
-
-    /// Check whether a procedure has an indirect return type.
-    bool HasIndirectReturn(ProcType* type);
 
     /// Create a conditional branch and join block.
     ///
@@ -201,9 +223,6 @@ private:
     /// Check if the size of a type is zero; this also means that every
     /// instance of this type is (or would be) identical.
     bool IsZeroSizedType(Type ty);
-
-    /// Check if a local variable has a stack slot.
-    bool LocalNeedsAlloca(LocalDecl* local);
 
     /// Create an infinite loop.
     ///

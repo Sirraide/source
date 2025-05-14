@@ -19,85 +19,179 @@ proc f2 {
     var d = c.start..<c.end;
 }
 
+proc f3 -> range<int> {
+    var x = 1..=42;
+    return x;
+}
+
 range<i13> x;
 
 // * proc __src_main {
-// +     %0 = range<i13>
+// +     %0 = range<i13>, align 2
 // +
 // + entry:
-// +     store range<i13> to %0, nil, align 2
+// +     zero %0, int 2, align 2
+// +     %1 = ptradd %0, int 2
+// +     zero %1, int 2, align 2
 // +     ret
 // + }
 // +
-// + proc _S1aFqiqiE (range<int> %0) -> range<int> {
-// +     %1 = range<int>
+// + proc _S1aFqiqiE (int %0, int %1) -> range<int> {
+// +     %2 = i8[16], align 8
+// +     %3 = range<int>, align 8
 // +
 // + entry:
-// +     store range<int> to %1, %0, align 8
-// +     ret (int 3, int 5)
+// +     store int to %2, %0, align 8
+// +     %4 = ptradd %2, int 8
+// +     store int to %4, %1, align 8
+// +     %5 = load int, %2, align 8
+// +     %6 = ptradd %2, int 8
+// +     %7 = load int, %6, align 8
+// +     store int to %3, %5, align 8
+// +     %8 = ptradd %3, int 8
+// +     store int to %8, %7, align 8
+// +     ret int 3, int 5
 // + }
 // +
-// + proc _S1bFqiqiE (range<int> %0) -> range<int> {
-// +     %1 = range<int>
+// + proc _S1bFqiqiE (int %0, int %1) -> range<int> {
+// +     %2 = i8[16], align 8
+// +     %3 = range<int>, align 8
 // +
 // + entry:
-// +     store range<int> to %1, %0, align 8
-// +     ret (int 3, int 4)
+// +     store int to %2, %0, align 8
+// +     %4 = ptradd %2, int 8
+// +     store int to %4, %1, align 8
+// +     %5 = load int, %2, align 8
+// +     %6 = ptradd %2, int 8
+// +     %7 = load int, %6, align 8
+// +     store int to %3, %5, align 8
+// +     %8 = ptradd %3, int 8
+// +     store int to %8, %7, align 8
+// +     ret int 3, int 4
 // + }
 // +
 // + proc _S2f1FvE {
-// +     %0 = range<int>
-// +     %1 = range<int>
-// +     %2 = range<int>
-// +     %3 = range<int>
+// +     %0 = range<int>, align 8
+// +     %1 = range<int>, align 8
+// +     %2 = range<int>, align 8
+// +     %3 = range<int>, align 8
 // +
 // + entry:
-// +     store range<int> to %0, nil, align 8
-// +     store range<int> to %1, (int 1, int 3), align 8
-// +     store range<int> to %2, (int 1, int 3), align 8
-// +     %4 = load int, %2, align 8
-// +     %5 = ptradd %2, int 8
-// +     %6 = load int, %5, align 8
-// +     %7 = add %6, int 1
-// +     store range<int> to %3, (%4, %7), align 8
+// +     zero %0, int 8, align 8
+// +     %4 = ptradd %0, int 8
+// +     zero %4, int 8, align 8
+// +     store int to %1, int 1, align 8
+// +     %5 = ptradd %1, int 8
+// +     store int to %5, int 3, align 8
+// +     store int to %2, int 1, align 8
+// +     %6 = ptradd %2, int 8
+// +     store int to %6, int 3, align 8
+// +     %7 = load int, %2, align 8
+// +     %8 = ptradd %2, int 8
+// +     %9 = load int, %8, align 8
+// +     %10 = load int, %2, align 8
+// +     %11 = ptradd %2, int 8
+// +     %12 = load int, %11, align 8
+// +     %13 = add %12, int 1
+// +     store int to %3, %7, align 8
+// +     %14 = ptradd %3, int 8
+// +     store int to %14, %13, align 8
 // +     ret
 // + }
 // +
 // + proc _S2f2FvE {
-// +     %0 = range<int>
-// +     %1 = range<int>
-// +     %2 = range<int>
-// +     %3 = range<int>
+// +     %0 = range<int>, align 8
+// +     %1 = range<int>, align 8
+// +     %2 = range<int>, align 8
+// +     %3 = range<int>, align 8
 // +
 // + entry:
-// +     store range<int> to %0, nil, align 8
-// +     store range<int> to %1, (int 1, int 2), align 8
-// +     store range<int> to %2, (int 1, int 2), align 8
-// +     %4 = load int, %2, align 8
-// +     %5 = ptradd %2, int 8
-// +     %6 = load int, %5, align 8
-// +     store range<int> to %3, (%4, %6), align 8
+// +     zero %0, int 8, align 8
+// +     %4 = ptradd %0, int 8
+// +     zero %4, int 8, align 8
+// +     store int to %1, int 1, align 8
+// +     %5 = ptradd %1, int 8
+// +     store int to %5, int 2, align 8
+// +     store int to %2, int 1, align 8
+// +     %6 = ptradd %2, int 8
+// +     store int to %6, int 2, align 8
+// +     %7 = load int, %2, align 8
+// +     %8 = ptradd %2, int 8
+// +     %9 = load int, %8, align 8
+// +     %10 = load int, %2, align 8
+// +     %11 = ptradd %2, int 8
+// +     %12 = load int, %11, align 8
+// +     store int to %3, %7, align 8
+// +     %13 = ptradd %3, int 8
+// +     store int to %13, %12, align 8
 // +     ret
 // + }
+// +
+// + proc _S2f3FqiE -> range<int> {
+// +     %0 = range<int>, align 8
+// +
+// + entry:
+// +     store int to %0, int 1, align 8
+// +     %1 = ptradd %0, int 8
+// +     store int to %1, int 43, align 8
+// +     %2 = load int, %0, align 8
+// +     %3 = ptradd %0, int 8
+// +     %4 = load int, %3, align 8
+// +     ret %2, %4
+// + }
 
-//L * define fastcc void @__src_main() {
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L +
+//L + define fastcc void @__src_main() {
 //L + entry:
 //L +   %0 = alloca { i13, i13 }, align 8
-//L +   store { i13, i13 } zeroinitializer, ptr %0, align 2
+//L +   call void @llvm.memset.p0.i64(ptr align 2 %0, i8 0, i64 2, i1 false)
+//L +   %1 = getelementptr inbounds i8, ptr %0, i64 2
+//L +   call void @llvm.memset.p0.i64(ptr align 2 %1, i8 0, i64 2, i1 false)
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc { i64, i64 } @_S1aFqiqiE({ i64, i64 } %0) {
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L +
+//L + define private fastcc { i64, i64 } @_S1aFqiqiE(i64 %0, i64 %1) {
 //L + entry:
-//L +   %1 = alloca { i64, i64 }, align 8
-//L +   store { i64, i64 } %0, ptr %1, align 8
+//L +   %2 = alloca [16 x i8], align 8
+//L +   %3 = alloca { i64, i64 }, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %4 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   store i64 %1, ptr %4, align 8
+//L +   %5 = load i64, ptr %2, align 8
+//L +   %6 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %7 = load i64, ptr %6, align 8
+//L +   store i64 %5, ptr %3, align 8
+//L +   %8 = getelementptr inbounds i8, ptr %3, i64 8
+//L +   store i64 %7, ptr %8, align 8
 //L +   ret { i64, i64 } { i64 3, i64 5 }
 //L + }
 //L +
-//L + define private fastcc { i64, i64 } @_S1bFqiqiE({ i64, i64 } %0) {
+//L + define private fastcc { i64, i64 } @_S1bFqiqiE(i64 %0, i64 %1) {
 //L + entry:
-//L +   %1 = alloca { i64, i64 }, align 8
-//L +   store { i64, i64 } %0, ptr %1, align 8
+//L +   %2 = alloca [16 x i8], align 8
+//L +   %3 = alloca { i64, i64 }, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %4 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   store i64 %1, ptr %4, align 8
+//L +   %5 = load i64, ptr %2, align 8
+//L +   %6 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %7 = load i64, ptr %6, align 8
+//L +   store i64 %5, ptr %3, align 8
+//L +   %8 = getelementptr inbounds i8, ptr %3, i64 8
+//L +   store i64 %7, ptr %8, align 8
 //L +   ret { i64, i64 } { i64 3, i64 4 }
 //L + }
 //L +
@@ -107,16 +201,25 @@ range<i13> x;
 //L +   %1 = alloca { i64, i64 }, align 8
 //L +   %2 = alloca { i64, i64 }, align 8
 //L +   %3 = alloca { i64, i64 }, align 8
-//L +   store { i64, i64 } zeroinitializer, ptr %0, align 8
-//L +   store { i64, i64 } { i64 1, i64 3 }, ptr %1, align 8
-//L +   store { i64, i64 } { i64 1, i64 3 }, ptr %2, align 8
-//L +   %4 = load i64, ptr %2, align 8
-//L +   %5 = getelementptr inbounds i8, ptr %2, i64 8
-//L +   %6 = load i64, ptr %5, align 8
-//L +   %7 = add i64 %6, 1
-//L +   %8 = insertvalue { i64, i64 } undef, i64 %4, 0
-//L +   %9 = insertvalue { i64, i64 } %8, i64 %7, 1
-//L +   store { i64, i64 } %9, ptr %3, align 8
+//L +   call void @llvm.memset.p0.i64(ptr align 8 %0, i8 0, i64 8, i1 false)
+//L +   %4 = getelementptr inbounds i8, ptr %0, i64 8
+//L +   call void @llvm.memset.p0.i64(ptr align 8 %4, i8 0, i64 8, i1 false)
+//L +   store i64 1, ptr %1, align 8
+//L +   %5 = getelementptr inbounds i8, ptr %1, i64 8
+//L +   store i64 3, ptr %5, align 8
+//L +   store i64 1, ptr %2, align 8
+//L +   %6 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   store i64 3, ptr %6, align 8
+//L +   %7 = load i64, ptr %2, align 8
+//L +   %8 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %9 = load i64, ptr %8, align 8
+//L +   %10 = load i64, ptr %2, align 8
+//L +   %11 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %12 = load i64, ptr %11, align 8
+//L +   %13 = add i64 %12, 1
+//L +   store i64 %7, ptr %3, align 8
+//L +   %14 = getelementptr inbounds i8, ptr %3, i64 8
+//L +   store i64 %13, ptr %14, align 8
 //L +   ret void
 //L + }
 //L +
@@ -126,16 +229,40 @@ range<i13> x;
 //L +   %1 = alloca { i64, i64 }, align 8
 //L +   %2 = alloca { i64, i64 }, align 8
 //L +   %3 = alloca { i64, i64 }, align 8
-//L +   store { i64, i64 } zeroinitializer, ptr %0, align 8
-//L +   store { i64, i64 } { i64 1, i64 2 }, ptr %1, align 8
-//L +   store { i64, i64 } { i64 1, i64 2 }, ptr %2, align 8
-//L +   %4 = load i64, ptr %2, align 8
-//L +   %5 = getelementptr inbounds i8, ptr %2, i64 8
-//L +   %6 = load i64, ptr %5, align 8
-//L +   %7 = insertvalue { i64, i64 } undef, i64 %4, 0
-//L +   %8 = insertvalue { i64, i64 } %7, i64 %6, 1
-//L +   store { i64, i64 } %8, ptr %3, align 8
+//L +   call void @llvm.memset.p0.i64(ptr align 8 %0, i8 0, i64 8, i1 false)
+//L +   %4 = getelementptr inbounds i8, ptr %0, i64 8
+//L +   call void @llvm.memset.p0.i64(ptr align 8 %4, i8 0, i64 8, i1 false)
+//L +   store i64 1, ptr %1, align 8
+//L +   %5 = getelementptr inbounds i8, ptr %1, i64 8
+//L +   store i64 2, ptr %5, align 8
+//L +   store i64 1, ptr %2, align 8
+//L +   %6 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   store i64 2, ptr %6, align 8
+//L +   %7 = load i64, ptr %2, align 8
+//L +   %8 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %9 = load i64, ptr %8, align 8
+//L +   %10 = load i64, ptr %2, align 8
+//L +   %11 = getelementptr inbounds i8, ptr %2, i64 8
+//L +   %12 = load i64, ptr %11, align 8
+//L +   store i64 %7, ptr %3, align 8
+//L +   %13 = getelementptr inbounds i8, ptr %3, i64 8
+//L +   store i64 %12, ptr %13, align 8
 //L +   ret void
 //L + }
 //L +
+//L + define private fastcc { i64, i64 } @_S2f3FqiE() {
+//L + entry:
+//L +   %0 = alloca { i64, i64 }, align 8
+//L +   store i64 1, ptr %0, align 8
+//L +   %1 = getelementptr inbounds i8, ptr %0, i64 8
+//L +   store i64 43, ptr %1, align 8
+//L +   %2 = load i64, ptr %0, align 8
+//L +   %3 = getelementptr inbounds i8, ptr %0, i64 8
+//L +   %4 = load i64, ptr %3, align 8
+//L +   %mrv = insertvalue { i64, i64 } poison, i64 %2, 0
+//L +   %mrv1 = insertvalue { i64, i64 } %mrv, i64 %4, 1
+//L +   ret { i64, i64 } %mrv1
+//L + }
+//L +
 //L + attributes #0 = { noreturn nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }

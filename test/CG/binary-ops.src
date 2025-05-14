@@ -43,28 +43,53 @@ proc arith (in int a, in int b) {
     sink(a != b);
 }
 
-// * proc __src_main {
+// * @0 = "+"
+// + @1 = "integer overflow"
+// + @2 = "-"
+// + @3 = "integer overflow"
+// + @4 = "*"
+// + @5 = "integer overflow"
+// + @6 = "/"
+// + @7 = "division by zero"
+// + @8 = "/"
+// + @9 = "integer overflow"
+// + @10 = "%"
+// + @11 = "division by zero"
+// + @12 = "%"
+// + @13 = "integer overflow"
+// + @14 = ":/"
+// + @15 = "division by zero"
+// + @16 = ":%"
+// + @17 = "division by zero"
+// + @18 = "<<"
+// + @19 = "shift amount exceeds bit width"
+// + @20 = "<<"
+// + @21 = "integer overflow"
+// + @22 = "<<<"
+// + @23 = "shift amount exceeds bit width"
+// +
+// + proc __src_main {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (in int %0) {
+// + proc _S4sinkFvxiE (int %0) {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxbE (in bool %0) {
+// + proc _S4sinkFvxbE (bool %0) {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S13arith_checkedFvxixiE (in int %0, in int %1) {
+// + proc _S13arith_checkedFvxixiE (int %0, int %1) {
 // + entry:
 // +     %2 = sadd ov %0, %1
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at <binary-ops.src:8:10> __src_int_arith_error(s"+", s"integer overflow")
+// +     abort at <binary-ops.src:8:10> __src_int_arith_error(@0, int 1, @1, int 16)
 // +
 // + bb2:
 // +     call void _S4sinkFvxiE(%2:0)
@@ -72,7 +97,7 @@ proc arith (in int a, in int b) {
 // +     br %3:1 to bb3 else bb4
 // +
 // + bb3:
-// +     abort at <binary-ops.src:9:10> __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <binary-ops.src:9:10> __src_int_arith_error(@2, int 1, @3, int 16)
 // +
 // + bb4:
 // +     call void _S4sinkFvxiE(%3:0)
@@ -80,7 +105,7 @@ proc arith (in int a, in int b) {
 // +     br %4:1 to bb5 else bb6
 // +
 // + bb5:
-// +     abort at <binary-ops.src:10:10> __src_int_arith_error(s"*", s"integer overflow")
+// +     abort at <binary-ops.src:10:10> __src_int_arith_error(@4, int 1, @5, int 16)
 // +
 // + bb6:
 // +     call void _S4sinkFvxiE(%4:0)
@@ -88,7 +113,7 @@ proc arith (in int a, in int b) {
 // +     br %5 to bb7 else bb8
 // +
 // + bb7:
-// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"division by zero")
+// +     abort at <binary-ops.src:12:10> __src_int_arith_error(@6, int 1, @7, int 16)
 // +
 // + bb8:
 // +     %6 = icmp eq %0, int -9223372036854775808
@@ -97,7 +122,7 @@ proc arith (in int a, in int b) {
 // +     br %8 to bb9 else bb10
 // +
 // + bb9:
-// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"integer overflow")
+// +     abort at <binary-ops.src:12:10> __src_int_arith_error(@8, int 1, @9, int 16)
 // +
 // + bb10:
 // +     %9 = sdiv %0, %1
@@ -106,7 +131,7 @@ proc arith (in int a, in int b) {
 // +     br %10 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"division by zero")
+// +     abort at <binary-ops.src:13:10> __src_int_arith_error(@10, int 1, @11, int 16)
 // +
 // + bb12:
 // +     %11 = icmp eq %0, int -9223372036854775808
@@ -115,7 +140,7 @@ proc arith (in int a, in int b) {
 // +     br %13 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"integer overflow")
+// +     abort at <binary-ops.src:13:10> __src_int_arith_error(@12, int 1, @13, int 16)
 // +
 // + bb14:
 // +     %14 = srem %0, %1
@@ -124,7 +149,7 @@ proc arith (in int a, in int b) {
 // +     br %15 to bb15 else bb16
 // +
 // + bb15:
-// +     abort at <binary-ops.src:14:10> __src_int_arith_error(s":/", s"division by zero")
+// +     abort at <binary-ops.src:14:10> __src_int_arith_error(@14, int 2, @15, int 16)
 // +
 // + bb16:
 // +     %16 = udiv %0, %1
@@ -133,7 +158,7 @@ proc arith (in int a, in int b) {
 // +     br %17 to bb17 else bb18
 // +
 // + bb17:
-// +     abort at <binary-ops.src:15:10> __src_int_arith_error(s":%", s"division by zero")
+// +     abort at <binary-ops.src:15:10> __src_int_arith_error(@16, int 2, @17, int 16)
 // +
 // + bb18:
 // +     %18 = urem %0, %1
@@ -142,7 +167,7 @@ proc arith (in int a, in int b) {
 // +     br %19 to bb19 else bb20
 // +
 // + bb19:
-// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
+// +     abort at <binary-ops.src:17:10> __src_int_arith_error(@18, int 2, @19, int 30)
 // +
 // + bb20:
 // +     %20 = shl %0, %1
@@ -152,7 +177,7 @@ proc arith (in int a, in int b) {
 // +     br %23 to bb21 else bb22
 // +
 // + bb21:
-// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"integer overflow")
+// +     abort at <binary-ops.src:17:10> __src_int_arith_error(@20, int 2, @21, int 16)
 // +
 // + bb22:
 // +     call void _S4sinkFvxiE(%20)
@@ -160,7 +185,7 @@ proc arith (in int a, in int b) {
 // +     br %24 to bb23 else bb24
 // +
 // + bb23:
-// +     abort at <binary-ops.src:18:10> __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
+// +     abort at <binary-ops.src:18:10> __src_int_arith_error(@22, int 3, @23, int 30)
 // +
 // + bb24:
 // +     %25 = shl %0, %1
@@ -168,7 +193,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S5arithFvxixiE (in int %0, in int %1) {
+// + proc _S5arithFvxixiE (int %0, int %1) {
 // + entry:
 // +     %2 = add %0, %1
 // +     call void _S4sinkFvxiE(%2)

@@ -32,7 +32,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1sE (in s^ %0) {
+// + proc _S1aFT1sE (i8^ %0) {
 // +     %1 = s
 // +
 // + entry:
@@ -41,7 +41,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1bFT1sxbE (in s^ %0, in bool %1) {
+// + proc _S1bFT1sxbE (i8^ %0, bool %1) {
 // +     %2 = s
 // +
 // + entry:
@@ -70,7 +70,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1cFT1sxbE (in s^ %0, in bool %1) {
+// + proc _S1cFT1sxbE (i8^ %0, bool %1) {
 // +     %2 = s
 // +
 // + entry:
@@ -99,7 +99,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1dFvxbE (in bool %0) {
+// + proc _S1dFvxbE (bool %0) {
 // +     %1 = s
 // +     %2 = s
 // +     %3 = s
@@ -163,7 +163,7 @@ proc d (in bool x) {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1bFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 %1) {
+//L + define private fastcc void @_S1bFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 zeroext %1) {
 //L + entry:
 //L +   %2 = alloca [8 x i8], align 8
 //L +   br i1 %1, label %bb1, label %bb2
@@ -191,7 +191,7 @@ proc d (in bool x) {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1cFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 %1) {
+//L + define private fastcc void @_S1cFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 zeroext %1) {
 //L + entry:
 //L +   %2 = alloca [8 x i8], align 8
 //L +   br i1 %1, label %bb1, label %bb2
@@ -219,7 +219,7 @@ proc d (in bool x) {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1dFvxbE(i1 %0) {
+//L + define private fastcc void @_S1dFvxbE(i1 zeroext %0) {
 //L + entry:
 //L +   %1 = alloca [8 x i8], align 8
 //L +   %2 = alloca [8 x i8], align 8

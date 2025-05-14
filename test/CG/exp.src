@@ -12,17 +12,28 @@ proc exp_ass (copy int a, in int b) {
     a **= b;
 }
 
-// * proc __src_main {
+// * @0 = "attempting to raise 0 to a negative power"
+// + @1 = "exp >= 0"
+// + @2 = "-"
+// + @3 = "integer overflow"
+// + @4 = "-"
+// + @5 = "integer overflow"
+// + @6 = "*"
+// + @7 = "integer overflow"
+// + @8 = "-"
+// + @9 = "integer overflow"
+// +
+// + proc __src_main {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (in int %0) {
+// + proc _S4sinkFvxiE (int %0) {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S3expFvxixiE (in int %0, in int %1) {
+// + proc _S3expFvxixiE (int %0, int %1) {
 // + entry:
 // +     %2 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
 // +     call void _S4sinkFvxiE(%2)
@@ -33,13 +44,13 @@ proc exp_ass (copy int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S$12__srcc_exp_iFixix3iE (in int %0, copy int %1) -> int {
+// + proc _S$12__srcc_exp_iFixix3iE (int %0, int %1) -> int {
 // +     %2 = int
 // +     %3 = int
 // +
 // + entry:
-// +     store int to %2, %1, align 8
-// +     %4 = load int, %2, align 8
+// +     store int to %3, %1, align 8
+// +     %4 = load int, %3, align 8
 // +     %5 = icmp eq %4, int 0
 // +     br %5 to bb1 else bb2
 // +
@@ -51,18 +62,18 @@ proc exp_ass (copy int a, in int b) {
 // +     br %6 to bb3 else bb6
 // +
 // + bb3:
-// +     %7 = load int, %2, align 8
+// +     %7 = load int, %3, align 8
 // +     %8 = icmp sge %7, int 0
 // +     br %8 to bb5 else bb4
 // +
 // + bb4:
-// +     abort at <preamble.src:11:9> __src_assert_fail(s"exp >= 0", s"attempting to raise 0 to a negative power")
+// +     abort at <preamble.src:11:9> __src_assert_fail(@1, int 8, @0, int 41)
 // +
 // + bb5:
 // +     ret int 0
 // +
 // + bb6:
-// +     %9 = load int, %2, align 8
+// +     %9 = load int, %3, align 8
 // +     %10 = icmp slt %9, int 0
 // +     br %10 to bb7 else bb20
 // +
@@ -71,14 +82,14 @@ proc exp_ass (copy int a, in int b) {
 // +     br %11:1 to bb8 else bb9
 // +
 // + bb8:
-// +     abort at <preamble.src:20:20> __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <preamble.src:20:20> __src_int_arith_error(@2, int 1, @3, int 16)
 // +
 // + bb9:
 // +     %12 = icmp eq %0, %11:0
 // +     br %12 to bb10 else bb16
 // +
 // + bb10:
-// +     %13 = load int, %2, align 8
+// +     %13 = load int, %3, align 8
 // +     %14 = and %13, int 1
 // +     %15 = icmp ne %14, int 0
 // +     br %15 to bb11 else bb14
@@ -88,7 +99,7 @@ proc exp_ass (copy int a, in int b) {
 // +     br %16:1 to bb12 else bb13
 // +
 // + bb12:
-// +     abort at <preamble.src:20:52> __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <preamble.src:20:52> __src_int_arith_error(@4, int 1, @5, int 16)
 // +
 // + bb13:
 // +     br bb15(%16:0)
@@ -113,41 +124,41 @@ proc exp_ass (copy int a, in int b) {
 // +     ret %19
 // +
 // + bb20:
-// +     store int to %3, %0, align 8
+// +     store int to %2, %0, align 8
 // +     br bb21
 // +
 // + bb21:
-// +     %20 = load int, %2, align 8
+// +     %20 = load int, %3, align 8
 // +     %21 = icmp ne %20, int 1
 // +     br %21 to bb22 else bb27
 // +
 // + bb22:
-// +     %22 = load int, %3, align 8
+// +     %22 = load int, %2, align 8
 // +     %23 = smul ov %22, %0
 // +     br %23:1 to bb23 else bb24
 // +
 // + bb23:
-// +     abort at <preamble.src:27:9> __src_int_arith_error(s"*", s"integer overflow")
+// +     abort at <preamble.src:27:9> __src_int_arith_error(@6, int 1, @7, int 16)
 // +
 // + bb24:
-// +     store int to %3, %23:0, align 8
-// +     %24 = load int, %2, align 8
+// +     store int to %2, %23:0, align 8
+// +     %24 = load int, %3, align 8
 // +     %25 = ssub ov %24, int 1
 // +     br %25:1 to bb25 else bb26
 // +
 // + bb25:
-// +     abort at <preamble.src:28:9> __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <preamble.src:28:9> __src_int_arith_error(@8, int 1, @9, int 16)
 // +
 // + bb26:
-// +     store int to %2, %25:0, align 8
+// +     store int to %3, %25:0, align 8
 // +     br bb21
 // +
 // + bb27:
-// +     %26 = load int, %3, align 8
+// +     %26 = load int, %2, align 8
 // +     ret %26
 // + }
 // +
-// + proc _S7exp_assFvx3ixiE (copy int %0, in int %1) {
+// + proc _S7exp_assFvx3ixiE (int %0, int %1) {
 // +     %2 = int
 // +
 // + entry:
@@ -156,7 +167,7 @@ proc exp_ass (copy int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S$19__srcc_exp_assign_iFRix2ixiE (inout int %0, in int %1) -> int^ {
+// + proc _S$19__srcc_exp_assign_iFRix2ixiE (int^ %0, int %1) -> int^ {
 // + entry:
 // +     %2 = load int, %0, align 8
 // +     %3 = call int _S$12__srcc_exp_iFixix3iE(%2, %1)

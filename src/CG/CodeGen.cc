@@ -11,6 +11,12 @@ using namespace srcc::cg;
 using ir::Block;
 using ir::Value;
 
+CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
+    : Builder{tu}, word_size{word_size}, lang_opts{lang_opts} {
+    call_lowering[CallingConvention::Native] = CreateNativeCallLowering_X86_64_Linux();
+    call_lowering[CallingConvention::Source] = CreateSourceCallLowering_X86_64_Linux();
+}
+
 void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, String name) {
     If(failure_cond, [&] {
         auto op_token = CreateGlobalStringSlice(Spelling(op));
@@ -52,64 +58,17 @@ auto CodeGen::DeclarePrintf() -> Value* {
 }
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
-    auto ty = proc->proc_type();
-    bool noreturn = ty->ret() == Type::NoReturnTy;
-    bool has_zero_sized_params = any_of(ty->params(), [&](const ParamTypeData& ty) {
-        return IsZeroSizedType(ty.type);
-    });
-
-    // If the procedure returns an MRValue, we need to pass a pointer
-    // to construct it into.
-    bool has_indirect_return = HasIndirectReturn(ty);
-
-    // Only rebuild the procedure type if we actually need to change
-    // something.
-    if (
-        (ty->ret() != Type::VoidTy and IsZeroSizedType(ty->ret())) or
-        has_zero_sized_params or
-        has_indirect_return
-    ) {
-        SmallVector<ParamTypeData> sized;
-        u32 ir_index = 0;
-
-        if (has_indirect_return) {
-            ir_index = 1;
-            sized.push_back({Intent::In, PtrType::Get(tu, ty->ret())});
-        }
-
-        if (has_indirect_return or has_zero_sized_params) {
-            auto map = std::make_unique<ArgumentMapping>();
-            for (auto [i, ty] : enumerate(ty->params())) {
-                if (not IsZeroSizedType(ty.type)) {
-                    map->map(u32(i), ir_index++);
-                    sized.push_back(ty);
-                }
-            }
-            argument_mapping[proc] = std::move(map);
-        } else {
-            append_range(sized, ty->params());
-        }
-
-        // Convert zero-sized return types to void, but keep noreturn so we
-        // can add the appropriate attribute when converting to LLVM IR.
-        auto ret = ty->ret();
-        if (has_indirect_return or (not noreturn and IsZeroSizedType(ret))) ret = Type::VoidTy;
-        ty = ProcType::Get(
-            tu,
-            ret,
-            sized,
-            ty->cconv(),
-            ty->variadic()
-        );
-    }
+    auto& ir_proc = declared_procs[proc];
+    if (ir_proc) return ir_proc;
+    auto original = proc->proc_type();
+    auto& lowering = *call_lowering[proc->cconv()];
+    auto [adjusted, attrs] = lowering.adjust_procedure_type(proc, original);
 
     // Create the procedure.
     auto name = MangledName(proc);
-    auto ir_proc = GetOrCreateProc(name, proc->linkage, ty);
+    ir_proc = CreateProc(name, proc->linkage, adjusted);
     ir_proc->associated_decl = proc;
-
-    // Remember the *original* return type.
-    if (has_indirect_return) ir_proc->indirect_ret_type = proc->return_type();
+    ir_proc->param_attrs = std::move(attrs);
     return ir_proc;
 }
 
@@ -135,24 +94,6 @@ CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::Proc* proc)
     // Create the entry block if it doesn’t exist yet.
     if (proc->empty())
         CG.EnterBlock(CG.CreateBlock());
-}
-
-auto CodeGen::GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument> {
-    if (proc->decl()) {
-        auto map = argument_mapping[proc->decl()].get();
-        if (map) {
-            auto mapped = map->map(index);
-            if (not mapped) return {};
-            index = *mapped;
-        }
-    }
-
-    return proc->args()[index];
-}
-
-bool CodeGen::HasIndirectReturn(ProcType* type) {
-    if (IsZeroSizedType(type->ret())) return false;
-    return type->ret()->rvalue_category() == ValueCategory::MRValue;
 }
 
 auto CodeGen::If(
@@ -212,13 +153,6 @@ auto CodeGen::If(Value* cond, ArrayRef<Value*> args, llvm::function_ref<void()> 
 
 bool CodeGen::IsZeroSizedType(Type ty) {
     return ty->size(tu) == Size();
-}
-
-bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
-    if (IsZeroSizedType(local->type)) return false;
-    auto p = dyn_cast<ParamDecl>(local);
-    if (not p) return true;
-    return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
 }
 
 void CodeGen::Loop(
@@ -316,6 +250,7 @@ void CodeGen::Mangler::Append(Type ty) {
 
         void operator()(SliceType* sl) { ElemTy("S", sl); }
         void operator()(ArrayType* arr) { ElemTy(std::format("A{}", arr->dimension()), arr); }
+        void operator()(IRAggregateType*) { Unreachable(); }
         void operator()(PtrType* ref) { ElemTy("R", ref); }
         void operator()(IntType* i) { M.name += std::format("I{}", i->bit_width().bits()); }
         void operator()(BuiltinType* b) {
@@ -390,12 +325,8 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 // ============================================================================
 void CodeGen::EmitInitialiser(Value* addr, Expr* init) {
     Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
-    if (init->type->is_srvalue()) {
-        Assert(init->value_category == Expr::SRValue);
-        CreateStore(Emit(init), addr);
-    } else {
-        EmitMRValue(addr, init);
-    }
+    if (!init->type->is_mrvalue()) CreateStore(init->type, Emit(init), addr);
+    else EmitMRValue(addr, init);
 }
 
 void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
@@ -403,7 +334,7 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
 
     // We support treating lvalues as mrvalues.
     if (init->value_category == Expr::LValue) {
-        CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()));
+        CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()), init->type->align(tu));
         return;
     }
 
@@ -429,11 +360,11 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
         [&](ConstExpr* e) {
             auto mrv = e->value->cast<eval::MRValue>();
             auto c = CreateGlobalConstantPtr(init->type, String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()));
-            CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()));
+            CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()), init->type->align(tu));
         },
 
         // Default initialiser here is a memset to 0.
-        [&](DefaultInitExpr* e) { CreateMemZero(addr, CreateInt(e->type->size(tu).bytes())); },
+        [&](DefaultInitExpr* e) { CreateMemZero(addr, CreateInt(e->type->size(tu).bytes()), e->type->align(tu)); },
 
         // If expressions can be mrvalues if either branch is an mrvalue.
         [&](IfExpr* e) { EmitIfExpr(e, addr); },
@@ -447,12 +378,7 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
                     continue;
                 }
 
-                auto offs = CreatePtrAdd(
-                    addr,
-                    CreateInt(field->offset.bytes()),
-                    true
-                );
-
+                auto offs = CreatePtrAdd(addr, field->offset());
                 EmitInitialiser(offs, val);
             }
         }
@@ -492,7 +418,11 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateNil(tu.StrLitTy);
         auto cond_str = CreateGlobalStringSlice(expr->cond->location().text(tu.context()));
-        CreateAbort(ir::AbortReason::AssertionFailed, expr->location(), cond_str, msg);
+        CreateAbort(
+            ir::AbortReason::AssertionFailed, expr->location(),
+            cond_str,
+            cast<ir::Aggregate>(msg)
+        );
     });
 
     return {};
@@ -534,16 +464,14 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 expr->lhs->type
             );
 
-            bool is_slice = isa<SliceType>(expr->lhs->type);
             auto range = Emit(expr->lhs);
             auto index = Emit(expr->rhs);
+            bool is_slice = isa<SliceType>(expr->lhs->type);
+            auto a = dyn_cast<ir::Aggregate>(range);
 
             // Check that the index is in bounds.
             if (lang_opts.overflow_checking) {
-                auto size = is_slice
-                    ? CreateExtractValue(range, 1)
-                    : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
-
+                auto size = is_slice ? a->field(1) : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
                 CreateArithFailure(
                     CreateICmpUGe(index, size),
                     Tk::LBrack,
@@ -554,7 +482,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
 
             Size elem_size = cast<SingleElementTypeBase>(expr->lhs->type)->elem()->array_size(tu);
             return CreatePtrAdd(
-                is_slice ? CreateExtractValue(range, 0) : range,
+                is_slice ? a->field(0) : range,
                 CreateIMul(CreateInt(elem_size.bytes()), index),
                 true
             );
@@ -583,7 +511,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 rhs,
                 expr->location()
             );
-            CreateStore(res, lvalue);
+            CreateStore(expr->lhs->type, res, lvalue);
             return lvalue;
         }
 
@@ -773,25 +701,25 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
             for (auto a : expr->args()) {
                 if (a->type == tu.StrLitTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto str_format = CreateGlobalStringSlice("%.*s")->data;
-                    auto slice = Emit(a);
-                    auto data = CreateExtractValue(slice, 0);
-                    auto size = CreateSICast(CreateExtractValue(slice, 1), tu.FFIIntTy);
+                    auto str_format = CreateGlobalStringSlice("%.*s")->field(0);
+                    auto slice = cast<ir::Aggregate>(Emit(a));
+                    auto data = slice->field(0);
+                    auto size = CreateSICast(slice->field(1), tu.FFIIntTy);
                     CreateCall(printf, {str_format, size, data});
                 }
 
                 else if (a->type == Type::IntTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto int_format = CreateGlobalStringSlice("%" PRId64)->data;
+                    auto int_format = CreateGlobalStringSlice("%" PRId64)->field(0);
                     auto val = Emit(a);
                     CreateCall(printf, {int_format, val});
                 }
 
                 else if (a->type == Type::BoolTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto bool_format = CreateGlobalStringSlice("%s")->data;
+                    auto bool_format = CreateGlobalStringSlice("%s")->field(0);
                     auto val = Emit(a);
-                    auto str = CreateSelect(val, CreateGlobalStringSlice("true")->data, CreateGlobalStringSlice("false")->data);
+                    auto str = CreateSelect(val, CreateGlobalStringSlice("true")->field(0), CreateGlobalStringSlice("false")->field(0));
                     CreateCall(printf, {bool_format, str});
                 }
 
@@ -819,41 +747,10 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
 auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Value* {
     switch (expr->access_kind) {
         using AK = BuiltinMemberAccessExpr::AccessKind;
-
-        // These support both lvalues and srvalues.
-        case AK::SliceData: {
-            auto slice = Emit(expr->operand);
-            auto stype = cast<SliceType>(expr->operand->type);
-            if (expr->operand->lvalue()) return CreateLoad(PtrType::Get(tu, stype->elem()), slice);
-            return CreateExtractValue(slice, 0);
-        }
-
-        case AK::SliceSize: {
-            auto slice = Emit(expr->operand);
-            if (expr->operand->lvalue()) {
-                auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Type::IntTy);
-                return CreateLoad(Type::IntTy, CreatePtrAdd(slice, ptr_sz, true));
-            }
-            return CreateExtractValue(slice, 1);
-        }
-
-        case AK::RangeStart: {
-            auto range = Emit(expr->operand);
-            auto elem = cast<RangeType>(expr->operand->type)->elem();
-            if (expr->operand->lvalue()) return CreateLoad(elem, range);
-            return CreateExtractValue(range, 0);
-        }
-
-        case AK::RangeEnd: {
-            auto range = Emit(expr->operand);
-            auto elem = cast<RangeType>(expr->operand->type)->elem();
-            if (expr->operand->lvalue()) {
-                auto offs = CreateInt(elem->array_size(tu).bytes(), Type::IntTy);
-                return CreateLoad(Type::IntTy, CreatePtrAdd(range, offs, true));
-            }
-            return CreateExtractValue(range, 1);
-        }
-
+        case AK::SliceData: return cast<ir::Aggregate>(Emit(expr->operand))->field(0);
+        case AK::SliceSize: return cast<ir::Aggregate>(Emit(expr->operand))->field(1);
+        case AK::RangeStart: return cast<ir::Aggregate>(Emit(expr->operand))->field(0);
+        case AK::RangeEnd: return cast<ir::Aggregate>(Emit(expr->operand))->field(1);
         case AK::TypeAlign: return CreateInt(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes());
         case AK::TypeArraySize: return CreateInt(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes());
         case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
@@ -877,26 +774,19 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
 
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value* mrvalue_slot) -> Value* {
     auto ty = cast<ProcType>(expr->callee->type);
-    Assert(HasIndirectReturn(ty) == bool(mrvalue_slot));
 
     // Callee is evaluated first.
-    auto callee = Emit(expr->callee);
-
-    // Add the return value pointer first if there is one.
-    SmallVector<Value*> args;
-    if (mrvalue_slot) args.push_back(mrvalue_slot);
+    auto callee = cast<ir::Aggregate>(Emit(expr->callee));
 
     // Evaluate the arguments and add them to the call.
-    //
-    // Don’t add zero-sized arguments, but take care to still emit
-    // them since they may have side effects.
+    SmallVector<Value*> args;
     for (auto arg : expr->args()) {
         auto v = Emit(arg);
-        if (not IsZeroSizedType(arg->type)) args.push_back(v);
+        args.push_back(v);
     }
 
     // This handles calling convention lowering etc.
-    return CreateCall(callee, args);
+    return call_lowering.at(ty->cconv())->lower_call(ty, callee, mrvalue_slot, args);
 }
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
@@ -930,7 +820,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
     if (IsZeroSizedType(stmt->type)) return nullptr;
-    Assert(stmt->type->rvalue_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
+    Assert(stmt->type->rvalue_category() != Expr::MRValue, "Emitting mrvalue on its own?");
     return CreateNil(stmt->type);
 }
 
@@ -961,7 +851,8 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
-    if (LocalNeedsAlloca(decl)) locals[decl] = CreateAlloca(curr_proc, decl->type);
+    if (!IsZeroSizedType(decl->type))
+        locals[decl] = CreateAlloca(curr_proc, decl->type);
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
@@ -975,7 +866,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {
     auto base = Emit(expr->base);
     if (IsZeroSizedType(expr->type)) return base;
-    return CreatePtrAdd(base, CreateInt(expr->field->offset.bytes()), true);
+    return CreatePtrAdd(base, expr->field->offset());
 }
 
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
@@ -995,26 +886,23 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     EnterProcedure _(*this, curr_proc);
 
     // Emit locals.
-    for (auto l : proc->locals) EmitLocal(l);
+    for (auto l : proc->locals)
+        if (not isa<ParamDecl>(l))
+            EmitLocal(l);
 
     // Initialise parameters.
-    for (auto [i, p] : enumerate(proc->params())) {
-        auto arg = GetArg(curr_proc, u32(i)).get_or_null();
-        if (not arg) continue;
-        if (not LocalNeedsAlloca(p)) locals[p] = arg;
-        else CreateStore(arg, locals.at(p));
-    }
+    call_lowering[proc->cconv()]->lower_params(curr_proc);
 
     // Emit the body.
     Emit(proc->body().get());
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
-    return DeclareProcedure(expr->decl);
+    return CreateClosure(DeclareProcedure(expr->decl));
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
-    if (curr_proc->indirect_ret_type) {
+    if (curr_proc->has_indirect_return()) {
         auto slot = curr_proc->args().front();
         EmitInitialiser(slot, expr->value.get());
         CreateReturn();
@@ -1123,7 +1011,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
     // Create a return value parameter if need be.
     auto ty = stmt->type_or_void();
     bool has_indirect_return = ty->rvalue_category() == Expr::MRValue;
-    ParamTypeData arg{Intent::In, PtrType::Get(tu, ty)};
+    ParamTypeData arg{Intent::Copy, PtrType::Get(tu, ty)};
     ArrayRef<ParamTypeData> args;
     if (has_indirect_return) {
         ty = Type::VoidTy;
@@ -1138,7 +1026,10 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
     );
 
     // Inform the procedure about whether we’re returning indirectly.
-    if (has_indirect_return) proc->indirect_ret_type = Type::VoidTy;
+    if (has_indirect_return) {
+        proc->param_attrs[0].ll_sret = true;
+        proc->param_attrs[0].ty = stmt->type_or_void();
+    }
 
     // Sema has already ensured that this is an initialiser, so throw it
     // into a return expression to handle MRValues.

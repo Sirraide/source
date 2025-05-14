@@ -9,6 +9,8 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/Basic/UnsignedOrNone.h>
+
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/TrailingObjects.h>
 
@@ -636,15 +638,22 @@ public:
 
 class srcc::FieldDecl final : public Decl {
 public:
+    StructType* parent = nullptr;
     Type type;
-    Size offset;
+    UnsignedOrNone index;
 
     FieldDecl(
         Type type,
-        Size offset,
+        UnsignedOrNone index,
         String name,
         Location location
-    ) : Decl{Kind::FieldDecl, name, location}, type{type}, offset{offset} {}
+    ) : Decl{Kind::FieldDecl, name, location}, type{type}, index{index} {}
+
+    /// Get the offset of this field, or 0 if this is a zero-sized field.
+    auto offset() const -> Size {
+        if (not index) return Size();
+        return parent->layout()->offset(*index);
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
 };
@@ -752,10 +761,6 @@ public:
 
     /// Get the parameter’s intent.
     [[nodiscard]] auto intent() const -> Intent;
-
-    /// Whether this is an 'in' parameter that is passed by value
-    /// under the hood.
-    [[nodiscard]] bool is_rvalue_in_parameter() const;
 
     /// Whether this is a 'with' parameter.
     [[nodiscard]] bool is_with_param() const { return with; }

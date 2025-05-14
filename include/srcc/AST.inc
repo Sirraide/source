@@ -66,13 +66,16 @@ AST_DECL_LEAF(ParamDecl)
 AST_DECL_LEAF(ProcDecl)
 
 AST_TYPE(TypeBase)
+
 AST_TYPE(SingleElementTypeBase)
 AST_TYPE_LEAF(ArrayType)
 AST_TYPE_LEAF(SliceType)
+AST_TYPE_LEAF(RangeType)
 AST_TYPE_LEAF(PtrType)
+
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
-AST_TYPE_LEAF(RangeType)
+AST_TYPE_LEAF(IRAggregateType)
 AST_TYPE_LEAF(ProcType)
 AST_TYPE_LEAF(StructType)
 

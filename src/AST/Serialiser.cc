@@ -131,6 +131,9 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
     // TODO: For structs, we need to figure out some way to do
     // recursion (maybe just add a dummy entry first?).
     switch (ty->kind()) {
+        case TypeBase::Kind::IRAggregateType:
+            Unreachable();
+
         case TypeBase::Kind::BuiltinType:
         case TypeBase::Kind::IntType:
             break;
@@ -162,6 +165,9 @@ auto Serialiser::SerialiseType(Type ty) -> u64 {
     Writer W{types_buffer};
     W << ty->kind();
     switch (ty->kind()) {
+        case TypeBase::Kind::IRAggregateType:
+            Unreachable();
+
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
             W << SerialiseType(cast<SingleElementTypeBase>(ty)->elem());
@@ -425,6 +431,9 @@ auto Deserialiser::DeserialiseTemplateTypeParamDecl() -> Decl* {
 void Deserialiser::DeserialiseType() {
     auto k = Read<TypeBase::Kind>();
     switch (k) {
+        case TypeBase::Kind::IRAggregateType:
+            Unreachable();
+
         case TypeBase::Kind::SliceType:
             deserialised_types.push_back(SliceType::Get(*M, ReadType()));
             return;

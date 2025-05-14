@@ -24,12 +24,13 @@ proc call {
 // +     ret
 // + }
 // +
-
-// * proc _S1aFT4zeroE;
-// * proc _S1bFT4zeroE;
-// * proc _S1cFT4zeroE;
-
-// * proc _S4callFvE {
+// + proc _S1aFT4zeroE;
+// +
+// + proc _S1bFT4zeroE;
+// +
+// + proc _S1cFT4zeroE;
+// +
+// + proc _S4callFvE {
 // + entry:
 // +     call void _S1aFT4zeroE
 // +     call void _S1bFT4zeroE

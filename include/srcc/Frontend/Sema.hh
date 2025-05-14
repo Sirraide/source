@@ -135,7 +135,7 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
         enum struct Kind : u8 {
             DefaultInit,
             IntegralCast,
-            LValueToSRValue,
+            LValueToRValue, // Only valid for srvalues/arvalues.
             MaterialisePoison,
             SelectOverload,
             StructInit,
@@ -155,7 +155,7 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
 
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
-        static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
+        static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto StructInit(StructInitData conversions) -> Conversion {
@@ -518,9 +518,9 @@ private:
     /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
     [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
 
-    /// Ensure that an expression is an srvalue of the given type. This is
+    /// Ensure that an expression is an srvalue/arvalue of the given type. This is
     /// mainly used for expressions involving operators.
-    [[nodiscard]] bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
@@ -570,8 +570,8 @@ private:
         bool complain = true
     ) -> LookupResult;
 
-    /// Convert an lvalue to an srvalue.
-    [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
+    /// Convert an lvalue to an srvalue/arvalue.
+    [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
 
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;

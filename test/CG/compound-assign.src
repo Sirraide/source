@@ -16,12 +16,33 @@ proc x (int a, in int b) {
     a >>>= b;
 }
 
-// * proc __src_main {
+// * @0 = "+"
+// + @1 = "integer overflow"
+// + @2 = "-"
+// + @3 = "integer overflow"
+// + @4 = "*"
+// + @5 = "integer overflow"
+// + @6 = "/"
+// + @7 = "division by zero"
+// + @8 = "/"
+// + @9 = "integer overflow"
+// + @10 = "%"
+// + @11 = "division by zero"
+// + @12 = "%"
+// + @13 = "integer overflow"
+// + @14 = "<<"
+// + @15 = "shift amount exceeds bit width"
+// + @16 = "<<"
+// + @17 = "integer overflow"
+// + @18 = "<<<"
+// + @19 = "shift amount exceeds bit width"
+// +
+// + proc __src_main {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1xFvixiE (int %0, in int %1) {
+// + proc _S1xFvixiE (int %0, int %1) {
 // +     %2 = int
 // +
 // + entry:
@@ -31,7 +52,7 @@ proc x (int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at <compound-assign.src:5:5> __src_int_arith_error(s"+", s"integer overflow")
+// +     abort at <compound-assign.src:5:5> __src_int_arith_error(@0, int 1, @1, int 16)
 // +
 // + bb2:
 // +     store int to %2, %4:0, align 8
@@ -43,7 +64,7 @@ proc x (int a, in int b) {
 // +     br %8:1 to bb3 else bb4
 // +
 // + bb3:
-// +     abort at <compound-assign.src:7:5> __src_int_arith_error(s"-", s"integer overflow")
+// +     abort at <compound-assign.src:7:5> __src_int_arith_error(@2, int 1, @3, int 16)
 // +
 // + bb4:
 // +     store int to %2, %8:0, align 8
@@ -55,7 +76,7 @@ proc x (int a, in int b) {
 // +     br %12:1 to bb5 else bb6
 // +
 // + bb5:
-// +     abort at <compound-assign.src:9:5> __src_int_arith_error(s"*", s"integer overflow")
+// +     abort at <compound-assign.src:9:5> __src_int_arith_error(@4, int 1, @5, int 16)
 // +
 // + bb6:
 // +     store int to %2, %12:0, align 8
@@ -67,7 +88,7 @@ proc x (int a, in int b) {
 // +     br %16 to bb7 else bb8
 // +
 // + bb7:
-// +     abort at <compound-assign.src:11:5> __src_int_arith_error(s"/", s"division by zero")
+// +     abort at <compound-assign.src:11:5> __src_int_arith_error(@6, int 1, @7, int 16)
 // +
 // + bb8:
 // +     %17 = icmp eq %15, int -9223372036854775808
@@ -76,7 +97,7 @@ proc x (int a, in int b) {
 // +     br %19 to bb9 else bb10
 // +
 // + bb9:
-// +     abort at <compound-assign.src:11:5> __src_int_arith_error(s"/", s"integer overflow")
+// +     abort at <compound-assign.src:11:5> __src_int_arith_error(@8, int 1, @9, int 16)
 // +
 // + bb10:
 // +     %20 = sdiv %15, %1
@@ -86,7 +107,7 @@ proc x (int a, in int b) {
 // +     br %22 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at <compound-assign.src:12:5> __src_int_arith_error(s"%", s"division by zero")
+// +     abort at <compound-assign.src:12:5> __src_int_arith_error(@10, int 1, @11, int 16)
 // +
 // + bb12:
 // +     %23 = icmp eq %21, int -9223372036854775808
@@ -95,7 +116,7 @@ proc x (int a, in int b) {
 // +     br %25 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at <compound-assign.src:12:5> __src_int_arith_error(s"%", s"integer overflow")
+// +     abort at <compound-assign.src:12:5> __src_int_arith_error(@12, int 1, @13, int 16)
 // +
 // + bb14:
 // +     %26 = srem %21, %1
@@ -105,7 +126,7 @@ proc x (int a, in int b) {
 // +     br %28 to bb15 else bb16
 // +
 // + bb15:
-// +     abort at <compound-assign.src:13:5> __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
+// +     abort at <compound-assign.src:13:5> __src_int_arith_error(@14, int 2, @15, int 30)
 // +
 // + bb16:
 // +     %29 = shl %27, %1
@@ -115,7 +136,7 @@ proc x (int a, in int b) {
 // +     br %32 to bb17 else bb18
 // +
 // + bb17:
-// +     abort at <compound-assign.src:13:5> __src_int_arith_error(s"<<", s"integer overflow")
+// +     abort at <compound-assign.src:13:5> __src_int_arith_error(@16, int 2, @17, int 16)
 // +
 // + bb18:
 // +     store int to %2, %29, align 8
@@ -127,7 +148,7 @@ proc x (int a, in int b) {
 // +     br %36 to bb19 else bb20
 // +
 // + bb19:
-// +     abort at <compound-assign.src:15:5> __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
+// +     abort at <compound-assign.src:15:5> __src_int_arith_error(@18, int 3, @19, int 30)
 // +
 // + bb20:
 // +     %37 = shl %35, %1

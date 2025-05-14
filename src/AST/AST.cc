@@ -74,6 +74,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
+    I8PtrTy = PtrType::Get(*this, I8Ty);
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and
@@ -183,6 +184,7 @@ void Stmt::Printer::PrintBasicNode(
                 case ValueCategory::SRValue: Unreachable();
                 case ValueCategory::MRValue: print(" mrvalue"); break;
                 case ValueCategory::LValue: print(" lvalue"); break;
+                case ValueCategory::ARValue: print(" arvalue"); break;
             }
         }
     }
@@ -196,6 +198,7 @@ void Stmt::Printer::Print(Stmt* e) {
             case ValueCategory::SRValue: return "srvalue";
             case ValueCategory::MRValue: return "mrvalue";
             case ValueCategory::LValue: return "lvalue";
+            case ValueCategory::ARValue: return "arvalue";
         }
         return "<invalid value category>";
     };
@@ -314,7 +317,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 " {} %5({}%) %1(offs%) %3({:y}%)\n",
                 f->type->print(),
                 f->name,
-                f->offset
+                f->offset()
             );
         } break;
 
@@ -446,9 +449,9 @@ void Stmt::Printer::Print(Stmt* e) {
                 print(
                     " %1(struct %3({}%) size %3({:y}%)/%3({:y}%) align %3({}%)%)\n",
                     s->name(),
-                    s->size(),
-                    s->array_size(),
-                    s->align()
+                    s->layout()->size(),
+                    s->layout()->array_size(),
+                    s->layout()->align()
                 );
 
                 SmallVector<Stmt*, 10> children;

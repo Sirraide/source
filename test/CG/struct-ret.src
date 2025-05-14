@@ -29,16 +29,16 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1xE (in x^ %0);
+// + proc _S1aFT1xE (i8^ %0);
 // +
-// + proc _S1bFT1xE (in x^ %0) {
+// + proc _S1bFT1xE (i8^ %0) {
 // + entry:
 // +     store int to %0, int 1, align 8
 // +     ret
 // + }
 // +
-// + proc _S1cFT1xiE (in x^ %0, int %1) {
-// +     %2 = int
+// + proc _S1cFT1xiE (i8^ %0, int %1) {
+// +     %2 = int, align 8
 // +
 // + entry:
 // +     store int to %2, %1, align 8
@@ -47,17 +47,17 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1dFT1xE (in x^ %0) {
-// +     %1 = x
+// + proc _S1dFT1xE (i8^ %0) {
+// +     %1 = x, align 8
 // +
 // + entry:
 // +     store int to %1, int 1, align 8
-// +     copy %0, %1, int 8
+// +     copy %0, %1, int 8, align 8
 // +     ret
 // + }
 // +
-// + proc _S1eFT1xE (in x^ %0) {
-// +     %1 = x
+// + proc _S1eFT1xE (i8^ %0) {
+// +     %1 = x, align 8
 // +
 // + entry:
 // +     call void _S1dFT1xE(%1)
@@ -66,7 +66,7 @@ proc f {
 // + }
 // +
 // + proc _S1fFvE {
-// +     %0 = x
+// +     %0 = x, align 8
 // +
 // + entry:
 // +     call void _S1dFT1xE(%0)

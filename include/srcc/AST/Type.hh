@@ -22,6 +22,8 @@ class FieldDecl;
 class ProcTemplateDecl;
 class TypeDecl;
 struct BuiltinTypes;
+class StructLayout;
+struct StructField;
 
 #define AST_TYPE(node) class node;
 #include "srcc/AST.inc"
@@ -109,14 +111,16 @@ protected:
 
 public:
     // Only allow allocating these in the module.
-    void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
-    void* operator new(usz size, TranslationUnit& mod);
+    void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead");
+    void* operator new(usz size, TranslationUnit& tu);
 
     /// Get the alignment of this type.
     [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
 
     /// Get the size of this type when stored in an array.
-    [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size {
+        return size(tu).align(align(tu));
+    }
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
@@ -133,41 +137,38 @@ public:
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
+    /// Whether values of this type are arvalues.
+    [[nodiscard]] bool is_arvalue() const {
+        return rvalue_category() == ValueCategory::ARValue;
+    }
+
     /// Whether values of this type are mrvalues.
-    [[nodiscard]] bool is_mrvalue() const { return not is_srvalue(); }
+    [[nodiscard]] bool is_mrvalue() const {
+        return rvalue_category() == ValueCategory::MRValue;
+    }
 
     /// Whether values of this type are srvalues.
-    [[nodiscard]] bool is_srvalue() const;
+    [[nodiscard]] bool is_srvalue() const {
+        return rvalue_category() == ValueCategory::SRValue;
+    }
 
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
+
+    /// Get the type kind.
+    [[nodiscard]] auto kind() const -> Kind { return type_kind; }
 
     /// Whether moving this type is the same as a copy.
     [[nodiscard]] bool move_is_copy() const;
 
     /// Whether this type should be passed as an lvalue given a specific intent.
-    [[nodiscard]] bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
-        return not pass_by_rvalue(cc, intent);
-    }
-
-    /// Whether this type should be passed as an rvalue given a specific intent.
-    [[nodiscard]] bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
-
-    /// Get the value category that should be used to pass this as a parameter.
-    [[nodiscard]] auto pass_value_category(
-        CallingConvention cc,
-        Intent intent
-    ) const -> ValueCategory {
-        return pass_by_lvalue(cc, intent) ? ValueCategory::LValue : rvalue_category();
-    }
+    [[nodiscard]] bool pass_by_reference(Intent i) const;
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
 
     /// Get what kind of rvalue this type produced.
-    [[nodiscard]] auto rvalue_category() const -> ValueCategory {
-        return is_srvalue() ? ValueCategory::SRValue : ValueCategory::MRValue;
-    }
+    [[nodiscard]] auto rvalue_category() const -> ValueCategory;
 
     /// Get the size of this type. This does NOT include tail padding!
     [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
@@ -175,9 +176,6 @@ public:
     /// Visit this type.
     template <typename Visitor>
     auto visit(Visitor&& v) const -> decltype(auto);
-
-    /// Get the type kind.
-    [[nodiscard]] auto kind() const -> Kind { return type_kind; }
 };
 
 class srcc::BuiltinType final : public TypeBase {
@@ -263,6 +261,14 @@ struct llvm::PointerLikeTypeTraits<srcc::Type> {
     static constexpr bool isPtrLike = true;
     static auto getAsVoidPointer(srcc::Type t) -> void* { return t.ptr(); }
     static auto getFromVoidPointer(void* p) -> srcc::Type { return srcc::Type{static_cast<srcc::TypeBase*>(p)}; }
+};
+
+template <>
+struct llvm::DenseMapInfo<srcc::Type> {
+    static srcc::Type getEmptyKey() { return srcc::Type(); }
+    static srcc::Type getTombstoneKey() { return srcc::Type(reinterpret_cast<srcc::TypeBase *>(-1)); }
+    static unsigned getHashValue(srcc::Type val) { return DenseMapInfo<void*>::getHashValue(val.ptr()); }
+    static bool isEqual(srcc::Type lhs, srcc::Type rhs)  { return lhs == rhs; }
 };
 
 template <>
@@ -368,9 +374,9 @@ public:
 
 /// Parts of a parameter that are relevant for the procedure type.
 struct srcc::ParamTypeData {
-    Intent intent;
     Type type;
-    ParamTypeData(Intent intent, Type type) : intent{intent}, type{type} {}
+    Intent intent;
+    ParamTypeData(Intent intent, Type type) : type{type}, intent{intent} {}
 };
 
 class srcc::ProcType final : public TypeBase
@@ -400,7 +406,7 @@ public:
     auto params() const -> ArrayRef<ParamTypeData> { return {getTrailingObjects<ParamTypeData>(), num_params}; }
 
     /// Print the proc type, optionally with a name.
-    auto print(StringRef proc_name = "", bool number_params = false) const -> SmallUnrenderedString;
+    auto print(StringRef proc_name = "", bool is_ir_proc = false) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }
@@ -458,6 +464,65 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };
 
+struct srcc::StructField {
+    Type ty;
+    Size offset;
+};
+
+/// Layout representing a struct type.
+class srcc::StructLayout final : TrailingObjects<StructLayout, StructField> {
+    friend TrailingObjects;
+
+    Size sz;
+    u32 num_fields;
+    Align alignment;
+
+    StructLayout(Size sz, Align alignment, u32 num_fields)
+        :  sz{sz}, num_fields{num_fields}, alignment{alignment} {}
+
+public:
+    /// Create a struct layout from a number of fields.
+    static auto Create(TranslationUnit& tu, ArrayRef<Type> field_types) -> StructLayout*;
+
+    /// Get the computed alignment of this struct.
+    auto align() const -> Align { return alignment; }
+
+    /// Get the size that this struct has when stored in an
+    /// array (this includes tail padding, unlike 'size()').
+    auto array_size()  const -> Size { return sz.align(alignment); }
+
+    /// Get the fields.
+    auto fields() const -> ArrayRef<StructField> { return {getTrailingObjects(), num_fields}; }
+
+    /// Get the offset of a field.
+    auto offset(u32 field_index) -> Size { return getTrailingObjects()[field_index].offset; }
+
+    /// Get the size of a single instance of this type; this does
+    /// *not* include tail padding (use 'array_size()' instead for
+    /// that).
+    auto size() const -> Size { return sz; }
+};
+
+/// An aggregate type is only used as the type of an otherwise untyped
+/// Aggregate* IR value; these values only exists temporarily during
+/// codegen.
+class srcc::IRAggregateType : public TypeBase, public FoldingSetNode {
+    StructLayout* const struct_layout;
+
+    explicit IRAggregateType(StructLayout* struct_layout)
+        : TypeBase(Kind::IRAggregateType),
+          struct_layout{struct_layout} {}
+
+public:
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, struct_layout); }
+    static auto Get(TranslationUnit& mod, StructLayout* layout) -> IRAggregateType*;
+    static void Profile(FoldingSetNodeID& ID, StructLayout* layout);
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::IRAggregateType; }
+
+    /// Get the aggregate layout.
+    auto layout() const -> StructLayout* { return struct_layout; }
+};
+
 class srcc::StructType final : public TypeBase
     , TrailingObjects<StructType, FieldDecl*> {
     friend TrailingObjects;
@@ -473,15 +538,11 @@ public:
     };
 
 private:
-    Size computed_size;
-    Size computed_array_size;
-    Align computed_alignment;
-    bool finalised : 1 = false;
-    Bits bits;
-
     TranslationUnit& owning_tu;
+    StructLayout* struct_layout = nullptr;
     TypeDecl* type_decl = nullptr;
     StructScope* struct_scope;
+    Bits bits;
 
     StructType(TranslationUnit& owner, StructScope* struct_scope, u32 num_fields)
         : TypeBase{Kind::StructType},
@@ -503,36 +564,18 @@ public:
         Location decl_loc
     ) -> StructType*;
 
-    /// Get the computed alignment of this struct.
-    auto align() const -> Align {
-        Assert(finalised);
-        return computed_alignment;
-    }
-
-    /// Get the size that this struct has when stored in an
-    /// array (this includes tail padding, unlike 'size()').
-    auto array_size() const -> Size {
-        Assert(finalised);
-        return computed_array_size;
-    }
-
     /// Get the type declaration for this struct.
     auto decl() const -> TypeDecl* { return type_decl; }
 
     /// Get the struct’s fields.
     auto fields() const -> ArrayRef<FieldDecl*> {
-        Assert(finalised);
+        Assert(is_complete());
         return {getTrailingObjects<FieldDecl*>(), num_fields};
     }
 
     /// Initialise fields and other properties; this marks
     /// the struct as complete.
-    void finalise(
-        ArrayRef<FieldDecl*> fields,
-        Size size,
-        Align alignment,
-        Bits bits
-    );
+    void finalise(StructLayout* layout, ArrayRef<FieldDecl*> fields, Bits bits);
 
     /// Whether this struct has a default initialiser (i.e.
     /// an initialiser that takes no arguments and is *not*
@@ -554,7 +597,13 @@ public:
 
     /// Get whether this type is complete, i.e. whether we can
     /// declare variables and create objects of this type.
-    bool is_complete() const { return finalised; }
+    bool is_complete() const { return struct_layout != nullptr; }
+
+    /// Get the struct layout.
+    auto layout() const -> StructLayout* {
+        Assert(is_complete(), "Layout not computed yet");
+        return struct_layout;
+    }
 
     /// Get the name of this type.
     auto name() const -> String;
@@ -565,11 +614,6 @@ public:
     /// Get the scope containing the fields, member functions, and
     /// initialisers of this struct.
     auto scope() const -> StructScope* { return struct_scope; }
-
-    /// Get the size of a single instance of this type; this does
-    /// *not* include tail padding (use 'array_size()' instead for
-    /// that).
-    auto size() const -> Size { return computed_size; }
 
     static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
 };

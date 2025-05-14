@@ -176,10 +176,12 @@ public:
     Type I64Ty;
     Type I128Ty;
     SliceType* StrLitTy;
+    PtrType* I8PtrTy;
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;
     FoldingSet<IntType> int_types;
+    FoldingSet<IRAggregateType> ir_aggregate_types;
     FoldingSet<PtrType> ptr_types;
     FoldingSet<ProcType> proc_types;
     FoldingSet<RangeType> range_types;

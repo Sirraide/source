@@ -81,22 +81,17 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
             Unreachable();
         },
         [&](const IntType* ty) { return tu.target().int_align(ty); },
+        [&](const IRAggregateType* ty) { return ty->layout()->align(); },
         [&](const ProcType*) { return tu.target().closure_align(); },
         [&](const PtrType*) { return tu.target().ptr_align(); },
         [&](const RangeType* ty) { return ty->elem()->align(tu); },
         [&](const SliceType*) { return tu.target().slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
-            return ty->align();
+            return ty->layout()->align();
         },
     });
 } // clang-format on
-
-auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
-    if (auto s = dyn_cast<StructType>(this)) return s->array_size();
-    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(tu) * 2;
-    return size(tu);
-}
 
 template <bool (StructType::*struct_predicate)() const>
 bool InitCheckHelper(const TypeBase* type) { // clang-format off
@@ -120,6 +115,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
             Unreachable();
         },
         [&](const IntType*) { return true; },
+        [&](const IRAggregateType*) -> bool { Unreachable("Should only be queried in Sema"); },
         [&](const ProcType*) { return false; },
         [&](const PtrType*) { return false; },
         [&](const RangeType*) { return true; },
@@ -144,23 +140,60 @@ bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
 }
 
-bool TypeBase::is_srvalue() const {
+bool TypeBase::pass_by_reference(Intent i) const {
+    switch (i) {
+        // These allow modifying the original value, which means that
+        // we always have to pass by reference here.
+        case Intent::Inout:
+        case Intent::Out:
+            return true;
+
+        // If we only want to inspect the value, pass by value if small (i.e.
+        // SRValue, ARValue), and by reference otherwise (MRValue).
+        //
+        // On the caller side, moving is treated the same as 'in', the only
+        // difference is that the former creates a variable in the callee,
+        // whereas the latter doesn’t.
+        //
+        // The intent behind the former is that e.g. 'moving' a large struct
+        // should not require a memcpy unless the callee actually moves it
+        // somewhere else; otherwise, it doesn't matter where it is stored,
+        // and we save a memcpy that way.
+        case Intent::Copy:
+        case Intent::In:
+        case Intent::Move:
+            return is_mrvalue();
+    }
+    Unreachable();
+}
+
+auto TypeBase::rvalue_category() const -> ValueCategory {
     switch (type_kind) {
         case Kind::BuiltinType:
         case Kind::IntType:
-        case Kind::ProcType:
         case Kind::PtrType:
+            return ValueCategory::SRValue;
+
+        case Kind::IRAggregateType:
+        case Kind::ProcType:
         case Kind::RangeType:
         case Kind::SliceType:
-            return true;
+            return ValueCategory::ARValue;
 
         // Zero-sized arrays are invalid, so treat all arrays as mrvalues.
+        // TODO: Pass small arrays in registers.
         case Kind::ArrayType:
-            return false;
+            return ValueCategory::MRValue;
 
-        // Zero-sized types are passed around as 'void', which is an srvalue.
-        case Kind::StructType:
-            return cast<StructType>(this)->size() == Size();
+        case Kind::StructType: {
+            auto s = cast<StructType>(this);
+
+            // Zero-sized types are passed around as 'void', which is an srvalue.
+            if (s->layout()->size() == Size()) return ValueCategory::SRValue;
+
+            // TODO: Pass small structs in registers.
+            return Expr::MRValue;
+        }
     }
 
     Unreachable("Invalid type kind");
@@ -174,50 +207,6 @@ bool TypeBase::is_void() const {
 bool TypeBase::move_is_copy() const {
     // This will have to change once we have destructors.
     return true;
-}
-
-bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
-    // Always pass parameters to C or C++ functions by value.
-    if (cc == CallingConvention::Native) return true;
-    Assert(cc == CallingConvention::Source, "Unsupported calling convention");
-    switch (intent) {
-        // These allow modifying the original value, which means that
-        // we always have to pass by reference here.
-        case Intent::Inout:
-        case Intent::Out:
-            return false;
-
-        // Always pass by value if we’re making a copy.
-        case Intent::Copy:
-            return true;
-
-        // If we only want to inspect the value, pass by value if small,
-        // and by reference otherwise.
-        //
-        // On the caller side, moving is treated the same as 'in', the
-        // only difference is that the latter creates a variable in the
-        // callee, whereas the former doesn’t.
-        //
-        // The intent behind the latter is that e.g. 'moving' a large
-        // struct should not require a memcpy unless the callee actually
-        // moves it somewhere else; otherwise, it doesn't matter where
-        // it is stored, and we save a memcpy that way.
-        case Intent::In:
-        case Intent::Move:
-            return visit(utils::Overloaded{
-                // clang-format off
-                [](ArrayType*) { return false; },                        // Arrays are usually big, so pass by reference.
-                [](BuiltinType*) { return true; },                       // All builtin types are small.
-                [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
-                [](ProcType*) { return true; },                          // Closures are two pointers.
-                [](PtrType*) { return true; },                           // Pointers are small.
-                [](RangeType*) { return true; },                         // Ranges are two integers.
-                [](SliceType*) { return true; },                         // Slices are two pointers.
-                [](StructType* s) { return s->is_srvalue(); },           // Pass structs by reference (TODO: small ones by value).
-            }); // clang-format on
-    }
-
-    Unreachable();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
@@ -243,6 +232,18 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
             out += std::format("%6(i{:i}%)", int_ty->bit_width());
+        } break;
+
+        case Kind::IRAggregateType: {
+            auto* a = cast<IRAggregateType>(this);
+            out += "%1((";
+            bool first = true;
+            for (auto f : a->layout()->fields()) {
+                if (first) first = false;
+                else out += ", ";
+                out += f.ty->print();
+            }
+            out += ")%)";
         } break;
 
         case Kind::ProcType: {
@@ -292,7 +293,8 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::IntType: return cast<IntType>(this)->bit_width();
+        case Kind::IntType: return tu.target().int_size(cast<IntType>(this));
+        case Kind::IRAggregateType: return cast<IRAggregateType>(this)->layout()->size();
         case Kind::PtrType: return tu.target().ptr_size();
         case Kind::ProcType: return tu.target().closure_size();
         case Kind::SliceType: return tu.target().slice_size();
@@ -303,7 +305,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
 
         case Kind::StructType: {
             auto s = cast<StructType>(this);
-            return s->size();
+            return s->layout()->size();
         }
 
         case Kind::ArrayType: {
@@ -335,6 +337,15 @@ auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
 
 void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
     ID.AddInteger(bits.bits());
+}
+
+auto IRAggregateType::Get(TranslationUnit& mod, StructLayout* layout) -> IRAggregateType* {
+    auto CreateNew = [&] { return new (mod) IRAggregateType{layout}; };
+    return GetOrCreateType(mod.ir_aggregate_types, CreateNew, layout);
+}
+
+void IRAggregateType::Profile(FoldingSetNodeID& ID, StructLayout* layout) {
+    ID.AddPointer(layout);
 }
 
 auto PtrType::Get(TranslationUnit& mod, Type elem) -> PtrType* {
@@ -418,13 +429,17 @@ void ProcType::Profile(
     }
 }
 
-auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnrenderedString {
+auto ProcType::print(StringRef proc_name, bool is_ir_proc) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     out += "%1(proc";
 
     // Add name.
     if (not proc_name.empty())
         out += std::format(" %2({}%)", proc_name);
+
+    // The default intent is move at the source level, but in the IR, all
+    // intents are lowered to copy.
+    auto default_intent = is_ir_proc ? Intent::Copy : Intent::Move;
 
     // Add params.
     const auto& ps = params();
@@ -434,9 +449,9 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
         for (const auto& [i, p] : enumerate(ps)) {
             if (first) first = false;
             else out += ", ";
-            if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
+            if (p.intent != default_intent) out += std::format("{} ", p.intent);
             out += p.type->print();
-            if (number_params) out += std::format(" %4(%%{}%)", i);
+            if (is_ir_proc) out += std::format(" %4(%%{}%)", i);
         }
         out += ")";
     }
@@ -491,20 +506,40 @@ auto StructType::name() const -> String {
 }
 
 void StructType::finalise(
+    StructLayout* layout,
     ArrayRef<FieldDecl*> fields,
-    Size sz,
-    Align align,
     Bits struct_bits
 ) {
-    Assert(not finalised, "finalise() called twice?");
-    finalised = true;
+    Assert(not is_complete(), "finalise() called twice?");
+    for (auto f : fields) f->parent = this;
+    struct_layout = layout;
     bits = struct_bits;
-    computed_size = sz;
-    computed_alignment = align;
-    computed_array_size = sz.align(align);
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),
-        getTrailingObjects<FieldDecl*>()
+        getTrailingObjects()
     );
+}
+
+auto StructLayout::Create(
+    TranslationUnit& tu,
+    ArrayRef<Type> field_types
+) -> StructLayout* {
+    SmallVector<StructField> fields{};
+    Align align{1};
+    Size size{};
+
+    // TODO: Optimise layout if this isn’t meant for FFI.
+    for (Type ty : field_types) {
+        size = size.align(ty->align(tu));
+        fields.emplace_back(ty, size);
+        size += ty->size(tu);
+        align = std::max(align, ty->align(tu));
+    }
+
+    auto sz = totalSizeToAlloc<StructField>(fields.size());
+    auto mem = tu.allocate(sz, alignof(StructLayout));
+    auto layout = ::new (mem) StructLayout(size, align, u32(fields.size()));
+    std::uninitialized_copy(fields.begin(), fields.end(), layout->getTrailingObjects());
+    return layout;
 }

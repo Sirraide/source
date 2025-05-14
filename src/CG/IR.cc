@@ -15,7 +15,10 @@ auto Managed::operator new(usz sz, Builder& b) -> void* {
     return b.Allocate(sz, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
-Builder::Builder(TranslationUnit& tu) : tu{tu} {}
+Builder::Builder(TranslationUnit& tu) : tu{tu} {
+    slice_layout = StructLayout::Create(tu, {tu.I8PtrTy, Type::IntTy});
+    closure_layout = StructLayout::Create(tu, {tu.I8PtrTy, tu.I8PtrTy});
+}
 
 template <std::derived_from<Inst> InstTy, typename... Args>
 auto Builder::CreateImpl(Args&&... args) -> Inst* {
@@ -38,8 +41,8 @@ auto Builder::CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValu
     return new (*this) InstValue(Create(op, vals), ty, 0);
 }
 
-void Builder::CreateAbort(AbortReason reason, Location loc, Value* msg1, Value* msg2) {
-    CreateImpl<AbortInst>(reason, loc, ArrayRef{msg1, msg2});
+void Builder::CreateAbort(AbortReason reason, Location loc, Aggregate* msg1, Aggregate* msg2) {
+    CreateImpl<AbortInst>(reason, loc, ArrayRef{msg1->field(0), msg1->field(1), msg2->field(0), msg2->field(1)});
 }
 
 auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
@@ -49,11 +52,26 @@ auto Builder::CreateAdd(Value* a, Value* b, bool nowrap) -> Value* {
     return add;
 }
 
-auto Builder::CreateAlloca(Proc* parent, Type ty) -> Value* {
+auto Builder::CreateAggregate(Type ty, StructLayout* layout, ArrayRef<Value*> vals) -> Aggregate* {
+    Assert(layout->fields().size() == vals.size(), "Invalid layout for aggregate");
+    if (ty == Type()) ty = IRAggregateType::Get(tu, layout);
+    auto size = Aggregate::totalSizeToAlloc<Value*>(vals.size());
+    auto mem = Allocate(size, alignof(Aggregate));
+    auto a = ::new (mem) Aggregate(ty, layout);
+    std::uninitialized_copy(vals.begin(), vals.end(), a->getTrailingObjects());
+    return a;
+}
+
+auto Builder::CreateAlloca(Proc* parent, Type ty, Align align) -> Value* {
     Assert(parent, "Alloca without parent procedure?");
-    auto a = new (*this) FrameSlot(tu, parent, ty);
+    if (align == Align()) align = ty->align(tu);
+    auto a = new (*this) FrameSlot(tu, parent, ty, align);
     parent->frame_info.push_back(a);
     return a;
+}
+
+auto Builder::CreateAlloca(Proc* parent, Size sz, Align align) -> Value* {
+    return CreateAlloca(parent, ArrayType::Get(tu, tu.I8Ty, i64(sz.bytes())), align);
 }
 
 auto Builder::CreateAnd(Value* a, Value* b) -> Value* {
@@ -64,6 +82,7 @@ auto Builder::CreateAShr(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::AShr, a->type(), {a, b});
 }
 
+// TODO: Aggregates in block arguments need to be split.
 auto Builder::CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block> {
     SmallVector<Type, 3> types;
     for (auto arg : args) types.push_back(arg->type());
@@ -96,37 +115,14 @@ auto Builder::CreateCall(Value* callee, ArrayRef<Value*> args) -> Value* {
     return CreateAndGetVal(Op::Call, cast<ProcType>(callee->type())->ret(), operands);
 }
 
+auto Builder::CreateClosure(Proc* proc, Value* env) -> Aggregate* {
+    if (not env) env = CreateNil(tu.I8PtrTy);
+    return CreateAggregate(proc->type(), closure_layout, {proc, env});
+}
+
 void Builder::CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) {
     Assert(cond->type() == Type::BoolTy, "Branch condition must be a bool");
     CreateImpl<BranchInst>(cond, then_block, else_block);
-}
-
-auto Builder::CreateExtractValue(Value* aggregate, u32 idx) -> Value* {
-    if (auto s = dyn_cast<Slice>(aggregate)) {
-        if (idx == 0) return s->data;
-        if (idx == 1) return s->size;
-        Unreachable("Invalid index for slice");
-    }
-
-    if (auto s = dyn_cast<Range>(aggregate)) {
-        if (idx == 0) return s->start;
-        if (idx == 1) return s->end;
-        Unreachable("Invalid index for range");
-    }
-
-    if (auto s = dyn_cast<SliceType>(aggregate->type().ptr())) {
-        if (idx == 0) return new (*this) Extract(aggregate, 0, PtrType::Get(tu, s->elem()));
-        if (idx == 1) return new (*this) Extract(aggregate, 1, Type::IntTy);
-        Unreachable("Invalid index for slice type");
-    }
-
-    if (auto s = dyn_cast<RangeType>(aggregate->type().ptr())) {
-        if (idx == 0) return new (*this) Extract(aggregate, 0, s->elem());
-        if (idx == 1) return new (*this) Extract(aggregate, 1, s->elem());
-        Unreachable("Invalid index for slice type");
-    }
-
-    Todo("Extract a value from this type: {}", aggregate->type());
 }
 
 auto Builder::CreateInt(APInt val, Type type) -> Value* {
@@ -193,6 +189,7 @@ auto Builder::CreateICmpSGe(Value* a, Value* b) -> Value* {
 }
 
 auto Builder::CreateLoad(Type ty, Value* ptr) -> Value* {
+    if (ty->is_arvalue()) return LoadAggregate(GetAggregateLayout(ty), ptr);
     return CreateSpecialGetVal<MemInst>(ty, Op::Load, ty, ty->align(tu), ptr);
 }
 
@@ -200,15 +197,22 @@ auto Builder::CreateLShr(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::LShr, a->type(), {a, b});
 }
 
-void Builder::CreateMemCopy(Value* to, Value* from, Value* bytes) {
-    Create(Op::MemCopy, {to, from, bytes});
+void Builder::CreateMemCopy(Value* to, Value* from, Value* bytes, Align align) {
+    Create(Op::MemCopy, {to, from, bytes})->alignment = align;
 }
 
-void Builder::CreateMemZero(Value* addr, Value* bytes) {
-    Create(Op::MemZero, {addr, bytes});
+void Builder::CreateMemZero(Value* addr, Value* bytes, Align align) {
+    Create(Op::MemZero, {addr, bytes})->alignment = align;
 }
 
 auto Builder::CreateNil(Type ty) -> Value* {
+    if (ty->is_arvalue()) {
+        SmallVector<Value*> values;
+        auto layout = GetAggregateLayout(ty);
+        for (auto f : layout->fields()) values.emplace_back(CreateNil(f.ty));
+        return CreateAggregate(ty, layout, values);
+    }
+
     return new (*this) BuiltinConstant(BuiltinConstantKind::Nil, ty);
 }
 
@@ -217,6 +221,13 @@ auto Builder::CreateOr(Value* a, Value* b) -> Value* {
 }
 
 auto Builder::CreatePoison(Type ty) -> Value* {
+    if (ty->is_arvalue()) {
+        SmallVector<Value*> values;
+        auto layout = GetAggregateLayout(ty);
+        for (auto f : layout->fields()) values.emplace_back(CreatePoison(f.ty));
+        return CreateAggregate(ty, layout, values);
+    }
+
     return new (*this) BuiltinConstant(BuiltinConstantKind::Poison, ty);
 }
 
@@ -232,12 +243,24 @@ auto Builder::CreatePtrAdd(Value* ptr, Value* offs, bool inbounds) -> Value* {
     return i;
 }
 
-auto Builder::CreateRange(Value* start, Value* end) -> Value* {
-    return new (*this) Range(RangeType::Get(tu, start->type()), start, end);
+auto Builder::CreatePtrAdd(Value* ptr, Size offs, bool inbounds) -> Value* {
+    if (offs == Size()) return ptr;
+    return CreatePtrAdd(ptr, CreateInt(offs.bytes()),  inbounds);
+}
+
+auto Builder::CreateRange(Value* start, Value* end) -> Aggregate* {
+    auto ty = RangeType::Get(tu, start->type());
+    auto layout = GetAggregateLayout(ty);
+    return CreateAggregate(ty, layout, {start, end});
 }
 
 void Builder::CreateReturn(Value* val) {
-    Create(Op::Ret, val ? ArrayRef{val} : ArrayRef<Value*>{});
+    ArrayRef<Value*> args;
+    if (val) {
+        if (auto a = dyn_cast<Aggregate>(val)) args = a->fields();
+        else args = val;
+    }
+    Create(Op::Ret, args);
 }
 
 auto Builder::CreateSAddOverflow(Value* a, Value* b) -> OverflowResult {
@@ -273,8 +296,9 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
     return CreateSpecialGetVal<ICast>(to_type, Op::SExt, to_type, i);
 }
 
-auto Builder::CreateSlice(Value* data, Value* size) -> Slice* {
-    return new (*this) Slice(SliceType::Get(tu, cast<PtrType>(data->type())->elem()), data, size);
+auto Builder::CreateSlice(Value* data, Value* size) -> Aggregate* {
+    auto ty = SliceType::Get(tu, cast<PtrType>(data->type())->elem());
+    return CreateAggregate(ty, slice_layout, {data, size});
 }
 
 auto Builder::CreateSMulOverflow(Value* a, Value* b) -> OverflowResult {
@@ -291,8 +315,22 @@ auto Builder::CreateSSubOverflow(Value* a, Value* b) -> OverflowResult {
     return {Result(i, a->type(), 0), Result(i, Type::BoolTy, 1)};
 }
 
-void Builder::CreateStore(Value* val, Value* ptr) {
-    CreateImpl<MemInst>(Op::Store, val->type(), val->type()->align(tu), ptr, val);
+void Builder::CreateStore(Type ty, Value* val, Value* ptr) {
+    if (auto b = dyn_cast<BuiltinConstant>(val); b and b->id == BuiltinConstantKind::Nil) {
+        CreateMemZero(ptr, CreateInt(ty->size(tu).bytes()), ty->align(tu));
+        return;
+    }
+
+    // ARValues should always be 'Aggregate*'s.
+    if (auto a = dyn_cast<Aggregate>(val)) {
+        StoreAggregate(ptr, a->layout(), a->fields());
+        return;
+    }
+
+    // Convert stores of the nil value to memsets.
+    Assert(ty, "Storing a non-aggregate requires a type");
+    Assert(ty->is_srvalue(), "Cannot store non-srvalues");
+    CreateImpl<MemInst>(Op::Store, ty, ty->align(tu), ptr, val);
 }
 
 auto Builder::CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant* {
@@ -301,11 +339,22 @@ auto Builder::CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant* {
     return g;
 }
 
-auto Builder::CreateGlobalStringSlice(String s) -> Slice* {
+auto Builder::CreateGlobalStringSlice(String s) -> Aggregate* {
     auto data = CreateGlobalConstantPtr(tu.I8Ty, s);
     auto size = CreateInt(s.size(), Type::IntTy);
     data->string = true;
-    return new (*this) Slice(tu.StrLitTy, data, size);
+    return CreateAggregate(tu.StrLitTy, slice_layout, {data, size});
+}
+
+auto Builder::CreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
+    auto [it, inserted] = procs.try_emplace(s, std::unique_ptr<Proc>(new Proc(s, ty, link)));
+    Assert(inserted, "Procedure with name '{}' already exists", s);
+    auto proc = it->second.get();
+    for (auto [i, p] : enumerate(ty->params())) {
+        Assert(p.intent == Intent::Copy, "Intents should have been lowered by codegen");
+        proc->arguments.push_back(new (*this) Argument(proc, u32(i), p.type));
+    }
+    return proc;
 }
 
 auto Builder::CreateSub(Value* a, Value* b, bool nowrap) -> Value* {
@@ -331,6 +380,22 @@ auto Builder::CreateXor(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::Xor, a->type(), {a, b});
 }
 
+auto Builder::CreateZExt(Value* i, Type to_type) -> Value* {
+    auto from = i->type()->size(tu).bits();
+    auto to = to_type->size(tu).bits();
+    if (i->type() == to_type) return i;
+
+    // Fold the cast if possible; casts of literals are rather common.
+    if (auto v = dyn_cast<SmallInt>(i)) return CreateInt(
+        APInt(unsigned(from), v->value()).zextOrTrunc(unsigned(to)).getZExtValue(),
+        to_type
+    );
+
+    // Create a cast operation.
+    if (from > to) return CreateSpecialGetVal<ICast>(to_type, Op::Trunc, to_type, i);
+    return CreateSpecialGetVal<ICast>(to_type, Op::ZExt, to_type, i);
+}
+
 auto Builder::Fold(
     Value* a,
     Value* b,
@@ -342,20 +407,24 @@ auto Builder::Fold(
     return nullptr;
 }
 
-auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
-    auto& proc = procs[s.value()];
-    if (proc) return proc.get();
-    proc = std::unique_ptr<Proc>(new Proc(s, ty, link));
-
-    // Initialise arguments.
-    for (auto [i, p] : enumerate(ty->params())) {
-        Type param_ty = p.type->pass_by_lvalue(ty->cconv(), p.intent)
-                          ? PtrType::Get(tu, p.type)
-                          : p.type;
-        proc->arguments.push_back(new (*this) Argument(proc.get(), u32(i), param_ty));
+auto Builder::GetAggregateLayout(Type ty) -> StructLayout* {
+    Assert(ty->is_arvalue());
+    if (isa<SliceType>(ty)) return slice_layout;
+    if (isa<ProcType>(ty)) return closure_layout;
+    if (auto s = dyn_cast<StructType>(ty)) return s->layout();
+    if (auto r = dyn_cast<RangeType>(ty)) {
+        auto& layout = range_layouts[u32(r->elem()->size(tu).bytes())];
+        if (not layout) layout = StructLayout::Create(tu, {r->elem(), r->elem()});
+        return layout;
     }
 
-    return proc.get();
+    Unreachable();
+}
+
+auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
+    auto it = procs.find(s.value());
+    if (it != procs.end()) return it->second.get();
+    return CreateProc(s, link, ty);
 }
 
 auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
@@ -363,8 +432,24 @@ auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
     return proc == procs.end() ? nullptr : proc->second.get();
 }
 
+auto Builder::LoadAggregate(StructLayout* layout, Value* ptr) -> Aggregate* {
+    SmallVector<Value*> fields;
+    for (auto f : layout->fields()) {
+        ptr = CreatePtrAdd(ptr, f.offset);
+        fields.push_back(CreateLoad(f.ty, ptr));
+    }
+    return CreateAggregate(Type(), layout, fields);
+}
+
 auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
     return new (*this) InstValue(i, ty, idx);
+}
+
+void Builder::StoreAggregate(Value* ptr, StructLayout* layout, ArrayRef<Value*> fields) {
+    for (auto [f, val] : zip(layout->fields(), fields)) {
+        ptr = CreatePtrAdd(ptr, f.offset);
+        CreateStore(val->type(), val, ptr);
+    }
 }
 
 auto AbortInst::handler_name() const -> String {
@@ -403,7 +488,13 @@ BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget 
       }()),
       then_args_num(u32(then.args.size())), then_block(then.dest), else_block(else_.dest) {}
 
-Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args) : arguments{args.copy(b.tu.allocator())}, op{op} {}
+Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args, Align align)
+    : arguments{args.copy(b.tu.allocator())}, op{op}, alignment{align} {
+    DebugAssert(
+        rgs::none_of(args, &Aggregate::classof),
+        "Unsplit aggregate passed to instruction"
+    );
+}
 
 bool Inst::has_multiple_results() const {
     return result_types().size() > 1;
@@ -545,7 +636,10 @@ void Printer::Dump(Builder& b) {
 void Printer::DumpInst(Inst* i) {
     out += "    %1(";
     if (ReturnsValue(i)) out += std::format("%8(%%{}%) = ", Id(inst_ids, i));
-    defer { out += "%)\n"; };
+    defer {
+        if (i->align() != Align()) out += std::format(", align %5({}%)", i->align());
+        out += "%)\n";
+    };
 
     auto Target = [&](Block* dest, ArrayRef<Value*> args) {
         out += std::format("%3(bb{}%)", Id(block_ids, dest));
@@ -623,21 +717,19 @@ void Printer::DumpInst(Inst* i) {
         case Op::Load: {
             auto m = cast<MemInst>(i);
             out += std::format(
-                "%1(load%) {}, {}, align %5({}%)",
+                "%1(load%) {}, {}",
                 m->memory_type(),
-                DumpValue(m->args()[0]),
-                m->align()
+                DumpValue(m->args()[0])
             );
         } break;
 
         case Op::Store: {
             auto m = cast<MemInst>(i);
             out += std::format(
-                "%1(store%) {} to {}, {}, align %5({}%)",
+                "%1(store%) {} to {}, {}",
                 m->memory_type(),
                 DumpValue(m->args()[0]),
-                DumpValue(m->args()[1]),
-                m->align()
+                DumpValue(m->args()[1])
             );
         } break;
 
@@ -715,7 +807,7 @@ void Printer::DumpProc(Proc* proc) {
 
     // Print frame allocations.
     for (auto* f : proc->frame())
-        out += std::format("    %8(%%{}%) %1(=%) {}\n", Id(frame_ids, f), f->allocated_type());
+        out += std::format("    %8(%%{}%) %1(=%) {}, %1(align%) {}\n", Id(frame_ids, f), f->allocated_type(), f->align());
     if (not proc->frame().empty())
         out += "\n";
 
@@ -741,6 +833,19 @@ bool Printer::ReturnsValue(Inst* i) {
 auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
     SmallUnrenderedString out;
     switch (v->kind()) {
+        case Value::Kind::Aggregate: {
+            auto a = cast<Aggregate>(v);
+            out += v->type()->print();
+            out += " %1((%)";
+            bool first = true;
+            for (auto f : a->fields()) {
+                if (first) first = false;
+                else out += "%1(,%) ";
+                out += DumpValue(f);
+            }
+            out += " %1()%)";
+        } break;
+
         case Value::Kind::Argument: {
             auto arg = cast<Argument>(v);
             out += std::format("%{}(%%{}%)", isa<Proc>(arg->parent()) ? '4' : '3', Id(arg_ids, arg));
@@ -758,11 +863,6 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
                 case BuiltinConstantKind::Nil: out += "nil"; break;
                 case BuiltinConstantKind::Poison: out += "poison"; break;
             }
-        } break;
-
-        case Value::Kind::Extract: {
-            auto e = cast<Extract>(v);
-            out += std::format("{}[%5({}%)]", DumpValue(e->aggregate()), e->index());
         } break;
 
         case Value::Kind::FrameSlot: {
@@ -801,26 +901,6 @@ auto Printer::DumpValue(Value* v) -> SmallUnrenderedString {
             out += std::format("%2({}%)", p->name());
         } break;
 
-        case Value::Kind::Range: {
-            auto s = cast<Range>(v);
-            out += std::format("%1(({}, {})%)", DumpValue(s->start), DumpValue(s->end));
-        } break;
-
-        case Value::Kind::Slice: {
-            auto s = cast<Slice>(v);
-            if (
-                auto sz = dyn_cast<SmallInt>(s->size);
-                sz and
-                isa<GlobalConstant>(s->data) and
-                cast<GlobalConstant>(s->data)->is_string()
-            ) {
-                auto str = cast<GlobalConstant>(s->data);
-                out += std::format("s%3(\"{}\"%)", utils::Escape(str->value().take(usz(sz->value())), true, true));
-            } else {
-                out += std::format("{} (%5({}%), %5({}%))", s->type(), DumpValue(s->data), DumpValue(s->size));
-            }
-        } break;
-
         case Value::Kind::SmallInt: {
             auto s = cast<SmallInt>(v);
             out += std::format(
@@ -838,6 +918,12 @@ void Inst::dump(TranslationUnit& tu) {
     p.DumpInst(this);
     p.out += "\n";
     std::print("{}", text::RenderColours(true, p.out.str()));
+}
+
+auto Proc::attributes(u32 param_idx) const -> ParamAttrs {
+    auto it = param_attrs.find(param_idx);
+    if (it == param_attrs.end()) return ParamAttrs();
+    return it->second;
 }
 
 void Proc::dump(TranslationUnit& tu) {

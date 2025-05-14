@@ -1,6 +1,8 @@
 #ifndef SRCC_CORE_UTILS_HH
 #define SRCC_CORE_UTILS_HH
 
+#include <clang/Basic/UnsignedOrNone.h>
+
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -20,8 +22,8 @@
 #include <base/Base.hh>
 #include <base/Colours.hh>
 #include <base/Serialisation.hh>
-#include <base/Text.hh>
 #include <base/Size.hh>
+#include <base/Text.hh>
 
 #include <chrono>
 #include <cmath>
@@ -46,6 +48,8 @@ using llvm::dyn_cast;
 using llvm::dyn_cast_if_present;
 using llvm::isa;
 using llvm::isa_and_present;
+
+using clang::UnsignedOrNone;
 
 using llvm::APInt;
 using llvm::ArrayRef;
