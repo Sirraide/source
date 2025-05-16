@@ -1,30 +1,82 @@
-// R %srcc --llvm %s
+// R      %srcc --ir   -fno-overflow-checks %s
+// R[//L] %srcc --llvm -fno-overflow-checks %s
 program test;
 
-proc caller (proc x -> int) = x();
-proc foo = 42;
+proc caller (in proc x (in int) -> int) = x(21);
+proc bar = foo;
+proc foo (in int x) -> int = x * 2;
 
-__srcc_print(caller(foo), "\n");
+caller(foo);
+caller(bar());
 
-// * define fastcc void @__src_main() {
+// * proc __src_main {
 // + entry:
-// +   %0 = call fastcc i64 @_S6callerFiFiEE({ ptr, ptr } { ptr @_S3fooFiE, ptr null })
-// +   %1 = call i32 (ptr, ...) @printf(ptr @0, i64 %0)
-// +   %2 = call i32 (ptr, ...) @printf(ptr @1, i32 1, ptr @2)
-// +   ret void
+// +     %0 = call int _S6callerFixFixiEE (_S3fooFixiE, nil)
+// +     %1 = call (i8^, i8^) _S3barFFixiEE
+// +     %2 = call int _S6callerFixFixiEE (%1:0, %1:1)
+// +     ret
+// + }
+// +
+// + proc _S6callerFixFixiEE (i8^ %0, i8^ %1) -> int {
+// + entry:
+// +     %2 = call int %0 (int 21), env %1
+// +     ret %2
+// + }
+// +
+// + proc _S3fooFixiE (int %0) -> int {
+// + entry:
+// +     %1 = imul %0, int 2
+// +     ret %1
+// + }
+// +
+// + proc _S3barFFixiEE -> proc (in int) -> int {
+// + entry:
+// +     ret _S3fooFixiE, nil
 // + }
 
-// * define private fastcc i64 @_S6callerFiFiEE({ ptr, ptr } %0) {
-// + entry:
-// +   %1 = alloca { ptr, ptr }, align 8
-// +   store { ptr, ptr } %0, ptr %1, align 8
-// +   %2 = load { ptr, ptr }, ptr %1, align 8
-// +   %3 = extractvalue { ptr, ptr } %2, 0
-// +   %4 = call fastcc i64 %3()
-// +   ret i64 %4
-// + }
-
-// * define private fastcc i64 @_S3fooFiE() {
-// + entry:
-// +   ret i64 42
-// + }
+//L * ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
+//L +
+//L + define fastcc void @__src_main() {
+//L + entry:
+//L +   %0 = call fastcc i64 @_S6callerFixFixiEE(ptr @_S3fooFixiE, ptr null)
+//L +   %1 = call fastcc { ptr, ptr } @_S3barFFixiEE()
+//L +   %2 = extractvalue { ptr, ptr } %1, 0
+//L +   %3 = extractvalue { ptr, ptr } %1, 1
+//L +   %4 = call fastcc i64 @_S6callerFixFixiEE(ptr %2, ptr %3)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc i64 @_S6callerFixFixiEE(ptr %0, ptr %1) {
+//L + entry:
+//L +   %2 = icmp eq ptr %1, null
+//L +   br i1 %2, label %3, label %5
+//L +
+//L + 3:                                                ; preds = %entry
+//L +   %4 = call fastcc i64 %0(i64 21)
+//L +   br label %7
+//L +
+//L + 5:                                                ; preds = %entry
+//L +   %6 = call fastcc i64 %0(i64 21, ptr %1)
+//L +   br label %7
+//L +
+//L + 7:                                                ; preds = %5, %3
+//L +   %8 = phi i64 [ %4, %3 ], [ %6, %5 ]
+//L +   ret i64 %8
+//L + }
+//L +
+//L + define private fastcc i64 @_S3fooFixiE(i64 %0) {
+//L + entry:
+//L +   %1 = mul nuw nsw i64 %0, 2
+//L +   ret i64 %1
+//L + }
+//L +
+//L + define private fastcc { ptr, ptr } @_S3barFFixiEE() {
+//L + entry:
+//L +   ret { ptr, ptr } { ptr @_S3fooFixiE, ptr null }
+//L + }
+//L +
+//L + attributes #0 = { noreturn nounwind }

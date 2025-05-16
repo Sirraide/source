@@ -241,7 +241,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             for (auto f : a->layout()->fields()) {
                 if (first) first = false;
                 else out += ", ";
-                out += f.ty->print();
+                out += f->print();
             }
             out += ")%)";
         } break;
@@ -293,7 +293,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::IntType: return tu.target().int_size(cast<IntType>(this));
+        case Kind::IntType: return cast<IntType>(this)->bit_width();
         case Kind::IRAggregateType: return cast<IRAggregateType>(this)->layout()->size();
         case Kind::PtrType: return tu.target().ptr_size();
         case Kind::ProcType: return tu.target().closure_size();
@@ -429,9 +429,14 @@ void ProcType::Profile(
     }
 }
 
-auto ProcType::print(StringRef proc_name, bool is_ir_proc) const -> SmallUnrenderedString {
+auto ProcType::print(
+    StringRef proc_name,
+    bool is_ir_proc,
+    bool is_ir_proc_ptr
+) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     out += "%1(proc";
+    if (is_ir_proc_ptr) out += "^";
 
     // Add name.
     if (not proc_name.empty())
@@ -525,21 +530,22 @@ auto StructLayout::Create(
     TranslationUnit& tu,
     ArrayRef<Type> field_types
 ) -> StructLayout* {
-    SmallVector<StructField> fields{};
+    SmallVector<Size> offsets{};
     Align align{1};
     Size size{};
 
     // TODO: Optimise layout if this isn’t meant for FFI.
     for (Type ty : field_types) {
         size = size.align(ty->align(tu));
-        fields.emplace_back(ty, size);
+        offsets.emplace_back(size);
         size += ty->size(tu);
         align = std::max(align, ty->align(tu));
     }
 
-    auto sz = totalSizeToAlloc<StructField>(fields.size());
+    auto sz = totalSizeToAlloc<Type, Size>(offsets.size(), offsets.size());
     auto mem = tu.allocate(sz, alignof(StructLayout));
-    auto layout = ::new (mem) StructLayout(size, align, u32(fields.size()));
-    std::uninitialized_copy(fields.begin(), fields.end(), layout->getTrailingObjects());
+    auto layout = ::new (mem) StructLayout(size, align, u32(offsets.size()));
+    std::uninitialized_copy(field_types.begin(), field_types.end(), layout->getTrailingObjects<Type>());
+    std::uninitialized_copy(offsets.begin(), offsets.end(), layout->getTrailingObjects<Size>());
     return layout;
 }

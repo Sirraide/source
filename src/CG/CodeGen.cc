@@ -39,7 +39,7 @@ auto CodeGen::CreateBinop(
     return val;
 }
 
-auto CodeGen::DeclarePrintf() -> Value* {
+auto CodeGen::DeclarePrintf() -> ir::Proc* {
     if (not printf) {
         printf = GetOrCreateProc(
             "printf",
@@ -62,7 +62,7 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
     if (ir_proc) return ir_proc;
     auto original = proc->proc_type();
     auto& lowering = *call_lowering[proc->cconv()];
-    auto [adjusted, attrs] = lowering.adjust_procedure_type(proc, original);
+    auto [adjusted, attrs] = lowering.adjust_procedure_type(original);
 
     // Create the procedure.
     auto name = MangledName(proc);
@@ -100,7 +100,7 @@ auto CodeGen::If(
     Value* cond,
     llvm::function_ref<Value*()> emit_then,
     llvm::function_ref<Value*()> emit_else
-) -> ArrayRef<ir::Argument*> {
+) -> ArrayRef<Value*> {
     if (not emit_else) {
         If(cond, emit_then);
         return {};

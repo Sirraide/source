@@ -12,7 +12,7 @@ struct SourceLowering final : CallLowering {
 
     explicit SourceLowering(CodeGen& CG) : CallLowering(CG) {}
 
-    auto adjust_procedure_type(ProcDecl* decl, ProcType* ty) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> override;
+    auto adjust_procedure_type(ProcType* ty) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> override;
     bool has_indirect_return(ProcType* ty) override;
 
     /// Compute a StructLayout for a type as it is split across registers; i.e.
@@ -129,7 +129,7 @@ void ARValueLayoutBuilder::process(Type ty) {
         }
 
         auto s = cast<StructType>(ty);
-        for (auto f : s->layout()->fields()) process(f.ty);
+        for (auto f : s->layout()->fields()) process(f);
         return;
     }
 
@@ -139,10 +139,7 @@ void ARValueLayoutBuilder::process(Type ty) {
     add(sz);
 }
 
-auto SourceLowering::adjust_procedure_type(
-    ProcDecl* decl,
-    ProcType* ty
-) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> {
+auto SourceLowering::adjust_procedure_type(ProcType* ty) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> {
     SmallVector<ParamTypeData> params;
     ir::Proc::ParamAttrMap attrs;
     Type ret = ty->ret();
@@ -174,7 +171,7 @@ auto SourceLowering::adjust_procedure_type(
         // Split aggregates.
         if (ty->is_arvalue()) {
             for (auto el : get_register_layout(ty)->fields())
-                params.emplace_back(Intent::Copy, el.ty);
+                params.emplace_back(Intent::Copy, el);
             continue;
         }
 
@@ -261,16 +258,14 @@ void SourceLowering::lower_params(ir::Proc* proc) {
             // load it back as the original type.
             Assert(p->type->is_arvalue() or is_splittable_int(p->type));
             auto layout = get_register_layout(p->type);
-            auto temp = CG.CreateAlloca(proc, layout->size(), std::max(layout->align(), p->type->align(CG.tu)));
-            temp_vec.clear();
-            append_range(temp_vec, args.drop_front(i).take_front(layout->fields().size()));
-            CG.StoreAggregate(temp, layout, temp_vec);
-            i += layout->fields().size();
 
             // We should be able to avoid a memcpy() into a second temporary
             // in all cases, but check just in case.
             Assert(sz <= layout->size());
-            return CG.CreateLoad(p->type, temp);
+            temp_vec.clear();
+            append_range(temp_vec, args.drop_front(i).take_front(layout->fields().size()));
+            i += layout->fields().size();
+            return AssembleTypeFromRegisters(p->type, layout, temp_vec);
         }();
 
         // If this is an 'in' parameter, just use the value directly.
@@ -302,10 +297,9 @@ auto SourceLowering::lower_call(
     SmallVector<ir::Value*> lowered;
 
     // Add the pointer for the return value if there is one.
-    DebugAssert((mrvalue_slot != nullptr) == has_indirect_return(proc_type));
+    bool indirect_return = has_indirect_return(proc_type);
+    DebugAssert((mrvalue_slot != nullptr) == indirect_return);
     if (mrvalue_slot) lowered.push_back(mrvalue_slot);
-
-    // TODO: Once we have actual closures, the closure pointer needs to come after that.
 
     // This loop essentially either does the opposite of or complements
     // lower_params() above, except that we no longer have to deal with
@@ -339,9 +333,18 @@ auto SourceLowering::lower_call(
         // it to memory and loading an Aggregate* back, except that the
         // latter is split properly across registers.
         if (ty->is_arvalue() or is_splittable_int(ty)) {
+            // For things that are basically two pointers, just forward them.
+            if (isa<ProcType, SliceType>(ty)) {
+                auto a = cast<ir::Aggregate>(arg);
+                lowered.push_back(a->field(0));
+                lowered.push_back(a->field(1));
+                continue;
+            }
+
+            // Otherwise, convert the object in memory.
             auto layout = get_register_layout(ty);
             auto temp = CG.CreateAlloca(CG.curr_proc, layout->size(), std::max(ty->align(CG.tu), layout->align()));
-            CG.CreateStore(ty, temp, arg);
+            CG.CreateStore(ty, arg, temp);
             for (auto v : cast<ir::Aggregate>(CG.LoadAggregate(layout, temp))->fields()) lowered.push_back(v);
             continue;
         }
@@ -350,5 +353,34 @@ auto SourceLowering::lower_call(
         lowered.push_back(arg);
     }
 
-    return CG.CreateCall(callee->field(0), lowered);
+    // If this is an indirect call, lower the procedure type.
+    auto direct = dyn_cast<ir::Proc>(callee->field(0));
+    auto adjusted = direct ? direct->proc_type() : adjust_procedure_type(proc_type).first;
+    auto proc = callee->field(0);
+    auto ret = proc_type->ret();
+
+    // Simple value.
+    if (not ret->is_arvalue()) return CG.CreateCall(
+        adjusted,
+        proc,
+        lowered,
+        ret,
+        callee->field(1)
+    );
+
+    // Aggregate value.
+    auto ret_layout = get_register_layout(ret);
+    auto call = CG.CreateCall(
+        adjusted,
+        proc,
+        lowered,
+        ret_layout->fields(),
+        callee->field(1)
+    );
+
+    return AssembleTypeFromRegisters(
+        ret,
+        ret_layout,
+        cast<ir::Aggregate>(call)->fields()
+    );
 }

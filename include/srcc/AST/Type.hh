@@ -2,6 +2,7 @@
 #define SRCC_AST_TYPE_HH
 
 #include <srcc/AST/Enums.hh>
+#include <srcc/AST/Type.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Macros.hh>
 
@@ -115,63 +116,63 @@ public:
     void* operator new(usz size, TranslationUnit& tu);
 
     /// Get the alignment of this type.
-    [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
+    [[nodiscard]] LLVM_READONLY auto align(TranslationUnit& tu) const -> Align;
 
     /// Get the size of this type when stored in an array.
-    [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size {
+    [[nodiscard]] LLVM_READONLY auto array_size(TranslationUnit& tu) const -> Size {
         return size(tu).align(align(tu));
     }
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
     /// an initialiser with no arguments.
-    [[nodiscard]] bool can_init_from_no_args() const;
+    [[nodiscard]] LLVM_READONLY bool can_init_from_no_args() const;
 
     /// Get whether this type has a default initialiser.
-    [[nodiscard]] bool can_default_init() const;
+    [[nodiscard]] LLVM_READONLY bool can_default_init() const;
 
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
     void dump_colour() const;
 
     /// Check if this is 'int' or a sized integer.
-    [[nodiscard]] bool is_integer() const;
+    [[nodiscard]] LLVM_READONLY bool is_integer() const;
 
     /// Whether values of this type are arvalues.
-    [[nodiscard]] bool is_arvalue() const {
+    [[nodiscard]] LLVM_READONLY bool is_arvalue() const {
         return rvalue_category() == ValueCategory::ARValue;
     }
 
     /// Whether values of this type are mrvalues.
-    [[nodiscard]] bool is_mrvalue() const {
+    [[nodiscard]] LLVM_READONLY bool is_mrvalue() const {
         return rvalue_category() == ValueCategory::MRValue;
     }
 
     /// Whether values of this type are srvalues.
-    [[nodiscard]] bool is_srvalue() const {
+    [[nodiscard]] LLVM_READONLY bool is_srvalue() const {
         return rvalue_category() == ValueCategory::SRValue;
     }
 
     /// Check if this type is the builtin 'void' type.
-    [[nodiscard]] bool is_void() const;
+    [[nodiscard]] LLVM_READONLY bool is_void() const;
 
     /// Get the type kind.
-    [[nodiscard]] auto kind() const -> Kind { return type_kind; }
+    [[nodiscard]] LLVM_READONLY auto kind() const -> Kind { return type_kind; }
 
     /// Whether moving this type is the same as a copy.
-    [[nodiscard]] bool move_is_copy() const;
+    [[nodiscard]] LLVM_READONLY bool move_is_copy() const;
 
     /// Whether this type should be passed as an lvalue given a specific intent.
-    [[nodiscard]] bool pass_by_reference(Intent i) const;
+    [[nodiscard]] LLVM_READONLY bool pass_by_reference(Intent i) const;
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
 
     /// Get what kind of rvalue this type produced.
-    [[nodiscard]] auto rvalue_category() const -> ValueCategory;
+    [[nodiscard]] LLVM_READONLY auto rvalue_category() const -> ValueCategory;
 
     /// Get the size of this type. This does NOT include tail padding!
-    [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] LLVM_READONLY auto size(TranslationUnit& tu) const -> Size;
 
     /// Visit this type.
     template <typename Visitor>
@@ -406,7 +407,11 @@ public:
     auto params() const -> ArrayRef<ParamTypeData> { return {getTrailingObjects<ParamTypeData>(), num_params}; }
 
     /// Print the proc type, optionally with a name.
-    auto print(StringRef proc_name = "", bool is_ir_proc = false) const -> SmallUnrenderedString;
+    auto print(
+        StringRef proc_name = "",
+        bool is_ir_proc = false,
+        bool is_ir_proc_ptr = false
+    ) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }
@@ -452,7 +457,6 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::RangeType; }
 };
 
-
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
     explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
@@ -464,18 +468,16 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };
 
-struct srcc::StructField {
-    Type ty;
-    Size offset;
-};
-
 /// Layout representing a struct type.
-class srcc::StructLayout final : TrailingObjects<StructLayout, StructField> {
+class srcc::StructLayout final : TrailingObjects<StructLayout, Type, Size> {
     friend TrailingObjects;
 
     Size sz;
     u32 num_fields;
     Align alignment;
+
+    auto numTrailingObjects(OverloadToken<Type>) const { return num_fields; }
+    auto numTrailingObjects(OverloadToken<Size>) const { return num_fields; }
 
     StructLayout(Size sz, Align alignment, u32 num_fields)
         :  sz{sz}, num_fields{num_fields}, alignment{alignment} {}
@@ -492,10 +494,13 @@ public:
     auto array_size()  const -> Size { return sz.align(alignment); }
 
     /// Get the fields.
-    auto fields() const -> ArrayRef<StructField> { return {getTrailingObjects(), num_fields}; }
+    auto fields() const -> ArrayRef<Type> { return getTrailingObjects<Type>(num_fields); }
 
     /// Get the offset of a field.
-    auto offset(u32 field_index) -> Size { return getTrailingObjects()[field_index].offset; }
+    auto offset(u32 field_index) -> Size { return getTrailingObjects<Size>(num_fields)[field_index]; }
+
+    /// Get the field offsets.
+    auto offsets() -> ArrayRef<Size> { return getTrailingObjects<Size>(num_fields); }
 
     /// Get the size of a single instance of this type; this does
     /// *not* include tail padding (use 'array_size()' instead for

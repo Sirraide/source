@@ -1,110 +1,10 @@
-// R %srcc --llvm %s
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
 program test;
 
-// * @0 = private unnamed_addr constant [5 x i8] c"%.*s\00", align 1
-// + @1 = private unnamed_addr constant [10 x i8] c"d = true\0A\00", align 1
-// + @2 = private unnamed_addr constant [11 x i8] c"d = false\0A\00", align 1
-// + @3 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-
-// * define fastcc void @__src_main() {
-// + entry:
-// +   call fastcc void @_S1xFviibE(i64 1, i64 2, i1 true)
-// +   call fastcc void @_S1xFviibE(i64 2, i64 1, i1 false)
-// +   ret void
-// + }
 x(1, 2, true);
 x(2, 1, false);
 
-// * define private fastcc void @_S1xFviibE(i64 %0, i64 %1, i1 %2) {
-// + entry:
-// +   %3 = alloca i64, align 8
-// +   %4 = alloca i64, align 8
-// +   %5 = alloca i1, align 1
-// +   store i64 %0, ptr %3, align 8
-// +   store i64 %1, ptr %4, align 8
-// +   store i1 %2, ptr %5, align 1
-// +   %6 = load i1, ptr %5, align 1
-// +   br i1 %6, label %bb1, label %bb2
-// +
-// + bb1:
-// +   %7 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
-// +   br label %bb3
-// +
-// + bb2:
-// +   %8 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
-// +   br label %bb3
-// +
-// + bb3:
-// +   %9 = load i1, ptr %5, align 1
-// +   br i1 %9, label %bb4, label %bb5
-// +
-// + bb4:
-// +   br label %bb6
-// +
-// + bb5:
-// +   br label %bb6
-// +
-// + bb6:
-// +   %10 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %bb4 ], [ { ptr @2, i64 10 }, %bb5 ]
-// +   %11 = extractvalue { ptr, i64 } %10, 1
-// +   %12 = trunc i64 %11 to i32
-// +   %13 = extractvalue { ptr, i64 } %10, 0
-// +   %14 = call i32 (ptr, ...) @printf(ptr @0, i32 %12, ptr %13)
-// +   %15 = load i1, ptr %5, align 1
-// +   br i1 %15, label %bb7, label %bb8
-// +
-// + bb7:
-// +   br label %bb9
-// +
-// + bb8:
-// +   br label %bb9
-// +
-// + bb9:
-// +   %16 = phi ptr [ %5, %bb7 ], [ %5, %bb8 ]
-// +   %17 = load i64, ptr %3, align 8
-// +   %18 = load i64, ptr %4, align 8
-// +   %19 = icmp slt i64 %17, %18
-// +   br i1 %19, label %bb10, label %bb11
-// +
-// + bb10:
-// +   br label %bb12
-// +
-// + bb11:
-// +   br label %bb12
-// +
-// + bb12:
-// +   %20 = phi i1 [ false, %bb10 ], [ true, %bb11 ]
-// +   store i1 %20, ptr %16, align 1
-// +   %21 = load i1, ptr %5, align 1
-// +   br i1 %21, label %bb13, label %bb14
-// +
-// + bb13:
-// +   %22 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
-// +   br label %bb15
-// +
-// + bb14:
-// +   %23 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
-// +   br label %bb15
-// +
-// + bb15:
-// +   %24 = load i1, ptr %5, align 1
-// +   br i1 %24, label %bb16, label %bb17
-// +
-// + bb16:
-// +   br label %bb18
-// +
-// + bb17:
-// +   br label %bb18
-// +
-// + bb18:
-// +   %25 = phi { ptr, i64 } [ { ptr @1, i64 9 }, %bb16 ], [ { ptr @2, i64 10 }, %bb17 ]
-// +   %26 = extractvalue { ptr, i64 } %25, 1
-// +   %27 = trunc i64 %26 to i32
-// +   %28 = extractvalue { ptr, i64 } %25, 0
-// +   %29 = call i32 (ptr, ...) @printf(ptr @0, i32 %27, ptr %28)
-// +   %30 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @3)
-// +   ret void
-// + }
 proc x(int a, int b, bool d) {
     if d then __srcc_print("d = true\n")
     else __srcc_print("d = false\n");
@@ -119,4 +19,228 @@ proc x(int a, int b, bool d) {
     __srcc_print("\n");
 }
 
+// * @0 = "%.*s"
+// + @1 = "d = true\n"
+// + @2 = "%.*s"
+// + @3 = "d = false\n"
+// + @4 = "%.*s"
+// + @5 = "d = true\n"
+// + @6 = "d = false\n"
+// + @7 = "%.*s"
+// + @8 = "d = true\n"
+// + @9 = "%.*s"
+// + @10 = "d = false\n"
+// + @11 = "%.*s"
+// + @12 = "d = true\n"
+// + @13 = "d = false\n"
+// + @14 = "%.*s"
+// + @15 = "\n"
+// +
+// + proc __src_main {
+// + entry:
+// +     call void _S1xFviibE(int 1, int 2, true)
+// +     call void _S1xFviibE(int 2, int 1, false)
+// +     ret
+// + }
+// +
+// + proc _S1xFviibE (int %0, int %1, bool %2) {
+// +     %3 = int, align 8
+// +     %4 = int, align 8
+// +     %5 = bool, align 1
+// +
+// + entry:
+// +     store int to %3, %0, align 8
+// +     store int to %4, %1, align 8
+// +     store bool to %5, %2
+// +     %6 = load bool, %5
+// +     br %6 to bb1 else bb2
+// +
+// + bb1:
+// +     %7 = call i32 printf(@0, i32 9, @1)
+// +     br bb3
+// +
+// + bb2:
+// +     %8 = call i32 printf(@2, i32 10, @3)
+// +     br bb3
+// +
+// + bb3:
+// +     %9 = load bool, %5
+// +     br %9 to bb4 else bb5
+// +
+// + bb4:
+// +     br bb6(@5, int 9)
+// +
+// + bb5:
+// +     br bb6(@6, int 10)
+// +
+// + bb6(i8^ %10, int %11):
+// +     %12 = trunc %11 to i32
+// +     %13 = call i32 printf(@4, %12, %10)
+// +     %14 = load bool, %5
+// +     br %14 to bb7 else bb8
+// +
+// + bb7:
+// +     br bb9(%5)
+// +
+// + bb8:
+// +     br bb9(%5)
+// +
+// + bb9(bool^ %15):
+// +     %16 = load int, %3, align 8
+// +     %17 = load int, %4, align 8
+// +     %18 = icmp slt %16, %17
+// +     br %18 to bb10 else bb11
+// +
+// + bb10:
+// +     br bb12(false)
+// +
+// + bb11:
+// +     br bb12(true)
+// +
+// + bb12(bool %19):
+// +     store bool to %15, %19
+// +     %20 = load bool, %5
+// +     br %20 to bb13 else bb14
+// +
+// + bb13:
+// +     %21 = call i32 printf(@7, i32 9, @8)
+// +     br bb15
+// +
+// + bb14:
+// +     %22 = call i32 printf(@9, i32 10, @10)
+// +     br bb15
+// +
+// + bb15:
+// +     %23 = load bool, %5
+// +     br %23 to bb16 else bb17
+// +
+// + bb16:
+// +     br bb18(@12, int 9)
+// +
+// + bb17:
+// +     br bb18(@13, int 10)
+// +
+// + bb18(i8^ %24, int %25):
+// +     %26 = trunc %25 to i32
+// +     %27 = call i32 printf(@11, %26, %24)
+// +     %28 = call i32 printf(@14, i32 1, @15)
+// +     ret
+// + }
+// +
+// + proc printf (i8^ %0) native variadic -> i32;
 
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + @0 = private unnamed_addr constant [5 x i8] c"%.*s\00", align 1
+//L + @1 = private unnamed_addr constant [10 x i8] c"d = true\0A\00", align 1
+//L + @2 = private unnamed_addr constant [11 x i8] c"d = false\0A\00", align 1
+//L + @3 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
+//L +
+//L + ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
+//L +
+//L + define fastcc void @__src_main() {
+//L + entry:
+//L +   call fastcc void @_S1xFviibE(i64 1, i64 2, i1 true)
+//L +   call fastcc void @_S1xFviibE(i64 2, i64 1, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1xFviibE(i64 %0, i64 %1, i1 zeroext %2) {
+//L + entry:
+//L +   %3 = alloca i64, align 8
+//L +   %4 = alloca i64, align 8
+//L +   %5 = alloca i1, align 1
+//L +   store i64 %0, ptr %3, align 8
+//L +   store i64 %1, ptr %4, align 8
+//L +   store i1 %2, ptr %5, align 1
+//L +   %6 = load i1, ptr %5, align 1
+//L +   br i1 %6, label %bb1, label %bb2
+//L +
+//L + bb1:                                              ; preds = %entry
+//L +   %7 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
+//L +   br label %bb3
+//L +
+//L + bb2:                                              ; preds = %entry
+//L +   %8 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
+//L +   br label %bb3
+//L +
+//L + bb3:                                              ; preds = %bb2, %bb1
+//L +   %9 = load i1, ptr %5, align 1
+//L +   br i1 %9, label %bb4, label %bb5
+//L +
+//L + bb4:                                              ; preds = %bb3
+//L +   br label %bb6
+//L +
+//L + bb5:                                              ; preds = %bb3
+//L +   br label %bb6
+//L +
+//L + bb6:                                              ; preds = %bb5, %bb4
+//L +   %10 = phi ptr [ @1, %bb4 ], [ @2, %bb5 ]
+//L +   %11 = phi i64 [ 9, %bb4 ], [ 10, %bb5 ]
+//L +   %12 = trunc i64 %11 to i32
+//L +   %13 = call i32 (ptr, ...) @printf(ptr @0, i32 %12, ptr %10)
+//L +   %14 = load i1, ptr %5, align 1
+//L +   br i1 %14, label %bb7, label %bb8
+//L +
+//L + bb7:                                              ; preds = %bb6
+//L +   br label %bb9
+//L +
+//L + bb8:                                              ; preds = %bb6
+//L +   br label %bb9
+//L +
+//L + bb9:                                              ; preds = %bb8, %bb7
+//L +   %15 = phi ptr [ %5, %bb7 ], [ %5, %bb8 ]
+//L +   %16 = load i64, ptr %3, align 8
+//L +   %17 = load i64, ptr %4, align 8
+//L +   %18 = icmp slt i64 %16, %17
+//L +   br i1 %18, label %bb10, label %bb11
+//L +
+//L + bb10:                                             ; preds = %bb9
+//L +   br label %bb12
+//L +
+//L + bb11:                                             ; preds = %bb9
+//L +   br label %bb12
+//L +
+//L + bb12:                                             ; preds = %bb11, %bb10
+//L +   %19 = phi i1 [ false, %bb10 ], [ true, %bb11 ]
+//L +   store i1 %19, ptr %15, align 1
+//L +   %20 = load i1, ptr %5, align 1
+//L +   br i1 %20, label %bb13, label %bb14
+//L +
+//L + bb13:                                             ; preds = %bb12
+//L +   %21 = call i32 (ptr, ...) @printf(ptr @0, i32 9, ptr @1)
+//L +   br label %bb15
+//L +
+//L + bb14:                                             ; preds = %bb12
+//L +   %22 = call i32 (ptr, ...) @printf(ptr @0, i32 10, ptr @2)
+//L +   br label %bb15
+//L +
+//L + bb15:                                             ; preds = %bb14, %bb13
+//L +   %23 = load i1, ptr %5, align 1
+//L +   br i1 %23, label %bb16, label %bb17
+//L +
+//L + bb16:                                             ; preds = %bb15
+//L +   br label %bb18
+//L +
+//L + bb17:                                             ; preds = %bb15
+//L +   br label %bb18
+//L +
+//L + bb18:                                             ; preds = %bb17, %bb16
+//L +   %24 = phi ptr [ @1, %bb16 ], [ @2, %bb17 ]
+//L +   %25 = phi i64 [ 9, %bb16 ], [ 10, %bb17 ]
+//L +   %26 = trunc i64 %25 to i32
+//L +   %27 = call i32 (ptr, ...) @printf(ptr @0, i32 %26, ptr %24)
+//L +   %28 = call i32 (ptr, ...) @printf(ptr @0, i32 1, ptr @3)
+//L +   ret void
+//L + }
+//L +
+//L + declare i32 @printf(ptr, ...)
+//L +
+//L + attributes #0 = { noreturn nounwind }

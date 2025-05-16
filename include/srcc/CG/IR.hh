@@ -99,18 +99,26 @@ private:
     Kind k;
 
 protected:
-    Value(Kind k, Type ty, u32 bits = 0) : ty{ty}, value_bits{bits}, k{k} {}
+    Value(Kind k, Type ty, u32 bits = 0) : ty{ty}, value_bits{bits}, k{k} {
+        Assert(ty, "Value has null type; use void instead");
+    }
 
 public:
     [[nodiscard]] auto as_int(TranslationUnit& tu) -> std::optional<APInt>;
+    [[nodiscard]] bool is_nil() const;
     [[nodiscard]] auto kind() const { return k; }
     [[nodiscard]] auto type() const { return ty; }
+    void dump(TranslationUnit& tu) const;
 
     template <typename Visitor>
     auto visit(Visitor&& visitor) const -> decltype(auto);
 };
 
 struct Managed {
+    LIBBASE_IMMOVABLE(Managed);
+protected:
+    Managed() = default;
+public:
     void* operator new(usz) = delete;
     void* operator new(usz, Builder&);
 };
@@ -272,6 +280,22 @@ public:
     [[nodiscard]] auto operator[](usz idx) { return arguments[idx]; }
 };
 
+/// Call instruction.
+class CallInst : public Inst {
+    friend Builder;
+    friend Inst;
+    ProcType* proc_ty;
+    Ptr<Value> env;
+    Type res;
+    CallInst(Builder& b, ProcType* callee_type, Type result, ArrayRef<Value*> args, Ptr<Value> env)
+        : Inst(b, Op::Call, args), proc_ty{callee_type}, env{env}, res{result} {}
+
+public:
+    [[nodiscard]] auto environment() const -> Ptr<Value> { return env; }
+    [[nodiscard]] auto proc_type() const -> ProcType* { return proc_ty; }
+    static bool classof(const Inst* v) { return v->opcode() == Op::Call; }
+};
+
 /// Integral cast instructions also take a type.
 class ICast : public Inst {
     friend Builder;
@@ -344,7 +368,8 @@ class BranchInst : public Inst {
     Block* then_block;
     Block* else_block;
 
-    BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget else_);
+    BranchInst(Builder& b, u32 then_args_num, ArrayRef<Value*> args, Block* then, Block* else_)
+        : Inst(b, Op::Br, args), then_args_num{then_args_num}, then_block{then},  else_block {else_} {}
 
 public:
     auto cond() const -> Value* { return is_conditional() ? args().front() : nullptr; }
@@ -396,17 +421,24 @@ class Block : public Value {
     friend Builder;
     friend Proc;
 
+    /// Parent procedure.
     Proc* p = nullptr;
+
+    /// Instructions in this block.
     SmallVector<Inst*> insts;
-    SmallVector<Type, 6> arg_types;
-    SmallVector<Argument*> arg_vals;
+
+    /// Arguments with aggregates split.
+    SmallVector<Argument*> split_args;
+
+    /// Logical arguments; these can contain aggregates.
+    SmallVector<Value*> logical_args;
 
     Block() : Value(Kind::Block, Type::VoidTy) {}
 
 public:
-    auto arg(u32 idx) -> Argument* { return arg_vals[idx]; }
-    auto arguments() -> ArrayRef<Argument*> { return arg_vals; }
-    auto argument_types() -> ArrayRef<Type> { return arg_types; }
+    auto arg(u32 idx) -> Value* { return logical_args[idx]; }
+    auto arguments() -> ArrayRef<Value*> { return logical_args; }
+    auto split_arguments() -> ArrayRef<Argument*> { return split_args; }
     bool closed() const;
     auto front() -> Inst* { return insts.front(); }
     auto instructions() const -> ArrayRef<Inst*> { return insts; }
@@ -441,8 +473,8 @@ private:
     SmallVector<Argument*> arguments;
     SmallVector<FrameSlot*> frame_info;
 
-    Proc(String mangled_name, ProcType* ty, Linkage link)
-        : Value{Kind::Proc, ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
+    Proc(Type ptr_ty, String mangled_name, ProcType* ty, Linkage link)
+        : Value{Kind::Proc, ptr_ty}, mangled_name{mangled_name}, ty{ty}, link{link} {}
 
 public:
     ParamAttrMap param_attrs;
@@ -460,7 +492,7 @@ public:
     auto frame() const -> ArrayRef<FrameSlot*> { return frame_info; }
     auto linkage() const -> Linkage { return link; }
     auto name() const -> String { return mangled_name; }
-    auto type() const -> ProcType* { return ty; }
+    auto proc_type() const -> ProcType* { return ty; }
 
     static bool classof(const Value* v) { return v->kind() == Kind::Proc; }
 };
@@ -499,8 +531,7 @@ private:
     SmallVector<std::unique_ptr<LargeInt>> large_ints;
     BuiltinConstant true_val{BuiltinConstantKind::True, Type::BoolTy};
     BuiltinConstant false_val{BuiltinConstantKind::False, Type::BoolTy};
-    DenseMap<u32, StructLayout*> range_layouts;
-    StructLayout* slice_layout{};
+    DenseMap<Type, StructLayout*> arvalue_layouts;
     StructLayout* closure_layout{};
 
 public:
@@ -525,6 +556,7 @@ public:
     auto CreateAShr(Value* a, Value* b) -> Value*;
     auto CreateAbort(AbortReason reason, Location loc, Aggregate* msg1, Aggregate* msg2) -> void;
     auto CreateAdd(Value* a, Value* b, bool nowrap = false) -> Value*;
+    auto CreateAggregate(Type ty, StructLayout* layout, ArrayRef<Value*> vals) -> Aggregate*;
     auto CreateAlloca(Proc* parent, Type ty, Align align = {}) -> Value*;
     auto CreateAlloca(Proc* parent, Size sz, Align align) -> Value*;
     auto CreateAnd(Value* a, Value* b) -> Value*;
@@ -534,7 +566,8 @@ public:
     auto CreateBlock(Proc* proc, ArrayRef<Type> args) -> Block*;
     auto CreateBool(bool value) -> Value*;
     auto CreateBr(Block* dest, ArrayRef<Value*> args = {}) -> void;
-    auto CreateCall(Value* callee, ArrayRef<Value*> args) -> Value*;
+    auto CreateCall(Proc* callee, ArrayRef<Value*> args) -> Value*;
+    auto CreateCall(ProcType* ty, Value* callee, ArrayRef<Value*> args, ArrayRef<Type> results, Ptr<Value> env) -> Value*;
     auto CreateClosure(Proc* proc, Value* env = nullptr) -> Aggregate*;
     auto CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) -> void;
     auto CreateGlobalConstantPtr(Type ty, String s) -> GlobalConstant*;
@@ -583,14 +616,14 @@ public:
 
 private:
     template <std::derived_from<Inst> InstTy, typename ...Args>
-    auto CreateImpl(Args&&... args) -> Inst*;
+    auto CreateImpl(Args&&... args) -> InstTy*;
 
     template <std::derived_from<Inst> InstTy, typename ...Args>
     auto CreateSpecialGetVal(Type val_ty, Args&&... args) -> Value*;
 
     auto Create(Op op, ArrayRef<Value*> vals) -> Inst*;
-    auto CreateAggregate(Type ty, StructLayout* layout, ArrayRef<Value*> vals) -> Aggregate*;
     auto CreateAndGetVal(Op op, Type ty, ArrayRef<Value*> vals) -> InstValue*;
+    void CreateBranchInst(Value* cond, BranchTarget then, BranchTarget else_);
     auto Fold(Value* lhs, Value* rhs, llvm::function_ref<u64(u64, u64)> op) -> Value*;
     auto Result(Inst* i, Type ty, u32 idx) -> InstValue*;
 };

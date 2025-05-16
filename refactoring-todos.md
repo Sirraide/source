@@ -10,6 +10,7 @@
     it; if this ever causes problems, we need to instead create a `StructCopyExpr` or sth like that
     which has an lvalue subexpression and which is an mrvalue that codegen can create a memcpy for.
 
+- TODO: Support shebangs (i.e. if the two bytes of a file are '#!', just skip to the next '\n')
 
 - ARValues
   Introduce a new value category to deal with values that are too large to fit in a single register,

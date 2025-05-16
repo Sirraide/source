@@ -518,11 +518,9 @@ auto Sema::BuildConversionSequence(
     // pretend that we have one.
     auto a = args.empty() ? nullptr : args.front();
     if (a and a->type == Type::NoReturnTy) {
-        if (in_call) {
-            auto cat = var_type->pass_by_reference(intent) ? ValueCategory::LValue : var_type->rvalue_category();
-            if (var_type != Type::NoReturnTy or a->value_category != cat)
-                seq.add(Conversion::Poison(var_type, cat));
-        }
+        auto cat = in_call and var_type->pass_by_reference(intent) ? ValueCategory::LValue : var_type->rvalue_category();
+        if (var_type != Type::NoReturnTy or a->value_category != cat)
+            seq.add(Conversion::Poison(var_type, cat));
         return seq;
     }
 

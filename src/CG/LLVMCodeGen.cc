@@ -37,6 +37,7 @@ class cg::LLVMCodeGen : DiagsProducer<std::nullptr_t>, llvm::IRBuilder<> {
     DenseMap<ir::Block*, BlockInfo> blocks;
     DenseMap<ir::Inst*, llvm::Value*> instructions;
     DenseMap<ir::FrameSlot*, llvm::AllocaInst*> frame_slots;
+    ir::Proc* curr_proc = nullptr;
     llvm::Function* curr_func = nullptr;
 
 public:
@@ -50,7 +51,7 @@ private:
     auto ConvertType(Type ty, bool array_elem = false) -> Ty*;
     auto ConvertTypeForMem(Type ty) -> llvm::Type*;
     auto ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type*;
-    auto ConvertProcType(ProcType* ty) -> llvm::FunctionType*;
+    auto ConvertProcType(ProcType* ty, bool add_env_ptr = false) -> llvm::FunctionType*;
     auto DeclareProc(ir::Proc* proc) -> llvm::FunctionCallee;
     auto Emit(ir::Inst& i) -> llvm::Value*;
     auto Emit(ir::Value* v) -> llvm::Value*;
@@ -132,6 +133,13 @@ auto ConvertLinkage(Linkage lnk) -> llvm::GlobalValue::LinkageTypes {
 
     Unreachable("Unknown linkage");
 }
+
+auto P(llvm::Type* ty) -> std::string {
+    std::string s;
+    llvm::raw_string_ostream os{s};
+    ty->print(os, true);
+    return s;
+}
 }
 
 // ============================================================================
@@ -145,9 +153,9 @@ auto LLVMCodeGen::ConvertType(Type ty, bool array_elem) -> Ty* {
 auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
     Assert(ty, "Null type in codegen");
     switch (ty->kind()) {
+        case TypeBase::Kind::ProcType: Unreachable("Call ConvertTypeForMem() or ConvertProcType() instead");
         case TypeBase::Kind::SliceType: return SliceTy;
         case TypeBase::Kind::PtrType: return PtrTy;
-        case TypeBase::Kind::ProcType: return ConvertProcType(cast<ProcType>(ty));
         case TypeBase::Kind::IntType: return getIntNTy(u32(cast<IntType>(ty)->bit_width().bits()));
 
         case TypeBase::Kind::RangeType: {
@@ -166,7 +174,7 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
         case TypeBase::Kind::IRAggregateType: {
             SmallVector<llvm::Type*> fields;
             for (auto f : cast<IRAggregateType>(ty)->layout()->fields())
-                fields.push_back(ConvertTypeForMem(f.ty));
+                fields.push_back(ConvertTypeForMem(f));
             return llvm::StructType::get(llvm->getContext(), fields);
         }
 
@@ -203,16 +211,41 @@ auto LLVMCodeGen::ConvertTypeImpl(Type ty, bool array_elem) -> llvm::Type* {
 }
 
 auto LLVMCodeGen::ConvertTypeForMem(Type ty) -> llvm::Type* {
-    if (isa<ProcType>(ty)) return ClosureTy; // Convert procedure types to closures.
+    // Convert procedure types to closures.
+    if (isa<ProcType>(ty)) return ClosureTy;
+
+    // Convert >128 bit integers to arrays.
+    // FIXME: Should this happen in codegen, i.e. is it platform-dependent?
+    if (ty->is_integer()) {
+        auto sz = ty->size(cg.tu);
+        if (sz > Size::Bytes(128)) return llvm::ArrayType::get(getInt8Ty(), sz.bytes());
+    }
+
     return ConvertType(ty);
 }
 
-auto LLVMCodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
-    auto ret = ConvertType(ty->ret());
+auto LLVMCodeGen::ConvertProcType(ProcType* ty, bool add_env_ptr) -> llvm::FunctionType* {
+    auto ret = ConvertTypeForMem(ty->ret());
+    DebugAssert(
+        llvm::FunctionType::isValidReturnType(ret),
+        "Not a valid LLVM return type: {} (from {})",
+        P(ret),
+        ty->ret()
+    );
+
     SmallVector<llvm::Type*> args;
     for (const auto& p : ty->params()) {
-        args.push_back(ConvertType(p.type));
+        auto a = ConvertTypeForMem(p.type);
+        args.push_back(a);
+        DebugAssert(
+            llvm::FunctionType::isValidArgumentType(a),
+            "Not a valid LLVM argument type: {} (from {})",
+            P(a),
+            p.type
+        );
     }
+
+    if (add_env_ptr) args.push_back(getPtrTy());
     return llvm::FunctionType::get(ret, args, ty->variadic());
 }
 
@@ -221,8 +254,8 @@ auto LLVMCodeGen::ConvertProcType(ProcType* ty) -> llvm::FunctionType* {
 // ============================================================================
 auto LLVMCodeGen::DeclareProc(ir::Proc* proc) -> llvm::FunctionCallee {
     if (auto f = llvm->getFunction(proc->name())) return f;
-    auto ty = proc->type();
-    auto callee = llvm->getOrInsertFunction(proc->name(), ConvertType<llvm::FunctionType>(ty));
+    auto ty = proc->proc_type();
+    auto callee = llvm->getOrInsertFunction(proc->name(), ConvertProcType(ty));
     auto func = cast<llvm::Function>(callee.getCallee());
     func->setCallingConv(ConvertCC(ty->cconv()));
     func->setLinkage(ConvertLinkage(proc->linkage()));
@@ -230,10 +263,11 @@ auto LLVMCodeGen::DeclareProc(ir::Proc* proc) -> llvm::FunctionCallee {
 }
 
 void LLVMCodeGen::emit(ir::Proc* proc) {
+    curr_proc = proc;
     curr_func = cast<llvm::Function>(DeclareProc(proc).getCallee());
 
     // Propagate 'noreturn'.
-    if (proc->type()->ret() == Type::NoReturnTy)
+    if (proc->proc_type()->ret() == Type::NoReturnTy)
         curr_func->setDoesNotReturn();
 
     // Process attributes.
@@ -279,8 +313,8 @@ void LLVMCodeGen::emit(ir::Proc* proc) {
         // Create a PHI for each block argument.
         SetInsertPoint(bb);
         SmallVector<llvm::PHINode*> args;
-        for (auto arg : b->argument_types())
-            args.push_back(CreatePHI(ConvertType(arg), 0));
+        for (auto arg : b->split_arguments())
+            args.push_back(CreatePHI(ConvertType(arg->type()), 0));
 
         // Store the block for later.
         blocks[b] = {bb, args};
@@ -310,7 +344,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
 
         // Special instructions.
         case Op::Abort: {
-            auto a = cast<ir::AbortInst>(i);
+            auto& a = cast<ir::AbortInst>(i);
             SmallVector<llvm::Value*> args;
 
             // Get file, line, and column. Don’t require a valid location here as
@@ -350,7 +384,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
             };
 
             // Emit then args.
-            auto b = cast<ir::BranchInst>(i);
+            auto& b = cast<ir::BranchInst>(i);
             auto then = blocks.at(b.then());
             AddArgs(then, b.then_args());
 
@@ -366,30 +400,74 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         }
 
         case Op::Call: {
-            auto proc = i.args().front();
-            auto args = i.args().drop_front(1);
+            auto& c = cast<ir::CallInst>(i);
+            auto proc = c.args().front();
+            auto args = c.args().drop_front(1);
+            auto ty = c.proc_type();
 
-            // Callee is always a closure, even if it is a static call to
-            // a function with no environment.
-            auto callee = llvm::FunctionCallee(
-                ConvertType<llvm::FunctionType>(proc->type()),
-                CreateExtractValue(Emit(proc), 0)
-            );
+            // Emit the callee and environment.
+            auto callee = Emit(proc);
+            auto env = c.environment().present() ? Emit(c.environment().get()) : nullptr;
 
-            // Convert arguments.
+            // Emit the arguments.
             SmallVector<llvm::Value*> llvm_args;
             for (auto arg : args) llvm_args.push_back(Emit(arg));
 
-            // Call the function.
-            // TODO: C calling convention.
-            auto c =  CreateCall(callee, llvm_args);
-            c->setCallingConv(ConvertCC(cast<ProcType>(proc->type())->cconv()));
-            return c;
+            // Helper to create a call.
+            auto BuildCall = [&](llvm::FunctionType* ftype) {
+                DebugAssert(
+                    ftype->isVarArg() or ftype->params().size() == llvm_args.size(),
+                    "Argument count mismatch, got {}, wanted {}",
+                     llvm_args.size(),
+                     ftype->params().size()
+                );
+
+                for (auto [ty, arg] : llvm::zip(ftype->params(), llvm_args)) DebugAssert(
+                    ty == arg->getType(),
+                    "LLVM type mismatch in call, got {}, wanted {}",
+                    P(arg->getType()),
+                    P(ty)
+                );
+
+                auto call =  CreateCall(ftype, callee, llvm_args);
+                call->setCallingConv(ConvertCC(ty->cconv()));
+                return call;
+            };
+
+            // If there is no environment, just build the call.
+            if (not env) return BuildCall(ConvertProcType(c.proc_type()));
+
+            // Otherwise, we need to add the environment, but only if it is non-null,
+            // so we need to build a branch here.
+            auto then = llvm::BasicBlock::Create(getContext(), "", curr_func);
+            auto else_ = llvm::BasicBlock::Create(getContext(), "", curr_func);
+            auto join = llvm::BasicBlock::Create(getContext(), "", curr_func);
+            auto is_null = CreateICmpEQ(env, llvm::ConstantPointerNull::get(getPtrTy()));
+
+            // Env is null.
+            CreateCondBr(is_null, then, else_);
+            SetInsertPoint(then);
+            auto call1 = BuildCall(ConvertProcType(c.proc_type()));
+            CreateBr(join);
+
+            // Env is not null.
+            SetInsertPoint(else_);
+            llvm_args.push_back(env);
+            auto call2 = BuildCall(ConvertProcType(c.proc_type(), true));
+            CreateBr(join);
+
+            // Merge the two values.
+            SetInsertPoint(join);
+            if (call1->getType()->isVoidTy()) return nullptr;
+            auto phi = CreatePHI(call1->getType(), 2);
+            phi->addIncoming(call1, then);
+            phi->addIncoming(call2, else_);
+            return phi;
         }
 
         case Op::Load: {
-            auto m = cast<ir::MemInst>(i);
-            auto ty = ConvertTypeForMem(m.memory_type());
+            auto& m = cast<ir::MemInst>(i);
+            auto ty = ConvertType(m.memory_type()); // NOT ForMem(), because this is the RESULT type of the load.
             return CreateAlignedLoad(ty, Emit(m.ptr()), ConvertAlign(m.align()));
         }
 
@@ -404,7 +482,7 @@ auto LLVMCodeGen::Emit(ir::Inst& i) -> llvm::Value* {
         }
 
         case Op::Store: {
-            auto m = cast<ir::MemInst>(i);
+            auto& m = cast<ir::MemInst>(i);
             return CreateAlignedStore(Emit(m.value()), Emit(m.ptr()), ConvertAlign(m.align()));
         }
 
@@ -508,15 +586,17 @@ auto LLVMCodeGen::Emit(ir::Value* v) -> llvm::Value* {
         case K::LargeInt:
             return getInt(cast<ir::LargeInt>(v)->value());
 
-        case K::Proc: {
-            auto callee = DeclareProc(cast<ir::Proc>(v));
-            auto f = cast<llvm::Function>(callee.getCallee());
-            return llvm::ConstantStruct::get(ClosureTy, {f, llvm::ConstantPointerNull::get(PtrTy)});
-        }
+        case K::Proc:
+            return DeclareProc(cast<ir::Proc>(v)).getCallee();
 
         case K::SmallInt: {
+            // FIXME: If type()->size() ever rounds up to 64 bits, we need to retrieve
+            // the actual bit width here.
+            //
+            // FIXME: Or alternatively, just add i->type()->memory_size() vs i->type()->size().
             auto i = cast<ir::SmallInt>(v);
-            return getIntN(u32(i->type()->size(cg.tu).bits()), u64(i->value()));
+            auto x = getIntN(u32(i->type()->size(cg.tu).bits()), u64(i->value()));
+            return x;
         }
     }
 

@@ -522,7 +522,7 @@ bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
     for (auto arg : args) copy.push_back(Val(arg));
 
     // Now, copy in the values.
-    for (auto [slot, arg] : zip(block->arguments(), copy))
+    for (auto [slot, arg] : zip(block->split_arguments(), copy))
         Temp(slot) = std::move(arg);
 
     return true;
@@ -775,7 +775,7 @@ bool Eval::EvalLoop() {
 }
 
 auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue> {
-    auto ret = FFIType(proc->type()->ret());
+    auto ret = FFIType(proc->proc_type()->ret());
     if (not ret) return std::nullopt;
     SmallVector<ffi_type*> arg_types;
     for (auto a : args) {
@@ -786,7 +786,7 @@ auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<S
 
     ffi_cif cif{};
     ffi_status status{};
-    if (proc->type()->variadic()) {
+    if (proc->proc_type()->variadic()) {
         status = ffi_prep_cif_var(
             &cif,
             FFI_DEFAULT_ABI,
@@ -812,7 +812,7 @@ auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<S
 
     // Prepare space for the return type.
     SmallVector<std::byte, 64> ret_storage;
-    ret_storage.resize(proc->type()->ret()->size(vm.owner()).bytes());
+    ret_storage.resize(proc->proc_type()->ret()->size(vm.owner()).bytes());
 
     // Store the arguments to memory.
     SmallVector<void*> arg_values;
@@ -846,7 +846,7 @@ auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<S
     );
 
     // Retrieve the return value.
-    return FFILoadRes(ret_storage.data(), proc->type()->ret());
+    return FFILoadRes(ret_storage.data(), proc->proc_type()->ret());
 }
 
 auto Eval::FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue> {
@@ -1064,7 +1064,7 @@ bool Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
 
     // Allocate temporaries for instructions and block arguments.
     for (auto b : proc->blocks()) {
-        for (auto a : b->arguments()) frame.temporaries[Encode(a)] = {};
+        for (auto a : b->split_arguments()) frame.temporaries[Encode(a)] = {};
         for (auto i : b->instructions()) {
             for (auto [n, _] : enumerate(i->result_types())) {
                 frame.temporaries[Encode(i, u32(n))] = {};

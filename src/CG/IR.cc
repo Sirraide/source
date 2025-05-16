@@ -16,12 +16,11 @@ auto Managed::operator new(usz sz, Builder& b) -> void* {
 }
 
 Builder::Builder(TranslationUnit& tu) : tu{tu} {
-    slice_layout = StructLayout::Create(tu, {tu.I8PtrTy, Type::IntTy});
     closure_layout = StructLayout::Create(tu, {tu.I8PtrTy, tu.I8PtrTy});
 }
 
 template <std::derived_from<Inst> InstTy, typename... Args>
-auto Builder::CreateImpl(Args&&... args) -> Inst* {
+auto Builder::CreateImpl(Args&&... args) -> InstTy* {
     Assert(insert_point, "No insert point");
     auto i = new (*this) InstTy(*this, LIBBASE_FWD(args)...);
     insert_point->insts.push_back(i);
@@ -82,7 +81,6 @@ auto Builder::CreateAShr(Value* a, Value* b) -> Value* {
     return CreateAndGetVal(Op::AShr, a->type(), {a, b});
 }
 
-// TODO: Aggregates in block arguments need to be split.
 auto Builder::CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block> {
     SmallVector<Type, 3> types;
     for (auto arg : args) types.push_back(arg->type());
@@ -90,10 +88,25 @@ auto Builder::CreateBlock(ArrayRef<Value*> args) -> std::unique_ptr<Block> {
 }
 
 auto Builder::CreateBlock(ArrayRef<Type> args) -> std::unique_ptr<Block> {
+    u32 i = 0;
     auto b = std::unique_ptr<Block>(new Block);
-    append_range(b->arg_types, args);
-    for (auto [i, ty] : enumerate(b->arg_types))
-        b->arg_vals.push_back(new (*this) Argument(b.get(), u32(i), ty));
+    for (auto ty : args) {
+        if (not ty->is_arvalue()) {
+            b->split_args.push_back(new (*this) Argument(b.get(), u32(i++), ty));
+            b->logical_args.push_back(b->split_args.back());
+            continue;
+        }
+
+        SmallVector<Value*> vals;
+        auto layout = GetAggregateLayout(ty);
+        for (auto f : layout->fields()) {
+            b->split_args.push_back(new (*this) Argument(b.get(), u32(i++), f));
+            vals.push_back(b->split_args.back());
+        }
+
+        b->logical_args.push_back(CreateAggregate(ty, layout, vals));
+    }
+
     return b;
 }
 
@@ -106,23 +119,91 @@ auto Builder::CreateBool(bool value) -> Value* {
 }
 
 void Builder::CreateBr(Block* dest, ArrayRef<Value*> args) {
-    CreateImpl<BranchInst>(nullptr, BranchTarget{dest, args}, BranchTarget{});
+    BranchTarget tgt{dest, args};
+    CreateBranchInst(nullptr, tgt, BranchTarget{});
 }
 
-auto Builder::CreateCall(Value* callee, ArrayRef<Value*> args) -> Value* {
+void Builder::CreateBranchInst(Value* cond, BranchTarget then, BranchTarget else_) {
+    SmallVector<Value*, 16> args{};
+    auto Append = [&](Value* v) {
+        if (auto a = dyn_cast<Aggregate>(v)) append_range(args, a->fields());
+        else args.push_back(v);
+    };
+
+    // Add the condition; this is always a single value.
+    if (cond) args.push_back(cond);
+
+    // Add the then block args.
+    for (auto v : then.args) Append(v);
+    u32 then_args = u32(args.size() - (cond ? 1 : 0));
+
+    // Add the else block args.
+    for (auto v : else_.args) Append(v);
+
+    // Build the branch.
+    CreateImpl<BranchInst>(then_args, args, then.dest, else_.dest);
+}
+
+auto Builder::CreateCall(Proc* callee, ArrayRef<Value*> args) -> Value* {
+    return CreateCall(
+        callee->proc_type(),
+        callee,
+        args,
+        callee->proc_type()->ret(),
+        nullptr
+    );
+}
+
+auto Builder::CreateCall(
+    ProcType* proc,
+    Value* callee,
+    ArrayRef<Value*> args,
+    ArrayRef<Type> results,
+    Ptr<Value> env
+) -> Value* {
+    Assert(
+        results.size() != 0,
+        "Call that returns nothing should return void instead"
+    );
+
     SmallVector operands{callee};
     append_range(operands, args);
-    return CreateAndGetVal(Op::Call, cast<ProcType>(callee->type())->ret(), operands);
+    auto Create = [&](Type ret) {
+        return CreateImpl<CallInst>(proc, ret, operands, env);
+    };
+
+    // Drop the environment if we know for sure that it’s nil.
+    if (auto e = env.get_or_null(); e and e->is_nil()) env = nullptr;
+
+    // This call returns a single value.
+    if (results.size() == 1) {
+        auto ty = results.front();
+        if (ty == Type::VoidTy or ty == Type::NoReturnTy) {
+            Create(Type());
+            return nullptr;
+        }
+
+        return new (*this) InstValue(Create(ty), ty, 0);
+    }
+
+    // This call returns an aggregate.
+    auto ty = IRAggregateType::Get(tu, StructLayout::Create(tu, results));
+    auto call = Create(ty);
+    operands.clear();
+    for (auto [i, v] : enumerate(ty->layout()->fields()))
+        operands.push_back(new (*this) InstValue(call, v, u32(i)));
+    return CreateAggregate(ty, ty->layout(), operands);
 }
 
 auto Builder::CreateClosure(Proc* proc, Value* env) -> Aggregate* {
     if (not env) env = CreateNil(tu.I8PtrTy);
-    return CreateAggregate(proc->type(), closure_layout, {proc, env});
+    auto ty = proc->proc_type();
+    return CreateAggregate(ty, GetAggregateLayout(ty), {proc, env});
 }
 
 void Builder::CreateCondBr(Value* cond, BranchTarget then_block, BranchTarget else_block) {
     Assert(cond->type() == Type::BoolTy, "Branch condition must be a bool");
-    CreateImpl<BranchInst>(cond, then_block, else_block);
+    CreateBranchInst(cond, then_block, else_block);
 }
 
 auto Builder::CreateInt(APInt val, Type type) -> Value* {
@@ -209,7 +290,7 @@ auto Builder::CreateNil(Type ty) -> Value* {
     if (ty->is_arvalue()) {
         SmallVector<Value*> values;
         auto layout = GetAggregateLayout(ty);
-        for (auto f : layout->fields()) values.emplace_back(CreateNil(f.ty));
+        for (auto f : layout->fields()) values.emplace_back(CreateNil(f));
         return CreateAggregate(ty, layout, values);
     }
 
@@ -224,7 +305,7 @@ auto Builder::CreatePoison(Type ty) -> Value* {
     if (ty->is_arvalue()) {
         SmallVector<Value*> values;
         auto layout = GetAggregateLayout(ty);
-        for (auto f : layout->fields()) values.emplace_back(CreatePoison(f.ty));
+        for (auto f : layout->fields()) values.emplace_back(CreatePoison(f));
         return CreateAggregate(ty, layout, values);
     }
 
@@ -298,7 +379,7 @@ auto Builder::CreateSICast(Value* i, Type to_type) -> Value* {
 
 auto Builder::CreateSlice(Value* data, Value* size) -> Aggregate* {
     auto ty = SliceType::Get(tu, cast<PtrType>(data->type())->elem());
-    return CreateAggregate(ty, slice_layout, {data, size});
+    return CreateAggregate(ty, GetAggregateLayout(ty), {data, size});
 }
 
 auto Builder::CreateSMulOverflow(Value* a, Value* b) -> OverflowResult {
@@ -316,6 +397,10 @@ auto Builder::CreateSSubOverflow(Value* a, Value* b) -> OverflowResult {
 }
 
 void Builder::CreateStore(Type ty, Value* val, Value* ptr) {
+    // It’s easy to swap the parameters, so check for that.
+    Assert(isa<PtrType>(ptr->type()), "Cannot store to non-pointer");
+
+    // Storing nil is a memset to 0.
     if (auto b = dyn_cast<BuiltinConstant>(val); b and b->id == BuiltinConstantKind::Nil) {
         CreateMemZero(ptr, CreateInt(ty->size(tu).bytes()), ty->align(tu));
         return;
@@ -343,11 +428,11 @@ auto Builder::CreateGlobalStringSlice(String s) -> Aggregate* {
     auto data = CreateGlobalConstantPtr(tu.I8Ty, s);
     auto size = CreateInt(s.size(), Type::IntTy);
     data->string = true;
-    return CreateAggregate(tu.StrLitTy, slice_layout, {data, size});
+    return CreateAggregate(tu.StrLitTy, GetAggregateLayout(tu.StrLitTy), {data, size});
 }
 
 auto Builder::CreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
-    auto [it, inserted] = procs.try_emplace(s, std::unique_ptr<Proc>(new Proc(s, ty, link)));
+    auto [it, inserted] = procs.try_emplace(s, std::unique_ptr<Proc>(new Proc(tu.I8PtrTy, s, ty, link)));
     Assert(inserted, "Procedure with name '{}' already exists", s);
     auto proc = it->second.get();
     for (auto [i, p] : enumerate(ty->params())) {
@@ -407,18 +492,26 @@ auto Builder::Fold(
     return nullptr;
 }
 
+
 auto Builder::GetAggregateLayout(Type ty) -> StructLayout* {
     Assert(ty->is_arvalue());
-    if (isa<SliceType>(ty)) return slice_layout;
-    if (isa<ProcType>(ty)) return closure_layout;
-    if (auto s = dyn_cast<StructType>(ty)) return s->layout();
-    if (auto r = dyn_cast<RangeType>(ty)) {
-        auto& layout = range_layouts[u32(r->elem()->size(tu).bytes())];
-        if (not layout) layout = StructLayout::Create(tu, {r->elem(), r->elem()});
-        return layout;
-    }
 
-    Unreachable();
+#   define Compute(...) ComputeLayout([&]{ return std::array<Type, 2>{__VA_ARGS__}; })
+    auto ComputeLayout = [&](llvm::function_ref<std::array<Type, 2>()> get_els) -> StructLayout* {
+        auto layout = arvalue_layouts[ty];
+        if (not layout) layout = StructLayout::Create(tu, get_els());
+        return layout;
+    };
+
+    return ty->visit(utils::Overloaded{
+        [](auto*) -> StructLayout* { Unreachable(); },
+        [](StructType* s) { return s->layout(); },
+        [&](SliceType* s) { return Compute(PtrType::Get(tu, s->elem()), Type::IntTy); },
+        [&](ProcType*) { return closure_layout; },
+        [&](RangeType* r) { return Compute(r->elem(), r->elem()); },
+    });
+
+#   undef Compute
 }
 
 auto Builder::GetOrCreateProc(String s, Linkage link, ProcType* ty) -> Proc* {
@@ -434,9 +527,9 @@ auto Builder::GetExistingProc(StringRef name) -> Ptr<Proc> {
 
 auto Builder::LoadAggregate(StructLayout* layout, Value* ptr) -> Aggregate* {
     SmallVector<Value*> fields;
-    for (auto f : layout->fields()) {
-        ptr = CreatePtrAdd(ptr, f.offset);
-        fields.push_back(CreateLoad(f.ty, ptr));
+    for (auto [ty, offs] : zip(layout->fields(), layout->offsets())) {
+        ptr = CreatePtrAdd(ptr, offs);
+        fields.push_back(CreateLoad(ty, ptr));
     }
     return CreateAggregate(Type(), layout, fields);
 }
@@ -446,8 +539,8 @@ auto Builder::Result(Inst* i, Type ty, u32 idx) -> InstValue* {
 }
 
 void Builder::StoreAggregate(Value* ptr, StructLayout* layout, ArrayRef<Value*> fields) {
-    for (auto [f, val] : zip(layout->fields(), fields)) {
-        ptr = CreatePtrAdd(ptr, f.offset);
+    for (auto [offs, val] : zip(layout->offsets(), fields)) {
+        ptr = CreatePtrAdd(ptr, offs);
         CreateStore(val->type(), val, ptr);
     }
 }
@@ -478,16 +571,6 @@ bool Block::is_entry() const {
     return p and p->entry() == this;
 }
 
-BranchInst::BranchInst(Builder& b, Value* cond, BranchTarget then, BranchTarget else_)
-    : Inst(b, Op::Br, [&] {
-          SmallVector<Value*, 16> args{};
-          if (cond) args.push_back(cond);
-          append_range(args, then.args);
-          append_range(args, else_.args);
-          return args;
-      }()),
-      then_args_num(u32(then.args.size())), then_block(then.dest), else_block(else_.dest) {}
-
 Inst::Inst(Builder& b, Op op, ArrayRef<Value*> args, Align align)
     : arguments{args.copy(b.tu.allocator())}, op{op}, alignment{align} {
     DebugAssert(
@@ -513,8 +596,10 @@ auto Inst::result_types() const -> SmallVector<Type, 2> {
             return {};
 
         case Op::Call: {
-            auto t = cast<ProcType>(arguments[0]->type())->ret();
-            return t == Type::VoidTy or t == Type::NoReturnTy ? V{} : V{t};
+            auto c = cast<CallInst>(this);
+            if (not c->res) return V{};
+            if (auto a = dyn_cast<IRAggregateType>(c->res)) return V{a->layout()->fields()};
+            return V{c->res};
         }
 
         case Op::Load:
@@ -580,6 +665,11 @@ auto Value::as_int(TranslationUnit& tu) -> std::optional<APInt> {
     return val;
 }
 
+bool Value::is_nil() const {
+    auto b = dyn_cast<BuiltinConstant>(this);
+    return b and b->id == BuiltinConstantKind::Nil;
+}
+
 /// ====================================================================
 ///  Printing
 /// ====================================================================
@@ -599,7 +689,7 @@ public:
     void Dump(Builder& b);
     void DumpInst(Inst* i);
     void DumpProc(Proc* p);
-    auto DumpValue(Value* b) -> SmallUnrenderedString;
+    [[nodiscard]] auto DumpValue(Value* b) -> SmallUnrenderedString;
     bool ReturnsValue(Inst* i);
 
     auto Id(auto& map, auto* ptr) -> i64 {
@@ -699,19 +789,26 @@ void Printer::DumpInst(Inst* i) {
         } break;
 
         case Op::Call: {
+            auto c = cast<CallInst>(i);
             auto proc = i->args().front();
             auto args = i->args().drop_front(1);
-            auto ret = cast<ProcType>(proc->type())->ret();
-            if (args.empty()) {
-                out += std::format("%1(call%) {} {}", ret, DumpValue(proc));
-            } else {
+            auto ret = i->result_types();
+            out += "%1(call%) ";
+
+            if (ret.size() == 0) out += "%1(void%) ";
+            else if (ret.size() == 1) out += std::format("{} ", ret.front());
+            else out += std::format("%1(({})%) ", utils::join(ret));
+
+            out += DumpValue(proc);
+            if (not args.empty()) {
                 out += std::format(
-                    "%1(call%) {} {}({})",
-                    ret,
-                    DumpValue(proc),
+                    "({})",
                     utils::join_as(args, [&](Value* v) { return DumpValue(v); })
                 );
             }
+
+            if (auto env = c->environment().get_or_null())
+                out += std::format(", %1(env%) {}", DumpValue(env));
         } break;
 
         case Op::Load: {
@@ -777,7 +874,7 @@ void Printer::DumpInst(Inst* i) {
 void Printer::DumpProc(Proc* proc) {
     curr_proc = proc;
     if (not out.empty()) out += "\n";
-    out += proc->type()->print(proc->name(), true);
+    out += proc->proc_type()->print(proc->name(), true);
 
     // Stop if there is no body.
     if (proc->empty()) {
@@ -795,7 +892,7 @@ void Printer::DumpProc(Proc* proc) {
     for (auto* arg : proc->frame()) frame_ids[arg] = temp++;
     for (const auto& [id, b] : vws::enumerate(proc->blocks())) {
         block_ids[b] = id;
-        for (auto* arg : b->arguments())
+        for (auto* arg : b->split_arguments())
             arg_ids[arg] = temp++;
         for (auto* i : b->instructions())
             if (ReturnsValue(i))
@@ -815,8 +912,8 @@ void Printer::DumpProc(Proc* proc) {
     for (const auto& [i, b] : enumerate(proc->blocks())) {
         out += i == 0 ? "%3(entry%)%1(" : std::format("\n%3(bb{}%)%1(", i);
         if (not b->arguments().empty()) {
-            out += std::format("({})", utils::join_as(b->arguments(), [&](Argument* arg) {
-                return std::format("{} %3(%%{}%)", b->argument_types()[arg->index()], arg_ids.at(arg));
+            out += std::format("({})", utils::join_as(b->split_arguments(), [&](Argument* arg) {
+                return std::format("{} %3(%%{}%)", arg->type(), arg_ids.at(arg));
             }));
         }
         out += ":%)\n";
@@ -917,7 +1014,7 @@ void Inst::dump(TranslationUnit& tu) {
     Printer p{tu};
     p.DumpInst(this);
     p.out += "\n";
-    std::print("{}", text::RenderColours(true, p.out.str()));
+    std::print(stderr, "{}", text::RenderColours(true, p.out.str()));
 }
 
 auto Proc::attributes(u32 param_idx) const -> ParamAttrs {
@@ -930,5 +1027,14 @@ void Proc::dump(TranslationUnit& tu) {
     Printer p{tu};
     p.DumpProc(this);
     p.out += "\n";
-    std::print("{}", text::RenderColours(true, p.out.str()));
+    std::print(stderr, "{}", text::RenderColours(true, p.out.str()));
+}
+
+void Value::dump(TranslationUnit& tu) const {
+    Printer p{tu};
+    p.out += type()->print();
+    p.out += " ";
+    p.out += p.DumpValue(const_cast<Value*>(this));
+    p.out += "\n";
+    std::print(stderr, "{}", text::RenderColours(true, p.out.str()));
 }

@@ -29,7 +29,6 @@ public:
     /// Adjust a procedure type and convert it to something that conforms with
     /// the target ABI.
     [[nodiscard]] virtual auto adjust_procedure_type(
-        ProcDecl* decl,
         ProcType* ty
     ) -> std::pair<ProcType*, ir::Proc::ParamAttrMap> = 0;
 
@@ -57,6 +56,15 @@ public:
 
     /// Emit logical parameters.
     virtual void lower_params(ir::Proc* proc) = 0;
+
+protected:
+    /// Create an instance of a type from a set of values as passed or returned in
+    /// registers and a layout representing them.
+    [[nodiscard]] auto AssembleTypeFromRegisters(
+        Type ty,
+        StructLayout* register_layout,
+        ArrayRef<ir::Value*> register_vals
+    ) -> ir::Value*;
 };
 
 class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
@@ -149,7 +157,7 @@ public:
 
     auto DeclareAssertFailureHandler() -> ir::Value*;
     auto DeclareArithmeticFailureHandler() -> ir::Value*;
-    auto DeclarePrintf() -> ir::Value*;
+    auto DeclarePrintf() -> ir::Proc*;
     auto DeclareProcedure(ProcDecl* proc) -> ir::Proc*;
 
     void Emit(ArrayRef<ProcDecl*> procs);
@@ -218,7 +226,7 @@ public:
         ir::Value* cond,
         llvm::function_ref<ir::Value*()> emit_then,
         llvm::function_ref<ir::Value*()> emit_else
-    ) -> ArrayRef<ir::Argument*>;
+    ) -> ArrayRef<ir::Value*>;
 
     /// Check if the size of a type is zero; this also means that every
     /// instance of this type is (or would be) identical.

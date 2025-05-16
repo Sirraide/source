@@ -33,7 +33,7 @@ proc d (in bool x) {
 // + }
 // +
 // + proc _S1aFT1sE (i8^ %0) {
-// +     %1 = s
+// +     %1 = s, align 8
 // +
 // + entry:
 // +     store i64 to %1, i64 1, align 8
@@ -42,7 +42,7 @@ proc d (in bool x) {
 // + }
 // +
 // + proc _S1bFT1sxbE (i8^ %0, bool %1) {
-// +     %2 = s
+// +     %2 = s, align 8
 // +
 // + entry:
 // +     br %1 to bb1 else bb2
@@ -71,7 +71,7 @@ proc d (in bool x) {
 // + }
 // +
 // + proc _S1cFT1sxbE (i8^ %0, bool %1) {
-// +     %2 = s
+// +     %2 = s, align 8
 // +
 // + entry:
 // +     br %1 to bb1 else bb2
@@ -81,7 +81,7 @@ proc d (in bool x) {
 // +     br bb3
 // +
 // + bb2:
-// +     call void _S1aFT1sE(%2)
+// +     %3 = call s _S1aFT1sE(%2)
 // +     br bb3
 // +
 // + bb3:
@@ -92,7 +92,7 @@ proc d (in bool x) {
 // +     br bb6
 // +
 // + bb5:
-// +     call void _S1aFT1sE(%0)
+// +     %4 = call s _S1aFT1sE(%0)
 // +     br bb6
 // +
 // + bb6:
@@ -100,15 +100,15 @@ proc d (in bool x) {
 // + }
 // +
 // + proc _S1dFvxbE (bool %0) {
-// +     %1 = s
-// +     %2 = s
-// +     %3 = s
-// +     %4 = s
-// +     %5 = s
+// +     %1 = s, align 8
+// +     %2 = s, align 8
+// +     %3 = s, align 8
+// +     %4 = s, align 8
+// +     %5 = s, align 8
 // +
 // + entry:
 // +     store i64 to %1, i64 1, align 8
-// +     copy %2, %1, int 8
+// +     copy %2, %1, int 8, align 8
 // +     br %0 to bb1 else bb2
 // +
 // + bb1:
@@ -118,7 +118,7 @@ proc d (in bool x) {
 // +     br bb3(%2)
 // +
 // + bb3(s^ %6):
-// +     copy %3, %6, int 8
+// +     copy %3, %6, int 8, align 8
 // +     br %0 to bb4 else bb5
 // +
 // + bb4:
@@ -126,14 +126,14 @@ proc d (in bool x) {
 // +     br bb6
 // +
 // + bb5:
-// +     copy %4, %2, int 8
+// +     copy %4, %2, int 8, align 8
 // +     br bb6
 // +
 // + bb6:
 // +     br %0 to bb7 else bb8
 // +
 // + bb7:
-// +     copy %5, %1, int 8
+// +     copy %5, %1, int 8, align 8
 // +     br bb9
 // +
 // + bb8:
@@ -145,10 +145,10 @@ proc d (in bool x) {
 // + }
 
 //L * ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
 //L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + define fastcc void @__src_main() {
 //L + entry:

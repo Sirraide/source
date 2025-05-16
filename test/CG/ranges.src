@@ -24,6 +24,8 @@ proc f3 -> range<int> {
     return x;
 }
 
+proc f4 -> range<int> = f3();
+
 range<i13> x;
 
 // * proc __src_main {
@@ -139,17 +141,18 @@ range<i13> x;
 // +     %4 = load int, %3, align 8
 // +     ret %2, %4
 // + }
+// +
+// + proc _S2f4FqiE -> range<int> {
+// + entry:
+// +     %0 = call range<int> _S2f3FqiE
+// +     ret %0
+// + }
 
-//L * ; ModuleID = 'test'
-//L + source_filename = "test"
-//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-//L + target triple = "x86_64-unknown-linux-gnu"
+//L * ; Function Attrs: noreturn nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
 //L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
-//L +
-//L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + define fastcc void @__src_main() {
 //L + entry:
@@ -262,6 +265,12 @@ range<i13> x;
 //L +   %mrv = insertvalue { i64, i64 } poison, i64 %2, 0
 //L +   %mrv1 = insertvalue { i64, i64 } %mrv, i64 %4, 1
 //L +   ret { i64, i64 } %mrv1
+//L + }
+//L +
+//L + define private fastcc { i64, i64 } @_S2f4FqiE() {
+//L + entry:
+//L +   %0 = call fastcc { i64, i64 } @_S2f3FqiE()
+//L +   ret { i64, i64 } %0
 //L + }
 //L +
 //L + attributes #0 = { noreturn nounwind }
