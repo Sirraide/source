@@ -1339,6 +1339,7 @@ void CodeGen::dump(bool raw) {
     if (not raw) {
         mlir::PassManager pm{&mlir};
         pm.enableVerifier(true);
+        pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::createRemoveDeadValuesPass());
         if (pm.run(mlir_module).failed()) Fatal("Failed to run DCE pass");
     }

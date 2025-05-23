@@ -219,9 +219,8 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
     );
 
     let results = (outs Optional<SRCC_Type>:$res);
-    let hasCustomAssemblyFormat = 0;
-    let hasVerifier = 0;
-
+    let hasCustomAssemblyFormat = 1;
+    let hasCanonicalizeMethod = 1;
     let builders = [
         OpBuilder<(ins
             "ProcRefOp":$ref,
@@ -246,7 +245,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
     ];
 }
 
-def ExtractOp : SRCC_Op<"extract"> {
+def ExtractOp : SRCC_Op<"extract", [Pure]> {
     let summary = "Extract a value from a tuple";
     let arguments = (ins SRCC_Tuple:$tuple, Builtin_IntegerAttr:$index);
     let results = (outs SRCC_Type:$res);
@@ -293,13 +292,13 @@ def LoadOp : SRCC_Op<"load"> {
     ];
 }
 
-def NilOp : SRCC_Op<"nil"> {
+def NilOp : SRCC_Op<"nil", [Pure]> {
     let summary = "Create the nil value of a type";
     let results = (outs SRCC_Type:$res);
-    //let hasCustomAssemblyFormat = 1;
+    let hasCustomAssemblyFormat = 1;
 }
 
-def ProcRefOp : SRCC_Op<"procaddr"> {
+def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
     let summary = "Reference a procedure";
     let arguments = (ins SymbolNameAttr:$proc_name);
     let results = (outs SRCC_Type:$res);
@@ -410,7 +409,7 @@ def StoreOp : SRCC_Op<"store"> {
     ];
 }
 
-def TupleOp : SRCC_Op<"tuple"> {
+def TupleOp : SRCC_Op<"tuple", [Pure]> {
     let summary = "Create a tuple value";
     let arguments = (ins Variadic<SRCC_Type>:$values);
     let results = (outs SRCC_Tuple:$res);
