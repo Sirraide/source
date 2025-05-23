@@ -38,6 +38,7 @@ using options = clopts< // clang-format off
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
+    flag<"--ir-raw", "Run codegen and emit IR without running the verifier or dead code eliminiation">,
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
@@ -85,6 +86,7 @@ int main(int argc, char** argv) {
     // Figure out what we want to do.
     auto action = opts.get<"--eval">()        ? Action::Eval
                 : opts.get<"--dump-module">() ? Action::DumpModule
+                : opts.get<"--ir-raw">()      ? Action::DumpIRRaw
                 : opts.get<"--ir">()          ? Action::DumpIR
                 : opts.get<"--lex">()         ? Action::Lex
                 : opts.get<"--llvm">()        ? Action::EmitLLVM

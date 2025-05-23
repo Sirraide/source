@@ -3,6 +3,7 @@
 using namespace srcc;
 using namespace srcc::cg;
 
+/*
 auto CallLowering::AssembleTypeFromRegisters(
     Type ty,
     StructLayout* register_layout,
@@ -26,3 +27,4 @@ auto CallLowering::AssembleTypeFromRegisters(
     CG.StoreAggregate(temp, register_layout, register_vals);
     return CG.CreateLoad(ty, temp);
 }
+*/

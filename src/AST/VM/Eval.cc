@@ -19,6 +19,7 @@ using namespace srcc;
 using namespace srcc::eval;
 namespace ir = cg::ir;
 
+/*
 #define Val(x) (*({auto _v = ValImpl(x); if (not _v) return {}; _v.get(); }))
 #define TRY(x)                 \
     do {                       \
@@ -290,7 +291,7 @@ auto SRValue::print() const -> SmallUnrenderedString {
     visit(V);
     return out;
 }
-
+*/
 auto RValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
@@ -309,7 +310,7 @@ auto RValue::print() const -> SmallUnrenderedString {
     visit(V);
     return out;
 }
-
+/*
 // ============================================================================
 //  Helpers
 // ============================================================================
@@ -1218,6 +1219,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         [&](Type t) { return RValue(t); },
     });
 }
+*/
 
 // ============================================================================
 //  VM API
@@ -1253,6 +1255,7 @@ auto VM::eval(
     }
 
     // Otherwise, we need to do this the complicated way. Evaluate the statement.
-    Eval e{*this, complain};
-    return e.eval(stmt);
+    Todo();
+    /*Eval e{*this, complain};
+    return e.eval(stmt);*/
 } // clang-format on

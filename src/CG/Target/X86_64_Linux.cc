@@ -1,6 +1,6 @@
 #include <srcc/CG/CodeGen.hh>
 
-using namespace srcc;
+/*using namespace srcc;
 using namespace srcc::cg;
 
 namespace {
@@ -191,7 +191,7 @@ auto SourceLowering::adjust_procedure_type(ProcType* ty) -> std::pair<ProcType*,
         else if (ty->is_integer()) {
             auto sz = ty->size(CG.tu);
             if (sz.bits() < 32) attrs[idx].ll_signext = true;
-            else if (sz.bits() == 32 or sz.bits() == 64) { /** Nothing. **/ } else if (sz.bits() < 64) {
+            else if (sz.bits() == 32 or sz.bits() == 64) { /** Nothing. *#1# } else if (sz.bits() < 64) {
                 ty = CG.tu.I64Ty;
             } else if (sz.bits() <= 128) {
                 params.emplace_back(Intent::Copy, CG.tu.I64Ty);
@@ -383,4 +383,397 @@ auto SourceLowering::lower_call(
         ret_layout,
         cast<ir::Aggregate>(call)->fields()
     );
+}*/
+
+
+/*
+#include <srcc/CG/CodeGen.hh>
+
+using namespace srcc;
+using namespace srcc::cg;
+
+using ir::Ty;
+
+namespace {
+
+class GPRUsageTracker {
+    static constexpr u32 MaxGPRs = 6;
+    u32 gprs_in_use = 0;
+
+public:
+    void add_indirect_return_pointer() { gprs_in_use++; }
+    void add(ArgumentPassingMode m) {
+        switch (m) {
+            case ArgumentPassingMode::Register:
+            case ArgumentPassingMode::ZeroExt:
+            case ArgumentPassingMode::SignExt:
+            case ArgumentPassingMode::SignExtManual:
+            case ArgumentPassingMode::Pointer:
+                gprs_in_use++;
+
+            case ArgumentPassingMode::RegisterPair:
+                gprs_in_use += 2;
+
+            case ArgumentPassingMode::Memory:
+                break;
+        }
+    }
+
+    bool can_pass_register_pair() {
+        return gprs_in_use + 2 <= MaxGPRs;
+    }
+};
+
+/// Implements platform-agnostic call lowering for the Source calling convention.
+struct SourceLowering final : CallLowering {
+    DenseMap<Type, StructLayout*> layouts;
+    StructLayout* slice_layout = StructLayout::Create(CG.tu, {CG.tu.I8PtrTy, Type::IntTy});
+    StructLayout* closure_layout = StructLayout::Create(CG.tu, {CG.tu.I8PtrTy, CG.tu.I8PtrTy});
+
+    explicit SourceLowering(CodeGen& CG) : CallLowering(CG) {}
+
+    /// Compute a StructLayout for a type as it is split across registers; i.e.
+    /// multiple fields in the actual type may correspond to a single field in
+    /// the resulting layout and vice versa.
+    auto get_register_layout(Type ty) -> StructLayout*;
+
+    auto lower_call(
+        ProcType* ty,
+        ir::Value* callee,
+        Ptr<ir::Value> env,
+        ir::Value* mrvalue_slot,
+        ArrayRef<ir::Value*> args
+    ) -> Value override;
+
+    void lower_params(ir::Proc* proc) override;
+    auto lower_proc_type(ProcType* ty) -> ir::ProcTy* override;
+
+    /// Create an instance of a type from a set of values as passed or returned in
+    /// registers and a layout representing them.
+    [[nodiscard]] auto AssembleTypeFromRegisters(
+        Type ty,
+        StructLayout* register_layout,
+        ArrayRef<ir::Value*> register_vals
+    ) -> ir::Value*;
+
+    /// Classify a parameter to determine how it should be passed.
+    auto ClassifyParameter(Type ty, Intent i, GPRUsageTracker* gprs) -> ArgumentPassingMode;
+};
+} // namespace
+
+auto CodeGen::CreateNativeCallLowering_X86_64_Linux() -> std::unique_ptr<CallLowering> {
+    // TODO: Actual native lowering.
+    return CreateSourceCallLowering_X86_64_Linux();
 }
+
+auto CodeGen::CreateSourceCallLowering_X86_64_Linux() -> std::unique_ptr<CallLowering> {
+    return std::make_unique<SourceLowering>(*this);
+}
+
+auto SourceLowering::ClassifyParameter(Type ty, Intent i, GPRUsageTracker* gprs) -> ArgumentPassingMode {
+    Assert(not CG.IsZeroSizedType(ty), "Should have dropped zero-sized types");
+
+    // (in)out parameters are passed as pointers. These are NOT by-value
+    // arguments and thus count towards the total allocated register count.
+    if (i == Intent::Inout or i == Intent::Out)
+        return ArgumentPassingMode::Pointer;
+
+    // Anything larger than 128 bits is passed in memory, i.e. no register
+    // is allocated for them. Integer types larger than 128 bits are aligned
+    // to a multiple of 64 bits.
+    auto sz = ty->array_size(CG.tu);
+    if (sz > Size::Bits(128)) return ArgumentPassingMode::Memory;
+
+    // If we get here, we have something that is at most 128 bits, and
+    // we also have enough GPRs left to pass it in registers.
+    //
+    // This is because the only types that can have class MEMORY are
+    // arrays and structs >128 bits, in which case we never get here.
+    // In other words, we already know that this type has class INTEGER,
+    // the only question is whether we need to split it into one or two
+    // registers.
+    //
+    // TODO: Once we support floating point types, we’ll have to deal
+    // with classes other than INTEGER and MEMORY.
+    if (sz > Size::Bits(64)) {
+        if (gprs and gprs->can_pass_register_pair()) return ArgumentPassingMode::Memory;
+        return ArgumentPassingMode::RegisterPair;
+    }
+
+    // Zero-extend 'bool'.
+    if (ty == Type::BoolTy) return ArgumentPassingMode::ZeroExt;
+
+    // Integers are a bit of a mess:
+    //  - Integers < 32 bit are extended to 32 bit *by the backend*;
+    //    add a 'signext' attribute at the LLVM IR level but keep the
+    //    type the same.
+    //  - 32 and 64 bit integers are unchanged.
+    //  - Integers < 64 need to be extended to 64 *by us*.
+    if (ty->is_integer()) {
+        if (sz.bits() < 32) return ArgumentPassingMode::SignExt;
+        if (sz.bits() != 32 and sz.bits() != 64) return ArgumentPassingMode::Register;
+        return ArgumentPassingMode::SignExtManual;
+    }
+
+    // Any other type (e.g. pointers) is integer-sized.
+    return ArgumentPassingMode::Register;
+}
+
+auto SourceLowering::lower_proc_type(ProcType* ty) -> ir::ProcTy* {
+    Ty* ret = CG.Convert(ty->ret());
+    SmallVector<Ty*> params;
+    ir::ProcTy::ParamAttrMap attrs;
+    GPRUsageTracker gprs;
+
+    // The implicit return pointer is the first argument.
+    if (ClassifyParameter(ty, Intent::Copy, &gprs) == ArgumentPassingMode::Memory) {
+        params.push_back(CG.ptr_ty);
+        attrs[0].ty = ret;
+        attrs[0].ll_sret = true;
+        ret = CG.void_ty;
+        gprs.add_indirect_return_pointer();
+    }
+
+    // Adjust the parameters.
+    for (auto [ty, intent] : ty->params()) {
+        if (CG.IsZeroSizedType(ty)) continue;
+        auto m = ClassifyParameter(ty, intent, &gprs);
+        gprs.add(m);
+        switch (m) {
+            case ArgumentPassingMode::Pointer:
+                params.push_back(CG.ptr_ty);
+                break;
+
+            case ArgumentPassingMode::Register:
+            case ArgumentPassingMode::SignExtManual:
+                params.push_back(CG.Convert(ty));
+                break;
+
+            case ArgumentPassingMode::RegisterPair: {
+                params.push_back(CG.i64_ty);
+                params.push_back(CG.i64_ty);
+            } break;
+
+            case ArgumentPassingMode::Memory: {
+                u32 idx = u32(params.size());
+                attrs[idx].ty = ty->is_integer() ? ir::IntTy::Get(CG, ty->size(CG.tu).align(Align(8))) : CG.Convert(ty);
+                attrs[idx].ll_byval = true;
+                params.push_back(CG.ptr_ty);
+            } break;
+
+            case ArgumentPassingMode::ZeroExt: {
+                attrs[params.size()].ll_zeroext = true;
+                params.push_back(CG.Convert(ty));
+            } break;
+
+            case ArgumentPassingMode::SignExt: {
+                attrs[params.size()].ll_signext = true;
+                params.push_back(CG.Convert(ty));
+            } break;
+        }
+    }
+
+    return ir::ProcTy::Get(CG, ret, params, std::move(attrs));
+}
+
+void SourceLowering::lower_params(ir::Proc* proc) {
+    SmallVector<ir::Value*> temp_vec;
+    GPRUsageTracker gprs;
+    auto args = proc->args();
+    usz i = proc->has_indirect_return() ? 1 : 0;
+    if (proc->has_indirect_return()) gprs.add_indirect_return_pointer();
+    for (auto p : proc->decl()->params()) {
+        // Skip zero-sized types.
+        if (CG.IsZeroSizedType(p->type)) continue;
+
+        // This is a by-reference parameter; use it directly.
+        auto cls = ClassifyParameter(p->type, p->intent(), &gprs);
+        if (cls == ArgumentPassingMode::Pointer) {
+            CG.locals[p] = args[i++];
+            continue;
+        }
+
+        // Otherwise, we have an ARValue or SRValue.
+        Assert(p->type->is_srvalue());
+        auto rvalue = [&] -> Value {
+            switch (cls) {
+                case ArgumentPassingMode::Pointer: Unreachable();
+                case ArgumentPassingMode::Register:
+                    return args[i++];
+
+                case ArgumentPassingMode::RegisterPair: {
+                    ir::Value* v1 = args[i];
+                    ir::Value* v2 = args[i + 1];
+
+                    // If we’re passing a register pair in a range, we may have to sign
+                    // extend the elements manually.
+                    if (
+                        auto rng = dyn_cast<RangeType>(p->type);
+                        rng and ClassifyParameter(rng->elem(), Intent::Copy, nullptr) == ArgumentPassingMode::SignExtManual
+                    ) {
+                        auto ty = CG.Convert(rng->elem());
+                        v1 = CG.CreateSICast(v1, ty);
+                        v2 = CG.CreateSICast(v1, ty);
+                    }
+
+                    i += 2;
+                    return {v1, v2};
+                }
+
+                // This should only happen for RegisterPairs if we run out
+                // of GPRs. Actual MRValues are never passed ‘by value’ at
+                // the *AST* level.
+                case ArgumentPassingMode::Memory: {
+                    if (not CG.IsARValue(p->type)) return CG.CreateLoad(
+                        CG.Convert(p->type),
+                        args[i++],
+                        p->type->align(CG.tu)
+                    );
+
+                    auto [first, second] = CG.GetARValueTypes(p->type);
+                    auto v1 = CG.CreateLoad(CG.Convert(first), args[i], first->align(CG.tu));
+                    auto v2 = CG.CreateLoad(CG.Convert(second), CG.CreatePtrAdd(args[i], first->size(CG.tu)), second->align(CG.tu));
+                    i += 2;
+                    return {v1, v2};
+                }
+
+                case ArgumentPassingMode::ZeroExt:
+                case ArgumentPassingMode::SignExt:
+                    return {args[i++]};
+
+                case ArgumentPassingMode::SignExtManual:
+                    return CG.CreateSICast(args[i++], CG.Convert(p->type));
+            }
+
+            Unreachable();
+        }();
+
+        // If this is an 'in' parameter, just use the value directly.
+        if (p->intent() == Intent::In) {
+            CG.locals[p] = rvalue;
+            continue;
+        }
+
+
+
+
+
+
+
+
+        // LEFT OFF HERE.
+        //
+        // TODO: Reintroduce `ir::Aggregate`, but as an *instruction* with
+        //       multiple result values, as well as `ir::ExtractValueInst`;
+        //       then, lower both to scalar operations in a separate pass
+        //       after CodeGen (and *before* constant evaluation).
+
+
+
+
+
+
+
+
+
+
+        // Otherwise, create a local variable for it and initialise it with the rvalue.
+        auto a = CG.locals[p] = CG.CreateAlloca(proc, CG.Convert(p->type), p->type->align(CG.tu));
+        CG.EmitInitialiser()
+        CG.CreateStore(p->type, rvalue, a);
+    }
+
+    // We should have nothing left at this point.
+    Assert(i == args.size(), "All IR parameters should have been processed");
+}
+
+bool SourceLowering::has_indirect_return(ProcType* ty) {
+    if (CG.IsZeroSizedType(ty)) return false;
+    return ty->ret()->rvalue_category() == ValueCategory::MRValue;
+}
+
+auto SourceLowering::lower_call(
+    ProcType* proc_type,
+    ir::Value* callee,
+    Ptr<ir::Value> env,
+    ir::Value* mrvalue_slot,
+    ArrayRef<ir::Value*> args
+) -> Value {
+    SmallVector<ir::Value*> lowered;
+
+    // Add the pointer for the return value if there is one.
+    bool indirect_return = has_indirect_return(proc_type);
+    DebugAssert((mrvalue_slot != nullptr) == indirect_return);
+    if (mrvalue_slot) lowered.push_back(mrvalue_slot);
+
+    // This loop essentially either does the opposite of or complements
+    // lower_params() above, except that we no longer have to deal with
+    // intents or lvalues here since those are just pointers here.
+    auto it = args.begin();
+    for (const auto& p : proc_type->params()) {
+        auto ty = p.type;
+
+        // Skip zero-sized args.
+        if (CG.IsZeroSizedType(ty)) continue;
+
+        // Handle weird integer cases.
+        if (ty->is_integer()) {
+            // If this is a 33-64 bit integer, extend it to 64 bits.
+            auto sz = ty->size(CG.tu);
+            if (ty->is_srvalue() and sz.bits() > 32 and sz.bits() < 64) {
+                lowered.push_back(CG.CreateSICast(*it++, CG.tu.I64Ty));
+                continue;
+            }
+
+            // If this is an integer that must be passed in memory, write a
+            // copy to the stack and pass a pointer to it.
+            if (sz.bits() > 128) {
+                auto byval = CG.CreateAlloca(CG.curr_proc, ty);
+                CG.CreateStore(ty, *it++, byval);
+                lowered.push_back(byval);
+                continue;
+            }
+        }
+
+        // If this is an ARValue or <=128 bit int, split it by storing
+        // it to memory and loading an Aggregate* back, except that the
+        // latter is split properly across registers.
+        if (ty->is_arvalue() or is_splittable_int(ty)) {
+            // For things that are basically two pointers, just forward them.
+            if (isa<ProcType, SliceType>(ty)) {
+                lowered.push_back(*it++);
+                lowered.push_back(*it++);
+                continue;
+            }
+
+            // Otherwise, convert the object in memory.
+            auto layout = get_register_layout(ty);
+            auto temp = CG.CreateAlloca(CG.curr_proc, layout->size(), std::max(ty->align(CG.tu), layout->align()));
+            CG.CreateStore(ty, *it++, temp);
+            lowered.push_back(CG.CreateLoad(layout->field(0), temp));
+            lowered.push_back(CG.CreateLoad(layout->field(0), CG.CreatePtrAdd(temp, Size::Bytes(8))));
+            continue;
+        }
+
+        // Finally, if we get here, just pass along the argument as-is.
+        lowered.push_back(*it++);
+    }
+
+    // If this is an indirect call, lower the procedure type.
+    auto direct = dyn_cast<ir::Proc>(callee);
+    auto adjusted = direct ? direct->proc_type() : adjust_procedure_type(proc_type).first;
+    auto ret = adjusted->ret();
+
+    // Simple value.
+    if (not ret->is_arvalue()) {
+        auto call = CG.CreateCallImpl(adjusted, callee, lowered, ret, env);
+        if (CG.IsZeroSizedType(ret)) return {};
+        return new (CG) ir::InstValue(call, ret, 0);
+    }
+
+    // Aggregate value. We need to reassemble it.
+    auto ret_layout = get_register_layout(ret);
+    auto call = CG.CreateCallImpl(adjusted, callee, lowered, ret_layout->fields(), env);
+    auto v1 = new (CG) ir::InstValue(call, ret, 0);
+    auto v2 = new (CG) ir::InstValue(call, ret, 1);
+}*/

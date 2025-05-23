@@ -397,6 +397,12 @@ the getter or setter (in which case it refers to the backing field instead).
 To perform a recursive call to a setter or getter, call unqualified `set()` 
 or `get()` from within a setter. 
 
+## Syntax ideas for list comprehensions
+```
+(for x in xs do x + 4)
+(for x in xs : x + 4)
+```
+
 ## Effect system?
 Maybe something like:
 ```
