@@ -10,6 +10,7 @@ include "mlir/Interfaces/InferIntRangeInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/VectorInterfaces.td"
+include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/OpAsmInterface.td"
@@ -44,9 +45,41 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 def SRCC_Void : TypeAlias<NoneType, "void">;
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Tuple : TypeAlias<Builtin_Tuple, "tuple">;
+def SRCC_Bool : TypeAlias<UI1, "bool">;
+
+/*def SRCC_ByteArray : SRCC_Type<"ByteArray", "bytes"> {
+    let summary = "Array of bytes";
+    let parameters = (ins "unsigned":$width);
+    let assemblyFormat = "`<` $width `>`";
+    let genMnemonicAlias = 1;
+}*/
+
+def SRCC_ProcType : SRCC_Type<"Proc", "proc"> {
+    let summary = "Procedure type";
+    let parameters = (ins
+        "::mlir::LLVM::CConv":$cc,
+        "::mlir::Type":$return_type,
+        ArrayRefParameter<"::mlir::Type">:$params,
+        "bool":$variadic,
+        "bool":$indirect_return
+    );
+
+    let genMnemonicAlias = 1;
+    let hasCustomAssemblyFormat = 1;
+    let builders = [TypeBuilderWithInferredContext<(ins
+        "::mlir::LLVM::CConv":$cc,
+        "::mlir::Type":$return_type,
+        "ArrayRef<::mlir::Type>":$params,
+        CArg<"bool", "false">:$variadic,
+        CArg<"bool", "false">:$indirect_return
+    )>];
+}
+
 def SRCC_Type : AnyTypeOf<[
     Builtin_Integer,
     FunctionType,
+//    SRCC_ByteArray,
+    SRCC_ProcType,
     SRCC_Tuple,
     SRCC_Void,
     SRCC_Ptr,
@@ -56,104 +89,48 @@ def SRCC_Type : AnyTypeOf<[
 //  Operations
 // ============================================================================
 def ProcOp : SRCC_Op<"proc", [
-    AffineScope, AutomaticAllocationScope, CallableOpInterface,
-    FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
+    AffineScope, AutomaticAllocationScope,
+    IsolatedFromAbove, OpAsmOpInterface
 ]> {
     let summary = "Procedure";
     let regions = (region AnyRegion:$body);
     let arguments = (ins
         SymbolNameAttr:$sym_name,
         LinkageAttr:$linkage,
-        CConv:$cc,
-        TypeAttrOf<FunctionType>:$function_type,
-        UnitAttr:$variadic,
-        UnitAttr:$has_indirect_return,
+        TypeAttrOf<SRCC_ProcType>:$proc_type,
         UnitAttr:$has_static_chain,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
     );
 
     let hasCustomAssemblyFormat = 1;
-    let skipDefaultBuilders = 1;
-    let builders = [
+    /*let builders = [
         OpBuilder<(ins
             "StringRef":$name,
             "::mlir::LLVM::Linkage":$linkage,
-            "::mlir::LLVM::CConv":$cc,
-            "::mlir::FunctionType":$type,
-            "bool":$variadic,
-            "bool":$has_indirect_return,
+            "ProcType":$type,
             "bool":$has_static_chain,
             CArg<"ArrayRef<::mlir::NamedAttribute>", "{}">:$attrs
         ), [{
             buildWithEntryBlock($_builder, $_state, name, type, attrs, type.getInputs());
-            $_state.addAttribute(getCcAttrName($_state.name), ::mlir::LLVM::CConvAttr::get($_state.getContext(), cc));
             $_state.addAttribute(getLinkageAttrName($_state.name), ::mlir::LLVM::LinkageAttr::get($_state.getContext(), linkage));
-            if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
-            if (has_indirect_return) $_state.addAttribute(getHasIndirectReturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
+            $_state.addAttribute(getProcTypeAttrName($_state.name), ::mlir::TypeAttr::get(type));
             if (has_static_chain) $_state.addAttribute(getHasStaticChainAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
         }]>
-    ];
+    ];*/
 
     /// Most of this is copied from the func dialect’s FuncOp.
     let extraClassDeclaration = [{
         ::mlir::Block* entry() {
             if (empty()) addEntryBlock();
-            return &front();
+            return &getBody().front();
         }
 
-        u32 getNumImplicitArgs() {
-            return getHasIndirectReturn() + getHasStaticChain();
-        }
-
-        ::mlir::BlockArgument getDeclaredArg(u32 i) {
-            return getArgument(i + getNumImplicitArgs());
-        }
-
-        ::mlir::BlockArgument getIndirectReturnPointer() {
-            Assert(getHasIndirectReturn());
-            return getArgument(0);
-        }
-
-        ::mlir::BlockArgument getStaticChainPointer() {
-            Assert(getHasStaticChain());
-            return getArgument(getHasIndirectReturn() + 1);
-        }
-
-        //===------------------------------------------------------------------===//
-        // CallableOpInterface
-        //===------------------------------------------------------------------===//
-
-        /// Returns the region on the current operation that is callable. This may
-        /// return null in the case of an external callable object, e.g. an external
-        /// function.
-        ::mlir::Region *getCallableRegion() { return isExternal() ? nullptr : &getBody(); }
-
-        /// Returns the results types that the callable region produces when
-        /// executed.
-        ArrayRef<::mlir::Type> getCallableResults() { return getFunctionType().getResults(); }
-
-        /// Returns the argument attributes for all callable region arguments or
-        /// null if there are none.
-        ::mlir::ArrayAttr getCallableArgAttrs() {
-          return getArgAttrs().value_or(nullptr);
-        }
-
-        /// Returns the result attributes for all callable region results or
-        /// null if there are none.
-        ::mlir::ArrayAttr getCallableResAttrs() {
-          return getResAttrs().value_or(nullptr);
-        }
-
-        //===------------------------------------------------------------------===//
-        // FunctionOpInterface Methods
-        //===------------------------------------------------------------------===//
-
-        /// Returns the argument types of this function.
-        ArrayRef<::mlir::Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-        /// Returns the result types of this function.
-        ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
+        void addEntryBlock();
+        auto empty() -> bool{ return getRegion().empty(); }
+        auto getName() -> StringRef { return getSymName(); }
+        auto getParamTypes() -> ArrayRef<::mlir::Type>{ return getProcType().getParams(); }
+        auto getReturnType() -> ::mlir::Type { return getProcType().getReturnType(); }
 
         //===------------------------------------------------------------------===//
         // OpAsmOpInterface Methods
@@ -166,7 +143,7 @@ def ProcOp : SRCC_Op<"proc", [
         // SymbolOpInterface Methods
         //===------------------------------------------------------------------===//
 
-        bool isDeclaration() { return isExternal(); }
+        bool isDeclaration() { return empty(); }
     }];
 }
 
@@ -212,9 +189,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
         SRCC_Ptr:$addr,
         Optional<SRCC_Ptr>:$env,
         Optional<SRCC_Ptr>:$mrvalue_slot,
-        CConv:$cc,
-        TypeAttrOf<FunctionType>:$function_type,
-        UnitAttr:$variadic,
+        TypeAttrOf<SRCC_ProcType>:$proc_type,
         Variadic<SRCC_Type>:$args
     );
 
@@ -232,13 +207,11 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
             build(
                 $_builder,
                 $_state,
-                proc.getResultTypes(),
+                proc.getReturnType(),
                 ref,
                 env,
                 mrvalue_slot,
-                proc.getCcAttr(),
-                proc.getFunctionTypeAttr(),
-                proc.getVariadicAttr(),
+                proc.getProcType(),
                 args
             );
         }]>
@@ -326,6 +299,12 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
 def RetOp : SRCC_Op<"ret", [Terminator]> {
     let summary = "Return from a procedure";
     let arguments = (ins Optional<SRCC_Type>:$value);
+    let hasCustomAssemblyFormat = 1;
+}
+
+def ReturnPointerOp : SRCC_Op<"retptr", [Pure]> {
+    let summary = "Get the return pointer for a procedure";
+    let results = (outs SRCC_Ptr:$pointer);
     let hasCustomAssemblyFormat = 1;
 }
 

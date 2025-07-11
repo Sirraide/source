@@ -25,8 +25,10 @@ proc f3 -> range<int> {
 }
 
 proc f4 -> range<int> = f3();
+proc f5(range<i128>) extern -> range<i128>;
 
 range<i13> x;
+//var y = f5();
 
 // * proc __src_main {
 // +     %0 = range<i13>, align 2

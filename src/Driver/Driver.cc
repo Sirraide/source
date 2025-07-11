@@ -265,8 +265,15 @@ int Driver::run_job() {
     if (ctx.diags().has_error()) return 1;
 
     // Dump IR.
-    if (a == Action::DumpIR or a == Action::DumpIRRaw) {
-        cg.dump(a == Action::DumpIRRaw);
+    if (a == Action::DumpIRRaw) {
+        cg.dump();
+        return 0;
+    }
+
+    // Finalise the IR.
+    if (not cg.run_abi_lowering() or not cg.finalise()) return 1;
+    if (a == Action::DumpIR) {
+        cg.dump();
         return 0;
     }
 

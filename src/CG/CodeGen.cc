@@ -20,8 +20,8 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     : CodeGenBase(), OpBuilder(&mlir), tu{tu}, word_size{word_size}, lang_opts{lang_opts} {
     ir::SRCCDialect::InitialiseContext(mlir);
     ptr_ty = mlir::LLVM::LLVMPointerType::get(&mlir);
-    closure_ty = mlir::LLVM::LLVMStructType::getLiteral(&mlir, {ptr_ty, ptr_ty});
-    slice_ty = mlir::LLVM::LLVMStructType::getLiteral(&mlir, {ptr_ty, getIntegerType(u32(tu.target().int_size().bits()))});
+    closure_ty = mlir::TupleType::get(&mlir, {ptr_ty, ptr_ty});
+    slice_ty = mlir::TupleType::get(&mlir, {ptr_ty, getIntegerType(u32(tu.target().int_size().bits()))});
     mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
 }
 
@@ -53,18 +53,19 @@ auto CodeGen::C(Location l) -> mlir::Location {
 
 auto CodeGen::C(Type ty) -> mlir::Type {
     // Integer types.
+    if (ty == Type::BoolTy) return getIntegerType(1, false);
     if (ty == Type::IntTy) return getIntegerType(u32(tu.target().int_size().bits()));
     if (auto i = dyn_cast<IntType>(ty)) return getIntegerType(u32(i->bit_width().bits()));
 
     // Pointer types.
     if (isa<PtrType>(ty)) return ptr_ty;
 
-    // Aggregates need to be represented as structs for extractvalue to work.
+    // Aggregates need to be represented as structs for extract to work.
     if (isa<ProcType>(ty)) return closure_ty;
     if (isa<SliceType>(ty)) return slice_ty;
     if (auto r = dyn_cast<RangeType>(ty)) {
         auto e = C(r->elem());
-        return mlir::LLVM::LLVMStructType::getLiteral(&mlir, {e, e});
+        return mlir::TupleType::get(&mlir, {e, e});
     }
 
     // Structs and arrays are just turned into blobs of bytes.
@@ -73,17 +74,14 @@ auto CodeGen::C(Type ty) -> mlir::Type {
     return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
 }
 
-auto CodeGen::ConvertProcType(ProcType* ty) -> mlir::FunctionType {
+auto CodeGen::ConvertProcType(ProcType* ty) -> ir::ProcType {
     SmallVector<mlir::Type> arg_types;
-    mlir::TypeRange results;
-    mlir::Type ret;
+    mlir::Type ret = C(ty->ret());
+    bool has_indirect_return = false;
 
     // Handle indirect returns.
-    if (ty->ret()->is_mrvalue()) arg_types.push_back(ptr_ty);
-    else if (not IsZeroSizedType(ty)) {
-        ret = C(ty->ret());
-        results = ret;
-    }
+    if (ty->ret()->is_mrvalue()) has_indirect_return = true;
+    else if (IsZeroSizedType(ty)) ret = mlir::NoneType::get(&mlir);
 
     // Add the remaining args.
     for (auto [ty, intent] : ty->params()) {
@@ -91,7 +89,13 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> mlir::FunctionType {
         arg_types.push_back(ty->pass_by_reference(intent) ? ptr_ty : C(ty));
     }
 
-    return mlir::FunctionType::get(&mlir, arg_types, results);
+    return ir::ProcType::get(
+        C(ty->cconv()),
+        ret,
+        arg_types,
+        ty->variadic(),
+        has_indirect_return
+    );
 }
 
 auto CodeGen::CreateAggregate(Location loc, Value a, Value b) -> Value {
@@ -261,10 +265,7 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
         C(proc->location()),
         name,
         C(proc->linkage),
-        C(proc->cconv()),
         ConvertProcType(ty),
-        ty->variadic(),
-        ty->ret()->is_mrvalue(),
         false
     );
 
@@ -310,11 +311,7 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
         C(loc),
         name,
         C(linkage),
-        C(ty->cconv()),
-        ConvertProcType(ty),
-        ty->variadic(),
-        ty->ret()->is_mrvalue(),
-        false
+        ConvertProcType(ty)
     );
 }
 
@@ -1207,7 +1204,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             (p->type->is_srvalue() and p->intent() == Intent::In) or
             p->type->pass_by_reference(p->intent())
         ) {
-            locals[p] = curr_proc.getDeclaredArg(arg_idx++);
+            locals[p] = curr_proc.getArgument(arg_idx++);
             continue;
         }
 
@@ -1215,7 +1212,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         create<ir::StoreOp>(
             C(p->location()),
             v,
-            curr_proc.getDeclaredArg(arg_idx++),
+            curr_proc.getArgument(arg_idx++),
             p->type->align(tu)
         );
     }
@@ -1234,8 +1231,8 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value {
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value {
-    if (curr_proc.getHasIndirectReturn()) {
-        EmitInitialiser(curr_proc.getIndirectReturnPointer(), expr->value.get());
+    if (curr_proc.getProcType().getIndirectReturn()) {
+        EmitInitialiser(create<ir::ReturnPointerOp>(getUnknownLoc()), expr->value.get());
         create<ir::RetOp>(C(expr->location()), Value());
         return nullptr;
     }
@@ -1335,18 +1332,11 @@ auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> Value { // cla
     return val.visit(V);
 }
 
-void CodeGen::dump(bool raw) {
-    if (not raw) {
-        mlir::PassManager pm{&mlir};
-        pm.enableVerifier(true);
-        pm.addPass(mlir::createCanonicalizerPass());
-        pm.addPass(mlir::createRemoveDeadValuesPass());
-        if (pm.run(mlir_module).failed()) Fatal("Failed to run DCE pass");
-    }
-
+void CodeGen::dump() {
     mlir::OpPrintingFlags flags;
     flags.assumeVerified(true);
     flags.printGenericOpForm(false);
+    flags.printNameLocAsPrefix(false);
     mlir_module.print(llvm::dbgs(), flags);
 }
 
@@ -1363,10 +1353,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         C(stmt->location()),
         constants::VMEntryPointName,
         C(Linkage::Internal),
-        C(CallingConvention::Source),
         ConvertProcType(ProcType::Get(tu, ty)),
-        false,
-        ty->is_mrvalue(),
         false
     );
 
@@ -1377,4 +1364,27 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     Emit(isa<Expr>(stmt) ? &re : stmt);
     if (not getInsertionBlock()->mightHaveTerminator()) create<ir::RetOp>(getUnknownLoc(), Value());
     return vm_entry_point;
+}
+
+bool CodeGen::finalise() {
+    mlir::PassManager pm{&mlir};
+    pm.enableVerifier(true);
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(mlir::createRemoveDeadValuesPass());
+    if (pm.run(mlir_module).failed()) {
+        ICE(Location(), "Failed to finalise IR");
+        return false;
+    }
+    return true;
+}
+
+bool CodeGen::run_abi_lowering() {
+    mlir::PassManager pm{&mlir};
+    pm.enableVerifier(true);
+    pm.addPass(CreateX86_64_LinuxABILoweringPass());
+    if (pm.run(mlir_module).failed()) {
+        ICE(Location(), "Failed to run ABI lowering pass");
+        return false;
+    }
+    return true;
 }

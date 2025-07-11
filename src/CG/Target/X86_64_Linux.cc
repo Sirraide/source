@@ -1,5 +1,302 @@
 #include <srcc/CG/CodeGen.hh>
 
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOpsDialect.h.inc>
+#include <mlir/Pass/Pass.h>
+#include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/Passes.h>
+#if 0
+using namespace srcc;
+using namespace srcc::cg;
+using namespace srcc::cg::ir;
+namespace srcc::cg::x64_64_linux_abi {}
+using namespace srcc::cg::x64_64_linux_abi;
+
+namespace srcc::cg::x64_64_linux_abi {
+struct LoweringPass :
+    mlir::PassWrapper<LoweringPass, mlir::OperationPass<mlir::ModuleOp>> {
+    void runOnOperation() override;
+};
+
+struct ProcOpLowering : mlir::RewritePattern {
+    ProcOpLowering(mlir::MLIRContext *context)
+        :  RewritePattern(ProcOp::getOperationName(), 1, context) {}
+
+    auto matchAndRewrite(
+        Operation* op,
+        mlir::PatternRewriter& rewriter
+    ) const -> llvm::LogicalResult override;
+};
+
+/// How an argument is passed to a function; used by codegen and below.
+enum class ArgumentPassingMode : u8 {
+    /// This parameter should be dropped entirely.
+    Drop,
+
+    /// Pass the value as-is in a single GPR.
+    Register,
+
+    /// Pass the value split across 2 registers if we have enough GPRs left.
+    RegisterPair,
+
+    /// Pass the value in memory.
+    Memory,
+
+    /// Pass the value in a register, and let the backend zero-extend it.
+    ZeroExt,
+
+    /// Pass the value in a register, and let the backend sign-extend it.
+    SignExt,
+
+    /// Pass the value in a register, but sign extend it manually.
+    SignExtManual,
+};
+
+class GPRUsageTracker {
+    static constexpr u32 MaxGPRs = 6;
+    u32 gprs_in_use = 0;
+
+public:
+    void add_indirect_return_pointer() { gprs_in_use++; }
+    void add(ArgumentPassingMode m) {
+        switch (m) {
+            case ArgumentPassingMode::Register:
+            case ArgumentPassingMode::ZeroExt:
+            case ArgumentPassingMode::SignExt:
+            case ArgumentPassingMode::SignExtManual:
+                gprs_in_use++;
+
+            case ArgumentPassingMode::RegisterPair:
+                gprs_in_use += 2;
+
+            case ArgumentPassingMode::Drop:
+            case ArgumentPassingMode::Memory:
+                break;
+        }
+    }
+
+    bool can_pass_register_pair() {
+        return gprs_in_use + 2 <= MaxGPRs;
+    }
+};
+
+struct Lowering {
+    TranslationUnit& tu;
+    auto ClassifyParameter(mlir::Type ty, GPRUsageTracker* gprs) const -> ArgumentPassingMode;
+    auto GetValueTypeSize(mlir::Type ty) const -> Size;
+    bool HasIndirectReturn(ir::ProcType ty) const;
+    void LowerProcOp(ProcOp op) const;
+    bool NeedsLowering(ProcOp op) const;
+};
+}
+
+auto Lowering::ClassifyParameter(mlir::Type ty, GPRUsageTracker* gprs) const -> ArgumentPassingMode {
+    auto sz = GetValueTypeSize(ty);
+    if (sz == Size()) return ArgumentPassingMode::Drop;
+
+    // Anything larger than 128 bits is passed in memory, i.e. no register
+    // is allocated for them. Integer types larger than 128 bits are aligned
+    // to a multiple of 64 bits.
+    if (sz > Size::Bits(128)) return ArgumentPassingMode::Memory;
+
+    // If we get here, we have something that is at most 128 bits, and
+    // we also have enough GPRs left to pass it in registers.
+    //
+    // This is because the only types that can have class MEMORY are
+    // arrays and structs >128 bits, in which case we never get here.
+    // In other words, we already know that this type has class INTEGER,
+    // the only question is whether we need to split it into one or two
+    // registers.
+    //
+    // TODO: Once we support floating point types, we’ll have to deal
+    // with classes other than INTEGER and MEMORY.
+    if (sz > Size::Bits(64)) {
+        if (gprs and gprs->can_pass_register_pair()) return ArgumentPassingMode::Memory;
+        return ArgumentPassingMode::RegisterPair;
+    }
+
+    // Zero-extend 'bool'.
+    if (sz.bits() == 1 and cast<mlir::IntegerType>(ty).isUnsigned())
+        return ArgumentPassingMode::ZeroExt;
+
+    // Integers are a bit of a mess:
+    //  - Integers < 32 bit are extended to 32 bit *by the backend*;
+    //    add a 'signext' attribute at the LLVM IR level but keep the
+    //    type the same.
+    //  - 32 and 64 bit integers are unchanged.
+    //  - Integers < 64 need to be extended to 64 *by us*.
+    if (isa<mlir::IntegerType>(ty)) {
+        if (sz.bits() < 32) return ArgumentPassingMode::SignExt;
+        if (sz.bits() != 32 and sz.bits() != 64) return ArgumentPassingMode::Register;
+        return ArgumentPassingMode::SignExtManual;
+    }
+
+    // Any other type (e.g. pointers) is integer-sized.
+    return ArgumentPassingMode::Register;
+}
+
+auto Lowering::GetValueTypeSize(mlir::Type ty) const -> Size {
+    if (isa<mlir::LLVM::LLVMPointerType>(ty)) return Size::Bytes(8);
+    if (isa<mlir::NoneType>(ty)) return Size();
+    if (auto i = dyn_cast<mlir::IntegerType>(ty)) return Size::Bits(i.getWidth());
+    if (auto a = dyn_cast<mlir::LLVM::LLVMArrayType>(ty)) {
+        Assert(a.getElementType().isInteger(8));
+        return Size::Bytes(a.getNumElements());
+    }
+
+    // Tuples are only used to represent builtin types, so if we get here,
+    // we have a slice/range/closure. Both closures and slices are 128 bits.
+    auto t = cast<mlir::TupleType>(ty);
+    if (isa<mlir::LLVM::LLVMPointerType>(t.getType(0))) return Size::Bits(128);
+
+    // If the first parameter is not a pointer, then we have a range. If the
+    // integer type is >64 bits, align it.
+    auto i = cast<mlir::IntegerType>(t.getType(0));
+    auto align = tu.target().int_align(Size::Bits(i.getWidth()));
+    auto size = tu.target().int_size(Size::Bits(i.getWidth()));
+    return size.align(align) + size;
+}
+
+bool Lowering::HasIndirectReturn(ir::ProcType ty) const {
+    GPRUsageTracker gprs;
+    return ty.getIndirectReturn() or
+           ClassifyParameter(ty.getReturnType(), &gprs) == ArgumentPassingMode::Memory;
+}
+
+
+void Lowering::LowerProcOp(ProcOp proc) const {
+    SmallVector<mlir::Type> params;
+    SmallVector<Value> param_vals;
+    GPRUsageTracker gprs;
+    std::unique_ptr<Block> new_entry;
+    auto proc_ty = proc.getProcType();
+    auto ret = proc_ty.getReturnType();
+    auto ctx = proc.getContext();
+    bool has_indirect_return = HasIndirectReturn(proc_ty);
+
+    // If this procedure has a body, build a new entry block.
+    if (not proc.getBody().empty()) {
+        new_entry.reset(new Block);
+        auto old_entry = &proc.getBody().front();
+
+        // Move all allocas into the new entry block.
+        while (not old_entry->empty() and isa<AllocaOp>(old_entry->front()))
+            old_entry->front().moveBefore(new_entry.get(), new_entry->end());
+    }
+
+
+
+    // TODO: Lower parameters: insert code for that into the new block, branch
+    // to the old entry block, and then merge the two blocks.
+
+
+
+
+
+    // The implicit return pointer is the first argument.
+    if (has_indirect_return) {
+        params.push_back(mlir::LLVM::LLVMPointerType::get(proc_ty.getContext()));
+        proc.setArgAttr(0, mlir::LLVM::LLVMDialect::getStructRetAttrName(), mlir::TypeAttr::get(ret));
+        ret = mlir::NoneType::get(ctx);
+        gprs.add_indirect_return_pointer();
+    }
+
+    // Adjust the parameters.
+    for (auto ty : proc_ty.getParams()) {
+        auto m = ClassifyParameter(ty, &gprs);
+        gprs.add(m);
+        switch (m) {
+            case ArgumentPassingMode::Drop:
+                break;
+
+            case ArgumentPassingMode::Register:
+                params.push_back(ty);
+                break;
+
+            case ArgumentPassingMode::SignExtManual:
+                params.push_back(mlir::IntegerType::get(ctx, 64));
+                break;
+
+            case ArgumentPassingMode::RegisterPair:
+                params.push_back(mlir::IntegerType::get(ctx, 64));
+                params.push_back(mlir::IntegerType::get(ctx, 64));
+                break;
+
+            case ArgumentPassingMode::Memory:
+                ty = ty.isInteger()
+                    ? mlir::IntegerType::get(ctx, Size::Bits(ty.getIntOrFloatBitWidth()).align(Align(8)).bits())
+                    : ty;
+
+                proc.setArgAttr(u32(params.size()), mlir::LLVM::LLVMDialect::getByValAttrName(), mlir::TypeAttr::get(ty));
+                params.push_back(mlir::LLVM::LLVMPointerType::get(proc_ty.getContext()));
+                break;
+
+            case ArgumentPassingMode::ZeroExt:
+                proc.setArgAttr(u32(params.size()), mlir::LLVM::LLVMDialect::getZExtAttrName(), mlir::UnitAttr::get(ctx));
+                params.push_back(ty);
+                break;
+
+            case ArgumentPassingMode::SignExt:
+                proc.setArgAttr(u32(params.size()), mlir::LLVM::LLVMDialect::getSExtAttrName(), mlir::UnitAttr::get(ctx));
+                params.push_back(ty);
+                break;
+        }
+    }
+
+
+    // Overwrite the procedure type.
+    auto adjusted_type = ir::ProcType::get(
+        proc_ty.getCc(),
+        ret,
+        params,
+        proc_ty.getVariadic(),
+        has_indirect_return
+    );
+
+    proc.setProcType(adjusted_type);
+
+    // Adjust all
+}
+
+bool Lowering::NeedsLowering(ProcOp op) const {
+    GPRUsageTracker gprs;
+    auto ty = op.getProcType();
+    if (HasIndirectReturn(ty)) return true;
+    for (auto p : ty.getParams()) {
+        auto m = ClassifyParameter(p, &gprs);
+        gprs.add(m);
+        switch (m) {
+            case ArgumentPassingMode::Drop:
+            case ArgumentPassingMode::Register:
+                break;
+            case ArgumentPassingMode::RegisterPair:
+            case ArgumentPassingMode::Memory:
+            case ArgumentPassingMode::ZeroExt:
+            case ArgumentPassingMode::SignExt:
+            case ArgumentPassingMode::SignExtManual:
+                return true;
+        }
+    }
+    return false;
+}
+
+
+auto ProcOpLowering::matchAndRewrite(
+    Operation* op_ptr,
+    mlir::PatternRewriter& rewriter
+) const -> llvm::LogicalResult {
+    auto proc = cast<ProcOp>(op_ptr);
+}
+
+
+void LoweringPass::runOnOperation() {
+    mlir::ConversionTarget tgt{getContext()};
+    mlir::RewritePatternSet patterns{&getContext()};
+    patterns.add<ProcOpLowering>(getContext());
+}
+
+#endif
+
+
 /*using namespace srcc;
 using namespace srcc::cg;
 
@@ -468,55 +765,6 @@ auto CodeGen::CreateNativeCallLowering_X86_64_Linux() -> std::unique_ptr<CallLow
 
 auto CodeGen::CreateSourceCallLowering_X86_64_Linux() -> std::unique_ptr<CallLowering> {
     return std::make_unique<SourceLowering>(*this);
-}
-
-auto SourceLowering::ClassifyParameter(Type ty, Intent i, GPRUsageTracker* gprs) -> ArgumentPassingMode {
-    Assert(not CG.IsZeroSizedType(ty), "Should have dropped zero-sized types");
-
-    // (in)out parameters are passed as pointers. These are NOT by-value
-    // arguments and thus count towards the total allocated register count.
-    if (i == Intent::Inout or i == Intent::Out)
-        return ArgumentPassingMode::Pointer;
-
-    // Anything larger than 128 bits is passed in memory, i.e. no register
-    // is allocated for them. Integer types larger than 128 bits are aligned
-    // to a multiple of 64 bits.
-    auto sz = ty->array_size(CG.tu);
-    if (sz > Size::Bits(128)) return ArgumentPassingMode::Memory;
-
-    // If we get here, we have something that is at most 128 bits, and
-    // we also have enough GPRs left to pass it in registers.
-    //
-    // This is because the only types that can have class MEMORY are
-    // arrays and structs >128 bits, in which case we never get here.
-    // In other words, we already know that this type has class INTEGER,
-    // the only question is whether we need to split it into one or two
-    // registers.
-    //
-    // TODO: Once we support floating point types, we’ll have to deal
-    // with classes other than INTEGER and MEMORY.
-    if (sz > Size::Bits(64)) {
-        if (gprs and gprs->can_pass_register_pair()) return ArgumentPassingMode::Memory;
-        return ArgumentPassingMode::RegisterPair;
-    }
-
-    // Zero-extend 'bool'.
-    if (ty == Type::BoolTy) return ArgumentPassingMode::ZeroExt;
-
-    // Integers are a bit of a mess:
-    //  - Integers < 32 bit are extended to 32 bit *by the backend*;
-    //    add a 'signext' attribute at the LLVM IR level but keep the
-    //    type the same.
-    //  - 32 and 64 bit integers are unchanged.
-    //  - Integers < 64 need to be extended to 64 *by us*.
-    if (ty->is_integer()) {
-        if (sz.bits() < 32) return ArgumentPassingMode::SignExt;
-        if (sz.bits() != 32 and sz.bits() != 64) return ArgumentPassingMode::Register;
-        return ArgumentPassingMode::SignExtManual;
-    }
-
-    // Any other type (e.g. pointers) is integer-sized.
-    return ArgumentPassingMode::Register;
 }
 
 auto SourceLowering::lower_proc_type(ProcType* ty) -> ir::ProcTy* {

@@ -9,8 +9,11 @@
 
 #include <base/Assert.hh>
 
+namespace mlir {
+class Pass;
+}
+
 namespace srcc::cg {
-class CallLowering;
 class CodeGen;
 class LLVMCodeGen;
 class VMCodeGen;
@@ -27,7 +30,6 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, detail::CodeGenBase, ml
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
-    friend CallLowering;
 
 public:
     TranslationUnit& tu;
@@ -51,7 +53,7 @@ public:
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
     /// Dump the IR module.
-    void dump(bool raw = true);
+    void dump();
 
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }
@@ -65,8 +67,14 @@ public:
     /// Emit LLVM IR.
     [[nodiscard]] auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
+    /// Finalise the IR.
+    [[nodiscard]] bool finalise();
+
     /// Optimise a module.
     void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
+
+    /// Perform ABI lowering.
+    [[nodiscard]] bool run_abi_lowering();
 
     /// Write the module to a file.
     int write_to_file(
@@ -95,7 +103,7 @@ public:
     auto C(Location l) -> mlir::Location;
     auto C(Type ty) -> mlir::Type;
 
-    auto ConvertProcType(ProcType* ty) -> mlir::FunctionType;
+    auto ConvertProcType(ProcType* ty) -> ir::ProcType;
     auto CreateAggregate(Location loc, Value a, Value b) -> Value;
     auto CreateAlloca(Location loc, Type ty) -> Value;
     void CreateArithFailure(
@@ -126,6 +134,8 @@ public:
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
+
+    auto CreateX86_64_LinuxABILoweringPass() -> std::unique_ptr<mlir::Pass>;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

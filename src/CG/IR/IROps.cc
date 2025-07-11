@@ -25,11 +25,12 @@ void AllocaOp::print(mlir::OpAsmPrinter& p) {
 }
 
 void CallOp::print(mlir::OpAsmPrinter& p) {
-    if (getCc() != mlir::LLVM::CConv::C) p << " " << stringifyCConv(getCc());
+    auto ty = getProcType();
+    if (ty.getCc() != mlir::LLVM::CConv::C) p << " " << ty.getCc();
     p << " " << getAddr();
-    if (not getArgs().empty() or getVariadic()) {
+    if (not getArgs().empty() or ty.getVariadic()) {
         p << "(" << getArgs();
-        if (getVariadic()) {
+        if (ty.getVariadic()) {
             if (not getArgs().empty()) p << ", ";
             p << "...";
         }
@@ -58,14 +59,21 @@ void NilOp::print(mlir::OpAsmPrinter& p) {
 
 void ProcOp::print(mlir::OpAsmPrinter& p) {
     p << " " << stringifyLinkage(getLinkage().getLinkage())
-      << " " << getCc()
+      << " " << getProcType().getCc()
       << " " << getName()
-      << " (" << getArgumentTypes()
-      << ") -> " << getResultTypes()
+      << " (" << getParamTypes()
+      << ") -> " << getReturnType()
       << " ";
 
     if (not getBody().empty())
         p.printRegion(getBody(), false);
+}
+
+void ProcOp::addEntryBlock() {
+    Assert(empty(), "Entry block already exists!");
+    auto& b = getRegion().emplaceBlock();
+    auto loc = mlir::OpBuilder(getContext()).getUnknownLoc();
+    for (auto param : getParamTypes()) b.addArgument(param, loc);
 }
 
 void ProcRefOp::print(mlir::OpAsmPrinter& p) {

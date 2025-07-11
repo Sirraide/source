@@ -76,12 +76,14 @@ public:
         [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
         [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
         [[nodiscard]] auto int_size() const -> Size { return ptr_size(); }
-        [[nodiscard]] auto int_align(const IntType* ty) const -> Align {
-            return Align(TI->getBitIntAlign(u32(ty->bit_width().bits())) / 8);
+        [[nodiscard]] auto int_align(const IntType* ty) const -> Align { return int_align(ty->bit_width()); }
+        [[nodiscard]] auto int_align(Size bit_width) const -> Align {
+            return Align(TI->getBitIntAlign(u32(bit_width.bits())) / 8);
         }
 
-        [[nodiscard]] auto int_size(const IntType* ty) const -> Size {
-            return Size::Bits(TI->getBitIntWidth(u32(ty->bit_width().bits())));
+        [[nodiscard]] auto int_size(const IntType* ty) const -> Size { return int_size(ty->bit_width()); }
+        [[nodiscard]] auto int_size(Size bits) const -> Size {
+            return Size::Bits(TI->getBitIntWidth(u32(bits.bits())));
         }
 
         [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
