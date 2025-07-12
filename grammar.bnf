@@ -23,33 +23,39 @@
 // ============================================================================
 //  Statements
 // ============================================================================
-<stmts> ::= { <stmt> [ ";" ] | <decl> }
-<stmt>  ::= <expr>
+<stmts> ::= { <stmt> }
+<stmt>  ::= <expr-braces>
+          | <expr-no-braces> ";"
           | <decl>
           | <stmt-while>
           | <stmt-for>
+          | <stmt-if>
           | EVAL <stmt>
+          | ";"
 
 <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
-<stmt-for> ::= FOR <expr> IN <expr> [ DO ] <stmt>
+<stmt-for> ::= FOR [ ENUM IDENTIFIER "," ] IDENTIFIER IN <expr> [ DO ] <stmt>
+<stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
+<if-stmt-body> ::= [ THEN ] <stmt>
 
 // ============================================================================
 //  Expressions
 // ============================================================================
-<expr> ::= <expr-assert>
-         | <expr-block>
-         | <expr-binary>
-         | <expr-call>
-         | <expr-decl-ref>
-         | <expr-eval>
-         | <expr-if>
-         | <expr-lit>
-         | <expr-member>
-         | <expr-paren>
-         | <expr-prefix>
-         | <expr-return>
-         | <expr-subscript>
-         | <expr-postfix>
+<expr>           ::= <expr-braces> | <expr-no-braces>
+<expr-braces>    ::= <expr-block>
+<expr-no-braces> ::= <expr-assert>
+                   | <expr-if>
+                   | <expr-binary>
+                   | <expr-call>
+                   | <expr-decl-ref>
+                   | <expr-eval>
+                   | <expr-lit>
+                   | <expr-member>
+                   | <expr-paren>
+                   | <expr-prefix>
+                   | <expr-return>
+                   | <expr-subscript>
+                   | <expr-postfix>
 
 <expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>
@@ -57,7 +63,7 @@
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
 <expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
-<expr-if>        ::= [ "#" ] IF <expr> <if-body> { [ "#" ] ELIF <expr> <if-body> } [ [ "#" ] ELSE <if-body> ]
+<expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-member>    ::= <expr> "." IDENTIFIER
 <expr-paren>     ::= "(" <expr> ")"
@@ -68,7 +74,7 @@
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | NOT | "~" | "&" | "^"
-<if-body> ::= [ THEN ] <stmt>
+<if-expr-body> ::= [ THEN ] <expr>
 <binary> ::= // TODO: list all binary operators here.
 
 

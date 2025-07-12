@@ -6,13 +6,13 @@ program test;
 #if true {}
 #if false {}
 #if true {} #else { 4 = 5; }
-#if false { 4 = 5 } #else {}
+#if false { 4 = 5; } #else {}
 
 int x = #if true 1 #else "foobar";
 int y = #if false "foobar" #else 1;
 int z = #if true 1;
 
 #if false {} #else { 4 = 5; } // expected-error: Invalid target for assignment
-#if true { 4 = 5 } #else {} // expected-error: Invalid target for assignment
+#if true { 4 = 5; } #else {} // expected-error: Invalid target for assignment
 
 int w = #if false 1; // expected-error: Cannot convert expression of type 'void' to 'int'

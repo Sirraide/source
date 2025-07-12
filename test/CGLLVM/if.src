@@ -106,13 +106,13 @@ x(2, 1, false);
 // +   ret void
 // + }
 proc x(int a, int b, bool d) {
-    if d then __srcc_print("d = true\n")
+    if d then __srcc_print("d = true\n");
     else __srcc_print("d = false\n");
     __srcc_print(if d "d = true\n" else "d = false\n");
 
     (if d then d else d) = (if a < b then false else true);
 
-    if d then __srcc_print("d = true\n")
+    if d then __srcc_print("d = true\n");
     else __srcc_print("d = false\n");
     __srcc_print(if d "d = true\n" else "d = false\n");
 

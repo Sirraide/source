@@ -212,7 +212,6 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::RangeType; }
 };
 
-
 class srcc::ParsedSliceType final : public ParsedStmt {
 public:
     ParsedStmt* elem;
@@ -373,6 +372,13 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeclRefExpr; }
 };
 
+/// A single semicolon.
+class srcc::ParsedEmptyStmt final : public ParsedStmt {
+public:
+    ParsedEmptyStmt(Location loc) : ParsedStmt{Kind::EmptyStmt, loc} {}
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EmptyStmt; }
+};
+
 /// A statement to evaluate.
 class srcc::ParsedEvalExpr final : public ParsedStmt {
 public:
@@ -389,17 +395,30 @@ public:
 /// A for loop.
 class srcc::ParsedForStmt final : public ParsedStmt {
 public:
+    Location enum_loc;
+    String enum_name;
     Location ident_loc;
     String ident;
     ParsedStmt* range;
     ParsedStmt* body;
+
     ParsedForStmt(
         Location for_loc,
+        Location enum_loc,
+        String enum_name,
         Location ident_loc,
         String ident,
         ParsedStmt* range,
         ParsedStmt* body
-    ) : ParsedStmt{Kind::ForStmt, for_loc}, ident_loc{ident_loc}, ident{ident}, range{range}, body{body} {}
+    ) : ParsedStmt{Kind::ForStmt, for_loc},
+        enum_loc{enum_loc},
+        enum_name{enum_name},
+        ident_loc{ident_loc},
+        ident{ident},
+        range{range},
+        body{body} {}
+
+    bool has_enumerator() const { return not enum_name.empty(); }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ForStmt; }
 };
@@ -724,9 +743,10 @@ private:
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
     auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
+    auto ParseForStmt() -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
-    auto ParseIf(bool is_static) -> Ptr<ParsedIfExpr>;
+    auto ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr>;
     void ParseImport();
     auto ParseIntent() -> std::pair<Location, Intent>;
     void ParsePreamble();
@@ -734,7 +754,6 @@ private:
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
     bool ParseSignatureImpl(SmallVectorImpl<ParsedLocalDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
-    void ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts);
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType() -> Ptr<ParsedStmt>;
     auto ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt>;

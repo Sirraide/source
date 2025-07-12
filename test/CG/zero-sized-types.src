@@ -14,7 +14,7 @@ e;
 
 proc h = void();
 proc i = h();
-proc j { return h() }
+proc j { return h(); }
 
 proc calls {
     void g = b();

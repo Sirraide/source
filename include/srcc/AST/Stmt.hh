@@ -79,6 +79,13 @@ public:
     auto visit(Visitor&& v) -> decltype(auto);
 };
 
+class srcc::EmptyStmt : public Stmt {
+public:
+    Location loc;
+    EmptyStmt(Location loc) : Stmt{Kind::EmptyStmt, loc} {}
+    static bool classof(const Stmt* e) { return e->kind() == Kind::EmptyStmt; }
+};
+
 class srcc::ForStmt : public Stmt {
 public:
     Expr* range;

@@ -3,4 +3,4 @@
 program test
 import <foo> as bar
 
-foo()
+foo();

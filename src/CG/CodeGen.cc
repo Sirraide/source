@@ -935,6 +935,10 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
     return CreateNil(stmt->type);
 }
 
+auto CodeGen::EmitEmptyStmt(EmptyStmt*) -> Value* {
+    return nullptr;
+}
+
 auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
 }

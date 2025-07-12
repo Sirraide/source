@@ -3,9 +3,9 @@ program test;
 
 proc f(int a, int b, bool c) {
     // Ok.
-    if a == 0 then a = b else a = 42;
+    if a == 0 then a = b; else a = 42;
     b = if a == 3 then 9 elif a == 42 then 4 else a;
-    if a == 0 then 2 else true;
+    if a == 0 then 2; else true;
 
     // No common type -> no yield.
     b = if a == 0 2 else true; // expected-error: Cannot convert expression of type 'void' to 'int'

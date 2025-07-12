@@ -5,7 +5,7 @@ program test;
 struct s { i64 x; }
 
 proc a -> s {
-    var x = {{{ s(1) }}};
+    var x = {{{ s(1); }}};
     return {{{ s(1); }}};
 }
 

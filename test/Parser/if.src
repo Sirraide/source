@@ -7,7 +7,7 @@ if {} {}
 if true then {}
 if true {} elif true {} elif true 4;
 if true {} elif true {} elif true {} else {}
-if true 7 elif true 7 elif true 7 else {}
+if true 7; elif true 7; elif true 7; else {}
 x = if true then 1 else 2;
 x = if true then 1 elif true then 2 else 3;
 x = if true {};
@@ -16,7 +16,7 @@ if 1 {};
 if {} {};
 if true then 1;
 if true then {};
-if true then 1 else 2;
+if true then 1; else 2;
 
 (if true a else b) = 42;
 
@@ -25,7 +25,7 @@ if true then 1 else 2;
 #if true then {}
 #if true {} #elif true {} #elif true 4;
 #if true {} #elif true {} #elif true {} #else {}
-#if true 7 #elif true 7 #elif true 7 #else {}
+#if true 7; #elif true 7; #elif true 7; #else {}
 x = #if true then 1 #else 2;
 (#if true a #else b) = 42;
 #if true {} #elif true {} #elif true 4;
@@ -45,7 +45,7 @@ if true {} #elif true {} elif true 4; // expected-error: 'if' must be paired wit
 
 // expected-error@+2 2: '#if' must be paired with '#elif'
 // expected-error@+1: '#if' must be paired with '#else'
-#if true 7 elif true 7 elif true 7 else {}
+#if true 7; elif true 7; elif true 7; else {}
 
 // expected-error@+2: '#if' must be paired with '#elif'
 // expected-error@+1: '#if' must be paired with '#else'
@@ -66,25 +66,35 @@ if true {} else if {} {}; // expected-error: Use 'elif' instead of 'else if'
 if 4 {} else #if 4 {} else {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 if 4 {} elif 4 {} else #if 4 {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 
-if true then 1; else 2; // expected-error: Semicolon before 'else' is not allowed
-if true {}
-    ; elif true {} // expected-error: Semicolon before 'elif' is not allowed
-    ; elif true {} // expected-error: Semicolon before 'elif' is not allowed
-    ; else {};     // expected-error: Semicolon before 'else' is not allowed
-if true 7
-    ; elif true 7  // expected-error: Semicolon before 'elif' is not allowed
-    ; elif true 7  // expected-error: Semicolon before 'elif' is not allowed
-    ; else {};     // expected-error: Semicolon before 'else' is not allowed
+// Error recovery on missing semicolon.
+if true 7 // expected-error: Expected ';'
+elif true 7 // expected-error: Expected ';'
+elif true 7 // expected-error: Expected ';'
+else {};
 
-#if true then 1; #else 2; // expected-error: Semicolon before '#else' is not allowed
+if true 7;
+elif true 7 // expected-error: Expected ';'
+elif true 7 // expected-error: Expected ';'
+else {};
+
+if true 7;
+elif true 7;
+elif true 7 // expected-error: Expected ';'
+else {};
+
+if true then 1 else 2; // expected-error: Expected ';'
+if true {}
+    ; elif true {} // expected-error: Unexpected ';'
+    ; elif true {} // expected-error: Unexpected ';'
+    ; else {};     // expected-error: Unexpected ';'
+if true 7; elif true 7; elif true 7; else {};
+
+#if true then 1; #else 2;
 #if true {}
-    ; #elif true {} // expected-error: Semicolon before '#elif' is not allowed
-    ; #elif true {} // expected-error: Semicolon before '#elif' is not allowed
-    ; #else {};     // expected-error: Semicolon before '#else' is not allowed
-#if true 7
-    ; #elif true 7  // expected-error: Semicolon before '#elif' is not allowed
-    ; #elif true 7  // expected-error: Semicolon before '#elif' is not allowed
-    ; #else {};     // expected-error: Semicolon before '#else' is not allowed
+    ; #elif true {} // expected-error: Unexpected ';'
+    ; #elif true {} // expected-error: Unexpected ';'
+    ; #else {};     // expected-error: Unexpected ';'
+#if true 7; #elif true 7; #elif true 7; #else {};
 
 x = if true {};
 x = if true then 1;
@@ -101,12 +111,12 @@ elif; // expected-error: Unexpected 'elif'
 #else; // expected-error: Unexpected '#else'
 #elif; // expected-error: Unexpected '#elif'
 
-if true 7 elif true 7 elif true; // expected-error: Expected expression
-if true {} elif true {} elif true; // expected-error: Expected expression
+if true 7; elif true 7; elif true;
+if true {} elif true {} elif true;
 if true {} else {} else {}; // expected-error: Unexpected 'else'
 
-#if true 7 #elif true 7 #elif true; // expected-error: Expected expression
-#if true {} #elif true {} #elif true; // expected-error: Expected expression
+#if true 7; #elif true 7; #elif true;
+#if true {} #elif true {} #elif true;
 #if true {} #else {} #else {}; // expected-error: Unexpected '#else'
 
 #var x; // expected-error: '#' should be followed by one of: 'if', 'assert'

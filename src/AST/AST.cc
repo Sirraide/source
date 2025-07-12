@@ -302,6 +302,10 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "DefaultInitExpr");
         } break;
 
+        case Kind::EmptyStmt:
+            PrintBasicNode(e, "EmptyStmt");
+            break;
+
         case Kind::EvalExpr: {
             PrintBasicNode(e, "EvalExpr");
             PrintChildren(cast<EvalExpr>(e)->stmt);

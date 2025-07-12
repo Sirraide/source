@@ -2309,6 +2309,10 @@ auto Sema::TranslateExportDecl(ParsedExportDecl*) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
+auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed) -> Ptr<Stmt> {
+    return new (*M) EmptyStmt(parsed->loc);
+}
+
 /// Like TranslateStmt(), but checks that the argument is an expression.
 auto Sema::TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr> {
     auto stmt = TranslateStmt(parsed);

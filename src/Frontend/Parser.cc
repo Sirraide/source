@@ -282,6 +282,10 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%8({}%)\n", utils::join(d.names(), "::"));
         } break;
 
+        case Kind::EmptyStmt:
+            PrintHeader(s, "EmptyStmt");
+            break;
+
         case Kind::EvalExpr: {
             auto& v = *cast<ParsedEvalExpr>(s);
             PrintHeader(s, "EvalExpr");
@@ -303,7 +307,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::ForStmt: {
             auto& f = *cast<ParsedForStmt>(s);
             PrintHeader(s, "ForStmt", false);
-            print("%1(var%) %8({}%)\n", f.ident);
+            print("%1(var%) %8({}%)", f.ident);
+            if (f.has_enumerator()) print(" %1(enum%) %8({}%)", f.enum_name);
+            print("\n");
             PrintChildren({f.range, f.body});
         } break;
 
@@ -771,7 +777,9 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
 
     // Parse statements.
     SmallVector<ParsedStmt*> stmts;
-    ParseStmts(stmts);
+    while (not At(Tk::Eof, Tk::RBrace))
+        if (auto s = ParseStmt())
+            stmts.push_back(s.get());
 
     if (not Consume(Tk::RBrace)) {
         Error("Expected '}}'");
@@ -789,7 +797,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
         if (not At(Tk::Identifier)) {
             Error("Expected identifier after '::'");
             SkipTo(Tk::Semicolon);
-            break;
+            return {};
         }
 
         strings.push_back(tok->text);
@@ -820,7 +828,10 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     bool at_start = AtStartOfExpression(); // See below.
     auto start_tok = tok->type;
     switch (tok->type) {
-        default: return Error("Expected expression");
+        default:
+            Error("Expected expression");
+            SkipTo(Tk::Semicolon);
+            return {};
 
         case Tk::Else:
         case Tk::Elif:
@@ -847,11 +858,11 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             auto hash_loc = Next();
             switch (tok->type) {
                 default: return Error("'%1(#%)' should be followed by one of: '%1(if%)', '%1(assert%)'");
-                case Tk::If: lhs = ParseIf(true); break;
+                case Tk::If: lhs = ParseIf(true, true); break;
                 case Tk::Assert: lhs = ParseAssert(true); break;
                 case Tk::Elif:
                 case Tk::Else:
-                    return Error("Unexpected '%1(#{}%)'", tok->type);
+                    return Error({hash_loc, tok->location}, "Unexpected '%1(#{}%)'", tok->type);
             }
             if (auto l = lhs.get_or_null()) l->loc = {hash_loc, l->loc};
         } break;
@@ -874,7 +885,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         } break;
 
         case Tk::If:
-            lhs = ParseIf(false);
+            lhs = ParseIf(false, true);
             break;
 
         case Tk::Identifier:
@@ -943,23 +954,6 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     // I keep forgetting to add new tokens to AtStartOfExpression,
     // so this is here to make sure I don’t forget.
     Assert(at_start, "Forgot to add '{}' to AtStartOfExpression", start_tok);
-
-    // If the next token is an identifier, then this is a declaration,
-    // provided that the lhs could conceivably be a type (i.e. don’t
-    // parse 'true a' as a declaration).
-    if (At(Tk::Identifier)) {
-        if (isa< // clang-format off
-            ParsedDeclRefExpr,
-            ParsedIntType,
-            ParsedBuiltinType,
-            ParsedProcType,
-            ParsedPtrType,
-            ParsedTemplateType,
-            ParsedRangeType,
-            ParsedParenExpr
-        >(lhs.get())) return ParseVarDecl(lhs.get()); // clang-format on
-        return lhs;
-    }
 
     // Big operator parse loop.
     while (
@@ -1041,10 +1035,41 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     return lhs;
 }
 
+// <stmt-for> ::= FOR [ ENUM IDENTIFIER "," ] IDENTIFIER IN <expr> [ DO ] <stmt>
+auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
+    auto for_loc = Next();
+
+    // Enumerator.
+    String enum_name;
+    Location enum_loc;
+    if (Consume(Tk::Enum)) {
+        if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for enum%)'");
+        enum_name = tok->text;
+        enum_loc = Next();
+        if (not Consume(Tk::Comma)) return Error("Expected '%1(,%)' after enumerator in '%(for%)' loop");
+    }
+
+    // Identifier.
+    if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for%)'");
+    auto ident = tok->text;
+    auto ident_loc = Next();
+
+    // Range.
+    if (not Consume(Tk::In)) return Error("Syntax of '%1(for%)' loop is '%1(for%) name %1(in%) expression'");
+    auto range = TryParseExpr();
+
+    // Body.
+    Consume(Tk::Do);
+    auto body = TryParseStmt();
+    return new (*this) ParsedForStmt{for_loc, enum_loc, enum_name, ident_loc, ident, range, body};
+}
+
 // <file> ::= <preamble> { <stmt> }
 void Parser::ParseFile() {
     ParsePreamble();
-    ParseStmts(mod->top_level);
+    while (not At(Tk::Eof))
+        if (auto s = ParseStmt())
+            mod->top_level.push_back(s.get());
 }
 
 // <header> ::= ( "program" | "module" ) <module-name> ";"
@@ -1073,14 +1098,30 @@ void Parser::ParseHeader() {
     Consume(Tk::Semicolon);
 }
 
-// <expr-if> ::= [ "#" ] IF <expr> <if-body> { [ "#" ] ELIF <expr> <if-body> } [ [ "#" ] ELSE <if-body> ]
-// <if-body> ::= [ THEN ] <expr>
-auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
+// The expression and statement forms of 'if' are nearly identical, except that the
+// body of the former is an expression and that of the latter a statement; this is a
+// bit of a hacky way to accomplish
+//
+//     1. not requiring braces,
+//     2. requiring statements to end with a semicolon in a consistent manner,
+//     3. avoiding the grammar requiring two semicolons in a row, e.g.
+//        'var x = if a then b else c;;'.
+//
+// <stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
+// <expr-if> ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
+auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.
     auto loc = Next();
 
     // Condition.
     auto cond = TryParseExpr(SkipTo(Tk::Semicolon));
+
+    // <if-stmt-body> ::= [ THEN ] <stmt>
+    // <if-expr-body> ::= [ THEN ] <expr>
+    auto ParseBody = [&] -> Ptr<ParsedStmt> {
+        Consume(Tk::Then);
+        return is_expr ? ParseExpr() : ParseStmt();
+    };
 
     // Check for unnecessary parens around the condition, which is
     // common in other languages.
@@ -1098,29 +1139,23 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
 
     // '#then' is nonsense. Just drop the hash sign.
     if (At(Tk::Hash) and LookAhead().is(Tk::Then)) {
-        Error("'%1(#then%)' is invalid; write '%1(then%)' instead");
+        Error({tok->location, LookAhead().location}, "'%1(#then%)' is invalid; write '%1(then%)' instead");
         Next();
     }
 
-    // 'then' is optional.
-    Consume(Tk::Then);
-    auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+    // Parse the if body.
+    auto body = TRY(ParseBody());
 
-    // Disallow semicolons here.
-    //
-    // Requiring semicolons here would make figuring out at what point
-    // we should discard the semicolon more difficult (currently, this
-    // only happens in one place outside of the preamble, viz. in the
-    // loop in ParseStmts()).
+    // Disallow semicolons before '(#|)(else|if)'. They’re not supposed to be
+    // there in an expression context, and they’re likely extraneous in a statement
+    // context.
     if ( // clang-format off
         At(Tk::Semicolon) and (
-            LookAhead().is(Tk::Elif, Tk::Else) or
-           (LookAhead().is(Tk::Hash) and LookAhead(2).is(Tk::Elif, Tk::Else))
+            LookAhead().is(Tk::Else, Tk::Elif) or
+            (LookAhead().is(Tk::Hash) and LookAhead(2).is(Tk::Else, Tk::Elif))
         )
     ) { // clang-format on
-        bool hash = LookAhead().is(Tk::Hash);
-        auto& tok = hash ? LookAhead(2) : LookAhead(1);
-        Error("Semicolon before '%1({}{}%)' is not allowed", hash ? "#" : "", tok.type);
+        Error("Unexpected ';'");
         Next();
     }
 
@@ -1177,8 +1212,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
 
         // After recovering from whatever nonsense the user potentially gave us,
         // actually parse the else clause.
-        if (correct_to_elif) else_ = ParseIf(is_static);
-        else else_ = ParseStmt();
+        else_ = correct_to_elif ? ParseIf(is_static, is_expr) : ParseBody();
     }
 
     // For elif, just check for a missing hash.
@@ -1188,7 +1222,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
             "'%1(#if%)' must be paired with '%1(#elif%)'"
         );
 
-        else_ = ParseIf(is_static);
+        else_ = ParseIf(is_static, is_expr);
     }
 
     // Finally, build the expression.
@@ -1323,7 +1357,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     Ptr<ParsedStmt> body;
     if (Consume(Tk::Assign)) {
         body = ParseExpr();
-        if (not Consume(Tk::Semicolon)) Error("Expected ';'");
+        ExpectSemicolon();
     } else if (Consume(Tk::Semicolon)) {
         // Nothing.
     } else if (At(Tk::LBrace)) {
@@ -1481,20 +1515,24 @@ bool Parser::ParseSignatureImpl(
     return true;
 }
 
-// <stmt>  ::= <expr>
-//           | <decl>
-//           | <stmt-for>
-//           | <stmt-while>
-//           | EVAL <stmt>
+// <stmt> ::= <expr-braces>
+//          | <expr-no-braces> ";"
+//          | <decl>
+//          | <stmt-while>
+//          | <stmt-for>
+//          | <stmt-if>
+//          | EVAL <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
+        // EVAL <stmt>
         case Tk::Eval: {
             Next();
             auto arg = TryParseStmt();
             return new (*this) ParsedEvalExpr{arg, loc};
         }
 
+        // EXPORT <decl>
         case Tk::Export: {
             Next();
 
@@ -1521,18 +1559,24 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedExportDecl{decl, loc};
         }
 
-        // <stmt-for> ::= FOR <expr> IN <expr> [ DO ] <stmt>
-        case Tk::For: {
-            auto for_loc = Next();
-            if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for%)'");
-            auto ident = tok->text;
-            auto ident_loc = Next();
-            if (not Consume(Tk::In)) return Error("Syntax of '%1(for%)' loop is '%1(for%) name %1(in%) expression'");
-            auto range = TryParseExpr();
-            Consume(Tk::Do);
-            auto body = TryParseStmt();
-            return new (*this) ParsedForStmt{for_loc, ident_loc, ident, range, body};
+        // <stmt-if>
+        case Tk::Hash: {
+            if (LookAhead(1).is(Tk::If)) {
+                auto hash_loc = Next();
+                auto if_ = ParseIf(true, false);
+                if (auto i = if_.get_or_null()) i->loc = {hash_loc, i->loc};
+                return if_;
+            }
+
+            // Fall through to expression parser.
+            goto expression_parser;
         }
+
+        // <stmt-if>
+        case Tk::If: return ParseIf(false, false);
+
+        // <stmt-for>
+        case Tk::For: return ParseForStmt();
 
         // <decl-struct>
         case Tk::Struct: return ParseStructDecl();
@@ -1546,16 +1590,40 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedWhileStmt{cond, body, loc};
         }
 
+        // <decl-proc>
         case Tk::Proc: return ParseProcDecl();
-        default: return TryParseExpr(SkipTo(Tk::Semicolon));
-    }
-}
 
-// <stmts> ::= { <stmt> [ ";" ] | <decl> }
-void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& stmts) {
-    while (not At(Tk::Eof, Tk::RBrace)) {
-        if (auto s = ParseStmt()) stmts.push_back(s.get());
-        Consume(Tk::Semicolon);
+        // ";"
+        case Tk::Semicolon: return new (*this) ParsedEmptyStmt{Next()};
+
+        // <expr-braces> | <expr-no-braces> | <decl-var>
+        default:
+        expression_parser: {
+            auto e = TryParseExpr(SkipTo(Tk::Semicolon));
+
+            // <decl-var>
+            //
+            // Types are expressions so variable declarations start with an expression.
+            // TODO: Do we really need the 'type name' syntax instead of just always using
+            //       'var'/'val' to declare a variable; that would simplify this part.
+            //
+            // If the next token is an identifier, then this is a declaration,
+            // provided that the lhs could conceivably be a type (i.e. don’t
+            // parse 'true a' as a declaration).
+            if (At(Tk::Identifier)) return ParseVarDecl(e);
+
+            // If the expression doesn’t have braces, require a semicolon.
+            //
+            // Don't skip to the next semicolon if we're at 'else' or 'elif' to
+            // improve error recovery in 'if' statements.
+            if (
+                not isa<ParsedBlockExpr>(e) and
+                not ExpectSemicolon() and
+                not At(Tk::Else, Tk::Elif)
+            ) SkipPast(Tk::Semicolon);
+
+            return e;
+        }
     }
 }
 
