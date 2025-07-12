@@ -325,7 +325,12 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ForStmt: {
             auto f = cast<ForStmt>(e);
             PrintBasicNode(e, "ForStmt");
-            PrintChildren({f->var, f->range, f->body});
+            SmallVector<Stmt*> children;
+            if (auto v = f->enum_var.get_or_null()) children.push_back(v);
+            llvm::append_range(children, f->vars());
+            llvm::append_range(children, f->ranges());
+            children.push_back(f->body);
+            PrintChildren(children);
         } break;
 
         case Kind::IfExpr: {

@@ -4,6 +4,8 @@ program test;
 proc foo(in int) extern;
 proc foo(in i16) extern;
 proc foo(in i16, in int) extern;
+proc foo(in int, in int) extern;
+proc foo(in int, in int, in int) extern;
 proc foo(in int, in int, in int, in int) extern;
 
 proc a {
@@ -36,6 +38,26 @@ proc f {
             foo(a, b, i, j);
 }
 
+proc g {
+    for i, j in 1..=10, 11..=20 do foo(i, j);
+}
+
+proc h {
+    for enum k, i, j in 1..=10, 11..=20 do foo(k, i, j);
+}
+
+proc i {
+    for enum i in 2..=20 do foo(i);
+}
+
+proc j {
+    for enum i, j in 2..=20, 3..=30, 4..=40, 5..=50 do foo(i, j);
+}
+
+proc k {
+    for 1..=10 do foo(42);
+}
+
 // * proc __src_main {
 // + entry:
 // +     ret
@@ -46,6 +68,10 @@ proc f {
 // + proc _S3fooFvxI16E (in i16 %0);
 // +
 // + proc _S3fooFvxI16xiE (in i16 %0, in int %1);
+// +
+// + proc _S3fooFvxixiE (in int %0, in int %1);
+// +
+// + proc _S3fooFvxixixiE (in int %0, in int %1, in int %2);
 // +
 // + proc _S3fooFvxixixixiE (in int %0, in int %1, in int %2, in int %3);
 // +
@@ -184,5 +210,118 @@ proc f {
 // +     br bb1(%8, %9)
 // +
 // + bb6:
+// +     ret
+// + }
+// +
+// + proc _S1gFvE {
+// + entry:
+// +     br bb1(int 1, int 11)
+// +
+// + bb1(int %0, int %1):
+// +     %2 = icmp slt %0, int 11
+// +     br %2 to bb2 else bb4
+// +
+// + bb2:
+// +     %3 = icmp slt %1, int 21
+// +     br %3 to bb3 else bb4
+// +
+// + bb3:
+// +     call void _S3fooFvxixiE(%0, %1)
+// +     %4 = add %0, int 1
+// +     %5 = add %1, int 1
+// +     br bb1(%4, %5)
+// +
+// + bb4:
+// +     ret
+// + }
+// +
+// + proc _S1hFvE {
+// + entry:
+// +     br bb1(int 0, int 1, int 11)
+// +
+// + bb1(int %0, int %1, int %2):
+// +     %3 = icmp slt %1, int 11
+// +     br %3 to bb2 else bb4
+// +
+// + bb2:
+// +     %4 = icmp slt %2, int 21
+// +     br %4 to bb3 else bb4
+// +
+// + bb3:
+// +     call void _S3fooFvxixixiE(%0, %1, %2)
+// +     %5 = add %0, int 1
+// +     %6 = add %1, int 1
+// +     %7 = add %2, int 1
+// +     br bb1(%5, %6, %7)
+// +
+// + bb4:
+// +     ret
+// + }
+// +
+// + proc _S1iFvE {
+// + entry:
+// +     br bb1(int 0, int 2)
+// +
+// + bb1(int %0, int %1):
+// +     %2 = icmp slt %1, int 21
+// +     br %2 to bb2 else bb3
+// +
+// + bb2:
+// +     call void _S3fooFvxiE(%0)
+// +     %3 = add %0, int 1
+// +     %4 = add %1, int 1
+// +     br bb1(%3, %4)
+// +
+// + bb3:
+// +     ret
+// + }
+// +
+// + proc _S1jFvE {
+// + entry:
+// +     br bb1(int 0, int 2, int 3, int 4, int 5)
+// +
+// + bb1(int %0, int %1, int %2, int %3, int %4):
+// +     %5 = icmp slt %1, int 21
+// +     br %5 to bb2 else bb6
+// +
+// + bb2:
+// +     %6 = icmp slt %2, int 31
+// +     br %6 to bb3 else bb6
+// +
+// + bb3:
+// +     %7 = icmp slt %3, int 41
+// +     br %7 to bb4 else bb6
+// +
+// + bb4:
+// +     %8 = icmp slt %4, int 51
+// +     br %8 to bb5 else bb6
+// +
+// + bb5:
+// +     call void _S3fooFvxixiE(%0, %1)
+// +     %9 = add %0, int 1
+// +     %10 = add %1, int 1
+// +     %11 = add %2, int 1
+// +     %12 = add %3, int 1
+// +     %13 = add %4, int 1
+// +     br bb1(%9, %10, %11, %12, %13)
+// +
+// + bb6:
+// +     ret
+// + }
+// +
+// + proc _S1kFvE {
+// + entry:
+// +     br bb1(int 1)
+// +
+// + bb1(int %0):
+// +     %1 = icmp slt %0, int 11
+// +     br %1 to bb2 else bb3
+// +
+// + bb2:
+// +     call void _S3fooFvxiE(int 42)
+// +     %2 = add %0, int 1
+// +     br bb1(%2)
+// +
+// + bb3:
 // +     ret
 // + }

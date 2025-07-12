@@ -86,20 +86,38 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::EmptyStmt; }
 };
 
-class srcc::ForStmt : public Stmt {
+class srcc::ForStmt final : public Stmt, TrailingObjects<ForStmt, LocalDecl*, Expr*> {
+    friend TrailingObjects;
+    u32 num_vars, num_ranges;
+
 public:
-    Expr* range;
     Ptr<LocalDecl> enum_var;
-    LocalDecl* var;
     Stmt* body;
 
+private:
     ForStmt(
-        Expr* range,
         Ptr<LocalDecl> enum_var,
-        LocalDecl* var,
+        ArrayRef<LocalDecl*> vars,
+        ArrayRef<Expr*> ranges,
         Stmt* body,
         Location location
-    ) : Stmt{Kind::ForStmt, location}, range{range}, enum_var{enum_var}, var{var}, body{body} {}
+    );
+
+    usz numTrailingObjects(OverloadToken<LocalDecl*>) const { return num_vars; }
+    usz numTrailingObjects(OverloadToken<Expr*>) const { return num_ranges; }
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        Ptr<LocalDecl> enum_var,
+        ArrayRef<LocalDecl*> vars,
+        ArrayRef<Expr*> ranges,
+        Stmt* body,
+        Location location
+    ) -> ForStmt*;
+
+    auto ranges() const -> ArrayRef<Expr*> { return getTrailingObjects<Expr*>(num_ranges); }
+    auto vars() const -> ArrayRef<LocalDecl*> { return getTrailingObjects<LocalDecl*>(num_vars); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ForStmt; }
 };

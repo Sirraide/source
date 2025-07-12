@@ -944,46 +944,61 @@ auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
 }
 
 auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
-    Assert(isa<RangeType>(stmt->range->type));
-    auto range = Emit(stmt->range);
-    auto start = CreateExtractValue(range, 0);
-    auto end = CreateExtractValue(range, 1);
+    SmallVector<Value*> ranges;
+    SmallVector<Type> arg_types;
+    SmallVector<Value*> args;
+    SmallVector<Value*> end_vals;
     auto bb_end = CreateBlock();
-    auto bb_body = CreateBlock();
+
+    // Emit the ranges in order.
+    for (auto r : stmt->ranges()) {
+        Assert(isa<RangeType>(r->type));
+        ranges.push_back(Emit(r));
+    }
+
+    // Add the enumerator.
+    auto* enum_var = stmt->enum_var.get_or_null();
+    if (enum_var) {
+        arg_types.push_back(enum_var->type);
+        args.push_back(CreateInt(0, enum_var->type));
+    }
 
     // Collect all loop variables. The enumerator is always at index 0.
-    auto* enum_var = stmt->enum_var.get_or_null();
-    SmallVector<Type> arg_types;
-    if (enum_var) arg_types.push_back(enum_var->type);
-    arg_types.push_back(start->type());
-    u32 args_offs = enum_var ? 1 : 0;
+    for (auto r : ranges) {
+        auto start = CreateExtractValue(r, 0);
+        auto end = CreateExtractValue(r, 1);
+        arg_types.push_back(start->type());
+        args.push_back(start);
+        end_vals.push_back(end);
+    }
 
     // Branch to the condition block.
-    SmallVector<Value*> args;
-    if (enum_var) args.push_back(CreateInt(0, enum_var->type));
-    args.push_back(start);
     auto bb_cond = EnterBlock(CreateBlock(arg_types), args);
 
     // Add the loop variables to the current scope.
+    auto block_args = bb_cond->arguments().drop_front(enum_var ? 1 : 0);
     if (enum_var) locals[enum_var] = bb_cond->arg(0);
-    locals[stmt->var] = bb_cond->arg(args_offs);
+    for (auto [v, a] : zip(stmt->vars(), block_args)) locals[v] = a;
 
-    // Condition.
-    auto eq = EmitArithmeticOrComparisonOperator(Tk::SLt, bb_cond->arg(args_offs), end, stmt->location());
-    CreateCondBr(eq, bb_body, bb_end);
+    // If we have multiple ranges, break if we’ve reach the end of any one of them.
+    for (auto [a, e] : zip(block_args, end_vals)) {
+        auto bb_cont = CreateBlock();
+        auto lt = EmitArithmeticOrComparisonOperator(Tk::SLt, a, e, stmt->location());
+        CreateCondBr(lt, bb_cont, bb_end);
+        EnterBlock(std::move(bb_cont));
+    }
 
     // Body.
-    EnterBlock(std::move(bb_body));
     Emit(stmt->body);
 
     // Remove the loop variables again.
     if (enum_var) locals.erase(enum_var);
-    locals.erase(stmt->var);
+    for (auto v : stmt->vars()) locals.erase(v);
 
-    // Increment.
+    // Emit increments for all of them.
     args.clear();
     if (enum_var) args.push_back(CreateAdd(bb_cond->arg(0), CreateInt(1, enum_var->type)));
-    args.push_back(CreateAdd(bb_cond->arg(args_offs), CreateInt(1, start->type())));
+    for (auto a : block_args) args.push_back(CreateAdd(a, CreateInt(1, a->type())));
     CreateBr(bb_cond, args);
 
     // Continue.

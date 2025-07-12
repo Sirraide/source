@@ -4,7 +4,7 @@ program test;
 // Due to some improper code reuse, we would stop parsing as soon as we
 // encountered an unmatched closing } because we believed that to be the
 // end of the ‘file-scope block’.
-for i in }; // expected-error: Expected-expression
+for i in }; // expected-error: Expected expression
 
 // Obvious syntax error.
-=; // expected-error: Expected-expression
+=; // expected-error: Expected expression

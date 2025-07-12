@@ -108,6 +108,33 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts().back());
 }
 
+ForStmt::ForStmt(
+    Ptr<LocalDecl> enum_var,
+    ArrayRef<LocalDecl*> vars,
+    ArrayRef<Expr*> ranges,
+    Stmt* body,
+    Location location
+) : Stmt{Kind::ForStmt, location},
+    num_vars{u32(vars.size())},
+    num_ranges{u32(ranges.size())},
+    enum_var{enum_var}, body{body} {
+    std::uninitialized_copy_n(vars.begin(), vars.size(), getTrailingObjects<LocalDecl*>());
+    std::uninitialized_copy_n(ranges.begin(), ranges.size(), getTrailingObjects<Expr*>());
+}
+
+auto ForStmt::Create(
+    TranslationUnit& tu,
+    Ptr<LocalDecl> enum_var,
+    ArrayRef<LocalDecl*> vars,
+    ArrayRef<Expr*> ranges,
+    Stmt* body,
+    Location location
+) -> ForStmt* {
+    const auto size = totalSizeToAlloc<LocalDecl*, Expr*>(vars.size(), ranges.size());
+    auto mem = tu.allocate(size, alignof(ForStmt));
+    return ::new (mem) ForStmt{enum_var, vars, ranges, body, location};
+}
+
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 

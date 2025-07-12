@@ -2331,33 +2331,38 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
 }
 
 auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
-    // The type of the variable depends on the range, so translate it first.
-    auto range = TRY(TranslateExpr(parsed->ranges().front()));
+    // The number of variables must be less than or equal to the number of ranges.
+    if (parsed->vars().size() > parsed->ranges().size()) return Error(
+        parsed->loc,
+        "'%1(for%)' loop declares more variables than it has ranges ({} vs {})",
+        parsed->vars().size(),
+        parsed->ranges().size()
+    );
 
-    // Range must be an srvalue range.
+    // The types of the variables depend on the ranges, so translate them first.
+    SmallVector<Expr*> ranges;
+    for (auto r : parsed->ranges())
+        if (auto e = TranslateExpr(r).get_or_null())
+            ranges.push_back(e);
+
+    // Give up if something went wrong.
+    if (ranges.size() != parsed->ranges().size()) return {};
+
+    // The ranges must be srvalue ranges.
     // TODO: Support slices as well.
-    auto rty = dyn_cast<RangeType>(range->type);
-    if (not rty) return Error(
-        range->location(),
-        "Invalid type '{}' for range of '%1(for%)' loop",
-        range->type
-    );
+    for (auto& r : ranges) {
+        auto rty = dyn_cast<RangeType>(r->type);
+        if (not rty) return Error(
+            r->location(),
+            "Invalid type '{}' for range of '%1(for%)' loop",
+            r->type
+        );
 
-    range = LValueToSRValue(range);
+        r = LValueToSRValue(r);
+    }
 
-    // Create the loop variable; it has no initialiser since it’s really
-    // just an srvalue value bound to the elements of the range.
-    auto var = new (*M) LocalDecl(
-        rty->elem(),
-        rty->elem()->rvalue_category(), // TODO: Should be lvalue if we’re iterating over a slice.
-        parsed->vars().front().first,
-        curr_proc().proc,
-        parsed->vars().front().second
-    );
-
-    // Push a new scope for the loop variable.
+    // Push a new scope for the loop variables.
     EnterScope _{*this};
-    DeclareLocal(var);
 
     // Declare the enumerator variable if there is one.
     Ptr<LocalDecl> enum_var;
@@ -2373,9 +2378,26 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
         DeclareLocal(enum_var.get());
     }
 
-    // Now that we have the variable, translate the loop body.
+    // Create the loop variables; they have no initialisers since they’re really
+    // just srvalues bound to the elements of the ranges.
+    SmallVector<LocalDecl*> vars;
+    for (auto [v, r] : zip(parsed->vars(), ranges)) {
+        auto rty = cast<RangeType>(r->type);
+        auto var = new (*M) LocalDecl(
+            rty->elem(),
+            rty->elem()->rvalue_category(), // TODO: Should be lvalue if we’re iterating over a slice.
+            v.first,
+            curr_proc().proc,
+            v.second
+        );
+
+        vars.push_back(var);
+        DeclareLocal(var);
+    }
+
+    // Now that we have the variables, translate the loop body.
     auto body = TRY(TranslateStmt(parsed->body));
-    return new (*M) ForStmt(range, enum_var, var, body, parsed->loc);
+    return ForStmt::Create(*M, enum_var, vars, ranges, body, parsed->loc);
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Stmt> {

@@ -19,3 +19,24 @@ for enum i, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range 
 
 // FIXME: Should work.
 for enum j, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
+
+for i, j in 1..=2, 1..=2 {};
+for enum k, i, j in 1..=2, 1..=2 {};
+for enum k, j in 1..=2, 1..=2 {};
+for enum k in 1..=2, 1..=2 {};
+for 1..=2, 1..=2 {};
+for 1..=2 {};
+
+for i, j in 1..=2 {}; // expected-error: 'for' loop declares more variables than it has ranges (2 vs 1)
+for i, j, k in 1..=2 {}; // expected-error: 'for' loop declares more variables than it has ranges (3 vs 1)
+
+for i, i in 1..=2, 1..=2 {};
+for i, i in 1..=2, 1..=2 do i + 1; // expected-error (Ambiguous symbol 'i') expected-note 2 (Candidate here)
+
+// The loop variable(s) are not available in the ranges.
+for enum k, l, i, j in
+    l..=1, // expected-error: Unknown symbol 'l'
+    j..=2, // expected-error: Unknown symbol 'j'
+    i..=3, // expected-error: Unknown symbol 'i'
+    k..=4  // expected-error: Unknown symbol 'k'
+;

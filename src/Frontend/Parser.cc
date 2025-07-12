@@ -145,7 +145,7 @@ ParsedForStmt::ParsedForStmt(
     enum_loc{enum_loc},
     enum_name{enum_name},
     body{body}{
-    std::uninitialized_copy_n(ranges.begin(), num_idents, getTrailingObjects<ParsedStmt*>());
+    std::uninitialized_copy_n(ranges.begin(), num_ranges, getTrailingObjects<ParsedStmt*>());
     std::uninitialized_copy_n(vars.begin(), num_idents, getTrailingObjects<LoopVar>());
 }
 
@@ -350,7 +350,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             }
 
             print("\n");
-            PrintChildren(f.body);
+            SmallVector<ParsedStmt*> children{f.ranges()};
+            children.push_back(f.body);
+            PrintChildren(children);
         } break;
 
         case Kind::IfExpr: {
@@ -1148,7 +1150,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
             if (At(Tk::Identifier)) Error("Expected ','");
             else break;
         }
-    } while (At(Tk::Identifier));
+    } while (AtStartOfExpression());
 
     // Body.
     Consume(Tk::Do);
