@@ -14,7 +14,16 @@ while true do false;
 while 3 + 4 * 5 / 4 do 4;
 
 while while 1 1 1; // expected-error: Expected expression
-while proc {} 1; // expected-error: Expected expression
 while / 3; // expected-error: Expected expression
 while = 3; // expected-error: Expected expression
 while 1 ]; // expected-error: Expected expression
+
+// This is a stupid loop, but it’s valid:
+//
+// WhileStmt 0x10083a70
+// ├─Type proc -> void
+// └─BlockExpr 0x10083a58
+//
+// FIXME: As soon as we have anonymous procedures the parse for this is
+// going to change and this will fail; update this test when we do.
+while proc {}

@@ -63,6 +63,7 @@
                    | <expr-return>
                    | <expr-subscript>
                    | <expr-postfix>
+                   | <type>
 
 <expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>

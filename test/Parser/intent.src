@@ -28,7 +28,7 @@ proc foo(
     in out int, // expected-error: Cannot specify more than one parameter intent
 
     // But any intents that are not keywords are allowed as parameter names.
-    int in, // expected-error: Expected parameter name, ',', or ')'
+    int in, // expected-error: Expected expression
     int out,
     int inout,
     int copy,

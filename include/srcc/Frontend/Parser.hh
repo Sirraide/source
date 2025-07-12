@@ -768,7 +768,7 @@ private:
     auto ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr>;
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
     auto ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr>;
-    auto ParseExpr(int precedence = -1) -> Ptr<ParsedStmt>;
+    auto ParseExpr(int precedence = -1, bool expect_type = false) -> Ptr<ParsedStmt>;
     auto ParseForStmt() -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
@@ -781,9 +781,7 @@ private:
     bool ParseSignatureImpl(SmallVectorImpl<ParsedLocalDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
-    auto ParseType() -> Ptr<ParsedStmt>;
-    auto ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt>;
-    auto ParseTypeStart() -> Ptr<ParsedStmt>;
+    auto ParseType(int precedence = -1) { return ParseExpr(precedence, true); }
     auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
 
     auto CreateType(Signature& sig) -> ParsedProcType*;

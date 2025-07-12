@@ -526,6 +526,17 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 out += std::format("%8({}%)", utils::join(d->names(), "::"));
             } break;
 
+            case Kind::BinaryExpr: {
+                auto e = cast<ParsedBinaryExpr>(type);
+                if (e->op == Tk::LBrack) {
+                    Append(e->lhs);
+                    out += "%1([%)<expr>%1(]%)";
+                    break;
+                }
+
+                [[fallthrough]];
+            }
+
             default:
                 out += "<invalid type>";
                 break;
@@ -557,6 +568,7 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::LBrack:
         case Tk::PlusPlus:
         case Tk::MinusMinus:
+        case Tk::Caret: // This is a type operator only.
             return 5'000;
 
         case Tk::LParen:
@@ -646,6 +658,14 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
 
 constexpr int PrefixPrecedence = 900;
 
+/// The precedence used to parse template parameters; this is set to the precedence
+/// of '>' + 1 so that we stop parsing when we find the '>'.
+constexpr int TemplateParamPrecedence = BinaryOrPostfixPrecedence(Tk::SGt) + 1;
+
+/// The precedence used to parse the return type of a function; this is set to the
+/// precedence of '=' + 1 so that we stop parsing if we encounter an '='.
+constexpr int ReturnTypePrecedence = BinaryOrPostfixPrecedence(Tk::Assign) + 1;
+
 constexpr bool IsRightAssociative(Tk t) {
     switch (t) {
         case Tk::StarStar:
@@ -694,6 +714,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Integer:
         case Tk::Minus:
         case Tk::MinusMinus:
+        case Tk::NoReturn:
         case Tk::Not:
         case Tk::LBrace:
         case Tk::LParen:
@@ -871,14 +892,25 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-return>
 //          | <expr-subscript>
 //          | <expr-postfix>
-auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
+//          | <type>
+//
+// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
+// <type-qualified> ::= <type> { <qualifier> }
+// <type-range> ::= RANGE "<" <type> ">"
+// <qualifier> ::= "[" "]" | "^"
+// <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
+auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
+    auto BuiltinType = [&](Type ty) {
+        return new (*this) ParsedBuiltinType(ty, Next());
+    };
+
     Ptr<ParsedStmt> lhs;
     bool at_start = AtStartOfExpression(); // See below.
     auto start_tok = tok->type;
     switch (tok->type) {
         default:
-            Error("Expected expression");
-            SkipTo(Tk::Semicolon);
+            if (expect_type) Error("Expected type");
+            else Error("Expected expression");
             return {};
 
         case Tk::Else:
@@ -992,16 +1024,58 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedParenExpr{lhs.get(), {lparen, rparen}};
         } break;
 
-        case Tk::Bool:
-        case Tk::Int:
+        // <type-prim> ::= BOOL | INT | VOID | VAR | NORETURN
+        case Tk::Bool: lhs = BuiltinType(Type::BoolTy); break;
+        case Tk::Int: lhs = BuiltinType(Type::IntTy); break;
+        case Tk::NoReturn: lhs = BuiltinType(Type::NoReturnTy); break;
+        case Tk::Void: lhs = BuiltinType(Type::VoidTy); break;
+        case Tk::Var: lhs = BuiltinType(Type::DeducedTy); break;
+
+        // INTEGER_TYPE
         case Tk::IntegerType:
-        case Tk::NoReturn:
-        case Tk::Range:
-        case Tk::Void:
-        case Tk::Var:
-        case Tk::TemplateType:
-            lhs = ParseType();
+            if (not tok->integer.isSingleWord()) return Error("Integer type too large");
+            lhs = new (*this) ParsedIntType(Size::Bits(tok->integer.getZExtValue()), Next());
             break;
+
+        // <signature>
+        case Tk::Proc: {
+            Signature sig;
+            if (not ParseSignature(sig, nullptr)) return nullptr;
+
+            // A procedure name is not allowed here. If you want
+            // to allow a name, call ParseSignature instead.
+            if (not sig.name.empty()) Error(
+                sig.tok_after_proc,
+                "A name is not allowed in a procedure type"
+            );
+
+            lhs = CreateType(sig);
+        } break;
+
+        // <type-range> ::= RANGE "<" <type> ">"
+        case Tk::Range: {
+            Location loc = Next(), end{};
+            if (not Consume(Tk::SLt)) Error("Expected '%1(<%)' after '%1(range%)'");
+            auto ty = TRY(ParseType(TemplateParamPrecedence));
+            if (not Consume(end, Tk::SGt)) {
+                Error("Expected '%1(>%)'");
+                SkipTo(Tk::Semicolon, Tk::SGt);
+                Consume(end, Tk::SGt);
+            }
+
+            lhs = new (*this) ParsedRangeType(ty, {loc, end});
+        } break;
+
+        // TEMPLATE-TYPE
+        case Tk::TemplateType: {
+            if (not current_signature) return Error("'{}' is not allowed here; try removing the '$'", tok->text);
+
+            // Drop the '$' from the type.
+            auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
+            current_signature->add_deduced_template_param(ty->name);
+            Next();
+            lhs = ty;
+        } break;
     }
 
     // There was an error.
@@ -1043,12 +1117,12 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
 
             // <expr=subscript> ::= <expr> "[" <expr> "]"
             case Tk::LBrack: {
-                if (LookAhead().is(Tk::RBrack)) {
-                    lhs = ParseTypeRest(lhs.get());
+                Next();
+                if (At(Tk::RBrack)) {
+                    lhs = new (*this) ParsedSliceType(lhs.get(), {lhs.get()->loc, Next()});
                     continue;
                 }
 
-                Next();
                 auto index = TryParseExpr();
                 auto end = tok->location;
                 ConsumeOrError(Tk::RBrack);
@@ -1060,6 +1134,10 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
                 };
                 continue;
             }
+
+            case Tk::Caret:
+                lhs = new (*this) ParsedPtrType(lhs.get(), {lhs.get()->loc, Next()});
+                continue;
 
             // <expr-member> ::= <expr> "." IDENTIFIER
             case Tk::Dot: {
@@ -1159,7 +1237,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
 
     // Ranges.
     do {
-        ranges.push_back(TryParseExpr());
+        ranges.push_back(TryParseExpr(SkipTo(Tk::Semicolon)));
         if (not Consume(Tk::Comma)) {
             if (At(Tk::Identifier)) Error("Expected ','");
             else break;
@@ -1619,7 +1697,7 @@ bool Parser::ParseSignatureImpl(
     );
 
     // Parse return type.
-    if (Consume(Tk::RArrow)) sig.ret = ParseType();
+    if (Consume(Tk::RArrow)) sig.ret = ParseType(ReturnTypePrecedence);
     return true;
 }
 
@@ -1778,102 +1856,4 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
 
     if (not Consume(Tk::RBrace)) Error("Expected '}}'");
     return ParsedStructDecl::Create(*this, name, fields, struct_loc);
-}
-
-// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
-// <type-qualified> ::= <type> { <qualifier> }
-// <qualifier> ::= "[" "]"
-auto Parser::ParseType() -> Ptr<ParsedStmt> {
-    auto ty = ParseTypeStart();
-    if (not ty) return {};
-    return ParseTypeRest(ty.get());
-}
-
-auto Parser::ParseTypeRest(ParsedStmt* ty) -> Ptr<ParsedStmt> {
-    // FIXME: This should just get merged into the expression parser.
-    switch (tok->type) {
-        default: return ty;
-        case Tk::Caret: {
-            ty = new (*this) ParsedPtrType(ty, {ty->loc, Next()});
-            return ParseTypeRest(ty);
-        }
-
-        case Tk::LBrack: {
-            Next();
-            Location loc;
-            if (not Consume(loc, Tk::RBrack)) {
-                Error("Expected ']'");
-                SkipTo(Tk::Semicolon);
-                return {};
-            }
-
-            ty = new (*this) ParsedSliceType(ty, {ty->loc, loc});
-            return ParseTypeRest(ty);
-        }
-    }
-}
-
-auto Parser::ParseTypeStart() -> Ptr<ParsedStmt> {
-    auto Builtin = [&](Type ty) {
-        return new (*this) ParsedBuiltinType(ty, Next());
-    };
-
-    switch (tok->type) {
-        default: return Error("Expected type");
-
-        // <type-prim> ::= BOOL | INT | VOID | VAR
-        case Tk::Bool: return Builtin(Type::BoolTy);
-        case Tk::Int: return Builtin(Type::IntTy);
-        case Tk::NoReturn: return Builtin(Type::NoReturnTy);
-        case Tk::Void: return Builtin(Type::VoidTy);
-        case Tk::Var: return Builtin(Type::DeducedTy);
-
-        // INTEGER_TYPE
-        case Tk::IntegerType:
-            if (not tok->integer.isSingleWord()) return Error("Integer type too large");
-            return new (*this) ParsedIntType(Size::Bits(tok->integer.getZExtValue()), Next());
-
-        // TEMPLATE-TYPE
-        case Tk::TemplateType: {
-            if (not current_signature) return Error("'{}' is not allowed here; try removing the '$'", tok->text);
-
-            // Drop the '$' from the type.
-            auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
-            current_signature->add_deduced_template_param(ty->name);
-            Next();
-            return ty;
-        }
-
-        // <expr-decl-ref>
-        case Tk::Identifier:
-            return ParseDeclRefExpr();
-
-        // <type-range> ::= RANGE "<" <type> ">"
-        case Tk::Range: {
-            Location loc = Next(), end{};
-            if (not Consume(Tk::SLt)) Error("Expected '%1(<%)' after '%1(range%)'");
-            auto ty = TryParseType();
-            if (not Consume(end, Tk::SGt)) {
-                Error("Expected '%1(>%)'");
-                SkipTo(Tk::Semicolon, Tk::SGt);
-                Consume(end, Tk::SGt);
-            }
-            return new (*this) ParsedRangeType(ty, {loc, end});
-        }
-
-        // <signature>
-        case Tk::Proc: {
-            Signature sig;
-            if (not ParseSignature(sig, nullptr)) return nullptr;
-
-            // A procedure name is not allowed here. If you want
-            // to allow a name, call ParseSignature instead.
-            if (not sig.name.empty()) Error(
-                sig.tok_after_proc,
-                "A name is not allowed in a procedure type"
-            );
-
-            return CreateType(sig);
-        }
-    }
 }
