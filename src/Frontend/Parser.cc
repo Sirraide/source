@@ -132,6 +132,37 @@ auto ParsedDeclRefExpr::Create(
     return ::new (mem) ParsedDeclRefExpr{names, location};
 }
 
+ParsedForStmt::ParsedForStmt(
+    Location for_loc,
+    Location enum_loc,
+    String enum_name,
+    ArrayRef<LoopVar> vars,
+    ArrayRef<ParsedStmt*> ranges,
+    ParsedStmt* body
+) : ParsedStmt{Kind::ForStmt, for_loc},
+    num_idents{u32(vars.size())},
+    num_ranges{u32(ranges.size())},
+    enum_loc{enum_loc},
+    enum_name{enum_name},
+    body{body}{
+    std::uninitialized_copy_n(ranges.begin(), num_idents, getTrailingObjects<ParsedStmt*>());
+    std::uninitialized_copy_n(vars.begin(), num_idents, getTrailingObjects<LoopVar>());
+}
+
+auto ParsedForStmt::Create(
+    Parser& parser,
+    Location for_loc,
+    Location enum_loc,
+    String enum_name,
+    ArrayRef<LoopVar> vars,
+    ArrayRef<ParsedStmt*> ranges,
+    ParsedStmt* body
+) -> ParsedForStmt* {
+    const auto size = totalSizeToAlloc<LoopVar, ParsedStmt*>(vars.size(), ranges.size());
+    auto mem = parser.allocate(size, alignof(ParsedForStmt));
+    return ::new (mem) ParsedForStmt{for_loc, enum_loc, enum_name, vars, ranges, body};
+}
+
 ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, Location loc)
     : ParsedStmt{Kind::IntLitExpr, loc},
       storage{p.module().integers.store_int(std::move(value))} {}
@@ -307,10 +338,19 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::ForStmt: {
             auto& f = *cast<ParsedForStmt>(s);
             PrintHeader(s, "ForStmt", false);
-            print("%1(var%) %8({}%)", f.ident);
-            if (f.has_enumerator()) print(" %1(enum%) %8({}%)", f.enum_name);
+
+            if (f.has_enumerator()) {
+                print(" %1(enum%) %8({}%)", f.enum_name);
+                if (not f.vars().empty()) print("%1(,%) ");
+            }
+
+            for (auto [i, v] : enumerate(f.vars())) {
+                if (i != 0) print("%1(,%) ");
+                print(" %8({}%)", f.enum_name);
+            }
+
             print("\n");
-            PrintChildren({f.range, f.body});
+            PrintChildren(f.body);
         } break;
 
         case Kind::IfExpr: {
@@ -1035,33 +1075,85 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     return lhs;
 }
 
-// <stmt-for> ::= FOR [ ENUM IDENTIFIER "," ] IDENTIFIER IN <expr> [ DO ] <stmt>
+// <stmt-for> ::= FOR [ <for-vars> IN ] <expr> { "," <expr> } [ DO ] <stmt>
+// <for-vars> ::= <idents> | ENUM IDENT [ "," <idents> ]
+// <idents>   ::= IDENT { "," IDENT }
 auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
+    SmallVector<ParsedForStmt::LoopVar> vars;
     auto for_loc = Next();
+    auto ParseIdents = [&] -> bool {
+        // This is only an identifier if followed by a comma or 'in' (or another
+        // identifier, which likely indicates a missing comma); otherwise, we might
+        // have a loop of the form 'for x { ... }', in which case we should not treat
+        // 'x' as a loop variable.
+        while (At(Tk::Identifier) and LookAhead().is(Tk::Identifier, Tk::Comma, Tk::In)) {
+            vars.emplace_back(tok->text, tok->location);
+            Next();
+            if (not Consume(Tk::Comma)) {
+                if (At(Tk::Identifier)) {
+                    // Recover from a missing comma if we're sure that that’s what the
+                    // user intended here.
+                    if (LookAhead().is(Tk::In, Tk::Do)) {
+                        Error("Expected '%1(,%)'");
+                        continue;
+                    }
 
-    // Enumerator.
+                    // Only issue this error message once if we’re not sure what we want here.
+                    ErrorSync("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
+                    return false;
+                }
+                break;
+            }
+        }
+        return true;
+    };
+
+    // Parse enumerator and identifiers.
     String enum_name;
     Location enum_loc;
     if (Consume(Tk::Enum)) {
-        if (not At(Tk::Identifier)) return ErrorSync("Expected identifier after '%1(for enum%)'");
-        enum_name = tok->text;
-        enum_loc = Next();
-        if (not Consume(Tk::Comma)) return ErrorSync("Expected '%1(,%)' after enumerator in '%(for%)' loop");
+        if (At(Tk::Identifier)) {
+            enum_name = tok->text;
+            enum_loc = Next();
+        } else {
+            Error("Expected identifier after '%1(for enum%)'");
+        }
+
+        if (Consume(Tk::Comma) and not ParseIdents())
+            return {};
+    } else if (At(Tk::Identifier) and not ParseIdents()) {
+        return {};
     }
 
-    // Identifier.
-    if (not At(Tk::Identifier)) return ErrorSync("Expected identifier after '%1(for%)'");
-    auto ident = tok->text;
-    auto ident_loc = Next();
+    // 'in' is required iff we have at least one identifier.
+    SmallVector<ParsedStmt*> ranges;
+    if (not enum_name.empty() or not vars.empty()) {
+        if (not Consume(Tk::In)) {
+            // This might be a missing comma. If not, it’s unlikely that trying
+            // to parse the rest of this is going to yield anything but more
+            // errors.
+            if (At(Tk::Identifier)) Error("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
+            else return ErrorSync("Expected '%1(in%)'");
+        }
+    } else if (Location in_loc; Consume(in_loc, Tk::In)) {
+        ErrorSync(Location{for_loc, in_loc}, "'%1(for in%)' is invalid");
+        Remark("Valid syntaxes for 'for' loops include 'for y' and 'for x in y'.");
+        return {};
+    }
 
-    // Range.
-    if (not Consume(Tk::In)) return Error("Expected '%1(in%)'");
-    auto range = TryParseExpr();
+    // Ranges.
+    do {
+        ranges.push_back(TryParseExpr());
+        if (not Consume(Tk::Comma)) {
+            if (At(Tk::Identifier)) Error("Expected ','");
+            else break;
+        }
+    } while (At(Tk::Identifier));
 
     // Body.
     Consume(Tk::Do);
     auto body = TryParseStmt();
-    return new (*this) ParsedForStmt{for_loc, enum_loc, enum_name, ident_loc, ident, range, body};
+    return ParsedForStmt::Create(*this, for_loc, enum_loc, enum_name, vars, ranges, body);
 }
 
 // <file> ::= <preamble> { <stmt> }

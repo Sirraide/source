@@ -17,8 +17,8 @@
 //
 <preamble>        ::= <header> { <import> }
 <header>          ::= ( "program" | "module" ) <module-name> ";"
-<import>          ::= IMPORT CXX-HEADER-NAME AS IDENTIFIER ";"
-<module-name>     ::= IDENTIFIER
+<import>          ::= IMPORT CXX-HEADER-NAME AS IDENT ";"
+<module-name>     ::= IDENT
 
 // ============================================================================
 //  Statements
@@ -34,9 +34,14 @@
           | ";"
 
 <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
-<stmt-for> ::= FOR [ ENUM IDENTIFIER "," ] IDENTIFIER IN <expr> [ DO ] <stmt>
+
 <stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
 <if-stmt-body> ::= [ THEN ] <stmt>
+
+// Note: The support for trailing commas here was accidental, but I don’t really have a problem w/ it.
+<stmt-for> ::= FOR [ <for-vars> IN ] <expr> { "," <expr> } [ "," ] DO <stmt>
+<for-vars> ::= <idents> | ENUM IDENT [ "," <idents> ]
+<idents>   ::= IDENT { "," IDENT } [ "," ]
 
 // ============================================================================
 //  Expressions
@@ -61,11 +66,11 @@
 <expr-binary>    ::= <expr> <binary> <expr>
 <expr-block>     ::= "{" <stmts>  "}"
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
-<expr-decl-ref>  ::= IDENTIFIER [ "::" <expr-decl-ref> ]
+<expr-decl-ref>  ::= IDENT [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
 <expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
-<expr-member>    ::= <expr> "." IDENTIFIER
+<expr-member>    ::= <expr> "." IDENT
 <expr-paren>     ::= "(" <expr> ")"
 <expr-prefix>    ::= <prefix> <expr>
 <expr-return>    ::= RETURN [ <expr> ]
@@ -82,14 +87,14 @@
 //  Declarations
 // ============================================================================
 <decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | EXPORT <decl>
-<decl-var>    ::= <type> IDENTIFIER [ "=" <expr> ] ";"
+<decl-var>    ::= <type> IDENT [ "=" <expr> ] ";"
 <decl-proc>   ::= <signature> <proc-body>
-<decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" } "}"
-<signature>   ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
+<decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
+<signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
-<param-decl>  ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
+<param-decl>  ::= [ <intent> ] <type> [ IDENT ] | [ <intent> ] <signature>
 <intent>      ::= IN | OUT | INOUT | COPY
 
 // ============================================================================

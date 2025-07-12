@@ -393,32 +393,47 @@ public:
 };
 
 /// A for loop.
-class srcc::ParsedForStmt final : public ParsedStmt {
+class srcc::ParsedForStmt final : public ParsedStmt,
+    TrailingObjects<ParsedForStmt, std::pair<String, Location>, ParsedStmt*> {
+    friend TrailingObjects;
+
+    u32 num_idents;
+    u32 num_ranges;
+
 public:
+    using LoopVar = std::pair<String, Location>;
+
     Location enum_loc;
     String enum_name;
-    Location ident_loc;
-    String ident;
-    ParsedStmt* range;
     ParsedStmt* body;
 
+private:
     ParsedForStmt(
         Location for_loc,
         Location enum_loc,
         String enum_name,
-        Location ident_loc,
-        String ident,
-        ParsedStmt* range,
+        ArrayRef<LoopVar> vars,
+        ArrayRef<ParsedStmt*> ranges,
         ParsedStmt* body
-    ) : ParsedStmt{Kind::ForStmt, for_loc},
-        enum_loc{enum_loc},
-        enum_name{enum_name},
-        ident_loc{ident_loc},
-        ident{ident},
-        range{range},
-        body{body} {}
+    );
+
+    usz numTrailingObjects(OverloadToken<LoopVar>) const { return num_idents; }
+    usz numTrailingObjects(OverloadToken<ParsedStmt*>) const { return num_ranges; }
+
+public:
+    static auto Create(
+        Parser& parser,
+        Location for_loc,
+        Location enum_loc,
+        String enum_name,
+        ArrayRef<LoopVar> vars,
+        ArrayRef<ParsedStmt*> ranges,
+        ParsedStmt* body
+    ) -> ParsedForStmt*;
 
     bool has_enumerator() const { return not enum_name.empty(); }
+    auto ranges() const -> ArrayRef<ParsedStmt*> { return getTrailingObjects<ParsedStmt*>(num_ranges); }
+    auto vars() const -> ArrayRef<LoopVar> { return getTrailingObjects<LoopVar>(num_idents); }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ForStmt; }
 };
@@ -771,6 +786,13 @@ private:
     template <typename... Args>
     auto Error(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         return Error(tok->location, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    auto ErrorSync(Location loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
+        Error(loc, fmt, std::forward<Args>(args)...);
+        SkipTo(Tk::Semicolon);
+        return {};
     }
 
     template <typename... Args>

@@ -2332,7 +2332,7 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
 
 auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // The type of the variable depends on the range, so translate it first.
-    auto range = TRY(TranslateExpr(parsed->range));
+    auto range = TRY(TranslateExpr(parsed->ranges().front()));
 
     // Range must be an srvalue range.
     // TODO: Support slices as well.
@@ -2350,9 +2350,9 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     auto var = new (*M) LocalDecl(
         rty->elem(),
         rty->elem()->rvalue_category(), // TODO: Should be lvalue if we’re iterating over a slice.
-        parsed->ident,
+        parsed->vars().front().first,
         curr_proc().proc,
-        parsed->ident_loc
+        parsed->vars().front().second
     );
 
     // Push a new scope for the loop variable.
