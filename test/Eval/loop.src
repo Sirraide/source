@@ -1,0 +1,4 @@
+// V %srcc --sema --verify %s --eval-steps 1000
+program test;
+
+eval loop {} // expected-error: Exceeded maximum compile-time evaluation steps

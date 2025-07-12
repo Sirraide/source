@@ -487,6 +487,17 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntLitExpr; }
 };
 
+/// This is used for both the expression and statement form.
+class srcc::ParsedLoopExpr final : public ParsedStmt {
+public:
+    Ptr<ParsedStmt> body;
+
+    ParsedLoopExpr(Ptr<ParsedStmt> body, Location location)
+        : ParsedStmt{Kind::LoopExpr, location}, body{body} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LoopExpr; }
+};
+
 /// A member access.
 class srcc::ParsedMemberExpr final : public ParsedStmt {
 public:

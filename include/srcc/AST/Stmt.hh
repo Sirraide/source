@@ -86,7 +86,8 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::EmptyStmt; }
 };
 
-class srcc::ForStmt final : public Stmt, TrailingObjects<ForStmt, LocalDecl*, Expr*> {
+class srcc::ForStmt final : public Stmt
+    , TrailingObjects<ForStmt, LocalDecl*, Expr*> {
     friend TrailingObjects;
     u32 num_vars, num_ranges;
 
@@ -498,6 +499,17 @@ public:
     LocalDecl* decl;
     LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location location);
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
+};
+
+class srcc::LoopExpr final : public Expr {
+public:
+    Ptr<Stmt> body;
+
+    LoopExpr(Ptr<Stmt> body, Location loc)
+        : Expr{Kind::LoopExpr, Type::NoReturnTy, SRValue, loc},
+          body{body} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::LoopExpr; }
 };
 
 class srcc::MemberAccessExpr final : public Expr {

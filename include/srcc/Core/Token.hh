@@ -63,6 +63,7 @@ enum struct srcc::Tk : base::u8 {
     Int,
     IntegerType,
     Is,
+    Loop,
     Match,
     NoReturn,
     Not,

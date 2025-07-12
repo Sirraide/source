@@ -46,6 +46,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Int: return "int";
         case Tk::Import: return "import";
         case Tk::Is: return "is";
+        case Tk::Loop: return "loop";
         case Tk::Match: return "match";
         case Tk::NoReturn: return "noreturn";
         case Tk::Not: return "not";

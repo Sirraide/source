@@ -222,19 +222,10 @@ bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
     return not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
 }
 
-void CodeGen::Loop(
-    ArrayRef<Value*> block_args,
-    llvm::function_ref<SmallVector<Value*>()> emit_body
-) {
-    auto bb_cond = EnterBlock(CreateBlock(block_args), block_args);
-    auto vals = emit_body();
-
-    Assert(
-        insert_point->closed() or block_args.size() == vals.size(),
-        "Mismatched argument count in branch to loop condition"
-    );
-
-    if (not insert_point->closed()) CreateBr(bb_cond, vals);
+void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
+    auto bb_cond = EnterBlock(CreateBlock());
+    emit_body();
+    EnterBlock(bb_cond);
 }
 
 void CodeGen::Unless(Value* cond, llvm::function_ref<void()> emit_else) {
@@ -1038,6 +1029,11 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
     if (l != locals.end()) return l->second;
     Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
     return CreateInvalidLocalReference(expr);
+}
+
+auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> Value* {
+    Loop([&] { if (auto b = stmt->body.get_or_null()) Emit(b); });
+    return nullptr;
 }
 
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {

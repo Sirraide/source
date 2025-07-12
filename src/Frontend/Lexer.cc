@@ -55,6 +55,7 @@ const llvm::StringMap<Tk> keywords = {
     {"init", Tk::Init},
     {"int", Tk::Int},
     {"is", Tk::Is},
+    {"loop", Tk::Loop},
     {"match", Tk::Match},
     {"noreturn", Tk::NoReturn},
     {"not", Tk::Not},

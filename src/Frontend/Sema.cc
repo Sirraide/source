@@ -2446,6 +2446,12 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
     );
 }
 
+auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed) -> Ptr<Stmt> {
+    Ptr<Stmt> body;
+    if (auto b = parsed->body.get_or_null()) body = TRY(TranslateStmt(b));
+    return new (*M) LoopExpr(body, parsed->loc);
+}
+
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
 

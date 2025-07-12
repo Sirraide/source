@@ -370,6 +370,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%5({}%)\n", val);
         } break;
 
+        case Kind::LoopExpr: {
+            PrintHeader(s, "LoopExpr");
+            if (auto b = cast<ParsedLoopExpr>(s)->body.get_or_null()) PrintChildren(b);
+        } break;
+
         case Kind::MemberExpr: {
             auto& m = *cast<ParsedMemberExpr>(s);
             PrintHeader(s, "MemberExpr", false);
@@ -859,6 +864,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-eval>
 //          | <expr-if>
 //          | <expr-lit>
+//          | <expr-loop>
 //          | <expr-member>
 //          | <expr-paren>
 //          | <expr-prefix>
@@ -925,6 +931,14 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
             auto arg = TryParseExpr();
             lhs = new (*this) ParsedEvalExpr{arg, {start, arg->loc}};
         } break;
+
+        // <expr-loop> ::= LOOP <expr>
+        case Tk::Loop: {
+            auto start = Next();
+            Ptr<ParsedStmt> arg;
+            if (AtStartOfExpression()) arg = TryParseExpr();
+            return new (*this) ParsedLoopExpr{arg, arg ? Location{start, arg.get()->loc} : start};
+        }
 
         case Tk::If:
             lhs = ParseIf(false, true);
@@ -1616,6 +1630,7 @@ bool Parser::ParseSignatureImpl(
 //          | <stmt-for>
 //          | <stmt-if>
 //          | EVAL <stmt>
+//          | LOOP <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
@@ -1668,6 +1683,13 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
         // <stmt-if>
         case Tk::If: return ParseIf(false, false);
+
+        // LOOP <stmt>
+        case Tk::Loop: {
+            Next();
+            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+            return new (*this) ParsedLoopExpr{body, loc};
+        }
 
         // <stmt-for>
         case Tk::For: return ParseForStmt();

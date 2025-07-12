@@ -1,0 +1,71 @@
+// R %srcc --ir %s
+program test;
+
+proc a extern;
+
+proc d {
+    loop { a(); }
+}
+
+proc e { loop a(); }
+proc f { loop 4; }
+proc g { loop; }
+
+var x = if 1 == 1 then 3 else loop;
+
+// * proc __src_main {
+// +     %0 = int
+// +
+// + entry:
+// +     %1 = icmp eq int 1, int 1
+// +     br %1 to bb1 else bb2
+// +
+// + bb1:
+// +     br bb4(int 3)
+// +
+// + bb2:
+// +     br bb3
+// +
+// + bb3:
+// +     br bb3
+// +
+// + bb4(int %2):
+// +     store int to %0, %2, align 8
+// +     ret
+// + }
+// +
+// + proc _S1aFvE;
+// +
+// + proc _S1dFvE {
+// + entry:
+// +     br bb1
+// +
+// + bb1:
+// +     call void _S1aFvE
+// +     br bb1
+// + }
+// +
+// + proc _S1eFvE {
+// + entry:
+// +     br bb1
+// +
+// + bb1:
+// +     call void _S1aFvE
+// +     br bb1
+// + }
+// +
+// + proc _S1fFvE {
+// + entry:
+// +     br bb1
+// +
+// + bb1:
+// +     br bb1
+// + }
+// +
+// + proc _S1gFvE {
+// + entry:
+// +     br bb1
+// +
+// + bb1:
+// +     br bb1
+// + }

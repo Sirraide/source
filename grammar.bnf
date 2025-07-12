@@ -31,6 +31,7 @@
           | <stmt-for>
           | <stmt-if>
           | EVAL <stmt>
+          | LOOP <stmt>
           | ";"
 
 <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
@@ -55,6 +56,7 @@
                    | <expr-decl-ref>
                    | <expr-eval>
                    | <expr-lit>
+                   | <expr-loop>
                    | <expr-member>
                    | <expr-paren>
                    | <expr-prefix>
@@ -70,6 +72,7 @@
 <expr-eval>      ::= EVAL <expr>
 <expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
+<expr-loop>      ::= LOOP [ <expr> ]
 <expr-member>    ::= <expr> "." IDENT
 <expr-paren>     ::= "(" <expr> ")"
 <expr-prefix>    ::= <prefix> <expr>

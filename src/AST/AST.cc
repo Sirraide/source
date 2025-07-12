@@ -375,6 +375,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         } break;
 
+        case Kind::LoopExpr: {
+            PrintBasicNode(e, "LoopExpr");
+            if (auto b = cast<LoopExpr>(e)->body.get_or_null()) PrintChildren(b);
+        } break;
+
         case Kind::MemberAccessExpr: {
             auto m = cast<MemberAccessExpr>(e);
             PrintBasicNode(e, "MemberAccessExpr");

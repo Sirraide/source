@@ -1,0 +1,8 @@
+// V %srcc --parse --verify %s
+program test;
+
+loop;
+loop 4;
+loop {}
+loop f();
+loop f() // expected-error: Expected ';'

@@ -210,10 +210,7 @@ private:
     /// The arguments, as well as the values returned from the callback,
     /// are passed to the condition block of the loop. The callback may
     /// return an empty vector if the loop is infinite or has no arguments.
-    void Loop(
-        ArrayRef<ir::Value*> block_args,
-        llvm::function_ref<SmallVector<ir::Value*>()> emit_body
-    );
+    void Loop(llvm::function_ref<void()> emit_body);
 
     auto MangledName(ProcDecl* proc) -> String;
 
