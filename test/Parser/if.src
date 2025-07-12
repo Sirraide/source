@@ -38,30 +38,15 @@ x = #if true then 1 else 2; // expected-error: '#if' must be paired with '#else'
 (#if true a else b) = 42;  // expected-error: '#if' must be paired with '#else'
 #if true {} #elif true {} elif true 4; // expected-error: '#if' must be paired with '#elif'
 if true {} #elif true {} elif true 4; // expected-error: 'if' must be paired with 'elif', not '#elif'
-
-// expected-error@+2 2: '#if' must be paired with '#elif'
-// expected-error@+1: '#if' must be paired with '#else'
-#if true {} elif true {} elif true {} else {}
-
-// expected-error@+2 2: '#if' must be paired with '#elif'
-// expected-error@+1: '#if' must be paired with '#else'
-#if true 7; elif true 7; elif true 7; else {}
-
-// expected-error@+2: '#if' must be paired with '#elif'
-// expected-error@+1: '#if' must be paired with '#else'
-#if true {} elif true {} #elif true {} else {};
+#if true {} elif true {} elif true {} else {} // expected-error 2 ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
+#if true 7; elif true 7; elif true 7; else {} // expected-error 2 ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
+#if true {} elif true {} #elif true {} else {}; // expected-error ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
 
 if true {} elif true {} #elif true {} else {}; // expected-error: 'if' must be paired with 'elif', not '#elif'
 if (true) {}; // expected-warning: Unnecessary parentheses around 'if' condition
 if true {} else if {} {}; // expected-error: Use 'elif' instead of 'else if'
-
-// expected-error@+2: 'else #if' is invalid; did you mean '#elif'
-// expected-error@+1: '#if' must be paired with '#else'
-#if 4 {} else #if 4 {} else {};
-
-// expected-error@+2: 'else #if' is invalid; did you mean '#elif'
-// expected-error@+1: '#if' must be paired with '#elif'
-#if 4 {} elif 4 {} else #if 4 {};
+#if 4 {} else #if 4 {} else {}; // expected-error ('else #if' is invalid; did you mean '#elif') // expected-error ('#if' must be paired with '#else')
+#if 4 {} elif 4 {} else #if 4 {}; // expected-error ('else #if' is invalid; did you mean '#elif') // expected-error ('#if' must be paired with '#elif')
 
 if 4 {} else #if 4 {} else {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 if 4 {} elif 4 {} else #if 4 {}; // expected-error: 'else #if' is invalid; did you mean 'elif'

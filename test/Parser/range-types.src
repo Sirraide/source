@@ -6,15 +6,6 @@ range int>; // expected-error: Expected '<' after 'range'
 range<int; // expected-error: Expected '>'
 range<i32[]>;
 range<int,int>; // expected-error: Expected '>'
-
-// expected-error@+2: Expected '<' after 'range'
-// expected-error@+1: Expected type
-range;
-
-// expected-error@+2: Expected '<' after 'range'
-// expected-error@+1: Expected '>'
-range i8;
-
-// expected-error@+2: Expected '<' after 'range'
-// expected-error@+1: Expected '>'
-range i32[];
+range; // expected-error (Expected '<' after 'range') expected-error (Expected type)
+range i8; // expected-error (Expected '<' after 'range') expected-error (Expected '>')
+range i32[]; // expected-error (Expected '<' after 'range') expected-error (Expected '>')

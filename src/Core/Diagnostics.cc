@@ -488,10 +488,13 @@ auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> Opt<DecodedLocatio
 
 /// This is called by the lexer when a comment token is encountered.
 void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
-    // Skip slashes and initial whitespace.
     stream comment{tok.text.sv()};
-    comment.drop_while('/');
-    comment.trim_front();
+    ParseMagicComment(comment, tok.location);
+}
+
+void VerifyDiagnosticsEngine::ParseMagicComment(stream comment, Location loc) {
+    // Skip slashes and initial whitespace.
+    comment.trim_front().drop_while('/').trim_front();
 
     // If the comment doesn’t start with 'expected-', ignore it.
     if (!comment.starts_with("expected-")) return;
@@ -517,7 +520,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 
     // Parse line offsets. Note that '@*' indicates that any
     // location is allowed.
-    Opt<DecodedLocation> diag_loc = DecodeLocation(tok.location);
+    Opt<DecodedLocation> diag_loc = DecodeLocation(loc);
     if (comment.trim_front().consume('@')) {
         if (comment.trim_front().consume('*')) diag_loc = {};
         else {
@@ -529,7 +532,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
             // Parse the offset.
             auto offset = Parse<i64>(comment.take_while(llvm::isDigit));
             if (not offset.has_value()) return Error(
-                tok.location,
+                loc,
                 "Invalid line offset in expected diagnostic: '{}'\n",
                 offset.error()
             );
@@ -546,7 +549,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 
             // Sanity check.
             if (where.line < 1 or where.line > where.file->size()) return Error(
-                tok.location,
+                loc,
                 "Invalid computed line offset in expected diagnostic: '{}'\n",
                 offset.error()
             );
@@ -560,20 +563,37 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
     if (comment.trim_front().starts_with_any("123456789")) {
         auto res = Parse<u32>(comment.take_while(llvm::isDigit));
         if (not res.has_value()) return Error(
-            tok.location,
+            loc,
             "Invalid count in expected diagnostic: '{}'\n",
             res.error()
         );
         count = res.value();
     }
 
-    // Next, we expect a colon.
-    if (not comment.trim_front().starts_with(':')) return;
+    // If the next character is a ':', then the rest of the comment is the diagnostic text.
+    if (comment.trim_front().starts_with(':')) {
+        comment.drop().trim();
+        expected_diags.emplace_back(level, std::string{comment.text()}, diag_loc, count);
+        return;
+    }
 
-    // The rest of the comment is the diagnostic text.
-    comment.drop().trim_front();
-    expected_diags.emplace_back(level, std::string{comment.text()}, diag_loc, count);
+    // Otherwise, if the comment starts with any number of parentheses, read everything until
+    // we find a matching amount of parentheses.
+    if (comment.starts_with('(')) {
+        std::string closing_parens(comment.take_while('(').size(), ')');
+        auto text = stream(comment.take_until_or_empty(closing_parens)).trim();
+        if (text.empty()) return Error(loc, "End of comment reached while looking for '{}'", closing_parens);
+        expected_diags.emplace_back(level, std::string{text.text()}, diag_loc, count);
+        comment.drop(closing_parens.size());
+
+        // Recurse to parse the rest of the comment.
+        return ParseMagicComment(comment, loc);
+    }
+
+    // Anything else is an error here.
+    return Error(loc, "Expected ':' or '(' in 'expected' comment");
 }
+
 
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     // Remove line-wrap formatting codes.

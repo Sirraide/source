@@ -1,9 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-// expected-error@+2: Cannot call procedure before its return type has been deduced
-// expected-note@+1: Declared here
-proc x = x();
+proc x = x(); // expected-error (Cannot call procedure before its return type has been deduced) expected-note (Declared here)
 
 // No error here since we have already diagnosed that there
 // is a problem with x.

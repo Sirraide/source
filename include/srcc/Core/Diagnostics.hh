@@ -355,6 +355,7 @@ private:
 
     auto DecodeLocation(Location loc) -> Opt<DecodedLocation>;
     void HandleCommentToken(const Token& tok);
+    void ParseMagicComment(stream comment, Location loc);
 };
 
 #endif // SRCC_CORE_DIAGNOSTICS_HH
