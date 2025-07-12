@@ -943,9 +943,9 @@ public:
 
 // This can only be defined here because it needs to know how big 'Decl' is.
 inline auto srcc::Scope::decls() {
-    return decls_by_name
-        | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; })
-        | vws::join;
+    return decls_by_name                                                                           //
+         | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; }) //
+         | vws::join;
 }
 
 /// Visit this statement.
