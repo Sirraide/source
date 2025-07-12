@@ -89,11 +89,17 @@ public:
 class srcc::ForStmt : public Stmt {
 public:
     Expr* range;
+    Ptr<LocalDecl> enum_var;
     LocalDecl* var;
     Stmt* body;
 
-    ForStmt(Expr* range, LocalDecl* var, Stmt* body, Location location)
-        : Stmt{Kind::ForStmt, location}, range{range}, var{var}, body{body} {}
+    ForStmt(
+        Expr* range,
+        Ptr<LocalDecl> enum_var,
+        LocalDecl* var,
+        Stmt* body,
+        Location location
+    ) : Stmt{Kind::ForStmt, location}, range{range}, enum_var{enum_var}, var{var}, body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ForStmt; }
 };
@@ -782,7 +788,6 @@ public:
 
     /// Get the parameter’s intent.
     [[nodiscard]] auto intent() const -> Intent;
-
 
     /// Whether this is a 'with' parameter.
     [[nodiscard]] bool is_with_param() const { return with; }

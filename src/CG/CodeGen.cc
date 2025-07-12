@@ -951,20 +951,40 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     auto bb_end = CreateBlock();
     auto bb_body = CreateBlock();
 
+    // Collect all loop variables. The enumerator is always at index 0.
+    auto* enum_var = stmt->enum_var.get_or_null();
+    SmallVector<Type> arg_types;
+    if (enum_var) arg_types.push_back(enum_var->type);
+    arg_types.push_back(start->type());
+    u32 args_offs = enum_var ? 1 : 0;
+
+    // Branch to the condition block.
+    SmallVector<Value*> args;
+    if (enum_var) args.push_back(CreateInt(0, enum_var->type));
+    args.push_back(start);
+    auto bb_cond = EnterBlock(CreateBlock(arg_types), args);
+
+    // Add the loop variables to the current scope.
+    if (enum_var) locals[enum_var] = bb_cond->arg(0);
+    locals[stmt->var] = bb_cond->arg(args_offs);
+
     // Condition.
-    auto bb_cond = EnterBlock(CreateBlock(start->type()), start);
-    locals[stmt->var] = bb_cond->arg(0);
-    auto eq = EmitArithmeticOrComparisonOperator(Tk::SLt, bb_cond->arg(0), end, stmt->location());
+    auto eq = EmitArithmeticOrComparisonOperator(Tk::SLt, bb_cond->arg(args_offs), end, stmt->location());
     CreateCondBr(eq, bb_body, bb_end);
 
     // Body.
     EnterBlock(std::move(bb_body));
     Emit(stmt->body);
+
+    // Remove the loop variables again.
+    if (enum_var) locals.erase(enum_var);
     locals.erase(stmt->var);
 
     // Increment.
-    auto incr = CreateAdd(bb_cond->arg(0), CreateInt(1, start->type()));
-    CreateBr(bb_cond, incr);
+    args.clear();
+    if (enum_var) args.push_back(CreateAdd(bb_cond->arg(0), CreateInt(1, enum_var->type)));
+    args.push_back(CreateAdd(bb_cond->arg(args_offs), CreateInt(1, start->type())));
+    CreateBr(bb_cond, args);
 
     // Continue.
     EnterBlock(std::move(bb_end));

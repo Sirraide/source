@@ -2359,9 +2359,23 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     EnterScope _{*this};
     DeclareLocal(var);
 
+    // Declare the enumerator variable if there is one.
+    Ptr<LocalDecl> enum_var;
+    if (parsed->has_enumerator()) {
+        enum_var = new (*M) LocalDecl(
+            Type::IntTy,
+            Expr::SRValue,
+            parsed->enum_name,
+            curr_proc().proc,
+            parsed->enum_loc
+        );
+
+        DeclareLocal(enum_var.get());
+    }
+
     // Now that we have the variable, translate the loop body.
     auto body = TRY(TranslateStmt(parsed->body));
-    return new (*M) ForStmt(range, var, body, parsed->loc);
+    return new (*M) ForStmt(range, enum_var, var, body, parsed->loc);
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Stmt> {

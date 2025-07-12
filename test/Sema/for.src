@@ -9,3 +9,13 @@ for i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for'
 
 for i in 1..=3 do i++; // expected-error: Operand of '++' must be an lvalue
 for i in 1..=3 do i + 3;
+
+for enum j, i in 1..=3 do j++; // expected-error: Operand of '++' must be an lvalue
+for enum i, i in 1..=3 do i + 3; // expected-error (Ambiguous symbol 'i') expected-note 2 (Candidate here)
+for enum j, i in 1..=3 do i + j;
+
+// FIXME: Should be a different error.
+for enum i, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
+
+// FIXME: Should work.
+for enum j, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
