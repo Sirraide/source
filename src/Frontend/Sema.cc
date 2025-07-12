@@ -73,8 +73,14 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
         case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*M, d, loc);
         case Stmt::Kind::TypeDecl: return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
         case Stmt::Kind::LocalDecl:
-        case Stmt::Kind::ParamDecl:
-            return new (*M) LocalRefExpr(cast<LocalDecl>(d), loc);
+        case Stmt::Kind::ParamDecl: {
+            auto local = cast<LocalDecl>(d);
+            return new (*M) LocalRefExpr(
+                cast<LocalDecl>(d),
+                local->category,
+                loc
+            );
+        }
     }
 }
 
@@ -469,8 +475,8 @@ auto Sema::BuildAggregateInitialiser(
         auto seq = BuildConversionSequence(field->type, arg, arg->location());
         if (not seq.result.has_value()) {
             auto note = field->name.empty()
-                ? CreateNote(field->location(), "In initialiser for field declared here")
-                : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
+                          ? CreateNote(field->location(), "In initialiser for field declared here")
+                          : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
             seq.result.error().push_back(std::move(note));
             return seq;
         }
@@ -955,6 +961,7 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
     String name;
 
     if (auto d = dyn_cast<ProcDecl>(proc)) {
+        if (d->is_imported()) return; // FIXME: Report this location somehow.
         auto p = d->params()[i];
         loc = p->location();
         name = p->name;
@@ -2319,6 +2326,40 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
     Unreachable("Handled as part of StructDecl translation");
 }
 
+auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
+    // The type of the variable depends on the range, so translate it first.
+    auto range = TRY(TranslateExpr(parsed->range));
+
+    // Range must be an srvalue range.
+    // TODO: Support slices as well.
+    auto rty = dyn_cast<RangeType>(range->type);
+    if (not rty) return Error(
+        range->location(),
+        "Invalid type '{}' for range of '%1(for%)' loop",
+        range->type
+    );
+
+    range = LValueToSRValue(range);
+
+    // Create the loop variable; it has no initialiser since it’s really
+    // just an srvalue value bound to the elements of the range.
+    auto var = new (*M) LocalDecl(
+        rty->elem(),
+        rty->elem()->rvalue_category(), // TODO: Should be lvalue if we’re iterating over a slice.
+        parsed->ident,
+        curr_proc().proc,
+        parsed->ident_loc
+    );
+
+    // Push a new scope for the loop variable.
+    EnterScope _{*this};
+    DeclareLocal(var);
+
+    // Now that we have the variable, translate the loop body.
+    auto body = TRY(TranslateStmt(parsed->body));
+    return new (*M) ForStmt(range, var, body, parsed->loc);
+}
+
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     if (parsed->is_static) return BuildStaticIfExpr(cond, parsed->then, parsed->else_, parsed->loc);
@@ -2450,6 +2491,7 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     auto decl = new (*M) LocalDecl(
         TranslateType(parsed->type),
+        Expr::LValue,
         parsed->name,
         curr_proc().proc,
         parsed->loc

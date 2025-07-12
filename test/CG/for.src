@@ -1,0 +1,96 @@
+// R %srcc --ir -fno-overflow-checks %s
+program test;
+
+proc foo(in int) extern;
+proc foo(in i16) extern;
+
+proc a {
+    for i in 1..=3 do i + 3;
+}
+
+proc b {
+    i16 x;
+    for i in x..<x do foo(i);
+}
+
+proc c {
+    for i in 1..=10 do
+        for j in 2..<i do
+            foo(j);
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S3fooFvxiE (in int %0);
+// +
+// + proc _S3fooFvxI16E (in i16 %0);
+// +
+// + proc _S1aFvE {
+// + entry:
+// +     br bb1(int 1)
+// +
+// + bb1(int %0):
+// +     %1 = icmp slt %0, int 4
+// +     br %1 to bb2 else bb3
+// +
+// + bb2:
+// +     %2 = add %0, int 3
+// +     %3 = add %0, int 1
+// +     br bb1(%3)
+// +
+// + bb3:
+// +     ret
+// + }
+// +
+// + proc _S1bFvE {
+// +     %0 = i16
+// +
+// + entry:
+// +     store i16 to %0, nil, align 2
+// +     %1 = load i16, %0, align 2
+// +     %2 = load i16, %0, align 2
+// +     br bb1(%1)
+// +
+// + bb1(i16 %3):
+// +     %4 = icmp slt %3, %2
+// +     br %4 to bb2 else bb3
+// +
+// + bb2:
+// +     call void _S3fooFvxI16E(%3)
+// +     %5 = add %3, i16 1
+// +     br bb1(%5)
+// +
+// + bb3:
+// +     ret
+// + }
+// +
+// + proc _S1cFvE {
+// + entry:
+// +     br bb1(int 1)
+// +
+// + bb1(int %0):
+// +     %1 = icmp slt %0, int 11
+// +     br %1 to bb2 else bb6
+// +
+// + bb2:
+// +     br bb3(int 2)
+// +
+// + bb3(int %2):
+// +     %3 = icmp slt %2, %0
+// +     br %3 to bb4 else bb5
+// +
+// + bb4:
+// +     call void _S3fooFvxiE(%2)
+// +     %4 = add %2, int 1
+// +     br bb3(%4)
+// +
+// + bb5:
+// +     %5 = add %0, int 1
+// +     br bb1(%5)
+// +
+// + bb6:
+// +     ret
+// + }

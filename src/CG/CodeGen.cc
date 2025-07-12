@@ -216,9 +216,10 @@ bool CodeGen::IsZeroSizedType(Type ty) {
 
 bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
     if (IsZeroSizedType(local->type)) return false;
+    if (local->category == Expr::SRValue) return false;
     auto p = dyn_cast<ParamDecl>(local);
     if (not p) return true;
-    return not p->is_rvalue_in_parameter() and not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
+    return not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
 }
 
 void CodeGen::Loop(
@@ -936,6 +937,34 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
 
 auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
     Unreachable("Should have been evaluated");
+}
+
+auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
+    Assert(isa<RangeType>(stmt->range->type));
+    auto range = Emit(stmt->range);
+    auto start = CreateExtractValue(range, 0);
+    auto end = CreateExtractValue(range, 1);
+    auto bb_end = CreateBlock();
+    auto bb_body = CreateBlock();
+
+    // Condition.
+    auto bb_cond = EnterBlock(CreateBlock(start->type()), start);
+    locals[stmt->var] = bb_cond->arg(0);
+    auto eq = EmitArithmeticOrComparisonOperator(Tk::SLt, bb_cond->arg(0), end, stmt->location());
+    CreateCondBr(eq, bb_body, bb_end);
+
+    // Body.
+    EnterBlock(std::move(bb_body));
+    Emit(stmt->body);
+    locals.erase(stmt->var);
+
+    // Increment.
+    auto incr = CreateAdd(bb_cond->arg(0), CreateInt(1, start->type()));
+    CreateBr(bb_cond, incr);
+
+    // Continue.
+    EnterBlock(std::move(bb_end));
+    return nullptr;
 }
 
 auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {

@@ -108,14 +108,8 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts().back());
 }
 
-LocalRefExpr::LocalRefExpr(LocalDecl* decl, Location loc)
-    : Expr(Kind::LocalRefExpr, decl->type, LValue, loc), decl{decl} {
-    // If this is a parameter that is passed as an rvalue, and the intent is 'In',
-    // then we only have an rvalue in the callee (other intents may be passed by
-    // value as well, but still create variables in the callee).
-    auto p = dyn_cast<ParamDecl>(decl);
-    if (p and p->is_rvalue_in_parameter()) value_category = SRValue;
-}
+LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location loc)
+    : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 
 MemberAccessExpr::MemberAccessExpr(
     Expr* base,

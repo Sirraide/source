@@ -386,6 +386,24 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EvalExpr; }
 };
 
+/// A for loop.
+class srcc::ParsedForStmt final : public ParsedStmt {
+public:
+    Location ident_loc;
+    String ident;
+    ParsedStmt* range;
+    ParsedStmt* body;
+    ParsedForStmt(
+        Location for_loc,
+        Location ident_loc,
+        String ident,
+        ParsedStmt* range,
+        ParsedStmt* body
+    ) : ParsedStmt{Kind::ForStmt, for_loc}, ident_loc{ident_loc}, ident{ident}, range{range}, body{body} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ForStmt; }
+};
+
 /// A string literal.
 class srcc::ParsedStrLitExpr final : public ParsedStmt {
 public:

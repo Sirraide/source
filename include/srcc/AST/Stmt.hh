@@ -79,6 +79,18 @@ public:
     auto visit(Visitor&& v) -> decltype(auto);
 };
 
+class srcc::ForStmt : public Stmt {
+public:
+    Expr* range;
+    LocalDecl* var;
+    Stmt* body;
+
+    ForStmt(Expr* range, LocalDecl* var, Stmt* body, Location location)
+        : Stmt{Kind::ForStmt, location}, range{range}, var{var}, body{body} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ForStmt; }
+};
+
 class srcc::WhileStmt : public Stmt {
 public:
     Expr* cond;
@@ -453,7 +465,7 @@ public:
 class srcc::LocalRefExpr final : public Expr {
 public:
     LocalDecl* decl;
-    LocalRefExpr(LocalDecl* decl, Location location);
+    LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location location);
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
 };
 
@@ -697,6 +709,12 @@ public:
     /// The type of this decl.
     Type type;
 
+    /// The value category of this decl.
+    ///
+    /// This is usually LValue, but may be SRValue for some in parameters
+    /// and loop variables.
+    ValueCategory category;
+
     /// Initialiser, if any.
     ///
     /// For SRValues, this is a normal expression that is emitted
@@ -709,20 +727,23 @@ protected:
     LocalDecl(
         Kind k,
         Type type,
+        ValueCategory category,
         String name,
         ProcDecl* parent,
         Location location
     ) : Decl{k, name, location},
         parent{parent},
-        type{type} {}
+        type{type},
+        category{category} {}
 
 public:
     LocalDecl(
         Type type,
+        ValueCategory category,
         String name,
         ProcDecl* parent,
         Location location
-    ) : LocalDecl{Kind::LocalDecl, type, name, parent, location} {}
+    ) : LocalDecl{Kind::LocalDecl, type, category, name, parent, location} {}
 
     /// Set the initialiser of this declaration.
     void set_init(Ptr<Expr> expr) { init = expr; }
@@ -743,9 +764,11 @@ public:
         u32 index,
         bool with_param,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, param->type, name, parent, location},
+    ) : LocalDecl{Kind::ParamDecl, param->type, Expr::LValue, name, parent, location},
         idx{index},
-        with{with_param} {}
+        with{with_param} {
+        if (is_rvalue_in_parameter()) category = Expr::SRValue;
+    }
 
     /// Get the parameter’s index.
     [[nodiscard]] auto index() const -> u32 { return idx; }
@@ -753,14 +776,16 @@ public:
     /// Get the parameter’s intent.
     [[nodiscard]] auto intent() const -> Intent;
 
-    /// Whether this is an 'in' parameter that is passed by value
-    /// under the hood.
-    [[nodiscard]] bool is_rvalue_in_parameter() const;
 
     /// Whether this is a 'with' parameter.
     [[nodiscard]] bool is_with_param() const { return with; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
+
+private:
+    /// Whether this is an 'in' parameter that is passed by value
+    /// under the hood.
+    [[nodiscard]] bool is_rvalue_in_parameter() const;
 };
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
@@ -850,6 +875,7 @@ public:
 
     /// Get the parameter declarations.
     auto params() const -> ArrayRef<ParamDecl*> {
+        Assert(not is_imported(), "Attempted to access parameter declarations of imported function");
         auto arr = locals.take_front(param_count());
         return {reinterpret_cast<ParamDecl* const*>(arr.data()), arr.size()};
     }

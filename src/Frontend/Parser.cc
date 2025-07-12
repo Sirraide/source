@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <memory>
 #include <print>
-#include <ranges>
 #include <utility>
 
 using namespace srcc;
@@ -28,8 +27,9 @@ void ParsedModule::dump() const {
 
     // Print preamble.
     utils::Print(c, "%1({}%) {}\n", is_module ? "Module" : "Program", name);
-    for (auto i : imports) std::print(
-        "%1(Import%) %4(<{}>%) %1(as%) %4({}%)\n",
+    for (auto i : imports) utils::Print(
+        c,
+        "%1(Import%) %4({}%) %1(as%) %4({}%)\n",
         i.linkage_name,
         i.import_name
     );
@@ -300,6 +300,13 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%5({}%) {}\n", f.name, f.type->dump_as_type());
         } break;
 
+        case Kind::ForStmt: {
+            auto& f = *cast<ParsedForStmt>(s);
+            PrintHeader(s, "ForStmt", false);
+            print("%1(var%) %8({}%)\n", f.ident);
+            PrintChildren({f.range, f.body});
+        } break;
+
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
             PrintHeader(s, "IfExpr", not i.is_static);
@@ -537,6 +544,7 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
 
         case Tk::DotDotEq:
         case Tk::DotDotLess:
+        case Tk::DotDot: // See ParseExpr().
             return 81;
 
         case Tk::ULt:
@@ -1023,6 +1031,7 @@ auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
         if (IsPostfix(op)) {
             lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, {lhs.get()->loc, end}};
         } else {
+            if (op == Tk::DotDot) Error("'%1(..%)' is not a valid operator; did you mean '%1(..=%)' or '%1(..<%)'?");
             auto rhs = ParseExpr(BinaryOrPostfixPrecedence(op));
             if (not rhs) return {};
             lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), {lhs.get()->loc, rhs.get()->loc}};
@@ -1474,6 +1483,7 @@ bool Parser::ParseSignatureImpl(
 
 // <stmt>  ::= <expr>
 //           | <decl>
+//           | <stmt-for>
 //           | <stmt-while>
 //           | EVAL <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
@@ -1509,6 +1519,19 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // The decl must have a name to be exportable.
             if (decl->name.empty()) return Error(decl->loc, "Anonymous declarations cannot be exported");
             return new (*this) ParsedExportDecl{decl, loc};
+        }
+
+        // <stmt-for> ::= FOR <expr> IN <expr> [ DO ] <stmt>
+        case Tk::For: {
+            auto for_loc = Next();
+            if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for%)'");
+            auto ident = tok->text;
+            auto ident_loc = Next();
+            if (not Consume(Tk::In)) return Error("Syntax of '%1(for%)' loop is '%1(for%) name %1(in%) expression'");
+            auto range = TryParseExpr();
+            Consume(Tk::Do);
+            auto body = TryParseStmt();
+            return new (*this) ParsedForStmt{for_loc, ident_loc, ident, range, body};
         }
 
         // <decl-struct>

@@ -1,0 +1,4 @@
+// V %srcc --parse --verify %s
+program test;
+
+1..2; // expected-error: '..' is not a valid operator; did you mean '..=' or '..<'?

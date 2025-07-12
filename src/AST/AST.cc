@@ -318,6 +318,12 @@ void Stmt::Printer::Print(Stmt* e) {
             );
         } break;
 
+        case Kind::ForStmt: {
+            auto f = cast<ForStmt>(e);
+            PrintBasicNode(e, "ForStmt");
+            PrintChildren({f->var, f->range, f->body});
+        } break;
+
         case Kind::IfExpr: {
             auto i = cast<IfExpr>(e);
             PrintBasicNode(e, "IfExpr");
@@ -390,7 +396,7 @@ void Stmt::Printer::Print(Stmt* e) {
             // Print template parameters and parameters.
             SmallVector<Stmt*> children;
             if (p->instantiated_from) children.push_back(p->instantiated_from);
-            append_range(children, p->params());
+            if (not p->is_imported()) append_range(children, p->params());
 
             // Take care we don’t recursively print ourselves when printing our parent.
             tempset print_instantiations = false;

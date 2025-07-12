@@ -27,9 +27,11 @@
 <stmt>  ::= <expr>
           | <decl>
           | <stmt-while>
+          | <stmt-for>
           | EVAL <stmt>
 
 <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
+<stmt-for> ::= FOR <expr> IN <expr> [ DO ] <stmt>
 
 // ============================================================================
 //  Expressions

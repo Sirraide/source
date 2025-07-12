@@ -1,0 +1,11 @@
+// V %srcc --sema --verify %s
+program test;
+
+for i in 1 do {}; // expected-error: Invalid type 'int' for range of 'for' loop
+for i in {} do {}; // expected-error: Invalid type 'void' for range of 'for' loop
+
+// FIXME: Should work.
+for i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
+
+for i in 1..=3 do i++; // expected-error: Operand of '++' must be an lvalue
+for i in 1..=3 do i + 3;
