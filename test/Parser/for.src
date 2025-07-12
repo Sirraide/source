@@ -1,9 +1,9 @@
 // V %srcc --parse --verify %s
 program test;
 for; // expected-error: Expected identifier after 'for'
-for i; // expected-error: Syntax of 'for' loop is 'for name in expression'
+for i; // expected-error: Expected 'in'
 for 4; // expected-error: Expected identifier after 'for'
-for i i; // expected-error: Syntax of 'for' loop is 'for name in expression'
+for i i; // expected-error: Expected 'in'
 for i in; // expected-error: Expected expression
 for i in }; // expected-error: Expected expression
 for i in i;
@@ -13,13 +13,13 @@ for i in i do {};
 for i in 1..=1 do i;
 for i in 3 do x;
 
-// for enum;
-// for enum j;
-// for enum j in;
-// for enum j i;
-// for enum j, i;
-// for enum j, i in;
-// for enum j, i in r;
-// for enum j, i in r do;
-// for enum j, i in r {};
-// for enum 4, i in r {};
+for enum; // expected-error: Expected identifier after 'for enum'
+for enum j; // expected-error: Expected ',' after enumerator in 'for' loop
+for enum j in; // expected-error: Expected ',' after enumerator in 'for' loop
+for enum j i; // expected-error: Expected ',' after enumerator in 'for' loop
+for enum j, i; // expected-error: Expected 'in'
+for enum j, i in; // expected-error: Expected expression
+for enum 4, i in r {}; // expected-error: Expected identifier after 'for enum'
+for enum j, i in r;
+for enum j, i in r do;
+for enum j, i in r {};

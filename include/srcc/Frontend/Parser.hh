@@ -773,6 +773,13 @@ private:
         return Error(tok->location, fmt, std::forward<Args>(args)...);
     }
 
+    template <typename... Args>
+    auto ErrorSync(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
+        Error(tok->location, fmt, std::forward<Args>(args)...);
+        SkipTo(Tk::Semicolon);
+        return {};
+    }
+
     /// Consume a token or issue an error.
     bool ConsumeOrError(Tk tk);
 

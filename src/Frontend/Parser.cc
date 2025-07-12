@@ -1043,19 +1043,19 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
     String enum_name;
     Location enum_loc;
     if (Consume(Tk::Enum)) {
-        if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for enum%)'");
+        if (not At(Tk::Identifier)) return ErrorSync("Expected identifier after '%1(for enum%)'");
         enum_name = tok->text;
         enum_loc = Next();
-        if (not Consume(Tk::Comma)) return Error("Expected '%1(,%)' after enumerator in '%(for%)' loop");
+        if (not Consume(Tk::Comma)) return ErrorSync("Expected '%1(,%)' after enumerator in '%(for%)' loop");
     }
 
     // Identifier.
-    if (not At(Tk::Identifier)) return Error("Expected identifier after '%1(for%)'");
+    if (not At(Tk::Identifier)) return ErrorSync("Expected identifier after '%1(for%)'");
     auto ident = tok->text;
     auto ident_loc = Next();
 
     // Range.
-    if (not Consume(Tk::In)) return Error("Syntax of '%1(for%)' loop is '%1(for%) name %1(in%) expression'");
+    if (not Consume(Tk::In)) return Error("Expected '%1(in%)'");
     auto range = TryParseExpr();
 
     // Body.
