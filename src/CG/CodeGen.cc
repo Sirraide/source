@@ -1051,6 +1051,20 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
     if (expr->postfix) {
         switch (expr->op) {
             default: Todo("Emit postfix '{}'", expr->op);
+            case Tk::PlusPlus:
+            case Tk::MinusMinus: {
+                auto ptr = Emit(expr->arg);
+                auto val = CreateLoad(expr->type, ptr);
+                auto new_val = EmitArithmeticOrComparisonOperator(
+                    expr->op == Tk::PlusPlus ? Tk::Plus : Tk::Minus,
+                    val,
+                    CreateInt(1, expr->type),
+                    expr->location()
+                );
+
+                CreateStore(new_val, ptr);
+                return val;
+            }
         }
     }
 

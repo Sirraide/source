@@ -1,0 +1,28 @@
+// V %srcc --sema --verify %s
+program test;
+
+4++; // expected-error: Operand of '++' must be an lvalue
+5++; // expected-error: Operand of '++' must be an lvalue
+x++; // expected-error: Unknown symbol 'x'
+4--; // expected-error: Operand of '--' must be an lvalue
+5--; // expected-error: Operand of '--' must be an lvalue
+x--; // expected-error: Unknown symbol 'x'
+
+int y;
+y++;
+y++++; // expected-error: Operand of '++' must be an lvalue
+y--;
+y----; // expected-error: Operand of '--' must be an lvalue
+
+i16 i;
+i++;
+i--;
+
+var z = "";
+z++; // expected-error:  Operand of '++' must be an integer, but was 'i8[]'
+z--; // expected-error:  Operand of '--' must be an integer, but was 'i8[]'
+
+var q = {};
+q++; // expected-error:  Operand of '++' must be an integer, but was 'void'
+q--; // expected-error:  Operand of '--' must be an integer, but was 'void
+

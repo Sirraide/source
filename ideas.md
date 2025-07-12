@@ -405,6 +405,61 @@ proc foo() [io] { ... }
 `unsafe` could just be another effect. Might be useful to constrain what functions can do (but
 have a way of opting out of it maybe; I feel like this is more useful for libraries than executables).
 
+## `inline` keyword
+`inline` can be used as an attribute on a procedure declaration to make it `alwaysinline`, or before
+a call to force-inline that call (implement this in MLIR); if a directly recursive call is declared `inline`,
+the call is converted to a tail call instead (I’m not sure we can always use `musttail` for this since that’s
+only supported for `fastcc`, not `ccc`, so we might have to implement this ourselves in MLIR).
+
+## Pass closures as function pointers to C
+Closures whose environment is known to be `nil` at compile time are passed to `native` functions as plain
+function pointers; in general, closure parameters of `native` functions are always plain function pointers;
+if a closure with a not-null environment needs to be passed to a `native` function, the environment must be
+passed as some other parameter; have some syntax for that. E.g.
+```
+proc some_c_function(proc a (int) -> int, __srcc_env_ptr_for(a)) native extern;
+```
+When such a function is defined in Source, any access to the closure parameter automatically pulls in the
+environment too (the closure is reconstituted in the function prologue); the environment parameter must be
+unnamed and can thus not be accessed directly:
+```
+proc callable_from_c(proc a (int) -> int, __srcc_env_ptr_for(a)) native {
+    a(42); // Closure call
+}
+```
+Of course, we should have an alias for this in the standard library so we can write this:
+```
+proc callable_from_c(proc a (int) -> int, std::ffi::env_ptr_for(a)) native;
+```
+
+## Syntax ideas for list comprehensions
+```
+(for x in xs do x + 4)
+(for x in xs : x + 4)
+```
+
+## Bigint support
+Use libbtommath and add a builtin `bigint` type.
+
+## Late variable intialisation
+Essentially, allow this
+```
+var x;
+x = 4;
+```
+This means that we keep the type of `x` as `var` until we encounter the expression that
+initialises it; at that point, we can set the type of the variable; this also means that
+if we encounter a use of a variable while its type is still `var`, then we can emit an
+error about an access to an uninitialised variable. Maybe this means we can also get rid
+of the `type ident` syntax for declaring variables and actually just use `var x : type`?.
+
+Out parameters can also initialise a variable; these require special handling, but I think
+it suffices to just handle them in BuildInitialiser(): if we have a LocalRefExpr to a
+variable whose type is `var`, and we’re passing it to an out pararameter, then we have a
+perfect ‘conversion’. We also need a new ‘InitOutParam’ conversion that when applied sets
+the type of the variable to the procedure parameter type.
+
+
 # Failed Ideas
 ## Renaming copy to var
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this 

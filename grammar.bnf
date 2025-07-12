@@ -47,6 +47,7 @@
          | <expr-prefix>
          | <expr-return>
          | <expr-subscript>
+         | <expr-postfix>
 
 <expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>
@@ -61,6 +62,7 @@
 <expr-prefix>    ::= <prefix> <expr>
 <expr-return>    ::= RETURN [ <expr> ]
 <expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
+<expr-postfix>   ::= <expr> ( "++" | "--" )
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | NOT | "~" | "&" | "^"

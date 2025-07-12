@@ -374,7 +374,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::UnaryExpr: {
             auto& u = *cast<ParsedUnaryExpr>(s);
             PrintHeader(s, "UnaryExpr", false);
-            print("%1({}%)\n", u.op);
+            print("%1({}%)", u.op);
+            if (u.postfix) print(" %3(postfix%)");
+            print("\n");
             PrintChildren(u.arg);
         } break;
 
@@ -493,6 +495,8 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
             return 10'000;
 
         case Tk::LBrack:
+        case Tk::PlusPlus:
+        case Tk::MinusMinus:
             return 5'000;
 
         case Tk::LParen:
@@ -603,6 +607,10 @@ constexpr bool IsRightAssociative(Tk t) {
 
 constexpr bool IsPostfix(Tk t) {
     switch (t) {
+        case Tk::MinusMinus:
+        case Tk::PlusPlus:
+            return true;
+
         default:
             return false;
     }
@@ -798,6 +806,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-prefix>
 //          | <expr-return>
 //          | <expr-subscript>
+//          | <expr-postfix>
 auto Parser::ParseExpr(int precedence) -> Ptr<ParsedStmt> {
     Ptr<ParsedStmt> lhs;
     bool at_start = AtStartOfExpression(); // See below.

@@ -1955,7 +1955,28 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
 
-    if (postfix) return ICE(loc, "Postfix unary operators are not yet implemented");
+    if (postfix) {
+        switch (op) {
+            default: Unreachable("Invalid postfix operator: {}", op);
+            case Tk::PlusPlus:
+            case Tk::MinusMinus: {
+                if (not operand->lvalue()) return Error(
+                    loc,
+                    "Operand of '%1({}%)' must be an lvalue",
+                    Spelling(op)
+                );
+
+                if (not operand->type->is_integer()) return Error(
+                    loc,
+                    "Operand of '%1({}%)' must be an integer, but was '{}'",
+                    Spelling(op),
+                    operand->type
+                );
+
+                return Build(operand->type, Expr::SRValue);
+            }
+        }
+    }
 
     // Handle prefix operators.
     switch (op) {
