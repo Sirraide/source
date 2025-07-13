@@ -396,13 +396,12 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
 
         case K::ArrayInit: {
             auto& data = conv.data.get<Conversion::ArrayInitData>();
-            Assert(data.elem_convs.size() == exprs.size() or data.default_conversion());
 
             // Apply the conversions to the initialisers.
             for (auto [e, c] : zip(exprs, data.elem_convs)) e = ApplyConversionSequence(e, c, e->location());
 
             // And add the default conversion for the remaining elements if there is one.
-            if (auto c = data.default_conversion()) exprs.push_back(ApplyConversionSequence({}, *c, loc));
+            if (auto c = data.broadcast_initialiser()) exprs.push_back(ApplyConversionSequence({}, *c, loc));
 
             auto init = ArrayInitExpr::Create(*M, data.ty, exprs, loc);
             exprs.clear();
@@ -562,7 +561,7 @@ auto Sema::BuildArrayInitialiser(
     }
 
     // Otherwise, use any available arguments to initialise array elements.
-    Conversion::ArrayInitData data{.ty =  a, .elem_convs = {}};
+    Conversion::ArrayInitData data{a};
     for (auto arg : args) {
         auto conv = BuildConversionSequence(a->elem(), arg, arg->location());
         if (not conv) return conv;
@@ -574,6 +573,7 @@ auto Sema::BuildArrayInitialiser(
         auto conv = BuildConversionSequence(a->elem(), {}, loc);
         if (not conv) return conv;
         data.elem_convs.push_back(std::move(conv.result.value()));
+        data.has_broadcast_initialiser = true;
     }
 
     seq.add(Conversion::ArrayInit(std::move(data)));

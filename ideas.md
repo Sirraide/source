@@ -269,6 +269,12 @@ to (the type name is ‘overloaded’, in a sense). This has two consequences.
    this might cause problems for generic code otherwise. Maybe we should just warn on it if
    the type isn’t dependent and suggest writing either `S::()` or `init()`?
 
+## Array initialisers
+Allow this maybe?
+```
+int[200](1, 2, 3, 4...) // Fill remaining elements with '4'.
+```
+
 ## Closures and C(++) interop.
 `__srcc_split_closure` builtin (maybe in the runtime?) to split a closure into a raw function
 pointer and a context pointer. The function pointer has an extra argument for the context

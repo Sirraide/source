@@ -126,6 +126,9 @@ private:
 
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> ir::Value*;
+    void EmitArrayBroadcast(Type elem_ty, ir::Value* addr, u64 elements, Expr* initialiser, Location loc);
+    void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, ir::Value* mrvalue_slot);
+    void EmitArrayInitExpr(ArrayInitExpr* e, ir::Value* mrvalue_slot);
     auto EmitCallExpr(CallExpr* call, ir::Value* mrvalue_slot) -> ir::Value*;
     auto EmitBlockExpr(BlockExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
     auto EmitIfExpr(IfExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;

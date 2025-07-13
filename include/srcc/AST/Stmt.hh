@@ -195,7 +195,7 @@ public:
         Location loc
     ) -> ArrayInitExpr*;
 
-    [[nodiscard]] auto default_init() const -> Expr* { return initialisers().back(); }
+    [[nodiscard]] auto broadcast_init() const -> Expr* { return initialisers().back(); }
     [[nodiscard]] auto initialisers() const -> ArrayRef<Expr*> { return getTrailingObjects(num_inits); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayInitExpr; }

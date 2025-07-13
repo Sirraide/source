@@ -404,6 +404,10 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
     init->visit(utils::Overloaded{
         [&](auto*) { ICE(init->location(), "Invalid mrvalue"); },
 
+        // Array initialisers are always mrvalues.
+        [&](ArrayBroadcastExpr* e) { EmitArrayBroadcastExpr(e, addr); },
+        [&](ArrayInitExpr* e) { EmitArrayInitExpr(e, addr); },
+
         // Blocks can be mrvalues if the last expression is an mrvalue.
         [&](BlockExpr* e) { EmitBlockExpr(e, addr); },
 
@@ -449,7 +453,7 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
             }
         }
     });
-}
+} // clang-format on
 
 // ============================================================================
 //  CG
@@ -476,8 +480,72 @@ auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> Value* {
     Unreachable("Should only be emitted as mrvalue");
 }
 
-auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*)-> Value* {
+void CodeGen::EmitArrayBroadcast(Type elem_ty, Value* addr, u64 elements, Expr* initialiser, Location loc) {
+    auto counter = CreateInt(0);
+    auto dimension = CreateInt(elements);
+    auto bb_cond = EnterBlock(CreateBlock(Type::IntTy), counter);
+    auto bb_body = CreateBlock();
+    auto bb_end = CreateBlock();
+
+    // Condition.
+    auto eq = EmitArithmeticOrComparisonOperator(Tk::EqEq, bb_cond->arg(0), dimension, loc);
+    CreateCondBr(eq, bb_end, bb_body);
+
+    // Initialisation.
+    EnterBlock(std::move(bb_body));
+    auto mul = CreateIMul(bb_cond->arg(0), CreateInt(elem_ty->array_size(tu).bytes()), true);
+    auto ptr = CreatePtrAdd(addr, mul, true);
+    EmitInitialiser(ptr, initialiser);
+
+    // Increment.
+    auto incr = CreateAdd(bb_cond->arg(0), CreateInt(1));
+    CreateBr(bb_cond, incr);
+
+    // Join.
+    EnterBlock(std::move(bb_end));
+}
+
+void CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value* mrvalue_slot) {
+    auto ty = cast<ArrayType>(e->type);
+    Assert(ty->dimension() > 1); // For dimension = 1 we create an ArrayInitExpr instead.
+    EmitArrayBroadcast(
+        ty->elem(),
+        mrvalue_slot,
+        u64(ty->dimension()),
+        e->element,
+        e->location()
+    );
+}
+
+auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*) -> Value* {
     Unreachable("Should only be emitted as mrvalue");
+}
+
+void CodeGen::EmitArrayInitExpr(ArrayInitExpr* e, Value* mrvalue_slot) {
+    auto ty = cast<ArrayType>(e->type);
+    bool broadcast_els = u64(ty->dimension()) - e->initialisers().size();
+
+    // Emit each initialiser.
+    auto size = CreateInt(ty->elem()->array_size(tu).bytes());
+    for (auto init : e->initialisers()) {
+        EmitInitialiser(mrvalue_slot, init);
+        if (init != e->initialisers().back() or broadcast_els != 0) {
+            mrvalue_slot = CreatePtrAdd(
+                mrvalue_slot,
+                size,
+                true
+            );
+        }
+    }
+
+    // And use the last initialiser to fill the rest of the array, if need be.
+    if (broadcast_els) EmitArrayBroadcast(
+        ty->elem(),
+        mrvalue_slot,
+        broadcast_els,
+        e->broadcast_init(),
+        e->location()
+    );
 }
 
 auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
@@ -541,8 +609,8 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
             // Check that the index is in bounds.
             if (lang_opts.overflow_checking) {
                 auto size = is_slice
-                    ? CreateExtractValue(range, 1)
-                    : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
+                              ? CreateExtractValue(range, 1)
+                              : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
 
                 CreateArithFailure(
                     CreateICmpUGe(index, size),

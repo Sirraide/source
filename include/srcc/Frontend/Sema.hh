@@ -137,16 +137,17 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
 
         struct ArrayInitData {
             ArrayType* ty;
-            std::vector<ConversionSequence> elem_convs;
+            std::vector<ConversionSequence> elem_convs{};
 
-            /// If 'elem_convs' contains fewer conversion sequences than the array has
-            /// elements, repeat the last conversion for any remaining elements; such a
-            /// conversion is always guaranteed to have no inputs and can thus be evaluated
-            /// multiple times without the risk of evaluating the same expression more than
-            /// once.
-            [[nodiscard]] auto default_conversion() const -> const ConversionSequence* {
-                if (elem_convs.size() < u64(ty->dimension())) return &elem_convs.back();
-                return nullptr;
+            /// This needs to be a flag so as to distinguish i[2](1) from i[2](1, 0);
+            /// the former has a broadcast initialiser but the latter doesn’t.
+            bool has_broadcast_initialiser = false;
+
+            /// Get the element to broadcast into the rest of the array, after all initialisers
+            /// proper have been evaluated.
+            [[nodiscard]] auto broadcast_initialiser() const -> const ConversionSequence* {
+                if (not has_broadcast_initialiser) return nullptr;
+                return &elem_convs.back();
             }
         };
 

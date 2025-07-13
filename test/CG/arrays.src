@@ -1,0 +1,224 @@
+// R %srcc --ir %s
+program test;
+
+// Broadcast initialisation.
+proc a {
+    var x1 = int[4](0);
+    var x2 = int[7](1);
+    var x3 = int[200](100);
+    var x4 = i16[5](20);
+}
+
+// Exhaustive elementwise initialisation.
+proc b {
+    var x1 = int[1](0);
+    var x2 = int[1](1);
+    var x3 = int[1](100);
+    var x4 = int[1](200);
+    var x5 = int[4](1, 2, 3, 4);
+    var x6 = i16[10](1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+    var x7 = int[3](40, 29, 123);
+
+    // These are technically non-exhaustive, but the broadcast initialiser
+    // is only used for a single element, and because of how codegen handles
+    // this we don't end up emitting a loop for this.
+    var x1 = int[3](0, 1);
+    var x2 = int[3](2, 3);
+}
+
+// Non-exhaustive elementwise initialisation.
+proc c {
+    var x3 = int[10](1, 2, 3, 4, 5);
+    var x4 = i16[200](61, 75, 230, 40, 25);
+}
+
+// * proc __src_main {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1aFvE {
+// +     %0 = int[4]
+// +     %1 = int[7]
+// +     %2 = int[200]
+// +     %3 = i16[5]
+// +
+// + entry:
+// +     br bb1(int 0)
+// +
+// + bb1(int %4):
+// +     %5 = icmp eq %4, int 4
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     %6 = imul %4, int 8
+// +     %7 = ptradd %0, %6
+// +     store int to %7, int 0, align 8
+// +     %8 = add %4, int 1
+// +     br bb1(%8)
+// +
+// + bb3:
+// +     br bb4(int 0)
+// +
+// + bb4(int %9):
+// +     %10 = icmp eq %9, int 7
+// +     br %10 to bb6 else bb5
+// +
+// + bb5:
+// +     %11 = imul %9, int 8
+// +     %12 = ptradd %1, %11
+// +     store int to %12, int 1, align 8
+// +     %13 = add %9, int 1
+// +     br bb4(%13)
+// +
+// + bb6:
+// +     br bb7(int 0)
+// +
+// + bb7(int %14):
+// +     %15 = icmp eq %14, int 200
+// +     br %15 to bb9 else bb8
+// +
+// + bb8:
+// +     %16 = imul %14, int 8
+// +     %17 = ptradd %2, %16
+// +     store int to %17, int 100, align 8
+// +     %18 = add %14, int 1
+// +     br bb7(%18)
+// +
+// + bb9:
+// +     br bb10(int 0)
+// +
+// + bb10(int %19):
+// +     %20 = icmp eq %19, int 5
+// +     br %20 to bb12 else bb11
+// +
+// + bb11:
+// +     %21 = imul %19, int 2
+// +     %22 = ptradd %3, %21
+// +     store i16 to %22, i16 20, align 2
+// +     %23 = add %19, int 1
+// +     br bb10(%23)
+// +
+// + bb12:
+// +     ret
+// + }
+// +
+// + proc _S1bFvE {
+// +     %0 = int[1]
+// +     %1 = int[1]
+// +     %2 = int[1]
+// +     %3 = int[1]
+// +     %4 = int[4]
+// +     %5 = i16[10]
+// +     %6 = int[3]
+// +     %7 = int[3]
+// +     %8 = int[3]
+// +
+// + entry:
+// +     store int to %0, int 0, align 8
+// +     store int to %1, int 1, align 8
+// +     store int to %2, int 100, align 8
+// +     store int to %3, int 200, align 8
+// +     store int to %4, int 1, align 8
+// +     %9 = ptradd %4, int 8
+// +     store int to %9, int 2, align 8
+// +     %10 = ptradd %9, int 8
+// +     store int to %10, int 3, align 8
+// +     %11 = ptradd %10, int 8
+// +     store int to %11, int 4, align 8
+// +     store i16 to %5, i16 1, align 2
+// +     %12 = ptradd %5, int 2
+// +     store i16 to %12, i16 2, align 2
+// +     %13 = ptradd %12, int 2
+// +     store i16 to %13, i16 3, align 2
+// +     %14 = ptradd %13, int 2
+// +     store i16 to %14, i16 4, align 2
+// +     %15 = ptradd %14, int 2
+// +     store i16 to %15, i16 5, align 2
+// +     %16 = ptradd %15, int 2
+// +     store i16 to %16, i16 6, align 2
+// +     %17 = ptradd %16, int 2
+// +     store i16 to %17, i16 7, align 2
+// +     %18 = ptradd %17, int 2
+// +     store i16 to %18, i16 8, align 2
+// +     %19 = ptradd %18, int 2
+// +     store i16 to %19, i16 9, align 2
+// +     %20 = ptradd %19, int 2
+// +     store i16 to %20, i16 10, align 2
+// +     store int to %6, int 40, align 8
+// +     %21 = ptradd %6, int 8
+// +     store int to %21, int 29, align 8
+// +     %22 = ptradd %21, int 8
+// +     store int to %22, int 123, align 8
+// +     store int to %7, int 0, align 8
+// +     %23 = ptradd %7, int 8
+// +     store int to %23, int 1, align 8
+// +     %24 = ptradd %23, int 8
+// +     store int to %24, nil, align 8
+// +     store int to %8, int 2, align 8
+// +     %25 = ptradd %8, int 8
+// +     store int to %25, int 3, align 8
+// +     %26 = ptradd %25, int 8
+// +     store int to %26, nil, align 8
+// +     ret
+// + }
+// +
+// + proc _S1cFvE {
+// +     %0 = int[10]
+// +     %1 = i16[200]
+// +
+// + entry:
+// +     store int to %0, int 1, align 8
+// +     %2 = ptradd %0, int 8
+// +     store int to %2, int 2, align 8
+// +     %3 = ptradd %2, int 8
+// +     store int to %3, int 3, align 8
+// +     %4 = ptradd %3, int 8
+// +     store int to %4, int 4, align 8
+// +     %5 = ptradd %4, int 8
+// +     store int to %5, int 5, align 8
+// +     %6 = ptradd %5, int 8
+// +     store int to %6, nil, align 8
+// +     %7 = ptradd %6, int 8
+// +     br bb1(int 0)
+// +
+// + bb1(int %8):
+// +     %9 = icmp eq %8, int 1
+// +     br %9 to bb3 else bb2
+// +
+// + bb2:
+// +     %10 = imul %8, int 8
+// +     %11 = ptradd %7, %10
+// +     store int to %11, nil, align 8
+// +     %12 = add %8, int 1
+// +     br bb1(%12)
+// +
+// + bb3:
+// +     store i16 to %1, i16 61, align 2
+// +     %13 = ptradd %1, int 2
+// +     store i16 to %13, i16 75, align 2
+// +     %14 = ptradd %13, int 2
+// +     store i16 to %14, i16 230, align 2
+// +     %15 = ptradd %14, int 2
+// +     store i16 to %15, i16 40, align 2
+// +     %16 = ptradd %15, int 2
+// +     store i16 to %16, i16 25, align 2
+// +     %17 = ptradd %16, int 2
+// +     store i16 to %17, nil, align 2
+// +     %18 = ptradd %17, int 2
+// +     br bb4(int 0)
+// +
+// + bb4(int %19):
+// +     %20 = icmp eq %19, int 1
+// +     br %20 to bb6 else bb5
+// +
+// + bb5:
+// +     %21 = imul %19, int 2
+// +     %22 = ptradd %18, %21
+// +     store i16 to %22, nil, align 2
+// +     %23 = add %19, int 1
+// +     br bb4(%23)
+// +
+// + bb6:
+// +     ret
+// + }

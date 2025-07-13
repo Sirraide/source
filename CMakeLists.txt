@@ -81,13 +81,13 @@ target_compile_options(options INTERFACE
     -Werror=return-stack-address
 
     ## Debug/Release flags.
-    $<$<CONFIG:DEBUG>:-O0 -g3 -ggdb3>
+    $<$<CONFIG:DEBUG>:-O0 -g3 -glldb>
     $<$<CONFIG:RELEASE>:-O3 -march=native>
 )
 
 ## Link flags.
 target_link_options(options INTERFACE
-    $<$<CONFIG:DEBUG>:-O0 -g3 -ggdb3 -rdynamic>
+    $<$<CONFIG:DEBUG>:-O0 -g3 -glldb -rdynamic>
     $<$<CONFIG:RELEASE>:-O3 -march=native>
 )
 
