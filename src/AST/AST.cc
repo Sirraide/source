@@ -202,6 +202,18 @@ void Stmt::Printer::Print(Stmt* e) {
 
     // FIXME: Should be a visitor.
     switch (e->kind()) {
+        case Kind::ArrayBroadcastExpr: {
+            auto a = cast<ArrayBroadcastExpr>(e);
+            PrintBasicNode(e, "ArrayBroadcastExpr");
+            PrintChildren(a->element);
+        } break;
+
+        case Kind::ArrayInitExpr: {
+            auto a = cast<ArrayInitExpr>(e);
+            PrintBasicNode(e, "ArrayInitExpr");
+            PrintChildren<Expr>(a->initialisers());
+        } break;
+
         case Kind::AssertExpr: {
             auto a = cast<AssertExpr>(e);
             PrintBasicNode(e, "AssertExpr");

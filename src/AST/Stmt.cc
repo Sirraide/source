@@ -18,6 +18,25 @@ void* Stmt::operator new(usz size, TranslationUnit& mod) {
 // ============================================================================
 //  AST
 // ============================================================================
+ArrayInitExpr::ArrayInitExpr(
+    ArrayType* type,
+    ArrayRef<Expr*> elements,
+    Location loc
+) : Expr{Kind::ArrayInitExpr, type, MRValue, loc}, num_inits{u32(elements.size())} {
+    std::uninitialized_copy_n(elements.begin(), elements.size(), getTrailingObjects());
+}
+
+auto ArrayInitExpr::Create(
+    TranslationUnit& tu,
+    ArrayType* type,
+    ArrayRef<Expr*> elements,
+    Location loc
+) -> ArrayInitExpr* {
+    const auto size = totalSizeToAlloc<Expr*>(elements.size());
+    auto mem = tu.allocate(size, alignof(ArrayInitExpr));
+    return ::new (mem) ArrayInitExpr{type, elements, loc};
+}
+
 BuiltinCallExpr::BuiltinCallExpr(
     Builtin kind,
     Type return_type,

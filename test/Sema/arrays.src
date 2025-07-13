@@ -1,0 +1,31 @@
+// V %srcc --sema --verify %s
+program test;
+
+int[0] x1;
+int[1] x2;
+int[100] x3;
+int[3 + 4] x4;
+int[5 + 7] x5;
+int[-1] x6; // expected-error: Array size cannot be negative (value: -1)
+int[-2] x7; // expected-error: Array size cannot be negative (value: -2)
+int[3-400] x8; // expected-error: Array size cannot be negative (value: -397)
+int[4-3] x9;
+int[1000000000000000] x10;
+int[1000000000000000000000000000000000000000000000000] x11; // expected-error: Array size must fit into a signed 64-bit integer
+
+noreturn[4](3); // expected-error: 'noreturn' is not allowed here
+var[4](4); // expected-error: Type deduction is not allowed here
+
+int[0](1); // expected-error: Too many elements in array initialiser for 'int[0]' (elements: 1)
+int[1](1, 2); // expected-error: Too many elements in array initialiser for 'int[1]' (elements: 2)
+int[4](1, 2, 3, 4, 5); // expected-error: Too many elements in array initialiser for 'int[4]' (elements: 5)
+
+int[5](1);
+i16[5](7);
+i128[5](10);
+var a1 = int[200](3);
+var a2 = i16[200](3);
+
+int[4](1, 2, 3, 4);
+int[100](1, 2, 3, 4);
+

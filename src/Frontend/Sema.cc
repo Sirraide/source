@@ -52,8 +52,8 @@ Type Sema::AdjustVariableType(Type ty, Location loc) {
         return Type();
     }
 
-    if (ty == Type::NoReturnTy or ty == Type::TypeTy) {
-        Error(loc, "Cannot declare a variable of type '{}'", ty);
+    if (ty == Type::NoReturnTy) {
+        Error(loc, "'{}' is not allowed here", Type::NoReturnTy);
         return Type();
     }
 
@@ -353,6 +353,7 @@ auto ModuleLoader::load(
 // ============================================================================
 //  Initialisation.
 // ============================================================================
+Sema::Conversion::~Conversion() = default;
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) -> Expr* {
     switch (conv.kind) {
         using K = Conversion::Kind;
@@ -385,6 +386,30 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
 void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc) {
     switch (conv.kind) {
         using K = Conversion::Kind;
+        case K::ArrayBroadcast: {
+            Assert(exprs.size() == 1);
+            auto& data = conv.data.get<Conversion::ArrayBroadcastData>();
+            exprs.front() = ApplyConversionSequence(exprs, *data.seq, loc);
+            exprs.front() = new (*M) ArrayBroadcastExpr(data.type, exprs.front(), loc);
+            return;
+        }
+
+        case K::ArrayInit: {
+            auto& data = conv.data.get<Conversion::ArrayInitData>();
+            Assert(data.elem_convs.size() == exprs.size() or data.default_conversion());
+
+            // Apply the conversions to the initialisers.
+            for (auto [e, c] : zip(exprs, data.elem_convs)) e = ApplyConversionSequence(e, c, e->location());
+
+            // And add the default conversion for the remaining elements if there is one.
+            if (auto c = data.default_conversion()) exprs.push_back(ApplyConversionSequence({}, *c, loc));
+
+            auto init = ArrayInitExpr::Create(*M, data.ty, exprs, loc);
+            exprs.clear();
+            exprs.push_back(init);
+            return;
+        }
+
         case K::DefaultInit: {
             Assert(exprs.empty());
             exprs.push_back(new (*M) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
@@ -508,6 +533,53 @@ auto Sema::BuildAggregateInitialiser(
     return seq;
 }
 
+auto Sema::BuildArrayInitialiser(
+    ArrayType* a,
+    ArrayRef<Expr*> args,
+    Location loc
+) -> ConversionSequenceOrDiags {
+    ConversionSequence seq;
+
+    // Error if there are more initialisers than array elements.
+    if (args.size() > u64(a->dimension())) return CreateError(
+        loc,
+        "Too many elements in array initialiser for '{}' (elements: {})",
+        Type(a),
+        args.size()
+    );
+
+    // If there is exactly 1 element, fill the array with copies of it. Since
+    // all array elements have the same type, it suffices to build the conversion
+    // sequence for it once.
+    if (args.size() == 1 && a->dimension() > 1) {
+        auto conv = BuildConversionSequence(a->elem(), args, loc);
+        if (not conv) return conv;
+        seq.add(Conversion::ArrayBroadcast({
+            .type = a,
+            .seq = std::make_unique<ConversionSequence>(std::move(conv.result.value())),
+        }));
+        return seq;
+    }
+
+    // Otherwise, use any available arguments to initialise array elements.
+    Conversion::ArrayInitData data{.ty =  a, .elem_convs = {}};
+    for (auto arg : args) {
+        auto conv = BuildConversionSequence(a->elem(), arg, arg->location());
+        if (not conv) return conv;
+        data.elem_convs.push_back(std::move(conv.result.value()));
+    }
+
+    // And build an extra conversion from no arguments if we have elements left.
+    if (args.size() != u64(a->dimension())) {
+        auto conv = BuildConversionSequence(a->elem(), {}, loc);
+        if (not conv) return conv;
+        data.elem_convs.push_back(std::move(conv.result.value()));
+    }
+
+    seq.add(Conversion::ArrayInit(std::move(data)));
+    return seq;
+}
+
 auto Sema::BuildConversionSequence(
     Type var_type,
     ArrayRef<Expr*> args,
@@ -557,7 +629,7 @@ auto Sema::BuildConversionSequence(
     // There are only few (classes of) types that support initialisation
     // from more than one argument.
     if (args.size() > 1) {
-        if (isa<ArrayType>(var_type)) return CreateICE(args.front()->location(), "TODO: Array initialiser");
+        if (auto a = dyn_cast<ArrayType>(var_type)) return BuildArrayInitialiser(a, args, init_loc);
         if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, init_loc);
         return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
     }
@@ -631,11 +703,13 @@ auto Sema::BuildConversionSequence(
 
     // We need to perform conversion. What we do here depends on the type.
     switch (var_type->kind()) {
-        case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
             return TypeMismatch();
+
+        case TypeBase::Kind::ArrayType:
+            return BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc);
 
         case TypeBase::Kind::StructType:
             return BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc);
@@ -947,6 +1021,15 @@ u32 Sema::ConversionSequence::badness() {
                 break;
 
             // These contain other conversions.
+            case K::ArrayBroadcast:
+                badness += conv.data.get<Conversion::ArrayBroadcastData>().seq->badness();
+                break;
+
+            case K::ArrayInit: {
+                auto& data = conv.data.get<Conversion::ArrayInitData>();
+                for (auto& seq : data.elem_convs) badness += seq.badness();
+            } break;
+
             case K::StructInit: {
                 auto& data = conv.data.get<Conversion::StructInitData>();
                 for (auto& seq : data.field_convs) badness += seq.badness();
@@ -1401,6 +1484,12 @@ auto Sema::BuildBinaryExpr(
 
         // Array or slice subscript.
         case Tk::LBrack: {
+            if (auto ty = dyn_cast<TypeExpr>(lhs)) {
+                auto arr = BuildArrayType({ty->value, ty->location()}, rhs);
+                if (not arr) return {};
+                return BuildTypeExpr(arr, loc);
+            }
+
             if (not isa<SliceType, ArrayType>(lhs->type)) return Error(
                 lhs->location(),
                 "Cannot subscript non-array, non-slice type '{}'",
@@ -2547,8 +2636,10 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     DeclareLocal(decl);
 
     // Don’t even bother with the initialiser if the type is ill-formed.
-    if (not decl->type)
+    if (not decl->type) {
+        decl->type = Type::VoidTy;
         return decl->set_invalid();
+    }
 
     // Translate the initialiser.
     Ptr<Expr> init;
@@ -2811,6 +2902,44 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed) -> Ptr<Stmt> {
 // ============================================================================
 //  Translation of Types
 // ============================================================================
+auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
+    auto size = cast<ConstExpr>(TRY(Evaluate(size_expr, size_expr->location())));
+    auto integer = size->value->dyn_cast<APInt>();
+
+    // Check that the element type makes sense.
+    base.ty = AdjustVariableType(base.ty, base.loc);
+    if (not base.ty) return Type();
+
+    // Check that the size is a positive 64-bit integer.
+    if (not integer) return Error(
+        size_expr->location(),
+        "Array size must be an integer, but was '{}'",
+        size->type
+    );
+
+    if (not integer->isSingleWord()) return Error(
+        size_expr->location(),
+        "Array size must fit into a signed 64-bit integer"
+    );
+
+    auto v = integer->getSExtValue();
+    if (v < 0) return Error(
+        size_expr->location(),
+        "Array size cannot be negative (value: {})",
+        v
+    );
+
+    return ArrayType::Get(*M, base.ty, v);
+}
+
+auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
+    Assert(parsed->op == Tk::LBrack);
+    auto elem = TranslateType(parsed->lhs);
+    if (not elem) return Type();
+    auto size = TRY(TranslateExpr(parsed->rhs));
+    return BuildArrayType({elem, parsed->loc}, size);
+}
+
 auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
     return parsed->ty;
 }
@@ -2939,7 +3068,21 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::RangeType: t = TranslateRangeType(cast<ParsedRangeType>(parsed)); break;
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
-        default: Error(parsed->loc, "Expected type"); break;
+
+        // Array types are parsed as subscript expressions.
+        case K::BinaryExpr: {
+            auto b = cast<ParsedBinaryExpr>(parsed);
+            if (b->op == Tk::LBrack) {
+                t = TranslateArrayType(b);
+                break;
+            }
+
+            [[fallthrough]];
+        }
+
+        default:
+            Error(parsed->loc, "Expected type");
+            break;
     }
 
     if (not t) t = fallback;

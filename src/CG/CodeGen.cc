@@ -472,6 +472,14 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Unreachable("Unknown statement kind");
 }
 
+auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> Value* {
+    Unreachable("Should only be emitted as mrvalue");
+}
+
+auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*)-> Value* {
+    Unreachable("Should only be emitted as mrvalue");
+}
+
 auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
     auto loc = expr->location().seek_line_column(tu.context());
     if (not loc) {

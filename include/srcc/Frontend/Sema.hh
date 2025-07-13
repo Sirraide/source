@@ -123,16 +123,41 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     };
 
     /// A (possibly empty) sequence of conversions applied to a type.
-    struct ConversionSequence;
+    class ConversionSequence;
 
     /// A conversion from one type to another.
-    struct Conversion {
+    class Conversion {
+        LIBBASE_MOVE_ONLY(Conversion);
+
+    public:
         struct StructInitData {
             StructType* ty;
             std::vector<ConversionSequence> field_convs;
         };
 
+        struct ArrayInitData {
+            ArrayType* ty;
+            std::vector<ConversionSequence> elem_convs;
+
+            /// If 'elem_convs' contains fewer conversion sequences than the array has
+            /// elements, repeat the last conversion for any remaining elements; such a
+            /// conversion is always guaranteed to have no inputs and can thus be evaluated
+            /// multiple times without the risk of evaluating the same expression more than
+            /// once.
+            [[nodiscard]] auto default_conversion() const -> const ConversionSequence* {
+                if (elem_convs.size() < u64(ty->dimension())) return &elem_convs.back();
+                return nullptr;
+            }
+        };
+
+        struct ArrayBroadcastData {
+            ArrayType* type;
+            std::unique_ptr<ConversionSequence> seq;
+        };
+
         enum struct Kind : u8 {
+            ArrayBroadcast,
+            ArrayInit,
             DefaultInit,
             IntegralCast,
             LValueToSRValue,
@@ -145,22 +170,29 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
         Variant< // clang-format off
             TypeAndValueCategory,
             StructInitData,
+            ArrayInitData,
+            ArrayBroadcastData,
             u32
         > data; // clang-format on
 
+    private:
         Conversion(Kind kind) : kind{kind} {}
         Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
-        Conversion(Kind kind, StructInitData conversions) : kind{kind}, data{std::move(conversions)} {}
+        Conversion(StructInitData conversions) : kind{Kind::StructInit}, data{std::move(conversions)} {}
+        Conversion(ArrayInitData data): kind{Kind::ArrayInit}, data{std::move(data)} {}
+        Conversion(ArrayBroadcastData data): kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
 
+    public:
+        ~Conversion();
+        static auto ArrayBroadcast(ArrayBroadcastData data) -> Conversion { return Conversion{std::move(data)}; }
+        static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
-        static auto StructInit(StructInitData conversions) -> Conversion {
-            return Conversion{Kind::StructInit, std::move(conversions)};
-        }
+        static auto StructInit(StructInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
 
         Type type() const { return data.get<TypeAndValueCategory>().type(); }
         auto value_category() const -> ValueCategory {
@@ -168,8 +200,12 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
         }
     };
 
-    struct ConversionSequence {
+    class ConversionSequence {
+        LIBBASE_MOVE_ONLY(ConversionSequence);
+
+    public:
         SmallVector<Conversion, 1> conversions;
+        ConversionSequence() = default;
         void add(Conversion conv) { conversions.push_back(std::move(conv)); }
         u32 badness();
     };
@@ -178,11 +214,13 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     struct ConversionSequenceOrDiags {
         using Diags = SmallVector<Diagnostic, 2>;
         std::expected<ConversionSequence, Diags> result;
-        ConversionSequenceOrDiags(ConversionSequence result) : result{result} {}
+        ConversionSequenceOrDiags(ConversionSequence result) : result{std::move(result)} {}
         ConversionSequenceOrDiags(Diags diags) : result{std::unexpected(std::move(diags))} {}
         ConversionSequenceOrDiags(Diagnostic diag) : result{std::unexpected(Diags{})} {
             result.error().push_back(std::move(diag));
         }
+
+        [[nodiscard]] explicit operator bool() const { return result.has_value(); }
     };
 
     /// The result of name lookup.
@@ -447,6 +485,15 @@ private:
         Location loc
     ) -> ConversionSequenceOrDiags;
 
+    /// Build an initialiser for an array type.
+    ///
+    /// This should not be called directly; call BuildInitialiser() instead.
+    auto BuildArrayInitialiser(
+        ArrayType* a,
+        ArrayRef<Expr*> args,
+        Location loc
+    ) -> ConversionSequenceOrDiags;
+
     /// Build a conversion sequence that can be applied to a list
     /// of arguments to create an expression that can initialise
     /// a variable of type \p var_type.
@@ -607,6 +654,7 @@ private:
 
     /// Building AST nodes; called after translation and template instantiation.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, Location loc) -> Ptr<Expr>;
+    auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
     auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<Expr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
@@ -647,6 +695,7 @@ private:
     auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 
     /// Types.
+    auto TranslateArrayType(ParsedBinaryExpr* parsed) -> Type;
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
     auto TranslateIntType(ParsedIntType* parsed) -> Type;
     auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;

@@ -166,8 +166,39 @@ public:
     [[nodiscard]] bool rvalue() const { return not lvalue(); }
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::AssertExpr and e->kind() <= Kind::UnaryExpr;
+        return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::UnaryExpr;
     }
+};
+
+class srcc::ArrayBroadcastExpr final : public Expr {
+public:
+    Expr* element;
+
+    ArrayBroadcastExpr(ArrayType* type, Expr* element, Location loc)
+        : Expr{Kind::ArrayBroadcastExpr, type, MRValue, loc}, element{element} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayBroadcastExpr; }
+};
+
+class srcc::ArrayInitExpr final : public Expr
+    , TrailingObjects<ArrayInitExpr, Expr*> {
+    friend TrailingObjects;
+    u32 num_inits;
+
+    ArrayInitExpr(ArrayType* type, ArrayRef<Expr*> element, Location loc);
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        ArrayType* type,
+        ArrayRef<Expr*> element,
+        Location loc
+    ) -> ArrayInitExpr*;
+
+    [[nodiscard]] auto default_init() const -> Expr* { return initialisers().back(); }
+    [[nodiscard]] auto initialisers() const -> ArrayRef<Expr*> { return getTrailingObjects(num_inits); }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayInitExpr; }
 };
 
 class srcc::AssertExpr final : public Expr {
