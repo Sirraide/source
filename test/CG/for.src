@@ -58,6 +58,11 @@ proc k {
     for 1..=10 do foo(42);
 }
 
+proc l {
+    var a1 = int[5](5, 6, 7, 8, 9);
+    for i in a1 do foo(i);
+}
+
 // * proc __src_main {
 // + entry:
 // +     ret
@@ -80,7 +85,7 @@ proc k {
 // +     br bb1(int 1)
 // +
 // + bb1(int %0):
-// +     %1 = icmp slt %0, int 4
+// +     %1 = icmp ne %0, int 4
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
@@ -102,7 +107,7 @@ proc k {
 // +     br bb1(%1)
 // +
 // + bb1(i16 %3):
-// +     %4 = icmp slt %3, %2
+// +     %4 = icmp ne %3, %2
 // +     br %4 to bb2 else bb3
 // +
 // + bb2:
@@ -119,14 +124,14 @@ proc k {
 // +     br bb1(int 1)
 // +
 // + bb1(int %0):
-// +     %1 = icmp slt %0, int 11
+// +     %1 = icmp ne %0, int 11
 // +     br %1 to bb2 else bb6
 // +
 // + bb2:
 // +     br bb3(int 2)
 // +
 // + bb3(int %2):
-// +     %3 = icmp slt %2, %0
+// +     %3 = icmp ne %2, %0
 // +     br %3 to bb4 else bb5
 // +
 // + bb4:
@@ -147,7 +152,7 @@ proc k {
 // +     br bb1(int 0, int 1)
 // +
 // + bb1(int %0, int %1):
-// +     %2 = icmp slt %1, int 4
+// +     %2 = icmp ne %1, int 4
 // +     br %2 to bb2 else bb3
 // +
 // + bb2:
@@ -170,7 +175,7 @@ proc k {
 // +     br bb1(int 0, %1)
 // +
 // + bb1(int %3, i16 %4):
-// +     %5 = icmp slt %4, %2
+// +     %5 = icmp ne %4, %2
 // +     br %5 to bb2 else bb3
 // +
 // + bb2:
@@ -188,14 +193,14 @@ proc k {
 // +     br bb1(int 0, int 1)
 // +
 // + bb1(int %0, int %1):
-// +     %2 = icmp slt %1, int 11
+// +     %2 = icmp ne %1, int 11
 // +     br %2 to bb2 else bb6
 // +
 // + bb2:
 // +     br bb3(int 0, int 2)
 // +
 // + bb3(int %3, int %4):
-// +     %5 = icmp slt %4, %1
+// +     %5 = icmp ne %4, %1
 // +     br %5 to bb4 else bb5
 // +
 // + bb4:
@@ -218,11 +223,11 @@ proc k {
 // +     br bb1(int 1, int 11)
 // +
 // + bb1(int %0, int %1):
-// +     %2 = icmp slt %0, int 11
+// +     %2 = icmp ne %0, int 11
 // +     br %2 to bb2 else bb4
 // +
 // + bb2:
-// +     %3 = icmp slt %1, int 21
+// +     %3 = icmp ne %1, int 21
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
@@ -240,11 +245,11 @@ proc k {
 // +     br bb1(int 0, int 1, int 11)
 // +
 // + bb1(int %0, int %1, int %2):
-// +     %3 = icmp slt %1, int 11
+// +     %3 = icmp ne %1, int 11
 // +     br %3 to bb2 else bb4
 // +
 // + bb2:
-// +     %4 = icmp slt %2, int 21
+// +     %4 = icmp ne %2, int 21
 // +     br %4 to bb3 else bb4
 // +
 // + bb3:
@@ -263,7 +268,7 @@ proc k {
 // +     br bb1(int 0, int 2)
 // +
 // + bb1(int %0, int %1):
-// +     %2 = icmp slt %1, int 21
+// +     %2 = icmp ne %1, int 21
 // +     br %2 to bb2 else bb3
 // +
 // + bb2:
@@ -281,19 +286,19 @@ proc k {
 // +     br bb1(int 0, int 2, int 3, int 4, int 5)
 // +
 // + bb1(int %0, int %1, int %2, int %3, int %4):
-// +     %5 = icmp slt %1, int 21
+// +     %5 = icmp ne %1, int 21
 // +     br %5 to bb2 else bb6
 // +
 // + bb2:
-// +     %6 = icmp slt %2, int 31
+// +     %6 = icmp ne %2, int 31
 // +     br %6 to bb3 else bb6
 // +
 // + bb3:
-// +     %7 = icmp slt %3, int 41
+// +     %7 = icmp ne %3, int 41
 // +     br %7 to bb4 else bb6
 // +
 // + bb4:
-// +     %8 = icmp slt %4, int 51
+// +     %8 = icmp ne %4, int 51
 // +     br %8 to bb5 else bb6
 // +
 // + bb5:
@@ -314,13 +319,44 @@ proc k {
 // +     br bb1(int 1)
 // +
 // + bb1(int %0):
-// +     %1 = icmp slt %0, int 11
+// +     %1 = icmp ne %0, int 11
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
 // +     call void _S3fooFvxiE(int 42)
 // +     %2 = add %0, int 1
 // +     br bb1(%2)
+// +
+// + bb3:
+// +     ret
+// + }
+// +
+// + proc _S1lFvE {
+// +     %0 = int[5]
+// +     %1 = int
+// +
+// + entry:
+// +     store int to %0, int 5, align 8
+// +     %2 = ptradd %0, int 8
+// +     store int to %2, int 6, align 8
+// +     %3 = ptradd %2, int 8
+// +     store int to %3, int 7, align 8
+// +     %4 = ptradd %3, int 8
+// +     store int to %4, int 8, align 8
+// +     %5 = ptradd %4, int 8
+// +     store int to %5, int 9, align 8
+// +     %6 = ptradd %0, int 40
+// +     br bb1(%0)
+// +
+// + bb1(int^ %7):
+// +     %8 = icmp ne %7, %6
+// +     br %8 to bb2 else bb3
+// +
+// + bb2:
+// +     %9 = load int, %7, align 8
+// +     call void _S3fooFvxiE(%9)
+// +     %10 = ptradd %7, int 8
+// +     br bb1(%10)
 // +
 // + bb3:
 // +     ret

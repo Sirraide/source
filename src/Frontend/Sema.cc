@@ -269,7 +269,7 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->lvalue()) return expr;
-    Todo();
+    return ICE(expr->location(), "TODO: Materialise temporary");
 }
 
 void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
@@ -2437,17 +2437,22 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // Give up if something went wrong.
     if (ranges.size() != parsed->ranges().size()) return {};
 
-    // The ranges must be srvalue ranges.
+    // Make sure the ranges are something we can actually iterate over.
+    //
+    // Ranges are iterated by value, arrays by reference.
     // TODO: Support slices as well.
     for (auto& r : ranges) {
-        auto rty = dyn_cast<RangeType>(r->type);
-        if (not rty) return Error(
-            r->location(),
-            "Invalid type '{}' for range of '%1(for%)' loop",
-            r->type
-        );
-
-        r = LValueToSRValue(r);
+        if (isa<RangeType>(r->type)) {
+            r = LValueToSRValue(r);
+        } else if (isa<ArrayType>(r->type)) {
+            r = MaterialiseTemporary(r);
+        } else {
+            return Error(
+                r->location(),
+                "Invalid type '{}' for range of '%1(for%)' loop",
+                r->type
+            );
+        }
     }
 
     // Push a new scope for the loop variables.
@@ -2471,17 +2476,24 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // just srvalues bound to the elements of the ranges.
     SmallVector<LocalDecl*> vars;
     for (auto [v, r] : zip(parsed->vars(), ranges)) {
-        auto rty = cast<RangeType>(r->type);
-        auto var = new (*M) LocalDecl(
-            rty->elem(),
-            rty->elem()->rvalue_category(), // TODO: Should be lvalue if we’re iterating over a slice.
-            v.first,
-            curr_proc().proc,
-            v.second
-        );
+        auto MakeVar = [&](Type ty, ValueCategory cat) {
+            auto var = new (*M) LocalDecl(
+                ty,
+                cat,
+                v.first,
+                curr_proc().proc,
+                v.second
+            );
 
-        vars.push_back(var);
-        DeclareLocal(var);
+            vars.push_back(var);
+            DeclareLocal(var);
+        };
+
+        r->type->visit(utils::Overloaded{
+            [&](auto*) { Unreachable(); },
+            [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue); },
+            [&](RangeType* ty) { MakeVar(ty->elem(), ty->elem()->rvalue_category()); },
+        });
     }
 
     // Now that we have the variables, translate the loop body.

@@ -669,7 +669,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
     using enum OverflowBehaviour;
     auto ty = rhs->type();
     Assert(
-        lhs->type() == ty,
+        (lhs->type() == ty) or (isa<PtrType>(lhs->type()) and isa<PtrType>(rhs->type())),
         "Sema should have converted these to the same type: {}, {}",
         lhs->type(),
         ty
@@ -1019,7 +1019,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
 
     // Emit the ranges in order.
     for (auto r : stmt->ranges()) {
-        Assert(isa<RangeType>(r->type));
+        Assert((isa<RangeType, ArrayType>(r->type)));
         ranges.push_back(Emit(r));
     }
 
@@ -1031,12 +1031,20 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     }
 
     // Collect all loop variables. The enumerator is always at index 0.
-    for (auto r : ranges) {
-        auto start = CreateExtractValue(r, 0);
-        auto end = CreateExtractValue(r, 1);
-        arg_types.push_back(start->type());
-        args.push_back(start);
-        end_vals.push_back(end);
+    for (auto [r, expr] : zip(ranges, stmt->ranges())) {
+        if (isa<RangeType>(expr->type)) {
+            auto start = CreateExtractValue(r, 0);
+            auto end = CreateExtractValue(r, 1);
+            arg_types.push_back(start->type());
+            args.push_back(start);
+            end_vals.push_back(end);
+        } else if (auto a = dyn_cast<ArrayType>(expr->type)) {
+            arg_types.push_back(PtrType::Get(tu, a->elem()));
+            args.push_back(r);
+            end_vals.push_back(CreatePtrAdd(r, CreateInt(a->size(tu).bytes()), true));
+        } else {
+            Unreachable("Invalid for range type: {}", expr->type);
+        }
     }
 
     // Branch to the condition block.
@@ -1050,8 +1058,8 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     // If we have multiple ranges, break if we’ve reach the end of any one of them.
     for (auto [a, e] : zip(block_args, end_vals)) {
         auto bb_cont = CreateBlock();
-        auto lt = EmitArithmeticOrComparisonOperator(Tk::SLt, a, e, stmt->location());
-        CreateCondBr(lt, bb_cont, bb_end);
+        auto ne = CreateICmpNe(a, e);
+        CreateCondBr(ne, bb_cont, bb_end);
         EnterBlock(std::move(bb_cont));
     }
 
@@ -1065,10 +1073,19 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     // Emit increments for all of them.
     args.clear();
     if (enum_var) args.push_back(CreateAdd(bb_cond->arg(0), CreateInt(1, enum_var->type)));
-    for (auto a : block_args) args.push_back(CreateAdd(a, CreateInt(1, a->type())));
-    CreateBr(bb_cond, args);
+    for (auto [expr, a] : zip(stmt->ranges(), block_args)) {
+        if (isa<RangeType>(expr->type)) {
+            args.push_back(CreateAdd(a, CreateInt(1, a->type())));
+        } else if (auto arr = dyn_cast<ArrayType>(expr->type)) {
+            auto sz = CreateInt(arr->elem()->array_size(tu).bytes());
+            args.push_back(CreatePtrAdd(a, sz, true));
+        } else {
+            Unreachable("Invalid for range type: {}", expr->type);
+        }
+    }
 
     // Continue.
+    CreateBr(bb_cond, args);
     EnterBlock(std::move(bb_end));
     return nullptr;
 }

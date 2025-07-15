@@ -40,3 +40,12 @@ for enum k, l, i, j in
     i..=3, // expected-error: Unknown symbol 'i'
     k..=4  // expected-error: Unknown symbol 'k'
 ;
+
+var a1 = int[5](1, 2, 3, 4, 5);
+for i in a1 do {};
+
+var a2 = int[7](1, 2, 3, 4, 5);
+for i in a2 do {};
+
+var a3 = int[7](9);
+for i in a3 do {};
