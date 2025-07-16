@@ -10,6 +10,9 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Allocator.h>
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+
 #include <ffi.h>
 #include <optional>
 #include <print>
@@ -18,8 +21,30 @@
 using namespace srcc;
 using namespace srcc::eval;
 namespace ir = cg::ir;
+using mlir::Value;
+using mlir::Block;
 
-/*
+auto RValue::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    utils::Overloaded V{
+        // clang-format off
+        [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
+        [&](std::monostate) {},
+        [&](Type ty) { out += ty->print(); },
+        [&](MRValue) { out += "<aggregate value>"; },
+        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
+        [&](this auto& self, const Range& range) {
+            self(range.start);
+            out += "%1(..%)";
+            self(range.end);
+        },
+    }; // clang-format on
+    visit(V);
+    return out;
+}
+
+#if 0
+
 #define Val(x) (*({auto _v = ValImpl(x); if (not _v) return {}; _v.get(); }))
 #define TRY(x)                 \
     do {                       \
@@ -301,7 +326,7 @@ auto SRValue::print() const -> SmallUnrenderedString {
         // clang-format off
         [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
-        [&](ir::ProcOp proc) { out += std::format("%2({}%)", proc->name()); },
+        [&](ir::ProcOp proc) { out += std::format("%2({}%)", proc.getName()); },
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
@@ -328,26 +353,7 @@ auto SRValue::print() const -> SmallUnrenderedString {
 
     visit(V);
     return out;
-}*/
-
-auto RValue::print() const -> SmallUnrenderedString {
-    SmallUnrenderedString out;
-    utils::Overloaded V{
-        // clang-format off
-        [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
-        [&](std::monostate) {},
-        [&](Type ty) { out += ty->print(); },
-        [&](MRValue) { out += "<aggregate value>"; },
-        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
-        [&](this auto& self, const Range& range) {
-            self(range.start);
-            out += "%1(..%)";
-            self(range.end);
-        },
-    }; // clang-format on
-    visit(V);
-    return out;
-}/*
+}
 
 // ============================================================================
 //  Helpers
@@ -359,8 +365,8 @@ namespace {
 /// to be unique *per procedure*.
 enum struct Temporary : u64;
 auto Encode(mlir::BlockArgument a) -> Temporary { return Temporary(u64(a.getAsOpaquePointer())); }
-auto Encode(ir::FrameSlot* f) -> Temporary { return Temporary(u64(f)); }
-auto Encode(ir::Inst* i, u32 val) -> Temporary { return Temporary(u64(i) << 32 | val); }
+auto Encode(ir::FrameSlotOp f) -> Temporary { return Temporary(u64(f.getAsOpaquePointer())); }
+auto Encode(Value v) -> Temporary { return Temporary(u64(v.getAsOpaquePointer())); }
 } // namespace
 
 // ============================================================================
@@ -472,7 +478,7 @@ class eval::Eval : DiagsProducer<bool> {
         ir::ProcOp proc{};
 
         /// Instruction pointer for this procedure.
-        ArrayRef<ir::Inst*>::iterator ip{};
+        mlir::Block::iterator ip{};
 
         /// Temporary values for each instruction.
         DenseMap<Temporary, SRValue> temporaries{};
@@ -513,10 +519,10 @@ private:
     }
 
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
-    [[nodiscard]] bool BranchTo(ir::Block* block, ArrayRef<ir::Value> args);
+    [[nodiscard]] bool BranchTo(Block* block, mlir::ValueRange args);
     [[nodiscard]] auto Eq(const SRValue& a, const SRValue& b) -> std::optional<bool>;
     [[nodiscard]] bool EvalLoop();
-    [[nodiscard]] auto FFICall(ir::ProcOp proc, ArrayRef<ir::Value> args) -> std::optional<SRValue>;
+    [[nodiscard]] auto FFICall(ir::ProcOp proc, ArrayRef<Value> args) -> std::optional<SRValue>;
     [[nodiscard]] auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto FFIType(Type ty) -> ffi_type*;
     [[nodiscard]] bool FFIStoreArg(void* ptr, const SRValue& val);
@@ -525,13 +531,13 @@ private:
     [[nodiscard]] auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto MakeProcPtr(ir::ProcOp proc) -> Pointer;
-    [[nodiscard]] bool PushFrame(ir::ProcOp proc, ArrayRef<ir::Value> args);
+    [[nodiscard]] bool PushFrame(ir::ProcOp proc, ArrayRef<Value> args);
     [[nodiscard]] bool StoreSRValue(const SRValue& ptr, const SRValue& val);
     [[nodiscard]] bool StoreSRValue(void* ptr, const SRValue& val);
-    [[nodiscard]] auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
-    [[nodiscard]] auto Temp(ir::Argument* i) -> SRValue&;
-    [[nodiscard]] auto Temp(ir::FrameSlot* f) -> SRValue&;
-    [[nodiscard]] auto ValImpl(ir::Value v) -> Ptr<const SRValue>;
+    [[nodiscard]] auto Temp(mlir::Operation* i, u32 idx = 0) -> SRValue&;
+    [[nodiscard]] auto Temp(mlir::BlockArgument i) -> SRValue&;
+    [[nodiscard]] auto Temp(ir::FrameSlotOp f) -> SRValue&;
+    [[nodiscard]] auto ValImpl(Value v) -> Ptr<const SRValue>;
 };
 
 Eval::Eval(VM& vm, bool complain)
@@ -545,10 +551,10 @@ auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
     return l;
 }
 
-bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value> args) {
-    call_stack.back().ip = block->instructions().begin();
+bool Eval::BranchTo(Block* block, mlir::ValueRange args) {
+    call_stack.back().ip = block->begin();
 
-    // Copy out the argument values our of their slots in case we’re doing
+    // Copy the argument values out of their slots in case we’re doing
     // something horrible like
     //
     //   bb1(int %1, int %2):
@@ -561,7 +567,7 @@ bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value> args) {
     for (auto arg : args) copy.push_back(Val(arg));
 
     // Now, copy in the values.
-    for (auto [slot, arg] : zip(block->arguments(), copy))
+    for (auto [slot, arg] : zip(block->getArguments(), copy))
         Temp(slot) = std::move(arg);
 
     return true;
@@ -587,7 +593,7 @@ auto Eval::Eq(const SRValue& a, const SRValue& b) -> std::optional<bool> {
 }
 
 bool Eval::EvalLoop() {
-    auto CastOp = [&] [[nodiscard]] (
+    /*auto CastOp = [&] [[nodiscard]] (
         ir::ICast* i,
         APInt (APInt::*op)(unsigned width) const
     ) -> bool {
@@ -596,44 +602,44 @@ bool Eval::EvalLoop() {
         auto result = (val.cast<APInt>().*op)(u32(to_wd.bits()));
         Temp(i) = SRValue{std::move(result), i->cast_result_type()};
         return true;
-    };
+    };*/
 
     auto CmpOp = [&] [[nodiscard]] (
-        ir::Inst* i,
+        mlir::Operation* i,
         llvm::function_ref<bool(const APInt& lhs, const APInt& rhs)> op
     ) -> bool {
-        auto& lhs = Val(i->args()[0]);
-        auto& rhs = Val(i->args()[1]);
+        auto& lhs = Val(i->getOperand(0));
+        auto& rhs = Val(i->getOperand(1));
         auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
         Temp(i) = SRValue{result};
         return true;
     };
 
     auto IntOp = [&] [[nodiscard]] (
-        ir::Inst* i,
+        mlir::Operation* i,
         llvm::function_ref<APInt(const APInt& lhs, const APInt& rhs)> op
     ) -> bool {
-        auto& lhs = Val(i->args()[0]);
-        auto& rhs = Val(i->args()[1]);
+        auto& lhs = Val(i->getOperand(0));
+        auto& rhs = Val(i->getOperand(1));
         auto result = op(lhs.cast<APInt>(), rhs.cast<APInt>());
         Temp(i) = SRValue{std::move(result), lhs.type()};
         return true;
     };
 
-    auto IntOrBoolOp = [&] [[nodiscard]] (ir::Inst* i, auto op) -> bool {
-        auto& lhs = Val(i->args()[0]);
-        auto& rhs = Val(i->args()[1]);
+    auto IntOrBoolOp = [&] [[nodiscard]] (mlir::Operation* i, auto op) -> bool {
+        auto& lhs = Val(i->getOperand(0));
+        auto& rhs = Val(i->getOperand(1));
         if (lhs.isa<bool>()) Temp(i) = SRValue{bool(op(lhs.cast<bool>(), rhs.cast<bool>()))};
         else Temp(i) = SRValue{op(lhs.cast<APInt>(), rhs.cast<APInt>()), lhs.type()};
         return true;
     };
 
     auto OvOp = [&] [[nodiscard]] (
-        ir::Inst* i,
+        mlir::Operation* i,
         APInt (APInt::*op)(const APInt& RHS, bool& Overflow) const
     ) -> bool {
-        auto& lhs = Val(i->args()[0]);
-        auto& rhs = Val(i->args()[1]);
+        auto& lhs = Val(i->getOperand(0));
+        auto& rhs = Val(i->getOperand(1));
         bool overflow = false;
         auto result = (lhs.cast<APInt>().*op)(rhs.cast<APInt>(), overflow);
         Temp(i, 0) = SRValue{std::move(result), lhs.type()};
@@ -643,73 +649,73 @@ bool Eval::EvalLoop() {
 
     const u64 max_steps = vm.owner().context().eval_steps ?: std::numeric_limits<u64>::max();
     for (u64 steps = 0; steps < max_steps; steps++) {
-        switch (auto i = *call_stack.back().ip++; i->opcode()) {
-            case ir::Op::Abort: {
-                if (not complain) return false;
-                auto& a = *cast<ir::AbortInst>(i);
-                auto& msg1 = Val(a[0]);
-                auto& msg2 = Val(a[1]);
-                auto reason_str = [&] -> std::string_view {
-                    switch (a.abort_reason()) {
-                        case ir::AbortReason::AssertionFailed: return "Assertion failed";
-                        case ir::AbortReason::ArithmeticError: return "Arithmetic error";
-                    }
-                    Unreachable();
-                }();
+        auto i = &*call_stack.back().ip++;
+        if (auto a = dyn_cast<ir::AbortOp>(i)) {
+            if (not complain) return false;
+            auto& msg1 = Val(a.getMsg1());
+            auto& msg2 = Val(a.getMsg2());
+            auto reason_str = [&] -> std::string_view {
+                switch (a.getReason()) {
+                    case ir::AbortReason::AssertionFailed: return "Assertion failed";
+                    case ir::AbortReason::ArithmeticError: return "Arithmetic error";
+                    case ir::AbortReason::InvalidLocalRef: return "Invalid local reference";
+                }
+                Unreachable();
+            }();
 
-                std::string msg{reason_str};
-                if (not msg1.empty()) msg += std::format(": '{}'", GetStringData(msg1));
-                if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
-                return Error(a.location(), "{}", msg);
+            std::string msg{reason_str};
+            if (not msg1.empty()) msg += std::format(": '{}'", GetStringData(msg1));
+            if (not msg2.empty()) msg += std::format(": {}", GetStringData(msg2));
+            return Error(Location::Decode(u64(a.getEncodedLocation().getInt())), "{}", msg);
+        }
+
+        if (auto b = dyn_cast<mlir::cf::BranchOp>(i)) {
+            TRY(BranchTo(b.getDest(), b.getDestOperands()));
+            continue;
+        }
+
+        if (auto b = dyn_cast<mlir::cf::CondBranchOp>(i)) {
+            auto& cond = Val(b.getCondition());
+            if (cond.cast<bool>()) TRY(BranchTo(b.getTrueDest(), b.getTrueDestOperands()));
+            else TRY(BranchTo(b.getFalseDest(), b.getFalseDestOperands()));
+            continue;
+        }
+
+        if (auto c = dyn_cast<ir::CallOp>(i)) {
+            auto proc = Val(c.getAddr()).cast<Pointer>();
+
+            // Check that this is a valid call target.
+            if (proc.is_null_ptr() or not proc.is_proc_ptr())
+                return Error(entry, "Attempted to call non-procedure");
+            if (c.getEnv() and not isa<ir::NilOp>(c.getEnv().getDefiningOp()))
+                return ICE(entry, "TODO: Call to procedure with environment");
+
+            // Compile the procedure now if we haven’t done that yet.
+            auto callee = procedure_indices[proc.value()];
+            if (callee.empty()) {
+                // This is an external procedure.
+                if (callee.getLinkage()) {
+                    auto res = FFICall(callee, args);
+                    if (not res) return false;
+                    Temp(i) = std::move(res.value());
+                    break;
+                }
+
+                // This is not imported, so it must have a body.
+                Assert(callee->decl() and callee->decl()->body());
+                cg.emit(callee->decl());
             }
 
-            case ir::Op::Br: {
-                auto b = cast<ir::BranchInst>(i);
-                if (b->is_conditional()) {
-                    auto& cond = Val(b->cond());
-                    if (cond.cast<bool>()) TRY(BranchTo(b->then(), b->then_args()));
-                    else TRY(BranchTo(b->else_(), b->else_args()));
-                } else {
-                    TRY(BranchTo(b->then(), b->then_args()));
-                }
-            } break;
+            // Get the temporary for the return value *before* pushing a new frame.
+            SRValue* ret = nullptr;
+            if (not i->result_types().empty()) ret = &Temp(i);
 
-            case ir::Op::Call: {
-                auto& closure = Val(i->args()[0]).cast<SRClosure>();
-                auto args = i->args().drop_front(1);
+            // Enter the stack frame.
+            TRY(PushFrame(callee, args));
 
-                // Check that this is a valid call target.
-                if (closure.proc.is_null_ptr() or not closure.proc.is_proc_ptr())
-                    return Error(entry, "Attempted to call non-procedure");
-                if (not closure.env.is_null_ptr())
-                    return ICE(entry, "TODO: Call to procedure with environment");
-
-                // Compile the procedure now if we haven’t done that yet.
-                auto callee = procedure_indices[closure.proc.value()];
-                if (callee->empty()) {
-                    // This is an external procedure.
-                    if (not callee->decl() or callee->decl()->is_imported()) {
-                        auto res = FFICall(callee, args);
-                        if (not res) return false;
-                        Temp(i) = std::move(res.value());
-                        break;
-                    }
-
-                    // This is not imported, so it must have a body.
-                    Assert(callee->decl() and callee->decl()->body());
-                    cg.emit(callee->decl());
-                }
-
-                // Get the temporary for the return value *before* pushing a new frame.
-                SRValue* ret = nullptr;
-                if (not i->result_types().empty()) ret = &Temp(i);
-
-                // Enter the stack frame.
-                TRY(PushFrame(callee, args));
-
-                // Set the return value slot to the call’s temporary.
-                call_stack.back().ret = ret;
-            } break;
+            // Set the return value slot to the call’s temporary.
+            call_stack.back().ret = ret;
+        } break;
 
             case ir::Op::Load: {
                 auto l = cast<ir::MemInst>(i);
@@ -819,7 +825,6 @@ bool Eval::EvalLoop() {
             case ir::Op::SAddOv: TRY(OvOp(i, &APInt::sadd_ov)); break;
             case ir::Op::SMulOv: TRY(OvOp(i, &APInt::smul_ov)); break;
             case ir::Op::SSubOv: TRY(OvOp(i, &APInt::ssub_ov)); break;
-        }
     }
 
     Error(entry, "Exceeded maximum compile-time evaluation steps");
@@ -827,12 +832,12 @@ bool Eval::EvalLoop() {
     return false;
 }
 
-auto Eval::FFICall(ir::ProcOp proc, ArrayRef<ir::Value> args) -> std::optional<SRValue> {
+auto Eval::FFICall(ir::ProcOp proc, ArrayRef<Value> args) -> std::optional<SRValue> {
     auto ret = FFIType(proc->type()->ret());
     if (not ret) return std::nullopt;
     SmallVector<ffi_type*> arg_types;
     for (auto a : args) {
-        auto arg_ty = FFIType(cast<ir::Value>(a)->type());
+        auto arg_ty = FFIType(cast<Value>(a)->type());
         if (not arg_ty) return std::nullopt;
         arg_types.push_back(arg_ty);
     }
@@ -1110,7 +1115,7 @@ auto Eval::MakeProcPtr(ir::ProcOp proc) -> Pointer {
     return Pointer::Proc(u32(procedure_indices.size() - 1));
 }
 
-bool Eval::PushFrame(ir::ProcOp proc, ArrayRef<ir::Value> args) {
+bool Eval::PushFrame(ir::ProcOp proc, ArrayRef<Value> args) {
     Assert(not proc->empty());
     StackFrame frame{proc};
     frame.stack_base = stack.size();
@@ -1191,25 +1196,25 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
     return val.visit(v);
 }
 
-auto Eval::Temp(ir::Argument* i) -> SRValue& {
+auto Eval::Temp(mlir::BlockArgument i) -> SRValue& {
     return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i)));
 }
 
-auto Eval::Temp(ir::FrameSlot* f) -> SRValue& {
+auto Eval::Temp(ir::FrameSlotOp f) -> SRValue& {
     return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(f)));
 }
 
-auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
+auto Eval::Temp(mlir::Operation* i, u32 idx) -> SRValue& {
     return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i, idx)));
 }
 
-auto Eval::ValImpl(ir::Value v) -> Ptr<const SRValue> {
+auto Eval::ValImpl(Value v) -> Ptr<const SRValue> {
     auto Materialise = [&](SRValue val) -> const SRValue* {
         return &call_stack.back().materialised_values.push_back(std::move(val));
     };
 
     switch (v->kind()) {
-        using K = ir::Value::Kind;
+        using K = Value::Kind;
         case K::Block: Unreachable("Can’t take address of basic block");
         case K::LargeInt: Todo();
         case K::Proc: {
@@ -1330,7 +1335,8 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         [&](Type t) { return RValue(t); },
     });
 }
-*/
+#endif
+
 // ============================================================================
 //  VM API
 // ============================================================================

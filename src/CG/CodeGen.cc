@@ -112,7 +112,13 @@ void CodeGen::CreateArithFailure(Value failure_cond, Tk op, Location loc, String
     If(failure_cond, [&] {
         auto op_token = CreateGlobalStringSlice(loc, Spelling(op));
         auto operation = CreateGlobalStringSlice(loc, name);
-        create<ir::AbortOp>(C(loc), ir::AbortReason::ArithmeticError, op_token, operation);
+        create<ir::AbortOp>(
+            C(loc),
+            ir::AbortReason::ArithmeticError,
+            op_token,
+            operation,
+            getI64IntegerAttr(loc.encode())
+        );
     });
 }
 
@@ -784,7 +790,13 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value {
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateNil(expr->location(), tu.StrLitTy);
         auto cond_str = CreateGlobalStringSlice(expr->cond->location(), expr->cond->location().text(tu.context()));
-        create<ir::AbortOp>(C(expr->location()), ir::AbortReason::AssertionFailed, cond_str, msg);
+        create<ir::AbortOp>(
+            C(expr->location()),
+            ir::AbortReason::AssertionFailed,
+            cond_str,
+            msg,
+            getI64IntegerAttr(expr->location().encode())
+        );
     });
 
     return {};
@@ -795,18 +807,18 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value {
         // Convert 'x and y' to 'if x then y else false'.
         case Tk::And: {
             return If(
-                Emit(expr->lhs),
-                [&] { return Emit(expr->rhs); },
-                [&] { return CreateBool(expr->location(), false); }
+                       Emit(expr->lhs),
+                       [&] { return Emit(expr->rhs); },
+                       [&] { return CreateBool(expr->location(), false); }
             )->getArgument(0);
         }
 
         // Convert 'x or y' to 'if x then true else y'.
         case Tk::Or: {
             return If(
-                Emit(expr->lhs),
-                [&] { return CreateBool(expr->location(), true); },
-                [&] { return Emit(expr->rhs); }
+                       Emit(expr->lhs),
+                       [&] { return CreateBool(expr->location(), true); },
+                       [&] { return Emit(expr->rhs); }
             )->getArgument(0);
         }
 
@@ -1357,7 +1369,8 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value {
         loc,
         ir::AbortReason::InvalidLocalRef,
         CreateGlobalStringSlice(expr->location(), expr->decl->name),
-        CreateNil(expr->location(), tu.StrLitTy)
+        CreateNil(expr->location(), tu.StrLitTy),
+        getI64IntegerAttr(expr->location().encode())
     );
 
     return create<mlir::LLVM::PoisonOp>(

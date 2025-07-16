@@ -23,7 +23,7 @@ struct srcc::LocInfo : LocInfoShort {
 
 /// A source range in a file.
 struct srcc::Location {
-    using Encoded = u64;
+    using Encoded = i64;
 
     u32 pos{};
     u16 len{};

@@ -189,7 +189,8 @@ def AbortOp : SRCC_Op<"abort", [Terminator]> {
     let arguments = (ins
         SRCC_AbortReasonAttr:$reason,
         SRCC_Tuple:$msg1,
-        SRCC_Tuple:$msg2
+        SRCC_Tuple:$msg2,
+        Builtin_IntegerAttr:$encoded_location
     );
 }
 
