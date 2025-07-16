@@ -14,10 +14,6 @@
 #include <variant>
 
 namespace srcc {
-namespace cg::ir {
-class InstValue;
-class Proc;
-}
 class Stmt;
 class ProcDecl;
 class StrLitExpr;
@@ -119,7 +115,7 @@ class VM {
     TranslationUnit& owner_tu;
 
     /// Symbol table for native procedures.
-    DenseMap<cg::ir::Proc*, void*> native_symbols;
+//    DenseMap<cg::ir::Proc*, void*> native_symbols;
 
 public:
     explicit VM(TranslationUnit& owner_tu);

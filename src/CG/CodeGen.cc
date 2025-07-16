@@ -4,38 +4,249 @@
 
 #include <clang/Basic/TargetInfo.h>
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Transforms/Passes.h>
+
 #include <memory>
 
 using namespace srcc;
 using namespace srcc::cg;
-using ir::Block;
-using ir::Value;
+namespace arith = mlir::arith;
+using Vals = mlir::ValueRange;
 
-void CodeGen::CreateArithFailure(Value* failure_cond, Tk op, Location loc, String name) {
+CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
+    : CodeGenBase(), OpBuilder(&mlir), tu{tu}, word_size{word_size}, lang_opts{lang_opts} {
+    ir::SRCCDialect::InitialiseContext(mlir);
+    ptr_ty = mlir::LLVM::LLVMPointerType::get(&mlir);
+    bool_ty = getIntegerType(1, false);
+    int_ty = C(Type::IntTy);
+    closure_ty = mlir::TupleType::get(&mlir, {ptr_ty, ptr_ty});
+    slice_ty = mlir::TupleType::get(&mlir, {ptr_ty, getIntegerType(u32(tu.target().int_size().bits()))});
+    mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
+}
+
+// ============================================================================
+//  AST -> IR
+// ============================================================================
+auto CodeGen::C(CallingConvention l) -> mlir::LLVM::CConv {
+    switch (l) {
+        case CallingConvention::Source: return mlir::LLVM::CConv::Fast;
+        case CallingConvention::Native: return mlir::LLVM::CConv::C;
+    }
+    Unreachable();
+}
+
+auto CodeGen::C(Linkage l) -> mlir::LLVM::Linkage {
+    switch (l) {
+        case Linkage::Internal: return mlir::LLVM::Linkage::Private;
+        case Linkage::Exported: return mlir::LLVM::Linkage::External;
+        case Linkage::Imported: return mlir::LLVM::Linkage::External;
+        case Linkage::Reexported: return mlir::LLVM::Linkage::External;
+        case Linkage::Merge: return mlir::LLVM::Linkage::LinkonceODR;
+    }
+    Unreachable();
+}
+
+auto CodeGen::C(Location l) -> mlir::Location {
+    auto lc = l.seek_line_column(tu.context());
+    if (not lc) return getUnknownLoc();
+    auto f = tu.context().file_name(l.file_id);
+    return mlir::FileLineColLoc::get(&mlir, f.value(), u32(lc->line), u32(lc->col));
+}
+
+auto CodeGen::C(Type ty) -> mlir::Type {
+    // Integer types.
+    if (ty == Type::BoolTy) return getIntegerType(1, false);
+    if (ty == Type::IntTy) return getIntegerType(u32(tu.target().int_size().bits()));
+    if (auto i = dyn_cast<IntType>(ty)) return getIntegerType(u32(i->bit_width().bits()));
+
+    // Pointer types.
+    if (isa<PtrType>(ty)) return ptr_ty;
+
+    // Aggregates need to be represented as structs for extract to work.
+    if (isa<ProcType>(ty)) return closure_ty;
+    if (isa<SliceType>(ty)) return slice_ty;
+    if (auto r = dyn_cast<RangeType>(ty)) {
+        auto e = C(r->elem());
+        return mlir::TupleType::get(&mlir, {e, e});
+    }
+
+    // Structs and arrays are just turned into blobs of bytes.
+    auto sz = ty->size(tu);
+    if (sz == Size()) return mlir::NoneType::get(&mlir);
+    return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
+}
+
+auto CodeGen::ConvertProcType(ProcType* ty) -> IRProcType {
+    IRProcType ptype;
+    SmallVector<mlir::Type> arg_types;
+    mlir::Type ret = C(ty->ret());
+
+    // Handle indirect returns.
+    if (ty->ret()->is_mrvalue()) ptype.has_indirect_return = true;
+    else if (IsZeroSizedType(ty)) ret = mlir::NoneType::get(&mlir);
+
+    // Add the remaining args.
+    for (auto [intent, t] : ty->params()) {
+        if (IsZeroSizedType(t)) continue;
+        arg_types.push_back(t->pass_by_lvalue(ty->cconv(), intent) ? ptr_ty : C(t));
+    }
+
+    ptype.type = mlir::FunctionType::get(&mlir, arg_types, mlir::TypeRange{ret});
+    return ptype;
+}
+
+auto CodeGen::CreateAggregate(Location loc, Value a, Value b) -> Value {
+    return create<ir::TupleOp>(C(loc), Vals{a, b});
+}
+
+auto CodeGen::CreateAlloca(Location loc, Type ty) -> Value {
+    InsertionGuard _{*this};
+    auto it = curr_proc.entry()->begin();
+    auto end = curr_proc.entry()->end();
+    while (it != end and isa<ir::AllocaOp>(*it)) ++it;
+    if (it == end) setInsertionPointToEnd(curr_proc.entry());
+    else setInsertionPoint(&*it);
+    return create<ir::AllocaOp>(C(loc), ty->size(tu), ty->align(tu));
+}
+
+void CodeGen::CreateArithFailure(Value failure_cond, Tk op, Location loc, String name) {
     If(failure_cond, [&] {
-        auto op_token = CreateGlobalStringSlice(Spelling(op));
-        auto operation = CreateGlobalStringSlice(name);
-        CreateAbort(ir::AbortReason::ArithmeticError, loc, op_token, operation);
+        auto op_token = CreateGlobalStringSlice(loc, Spelling(op));
+        auto operation = CreateGlobalStringSlice(loc, name);
+        create<ir::AbortOp>(C(loc), ir::AbortReason::ArithmeticError, op_token, operation);
     });
 }
 
+template <typename Unchecked, typename Checked>
 auto CodeGen::CreateBinop(
-    Value* lhs,
-    Value* rhs,
+    Type,
+    Value lhs,
+    Value rhs,
     Location loc,
-    Tk op,
-    auto (Builder::*build_unchecked)(Value*, Value*, bool)->Value*,
-    auto (Builder::*build_overflow)(Value*, Value*)->ir::OverflowResult
-) {
-    if (not lang_opts.overflow_checking) return (this->*build_unchecked)(lhs, rhs, true);
-    auto [val, overflow] = (this->*build_overflow)(lhs, rhs);
-    CreateArithFailure(overflow, op, loc);
-    return val;
+    Tk op
+) -> Value {
+    if (not lang_opts.overflow_checking) return createOrFold<Unchecked>(C(loc), lhs, rhs);
+    Operation* checked = create<Checked>(C(loc), lhs, rhs);
+    CreateArithFailure(checked->getResult(1), op, loc);
+    return checked->getResult(0);
 }
 
-auto CodeGen::DeclarePrintf() -> Value* {
+auto CodeGen::CreateBlock(ArrayRef<mlir::Type> args) -> std::unique_ptr<Block> {
+    std::unique_ptr<Block> b{new Block};
+    for (auto ty : args) b->addArgument(ty, getUnknownLoc());
+    return b;
+}
+
+auto CodeGen::CreateBool(Location loc, bool b) -> Value {
+    return create<arith::ConstantOp>(
+        C(loc),
+        getI1Type(),
+        mlir::IntegerAttr::get(getI1Type(), b)
+    );
+}
+
+auto CodeGen::CreateGlobalStringPtr(String data) -> Value {
+    return CreateGlobalStringPtr(Align(1), data, true);
+}
+
+auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value {
+    mlir::LLVM::GlobalOp op;
+    {
+        InsertionGuard _{*this};
+        setInsertionPointToStart(&mlir_module.getBodyRegion().front());
+        op = create<mlir::LLVM::GlobalOp>(
+            getUnknownLoc(),
+            mlir::LLVM::LLVMArrayType::get(getI8Type(), data.size() + null_terminated),
+            true,
+            mlir::LLVM::Linkage::Private,
+            std::format("__srcc_str.{}", strings++),
+            getStringAttr(llvm::Twine(StringRef(data)) + (null_terminated ? "\0"sv : "")),
+            align.value().bytes()
+        );
+    }
+    return create<mlir::LLVM::AddressOfOp>(getUnknownLoc(), op);
+}
+
+auto CodeGen::CreateGlobalStringSlice(Location loc, String data) -> Value {
+    return CreateAggregate(loc, CreateGlobalStringPtr(data), CreateInt(i64(data.size())));
+}
+
+auto CodeGen::CreateInt(const APInt& value, Type ty) -> Value {
+    return create<arith::ConstantOp>(getUnknownLoc(), getIntegerAttr(C(ty), value));
+}
+
+auto CodeGen::CreateInt(i64 value, Type ty) -> Value {
+    return CreateInt(value, C(ty));
+}
+
+auto CodeGen::CreateInt(i64 value, mlir::Type ty) -> Value {
+    return create<arith::ConstantOp>(getUnknownLoc(), getIntegerAttr(ty, value));
+}
+
+auto CodeGen::CreateNil(Location loc, Type ty) -> Value {
+    Assert(not ty->is_mrvalue(), "MRValues don’t have a 'nil' value");
+    if (isa<ProcType>(ty)) {
+        auto p = CreateNullPointer(loc);
+        return CreateAggregate(loc, p, p);
+    }
+
+    if (isa<SliceType>(ty)) return CreateAggregate(
+        loc,
+        CreateNullPointer(loc),
+        CreateNil(loc, Type::IntTy)
+    );
+
+    if (auto r = dyn_cast<RangeType>(ty)) {
+        auto el = CreateNil(loc, r->elem());
+        return CreateAggregate(loc, el, el);
+    }
+
+    if (ty->is_integer()) return CreateInt(0, ty);
+    return create<ir::NilOp>(C(loc), C(ty));
+}
+
+auto CodeGen::CreateNullPointer(Location loc) -> Value {
+    return create<ir::NilOp>(C(loc), ptr_ty);
+}
+
+auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value {
+    return createOrFold<mlir::LLVM::GEPOp>(
+        loc,
+        ptr_ty,
+        getI8Type(),
+        addr,
+        mlir::LLVM::GEPArg(i32(offs.bytes())),
+        mlir::LLVM::GEPNoWrapFlags::inbounds | mlir::LLVM::GEPNoWrapFlags::nusw | mlir::LLVM::GEPNoWrapFlags::nuw
+    );
+}
+
+auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value {
+    return createOrFold<mlir::LLVM::GEPOp>(
+        loc,
+        ptr_ty,
+        getI8Type(),
+        addr,
+        mlir::LLVM::GEPArg(offs),
+        mlir::LLVM::GEPNoWrapFlags::inbounds | mlir::LLVM::GEPNoWrapFlags::nusw | mlir::LLVM::GEPNoWrapFlags::nuw
+    );
+}
+
+auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value {
+    auto from_sz = from->size(tu);
+    auto to_sz = to->size(tu);
+    if (from_sz == to_sz) return val;
+    if (from_sz > to_sz) return createOrFold<arith::TruncIOp>(loc, C(to), val);
+    if (from == Type::BoolTy) return createOrFold<arith::ExtUIOp>(loc, C(to), val);
+    return createOrFold<arith::ExtSIOp>(loc, C(to), val);
+}
+
+auto CodeGen::DeclarePrintf() -> ir::ProcOp {
     if (not printf) {
         printf = GetOrCreateProc(
+            Location(),
             "printf",
             Linkage::Imported,
             ProcType::Get(
@@ -51,160 +262,141 @@ auto CodeGen::DeclarePrintf() -> Value* {
     return printf.value();
 }
 
-auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::Proc* {
+auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
+    auto& ir_proc = declared_procs[proc];
+    if (ir_proc) return ir_proc;
     auto ty = proc->proc_type();
-    bool noreturn = ty->ret() == Type::NoReturnTy;
-    bool has_zero_sized_params = any_of(ty->params(), [&](const ParamTypeData& ty) {
-        return IsZeroSizedType(ty.type);
-    });
 
-    // If the procedure returns an MRValue, we need to pass a pointer
-    // to construct it into.
-    bool has_indirect_return = HasIndirectReturn(ty);
+    // Create a procedure declaration.
+    InsertionGuard _{*this};
+    setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
+    auto name = MangledName(proc);
+    auto [ftype, has_indirect_return] = ConvertProcType(ty);
+    ir_proc = create<ir::ProcOp>(
+        C(proc->location()),
+        name,
+        C(proc->linkage),
+        C(proc->cconv()),
+        ftype,
+        proc->proc_type()->variadic(),
+        has_indirect_return,
+        /*has_static_chain=*/false
+    );
 
-    // Only rebuild the procedure type if we actually need to change
-    // something.
-    if (
-        (ty->ret() != Type::VoidTy and IsZeroSizedType(ty->ret())) or
-        has_zero_sized_params or
-        has_indirect_return
-    ) {
-        SmallVector<ParamTypeData> sized;
-        u32 ir_index = 0;
-
-        if (has_indirect_return) {
-            ir_index = 1;
-            sized.push_back({Intent::In, PtrType::Get(tu, ty->ret())});
-        }
-
-        if (has_indirect_return or has_zero_sized_params) {
-            auto map = std::make_unique<ArgumentMapping>();
-            for (auto [i, ty] : enumerate(ty->params())) {
-                if (not IsZeroSizedType(ty.type)) {
-                    map->map(u32(i), ir_index++);
-                    sized.push_back(ty);
-                }
-            }
-            argument_mapping[proc] = std::move(map);
-        } else {
-            append_range(sized, ty->params());
-        }
-
-        // Convert zero-sized return types to void, but keep noreturn so we
-        // can add the appropriate attribute when converting to LLVM IR.
-        auto ret = ty->ret();
-        if (has_indirect_return or (not noreturn and IsZeroSizedType(ret))) ret = Type::VoidTy;
-        ty = ProcType::Get(
-            tu,
-            ret,
-            sized,
-            ty->cconv(),
-            ty->variadic()
-        );
+    // Erase the body if this is just a declaration; additionally, declarations
+    // can’t have public visibility, so set it to private in that case.
+    if (not proc->body()) {
+        ir_proc.eraseBody();
+        ir_proc.setVisibility(mlir::SymbolTable::Visibility::Private);
     }
 
-    // Create the procedure.
-    auto name = MangledName(proc);
-    auto ir_proc = GetOrCreateProc(name, proc->linkage, ty);
-    ir_proc->associated_decl = proc;
-
-    // Remember the *original* return type.
-    if (has_indirect_return) ir_proc->indirect_ret_type = proc->return_type();
     return ir_proc;
 }
 
-auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, ArrayRef<Value*> args) -> Block* {
-    return EnterBlock(curr_proc->add(std::move(bb)), args);
+auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, Vals args) -> Block* {
+    auto b = bb.release();
+    curr_proc.push_back(b);
+    return EnterBlock(b, args);
 }
 
-auto CodeGen::EnterBlock(Block* bb, ArrayRef<Value*> args) -> Block* {
+auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
     // If there is a current block, and it is not closed, branch to the newly
     // inserted block, unless that block is the function’s entry block.
-    if (insert_point and not insert_point->closed() and not bb->is_entry())
-        CreateBr(bb, args);
+    auto curr = getInsertionBlock();
+    if (curr and not curr->mightHaveTerminator())
+        create<mlir::cf::BranchOp>(getUnknownLoc(), bb, args);
 
     // Finally, position the builder at the end of the block.
-    insert_point = bb;
+    setInsertionPointToEnd(bb);
     return bb;
 }
 
-CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::Proc* proc)
+CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc)
     : CG(CG), old_func(CG.curr_proc), guard{CG} {
     CG.curr_proc = proc;
-
-    // Create the entry block if it doesn’t exist yet.
-    if (proc->empty())
-        CG.EnterBlock(CG.CreateBlock());
+    CG.EnterBlock(proc.entry());
 }
 
-auto CodeGen::GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument> {
-    if (proc->decl()) {
-        auto map = argument_mapping[proc->decl()].get();
-        if (map) {
-            auto mapped = map->map(index);
-            if (not mapped) return {};
-            index = *mapped;
-        }
-    }
-
-    return proc->args()[index];
-}
-
-bool CodeGen::HasIndirectReturn(ProcType* type) {
-    if (IsZeroSizedType(type->ret())) return false;
-    return type->ret()->rvalue_category() == ValueCategory::MRValue;
+auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp {
+    if (auto op = mlir_module.lookupSymbol<ir::ProcOp>(name)) return op;
+    InsertionGuard _{*this};
+    setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
+    auto [ftype, has_indirect_return] = ConvertProcType(ty);
+    return create<ir::ProcOp>(
+        C(loc),
+        name,
+        C(linkage),
+        C(ty->cconv()),
+        ftype,
+        ty->variadic(),
+        has_indirect_return,
+        false
+    );
 }
 
 auto CodeGen::If(
-    Value* cond,
-    llvm::function_ref<Value*()> emit_then,
-    llvm::function_ref<Value*()> emit_else
-) -> ArrayRef<ir::Argument*> {
+    Value cond,
+    llvm::function_ref<Value()> emit_then,
+    llvm::function_ref<Value()> emit_else
+) -> Block* {
     if (not emit_else) {
         If(cond, emit_then);
-        return {};
+        return nullptr;
     }
 
     auto bb_then = CreateBlock();
     auto bb_else = CreateBlock();
-    CreateCondBr(cond, bb_then, bb_else);
+    auto bb_join = CreateBlock();
+    create<mlir::cf::CondBranchOp>(getUnknownLoc(), cond, bb_then.get(), bb_else.get());
 
     // Emit the then block.
     EnterBlock(std::move(bb_then));
     auto then_val = emit_then();
 
-    // Now we can create the join block since we know how many arguments it takes.
-    auto bb_join = CreateBlock(then_val ? ArrayRef{then_val->type()} : ArrayRef<Type>{});
-
     // Branch to the join block.
-    if (not insert_point->closed())
-        CreateBr(bb_join.get(), then_val ? ArrayRef{then_val} : ArrayRef<Value*>{});
+    if (then_val) bb_join->addArgument(then_val.getType(), getUnknownLoc());
+    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+        getUnknownLoc(),
+        bb_join.get(),
+        then_val ? Vals(then_val) : Vals()
+    );
 
     // And emit the else block.
     EnterBlock(std::move(bb_else));
     auto else_val = emit_else();
-    if (not insert_point->closed())
-        CreateBr(bb_join.get(), else_val ? ArrayRef{else_val} : ArrayRef<Value*>{});
+    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+        getUnknownLoc(),
+        bb_join.get(),
+        else_val ? Vals(else_val) : Vals()
+    );
 
     // Finally, return the join block.
-    auto args = bb_join->arguments();
-    EnterBlock(std::move(bb_join));
-    return args;
+    return EnterBlock(std::move(bb_join));
 }
 
-auto CodeGen::If(Value* cond, ArrayRef<Value*> args, llvm::function_ref<void()> emit_then) -> Block* {
-    SmallVector<Type, 3> types;
-    for (auto arg : args) types.push_back(arg->type());
+auto CodeGen::If(Value cond, Vals args, llvm::function_ref<void()> emit_then) -> Block* {
+    SmallVector<mlir::Type, 3> types;
+    for (auto arg : args) types.push_back(arg.getType());
 
     // Create the blocks and branch to the body.
     auto body = CreateBlock(types);
     auto join = CreateBlock();
-    CreateCondBr(cond, {body, args}, {join, {}});
+    create<mlir::cf::CondBranchOp>(
+        getUnknownLoc(),
+        cond,
+        body.get(),
+        args,
+        join.get(),
+        Vals()
+    );
 
     // Emit the body and close the block.
     EnterBlock(std::move(body));
     emit_then();
-    if (not insert_point->closed()) CreateBr(join.get(), {});
+    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+        getUnknownLoc(),
+        join.get()
+    );
 
     // Add the join block.
     return EnterBlock(std::move(join));
@@ -228,23 +420,31 @@ void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
     EnterBlock(bb_cond);
 }
 
-void CodeGen::Unless(Value* cond, llvm::function_ref<void()> emit_else) {
+void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
     // Create the blocks and branch to the body.
     auto else_ = CreateBlock();
     auto join = CreateBlock();
-    CreateCondBr(cond, {join, {}}, {else_, {}});
+    create<mlir::cf::CondBranchOp>(
+        getUnknownLoc(),
+        cond,
+        join.get(),
+        else_.get()
+    );
 
     // Emit the body and close the block.
     EnterBlock(std::move(else_));
     emit_else();
-    if (not insert_point->closed()) CreateBr(join.get(), {});
+    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+        getUnknownLoc(),
+        join.get()
+    );
 
     // Add the join block.
     EnterBlock(std::move(join));
 }
 
 void CodeGen::While(
-    llvm::function_ref<Value*()> emit_cond,
+    llvm::function_ref<Value()> emit_cond,
     llvm::function_ref<void()> emit_body
 ) {
     auto bb_cond = CreateBlock();
@@ -254,12 +454,12 @@ void CodeGen::While(
 
     // Emit condition.
     EnterBlock(std::move(bb_cond));
-    CreateCondBr(emit_cond(), bb_body, bb_end);
+    create<mlir::cf::CondBranchOp>(getUnknownLoc(), emit_cond(), bb_body.get(), bb_end.get());
 
     // Emit body.
     EnterBlock(std::move(bb_body));
     emit_body();
-    CreateBr(cond);
+    create<mlir::cf::BranchOp>(getUnknownLoc(), cond);
 
     // Continue after the loop.
     EnterBlock(std::move(bb_end));
@@ -380,22 +580,24 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 // ============================================================================
 //  Initialisation.
 // ============================================================================
-void CodeGen::EmitInitialiser(Value* addr, Expr* init) {
-    Assert(not IsZeroSizedType(addr->type()), "Should have been checked before calling this");
-    if (init->type->is_srvalue()) {
-        Assert(init->value_category == Expr::SRValue);
-        CreateStore(Emit(init), addr);
-    } else {
-        EmitMRValue(addr, init);
-    }
+void CodeGen::EmitInitialiser(Value addr, Expr* init) {
+    Assert(not IsZeroSizedType(init->type), "Should have been checked before calling this");
+    if (init->type->is_mrvalue()) EmitMRValue(addr, init);
+    else create<ir::StoreOp>(C(init->location()), addr, Emit(init), init->type->align(tu));
 }
 
-void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
+void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
     Assert(addr, "Emitting mrvalue without address?");
 
     // We support treating lvalues as mrvalues.
     if (init->value_category == Expr::LValue) {
-        CreateMemCopy(addr, Emit(init), CreateInt(init->type->size(tu).bytes()));
+        create<mlir::LLVM::MemcpyOp>(
+            C(init->location()),
+            addr,
+            Emit(init),
+            CreateInt(i64(init->type->size(tu).bytes())),
+            false
+        );
         return;
     }
 
@@ -424,12 +626,31 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
         // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
         [&](ConstExpr* e) {
             auto mrv = e->value->cast<eval::MRValue>();
-            auto c = CreateGlobalConstantPtr(init->type, String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()));
-            CreateMemCopy(addr, c, CreateInt(init->type->size(tu).bytes()));
+            auto c = CreateGlobalStringPtr(
+                init->type->align(tu),
+                String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()),
+                false
+            );
+
+            create<mlir::LLVM::MemcpyOp>(
+                C(init->location()),
+                addr,
+                c,
+                CreateInt(i64(init->type->size(tu).bytes())),
+                false
+            );
         },
 
         // Default initialiser here is a memset to 0.
-        [&](DefaultInitExpr* e) { CreateMemZero(addr, CreateInt(e->type->size(tu).bytes())); },
+        [&](DefaultInitExpr* e) {
+            create<mlir::LLVM::MemsetOp>(
+                C(init->location()),
+                addr,
+                CreateInt(0, tu.I8Ty),
+                CreateInt(i64(e->type->size(tu).bytes())),
+                false
+            );
+        },
 
         // If expressions can be mrvalues if either branch is an mrvalue.
         [&](IfExpr* e) { EmitIfExpr(e, addr); },
@@ -443,12 +664,7 @@ void CodeGen::EmitMRValue(Value* addr, Expr* init) { // clang-format off
                     continue;
                 }
 
-                auto offs = CreatePtrAdd(
-                    addr,
-                    CreateInt(field->offset.bytes()),
-                    true
-                );
-
+                auto offs = CreatePtrAdd(C(val->location()), addr, field->offset);
                 EmitInitialiser(offs, val);
             }
         }
@@ -462,7 +678,7 @@ void CodeGen::Emit(ArrayRef<ProcDecl*> procs) {
     for (auto& p : procs) EmitProcedure(p);
 }
 
-auto CodeGen::Emit(Stmt* stmt) -> Value* {
+auto CodeGen::Emit(Stmt* stmt) -> Value {
     Assert(not stmt->is_mrvalue(), "Should call EmitMRValue() instead");
     switch (stmt->kind()) {
         using K = Stmt::Kind;
@@ -476,36 +692,49 @@ auto CodeGen::Emit(Stmt* stmt) -> Value* {
     Unreachable("Unknown statement kind");
 }
 
-auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> Value* {
+auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> Value {
     Unreachable("Should only be emitted as mrvalue");
 }
 
-void CodeGen::EmitArrayBroadcast(Type elem_ty, Value* addr, u64 elements, Expr* initialiser, Location loc) {
+void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc) {
     auto counter = CreateInt(0);
-    auto dimension = CreateInt(elements);
-    auto bb_cond = EnterBlock(CreateBlock(Type::IntTy), counter);
+    auto dimension = CreateInt(i64(elements));
+    auto bb_cond = EnterBlock(CreateBlock(int_ty), counter);
     auto bb_body = CreateBlock();
     auto bb_end = CreateBlock();
+    auto l = C(loc);
 
     // Condition.
-    auto eq = EmitArithmeticOrComparisonOperator(Tk::EqEq, bb_cond->arg(0), dimension, loc);
-    CreateCondBr(eq, bb_end, bb_body);
+    auto eq = EmitArithmeticOrComparisonOperator(
+        Tk::EqEq,
+        Type::IntTy,
+        bb_cond->getArgument(0),
+        dimension,
+        loc
+    );
+    create<mlir::cf::CondBranchOp>(l, eq, bb_end.get(), bb_body.get());
 
     // Initialisation.
     EnterBlock(std::move(bb_body));
-    auto mul = CreateIMul(bb_cond->arg(0), CreateInt(elem_ty->array_size(tu).bytes()), true);
-    auto ptr = CreatePtrAdd(addr, mul, true);
+    auto mul = create<arith::MulIOp>(
+        l,
+        bb_cond->getArgument(0),
+        CreateInt(i64(elem_ty->array_size(tu).bytes())),
+        arith::IntegerOverflowFlags::nuw // FIXME: Should this be nsw too?
+    );
+
+    auto ptr = CreatePtrAdd(l, addr, mul);
     EmitInitialiser(ptr, initialiser);
 
     // Increment.
-    auto incr = CreateAdd(bb_cond->arg(0), CreateInt(1));
-    CreateBr(bb_cond, incr);
+    auto incr = create<arith::AddIOp>(l, bb_cond->getArgument(0), CreateInt(1));
+    create<mlir::cf::BranchOp>(l, bb_cond, incr.getResult());
 
     // Join.
     EnterBlock(std::move(bb_end));
 }
 
-void CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value* mrvalue_slot) {
+void CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot) {
     auto ty = cast<ArrayType>(e->type);
     Assert(ty->dimension() > 1); // For dimension = 1 we create an ArrayInitExpr instead.
     EmitArrayBroadcast(
@@ -517,23 +746,22 @@ void CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value* mrvalue_slot)
     );
 }
 
-auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*) -> Value* {
+auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*) -> Value {
     Unreachable("Should only be emitted as mrvalue");
 }
 
-void CodeGen::EmitArrayInitExpr(ArrayInitExpr* e, Value* mrvalue_slot) {
+void CodeGen::EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot) {
     auto ty = cast<ArrayType>(e->type);
     bool broadcast_els = u64(ty->dimension()) - e->initialisers().size();
 
     // Emit each initialiser.
-    auto size = CreateInt(ty->elem()->array_size(tu).bytes());
     for (auto init : e->initialisers()) {
         EmitInitialiser(mrvalue_slot, init);
         if (init != e->initialisers().back() or broadcast_els != 0) {
             mrvalue_slot = CreatePtrAdd(
+                C(init->location()),
                 mrvalue_slot,
-                size,
-                true
+                ty->elem()->array_size(tu)
             );
         }
     }
@@ -548,7 +776,7 @@ void CodeGen::EmitArrayInitExpr(ArrayInitExpr* e, Value* mrvalue_slot) {
     );
 }
 
-auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
+auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value {
     auto loc = expr->location().seek_line_column(tu.context());
     if (not loc) {
         ICE(expr->location(), "No location for assert");
@@ -556,34 +784,34 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> Value* {
     }
 
     Unless(Emit(expr->cond), [&] {
-        Value* msg{};
+        Value msg{};
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
-        else msg = CreateNil(tu.StrLitTy);
-        auto cond_str = CreateGlobalStringSlice(expr->cond->location().text(tu.context()));
-        CreateAbort(ir::AbortReason::AssertionFailed, expr->location(), cond_str, msg);
+        else msg = CreateNil(expr->location(), tu.StrLitTy);
+        auto cond_str = CreateGlobalStringSlice(expr->cond->location(), expr->cond->location().text(tu.context()));
+        create<ir::AbortOp>(C(expr->location()), ir::AbortReason::AssertionFailed, cond_str, msg);
     });
 
     return {};
 }
 
-auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
+auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value {
     switch (expr->op) {
         // Convert 'x and y' to 'if x then y else false'.
         case Tk::And: {
             return If(
                 Emit(expr->lhs),
                 [&] { return Emit(expr->rhs); },
-                [&] { return CreateBool(false); }
-            )[0];
+                [&] { return CreateBool(expr->location(), false); }
+            )->getArgument(0);
         }
 
         // Convert 'x or y' to 'if x then true else y'.
         case Tk::Or: {
             return If(
                 Emit(expr->lhs),
-                [&] { return CreateBool(true); },
+                [&] { return CreateBool(expr->location(), true); },
                 [&] { return Emit(expr->rhs); }
-            )[0];
+            )->getArgument(0);
         }
 
         // Assignment.
@@ -602,18 +830,19 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
                 expr->lhs->type
             );
 
-            bool is_slice = isa<SliceType>(expr->lhs->type);
             auto range = Emit(expr->lhs);
             auto index = Emit(expr->rhs);
+            bool is_slice = isa<SliceType>(expr->lhs->type);
 
             // Check that the index is in bounds.
+            auto l = C(expr->location());
             if (lang_opts.overflow_checking) {
                 auto size = is_slice
-                              ? CreateExtractValue(range, 1)
-                              : CreateInt(u64(cast<ArrayType>(expr->lhs->type)->dimension()));
+                              ? createOrFold<ir::ExtractOp>(C(expr->lhs->location()), range, i64(1))
+                              : CreateInt(cast<ArrayType>(expr->lhs->type)->dimension());
 
                 CreateArithFailure(
-                    CreateICmpUGe(index, size),
+                    createOrFold<arith::CmpIOp>(l, arith::CmpIPredicate::uge, index, size),
                     Tk::LBrack,
                     expr->location(),
                     "out of bounds access"
@@ -622,9 +851,9 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
 
             Size elem_size = cast<SingleElementTypeBase>(expr->lhs->type)->elem()->array_size(tu);
             return CreatePtrAdd(
-                is_slice ? CreateExtractValue(range, 0) : range,
-                CreateIMul(CreateInt(elem_size.bytes()), index),
-                true
+                l,
+                is_slice ? createOrFold<ir::ExtractOp>(C(expr->lhs->location()), range, i64(0)) : range,
+                createOrFold<arith::MulIOp>(l, CreateInt(i64(elem_size.bytes())), index)
             );
         }
 
@@ -642,22 +871,37 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
+            auto a = expr->lhs->type->align(tu);
             auto lvalue = Emit(expr->lhs);
-            auto lhs = CreateLoad(expr->lhs->type, lvalue);
+            auto lhs = create<ir::LoadOp>(
+                lvalue.getLoc(),
+                C(expr->lhs->type),
+                lvalue,
+                a
+            );
+
             auto rhs = Emit(expr->rhs);
             auto res = EmitArithmeticOrComparisonOperator(
                 StripAssignment(expr->op),
+                expr->lhs->type,
                 lhs,
                 rhs,
                 expr->location()
             );
-            CreateStore(res, lvalue);
+
+            create<ir::StoreOp>(
+                C(expr->location()),
+                lvalue,
+                res,
+                a
+            );
             return lvalue;
         }
 
         // Anything else.
         default: return EmitArithmeticOrComparisonOperator(
             expr->op,
+            expr->lhs->type,
             Emit(expr->lhs),
             Emit(expr->rhs),
             expr->location()
@@ -665,27 +909,23 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value* {
     }
 }
 
-auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, Location loc) -> Value* {
+auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Value rhs, Location ast_loc) -> Value {
     using enum OverflowBehaviour;
-    auto ty = rhs->type();
+    auto ty = rhs.getType();
+    auto loc = C(ast_loc);
     Assert(
-        (lhs->type() == ty) or (isa<PtrType>(lhs->type()) and isa<PtrType>(rhs->type())),
-        "Sema should have converted these to the same type: {}, {}",
-        lhs->type(),
-        ty
+        lhs.getType() == ty,
+        "Sema should have converted these to the same type"
     );
 
     auto CheckDivByZero = [&] {
-        auto check = CreateICmpEq(rhs, CreateInt(0, ty));
-        CreateArithFailure(check, op, loc, "division by zero");
+        auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, rhs, CreateInt(0, ty));
+        CreateArithFailure(check, op, ast_loc, "division by zero");
     };
 
-    auto CreateCheckedBinop = [&]( // clang-format off
-        auto (Builder::*build_unchecked)(Value*, Value*, bool)->Value*,
-        auto (Builder::*build_overflow)(Value*, Value*)->ir::OverflowResult
-    ) -> Value* {
-        return CreateBinop(lhs, rhs, loc, op, build_unchecked, build_overflow);
-    }; // clang-format on
+    auto CreateCheckedBinop = [&]<typename Unchecked, typename Checked>() -> Value {
+        return CreateBinop<Unchecked, Checked>(type, lhs, rhs, ast_loc, op);
+    };
 
     switch (op) {
         default: Todo("Codegen for '{}'", op);
@@ -696,49 +936,51 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
             Unreachable("'and' and 'or' cannot be handled here.");
 
         // Comparison operators.
-        case Tk::ULt: return CreateICmpULt(lhs, rhs);
-        case Tk::UGt: return CreateICmpUGt(lhs, rhs);
-        case Tk::ULe: return CreateICmpULe(lhs, rhs);
-        case Tk::UGe: return CreateICmpUGe(lhs, rhs);
-        case Tk::SLt: return CreateICmpSLt(lhs, rhs);
-        case Tk::SGt: return CreateICmpSGt(lhs, rhs);
-        case Tk::SLe: return CreateICmpSLe(lhs, rhs);
-        case Tk::SGe: return CreateICmpSGe(lhs, rhs);
-        case Tk::EqEq: return CreateICmpEq(lhs, rhs);
-        case Tk::Neq: return CreateICmpNe(lhs, rhs);
+        case Tk::ULt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ult, lhs, rhs);
+        case Tk::UGt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ugt, lhs, rhs);
+        case Tk::ULe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ule, lhs, rhs);
+        case Tk::UGe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::uge, lhs, rhs);
+        case Tk::SLt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::slt, lhs, rhs);
+        case Tk::SGt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sgt, lhs, rhs);
+        case Tk::SLe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sle, lhs, rhs);
+        case Tk::SGe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sge, lhs, rhs);
+        case Tk::EqEq: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::eq, lhs, rhs);
+        case Tk::Neq: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ne, lhs, rhs);
 
         // Arithmetic operators that wrap or can’t overflow.
-        case Tk::PlusTilde: return CreateAdd(lhs, rhs);
-        case Tk::MinusTilde: return CreateSub(lhs, rhs);
-        case Tk::StarTilde: return CreateIMul(lhs, rhs);
-        case Tk::ShiftRight: return CreateAShr(lhs, rhs);
-        case Tk::ShiftRightLogical: return CreateLShr(lhs, rhs);
-        case Tk::Ampersand: return CreateAnd(lhs, rhs);
-        case Tk::VBar: return CreateOr(lhs, rhs);
-        case Tk::Xor: return CreateXor(lhs, rhs);
+        case Tk::PlusTilde: return createOrFold<arith::AddIOp>(loc, lhs, rhs);
+        case Tk::MinusTilde: return createOrFold<arith::SubIOp>(loc, lhs, rhs);
+        case Tk::StarTilde: return createOrFold<arith::MulIOp>(loc, lhs, rhs);
+        case Tk::ShiftRight: return createOrFold<arith::ShRSIOp>(loc, lhs, rhs);
+        case Tk::ShiftRightLogical: return createOrFold<arith::ShRUIOp>(loc, lhs, rhs);
+        case Tk::Ampersand: return createOrFold<arith::AndIOp>(loc, lhs, rhs);
+        case Tk::VBar: return createOrFold<arith::OrIOp>(loc, lhs, rhs);
+        case Tk::Xor: return createOrFold<arith::XOrIOp>(loc, lhs, rhs);
 
         // Arithmetic operators for which there is an intrinsic
         // that can perform overflow checking.
-        case Tk::Plus: return CreateCheckedBinop(
-            &Builder::CreateAdd,
-            &Builder::CreateSAddOverflow
-        );
+        case Tk::Plus: return CreateCheckedBinop.operator()< // clang-format off
+            arith::AddIOp,
+            ir::SAddOvOp
+        >();
 
-        case Tk::Minus: return CreateCheckedBinop(
-            &Builder::CreateSub,
-            &Builder::CreateSSubOverflow
-        );
+        case Tk::Minus: return CreateCheckedBinop.operator()<
+            arith::SubIOp,
+            ir::SSubOvOp
+        >();
 
-        case Tk::Star: return CreateCheckedBinop(
-            &Builder::CreateIMul,
-            &Builder::CreateSMulOverflow
-        );
+        case Tk::Star: return CreateCheckedBinop.operator()<
+            arith::MulIOp,
+            ir::SMulOvOp
+        >(); // clang-format on
 
         // Division only requires a check for division by zero.
         case Tk::ColonSlash:
         case Tk::ColonPercent: {
             CheckDivByZero();
-            return op == Tk::ColonSlash ? CreateUDiv(lhs, rhs) : CreateURem(lhs, rhs);
+            return op == Tk::ColonSlash
+                     ? createOrFold<arith::DivUIOp>(loc, lhs, rhs)
+                     : createOrFold<arith::RemUIOp>(loc, lhs, rhs);
         }
 
         // Signed division additionally has to check for overflow, which
@@ -746,51 +988,58 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Value* lhs, Value* rhs, 
         case Tk::Slash:
         case Tk::Percent: {
             CheckDivByZero();
-            auto int_min = CreateInt(APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
-            auto minus_one = CreateInt(u64(-1), ty);
-            auto check_lhs = CreateICmpEq(lhs, int_min);
-            auto check_rhs = CreateICmpEq(rhs, minus_one);
-            CreateArithFailure(CreateAnd(check_lhs, check_rhs), op, loc);
-            return op == Tk::Slash ? CreateSDiv(lhs, rhs) : CreateSRem(lhs, rhs);
+            auto int_min = CreateInt(APInt::getSignedMinValue(u32(type->size(tu).bits())), type);
+            auto minus_one = CreateInt(-1, ty);
+            auto check_lhs = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, lhs, int_min);
+            auto check_rhs = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, rhs, minus_one);
+            CreateArithFailure(
+                createOrFold<arith::AndIOp>(loc, check_lhs, check_rhs),
+                op,
+                ast_loc
+            );
+
+            return op == Tk::Slash
+                     ? createOrFold<arith::DivSIOp>(loc, lhs, rhs)
+                     : createOrFold<arith::RemSIOp>(loc, lhs, rhs);
         }
 
         // Left shift overflows if the shift amount is equal
         // to or exceeds the bit width.
         case Tk::ShiftLeftLogical: {
-            auto check = CreateICmpUGe(rhs, CreateInt(ty->size(tu).bits()));
-            CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
-            return CreateShl(lhs, rhs);
+            auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
+            CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
+            return createOrFold<arith::ShLIOp>(loc, lhs, rhs);
         }
 
         // Signed left shift additionally does not allow a sign change.
         case Tk::ShiftLeft: {
-            auto check = CreateICmpUGe(rhs, CreateInt(ty->size(tu).bits()));
-            CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
+            auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
+            CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
 
             // Check sign.
-            auto res = CreateShl(lhs, rhs);
-            auto sign = CreateAShr(lhs, CreateInt(ty->size(tu).bits() - 1));
-            auto new_sign = CreateAShr(res, CreateInt(ty->size(tu).bits() - 1));
-            auto sign_change = CreateICmpNe(sign, new_sign);
-            CreateArithFailure(sign_change, op, loc);
+            auto res = createOrFold<arith::ShLIOp>(loc, lhs, rhs);
+            auto sign = createOrFold<arith::ShRSIOp>(loc, lhs, CreateInt(i64(type->size(tu).bits()) - 1));
+            auto new_sign = createOrFold<arith::ShRSIOp>(loc, res, CreateInt(i64(type->size(tu).bits()) - 1));
+            auto sign_change = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, sign, new_sign);
+            CreateArithFailure(sign_change, op, ast_loc);
             return res;
         }
 
         // Range expressions.
-        case Tk::DotDotLess: return CreateRange(lhs, rhs);
-        case Tk::DotDotEq: return CreateRange(lhs, CreateAdd(rhs, CreateInt(1, rhs->type())));
+        case Tk::DotDotLess: return CreateAggregate(ast_loc, lhs, rhs);
+        case Tk::DotDotEq: return CreateAggregate(ast_loc, lhs, createOrFold<arith::AddIOp>(loc, rhs, CreateInt(1, rhs.getType())));
 
         // This is lowered to a call to a compiler-generated function.
         case Tk::StarStar: Unreachable("Sema should have converted this to a call");
     }
 }
 
-auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value* {
+auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> Value {
     return EmitBlockExpr(expr, nullptr);
 }
 
-auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value* mrvalue_slot) -> Value* {
-    Value* ret = nullptr;
+auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> Value {
+    Value ret = nullptr;
     for (auto s : expr->stmts()) {
         // Initialise variables.
         //
@@ -820,7 +1069,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value* mrvalue_slot) -> Value* {
         // allow these here, but we need to provide stack space for them.
         else if (s->is_mrvalue()) {
             auto e = cast<Expr>(s);
-            auto l = CreateAlloca(curr_proc, e->type);
+            auto l = CreateAlloca(e->location(), e->type);
             EmitMRValue(l, e);
         }
 
@@ -830,37 +1079,39 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value* mrvalue_slot) -> Value* {
     return ret;
 }
 
-auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> Value* {
-    return CreateBool(stmt->value);
+auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> Value {
+    return CreateBool(stmt->location(), stmt->value);
 }
 
-auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
+auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value {
     switch (expr->builtin) {
         case BuiltinCallExpr::Builtin::Print: {
             auto printf = DeclarePrintf();
+            auto ref = create<ir::ProcRefOp>(C(expr->location()), printf);
             for (auto a : expr->args()) {
+                auto loc = C(a->location());
                 if (a->type == tu.StrLitTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto str_format = CreateGlobalStringSlice("%.*s")->data;
+                    auto str_format = CreateGlobalStringPtr("%.*s");
                     auto slice = Emit(a);
-                    auto data = CreateExtractValue(slice, 0);
-                    auto size = CreateSICast(CreateExtractValue(slice, 1), tu.FFIIntTy);
-                    CreateCall(printf, {str_format, size, data});
+                    auto data = createOrFold<ir::ExtractOp>(loc, slice, i64(0));
+                    auto size = CreateSICast(loc, createOrFold<ir::ExtractOp>(loc, slice, i64(1)), Type::IntTy, tu.FFIIntTy);
+                    create<ir::CallOp>(loc, ref, Vals{str_format, size, data});
                 }
 
                 else if (a->type == Type::IntTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto int_format = CreateGlobalStringSlice("%" PRId64)->data;
+                    auto int_format = CreateGlobalStringPtr("%" PRId64);
                     auto val = Emit(a);
-                    CreateCall(printf, {int_format, val});
+                    create<ir::CallOp>(loc, ref, Vals{int_format, val});
                 }
 
                 else if (a->type == Type::BoolTy) {
                     Assert(a->value_category == Expr::SRValue);
-                    auto bool_format = CreateGlobalStringSlice("%s")->data;
+                    auto bool_format = CreateGlobalStringPtr("%s");
                     auto val = Emit(a);
-                    auto str = CreateSelect(val, CreateGlobalStringSlice("true")->data, CreateGlobalStringSlice("false")->data);
-                    CreateCall(printf, {bool_format, str});
+                    auto str = createOrFold<ir::SelectOp>(loc, val, CreateGlobalStringPtr("true"), CreateGlobalStringPtr("false"));
+                    create<ir::CallOp>(loc, ref, Vals{bool_format, str});
                 }
 
                 else {
@@ -875,7 +1126,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
         }
 
         case BuiltinCallExpr::Builtin::Unreachable: {
-            CreateUnreachable();
+            create<mlir::LLVM::UnreachableOp>(C(expr->location()));
             EnterBlock(CreateBlock());
             return nullptr;
         }
@@ -884,49 +1135,18 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> Value* {
     Unreachable("Unknown builtin");
 }
 
-auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Value* {
+auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Value {
     switch (expr->access_kind) {
         using AK = BuiltinMemberAccessExpr::AccessKind;
-
-        // These support both lvalues and srvalues.
-        case AK::SliceData: {
-            auto slice = Emit(expr->operand);
-            auto stype = cast<SliceType>(expr->operand->type);
-            if (expr->operand->lvalue()) return CreateLoad(PtrType::Get(tu, stype->elem()), slice);
-            return CreateExtractValue(slice, 0);
-        }
-
-        case AK::SliceSize: {
-            auto slice = Emit(expr->operand);
-            if (expr->operand->lvalue()) {
-                auto ptr_sz = CreateInt(tu.target().ptr_size().bytes(), Type::IntTy);
-                return CreateLoad(Type::IntTy, CreatePtrAdd(slice, ptr_sz, true));
-            }
-            return CreateExtractValue(slice, 1);
-        }
-
-        case AK::RangeStart: {
-            auto range = Emit(expr->operand);
-            auto elem = cast<RangeType>(expr->operand->type)->elem();
-            if (expr->operand->lvalue()) return CreateLoad(elem, range);
-            return CreateExtractValue(range, 0);
-        }
-
-        case AK::RangeEnd: {
-            auto range = Emit(expr->operand);
-            auto elem = cast<RangeType>(expr->operand->type)->elem();
-            if (expr->operand->lvalue()) {
-                auto offs = CreateInt(elem->array_size(tu).bytes(), Type::IntTy);
-                return CreateLoad(Type::IntTy, CreatePtrAdd(range, offs, true));
-            }
-            return CreateExtractValue(range, 1);
-        }
-
-        case AK::TypeAlign: return CreateInt(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes());
-        case AK::TypeArraySize: return CreateInt(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes());
-        case AK::TypeBits: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bits());
-        case AK::TypeBytes: return CreateInt(cast<TypeExpr>(expr->operand)->value->size(tu).bytes());
-        case AK::TypeName: return CreateGlobalStringSlice(tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
+        case AK::SliceData: return createOrFold<ir::ExtractOp>(C(expr->location()), Emit(expr->operand), 0);
+        case AK::SliceSize: return createOrFold<ir::ExtractOp>(C(expr->location()), Emit(expr->operand), 1);
+        case AK::RangeStart: return createOrFold<ir::ExtractOp>(C(expr->location()), Emit(expr->operand), 0);
+        case AK::RangeEnd: return createOrFold<ir::ExtractOp>(C(expr->location()), Emit(expr->operand), 1);
+        case AK::TypeAlign: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes()));
+        case AK::TypeArraySize: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes()));
+        case AK::TypeBits: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->size(tu).bits()));
+        case AK::TypeBytes: return CreateInt(i64(cast<TypeExpr>(expr->operand)->value->size(tu).bytes()));
+        case AK::TypeName: return CreateGlobalStringSlice(expr->location(), tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
         case AK::TypeMaxVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
             return CreateInt(APInt::getSignedMaxValue(u32(ty->size(tu).bits())), ty);
@@ -939,83 +1159,91 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> Valu
     Unreachable();
 }
 
-auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value* {
+auto CodeGen::EmitCallExpr(CallExpr* expr) -> Value {
     return EmitCallExpr(expr, nullptr);
 }
 
-auto CodeGen::EmitCallExpr(CallExpr* expr, Value* mrvalue_slot) -> Value* {
+auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> Value {
     auto ty = cast<ProcType>(expr->callee->type);
-    Assert(HasIndirectReturn(ty) == bool(mrvalue_slot));
+    auto has_result = not IsZeroSizedType(ty->ret()) and not ty->ret()->is_mrvalue();
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
 
-    // Add the return value pointer first if there is one.
-    SmallVector<Value*> args;
-    if (mrvalue_slot) args.push_back(mrvalue_slot);
-
     // Evaluate the arguments and add them to the call.
-    //
-    // Don’t add zero-sized arguments, but take care to still emit
-    // them since they may have side effects.
+    SmallVector<Value> args;
     for (auto arg : expr->args()) {
         auto v = Emit(arg);
         if (not IsZeroSizedType(arg->type)) args.push_back(v);
     }
 
-    // This handles calling convention lowering etc.
-    return CreateCall(callee, args);
+    auto op = create<ir::CallOp>(
+        C(expr->location()),
+        has_result ? mlir::TypeRange(C(ty->ret())) : mlir::TypeRange(),
+        createOrFold<ir::ExtractOp>(callee.getLoc(), callee, 0),
+        createOrFold<ir::ExtractOp>(callee.getLoc(), callee, 1),
+        mrvalue_slot,
+        C(ty->cconv()),
+        ConvertProcType(ty).type,
+        ty->variadic(),
+        args
+    );
+
+    if (has_result) return op.getRes();
+    return {};
 }
 
-auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value* {
+auto CodeGen::EmitCastExpr(CastExpr* expr) -> Value {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
         case CastExpr::Deref:
             return val; // This is a no-op like prefix '^'.
 
         case CastExpr::Integral:
-            return CreateSICast(val, expr->type);
+            return CreateSICast(C(expr->location()), val, expr->arg->type, expr->type);
 
         case CastExpr::LValueToSRValue:
             Assert(expr->arg->value_category == Expr::LValue);
             if (IsZeroSizedType(expr->type)) return nullptr;
-            return CreateLoad(expr->type, val);
+            return create<ir::LoadOp>(C(expr->location()), C(expr->type), val, expr->type->align(tu));
 
         case CastExpr::MaterialisePoisonValue:
-            return CreatePoison(
+            return create<mlir::LLVM::PoisonOp>(
+                C(expr->location()),
                 expr->value_category == Expr::SRValue
-                    ? expr->type
-                    : PtrType::Get(tu, Type::VoidTy)
+                    ? C(expr->type)
+                    : ptr_ty
             );
     }
 
     Unreachable();
 }
 
-auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value* {
-    return EmitValue(*constant->value);
+auto CodeGen::EmitConstExpr(ConstExpr* constant) -> Value {
+    return EmitValue(constant->location(), *constant->value);
 }
 
-auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value* {
+auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> Value {
     if (IsZeroSizedType(stmt->type)) return nullptr;
     Assert(stmt->type->rvalue_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
-    return CreateNil(stmt->type);
+    return CreateNil(stmt->location(), stmt->type);
 }
 
-auto CodeGen::EmitEmptyStmt(EmptyStmt*) -> Value* {
+auto CodeGen::EmitEmptyStmt(EmptyStmt*) -> Value {
     return nullptr;
 }
 
-auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value* {
+auto CodeGen::EmitEvalExpr(EvalExpr*) -> Value {
     Unreachable("Should have been evaluated");
 }
 
-auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
-    SmallVector<Value*> ranges;
-    SmallVector<Type> arg_types;
-    SmallVector<Value*> args;
-    SmallVector<Value*> end_vals;
+auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value {
+    SmallVector<Value> ranges;
+    SmallVector<Value> args;
+    SmallVector<Value> end_vals;
+    SmallVector<mlir::Type> arg_types;
     auto bb_end = CreateBlock();
+    auto floc = C(stmt->location());
 
     // Emit the ranges in order.
     for (auto r : stmt->ranges()) {
@@ -1026,22 +1254,22 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     // Add the enumerator.
     auto* enum_var = stmt->enum_var.get_or_null();
     if (enum_var) {
-        arg_types.push_back(enum_var->type);
+        arg_types.push_back(C(enum_var->type));
         args.push_back(CreateInt(0, enum_var->type));
     }
 
     // Collect all loop variables. The enumerator is always at index 0.
     for (auto [r, expr] : zip(ranges, stmt->ranges())) {
         if (isa<RangeType>(expr->type)) {
-            auto start = CreateExtractValue(r, 0);
-            auto end = CreateExtractValue(r, 1);
-            arg_types.push_back(start->type());
+            auto start = createOrFold<ir::ExtractOp>(r.getLoc(), r, 0);
+            auto end = createOrFold<ir::ExtractOp>(r.getLoc(), r, 1);
+            arg_types.push_back(start.getType());
             args.push_back(start);
             end_vals.push_back(end);
         } else if (auto a = dyn_cast<ArrayType>(expr->type)) {
-            arg_types.push_back(PtrType::Get(tu, a->elem()));
+            arg_types.push_back(ptr_ty);
             args.push_back(r);
-            end_vals.push_back(CreatePtrAdd(r, CreateInt(a->size(tu).bytes()), true));
+            end_vals.push_back(CreatePtrAdd(r.getLoc(), r, a->size(tu)));
         } else {
             Unreachable("Invalid for range type: {}", expr->type);
         }
@@ -1051,15 +1279,15 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
     auto bb_cond = EnterBlock(CreateBlock(arg_types), args);
 
     // Add the loop variables to the current scope.
-    auto block_args = bb_cond->arguments().drop_front(enum_var ? 1 : 0);
-    if (enum_var) locals[enum_var] = bb_cond->arg(0);
+    auto block_args = bb_cond->getArguments().drop_front(enum_var ? 1 : 0);
+    if (enum_var) locals[enum_var] = bb_cond->getArgument(0);
     for (auto [v, a] : zip(stmt->vars(), block_args)) locals[v] = a;
 
     // If we have multiple ranges, break if we’ve reach the end of any one of them.
     for (auto [a, e] : zip(block_args, end_vals)) {
         auto bb_cont = CreateBlock();
-        auto ne = CreateICmpNe(a, e);
-        CreateCondBr(ne, bb_cont, bb_end);
+        auto ne = create<arith::CmpIOp>(floc, arith::CmpIPredicate::ne, a, e);
+        create<mlir::cf::CondBranchOp>(floc, ne, bb_cont.get(), bb_end.get());
         EnterBlock(std::move(bb_cont));
     }
 
@@ -1072,34 +1300,40 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value* {
 
     // Emit increments for all of them.
     args.clear();
-    if (enum_var) args.push_back(CreateAdd(bb_cond->arg(0), CreateInt(1, enum_var->type)));
+    if (enum_var) {
+        args.push_back(create<arith::AddIOp>( //
+            floc,
+            bb_cond->getArgument(0),
+            CreateInt(1, enum_var->type)
+        ));
+    }
+
     for (auto [expr, a] : zip(stmt->ranges(), block_args)) {
         if (isa<RangeType>(expr->type)) {
-            args.push_back(CreateAdd(a, CreateInt(1, a->type())));
+            args.push_back(create<arith::AddIOp>(floc, a, CreateInt(1, a.getType())));
         } else if (auto arr = dyn_cast<ArrayType>(expr->type)) {
-            auto sz = CreateInt(arr->elem()->array_size(tu).bytes());
-            args.push_back(CreatePtrAdd(a, sz, true));
+            args.push_back(CreatePtrAdd(floc, a, arr->elem()->array_size(tu)));
         } else {
             Unreachable("Invalid for range type: {}", expr->type);
         }
     }
 
     // Continue.
-    CreateBr(bb_cond, args);
+    create<mlir::cf::BranchOp>(floc, bb_cond, args);
     EnterBlock(std::move(bb_end));
     return nullptr;
 }
 
-auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value* {
+auto CodeGen::EmitIfExpr(IfExpr* stmt) -> Value {
     auto args = If(
         Emit(stmt->cond),
         [&] { return Emit(stmt->then); },
-        stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<Value*()>{}
+        stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<Value()>{}
     );
-    return args.empty() ? nullptr : args.front();
+    return args ? args->getArgument(0) : nullptr;
 }
 
-auto CodeGen::EmitIfExpr(IfExpr* stmt, Value* mrvalue_slot) -> Value* {
+auto CodeGen::EmitIfExpr(IfExpr* stmt, Value mrvalue_slot) -> Value {
     (void) If(
         Emit(stmt->cond),
         [&] { EmitMRValue(mrvalue_slot, cast<Expr>(stmt->then));  return nullptr; },
@@ -1108,34 +1342,48 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt, Value* mrvalue_slot) -> Value* {
     return nullptr;
 }
 
-auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value* {
+auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> Value {
     return CreateInt(expr->storage.value(), expr->type);
 }
 
 void CodeGen::EmitLocal(LocalDecl* decl) {
-    if (LocalNeedsAlloca(decl)) locals[decl] = CreateAlloca(curr_proc, decl->type);
+    if (LocalNeedsAlloca(decl)) locals[decl] = CreateAlloca(decl->location(), decl->type);
 }
 
-auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value* {
+auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> Value {
     if (IsZeroSizedType(expr->type)) return nullptr;
     auto l = locals.find(expr->decl);
     if (l != locals.end()) return l->second;
+
     Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
-    return CreateInvalidLocalReference(expr);
+    auto loc = C(expr->location());
+    create<ir::AbortOp>(
+        loc,
+        ir::AbortReason::InvalidLocalRef,
+        CreateGlobalStringSlice(expr->location(), expr->decl->name),
+        CreateNil(expr->location(), tu.StrLitTy)
+    );
+
+    return create<mlir::LLVM::PoisonOp>(
+        loc,
+        expr->value_category == Expr::SRValue
+            ? C(expr->type)
+            : ptr_ty
+    );
 }
 
-auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> Value* {
+auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> Value {
     Loop([&] { if (auto b = stmt->body.get_or_null()) Emit(b); });
     return nullptr;
 }
 
-auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value* {
+auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> Value {
     auto base = Emit(expr->base);
     if (IsZeroSizedType(expr->type)) return base;
-    return CreatePtrAdd(base, CreateInt(expr->field->offset.bytes()), true);
+    return CreatePtrAdd(C(expr->location()), base, expr->field->offset);
 }
 
-auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value* {
+auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> Value {
     Unreachable("Emitting unresolved overload set?");
 }
 
@@ -1152,44 +1400,66 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     EnterProcedure _(*this, curr_proc);
 
     // Emit locals.
-    for (auto l : proc->locals) EmitLocal(l);
+    u32 arg_idx = 0;
+    for (auto l : proc->locals) {
+        if (IsZeroSizedType(l->type)) continue;
+        auto p = dyn_cast<ParamDecl>(l);
+        if (not p) {
+            EmitLocal(l);
+            continue;
+        }
 
-    // Initialise parameters.
-    for (auto [i, p] : enumerate(proc->params())) {
-        auto arg = GetArg(curr_proc, u32(i)).get_or_null();
-        if (not arg) continue;
-        if (not LocalNeedsAlloca(p)) locals[p] = arg;
-        else CreateStore(arg, locals.at(p));
+        if (
+            (p->type->is_srvalue() and p->intent() == Intent::In) or
+            p->type->pass_by_lvalue(proc->cconv(), p->intent())
+        ) {
+            locals[p] = curr_proc.getArgument(arg_idx++);
+            continue;
+        }
+
+        auto v = locals[p] = CreateAlloca(p->location(), p->type);
+        create<ir::StoreOp>(
+            C(p->location()),
+            v,
+            curr_proc.getArgument(arg_idx++),
+            p->type->align(tu)
+        );
     }
 
     // Emit the body.
     Emit(proc->body().get());
 }
 
-auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value* {
-    return DeclareProcedure(expr->decl);
+auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> Value {
+    auto op = DeclareProcedure(expr->decl);
+    return create<ir::TupleOp>(
+        C(expr->location()),
+        Vals{
+            create<ir::ProcRefOp>(C(expr->location()), op),
+            CreateNullPointer(expr->location()),
+        }
+    );
 }
 
-auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value* {
-    if (curr_proc->indirect_ret_type) {
-        auto slot = curr_proc->args().front();
-        EmitInitialiser(slot, expr->value.get());
-        CreateReturn();
+auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> Value {
+    if (curr_proc.getHasIndirectReturn()) {
+        EmitInitialiser(create<ir::ReturnPointerOp>(getUnknownLoc()), expr->value.get());
+        create<ir::RetOp>(C(expr->location()), Value());
         return nullptr;
     }
 
     auto val = expr->value.get_or_null();
     auto ret_val = val ? Emit(val) : nullptr;
     if (val and IsZeroSizedType(val->type)) ret_val = nullptr;
-    CreateReturn(ret_val);
+    create<ir::RetOp>(C(expr->location()), ret_val);
     return {};
 }
 
-auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value* {
-    return CreateGlobalStringSlice(expr->value);
+auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> Value {
+    return CreateGlobalStringSlice(expr->location(), expr->value);
 }
 
-auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> Value* {
+auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> Value {
     if (IsZeroSizedType(e->type)) {
         for (auto v : e->values()) Emit(v);
         return nullptr;
@@ -1198,28 +1468,30 @@ auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> Value* {
     Unreachable("Emitting struct initialiser without memory location?");
 }
 
-auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value* {
+auto CodeGen::EmitTypeExpr(TypeExpr* expr) -> Value {
     // These should only exist at compile time.
     ICE(expr->location(), "Can’t emit type expr");
     return nullptr;
 }
 
-auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
+auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value {
     if (expr->postfix) {
         switch (expr->op) {
             default: Todo("Emit postfix '{}'", expr->op);
             case Tk::PlusPlus:
             case Tk::MinusMinus: {
                 auto ptr = Emit(expr->arg);
-                auto val = CreateLoad(expr->type, ptr);
+                auto a = expr->type->align(tu);
+                auto val = create<ir::LoadOp>(ptr.getLoc(), C(expr->type), ptr, a);
                 auto new_val = EmitArithmeticOrComparisonOperator(
                     expr->op == Tk::PlusPlus ? Tk::Plus : Tk::Minus,
+                    expr->type,
                     val,
                     CreateInt(1, expr->type),
                     expr->location()
                 );
 
-                CreateStore(new_val, ptr);
+                create<ir::StoreOp>(C(expr->location()), ptr, new_val, a);
                 return val;
             }
         }
@@ -1236,8 +1508,6 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
 
         // Negate an integer.
         case Tk::Minus: {
-            auto a = Emit(expr->arg);
-
             // Because of how literals are parsed, we can get into an annoying
             // corner case with this operator: e.g. if the user declares an i64
             // and attempts to initialise it with -9223372036854775808, we overflow
@@ -1245,27 +1515,28 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> Value* {
             // even though -9223372036854775808 *is* valid. Be nice and special-case
             // this here.
             if (
-                auto val = a->as_int(tu);
-                val and *val - 1 == APInt::getSignedMaxValue(u32(a->type()->size(tu).bits()))
+                auto val = dyn_cast<IntLitExpr>(expr->arg);
+                val and val->storage.value() - 1 == APInt::getSignedMaxValue(u32(val->type->size(tu).bits()))
             ) {
-                val->negate();
-                return CreateInt(std::move(*val), expr->type);
+                auto copy = val->storage.value();
+                copy.negate();
+                return CreateInt(copy, expr->type);
             }
 
             // Otherwise, emit '0 - val'.
-            return CreateBinop(
+            auto a = Emit(expr->arg);
+            return CreateBinop<arith::SubIOp, ir::SSubOvOp>(
+                expr->arg->type,
                 CreateInt(0, expr->type),
                 a,
                 expr->location(),
-                expr->op,
-                &Builder::CreateSub,
-                &Builder::CreateSSubOverflow
+                expr->op
             );
         }
     }
 }
 
-auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
+auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value {
     While(
         [&] { return Emit(stmt->cond); },
         [&] { Emit(stmt->body); }
@@ -1274,48 +1545,46 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> Value* {
     return nullptr;
 }
 
-auto CodeGen::EmitValue(const eval::RValue& val) -> Value* { // clang-format off
+auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> Value { // clang-format off
     utils::Overloaded V {
-        [&](bool b) -> Value* { return CreateBool(b); },
-        [&](std::monostate) -> Value* { return nullptr; },
-        [&](Type) -> Value* { Unreachable("Cannot emit type constant"); },
-        [&](const APInt& value) -> Value* { return CreateInt(value, val.type()); },
-        [&](eval::MRValue) -> Value* { return nullptr; }, // This only happens if the value is unused.
-        [&](this auto& self, const eval::Range& range) -> Value* {
-            return CreateRange(self(range.start), self(range.end));
+        [&](bool b) -> Value { return CreateBool(loc, b); },
+        [&](std::monostate) -> Value { return nullptr; },
+        [&](Type) -> Value { Unreachable("Cannot emit type constant"); },
+        [&](const APInt& value) -> Value { return CreateInt(value, val.type()); },
+        [&](eval::MRValue) -> Value { return nullptr; }, // This only happens if the value is unused.
+        [&](this auto& self, const eval::Range& range) -> Value {
+            return CreateAggregate(loc, self(range.start), self(range.end));
         }
     }; // clang-format on
     return val.visit(V);
 }
 
-auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc* {
+auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     Assert(bool(lang_opts.constant_eval));
 
-    // Create a return value parameter if need be.
+    // Delete any remnants of the last constant evaluation.
+    if (vm_entry_point) vm_entry_point.erase();
+
+    // Build a procedure for this statement.
+    setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
     auto ty = stmt->type_or_void();
-    bool has_indirect_return = ty->rvalue_category() == Expr::MRValue;
-    ParamTypeData arg{Intent::In, PtrType::Get(tu, ty)};
-    ArrayRef<ParamTypeData> args;
-    if (has_indirect_return) {
-        ty = Type::VoidTy;
-        args = arg;
-    }
-
-    // Create a new procedure for this statement.
-    auto proc = GetOrCreateProc(
+    auto [ftype, has_indirect_return] = ConvertProcType(ProcType::Get(tu, ty));
+    vm_entry_point = create<ir::ProcOp>(
+        C(stmt->location()),
         constants::VMEntryPointName,
-        Linkage::Internal,
-        ProcType::Get(tu, ty, args)
+        C(Linkage::Internal),
+        C(CallingConvention::Native),
+        ftype,
+        false,
+        has_indirect_return,
+        false
     );
-
-    // Inform the procedure about whether we’re returning indirectly.
-    if (has_indirect_return) proc->indirect_ret_type = Type::VoidTy;
 
     // Sema has already ensured that this is an initialiser, so throw it
     // into a return expression to handle MRValues.
     ReturnExpr re{dyn_cast<Expr>(stmt), stmt->location(), true};
-    EnterProcedure _(*this, proc);
+    EnterProcedure _(*this, vm_entry_point);
     Emit(isa<Expr>(stmt) ? &re : stmt);
-    if (not insert_point->closed()) CreateReturn();
-    return proc;
+    if (not getInsertionBlock()->mightHaveTerminator()) create<ir::RetOp>(getUnknownLoc(), Value());
+    return vm_entry_point;
 }

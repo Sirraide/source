@@ -3,7 +3,7 @@
 
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Eval.hh>
-#include <srcc/CG/IR.hh>
+#include <srcc/CG/IR/IR.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Macros.hh>
 
@@ -14,6 +14,13 @@ class CodeGen;
 class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
+
+namespace detail {
+class CodeGenBase {
+protected:
+    mlir::MLIRContext mlir;
+};
+}
 }
 
 class srcc::cg::ArgumentMapping {
@@ -36,30 +43,39 @@ public:
     }
 };
 
-class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
-    , public ir::Builder {
+class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, detail::CodeGenBase, mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
+    struct Printer;
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
 
-    Opt<ir::Proc*> printf;
-    DenseMap<LocalDecl*, ir::Value*> locals;
+    TranslationUnit& tu;
+    Opt<ir::ProcOp> printf;
+    DenseMap<LocalDecl*, Value> locals;
+    DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ProcDecl*, String> mangled_names;
     DenseMap<ProcDecl*, std::unique_ptr<const ArgumentMapping>> argument_mapping;
-    ir::Proc* curr_proc = nullptr;
+    mlir::ModuleOp mlir_module;
+    ir::ProcOp vm_entry_point;
+    ir::ProcOp curr_proc;
     Size word_size;
     LangOpts lang_opts;
+    mlir::Type ptr_ty;
+    mlir::Type int_ty;
+    mlir::Type closure_ty;
+    mlir::Type slice_ty;
+    mlir::Type bool_ty;
+    usz strings = 0;
 
 public:
-    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
-        : Builder{tu}, word_size{word_size}, lang_opts{lang_opts} {}
+    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size);
 
     /// Get the diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
     /// Dump the IR module.
-    [[nodiscard]] auto dump() -> SmallUnrenderedString { return Dump(); }
+    [[nodiscard]] auto dump(bool verbose = false) -> SmallUnrenderedString;
 
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }
@@ -68,7 +84,7 @@ public:
     ///
     /// This is used exclusively to prepare a statement for
     /// constant evaluation.
-    [[nodiscard]] auto emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::Proc*;
+    [[nodiscard]] auto emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp;
 
     /// Emit LLVM IR.
     [[nodiscard]] auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
@@ -90,68 +106,95 @@ private:
         SRCC_IMMOVABLE(EnterProcedure);
 
         CodeGen& CG;
-        ir::Proc* old_func;
-        InsertPointGuard guard;
+        ir::ProcOp old_func;
+        InsertionGuard guard;
 
     public:
-        EnterProcedure(CodeGen& CG, ir::Proc* func);
+        EnterProcedure(CodeGen& CG, ir::ProcOp func);
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
+    struct IRProcType {
+        mlir::FunctionType type;
+        bool has_indirect_return = false;
+    };
+
+    // AST -> IR converters
+    auto C(CallingConvention l) -> mlir::LLVM::CConv;
+    auto C(Linkage l) -> mlir::LLVM::Linkage;
+    auto C(Location l) -> mlir::Location;
+    auto C(Type ty) -> mlir::Type;
+
+    auto ConvertProcType(ProcType* ty) -> IRProcType;
+    auto CreateAggregate(Location loc, Value a, Value b) -> Value;
+    auto CreateAlloca(Location loc, Type ty) -> Value;
+
     void CreateArithFailure(
-        ir::Value* failure_cond,
+        Value failure_cond,
         Tk op,
         Location loc,
         String name = "integer overflow"
     );
 
+    template <typename Unchecked, typename Checked>
     auto CreateBinop(
-        ir::Value* lhs,
-        ir::Value* rhs,
+        Type ty,
+        Value lhs,
+        Value rhs,
         Location loc,
-        Tk op,
-        auto (Builder::*build_unchecked)(ir::Value*, ir::Value*, bool)->ir::Value*,
-        auto (Builder::*build_overflow)(ir::Value*, ir::Value*)->ir::OverflowResult
-    );
+        Tk op
+    ) -> Value;
+
+    auto CreateBlock(ArrayRef<mlir::Type> args = {}) -> std::unique_ptr<Block>;
+    auto CreateBool(Location loc, bool b) -> Value;
+    auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
+    auto CreateGlobalStringPtr(String data) -> Value;
+    auto CreateGlobalStringSlice(Location loc, String data) -> Value;
+    auto CreateInt(const APInt& value, Type ty) -> Value;
+    auto CreateInt(i64 value, Type ty = Type::IntTy) -> Value;
+    auto CreateInt(i64 value, mlir::Type ty) -> Value;
+    auto CreateNil(Location loc, Type ty) -> Value;
+    auto CreateNullPointer(Location loc) -> Value;
+    auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
+    auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
+    auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         tu.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
-    auto DeclareAssertFailureHandler() -> ir::Value*;
-    auto DeclareArithmeticFailureHandler() -> ir::Value*;
-    auto DeclarePrintf() -> ir::Value*;
-    auto DeclareProcedure(ProcDecl* proc) -> ir::Proc*;
+    auto DeclarePrintf() -> ir::ProcOp;
+    auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 
     void Emit(ArrayRef<ProcDecl*> procs);
-    auto Emit(Stmt* stmt) -> ir::Value*;
-    void EmitArrayBroadcast(Type elem_ty, ir::Value* addr, u64 elements, Expr* initialiser, Location loc);
-    void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, ir::Value* mrvalue_slot);
-    void EmitArrayInitExpr(ArrayInitExpr* e, ir::Value* mrvalue_slot);
-    auto EmitCallExpr(CallExpr* call, ir::Value* mrvalue_slot) -> ir::Value*;
-    auto EmitBlockExpr(BlockExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
-    auto EmitIfExpr(IfExpr* expr, ir::Value* mrvalue_slot) -> ir::Value*;
+    auto Emit(Stmt* stmt) -> Value;
+    void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc);
+    void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
+    void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
+    auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> Value;
+    auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> Value;
+    auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> Value;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->ir::Value*;
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->Value;
 #include "srcc/AST.inc"
 
-    auto EmitArithmeticOrComparisonOperator(Tk op, ir::Value* lhs, ir::Value* rhs, Location loc) -> ir::Value*;
+    auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(const eval::RValue& val) -> ir::Value*;
+    auto EmitValue(Location loc, const eval::RValue& val) -> Value;
 
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
-    void EmitInitialiser(ir::Value* addr, Expr* init);
+    void EmitInitialiser(Value addr, Expr* init);
     void EmitLocal(LocalDecl* decl);
 
     /// Emit an mrvalue into a memory location.
-    void EmitMRValue(ir::Value* addr, Expr* init);
+    void EmitMRValue(Value addr, Expr* init);
 
-    auto EnterBlock(std::unique_ptr<ir::Block> bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
-    auto EnterBlock(ir::Block* bb, ArrayRef<ir::Value*> args = {}) -> ir::Block*;
+    auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;
+    auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
 
-    /// Get a (mapped) procedure argument.
-    auto GetArg(ir::Proc* proc, u32 index) -> Ptr<ir::Argument>;
+    /// Get a procedure, declaring it if it doesn’t exist yet.
+    auto GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp;
 
     /// Check whether a procedure has an indirect return type.
     bool HasIndirectReturn(ProcType* type);
@@ -168,13 +211,13 @@ private:
     ///
     /// \return The join block.
     auto If(
-        ir::Value* cond,
-        ArrayRef<ir::Value*> args,
+        Value cond,
+        mlir::ValueRange args,
         llvm::function_ref<void()> emit_body
-    ) -> ir::Block*;
+    ) -> Block*;
 
     auto If(
-        ir::Value* cond,
+        Value cond,
         llvm::function_ref<void()> emit_body
     ) { return If(cond, {}, emit_body); }
 
@@ -193,13 +236,12 @@ private:
     /// The builder is positioned at the end of the join block after this
     /// returns.
     ///
-    /// \return The argument values of the join block, which correspond to
-    /// the values returned from emit_then and emit_else.
+    /// \return The join block.
     auto If(
-        ir::Value* cond,
-        llvm::function_ref<ir::Value*()> emit_then,
-        llvm::function_ref<ir::Value*()> emit_else
-    ) -> ArrayRef<ir::Argument*>;
+        Value cond,
+        llvm::function_ref<Value()> emit_then,
+        llvm::function_ref<Value()> emit_else
+    ) -> Block*;
 
     /// Check if the size of a type is zero; this also means that every
     /// instance of this type is (or would be) identical.
@@ -219,13 +261,13 @@ private:
 
     /// Opposite of If().
     void Unless(
-        ir::Value* cond,
+        Value cond,
         llvm::function_ref<void()> emit_else
     );
 
     /// Create a while loop.
     void While(
-        llvm::function_ref<ir::Value*()> emit_cond,
+        llvm::function_ref<Value()> emit_cond,
         llvm::function_ref<void()> emit_body
     );
 };

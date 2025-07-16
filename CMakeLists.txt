@@ -155,20 +155,25 @@ set(SOURCE_LLVM_CMAKE_DIR "${SOURCE_LLVM_ROOT}/lib/cmake")
 set(SOURCE_LLVM_BIN_DIR "${SOURCE_LLVM_ROOT}/bin")
 set(LLVM_DIR "${SOURCE_LLVM_CMAKE_DIR}/llvm")
 set(Clang_DIR "${SOURCE_LLVM_CMAKE_DIR}/clang")
+set(MLIR_DIR "${SOURCE_LLVM_CMAKE_DIR}/mlir")
 
 find_package(LLVM REQUIRED CONFIG)
+find_package(MLIR REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
 
 include(TableGen)
 include(AddLLVM)
+include(AddMLIR)
 include(AddClang)
 include(HandleLLVMOptions)
 
 include_directories(SYSTEM
     ${LLVM_INCLUDE_DIRS}
+    ${MLIR_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
 
@@ -187,6 +192,16 @@ target_link_libraries(options INTERFACE
     LLVMTargetParser
     LLVMX86AsmParser
     LLVMX86CodeGen
+
+    MLIRArithDialect
+    MLIRBuiltinToLLVMIRTranslation
+    MLIRControlFlowDialect
+    MLIRIR
+    MLIRLLVMDialect
+    MLIRLLVMIRToLLVMTranslation
+    MLIRLLVMToLLVMIRTranslation
+    MLIRTargetLLVM
+    MLIRTargetLLVMIRExport
 
     clang
     clangBasic
@@ -210,29 +225,6 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
     COMMAND_ERROR_IS_FATAL ANY
 )
-]]
-
-## ============================================================================
-##  Tablegen
-## ============================================================================
-#[[
-add_subdirectory(tools)
-
-macro(srcc_tablegen file)
-    add_custom_command(
-        OUTPUT "${PROJECT_SOURCE_DIR}/${file}.inc"
-        COMMAND $<TARGET_FILE:vm-tablegen>
-            "${PROJECT_SOURCE_DIR}/${file}.td"
-            -o "${PROJECT_SOURCE_DIR}/${file}.inc"
-        DEPENDS
-            vm-tablegen
-            "${PROJECT_SOURCE_DIR}/${file}.td"
-    )
-
-    list(APPEND SRCC_TABLEGEN_OUTPUTS "${PROJECT_SOURCE_DIR}/${file}.inc")
-endmacro()
-
-srcc_tablegen(src/AST/VM/Ops)
 ]]
 
 ## ============================================================================
@@ -272,6 +264,13 @@ target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
 
 target_link_libraries(srcc-core PRIVATE options)
 target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
+
+## ============================================================================
+##  IR Tablegen
+## ============================================================================
+add_subdirectory(include/srcc/CG/IR)
+target_include_directories(srcc-core PRIVATE "${CMAKE_BINARY_DIR}/include")
+
 #[[
 ## ============================================================================
 ##  Core library

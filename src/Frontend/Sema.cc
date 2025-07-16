@@ -1669,11 +1669,14 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     auto type = [&] -> Type {
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::SliceSize:
             case AK::TypeAlign:
             case AK::TypeArraySize:
             case AK::TypeBits:
             case AK::TypeBytes:
+                return Type::IntTy;
+
+            case AK::SliceSize:
+                operand = LValueToSRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1681,6 +1684,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
+                operand = LValueToSRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1688,6 +1692,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
+                operand = LValueToSRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();

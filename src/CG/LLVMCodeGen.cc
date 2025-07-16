@@ -9,6 +9,12 @@ using namespace srcc;
 using namespace srcc::cg;
 namespace intrin = llvm::Intrinsic;
 
+auto CodeGen::emit_llvm(llvm::TargetMachine&) -> std::unique_ptr<llvm::Module> {
+    Todo();
+}
+
+
+/*
 class cg::LLVMCodeGen : DiagsProducer<std::nullptr_t>, llvm::IRBuilder<> {
     friend DiagsProducer;
 
@@ -511,3 +517,4 @@ auto LLVMCodeGen::InternStringPtr(StringRef value) -> llvm::Constant* {
 auto LLVMCodeGen::MakeInt(i64 value) -> llvm::ConstantInt* {
     return llvm::ConstantInt::get(IntTy, u64(value));
 }
+*/

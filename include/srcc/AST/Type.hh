@@ -330,7 +330,7 @@ public:
     auto elem() const -> Type { return element_type; }
 
     static bool classof(const TypeBase* e) {
-        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::PtrType;
+        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::RangeType;
     }
 };
 

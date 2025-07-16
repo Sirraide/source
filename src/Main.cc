@@ -39,6 +39,7 @@ using options = clopts< // clang-format off
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
+    flag<"--ir-verbose", "Run codegen and emit IR; as --ir but always prints the type of a value">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
     flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
@@ -86,6 +87,7 @@ int main(int argc, char** argv) {
     auto action = opts.get<"--eval">()        ? Action::Eval
                 : opts.get<"--dump-module">() ? Action::DumpModule
                 : opts.get<"--ir">()          ? Action::DumpIR
+                : opts.get<"--ir-verbose">()  ? Action::DumpIRVerbose
                 : opts.get<"--lex">()         ? Action::Lex
                 : opts.get<"--llvm">()        ? Action::EmitLLVM
                 : opts.get<"--parse">()       ? Action::Parse
