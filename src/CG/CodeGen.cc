@@ -104,12 +104,8 @@ auto CodeGen::CreateAggregate(Location loc, Value a, Value b) -> Value {
 
 auto CodeGen::CreateAlloca(Location loc, Type ty) -> Value {
     InsertionGuard _{*this};
-    auto it = curr_proc.entry()->begin();
-    auto end = curr_proc.entry()->end();
-    while (it != end and isa<ir::AllocaOp>(*it)) ++it;
-    if (it == end) setInsertionPointToEnd(curr_proc.entry());
-    else setInsertionPoint(&*it);
-    return create<ir::AllocaOp>(C(loc), ty->size(tu), ty->align(tu));
+    setInsertionPointToEnd(curr_proc.frame());
+    return create<ir::FrameSlotOp>(C(loc), ty->size(tu), ty->align(tu));
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, Location loc, String name) {

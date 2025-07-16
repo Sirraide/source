@@ -115,7 +115,7 @@ class VM {
     TranslationUnit& owner_tu;
 
     /// Symbol table for native procedures.
-//    DenseMap<cg::ir::Proc*, void*> native_symbols;
+    StringMap<void*> native_symbols;
 
 public:
     explicit VM(TranslationUnit& owner_tu);

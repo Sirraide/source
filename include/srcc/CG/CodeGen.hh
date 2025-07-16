@@ -75,7 +75,7 @@ public:
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
 
     /// Dump the IR module.
-    [[nodiscard]] auto dump(bool verbose = false) -> SmallUnrenderedString;
+    [[nodiscard]] auto dump(bool verbose = false, bool generic = false) -> SmallUnrenderedString;
 
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }

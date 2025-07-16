@@ -180,7 +180,7 @@ class SRValue {
 
 public:
     SRValue() = default;
-    explicit SRValue(ir::Proc* proc);
+    explicit SRValue(ir::ProcOp proc);
     explicit SRValue(std::same_as<bool> auto b) : value{b}, ty{Type::BoolTy} {}
     explicit SRValue(Type ty) : value{ty}, ty{Type::TypeTy} {}
     explicit SRValue(Pointer p, Type ptr_ty) : value{p}, ty{ptr_ty} {}
@@ -301,7 +301,7 @@ auto SRValue::print() const -> SmallUnrenderedString {
         // clang-format off
         [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
-        [&](ir::Proc* proc) { out += std::format("%2({}%)", proc->name()); },
+        [&](ir::ProcOp proc) { out += std::format("%2({}%)", proc->name()); },
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { out += std::format("%4({}%)", reinterpret_cast<void*>(ptr.encode())); },
@@ -358,7 +358,7 @@ namespace {
 /// This represents an encoded form of a temporary value that is guaranteed
 /// to be unique *per procedure*.
 enum struct Temporary : u64;
-auto Encode(ir::Argument* a) -> Temporary { return Temporary(u64(a)); }
+auto Encode(mlir::BlockArgument a) -> Temporary { return Temporary(u64(a.getAsOpaquePointer())); }
 auto Encode(ir::FrameSlot* f) -> Temporary { return Temporary(u64(f)); }
 auto Encode(ir::Inst* i, u32 val) -> Temporary { return Temporary(u64(i) << 32 | val); }
 } // namespace
@@ -469,7 +469,7 @@ class eval::Eval : DiagsProducer<bool> {
     /// A procedure on the stack.
     struct StackFrame {
         /// Procedure to which this frame belongs.
-        ir::Proc* proc{};
+        ir::ProcOp proc{};
 
         /// Instruction pointer for this procedure.
         ArrayRef<ir::Inst*>::iterator ip{};
@@ -491,7 +491,7 @@ class eval::Eval : DiagsProducer<bool> {
     cg::CodeGen cg;
     ByteBuffer stack;
     SmallVector<StackFrame, 4> call_stack;
-    SmallVector<ir::Proc*> procedure_indices;
+    SmallVector<ir::ProcOp> procedure_indices;
     HostMemoryMap host_memory;
     const SRValue true_val{true};
     const SRValue false_val{false};
@@ -513,10 +513,10 @@ private:
     }
 
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
-    [[nodiscard]] bool BranchTo(ir::Block* block, ArrayRef<ir::Value*> args);
+    [[nodiscard]] bool BranchTo(ir::Block* block, ArrayRef<ir::Value> args);
     [[nodiscard]] auto Eq(const SRValue& a, const SRValue& b) -> std::optional<bool>;
     [[nodiscard]] bool EvalLoop();
-    [[nodiscard]] auto FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue>;
+    [[nodiscard]] auto FFICall(ir::ProcOp proc, ArrayRef<ir::Value> args) -> std::optional<SRValue>;
     [[nodiscard]] auto FFILoadRes(const void* mem, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto FFIType(Type ty) -> ffi_type*;
     [[nodiscard]] bool FFIStoreArg(void* ptr, const SRValue& val);
@@ -524,14 +524,14 @@ private:
     [[nodiscard]] auto GetStringData(const SRValue& val) -> std::string;
     [[nodiscard]] auto LoadSRValue(const SRValue& ptr, Type ty) -> std::optional<SRValue>;
     [[nodiscard]] auto LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue>;
-    [[nodiscard]] auto MakeProcPtr(ir::Proc* proc) -> Pointer;
-    [[nodiscard]] bool PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args);
+    [[nodiscard]] auto MakeProcPtr(ir::ProcOp proc) -> Pointer;
+    [[nodiscard]] bool PushFrame(ir::ProcOp proc, ArrayRef<ir::Value> args);
     [[nodiscard]] bool StoreSRValue(const SRValue& ptr, const SRValue& val);
     [[nodiscard]] bool StoreSRValue(void* ptr, const SRValue& val);
     [[nodiscard]] auto Temp(ir::Inst* i, u32 idx = 0) -> SRValue&;
     [[nodiscard]] auto Temp(ir::Argument* i) -> SRValue&;
     [[nodiscard]] auto Temp(ir::FrameSlot* f) -> SRValue&;
-    [[nodiscard]] auto ValImpl(ir::Value* v) -> Ptr<const SRValue>;
+    [[nodiscard]] auto ValImpl(ir::Value v) -> Ptr<const SRValue>;
 };
 
 Eval::Eval(VM& vm, bool complain)
@@ -545,7 +545,7 @@ auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
     return l;
 }
 
-bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value*> args) {
+bool Eval::BranchTo(ir::Block* block, ArrayRef<ir::Value> args) {
     call_stack.back().ip = block->instructions().begin();
 
     // Copy out the argument values our of their slots in case we’re doing
@@ -827,7 +827,7 @@ bool Eval::EvalLoop() {
     return false;
 }
 
-auto Eval::FFICall(ir::Proc* proc, ArrayRef<ir::Value*> args) -> std::optional<SRValue> {
+auto Eval::FFICall(ir::ProcOp proc, ArrayRef<ir::Value> args) -> std::optional<SRValue> {
     auto ret = FFIType(proc->type()->ret());
     if (not ret) return std::nullopt;
     SmallVector<ffi_type*> arg_types;
@@ -1103,14 +1103,14 @@ auto Eval::LoadSRValue(const void* mem, Type ty) -> std::optional<SRValue> {
     Unreachable();
 }
 
-auto Eval::MakeProcPtr(ir::Proc* proc) -> Pointer {
+auto Eval::MakeProcPtr(ir::ProcOp proc) -> Pointer {
     auto it = find(procedure_indices, proc);
     if (it != procedure_indices.end()) return Pointer::Proc(u32(it - procedure_indices.begin()));
     procedure_indices.push_back(proc);
     return Pointer::Proc(u32(procedure_indices.size() - 1));
 }
 
-bool Eval::PushFrame(ir::Proc* proc, ArrayRef<ir::Value*> args) {
+bool Eval::PushFrame(ir::ProcOp proc, ArrayRef<ir::Value> args) {
     Assert(not proc->empty());
     StackFrame frame{proc};
     frame.stack_base = stack.size();
@@ -1166,7 +1166,7 @@ bool Eval::StoreSRValue(void* ptr, const SRValue& val) {
         // clang-format off
         [&](bool b) { return Store(b); },
         [&](std::monostate) { return ICE(entry, "I don’t think we can get here?"); },
-        [&](ir::Proc*) { return ICE(entry, "TODO: Store closure in memory"); },
+        [&](ir::ProcOp) { return ICE(entry, "TODO: Store closure in memory"); },
         [&](Type ty) { return Store(ty.ptr()); },
         [&](Pointer p) { return Store(p.encode()); },
         [&](const SRClosure& cl) -> bool { return Store(cl); },
@@ -1203,7 +1203,7 @@ auto Eval::Temp(ir::Inst* i, u32 idx) -> SRValue& {
     return const_cast<SRValue&>(call_stack.back().temporaries.at(Encode(i, idx)));
 }
 
-auto Eval::ValImpl(ir::Value* v) -> Ptr<const SRValue> {
+auto Eval::ValImpl(ir::Value v) -> Ptr<const SRValue> {
     auto Materialise = [&](SRValue val) -> const SRValue* {
         return &call_stack.back().materialised_values.push_back(std::move(val));
     };
@@ -1316,7 +1316,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     if (ty->rvalue_category() == Expr::MRValue) {
         auto mrv = vm.allocate_mrvalue(ty);
         auto ptr = host_memory.create_map(mrv.data(), mrv.size(), ty->align(vm.owner()), false);
-        call_stack.back().temporaries[Encode(proc->args()[0])] = SRValue(ptr, PtrType::Get(vm.owner(), ty));
+        call_stack.back().temporaries[Encode(proc.getArgument(0))] = SRValue(ptr, PtrType::Get(vm.owner(), ty));
         TRY(EvalLoop());
         return RValue(mrv, ty);
     }

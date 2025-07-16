@@ -64,7 +64,7 @@ def ProcOp : SRCC_Op<"proc", [
     FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
 ]> {
     let summary = "Procedure";
-    let regions = (region AnyRegion:$body);
+    let regions = (region AnyRegion:$body, AnyRegion:$frame_region);
     let arguments = (ins
         SymbolNameAttr:$sym_name,
         LinkageAttr:$linkage,
@@ -95,6 +95,13 @@ def ProcOp : SRCC_Op<"proc", [
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_indirect_return) $_state.addAttribute(getHasIndirectReturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_static_chain) $_state.addAttribute(getHasStaticChainAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
+
+            // Add the frame.
+            {
+                mlir::OpBuilder::InsertionGuard g($_builder);
+                auto frame = $_state.addRegion();
+                $_builder.createBlock(frame);
+            }
         }]>
     ];
 
@@ -103,6 +110,10 @@ def ProcOp : SRCC_Op<"proc", [
         ::mlir::Block* entry() {
             if (empty()) addEntryBlock();
             return &front();
+        }
+
+        ::mlir::Block* frame() {
+            return &getFrameRegion().front();
         }
 
         u32 getNumImplicitArgs() {
@@ -182,30 +193,6 @@ def AbortOp : SRCC_Op<"abort", [Terminator]> {
     );
 }
 
-def AllocaOp : SRCC_Op<"alloca"> {
-    let summary = "Allocate stack memory";
-    let arguments = (ins
-        Builtin_IntegerAttr:$bytes,
-        Builtin_IntegerAttr:$alignment
-    );
-
-    let results = (outs SRCC_Ptr:$res);
-    let builders = [
-        OpBuilder<(ins
-            "Size":$size,
-            "Align":$alignment
-        ), [{
-            build(
-                $_builder,
-                $_state,
-                mlir::LLVM::LLVMPointerType::get($_builder.getContext()),
-                $_builder.getI64IntegerAttr(size.bytes()),
-                $_builder.getI64IntegerAttr(i64(alignment.value().bytes()))
-            );
-        }]>
-    ];
-}
-
 def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
     let summary = "Call a procedure";
     let arguments = (ins
@@ -260,6 +247,30 @@ def ExtractOp : SRCC_Op<"extract", [Pure]> {
                 cast<mlir::TupleType>(tuple.getType()).getType(index),
                 tuple,
                 $_builder.getI64IntegerAttr(i64(index))
+            );
+        }]>
+    ];
+}
+
+def FrameSlotOp : SRCC_Op<"slot"> {
+    let summary = "Allocate stack memory";
+    let arguments = (ins
+        Builtin_IntegerAttr:$bytes,
+        Builtin_IntegerAttr:$alignment
+    );
+
+    let results = (outs SRCC_Ptr:$res);
+    let builders = [
+        OpBuilder<(ins
+            "Size":$size,
+            "Align":$alignment
+        ), [{
+            build(
+                $_builder,
+                $_state,
+                mlir::LLVM::LLVMPointerType::get($_builder.getContext()),
+                $_builder.getI64IntegerAttr(size.bytes()),
+                $_builder.getI64IntegerAttr(i64(alignment.value().bytes()))
             );
         }]>
     ];

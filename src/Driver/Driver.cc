@@ -265,8 +265,9 @@ int Driver::run_job() {
     if (ctx.diags().has_error()) return 1;
 
     // Dump IR.
-    if (a == Action::DumpIR or a == Action::DumpIRVerbose) {
-        std::print("{}", text::RenderColours(opts.colours, cg.dump(a == Action::DumpIRVerbose).str()));
+    if (a == Action::DumpIR or a == Action::DumpIRVerbose or a == Action::DumpIRGeneric) {
+        auto s = cg.dump(a == Action::DumpIRVerbose, a == Action::DumpIRGeneric);
+        std::print("{}", text::RenderColours(opts.colours, s.str()));
         return 0;
     }
 

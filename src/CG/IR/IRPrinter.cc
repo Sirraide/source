@@ -17,6 +17,7 @@ struct CodeGen::Printer {
     DenseMap<mlir::BlockArgument, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Operation*, i64> inst_ids;
+    DenseMap<Operation*, i64> frame_ids;
     i64 global = 0;
     ProcOp curr_proc{};
     bool always_include_types;
@@ -58,7 +59,15 @@ static auto IsInlineOp(Operation* op) {
     return isa<mlir::arith::ConstantIntOp, ProcRefOp, NilOp, TupleOp, mlir::LLVM::AddressOfOp, ReturnPointerOp>(op);
 }
 
-auto CodeGen::dump(bool verbose) -> SmallUnrenderedString {
+auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
+    if (generic) {
+        SmallUnrenderedString s;
+        llvm::raw_svector_ostream os{s};
+        auto f = mlir::OpPrintingFlags().assumeVerified(true).printUniqueSSAIDs(true).enableDebugInfo(true, true);
+        mlir_module.print(os, f);
+        return SmallUnrenderedString(stream{s.str()}.replace('%', "%%"));
+    }
+
     Printer p{*this, verbose};
     p.print(mlir_module);
     return std::move(p.out);
@@ -114,15 +123,6 @@ void CodeGen::Printer::print_op(Operation* op) {
             val(op->getOperand(1), false)
         );
     };
-
-    if (auto a = dyn_cast<AllocaOp>(op)) {
-        out += std::format(
-            "alloca %5({}%), align %5({}%)",
-            a.getBytes().getValue(),
-            a.getAlignment().getValue()
-        );
-        return;
-    }
 
     if (auto s = dyn_cast<StoreOp>(op)) {
         out += std::format(
@@ -312,10 +312,20 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += " %1({%)\n";
 
     // Print frame allocations.
-    /*for (auto* f : proc->frame())
-        out += std::format("    %8(%%{}%) %1(=%) {}\n", Id(frame_ids, f), f->allocated_type());
-    if (not proc->frame().empty())
-        out += "\n";*/
+    i64 frame = 0;
+    for (auto& f : *proc.frame()) {
+        auto slot = cast<FrameSlotOp>(&f);
+        auto id = frame_ids[&f] = frame++;
+        out += std::format(
+            "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
+            id,
+            slot.getBytes().getValue(),
+            slot.getAlignment().getValue()
+        );
+    }
+
+    if (not proc.frame()->empty())
+        out += "\n";
 
     // Print blocks and instructions.
     for (auto [i, b] : enumerate(proc.getBlocks())) {
@@ -426,6 +436,11 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (isa<ReturnPointerOp>(op)) {
             tmp += "%3(retptr%)";
+            return tmp;
+        }
+
+        if (isa<FrameSlotOp>(op)) {
+            tmp += std::format("%4(#{}%)", Id(frame_ids, op));
             return tmp;
         }
 
