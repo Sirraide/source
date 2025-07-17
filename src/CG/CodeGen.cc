@@ -20,7 +20,7 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     : CodeGenBase(), OpBuilder(&mlir), tu{tu}, word_size{word_size}, lang_opts{lang_opts} {
     ir::SRCCDialect::InitialiseContext(mlir);
     ptr_ty = mlir::LLVM::LLVMPointerType::get(&mlir);
-    bool_ty = getIntegerType(1, false);
+    bool_ty = getI1Type();
     int_ty = C(Type::IntTy);
     closure_ty = mlir::TupleType::get(&mlir, {ptr_ty, ptr_ty});
     slice_ty = mlir::TupleType::get(&mlir, {ptr_ty, getIntegerType(u32(tu.target().int_size().bits()))});
@@ -58,7 +58,7 @@ auto CodeGen::C(Location l) -> mlir::Location {
 
 auto CodeGen::C(Type ty) -> mlir::Type {
     // Integer types.
-    if (ty == Type::BoolTy) return getIntegerType(1, false);
+    if (ty == Type::BoolTy) return getIntegerType(1);
     if (ty == Type::IntTy) return getIntegerType(u32(tu.target().int_size().bits()));
     if (auto i = dyn_cast<IntType>(ty)) return getIntegerType(u32(i->bit_width().bits()));
 
@@ -104,7 +104,16 @@ auto CodeGen::CreateAggregate(Location loc, Value a, Value b) -> Value {
 
 auto CodeGen::CreateAlloca(Location loc, Type ty) -> Value {
     InsertionGuard _{*this};
-    setInsertionPointToEnd(curr_proc.frame());
+
+    // Do this stupid garbage because allowing a separate region in a function for
+    // frame slots is apparently too much to ask because MLIR complains about both
+    // uses not being dominated by the frame slots and about a FunctionOpInterface
+    // having more than one region.
+    auto it = curr_proc.entry()->begin();
+    auto end = curr_proc.entry()->end();
+    while (it != end and isa<ir::FrameSlotOp>(*it)) ++it;
+    if (it == end) setInsertionPointToEnd(curr_proc.entry());
+    else setInsertionPoint(&*it);
     return create<ir::FrameSlotOp>(C(loc), ty->size(tu), ty->align(tu));
 }
 
@@ -175,6 +184,32 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
 auto CodeGen::CreateGlobalStringSlice(Location loc, String data) -> Value {
     return CreateAggregate(loc, CreateGlobalStringPtr(data), CreateInt(i64(data.size())));
 }
+
+auto CodeGen::CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value {
+    // This is required because arith::cmpi doesn’t support pointers...
+    if (isa<mlir::LLVM::LLVMPointerType>(lhs.getType()))
+        return createOrFold<mlir::LLVM::ICmpOp>(loc, pred, lhs, rhs);
+
+    auto pred_conv = [&] {
+        switch (pred) {
+            case mlir::LLVM::ICmpPredicate::eq: return arith::CmpIPredicate::eq;
+            case mlir::LLVM::ICmpPredicate::ne: return arith::CmpIPredicate::ne;
+            case mlir::LLVM::ICmpPredicate::slt: return arith::CmpIPredicate::slt;
+            case mlir::LLVM::ICmpPredicate::sle: return arith::CmpIPredicate::sle;
+            case mlir::LLVM::ICmpPredicate::sgt: return arith::CmpIPredicate::sgt;
+            case mlir::LLVM::ICmpPredicate::sge: return arith::CmpIPredicate::sge;
+            case mlir::LLVM::ICmpPredicate::ult: return arith::CmpIPredicate::ult;
+            case mlir::LLVM::ICmpPredicate::ule: return arith::CmpIPredicate::ule;
+            case mlir::LLVM::ICmpPredicate::ugt: return arith::CmpIPredicate::ugt;
+            case mlir::LLVM::ICmpPredicate::uge: return arith::CmpIPredicate::uge;
+        }
+        Unreachable();
+    }();
+
+    // But we prefer to emit an arith op because it can be folded etc.
+    return createOrFold<arith::CmpIOp>(loc, pred_conv, lhs, rhs);
+}
+
 
 auto CodeGen::CreateInt(const APInt& value, Type ty) -> Value {
     return create<arith::ConstantOp>(getUnknownLoc(), getIntegerAttr(C(ty), value));
@@ -850,7 +885,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> Value {
                               : CreateInt(cast<ArrayType>(expr->lhs->type)->dimension());
 
                 CreateArithFailure(
-                    createOrFold<arith::CmpIOp>(l, arith::CmpIPredicate::uge, index, size),
+                    CreateICmp(l, mlir::LLVM::ICmpPredicate::uge, index, size),
                     Tk::LBrack,
                     expr->location(),
                     "out of bounds access"
@@ -927,7 +962,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
     );
 
     auto CheckDivByZero = [&] {
-        auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, rhs, CreateInt(0, ty));
+        auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, rhs, CreateInt(0, ty));
         CreateArithFailure(check, op, ast_loc, "division by zero");
     };
 
@@ -944,16 +979,16 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
             Unreachable("'and' and 'or' cannot be handled here.");
 
         // Comparison operators.
-        case Tk::ULt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ult, lhs, rhs);
-        case Tk::UGt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ugt, lhs, rhs);
-        case Tk::ULe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ule, lhs, rhs);
-        case Tk::UGe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::uge, lhs, rhs);
-        case Tk::SLt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::slt, lhs, rhs);
-        case Tk::SGt: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sgt, lhs, rhs);
-        case Tk::SLe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sle, lhs, rhs);
-        case Tk::SGe: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::sge, lhs, rhs);
-        case Tk::EqEq: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::eq, lhs, rhs);
-        case Tk::Neq: return createOrFold<arith::CmpIOp>(loc, bool_ty, arith::CmpIPredicate::ne, lhs, rhs);
+        case Tk::ULt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ult, lhs, rhs);
+        case Tk::UGt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ugt, lhs, rhs);
+        case Tk::ULe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ule, lhs, rhs);
+        case Tk::UGe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, lhs, rhs);
+        case Tk::SLt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::slt, lhs, rhs);
+        case Tk::SGt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sgt, lhs, rhs);
+        case Tk::SLe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sle, lhs, rhs);
+        case Tk::SGe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sge, lhs, rhs);
+        case Tk::EqEq: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, lhs, rhs);
+        case Tk::Neq: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ne, lhs, rhs);
 
         // Arithmetic operators that wrap or can’t overflow.
         case Tk::PlusTilde: return createOrFold<arith::AddIOp>(loc, lhs, rhs);
@@ -998,8 +1033,8 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
             CheckDivByZero();
             auto int_min = CreateInt(APInt::getSignedMinValue(u32(type->size(tu).bits())), type);
             auto minus_one = CreateInt(-1, ty);
-            auto check_lhs = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, lhs, int_min);
-            auto check_rhs = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, rhs, minus_one);
+            auto check_lhs = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, lhs, int_min);
+            auto check_rhs = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, rhs, minus_one);
             CreateArithFailure(
                 createOrFold<arith::AndIOp>(loc, check_lhs, check_rhs),
                 op,
@@ -1014,21 +1049,21 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         // Left shift overflows if the shift amount is equal
         // to or exceeds the bit width.
         case Tk::ShiftLeftLogical: {
-            auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
+            auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
             CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
             return createOrFold<arith::ShLIOp>(loc, lhs, rhs);
         }
 
         // Signed left shift additionally does not allow a sign change.
         case Tk::ShiftLeft: {
-            auto check = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
+            auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, rhs, CreateInt(i64(type->size(tu).bits())));
             CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
 
             // Check sign.
             auto res = createOrFold<arith::ShLIOp>(loc, lhs, rhs);
             auto sign = createOrFold<arith::ShRSIOp>(loc, lhs, CreateInt(i64(type->size(tu).bits()) - 1));
             auto new_sign = createOrFold<arith::ShRSIOp>(loc, res, CreateInt(i64(type->size(tu).bits()) - 1));
-            auto sign_change = createOrFold<arith::CmpIOp>(loc, arith::CmpIPredicate::ne, sign, new_sign);
+            auto sign_change = CreateICmp(loc, mlir::LLVM::ICmpPredicate::ne, sign, new_sign);
             CreateArithFailure(sign_change, op, ast_loc);
             return res;
         }
@@ -1294,7 +1329,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> Value {
     // If we have multiple ranges, break if we’ve reach the end of any one of them.
     for (auto [a, e] : zip(block_args, end_vals)) {
         auto bb_cont = CreateBlock();
-        auto ne = create<arith::CmpIOp>(floc, arith::CmpIPredicate::ne, a, e);
+        auto ne = create<mlir::LLVM::ICmpOp>(floc, mlir::LLVM::ICmpPredicate::ne, a, e);
         create<mlir::cf::CondBranchOp>(floc, ne, bb_cont.get(), bb_end.get());
         EnterBlock(std::move(bb_cont));
     }

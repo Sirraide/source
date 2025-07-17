@@ -45,7 +45,7 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 def SRCC_Void : TypeAlias<NoneType, "void">;
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Tuple : TypeAlias<Builtin_Tuple, "tuple">;
-def SRCC_Bool : TypeAlias<UI1, "bool">;
+def SRCC_Bool : TypeAlias<I1, "bool">;
 
 def SRCC_Type : AnyTypeOf<[
     Builtin_Integer,
@@ -64,7 +64,7 @@ def ProcOp : SRCC_Op<"proc", [
     FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
 ]> {
     let summary = "Procedure";
-    let regions = (region AnyRegion:$body, AnyRegion:$frame_region);
+    let regions = (region AnyRegion:$body);
     let arguments = (ins
         SymbolNameAttr:$sym_name,
         LinkageAttr:$linkage,
@@ -95,13 +95,6 @@ def ProcOp : SRCC_Op<"proc", [
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_indirect_return) $_state.addAttribute(getHasIndirectReturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_static_chain) $_state.addAttribute(getHasStaticChainAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
-
-            // Add the frame.
-            {
-                mlir::OpBuilder::InsertionGuard g($_builder);
-                auto frame = $_state.addRegion();
-                $_builder.createBlock(frame);
-            }
         }]>
     ];
 
@@ -110,10 +103,6 @@ def ProcOp : SRCC_Op<"proc", [
         ::mlir::Block* entry() {
             if (empty()) addEntryBlock();
             return &front();
-        }
-
-        ::mlir::Block* frame() {
-            return &getFrameRegion().front();
         }
 
         u32 getNumImplicitArgs() {
@@ -353,21 +342,21 @@ def ReturnPointerOp : SRCC_Op<"retptr", [Pure]> {
 def SAddOvOp : SRCC_Op<"sadd.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {
     let summary = "Add and check for overflow";
     let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
-    let results = (outs Builtin_Integer:$res, I1:$overflow);
+    let results = (outs Builtin_Integer:$res, SRCC_Bool:$overflow);
     let hasFolder = 1;
 }
 
 def SMulOvOp : SRCC_Op<"smul.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {
     let summary = "Multiply and check for overflow";
     let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
-    let results = (outs Builtin_Integer:$res, I1:$overflow);
+    let results = (outs Builtin_Integer:$res, SRCC_Bool:$overflow);
     let hasFolder = 1;
 }
 
 def SSubOvOp : SRCC_Op<"ssub.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {
     let summary = "Subtract and check for overflow";
     let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
-    let results = (outs Builtin_Integer:$res, I1:$overflow);
+    let results = (outs Builtin_Integer:$res, SRCC_Bool:$overflow);
     let hasFolder = 1;
 }
 

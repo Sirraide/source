@@ -20,9 +20,10 @@ struct CodeGen::Printer {
     DenseMap<Operation*, i64> frame_ids;
     i64 global = 0;
     ProcOp curr_proc{};
-    bool always_include_types;
+    bool verbose;
+    bool always_include_types = verbose;
 
-    Printer(CodeGen& cg, bool always_include_types = false) : cg{cg}, always_include_types{always_include_types} {}
+    Printer(CodeGen& cg, bool verbose = false) : cg{cg}, verbose{verbose} {}
     void print(mlir::ModuleOp module);
     void print_op(Operation* op);
     void print_procedure(ProcOp op);
@@ -34,6 +35,19 @@ struct CodeGen::Printer {
         auto it = map.find(ptr);
         return it == map.end() ? -1 : it->second;
     }
+
+    auto IsInlineOp(Operation* op) {
+        return not verbose and isa< // clang-format off
+            FrameSlotOp,
+            NilOp,
+            ProcRefOp,
+            ReturnPointerOp,
+            TupleOp,
+            mlir::LLVM::AddressOfOp,
+            mlir::arith::ConstantIntOp
+        >(op); // clang-format on
+    }
+
 };
 
 static auto FormatType(mlir::Type ty) -> std::string {
@@ -55,9 +69,6 @@ static auto FormatType(mlir::Type ty) -> std::string {
     return tmp;
 }
 
-static auto IsInlineOp(Operation* op) {
-    return isa<mlir::arith::ConstantIntOp, ProcRefOp, NilOp, TupleOp, mlir::LLVM::AddressOfOp, ReturnPointerOp>(op);
-}
 
 auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
     if (generic) {
@@ -149,6 +160,16 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(op)) {
+        out += std::format(
+            "cmp {} {}, {}",
+            stringifyICmpPredicate(cmp.getPredicate()),
+            val(cmp.getLhs()),
+            val(cmp.getRhs(), false)
+        );
+        return;
+    }
+
     if (auto cmp = dyn_cast<mlir::arith::CmpIOp>(op)) {
         out += std::format(
             "icmp {} {}, {}",
@@ -227,6 +248,51 @@ void CodeGen::Printer::print_op(Operation* op) {
             val(m.getSrc(), false),
             val(m.getLen(), false)
         );
+        return;
+    }
+
+    if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
+        auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
+        out += std::format("addressof %3(@{}%)", global_ids.at(g));
+        return;
+    }
+
+    if (auto c = dyn_cast<mlir::arith::ConstantIntOp>(op)) {
+        out += std::format("{} %5({}%)", FormatType(c.getType()), c.value());
+        return;
+    }
+
+    if (auto p = dyn_cast<ProcRefOp>(op)) {
+        out += std::format("procref %2({}%)", p.proc().getName());
+        return;
+    }
+
+    if (auto slot = dyn_cast<FrameSlotOp>(op)) {
+        out += std::format(
+            "alloca %5({}%)%1(, align%) %5({}%)",
+            slot.getBytes().getValue(),
+            slot.getAlignment().getValue()
+        );
+        return;
+    }
+
+    if (auto t = dyn_cast<TupleOp>(op)) {
+        out += std::format("tuple {} ({})", FormatType(t.getType()), ops(t.getValues(), false));
+        return;
+    }
+
+    if (auto s = dyn_cast<mlir::arith::SelectOp>(op)) {
+        out += std::format(
+            "select {}, {}, {}",
+            val(s.getCondition(), false),
+            val(s.getTrueValue()),
+            val(s.getFalseValue(), false)
+        );
+        return;
+    }
+
+    if (isa<ReturnPointerOp>(op)) {
+        out += "%3(retptr%)";
         return;
     }
 
@@ -312,20 +378,23 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += " %1({%)\n";
 
     // Print frame allocations.
-    i64 frame = 0;
-    for (auto& f : *proc.frame()) {
-        auto slot = cast<FrameSlotOp>(&f);
-        auto id = frame_ids[&f] = frame++;
-        out += std::format(
-            "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
-            id,
-            slot.getBytes().getValue(),
-            slot.getAlignment().getValue()
-        );
-    }
+    if (not verbose) {
+        i64 frame = 0;
+        for (auto& f : *proc.entry()) {
+            // Transformations may reorder these for some reason.
+            auto slot = dyn_cast<FrameSlotOp>(&f);
+            if (not slot) continue;
+            auto id = frame_ids[&f] = frame++;
+            out += std::format(
+                "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
+                id,
+                slot.getBytes().getValue(),
+                slot.getAlignment().getValue()
+            );
+        }
 
-    if (not proc.frame()->empty())
-        out += "\n";
+        if (frame) out += "\n";
+    }
 
     // Print blocks and instructions.
     for (auto [i, b] : enumerate(proc.getBlocks())) {
@@ -403,7 +472,13 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
     if (auto res = dyn_cast<mlir::OpResult>(v)) {
         auto op = res.getOwner();
 
-        // Inline constant ops.
+        if (not IsInlineOp(op)) {
+            tmp += std::format("%8(%%{}", inst_ids.at(op));
+            if (op->getNumResults() > 1) tmp += std::format(":{}", res.getResultNumber());
+            tmp += "%)";
+            return tmp;
+        }
+
         if (auto c = dyn_cast<mlir::arith::ConstantIntOp>(op)) {
             tmp += std::format("%5({}%)", c.value());
             return tmp;
@@ -444,11 +519,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
             return tmp;
         }
 
-        Assert(not IsInlineOp(op), "Forgot to handle this inline op here: '{}'", op->getName().getStringRef());
-        tmp += std::format("%8(%%{}", inst_ids.at(op));
-        if (op->getNumResults() > 1) tmp += std::format(":{}", res.getResultNumber());
-        tmp += "%)";
-        return tmp;
+        Unreachable("Unsupported inline op: '{}'", op->getName().getStringRef());
     }
 
     tmp += "TODO: Print this value properly:";

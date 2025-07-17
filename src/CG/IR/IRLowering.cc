@@ -13,7 +13,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine&) -> std::unique_ptr<llvm::Module> {
 
 bool CodeGen::finalise() {
     mlir::PassManager pm{&mlir};
-    pm.enableVerifier(false);
+    pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createRemoveDeadValuesPass());
     if (pm.run(mlir_module).failed()) {

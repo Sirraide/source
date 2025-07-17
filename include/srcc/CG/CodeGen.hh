@@ -89,6 +89,9 @@ public:
     /// Emit LLVM IR.
     [[nodiscard]] auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
+    /// Finalise IR.
+    [[nodiscard]] bool finalise();
+
     /// Optimise a module.
     void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
 
@@ -150,6 +153,7 @@ private:
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
     auto CreateGlobalStringSlice(Location loc, String data) -> Value;
+    auto CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value;
     auto CreateInt(const APInt& value, Type ty) -> Value;
     auto CreateInt(i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(i64 value, mlir::Type ty) -> Value;

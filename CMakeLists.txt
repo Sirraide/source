@@ -14,6 +14,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ## ============================================================================
 ##  Global compiler options.
 ## ============================================================================
+if (EXPERIMENTAL_CLANG_DIAGNOSTICS)
+    add_compile_options(-fdiagnostics-format=fancy)
+endif()
+
 ## Turn on diagnostics colours.
 add_compile_options(-fcolor-diagnostics)
 
