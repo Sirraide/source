@@ -27,245 +27,233 @@ proc d (in bool x) {
     s e = if x then a else s(1);
 }
 
-// * proc __src_main {
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1aFT1sE (in s^ %0) {
-// +     %1 = s
+// + proc _S1aFT1sE indirect private fastcc -> i8[8] {
+// +     #0 = 8, align 8
 // +
 // + entry:
-// +     store i64 to %1, i64 1, align 8
-// +     store i64 to %0, i64 1, align 8
+// +     store #0, i64 1, align 8
+// +     store retptr, i64 1, align 8
 // +     ret
 // + }
 // +
-// + proc _S1bFT1sxbE (in s^ %0, in bool %1) {
-// +     %2 = s
+// + proc _S1bFT1sxbE (i1 %0) indirect private fastcc -> i8[8] {
+// +     #0 = 8, align 8
 // +
 // + entry:
-// +     br %1 to bb1 else bb2
-// +
-// + bb1:
-// +     store i64 to %2, i64 1, align 8
-// +     br bb3
-// +
-// + bb2:
-// +     store i64 to %2, i64 2, align 8
-// +     br bb3
-// +
-// + bb3:
-// +     br %1 to bb4 else bb5
-// +
-// + bb4:
-// +     store i64 to %0, i64 1, align 8
-// +     br bb6
-// +
-// + bb5:
-// +     store i64 to %0, i64 2, align 8
-// +     br bb6
-// +
-// + bb6:
-// +     ret
-// + }
-// +
-// + proc _S1cFT1sxbE (in s^ %0, in bool %1) {
-// +     %2 = s
-// +
-// + entry:
-// +     br %1 to bb1 else bb2
-// +
-// + bb1:
-// +     store i64 to %2, i64 1, align 8
-// +     br bb3
-// +
-// + bb2:
-// +     call void _S1aFT1sE(%2)
-// +     br bb3
-// +
-// + bb3:
-// +     br %1 to bb4 else bb5
-// +
-// + bb4:
-// +     store i64 to %0, i64 2, align 8
-// +     br bb6
-// +
-// + bb5:
-// +     call void _S1aFT1sE(%0)
-// +     br bb6
-// +
-// + bb6:
-// +     ret
-// + }
-// +
-// + proc _S1dFvxbE (in bool %0) {
-// +     %1 = s
-// +     %2 = s
-// +     %3 = s
-// +     %4 = s
-// +     %5 = s
-// +
-// + entry:
-// +     store i64 to %1, i64 1, align 8
-// +     copy %2, %1, int 8
 // +     br %0 to bb1 else bb2
 // +
 // + bb1:
-// +     br bb3(%1)
+// +     store #0, i64 1, align 8
+// +     br bb3
 // +
 // + bb2:
-// +     br bb3(%2)
+// +     store #0, i64 2, align 8
+// +     br bb3
 // +
-// + bb3(s^ %6):
-// +     copy %3, %6, int 8
+// + bb3:
 // +     br %0 to bb4 else bb5
 // +
 // + bb4:
-// +     store i64 to %4, i64 1, align 8
+// +     store retptr, i64 1, align 8
 // +     br bb6
 // +
 // + bb5:
-// +     copy %4, %2, int 8
+// +     store retptr, i64 2, align 8
 // +     br bb6
 // +
 // + bb6:
-// +     br %0 to bb7 else bb8
+// +     ret
+// + }
 // +
-// + bb7:
-// +     copy %5, %1, int 8
-// +     br bb9
+// + proc _S1cFT1sxbE (i1 %0) indirect private fastcc -> i8[8] {
+// +     #0 = 8, align 8
 // +
-// + bb8:
-// +     store i64 to %5, i64 1, align 8
-// +     br bb9
+// + entry:
+// +     br %0 to bb1 else bb2
 // +
-// + bb9:
+// + bb1:
+// +     store #0, i64 1, align 8
+// +     br bb3
+// +
+// + bb2:
+// +     call fastcc void _S1aFT1sE() into #0
+// +     br bb3
+// +
+// + bb3:
+// +     br %0 to bb4 else bb5
+// +
+// + bb4:
+// +     store retptr, i64 2, align 8
+// +     br bb6
+// +
+// + bb5:
+// +     call fastcc void _S1aFT1sE() into retptr
+// +     br bb6
+// +
+// + bb6:
+// +     ret
+// + }
+// +
+// + proc _S1dFvxbE (i1 %0) private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     copy #1, #0, 8
+// +     %1 = select %0, ptr #0, #1
+// +     copy #2, %1, 8
+// +     br %0 to bb1 else bb2
+// +
+// + bb1:
+// +     store #3, i64 1, align 8
+// +     br bb3
+// +
+// + bb2:
+// +     copy #3, #1, 8
+// +     br bb3
+// +
+// + bb3:
+// +     br %0 to bb4 else bb5
+// +
+// + bb4:
+// +     copy #4, #0, 8
+// +     br bb6
+// +
+// + bb5:
+// +     store #4, i64 1, align 8
+// +     br bb6
+// +
+// + bb6:
 // +     ret
 // + }
 
-//L * ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
 //L +
 //L + define fastcc void @__src_main() {
-//L + entry:
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1aFT1sE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0) {
-//L + entry:
-//L +   %1 = alloca [8 x i8], align 8
-//L +   store i64 1, ptr %1, align 8
+//L + define private fastcc void @_S1aFT1sE(ptr %0) {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 1, ptr %2, align 8
 //L +   store i64 1, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1bFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 %1) {
-//L + entry:
-//L +   %2 = alloca [8 x i8], align 8
-//L +   br i1 %1, label %bb1, label %bb2
+//L + define private fastcc void @_S1bFT1sxbE(ptr %0, i1 %1) {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   br i1 %1, label %4, label %5
 //L +
-//L + bb1:                                              ; preds = %entry
-//L +   store i64 1, ptr %2, align 8
-//L +   br label %bb3
+//L + 4:                                                ; preds = %2
+//L +   store i64 1, ptr %3, align 8
+//L +   br label %6
 //L +
-//L + bb2:                                              ; preds = %entry
-//L +   store i64 2, ptr %2, align 8
-//L +   br label %bb3
+//L + 5:                                                ; preds = %2
+//L +   store i64 2, ptr %3, align 8
+//L +   br label %6
 //L +
-//L + bb3:                                              ; preds = %bb2, %bb1
-//L +   br i1 %1, label %bb4, label %bb5
+//L + 6:                                                ; preds = %4, %5
+//L +   br i1 %1, label %7, label %8
 //L +
-//L + bb4:                                              ; preds = %bb3
+//L + 7:                                                ; preds = %6
 //L +   store i64 1, ptr %0, align 8
-//L +   br label %bb6
+//L +   br label %9
 //L +
-//L + bb5:                                              ; preds = %bb3
+//L + 8:                                                ; preds = %6
 //L +   store i64 2, ptr %0, align 8
-//L +   br label %bb6
+//L +   br label %9
 //L +
-//L + bb6:                                              ; preds = %bb5, %bb4
+//L + 9:                                                ; preds = %7, %8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1cFT1sxbE(ptr dead_on_unwind noalias writable sret([8 x i8]) align 8 captures(none) %0, i1 %1) {
-//L + entry:
-//L +   %2 = alloca [8 x i8], align 8
-//L +   br i1 %1, label %bb1, label %bb2
+//L + define private fastcc void @_S1cFT1sxbE(ptr %0, i1 %1) {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   br i1 %1, label %4, label %5
 //L +
-//L + bb1:                                              ; preds = %entry
-//L +   store i64 1, ptr %2, align 8
-//L +   br label %bb3
+//L + 4:                                                ; preds = %2
+//L +   store i64 1, ptr %3, align 8
+//L +   br label %6
 //L +
-//L + bb2:                                              ; preds = %entry
-//L +   call fastcc void @_S1aFT1sE(ptr %2)
-//L +   br label %bb3
+//L + 5:                                                ; preds = %2
+//L +   call fastcc void @_S1aFT1sE(ptr %3)
+//L +   br label %6
 //L +
-//L + bb3:                                              ; preds = %bb2, %bb1
-//L +   br i1 %1, label %bb4, label %bb5
+//L + 6:                                                ; preds = %4, %5
+//L +   br i1 %1, label %7, label %8
 //L +
-//L + bb4:                                              ; preds = %bb3
+//L + 7:                                                ; preds = %6
 //L +   store i64 2, ptr %0, align 8
-//L +   br label %bb6
+//L +   br label %9
 //L +
-//L + bb5:                                              ; preds = %bb3
+//L + 8:                                                ; preds = %6
 //L +   call fastcc void @_S1aFT1sE(ptr %0)
-//L +   br label %bb6
+//L +   br label %9
 //L +
-//L + bb6:                                              ; preds = %bb5, %bb4
+//L + 9:                                                ; preds = %7, %8
 //L +   ret void
 //L + }
 //L +
 //L + define private fastcc void @_S1dFvxbE(i1 %0) {
-//L + entry:
-//L +   %1 = alloca [8 x i8], align 8
-//L +   %2 = alloca [8 x i8], align 8
-//L +   %3 = alloca [8 x i8], align 8
-//L +   %4 = alloca [8 x i8], align 8
-//L +   %5 = alloca [8 x i8], align 8
-//L +   store i64 1, ptr %1, align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %2, ptr align 8 %1, i64 8, i1 false)
-//L +   br i1 %0, label %bb1, label %bb2
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   %5 = alloca i8, i64 8, align 8
+//L +   %6 = alloca i8, i64 8, align 8
+//L +   store i64 1, ptr %2, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %3, ptr %2, i64 8, i1 false)
+//L +   %7 = select i1 %0, ptr %2, ptr %3
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %7, i64 8, i1 false)
+//L +   br i1 %0, label %8, label %9
 //L +
-//L + bb1:                                              ; preds = %entry
-//L +   br label %bb3
-//L +
-//L + bb2:                                              ; preds = %entry
-//L +   br label %bb3
-//L +
-//L + bb3:                                              ; preds = %bb2, %bb1
-//L +   %6 = phi ptr [ %1, %bb1 ], [ %2, %bb2 ]
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %3, ptr align 8 %6, i64 8, i1 false)
-//L +   br i1 %0, label %bb4, label %bb5
-//L +
-//L + bb4:                                              ; preds = %bb3
-//L +   store i64 1, ptr %4, align 8
-//L +   br label %bb6
-//L +
-//L + bb5:                                              ; preds = %bb3
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %4, ptr align 8 %2, i64 8, i1 false)
-//L +   br label %bb6
-//L +
-//L + bb6:                                              ; preds = %bb5, %bb4
-//L +   br i1 %0, label %bb7, label %bb8
-//L +
-//L + bb7:                                              ; preds = %bb6
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %5, ptr align 8 %1, i64 8, i1 false)
-//L +   br label %bb9
-//L +
-//L + bb8:                                              ; preds = %bb6
+//L + 8:                                                ; preds = %1
 //L +   store i64 1, ptr %5, align 8
-//L +   br label %bb9
+//L +   br label %10
 //L +
-//L + bb9:                                              ; preds = %bb8, %bb7
+//L + 9:                                                ; preds = %1
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %3, i64 8, i1 false)
+//L +   br label %10
+//L +
+//L + 10:                                               ; preds = %8, %9
+//L +   br i1 %0, label %11, label %12
+//L +
+//L + 11:                                               ; preds = %10
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %6, ptr %2, i64 8, i1 false)
+//L +   br label %13
+//L +
+//L + 12:                                               ; preds = %10
+//L +   store i64 1, ptr %6, align 8
+//L +   br label %13
+//L +
+//L + 13:                                               ; preds = %11, %12
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
-//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #0
 //L +
-//L + attributes #0 = { noreturn nounwind }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #0 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

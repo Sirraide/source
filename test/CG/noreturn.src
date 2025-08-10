@@ -1,0 +1,104 @@
+// V      %srcc --sema --verify %s
+// R      %srcc --ir -fno-overflow-checks %s
+// R[//L] %srcc --llvm -fno-overflow-checks %s
+// expected-no-diagnostics
+program test;
+
+proc exit extern -> noreturn;
+proc sink(int) extern;
+proc sink_lv(inout int) extern;
+
+proc a1 { 3 + exit(); }
+proc a2 { 3 + __srcc_unreachable(); }
+proc a3 { true and __srcc_unreachable(); }
+proc a4 { sink(exit()); }
+proc a5 { sink_lv(exit()); }
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S4exitFzE external fastcc;
+// +
+// + proc _S4sinkFviE (i64) external fastcc;
+// +
+// + proc _S7sink_lvFvx2iE (ptr) external fastcc;
+// +
+// + proc _S2a1FvE private fastcc {
+// + entry:
+// +     call fastcc void _S4exitFzE()
+// +     unreachable
+// + }
+// +
+// + proc _S2a2FvE private fastcc {
+// + entry:
+// +     unreachable
+// + }
+// +
+// + proc _S2a3FvE private fastcc {
+// + entry:
+// +     unreachable
+// + }
+// +
+// + proc _S2a4FvE private fastcc {
+// + entry:
+// +     call fastcc void _S4exitFzE()
+// +     unreachable
+// + }
+// +
+// + proc _S2a5FvE private fastcc {
+// + entry:
+// +     call fastcc void _S4exitFzE()
+// +     unreachable
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   ret void
+//L + }
+//L +
+//L + declare fastcc void @_S4exitFzE()
+//L +
+//L + declare fastcc void @_S4sinkFviE(i64)
+//L +
+//L + declare fastcc void @_S7sink_lvFvx2iE(ptr)
+//L +
+//L + define private fastcc void @_S2a1FvE() {
+//L +   call fastcc void @_S4exitFzE()
+//L +   unreachable
+//L + }
+//L +
+//L + define private fastcc void @_S2a2FvE() {
+//L +   unreachable
+//L + }
+//L +
+//L + define private fastcc void @_S2a3FvE() {
+//L +   unreachable
+//L + }
+//L +
+//L + define private fastcc void @_S2a4FvE() {
+//L +   call fastcc void @_S4exitFzE()
+//L +   unreachable
+//L + }
+//L +
+//L + define private fastcc void @_S2a5FvE() {
+//L +   call fastcc void @_S4exitFzE()
+//L +   unreachable
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

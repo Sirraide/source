@@ -2889,6 +2889,9 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
         parsed->loc
     );
 
+    if (parsed->name == "__src_abort_info")
+        M->abort_info_type = ty;
+
     AddDeclToScope(curr_scope(), ty->decl());
     return ty->decl();
 }

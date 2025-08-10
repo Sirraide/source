@@ -1,0 +1,115 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+proc foo(int a, int b) {
+    int x = a;
+    int y = b;
+    var z = y;
+    var c = 7;
+    __srcc_print(x, " ", y, " ", x, " ", c, "\n");
+}
+
+// * @0 = "\0A\00"
+// + @1 = " \00"
+// + @2 = "%.*s\00"
+// + @3 = "%ld\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S3fooFviiE (i64 %0, i64 %1) private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +     #5 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     store #2, i64 %2, align 8
+// +     %3 = load i64, #1, align 8
+// +     store #3, i64 %3, align 8
+// +     %4 = load i64, #3, align 8
+// +     store #4, i64 %4, align 8
+// +     store #5, i64 7, align 8
+// +     %5 = load i64, #2, align 8
+// +     %6 = call variadic ccc i32 printf(ptr @3, i64 %5)
+// +     %7 = call variadic ccc i32 printf(ptr @2, i32 1, ptr @1)
+// +     %8 = load i64, #3, align 8
+// +     %9 = call variadic ccc i32 printf(ptr @3, i64 %8)
+// +     %10 = call variadic ccc i32 printf(ptr @2, i32 1, ptr @1)
+// +     %11 = load i64, #2, align 8
+// +     %12 = call variadic ccc i32 printf(ptr @3, i64 %11)
+// +     %13 = call variadic ccc i32 printf(ptr @2, i32 1, ptr @1)
+// +     %14 = load i64, #5, align 8
+// +     %15 = call variadic ccc i32 printf(ptr @3, i64 %14)
+// +     %16 = call variadic ccc i32 printf(ptr @2, i32 1, ptr @0)
+// +     ret
+// + }
+// +
+// + proc printf (ptr) variadic external ccc -> i32;
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + @__srcc_str.3 = private constant [2 x i8] c"\0A\00", align 1
+//L + @__srcc_str.2 = private constant [2 x i8] c" \00", align 1
+//L + @__srcc_str.1 = private constant [5 x i8] c"%.*s\00", align 1
+//L + @__srcc_str.0 = private constant [4 x i8] c"%ld\00", align 1
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S3fooFviiE(i64 %0, i64 %1) {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   %5 = alloca i8, i64 8, align 8
+//L +   %6 = alloca i8, i64 8, align 8
+//L +   %7 = alloca i8, i64 8, align 8
+//L +   %8 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %3, align 8
+//L +   store i64 %1, ptr %4, align 8
+//L +   %9 = load i64, ptr %3, align 8
+//L +   store i64 %9, ptr %5, align 8
+//L +   %10 = load i64, ptr %4, align 8
+//L +   store i64 %10, ptr %6, align 8
+//L +   %11 = load i64, ptr %6, align 8
+//L +   store i64 %11, ptr %7, align 8
+//L +   store i64 7, ptr %8, align 8
+//L +   %12 = load i64, ptr %5, align 8
+//L +   %13 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %12)
+//L +   %14 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %15 = load i64, ptr %6, align 8
+//L +   %16 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %15)
+//L +   %17 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %18 = load i64, ptr %5, align 8
+//L +   %19 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %18)
+//L +   %20 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %21 = load i64, ptr %8, align 8
+//L +   %22 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %21)
+//L +   %23 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.3)
+//L +   ret void
+//L + }
+//L +
+//L + declare i32 @printf(ptr, ...)
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

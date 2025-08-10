@@ -43,7 +43,7 @@ BuiltinCallExpr::BuiltinCallExpr(
     ArrayRef<Expr*> args,
     Location location
 ) : Expr{Kind::BuiltinCallExpr, return_type, SRValue, location}, builtin{kind}, num_args{u32(args.size())} {
-    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<Expr*>());
+    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
     // Determine value category.
     switch (builtin) {
         // SRValue.
@@ -72,7 +72,7 @@ CallExpr::CallExpr(
     Location location
 ) : Expr{Kind::CallExpr, type, type->rvalue_category(), location},
     callee{callee}, num_args{u32(args.size())} {
-    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<Expr*>());
+    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
 }
 
 auto CallExpr::Create(
@@ -104,7 +104,7 @@ BlockExpr::BlockExpr(
 ) : Expr{Kind::BlockExpr, type, SRValue, location},
     num_stmts{u32(stmts.size())},
     scope{parent_scope} {
-    std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<Stmt*>());
+    std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects());
     // The value category of this is that of the return expr.
     if (auto e = return_expr()) value_category = e->value_category;
 }
@@ -170,7 +170,7 @@ OverloadSetExpr::OverloadSetExpr(
     Location location
 ) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, SRValue, location},
     num_overloads{u32(decls.size())} {
-    std::uninitialized_copy(decls.begin(), decls.end(), getTrailingObjects<Decl*>());
+    std::uninitialized_copy(decls.begin(), decls.end(), getTrailingObjects());
 }
 
 auto OverloadSetExpr::Create(
@@ -303,7 +303,7 @@ StructInitExpr::StructInitExpr(
     ArrayRef<Expr*> fields,
     Location location
 ) : Expr{Kind::StructInitExpr, ty, ty->rvalue_category(), location} {
-    std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects<Expr*>());
+    std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
 }
 
 auto StructInitExpr::Create(

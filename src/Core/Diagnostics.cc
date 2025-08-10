@@ -169,30 +169,30 @@ static auto FormatDiagnostic(
         }
 
         out += "\n";
+
+        // Print the line up to the start of the location, the range in the right
+        // colour, and the rest of the line.
+        // TODO: Proper underlines: \033[1;58:5:1;4:3m
+        out += std::format("%b({} |%) {}", l->line, utils::Escape(before, false, true));
+        if (not range.empty()) out += std::format("%b8({}%)", utils::Escape(range, false, true));
+        if (not after.empty()) out += utils::Escape(after, false, true);
+        out += "\n";
+
+        // Determine the number of digits in the line number.
+        const auto digits = std::to_string(l->line).size();
+
+        // Underline the range. For that, we first pad the line based on the number
+        // of digits in the line number and append more spaces to line us up with
+        // the range.
+        for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++) out += ' ';
+
+        // Finally, underline the range. The range may be empty, so underline at least 1 character.
+        out += std::format(
+            "%{}b({}%)",
+            Colour(diag.level),
+            std::string(std::max<usz>(range_wd, 1), '~')
+        );
     }
-
-    // Print the line up to the start of the location, the range in the right
-    // colour, and the rest of the line.
-    // TODO: Proper underlines: \033[1;58:5:1;4:3m
-    out += std::format("%b({} |%) {}", l->line, utils::Escape(before, false, true));
-    if (not range.empty()) out += std::format("%b8({}%)", utils::Escape(range, false, true));
-    if (not after.empty()) out += utils::Escape(after, false, true);
-    out += "\n";
-
-    // Determine the number of digits in the line number.
-    const auto digits = std::to_string(l->line).size();
-
-    // Underline the range. For that, we first pad the line based on the number
-    // of digits in the line number and append more spaces to line us up with
-    // the range.
-    for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++) out += ' ';
-
-    // Finally, underline the range. The range may be empty, so underline at least 1 character.
-    out += std::format(
-        "%{}b({}%)",
-        Colour(diag.level),
-        std::string(std::max<usz>(range_wd, 1), '~')
-    );
 
     // And print any extra data.
     PrintExtraData();

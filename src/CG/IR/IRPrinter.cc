@@ -116,16 +116,6 @@ void CodeGen::Printer::print_op(Operation* op) {
         return tmp;
     };
 
-    /*auto IntCast = [&](StringRef name) {
-        auto c = cast<ICast>(i);
-        out += std::format(
-            "%1({}%) {} to {}",
-            name,
-            DumpValue(c->args()[0]),
-            c->cast_result_type()
-        );
-    };*/
-
     auto PrintArithOp = [&](StringRef mnemonic) {
         out += std::format(
             "{} {}, {}",
@@ -235,7 +225,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         out += std::format(
             "%) %2({}%)({})",
             stringifyAbortReason(a.getReason()),
-            ops(a.getOperands())
+            ops(a.getAbortInfo())
         );
         return;
     }
@@ -301,6 +291,36 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto ext = dyn_cast<mlir::arith::ExtUIOp>(op)) {
+        out += std::format("zext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        return;
+    }
+
+    if (auto ext = dyn_cast<mlir::arith::ExtSIOp>(op)) {
+        out += std::format("sext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        return;
+    }
+
+    if (auto ext = dyn_cast<mlir::arith::TruncIOp>(op)) {
+        out += std::format("trunc {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        return;
+    }
+
+    if (auto m = dyn_cast<mlir::LLVM::MemsetOp>(op)) {
+        out += std::format("set {}, {}, {}", val(m.getDst()), val(m.getVal()), val(m.getLen()));
+        return;
+    }
+
+    if (isa<mlir::LLVM::UnreachableOp>(op)) {
+        out += "unreachable";
+        return;
+    }
+
+    if (isa<mlir::LLVM::PoisonOp>(op)) {
+        out += std::format("{} poison", FormatType(op->getResult(0).getType()));
+        return;
+    }
+
     if (isa<mlir::arith::AddIOp>(op)) return PrintArithOp("add");
     if (isa<mlir::arith::AndIOp>(op)) return PrintArithOp("and");
     if (isa<mlir::arith::DivSIOp>(op)) return PrintArithOp("sdiv");
@@ -319,7 +339,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     if (isa<SSubOvOp>(op)) return PrintArithOp("ssub ov");
     if (isa<SMulOvOp>(op)) return PrintArithOp("smul ov");
 
-    out += std::format("TODO: PRINT '{}'", op->getName().getStringRef());
+    Unreachable("Don’t know how to print this op: {}", op->getName().getStringRef());
 }
 
 void CodeGen::Printer::print_procedure(ProcOp proc) {

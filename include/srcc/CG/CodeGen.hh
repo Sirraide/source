@@ -21,7 +21,7 @@ protected:
     mlir::MLIRContext mlir;
 };
 }
-}
+} // namespace srcc::cg
 
 class srcc::cg::ArgumentMapping {
     LIBBASE_IMMOVABLE(ArgumentMapping);
@@ -43,7 +43,9 @@ public:
     }
 };
 
-class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, detail::CodeGenBase, mlir::OpBuilder {
+class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
+    , detail::CodeGenBase
+    , mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
     struct Printer;
     struct Mangler;
@@ -56,6 +58,8 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, detail::CodeGenBase, ml
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ProcDecl*, String> mangled_names;
     DenseMap<ProcDecl*, std::unique_ptr<const ArgumentMapping>> argument_mapping;
+    StringMap<mlir::LLVM::GlobalOp> interned_strings;
+    Value abort_info_slot;
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;
     ir::ProcOp curr_proc;
@@ -70,6 +74,9 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>, detail::CodeGenBase, ml
 
 public:
     CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size);
+
+    /// Get the context.
+    [[nodiscard]] auto context() const -> Context& { return tu.context(); }
 
     /// Get the diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
@@ -92,8 +99,20 @@ public:
     /// Finalise IR.
     [[nodiscard]] bool finalise();
 
+    /// Get the MLIR context.
+    [[nodiscard]] auto mlir_context() -> mlir::MLIRContext* { return &mlir; }
+
     /// Optimise a module.
     void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
+
+    /// Get the platform 'int' type.
+    [[nodiscard]] auto platform_int_type() -> mlir::Type { return int_ty; }
+
+    /// Get the platform type corresponding to a slice (of any type).
+    [[nodiscard]] auto platform_slice_type() -> mlir::Type { return slice_ty; }
+
+    /// Get the translation unit we’re compiling.
+    [[nodiscard]] auto translation_unit() -> TranslationUnit& { return tu; }
 
     /// Write the module to a file.
     int write_to_file(
@@ -122,6 +141,16 @@ private:
         bool has_indirect_return = false;
     };
 
+    struct StructInitHelper {
+        CodeGen& CG;
+        StructType* ty;
+        Value base;
+        usz i = 0;
+
+        StructInitHelper(CodeGen& CG, StructType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
+        void emit_next_field(Value v);
+    };
+
     // AST -> IR converters
     auto C(CallingConvention l) -> mlir::LLVM::CConv;
     auto C(Linkage l) -> mlir::LLVM::Linkage;
@@ -129,8 +158,9 @@ private:
     auto C(Type ty) -> mlir::Type;
 
     auto ConvertProcType(ProcType* ty) -> IRProcType;
-    auto CreateAggregate(Location loc, Value a, Value b) -> Value;
+    auto CreateAggregate(mlir::Location loc, Value a, Value b) -> Value;
     auto CreateAlloca(Location loc, Type ty) -> Value;
+    void CreateAbort(Location loc, ir::AbortReason reason, Value msg1, Value msg2);
 
     void CreateArithFailure(
         Value failure_cond,
@@ -149,16 +179,16 @@ private:
     ) -> Value;
 
     auto CreateBlock(ArrayRef<mlir::Type> args = {}) -> std::unique_ptr<Block>;
-    auto CreateBool(Location loc, bool b) -> Value;
+    auto CreateBool(mlir::Location loc, bool b) -> Value;
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
     auto CreateGlobalStringSlice(Location loc, String data) -> Value;
     auto CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value;
-    auto CreateInt(const APInt& value, Type ty) -> Value;
-    auto CreateInt(i64 value, Type ty = Type::IntTy) -> Value;
-    auto CreateInt(i64 value, mlir::Type ty) -> Value;
-    auto CreateNil(Location loc, Type ty) -> Value;
-    auto CreateNullPointer(Location loc) -> Value;
+    auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
+    auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
+    auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
+    auto CreateNil(mlir::Location loc, Type ty) -> Value;
+    auto CreateNullPointer(mlir::Location loc) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
@@ -198,7 +228,15 @@ private:
     auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
-    auto GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp;
+    auto GetOrCreateProc(
+        Location loc,
+        String name,
+        Linkage linkage,
+        ProcType* ty
+    ) -> ir::ProcOp;
+
+    /// Handle a backend diagnostic.
+    void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
     /// Check whether a procedure has an indirect return type.
     bool HasIndirectReturn(ProcType* type);

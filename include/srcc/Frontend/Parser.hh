@@ -186,7 +186,7 @@ public:
     ) -> ParsedProcType*;
 
     auto param_types() -> ArrayRef<ParsedParameter> {
-        return {getTrailingObjects<ParsedParameter>(), num_params};
+        return getTrailingObjects(num_params);
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
@@ -291,7 +291,7 @@ public:
 
     /// Get the statements stored in this block.
     auto stmts() -> ArrayRef<ParsedStmt*> {
-        return {getTrailingObjects<ParsedStmt*>(), num_stmts};
+        return getTrailingObjects(num_stmts);
     }
 
     static bool classof(const ParsedStmt* e) {
@@ -340,7 +340,7 @@ public:
 
     /// Get the arguments to the call.
     auto args() -> ArrayRef<ParsedStmt*> {
-        return {getTrailingObjects<ParsedStmt*>(), num_args};
+        return getTrailingObjects(num_args);
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CallExpr; }
@@ -367,7 +367,7 @@ public:
     ) -> ParsedDeclRefExpr*;
 
     /// Get the parts of the declaration reference.
-    auto names() -> ArrayRef<String> { return {getTrailingObjects<String>(), num_parts}; }
+    auto names() -> ArrayRef<String> { return getTrailingObjects(num_parts); }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeclRefExpr; }
 };
@@ -668,7 +668,7 @@ public:
     ) -> ParsedProcDecl*;
 
     auto params() -> ArrayRef<ParsedLocalDecl*> {
-        return {getTrailingObjects<ParsedLocalDecl*>(), type->param_types().size()};
+        return getTrailingObjects(type->param_types().size());
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcDecl; }
@@ -691,7 +691,7 @@ public:
     ) -> ParsedStructDecl*;
 
     auto fields() -> ArrayRef<ParsedFieldDecl*> {
-        return {getTrailingObjects<ParsedFieldDecl*>(), num_fields};
+        return getTrailingObjects(num_fields);
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StructDecl; }

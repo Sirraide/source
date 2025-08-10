@@ -1,0 +1,83 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+proc caller (proc x -> int) = x();
+proc foo = 42;
+
+__srcc_print(caller(foo), "\n");
+
+// * @0 = "\0A\00"
+// + @1 = "%.*s\00"
+// + @2 = "%ld\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     %0 = call fastcc i64 _S6callerFiFiEE((ptr, ptr) (_S3fooFiE, nil))
+// +     %1 = call variadic ccc i32 printf(ptr @2, i64 %0)
+// +     %2 = call variadic ccc i32 printf(ptr @1, i32 1, ptr @0)
+// +     ret
+// + }
+// +
+// + proc printf (ptr) variadic external ccc -> i32;
+// +
+// + proc _S6callerFiFiEE ((ptr, ptr) %0) private fastcc -> i64 {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, (ptr, ptr) %0, align 8
+// +     %1 = load (ptr, ptr), #0, align 8
+// +     %2 = extract (ptr, ptr) %1, 0
+// +     %3 = extract (ptr, ptr) %1, 1
+// +     %4 = call fastcc i64 %2(), env %3
+// +     ret i64 %4
+// + }
+// +
+// + proc _S3fooFiE private fastcc -> i64 {
+// + entry:
+// +     ret i64 42
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + @__srcc_str.2 = private constant [2 x i8] c"\0A\00", align 1
+//L + @__srcc_str.1 = private constant [5 x i8] c"%.*s\00", align 1
+//L + @__srcc_str.0 = private constant [4 x i8] c"%ld\00", align 1
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   %1 = call fastcc i64 @_S6callerFiFiEE({ ptr, ptr } { ptr @_S3fooFiE, ptr null })
+//L +   %2 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %1)
+//L +   %3 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   ret void
+//L + }
+//L +
+//L + declare i32 @printf(ptr, ...)
+//L +
+//L + define private fastcc i64 @_S6callerFiFiEE({ ptr, ptr } %0) {
+//L +   %2 = alloca i8, i64 16, align 8
+//L +   store { ptr, ptr } %0, ptr %2, align 8
+//L +   %3 = load { ptr, ptr }, ptr %2, align 8
+//L +   %4 = extractvalue { ptr, ptr } %3, 0
+//L +   %5 = extractvalue { ptr, ptr } %3, 1
+//L +   %6 = call fastcc i64 %4(ptr %5)
+//L +   ret i64 %6
+//L + }
+//L +
+//L + define private fastcc i64 @_S3fooFiE() {
+//L +   ret i64 42
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

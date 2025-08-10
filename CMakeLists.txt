@@ -198,10 +198,13 @@ target_link_libraries(options INTERFACE
     LLVMX86CodeGen
 
     MLIRArithDialect
+    MLIRArithToLLVM
     MLIRBuiltinToLLVMIRTranslation
     MLIRControlFlowDialect
+    MLIRControlFlowToLLVM
     MLIRIR
     MLIRLLVMDialect
+    MLIRLLVMCommonConversion
     MLIRLLVMIRToLLVMTranslation
     MLIRLLVMToLLVMIRTranslation
     MLIRTargetLLVM

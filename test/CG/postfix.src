@@ -12,34 +12,38 @@ i16 i;
 i++;
 i--;
 
-// * proc __src_main {
-// +     %0 = int
-// +     %1 = int
-// +     %2 = int
-// +     %3 = i16
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 2, align 2
 // +
 // + entry:
-// +     store int to %0, nil, align 8
-// +     %4 = load int, %0, align 8
-// +     %5 = add %4, int 1
-// +     store int to %0, %5, align 8
-// +     %6 = load int, %0, align 8
-// +     %7 = sub %6, int 1
-// +     store int to %0, %7, align 8
-// +     %8 = load int, %0, align 8
-// +     %9 = add %8, int 1
-// +     store int to %0, %9, align 8
-// +     store int to %1, %8, align 8
-// +     %10 = load int, %0, align 8
-// +     %11 = sub %10, int 1
-// +     store int to %0, %11, align 8
-// +     store int to %2, %10, align 8
-// +     store i16 to %3, nil, align 2
-// +     %12 = load i16, %3, align 2
-// +     %13 = add %12, i16 1
-// +     store i16 to %3, %13, align 2
-// +     %14 = load i16, %3, align 2
-// +     %15 = sub %14, i16 1
-// +     store i16 to %3, %15, align 2
+// +     store #0, i64 0, align 8
+// +     %0 = load i64, #0, align 8
+// +     %1 = add i64 %0, 1
+// +     store #0, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = sub i64 %2, 1
+// +     store #0, i64 %3, align 8
+// +     %4 = load i64, #0, align 8
+// +     %5 = add i64 %4, 1
+// +     store #0, i64 %5, align 8
+// +     store #1, i64 %4, align 8
+// +     %6 = load i64, #0, align 8
+// +     %7 = sub i64 %6, 1
+// +     store #0, i64 %7, align 8
+// +     store #2, i64 %6, align 8
+// +     store #3, i16 0, align 2
+// +     %8 = load i16, #3, align 2
+// +     %9 = add i16 %8, 1
+// +     store #3, i16 %9, align 2
+// +     %10 = load i16, #3, align 2
+// +     %11 = sub i16 %10, 1
+// +     store #3, i16 %11, align 2
 // +     ret
 // + }

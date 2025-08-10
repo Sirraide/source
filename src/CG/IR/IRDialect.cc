@@ -49,7 +49,7 @@ void srcc::cg::ir::SRCCDialect::InitialiseContext(mlir::MLIRContext& ctx) {
     //mlir::registerAllDialects(ctx);
     mlir::registerBuiltinDialectTranslation(ctx);
     mlir::registerLLVMDialectTranslation(ctx);
-    ctx.printStackTraceOnDiagnostic(true);
+    //ctx.printStackTraceOnDiagnostic(true);
     ctx.printOpOnDiagnostic(true);
     ctx.loadDialect<
         mlir::BuiltinDialect,

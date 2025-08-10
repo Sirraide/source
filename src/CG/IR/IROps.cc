@@ -9,6 +9,26 @@ using namespace srcc;
 using namespace srcc::cg;
 using namespace srcc::cg::ir;
 
+auto SRCCDialect::materializeConstant(
+    mlir::OpBuilder& builder,
+    mlir::Attribute value,
+    mlir::Type type,
+    mlir::Location loc
+) -> Operation* {
+    if (auto i = dyn_cast<mlir::IntegerAttr>(value); i and type.isInteger())
+        return builder.create<mlir::arith::ConstantOp>(loc, type, i);
+
+    if (auto b = dyn_cast<mlir::BoolAttr>(value)) {
+        Assert(type.isInteger());
+        return builder.create<mlir::arith::ConstantOp>(loc, type, b);
+    }
+
+    SmallString<128> s;
+    llvm::raw_svector_ostream os{s};
+    os << value;
+    Unreachable("Don’t know how to materialise this attribute: {}", s);
+}
+
 // ============================================================================
 //  Folders
 // ============================================================================
@@ -16,7 +36,7 @@ static auto FoldOv(
     mlir::Attribute lhs_val,
     mlir::Attribute rhs_val,
     SmallVectorImpl<mlir::OpFoldResult>& results,
-    APInt (APInt::*folder)(const APInt &RHS, bool &Overflow) const
+    APInt (APInt::*folder)(const APInt& RHS, bool& Overflow) const
 ) -> mlir::LogicalResult {
     auto lhs = dyn_cast_if_present<mlir::IntegerAttr>(lhs_val);
     auto rhs = dyn_cast_if_present<mlir::IntegerAttr>(rhs_val);
@@ -30,7 +50,7 @@ static auto FoldOv(
 
 llvm::LogicalResult CallOp::canonicalize(CallOp op, mlir::PatternRewriter& rewriter) {
     if (op.getEnv() and isa<NilOp>(op.getEnv().getDefiningOp())) {
-        rewriter.modifyOpInPlace(op, [&]{ op.getEnvMutable().clear(); });
+        rewriter.modifyOpInPlace(op, [&] { op.getEnvMutable().clear(); });
         return mlir::success();
     }
 

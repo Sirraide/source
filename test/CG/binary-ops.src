@@ -43,166 +43,294 @@ proc arith (in int a, in int b) {
     sink(a != b);
 }
 
-// * proc __src_main {
+// * @0 = "<<<\00"
+// + @1 = "shift amount exceeds bit width\00"
+// + @2 = "<<\00"
+// + @3 = ":%\00"
+// + @4 = ":/\00"
+// + @5 = "%\00"
+// + @6 = "division by zero\00"
+// + @7 = "/\00"
+// + @8 = "*\00"
+// + @9 = "-\00"
+// + @10 = "binary-ops.src\00"
+// + @11 = "integer overflow\00"
+// + @12 = "+\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (in int %0) {
+// + proc _S4sinkFvxiE (i64 %0) private fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxbE (in bool %0) {
+// + proc _S4sinkFvxbE (i1 %0) private fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S13arith_checkedFvxixiE (in int %0, in int %1) {
+// + proc _S13arith_checkedFvxixiE (i64 %0, i64 %1) private fastcc {
+// +     #0 = 64, align 8
+// +
 // + entry:
-// +     %2 = sadd ov %0, %1
+// +     %2 = sadd ov i64 %0, %1
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at <binary-ops.src:8:10> __src_int_arith_error(s"+", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %3 = ptradd #0, 16
+// +     store %3, i64 8, align 8
+// +     %4 = ptradd #0, 24
+// +     store %4, i64 10, align 8
+// +     %5 = ptradd #0, 32
+// +     store %5, (ptr, i64) (@12, 1), align 8
+// +     %6 = ptradd #0, 48
+// +     store %6, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":8:10) arithmetic(ptr #0)
 // +
 // + bb2:
-// +     call void _S4sinkFvxiE(%2:0)
-// +     %3 = ssub ov %0, %1
-// +     br %3:1 to bb3 else bb4
+// +     call fastcc void _S4sinkFvxiE(i64 %2:0)
+// +     %7 = ssub ov i64 %0, %1
+// +     br %7:1 to bb3 else bb4
 // +
 // + bb3:
-// +     abort at <binary-ops.src:9:10> __src_int_arith_error(s"-", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %8 = ptradd #0, 16
+// +     store %8, i64 9, align 8
+// +     %9 = ptradd #0, 24
+// +     store %9, i64 10, align 8
+// +     %10 = ptradd #0, 32
+// +     store %10, (ptr, i64) (@9, 1), align 8
+// +     %11 = ptradd #0, 48
+// +     store %11, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":9:10) arithmetic(ptr #0)
 // +
 // + bb4:
-// +     call void _S4sinkFvxiE(%3:0)
-// +     %4 = smul ov %0, %1
-// +     br %4:1 to bb5 else bb6
+// +     call fastcc void _S4sinkFvxiE(i64 %7:0)
+// +     %12 = smul ov i64 %0, %1
+// +     br %12:1 to bb5 else bb6
 // +
 // + bb5:
-// +     abort at <binary-ops.src:10:10> __src_int_arith_error(s"*", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %13 = ptradd #0, 16
+// +     store %13, i64 10, align 8
+// +     %14 = ptradd #0, 24
+// +     store %14, i64 10, align 8
+// +     %15 = ptradd #0, 32
+// +     store %15, (ptr, i64) (@8, 1), align 8
+// +     %16 = ptradd #0, 48
+// +     store %16, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":10:10) arithmetic(ptr #0)
 // +
 // + bb6:
-// +     call void _S4sinkFvxiE(%4:0)
-// +     %5 = icmp eq %1, int 0
-// +     br %5 to bb7 else bb8
+// +     call fastcc void _S4sinkFvxiE(i64 %12:0)
+// +     %17 = icmp eq i64 %1, 0
+// +     br %17 to bb7 else bb8
 // +
 // + bb7:
-// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"division by zero")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %18 = ptradd #0, 16
+// +     store %18, i64 12, align 8
+// +     %19 = ptradd #0, 24
+// +     store %19, i64 10, align 8
+// +     %20 = ptradd #0, 32
+// +     store %20, (ptr, i64) (@7, 1), align 8
+// +     %21 = ptradd #0, 48
+// +     store %21, (ptr, i64) (@6, 16), align 8
+// +     abort at loc("binary-ops.src":12:10) arithmetic(ptr #0)
 // +
 // + bb8:
-// +     %6 = icmp eq %0, int -9223372036854775808
-// +     %7 = icmp eq %1, int -1
-// +     %8 = and %6, %7
-// +     br %8 to bb9 else bb10
+// +     %22 = icmp eq i64 %0, -9223372036854775808
+// +     %23 = icmp eq i64 %1, -1
+// +     %24 = and i1 %22, %23
+// +     br %24 to bb9 else bb10
 // +
 // + bb9:
-// +     abort at <binary-ops.src:12:10> __src_int_arith_error(s"/", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %25 = ptradd #0, 16
+// +     store %25, i64 12, align 8
+// +     %26 = ptradd #0, 24
+// +     store %26, i64 10, align 8
+// +     %27 = ptradd #0, 32
+// +     store %27, (ptr, i64) (@7, 1), align 8
+// +     %28 = ptradd #0, 48
+// +     store %28, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":12:10) arithmetic(ptr #0)
 // +
 // + bb10:
-// +     %9 = sdiv %0, %1
-// +     call void _S4sinkFvxiE(%9)
-// +     %10 = icmp eq %1, int 0
-// +     br %10 to bb11 else bb12
+// +     %29 = sdiv i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %29)
+// +     %30 = icmp eq i64 %1, 0
+// +     br %30 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"division by zero")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %31 = ptradd #0, 16
+// +     store %31, i64 13, align 8
+// +     %32 = ptradd #0, 24
+// +     store %32, i64 10, align 8
+// +     %33 = ptradd #0, 32
+// +     store %33, (ptr, i64) (@5, 1), align 8
+// +     %34 = ptradd #0, 48
+// +     store %34, (ptr, i64) (@6, 16), align 8
+// +     abort at loc("binary-ops.src":13:10) arithmetic(ptr #0)
 // +
 // + bb12:
-// +     %11 = icmp eq %0, int -9223372036854775808
-// +     %12 = icmp eq %1, int -1
-// +     %13 = and %11, %12
-// +     br %13 to bb13 else bb14
+// +     %35 = icmp eq i64 %0, -9223372036854775808
+// +     %36 = icmp eq i64 %1, -1
+// +     %37 = and i1 %35, %36
+// +     br %37 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at <binary-ops.src:13:10> __src_int_arith_error(s"%", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %38 = ptradd #0, 16
+// +     store %38, i64 13, align 8
+// +     %39 = ptradd #0, 24
+// +     store %39, i64 10, align 8
+// +     %40 = ptradd #0, 32
+// +     store %40, (ptr, i64) (@5, 1), align 8
+// +     %41 = ptradd #0, 48
+// +     store %41, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":13:10) arithmetic(ptr #0)
 // +
 // + bb14:
-// +     %14 = srem %0, %1
-// +     call void _S4sinkFvxiE(%14)
-// +     %15 = icmp eq %1, int 0
-// +     br %15 to bb15 else bb16
+// +     %42 = srem i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %42)
+// +     %43 = icmp eq i64 %1, 0
+// +     br %43 to bb15 else bb16
 // +
 // + bb15:
-// +     abort at <binary-ops.src:14:10> __src_int_arith_error(s":/", s"division by zero")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %44 = ptradd #0, 16
+// +     store %44, i64 14, align 8
+// +     %45 = ptradd #0, 24
+// +     store %45, i64 10, align 8
+// +     %46 = ptradd #0, 32
+// +     store %46, (ptr, i64) (@4, 2), align 8
+// +     %47 = ptradd #0, 48
+// +     store %47, (ptr, i64) (@6, 16), align 8
+// +     abort at loc("binary-ops.src":14:10) arithmetic(ptr #0)
 // +
 // + bb16:
-// +     %16 = udiv %0, %1
-// +     call void _S4sinkFvxiE(%16)
-// +     %17 = icmp eq %1, int 0
-// +     br %17 to bb17 else bb18
+// +     %48 = udiv i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %48)
+// +     %49 = icmp eq i64 %1, 0
+// +     br %49 to bb17 else bb18
 // +
 // + bb17:
-// +     abort at <binary-ops.src:15:10> __src_int_arith_error(s":%", s"division by zero")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %50 = ptradd #0, 16
+// +     store %50, i64 15, align 8
+// +     %51 = ptradd #0, 24
+// +     store %51, i64 10, align 8
+// +     %52 = ptradd #0, 32
+// +     store %52, (ptr, i64) (@3, 2), align 8
+// +     %53 = ptradd #0, 48
+// +     store %53, (ptr, i64) (@6, 16), align 8
+// +     abort at loc("binary-ops.src":15:10) arithmetic(ptr #0)
 // +
 // + bb18:
-// +     %18 = urem %0, %1
-// +     call void _S4sinkFvxiE(%18)
-// +     %19 = icmp uge %1, int 64
-// +     br %19 to bb19 else bb20
+// +     %54 = urem i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %54)
+// +     %55 = icmp uge i64 %1, 64
+// +     br %55 to bb19 else bb20
 // +
 // + bb19:
-// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"shift amount exceeds bit width")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %56 = ptradd #0, 16
+// +     store %56, i64 17, align 8
+// +     %57 = ptradd #0, 24
+// +     store %57, i64 10, align 8
+// +     %58 = ptradd #0, 32
+// +     store %58, (ptr, i64) (@2, 2), align 8
+// +     %59 = ptradd #0, 48
+// +     store %59, (ptr, i64) (@1, 30), align 8
+// +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #0)
 // +
 // + bb20:
-// +     %20 = shl %0, %1
-// +     %21 = ashr %0, int 63
-// +     %22 = ashr %20, int 63
-// +     %23 = icmp ne %21, %22
-// +     br %23 to bb21 else bb22
+// +     %60 = shl i64 %0, %1
+// +     %61 = ashr i64 %0, 63
+// +     %62 = ashr i64 %60, 63
+// +     %63 = icmp ne i64 %61, %62
+// +     br %63 to bb21 else bb22
 // +
 // + bb21:
-// +     abort at <binary-ops.src:17:10> __src_int_arith_error(s"<<", s"integer overflow")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %64 = ptradd #0, 16
+// +     store %64, i64 17, align 8
+// +     %65 = ptradd #0, 24
+// +     store %65, i64 10, align 8
+// +     %66 = ptradd #0, 32
+// +     store %66, (ptr, i64) (@2, 2), align 8
+// +     %67 = ptradd #0, 48
+// +     store %67, (ptr, i64) (@11, 16), align 8
+// +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #0)
 // +
 // + bb22:
-// +     call void _S4sinkFvxiE(%20)
-// +     %24 = icmp uge %1, int 64
-// +     br %24 to bb23 else bb24
+// +     call fastcc void _S4sinkFvxiE(i64 %60)
+// +     %68 = icmp uge i64 %1, 64
+// +     br %68 to bb23 else bb24
 // +
 // + bb23:
-// +     abort at <binary-ops.src:18:10> __src_int_arith_error(s"<<<", s"shift amount exceeds bit width")
+// +     store #0, (ptr, i64) (@10, 14), align 8
+// +     %69 = ptradd #0, 16
+// +     store %69, i64 18, align 8
+// +     %70 = ptradd #0, 24
+// +     store %70, i64 10, align 8
+// +     %71 = ptradd #0, 32
+// +     store %71, (ptr, i64) (@0, 3), align 8
+// +     %72 = ptradd #0, 48
+// +     store %72, (ptr, i64) (@1, 30), align 8
+// +     abort at loc("binary-ops.src":18:10) arithmetic(ptr #0)
 // +
 // + bb24:
-// +     %25 = shl %0, %1
-// +     call void _S4sinkFvxiE(%25)
+// +     %73 = shl i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %73)
 // +     ret
 // + }
 // +
-// + proc _S5arithFvxixiE (in int %0, in int %1) {
+// + proc _S5arithFvxixiE (i64 %0, i64 %1) private fastcc {
 // + entry:
-// +     %2 = add %0, %1
-// +     call void _S4sinkFvxiE(%2)
-// +     %3 = sub %0, %1
-// +     call void _S4sinkFvxiE(%3)
-// +     %4 = imul %0, %1
-// +     call void _S4sinkFvxiE(%4)
-// +     %5 = ashr %0, %1
-// +     call void _S4sinkFvxiE(%5)
-// +     %6 = lshr %0, %1
-// +     call void _S4sinkFvxiE(%6)
-// +     %7 = and %0, %1
-// +     call void _S4sinkFvxiE(%7)
-// +     %8 = or %0, %1
-// +     call void _S4sinkFvxiE(%8)
-// +     %9 = icmp slt %0, %1
-// +     call void _S4sinkFvxbE(%9)
-// +     %10 = icmp sle %0, %1
-// +     call void _S4sinkFvxbE(%10)
-// +     %11 = icmp sgt %0, %1
-// +     call void _S4sinkFvxbE(%11)
-// +     %12 = icmp sge %0, %1
-// +     call void _S4sinkFvxbE(%12)
-// +     %13 = icmp ult %0, %1
-// +     call void _S4sinkFvxbE(%13)
-// +     %14 = icmp ule %0, %1
-// +     call void _S4sinkFvxbE(%14)
-// +     %15 = icmp ugt %0, %1
-// +     call void _S4sinkFvxbE(%15)
-// +     %16 = icmp uge %0, %1
-// +     call void _S4sinkFvxbE(%16)
-// +     %17 = icmp eq %0, %1
-// +     call void _S4sinkFvxbE(%17)
-// +     %18 = icmp ne %0, %1
-// +     call void _S4sinkFvxbE(%18)
+// +     %2 = add i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %2)
+// +     %3 = sub i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %3)
+// +     %4 = mul i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %4)
+// +     %5 = ashr i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %5)
+// +     %6 = lshr i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %6)
+// +     %7 = and i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %7)
+// +     %8 = or i64 %0, %1
+// +     call fastcc void _S4sinkFvxiE(i64 %8)
+// +     %9 = icmp slt i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %9)
+// +     %10 = icmp sle i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %10)
+// +     %11 = icmp sgt i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %11)
+// +     %12 = icmp sge i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %12)
+// +     %13 = icmp ult i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %13)
+// +     %14 = icmp ule i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %14)
+// +     %15 = icmp ugt i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %15)
+// +     %16 = icmp uge i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %16)
+// +     %17 = icmp eq i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %17)
+// +     %18 = icmp ne i64 %0, %1
+// +     call fastcc void _S4sinkFvxbE(i1 %18)
 // +     ret
 // + }

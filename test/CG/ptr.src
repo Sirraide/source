@@ -12,36 +12,31 @@ b = &^b;
 b = ^&b;
 a = &(if true then i else i);
 
-// * proc __src_main {
-// +     %0 = int
-// +     %1 = int^
-// +     %2 = int^^
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
 // +
 // + entry:
-// +     store int to %0, nil, align 8
-// +     store int^ to %1, %0, align 8
-// +     store int^^ to %2, %1, align 8
-// +     %3 = load int^^, %2, align 8
-// +     %4 = load int^, %3, align 8
-// +     store int^ to %1, %4, align 8
-// +     %5 = load int^, %1, align 8
-// +     store int to %5, int 4, align 8
-// +     %6 = load int^^, %2, align 8
-// +     %7 = load int^, %6, align 8
-// +     store int to %7, int 5, align 8
-// +     %8 = load int^^, %2, align 8
-// +     store int^^ to %2, %8, align 8
-// +     %9 = load int^^, %2, align 8
-// +     store int^^ to %2, %9, align 8
-// +     br true to bb1 else bb2
-// +
-// + bb1:
-// +     br bb3(%0)
-// +
-// + bb2:
-// +     br bb3(%0)
-// +
-// + bb3(int^ %10):
-// +     store int^ to %1, %10, align 8
+// +     store #0, i64 0, align 8
+// +     store #1, ptr #0, align 8
+// +     store #2, ptr #1, align 8
+// +     %0 = load ptr, #2, align 8
+// +     %1 = load ptr, %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #1, align 8
+// +     store %2, i64 4, align 8
+// +     %3 = load ptr, #2, align 8
+// +     %4 = load ptr, %3, align 8
+// +     store %4, i64 5, align 8
+// +     %5 = load ptr, #2, align 8
+// +     store #2, ptr %5, align 8
+// +     %6 = load ptr, #2, align 8
+// +     store #2, ptr %6, align 8
+// +     store #1, ptr #0, align 8
 // +     ret
 // + }

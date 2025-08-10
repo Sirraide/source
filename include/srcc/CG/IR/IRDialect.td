@@ -12,6 +12,7 @@ def SRCC_Dialect : Dialect {
     }];
 
     let useDefaultAttributePrinterParser = 1;
+    let hasConstantMaterializer = 1;
     let extraClassDeclaration = [{
         static void InitialiseContext(mlir::MLIRContext& ctx);
     }];

@@ -175,6 +175,7 @@ public:
     Type I32Ty;
     Type I64Ty;
     Type I128Ty;
+    Type AbortInfoTy; // TODO: Get this from the runtime.
     SliceType* StrLitTy;
 
     /// Type caches.
@@ -184,6 +185,9 @@ public:
     FoldingSet<ProcType> proc_types;
     FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
+
+    /// The declaration of '__src_abort_info', if it exists.
+    StructType* abort_info_type;
 
     /// Create a new module.
     static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr;

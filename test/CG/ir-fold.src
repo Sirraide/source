@@ -7,14 +7,18 @@ var a = 4 - 3;
 var b = 4 + 3;
 i64 c = 7;
 
-// * proc __src_main {
-// +     %0 = int
-// +     %1 = int
-// +     %2 = i64
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
 // +
 // + entry:
-// +     store int to %0, int 1, align 8
-// +     store int to %1, int 7, align 8
-// +     store i64 to %2, i64 7, align 8
+// +     store #0, i64 1, align 8
+// +     store #1, i64 7, align 8
+// +     store #2, i64 7, align 8
 // +     ret
 // + }

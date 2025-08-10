@@ -1,0 +1,122 @@
+// R      %srcc --short-filenames --ir   %s
+// R[//L] %srcc --short-filenames --llvm %s
+program test;
+
+proc foo(in int a, in int b) {
+    assert a == b;
+    assert a > 42, "a should be greater than 42";
+}
+
+// * @0 = "a > 42\00"
+// + @1 = "a should be greater than 42\00"
+// + @2 = "assert.src\00"
+// + @3 = "a == b\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S3fooFvxixiE (i64 %0, i64 %1) private fastcc {
+// +     #0 = 64, align 8
+// +
+// + entry:
+// +     %2 = icmp eq i64 %0, %1
+// +     br %2 to bb2 else bb1
+// +
+// + bb1:
+// +     store #0, (ptr, i64) (@2, 10), align 8
+// +     %3 = ptradd #0, 16
+// +     store %3, i64 6, align 8
+// +     %4 = ptradd #0, 24
+// +     store %4, i64 5, align 8
+// +     %5 = ptradd #0, 32
+// +     store %5, (ptr, i64) (@3, 6), align 8
+// +     %6 = ptradd #0, 48
+// +     store %6, (ptr, i64) (nil, 0), align 8
+// +     abort at loc("assert.src":6:5) assert(ptr #0)
+// +
+// + bb2:
+// +     %7 = icmp sgt i64 %0, 42
+// +     br %7 to bb4 else bb3
+// +
+// + bb3:
+// +     store #0, (ptr, i64) (@2, 10), align 8
+// +     %8 = ptradd #0, 16
+// +     store %8, i64 7, align 8
+// +     %9 = ptradd #0, 24
+// +     store %9, i64 5, align 8
+// +     %10 = ptradd #0, 32
+// +     store %10, (ptr, i64) (@0, 6), align 8
+// +     %11 = ptradd #0, 48
+// +     store %11, (ptr, i64) (@1, 27), align 8
+// +     abort at loc("assert.src":7:5) assert(ptr #0)
+// +
+// + bb4:
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + @__srcc_str.3 = private constant [7 x i8] c"a > 42\00", align 1
+//L + @__srcc_str.2 = private constant [28 x i8] c"a should be greater than 42\00", align 1
+//L + @__srcc_str.1 = private constant [11 x i8] c"assert.src\00", align 1
+//L + @__srcc_str.0 = private constant [7 x i8] c"a == b\00", align 1
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S3fooFvxixiE(i64 %0, i64 %1) {
+//L +   %3 = alloca i8, i64 64, align 8
+//L +   %4 = icmp eq i64 %0, %1
+//L +   br i1 %4, label %10, label %5
+//L +
+//L + 5:                                                ; preds = %2
+//L +   store { ptr, i64 } { ptr @__srcc_str.1, i64 10 }, ptr %3, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 16
+//L +   store i64 6, ptr %6, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %3, i32 24
+//L +   store i64 5, ptr %7, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %3, i32 32
+//L +   store { ptr, i64 } { ptr @__srcc_str.0, i64 6 }, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %3, i32 48
+//L +   store { ptr, i64 } zeroinitializer, ptr %9, align 8
+//L +   call void @__src_assert_fail(ptr %3)
+//L +   unreachable
+//L +
+//L + 10:                                               ; preds = %2
+//L +   %11 = icmp sgt i64 %0, 42
+//L +   br i1 %11, label %17, label %12
+//L +
+//L + 12:                                               ; preds = %10
+//L +   store { ptr, i64 } { ptr @__srcc_str.1, i64 10 }, ptr %3, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %3, i32 16
+//L +   store i64 7, ptr %13, align 8
+//L +   %14 = getelementptr inbounds nuw i8, ptr %3, i32 24
+//L +   store i64 5, ptr %14, align 8
+//L +   %15 = getelementptr inbounds nuw i8, ptr %3, i32 32
+//L +   store { ptr, i64 } { ptr @__srcc_str.3, i64 6 }, ptr %15, align 8
+//L +   %16 = getelementptr inbounds nuw i8, ptr %3, i32 48
+//L +   store { ptr, i64 } { ptr @__srcc_str.2, i64 27 }, ptr %16, align 8
+//L +   call void @__src_assert_fail(ptr %3)
+//L +   unreachable
+//L +
+//L + 17:                                               ; preds = %10
+//L +   ret void
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

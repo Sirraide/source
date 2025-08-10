@@ -1,5 +1,6 @@
 #include <srcc/Core/Core.hh>
 #include <srcc/Core/Location.hh>
+#include <mlir/IR/Location.h>
 
 using namespace srcc;
 
@@ -25,6 +26,17 @@ Location::Location(Location a, Location b) {
     pos = std::min<u32>(a.pos, b.pos);
     len = u16(std::max<u32>(a.pos + a.len, b.pos + b.len) - pos);
     file_id = a.file_id;
+}
+
+auto Location::Decode(mlir::Location loc) -> std::optional<Location> {
+    if (
+        auto o = dyn_cast<mlir::OpaqueLoc>(loc);
+        o and o.getUnderlyingTypeID() == mlir::TypeID::get<Location>()
+    ) {
+        return Decode(o.getUnderlyingLocation());
+    }
+
+    return std::nullopt;
 }
 
 auto Location::after() const -> Location {

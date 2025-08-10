@@ -177,9 +177,7 @@ def AbortOp : SRCC_Op<"abort", [Terminator]> {
     let summary = "Report a fatal error and abort the program";
     let arguments = (ins
         SRCC_AbortReasonAttr:$reason,
-        SRCC_Tuple:$msg1,
-        SRCC_Tuple:$msg2,
-        Builtin_IntegerAttr:$encoded_location
+        SRCC_Ptr:$abort_info
     );
 }
 
@@ -242,7 +240,7 @@ def ExtractOp : SRCC_Op<"extract", [Pure]> {
     ];
 }
 
-def FrameSlotOp : SRCC_Op<"slot"> {
+def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
     let summary = "Allocate stack memory";
     let arguments = (ins
         Builtin_IntegerAttr:$bytes,

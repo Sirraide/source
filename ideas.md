@@ -465,6 +465,8 @@ variable whose type is `var`, and we’re passing it to an out pararameter, then
 perfect ‘conversion’. We also need a new ‘InitOutParam’ conversion that when applied sets
 the type of the variable to the procedure parameter type.
 
+## Recursion in anonymous functions
+Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for it using `alias`).
 
 # Failed Ideas
 ## Renaming copy to var

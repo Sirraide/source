@@ -397,7 +397,7 @@ public:
     auto cconv() const -> CallingConvention { return cc; }
 
     /// Get the parameter types of this procedure type.
-    auto params() const -> ArrayRef<ParamTypeData> { return {getTrailingObjects<ParamTypeData>(), num_params}; }
+    auto params() const -> ArrayRef<ParamTypeData> { return getTrailingObjects(num_params); }
 
     /// Print the proc type, optionally with a name.
     auto print(StringRef proc_name = "", bool number_params = false) const -> SmallUnrenderedString;
@@ -522,7 +522,7 @@ public:
     /// Get the struct’s fields.
     auto fields() const -> ArrayRef<FieldDecl*> {
         Assert(finalised);
-        return {getTrailingObjects<FieldDecl*>(), num_fields};
+        return getTrailingObjects(num_fields);
     }
 
     /// Initialise fields and other properties; this marks
