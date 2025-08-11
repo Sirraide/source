@@ -42,12 +42,10 @@ struct CodeGen::Printer {
             NilOp,
             ProcRefOp,
             ReturnPointerOp,
-            TupleOp,
             mlir::LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
         >(op); // clang-format on
     }
-
 };
 
 static auto FormatType(mlir::Type ty) -> std::string {
@@ -58,8 +56,6 @@ static auto FormatType(mlir::Type ty) -> std::string {
         tmp += "%6(bool%)";
     } else if (auto a = dyn_cast<mlir::LLVM::LLVMArrayType>(ty)) {
         tmp += std::format("{}%1([%5({}%)]%)", FormatType(a.getElementType()), a.getNumElements());
-    } else if (auto t = dyn_cast<mlir::TupleType>(ty)) {
-        tmp += std::format("%1(({})%)", utils::join(t.getTypes(), ", ", "{}", FormatType));
     } else {
         llvm::raw_string_ostream os{tmp};
         tmp += "%6(";
@@ -68,7 +64,6 @@ static auto FormatType(mlir::Type ty) -> std::string {
     }
     return tmp;
 }
-
 
 auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
     if (generic) {
@@ -201,8 +196,21 @@ void CodeGen::Printer::print_op(Operation* op) {
         out += stringifyCConv(c.getCc());
         out += " ";
 
-        if (c.getRes()) out += FormatType(c.getResultTypes().front());
-        else out += "%6(void%)";
+        if (c.getNumResults() == 0) {
+            out += "%6(void%)";
+        } else if (c.getNumResults() == 1) {
+            out += FormatType(c.getResultTypes().front());
+        } else {
+            out += std::format(
+                "%1(({})%)",
+                utils::join(
+                    SmallVector<mlir::Type>{c.getResultTypes()},
+                    ", ",
+                    "{}",
+                    FormatType
+                )
+            );
+        }
         out += " ";
 
         out += std::format("{}({})", val(c.getAddr(), false), ops(c.getArgs()));
@@ -213,8 +221,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto r = dyn_cast<RetOp>(op)) {
-        out += "ret";
-        if (auto v = r.getValue()) out += std::format(" {}", val(v));
+        out += std::format("ret {}", ops(r.getVals()));
         return;
     }
 
@@ -266,11 +273,6 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto t = dyn_cast<TupleOp>(op)) {
-        out += std::format("tuple {} ({})", FormatType(t.getType()), ops(t.getValues(), false));
-        return;
-    }
-
     if (auto s = dyn_cast<mlir::arith::SelectOp>(op)) {
         out += std::format(
             "select {}, {}, {}",
@@ -283,11 +285,6 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (isa<ReturnPointerOp>(op)) {
         out += "%3(retptr%)";
-        return;
-    }
-
-    if (auto e = dyn_cast<ExtractOp>(op)) {
-        out += std::format("extract {}, %5({}%)", val(e.getTuple()), e.getIndex().getValue());
         return;
     }
 
@@ -384,9 +381,23 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
 
-    // Print return type.
-    if (proc.getNumResults() and not isa<mlir::NoneType>(proc.getResultTypes().front()))
-        out += std::format(" %1(->%) {}", FormatType(proc.getResultTypes().front()));
+    // Print return types.
+    if (proc.getNumResults() and not isa<mlir::NoneType>(proc.getResultTypes().front())) {
+        out += " %1(->%) ";
+        if (proc.getNumResults() == 1) {
+            out += FormatType(proc.getResultTypes().front());
+        } else {
+            out += std::format(
+                "%1(({})%)",
+                utils::join(
+                    SmallVector<mlir::Type>{proc.getResultTypes()},
+                    ", ",
+                    "{}",
+                    FormatType
+                )
+            );
+        }
+    }
 
     // Stop if there is no body.
     if (proc.isDeclaration()) {
@@ -507,14 +518,6 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
         if (auto p = dyn_cast<ProcRefOp>(op)) {
             tmp.clear(); // Never print the type of a proc ref.
             tmp += std::format("%2({}%)", p.proc().getName());
-            return tmp;
-        }
-
-        if (auto t = dyn_cast<TupleOp>(op)) {
-            tempset always_include_types = false;
-            tmp += "(";
-            tmp += ops(t.getValues(), false); // We’ve already printed the tuple type.
-            tmp += ")";
             return tmp;
         }
 

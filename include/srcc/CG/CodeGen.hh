@@ -14,8 +14,13 @@ class CodeGen;
 class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
+class SRValue;
+class SType;
 
 namespace detail {
+template <typename Elem, typename Range>
+class ValueOrTypePair;
+
 class CodeGenBase {
 protected:
     mlir::MLIRContext mlir;
@@ -23,23 +28,128 @@ protected:
 }
 } // namespace srcc::cg
 
-class srcc::cg::ArgumentMapping {
-    LIBBASE_IMMOVABLE(ArgumentMapping);
-
-    llvm::SmallDenseMap<u32, u32> indices;
+template <typename Elem, typename Range>
+class srcc::cg::detail::ValueOrTypePair {
+protected:
+    Elem vals[2]{};
 
 public:
-    ArgumentMapping() = default;
+    ValueOrTypePair() = default;
+    ValueOrTypePair(std::nullptr_t) = delete("Use '{}' instead to create an empty SRValue or RType");
+    ValueOrTypePair(Elem first_val) : vals{first_val, nullptr} { Assert(first_val); }
+    ValueOrTypePair(Elem first_val, Elem second_val) : vals{first_val, second_val} {
+        Assert(vals[0] and vals[1]);
+    }
 
-    /// Map an index to another index
-    auto map(u32 a, u32 b) { indices[a] = b; }
+    template <utils::ConvertibleRange<Elem> T>
+    ValueOrTypePair(T r) {
+        Assert(r.size() <= 2);
+        if (r.size() >= 1) vals[0] = r[0];
+        if (r.size() >= 2) vals[1] = r[1];
+    }
 
-    /// Get the IR arg index that a AST arg maps to; if nullopt is
-    /// returned, this argument should simply be dropped.
-    auto map(u32 idx) const -> std::optional<u32> {
-        auto it = indices.find(idx);
-        if (it == indices.end()) return std::nullopt;
-        return it->second;
+    ValueOrTypePair(Range r) {
+        Assert(r.size() <= 2);
+        if (r.size() >= 1) vals[0] = r[0];
+        if (r.size() >= 2) vals[1] = r[1];
+    }
+
+    /// Allow treating this as a range.
+    [[nodiscard]] auto begin() const { return operator Range().begin(); }
+    [[nodiscard]] auto end() const { return operator Range().end(); }
+
+    /// Run a function on each element of this range.
+    auto each(auto cb) {
+        using Res = std::invoke_result_t<decltype(cb), Elem>;
+        if constexpr (std::is_same_v<Res, void>) {
+            if (vals[0]) std::invoke(cb, vals[0]);
+            if (vals[1]) std::invoke(cb, vals[1]);
+        } else {
+            SmallVector<Res, 2> results;
+            if (vals[0]) results.push_back(std::invoke(cb, vals[0]));
+            if (vals[1]) results.push_back(std::invoke(cb, vals[1]));
+            return results;
+        }
+    }
+
+    /// Get the first value of an aggregate.
+    [[nodiscard]] auto first() const -> Elem {
+        Assert(is_aggregate());
+        return vals[0];
+    }
+
+    /// Copy the types into a vector.
+    void into(SmallVectorImpl<Elem>& container) const {
+        if (vals[0]) container.push_back(vals[0]);
+        if (vals[1]) container.push_back(vals[1]);
+    }
+
+    /// Check if this is an aggregate.
+    [[nodiscard]] bool is_aggregate() const { return vals[1] != nullptr; }
+
+    /// Check if this is an empty value.
+    [[nodiscard]] auto is_null() const { return vals[0] == nullptr; }
+
+    /// Check if this is a scalar value.
+    [[nodiscard]] bool is_scalar() const {
+        return not is_null() and not is_aggregate();
+    }
+
+    /// Get the second value of an aggregate.
+    [[nodiscard]] auto second() const -> Elem {
+        Assert(is_aggregate());
+        return vals[1];
+    }
+
+    /// Get this as a single scalar value.
+    [[nodiscard]] auto scalar() const -> Elem {
+        Assert(is_scalar());
+        return vals[0];
+    }
+
+    /// Get the first value if this is an aggregate or scalar.
+    [[nodiscard]] auto scalar_or_first() const -> Elem {
+        Assert(not is_null());
+        return vals[0];
+    }
+
+    /// Convert this to a range of types.
+    operator Range() const {
+        if (is_null()) return {};
+        if (is_scalar()) return ArrayRef{vals, 1};
+        return ArrayRef{vals, 2};
+    }
+
+    /// Check if this is empty.
+    explicit operator bool() const { return not is_null(); }
+};
+
+/// Type equivalent of 'SRValue'
+class srcc::cg::SType : public detail::ValueOrTypePair<mlir::Type, mlir::TypeRange> {
+    friend SRValue;
+
+public:
+    using ValueOrTypePair::ValueOrTypePair;
+};
+
+/// This is either a single SSA value or a pair of SSA values; the
+/// latter is used for slices, ranges, and closures.
+class srcc::cg::SRValue : public detail::ValueOrTypePair<Value, mlir::ValueRange> {
+public:
+    using ValueOrTypePair::ValueOrTypePair;
+
+    /// Get a location describing this value.
+    [[nodiscard]] auto loc() const -> mlir::Location {
+        Assert(not is_null());
+        return scalar_or_first().getLoc();
+    }
+
+    /// Get the type(s) of this value.
+    [[nodiscard]] auto type() const -> SType {
+        SType ty;
+        if (vals[0]) ty.vals[0] = vals[0].getType();
+        if (vals[1]) ty.vals[1] = vals[1].getType();
+        return ty;
     }
 };
 
@@ -54,10 +164,9 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
 
     TranslationUnit& tu;
     Opt<ir::ProcOp> printf;
-    DenseMap<LocalDecl*, Value> locals;
+    DenseMap<LocalDecl*, SRValue> locals;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ProcDecl*, String> mangled_names;
-    DenseMap<ProcDecl*, std::unique_ptr<const ArgumentMapping>> argument_mapping;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
     Value abort_info_slot;
     mlir::ModuleOp mlir_module;
@@ -67,9 +176,9 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
     LangOpts lang_opts;
     mlir::Type ptr_ty;
     mlir::Type int_ty;
-    mlir::Type closure_ty;
-    mlir::Type slice_ty;
     mlir::Type bool_ty;
+    SType closure_ty;
+    SType slice_ty;
     usz strings = 0;
 
 public:
@@ -104,12 +213,6 @@ public:
 
     /// Optimise a module.
     void optimise(llvm::TargetMachine& target, TranslationUnit& tu, llvm::Module& module);
-
-    /// Get the platform 'int' type.
-    [[nodiscard]] auto platform_int_type() -> mlir::Type { return int_ty; }
-
-    /// Get the platform type corresponding to a slice (of any type).
-    [[nodiscard]] auto platform_slice_type() -> mlir::Type { return slice_ty; }
 
     /// Get the translation unit we’re compiling.
     [[nodiscard]] auto translation_unit() -> TranslationUnit& { return tu; }
@@ -148,19 +251,18 @@ private:
         usz i = 0;
 
         StructInitHelper(CodeGen& CG, StructType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
-        void emit_next_field(Value v);
+        void emit_next_field(SRValue v);
     };
 
     // AST -> IR converters
     auto C(CallingConvention l) -> mlir::LLVM::CConv;
     auto C(Linkage l) -> mlir::LLVM::Linkage;
     auto C(Location l) -> mlir::Location;
-    auto C(Type ty) -> mlir::Type;
+    auto C(Type ty) -> SType;
 
     auto ConvertProcType(ProcType* ty) -> IRProcType;
-    auto CreateAggregate(mlir::Location loc, Value a, Value b) -> Value;
     auto CreateAlloca(Location loc, Type ty) -> Value;
-    void CreateAbort(Location loc, ir::AbortReason reason, Value msg1, Value msg2);
+    void CreateAbort(Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
 
     void CreateArithFailure(
         Value failure_cond,
@@ -182,16 +284,19 @@ private:
     auto CreateBool(mlir::Location loc, bool b) -> Value;
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
-    auto CreateGlobalStringSlice(Location loc, String data) -> Value;
+    auto CreateGlobalStringSlice(Location loc, String data) -> SRValue;
     auto CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value;
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
-    auto CreateNil(mlir::Location loc, Type ty) -> Value;
+    auto CreateLoad(mlir::Location loc, Value addr, SType ty, Align align) -> SRValue;
+    auto CreateNil(mlir::Location loc, SType ty) -> SRValue;
     auto CreateNullPointer(mlir::Location loc) -> Value;
+    auto CreatePoison(mlir::Location loc, SType ty) -> SRValue;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
+    void CreateStore(mlir::Location loc, Value addr, SRValue val, Align align);
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -202,20 +307,20 @@ private:
     auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 
     void Emit(ArrayRef<ProcDecl*> procs);
-    auto Emit(Stmt* stmt) -> Value;
+    auto Emit(Stmt* stmt) -> SRValue;
     void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc);
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
     void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
-    auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> Value;
-    auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> Value;
-    auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> Value;
+    auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> SRValue;
+    auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> SRValue;
+    auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> SRValue;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->Value;
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->SRValue;
 #include "srcc/AST.inc"
 
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(Location loc, const eval::RValue& val) -> Value;
+    auto EmitValue(Location loc, const eval::RValue& val) -> SRValue;
 
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitInitialiser(Value addr, Expr* init);
@@ -234,6 +339,13 @@ private:
         Linkage linkage,
         ProcType* ty
     ) -> ir::ProcOp;
+
+    /// Offset a pointer to load the second element of an aggregate value.
+    auto GetPtrToSecondAggregateElem(
+        mlir::Location loc,
+        Value addr,
+        SType aggregate
+    ) -> std::pair<Value, Align>;
 
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
@@ -281,8 +393,8 @@ private:
     /// \return The join block.
     auto If(
         Value cond,
-        llvm::function_ref<Value()> emit_then,
-        llvm::function_ref<Value()> emit_else
+        llvm::function_ref<SRValue()> emit_then,
+        llvm::function_ref<SRValue()> emit_else
     ) -> Block*;
 
     /// Check if the size of a type is zero; this also means that every

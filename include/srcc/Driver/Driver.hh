@@ -21,6 +21,7 @@ enum struct srcc::Action : srcc::u8 {
     /// Run codegen and dump our codegen IR.
     DumpIR,
     DumpIRGeneric,
+    DumpIRNoFinalise,
     DumpIRVerbose,
 
     /// Print tokens.

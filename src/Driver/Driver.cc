@@ -263,10 +263,10 @@ int Driver::run_job() {
     cg::CodeGen cg{*tu, tu->lang_opts(), tu->target().ptr_size()};
     for (auto p : tu->procs) cg.emit(p);
     if (ctx.diags().has_error()) return 1;
-    if (a != Action::DumpIRGeneric and not cg.finalise()) return 1;
+    if (a != Action::DumpIRNoFinalise and a != Action::DumpIRGeneric and not cg.finalise()) return 1;
 
     // Dump IR.
-    if (a == Action::DumpIR or a == Action::DumpIRVerbose or a == Action::DumpIRGeneric) {
+    if (a == Action::DumpIR or a == Action::DumpIRVerbose or a == Action::DumpIRGeneric or a == Action::DumpIRNoFinalise) {
         auto s = cg.dump(a == Action::DumpIRVerbose, a == Action::DumpIRGeneric);
         std::print("{}", text::RenderColours(opts.colours, s.str()));
         return 0;

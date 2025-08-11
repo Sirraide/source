@@ -57,51 +57,33 @@ proc x(int a, int b, bool d) {
 // +
 // + bb3:
 // +     %6 = load i1, #2, align 1
-// +     br %6 to bb4 else bb5
+// +     %7 = select %6, ptr @2, @1
+// +     %8 = select %6, i64 9, 10
+// +     %9 = trunc i64 %8 to i32
+// +     %10 = call variadic ccc i32 printf(ptr @3, i32 %9, ptr %7)
+// +     %11 = load i1, #2, align 1
+// +     %12 = load i64, #0, align 8
+// +     %13 = load i64, #1, align 8
+// +     %14 = icmp sge i64 %12, %13
+// +     store #2, i1 %14, align 1
+// +     %15 = load i1, #2, align 1
+// +     br %15 to bb4 else bb5
 // +
 // + bb4:
-// +     br bb6((@2, 9))
+// +     %16 = call variadic ccc i32 printf(ptr @3, i32 9, ptr @2)
+// +     br bb6
 // +
 // + bb5:
-// +     br bb6((@1, 10))
+// +     %17 = call variadic ccc i32 printf(ptr @3, i32 10, ptr @1)
+// +     br bb6
 // +
-// + bb6((ptr, i64) %7):
-// +     %8 = extract (ptr, i64) %7, 0
-// +     %9 = extract (ptr, i64) %7, 1
-// +     %10 = trunc i64 %9 to i32
-// +     %11 = call variadic ccc i32 printf(ptr @3, i32 %10, ptr %8)
-// +     %12 = load i1, #2, align 1
-// +     %13 = load i64, #0, align 8
-// +     %14 = load i64, #1, align 8
-// +     %15 = icmp sge i64 %13, %14
-// +     store #2, i1 %15, align 1
-// +     %16 = load i1, #2, align 1
-// +     br %16 to bb7 else bb8
-// +
-// + bb7:
-// +     %17 = call variadic ccc i32 printf(ptr @3, i32 9, ptr @2)
-// +     br bb9
-// +
-// + bb8:
-// +     %18 = call variadic ccc i32 printf(ptr @3, i32 10, ptr @1)
-// +     br bb9
-// +
-// + bb9:
-// +     %19 = load i1, #2, align 1
-// +     br %19 to bb10 else bb11
-// +
-// + bb10:
-// +     br bb12((@2, 9))
-// +
-// + bb11:
-// +     br bb12((@1, 10))
-// +
-// + bb12((ptr, i64) %20):
-// +     %21 = extract (ptr, i64) %20, 0
-// +     %22 = extract (ptr, i64) %20, 1
-// +     %23 = trunc i64 %22 to i32
-// +     %24 = call variadic ccc i32 printf(ptr @3, i32 %23, ptr %21)
-// +     %25 = call variadic ccc i32 printf(ptr @3, i32 1, ptr @0)
+// + bb6:
+// +     %18 = load i1, #2, align 1
+// +     %19 = select %18, ptr @2, @1
+// +     %20 = select %18, i64 9, 10
+// +     %21 = trunc i64 %20 to i32
+// +     %22 = call variadic ccc i32 printf(ptr @3, i32 %21, ptr %19)
+// +     %23 = call variadic ccc i32 printf(ptr @3, i32 1, ptr @0)
 // +     ret
 // + }
 // +
@@ -147,53 +129,33 @@ proc x(int a, int b, bool d) {
 //L +
 //L + 12:                                               ; preds = %8, %10
 //L +   %13 = load i1, ptr %6, align 1
-//L +   br i1 %13, label %14, label %15
-//L +
-//L + 14:                                               ; preds = %12
-//L +   br label %16
-//L +
-//L + 15:                                               ; preds = %12
-//L +   br label %16
-//L +
-//L + 16:                                               ; preds = %14, %15
-//L +   %17 = phi { ptr, i64 } [ { ptr @__srcc_str.2, i64 10 }, %15 ], [ { ptr @__srcc_str.1, i64 9 }, %14 ]
-//L +   %18 = extractvalue { ptr, i64 } %17, 0
-//L +   %19 = extractvalue { ptr, i64 } %17, 1
-//L +   %20 = trunc i64 %19 to i32
-//L +   %21 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 %20, ptr %18)
+//L +   %14 = select i1 %13, ptr @__srcc_str.1, ptr @__srcc_str.2
+//L +   %15 = select i1 %13, i64 9, i64 10
+//L +   %16 = trunc i64 %15 to i32
+//L +   %17 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 %16, ptr %14)
+//L +   %18 = load i1, ptr %6, align 1
+//L +   %19 = load i64, ptr %4, align 8
+//L +   %20 = load i64, ptr %5, align 8
+//L +   %21 = icmp sge i64 %19, %20
+//L +   store i1 %21, ptr %6, align 1
 //L +   %22 = load i1, ptr %6, align 1
-//L +   %23 = load i64, ptr %4, align 8
-//L +   %24 = load i64, ptr %5, align 8
-//L +   %25 = icmp sge i64 %23, %24
-//L +   store i1 %25, ptr %6, align 1
-//L +   %26 = load i1, ptr %6, align 1
-//L +   br i1 %26, label %27, label %29
+//L +   br i1 %22, label %23, label %25
 //L +
-//L + 27:                                               ; preds = %16
-//L +   %28 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 9, ptr @__srcc_str.1)
-//L +   br label %31
+//L + 23:                                               ; preds = %12
+//L +   %24 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 9, ptr @__srcc_str.1)
+//L +   br label %27
 //L +
-//L + 29:                                               ; preds = %16
-//L +   %30 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 10, ptr @__srcc_str.2)
-//L +   br label %31
+//L + 25:                                               ; preds = %12
+//L +   %26 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 10, ptr @__srcc_str.2)
+//L +   br label %27
 //L +
-//L + 31:                                               ; preds = %27, %29
-//L +   %32 = load i1, ptr %6, align 1
-//L +   br i1 %32, label %33, label %34
-//L +
-//L + 33:                                               ; preds = %31
-//L +   br label %35
-//L +
-//L + 34:                                               ; preds = %31
-//L +   br label %35
-//L +
-//L + 35:                                               ; preds = %33, %34
-//L +   %36 = phi { ptr, i64 } [ { ptr @__srcc_str.2, i64 10 }, %34 ], [ { ptr @__srcc_str.1, i64 9 }, %33 ]
-//L +   %37 = extractvalue { ptr, i64 } %36, 0
-//L +   %38 = extractvalue { ptr, i64 } %36, 1
-//L +   %39 = trunc i64 %38 to i32
-//L +   %40 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 %39, ptr %37)
-//L +   %41 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 1, ptr @__srcc_str.3)
+//L + 27:                                               ; preds = %23, %25
+//L +   %28 = load i1, ptr %6, align 1
+//L +   %29 = select i1 %28, ptr @__srcc_str.1, ptr @__srcc_str.2
+//L +   %30 = select i1 %28, i64 9, i64 10
+//L +   %31 = trunc i64 %30 to i32
+//L +   %32 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 %31, ptr %29)
+//L +   %33 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.0, i32 1, ptr @__srcc_str.3)
 //L +   ret void
 //L + }
 //L +

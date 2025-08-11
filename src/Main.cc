@@ -40,6 +40,7 @@ using options = clopts< // clang-format off
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
     flag<"--ir-generic", "Run codegen and emit unverified IR in the generic MLIR assembly format">,
+    flag<"--ir-no-finalise", "Run codegen and emit IR without finalising it">,
     flag<"--ir-verbose", "Run codegen and emit IR; as --ir but always prints the type of a value">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
@@ -85,17 +86,18 @@ int main(int argc, char** argv) {
 #endif
 
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()        ? Action::Eval
-                : opts.get<"--dump-module">() ? Action::DumpModule
-                : opts.get<"--ir">()          ? Action::DumpIR
-                : opts.get<"--ir-generic">()  ? Action::DumpIRGeneric
-                : opts.get<"--ir-verbose">()  ? Action::DumpIRVerbose
-                : opts.get<"--lex">()         ? Action::Lex
-                : opts.get<"--llvm">()        ? Action::EmitLLVM
-                : opts.get<"--parse">()       ? Action::Parse
-                : opts.get<"--sema">()        ? Action::Sema
-                : opts.get<"--tokens">()      ? Action::DumpTokens
-                                              : Action::Compile;
+    auto action = opts.get<"--eval">()           ? Action::Eval
+                : opts.get<"--dump-module">()    ? Action::DumpModule
+                : opts.get<"--ir">()             ? Action::DumpIR
+                : opts.get<"--ir-generic">()     ? Action::DumpIRGeneric
+                : opts.get<"--ir-no-finalise">() ? Action::DumpIRNoFinalise
+                : opts.get<"--ir-verbose">()     ? Action::DumpIRVerbose
+                : opts.get<"--lex">()            ? Action::Lex
+                : opts.get<"--llvm">()           ? Action::EmitLLVM
+                : opts.get<"--parse">()          ? Action::Parse
+                : opts.get<"--sema">()           ? Action::Sema
+                : opts.get<"--tokens">()         ? Action::DumpTokens
+                                                 : Action::Compile;
 
     // Collect module search paths.
     std::vector<std::string> module_search_paths{

@@ -49,24 +49,12 @@ static auto FoldOv(
 }
 
 llvm::LogicalResult CallOp::canonicalize(CallOp op, mlir::PatternRewriter& rewriter) {
-    if (op.getEnv() and isa<NilOp>(op.getEnv().getDefiningOp())) {
+    if (op.getEnv() and isa_and_present<NilOp>(op.getEnv().getDefiningOp())) {
         rewriter.modifyOpInPlace(op, [&] { op.getEnvMutable().clear(); });
         return mlir::success();
     }
 
     return mlir::failure();
-}
-
-auto ExtractOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
-    auto op = getTuple().getDefiningOp<TupleOp>();
-    if (not op) return nullptr;
-    return op.getValues()[u32(adaptor.getIndex().getInt())];
-}
-
-auto SelectOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
-    auto c = dyn_cast_if_present<mlir::IntegerAttr>(adaptor.getCond());
-    if (not c) return nullptr;
-    return c.getInt() ? adaptor.getThenVal() : adaptor.getElseVal();
 }
 
 auto SAddOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& results) -> llvm::LogicalResult {

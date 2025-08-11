@@ -44,13 +44,11 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 // ============================================================================
 def SRCC_Void : TypeAlias<NoneType, "void">;
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
-def SRCC_Tuple : TypeAlias<Builtin_Tuple, "tuple">;
 def SRCC_Bool : TypeAlias<I1, "bool">;
 
 def SRCC_Type : AnyTypeOf<[
     Builtin_Integer,
     FunctionType,
-    SRCC_Tuple,
     SRCC_Void,
     SRCC_Ptr,
     SRCC_Bool,
@@ -193,7 +191,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
         Variadic<SRCC_Type>:$args
     );
 
-    let results = (outs Optional<SRCC_Type>:$res);
+    let results = (outs Variadic<SRCC_Type>:$res);
     let hasCanonicalizeMethod = 1;
     let builders = [
         OpBuilder<(ins
@@ -214,27 +212,6 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
                 proc.getFunctionType(),
                 proc.getVariadic(),
                 args
-            );
-        }]>
-    ];
-}
-
-def ExtractOp : SRCC_Op<"extract", [Pure]> {
-    let summary = "Extract a value from a tuple";
-    let arguments = (ins SRCC_Tuple:$tuple, Builtin_IntegerAttr:$index);
-    let results = (outs SRCC_Type:$res);
-    let hasFolder = 1;
-    let builders = [
-        OpBuilder<(ins
-            "::mlir::Value":$tuple,
-            "u32":$index
-        ), [{
-            build(
-                $_builder,
-                $_state,
-                cast<mlir::TupleType>(tuple.getType()).getType(index),
-                tuple,
-                $_builder.getI64IntegerAttr(i64(index))
             );
         }]>
     ];
@@ -320,7 +297,7 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
 
 def RetOp : SRCC_Op<"ret", [Terminator]> {
     let summary = "Return from a procedure";
-    let arguments = (ins Optional<SRCC_Type>:$value);
+    let arguments = (ins Variadic<SRCC_Type>:$vals);
 }
 
 def ReturnPointerOp : SRCC_Op<"retptr", [Pure]> {
@@ -358,35 +335,6 @@ def SSubOvOp : SRCC_Op<"ssub.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> 
     let hasFolder = 1;
 }
 
-def SelectOp : SRCC_Op<"select", [Pure, AllTypesMatch<["then_val", "else_val", "res"]>]> {
-    let summary = "Select between two values based on a condition";
-    let arguments = (ins
-        SRCC_Bool:$cond,
-        SRCC_Type:$then_val,
-        SRCC_Type:$else_val
-    );
-
-    let results = (outs SRCC_Type:$res);
-    let hasFolder = 1;
-
-    let builders = [
-        OpBuilder<(ins
-            "::mlir::Value":$cond,
-            "::mlir::Value":$then_val,
-            "::mlir::Value":$else_val
-        ), [{
-            build(
-                $_builder,
-                $_state,
-                then_val.getType(),
-                cond,
-                then_val,
-                else_val
-            );
-        }]>
-    ];
-}
-
 def StoreOp : SRCC_Op<"store"> {
     let summary = "Store a value to a pointer";
     let arguments = (ins
@@ -407,26 +355,6 @@ def StoreOp : SRCC_Op<"store"> {
                 addr,
                 value,
                 $_builder.getI64IntegerAttr(i64(alignment.value().bytes()))
-            );
-        }]>
-    ];
-}
-
-def TupleOp : SRCC_Op<"tuple", [Pure]> {
-    let summary = "Create a tuple value";
-    let arguments = (ins Variadic<SRCC_Type>:$values);
-    let results = (outs SRCC_Tuple:$res);
-    let builders = [
-        OpBuilder<(ins
-            "::mlir::ValueRange":$values
-        ), [{
-            SmallVector<mlir::Type> types;
-            for (auto v : values) types.push_back(v.getType());
-            build(
-                $_builder,
-                $_state,
-                mlir::TupleType::get($_builder.getContext(), types),
-                values
             );
         }]>
     ];

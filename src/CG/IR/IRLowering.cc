@@ -118,25 +118,36 @@ LOWERING(CallOp, {
         arg_types.push_back(ptr);
     }
 
+    mlir::Type result;
+    if (op.getNumResults() == 0) {
+        result = LLVM::LLVMVoidType::get(getContext());
+    } else if (op.getNumResults() == 1) {
+        result = tc->convertType(op.getResult(0).getType());
+    } else {
+        SmallVector<mlir::Type> elems;
+        if (failed(tc->convertTypes(op.getResultTypes(), elems)))
+            return SmallVector<mlir::Value>();
+        result = LLVM::LLVMStructType::getLiteral(getContext(), elems);
+    }
+
     auto fty = LLVM::LLVMFunctionType::get(
-        op.getNumResults()
-            ? tc->convertType(op.getResult(0).getType())
-            : LLVM::LLVMVoidType::get(getContext()),
+        result,
         arg_types,
         a.getVariadic()
     );
 
     auto call = r.create<LLVM::CallOp>(op.getLoc(), fty, args);
     call.setCConv(op.getCc());
-    return call;
-});
 
-LOWERING(ExtractOp, {
-    return r.create<LLVM::ExtractValueOp>(
-        op.getLoc(),
-        a.getTuple(),
-        unsigned(a.getIndex().getInt())
-    );
+    // Split aggregate returns.
+    if (op.getNumResults() > 1) {
+        SmallVector<mlir::Value> results;
+        for (i64 i = 0; i < i64(op.getNumResults()); i++)
+            results.push_back(r.create<LLVM::ExtractValueOp>(op.getLoc(), call.getResult(), i));
+        return results;
+    }
+
+    return op.getNumResults() == 0 ? SmallVector<mlir::Value>() : SmallVector{call.getResult()};
 });
 
 LOWERING(FrameSlotOp, {
@@ -175,8 +186,13 @@ LOWERING(ProcOp, {
     if (op.getHasIndirectReturn()) {
         sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
         ret = LLVM::LLVMVoidType::get(getContext());
-    } else {
+    } else if (op.getNumResults() <= 1) {
         ret = tc->convertType(old.getResult(0));
+    } else {
+        SmallVector<mlir::Type> results;
+        if (failed(tc->convertTypes(op.getResultTypes(), results)))
+            return LLVM::LLVMFuncOp{};
+        ret = LLVM::LLVMStructType::getLiteral(getContext(), results);
     }
 
     // Add the arguments.
@@ -218,10 +234,30 @@ LOWERING(ProcRefOp, {
 });
 
 LOWERING(RetOp, {
-    return r.create<LLVM::ReturnOp>(
-        op.getLoc(),
-        a.getValue()
-    );
+    Value res;
+
+    if (a.getVals().size() == 1) {
+        res = a.getVals().front();
+    } else if (a.getVals().size() > 1) {
+        res = r.create<LLVM::UndefOp>(
+            op.getLoc(),
+            LLVM::LLVMStructType::getLiteral(
+                getContext(),
+                SmallVector<mlir::Type>{a.getVals().getTypes()}
+            )
+        );
+
+        for (auto [i, v] : llvm::enumerate(a.getVals())) {
+            res = r.create<LLVM::InsertValueOp>(
+                op.getLoc(),
+                res,
+                v,
+                i
+            );
+        }
+    }
+
+    return r.create<LLVM::ReturnOp>(op.getLoc(), res);
 });
 
 LOWERING(ReturnPointerOp, {
@@ -239,28 +275,6 @@ LOWERING(StoreOp, {
         unsigned(a.getAlignment().getInt())
     );
 });
-
-LOWERING(TupleOp, {
-    mlir::Value tuple = r.create<LLVM::UndefOp>(
-        op.getLoc(),
-        LLVM::LLVMStructType::getLiteral(
-            getContext(),
-            SmallVector<mlir::Type>{a.getValues().getTypes()}
-        )
-    );
-
-    for (auto [i, v] : llvm::enumerate(a.getValues())) {
-        tuple = r.create<LLVM::InsertValueOp>(
-            op.getLoc(),
-            tuple,
-            v,
-            i
-        );
-    }
-
-    return tuple;
-});
-
 } // namespace srcc::cg::lowering
 
 using namespace srcc::cg::lowering;
@@ -279,20 +293,9 @@ void LoweringPass::runOnOperation() {
         return LLVM::LLVMVoidType::get(&getContext());
     });
 
-    // Convert tuples to LLVM structs.
-    //
-    // FIXME: Tuple types should no longer exist here; eliminate them in
-    // a separate lowering pass that also runs before constant evaluation.
-    tc.addConversion([&](TupleType tt) -> LLVM::LLVMStructType {
-        SmallVector<mlir::Type> args;
-        if (failed(tc.convertTypes(tt.getTypes(), args))) return nullptr;
-        return LLVM::LLVMStructType::getLiteral(&getContext(), args);
-    });
-
     patterns.add< // clang-format off
         AbortOpLowering,
         CallOpLowering,
-        ExtractOpLowering,
         FrameSlotOpLowering,
         LoadOpLowering,
         NilOpLowering,
@@ -303,8 +306,7 @@ void LoweringPass::runOnOperation() {
         SAddOvOpLowering,
         SMulOvOpLowering,
         SSubOvOpLowering,
-        StoreOpLowering,
-        TupleOpLowering
+        StoreOpLowering
     >(cg, tc); // clang-format on
 
     target.addLegalDialect<LLVM::LLVMDialect>();
