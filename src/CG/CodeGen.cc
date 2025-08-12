@@ -23,6 +23,7 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
       tu{tu},
       word_size{word_size},
       lang_opts{lang_opts} {
+    if (libassert::is_debugger_present()) mlir.disableMultithreading();
     mlir.getDiagEngine().registerHandler([&](mlir::Diagnostic& diag) {
         HandleMLIRDiagnostic(diag);
     });
@@ -93,32 +94,32 @@ auto CodeGen::C(Type ty) -> SType {
 
     // Structs and arrays are just turned into blobs of bytes.
     auto sz = ty->size(tu);
-    if (sz == Size()) return mlir::NoneType::get(&mlir);
+    Assert(sz != Size(), "Should have eliminated zero-sized types");
     return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
 }
 
 auto CodeGen::ConvertProcType(ProcType* ty) -> IRProcType {
     IRProcType ptype;
-    SmallVector<Ty> arg_types;
-    auto ret = C(ty->ret());
 
-    // Handle indirect returns.
+    // Collect the return type(s).
+    SmallVector<Ty, 2> ret_types;
     if (ty->ret()->is_mrvalue()) ptype.has_indirect_return = true;
-    else if (IsZeroSizedType(ty->ret())) ret = mlir::NoneType::get(&mlir);
+    else if (not IsZeroSizedType(ty->ret())) C(ty->ret()).into(ret_types);
 
-    // Add the remaining args.
+    // Collect the arguments.
+    SmallVector<Ty> arg_types;
     for (auto [intent, t] : ty->params()) {
         if (IsZeroSizedType(t)) continue;
         if (t->pass_by_lvalue(ty->cconv(), intent)) arg_types.push_back(ptr_ty);
         else C(t).into(arg_types);
     }
 
-    ptype.type = mlir::FunctionType::get(&mlir, arg_types, mlir::TypeRange{ret});
+    ptype.type = mlir::FunctionType::get(&mlir, arg_types, mlir::TypeRange{ret_types});
     return ptype;
 }
 
 void CodeGen::CreateAbort(Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2) {
-    // The runtime defines the assertion payload as follows.
+    // The runtime defines the assertion payload as follows:
     //
     // struct AbortInfo {
     //    i8[] filename;
@@ -169,10 +170,10 @@ auto CodeGen::CreateAlloca(Location loc, Type ty) -> Value {
     // frame slots is apparently too much to ask because MLIR complains about both
     // uses not being dominated by the frame slots and about a FunctionOpInterface
     // having more than one region.
-    auto it = curr_proc.entry()->begin();
-    auto end = curr_proc.entry()->end();
+    auto it = curr_proc.front().begin();
+    auto end = curr_proc.front().end();
     while (it != end and isa<ir::FrameSlotOp>(*it)) ++it;
-    if (it == end) setInsertionPointToEnd(curr_proc.entry());
+    if (it == end) setInsertionPointToEnd(&curr_proc.front());
     else setInsertionPoint(&*it);
     return create<ir::FrameSlotOp>(C(loc), ty->size(tu), ty->align(tu));
 }
@@ -370,13 +371,17 @@ auto CodeGen::DeclarePrintf() -> ir::ProcOp {
 
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
     auto& ir_proc = declared_procs[proc];
-    if (ir_proc) return ir_proc;
-    return GetOrCreateProc(
-        proc->location(),
-        MangledName(proc),
-        proc->linkage,
-        proc->proc_type()
-    );
+    if (not ir_proc) {
+        ir_proc = GetOrCreateProc(
+            proc->location(),
+            MangledName(proc),
+            proc->linkage,
+            proc->proc_type()
+        );
+
+        proc_reverse_lookup[ir_proc] = proc;
+    }
+    return ir_proc;
 }
 
 auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, Vals args) -> Block* {
@@ -400,7 +405,7 @@ auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
 CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc)
     : CG(CG), old_func(CG.curr_proc), guard{CG} {
     CG.curr_proc = proc;
-    CG.EnterBlock(proc.entry());
+    CG.EnterBlock(proc.getOrCreateEntryBlock());
 }
 
 auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp {
@@ -419,13 +424,10 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
         false
     );
 
-    // Erase the body if this is just a declaration; additionally, declarations
-    // can’t have public visibility, so set it to private in that case.
-    if (linkage == Linkage::Imported or linkage == Linkage::Reexported) {
-        ir_proc.eraseBody();
-        ir_proc.setVisibility(mlir::SymbolTable::Visibility::Private);
-    }
-
+    // Erase the body for now; additionally, declarations can’t have public
+    // visibility, so set it to private in that case.
+    ir_proc.eraseBody();
+    ir_proc.setVisibility(mlir::SymbolTable::Visibility::Private);
     return ir_proc;
 }
 
@@ -470,7 +472,7 @@ void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
             Unreachable();
         }();
 
-        auto loc = Location::Decode(d.getLocation()).value_or({});
+        auto loc = Location::Decode(d.getLocation());
         auto msg = d.str();
         Diag(level, loc, "{}", utils::Escape(msg, false, true));
     };
@@ -1576,6 +1578,10 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Create the entry block.
     EnterProcedure _(*this, curr_proc);
 
+    // If this is exported, set its visibility accordingly.
+    if (proc->linkage == Linkage::Exported or proc->linkage == Linkage::Reexported)
+        curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
+
     // Emit locals.
     u32 arg_idx = 0;
     for (auto l : proc->locals) {
@@ -1735,7 +1741,7 @@ auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> SRValue { // c
         [&](Type) -> SRValue { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> SRValue { return CreateInt(C(loc), value, val.type()); },
         [&](eval::MRValue) -> SRValue { return {}; }, // This only happens if the value is unused.
-        [&](this auto& self, const eval::Range& range) -> SRValue {
+        [&](this auto& self, const eval::RValue::Range& range) -> SRValue {
             return {self(range.start).scalar(), self(range.end).scalar()};
         }
     }; // clang-format on
@@ -1768,6 +1774,13 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     ReturnExpr re{dyn_cast<Expr>(stmt), stmt->location(), true};
     EnterProcedure _(*this, vm_entry_point);
     Emit(isa<Expr>(stmt) ? &re : stmt);
-    if (not getInsertionBlock()->mightHaveTerminator()) create<ir::RetOp>(C(stmt->location()), Value());
+    if (not getInsertionBlock()->mightHaveTerminator())
+        create<ir::RetOp>(C(stmt->location()), mlir::ValueRange());
     return vm_entry_point;
+}
+
+auto CodeGen::lookup(ir::ProcOp op) -> Ptr<ProcDecl> {
+    auto it = proc_reverse_lookup.find(op);
+    if (it != proc_reverse_lookup.end()) return it->second;
+    return nullptr;
 }

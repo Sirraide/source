@@ -382,7 +382,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
 
     // Print return types.
-    if (proc.getNumResults() and not isa<mlir::NoneType>(proc.getResultTypes().front())) {
+    if (proc.getNumResults()) {
         out += " %1(->%) ";
         if (proc.getNumResults() == 1) {
             out += FormatType(proc.getResultTypes().front());
@@ -411,7 +411,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     // Print frame allocations.
     if (not verbose) {
         i64 frame = 0;
-        for (auto& f : *proc.entry()) {
+        for (auto& f : proc.front()) {
             // Transformations may reorder these for some reason.
             auto slot = dyn_cast<FrameSlotOp>(&f);
             if (not slot) continue;

@@ -90,7 +90,7 @@ struct srcc::Location {
     }
 
     /// Try to decode an MLIR location.
-    static auto Decode(mlir::Location loc) -> std::optional<Location>;
+    static auto Decode(mlir::Location loc) -> Location;
 
 private:
     [[nodiscard]] bool seekable(const Context& ctx) const;

@@ -166,6 +166,7 @@ class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
     Opt<ir::ProcOp> printf;
     DenseMap<LocalDecl*, SRValue> locals;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
+    DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ProcDecl*, String> mangled_names;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
     Value abort_info_slot;
@@ -207,6 +208,9 @@ public:
 
     /// Finalise IR.
     [[nodiscard]] bool finalise();
+
+    /// Given an IR procedure, attempt to find the Source procedure it corresponds to.
+    [[nodiscard]] auto lookup(ir::ProcOp op) -> Ptr<ProcDecl>;
 
     /// Get the MLIR context.
     [[nodiscard]] auto mlir_context() -> mlir::MLIRContext* { return &mlir; }

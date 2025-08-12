@@ -28,7 +28,7 @@ Location::Location(Location a, Location b) {
     file_id = a.file_id;
 }
 
-auto Location::Decode(mlir::Location loc) -> std::optional<Location> {
+auto Location::Decode(mlir::Location loc) -> Location {
     if (
         auto o = dyn_cast<mlir::OpaqueLoc>(loc);
         o and o.getUnderlyingTypeID() == mlir::TypeID::get<Location>()
@@ -36,7 +36,7 @@ auto Location::Decode(mlir::Location loc) -> std::optional<Location> {
         return Decode(o.getUnderlyingLocation());
     }
 
-    return std::nullopt;
+    return Location();
 }
 
 auto Location::after() const -> Location {

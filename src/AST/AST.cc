@@ -32,8 +32,8 @@ auto ImportHandle::copy(String logical_name, Location loc) -> ImportHandle {
 // ============================================================================
 //  Target
 // ============================================================================
-TranslationUnit::Target::Target() = default;
-TranslationUnit::Target::~Target() = default;
+Target::Target() = default;
+Target::~Target() = default;
 
 // ============================================================================
 //  TU
@@ -55,6 +55,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     Assert(clang::CompilerInvocation::CreateFromArgs(tgt.ci->getInvocation(), args, tgt.ci->getDiagnostics()));
     Assert(tgt.ci->createTarget());
     tgt.TI = tgt.ci->getTargetPtr();
+    vm.init(tgt);
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));

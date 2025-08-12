@@ -1,6 +1,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Driver/Driver.hh>
 
+#include <llvm/Support/Process.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Signals.h>
 
@@ -84,6 +85,9 @@ int main(int argc, char** argv) {
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
     InitSignalHandlers();
 #endif
+
+    // Disable this because they take too long and it’s fucking annoying.
+    llvm::sys::Process::PreventCoreFiles();
 
     // Figure out what we want to do.
     auto action = opts.get<"--eval">()           ? Action::Eval

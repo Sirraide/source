@@ -183,10 +183,10 @@ LOWERING(ProcOp, {
 
     // Add the return pointer, if need be.
     mlir::Type ret;
-    if (op.getHasIndirectReturn()) {
-        sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
+    if (op.getNumResults() == 0) {
+        if (op.getHasIndirectReturn()) sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
         ret = LLVM::LLVMVoidType::get(getContext());
-    } else if (op.getNumResults() <= 1) {
+    }  else if (op.getNumResults() == 1) {
         ret = tc->convertType(old.getResult(0));
     } else {
         SmallVector<mlir::Type> results;
@@ -287,11 +287,6 @@ void LoweringPass::runOnOperation() {
 
     arith::populateArithToLLVMConversionPatterns(tc, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(tc, patterns);
-
-    // Convert none to void.
-    tc.addConversion([&](NoneType) {
-        return LLVM::LLVMVoidType::get(&getContext());
-    });
 
     patterns.add< // clang-format off
         AbortOpLowering,

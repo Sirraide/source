@@ -42,14 +42,12 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 // ============================================================================
 //  Types
 // ============================================================================
-def SRCC_Void : TypeAlias<NoneType, "void">;
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Bool : TypeAlias<I1, "bool">;
 
 def SRCC_Type : AnyTypeOf<[
     Builtin_Integer,
     FunctionType,
-    SRCC_Void,
     SRCC_Ptr,
     SRCC_Bool,
 ]>;
@@ -98,7 +96,7 @@ def ProcOp : SRCC_Op<"proc", [
 
     /// Most of this is copied from the func dialect’s FuncOp.
     let extraClassDeclaration = [{
-        ::mlir::Block* entry() {
+        ::mlir::Block* getOrCreateEntryBlock() {
             if (empty()) addEntryBlock();
             return &front();
         }
@@ -239,6 +237,16 @@ def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
             );
         }]>
     ];
+
+    let extraClassDeclaration = [{
+        base::Align align() {
+            return base::Align(u64(getAlignment().getInt()));
+        }
+
+        base::Size size() {
+            return base::Size::Bytes(getBytes().getInt());
+        }
+    }];
 }
 
 def LoadOp : SRCC_Op<"load"> {

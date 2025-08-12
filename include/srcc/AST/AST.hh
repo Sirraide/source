@@ -21,6 +21,7 @@
 namespace srcc {
 class ImportHandle;
 class TranslationUnit;
+class Target;
 }
 
 /// Ref-counted handle to an import.
@@ -53,6 +54,41 @@ public:
     auto ptr() -> PointerUnion<TranslationUnit*, clang::ASTUnit*> { return *this; }
 };
 
+class srcc::Target {
+    LIBBASE_IMMOVABLE(Target);
+
+    friend TranslationUnit;
+    std::unique_ptr<clang::CompilerInstance> ci;
+    llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
+    Target();
+    ~Target();
+
+public:
+    [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
+    [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
+
+    [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
+    [[nodiscard]] auto int_align(const IntType* ty) const -> Align { return int_align(ty->bit_width()); }
+    [[nodiscard]] auto int_align(Size width) const -> Align {
+        return Align(TI->getBitIntAlign(u32(width.bits())) / 8);
+    }
+
+    [[nodiscard]] auto int_size() const -> Size { return ptr_size(); }
+    [[nodiscard]] auto int_size(const IntType* ty) const -> Size { return int_size(ty->bit_width()); }
+    [[nodiscard]] auto int_size(Size width) const -> Size {
+        return Size::Bits(TI->getBitIntWidth(u32(width.bits())));
+    }
+
+    [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
+    [[nodiscard]] auto ptr_size() const -> Size { return Size::Bits(TI->PointerWidth); }
+    [[nodiscard]] auto slice_align() const -> Align { return std::max(ptr_align(), int_align()); }
+    [[nodiscard]] auto slice_size() const -> Size { return ptr_size().align(int_align()) + int_size(); }
+
+    [[nodiscard]] auto triple() const -> const llvm::Triple& {
+        return TI->getTriple();
+    }
+};
+
 /// Representation of a single program or module. NOT thread-safe.
 class srcc::TranslationUnit {
     SRCC_IMMOVABLE(TranslationUnit);
@@ -61,37 +97,6 @@ public:
     struct Serialiser;
     struct Deserialiser;
     using Ptr = std::unique_ptr<TranslationUnit>;
-
-    class Target {
-        LIBBASE_IMMOVABLE(Target);
-
-        friend TranslationUnit;
-        std::unique_ptr<clang::CompilerInstance> ci;
-        llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
-        Target();
-        ~Target();
-
-    public:
-        [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
-        [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
-
-        [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
-        [[nodiscard]] auto int_align(const IntType* ty) const -> Align { return int_align(ty->bit_width()); }
-        [[nodiscard]] auto int_align(Size width) const -> Align {
-            return Align(TI->getBitIntAlign(u32(width.bits())) / 8);
-        }
-
-        [[nodiscard]] auto int_size() const -> Size { return ptr_size(); }
-        [[nodiscard]] auto int_size(const IntType* ty) const -> Size { return int_size(ty->bit_width()); }
-        [[nodiscard]] auto int_size(Size width) const -> Size {
-            return Size::Bits(TI->getBitIntWidth(u32(width.bits())));
-        }
-
-        [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
-        [[nodiscard]] auto ptr_size() const -> Size { return Size::Bits(TI->PointerWidth); }
-        [[nodiscard]] auto slice_align() const -> Align { return std::max(ptr_align(), int_align()); }
-        [[nodiscard]] auto slice_size() const -> Size { return ptr_size().align(int_align()) + int_size(); }
-    };
 
 private:
     /// Context that owns this module.
