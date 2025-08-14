@@ -28,6 +28,12 @@ protected:
 }
 } // namespace srcc::cg
 
+namespace mlir {
+namespace arith {
+enum class CmpIPredicate : uint64_t;
+}
+}
+
 template <typename Elem, typename Range>
 class srcc::cg::detail::ValueOrTypePair {
 protected:
@@ -289,7 +295,7 @@ private:
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
     auto CreateGlobalStringSlice(Location loc, String data) -> SRValue;
-    auto CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value;
+    auto CreateICmp(mlir::Location loc, mlir::arith::CmpIPredicate pred, Value lhs, Value rhs) -> Value;
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
@@ -369,15 +375,17 @@ private:
     ///
     /// \return The join block.
     auto If(
+        mlir::Location loc,
         Value cond,
         mlir::ValueRange args,
         llvm::function_ref<void()> emit_body
     ) -> Block*;
 
     auto If(
+        mlir::Location loc,
         Value cond,
         llvm::function_ref<void()> emit_body
-    ) { return If(cond, {}, emit_body); }
+    ) { return If(loc, cond, {}, emit_body); }
 
     /// Create a branch that can return a value.
     ///
@@ -396,6 +404,7 @@ private:
     ///
     /// \return The join block.
     auto If(
+        mlir::Location loc,
         Value cond,
         llvm::function_ref<SRValue()> emit_then,
         llvm::function_ref<SRValue()> emit_else

@@ -94,17 +94,17 @@ proc foo(int a, int b) {
 //L +   store i64 %11, ptr %7, align 8
 //L +   store i64 7, ptr %8, align 8
 //L +   %12 = load i64, ptr %5, align 8
-//L +   %13 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %12)
-//L +   %14 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %13 = call i32 (ptr, ...) @printf(ptr @__srcc_str.0, i64 %12)
+//L +   %14 = call i32 (ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
 //L +   %15 = load i64, ptr %6, align 8
-//L +   %16 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %15)
-//L +   %17 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %16 = call i32 (ptr, ...) @printf(ptr @__srcc_str.0, i64 %15)
+//L +   %17 = call i32 (ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
 //L +   %18 = load i64, ptr %5, align 8
-//L +   %19 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %18)
-//L +   %20 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
+//L +   %19 = call i32 (ptr, ...) @printf(ptr @__srcc_str.0, i64 %18)
+//L +   %20 = call i32 (ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.2)
 //L +   %21 = load i64, ptr %8, align 8
-//L +   %22 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.0, i64 %21)
-//L +   %23 = call i32 (ptr, i32, ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.3)
+//L +   %22 = call i32 (ptr, ...) @printf(ptr @__srcc_str.0, i64 %21)
+//L +   %23 = call i32 (ptr, ...) @printf(ptr @__srcc_str.1, i32 1, ptr @__srcc_str.3)
 //L +   ret void
 //L + }
 //L +

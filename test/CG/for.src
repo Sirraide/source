@@ -90,7 +90,7 @@ proc l {
 // +     br bb1(1)
 // +
 // + bb1(i64 %0):
-// +     %1 = cmp ne i64 %0, 4
+// +     %1 = icmp ne i64 %0, 4
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
@@ -111,7 +111,7 @@ proc l {
 // +     br bb1(%0)
 // +
 // + bb1(i16 %2):
-// +     %3 = cmp ne i16 %2, %1
+// +     %3 = icmp ne i16 %2, %1
 // +     br %3 to bb2 else bb3
 // +
 // + bb2:
@@ -128,11 +128,11 @@ proc l {
 // +     br bb1(1)
 // +
 // + bb1(i64 %0):
-// +     %1 = cmp ne i64 %0, 11
+// +     %1 = icmp ne i64 %0, 11
 // +     br %1 to bb2(2) else bb5
 // +
 // + bb2(i64 %2):
-// +     %3 = cmp ne i64 %2, %0
+// +     %3 = icmp ne i64 %2, %0
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
@@ -153,7 +153,7 @@ proc l {
 // +     br bb1(1)
 // +
 // + bb1(i64 %0):
-// +     %1 = cmp ne i64 %0, 4
+// +     %1 = icmp ne i64 %0, 4
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
@@ -174,7 +174,7 @@ proc l {
 // +     br bb1(0, %0)
 // +
 // + bb1(i64 %2, i16 %3):
-// +     %4 = cmp ne i16 %3, %1
+// +     %4 = icmp ne i16 %3, %1
 // +     br %4 to bb2 else bb3
 // +
 // + bb2:
@@ -192,11 +192,11 @@ proc l {
 // +     br bb1(0, 1)
 // +
 // + bb1(i64 %0, i64 %1):
-// +     %2 = cmp ne i64 %1, 11
+// +     %2 = icmp ne i64 %1, 11
 // +     br %2 to bb2(0, 2) else bb5
 // +
 // + bb2(i64 %3, i64 %4):
-// +     %5 = cmp ne i64 %4, %1
+// +     %5 = icmp ne i64 %4, %1
 // +     br %5 to bb3 else bb4
 // +
 // + bb3:
@@ -219,11 +219,11 @@ proc l {
 // +     br bb1(1, 11)
 // +
 // + bb1(i64 %0, i64 %1):
-// +     %2 = cmp ne i64 %0, 11
+// +     %2 = icmp ne i64 %0, 11
 // +     br %2 to bb2 else bb4
 // +
 // + bb2:
-// +     %3 = cmp ne i64 %1, 21
+// +     %3 = icmp ne i64 %1, 21
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
@@ -241,11 +241,11 @@ proc l {
 // +     br bb1(0, 1, 11)
 // +
 // + bb1(i64 %0, i64 %1, i64 %2):
-// +     %3 = cmp ne i64 %1, 11
+// +     %3 = icmp ne i64 %1, 11
 // +     br %3 to bb2 else bb4
 // +
 // + bb2:
-// +     %4 = cmp ne i64 %2, 21
+// +     %4 = icmp ne i64 %2, 21
 // +     br %4 to bb3 else bb4
 // +
 // + bb3:
@@ -264,7 +264,7 @@ proc l {
 // +     br bb1(0, 2)
 // +
 // + bb1(i64 %0, i64 %1):
-// +     %2 = cmp ne i64 %1, 21
+// +     %2 = icmp ne i64 %1, 21
 // +     br %2 to bb2 else bb3
 // +
 // + bb2:
@@ -282,19 +282,19 @@ proc l {
 // +     br bb1(0, 2, 3, 4, 5)
 // +
 // + bb1(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4):
-// +     %5 = cmp ne i64 %1, 21
+// +     %5 = icmp ne i64 %1, 21
 // +     br %5 to bb2 else bb6
 // +
 // + bb2:
-// +     %6 = cmp ne i64 %2, 31
+// +     %6 = icmp ne i64 %2, 31
 // +     br %6 to bb3 else bb6
 // +
 // + bb3:
-// +     %7 = cmp ne i64 %3, 41
+// +     %7 = icmp ne i64 %3, 41
 // +     br %7 to bb4 else bb6
 // +
 // + bb4:
-// +     %8 = cmp ne i64 %4, 51
+// +     %8 = icmp ne i64 %4, 51
 // +     br %8 to bb5 else bb6
 // +
 // + bb5:
@@ -315,7 +315,7 @@ proc l {
 // +     br bb1(1)
 // +
 // + bb1(i64 %0):
-// +     %1 = cmp ne i64 %0, 11
+// +     %1 = icmp ne i64 %0, 11
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:

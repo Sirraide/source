@@ -25,7 +25,7 @@ stdio::printf("bar: %d\n".data, 12);
 // +   %2 = sext i8 %1 to i32
 // +   %3 = call i32 @putchar(i32 %2)
 // +   %4 = call i32 @puts(ptr @__srcc_str.1)
-// +   %5 = call i32 (ptr, i64, ...) @printf(ptr @__srcc_str.2, i64 12)
+// +   %5 = call i32 (ptr, ...) @printf(ptr @__srcc_str.2, i64 12)
 // +   ret void
 // + }
 // +

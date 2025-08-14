@@ -104,10 +104,8 @@ LOWERING(CallOp, {
         arg_types.push_back(ptr);
     }
 
-    for (auto arg : a.getArgs()) {
-        args.push_back(arg);
-        arg_types.push_back(arg.getType());
-    }
+    for (auto arg : a.getArgs()) args.push_back(arg);
+    for (auto arg : op.getProcType().getInputs()) arg_types.push_back(arg);
 
     // Note: I *think* it’s fine to just throw the environment in there
     // even if the function we’re calling doesn’t take an environment–at

@@ -179,7 +179,7 @@ auto CodeGen::CreateAlloca(Location loc, Type ty) -> Value {
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, Location loc, String name) {
-    If(failure_cond, [&] {
+    If(C(loc), failure_cond, [&] {
         auto op_token = CreateGlobalStringSlice(loc, Spelling(op));
         auto operation = CreateGlobalStringSlice(loc, name);
         CreateAbort(
@@ -247,29 +247,11 @@ auto CodeGen::CreateGlobalStringSlice(Location loc, String data) -> SRValue {
     return {CreateGlobalStringPtr(data), CreateInt(C(loc), i64(data.size()))};
 }
 
-auto CodeGen::CreateICmp(mlir::Location loc, mlir::LLVM::ICmpPredicate pred, Value lhs, Value rhs) -> Value {
-    // This is required because arith::cmpi doesn’t support pointers...
-    if (isa<mlir::LLVM::LLVMPointerType>(lhs.getType()))
-        return createOrFold<mlir::LLVM::ICmpOp>(loc, pred, lhs, rhs);
-
-    auto pred_conv = [&] {
-        switch (pred) {
-            case mlir::LLVM::ICmpPredicate::eq: return arith::CmpIPredicate::eq;
-            case mlir::LLVM::ICmpPredicate::ne: return arith::CmpIPredicate::ne;
-            case mlir::LLVM::ICmpPredicate::slt: return arith::CmpIPredicate::slt;
-            case mlir::LLVM::ICmpPredicate::sle: return arith::CmpIPredicate::sle;
-            case mlir::LLVM::ICmpPredicate::sgt: return arith::CmpIPredicate::sgt;
-            case mlir::LLVM::ICmpPredicate::sge: return arith::CmpIPredicate::sge;
-            case mlir::LLVM::ICmpPredicate::ult: return arith::CmpIPredicate::ult;
-            case mlir::LLVM::ICmpPredicate::ule: return arith::CmpIPredicate::ule;
-            case mlir::LLVM::ICmpPredicate::ugt: return arith::CmpIPredicate::ugt;
-            case mlir::LLVM::ICmpPredicate::uge: return arith::CmpIPredicate::uge;
-        }
-        Unreachable();
-    }();
+auto CodeGen::CreateICmp(mlir::Location loc, arith::CmpIPredicate pred, Value lhs, Value rhs) -> Value {
+    Assert(not isa<mlir::LLVM::LLVMPointerType>(lhs.getType()), "Cannot compare pointers this way");
 
     // But we prefer to emit an arith op because it can be folded etc.
-    return createOrFold<arith::CmpIOp>(loc, pred_conv, lhs, rhs);
+    return createOrFold<arith::CmpIOp>(loc, pred, lhs, rhs);
 }
 
 auto CodeGen::CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value {
@@ -483,28 +465,29 @@ void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
 }
 
 auto CodeGen::If(
+    mlir::Location loc,
     Value cond,
     llvm::function_ref<SRValue()> emit_then,
     llvm::function_ref<SRValue()> emit_else
 ) -> Block* {
     if (not emit_else) {
-        If(cond, emit_then);
+        If(loc, cond, emit_then);
         return nullptr;
     }
 
     auto bb_then = CreateBlock();
     auto bb_else = CreateBlock();
     auto bb_join = CreateBlock();
-    create<mlir::cf::CondBranchOp>(getUnknownLoc(), cond, bb_then.get(), bb_else.get());
+    create<mlir::cf::CondBranchOp>(loc, cond, bb_then.get(), bb_else.get());
 
     // Emit the then block.
     EnterBlock(std::move(bb_then));
     auto then_val = emit_then();
 
     // Branch to the join block.
-    then_val.type().each([&](Ty t){ bb_join->addArgument(t, getUnknownLoc()); });
+    then_val.type().each([&](Ty t){ bb_join->addArgument(t, loc); });
     if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
-        getUnknownLoc(),
+        loc,
         bb_join.get(),
         then_val ? Vals(then_val) : Vals()
     );
@@ -513,7 +496,7 @@ auto CodeGen::If(
     EnterBlock(std::move(bb_else));
     auto else_val = emit_else();
     if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
-        getUnknownLoc(),
+        loc,
         bb_join.get(),
         else_val ? Vals(else_val) : Vals()
     );
@@ -522,7 +505,7 @@ auto CodeGen::If(
     return EnterBlock(std::move(bb_join));
 }
 
-auto CodeGen::If(Value cond, Vals args, llvm::function_ref<void()> emit_then) -> Block* {
+auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<void()> emit_then) -> Block* {
     SmallVector<Ty, 3> types;
     for (auto arg : args) types.push_back(arg.getType());
 
@@ -530,7 +513,7 @@ auto CodeGen::If(Value cond, Vals args, llvm::function_ref<void()> emit_then) ->
     auto body = CreateBlock(types);
     auto join = CreateBlock();
     create<mlir::cf::CondBranchOp>(
-        getUnknownLoc(),
+        loc,
         cond,
         body.get(),
         args,
@@ -542,7 +525,7 @@ auto CodeGen::If(Value cond, Vals args, llvm::function_ref<void()> emit_then) ->
     EnterBlock(std::move(body));
     emit_then();
     if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
-        getUnknownLoc(),
+        loc,
         join.get()
     );
 
@@ -963,6 +946,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> SRValue {
         // Convert 'x and y' to 'if x then y else false'.
         case Tk::And: {
             return If(
+                l,
                 Emit(expr->lhs).scalar(),
                 [&] { return Emit(expr->rhs).scalar(); },
                 [&] { return CreateBool(l, false); }
@@ -972,6 +956,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> SRValue {
         // Convert 'x or y' to 'if x then true else y'.
         case Tk::Or: {
             return If(
+                l,
                 Emit(expr->lhs).scalar(),
                 [&] { return CreateBool(l, true); },
                 [&] { return Emit(expr->rhs).scalar(); }
@@ -1002,7 +987,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> SRValue {
             if (lang_opts.overflow_checking) {
                 auto size = is_slice ? range.second() : CreateInt(l, cast<ArrayType>(expr->lhs->type)->dimension());
                 CreateArithFailure(
-                    CreateICmp(l, mlir::LLVM::ICmpPredicate::uge, index, size),
+                    CreateICmp(l, arith::CmpIPredicate::uge, index, size),
                     Tk::LBrack,
                     expr->location(),
                     "out of bounds access"
@@ -1095,7 +1080,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
     );
 
     auto CheckDivByZero = [&] {
-        auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, rhs, CreateInt(loc, 0, ty));
+        auto check = CreateICmp(loc, arith::CmpIPredicate::eq, rhs, CreateInt(loc, 0, ty));
         CreateArithFailure(check, op, ast_loc, "division by zero");
     };
 
@@ -1112,16 +1097,16 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
             Unreachable("'and' and 'or' cannot be handled here.");
 
         // Comparison operators.
-        case Tk::ULt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ult, lhs, rhs);
-        case Tk::UGt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ugt, lhs, rhs);
-        case Tk::ULe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ule, lhs, rhs);
-        case Tk::UGe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, lhs, rhs);
-        case Tk::SLt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::slt, lhs, rhs);
-        case Tk::SGt: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sgt, lhs, rhs);
-        case Tk::SLe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sle, lhs, rhs);
-        case Tk::SGe: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::sge, lhs, rhs);
-        case Tk::EqEq: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, lhs, rhs);
-        case Tk::Neq: return CreateICmp(loc, mlir::LLVM::ICmpPredicate::ne, lhs, rhs);
+        case Tk::ULt: return CreateICmp(loc, arith::CmpIPredicate::ult, lhs, rhs);
+        case Tk::UGt: return CreateICmp(loc, arith::CmpIPredicate::ugt, lhs, rhs);
+        case Tk::ULe: return CreateICmp(loc, arith::CmpIPredicate::ule, lhs, rhs);
+        case Tk::UGe: return CreateICmp(loc, arith::CmpIPredicate::uge, lhs, rhs);
+        case Tk::SLt: return CreateICmp(loc, arith::CmpIPredicate::slt, lhs, rhs);
+        case Tk::SGt: return CreateICmp(loc, arith::CmpIPredicate::sgt, lhs, rhs);
+        case Tk::SLe: return CreateICmp(loc, arith::CmpIPredicate::sle, lhs, rhs);
+        case Tk::SGe: return CreateICmp(loc, arith::CmpIPredicate::sge, lhs, rhs);
+        case Tk::EqEq: return CreateICmp(loc, arith::CmpIPredicate::eq, lhs, rhs);
+        case Tk::Neq: return CreateICmp(loc, arith::CmpIPredicate::ne, lhs, rhs);
 
         // Arithmetic operators that wrap or can’t overflow.
         case Tk::PlusTilde: return createOrFold<arith::AddIOp>(loc, lhs, rhs);
@@ -1166,8 +1151,8 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
             CheckDivByZero();
             auto int_min = CreateInt(loc, APInt::getSignedMinValue(u32(type->size(tu).bits())), type);
             auto minus_one = CreateInt(loc, -1, ty);
-            auto check_lhs = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, lhs, int_min);
-            auto check_rhs = CreateICmp(loc, mlir::LLVM::ICmpPredicate::eq, rhs, minus_one);
+            auto check_lhs = CreateICmp(loc, arith::CmpIPredicate::eq, lhs, int_min);
+            auto check_rhs = CreateICmp(loc, arith::CmpIPredicate::eq, rhs, minus_one);
             CreateArithFailure(
                 createOrFold<arith::AndIOp>(loc, check_lhs, check_rhs),
                 op,
@@ -1182,21 +1167,21 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         // Left shift overflows if the shift amount is equal
         // to or exceeds the bit width.
         case Tk::ShiftLeftLogical: {
-            auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
+            auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
             CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
             return createOrFold<arith::ShLIOp>(loc, lhs, rhs);
         }
 
         // Signed left shift additionally does not allow a sign change.
         case Tk::ShiftLeft: {
-            auto check = CreateICmp(loc, mlir::LLVM::ICmpPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
+            auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
             CreateArithFailure(check, op, ast_loc, "shift amount exceeds bit width");
 
             // Check sign.
             auto res = createOrFold<arith::ShLIOp>(loc, lhs, rhs);
             auto sign = createOrFold<arith::ShRSIOp>(loc, lhs, CreateInt(loc, i64(type->size(tu).bits()) - 1));
             auto new_sign = createOrFold<arith::ShRSIOp>(loc, res, CreateInt(loc, i64(type->size(tu).bits()) - 1));
-            auto sign_change = CreateICmp(loc, mlir::LLVM::ICmpPredicate::ne, sign, new_sign);
+            auto sign_change = CreateICmp(loc, arith::CmpIPredicate::ne, sign, new_sign);
             CreateArithFailure(sign_change, op, ast_loc);
             return res;
         }
@@ -1464,7 +1449,10 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> SRValue {
     // If we have multiple ranges, break if we’ve reach the end of any one of them.
     for (auto [a, e] : zip(block_args, end_vals)) {
         auto bb_cont = CreateBlock();
-        auto ne = create<mlir::LLVM::ICmpOp>(floc, mlir::LLVM::ICmpPredicate::ne, a, e);
+        auto ne =
+            isa<mlir::LLVM::LLVMPointerType>(a.getType())
+                ? create<mlir::LLVM::ICmpOp>(floc, mlir::LLVM::ICmpPredicate::ne, a, e)
+                : CreateICmp(floc, arith::CmpIPredicate::ne, a, e);
         create<mlir::cf::CondBranchOp>(floc, ne, bb_cont.get(), bb_end.get());
         EnterBlock(std::move(bb_cont));
     }
@@ -1504,6 +1492,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> SRValue {
 
 auto CodeGen::EmitIfExpr(IfExpr* stmt) -> SRValue {
     auto args = If(
+        C(stmt->location()),
         Emit(stmt->cond).scalar(),
         [&] { return Emit(stmt->then); },
         stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<SRValue()>{}
@@ -1515,6 +1504,7 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt) -> SRValue {
 
 auto CodeGen::EmitIfExpr(IfExpr* stmt, Value mrvalue_slot) -> SRValue {
     If(
+        C(stmt->location()),
         Emit(stmt->cond).scalar(),
         [&] { EmitMRValue(mrvalue_slot, cast<Expr>(stmt->then));  return SRValue{}; },
         [&] { EmitMRValue(mrvalue_slot, cast<Expr>(stmt->else_.get())); return SRValue{}; }
@@ -1578,9 +1568,31 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Create the entry block.
     EnterProcedure _(*this, curr_proc);
 
-    // If this is exported, set its visibility accordingly.
-    if (proc->linkage == Linkage::Exported or proc->linkage == Linkage::Reexported)
-        curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
+    // Always set the visibility to public.
+    //
+    // tl;dr: MLIR deleting function arguments and return values causes bad things
+    // to happen, and I can’t be bothered to debug that nonsense.
+    //
+    // The remove dead values pass or something else in MLIR is currently bugged
+    // and crashes on even simple private functions; we also don’t want any MLIR
+    // passes to remove unused arguments for ABI reasons (yes, a function may be
+    // private, but we might end up passing it as a callback somewhere, and I’m
+    // not sure it’s clever enough to figure that out).
+    //
+    // Furthermore, we control visibility entirely through LLVM linkage attributes,
+    // so the entire MLIR visibility nonsense is categorically useless to us either
+    // way.
+    //
+    // The test case that crashes as soon as we set this to private is:
+    //
+    //     program test;
+    //
+    //     proc x (in int exp) -> int {
+    //         if exp == 0 then return 1;
+    //         return 3;
+    //     }
+    //
+    curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Emit locals.
     u32 arg_idx = 0;

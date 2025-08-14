@@ -1,7 +1,7 @@
 // R %srcc --sema --verify %s
 program test;
 
-int a; // expected-note 2: Variable declared here
+int a;
 eval a; // expected-error: Cannot access variable declared outside the current evaluation context
 
 #if a == 0 {} // expected-error: Cannot access variable declared outside the current evaluation context

@@ -33,15 +33,15 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1xE indirect external fastcc -> i8[8];
+// + proc _S1aFT1xE indirect external fastcc;
 // +
-// + proc _S1bFT1xE indirect private fastcc -> i8[8] {
+// + proc _S1bFT1xE indirect private fastcc {
 // + entry:
 // +     store retptr, i64 1, align 8
 // +     ret
 // + }
 // +
-// + proc _S1cFT1xiE (i64 %0) indirect private fastcc -> i8[8] {
+// + proc _S1cFT1xiE (i64 %0) indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -51,7 +51,7 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1dFT1xE indirect private fastcc -> i8[8] {
+// + proc _S1dFT1xE indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -60,7 +60,7 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1eFT1xE indirect private fastcc -> i8[8] {
+// + proc _S1eFT1xE indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:

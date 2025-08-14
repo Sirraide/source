@@ -303,12 +303,12 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
     }];
 }
 
-def RetOp : SRCC_Op<"ret", [Terminator]> {
+def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {
     let summary = "Return from a procedure";
     let arguments = (ins Variadic<SRCC_Type>:$vals);
 }
 
-def ReturnPointerOp : SRCC_Op<"retptr", [Pure]> {
+def ReturnPointerOp : SRCC_Op<"retptr", [Pure, HasParent<"ProcOp">]> {
     let summary = "Get the return pointer for a procedure";
     let results = (outs SRCC_Ptr:$pointer);
     let builders = [

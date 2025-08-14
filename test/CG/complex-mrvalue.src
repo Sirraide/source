@@ -36,7 +36,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1sE indirect private fastcc -> i8[8] {
+// + proc _S1aFT1sE indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -45,7 +45,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1bFT1sxbE (i1 %0) indirect private fastcc -> i8[8] {
+// + proc _S1bFT1sxbE (i1 %0) indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -74,7 +74,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1cFT1sxbE (i1 %0) indirect private fastcc -> i8[8] {
+// + proc _S1cFT1sxbE (i1 %0) indirect private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:

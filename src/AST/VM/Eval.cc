@@ -150,7 +150,7 @@ struct std::formatter<SRValue> : std::formatter<std::string_view> {
     }
 };
 
-void SRValue::dump(bool use_colour) const {
+LIBBASE_DEBUG(__attribute__((used))) void SRValue::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
@@ -311,6 +311,8 @@ class eval::Eval : DiagsProducer<bool> {
 
     /// A procedure on the stack.
     struct StackFrame {
+        using RetVals = SmallVector<SRValue*, 2>;
+
         /// Procedure to which this frame belongs.
         ir::ProcOp proc{};
 
@@ -327,7 +329,7 @@ class eval::Eval : DiagsProducer<bool> {
         std::byte* stack_base{};
 
         /// Return value slots.
-        ArrayRef<SRValue*> ret_vals{};
+        RetVals ret_vals{};
     };
 
     VM& vm;
@@ -366,7 +368,7 @@ private:
 
     void BranchTo(Block* block, mlir::ValueRange args);
     void BranchTo(Block* block, MutableArrayRef<SRValue> args);
-    void PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, ArrayRef<SRValue*> ret_vals);
+    void PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, StackFrame::RetVals ret_vals);
     void StoreSRValue(void* mem, const SRValue& val);
 };
 
@@ -494,7 +496,7 @@ bool Eval::EvalLoop() {
                 switch (a.getReason()) {
                     case ir::AbortReason::AssertionFailed: return "Assertion failed";
                     case ir::AbortReason::ArithmeticError: return "Arithmetic error";
-                    case ir::AbortReason::InvalidLocalRef: return "Invalid local reference";
+                    case ir::AbortReason::InvalidLocalRef: return "Cannot access variable declared outside the current evaluation context";
                 }
                 Unreachable();
             }();
@@ -563,11 +565,11 @@ bool Eval::EvalLoop() {
             }
 
             // Get the return value slots *before* pushing a new frame.
-            SmallVector<SRValue*, 2> ret_vals;
+            StackFrame::RetVals ret_vals;
             for (auto res : c.getResults()) ret_vals.push_back(&Temp(res));
 
             // Enter the stack frame.
-            PushFrame(callee, args, ret_vals);
+            PushFrame(callee, args, std::move(ret_vals));
             continue;
         }
 
@@ -676,6 +678,26 @@ bool Eval::EvalLoop() {
                 CMP_OP(ult); CMP_OP(ule); CMP_OP(ugt); CMP_OP(uge);
             }
             Unreachable();
+        }
+
+        if (auto cmp = dyn_cast<mlir::arith::CmpIOp>(i)) {
+            switch (cmp.getPredicate()) {
+                using enum mlir::arith::CmpIPredicate;
+                CMP_OP(eq); CMP_OP(ne);
+                CMP_OP(slt); CMP_OP(sle); CMP_OP(sgt); CMP_OP(sge);
+                CMP_OP(ult); CMP_OP(ule); CMP_OP(ugt); CMP_OP(uge);
+            }
+            Unreachable();
+        }
+
+        // We currently only emit a 'ne' for 'for' loops involving arrays.
+        // FIXME: Introduce our own CMP instruction that supports both integers and pointers.
+        if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(i)) {
+            Assert(cmp.getPredicate() == mlir::LLVM::ICmpPredicate::ne);
+            auto lhs = Val(cmp.getLhs());
+            auto rhs = Val(cmp.getRhs());
+            Temp(cmp) = SRValue(lhs.cast<Pointer>() != rhs.cast<Pointer>());
+            continue;
         }
 
         INT_OP(AndIOp,lhs & rhs);
@@ -858,10 +880,13 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
         }
 
         APInt v{i.getWidth(), 0};
+        auto available_size = vm.owner().target().int_size(Size::Bits(i.getWidth()));
+        auto size_to_load = Size::Bits(v.getBitWidth()).as_bytes();
+        Assert(size_to_load <= available_size);
         llvm::LoadIntFromMemory(
             v,
             static_cast<const u8*>(mem),
-            unsigned(vm.owner().target().int_size(Size::Bits(i.getWidth())).bytes())
+            unsigned(size_to_load.bytes())
         );
         return SRValue(std::move(v));
     }
@@ -876,7 +901,7 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
     Unreachable("Cannot load value of type '{}'", ty);
 }
 
-void Eval::PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, ArrayRef<SRValue*> ret_vals) {
+void Eval::PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, StackFrame::RetVals ret_vals) {
     Assert(not proc.empty());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
@@ -891,7 +916,7 @@ void Eval::PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, ArrayRef<SR
     }
 
     // Set the return value slots.
-    frame.ret_vals = ret_vals;
+    frame.ret_vals = std::move(ret_vals);
 
     // Now that we’ve set up the frame, add it to the stack; we need
     // to do this *after* we initialise the call arguments above.
@@ -905,10 +930,13 @@ void Eval::StoreSRValue(void* ptr, const SRValue& val) {
     val.visit(utils::Overloaded{
         [](std::monostate) { Unreachable("Store of empty value?"); },
         [&](const APInt& i) {
+            auto available_size = vm.owner().target().int_size(Size::Bits(i.getBitWidth()));
+            auto size_to_store = Size::Bits(i.getBitWidth()).as_bytes();
+            Assert(size_to_store <= available_size);
             llvm::StoreIntToMemory(
                 i,
                 static_cast<u8*>(ptr),
-                unsigned(vm.owner().target().int_size(Size::Bits(i.getBitWidth())).bytes())
+                unsigned(size_to_store.bytes())
             );
         },
         [&](Pointer p) {
@@ -937,9 +965,9 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // Set up a stack frame for it.
     SmallVector<SRValue> ret(proc.getNumResults());
-    SmallVector<SRValue*> ret_val_pointers;
+    StackFrame::RetVals ret_val_pointers;
     for (auto& v : ret) ret_val_pointers.push_back(&v);
-    PushFrame(proc, {}, ret_val_pointers);
+    PushFrame(proc, {}, std::move(ret_val_pointers));
 
     // If statement returns an mrvalue, allocate one and set it
     // as the first argument to the call.
@@ -956,7 +984,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // The procedure may have 2 results if it’s a range.
     if (isa<RangeType>(ty)) {
-        Assert(proc->getNumResults() == 2);
+        Assert(proc.getFunctionType().getNumResults() == 2);
         return RValue(
             RValue::Range(
                 std::move(ret[0].cast<APInt>()),
@@ -967,24 +995,24 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     }
 
     if (isa<IntType>(ty) or ty == Type::IntTy) {
-        Assert(proc->getNumResults() == 1);
+        Assert(proc.getFunctionType().getNumResults() == 1);
         return RValue(std::move(ret[0].cast<APInt>()), ty);
     }
 
     if (ty == Type::BoolTy) {
-        Assert(proc->getNumResults() == 1);
+        Assert(proc.getFunctionType().getNumResults() == 1);
         return RValue(ret[0].cast<APInt>().getBoolValue());
     }
 
     if (ty == Type::TypeTy) {
-        Assert(proc->getNumResults() == 1);
+        Assert(proc.getFunctionType().getNumResults() == 1);
         return RValue(
             vm.memory->get_host_pointer<TypeBase>(ret[0].cast<Pointer>())
         );
     }
 
     if (ty == Type::VoidTy) {
-        Assert(proc->getNumResults() == 0);
+        Assert(proc.getFunctionType().getNumResults() == 0);
         return RValue();
     }
 
