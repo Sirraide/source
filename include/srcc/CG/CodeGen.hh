@@ -8,6 +8,7 @@
 #include <srcc/Macros.hh>
 
 #include <base/Assert.hh>
+#include <mlir/Pass/PassManager.h>
 
 namespace srcc::cg {
 class CodeGen;
@@ -215,6 +216,9 @@ public:
     /// Finalise IR.
     [[nodiscard]] bool finalise();
 
+    /// Finalise a single procedure.
+    [[nodiscard]] bool finalise(ir::ProcOp proc);
+
     /// Given an IR procedure, attempt to find the Source procedure it corresponds to.
     [[nodiscard]] auto lookup(ir::ProcOp op) -> Ptr<ProcDecl>;
 
@@ -361,8 +365,8 @@ private:
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
-    /// Check whether a procedure has an indirect return type.
-    bool HasIndirectReturn(ProcType* type);
+    /// Check whether the current insertion point has a terminator.
+    bool HasTerminator();
 
     /// Create a conditional branch and join block.
     ///

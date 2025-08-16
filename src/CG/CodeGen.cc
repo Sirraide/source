@@ -373,11 +373,15 @@ auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, Vals args) -> Block* {
 }
 
 auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
-    // If there is a current block, and it is not closed, branch to the newly
-    // inserted block, unless that block is the function’s entry block.
+    // If we’re in a procedure, there is a current block, and it is not
+    // closed, branch to the newly inserted block, unless that block is
+    // the function’s entry block.
     auto curr = getInsertionBlock();
-    if (curr and not curr->mightHaveTerminator())
-        create<mlir::cf::BranchOp>(getUnknownLoc(), bb, args);
+    if (
+        curr and
+        not HasTerminator() and
+        isa_and_present<ir::ProcOp>(curr->getParentOp())
+    ) create<mlir::cf::BranchOp>(getUnknownLoc(), bb, args);
 
     // Finally, position the builder at the end of the block.
     setInsertionPointToEnd(bb);
@@ -464,6 +468,11 @@ void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
         EmitDiagnostic(n);
 }
 
+bool CodeGen::HasTerminator() {
+    auto curr = getInsertionBlock();
+    return curr and curr->mightHaveTerminator();
+}
+
 auto CodeGen::If(
     mlir::Location loc,
     Value cond,
@@ -486,7 +495,7 @@ auto CodeGen::If(
 
     // Branch to the join block.
     then_val.type().each([&](Ty t){ bb_join->addArgument(t, loc); });
-    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) create<mlir::cf::BranchOp>(
         loc,
         bb_join.get(),
         then_val ? Vals(then_val) : Vals()
@@ -495,7 +504,7 @@ auto CodeGen::If(
     // And emit the else block.
     EnterBlock(std::move(bb_else));
     auto else_val = emit_else();
-    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) create<mlir::cf::BranchOp>(
         loc,
         bb_join.get(),
         else_val ? Vals(else_val) : Vals()
@@ -524,7 +533,7 @@ auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<v
     // Emit the body and close the block.
     EnterBlock(std::move(body));
     emit_then();
-    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) create<mlir::cf::BranchOp>(
         loc,
         join.get()
     );
@@ -565,7 +574,7 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
     // Emit the body and close the block.
     EnterBlock(std::move(else_));
     emit_else();
-    if (not getInsertionBlock()->mightHaveTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) create<mlir::cf::BranchOp>(
         getUnknownLoc(),
         join.get()
     );
@@ -1622,6 +1631,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> SRValue {
         CreateNil(loc, slice_ty)
     );
 
+    EnterBlock(CreateBlock());
     return CreatePoison(
         loc,
         expr->value_category == Expr::SRValue ? C(expr->type) : ptr_ty
@@ -1630,6 +1640,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> SRValue {
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> SRValue {
     Loop([&] { if (auto b = stmt->body.get_or_null()) Emit(b); });
+    EnterBlock(CreateBlock());
     return {};
 }
 
@@ -1735,14 +1746,14 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> SRValue {
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
     if (curr_proc.getHasIndirectReturn()) {
         EmitInitialiser(create<ir::ReturnPointerOp>(getUnknownLoc()), expr->value.get());
-        create<ir::RetOp>(C(expr->location()), mlir::ValueRange());
+        if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), mlir::ValueRange());
         return {};
     }
 
     auto val = expr->value.get_or_null();
     auto ret_vals = val ? Emit(val) : SRValue{};
     if (val and IsZeroSizedType(val->type)) ret_vals = {};
-    create<ir::RetOp>(C(expr->location()), ret_vals);
+    if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), ret_vals);
     return {};
 }
 
@@ -1883,8 +1894,9 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     ReturnExpr re{dyn_cast<Expr>(stmt), stmt->location(), true};
     EnterProcedure _(*this, vm_entry_point);
     Emit(isa<Expr>(stmt) ? &re : stmt);
-    if (not getInsertionBlock()->mightHaveTerminator())
-        create<ir::RetOp>(C(stmt->location()), mlir::ValueRange());
+
+    // Run canonicalisation etc.
+    if (not finalise(vm_entry_point)) return nullptr;
     return vm_entry_point;
 }
 

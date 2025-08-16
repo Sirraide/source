@@ -569,6 +569,7 @@ bool Eval::EvalLoop() {
 
                 // This is a procedure that hasn’t been compiled yet.
                 cg.emit(decl.get());
+                if (not cg.finalise(callee)) return false;
             }
 
             // Get the return value slots *before* pushing a new frame.
@@ -1004,6 +1005,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     // Compile the procedure.
     entry = s->location();
     auto proc = cg.emit_stmt_as_proc_for_vm(s);
+    if (not proc) return std::nullopt;
 
     // Set up a stack frame for it.
     SmallVector<SRValue> ret(proc.getNumResults());

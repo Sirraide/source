@@ -342,19 +342,46 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     return m;
 }
 
+bool CodeGen::finalise(ir::ProcOp proc) {
+    mlir::PassManager pm{&mlir};
+    pm.enableVerifier(true);
+    pm.addPass(mlir::createCanonicalizerPass());
+    // For some reason this pass sometimes produces null values...
+    // This is possibly LLVM bug 153906.
+    //pm.addPass(mlir::createRemoveDeadValuesPass());
+    if (pm.run(proc).succeeded()) return true;
+    proc->dumpPretty();
+    if (not tu.context().diags().has_error()) ICE(
+        Location(),
+        "Failed to finalise IR"
+    );
+
+    Remark(
+        "For people working on the compiler: Finalisation is known to be buggy "
+        "if the input contains trivially unreachable blocks; try not to emit such "
+        "blocks."
+    );
+
+    return false;
+}
+
+
 bool CodeGen::finalise() {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createRemoveDeadValuesPass());
-    if (pm.run(mlir_module).failed()) {
-        if (not tu.context().diags().has_error()) ICE(Location(), "Failed to finalise IR");
-        Remark(
-            "For people working on the compiler: Finalisation is known to be buggy "
-            "if the input contains trivially unreachable blocks; try not to emit such "
-            "blocks."
-        );
-        return false;
-    }
-    return true;
+    if (pm.run(mlir_module).succeeded()) return true;
+    if (not tu.context().diags().has_error()) ICE(
+        Location(),
+        "Failed to finalise IR"
+    );
+
+    Remark(
+        "For people working on the compiler: Finalisation is known to be buggy "
+        "if the input contains trivially unreachable blocks; try not to emit such "
+        "blocks."
+    );
+
+    return false;
 }

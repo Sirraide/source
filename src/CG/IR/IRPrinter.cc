@@ -313,6 +313,11 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (isa<NilOp>(op)) {
+        out += "nil";
+        return;
+    }
+
     if (isa<mlir::LLVM::PoisonOp>(op)) {
         out += std::format("{} poison", FormatType(op->getResult(0).getType()));
         return;
