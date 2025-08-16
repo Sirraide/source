@@ -26,8 +26,6 @@ var x = if 1 == 1 then 3 else loop;
 // +     ret
 // + }
 // +
-// + proc _S1aFiE external fastcc -> i64;
-// +
 // + proc _S1dFvE private fastcc {
 // + entry:
 // +     br bb1
@@ -36,6 +34,8 @@ var x = if 1 == 1 then 3 else loop;
 // +     %0 = call fastcc i64 _S1aFiE()
 // +     br bb1
 // + }
+// +
+// + proc _S1aFiE external fastcc -> i64;
 // +
 // + proc _S1eFvE private fastcc {
 // + entry:

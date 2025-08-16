@@ -23,17 +23,13 @@ proc a5 { sink_lv(exit()); }
 // +     ret
 // + }
 // +
-// + proc _S4exitFzE external fastcc;
-// +
-// + proc _S4sinkFviE (i64) external fastcc;
-// +
-// + proc _S7sink_lvFvx2iE (ptr) external fastcc;
-// +
 // + proc _S2a1FvE private fastcc {
 // + entry:
 // +     call fastcc void _S4exitFzE()
 // +     unreachable
 // + }
+// +
+// + proc _S4exitFzE external fastcc;
 // +
 // + proc _S2a2FvE private fastcc {
 // + entry:
@@ -51,11 +47,15 @@ proc a5 { sink_lv(exit()); }
 // +     unreachable
 // + }
 // +
+// + proc _S4sinkFviE (i64) external fastcc;
+// +
 // + proc _S2a5FvE private fastcc {
 // + entry:
 // +     call fastcc void _S4exitFzE()
 // +     unreachable
 // + }
+// +
+// + proc _S7sink_lvFvx2iE (ptr) external fastcc;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -70,16 +70,12 @@ proc a5 { sink_lv(exit()); }
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S4exitFzE()
-//L +
-//L + declare fastcc void @_S4sinkFviE(i64)
-//L +
-//L + declare fastcc void @_S7sink_lvFvx2iE(ptr)
-//L +
 //L + define private fastcc void @_S2a1FvE() {
 //L +   call fastcc void @_S4exitFzE()
 //L +   unreachable
 //L + }
+//L +
+//L + declare fastcc void @_S4exitFzE()
 //L +
 //L + define private fastcc void @_S2a2FvE() {
 //L +   unreachable
@@ -94,10 +90,14 @@ proc a5 { sink_lv(exit()); }
 //L +   unreachable
 //L + }
 //L +
+//L + declare fastcc void @_S4sinkFviE(i64)
+//L +
 //L + define private fastcc void @_S2a5FvE() {
 //L +   call fastcc void @_S4exitFzE()
 //L +   unreachable
 //L + }
+//L +
+//L + declare fastcc void @_S7sink_lvFvx2iE(ptr)
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

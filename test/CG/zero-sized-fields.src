@@ -28,12 +28,6 @@ proc call {
 // +     ret
 // + }
 // +
-// + proc _S1aFT4zeroE external fastcc;
-// +
-// + proc _S1bFT4zeroE external fastcc;
-// +
-// + proc _S1cFT4zeroE external fastcc;
-// +
 // + proc _S4callFvE private fastcc {
 // + entry:
 // +     call fastcc void _S1aFT4zeroE()
@@ -41,3 +35,9 @@ proc call {
 // +     call fastcc void _S1cFT4zeroE()
 // +     ret
 // + }
+// +
+// + proc _S1aFT4zeroE external fastcc;
+// +
+// + proc _S1bFT4zeroE external fastcc;
+// +
+// + proc _S1cFT4zeroE external fastcc;

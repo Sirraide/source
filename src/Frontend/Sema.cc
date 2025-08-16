@@ -166,13 +166,13 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
             // lookup finds a module name, because a module name alone is useless
             // if it’s not on the lhs of `::`.
             case NotFound: {
-                auto it = M->imports.find(first);
-                if (it == M->imports.end()) return res;
-                if (isa<TranslationUnit*>(it->second.ptr())) Todo();
+                auto it = M->logical_imports.find(first);
+                if (it == M->logical_imports.end() or not it->getValue()) return res;
+                if (isa<ImportedSourceModuleDecl>(it->second)) Todo();
 
                 // We found an imported C++ header; do a C++ lookup.
-                auto hdr = dyn_cast<clang::ASTUnit*>(it->second.ptr());
-                return LookUpCXXName(hdr, names.drop_front());
+                auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
+                return LookUpCXXName(&hdr->clang_ast, names.drop_front());
             } break;
         }
     }
@@ -291,63 +291,6 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
             );
         } break;
     }
-}
-
-// ============================================================================
-//  Modules.
-// ============================================================================
-auto ModuleLoader::LoadModuleFromArchive(
-    StringRef name,
-    Location import_loc
-) -> Opt<ImportHandle> {
-    if (module_search_paths.empty()) {
-        ICE(import_loc, "No module search path");
-        return std::nullopt;
-    }
-
-    // Append extension.
-    std::string filename{name.str()};
-    if (not name.ends_with(".mod")) filename += ".mod";
-
-    // Try to find the module in the search path.
-    fs::Path path;
-    for (auto& base : module_search_paths) {
-        auto combined = fs::Path{base} / filename;
-        if (fs::File::Exists(combined)) {
-            path = std::move(combined);
-            break;
-        }
-    }
-
-    // Couldn’t find it :(.
-    if (path.empty()) {
-        Error(import_loc, "Could not find module '{}'", name);
-        Remark("Search paths:\n  {}", utils::join(module_search_paths, "\n  "));
-        return std::nullopt;
-    }
-
-    auto tu = TranslationUnit::Deserialise(ctx, name, path.string(), import_loc);
-    if (not tu) return std::nullopt;
-    return ImportHandle(std::move(tu.value()));
-}
-
-auto ModuleLoader::load(
-    String logical_name,
-    String linkage_name,
-    Location import_loc,
-    bool is_cxx_header
-) -> Opt<ImportHandle> {
-    if (auto it = modules.find(linkage_name); it != modules.end())
-        return Opt<ImportHandle>{it->second.copy(logical_name, import_loc)};
-
-    auto h //
-        = is_cxx_header
-            ? ImportCXXHeader(linkage_name, import_loc)
-            : LoadModuleFromArchive(linkage_name, import_loc);
-
-    if (not h) return std::nullopt;
-    auto [it, _] = modules.try_emplace(linkage_name, std::move(h.value()));
-    return it->second.copy(logical_name, import_loc);
 }
 
 // ============================================================================
@@ -1508,6 +1451,34 @@ auto Sema::BuildBinaryExpr(
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
         }
 
+        case Tk::As: {
+            auto ty_expr = dyn_cast<TypeExpr>(rhs);
+            if (not ty_expr) return Error(rhs->location(), "Expected type");
+            auto ty = ty_expr->value;
+
+            // This is a no-op if the types are the same.
+            if (ty == lhs->type) return lhs;
+
+            // Casting between integer types is always allowed.
+            if (lhs->type->is_integer() and ty->is_integer()) return new (*M) CastExpr(
+                ty,
+                CastExpr::Integral,
+                LValueToSRValue(lhs),
+                loc
+            );
+
+            // Casting to void does nothing.
+            if (ty == Type::VoidTy) return new (*M) CastExpr(
+                ty,
+                CastExpr::ExplicitDiscard,
+                lhs,
+                loc
+            );
+
+            // For everything else, just try to build an initialiser.
+            return BuildInitialiser(ty, lhs, loc);
+        }
+
         // TODO: Allow for slices and arrays.
         case Tk::In: return ICE(loc, "Operator 'in' not yet implemented");
 
@@ -2182,11 +2153,15 @@ Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
     S.scope_stack.push_back(scope);
 }
 
+Sema::Sema(Context& ctx) : ctx(ctx) {}
+Sema::~Sema() = default;
+
 auto Sema::Translate(
     const LangOpts& opts,
     ParsedModule::Ptr preamble,
     SmallVector<ParsedModule::Ptr> modules,
-    StringMap<ImportHandle> imported_modules
+    std::vector<std::string> module_search_paths,
+    bool load_runtime
 ) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
@@ -2201,16 +2176,17 @@ auto Sema::Translate(
     );
 
     // Take ownership of the modules.
-    if (preamble) S.parsed_modules.push_back(std::move(preamble));
+    bool have_preamble = preamble != nullptr;
+    if (have_preamble) S.parsed_modules.push_back(std::move(preamble));
     for (auto& m : modules) S.parsed_modules.push_back(std::move(m));
-    S.M->imports = std::move(imported_modules);
+    S.search_paths = std::move(module_search_paths);
 
     // Translate it.
-    S.Translate();
+    S.Translate(have_preamble, load_runtime);
     return std::move(S.M);
 }
 
-void Sema::Translate() {
+void Sema::Translate(bool have_preamble, bool load_runtime) {
     // Take ownership of any resources of the parsed modules.
     for (auto& p : parsed_modules) {
         M->add_allocator(std::move(p->string_alloc));
@@ -2223,9 +2199,37 @@ void Sema::Translate() {
     M->initialiser_proc->scope = M->create_scope(nullptr);
     EnterProcedure _{*this, M->initialiser_proc};
 
-    // Collect all statements and translate them.
+    // Translate the preamble first since the runtime and other modules rely
+    // on it always being available.
+    auto modules = ArrayRef(parsed_modules).drop_front(have_preamble ? 1 : 0);
     SmallVector<Stmt*> top_level_stmts;
-    for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
+    if (have_preamble) TranslateStmts(top_level_stmts, parsed_modules.front()->top_level);
+
+    // Load the runtime.
+    if (load_runtime) LoadModule(
+        "__src_runtime",
+        "__src_runtime",
+        modules.front()->program_or_module_loc,
+        false
+    );
+
+    // And process other imports.
+    for (auto& m : modules) {
+        for (auto& i : m->imports) {
+            LoadModule(
+                i.import_name,
+                i.linkage_name,
+                i.loc,
+                i.linkage_name.starts_with('<')
+            );
+        }
+    }
+
+    // Bail if we couldn’t load a module.
+    if (ctx.diags().has_error()) return;
+
+    // Collect all statements and translate them.
+    for (auto& p : modules) TranslateStmts(top_level_stmts, p->top_level);
     M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, Location{});
 
     // File scope block should never be dependent.
@@ -2361,6 +2365,13 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Stmt> {
 /// Perform initial processing of a decl so it can be used by the rest
 /// of the code. This only handles order-independent decls.
 auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
+    // If we’re importing a module, adjust the linkage of this declaration.
+    auto Adjust = [&](Ptr<Decl> d) {
+        if (not d or not importing_module) return d;
+        cast<ObjectDecl>(d.get())->linkage = Linkage::Imported;
+        return d;
+    };
+
     // Unwrap exports.
     if (auto exp = dyn_cast<ParsedExportDecl>(d)) {
         auto decl = TranslateDeclInitial(exp->decl);
@@ -2378,7 +2389,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     }
 
     // Build procedure type now so we can forward-reference it.
-    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
+    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return Adjust(TranslateProcDeclInitial(proc));
     if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
     return std::nullopt;
 }

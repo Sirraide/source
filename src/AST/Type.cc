@@ -418,7 +418,7 @@ void ProcType::Profile(
     }
 }
 
-auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnrenderedString {
+auto ProcType::print(StringRef proc_name, bool number_params, ProcDecl* decl) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     out += "%1(proc";
 
@@ -444,6 +444,10 @@ auto ProcType::print(StringRef proc_name, bool number_params) const -> SmallUnre
     // Add attributes.
     if (cconv() == CallingConvention::Native) out += " native";
     if (variadic()) out += " variadic";
+    if (decl) {
+        if (cconv() != CallingConvention::Native and decl->mangling == Mangling::None)
+            out += " nomangle";
+    }
 
     // Add return type.
     if (not ret()->is_void())

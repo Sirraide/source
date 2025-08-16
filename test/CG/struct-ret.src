@@ -33,8 +33,6 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1xE indirect external fastcc;
-// +
 // + proc _S1bFT1xE indirect private fastcc {
 // + entry:
 // +     store retptr, i64 1, align 8
@@ -89,8 +87,6 @@ proc f {
 //L + define fastcc void @__src_main() {
 //L +   ret void
 //L + }
-//L +
-//L + declare fastcc void @_S1aFT1xE(ptr)
 //L +
 //L + define private fastcc void @_S1bFT1xE(ptr %0) {
 //L +   store i64 1, ptr %0, align 8

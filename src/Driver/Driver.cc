@@ -125,9 +125,11 @@ int Driver::run_job() {
 
     // Dump a module.
     if (a == Action::DumpModule) {
-        llvm::BumpPtrAllocator alloc;
+        Todo();
+        /*llvm::BumpPtrAllocator alloc;
         llvm::StringSaver saver{alloc};
-        ModuleLoader loader{ctx, opts.module_search_paths};
+        auto dummy = TranslationUnit::Create(ctx, lang_opts, "__dummy__", false);
+        ModuleLoader loader{*dummy, opts.module_search_paths};
         auto mod = loader.load(
             "module",
             String::Save(saver, files.front().string()),
@@ -136,9 +138,9 @@ int Driver::run_job() {
         );
 
         if (not mod) return 1;
-        if (auto tu = mod.value().dyn_cast<TranslationUnit*>()) tu->dump();
+        if (auto tu = mod.value().dyn_cast<ImportedModule*>()) tu->dump();
         else Todo();
-        return 0;
+        return 0;*/
     }
 
     // Run the verifier.
@@ -198,33 +200,6 @@ int Driver::run_job() {
     // Stop if there was an error.
     if (ctx.diags().has_error()) return 1;
 
-    // Load the runtime.
-    ModuleLoader loader{ctx, opts.module_search_paths};
-    StringMap<ImportHandle> imported;
-    if (opts.import_runtime) {
-        auto rt = loader.load(
-            "__src_runtime",
-            "__src_runtime",
-            parsed_modules.front()->program_or_module_loc,
-            false
-        );
-
-        if (not rt) return 1;
-        imported.try_emplace("__src_runtime", std::move(rt.value()));
-    }
-
-    // And all imported modules we need.
-    for (auto& m : parsed_modules) {
-        for (auto& i : m->imports) {
-            auto h = loader.load(i.import_name, i.linkage_name, i.loc, i.linkage_name.starts_with('<'));
-            if (not h) return 1;
-            imported.try_emplace(i.import_name.sv(), std::move(h.value()));
-        }
-    }
-
-    // Drop the loader’s refcounts.
-    loader.release_all();
-
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
     // TODO: Maybe dispatch to multiple processes? It would simplify things if
@@ -236,7 +211,8 @@ int Driver::run_job() {
         lang_opts,
         std::move(preamble),
         std::move(parsed_modules),
-        std::move(imported)
+        std::move(opts.module_search_paths),
+        opts.import_runtime
     );
 
     if (a == Action::Sema) {
@@ -268,7 +244,7 @@ int Driver::run_job() {
 
     // Run codegen.
     cg::CodeGen cg{*tu, tu->lang_opts(), tu->target().ptr_size()};
-    for (auto p : tu->procs) cg.emit(p);
+    cg.emit_as_needed(tu->procs);
     if (ctx.diags().has_error()) return 1;
     bool finalise_ok = opts.ir_no_finalise or cg.finalise();
 

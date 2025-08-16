@@ -6,8 +6,12 @@ proc exit(i32 value) extern native;
 proc __src_main extern nomangle;
 
 /// Arithmetic failure handler.
+///
+/// The __src_abort_info type passed to these handlers does not
+/// need to be exported by this because it’s part of the preamble,
+/// so it should always be available.
 export proc __src_int_arith_error (
-//    in Assertion
+    in __src_abort_info info
 ) nomangle {
     // TODO: Print error message.
     exit(33);
@@ -15,7 +19,7 @@ export proc __src_int_arith_error (
 
 /// Assertion handler.
 export proc __src_assert_fail (
-//    in Assertion
+    in __src_abort_info info
 ) nomangle {
     // TODO: Print error message.
     exit(33);

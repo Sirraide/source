@@ -81,6 +81,9 @@ public:
 
     /// Dump the contents of the module.
     void dump() const;
+
+    /// Format this module.
+    void format() const;
 };
 
 // ============================================================================
@@ -735,6 +738,7 @@ private:
     TokenStream::iterator tok;
     Context& ctx;
     Signature* current_signature = nullptr;
+    bool parsing_imported_module = false;
 
 public:
     /// Parse a file.

@@ -93,21 +93,15 @@ int cg::CodeGen::write_to_file(
 #endif
     }();
 
-    // Derive the file name from the program name; for modules, always
-    // use '.mod' instead of e.g. '.a' because linking against a module
-    // isn’t enough to make it usable: you also have to run the module
-    // initialiser.
-    //
-    // For programs, we also allow overriding this with a user-defined
-    // output file name.
-    std::string out_name{tu.name.sv()};
-    if (tu.is_module) out_name = std::format("{}.mod", out_name);
-    else if (not program_file_name_override.empty()) out_name = program_file_name_override;
-    else if (machine.getTargetTriple().isOSWindows()) out_name += ".exe";
-
     // If we’re compiling a module, create a static archive.
     // TODO: And a shared library.
     if (tu.is_module) {
+        // Derive the file name from the module name; always use '.mod' instead
+        // of e.g. '.a' because linking against a module isn’t enough to make it
+        // usable: you also have to run the module initialiser.
+        auto out_name = std::format("{}.mod", tu.name.sv());
+        auto desc_name = std::format("{}.mod.meta", tu.name.sv());
+
         // We could avoid writing to a temporary file in this case (but
         // we’d have to add files anyway if we’re combining modules into
         // a collection; would it be worth it?).
@@ -137,8 +131,19 @@ int cg::CodeGen::write_to_file(
 
         // Yes, this is truthy on failure for some ungodly reason.
         if (err) Fatal("Failed to write archive: {}", utils::FormatError(err));
+
+        // Emit the module description.
+        auto desc = tu.serialise();
+        auto res = File::Write(desc.data(), desc.size(), tu.context().module_path() / desc_name);
+        if (not res) Fatal("Failed to write module description: {}", res.error());
         return 0;
     }
+
+    // Determine the file name; For programs, we allow overriding this with a
+    // user-defined output file name.
+    std::string out_name{tu.name.sv()};
+    if (not program_file_name_override.empty()) out_name = program_file_name_override;
+    else if (machine.getTargetTriple().isOSWindows()) out_name += ".exe";
 
     // Collect args.
     SmallVector<std::string> clang_link_args;
@@ -151,9 +156,9 @@ int cg::CodeGen::write_to_file(
     SmallVector<StringRef> args_ref;
     for (auto& arg : clang_link_args) args_ref.push_back(arg);
     for (auto& obj : additional_objects) args_ref.push_back(obj);
-    for (auto& import : tu.imports)
-        if (auto src_mod = import.second.dyn_cast<TranslationUnit*>())
-            args_ref.push_back(src_mod->link_path());
+    for (auto& [_, import] : tu.linkage_imports)
+        if (auto src_mod = dyn_cast<ImportedSourceModuleDecl>(import))
+            args_ref.push_back(src_mod->mod_path);
 
     // We could run the linker without waiting for it, but that defeats
     // the purpose of making the number of jobs configurable, so block

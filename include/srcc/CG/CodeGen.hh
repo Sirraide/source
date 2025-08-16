@@ -204,6 +204,9 @@ public:
     /// Emit a procedure.
     void emit(ProcDecl* proc) { EmitProcedure(proc); }
 
+    /// Emit a list of procedures; any procedures that are not referenced are omitted.
+    void emit_as_needed(ArrayRef<ProcDecl*> procs) { Emit(procs); }
+
     /// Emit a statement into a separate procedure.
     ///
     /// This is used exclusively to prepare a statement for

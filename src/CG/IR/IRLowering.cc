@@ -330,15 +330,6 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     auto m = mlir::translateModuleToLLVMIR(mlir_module, tu.llvm_context, tu.name);
     m->setTargetTriple(machine.getTargetTriple());
     m->setDataLayout(machine.createDataLayout());
-
-    // Emit the module description if this is a module.
-    if (tu.is_module) {
-        SmallString<0> md;
-        tu.serialise(md);
-        auto mb = llvm::MemoryBuffer::getMemBuffer(md, "", false);
-        llvm::embedBufferInModule(*m, mb->getMemBufferRef(), constants::ModuleDescriptionSectionName(tu.name));
-    }
-
     return m;
 }
 

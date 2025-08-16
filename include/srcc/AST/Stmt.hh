@@ -3,6 +3,7 @@
 
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Eval.hh>
+#include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Core/Token.hh>
@@ -15,6 +16,10 @@
 #include <functional>
 #include <memory>
 #include <ranges>
+
+namespace clang {
+class ASTUnit;
+}
 
 namespace srcc {
 #define AST_STMT(node) class node;
@@ -397,6 +402,9 @@ public:
         /// Convert an srvalue 'T^' to an lvalue 'T'.
         Deref,
 
+        /// This is a cast to void.
+        ExplicitDiscard,
+
         /// Cast an srvalue integer to an srvalue integer.
         Integral,
 
@@ -773,6 +781,70 @@ private:
 
 public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeDecl; }
+};
+
+/// Base class for declarations that represent modules.
+class srcc::ModuleDecl : public Decl {
+public:
+    /// The ‘linkage name’ is the actual name of the imported module or the
+    /// actual header name, as opposed to the logical name, which is the name
+    /// given to it when imported. E.g. in
+    ///
+    ///     import foo as bar;
+    ///
+    /// ‘foo’ is the linkage name and ‘bar’ the logical name.
+    String linkage_name;
+
+protected:
+    ModuleDecl(
+        Kind k,
+        String logical_name,
+        String linkage_name,
+        Location loc
+    ) : Decl{k, logical_name, loc}, linkage_name{linkage_name} {
+        Assert(not logical_name.empty());
+        Assert(not linkage_name.empty());
+    }
+
+public:
+    static bool classof(const Stmt* e) {
+        return e->kind() >= Kind::ImportedClangModuleDecl and
+               e->kind() <= Kind::ImportedSourceModuleDecl;
+    }
+};
+
+/// Class representing an imported Clang module.
+class srcc::ImportedClangModuleDecl : public ModuleDecl {
+public:
+    clang::ASTUnit& clang_ast;
+
+    ImportedClangModuleDecl(
+        clang::ASTUnit& clang_ast,
+        String logical_name,
+        String linkage_name,
+        Location loc
+    ) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, linkage_name, loc}, clang_ast{clang_ast} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ImportedClangModuleDecl; }
+};
+
+/// Class representing an imported Source module.
+class srcc::ImportedSourceModuleDecl : public ModuleDecl {
+public:
+    Scope& exports;
+
+    /// The path that we need to link against.
+    String mod_path;
+
+    ImportedSourceModuleDecl(
+        Scope& exports,
+        String logical_name,
+        String linkage_name,
+        String mod_path,
+        Location loc
+    ) : ModuleDecl{Kind::ImportedSourceModuleDecl, logical_name, linkage_name, loc}, exports{exports}, mod_path{mod_path} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ImportedSourceModuleDecl; }
 };
 
 class srcc::LocalDecl : public Decl {

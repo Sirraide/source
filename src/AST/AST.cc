@@ -12,24 +12,6 @@
 using namespace srcc;
 
 // ============================================================================
-//  ImportHandle
-// ============================================================================
-ImportHandle::ImportHandle(std::unique_ptr<TranslationUnit> h)
-    : PointerUnion(h.get()),
-      shared_handle{std::shared_ptr(std::move(h))} {}
-
-ImportHandle::ImportHandle(std::unique_ptr<clang::ASTUnit> h)
-    : PointerUnion(h.get()),
-      shared_handle{std::shared_ptr(std::move(h))} {}
-
-auto ImportHandle::copy(String logical_name, Location loc) -> ImportHandle {
-    auto h = *this;
-    h.import_name = logical_name;
-    h.import_location = loc;
-    return h;
-}
-
-// ============================================================================
 //  Target
 // ============================================================================
 Target::Target() = default;
@@ -108,25 +90,17 @@ auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name,
     return std::unique_ptr<TranslationUnit>(m);
 }
 
-auto TranslationUnit::CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr {
-    return std::unique_ptr<TranslationUnit>(new TranslationUnit{ctx, opts, "", true});
-}
-
 void TranslationUnit::dump() const {
     bool c = context().use_colours;
 
     // Print preamble.
     utils::Print(c, "%1({}%) %2({}%)\n", is_module ? "Module" : "Program", name);
 
+    // Dump imports.
+    for (auto& [_, i] : logical_imports) i->dump(c);
+
     // Print content.
-    if (imported()) {
-        for (auto& list : exports.decls_by_name)
-            for (auto d : list.second)
-                d->dump(c);
-    } else {
-        for (auto s : file_scope_block->stmts())
-            s->dump(c);
-    }
+    for (auto s : file_scope_block->stmts()) s->dump(c);
 }
 
 auto TranslationUnit::save(eval::RValue val) -> eval::RValue* {
@@ -297,6 +271,7 @@ void Stmt::Printer::Print(Stmt* e) {
             print(" {} ", c->type->print());
             switch (c->kind) {
                 case CastExpr::Deref: print("deref"); break;
+                case CastExpr::ExplicitDiscard: print("discard"); break;
                 case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
@@ -352,6 +327,29 @@ void Stmt::Printer::Print(Stmt* e) {
             SmallVector<Stmt*, 3> children{i->cond, i->then};
             if (auto el = i->else_.get_or_null()) children.push_back(el);
             PrintChildren(children);
+        } break;
+
+        case Kind::ImportedClangModuleDecl:
+            PrintBasicNode(e, "ImportedClangModuleDecl", [&] {
+                auto c = cast<ImportedClangModuleDecl>(e);
+                print(
+                    "%3({}%) %1(as%) {}",
+                    utils::Escape(c->linkage_name, false, true),
+                    c->name
+                );
+            });
+            break;
+
+        case Kind::ImportedSourceModuleDecl: {
+            auto s = cast<ImportedSourceModuleDecl>(e);
+            PrintBasicNode(e, "ImportedSourceModuleDecl", [&] {
+                if (s->linkage_name != s->name) {
+                    print("{} %1(as%) {}", s->linkage_name, s->name);
+                } else {
+                    print("{}", s->name);
+                }
+            });
+            PrintChildren<Decl>(s->exports.decls() | rgs::to<std::vector>());
         } break;
 
         case Kind::IntLitExpr: {

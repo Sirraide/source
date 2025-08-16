@@ -21,6 +21,7 @@ class Decl;
 class FieldDecl;
 class ProcTemplateDecl;
 class TypeDecl;
+class ProcDecl;
 struct BuiltinTypes;
 
 #define AST_TYPE(node) class node;
@@ -400,7 +401,7 @@ public:
     auto params() const -> ArrayRef<ParamTypeData> { return getTrailingObjects(num_params); }
 
     /// Print the proc type, optionally with a name.
-    auto print(StringRef proc_name = "", bool number_params = false) const -> SmallUnrenderedString;
+    auto print(StringRef proc_name = "", bool number_params = false, ProcDecl* decl = nullptr) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }

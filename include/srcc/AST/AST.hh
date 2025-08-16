@@ -19,40 +19,9 @@
 #include <base/DSA.hh>
 
 namespace srcc {
-class ImportHandle;
 class TranslationUnit;
 class Target;
 }
-
-/// Ref-counted handle to an import.
-class srcc::ImportHandle : public llvm::PointerUnion<TranslationUnit*, clang::ASTUnit*> {
-    // So we don’t have to deal with implementing a refcount; we won’t
-    // be moving these around much anyway.
-    Variant<
-        std::shared_ptr<TranslationUnit>,
-        std::shared_ptr<clang::ASTUnit>>
-        shared_handle;
-
-    // Logical name of this import.
-    String import_name;
-
-    // Location of the import.
-    Location import_location;
-
-    ImportHandle(const ImportHandle&) = default;
-    ImportHandle& operator=(const ImportHandle&) = default;
-
-public:
-    explicit ImportHandle(std::unique_ptr<TranslationUnit> h);
-    explicit ImportHandle(std::unique_ptr<clang::ASTUnit> h);
-    ImportHandle(ImportHandle&&) = default;
-    ImportHandle& operator=(ImportHandle&&) = default;
-
-    auto copy(String logical_name, Location loc) -> ImportHandle;
-    auto logical_name() const -> String { return import_name; }
-    auto location() const -> Location { return import_location; }
-    auto ptr() -> PointerUnion<TranslationUnit*, clang::ASTUnit*> { return *this; }
-};
 
 class srcc::Target {
     LIBBASE_IMMOVABLE(Target);
@@ -94,8 +63,6 @@ class srcc::TranslationUnit {
     SRCC_IMMOVABLE(TranslationUnit);
 
 public:
-    struct Serialiser;
-    struct Deserialiser;
     using Ptr = std::unique_ptr<TranslationUnit>;
 
 private:
@@ -140,8 +107,11 @@ private:
     explicit TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module);
 
 public:
-    /// Map from module names to imported modules.
-    StringMap<ImportHandle> imports;
+    /// Map from linkage names to imported modules.
+    StringMap<ModuleDecl*> linkage_imports;
+
+    /// Map from logical names to imported modules.
+    StringMap<ModuleDecl*> logical_imports;
 
     /// The name of this program or module.
     String name;
@@ -199,22 +169,6 @@ public:
 
     /// Create a new module.
     static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr;
-    static auto CreateEmpty(Context& ctx, const LangOpts& opts) -> Ptr;
-
-    /// Deserialise a module.
-    static auto Deserialise(Context& ctx, ArrayRef<char> data) -> Ptr;
-
-    /// Deserialise a module from an archive.
-    ///
-    /// \return std::nullopt if extracting the module description
-    /// from the file failed. Deserialisation errors are still
-    /// fatal errors!
-    static auto Deserialise(
-        Context& ctx,
-        StringRef module_name,
-        StringRef archive_path,
-        Location err_loc
-    ) -> Opt<Ptr>;
 
     /// Allocate data.
     void* allocate(usz size, usz align) { return allocator().Allocate(size, align); }
@@ -253,9 +207,6 @@ public:
     /// Dump the contents of the module.
     void dump() const;
 
-    /// Whether this is an imported module.
-    bool imported() const { return initialiser_proc == nullptr; }
-
     /// Get the language options for this module.
     [[nodiscard]] auto lang_opts() const -> const LangOpts& { return language_opts; }
 
@@ -271,8 +222,8 @@ public:
     /// Store an integer in the module.
     auto store_int(APInt value) -> StoredInteger;
 
-    /// Serialise this module to a memory buffer
-    void serialise(SmallVectorImpl<char>& buffer) const;
+    /// Serialise this module.
+    auto serialise() -> SmallString<0>;
 
     /// Get the target info.
     auto target() const -> const Target& { return tgt; }

@@ -21,40 +21,6 @@ namespace srcc {
 class TemplateInstantiator;
 }
 
-/// Structure that is used to collect imports for a compilation job; the
-/// loader does *not* own any modules; they are refcounted instead.
-class srcc::ModuleLoader : public DefaultDiagsProducer<> {
-    friend DefaultDiagsProducer;
-    Context& ctx;
-    StringMap<ImportHandle> modules;
-    SmallVector<std::string> module_search_paths;
-
-public:
-    ModuleLoader(Context& ctx, ArrayRef<std::string> module_search_paths)
-        : ctx{ctx}, module_search_paths{module_search_paths.begin(), module_search_paths.end()} {}
-
-    /// Load a C++ header from the system include path.
-    ///
-    /// \param logical_name The name given to this in source.
-    /// \param linkage_name The actual name of this.
-    /// \param import_loc Where this was imported from.
-    /// \param is_cxx_header Whether this is a C++ header name.
-    auto load(
-        String logical_name,
-        String linkage_name,
-        Location import_loc,
-        bool is_cxx_header
-    ) -> Opt<ImportHandle>;
-
-    /// Release all handles held by the module loader; they will be deleted
-    /// when the refcount reaches 0.
-    void release_all() { modules.clear(); }
-
-private:
-    auto ImportCXXHeader(StringRef name, Location import_loc) -> Opt<ImportHandle>;
-    auto LoadModuleFromArchive(StringRef name, Location import_loc) -> Opt<ImportHandle>;
-};
-
 class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     SRCC_IMMOVABLE(Sema);
 
@@ -405,6 +371,7 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     Context& ctx;
     TranslationUnit::Ptr M;
     SmallVector<ParsedModule::Ptr> parsed_modules;
+    std::vector<std::string> search_paths;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
@@ -419,13 +386,20 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
 
+    /// C++ TUs that we own.
+    SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
+
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, SmallVector<std::unique_ptr<SubstitutionInfo>>> template_substitutions;
 
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
-    explicit Sema(Context& ctx) : ctx(ctx) {}
+    /// Whether we’re currently parsing imported declarations.
+    bool importing_module = false;
+
+    Sema(Context& ctx);
+    ~Sema();
 
 public:
     /// Analyse a set of parsed modules and combine them into a single module.
@@ -435,7 +409,8 @@ public:
         const LangOpts& opts,
         ParsedModule::Ptr preamble,
         SmallVector<ParsedModule::Ptr> modules,
-        StringMap<ImportHandle> imported_modules
+        std::vector<std::string> module_search_paths,
+        bool load_runtime
     ) -> TranslationUnit::Ptr;
 
     /// Get the context.
@@ -573,6 +548,13 @@ private:
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
 
+    /// Import a C++ header.
+    auto ImportCXXHeader(
+        String logical_name,
+        String linkage_name,
+        Location import_loc
+    ) -> Ptr<ImportedClangModuleDecl>;
+
     /// Instantiate a procedure template.
     auto InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl*;
 
@@ -581,6 +563,26 @@ private:
 
     /// Check that we have a complete type.
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
+
+    /// Load a native header or Source module from the system include path.
+    ///
+    /// \param logical_name The name given to this in source.
+    /// \param linkage_name The actual name of this.
+    /// \param import_loc Where this was imported from.
+    /// \param is_cxx_header Whether this is a C++ header name.
+    void LoadModule(
+        String logical_name,
+        String linkage_name,
+        Location import_loc,
+        bool is_cxx_header
+    );
+
+    /// Load a Source module.
+    auto LoadModuleFromArchive(
+        String logical_name,
+        String linkage_name,
+        Location import_loc
+    ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
     auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult;
@@ -673,7 +675,7 @@ private:
     auto BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt>;
 
     /// Entry point.
-    void Translate();
+    void Translate(bool have_preamble, bool load_runtime);
 
     /// Statements.
 #define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;

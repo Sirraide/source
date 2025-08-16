@@ -73,18 +73,6 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxiE (i64) external fastcc;
-// +
-// + proc _S3fooFvxI16E (i16) external fastcc;
-// +
-// + proc _S3fooFvxI16xiE (i16,i64) external fastcc;
-// +
-// + proc _S3fooFvxixiE (i64,i64) external fastcc;
-// +
-// + proc _S3fooFvxixixiE (i64,i64,i64) external fastcc;
-// +
-// + proc _S3fooFvxixixixiE (i64,i64,i64,i64) external fastcc;
-// +
 // + proc _S1aFvE private fastcc {
 // + entry:
 // +     br bb1(1)
@@ -123,6 +111,8 @@ proc l {
 // +     ret
 // + }
 // +
+// + proc _S3fooFvxI16E (i16) external fastcc;
+// +
 // + proc _S1cFvE private fastcc {
 // + entry:
 // +     br bb1(1)
@@ -147,6 +137,8 @@ proc l {
 // + bb5:
 // +     ret
 // + }
+// +
+// + proc _S3fooFvxiE (i64) external fastcc;
 // +
 // + proc _S1dFvE private fastcc {
 // + entry:
@@ -187,6 +179,8 @@ proc l {
 // +     ret
 // + }
 // +
+// + proc _S3fooFvxI16xiE (i16,i64) external fastcc;
+// +
 // + proc _S1fFvE private fastcc {
 // + entry:
 // +     br bb1(0, 1)
@@ -214,6 +208,8 @@ proc l {
 // +     ret
 // + }
 // +
+// + proc _S3fooFvxixixixiE (i64,i64,i64,i64) external fastcc;
+// +
 // + proc _S1gFvE private fastcc {
 // + entry:
 // +     br bb1(1, 11)
@@ -235,6 +231,8 @@ proc l {
 // + bb4:
 // +     ret
 // + }
+// +
+// + proc _S3fooFvxixiE (i64,i64) external fastcc;
 // +
 // + proc _S1hFvE private fastcc {
 // + entry:
@@ -258,6 +256,8 @@ proc l {
 // + bb4:
 // +     ret
 // + }
+// +
+// + proc _S3fooFvxixixiE (i64,i64,i64) external fastcc;
 // +
 // + proc _S1iFvE private fastcc {
 // + entry:
@@ -370,18 +370,6 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxiE(i64)
-//L +
-//L + declare fastcc void @_S3fooFvxI16E(i16)
-//L +
-//L + declare fastcc void @_S3fooFvxI16xiE(i16, i64)
-//L +
-//L + declare fastcc void @_S3fooFvxixiE(i64, i64)
-//L +
-//L + declare fastcc void @_S3fooFvxixixiE(i64, i64, i64)
-//L +
-//L + declare fastcc void @_S3fooFvxixixixiE(i64, i64, i64, i64)
-//L +
 //L + define private fastcc void @_S1aFvE() {
 //L +   br label %1
 //L +
@@ -419,6 +407,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
+//L + declare fastcc void @_S3fooFvxI16E(i16)
+//L +
 //L + define private fastcc void @_S1cFvE() {
 //L +   br label %1
 //L +
@@ -444,6 +434,8 @@ proc l {
 //L + 11:                                               ; preds = %1
 //L +   ret void
 //L + }
+//L +
+//L + declare fastcc void @_S3fooFvxiE(i64)
 //L +
 //L + define private fastcc void @_S1dFvE() {
 //L +   br label %1
@@ -484,6 +476,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
+//L + declare fastcc void @_S3fooFvxI16xiE(i16, i64)
+//L +
 //L + define private fastcc void @_S1fFvE() {
 //L +   br label %1
 //L +
@@ -514,6 +508,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
+//L + declare fastcc void @_S3fooFvxixixixiE(i64, i64, i64, i64)
+//L +
 //L + define private fastcc void @_S1gFvE() {
 //L +   br label %1
 //L +
@@ -536,6 +532,8 @@ proc l {
 //L + 10:                                               ; preds = %5, %1
 //L +   ret void
 //L + }
+//L +
+//L + declare fastcc void @_S3fooFvxixiE(i64, i64)
 //L +
 //L + define private fastcc void @_S1hFvE() {
 //L +   br label %1
@@ -561,6 +559,8 @@ proc l {
 //L + 12:                                               ; preds = %6, %1
 //L +   ret void
 //L + }
+//L +
+//L + declare fastcc void @_S3fooFvxixixiE(i64, i64, i64)
 //L +
 //L + define private fastcc void @_S1iFvE() {
 //L +   br label %1

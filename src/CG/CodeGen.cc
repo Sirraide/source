@@ -37,6 +37,7 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
 
     // Declare the abort handlers.
+    // FIXME: These should instead be declared as needed by the LLVM lowering pass.
     if (tu.abort_info_type) {
         auto ptr = PtrType::Get(tu, tu.abort_info_type);
         auto ty = ProcType::Get(tu, Type::VoidTy, {ParamTypeData{Intent::In, ptr}});
@@ -825,7 +826,9 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
 //  CG
 // ============================================================================
 void CodeGen::Emit(ArrayRef<ProcDecl*> procs) {
-    for (auto& p : procs) EmitProcedure(p);
+    for (auto& p : procs)
+        if (p->body())
+            EmitProcedure(p);
 }
 
 auto CodeGen::Emit(Stmt* stmt) -> SRValue {
@@ -1373,6 +1376,9 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> SRValue {
     switch (expr->kind) {
         case CastExpr::Deref:
             return val; // This is a no-op like prefix '^'.
+
+        case CastExpr::ExplicitDiscard:
+            return {};
 
         case CastExpr::Integral:
             return CreateSICast(C(expr->location()), val.scalar(), expr->arg->type, expr->type);

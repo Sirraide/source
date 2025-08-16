@@ -29,10 +29,17 @@
 // These must be arranged in a preorder traversal of the class hierarchy
 // for classof() to work properly.
 
+// =================================================================================
+//  Statements
+// =================================================================================
 AST_STMT(Stmt)
 AST_STMT_LEAF(EmptyStmt)
 AST_STMT_LEAF(ForStmt)
 AST_STMT_LEAF(WhileStmt)
+
+// =================================================================================
+//  Expressions
+// =================================================================================
 AST_STMT(Expr)
 AST_STMT_LEAF(ArrayBroadcastExpr)
 AST_STMT_LEAF(ArrayInitExpr)
@@ -60,16 +67,27 @@ AST_STMT_LEAF(StructInitExpr)
 AST_STMT_LEAF(TypeExpr)
 AST_STMT_LEAF(UnaryExpr)
 
+// =================================================================================
+//  Declarations
+// =================================================================================
 AST_STMT(Decl)
 AST_DECL_LEAF(FieldDecl)
 AST_DECL_LEAF(ProcTemplateDecl)
 AST_DECL_LEAF(TemplateTypeParamDecl)
 AST_DECL_LEAF(TypeDecl)
+
+AST_STMT(ModuleDecl)
+AST_DECL_LEAF(ImportedClangModuleDecl)
+AST_DECL_LEAF(ImportedSourceModuleDecl)
+
 AST_STMT(ObjectDecl)
 AST_DECL_LEAF(LocalDecl)
 AST_DECL_LEAF(ParamDecl)
 AST_DECL_LEAF(ProcDecl)
 
+// =================================================================================
+//  Types
+// =================================================================================
 AST_TYPE(TypeBase)
 AST_TYPE(SingleElementTypeBase)
 AST_TYPE_LEAF(ArrayType)
