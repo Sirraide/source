@@ -10,7 +10,6 @@
 #include <mlir/IR/BuiltinDialect.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-//#include <mlir/InitAllDialects.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 
@@ -46,10 +45,8 @@ void srcc::cg::ir::SRCCDialect::initialize() {
 }
 
 void srcc::cg::ir::SRCCDialect::InitialiseContext(mlir::MLIRContext& ctx) {
-    //mlir::registerAllDialects(ctx);
     mlir::registerBuiltinDialectTranslation(ctx);
     mlir::registerLLVMDialectTranslation(ctx);
-    //ctx.printStackTraceOnDiagnostic(true);
     ctx.printOpOnDiagnostic(true);
     ctx.loadDialect<
         mlir::BuiltinDialect,
