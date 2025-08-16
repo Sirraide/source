@@ -104,6 +104,11 @@ auto TranslationUnit::serialise() -> SmallString<0> {
             continue;
         }
 
+        // TODO: I was going to compress the module description, but instead,
+        // can we extract doc comments and paste them into this file? That way,
+        // we’d basically be generating a header file, and people like to use
+        // those for documentation.
+
         // TODO: For templates, have the parser keep track of the first and
         // last token of the function body and simply write out all the tokens
         // in between.

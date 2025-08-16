@@ -335,7 +335,7 @@ invalid pattern is one that is not *valid*:
 
 ## Idea for formatting and syntax highlighting
 ‘Decorated parse tree’, i.e. optionally (or always, it oughtn’t be too expensive), Sema
-builds a one-to-one mapping from parse tree nodes to AST nodes so that people can both
+builds a mapping from parse tree nodes to AST nodes so that people can both
 use the parse tree for syntactic information and also known e.g. what an identifer actually
 is.
 
@@ -478,18 +478,4 @@ Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for
 is probably an error. Allowing this would just be too weird...)
 
 - Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
-  since 'in' parameters are immutable by default.~~ 
-
-## Semicolons as separators
-(This doesn’t work because it would require us to write a `;` after `}`, which is just dumb.)
-
-Semicolons *need* to be separators, not terminators, because of cases such as:
-```
-int x = if a then b else c;
-```
-if semicolons were terminators, we’d either need separate `if` statement and expression productions,
-or the above would have to be
-```
-int x = if a then b; else c;;
-```
-which is just gross.
+  since 'in' parameters are immutable by default.~~
