@@ -60,7 +60,7 @@ ParsedProcType::ParsedProcType(
     std::uninitialized_copy_n(
         params.begin(),
         params.size(),
-        getTrailingObjects<ParsedParameter>()
+        getTrailingObjects()
     );
 }
 
@@ -84,7 +84,7 @@ ParsedBlockExpr::ParsedBlockExpr(
     Location location
 ) : ParsedStmt{Kind::BlockExpr, location},
     num_stmts{u32(stmts.size())} {
-    std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects<ParsedStmt*>());
+    std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects());
 }
 
 auto ParsedBlockExpr::Create(
@@ -103,7 +103,7 @@ ParsedCallExpr::ParsedCallExpr(
     Location location
 ) : ParsedStmt{Kind::CallExpr, location},
     callee{callee}, num_args{u32(args.size())} {
-    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects<ParsedStmt*>());
+    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
 }
 
 auto ParsedCallExpr::Create(
@@ -119,7 +119,7 @@ auto ParsedCallExpr::Create(
 
 ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<String> names, Location location)
     : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())) {
-    std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects<String>());
+    std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects());
 }
 
 auto ParsedDeclRefExpr::Create(
@@ -182,7 +182,7 @@ ParsedProcDecl::ParsedProcDecl(
     std::uninitialized_copy_n(
         param_decls.begin(),
         param_decls.size(),
-        getTrailingObjects<ParsedLocalDecl*>()
+        getTrailingObjects()
     );
 }
 
@@ -207,7 +207,7 @@ ParsedStructDecl::ParsedStructDecl(
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),
-        getTrailingObjects<ParsedFieldDecl*>()
+        getTrailingObjects()
     );
 }
 

@@ -2,38 +2,66 @@
 // R[//L] %srcc --llvm %s
 program test;
 
-struct x { int y; }
+struct x { int a; int b; int c; }
 
-eval x(1);
-x a = eval x(1);
+proc a = eval x(1, 2, 3);
+proc b = eval x(-1, -2, -3);
 
-// * @0 = { 01, 00, 00, 00, 00, 00, 00, 00 }, align 8
+// * @0 = "\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
+// + @1 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
 // +
-// + proc __src_main {
-// +     %0 = x
+// + proc __src_assert_fail (ptr) external fastcc;
 // +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
-// +     copy %0, @0, int 8
+// +     ret
+// + }
+// +
+// + proc _S1aFT1xE indirect private fastcc {
+// + entry:
+// +     copy retptr, @1, 24
+// +     ret
+// + }
+// +
+// + proc _S1bFT1xE indirect private fastcc {
+// + entry:
+// +     copy retptr, @0, 24
 // +     ret
 // + }
 
-//L * @0 = private unnamed_addr constant [8 x i8] c"\01\00\00\00\00\00\00\00", align 8
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_assert_fail({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + @__srcc_str.1 = private constant [24 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
+//L + @__srcc_str.0 = private constant [24 x i8] c"\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
 //L +
-//L + ; Function Attrs: noreturn nounwind
-//L + declare fastcc void @__src_int_arith_error({ ptr, i64 }, i64, i64, { ptr, i64 }, { ptr, i64 }) #0
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
 //L +
 //L + define fastcc void @__src_main() {
-//L + entry:
-//L +   %0 = alloca [8 x i8], align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr align 8 %0, ptr align 8 @0, i64 8, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1aFT1xE(ptr %0) {
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %0, ptr @__srcc_str.0, i64 24, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1bFT1xE(ptr %0) {
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %0, ptr @__srcc_str.1, i64 24, i1 false)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
-//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #0
 //L +
-//L + attributes #0 = { noreturn nounwind }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #0 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

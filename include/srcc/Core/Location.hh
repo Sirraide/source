@@ -10,6 +10,10 @@ struct LocInfo;
 struct LocInfoShort;
 }
 
+namespace mlir {
+class Location;
+}
+
 /// A short decoded source location.
 struct srcc::LocInfoShort {
     i64 line;
@@ -23,7 +27,7 @@ struct srcc::LocInfo : LocInfoShort {
 
 /// A source range in a file.
 struct srcc::Location {
-    using Encoded = u64;
+    using Encoded = uptr;
 
     u32 pos{};
     u16 len{};
@@ -84,6 +88,9 @@ struct srcc::Location {
     static auto Decode(Encoded loc) -> Location {
         return std::bit_cast<Location>(loc);
     }
+
+    /// Try to decode an MLIR location.
+    static auto Decode(mlir::Location loc) -> Location;
 
 private:
     [[nodiscard]] bool seekable(const Context& ctx) const;

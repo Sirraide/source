@@ -1,0 +1,106 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+struct A {
+    int x;
+    int y;
+};
+
+struct B {
+    A a;
+    A b;
+};
+
+proc f {
+    A a = A(1, 2);
+    B b = B(A(3, 4), A(5, 6));
+}
+
+proc g {
+    A a;
+    B b;
+}
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1fFvE private fastcc {
+// +     #0 = 16, align 8
+// +     #1 = 32, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 2, align 8
+// +     store #1, i64 3, align 8
+// +     %1 = ptradd #1, 8
+// +     store %1, i64 4, align 8
+// +     %2 = ptradd #1, 16
+// +     store %2, i64 5, align 8
+// +     %3 = ptradd %2, 8
+// +     store %3, i64 6, align 8
+// +     ret
+// + }
+// +
+// + proc _S1gFvE private fastcc {
+// +     #0 = 16, align 8
+// +     #1 = 32, align 8
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 16
+// +     set ptr #1, i8 0, i64 32
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1fFvE() {
+//L +   %1 = alloca i8, i64 16, align 8
+//L +   %2 = alloca i8, i64 32, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %3 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 2, ptr %3, align 8
+//L +   store i64 3, ptr %2, align 8
+//L +   %4 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i64 4, ptr %4, align 8
+//L +   %5 = getelementptr inbounds nuw i8, ptr %2, i32 16
+//L +   store i64 5, ptr %5, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 6, ptr %6, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S1gFvE() {
+//L +   %1 = alloca i8, i64 16, align 8
+//L +   %2 = alloca i8, i64 32, align 8
+//L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 16, i1 false)
+//L +   call void @llvm.memset.p0.i64(ptr %2, i8 0, i64 32, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #0
+//L +
+//L + attributes #0 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

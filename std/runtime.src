@@ -6,7 +6,17 @@ proc exit(i32 value) extern native;
 proc __src_main extern nomangle;
 
 /// Arithmetic failure handler.
-export proc __src_int_arith_error nomangle {
+export proc __src_int_arith_error (
+//    in Assertion
+) nomangle {
+    // TODO: Print error message.
+    exit(33);
+}
+
+/// Assertion handler.
+export proc __src_assert_fail (
+//    in Assertion
+) nomangle {
     // TODO: Print error message.
     exit(33);
 }

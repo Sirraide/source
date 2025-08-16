@@ -12,154 +12,181 @@ proc exp_ass (copy int a, in int b) {
     a **= b;
 }
 
-// * proc __src_main {
+// * @0 = "*\00"
+// + @1 = "integer overflow\00"
+// + @2 = "-\00"
+// + @3 = "preamble.src\00"
+// + @4 = "exp >= 0\00"
+// + @5 = "attempting to raise 0 to a negative power\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (in int %0) {
+// + proc _S4sinkFvxiE (i64 %0) private fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S3expFvxixiE (in int %0, in int %1) {
+// + proc _S3expFvxixiE (i64 %0, i64 %1) private fastcc {
 // + entry:
-// +     %2 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
-// +     call void _S4sinkFvxiE(%2)
-// +     %3 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
-// +     call void _S4sinkFvxiE(%3)
-// +     %4 = call int _S$12__srcc_exp_iFixix3iE(%0, %1)
-// +     call void _S4sinkFvxiE(%4)
+// +     %2 = call fastcc i64 _S$12__srcc_exp_iFixix3iE(i64 %0, i64 %1)
+// +     call fastcc void _S4sinkFvxiE(i64 %2)
+// +     %3 = call fastcc i64 _S$12__srcc_exp_iFixix3iE(i64 %0, i64 %1)
+// +     call fastcc void _S4sinkFvxiE(i64 %3)
+// +     %4 = call fastcc i64 _S$12__srcc_exp_iFixix3iE(i64 %0, i64 %1)
+// +     call fastcc void _S4sinkFvxiE(i64 %4)
 // +     ret
 // + }
 // +
-// + proc _S$12__srcc_exp_iFixix3iE (in int %0, copy int %1) -> int {
-// +     %2 = int
-// +     %3 = int
+// + proc _S$12__srcc_exp_iFixix3iE (i64 %0, i64 %1) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 64, align 8
 // +
 // + entry:
-// +     store int to %2, %1, align 8
-// +     %4 = load int, %2, align 8
-// +     %5 = icmp eq %4, int 0
-// +     br %5 to bb1 else bb2
+// +     store #0, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = icmp eq i64 %2, 0
+// +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     ret int 1
+// +     ret i64 1
 // +
 // + bb2:
-// +     %6 = icmp eq %0, int 0
-// +     br %6 to bb3 else bb6
+// +     %4 = icmp eq i64 %0, 0
+// +     br %4 to bb3 else bb6
 // +
 // + bb3:
-// +     %7 = load int, %2, align 8
-// +     %8 = icmp sge %7, int 0
-// +     br %8 to bb5 else bb4
+// +     %5 = load i64, #0, align 8
+// +     %6 = icmp sge i64 %5, 0
+// +     br %6 to bb5 else bb4
 // +
 // + bb4:
-// +     abort at <preamble.src:11:9> __src_assert_fail(s"exp >= 0", s"attempting to raise 0 to a negative power")
+// +     store #2, ptr @3, align 8
+// +     %7 = ptradd #2, 8
+// +     store %7, i64 12, align 8
+// +     %8 = ptradd #2, 16
+// +     store %8, i64 11, align 8
+// +     %9 = ptradd #2, 24
+// +     store %9, i64 9, align 8
+// +     %10 = ptradd #2, 32
+// +     store %10, ptr @4, align 8
+// +     %11 = ptradd %10, 8
+// +     store %11, i64 8, align 8
+// +     %12 = ptradd #2, 48
+// +     store %12, ptr @5, align 8
+// +     %13 = ptradd %12, 8
+// +     store %13, i64 41, align 8
+// +     abort at loc("preamble.src":11:9) assert(ptr #2)
 // +
 // + bb5:
-// +     ret int 0
+// +     ret i64 0
 // +
 // + bb6:
-// +     %9 = load int, %2, align 8
-// +     %10 = icmp slt %9, int 0
-// +     br %10 to bb7 else bb20
+// +     %14 = load i64, #0, align 8
+// +     %15 = icmp slt i64 %14, 0
+// +     br %15 to bb7 else bb10
 // +
 // + bb7:
-// +     %11 = ssub ov int 0, int 1
-// +     br %11:1 to bb8 else bb9
+// +     %16 = icmp eq i64 %0, -1
+// +     br %16 to bb8 else bb9
 // +
 // + bb8:
-// +     abort at <preamble.src:20:20> __src_int_arith_error(s"-", s"integer overflow")
+// +     %17 = load i64, #0, align 8
+// +     %18 = and i64 %17, 1
+// +     %19 = icmp ne i64 %18, 0
+// +     %20 = select %19, i64 -1, 1
+// +     ret i64 %20
 // +
 // + bb9:
-// +     %12 = icmp eq %0, %11:0
-// +     br %12 to bb10 else bb16
+// +     %21 = icmp eq i64 %0, 1
+// +     %22 = zext i1 %21 to i64
+// +     ret i64 %22
 // +
 // + bb10:
-// +     %13 = load int, %2, align 8
-// +     %14 = and %13, int 1
-// +     %15 = icmp ne %14, int 0
-// +     br %15 to bb11 else bb14
+// +     store #1, i64 %0, align 8
+// +     br bb11
 // +
 // + bb11:
-// +     %16 = ssub ov int 0, int 1
-// +     br %16:1 to bb12 else bb13
+// +     %23 = load i64, #0, align 8
+// +     %24 = icmp ne i64 %23, 1
+// +     br %24 to bb12 else bb17
 // +
 // + bb12:
-// +     abort at <preamble.src:20:52> __src_int_arith_error(s"-", s"integer overflow")
+// +     %25 = load i64, #1, align 8
+// +     %26 = smul ov i64 %25, %0
+// +     br %26:1 to bb13 else bb14
 // +
 // + bb13:
-// +     br bb15(%16:0)
+// +     store #2, ptr @3, align 8
+// +     %27 = ptradd #2, 8
+// +     store %27, i64 12, align 8
+// +     %28 = ptradd #2, 16
+// +     store %28, i64 27, align 8
+// +     %29 = ptradd #2, 24
+// +     store %29, i64 9, align 8
+// +     %30 = ptradd #2, 32
+// +     store %30, ptr @0, align 8
+// +     %31 = ptradd %30, 8
+// +     store %31, i64 1, align 8
+// +     %32 = ptradd #2, 48
+// +     store %32, ptr @1, align 8
+// +     %33 = ptradd %32, 8
+// +     store %33, i64 16, align 8
+// +     abort at loc("preamble.src":27:9) arithmetic(ptr #2)
 // +
 // + bb14:
-// +     br bb15(int 1)
+// +     store #1, i64 %26:0, align 8
+// +     %34 = load i64, #0, align 8
+// +     %35 = ssub ov i64 %34, 1
+// +     br %35:1 to bb15 else bb16
 // +
-// + bb15(int %17):
-// +     ret %17
+// + bb15:
+// +     store #2, ptr @3, align 8
+// +     %36 = ptradd #2, 8
+// +     store %36, i64 12, align 8
+// +     %37 = ptradd #2, 16
+// +     store %37, i64 28, align 8
+// +     %38 = ptradd #2, 24
+// +     store %38, i64 9, align 8
+// +     %39 = ptradd #2, 32
+// +     store %39, ptr @2, align 8
+// +     %40 = ptradd %39, 8
+// +     store %40, i64 1, align 8
+// +     %41 = ptradd #2, 48
+// +     store %41, ptr @1, align 8
+// +     %42 = ptradd %41, 8
+// +     store %42, i64 16, align 8
+// +     abort at loc("preamble.src":28:9) arithmetic(ptr #2)
 // +
 // + bb16:
-// +     %18 = icmp eq %0, int 1
-// +     br %18 to bb17 else bb18
+// +     store #0, i64 %35:0, align 8
+// +     br bb11
 // +
 // + bb17:
-// +     br bb19(int 1)
-// +
-// + bb18:
-// +     br bb19(int 0)
-// +
-// + bb19(int %19):
-// +     ret %19
-// +
-// + bb20:
-// +     store int to %3, %0, align 8
-// +     br bb21
-// +
-// + bb21:
-// +     %20 = load int, %2, align 8
-// +     %21 = icmp ne %20, int 1
-// +     br %21 to bb22 else bb27
-// +
-// + bb22:
-// +     %22 = load int, %3, align 8
-// +     %23 = smul ov %22, %0
-// +     br %23:1 to bb23 else bb24
-// +
-// + bb23:
-// +     abort at <preamble.src:27:9> __src_int_arith_error(s"*", s"integer overflow")
-// +
-// + bb24:
-// +     store int to %3, %23:0, align 8
-// +     %24 = load int, %2, align 8
-// +     %25 = ssub ov %24, int 1
-// +     br %25:1 to bb25 else bb26
-// +
-// + bb25:
-// +     abort at <preamble.src:28:9> __src_int_arith_error(s"-", s"integer overflow")
-// +
-// + bb26:
-// +     store int to %2, %25:0, align 8
-// +     br bb21
-// +
-// + bb27:
-// +     %26 = load int, %3, align 8
-// +     ret %26
+// +     %43 = load i64, #1, align 8
+// +     ret i64 %43
 // + }
 // +
-// + proc _S7exp_assFvx3ixiE (copy int %0, in int %1) {
-// +     %2 = int
+// + proc _S7exp_assFvx3ixiE (i64 %0, i64 %1) private fastcc {
+// +     #0 = 8, align 8
 // +
 // + entry:
-// +     store int to %2, %0, align 8
-// +     %3 = call int^ _S$19__srcc_exp_assign_iFRix2ixiE(%2, %1)
+// +     store #0, i64 %0, align 8
+// +     %2 = call fastcc ptr _S$19__srcc_exp_assign_iFRix2ixiE(ptr #0, i64 %1)
 // +     ret
 // + }
 // +
-// + proc _S$19__srcc_exp_assign_iFRix2ixiE (inout int %0, in int %1) -> int^ {
+// + proc _S$19__srcc_exp_assign_iFRix2ixiE (ptr %0, i64 %1) private fastcc -> ptr {
 // + entry:
-// +     %2 = load int, %0, align 8
-// +     %3 = call int _S$12__srcc_exp_iFixix3iE(%2, %1)
-// +     store int to %0, %3, align 8
-// +     ret %0
+// +     %2 = load i64, %0, align 8
+// +     %3 = call fastcc i64 _S$12__srcc_exp_iFixix3iE(i64 %2, i64 %1)
+// +     store %0, i64 %3, align 8
+// +     ret ptr %0
 // + }

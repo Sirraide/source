@@ -1,0 +1,86 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+proc caller1 (proc x -> int) = x();
+proc caller2 (in proc x -> int) = x();
+proc foo = 42;
+
+caller1(foo);
+caller2(foo);
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     %0 = call fastcc i64 _S7caller1FiFiEE(_S3fooFiE, ptr nil)
+// +     %1 = call fastcc i64 _S7caller2FixFiEE(_S3fooFiE, ptr nil)
+// +     ret
+// + }
+// +
+// + proc _S7caller1FiFiEE (ptr %0, ptr %1) private fastcc -> i64 {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %2 = ptradd #0, 8
+// +     store %2, ptr %1, align 8
+// +     %3 = load ptr, #0, align 8
+// +     %4 = ptradd #0, 8
+// +     %5 = load ptr, %4, align 8
+// +     %6 = call fastcc i64 %3(), env %5
+// +     ret i64 %6
+// + }
+// +
+// + proc _S3fooFiE private fastcc -> i64 {
+// + entry:
+// +     ret i64 42
+// + }
+// +
+// + proc _S7caller2FixFiEE (ptr %0, ptr %1) private fastcc -> i64 {
+// + entry:
+// +     %2 = call fastcc i64 %0(), env %1
+// +     ret i64 %2
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   %1 = call fastcc i64 @_S7caller1FiFiEE(ptr @_S3fooFiE, ptr null)
+//L +   %2 = call fastcc i64 @_S7caller2FixFiEE(ptr @_S3fooFiE, ptr null)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc i64 @_S7caller1FiFiEE(ptr %0, ptr %1) {
+//L +   %3 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %7 = load ptr, ptr %6, align 8
+//L +   %8 = call fastcc i64 %5(ptr %7)
+//L +   ret i64 %8
+//L + }
+//L +
+//L + define private fastcc i64 @_S3fooFiE() {
+//L +   ret i64 42
+//L + }
+//L +
+//L + define private fastcc i64 @_S7caller2FixFiEE(ptr %0, ptr %1) {
+//L +   %3 = call fastcc i64 %0(ptr %1)
+//L +   ret i64 %3
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

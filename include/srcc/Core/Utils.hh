@@ -353,6 +353,14 @@ struct std::formatter<llvm::APInt> : formatter<std::string> {
 };
 
 template <>
+struct std::formatter<llvm::APSInt> : formatter<std::string> {
+    template <typename FormatContext>
+    auto format(const llvm::APSInt& i, FormatContext& ctx) const {
+        return formatter<std::string>::format(llvm::toString(i, 10), ctx);
+    }
+};
+
+template <>
 struct std::formatter<srcc::String> : formatter<std::string_view> {
     template <typename FormatContext>
     auto format(srcc::String s, FormatContext& ctx) const {

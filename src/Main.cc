@@ -1,6 +1,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Driver/Driver.hh>
 
+#include <llvm/Support/Process.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Signals.h>
 
@@ -24,7 +25,7 @@ using options = clopts< // clang-format off
     option<"--mo", "Path to a directory where compiled modules will be placed (default: '.')">,
     option<"-o", "Override the default output file name">,
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
-    option<"--preamble", "Override preamble">,
+    option<"--preamble", "Override preamble; only use this if you know what you’re doing since it may cause unintended behaviour">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
@@ -39,6 +40,9 @@ using options = clopts< // clang-format off
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
+    flag<"--ir-generic", "Use the generic MLIR assembly format">,
+    flag<"--ir-no-finalise", "Don’t finalise the IR">,
+    flag<"--ir-verbose", "Always print the type of a value">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
     flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
@@ -82,16 +86,19 @@ int main(int argc, char** argv) {
     InitSignalHandlers();
 #endif
 
+    // Disable this because they take too long and it’s fucking annoying.
+    llvm::sys::Process::PreventCoreFiles();
+
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()        ? Action::Eval
-                : opts.get<"--dump-module">() ? Action::DumpModule
-                : opts.get<"--ir">()          ? Action::DumpIR
-                : opts.get<"--lex">()         ? Action::Lex
-                : opts.get<"--llvm">()        ? Action::EmitLLVM
-                : opts.get<"--parse">()       ? Action::Parse
-                : opts.get<"--sema">()        ? Action::Sema
-                : opts.get<"--tokens">()      ? Action::DumpTokens
-                                              : Action::Compile;
+    auto action = opts.get<"--eval">()           ? Action::Eval
+                : opts.get<"--dump-module">()    ? Action::DumpModule
+                : opts.get<"--ir">()             ? Action::DumpIR
+                : opts.get<"--lex">()            ? Action::Lex
+                : opts.get<"--llvm">()           ? Action::EmitLLVM
+                : opts.get<"--parse">()          ? Action::Parse
+                : opts.get<"--sema">()           ? Action::Sema
+                : opts.get<"--tokens">()         ? Action::DumpTokens
+                                                 : Action::Compile;
 
     // Collect module search paths.
     std::vector<std::string> module_search_paths{
@@ -136,6 +143,9 @@ int main(int argc, char** argv) {
         .overflow_checking = not opts.get<"-fno-overflow-checks">(),
         .import_runtime = not opts.get<"--noruntime">(),
         .short_filenames = opts.get<"--short-filenames">(),
+        .ir_generic = opts.get<"--ir-generic">(),
+        .ir_no_finalise = opts.get<"--ir-no-finalise">(),
+        .ir_verbose = opts.get<"--ir-verbose">(),
     }}; // clang-format on
 
     // Add files.

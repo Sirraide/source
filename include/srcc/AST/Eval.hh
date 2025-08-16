@@ -14,19 +14,21 @@
 #include <variant>
 
 namespace srcc {
-namespace cg::ir {
-class InstValue;
-class Proc;
-}
 class Stmt;
 class ProcDecl;
 class StrLitExpr;
 class TranslationUnit;
+class Target;
 } // namespace srcc
+
+namespace mlir {
+class Operation;
+}
 
 namespace srcc::eval {
 class Eval;
 class VM;
+class VirtualMemoryMap;
 
 /// Evaluated mrvalue.
 ///
@@ -47,26 +49,16 @@ public:
     [[nodiscard]] auto operator<=>(const MRValue& other) const = default;
 };
 
-/// Evaluated range.
-struct Range {
-    APInt start;
-    APInt end;
-
-    Range(APInt start,  APInt end)
-        : start(std::move(start)), end(std::move(end)) {}
-
-    [[nodiscard]] bool operator==(const Range& other) const {
-        // operator== asserts that the bit width are the same, so we
-        // don’t use it directly here.
-        auto Eq = [](const APInt& a, const APInt& b) {
-            return a.getBitWidth() == b.getBitWidth() and a == b;
-        };
-        return Eq(start, other.start) and Eq(end, other.end);
-    }
-};
-
 /// Evaluated rvalue.
 class RValue {
+public:
+    struct Range {
+        APInt start;
+        APInt end;
+        Range(APInt start,  APInt end) : start(std::move(start)), end(std::move(end)) {}
+    };
+
+private:
     Variant<APInt, Range, bool, Type, MRValue, std::monostate> value;
     Type ty{Type::VoidTy};
 
@@ -119,7 +111,26 @@ class VM {
     TranslationUnit& owner_tu;
 
     /// Symbol table for native procedures.
-    DenseMap<cg::ir::Proc*, void*> native_symbols;
+    DenseMap<mlir::Operation*, void*> native_symbols;
+
+    /// Whether FFI calls are supported.
+    bool supports_ffi_calls = false;
+
+    /// Whether init() has been called.
+    bool initialised = false;
+
+    /// Whether we’re currently performing constant evaluation.
+    bool evaluating = false;
+
+    /// Virtual memory manager.
+    std::unique_ptr<VirtualMemoryMap> memory;
+
+    /// Size of the stack.
+    const Size max_stack_size = Size::Bytes(10 * 1024 * 1024);
+
+    /// Stack memory for the evaluator.
+    // TODO: Make this value configurable (via --feval-stack-size or sth.).
+    std::unique_ptr<std::byte[]> stack = std::make_unique<std::byte[]>(max_stack_size.bytes());
 
 public:
     explicit VM(TranslationUnit& owner_tu);
@@ -137,6 +148,9 @@ public:
     /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
     /// \return The value of the statement, if it can be evaluated.
     [[nodiscard]] auto eval(Stmt* stmt, bool complain = true) -> std::optional<RValue>;
+
+    /// Initialise the VM.
+    void init(const Target& tgt);
 
     /// Get the translation unit that owns this vm.
     [[nodiscard]] auto owner() -> TranslationUnit& { return owner_tu; }

@@ -4,9 +4,6 @@ program test;
 for i in 1 do {}; // expected-error: Invalid type 'int' for range of 'for' loop
 for i in {} do {}; // expected-error: Invalid type 'void' for range of 'for' loop
 
-// FIXME: Should work.
-for i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
-
 for i in 1..=3 do i++; // expected-error: Operand of '++' must be an lvalue
 for i in 1..=3 do i + 3;
 
@@ -14,24 +11,21 @@ for enum j, i in 1..=3 do j++; // expected-error: Operand of '++' must be an lva
 for enum i, i in 1..=3 do i + 3; // expected-error (Ambiguous symbol 'i') expected-note 2 (Candidate here)
 for enum j, i in 1..=3 do i + j;
 
-// FIXME: Should be a different error.
-for enum i, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
-
-// FIXME: Should work.
-for enum j, i in "abcd" do {}; // expected-error: Invalid type 'i8[]' for range of 'for' loop
-
 for i, j in 1..=2, 1..=2 {};
 for enum k, i, j in 1..=2, 1..=2 {};
 for enum k, j in 1..=2, 1..=2 {};
 for enum k in 1..=2, 1..=2 {};
 for 1..=2, 1..=2 {};
 for 1..=2 {};
+for i in "abcd" do {};
+for enum j, i in "abcd" do {};
 
 for i, j in 1..=2 {}; // expected-error: 'for' loop declares more variables than it has ranges (2 vs 1)
 for i, j, k in 1..=2 {}; // expected-error: 'for' loop declares more variables than it has ranges (3 vs 1)
 
 for i, i in 1..=2, 1..=2 {};
 for i, i in 1..=2, 1..=2 do i + 1; // expected-error (Ambiguous symbol 'i') expected-note 2 (Candidate here)
+for enum i, i in "abcd" do i; // expected-error (Ambiguous symbol 'i') expected-note 2 (Candidate here)
 
 // The loop variable(s) are not available in the ranges.
 for enum k, l, i, j in

@@ -1558,6 +1558,16 @@ auto Sema::BuildBinaryExpr(
         case Tk::EqEq:
         case Tk::Neq: {
             if (not ConvertToCommonType()) return nullptr;
+
+            // For slices, emit a call to a builtin.
+            if (isa<SliceType>(lhs->type)) {
+                auto ref = LookUpName(global_scope(), {"__srcc_slice_eq"}, loc, true);
+                if (not ref) return nullptr;
+                auto call = BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
+                if (not call) return nullptr;
+                return op == Tk::Neq ? BuildUnaryExpr(Tk::Not, call.get(), false, loc) : call;
+            }
+
             return Build(Type::BoolTy);
         }
 
@@ -1669,11 +1679,14 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     auto type = [&] -> Type {
         switch (ak) {
             using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::SliceSize:
             case AK::TypeAlign:
             case AK::TypeArraySize:
             case AK::TypeBits:
             case AK::TypeBytes:
+                return Type::IntTy;
+
+            case AK::SliceSize:
+                operand = LValueToSRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1681,6 +1694,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
+                operand = LValueToSRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1688,6 +1702,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
+                operand = LValueToSRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
@@ -2438,11 +2453,8 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     if (ranges.size() != parsed->ranges().size()) return {};
 
     // Make sure the ranges are something we can actually iterate over.
-    //
-    // Ranges are iterated by value, arrays by reference.
-    // TODO: Support slices as well.
     for (auto& r : ranges) {
-        if (isa<RangeType>(r->type)) {
+        if (isa<RangeType, SliceType>(r->type)) {
             r = LValueToSRValue(r);
         } else if (isa<ArrayType>(r->type)) {
             r = MaterialiseTemporary(r);
@@ -2473,7 +2485,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     }
 
     // Create the loop variables; they have no initialisers since they’re really
-    // just srvalues bound to the elements of the ranges.
+    // just values bound to the elements of the ranges.
     SmallVector<LocalDecl*> vars;
     for (auto [v, r] : zip(parsed->vars(), ranges)) {
         auto MakeVar = [&](Type ty, ValueCategory cat) {
@@ -2492,6 +2504,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
         r->type->visit(utils::Overloaded{
             [&](auto*) { Unreachable(); },
             [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue); },
+            [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue); },
             [&](RangeType* ty) { MakeVar(ty->elem(), ty->elem()->rvalue_category()); },
         });
     }
@@ -2883,6 +2896,9 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
         u32(parsed->fields().size()),
         parsed->loc
     );
+
+    if (parsed->name == "__src_abort_info")
+        M->abort_info_type = ty;
 
     AddDeclToScope(curr_scope(), ty->decl());
     return ty->decl();

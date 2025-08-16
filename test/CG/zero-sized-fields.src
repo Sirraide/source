@@ -19,20 +19,25 @@ proc call {
     s(a(), b(), c());
 }
 
-// * proc __src_main {
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-
-// * proc _S1aFT4zeroE;
-// * proc _S1bFT4zeroE;
-// * proc _S1cFT4zeroE;
-
-// * proc _S4callFvE {
+// + proc _S1aFT4zeroE external fastcc;
+// +
+// + proc _S1bFT4zeroE external fastcc;
+// +
+// + proc _S1cFT4zeroE external fastcc;
+// +
+// + proc _S4callFvE private fastcc {
 // + entry:
-// +     call void _S1aFT4zeroE
-// +     call void _S1bFT4zeroE
-// +     call void _S1cFT4zeroE
+// +     call fastcc void _S1aFT4zeroE()
+// +     call fastcc void _S1bFT4zeroE()
+// +     call fastcc void _S1cFT4zeroE()
 // +     ret
 // + }

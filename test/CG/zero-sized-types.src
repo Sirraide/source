@@ -27,71 +27,75 @@ proc interleaved2 (int a, void b, int c, void d) = a | c;
 interleaved1(2, void(), 3, void());
 interleaved2(2, void(), 3, void());
 
-// * proc __src_main {
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
 // + entry:
-// +     %0 = call int _S12interleaved1FixivxivE(int 2, int 3)
-// +     %1 = call int _S12interleaved2FiivivE(int 2, int 3)
+// +     %0 = call fastcc i64 _S12interleaved1FixivxivE(i64 2, i64 3)
+// +     %1 = call fastcc i64 _S12interleaved2FiivivE(i64 2, i64 3)
 // +     ret
 // + }
 // +
-// + proc _S12interleaved1FixivxivE (in int %0, in int %1) -> int {
+// + proc _S12interleaved1FixivxivE (i64 %0, i64 %1) private fastcc -> i64 {
 // + entry:
-// +     %2 = or %0, %1
-// +     ret %2
+// +     %2 = or i64 %0, %1
+// +     ret i64 %2
 // + }
 // +
-// + proc _S12interleaved2FiivivE (int %0, int %1) -> int {
-// +     %2 = int
-// +     %3 = int
+// + proc _S12interleaved2FiivivE (i64 %0, i64 %1) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
 // +
 // + entry:
-// +     store int to %2, %0, align 8
-// +     store int to %3, %1, align 8
-// +     %4 = load int, %2, align 8
-// +     %5 = load int, %3, align 8
-// +     %6 = or %4, %5
-// +     ret %6
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = load i64, #1, align 8
+// +     %4 = or i64 %2, %3
+// +     ret i64 %4
 // + }
 // +
-// + proc _S1aFvvvE {
-// + entry:
-// +     ret
-// + }
-// +
-// + proc _S1bFvE {
-// + entry:
-// +     call void _S1aFvvvE
-// +     ret
-// + }
-// +
-// + proc _S1cFvE {
+// + proc _S1aFvvvE private fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1hFvE {
+// + proc _S1bFvE private fastcc {
+// + entry:
+// +     call fastcc void _S1aFvvvE()
+// +     ret
+// + }
+// +
+// + proc _S1cFvE private fastcc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1iFvE {
+// + proc _S1hFvE private fastcc {
 // + entry:
-// +     call void _S1hFvE
 // +     ret
 // + }
 // +
-// + proc _S1jFvE {
+// + proc _S1iFvE private fastcc {
 // + entry:
-// +     call void _S1hFvE
+// +     call fastcc void _S1hFvE()
 // +     ret
 // + }
 // +
-// + proc _S5callsFvE {
+// + proc _S1jFvE private fastcc {
 // + entry:
-// +     call void _S1bFvE
-// +     call void _S1cFvE
-// +     call void _S1iFvE
-// +     call void _S1jFvE
-// +     call void _S1aFvvvE
+// +     call fastcc void _S1hFvE()
+// +     ret
+// + }
+// +
+// + proc _S5callsFvE private fastcc {
+// + entry:
+// +     call fastcc void _S1bFvE()
+// +     call fastcc void _S1cFvE()
+// +     call fastcc void _S1iFvE()
+// +     call fastcc void _S1jFvE()
+// +     call fastcc void _S1aFvvvE()
 // +     ret
 // + }

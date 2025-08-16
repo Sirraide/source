@@ -1,7 +1,7 @@
-// R %srcc --ir %s
+// R %srcc --ir -fno-overflow-checks %s
 program test;
 
-proc a extern;
+proc a extern -> int;
 
 proc d {
     loop { a(); }
@@ -10,51 +10,43 @@ proc d {
 proc e { loop a(); }
 proc f { loop 4; }
 proc g { loop; }
+proc h = a() + loop;
 
 var x = if 1 == 1 then 3 else loop;
 
-// * proc __src_main {
-// +     %0 = int
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// +     #0 = 8, align 8
 // +
 // + entry:
-// +     %1 = icmp eq int 1, int 1
-// +     br %1 to bb1 else bb2
-// +
-// + bb1:
-// +     br bb4(int 3)
-// +
-// + bb2:
-// +     br bb3
-// +
-// + bb3:
-// +     br bb3
-// +
-// + bb4(int %2):
-// +     store int to %0, %2, align 8
+// +     store #0, i64 3, align 8
 // +     ret
 // + }
 // +
-// + proc _S1aFvE;
+// + proc _S1aFiE external fastcc -> i64;
 // +
-// + proc _S1dFvE {
+// + proc _S1dFvE private fastcc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     call void _S1aFvE
+// +     %0 = call fastcc i64 _S1aFiE()
 // +     br bb1
 // + }
 // +
-// + proc _S1eFvE {
+// + proc _S1eFvE private fastcc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     call void _S1aFvE
+// +     %0 = call fastcc i64 _S1aFiE()
 // +     br bb1
 // + }
 // +
-// + proc _S1fFvE {
+// + proc _S1fFvE private fastcc {
 // + entry:
 // +     br bb1
 // +
@@ -62,8 +54,17 @@ var x = if 1 == 1 then 3 else loop;
 // +     br bb1
 // + }
 // +
-// + proc _S1gFvE {
+// + proc _S1gFvE private fastcc {
 // + entry:
+// +     br bb1
+// +
+// + bb1:
+// +     br bb1
+// + }
+// +
+// + proc _S1hFiE private fastcc -> i64 {
+// + entry:
+// +     %0 = call fastcc i64 _S1aFiE()
 // +     br bb1
 // +
 // + bb1:

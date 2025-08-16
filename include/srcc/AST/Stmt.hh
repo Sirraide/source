@@ -268,7 +268,7 @@ public:
     ) -> BlockExpr*;
 
     /// Get the statements in this block.
-    auto stmts() -> ArrayRef<Stmt*> { return {getTrailingObjects<Stmt*>(), num_stmts}; }
+    auto stmts() -> ArrayRef<Stmt*> { return getTrailingObjects(num_stmts); }
 
     /// Get the expression whose value is returned from this block, if any.
     auto return_expr() -> Expr*;
@@ -321,7 +321,7 @@ public:
     ) -> BuiltinCallExpr*;
 
     /// Get the arguments.
-    auto args() -> ArrayRef<Expr*> { return {getTrailingObjects<Expr*>(), num_args}; }
+    auto args() -> ArrayRef<Expr*> { return getTrailingObjects(num_args); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinCallExpr; }
 };
@@ -386,7 +386,7 @@ public:
         Location location
     ) -> CallExpr*;
 
-    [[nodiscard]] auto args() -> ArrayRef<Expr*> { return {getTrailingObjects<Expr*>(), num_args}; }
+    [[nodiscard]] auto args() -> ArrayRef<Expr*> { return getTrailingObjects(num_args); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::CallExpr; }
 };
@@ -571,7 +571,7 @@ public:
         Location location
     ) -> OverloadSetExpr*;
 
-    auto overloads() -> ArrayRef<Decl*> { return {getTrailingObjects<Decl*>(), num_overloads}; }
+    auto overloads() -> ArrayRef<Decl*> { return getTrailingObjects(num_overloads); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
 };
@@ -630,7 +630,7 @@ public:
     ) -> StructInitExpr*;
 
     auto struct_type() const -> StructType* { return cast<StructType>(type.ptr()); }
-    auto values() -> ArrayRef<Expr*> { return {getTrailingObjects<Expr*>(), struct_type()->fields().size()}; }
+    auto values() -> ArrayRef<Expr*> { return getTrailingObjects(struct_type()->fields().size()); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::StructInitExpr; }
 };

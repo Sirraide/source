@@ -397,7 +397,7 @@ ProcType::ProcType(
     std::uninitialized_copy_n(
         param_types.begin(),
         param_types.size(),
-        getTrailingObjects<ParamTypeData>()
+        getTrailingObjects()
     );
 }
 
@@ -505,6 +505,6 @@ void StructType::finalise(
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),
-        getTrailingObjects<FieldDecl*>()
+        getTrailingObjects()
     );
 }

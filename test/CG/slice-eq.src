@@ -1,0 +1,293 @@
+// R      %srcc --ir %s
+// R[//L] %srcc --llvm %s
+program test;
+
+proc a = "abcd" == "dcef";
+proc b = "a" == "bc";
+proc c = "a" == "a";
+proc d = "" == "";
+proc e (i64[] a, i64[] b) = a == b;
+
+// * @0 = "\00"
+// + @1 = "bc\00"
+// + @2 = "a\00"
+// + @3 = "dcef\00"
+// + @4 = "abcd\00"
+// +
+// + proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1aFbE private fastcc -> i1 {
+// + entry:
+// +     %0 = call fastcc i1 _S$15__srcc_slice_eqFbxSI8xSI8E(ptr @4, i64 4, ptr @3, i64 4)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S$15__srcc_slice_eqFbxSI8xSI8E (ptr %0, i64 %1, ptr %2, i64 %3) private fastcc -> i1 {
+// + entry:
+// +     %4 = icmp ne i64 %1, %3
+// +     br %4 to bb1 else bb2
+// +
+// + bb1:
+// +     ret i1 false
+// +
+// + bb2:
+// +     %5 = ptradd %0, i64 %1
+// +     %6 = ptradd %2, i64 %3
+// +     br bb3(%0, %2)
+// +
+// + bb3(ptr %7, ptr %8):
+// +     %9 = cmp ne ptr %7, %5
+// +     br %9 to bb4 else bb8
+// +
+// + bb4:
+// +     %10 = cmp ne ptr %8, %6
+// +     br %10 to bb5 else bb8
+// +
+// + bb5:
+// +     %11 = load i8, %7, align 1
+// +     %12 = load i8, %8, align 1
+// +     %13 = icmp ne i8 %11, %12
+// +     br %13 to bb6 else bb7
+// +
+// + bb6:
+// +     ret i1 false
+// +
+// + bb7:
+// +     %14 = ptradd %7, 1
+// +     %15 = ptradd %8, 1
+// +     br bb3(%14, %15)
+// +
+// + bb8:
+// +     ret i1 true
+// + }
+// +
+// + proc _S1bFbE private fastcc -> i1 {
+// + entry:
+// +     %0 = call fastcc i1 _S$15__srcc_slice_eqFbxSI8xSI8E(ptr @2, i64 1, ptr @1, i64 2)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1cFbE private fastcc -> i1 {
+// + entry:
+// +     %0 = call fastcc i1 _S$15__srcc_slice_eqFbxSI8xSI8E(ptr @2, i64 1, ptr @2, i64 1)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1dFbE private fastcc -> i1 {
+// + entry:
+// +     %0 = call fastcc i1 _S$15__srcc_slice_eqFbxSI8xSI8E(ptr @0, i64 0, ptr @0, i64 0)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1eFbSI64SI64E (ptr %0, i64 %1, ptr %2, i64 %3) private fastcc -> i1 {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %1, align 8
+// +     store #1, ptr %2, align 8
+// +     %5 = ptradd #1, 8
+// +     store %5, i64 %3, align 8
+// +     %6 = load ptr, #0, align 8
+// +     %7 = ptradd #0, 8
+// +     %8 = load i64, %7, align 8
+// +     %9 = load ptr, #1, align 8
+// +     %10 = ptradd #1, 8
+// +     %11 = load i64, %10, align 8
+// +     %12 = call fastcc i1 _S$15__srcc_slice_eqFbxSI64xSI64E(ptr %6, i64 %8, ptr %9, i64 %11)
+// +     ret i1 %12
+// + }
+// +
+// + proc _S$15__srcc_slice_eqFbxSI64xSI64E (ptr %0, i64 %1, ptr %2, i64 %3) private fastcc -> i1 {
+// + entry:
+// +     %4 = icmp ne i64 %1, %3
+// +     br %4 to bb1 else bb2
+// +
+// + bb1:
+// +     ret i1 false
+// +
+// + bb2:
+// +     %5 = mul i64 %1, 8
+// +     %6 = ptradd %0, i64 %5
+// +     %7 = mul i64 %3, 8
+// +     %8 = ptradd %2, i64 %7
+// +     br bb3(%0, %2)
+// +
+// + bb3(ptr %9, ptr %10):
+// +     %11 = cmp ne ptr %9, %6
+// +     br %11 to bb4 else bb8
+// +
+// + bb4:
+// +     %12 = cmp ne ptr %10, %8
+// +     br %12 to bb5 else bb8
+// +
+// + bb5:
+// +     %13 = load i64, %9, align 8
+// +     %14 = load i64, %10, align 8
+// +     %15 = icmp ne i64 %13, %14
+// +     br %15 to bb6 else bb7
+// +
+// + bb6:
+// +     ret i1 false
+// +
+// + bb7:
+// +     %16 = ptradd %9, 8
+// +     %17 = ptradd %10, 8
+// +     br bb3(%16, %17)
+// +
+// + bb8:
+// +     ret i1 true
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + @__srcc_str.4 = private constant [1 x i8] zeroinitializer, align 1
+//L + @__srcc_str.3 = private constant [3 x i8] c"bc\00", align 1
+//L + @__srcc_str.2 = private constant [2 x i8] c"a\00", align 1
+//L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
+//L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc i1 @_S1aFbE() {
+//L +   %1 = call fastcc i1 @"_S$15__srcc_slice_eqFbxSI8xSI8E"(ptr @__srcc_str.0, i64 4, ptr @__srcc_str.1, i64 4)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + define private fastcc i1 @"_S$15__srcc_slice_eqFbxSI8xSI8E"(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L +   %5 = icmp ne i64 %1, %3
+//L +   br i1 %5, label %6, label %7
+//L +
+//L + 6:                                                ; preds = %4
+//L +   ret i1 false
+//L +
+//L + 7:                                                ; preds = %4
+//L +   %8 = getelementptr inbounds nuw i8, ptr %0, i64 %1
+//L +   %9 = getelementptr inbounds nuw i8, ptr %2, i64 %3
+//L +   br label %10
+//L +
+//L + 10:                                               ; preds = %21, %7
+//L +   %11 = phi ptr [ %22, %21 ], [ %0, %7 ]
+//L +   %12 = phi ptr [ %23, %21 ], [ %2, %7 ]
+//L +   %13 = icmp ne ptr %11, %8
+//L +   br i1 %13, label %14, label %24
+//L +
+//L + 14:                                               ; preds = %10
+//L +   %15 = icmp ne ptr %12, %9
+//L +   br i1 %15, label %16, label %24
+//L +
+//L + 16:                                               ; preds = %14
+//L +   %17 = load i8, ptr %11, align 1
+//L +   %18 = load i8, ptr %12, align 1
+//L +   %19 = icmp ne i8 %17, %18
+//L +   br i1 %19, label %20, label %21
+//L +
+//L + 20:                                               ; preds = %16
+//L +   ret i1 false
+//L +
+//L + 21:                                               ; preds = %16
+//L +   %22 = getelementptr inbounds nuw i8, ptr %11, i32 1
+//L +   %23 = getelementptr inbounds nuw i8, ptr %12, i32 1
+//L +   br label %10
+//L +
+//L + 24:                                               ; preds = %14, %10
+//L +   ret i1 true
+//L + }
+//L +
+//L + define private fastcc i1 @_S1bFbE() {
+//L +   %1 = call fastcc i1 @"_S$15__srcc_slice_eqFbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.3, i64 2)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + define private fastcc i1 @_S1cFbE() {
+//L +   %1 = call fastcc i1 @"_S$15__srcc_slice_eqFbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.2, i64 1)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + define private fastcc i1 @_S1dFbE() {
+//L +   %1 = call fastcc i1 @"_S$15__srcc_slice_eqFbxSI8xSI8E"(ptr @__srcc_str.4, i64 0, ptr @__srcc_str.4, i64 0)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + define private fastcc i1 @_S1eFbSI64SI64E(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L +   %5 = alloca i8, i64 16, align 8
+//L +   %6 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %5, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 %1, ptr %7, align 8
+//L +   store ptr %2, ptr %6, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   store i64 %3, ptr %8, align 8
+//L +   %9 = load ptr, ptr %5, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %11 = load i64, ptr %10, align 8
+//L +   %12 = load ptr, ptr %6, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %14 = load i64, ptr %13, align 8
+//L +   %15 = call fastcc i1 @"_S$15__srcc_slice_eqFbxSI64xSI64E"(ptr %9, i64 %11, ptr %12, i64 %14)
+//L +   ret i1 %15
+//L + }
+//L +
+//L + define private fastcc i1 @"_S$15__srcc_slice_eqFbxSI64xSI64E"(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L +   %5 = icmp ne i64 %1, %3
+//L +   br i1 %5, label %6, label %7
+//L +
+//L + 6:                                                ; preds = %4
+//L +   ret i1 false
+//L +
+//L + 7:                                                ; preds = %4
+//L +   %8 = mul i64 %1, 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %0, i64 %8
+//L +   %10 = mul i64 %3, 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %2, i64 %10
+//L +   br label %12
+//L +
+//L + 12:                                               ; preds = %23, %7
+//L +   %13 = phi ptr [ %24, %23 ], [ %0, %7 ]
+//L +   %14 = phi ptr [ %25, %23 ], [ %2, %7 ]
+//L +   %15 = icmp ne ptr %13, %9
+//L +   br i1 %15, label %16, label %26
+//L +
+//L + 16:                                               ; preds = %12
+//L +   %17 = icmp ne ptr %14, %11
+//L +   br i1 %17, label %18, label %26
+//L +
+//L + 18:                                               ; preds = %16
+//L +   %19 = load i64, ptr %13, align 8
+//L +   %20 = load i64, ptr %14, align 8
+//L +   %21 = icmp ne i64 %19, %20
+//L +   br i1 %21, label %22, label %23
+//L +
+//L + 22:                                               ; preds = %18
+//L +   ret i1 false
+//L +
+//L + 23:                                               ; preds = %18
+//L +   %24 = getelementptr inbounds nuw i8, ptr %13, i32 8
+//L +   %25 = getelementptr inbounds nuw i8, ptr %14, i32 8
+//L +   br label %12
+//L +
+//L + 26:                                               ; preds = %16, %12
+//L +   ret i1 true
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

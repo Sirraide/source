@@ -1,0 +1,285 @@
+// R      %srcc --ir -fno-overflow-checks %s
+// R[//L] %srcc --llvm -fno-overflow-checks %s
+program test;
+
+proc f_move(int i) = i * 2;
+proc f_move(i10000 i) = i * 2;
+
+int mi = 5;
+i10000 mj = 10;
+
+f_move(mi);
+f_move(mj);
+f_move(20);
+
+int i = 5;
+i10000 j = 10;
+
+proc f_in(in int i) = i * 3;
+proc f_in(in i10000 i) = i * 3;
+
+f_in(i);
+f_in(j);
+f_in(20);
+
+proc f_out(out int i) { i = 100; }
+proc f_out(out i10000 i) { i = 1000; }
+
+f_out(i);
+f_out(j);
+
+proc f_inout(inout int i) = i = i * 5;
+proc f_inout(inout i10000 i) = i = i * 5;
+
+i = 5;
+j = 10;
+
+f_inout(i);
+f_inout(j);
+
+proc f_copy(copy int i) = i = i * 6;
+proc f_copy(copy i10000 i) = i = i * 6;
+
+i = 5;
+j = 10;
+
+f_copy(i);
+f_copy(j);
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 1250, align 8
+// +     #2 = 8, align 8
+// +     #3 = 1250, align 8
+// +
+// + entry:
+// +     store #0, i64 5, align 8
+// +     store #1, i10000 10, align 8
+// +     %0 = load i64, #0, align 8
+// +     %1 = call fastcc i64 _S6f_moveFiiE(i64 %0)
+// +     %2 = call fastcc i10000 _S6f_moveFI10000I10000E(ptr #1)
+// +     %3 = call fastcc i64 _S6f_moveFiiE(i64 20)
+// +     store #2, i64 5, align 8
+// +     store #3, i10000 10, align 8
+// +     %4 = load i64, #2, align 8
+// +     %5 = call fastcc i64 _S4f_inFixiE(i64 %4)
+// +     %6 = call fastcc i10000 _S4f_inFI10000xI10000E(ptr #3)
+// +     %7 = call fastcc i64 _S4f_inFixiE(i64 20)
+// +     call fastcc void _S5f_outFvx1iE(ptr #2)
+// +     call fastcc void _S5f_outFvx1I10000E(ptr #3)
+// +     store #2, i64 5, align 8
+// +     store #3, i10000 10, align 8
+// +     %8 = call fastcc i64 _S7f_inoutFix2iE(ptr #2)
+// +     %9 = call fastcc i10000 _S7f_inoutFI10000x2I10000E(ptr #3)
+// +     store #2, i64 5, align 8
+// +     store #3, i10000 10, align 8
+// +     %10 = load i64, #2, align 8
+// +     %11 = call fastcc i64 _S6f_copyFix3iE(i64 %10)
+// +     %12 = load i10000, #3, align 8
+// +     %13 = call fastcc i10000 _S6f_copyFI10000x3I10000E(i10000 %12)
+// +     ret
+// + }
+// +
+// + proc _S6f_moveFiiE (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = mul i64 %1, 2
+// +     ret i64 %2
+// + }
+// +
+// + proc _S6f_moveFI10000I10000E (ptr %0) private fastcc -> i10000 {
+// + entry:
+// +     %1 = load i10000, %0, align 8
+// +     %2 = mul i10000 %1, 2
+// +     ret i10000 %2
+// + }
+// +
+// + proc _S4f_inFixiE (i64 %0) private fastcc -> i64 {
+// + entry:
+// +     %1 = mul i64 %0, 3
+// +     ret i64 %1
+// + }
+// +
+// + proc _S4f_inFI10000xI10000E (ptr %0) private fastcc -> i10000 {
+// + entry:
+// +     %1 = load i10000, %0, align 8
+// +     %2 = mul i10000 %1, 3
+// +     ret i10000 %2
+// + }
+// +
+// + proc _S5f_outFvx1iE (ptr %0) private fastcc {
+// + entry:
+// +     store %0, i64 100, align 8
+// +     ret
+// + }
+// +
+// + proc _S5f_outFvx1I10000E (ptr %0) private fastcc {
+// + entry:
+// +     store %0, i10000 1000, align 8
+// +     ret
+// + }
+// +
+// + proc _S7f_inoutFix2iE (ptr %0) private fastcc -> i64 {
+// + entry:
+// +     %1 = load i64, %0, align 8
+// +     %2 = mul i64 %1, 5
+// +     store %0, i64 %2, align 8
+// +     %3 = load i64, %0, align 8
+// +     ret i64 %3
+// + }
+// +
+// + proc _S7f_inoutFI10000x2I10000E (ptr %0) private fastcc -> i10000 {
+// + entry:
+// +     %1 = load i10000, %0, align 8
+// +     %2 = mul i10000 %1, 5
+// +     store %0, i10000 %2, align 8
+// +     %3 = load i10000, %0, align 8
+// +     ret i10000 %3
+// + }
+// +
+// + proc _S6f_copyFix3iE (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = mul i64 %1, 6
+// +     store #0, i64 %2, align 8
+// +     %3 = load i64, #0, align 8
+// +     ret i64 %3
+// + }
+// +
+// + proc _S6f_copyFI10000x3I10000E (i10000 %0) private fastcc -> i10000 {
+// +     #0 = 1250, align 8
+// +
+// + entry:
+// +     store #0, i10000 %0, align 8
+// +     %1 = load i10000, #0, align 8
+// +     %2 = mul i10000 %1, 6
+// +     store #0, i10000 %2, align 8
+// +     %3 = load i10000, #0, align 8
+// +     ret i10000 %3
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + declare fastcc void @__src_assert_fail(ptr)
+//L +
+//L + declare fastcc void @__src_int_arith_error(ptr)
+//L +
+//L + define fastcc void @__src_main() {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 1250, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 1250, align 8
+//L +   store i64 5, ptr %1, align 8
+//L +   store i10000 10, ptr %2, align 8
+//L +   %5 = load i64, ptr %1, align 8
+//L +   %6 = call fastcc i64 @_S6f_moveFiiE(i64 %5)
+//L +   %7 = call fastcc i10000 @_S6f_moveFI10000I10000E(ptr %2)
+//L +   %8 = call fastcc i64 @_S6f_moveFiiE(i64 20)
+//L +   store i64 5, ptr %3, align 8
+//L +   store i10000 10, ptr %4, align 8
+//L +   %9 = load i64, ptr %3, align 8
+//L +   %10 = call fastcc i64 @_S4f_inFixiE(i64 %9)
+//L +   %11 = call fastcc i10000 @_S4f_inFI10000xI10000E(ptr %4)
+//L +   %12 = call fastcc i64 @_S4f_inFixiE(i64 20)
+//L +   call fastcc void @_S5f_outFvx1iE(ptr %3)
+//L +   call fastcc void @_S5f_outFvx1I10000E(ptr %4)
+//L +   store i64 5, ptr %3, align 8
+//L +   store i10000 10, ptr %4, align 8
+//L +   %13 = call fastcc i64 @_S7f_inoutFix2iE(ptr %3)
+//L +   %14 = call fastcc i10000 @_S7f_inoutFI10000x2I10000E(ptr %4)
+//L +   store i64 5, ptr %3, align 8
+//L +   store i10000 10, ptr %4, align 8
+//L +   %15 = load i64, ptr %3, align 8
+//L +   %16 = call fastcc i64 @_S6f_copyFix3iE(i64 %15)
+//L +   %17 = load i10000, ptr %4, align 8
+//L +   %18 = call fastcc i10000 @_S6f_copyFI10000x3I10000E(i10000 %17)
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc i64 @_S6f_moveFiiE(i64 %0) {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = mul i64 %3, 2
+//L +   ret i64 %4
+//L + }
+//L +
+//L + define private fastcc i10000 @_S6f_moveFI10000I10000E(ptr %0) {
+//L +   %2 = load i10000, ptr %0, align 8
+//L +   %3 = mul i10000 %2, 2
+//L +   ret i10000 %3
+//L + }
+//L +
+//L + define private fastcc i64 @_S4f_inFixiE(i64 %0) {
+//L +   %2 = mul i64 %0, 3
+//L +   ret i64 %2
+//L + }
+//L +
+//L + define private fastcc i10000 @_S4f_inFI10000xI10000E(ptr %0) {
+//L +   %2 = load i10000, ptr %0, align 8
+//L +   %3 = mul i10000 %2, 3
+//L +   ret i10000 %3
+//L + }
+//L +
+//L + define private fastcc void @_S5f_outFvx1iE(ptr %0) {
+//L +   store i64 100, ptr %0, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S5f_outFvx1I10000E(ptr %0) {
+//L +   store i10000 1000, ptr %0, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc i64 @_S7f_inoutFix2iE(ptr %0) {
+//L +   %2 = load i64, ptr %0, align 8
+//L +   %3 = mul i64 %2, 5
+//L +   store i64 %3, ptr %0, align 8
+//L +   %4 = load i64, ptr %0, align 8
+//L +   ret i64 %4
+//L + }
+//L +
+//L + define private fastcc i10000 @_S7f_inoutFI10000x2I10000E(ptr %0) {
+//L +   %2 = load i10000, ptr %0, align 8
+//L +   %3 = mul i10000 %2, 5
+//L +   store i10000 %3, ptr %0, align 8
+//L +   %4 = load i10000, ptr %0, align 8
+//L +   ret i10000 %4
+//L + }
+//L +
+//L + define private fastcc i64 @_S6f_copyFix3iE(i64 %0) {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = mul i64 %3, 6
+//L +   store i64 %4, ptr %2, align 8
+//L +   %5 = load i64, ptr %2, align 8
+//L +   ret i64 %5
+//L + }
+//L +
+//L + define private fastcc i10000 @_S6f_copyFI10000x3I10000E(i10000 %0) {
+//L +   %2 = alloca i8, i64 1250, align 8
+//L +   store i10000 %0, ptr %2, align 8
+//L +   %3 = load i10000, ptr %2, align 8
+//L +   %4 = mul i10000 %3, 6
+//L +   store i10000 %4, ptr %2, align 8
+//L +   %5 = load i10000, ptr %2, align 8
+//L +   ret i10000 %5
+//L + }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}
