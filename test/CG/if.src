@@ -30,8 +30,8 @@ proc x(int a, int b, bool d) {
 // +
 // + proc __src_main external fastcc {
 // + entry:
-// +     call fastcc void _S1xFviibE(i64 1, i64 2, i1 -1)
-// +     call fastcc void _S1xFviibE(i64 2, i64 1, i1 0)
+// +     call fastcc void _S1xFviibE(i64 1, i64 2, i1 true)
+// +     call fastcc void _S1xFviibE(i64 2, i64 1, i1 false)
 // +     ret
 // + }
 // +

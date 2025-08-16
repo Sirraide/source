@@ -271,13 +271,13 @@ private:
     auto C(Type ty) -> SType;
 
     auto ConvertProcType(ProcType* ty) -> IRProcType;
-    auto CreateAlloca(Location loc, Type ty) -> Value;
-    void CreateAbort(Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
+    auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
+    void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
 
     void CreateArithFailure(
         Value failure_cond,
         Tk op,
-        Location loc,
+        mlir::Location loc,
         String name = "integer overflow"
     );
 
@@ -286,7 +286,7 @@ private:
         Type ty,
         Value lhs,
         Value rhs,
-        Location loc,
+        mlir::Location loc,
         Tk op
     ) -> Value;
 
@@ -294,7 +294,7 @@ private:
     auto CreateBool(mlir::Location loc, bool b) -> Value;
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
-    auto CreateGlobalStringSlice(Location loc, String data) -> SRValue;
+    auto CreateGlobalStringSlice(mlir::Location loc, String data) -> SRValue;
     auto CreateICmp(mlir::Location loc, mlir::arith::CmpIPredicate pred, Value lhs, Value rhs) -> Value;
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
@@ -324,11 +324,12 @@ private:
     auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> SRValue;
     auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> SRValue;
     auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> SRValue;
+    auto EmitEqualityComparison(mlir::Location l, Type ty, Tk op, SRValue lhs, SRValue rhs) -> Value;
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->SRValue;
 #include "srcc/AST.inc"
 
-    auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, Location loc) -> Value;
+    auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
     auto EmitValue(Location loc, const eval::RValue& val) -> SRValue;
 

@@ -32,6 +32,13 @@ struct LoweringPass final : mlir::PassWrapper<LoweringPass, mlir::OperationPass<
     void runOnOperation() override;
 };
 
+struct BlockDCEPass final : mlir::PassWrapper<BlockDCEPass, mlir::OperationPass<mlir::ModuleOp>> {
+    CodeGen& cg;
+    BlockDCEPass(CodeGen& cg) : cg(cg) {}
+
+    void runOnOperation() override;
+};
+
 #define LOWERING(SRCCOp, ...)                                               \
     struct SRCCOp##Lowering final : mlir::OpConversionPattern<ir::SRCCOp> { \
         CodeGen& cg;                                                        \
@@ -342,6 +349,11 @@ bool CodeGen::finalise() {
     pm.addPass(mlir::createRemoveDeadValuesPass());
     if (pm.run(mlir_module).failed()) {
         if (not tu.context().diags().has_error()) ICE(Location(), "Failed to finalise IR");
+        Remark(
+            "For people working on the compiler: Finalisation is known to be buggy "
+            "if the input contains trivially unreachable blocks; try not to emit such "
+            "blocks."
+        );
         return false;
     }
     return true;

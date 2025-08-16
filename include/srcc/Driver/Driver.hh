@@ -20,9 +20,6 @@ enum struct srcc::Action : srcc::u8 {
 
     /// Run codegen and dump our codegen IR.
     DumpIR,
-    DumpIRGeneric,
-    DumpIRNoFinalise,
-    DumpIRVerbose,
 
     /// Print tokens.
     DumpTokens,
@@ -97,6 +94,11 @@ public:
         /// Whether to use short filenames (e.g. 'foo.src' instead of
         /// 'path/to/foo.src').
         bool short_filenames : 1;
+
+        /// IR dumping flags.
+        bool ir_generic : 1 = false;
+        bool ir_no_finalise : 1 = false;
+        bool ir_verbose : 1 = false;
     };
 
 private:

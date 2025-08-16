@@ -101,24 +101,6 @@ def ProcOp : SRCC_Op<"proc", [
             return &front();
         }
 
-        u32 getNumImplicitArgs() {
-            return getHasIndirectReturn() + getHasStaticChain();
-        }
-
-        ::mlir::BlockArgument getDeclaredArg(u32 i) {
-            return getArgument(i + getNumImplicitArgs());
-        }
-
-        ::mlir::BlockArgument getIndirectReturnPointer() {
-            Assert(getHasIndirectReturn());
-            return getArgument(0);
-        }
-
-        ::mlir::BlockArgument getStaticChainPointer() {
-            Assert(getHasStaticChain());
-            return getArgument(getHasIndirectReturn() + 1);
-        }
-
         //===------------------------------------------------------------------===//
         // CallableOpInterface
         //===------------------------------------------------------------------===//

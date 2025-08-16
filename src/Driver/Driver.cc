@@ -78,6 +78,13 @@ int Driver::run_job() {
     if (opts.print_ast and a != Action::Parse and a != Action::Sema)
         return Error("--ast requires --parse or --sema");
 
+    // IR dumping flags are only valid if we’re dumping IR.
+    if (a != Action::DumpIR) {
+        if (opts.ir_generic) return Error("--ir-generic requires --ir");
+        if (opts.ir_no_finalise) return Error("--ir-no-finalise requires --ir");
+        if (opts.ir_verbose) return Error("--ir-verbose requires --ir");
+    }
+
     // Create lang opts.
     LangOpts lang_opts;
     lang_opts.overflow_checking = opts.overflow_checking;
@@ -263,14 +270,18 @@ int Driver::run_job() {
     cg::CodeGen cg{*tu, tu->lang_opts(), tu->target().ptr_size()};
     for (auto p : tu->procs) cg.emit(p);
     if (ctx.diags().has_error()) return 1;
-    if (a != Action::DumpIRNoFinalise and a != Action::DumpIRGeneric and not cg.finalise()) return 1;
+    bool finalise_ok = opts.ir_no_finalise or cg.finalise();
 
     // Dump IR.
-    if (a == Action::DumpIR or a == Action::DumpIRVerbose or a == Action::DumpIRGeneric or a == Action::DumpIRNoFinalise) {
-        auto s = cg.dump(a == Action::DumpIRVerbose, a == Action::DumpIRGeneric);
+    if (a == Action::DumpIR) {
+        auto s = cg.dump(opts.ir_verbose, opts.ir_generic);
         std::print("{}", text::RenderColours(opts.colours, s.str()));
-        return 0;
+        return finalise_ok ? 0 : 1;
     }
+
+    // Give up if we’re actually trying to do anything with this
+    // if there was an error.
+    if (not finalise_ok) return 1;
 
     // Run LLVM lowering.
     auto ir_module = cg.emit_llvm(*machine);

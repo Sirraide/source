@@ -69,7 +69,7 @@ auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
     if (generic) {
         SmallUnrenderedString s;
         llvm::raw_svector_ostream os{s};
-        auto f = mlir::OpPrintingFlags().assumeVerified(true).printUniqueSSAIDs(true).enableDebugInfo(true, true);
+        auto f = mlir::OpPrintingFlags().assumeVerified(true).printUniqueSSAIDs(true).enableDebugInfo(verbose, verbose);
         mlir_module.print(os, f);
         return SmallUnrenderedString(stream{s.str()}.replace('%', "%%"));
     }
@@ -458,6 +458,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
         auto i = global++;
         global_ids[g] = i64(i);
         out += std::format("%3(@{}%)", i);
+
         if (auto init = g.getValueOrNull()) {
             out += " %1(=%) ";
 
@@ -465,17 +466,13 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             SmallString<128> tmp;
             llvm::raw_svector_ostream os{tmp};
             init.print(os, true);
-            if (tmp.ends_with("\"")) {
-                out += std::format("%3({}%)", stream{tmp.str()}.replace('%', "%%"));
-            } else {
-                out += std::format(
-                    "%1({{%) %5({}%) %1(}}, align %) %5({}%)",
-                    utils::join(tmp, "%1(,%) ", "{:02X}"),
-                    g.getAlignment().value_or(1)
-                );
-            }
+            out += std::format("%3({}%)", stream{tmp.str()}.replace('%', "%%"));
         }
-        out += "\n";
+
+        if (g.getAlignment().value_or(1) != 1)
+            out += std::format("%1(, align%) %5({}%)", g.getAlignment().value_or(1));
+
+        out += '\n';
         return;
     }
 
@@ -489,6 +486,10 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
 
 auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString {
     SmallUnrenderedString tmp;
+    if (not v) {
+        tmp += std::format("%1b(<<< NULL >>>%)");
+        return tmp;
+    }
 
     if (include_type or always_include_types) {
         tmp += FormatType(v.getType());
@@ -511,7 +512,8 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
         }
 
         if (auto c = dyn_cast<mlir::arith::ConstantIntOp>(op)) {
-            tmp += std::format("%5({}%)", c.value());
+            if (c.getType().isInteger(1)) tmp += std::format("%5({}%)", c.value() != 0);
+            else tmp += std::format("%5({}%)", c.value());
             return tmp;
         }
 

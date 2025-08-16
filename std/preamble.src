@@ -38,6 +38,14 @@ proc __srcc_exp_assign_i (inout $T base, in $T exp) -> T^ {
     return &base;
 }
 
+/// Implementation of '==' for slice types.
+// FIXME: Should be '$T[]'
+proc __srcc_slice_eq (in $T a, in T b) -> bool {
+    if a.size != b.size return false;
+    for v1, v2 in a, b if v1 != v2 return false;
+    return true;
+}
+
 /// Payload passed to various assertion handlers.
 ///
 /// The name and layout of this type are hard-coded into the

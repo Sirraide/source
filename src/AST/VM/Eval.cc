@@ -330,6 +330,12 @@ class eval::Eval : DiagsProducer<bool> {
 
         /// Return value slots.
         RetVals ret_vals{};
+
+        /// Address used for indirect returns.
+        SRValue ret_ptr{};
+
+        /// Environment pointer.
+        SRValue env_ptr{};
     };
 
     VM& vm;
@@ -359,7 +365,7 @@ private:
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
     [[nodiscard]] auto AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> std::optional<Pointer>;
     [[nodiscard]] bool EvalLoop();
-    [[nodiscard]] auto FFICall(ir::ProcOp proc, ir::CallOp call, ArrayRef<SRValue> args) -> std::optional<SRValue>;
+    [[nodiscard]] auto FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue>;
     [[nodiscard]] auto FFIType(mlir::Type ty) -> ffi_type*;
     [[nodiscard]] auto GetHostMemoryPointer(Value v) -> void*;
     [[nodiscard]] auto LoadSRValue(const void* mem, mlir::Type ty) -> SRValue;
@@ -368,7 +374,14 @@ private:
 
     void BranchTo(Block* block, mlir::ValueRange args);
     void BranchTo(Block* block, MutableArrayRef<SRValue> args);
-    void PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, StackFrame::RetVals ret_vals);
+    void PushFrame(
+        ir::ProcOp proc,
+        MutableArrayRef<SRValue> args,
+        StackFrame::RetVals ret_vals,
+        SRValue ret_ptr = {},
+        SRValue env_ptr = {}
+    );
+
     void StoreSRValue(void* mem, const SRValue& val);
 };
 
@@ -543,18 +556,12 @@ bool Eval::EvalLoop() {
             auto callee = vm.memory->get_procedure(ptr);
             if (not callee) return Error(Location::Decode(i->getLoc()), "Address is not callable");
 
-            // Collect the arguments.
-            SmallVector<SRValue, 6> args;
-            if (c.getMrvalueSlot()) args.push_back(Val(c.getMrvalueSlot()));
-            for (auto a : c.getArgs()) args.push_back(Val(a));
-            if (c.getEnv()) args.push_back(Val(c.getEnv()));
-
             // Compile the procedure now if we haven’t done that yet.
             if (callee.empty()) {
                 // This is an external procedure.
                 auto decl = cg.lookup(callee);
                 if (not decl or not decl.get()->body()) {
-                    auto res = FFICall(callee, c, args);
+                    auto res = FFICall(callee, c);
                     if (not res) return false;
                     Temp(i->getResult(0)) = std::move(res.value());
                     continue;
@@ -569,7 +576,11 @@ bool Eval::EvalLoop() {
             for (auto res : c.getResults()) ret_vals.push_back(&Temp(res));
 
             // Enter the stack frame.
-            PushFrame(callee, args, std::move(ret_vals));
+            SmallVector<SRValue, 6> args;
+            for (auto a : c.getArgs()) args.push_back(Val(a));
+            SRValue ret_ptr = c.getMrvalueSlot() ? Val(c.getMrvalueSlot()) : SRValue();
+            SRValue env_ptr = c.getEnv() ? Val(c.getEnv()) : SRValue();
+            PushFrame(callee, args, std::move(ret_vals), ret_ptr, env_ptr);
             continue;
         }
 
@@ -655,6 +666,11 @@ bool Eval::EvalLoop() {
         if (isa<mlir::LLVM::UnreachableOp>(i))
             return Error(Location::Decode(i->getLoc()), "Unreachable code reached");
 
+        if (isa<ir::ReturnPointerOp>(i)) {
+            Temp(i->getResult(0)) = frame().ret_ptr;
+            continue;
+        }
+
         if (auto c = dyn_cast<mlir::arith::ExtSIOp>(i)) {
             TRY(CastOp(i, c.getType(), &APInt::sext));
             continue;
@@ -737,13 +753,29 @@ bool Eval::EvalLoop() {
     return false;
 }
 
-auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call, ArrayRef<SRValue> args) -> std::optional<SRValue> {
+auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
     if (not vm.supports_ffi_calls) {
-        Error(entry, "Compile-time FFI calls are not supported when cross-compiling");
+        Error(Location::Decode(call.getLoc()), "Compile-time FFI calls are not supported when cross-compiling");
         Remark(
             "The target triple is set to '{}', but the host triple is '{}'",
             vm.owner_tu.target().triple().str(),
             llvm::sys::getDefaultTargetTriple()
+        );
+        return std::nullopt;
+    }
+
+    if (call.getMrvalueSlot()) {
+        ICE(
+            Location::Decode(call.getLoc()),
+            "Compile-time FFI calls returning a structure in memory are currently not supported"
+        );
+        return std::nullopt;
+    }
+
+    if (call.getEnv()) {
+        ICE(
+            Location::Decode(call.getLoc()),
+            "Compile-time calls to compiled closures are currently not supported"
         );
         return std::nullopt;
     }
@@ -753,15 +785,17 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call, ArrayRef<SRValue> args) -> 
     auto ffi_ret = proc->getNumResults() ? FFIType(proc.getResultTypes()[0]) : &ffi_type_void;
     if (not ffi_ret) return std::nullopt;
 
+    // Collect the arguments.
+    SmallVector<SRValue, 6> args;
+    for (auto a : call.getArgs()) args.push_back(Val(a));
+
     // Collect the argument types.
     SmallVector<ffi_type*> arg_types;
-    if (call.getMrvalueSlot()) arg_types.push_back(&ffi_type_pointer);
     for (auto a : call->getOperandTypes()) {
         auto arg_ty = FFIType(a);
         if (not arg_ty) return std::nullopt;
         arg_types.push_back(arg_ty);
     }
-    if (call.getEnv()) arg_types.push_back(&ffi_type_pointer);
 
     // Prepare the call.
     ffi_cif cif{};
@@ -901,10 +935,18 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
     Unreachable("Cannot load value of type '{}'", ty);
 }
 
-void Eval::PushFrame(ir::ProcOp proc, MutableArrayRef<SRValue> args, StackFrame::RetVals ret_vals) {
+void Eval::PushFrame(
+    ir::ProcOp proc,
+    MutableArrayRef<SRValue> args,
+    StackFrame::RetVals ret_vals,
+    SRValue ret_ptr,
+    SRValue env_ptr
+) {
     Assert(not proc.empty());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
+    frame.ret_ptr = ret_ptr;
+    frame.env_ptr = env_ptr;
 
     // Allocate temporaries for instructions and block arguments.
     for (auto& b : proc.getBody()) {
@@ -974,7 +1016,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     auto ty = s->type_or_void();
     if (ty->rvalue_category() == Expr::MRValue) {
         auto mrv = vm.allocate_mrvalue(ty);
-        frame().temporaries[Encode(proc.getArgument(0))] = SRValue(vm.memory->make_host_pointer(uptr(mrv.data())));
+        frame().ret_ptr = SRValue(vm.memory->make_host_pointer(uptr(mrv.data())));
         TRY(EvalLoop());
         return RValue(mrv, ty);
     }
@@ -1057,6 +1099,9 @@ auto VM::eval(
     }
 
     // Otherwise, we need to do this the complicated way. Evaluate the statement.
+    //
+    // TODO: I think it’s possible to trigger this, actually, if an evaluation
+    // performs a template instantiation that contains an 'eval' statement.
     Assert(not evaluating, "We somehow triggered a nested evaluation?");
     tempset evaluating = true;
     Eval e{*this, complain};

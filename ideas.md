@@ -468,6 +468,10 @@ the type of the variable to the procedure parameter type.
 ## Recursion in anonymous functions
 Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for it using `alias`).
 
+## Operators
+- `and` and `or` should not associate.
+- 
+
 # Failed Ideas
 ## Renaming copy to var
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this 
