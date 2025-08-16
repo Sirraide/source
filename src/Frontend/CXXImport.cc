@@ -254,9 +254,9 @@ auto Sema::ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl> {
     return importer.ImportDecl(decl);
 }
 
-auto Sema::ImportCXXHeader(
+auto Sema::ImportCXXHeaders(
     String logical_name,
-    String linkage_name,
+    ArrayRef<String> header_names,
     Location import_loc
 ) -> Ptr<ImportedClangModuleDecl> {
     std::vector<std::string> args{
@@ -276,22 +276,23 @@ auto Sema::ImportCXXHeader(
     };
 
     auto AST = clang::tooling::buildASTFromCodeWithArgs(
-        std::format("#include {}\n", linkage_name),
+        utils::join(header_names, "", "#include {}\n"),
         args,
         "__srcc.imports.cc",
         SOURCE_CLANG_EXE
     );
 
     if (not AST) {
-        Error(import_loc, "Failed to import C++ header '{}'", linkage_name);
+        Error(import_loc, "Header import failed");
         return {};
     }
 
     clang_ast_units.push_back(std::move(AST));
-    return new (*M) ImportedClangModuleDecl(
+    return ImportedClangModuleDecl::Create(
+        *M,
         *clang_ast_units.back(),
         logical_name,
-        linkage_name,
+        header_names,
         import_loc
     );
 }

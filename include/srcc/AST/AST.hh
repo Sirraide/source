@@ -107,8 +107,8 @@ private:
     explicit TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module);
 
 public:
-    /// Map from linkage names to imported modules.
-    StringMap<ModuleDecl*> linkage_imports;
+    /// Map from linkage names to imported source modules.
+    StringMap<ImportedSourceModuleDecl*> linkage_imports;
 
     /// Map from logical names to imported modules.
     StringMap<ModuleDecl*> logical_imports;

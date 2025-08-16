@@ -22,12 +22,17 @@ void ParsedModule::dump() const {
 
     // Print preamble.
     utils::Print(c, "%1({}%) {}\n", is_module ? "Module" : "Program", name);
-    for (auto i : imports) utils::Print(
-        c,
-        "%1(Import%) %4({}%) %1(as%) %4({}%)\n",
-        i.linkage_name,
-        i.import_name
-    );
+    for (auto i : imports) {
+        utils::Print(
+            c,
+            "%1(Import%) %4({}%) %1(as%) %4({}%)",
+            utils::join(i.linkage_names),
+            i.import_name
+        );
+
+        if (i.is_header_import) utils::Print(c, " header-import");
+        utils::Print(c, "\n");
+    }
 
     // Print content.
     for (auto s : top_level) s->dump(this, c);

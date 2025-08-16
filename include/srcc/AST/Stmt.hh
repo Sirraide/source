@@ -786,24 +786,13 @@ public:
 /// Base class for declarations that represent modules.
 class srcc::ModuleDecl : public Decl {
 public:
-    /// The ‘linkage name’ is the actual name of the imported module or the
-    /// actual header name, as opposed to the logical name, which is the name
-    /// given to it when imported. E.g. in
-    ///
-    ///     import foo as bar;
-    ///
-    /// ‘foo’ is the linkage name and ‘bar’ the logical name.
-    String linkage_name;
-
 protected:
     ModuleDecl(
         Kind k,
         String logical_name,
-        String linkage_name,
         Location loc
-    ) : Decl{k, logical_name, loc}, linkage_name{linkage_name} {
+    ) : Decl{k, logical_name, loc} {
         Assert(not logical_name.empty());
-        Assert(not linkage_name.empty());
     }
 
 public:
@@ -814,18 +803,39 @@ public:
 };
 
 /// Class representing an imported Clang module.
-class srcc::ImportedClangModuleDecl : public ModuleDecl {
+class srcc::ImportedClangModuleDecl final : public ModuleDecl
+    , TrailingObjects<ImportedClangModuleDecl, String> {
+    friend TrailingObjects;
+    const u32 num_headers;
+
 public:
     clang::ASTUnit& clang_ast;
 
+private:
     ImportedClangModuleDecl(
         clang::ASTUnit& clang_ast,
         String logical_name,
-        String linkage_name,
+        ArrayRef<String> header_names,
         Location loc
-    ) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, linkage_name, loc}, clang_ast{clang_ast} {}
+    );
 
-    static bool classof(const Stmt* e) { return e->kind() == Kind::ImportedClangModuleDecl; }
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        clang::ASTUnit& clang_ast,
+        String logical_name,
+        ArrayRef<String> header_names,
+        Location loc
+    ) -> ImportedClangModuleDecl*;
+
+    /// Get the headers that make up this module.
+    auto headers() const -> ArrayRef<String> {
+        return getTrailingObjects(num_headers);
+    }
+
+    static bool classof(const Stmt* e) {
+        return e->kind() == Kind::ImportedClangModuleDecl;
+    }
 };
 
 /// Class representing an imported Source module.
@@ -836,15 +846,31 @@ public:
     /// The path that we need to link against.
     String mod_path;
 
+    /// The ‘linkage name’ is the actual name of the imported module or the
+    /// actual header name, as opposed to the logical name, which is the name
+    /// given to it when imported. E.g. in
+    ///
+    ///     import foo as bar;
+    ///
+    /// ‘foo’ is the linkage name and ‘bar’ the logical name.
+    String linkage_name;
+
     ImportedSourceModuleDecl(
         Scope& exports,
         String logical_name,
         String linkage_name,
         String mod_path,
         Location loc
-    ) : ModuleDecl{Kind::ImportedSourceModuleDecl, logical_name, linkage_name, loc}, exports{exports}, mod_path{mod_path} {}
+    ) : ModuleDecl{Kind::ImportedSourceModuleDecl, logical_name, loc},
+        exports{exports},
+        mod_path{mod_path},
+        linkage_name{linkage_name} {
+        Assert(not linkage_name.empty());
+    }
 
-    static bool classof(const Stmt* e) { return e->kind() == Kind::ImportedSourceModuleDecl; }
+    static bool classof(const Stmt* e) {
+        return e->kind() == Kind::ImportedSourceModuleDecl;
+    }
 };
 
 class srcc::LocalDecl : public Decl {

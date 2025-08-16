@@ -549,9 +549,9 @@ private:
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
 
     /// Import a C++ header.
-    auto ImportCXXHeader(
+    auto ImportCXXHeaders(
         String logical_name,
-        String linkage_name,
+        ArrayRef<String> header_names,
         Location import_loc
     ) -> Ptr<ImportedClangModuleDecl>;
 
@@ -565,14 +565,9 @@ private:
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
 
     /// Load a native header or Source module from the system include path.
-    ///
-    /// \param logical_name The name given to this in source.
-    /// \param linkage_name The actual name of this.
-    /// \param import_loc Where this was imported from.
-    /// \param is_cxx_header Whether this is a C++ header name.
     void LoadModule(
         String logical_name,
-        String linkage_name,
+        ArrayRef<String> linkage_names,
         Location import_loc,
         bool is_cxx_header
     );

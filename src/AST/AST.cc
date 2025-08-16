@@ -334,7 +334,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 auto c = cast<ImportedClangModuleDecl>(e);
                 print(
                     "%3({}%) %1(as%) {}",
-                    utils::Escape(c->linkage_name, false, true),
+                    utils::Escape(utils::join(c->headers()), false, true),
                     c->name
                 );
             });

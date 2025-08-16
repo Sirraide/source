@@ -105,6 +105,7 @@ struct Lexer {
     const char* curr;
     const char* const end;
     bool in_pragma = false;
+    const Token invalid_token;
 
     Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallback cb);
 
@@ -132,6 +133,12 @@ struct Lexer {
     void FinishText() {
         tok().location.len = u16(curr - f.data() - tok().location.pos);
         tok().text = tok().location.text(f.context());
+    }
+
+    auto Prev(usz i = 1) -> const Token& {
+        i++; // Exclude the current token.
+        if (tokens.size() >= i) return tokens[tokens.size() - i];
+        return invalid_token;
     }
 
     auto CurrOffs() -> u32;
@@ -300,7 +307,10 @@ void Lexer::NextImpl() {
 
         case '<':
             // Handle C++ header names.
-            if (tokens.size() > 1 and tokens[tokens.size() - 2].type == Tk::Import) {
+            if (
+                Prev().is(Tk::Import) or
+                (Prev().is(Tk::Comma) and Prev(2).is(Tk::CXXHeaderName))
+            ) {
                 LexCXXHeaderName();
                 break;
             }

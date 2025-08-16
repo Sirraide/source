@@ -888,7 +888,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
     };
 }
 
-// <import> ::= IMPORT CXX-HEADER-NAME AS IDENTIFIER ";"
+// <import> ::= IMPORT CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ] AS IDENT ";"
 void Parser::ParseImport() {
     Location import_loc;
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
@@ -899,31 +899,29 @@ void Parser::ParseImport() {
     }
 
     // Save name for later.
-    auto linkage_name = tok->text;
-    Next();
+    SmallVector<String> linkage_names;
+    while (At(Tk::CXXHeaderName)) {
+        linkage_names.push_back(tok->text);
+        Next();
+        if (not Consume(Tk::Comma)) break;
+    }
 
     // Read import name.
-    ExpectAndConsume(Tk::As, "Syntax for header imports is `import <header> as name`");
-    if (not At(Tk::Identifier)) {
-        Error("Expected identifier after 'as' in import directive");
+    if (not Consume(Tk::As)) {
+        Error("Syntax for header imports is '%1(import%) %3(<header>%) %1(as%) name`");
+        SkipPast(Tk::Semicolon);
         return;
     }
 
-    // Warn about duplicate imports.
-    auto FindExisting = [&](auto& i) { return i.linkage_name == linkage_name and i.import_name == tok->text; };
-    Location loc = {import_loc, tok->location};
-    if (
-        auto it = rgs::find_if(mod->imports, FindExisting);
-        it != mod->imports.end()
-    ) {
-        Warn(loc, "Duplicate import ignored");
-        Note(it->loc, "Previous import was here");
-    } else {
-        mod->imports.emplace_back(linkage_name, tok->text, loc);
+    if (not At(Tk::Identifier)) {
+        Error("Expected identifier after '%1(as%)' in import directive");
+        SkipPast(Tk::Semicolon);
+        return;
     }
 
+    mod->imports.emplace_back(std::move(linkage_names), tok->text, import_loc, true);
     Next();
-    Consume(Tk::Semicolon);
+    if (not Consume(Tk::Semicolon)) Error("Expected ';' at end of import");
 }
 
 // <intent> ::= IN | OUT | INOUT | COPY

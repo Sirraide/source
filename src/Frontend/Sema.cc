@@ -2208,7 +2208,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     // Load the runtime.
     if (load_runtime) LoadModule(
         "__src_runtime",
-        "__src_runtime",
+        String("__src_runtime"),
         modules.front()->program_or_module_loc,
         false
     );
@@ -2218,9 +2218,9 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
         for (auto& i : m->imports) {
             LoadModule(
                 i.import_name,
-                i.linkage_name,
+                i.linkage_names,
                 i.loc,
-                i.linkage_name.starts_with('<')
+                i.is_header_import
             );
         }
     }

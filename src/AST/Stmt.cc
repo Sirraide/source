@@ -223,6 +223,29 @@ auto Stmt::value_category_or_srvalue() const -> ValueCategory {
 // ============================================================================
 //  Declarations
 // ============================================================================
+ImportedClangModuleDecl::ImportedClangModuleDecl(
+    clang::ASTUnit& clang_ast,
+    String logical_name,
+    ArrayRef<String> header_names,
+    Location loc
+) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, loc},
+    num_headers{u32(header_names.size())},
+    clang_ast{clang_ast} {
+    uninitialized_copy(header_names, getTrailingObjects());
+}
+
+auto ImportedClangModuleDecl::Create(
+    TranslationUnit& tu,
+    clang::ASTUnit& clang_ast,
+    String logical_name,
+    ArrayRef<String> header_names,
+    Location loc
+) -> ImportedClangModuleDecl* {
+    auto sz = totalSizeToAlloc<String>(header_names.size());
+    auto mem = tu.allocate(sz, alignof(ImportedClangModuleDecl));
+    return ::new (mem) ImportedClangModuleDecl{clang_ast, logical_name, header_names, loc};
+}
+
 ProcDecl::ProcDecl(
     TranslationUnit* owner,
     ProcType* type,

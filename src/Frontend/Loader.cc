@@ -59,33 +59,40 @@ auto Sema::LoadModuleFromArchive(
 
 void Sema::LoadModule(
     String logical_name,
-    String linkage_name,
+    ArrayRef<String> linkage_names,
     Location import_loc,
     bool is_cxx_header
 ) {
-    auto& link = M->linkage_imports[linkage_name];
+    // Clang imports cannot be cached or redefined.
     auto& logical = M->logical_imports[logical_name];
-
-    // The module has already been imported.
-    if (link) {
-        // If we’re importing it with a different name, map that name to the same module.
-        if (not logical) logical = link;
-
-        // Conversely, complain if this name is already mapped to a different module.
-        else if (logical != link) {
-            Error(import_loc, "Import with name '{}' conflicts with an existing import", logical_name);
-            Note(import_loc, "Import here refers to module '{}'", linkage_name);
-            Note(link->location(), "But import here refers to module '{}'", link->linkage_name);
-        }
-
+    if (isa_and_present<ImportedClangModuleDecl>(logical)) {
+        Error(import_loc, "Cannot redefine header import '{}'", logical_name);
+        Note(logical->location(), "Previous definition was here");
         return;
     }
 
-    // Import the module.
-    ModuleDecl* m;
-    if (is_cxx_header) m = ImportCXXHeader(logical_name, linkage_name, import_loc).get_or_null();
-    else m = LoadModuleFromArchive(logical_name, linkage_name, import_loc).get_or_null();
-    link = logical = m;
+    if (is_cxx_header) {
+        logical = ImportCXXHeaders(logical_name, linkage_names, import_loc).get_or_null();
+        return;
+    }
+
+    Assert(linkage_names.size() == 1, "Source module imports should consist of a single physical module");
+    auto& link = M->linkage_imports[linkage_names.front()];
+    if (not link) {
+        logical = link = LoadModuleFromArchive(logical_name, linkage_names.front(), import_loc).get_or_null();
+        return;
+    }
+
+    // We’ve imported this before; if the logical name isn’t mapped yet, map it
+    // to the same module.
+    if (not logical) logical = link;
+
+    // Conversely, complain if this name is already mapped to a different module.
+    else if (logical != link) {
+        Error(import_loc, "Import with name '{}' conflicts with an existing import", logical_name);
+        Note(import_loc, "Import here refers to module '{}'", linkage_names.front());
+        Note(link->location(), "But import here refers to module '{}'", link->linkage_name);
+    }
 }
 
 auto TranslationUnit::serialise() -> SmallString<0> {

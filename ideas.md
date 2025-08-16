@@ -403,6 +403,9 @@ the getter or setter (in which case it refers to the backing field instead).
 To perform a recursive call to a setter or getter, call unqualified `set()` 
 or `get()` from within a setter. 
 
+## FFI
+For C compatibility, add an implicit conversion from string literals to 'i8^'.
+
 ## Effect system?
 Maybe something like:
 ```
