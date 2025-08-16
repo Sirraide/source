@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
     auto opts = ::detail::options::parse(argc, argv);
 
     // Enable colours.
-    auto colour_opt = opts.get_or<"--colour">("auto");
+    auto colour_opt = opts.get<"--colour">("auto");
     bool use_colour = colour_opt == "never"  ? false
                     : colour_opt == "always" ? true
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
@@ -123,9 +123,9 @@ int main(int argc, char** argv) {
 
     // Create driver.
     Driver driver{{// clang-format off
-        .module_output_path = opts.get_or<"--mo">("."),
-        .output_file_name = opts.get_or<"-o">(""),
-        .preamble_path = opts.get_or<"--preamble">(SOURCE_PROJECT_DIR_NAME "/std/preamble.src"),
+        .module_output_path = opts.get<"--mo">("."),
+        .output_file_name = opts.get<"-o">(""),
+        .preamble_path = opts.get<"--preamble">(SOURCE_PROJECT_DIR_NAME "/std/preamble.src"),
         .module_search_paths = std::move(module_search_paths),
 
         .link_objects = std::vector<std::string>{
@@ -134,9 +134,9 @@ int main(int argc, char** argv) {
         },
 
         .action = action,
-        .eval_steps = u64(opts.get_or<"--eval-steps">(1 << 20)),
-        .error_limit = u32(opts.get_or<"--error-limit">(20)),
-        .opt_level = u8(opts.get_or<"-O">(0)),
+        .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
+        .error_limit = u32(opts.get<"--error-limit">(20)),
+        .opt_level = u8(opts.get<"-O">(0)),
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),
         .colours = use_colour,

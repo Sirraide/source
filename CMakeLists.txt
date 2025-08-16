@@ -21,9 +21,6 @@ endif()
 ## Turn on diagnostics colours.
 add_compile_options(-fcolor-diagnostics)
 
-## Temporary fix until our dependencies have fixed some libstdc++ deprecation warnings.
-add_compile_options(-Wno-deprecated-declarations)
-
 ## Use mold as the default linker, if it exists.
 find_program(MOLD_LINKER "mold")
 if (MOLD_LINKER)
