@@ -2,7 +2,7 @@
 module foo;
 
 export int; // expected-error: Only declarations can be exported
-export proc = 1; // expected-error: Anonymous declarations cannot be exported
+export proc = 1; // expected-error (Operator '=' cannot be overloaded) expected-error (Expected procedure body)
 export export int x; // expected-error: 'export export' is invalid
 export 4; // expected-error: Only declarations can be exported
 export {} // expected-error: Only declarations can be exported

@@ -16,9 +16,26 @@ using namespace srcc;
 #define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(, ) __VA_ARGS__)
 #define TryParseType(...) TRY(ParseType() __VA_OPT__(, ) __VA_ARGS__)
 
+#define SkipTo(...)                                 \
+    do {                                            \
+        if (not SkipToImpl(__VA_ARGS__)) return {}; \
+    } while (false)
+
+#define SkipPast(...)                                 \
+    do {                                              \
+        if (not SkipPastImpl(__VA_ARGS__)) return {}; \
+    } while (false)
+
 // ============================================================================
 //  Parser Helpers
 // ============================================================================
+/// Precedence used for tokens that aren’t operators.
+constexpr int NotAnOperator = -1;
+
+/// Precedence used for prefix operators.
+constexpr int PrefixPrecedence = 900;
+
+/// Get the precedence of this operator. Does not handled unary prefix operators.
 constexpr int BinaryOrPostfixPrecedence(Tk t) {
     switch (t) {
         case Tk::ColonColon:
@@ -114,11 +131,9 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
             return 1;
 
         default:
-            return -1;
+            return NotAnOperator;
     }
 }
-
-constexpr int PrefixPrecedence = 900;
 
 /// The precedence used to parse template parameters; this is set to the precedence
 /// of '>' + 1 so that we stop parsing when we find the '>'.
@@ -128,6 +143,7 @@ constexpr int TemplateParamPrecedence = BinaryOrPostfixPrecedence(Tk::SGt) + 1;
 /// precedence of '=' + 1 so that we stop parsing if we encounter an '='.
 constexpr int ReturnTypePrecedence = BinaryOrPostfixPrecedence(Tk::Assign) + 1;
 
+/// Check if this is a right-associative operator.
 constexpr bool IsRightAssociative(Tk t) {
     switch (t) {
         case Tk::StarStar:
@@ -148,6 +164,7 @@ constexpr bool IsRightAssociative(Tk t) {
     }
 }
 
+/// Check if this is a postfix operator.
 constexpr bool IsPostfix(Tk t) {
     switch (t) {
         case Tk::MinusMinus:
@@ -159,6 +176,26 @@ constexpr bool IsPostfix(Tk t) {
     }
 }
 
+/// Check if this is a prefix operator.
+constexpr bool IsPrefix(Tk t) {
+    switch (t) {
+        case Tk::Ampersand:
+        case Tk::Caret:
+        case Tk::Minus:
+        case Tk::Plus:
+        case Tk::Not:
+        case Tk::Tilde:
+        case Tk::MinusMinus:
+        case Tk::PlusPlus:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+/// Check if this token could start an expression (that doesn’t
+/// imply that it actually does!).
 bool Parser::AtStartOfExpression() {
     switch (tok->type) {
         default: return false;
@@ -266,9 +303,13 @@ auto Parser::LookAhead(usz n) -> Token& {
 }
 
 auto Parser::Next() -> Location {
-    auto loc = tok->location;
+    return NextToken()->location;
+}
+
+auto Parser::NextToken() -> Token* {
+    auto* t = &*tok;
     if (not At(Tk::Eof)) ++tok;
-    return loc;
+    return t;
 }
 
 // ============================================================================
@@ -322,7 +363,7 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
 // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
 auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
     auto loc = tok->location;
-    SmallVector<String> strings;
+    SmallVector<DeclName> strings;
     do {
         if (not At(Tk::Identifier)) {
             Error("Expected identifier after '::'");
@@ -370,30 +411,10 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
     bool at_start = AtStartOfExpression(); // See below.
     auto start_tok = tok->type;
     switch (tok->type) {
-        default:
-            if (expect_type) Error("Expected type");
-            else Error("Expected expression");
-            return {};
-
         case Tk::Else:
         case Tk::Elif:
         case Tk::Then:
             return Error("Unexpected '%1({}%)'", tok->type);
-
-        // <expr-prefix> ::= <prefix> <expr>
-        case Tk::Ampersand:
-        case Tk::Caret:
-        case Tk::Minus:
-        case Tk::Plus:
-        case Tk::Not:
-        case Tk::Tilde:
-        case Tk::MinusMinus:
-        case Tk::PlusPlus: {
-            auto op = tok->type;
-            auto start = Next();
-            auto arg = TRY(ParseExpr(PrefixPrecedence));
-            lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
-        } break;
 
         // Compile-time expressions.
         case Tk::Hash: {
@@ -538,6 +559,21 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             Next();
             lhs = ty;
         } break;
+
+        // <expr-prefix> ::= <prefix> <expr>
+        default: {
+            if (IsPrefix(tok->type)) {
+                auto op = tok->type;
+                auto start = Next();
+                auto arg = TRY(ParseExpr(PrefixPrecedence));
+                lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
+                break;
+            }
+
+            if (expect_type) Error("Expected type");
+            else Error("Expected expression");
+            return {};
+        }
     }
 
     // There was an error.
@@ -721,7 +757,8 @@ void Parser::ParseFile() {
 }
 
 // <header> ::= ( "program" | "module" ) <module-name> ";"
-//   [ext]     | __srcc_preamble__
+//   [ext]    | "__srcc_preamble__"
+//   [ext]    | "__srcc_ser_module__" <module-name> ";"
 // <module-name> ::= IDENTIFIER
 void Parser::ParseHeader() {
     // Keep the preamble as a non-module to disallow e.g. 'export' since
@@ -737,12 +774,14 @@ void Parser::ParseHeader() {
         not ConsumeContextual(mod->program_or_module_loc, "program")
     ) {
         Error("Expected '%1(program%)' or '%1(module%)' directive at start of file");
-        return SkipPast(Tk::Semicolon);
+        SkipPastImpl(Tk::Semicolon);
+        return;
     }
 
     if (not At(Tk::Identifier)) {
         Error("Expected identifier after '%1({}%)'", module ? "module" : "program");
-        return SkipPast(Tk::Semicolon);
+        SkipPastImpl(Tk::Semicolon);
+        return;
     }
 
     mod->name = tok->text;
@@ -894,7 +933,7 @@ void Parser::ParseImport() {
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
     if (not At(Tk::CXXHeaderName)) {
         Error("Expected C++ header name after 'import'");
-        SkipPast(Tk::Semicolon);
+        SkipPastImpl(Tk::Semicolon);
         return;
     }
 
@@ -909,13 +948,13 @@ void Parser::ParseImport() {
     // Read import name.
     if (not Consume(Tk::As)) {
         Error("Syntax for header imports is '%1(import%) %3(<header>%) %1(as%) name`");
-        SkipPast(Tk::Semicolon);
+        SkipPastImpl(Tk::Semicolon);
         return;
     }
 
     if (not At(Tk::Identifier)) {
         Error("Expected identifier after '%1(as%)' in import directive");
-        SkipPast(Tk::Semicolon);
+        SkipPastImpl(Tk::Semicolon);
         return;
     }
 
@@ -972,6 +1011,57 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
     return decl;
 }
 
+/// Check if the current token represents an operator name that
+/// can be used in a function definition to define an overloaded
+/// operator function.
+///
+/// Note that it’s possible for this function to do nothing at all
+/// if this is a signature without a name.
+void Parser::ParseOverloadableOperatorName(Signature& sig) {
+    // Parse 'proc ()' as the call operator. For an empty argument list,
+    // people should just omit the '()' (and for anonymous functions, we
+    // shouldn’t even be using 'proc' in the first place...).
+    //
+    // Note that '(' on its own is not an operator, but rather the start
+    // of an argument list, so don’t error in that case. Also correct
+    // 'proc ( (' to 'proc () ('.
+    if (At(Tk::LParen)) {
+        if (LookAhead().is(Tk::RParen, Tk::LParen)) {
+            sig.name = Tk::LParen;
+            auto loc = Next(); // Yeet '('.
+            if (not Consume(Tk::RParen)) Error(
+                loc,
+                "To overload the call operator, write '%1(proc ()%)'"
+            );
+        }
+    }
+
+    // Similarly, '[]' is a valid operator.
+    else if (At(Tk::LBrack)) {
+        sig.name = Tk::LBrack;
+        auto loc = Next(); // Yeet '['.
+        if (not Consume(Tk::RBrack)) Error(
+            loc,
+            "To overload the subscript operator, write '%1(proc []%)'"
+        );
+    }
+
+    // Handle other builtin operators.
+    else if (
+        BinaryOrPostfixPrecedence(tok->type) != NotAnOperator or
+        IsPrefix(tok->type)
+    ) {
+        if (At(Tk::Assign, Tk::ColonColon, Tk::Dot)) Error(
+            "Operator '{}' cannot be overloaded",
+            tok->type
+        );
+
+        // Continue parsing either way.
+        sig.name = tok->type;
+        Next();
+    }
+}
+
 // <preamble> ::= <header> { <import> }
 void Parser::ParsePreamble() {
     ParseHeader();
@@ -986,6 +1076,12 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     Signature sig;
     if (not ParseSignature(sig, &param_decls)) return nullptr;
 
+    // The 'proc' syntax requires a name.
+    if (sig.name.empty()) {
+        Error("Procedures declared with '%1(proc%)' must have a name");
+        return nullptr;
+    }
+
     // If we failed to parse a return type, or if there was
     // none, just default to void instead, or deduce the type
     // if this is a '= <expr>' declaration.
@@ -998,8 +1094,10 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     // If the next token can’t introduce a body, skip any intervening junk
     // that the user may have put here.
+    bool complained_about_body = false;
     if (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign)) {
-        Error("Expected '{{', '=', or ';'");
+        complained_about_body = true;
+        Error("Expected procedure body");
         do Next();
         while (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign, Tk::Eof));
     }
@@ -1017,7 +1115,12 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     // Procedures not declared 'extern' must have a body (and vice versa); allow it
     // if we’re parsing a module description though.
-    if (not parsing_imported_module and sig.attrs.extern_ != not bool(body)) Error(
+    // FIXME: Move this diagnostic to Sema instead.
+    if (
+        not complained_about_body and
+        not parsing_imported_module and
+        sig.attrs.extern_ != not bool(body)
+    ) Error(
         sig.proc_loc,
         "Procedure that is{} declared '%1(extern%)' must{} have a body",
         sig.attrs.extern_ ? ""sv : " not"sv,
@@ -1062,6 +1165,8 @@ bool Parser::ParseSignatureImpl(
     if (At(Tk::Identifier)) {
         sig.name = tok->text;
         Next();
+    } else {
+        ParseOverloadableOperatorName(sig);
     }
 
     // Parse params.
@@ -1091,9 +1196,14 @@ bool Parser::ParseSignatureImpl(
                     continue;
                 }
 
+                if (inner.name.is_operator_name()) {
+                    Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name);
+                } else {
+                    name = inner.name.str();
+                    name_loc = inner.tok_after_proc;
+                }
+
                 type = CreateType(inner);
-                name = inner.name;
-                name_loc = inner.tok_after_proc;
 
                 // For all template parameters that appear in the signature,
                 // add the index of the parameter that is the signature.
@@ -1126,12 +1236,15 @@ bool Parser::ParseSignatureImpl(
                     name = tok->text;
                     end = Next();
                 } else if (not At(Tk::Comma, Tk::RParen)) {
-                    Error("Expected parameter name, '%1(,%)', or '%1()%)'");
-                    if (IsKeyword(tok->type)) Remark(
-                        "'%1({})' is not a valid parameter name because it is "
-                        "a reserved word.",
-                        tok->text
-                    );
+                    if (IsKeyword(tok->type)) {
+                        Error(
+                            "'%1({})' is not a valid parameter name because it is "
+                            "a reserved word.",
+                            tok->text
+                        );
+                    } else {
+                        Error("Unexpected token in procedure argument list");
+                    }
 
                     SkipTo(Tk::Comma, Tk::RParen);
                 }
@@ -1160,7 +1273,8 @@ bool Parser::ParseSignatureImpl(
         ParseAttr(sig.attrs.extern_, "extern") or
         ParseAttr(sig.attrs.native, "native") or
         ParseAttr(sig.attrs.nomangle, "nomangle") or
-        ParseAttr(sig.attrs.variadic, "variadic")
+        ParseAttr(sig.attrs.variadic, "variadic") or
+        ParseAttr(sig.attrs.builtin_operator, "__srcc_builtin_op__")
     );
 
     // Parse return type.
@@ -1207,9 +1321,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // Avoid forcing Sema to deal with unwrapping nested
             // export declarations.
             if (isa<ParsedExportDecl>(decl)) return Error({loc, decl->loc}, "'%1(export export%)' is invalid");
-
-            // The decl must have a name to be exportable.
-            if (decl->name.empty()) return Error(decl->loc, "Anonymous declarations cannot be exported");
             return new (*this) ParsedExportDecl{decl, loc};
         }
 

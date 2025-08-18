@@ -15,14 +15,7 @@ class Diagnostic;
 class DiagnosticsEngine;
 class StreamingDiagnosticsEngine;
 class VerifyDiagnosticsEngine;
-
-class DiagsProducerBase;
-
-template <typename ErrRetTy>
 class DiagsProducer;
-
-template <typename ErrRetTy>
-class DefaultDiagsProducer;
 }
 
 /// A diagnostic.
@@ -80,7 +73,17 @@ public:
 };
 
 /// Mixin to provide helpers for creating errors.
-class srcc::DiagsProducerBase {
+class srcc::DiagsProducer {
+    struct Falsy {
+        // Allow conversion to false.
+        constexpr /* implicit */ operator bool() const { return false; }
+
+        // Allow conversion to any nullable type.
+        template <typename ty>
+        requires std::convertible_to<std::nullptr_t, ty>
+        constexpr /* implicit */ operator ty() const { return nullptr; }
+    };
+
 public:
     template <typename... Args>
     static auto CreateError(
@@ -117,23 +120,16 @@ public:
     ) -> Diagnostic {
         return Diagnostic(Diagnostic::Level::Warning, where, fmt, std::forward<Args>(args)...);
     }
-};
 
-/// Mixin to provide helper functions to issue diagnostics.
-template <typename ErrRetTy = void>
-class srcc::DiagsProducer : public DiagsProducerBase {
-    using Base = DiagsProducerBase;
-
-public:
     template <typename... Args>
     auto Error(
         this auto& This,
         Location where,
         std::format_string<Args...> fmt,
         Args&&... args
-    ) -> ErrRetTy {
-        This.diags().report(Base::CreateError(where, fmt, std::forward<Args>(args)...));
-        return ErrRetTy();
+    ) -> Falsy {
+        This.diags().report(DiagsProducer::CreateError(where, fmt, std::forward<Args>(args)...));
+        return Falsy();
     }
 
     template <typename... Args>
@@ -142,9 +138,9 @@ public:
         Location where,
         std::format_string<Args...> fmt,
         Args&&... args
-    ) -> ErrRetTy {
-        This.diags().report(Base::CreateICE(where, fmt, std::forward<Args>(args)...));
-        return ErrRetTy();
+    ) -> Falsy {
+        This.diags().report(DiagsProducer::CreateICE(where, fmt, std::forward<Args>(args)...));
+        return Falsy();
     }
 
     template <typename... Args>
@@ -154,7 +150,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.diags().report(Base::CreateNote(loc, fmt, std::forward<Args>(args)...));
+        This.diags().report(DiagsProducer::CreateNote(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
@@ -164,7 +160,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.diags().report(Base::CreateWarning(loc, fmt, std::forward<Args>(args)...));
+        This.diags().report(DiagsProducer::CreateWarning(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
@@ -175,25 +171,6 @@ public:
     ) {
         This.diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
-};
-
-/// Diags producer that uses the context’s engine.
-template <typename ErrRetTy = void>
-class srcc::DefaultDiagsProducer : public DiagsProducer<ErrRetTy> {
-public:
-    template <typename... Args>
-    void Diag(
-        this auto& This,
-        Diagnostic::Level lvl,
-        Location where,
-        std::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        This.ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
-
-    /// Get the diagnostics engine.
-    auto diags(this const auto& This) -> DiagnosticsEngine& { return This.ctx.diags(); }
 };
 
 /// This class handles dispatching diagnostics. Objects of this
@@ -283,7 +260,7 @@ private:
 };
 
 class srcc::VerifyDiagnosticsEngine final : public DiagnosticsEngine
-    , DiagsProducer<>
+    , DiagsProducer
     , public text::ColourFormatter {
 public:
     /// Type of the callback used to handle comment tokens.
@@ -351,6 +328,11 @@ private:
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
         diags_reporter->diag(lvl, where, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    void Error(Location loc, std::format_string<Args...> fmt, Args&&... args) {
+        Diag(Diagnostic::Level::Error, loc, fmt, std::forward<Args>(args)...);
     }
 
     auto DecodeLocation(Location loc) -> Opt<DecodedLocation>;

@@ -21,7 +21,7 @@ namespace srcc {
 class TemplateInstantiator;
 }
 
-class srcc::Sema : public DiagsProducer<std::nullptr_t> {
+class srcc::Sema : public DiagsProducer {
     SRCC_IMMOVABLE(Sema);
 
     class Importer;
@@ -217,14 +217,14 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
 
         /// The name we failed to look up, if any. Will be unset
         /// if the lookup was successful.
-        String name;
+        DeclName name;
 
         /// Reason for failure.
         Reason result;
 
-        LookupResult(String name) : name{name}, result{Reason::NotFound} {}
-        LookupResult(ArrayRef<Decl*> decls, String name, Reason result) : decls{decls}, name{name}, result{result} {}
-        LookupResult(Decl* decl, String name, Reason result) : name{name}, result{result} {
+        LookupResult(DeclName name) : name{name}, result{Reason::NotFound} {}
+        LookupResult(ArrayRef<Decl*> decls, DeclName name, Reason result) : decls{decls}, name{name}, result{result} {}
+        LookupResult(Decl* decl, DeclName name, Reason result) : name{name}, result{result} {
             if (decl) decls.push_back(decl);
         }
 
@@ -232,11 +232,11 @@ class srcc::Sema : public DiagsProducer<std::nullptr_t> {
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
         [[nodiscard]] explicit operator bool() const { return successful(); }
 
-        static auto Ambiguous(String name, ArrayRef<Decl*> decls) { return LookupResult{decls, name, Reason::Ambiguous}; }
-        static auto FailedToImport() { return LookupResult{{}, "", Reason::FailedToImport}; }
-        static auto NonScopeInPath(String name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
-        static auto NotFound(String name) { return LookupResult{name}; }
-        static auto Success(Decl* decl) { return LookupResult{decl, "", Reason::Success}; }
+        static auto Ambiguous(DeclName name, ArrayRef<Decl*> decls) { return LookupResult{decls, name, Reason::Ambiguous}; }
+        static auto FailedToImport() { return LookupResult{{}, {}, Reason::FailedToImport}; }
+        static auto NonScopeInPath(DeclName name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
+        static auto NotFound(DeclName name) { return LookupResult{name}; }
+        static auto Success(Decl* decl) { return LookupResult{decl, {}, Reason::Success}; }
     };
 
     /// The result of substituting a procedure type before template instantiation.
@@ -518,6 +518,9 @@ private:
         CallingConvention cc = CallingConvention::Source
     ) -> Ptr<Expr>;
 
+    /// Check if the declaration of an overloaded operator is well-formed.
+    bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
+
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
 
@@ -564,6 +567,9 @@ private:
     /// Check that we have a complete type.
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
 
+    /// Check if an operator that takes a sequence of argument types must be overloaded.
+    bool IsOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
+
     /// Load a native header or Source module from the system include path.
     void LoadModule(
         String logical_name,
@@ -580,15 +586,15 @@ private:
     ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
-    auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult;
+    auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> LookupResult;
 
     /// Use LookUpName() instead.
-    auto LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult;
+    auto LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult;
 
     /// Perform unqualified name lookup.
     auto LookUpUnqualifiedName(
         Scope* in_scope,
-        String name,
+        DeclName name,
         bool this_scope_only
     ) -> LookupResult;
 
@@ -610,7 +616,7 @@ private:
     /// \param complain Emit a diagnostic if lookup fails.
     auto LookUpName(
         Scope* in_scope,
-        ArrayRef<String> names,
+        ArrayRef<DeclName> names,
         Location loc,
         bool complain = true
     ) -> LookupResult;
@@ -650,7 +656,7 @@ private:
     /// either way.
     auto TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr>;
 
-    /// Building AST nodes; called after translation and template instantiation.
+    /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, Location loc) -> Ptr<Expr>;
     auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
     auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<Expr>;
@@ -658,10 +664,11 @@ private:
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, Location loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
+    auto BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
-    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, String name, Location loc, ParsedProcAttrs attrs) -> ProcDecl*;
+    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;

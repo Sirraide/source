@@ -297,7 +297,7 @@ auto Sema::ImportCXXHeaders(
     );
 }
 
-auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupResult {
+auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> LookupResult {
     Assert(not names.empty(), "Empty name lookup?");
     auto& actions = ast->getSema();
     auto& ast_ctx = ast->getASTContext();
@@ -306,7 +306,7 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupR
     // Look up all scopes in the path.
     clang::DeclContext* ctx = ast_ctx.getTranslationUnitDecl();
     for (auto n : names.drop_back()) {
-        auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(n)));
+        auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(n.str())));
         if (not res.isSingleResult()) return LookupResult::NonScopeInPath(n);
         auto new_ctx = dyn_cast<clang::DeclContext>(res.front());
         if (not new_ctx) return LookupResult::NonScopeInPath(n);
@@ -314,7 +314,8 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<String> names) -> LookupR
     }
 
     // Look up the last segment in the scope.
-    auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back())));
+    // TODO: Support operators.
+    auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back().str())));
     if (res.empty()) return LookupResult::NotFound(names.back());
 
     // We found exactly one name.

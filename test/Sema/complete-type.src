@@ -1,4 +1,4 @@
-// R %srcc --sema --verify %s
+// V %srcc --sema --verify %s
 program test;
 
 // FIXME: This should be allowed.
@@ -15,10 +15,10 @@ proc p1 (s a) {} // expected-error: Unknown symbol 's'
 proc p2 -> s {} // expected-error: Unknown symbol 's'
 
 // FIXME: This is fine because this is never called before the struct is completed.
-proc { s x; } // expected-error: Cannot create instance of incomplete type 's'
+proc q1 { s x; } // expected-error: Cannot create instance of incomplete type 's'
 
 // FIXME: This should be fine too because 's' does not depend on this procedure.
-proc = s(); // expected-error: Cannot create instance of incomplete type 's'
+proc q2 = s(); // expected-error: Cannot create instance of incomplete type 's'
 
 p1(42);
 var m = p2();

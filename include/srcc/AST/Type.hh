@@ -1,6 +1,7 @@
 #ifndef SRCC_AST_TYPE_HH
 #define SRCC_AST_TYPE_HH
 
+#include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Macros.hh>
@@ -58,7 +59,7 @@ protected:
 
 public:
     /// Declarations in this scope.
-    StringMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
+    DeclNameMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
 
     virtual ~Scope(); // Defaulted out-of-line.
 
@@ -172,6 +173,9 @@ public:
 
     /// Get the size of this type. This does NOT include tail padding!
     [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
+
+    /// Strip array types from this type.
+    [[nodiscard]] auto strip_arrays() -> Type;
 
     /// Visit this type.
     template <typename Visitor>
@@ -401,7 +405,11 @@ public:
     auto params() const -> ArrayRef<ParamTypeData> { return getTrailingObjects(num_params); }
 
     /// Print the proc type, optionally with a name.
-    auto print(StringRef proc_name = "", bool number_params = false, ProcDecl* decl = nullptr) const -> SmallUnrenderedString;
+    auto print(
+        DeclName proc_name = {},
+        bool number_params = false,
+        ProcDecl* decl = nullptr
+    ) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }

@@ -409,7 +409,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ProcDecl: {
             auto p = cast<ProcDecl>(e);
             PrintBasicHeader(p, "ProcDecl");
-            print(" %2({}%) {}", p->name, p->type->print());
+            print(" %2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
             if (p->instantiated_from) print(" instantiation");
             if (p->linkage == Linkage::Exported or p->linkage == Linkage::Reexported) print(" exported");
@@ -434,14 +434,14 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ProcTemplateDecl: {
             auto p = cast<ProcTemplateDecl>(e);
             PrintBasicHeader(p, "ProcTemplateDecl");
-            print(" %2({}%)\n", p->name);
+            print(" %2({}%)\n", utils::Escape(p->name.str(), false, true));
             if (print_instantiations) PrintChildren<ProcDecl>(p->instantiations());
         } break;
 
         case Kind::ProcRefExpr: {
             auto p = cast<ProcRefExpr>(e);
             PrintBasicHeader(p, "ProcRefExpr");
-            print(" %2({}%)\n", p->decl->name);
+            print(" %2({}%)\n", utils::Escape(p->decl->name.str(), false, true));
 
             tempset print_procedure_bodies = false;
             PrintChildren(p->decl);

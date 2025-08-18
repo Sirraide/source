@@ -1,0 +1,91 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+struct s { int x; }
+struct t { bool x; }
+
+proc ** (in s a, in s b) = s(a.x ** b.x);
+proc * (in s a, in s b) = s(a.x * b.x);
+proc / (in s a, in s b) = s(a.x / b.x);
+proc % (in s a, in s b) = s(a.x % b.x);
+proc *~ (in s a, in s b) = s(a.x *~ b.x);
+proc :/ (in s a, in s b) = s(a.x :/ b.x);
+proc :% (in s a, in s b) = s(a.x :% b.x);
+proc + (in s a, in s b) = s(a.x + b.x);
+proc +~ (in s a, in s b) = s(a.x +~ b.x);
+proc - (in s a, in s b) = s(a.x - b.x);
+proc -~ (in s a, in s b) = s(a.x -~ b.x);
+proc << (in s a, in s b) = s(a.x << b.x);
+proc <<< (in s a, in s b) = s(a.x <<< b.x);
+proc >> (in s a, in s b) = s(a.x >> b.x);
+proc >>> (in s a, in s b) = s(a.x >>> b.x);
+proc & (in s a, in s b) = s(a.x & b.x);
+proc | (in s a, in s b) = s(a.x | b.x);
+
+proc ..< (in s a, in s b) = a.x ..< b.x;
+proc ..= (in s a, in s b) = a.x ..= b.x;
+
+proc < (in s a, in s b) = t(a.x < b.x);
+proc <= (in s a, in s b) = t(a.x <= b.x);
+proc > (in s a, in s b) = t(a.x > b.x);
+proc >= (in s a, in s b) = t(a.x >= b.x);
+proc <: (in s a, in s b) = t(a.x <: b.x);
+proc <=: (in s a, in s b) = t(a.x <=: b.x);
+proc :> (in s a, in s b) = t(a.x :> b.x);
+proc :>= (in s a, in s b) = t(a.x :>= b.x);
+proc == (in s a, in s b) = t(a.x == b.x);
+proc != (in s a, in s b) = t(a.x != b.x);
+proc and (in t a, in t b) = t(a.x and b.x);
+proc or (in t a, in t b) = t(a.x or b.x);
+proc xor (in t a, in t b) = t(a.x xor b.x);
+
+proc += (inout s a, in s b) = s(a.x += b.x);
+proc -= (inout s a, in s b) = s(a.x -= b.x);
+proc *= (inout s a, in s b) = s(a.x *= b.x);
+proc +~= (inout s a, in s b) = s(a.x +~= b.x);
+proc -~= (inout s a, in s b) = s(a.x -~= b.x);
+proc *~= (inout s a, in s b) = s(a.x *~= b.x);
+proc **= (inout s a, in s b) = s(a.x **= b.x);
+proc /= (inout s a, in s b) = s(a.x /= b.x);
+proc %= (inout s a, in s b) = s(a.x %= b.x);
+proc <<= (inout s a, in s b) = s(a.x <<= b.x);
+proc <<<= (inout s a, in s b) = s(a.x <<<= b.x);
+proc >>= (inout s a, in s b) = s(a.x >>= b.x);
+proc >>>= (inout s a, in s b) = s(a.x >>>= b.x);
+
+proc not (t a) = t(not a.x);
+proc ~ (s a) = s(~a.x);
+proc + (s a) = s(+a.x);
+proc - (s a) = s(-a.x);
+
+
+proc [] (s a) = a.x;
+proc () (inout s a) = a.x;
+proc ++ (inout s a) = ++a.x;
+proc -- (inout s a) = --a.x;
+proc ^ (inout s a) = a.x;
+proc in (s a, int x) = t(a.x == x);
+proc as (inout s a) -> int = a.x;
+proc as (inout s a) -> i32 = a.x as i32;
+
+var s1 = s(42);
+var s2 = s(2);
+
+//assert (s1 ** s2).x == (42 ** 2);
+//assert (s1 * s2).x == (42 * 2);
+//assert (s1 / s2).x == (42 / 2);
+//assert (s1 % s2).x == (42 % 2);
+//assert (s1 *~ s2).x == (42 *~ 2);
+//assert (s1 :/ s2).x == (42 :/ 2);
+//assert (s1 :% s2).x == (42 :% 2);
+//assert (s1 + s2).x == (42 + 2);
+//assert (s1 +~ s2).x == (42 +~ 2);
+//assert (s1 - s2).x == (42 - 2);
+//assert (s1 -~ s2).x == (42 -~ 2);
+//assert (s1 << s2).x == (42 << 2);
+//assert (s1 <<< s2).x == (42 <<< 2);
+//assert (s1 >> s2).x == (42 >> 2);
+//assert (s1 >>> s2).x == (42 >>> 2);
+//assert (s1 & s2).x == (42 & 2);
+//assert (s1 | s2).x == (42 | 2);

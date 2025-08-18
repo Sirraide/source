@@ -139,7 +139,7 @@ static auto FormatDiagnostic(
     if (
         not diag.extra_locations.empty() or
         not previous_loc.has_value() or
-        previous_loc.value().file_id != diag.where.file_id
+        previous_loc.value() != diag.where
     ) {
         auto PrintLocation = [&](Location loc, LocInfoShort l) {
             out += std::format(

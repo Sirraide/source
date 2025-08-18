@@ -1,0 +1,88 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc :: {} // expected-error: Operator '::' cannot be overloaded
+proc . {} // expected-error: Operator '.' cannot be overloaded
+
+proc [] {}
+proc ++ {}
+proc -- {}
+proc ^ {}
+
+proc () {}
+
+proc as {}
+proc as! {}
+
+proc ** {}
+
+proc * {}
+proc / {}
+proc % {}
+proc *~ {}
+proc :/ {}
+proc :% {}
+
+proc + {}
+proc +~ {}
+proc - {}
+proc -~ {}
+
+proc << {}
+proc <<< {}
+proc >> {}
+proc >>> {}
+
+proc & {}
+proc | {}
+
+proc .. {}
+proc ..< {}
+proc ..= {}
+
+proc < {}
+proc <= {}
+proc > {}
+proc >= {}
+proc <: {}
+proc <=: {}
+proc :> {}
+proc :>= {}
+
+proc == {}
+proc != {}
+
+proc in {}
+
+proc and {}
+proc or {}
+proc xor {}
+
+proc = {} // expected-error: Operator '=' cannot be overloaded
+proc += {}
+proc -= {}
+proc *= {}
+proc +~= {}
+proc -~= {}
+proc *~= {}
+proc **= {}
+proc /= {}
+proc %= {}
+proc <<= {}
+proc <<<= {}
+proc >>= {}
+proc >>>= {}
+
+proc not {}
+proc ~ {}
+
+proc + = 3;
+proc += = 3;
+proc + -> int = 3;
+proc + extern -> int;
+
+proc ( () {} // expected-error: To overload the call operator, write 'proc ()'
+proc [ {} // expected-error: To overload the subscript operator, write 'proc []'
+
+// Error recovery of this is ... not great because '{}' parses as a valid type.
+proc ( {} // expected-error@+1: Unexpected token in procedure argument list

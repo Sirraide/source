@@ -42,7 +42,7 @@ enum struct srcc::Action : srcc::u8 {
     Sema,
 };
 
-class srcc::Driver : DiagsProducer<> {
+class srcc::Driver : DiagsProducer {
 public:
     struct Options {
         /// The path to a directory where modules should be stored.

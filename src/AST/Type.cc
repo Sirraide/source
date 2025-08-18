@@ -247,7 +247,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 
         case Kind::ProcType: {
             auto proc = cast<ProcType>(this);
-            out += proc->print("");
+            out += proc->print(String());
         } break;
 
         case Kind::PtrType: {
@@ -313,6 +313,11 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
     }
 
     Unreachable("Invalid type kind");
+}
+
+auto TypeBase::strip_arrays() -> Type {
+    if (auto a = dyn_cast<ArrayType>(this)) return a->elem()->strip_arrays();
+    return this;
 }
 
 // ============================================================================
@@ -418,7 +423,7 @@ void ProcType::Profile(
     }
 }
 
-auto ProcType::print(StringRef proc_name, bool number_params, ProcDecl* decl) const -> SmallUnrenderedString {
+auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     out += "%1(proc";
 
@@ -491,7 +496,7 @@ auto StructType::Create(
 }
 
 auto StructType::name() const -> String {
-    return type_decl->name;
+    return type_decl->name.str();
 }
 
 void StructType::finalise(

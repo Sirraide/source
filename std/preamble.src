@@ -1,7 +1,6 @@
 __srcc_preamble__
 
-/// Implementation of '**' for builtin integer types.
-proc __srcc_exp_i (in $T base, copy $T exp) -> T {
+proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T {
     // Anything to the power of 0 is 1.
     if exp == 0 then return 1;
 
@@ -32,15 +31,13 @@ proc __srcc_exp_i (in $T base, copy $T exp) -> T {
     return v;
 }
 
-/// Implementation of '**=' for builtin integer types.
-proc __srcc_exp_assign_i (inout $T base, in $T exp) -> T^ {
+proc **= (inout $T base, in $T exp) __srcc_builtin_op__ -> T^ {
     base = base ** exp;
     return &base;
 }
 
-/// Implementation of '==' for slice types.
 // FIXME: Should be '$T[]'
-proc __srcc_slice_eq (in $T a, in T b) -> bool {
+proc == (in $T a, in T b) __srcc_builtin_op__ -> bool {
     if a.size != b.size return false;
     for v1, v2 in a, b if v1 != v2 return false;
     return true;

@@ -1,6 +1,7 @@
 #ifndef SRCC_FRONTEND_PARSER_HH
 #define SRCC_FRONTEND_PARSER_HH
 
+#include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Core.hh>
 #include <srcc/Core/Diagnostics.hh>
@@ -162,6 +163,7 @@ struct ParsedProcAttrs {
     bool nomangle = false;
     bool native = false;
     bool variadic = false;
+    bool builtin_operator = false;
 };
 
 class srcc::ParsedProcType final : public ParsedStmt
@@ -352,26 +354,26 @@ public:
 
 /// A reference to a declaration.
 class srcc::ParsedDeclRefExpr final : public ParsedStmt
-    , TrailingObjects<ParsedDeclRefExpr, String> {
+    , TrailingObjects<ParsedDeclRefExpr, DeclName> {
     friend TrailingObjects;
 
     u32 num_parts;
-    auto numTrailingObjects(OverloadToken<String>) -> usz { return num_parts; }
+    auto numTrailingObjects(OverloadToken<DeclName>) -> usz { return num_parts; }
 
     ParsedDeclRefExpr(
-        ArrayRef<String> names,
+        ArrayRef<DeclName> names,
         Location location
     );
 
 public:
     static auto Create(
         Parser& parser,
-        ArrayRef<String> names,
+        ArrayRef<DeclName> names,
         Location location
     ) -> ParsedDeclRefExpr*;
 
     /// Get the parts of the declaration reference.
-    auto names() -> ArrayRef<String> { return getTrailingObjects(num_parts); }
+    auto names() -> ArrayRef<DeclName> { return getTrailingObjects(num_parts); }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeclRefExpr; }
 };
@@ -579,12 +581,12 @@ class srcc::ParsedDecl : public ParsedStmt {
 public:
     /// The name of the declaration; may be empty if it is
     /// compiler-generated.
-    String name;
+    DeclName name;
 
 protected:
     ParsedDecl(
         Kind kind,
-        String name,
+        DeclName name,
         Location location
     ) : ParsedStmt{kind, location}, name{name} {}
 
@@ -602,7 +604,7 @@ public:
     ParsedExportDecl(
         ParsedDecl* decl,
         Location location
-    ) : ParsedDecl{Kind::ExportDecl, "", location}, decl{decl} {}
+    ) : ParsedDecl{Kind::ExportDecl, String(), location}, decl{decl} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ExportDecl; }
 };
@@ -654,7 +656,7 @@ public:
 private:
     auto numTrailingObjects(OverloadToken<ParsedLocalDecl*>) -> usz { return type->param_types().size(); }
     ParsedProcDecl(
-        String name,
+        DeclName name,
         ParsedProcType* type,
         ArrayRef<ParsedLocalDecl*> param_decls,
         Ptr<ParsedStmt> body,
@@ -664,7 +666,7 @@ private:
 public:
     static auto Create(
         Parser& parser,
-        String name,
+        DeclName name,
         ParsedProcType* type,
         ArrayRef<ParsedLocalDecl*> param_names,
         Ptr<ParsedStmt> body,
@@ -709,7 +711,7 @@ struct srcc::LexedTokenStream {
     TokenStream tokens{alloc};
 };
 
-class srcc::Parser : DiagsProducer<std::nullptr_t> {
+class srcc::Parser : DiagsProducer {
     SRCC_IMMOVABLE(Parser);
 
 public:
@@ -722,7 +724,7 @@ private:
         SmallVector<ParsedParameter, 10> param_types;
         TemplateParamDeductionInfo deduction_info;
         Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
-        String name;
+        DeclName name;
         Location proc_loc;
         Location tok_after_proc;
         ParsedProcAttrs attrs;
@@ -780,6 +782,7 @@ private:
     auto ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr>;
     void ParseImport();
     auto ParseIntent() -> std::pair<Location, Intent>;
+    void ParseOverloadableOperatorName(Signature& sig);
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
@@ -805,14 +808,14 @@ private:
     template <typename... Args>
     auto ErrorSync(Location loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         Error(loc, fmt, std::forward<Args>(args)...);
-        SkipTo(Tk::Semicolon);
+        SkipToImpl(Tk::Semicolon);
         return {};
     }
 
     template <typename... Args>
     auto ErrorSync(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         Error(tok->location, fmt, std::forward<Args>(args)...);
-        SkipTo(Tk::Semicolon);
+        SkipToImpl(Tk::Semicolon);
         return {};
     }
 
@@ -852,19 +855,22 @@ private:
     /// Get a lookahead token; returns EOF if looking past the end.
     auto LookAhead(usz n = 1) -> Token&;
 
-    /// Consume a token and return its location. If the parser is at
+    /// Consume a token and return it (or its location). If the parser is at
     /// end of file, the token iterator is not advanced.
     auto Next() -> Location;
+    auto NextToken() -> Token*;
 
     /// Skip up to a token.
-    void SkipTo(std::same_as<Tk> auto... tks) {
+    bool SkipToImpl(std::same_as<Tk> auto... tks) {
         while (not At(tks..., Tk::Eof)) Next();
+        return not At(Tk::Eof);
     }
 
     /// Skip up and past a token.
-    void SkipPast(std::same_as<Tk> auto... tks) {
-        SkipTo(tks...);
+    bool SkipPastImpl(std::same_as<Tk> auto... tks) {
+        SkipToImpl(tks...);
         Next();
+        return not At(Tk::Eof);
     }
 
     /// Read all tokens from a file.

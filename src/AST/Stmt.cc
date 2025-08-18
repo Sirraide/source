@@ -223,6 +223,20 @@ auto Stmt::value_category_or_srvalue() const -> ValueCategory {
 // ============================================================================
 //  Declarations
 // ============================================================================
+auto DeclName::str() const -> String {
+    if (is_str()) return String::CreateUnsafe(ptr, opaque_value);
+    auto t = operator_name();
+    if (t == Tk::LParen) return "()";
+    if (t == Tk::LBrack) return "[]";
+    return Spelling(t);
+}
+
+bool srcc::operator==(DeclName a, DeclName b) {
+    if (a.is_str() != b.is_str()) return false;
+    if (a.is_operator_name()) return a.operator_name() == b.operator_name();
+    return a.str() == b.str();
+}
+
 ImportedClangModuleDecl::ImportedClangModuleDecl(
     clang::ASTUnit& clang_ast,
     String logical_name,
@@ -249,7 +263,7 @@ auto ImportedClangModuleDecl::Create(
 ProcDecl::ProcDecl(
     TranslationUnit* owner,
     ProcType* type,
-    String name,
+    DeclName name,
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
@@ -262,7 +276,7 @@ ProcDecl::ProcDecl(
 auto ProcDecl::Create(
     TranslationUnit& tu,
     ProcType* type,
-    String name,
+    DeclName name,
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,

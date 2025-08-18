@@ -117,17 +117,17 @@ auto ParsedCallExpr::Create(
     return ::new (mem) ParsedCallExpr{callee, args, location};
 }
 
-ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<String> names, Location location)
+ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<DeclName> names, Location location)
     : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())) {
     std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects());
 }
 
 auto ParsedDeclRefExpr::Create(
     Parser& parser,
-    ArrayRef<String> names,
+    ArrayRef<DeclName> names,
     Location location
 ) -> ParsedDeclRefExpr* {
-    const auto size = totalSizeToAlloc<String>(names.size());
+    const auto size = totalSizeToAlloc<DeclName>(names.size());
     auto mem = parser.allocate(size, alignof(ParsedDeclRefExpr));
     return ::new (mem) ParsedDeclRefExpr{names, location};
 }
@@ -171,7 +171,7 @@ ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, Location loc)
 //  Declarations
 // ============================================================================
 ParsedProcDecl::ParsedProcDecl(
-    String name,
+    DeclName name,
     ParsedProcType* type,
     ArrayRef<ParsedLocalDecl*> param_decls,
     Ptr<ParsedStmt> body,
@@ -188,7 +188,7 @@ ParsedProcDecl::ParsedProcDecl(
 
 auto ParsedProcDecl::Create(
     Parser& parser,
-    String name,
+    DeclName name,
     ParsedProcType* type,
     ArrayRef<ParsedLocalDecl*> param_decls,
     Ptr<ParsedStmt> body,
@@ -401,7 +401,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "ProcDecl", false);
             print(
                 "%2({}%){}{}\n",
-                p.name,
+                utils::Escape(p.name.str(), false, true),
                 p.name.empty() ? ""sv : " "sv,
                 p.type->dump_as_type()
             );

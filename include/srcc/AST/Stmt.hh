@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <ranges>
+#include <srcc/AST/DeclName.hh>
 
 namespace clang {
 class ASTUnit;
@@ -699,13 +700,13 @@ public:
 // ============================================================================
 class srcc::Decl : public Stmt {
 public:
-    String name;
+    DeclName name;
     bool is_valid = true;
 
 protected:
     Decl(
         Kind kind,
-        String name,
+        DeclName name,
         Location location
     ) : Stmt{kind, location}, name{name} {}
 
@@ -971,7 +972,7 @@ protected:
         Kind kind,
         TranslationUnit* owner,
         Type type,
-        String name,
+        DeclName name,
         Linkage linkage,
         Mangling mangling,
         Location location
@@ -1013,7 +1014,7 @@ private:
     ProcDecl(
         TranslationUnit* owner,
         ProcType* type,
-        String name,
+        DeclName name,
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
@@ -1024,7 +1025,7 @@ public:
     static auto Create(
         TranslationUnit& tu,
         ProcType* type,
-        String name,
+        DeclName name,
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
@@ -1044,6 +1045,9 @@ public:
     ///        local variables of this procedure.
     void finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> locals);
 
+    /// Check if this declaration declares an overloaded operator.
+    bool is_overloaded_operator() const { return name.is_operator_name(); }
+
     /// Get the parameter declarations.
     auto params() const -> ArrayRef<ParamDecl*> {
         Assert(not is_imported(), "Attempted to access parameter declarations of imported function");
@@ -1057,6 +1061,11 @@ public:
     /// Get the parameter types.
     auto param_types() const -> ArrayRef<ParamTypeData> {
         return proc_type()->params();
+    }
+
+    /// Get the param types without the intent.
+    auto param_types_no_intent() const {
+        return proc_type()->params() | vws::transform(&ParamTypeData::type);
     }
 
     /// Get the procedure type.

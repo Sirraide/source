@@ -126,7 +126,7 @@ bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
     return true;
 }
 
-auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> LookupResult {
+auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult {
     Assert(names.size() > 1, "Should not be unqualified lookup");
 
     // The first segment is looked up using unqualified lookup, but don’t
@@ -166,7 +166,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
             // lookup finds a module name, because a module name alone is useless
             // if it’s not on the lhs of `::`.
             case NotFound: {
-                auto it = M->logical_imports.find(first);
+                auto it = M->logical_imports.find(first.str());
                 if (it == M->logical_imports.end() or not it->getValue()) return res;
                 if (isa<ImportedSourceModuleDecl>(it->second)) Todo();
 
@@ -199,7 +199,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<String> names) -> Looku
     return LookUpUnqualifiedName(in_scope, names.back(), true);
 }
 
-auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_only) -> LookupResult {
+auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope_only) -> LookupResult {
     if (name.empty()) return LookupResult(name);
     while (in_scope) {
         // Look up the name in the this scope.
@@ -221,7 +221,7 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, String name, bool this_scope_o
 
 auto Sema::LookUpName(
     Scope* in_scope,
-    ArrayRef<String> names,
+    ArrayRef<DeclName> names,
     Location loc,
     bool complain
 ) -> LookupResult {
@@ -990,17 +990,121 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
         if (d->is_imported()) return; // FIXME: Report this location somehow.
         auto p = d->params()[i];
         loc = p->location();
-        name = p->name;
+        name = p->name.str();
     } else if (auto d = dyn_cast<ProcTemplateDecl>(proc)) {
         auto p = d->pattern->params()[i];
         loc = p->loc;
-        name = p->name;
+        name = p->name.str();
     } else {
         return;
     }
 
     if (name.empty()) S.Note(loc, "In argument to parameter declared here");
     else S.Note(loc, "In argument to parameter '{}'", name);
+}
+
+bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
+    static constexpr usz AnyNumber = ~0zu;
+    auto t = d->name.operator_name();
+
+    // Check the arity.
+    auto [min, max] = [&] -> std::pair<usz, usz> {
+        switch (t) {
+            default: Unreachable("Invalid overloaded operator '{}'", t);
+            case Tk::LBrack:
+            case Tk::LParen:
+                return {AnyNumber, AnyNumber};
+
+            case Tk::As:
+            case Tk::AsBang:
+            case Tk::Caret:
+            case Tk::MinusMinus:
+            case Tk::Not:
+            case Tk::PlusPlus:
+            case Tk::Tilde:
+                return {1, 1};
+
+            case Tk::Ampersand:
+            case Tk::Minus:
+            case Tk::Plus:
+                return {1, 2};
+
+            case Tk::And:
+            case Tk::ColonPercent:
+            case Tk::ColonSlash:
+            case Tk::DotDot:
+            case Tk::DotDotEq:
+            case Tk::DotDotLess:
+            case Tk::EqEq:
+            case Tk::In:
+            case Tk::MinusEq:
+            case Tk::MinusTilde:
+            case Tk::MinusTildeEq:
+            case Tk::Neq:
+            case Tk::Or:
+            case Tk::Percent:
+            case Tk::PercentEq:
+            case Tk::PlusEq:
+            case Tk::PlusTilde:
+            case Tk::PlusTildeEq:
+            case Tk::SGe:
+            case Tk::SGt:
+            case Tk::SLe:
+            case Tk::SLt:
+            case Tk::ShiftLeft:
+            case Tk::ShiftLeftEq:
+            case Tk::ShiftLeftLogical:
+            case Tk::ShiftLeftLogicalEq:
+            case Tk::ShiftRight:
+            case Tk::ShiftRightEq:
+            case Tk::ShiftRightLogical:
+            case Tk::ShiftRightLogicalEq:
+            case Tk::Slash:
+            case Tk::SlashEq:
+            case Tk::Star:
+            case Tk::StarEq:
+            case Tk::StarStar:
+            case Tk::StarStarEq:
+            case Tk::StarTilde:
+            case Tk::StarTildeEq:
+            case Tk::UGe:
+            case Tk::UGt:
+            case Tk::ULe:
+            case Tk::ULt:
+            case Tk::VBar:
+            case Tk::Xor:
+                return {2, 2};
+        }
+    }();
+
+    if (min == max and min != AnyNumber and d->param_count() != min)
+        return Error(d->location(), "Operator '{}' requires exactly {} parameters", t, min);
+    if (min != AnyNumber and d->param_count() < min)
+        return Error(d->location(), "Operator '{}' requires at least {} parameters", t, min);
+    if (max != AnyNumber and d->param_count() > max)
+        return Error(d->location(), "Operator '{}' takes at most {} parameters", t, max);
+
+    // Disallow overriding builtin operators or defining overloads that take
+    // only builtin types.
+    if (
+        not builtin_operator and
+        not IsOverloadedOperator(t, d->param_types_no_intent() | rgs::to<SmallVector<Type, 10>>())
+    ) {
+        Error(d->location(), "At least one argument of overloaded operator must be a struct type");
+        Remark("Current arguments: {}", utils::join(d->param_types_no_intent()));
+        return false;
+    }
+
+    // The return type of 'as' and 'as!' must not be deduced.
+    if ((t == Tk::As or t == Tk::AsBang) and d->return_type() == Type::DeducedTy)
+        return Error(d->location(), "Return type of operator '{}' cannot be deduced", t);
+
+    return true;
+}
+
+bool Sema::IsOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
+    auto CanOverload = [](Type t) { return isa<StructType>(t); };
+    return any_of(argument_types, CanOverload);
 }
 
 auto Sema::PerformOverloadResolution(
@@ -1415,13 +1519,15 @@ auto Sema::BuildBinaryExpr(
         return Build(comparison ? Type::BoolTy : lhs->type);
     };
 
-    auto BuildExpCall = [&](String exp_fun) -> Ptr<Expr> {
-        auto ref = LookUpName(global_scope(), exp_fun, loc, true);
+    auto BuildCall = [&](DeclName fun) -> Ptr<Expr> {
+        auto ref = BuildDeclRefExpr(fun, loc);
         if (not ref) return nullptr;
-        return BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
+        return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
 
-    // Otherwise, each builtin operator needs custom handling.
+    if (IsOverloadedOperator(op, {lhs->type, rhs->type}))
+        return BuildCall(DeclName(op));
+
     switch (op) {
         default: Unreachable("Invalid binary operator: {}", op);
 
@@ -1485,7 +1591,7 @@ auto Sema::BuildBinaryExpr(
         // This is implemented as a function template.
         case Tk::StarStar: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-            return BuildExpCall("__srcc_exp_i");
+            return BuildCall(DeclName(Tk::StarStar));
         }
 
         // Range construction.
@@ -1530,12 +1636,9 @@ auto Sema::BuildBinaryExpr(
         case Tk::Neq: {
             if (not ConvertToCommonType()) return nullptr;
 
-            // For slices, emit a call to a builtin.
+            // For slices, call an overloaded operator.
             if (isa<SliceType>(lhs->type)) {
-                auto ref = LookUpName(global_scope(), {"__srcc_slice_eq"}, loc, true);
-                if (not ref) return nullptr;
-                auto call = BuildCallExpr(CreateReference(ref.decls.front(), loc).get(), {lhs, rhs}, loc);
-                if (not call) return nullptr;
+                auto call = BuildCall(DeclName(Tk::EqEq));
                 return op == Tk::Neq ? BuildUnaryExpr(Tk::Not, call.get(), false, loc) : call;
             }
 
@@ -1596,7 +1699,7 @@ auto Sema::BuildBinaryExpr(
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
             // '**=' requires a separate function since it needs to return the lhs.
-            return CastExpr::Dereference(*M, TRY(BuildExpCall("__srcc_exp_assign_i")));
+            return CastExpr::Dereference(*M, TRY(BuildCall(DeclName(Tk::StarStarEq))));
         }
     }
 }
@@ -1809,6 +1912,23 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     );
 }
 
+auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr> {
+    auto res = LookUpName(curr_scope(), names, loc, false);
+    if (res.successful()) return CreateReference(res.decls.front(), loc);
+
+    // Overload sets are ok here.
+    // TODO: Validate overload set; i.e. that there are no two functions that
+    // differ only in return type, or not at all. Also: don’t allow overloading
+    // on intent (for now).
+    if (
+        res.result == LookupResult::Reason::Ambiguous and
+        isa<ProcDecl, ProcTemplateDecl>(res.decls.front())
+    ) return OverloadSetExpr::Create(*M, res.decls, loc);
+
+    ReportLookupFailure(res, loc);
+    return {};
+}
+
 auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     // An eval expression returns an rvalue.
     if (auto e = dyn_cast<Expr>(arg)) {
@@ -1918,7 +2038,7 @@ auto Sema::BuildParamDecl(
 auto Sema::BuildProcDeclInitial(
     Scope* proc_scope,
     ProcType* ty,
-    String name,
+    DeclName name,
     Location loc,
     ParsedProcAttrs attrs
 ) -> ProcDecl* {
@@ -1935,6 +2055,13 @@ auto Sema::BuildProcDeclInitial(
         proc_stack.size() >= 3 ? proc_stack.back()->proc : nullptr,
         loc
     );
+
+    // If this is an overloaded operator, check its arity and other properties.
+    if (
+        proc->is_overloaded_operator() and
+        proc->valid() and
+        not CheckOverloadedOperator(proc, attrs.builtin_operator)
+    ) proc->set_invalid();
 
     // Don’t e.g. diagnose calls to this if the type is invalid.
     if (not ty) proc->set_invalid();
@@ -2330,7 +2457,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
     // Callee may be a builtin.
     if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
         using B = BuiltinCallExpr::Builtin;
-        auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front())
+        auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front().str())
                       .Case("__srcc_print", B::Print)
                       .Case("__srcc_unreachable", B::Unreachable)
                       .Default(std::nullopt);
@@ -2346,20 +2473,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
 
 /// Translate a parsed name to a reference to the declaration it references.
 auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Stmt> {
-    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc, false);
-    if (res.successful()) return CreateReference(res.decls.front(), parsed->loc);
-
-    // Overload sets are ok here.
-    // TODO: Validate overload set; i.e. that there are no two functions that
-    // differ only in return type, or not at all. Also: don’t allow overloading
-    // on intent (for now).
-    if (
-        res.result == LookupResult::Reason::Ambiguous and
-        isa<ProcDecl>(res.decls.front())
-    ) return OverloadSetExpr::Create(*M, res.decls, parsed->loc);
-
-    ReportLookupFailure(res, parsed->loc);
-    return {};
+    return BuildDeclRefExpr(parsed->names(), parsed->loc);
 }
 
 /// Perform initial processing of a decl so it can be used by the rest
@@ -2647,10 +2761,12 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     }();
 
     if (kind == AlreadyDiagnosed) return {};
-    if (kind == std::nullopt) {
-        Error(parsed->loc, "'{}' has no member named '{}'", base->type, parsed->member);
-        return {};
-    }
+    if (kind == std::nullopt) return Error(
+        parsed->loc,
+        "'{}' has no member named '{}'",
+        base->type,
+        parsed->member
+    );
 
     return BuildBuiltinMemberAccessExpr(kind.value(), base, parsed->loc);
 }
@@ -2663,7 +2779,7 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     auto decl = new (*M) LocalDecl(
         TranslateType(parsed->type),
         Expr::LValue,
-        parsed->name,
+        parsed->name.str(),
         curr_proc().proc,
         parsed->loc
     );
@@ -2749,7 +2865,7 @@ auto Sema::TranslateProcBody(
             &param_info,
             u32(i),
             false,
-            parsed_decl->name,
+            parsed_decl->name.str(),
             parsed_decl->loc
         );
     }
@@ -2852,14 +2968,14 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
                 ty
             );
 
-            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name, f->loc))->set_invalid();
+            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name.str(), f->loc))->set_invalid();
             continue;
         }
 
         // Otherwise, add the field and adjust our size and alignment.
         // TODO: Optimise layout if this isn’t meant for FFI.
         size = size.align(ty->align(*M));
-        fields.push_back(new (*M) FieldDecl(ty, size, f->name, f->loc));
+        fields.push_back(new (*M) FieldDecl(ty, size, f->name.str(), f->loc));
         size += ty->size(*M);
         align = std::max(align, ty->align(*M));
         AddDeclToScope(s->scope(), fields.back());
@@ -2903,12 +3019,12 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
     auto ty = StructType::Create(
         *M,
         sc,
-        parsed->name,
+        parsed->name.str(),
         u32(parsed->fields().size()),
         parsed->loc
     );
 
-    if (parsed->name == "__src_abort_info")
+    if (parsed->name.str() == "__src_abort_info")
         M->abort_info_type = ty;
 
     AddDeclToScope(curr_scope(), ty->decl());

@@ -306,7 +306,7 @@ auto Encode(Value v) -> Temporary { return Temporary(u64(v.getAsOpaquePointer())
 // ============================================================================
 //  Evaluator
 // ============================================================================
-class eval::Eval : DiagsProducer<bool> {
+class eval::Eval : DiagsProducer {
     friend DiagsProducer;
 
     /// A procedure on the stack.

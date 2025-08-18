@@ -86,9 +86,9 @@ class Ptr {
     friend class Ptr;
 
 public:
-    Ptr() : value{nullptr} {}
-    Ptr(Ty* value) : value{value} {}
-    Ptr(std::nullptr_t) : value{nullptr} {}
+    constexpr Ptr() : value{nullptr} {}
+    constexpr Ptr(Ty* value) : value{value} {}
+    constexpr Ptr(std::nullptr_t) : value{nullptr} {}
 
     template <std::derived_from<Ty> Derived>
     Ptr(Ptr<Derived> other) : value{other.value} {}

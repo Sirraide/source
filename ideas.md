@@ -156,6 +156,10 @@ delete x;         /// Delete the int pointed to by x.
 // y is deleted at end of scope.
 ```
 
+## Heterogeneous ranges
+I.e. allow `i32..i8` as a *type* (`..` is a type operator only) and store begin+size instead of begin+end; also, allow
+iterating downwards if the size is negative.
+
 ## Unified sum-product type.
 `dynamic` makes this and its variant clauses equivalent to
 a ‘class hierarchy’, except that it cannot be extended at

@@ -619,7 +619,7 @@ struct CodeGen::Mangler {
 
     explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
         name = "_S";
-        Append(proc->name);
+        Append(proc->name.str());
         Append(proc->type);
     }
 
@@ -699,7 +699,7 @@ void CodeGen::Mangler::Append(Type ty) {
 }
 
 auto CodeGen::MangledName(ProcDecl* proc) -> String {
-    if (proc->mangling == Mangling::None) return proc->name;
+    if (proc->mangling == Mangling::None) return proc->name.str();
 
     // Maybe we’ve already cached this?
     auto it = mangled_names.find(proc);
@@ -1559,7 +1559,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> SRValue {
     CreateAbort(
         loc,
         ir::AbortReason::InvalidLocalRef,
-        CreateGlobalStringSlice(loc, expr->decl->name),
+        CreateGlobalStringSlice(loc, expr->decl->name.str()),
         CreateNil(loc, slice_ty)
     );
 

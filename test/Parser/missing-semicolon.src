@@ -1,6 +1,6 @@
 // V %srcc --parse --verify %s
 // expected-no-diagnostics
 program test
-import <foo> as bar
+import <foo> as bar;
 
 foo();

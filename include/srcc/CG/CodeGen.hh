@@ -160,7 +160,7 @@ public:
     }
 };
 
-class srcc::cg::CodeGen : DiagsProducer<std::nullptr_t>
+class srcc::cg::CodeGen : DiagsProducer
     , detail::CodeGenBase
     , mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
