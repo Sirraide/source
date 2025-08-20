@@ -3,3 +3,13 @@ program test;
 
 proc + (int, int) = 3; // expected-error: At least one argument of overloaded operator must be a struct type
 proc - (int, int) __srcc_builtin_op__ = 3;
+
+struct s { int x; }
+
+var x = s(1);
+
+// These are defined in the preamble as builtin operator templates; check
+// that we don’t try to use them for user-defined types.
+x **= 1; // expected-error:  Invalid operation: **= between s and int
+x ** 1; // expected-error:  Invalid operation: **= between s and int
+x == 1; // expected-error:  Invalid operation: **= between s and int

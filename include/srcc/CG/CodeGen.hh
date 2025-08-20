@@ -329,6 +329,7 @@ private:
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
     void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
     auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> SRValue;
+    auto EmitCastExpr(CastExpr* cast, Value mrvalue_slot) -> SRValue;
     auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> SRValue;
     auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> SRValue;
     auto EmitEqualityComparison(mlir::Location l, Type ty, Tk op, SRValue lhs, SRValue rhs) -> Value;
@@ -432,7 +433,20 @@ private:
     /// return an empty vector if the loop is infinite or has no arguments.
     void Loop(llvm::function_ref<void()> emit_body);
 
+    /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;
+
+    /// Create a temporary value to hold an mrvalue. Returns the address of
+    /// the temporary.
+    auto MakeTemporary(mlir::Location l, Expr* init) -> Value;
+
+    /// Determine whether this parameter type is passed by reference under
+    /// the given intent.
+    ///
+    /// No calling convention is passed to this since parameters to native
+    /// procedures should always have the 'copy' intent, which by definition
+    /// always passes by value.
+    bool PassByReference(Type ty, Intent i);
 
     /// Opposite of If().
     void Unless(

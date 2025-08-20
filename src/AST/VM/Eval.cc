@@ -21,6 +21,7 @@
 #include <optional>
 #include <print>
 #include <ranges>
+#include <srcc/CG/Target/Target.hh>
 
 using namespace srcc;
 using namespace srcc::eval;

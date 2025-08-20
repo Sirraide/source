@@ -147,22 +147,6 @@ public:
     /// Whether moving this type is the same as a copy.
     [[nodiscard]] bool move_is_copy() const;
 
-    /// Whether this type should be passed as an lvalue given a specific intent.
-    [[nodiscard]] bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
-        return not pass_by_rvalue(cc, intent);
-    }
-
-    /// Whether this type should be passed as an rvalue given a specific intent.
-    [[nodiscard]] bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
-
-    /// Get the value category that should be used to pass this as a parameter.
-    [[nodiscard]] auto pass_value_category(
-        CallingConvention cc,
-        Intent intent
-    ) const -> ValueCategory {
-        return pass_by_lvalue(cc, intent) ? ValueCategory::LValue : rvalue_category();
-    }
-
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
 
@@ -176,6 +160,9 @@ public:
 
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() -> Type;
+
+    /// Whether this type is trivially copyable.
+    [[nodiscard]] bool trivially_copyable() { return true; }
 
     /// Visit this type.
     template <typename Visitor>

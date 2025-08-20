@@ -18,6 +18,7 @@ enum class Mangling : u8;
 enum class ValueCategory : u8;
 enum class OverflowBehaviour : u8;
 enum class ScopeKind : u8;
+enum class ParamPassingMode : u8;
 } // namespace srcc
 
 /// Parameter intents.
@@ -44,6 +45,36 @@ enum class srcc::Intent : base::u8 {
     /// the callee. This is the only valid intent for procedures that
     /// use the C++ ABI.
     Copy,
+};
+
+/// Parameter passing modes.
+///
+/// These are what intents are lowered to.
+enum class srcc::ParamPassingMode : base::u8 {
+    /// Pass an lvalue of the same type.
+    ///
+    /// This is used in cases where the callee wants to modify a
+    /// value in the caller’s stack frame.
+    ///
+    /// Sema will ensure that this is an lvalue.
+    SameTypeLValue,
+
+    /// Pass an rvalue to the callee.
+    ///
+    /// Depending on the calling convention, target, and size of the
+    /// type, this may entail passing the value indirectly by storing
+    /// it to memory and passing a pointer instead.
+    ///
+    /// Sema will ensure that this is an srvalue or mrvalue.
+    RValue,
+
+    /// Pass an lvalue if we already have one, and materialise a
+    /// temporary and pass it otherwise.
+    ///
+    /// This mode cannot be used for SRValue types.
+    ///
+    /// Sema will ensure that this is an lvalue.
+    AnyLValue,
 };
 
 /// Builtin types.

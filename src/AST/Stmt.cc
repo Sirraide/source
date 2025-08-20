@@ -170,6 +170,7 @@ OverloadSetExpr::OverloadSetExpr(
     Location location
 ) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, SRValue, location},
     num_overloads{u32(decls.size())} {
+    Assert(num_overloads != 0, "Empty overload set?");
     std::uninitialized_copy(decls.begin(), decls.end(), getTrailingObjects());
 }
 
@@ -183,13 +184,17 @@ auto OverloadSetExpr::Create(
     return ::new (mem) OverloadSetExpr{decls, location};
 }
 
+auto OverloadSetExpr::name() -> DeclName {
+    return overloads().front()->name;
+}
+
 auto ParamDecl::intent() const -> Intent {
     return parent->param_types()[idx].intent;
 }
 
-bool ParamDecl::is_rvalue_in_parameter() const {
+bool ParamDecl::is_srvalue_in_parameter() const {
     auto i = intent();
-    return i == Intent::In and type->pass_by_rvalue(parent->proc_type()->cconv(), i);
+    return i == Intent::In and type->is_srvalue();
 }
 
 ProcRefExpr::ProcRefExpr(
@@ -333,6 +338,10 @@ auto ProcTemplateDecl::Create(
 
 auto ProcTemplateDecl::instantiations() -> ArrayRef<ProcDecl*> {
     return owner->template_instantiations[this];
+}
+
+bool ProcTemplateDecl::is_builtin_operator_template() const {
+    return pattern->type->attrs.builtin_operator;
 }
 
 StructInitExpr::StructInitExpr(

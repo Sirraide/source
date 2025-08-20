@@ -232,10 +232,16 @@ auto Sema::LookUpName(
     return res;
 }
 
-auto Sema::LValueToSRValue(Expr* expr) -> Expr* {
-    if (expr->value_category == Expr::SRValue) return expr;
-    Assert(expr->value_category == Expr::LValue);
-    return new (*M) CastExpr(expr->type, CastExpr::LValueToSRValue, expr, expr->location(), true);
+auto Sema::LValueToRValue(Expr* expr) -> Expr* {
+    if (expr->rvalue()) return expr;
+    return new (*M) CastExpr(
+        expr->type,
+        CastExpr::LValueToRValue,
+        expr,
+        expr->location(),
+        true,
+        expr->type->rvalue_category()
+    );
 }
 
 bool Sema::MakeCondition(Expr*& e, StringRef op) {
@@ -263,13 +269,14 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     }
 
     // Make sure it’s an srvalue.
-    e = LValueToSRValue(init.get());
+    e = LValueToRValue(init.get());
     return true;
 }
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->lvalue()) return expr;
-    return ICE(expr->location(), "TODO: Materialise temporary");
+    Assert(expr->value_category == Expr::MRValue, "Cannot materialise srvalue");
+    return new (*M) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
 void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
@@ -309,7 +316,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             true
         );
 
-        case K::LValueToSRValue: return LValueToSRValue(e);
+        case K::LValueToRValue: return LValueToRValue(e);
         case K::MaterialisePoison: return new (*M) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
@@ -318,6 +325,9 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             true,
             conv.value_category()
         );
+
+        case K::MaterialiseTemporary:
+            return MaterialiseTemporary(e);
 
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
@@ -359,8 +369,9 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         }
 
         case K::IntegralCast:
-        case K::LValueToSRValue:
+        case K::LValueToRValue:
         case K::MaterialisePoison:
+        case K::MaterialiseTemporary:
         case K::SelectOverload: {
             Assert(exprs.size() == 1);
             exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
@@ -531,20 +542,7 @@ auto Sema::BuildConversionSequence(
     CallingConvention cc,
     bool in_call
 ) -> ConversionSequenceOrDiags {
-    Assert(var_type, "Null type in initialisation?");
     ConversionSequence seq;
-
-    // As a special case, 'noreturn' can be converted to *any* type (and value
-    // category). This is because 'noreturn' means we never actually reach the
-    // point in the program where the value would be needed, so it’s fine to just
-    // pretend that we have one.
-    auto a = args.empty() ? nullptr : args.front();
-    if (a and a->type == Type::NoReturnTy) {
-        auto cat = var_type->pass_value_category(cc, intent);
-        if (var_type != Type::NoReturnTy or a->value_category != cat)
-            seq.add(Conversion::Poison(var_type, cat));
-        return seq;
-    }
 
     // The type we’re initialising must be complete.
     if (not IsCompleteType(var_type)) return CreateError(
@@ -553,59 +551,79 @@ auto Sema::BuildConversionSequence(
         var_type
     );
 
+    // Handle a single argument of type 'noreturn'.
+    //
+    // As a special case, 'noreturn' can be converted to *any* type (and value
+    // category). This is because 'noreturn' means we never actually reach the
+    // point in the program where the value would be needed, so it’s fine to just
+    // pretend that we have one.
+    if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
+        auto cat = var_type->rvalue_category();
+        if (var_type != Type::NoReturnTy or args.front()->value_category != cat)
+            seq.add(Conversion::Poison(var_type, cat));
+        return seq;
+    }
+
+    // If we have zero or more than one argument, we need to build an RValue
+    // of the target type first.
+    ValueCategory vc;
+    Type ty;
+
     // If there are no arguments, this is default initialisation.
     if (args.empty()) {
         if (var_type->can_default_init()) {
             seq.add(Conversion::DefaultInit(var_type));
-            return seq;
+            ty = var_type;
+            vc = var_type->rvalue_category();
+        } else if (var_type->can_init_from_no_args()) {
+            return CreateICE(
+                init_loc,
+                "TODO: non-default empty initialisation of '{}'",
+                var_type
+            );
+        } else {
+            return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
         }
-
-        if (var_type->can_init_from_no_args()) return CreateICE(
-            init_loc,
-            "TODO: non-default empty initialisation of '{}'",
-            var_type
-        );
-
-        return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
     }
 
     // There are only few (classes of) types that support initialisation
     // from more than one argument.
-    if (args.size() > 1) {
-        if (auto a = dyn_cast<ArrayType>(var_type)) return BuildArrayInitialiser(a, args, init_loc);
-        if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, init_loc);
-        return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
+    else if (args.size() > 1) {
+        ty = var_type;
+        vc = var_type->rvalue_category();
+        if (auto a = dyn_cast<ArrayType>(var_type)) {
+            seq = Try(BuildArrayInitialiser(a, args, init_loc).result);
+        } else if (auto s = dyn_cast<StructType>(var_type.ptr())) {
+            seq = Try(BuildAggregateInitialiser(s, args, init_loc).result);
+        } else {
+            return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
+        }
     }
 
-    // Ok, we have exactly one argument.
-    auto TypeMismatch = [&] {
-        return CreateError(
-            init_loc,
-            "Cannot convert expression of type '{}' to '{}'",
-            a->type,
-            var_type
-        );
-    };
+    // There is only a single argument; if the type matches, use it directly.
+    else {
+        ty = args.front()->type;
+        vc = args.front()->value_category;
+    }
 
-    // If the intent resolves to pass by reference, then we
-    // need to bind to it; the type must match exactly for
-    // that.
-    if (in_call and var_type->pass_by_lvalue(cc, intent)) {
-        // If we’re passing by lvalue, the type must match exactly.
-        if (a->type != var_type) return CreateError(
+    // 'inout' and 'out' allow modifying the original value, which means that
+    // we always have to pass an existing lvalue here.
+    if (in_call and (intent == Intent::Inout or intent == Intent::Out)) {
+        if (ty != var_type) return CreateError(
             init_loc,
             "Cannot pass type {} to %1({}%) parameter of type {}",
-            a->type,
+            ty,
             intent,
             var_type
         );
 
         // If the argument is not an lvalue, try to explain what the issue is.
-        if (not a->lvalue()) {
+        if (vc != Expr::LValue) {
             ConversionSequenceOrDiags::Diags diags;
 
             // If this is itself a parameter, issue a better error.
-            if (auto dre = dyn_cast<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
+            auto a = args.size() == 1 ? args.front() : nullptr;
+            if (auto dre = dyn_cast_if_present<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
                 diags.push_back(CreateError(
                     init_loc,
                     "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
@@ -623,144 +641,171 @@ auto Sema::BuildConversionSequence(
 
         // Otherwise, we have an lvalue of the same type; there is nothing
         // to be done here.
-        return seq;
+        return ConversionSequence();
     }
 
-    // Type matches exactly.
-    if (a->type == var_type) {
-        // We’re passing by value. For srvalue types, convert lvalues
-        // to srvalues here.
-        if (a->type->rvalue_category() == Expr::SRValue) {
-            if (a->lvalue()) seq.add(Conversion::LValueToSRValue());
-            return seq;
-        }
+    // At this point, if the types don’t match, we need to perform a type conversion.
+    if (ty != var_type) {
+        Assert(args.size() == 1);
+        Assert(seq.conversions.empty());
+        auto a = args.front();
+        auto TypeMismatch = [&] {
+            return CreateError(
+                init_loc,
+                "Cannot convert expression of type '{}' to '{}'",
+                ty,
+                var_type
+            );
+        };
 
-        // If we have an mrvalue, use it directly.
-        if (a->value_category == Expr::MRValue) return seq;
+        switch (var_type->kind()) {
+            case TypeBase::Kind::RangeType:
+            case TypeBase::Kind::SliceType:
+            case TypeBase::Kind::PtrType:
+                return TypeMismatch();
 
-        // Otherwise, we have an lvalue here that we need to move from; if
-        // moving is the same as copying, just leave it as it.
-        if (a->type->move_is_copy()) return seq;
-        return CreateICE(a->location(), "TODO: Moving a value of type '{}'", var_type);
-    }
+            case TypeBase::Kind::ArrayType:
+                seq = Try(BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc).result);
+                break;
 
-    // We need to perform conversion. What we do here depends on the type.
-    switch (var_type->kind()) {
-        case TypeBase::Kind::RangeType:
-        case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::PtrType:
-            return TypeMismatch();
+            case TypeBase::Kind::StructType:
+                seq = Try(BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc).result);
+                break;
 
-        case TypeBase::Kind::ArrayType:
-            return BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc);
+            case TypeBase::Kind::ProcType:
+                // Type is an overload set; attempt to convert it.
+                //
+                // This is *not* the same algorithm as overload resolution, because
+                // the types must match exactly here, and we also need to check the
+                // return type.
+                if (ty == Type::UnresolvedOverloadSetTy) {
+                    auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
+                    if (not p_proc_type) return TypeMismatch();
 
-        case TypeBase::Kind::StructType:
-            return BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc);
+                    // Instantiate templates and simply match function types otherwise; we
+                    // don’t need to do anything fancier here.
+                    auto overloads = cast<OverloadSetExpr>(a)->overloads();
 
-        case TypeBase::Kind::ProcType:
-            // Type is an overload set; attempt to convert it.
-            //
-            // This is *not* the same algorithm as overload resolution, because
-            // the types must match exactly here, and we also need to check the
-            // return type.
-            if (a->type == Type::UnresolvedOverloadSetTy) {
-                auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
-                if (not p_proc_type) return TypeMismatch();
+                    // Check non-templates first to avoid storing template substitution
+                    // for all of them.
+                    for (auto [j, o] : enumerate(overloads)) {
+                        if (isa<ProcTemplateDecl>(o)) continue;
 
-                // Instantiate templates and simply match function types otherwise; we
-                // don’t need to do anything fancier here.
-                auto overloads = cast<OverloadSetExpr>(a)->overloads();
+                        // We have a match!
+                        //
+                        // The internal consistency of an overload set was already verified
+                        // when the corresponding declarations were added to their scope, so
+                        // if one of them matches, it is the only one that matches.
+                        if (cast<ProcDecl>(o)->type == var_type) {
+                            seq.add(Conversion::SelectOverload(u16(j)));
+                            goto done_with_type_conversion;
+                        }
+                    }
 
-                // Check non-templates first to avoid storing template substitution
-                // for all of them.
-                for (auto [j, o] : enumerate(overloads)) {
-                    if (isa<ProcTemplateDecl>(o)) continue;
+                    // Otherwise, we need to try and instantiate templates in this overload set.
+                    for (auto o : overloads) {
+                        if (not isa<ProcTemplateDecl>(o)) continue;
+                        Todo("Instantiate template in nested overload set");
+                    }
 
-                    // We have a match!
-                    //
-                    // The internal consistency of an overload set was already verified
-                    // when the corresponding declarations were added to their scope, so
-                    // if one of them matches, it is the only one that matches.
-                    if (cast<ProcDecl>(o)->type == var_type) {
-                        seq.add(Conversion::SelectOverload(u16(j)));
-                        return seq;
+                    // None of the overloads matched.
+                    return CreateError(
+                        init_loc,
+                        "Overload set for '{}' does not contain a procedure of type '{}'",
+                        overloads.front()->name,
+                        var_type
+                    );
+                }
+
+                // Otherwise, the types don’t match.
+                return TypeMismatch();
+
+            // For integers, we can use the common type rule.
+            case TypeBase::Kind::IntType: {
+                // If this is a (possibly parenthesised and negated) integer
+                // that fits in the type of the lhs, convert it. If it doesn’t
+                // fit, the type must be larger, so give up.
+                Expr* lit = a;
+                for (;;) {
+                    auto u = dyn_cast<UnaryExpr>(lit);
+                    if (not u or u->op != Tk::Minus) break;
+                    lit = u->arg;
+                }
+
+                // If we ultimately found a literal, evaluate the original expression.
+                if (isa_and_present<IntLitExpr>(lit)) {
+                    auto val = M->vm.eval(a, false);
+                    if (val and IntegerFitsInType(val->cast<APInt>(), var_type)) {
+                        // Integer literals are srvalues so no need fo l2r conv here.
+                        seq.add(Conversion::IntegralCast(var_type));
+                        goto done_with_type_conversion;
                     }
                 }
 
-                // Otherwise, we need to try and instantiate templates in this overload set.
-                for (auto o : overloads) {
-                    if (not isa<ProcTemplateDecl>(o)) continue;
-                    Todo("Instantiate template in nested overload set");
+                // Otherwise, if both are sized integer types, and the initialiser
+                // is smaller, we can convert it as well.
+                auto ivar = cast<IntType>(var_type);
+                auto iinit = dyn_cast<IntType>(a->type);
+                if (not iinit or iinit->bit_width() > ivar->bit_width()) return TypeMismatch();
+                seq.add(Conversion::LValueToRValue());
+                seq.add(Conversion::IntegralCast(var_type));
+                goto done_with_type_conversion;
+            }
+
+            // For builtin types, it depends.
+            case TypeBase::Kind::BuiltinType: {
+                switch (cast<BuiltinType>(var_type)->builtin_kind()) {
+                    case BuiltinKind::Deduced:
+                        return CreateError(init_loc, "Type deduction is not allowed here");
+
+                    // The only type that can initialise these is the exact
+                    // same type, so complain (integer literals are not of
+                    // type 'int' iff the literal doesn’t fit in an 'int',
+                    // so don’t even bother trying to convert it).
+                    case BuiltinKind::Void:
+                    case BuiltinKind::Bool:
+                    case BuiltinKind::Int:
+                    case BuiltinKind::NoReturn:
+                    case BuiltinKind::Type:
+                    case BuiltinKind::UnresolvedOverloadSet:
+                        return TypeMismatch();
                 }
 
-                // None of the overloads matched.
-                return CreateError(
-                    init_loc,
-                    "Overload set for '{}' does not contain a procedure of type '{}'",
-                    overloads.front()->name,
-                    var_type
-                );
+                Unreachable();
             }
-
-            // Otherwise, the types don’t match.
-            return TypeMismatch();
-
-        // For integers, we can use the common type rule.
-        case TypeBase::Kind::IntType: {
-            // If this is a (possibly parenthesised and negated) integer
-            // that fits in the type of the lhs, convert it. If it doesn’t
-            // fit, the type must be larger, so give up.
-            Expr* lit = a;
-            for (;;) {
-                auto u = dyn_cast<UnaryExpr>(lit);
-                if (not u or u->op != Tk::Minus) break;
-                lit = u->arg;
-            }
-
-            // If we ultimately found a literal, evaluate the original expression.
-            if (isa_and_present<IntLitExpr>(lit)) {
-                auto val = M->vm.eval(a, false);
-                if (val and IntegerFitsInType(val->cast<APInt>(), var_type)) {
-                    // Integer literals are srvalues so no need fo l2r conv here.
-                    seq.add(Conversion::IntegralCast(var_type));
-                    return seq;
-                }
-            }
-
-            // Otherwise, if both are sized integer types, and the initialiser
-            // is smaller, we can convert it as well.
-            auto ivar = cast<IntType>(var_type);
-            auto iinit = dyn_cast<IntType>(a->type);
-            if (not iinit or iinit->bit_width() > ivar->bit_width()) return TypeMismatch();
-            seq.add(Conversion::LValueToSRValue());
-            seq.add(Conversion::IntegralCast(var_type));
-            return seq;
         }
 
-        // For builtin types, it depends.
-        case TypeBase::Kind::BuiltinType: {
-            switch (cast<BuiltinType>(var_type)->builtin_kind()) {
-                case BuiltinKind::Deduced:
-                    return CreateError(init_loc, "Type deduction is not allowed here");
+    done_with_type_conversion:
+        ty = var_type;
+        vc = var_type->rvalue_category();
+    }
 
-                // The only type that can initialise these is the exact
-                // same type, so complain (integer literals are not of
-                // type 'int' iff the literal doesn’t fit in an 'int',
-                // so don’t even bother trying to convert it).
-                case BuiltinKind::Void:
-                case BuiltinKind::Bool:
-                case BuiltinKind::Int:
-                case BuiltinKind::NoReturn:
-                case BuiltinKind::Type:
-                case BuiltinKind::UnresolvedOverloadSet:
-                    return TypeMismatch();
-            }
+    // If we’re passing a copy, add an lvalue to rvalue conversion.
+    Assert(ty == var_type);
+    Assert(intent != Intent::Inout and intent != Intent::Out);
 
-            Unreachable();
+    // SRValues are always passed by value under these intents.
+    if (ty->is_srvalue()) seq.add(Conversion::LValueToRValue());
+    else {
+        // So are by-copy parameters.
+        if (intent == Intent::Copy) {
+            Assert(
+                not isa<StructType>(ty) or cast<StructType>(ty)->initialisers().empty(),
+                "TODO: Copying structs with initialisers"
+            );
+
+            seq.add(Conversion::LValueToRValue());
+        }
+
+        // If we’re moving a value, we may have to do something if the
+        // type has a destructor.
+        else if (intent == Intent::Move) {
+            Assert(var_type->move_is_copy(), "TODO: Handle types with destructors");
         }
     }
 
-    Unreachable();
+    // Leave the rest up to codegen.
+    return seq;
 }
 
 auto Sema::BuildInitialiser(
@@ -952,9 +997,10 @@ u32 Sema::ConversionSequence::badness() {
             using K = Conversion::Kind;
 
             // These don’t perform type conversion.
-            case K::LValueToSRValue:
-            case K::SelectOverload:
             case K::DefaultInit:
+            case K::LValueToRValue:
+            case K::MaterialiseTemporary:
+            case K::SelectOverload:
                 break;
 
             // These are actual type conversions.
@@ -1088,7 +1134,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
     // only builtin types.
     if (
         not builtin_operator and
-        not IsOverloadedOperator(t, d->param_types_no_intent() | rgs::to<SmallVector<Type, 10>>())
+        not IsUserDefinedOverloadedOperator(t, d->param_types_no_intent() | rgs::to<SmallVector<Type, 10>>())
     ) {
         Error(d->location(), "At least one argument of overloaded operator must be a struct type");
         Remark("Current arguments: {}", utils::join(d->param_types_no_intent()));
@@ -1102,7 +1148,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
     return true;
 }
 
-bool Sema::IsOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
+bool Sema::IsUserDefinedOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
     auto CanOverload = [](Type t) { return isa<StructType>(t); };
     return any_of(argument_types, CanOverload);
 }
@@ -1123,10 +1169,26 @@ auto Sema::PerformOverloadResolution(
     // deduction are hard errors.
     SmallVector<Candidate, 4> candidates;
 
+    // Are we resolving a call to a builtin operator?
+    auto types = vws::transform(args, &Expr::type) | rgs::to<SmallVector<Type, 10>>();
+    bool resolving_builtin_operator = overload_set->name().is_operator_name() and
+                                      not IsUserDefinedOverloadedOperator(overload_set->name().operator_name(), types);
+
     // Add a candidate to the overload set.
     auto AddCandidate = [&](Decl* proc) -> bool {
         if (not proc->valid())
             return false;
+
+        // If we’re resolving a builtin operator, only consider templates that
+        // have been annotated with the appropriate attribute (and vice versa).
+        //
+        // Do this here since we should never fail to resolve a builtin operator;
+        // and conversely, they should never be used for user types, so there is
+        // little point in always including these as non-viable candidates.
+        auto templ = dyn_cast<ProcTemplateDecl>(proc);
+        bool is_builtin_operator_template = templ and templ->is_builtin_operator_template();
+        if (is_builtin_operator_template != resolving_builtin_operator)
+            return true;
 
         // Add the candidate.
         auto& c = candidates.emplace_back(proc);
@@ -1142,7 +1204,6 @@ auto Sema::PerformOverloadResolution(
         }
 
         // Candidate is a regular procedure.
-        auto templ = dyn_cast<ProcTemplateDecl>(proc);
         if (not templ) return true;
 
         // Candidate is a template. Check that we have enough arguments
@@ -1207,6 +1268,24 @@ auto Sema::PerformOverloadResolution(
         return true;
     };
 
+    // Check if we have no candidates at all; this can happen if the only
+    // candidates in the overload set were builtin operators.
+    if (candidates.empty()) {
+        Assert(
+            overload_set->name().is_operator_name() and args.size() == 2,
+            "Only a few binary operators are currently handled this way"
+        );
+
+        Error(
+            call_loc,
+            "Invalid operation: %1({}%) between {} and {}",
+            Spelling(overload_set->name().operator_name()),
+            args[0]->type,
+            args[1]->type
+        );
+        return {};
+    }
+
     // Check each candidate, computing viability etc.
     for (auto& c : candidates) {
         if (not c.viable()) continue;
@@ -1219,14 +1298,11 @@ auto Sema::PerformOverloadResolution(
     auto viable = candidates | vws::filter(&Candidate::viable);
     for (auto& c : viable) {
         // First viable candidate.
-        if (not best) {
-            best = &c;
-            continue;
-        }
+        if (not best) best = &c;
 
         // We already have a candidate. If the badness of this
         // one is better, then it becomes the new best candidate.
-        if (c.badness() < best.get()->badness()) {
+        else if (c.badness() < best.get()->badness()) {
             best = &c;
             ambiguous = false;
         }
@@ -1509,8 +1585,8 @@ auto Sema::BuildBinaryExpr(
         }
 
         // Now they’re the same type, so ensure both are srvalues.
-        lhs = LValueToSRValue(lhs);
-        rhs = LValueToSRValue(rhs);
+        lhs = LValueToRValue(lhs);
+        rhs = LValueToRValue(rhs);
         return true;
     };
 
@@ -1525,7 +1601,7 @@ auto Sema::BuildBinaryExpr(
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
 
-    if (IsOverloadedOperator(op, {lhs->type, rhs->type}))
+    if (IsUserDefinedOverloadedOperator(op, {lhs->type, rhs->type}))
         return BuildCall(DeclName(op));
 
     switch (op) {
@@ -1551,7 +1627,7 @@ auto Sema::BuildBinaryExpr(
             // with them; slices are srvalues and should be loaded
             // whole.
             if (isa<ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
-            else lhs = LValueToSRValue(lhs);
+            else lhs = LValueToRValue(lhs);
 
             // A subscripting operation yields an lvalue.
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
@@ -1569,7 +1645,7 @@ auto Sema::BuildBinaryExpr(
             if (lhs->type->is_integer() and ty->is_integer()) return new (*M) CastExpr(
                 ty,
                 CastExpr::Integral,
-                LValueToSRValue(lhs),
+                LValueToRValue(lhs),
                 loc
             );
 
@@ -1731,7 +1807,7 @@ auto Sema::BuildBuiltinCallExpr(
                     "__srcc_print only accepts i8[] and integers, but got {}",
                     arg->type
                 );
-                arg = LValueToSRValue(arg);
+                arg = LValueToRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
         }
@@ -1760,7 +1836,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::IntTy;
 
             case AK::SliceSize:
-                operand = LValueToSRValue(operand);
+                operand = LValueToRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1768,7 +1844,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
-                operand = LValueToSRValue(operand);
+                operand = LValueToRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1776,7 +1852,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
-                operand = LValueToSRValue(operand);
+                operand = LValueToRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
@@ -1824,7 +1900,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // work for indirect calls since for those we don’t have a reference
     // to the procedure declaration.
     else if (auto ty = dyn_cast<ProcType>(callee_expr->type)) {
-        resolved_callee = LValueToSRValue(callee_expr);
+        resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
         auto params = ty->params().size();
@@ -1882,7 +1958,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
             isa<PtrType>(a->type)
         ) {
-            converted_args.push_back(LValueToSRValue(a));
+            converted_args.push_back(LValueToRValue(a));
         } else {
             Error(
                 a->location(),
@@ -2016,8 +2092,8 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     }
 
     // The type is an srvalue type. Make sure both sides are srvalues.
-    t = LValueToSRValue(t);
-    e = LValueToSRValue(e);
+    t = LValueToRValue(t);
+    e = LValueToRValue(e);
     return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
 }
 
@@ -2159,7 +2235,7 @@ auto Sema::BuildTypeExpr(Type ty, Location loc) -> TypeExpr* {
     return new (*M) TypeExpr(ty, loc);
 }
 
-auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<UnaryExpr> {
+auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr> {
     auto Build = [&](Type ty, ValueCategory cat) {
         return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
@@ -2187,6 +2263,13 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         }
     }
 
+    // Handle overloaded operators.
+    if (IsUserDefinedOverloadedOperator(op, operand->type)) {
+        auto ref = BuildDeclRefExpr(DeclName(op), loc);
+        if (not ref) return nullptr;
+        return BuildCallExpr(ref.get(), operand, loc);
+    }
+
     // Handle prefix operators.
     switch (op) {
         default: Unreachable("Invalid unary operator: {}", op);
@@ -2206,7 +2289,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
                 operand->type
             );
 
-            operand = LValueToSRValue(operand);
+            operand = LValueToRValue(operand);
             return Build(ptr->elem(), Expr::LValue);
         }
 
@@ -2580,7 +2663,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // Make sure the ranges are something we can actually iterate over.
     for (auto& r : ranges) {
         if (isa<RangeType, SliceType>(r->type)) {
-            r = LValueToSRValue(r);
+            r = LValueToRValue(r);
         } else if (isa<ArrayType>(r->type)) {
             r = MaterialiseTemporary(r);
         } else {
@@ -2702,7 +2785,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
             base->type
         );
 
-        if (not base->lvalue()) return ICE(parsed->loc, "TODO: Materialise temporary");
+        base = MaterialiseTemporary(base);
         auto field = LookUpUnqualifiedName(s->scope(), parsed->member, true);
         switch (field.result) {
             using enum LookupResult::Reason;

@@ -9,7 +9,6 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
-#include <clang/Basic/TargetInfo.h>
 #include <clang/Frontend/ASTUnit.h>
 
 #include <llvm/IR/LLVMContext.h>
@@ -23,41 +22,6 @@ class TranslationUnit;
 class Target;
 }
 
-class srcc::Target {
-    LIBBASE_IMMOVABLE(Target);
-
-    friend TranslationUnit;
-    std::unique_ptr<clang::CompilerInstance> ci;
-    llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
-    Target();
-    ~Target();
-
-public:
-    [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
-    [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
-
-    [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
-    [[nodiscard]] auto int_align(const IntType* ty) const -> Align { return int_align(ty->bit_width()); }
-    [[nodiscard]] auto int_align(Size width) const -> Align {
-        return Align(TI->getBitIntAlign(u32(width.bits())) / 8);
-    }
-
-    [[nodiscard]] auto int_size() const -> Size { return ptr_size(); }
-    [[nodiscard]] auto int_size(const IntType* ty) const -> Size { return int_size(ty->bit_width()); }
-    [[nodiscard]] auto int_size(Size width) const -> Size {
-        return Size::Bits(TI->getBitIntWidth(u32(width.bits())));
-    }
-
-    [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
-    [[nodiscard]] auto ptr_size() const -> Size { return Size::Bits(TI->PointerWidth); }
-    [[nodiscard]] auto slice_align() const -> Align { return std::max(ptr_align(), int_align()); }
-    [[nodiscard]] auto slice_size() const -> Size { return ptr_size().align(int_align()) + int_size(); }
-
-    [[nodiscard]] auto triple() const -> const llvm::Triple& {
-        return TI->getTriple();
-    }
-};
-
 /// Representation of a single program or module. NOT thread-safe.
 class srcc::TranslationUnit {
     SRCC_IMMOVABLE(TranslationUnit);
@@ -69,8 +33,11 @@ private:
     /// Context that owns this module.
     Context& ctx;
 
+    /// Clang compiler instance.
+    std::unique_ptr<clang::CompilerInstance> ci;
+
     /// Target information.
-    Target tgt{};
+    std::unique_ptr<Target> tgt{};
 
     /// Language options for this module.
     LangOpts language_opts;
@@ -167,6 +134,8 @@ public:
     /// The declaration of '__src_abort_info', if it exists.
     StructType* abort_info_type;
 
+    ~TranslationUnit();
+
     /// Create a new module.
     static auto Create(Context& ctx, const LangOpts& opts, StringRef name, bool is_module) -> Ptr;
 
@@ -226,7 +195,7 @@ public:
     auto serialise() -> SmallString<0>;
 
     /// Get the target info.
-    auto target() const -> const Target& { return tgt; }
+    auto target() const -> const Target& { return *tgt; }
 };
 
 #endif // SRCC_AST_HH

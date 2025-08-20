@@ -1,6 +1,7 @@
 #ifndef SRCC_AST_STMT_HH
 #define SRCC_AST_STMT_HH
 
+#include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
@@ -16,7 +17,6 @@
 #include <functional>
 #include <memory>
 #include <ranges>
-#include <srcc/AST/DeclName.hh>
 
 namespace clang {
 class ASTUnit;
@@ -70,6 +70,9 @@ public:
 
     /// Get whether this is an mrvalue.
     bool is_mrvalue() const { return value_category_or_srvalue() == ValueCategory::MRValue; }
+
+    /// Get whether this is an srvalue.
+    bool is_srvalue() const { return value_category_or_srvalue() == ValueCategory::SRValue; }
 
     /// Get the source location of this statement.
     auto location() const -> Location { return loc; }
@@ -412,7 +415,7 @@ public:
         /// Convert an lvalue to an srvalue.
         ///
         /// This is only valid for types that can be srvalues.
-        LValueToSRValue,
+        LValueToRValue,
 
         /// Materialise a poison value of the given type.
         MaterialisePoisonValue,
@@ -552,6 +555,19 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::LoopExpr; }
 };
 
+class srcc::MaterialiseTemporaryExpr final : public Expr {
+public:
+    Expr* temporary;
+
+    MaterialiseTemporaryExpr(Expr* temporary, Location location)
+        : Expr(Kind::MaterialiseTemporaryExpr, temporary->type, LValue, location),
+          temporary{temporary} {}
+
+    static bool classof(const Stmt* e) {
+        return e->kind() == Kind::MaterialiseTemporaryExpr;
+    }
+};
+
 class srcc::MemberAccessExpr final : public Expr {
 public:
     Expr* base;
@@ -580,6 +596,7 @@ public:
         Location location
     ) -> OverloadSetExpr*;
 
+    auto name() -> DeclName;
     auto overloads() -> ArrayRef<Decl*> { return getTrailingObjects(num_overloads); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
@@ -940,7 +957,7 @@ public:
     ) : LocalDecl{Kind::ParamDecl, param->type, Expr::LValue, name, parent, location},
         idx{index},
         with{with_param} {
-        if (is_rvalue_in_parameter()) category = Expr::SRValue;
+        if (is_srvalue_in_parameter()) category = Expr::SRValue;
     }
 
     /// Get the parameter’s index.
@@ -949,15 +966,14 @@ public:
     /// Get the parameter’s intent.
     [[nodiscard]] auto intent() const -> Intent;
 
+    /// SRValue 'in' parameters do not create a variable in the callee; instead
+    /// the parameter name directly refers to the argument value.
+    [[nodiscard]] bool is_srvalue_in_parameter() const;
+
     /// Whether this is a 'with' parameter.
     [[nodiscard]] bool is_with_param() const { return with; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
-
-private:
-    /// Whether this is an 'in' parameter that is passed by value
-    /// under the hood.
-    [[nodiscard]] bool is_rvalue_in_parameter() const;
 };
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
@@ -1105,6 +1121,9 @@ public:
 
     /// Get all instantiations of this template.
     auto instantiations() -> ArrayRef<ProcDecl*>;
+
+    /// Whether this template is used to implement a builtin operator.
+    bool is_builtin_operator_template() const;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcTemplateDecl; }
 };

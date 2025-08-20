@@ -22,10 +22,6 @@ proc >> (in s a, in s b) = s(a.x >> b.x);
 proc >>> (in s a, in s b) = s(a.x >>> b.x);
 proc & (in s a, in s b) = s(a.x & b.x);
 proc | (in s a, in s b) = s(a.x | b.x);
-
-proc ..< (in s a, in s b) = a.x ..< b.x;
-proc ..= (in s a, in s b) = a.x ..= b.x;
-
 proc < (in s a, in s b) = t(a.x < b.x);
 proc <= (in s a, in s b) = t(a.x <= b.x);
 proc > (in s a, in s b) = t(a.x > b.x);
@@ -39,7 +35,6 @@ proc != (in s a, in s b) = t(a.x != b.x);
 proc and (in t a, in t b) = t(a.x and b.x);
 proc or (in t a, in t b) = t(a.x or b.x);
 proc xor (in t a, in t b) = t(a.x xor b.x);
-
 proc += (inout s a, in s b) = s(a.x += b.x);
 proc -= (inout s a, in s b) = s(a.x -= b.x);
 proc *= (inout s a, in s b) = s(a.x *= b.x);
@@ -54,10 +49,19 @@ proc <<<= (inout s a, in s b) = s(a.x <<<= b.x);
 proc >>= (inout s a, in s b) = s(a.x >>= b.x);
 proc >>>= (inout s a, in s b) = s(a.x >>>= b.x);
 
-proc not (t a) = t(not a.x);
+// ============================================
 proc ~ (s a) = s(~a.x);
 proc + (s a) = s(+a.x);
 proc - (s a) = s(-a.x);
+
+
+proc ..< (in s a, in s b) = a.x ..< b.x;
+proc ..= (in s a, in s b) = a.x ..= b.x;
+
+
+
+
+proc not (t a) = t(not a.x);
 
 
 proc [] (s a) = a.x;
@@ -71,21 +75,55 @@ proc as (inout s a) -> i32 = a.x as i32;
 
 var s1 = s(42);
 var s2 = s(2);
+var t1 = t(true);
+var t2 = t(false);
 
-//assert (s1 ** s2).x == (42 ** 2);
-//assert (s1 * s2).x == (42 * 2);
-//assert (s1 / s2).x == (42 / 2);
-//assert (s1 % s2).x == (42 % 2);
-//assert (s1 *~ s2).x == (42 *~ 2);
-//assert (s1 :/ s2).x == (42 :/ 2);
-//assert (s1 :% s2).x == (42 :% 2);
-//assert (s1 + s2).x == (42 + 2);
-//assert (s1 +~ s2).x == (42 +~ 2);
-//assert (s1 - s2).x == (42 - 2);
-//assert (s1 -~ s2).x == (42 -~ 2);
-//assert (s1 << s2).x == (42 << 2);
-//assert (s1 <<< s2).x == (42 <<< 2);
-//assert (s1 >> s2).x == (42 >> 2);
-//assert (s1 >>> s2).x == (42 >>> 2);
-//assert (s1 & s2).x == (42 & 2);
-//assert (s1 | s2).x == (42 | 2);
+assert (s1 ** s2).x == (42 ** 2);
+assert (s1 * s2).x == (42 * 2);
+assert (s1 / s2).x == (42 / 2);
+assert (s1 % s2).x == (42 % 2);
+assert (s1 *~ s2).x == (42 *~ 2);
+assert (s1 :/ s2).x == (42 :/ 2);
+assert (s1 :% s2).x == (42 :% 2);
+assert (s1 + s2).x == (42 + 2);
+assert (s1 +~ s2).x == (42 +~ 2);
+assert (s1 - s2).x == (42 - 2);
+assert (s1 -~ s2).x == (42 -~ 2);
+assert (s1 << s2).x == (42 << 2);
+assert (s1 <<< s2).x == (42 <<< 2);
+assert (s1 >> s2).x == (42 >> 2);
+assert (s1 >>> s2).x == (42 >>> 2);
+assert (s1 & s2).x == (42 & 2);
+assert (s1 | s2).x == (42 | 2);
+assert (s1 < s2).x == (42 < 2);
+assert (s1 <= s2).x == (42 <= 2);
+assert (s1 > s2).x == (42 > 2);
+assert (s1 >= s2).x == (42 >= 2);
+assert (s1 <: s2).x == (42 <: 2);
+assert (s1 <=: s2).x == (42 <=: 2);
+assert (s1 :> s2).x == (42 :> 2);
+assert (s1 :>= s2).x == (42 :>= 2);
+assert (s1 == s2).x == (42 == 2);
+assert (s1 != s2).x == (42 != 2);
+
+assert (t1 and t2).x == (true and false);
+assert (t1 or t2).x == (true or false);
+assert (t1 xor t2).x == (true xor false);
+
+assert { var v = s1; v += s2; v.x; } == { var v = 42; v += 2; };
+assert { var v = s1; v -= s2; v.x; } == { var v = 42; v -= 2; };
+assert { var v = s1; v *= s2; v.x; } == { var v = 42; v *= 2; };
+assert { var v = s1; v +~= s2; v.x; } == { var v = 42; v +~= 2; };
+assert { var v = s1; v -~= s2; v.x; } == { var v = 42; v -~= 2; };
+assert { var v = s1; v *~= s2; v.x; } == { var v = 42; v *~= 2; };
+assert { var v = s1; v **= s2; v.x; } == { var v = 42; v **= 2; };
+assert { var v = s1; v /= s2; v.x; } == { var v = 42; v /= 2; };
+assert { var v = s1; v %= s2; v.x; } == { var v = 42; v %= 2; };
+assert { var v = s1; v <<= s2; v.x; } == { var v = 42; v <<= 2; };
+assert { var v = s1; v <<<= s2; v.x; } == { var v = 42; v <<<= 2; };
+assert { var v = s1; v >>= s2; v.x; } == { var v = 42; v >>= 2; };
+assert { var v = s1; v >>>= s2; v.x; } == { var v = 42; v >>>= 2; };
+
+assert ~s1 == ~42;
+assert +s1 == +42;
+assert -s1 == -42;

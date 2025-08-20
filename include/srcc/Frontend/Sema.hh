@@ -127,8 +127,9 @@ class srcc::Sema : public DiagsProducer {
             ArrayInit,
             DefaultInit,
             IntegralCast,
-            LValueToSRValue,
+            LValueToRValue,
             MaterialisePoison,
+            MaterialiseTemporary,
             SelectOverload,
             StructInit,
         };
@@ -156,7 +157,8 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
-        static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
+        static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
+        static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto StructInit(StructInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
@@ -183,6 +185,7 @@ class srcc::Sema : public DiagsProducer {
         std::expected<ConversionSequence, Diags> result;
         ConversionSequenceOrDiags(ConversionSequence result) : result{std::move(result)} {}
         ConversionSequenceOrDiags(Diags diags) : result{std::unexpected(std::move(diags))} {}
+        ConversionSequenceOrDiags(std::unexpected<Diags> diags) : result{std::move(diags)} {}
         ConversionSequenceOrDiags(Diagnostic diag) : result{std::unexpected(Diags{})} {
             result.error().push_back(std::move(diag));
         }
@@ -568,7 +571,7 @@ private:
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
-    bool IsOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
+    bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
 
     /// Load a native header or Source module from the system include path.
     void LoadModule(
@@ -622,7 +625,7 @@ private:
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
-    [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
+    [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
 
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
@@ -673,7 +676,7 @@ private:
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
-    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<UnaryExpr>;
+    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr>;
     auto BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt>;
 
     /// Entry point.

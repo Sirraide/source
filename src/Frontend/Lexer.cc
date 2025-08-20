@@ -418,7 +418,7 @@ void Lexer::HandlePragma() {
         //
         // No, this doesn’t work if there is more than one level of recursion,
         // but this feature is only supposed to be used very sparingly anyways.
-        auto& new_f = res.value();
+        const srcc::File& new_f = res.value();
         if (f == new_f) {
             Error(
                 tok().location,

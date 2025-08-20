@@ -1,4 +1,5 @@
 #include <srcc/CG/CodeGen.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Constants.hh>
 #include <srcc/Macros.hh>
 
@@ -111,7 +112,7 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> IRProcType {
     SmallVector<Ty> arg_types;
     for (auto [intent, t] : ty->params()) {
         if (IsZeroSizedType(t)) continue;
-        if (t->pass_by_lvalue(ty->cconv(), intent)) arg_types.push_back(ptr_ty);
+        if (PassByReference(ty, intent)) arg_types.push_back(ptr_ty);
         else C(t).into(arg_types);
     }
 
@@ -552,13 +553,41 @@ bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
     if (local->category == Expr::SRValue) return false;
     auto p = dyn_cast<ParamDecl>(local);
     if (not p) return true;
-    return not p->type->pass_by_lvalue(p->parent->cconv(), p->intent());
+    return not PassByReference(p->type, p->intent());
 }
 
 void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
     auto bb_cond = EnterBlock(CreateBlock());
     emit_body();
     EnterBlock(bb_cond);
+}
+
+auto CodeGen::MakeTemporary(mlir::Location l, Expr* init) -> Value {
+    Assert(init->is_mrvalue());
+    auto temp = CreateAlloca(l, init->type);
+    EmitMRValue(temp, init);
+    return temp;
+}
+
+bool CodeGen::PassByReference(Type ty, Intent i) {
+    Assert(not IsZeroSizedType(ty));
+
+    // 'inout' and 'out' parameters are always references.
+    if (i == Intent::Inout or i == Intent::Out) return true;
+
+    // Large or non-trivially copyable 'move' and 'in' parameters
+    // are references as well.
+    if (i == Intent::In or i == Intent::Move) {
+        if (not ty->trivially_copyable()) return true;
+        if (ty->is_srvalue()) return false;
+        return ty->size(tu) > tu.target().ptr_size() * 3;
+    }
+
+    // Copy parameters are always passed by value; whether this is
+    // accomplished by making a copy in the caller and passing a
+    // pointer or whether they are passed in registers is up to the
+    // target ABI and handled in a separate lowering pass.
+    return false;
 }
 
 void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
@@ -764,6 +793,10 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
 
         // If the initialiser is a call, pass the address to it.
         [&](CallExpr* e) { EmitCallExpr(e, addr); },
+
+        // The initialiser might be an lvalue-to-rvalue conversion; this is used to
+        // pass trivially-copyable structs by value.
+        [&](CastExpr *e) { EmitCastExpr(e, addr); },
 
         // If the initialiser is a constant expression, create a global constant for it.
         //
@@ -1336,19 +1369,64 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> SRValue {
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     auto ty = cast<ProcType>(expr->callee->type);
     auto has_result = not IsZeroSizedType(ty->ret()) and not ty->ret()->is_mrvalue();
+    auto l = C(expr->location());
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
 
     // Evaluate the arguments and add them to the call.
     SmallVector<Value> args;
-    for (auto arg : expr->args()) {
-        auto v = Emit(arg);
-        if (not IsZeroSizedType(arg->type)) v.into(args);
+    for (auto [param, arg] : zip(ty->params(), expr->args())) {
+        if (IsZeroSizedType(arg->type)) {
+            Emit(arg);
+            continue;
+        }
+
+        // Helper to pass an mrvalue ‘by value’. This just inserts a very ugly
+        // load that is cleaned up in a subsequent lowering pass.
+        auto PassMRValueTypeByValue = [&] {
+            Value addr = arg->lvalue() ? Emit(arg).scalar() : MakeTemporary(l, arg);
+            CreateLoad(l, addr, C(arg->type), arg->type->align(tu)).into(args);
+        };
+
+        // How this is passed depends on the intent.
+        switch (param.intent) {
+            // 'inout' and 'out' arguments are always existing lvalues,
+            // which can be emitted on their own.
+            case Intent::Inout:
+            case Intent::Out:
+                Emit(arg).into(args);
+                break;
+
+            // 'copy' arguments are always rvalues.
+            case Intent::Copy:
+                if (arg->is_mrvalue()) PassMRValueTypeByValue();
+                else Emit(arg).into(args);
+                break;
+
+            // 'in' and 'move' arguments may have any value category.
+            case Intent::In:
+            case Intent::Move: {
+                // Handle lvalues and srvalues that should just be passed along.
+                if (
+                    (arg->lvalue() and PassByReference(arg->type, param.intent)) or
+                    arg->is_srvalue()
+                ) Emit(arg).into(args);
+
+                // If we’re passing by reference here, then this can only be an mrvalue
+                // (srvalues are never passed by reference under these intents, and lvalues
+                // are handled above); throw it into a temporary.
+                else if (PassByReference(arg->type, param.intent))
+                    args.push_back(MakeTemporary(l, arg));
+
+                // Otherwise, we’re passing by value.
+                else PassMRValueTypeByValue();
+            } break;
+        }
     }
 
     auto op = create<ir::CallOp>(
-        C(expr->location()),
+        l,
         has_result ? mlir::TypeRange(C(ty->ret())) : mlir::TypeRange(),
         callee.first(),
         callee.second(),
@@ -1372,6 +1450,10 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
 }
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> SRValue {
+    return EmitCastExpr(expr, nullptr);
+}
+
+auto CodeGen::EmitCastExpr(CastExpr* expr, Value mrvalue_slot) -> SRValue {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
         case CastExpr::Deref:
@@ -1383,10 +1465,20 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> SRValue {
         case CastExpr::Integral:
             return CreateSICast(C(expr->location()), val.scalar(), expr->arg->type, expr->type);
 
-        case CastExpr::LValueToSRValue:
+        case CastExpr::LValueToRValue: {
             Assert(expr->arg->value_category == Expr::LValue);
             if (IsZeroSizedType(expr->type)) return {};
-            return CreateLoad(C(expr->location()), val.scalar(), C(expr->type), expr->type->align(tu));
+            if (expr->type->is_srvalue()) return CreateLoad(
+                C(expr->location()),
+                val.scalar(),
+                C(expr->type),
+                expr->type->align(tu)
+            );
+
+            Assert(mrvalue_slot);
+            EmitMRValue(mrvalue_slot, expr->arg);
+            return {};
+        }
 
         case CastExpr::MaterialisePoisonValue: {
             return CreatePoison(
@@ -1576,6 +1668,17 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> SRValue {
     return {};
 }
 
+auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> SRValue {
+    if (IsZeroSizedType(stmt->type)) {
+        Emit(stmt->temporary);
+        return {};
+    }
+
+    auto var = CreateAlloca(C(stmt->location()), stmt->type);
+    EmitMRValue(var, stmt->temporary);
+    return var;
+}
+
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> SRValue {
     auto base = Emit(expr->base).scalar();
     if (IsZeroSizedType(expr->type)) return base;
@@ -1623,6 +1726,8 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     //         return 3;
     //     }
     //
+    // TODO: The upstream bug related to this seems to have been fixed. Investigate
+    //        whether we can reenable this.
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Emit locals.
@@ -1635,11 +1740,14 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             continue;
         }
 
-        // If this is a range, slice, or procedure that is passed by value, then it
-        // actually takes up two argument slots.
+        // Ranges, slice, and procedures are passed by value if the intent
+        // it 'copy', 'in', or 'move'. Such values take up two argument slots.
         SRValue arg;
-        auto by_val = p->type->pass_by_rvalue(proc->cconv(), p->intent());
-        if (by_val and isa<ProcType, RangeType, SliceType>(p->type)) {
+        auto i = p->intent();
+        if (
+            isa<ProcType, RangeType, SliceType>(p->type) and
+            (i == Intent::Copy or i == Intent::In or i == Intent::Move)
+        ) {
             auto first = curr_proc.getArgument(arg_idx++);
             auto second = curr_proc.getArgument(arg_idx++);
             arg = {first, second};
@@ -1647,14 +1755,15 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             arg = curr_proc.getArgument(arg_idx++);
         }
 
-        if (
-            (p->type->is_srvalue() and p->intent() == Intent::In) or
-            p->type->pass_by_lvalue(proc->cconv(), p->intent())
-        ) {
+        // SRValue 'in' parameters do not actually create a variable
+        // in the callee, so use their value directly; similarly, any
+        // parameters that are passed by reference can be used directly.
+        if (p->is_srvalue_in_parameter() or PassByReference(p->type, p->intent())) {
             locals[p] = arg;
             continue;
         }
 
+        // Any other parameters require a stack variable.
         auto loc = C(p->location());
         auto v = locals[p] = CreateAlloca(loc, p->type);
         CreateStore(
@@ -1708,42 +1817,49 @@ auto CodeGen::EmitTypeExpr(TypeExpr*) -> SRValue {
 }
 
 auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> SRValue {
+    struct Increment {
+        Value old_val;
+        Value addr;
+    };
+
+    auto l = C(expr->location());
+    auto EmitIncrement = [&] -> Increment {
+        auto ptr = Emit(expr->arg).scalar();
+        auto a = expr->type->align(tu);
+        auto val = create<ir::LoadOp>(ptr.getLoc(), C(expr->type).scalar(), ptr, a);
+        auto new_val = EmitArithmeticOrComparisonOperator(
+            expr->op == Tk::PlusPlus ? Tk::Plus : Tk::Minus,
+            expr->type,
+            val,
+            CreateInt(l, 1, expr->type),
+            l
+        );
+
+        create<ir::StoreOp>(l, ptr, new_val, a);
+        return {.old_val = val, .addr = ptr};
+    };
+
+
     if (expr->postfix) {
         switch (expr->op) {
             default: Todo("Emit postfix '{}'", expr->op);
             case Tk::PlusPlus:
-            case Tk::MinusMinus: {
-                auto ptr = Emit(expr->arg).scalar();
-                auto l = C(expr->location());
-                auto a = expr->type->align(tu);
-                auto val = create<ir::LoadOp>(ptr.getLoc(), C(expr->type).scalar(), ptr, a);
-                auto new_val = EmitArithmeticOrComparisonOperator(
-                    expr->op == Tk::PlusPlus ? Tk::Plus : Tk::Minus,
-                    expr->type,
-                    val,
-                    CreateInt(l, 1, expr->type),
-                    l
-                );
-
-                create<ir::StoreOp>(l, ptr, new_val, a);
-                return val.getRes();
-            }
+            case Tk::MinusMinus:
+                return EmitIncrement().old_val;
         }
     }
 
     switch (expr->op) {
         default: Todo("Emit prefix '{}'", expr->op);
 
-        // These are both no-ops at the IR level and only affect the type
-        // of the expression.
+        // These are both no-ops at the IR level.
         case Tk::Ampersand:
         case Tk::Caret:
+        case Tk::Plus:
             return Emit(expr->arg);
 
         // Negate an integer.
         case Tk::Minus: {
-            auto l = C(expr->location());
-
             // Because of how literals are parsed, we can get into an annoying
             // corner case with this operator: e.g. if the user declares an i64
             // and attempts to initialise it with -9223372036854775808, we overflow
@@ -1772,8 +1888,16 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> SRValue {
 
         case Tk::Not: {
             auto a = Emit(expr->arg).scalar();
-            auto l = C(expr->location());
             return createOrFold<arith::XOrIOp>(l, a, CreateBool(l, true));
+        }
+
+        case Tk::PlusPlus:
+        case Tk::MinusMinus:
+            return EmitIncrement().addr;
+
+        case Tk::Tilde: {
+            auto a = Emit(expr->arg).scalar();
+            return createOrFold<arith::XOrIOp>(l, a, CreateInt(l, -1, expr->arg->type));
         }
     }
 }

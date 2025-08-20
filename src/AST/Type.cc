@@ -1,6 +1,8 @@
 #include <srcc/AST/AST.hh>
+#include <srcc/AST/Enums.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/CG/Target/Target.hh>
 
 #include <clang/Basic/TargetInfo.h>
 
@@ -174,50 +176,6 @@ bool TypeBase::is_void() const {
 bool TypeBase::move_is_copy() const {
     // This will have to change once we have destructors.
     return true;
-}
-
-bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
-    // Always pass parameters to C or C++ functions by value.
-    if (cc == CallingConvention::Native) return true;
-    Assert(cc == CallingConvention::Source, "Unsupported calling convention");
-    switch (intent) {
-        // These allow modifying the original value, which means that
-        // we always have to pass by reference here.
-        case Intent::Inout:
-        case Intent::Out:
-            return false;
-
-        // Always pass by value if we’re making a copy.
-        case Intent::Copy:
-            return true;
-
-        // If we only want to inspect the value, pass by value if small,
-        // and by reference otherwise.
-        //
-        // On the caller side, moving is treated the same as 'in', the
-        // only difference is that the latter creates a variable in the
-        // callee, whereas the former doesn’t.
-        //
-        // The intent behind the latter is that e.g. 'moving' a large
-        // struct should not require a memcpy unless the callee actually
-        // moves it somewhere else; otherwise, it doesn't matter where
-        // it is stored, and we save a memcpy that way.
-        case Intent::In:
-        case Intent::Move:
-            return visit(utils::Overloaded{
-                // clang-format off
-                [](ArrayType*) { return false; },                        // Arrays are usually big, so pass by reference.
-                [](BuiltinType*) { return true; },                       // All builtin types are small.
-                [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
-                [](ProcType*) { return true; },                          // Closures are two pointers.
-                [](PtrType*) { return true; },                           // Pointers are small.
-                [](RangeType*) { return true; },                         // Ranges are two integers.
-                [](SliceType*) { return true; },                         // Slices are two pointers.
-                [](StructType* s) { return s->is_srvalue(); },           // Pass structs by reference (TODO: small ones by value).
-            }); // clang-format on
-    }
-
-    Unreachable();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {

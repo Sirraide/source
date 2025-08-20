@@ -1,0 +1,69 @@
+// R %srcc --ir %s
+program test;
+
+proc p_in (in $T) {}
+proc p_out (out $T) {}
+proc p_inout (inout $T) {}
+proc p_copy (copy $T) {}
+proc p_move ($T) {}
+
+// SRValue.
+proc srvalue {
+    var i = 1;
+    var j = "123";
+    p_in(1);
+    p_copy(1);
+    p_move(1);
+
+    p_in(i);
+    p_copy(i);
+    p_move(i);
+
+    p_in("123");
+    p_copy("123");
+    p_move("123");
+
+    p_in(j);
+    p_copy(j);
+    p_move(j);
+
+    p_inout(i);
+    p_out(i);
+
+    p_inout(j);
+    p_out(j);
+}
+
+// Small MRValue.
+proc mrvalue_small {
+    struct small { int i; }
+    var s = small(1);
+
+    p_in(small(1));
+    p_copy(small(1));
+    p_move(small(1));
+
+    p_in(small(s));
+    p_copy(small(s));
+    p_move(small(s));
+
+    p_inout(s);
+    p_out(s);
+}
+
+// Large MRValue.
+proc mrvalue_large {
+    struct large { int[100] i; }
+    var l = large();
+
+    p_in(large());
+    p_copy(large());
+    p_move(large());
+
+    p_in(l);
+    p_copy(l);
+    p_move(l);
+
+    p_inout(l);
+    p_out(l);
+}

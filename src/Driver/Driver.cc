@@ -40,6 +40,7 @@
 #include <print>
 #include <ranges>
 #include <unordered_set>
+#include <srcc/CG/Target/Target.hh>
 
 namespace srcc {
 class ParsedModule;

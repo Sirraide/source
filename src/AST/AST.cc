@@ -1,6 +1,7 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Printer.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Constants.hh>
 #include <srcc/Core/Core.hh>
 
@@ -12,14 +13,9 @@
 using namespace srcc;
 
 // ============================================================================
-//  Target
-// ============================================================================
-Target::Target() = default;
-Target::~Target() = default;
-
-// ============================================================================
 //  TU
 // ============================================================================
+TranslationUnit::~TranslationUnit() = default;
 TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module)
     : ctx{ctx},
       language_opts{opts},
@@ -32,12 +28,12 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
         "foo.cc"
     };
 
-    tgt.ci = std::make_unique<clang::CompilerInstance>();
-    tgt.ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
-    Assert(clang::CompilerInvocation::CreateFromArgs(tgt.ci->getInvocation(), args, tgt.ci->getDiagnostics()));
-    Assert(tgt.ci->createTarget());
-    tgt.TI = tgt.ci->getTargetPtr();
-    vm.init(tgt);
+    ci = std::make_unique<clang::CompilerInstance>();
+    ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
+    Assert(clang::CompilerInvocation::CreateFromArgs(ci->getInvocation(), args, ci->getDiagnostics()));
+    Assert(ci->createTarget());
+    tgt = Target::Create(ci->getTargetPtr());
+    vm.init(*tgt);
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
@@ -47,13 +43,13 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     I128Ty = IntType::Get(*this, Size::Bits(128));
 
     // Initialise FFI types.
-    FFIBoolTy = IntType::Get(*this, Size::Bits(target().TI->getBoolWidth()));
-    FFICharTy = IntType::Get(*this, Size::Bits(target().TI->getCharWidth()));
-    FFIShortTy = IntType::Get(*this, Size::Bits(target().TI->getShortWidth()));
-    FFIIntTy = IntType::Get(*this, Size::Bits(target().TI->getIntWidth()));
-    FFILongTy = IntType::Get(*this, Size::Bits(target().TI->getLongWidth()));
-    FFILongLongTy = IntType::Get(*this, Size::Bits(target().TI->getLongLongWidth()));
-    FFISizeTy = IntType::Get(*this, Size::Bits(target().TI->getTypeWidth(target().TI->getSizeType())));
+    FFIBoolTy = IntType::Get(*this, Size::Bits(target().clang().getBoolWidth()));
+    FFICharTy = IntType::Get(*this, Size::Bits(target().clang().getCharWidth()));
+    FFIShortTy = IntType::Get(*this, Size::Bits(target().clang().getShortWidth()));
+    FFIIntTy = IntType::Get(*this, Size::Bits(target().clang().getIntWidth()));
+    FFILongTy = IntType::Get(*this, Size::Bits(target().clang().getLongWidth()));
+    FFILongLongTy = IntType::Get(*this, Size::Bits(target().clang().getLongLongWidth()));
+    FFISizeTy = IntType::Get(*this, Size::Bits(target().clang().getTypeWidth(target().clang().getSizeType())));
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
@@ -272,7 +268,7 @@ void Stmt::Printer::Print(Stmt* e) {
             switch (c->kind) {
                 case CastExpr::Deref: print("deref"); break;
                 case CastExpr::ExplicitDiscard: print("discard"); break;
-                case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
+                case CastExpr::LValueToRValue: print("lvalue->rvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
             }
@@ -390,6 +386,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LoopExpr");
             if (auto b = cast<LoopExpr>(e)->body.get_or_null()) PrintChildren(b);
         } break;
+
+        case Kind::MaterialiseTemporaryExpr:
+            PrintBasicNode(e, "MaterialiseTemporaryExpr");
+            PrintChildren(cast<MaterialiseTemporaryExpr>(e)->temporary);
+            break;
 
         case Kind::MemberAccessExpr: {
             auto m = cast<MemberAccessExpr>(e);

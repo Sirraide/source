@@ -367,7 +367,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     }
 
     // Print name.
-    out += std::format("%1(proc%) %2({}%)", proc.getName());
+    out += std::format("%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
 
     // Print args.
     if (proc.getNumArguments()) {
@@ -524,7 +524,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (auto p = dyn_cast<ProcRefOp>(op)) {
             tmp.clear(); // Never print the type of a proc ref.
-            tmp += std::format("%2({}%)", p.proc().getName());
+            tmp += std::format("%2({}%)", utils::Escape(p.proc().getName(), false, true));
             return tmp;
         }
 
