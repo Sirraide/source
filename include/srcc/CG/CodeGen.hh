@@ -334,7 +334,6 @@ public:
     auto EmitCastExpr(CastExpr* cast, Value mrvalue_slot) -> SRValue;
     auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> SRValue;
     auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> SRValue;
-    auto EmitEqualityComparison(mlir::Location l, Type ty, Tk op, SRValue lhs, SRValue rhs) -> Value;
 #define AST_DECL_LEAF(Class)
 #define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->SRValue;
 #include "srcc/AST.inc"

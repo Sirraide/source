@@ -33,12 +33,14 @@ using Classification = SmallVector<Class, 8>;
 
 struct Impl final : Target {
     Impl(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) : Target(std::move(TI)) {}
+    bool is_returned_as_mrvalue(Type ty) const override;
     bool needs_indirect_return(Type ty) const override;
     auto get_call_builder(
         CodeGen& cg,
         ProcType* ty,
         Value indirect_ptr
     ) const -> std::unique_ptr<CallBuilder> override;
+    bool pass_in_parameter_by_value(Type ty) const override;
 };
 
 struct Builder final : CallBuilder {
@@ -127,6 +129,10 @@ auto Impl::get_call_builder(
     Value indirect_ptr
 ) const -> std::unique_ptr<CallBuilder> {
     return std::make_unique<Builder>(cg, ty, indirect_ptr);
+}
+
+bool Impl::pass_in_parameter_by_value(Type ty) const {
+    return ty->size(*this) <= Eightbyte * 2;
 }
 
 Builder::Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr)
@@ -292,69 +298,29 @@ auto Builder::get_result_types() -> SmallVector<mlir::Type, 2> {
 }
 
 auto Builder::get_result_vals(ir::CallOp call) -> SRValue {
-    if (call.getNumResults() == 0) {
-        if (indirect) return {};
+    if (indirect) return {};
 
-        // If there are no results, but this is not an indirect return from the
-        // point of view of Sema/CodeGen, then we need to insert a load here to
-        // retrieve the actual value.
-        Assert(proc_ty->ret()->is_srvalue());
-        Assert(indirect_ptr);
-        return cg.CreateLoad(
-            call.getLoc(),
-            indirect_ptr,
-            cg.C(proc_ty->ret()),
-            proc_ty->ret()->align(target())
-        );
-    }
-
-    // If this is a range, slice, or closure, and we have 2 return values,
-    // then alignment requirements around integer types imply that they the
-    // two results map to the first and second element of the range/slice/closure.
+    // If this is an mrvalue, write it to memory.
     auto ret = proc_ty->ret();
-    if (
-        call.getNumResults() == 2 and
-        isa<RangeType, SliceType, ProcType>(ret)
-    ) return call.getResults();
-
-    // If we’re returning a pointer or integer with bit width <= i64, then we
-    // expect a single register.
-    if (
-        isa<PtrType>(ret) or
-        (ret->is_integer() and ret->size(target()) <= Eightbyte) or
-        ret == Type::BoolTy
-    ) {
-        Assert(call.getNumResults() == 1);
-        return call.getResult(0);
-    }
-
-    // Otherwise, we can’t take any shortcuts here: we might have e.g. an i8..i8
-    // range that has been merged into a single i64.
-    Assert(
-        call.getNumResults() <= 2 and
-        llvm::all_of(call.getResultTypes(), [](mlir::Type t){ return t.isInteger(); })
-    );
-
-    // We may have an mrvalue slot here even though we’re not returning
-    // indirectly. This is because structs are always *logically* mrvalues,
-    // even if they are passed in registers. If there is no slot, then this
-    // must be an srvalue that is split across multiple registers.
-    // TODO: Assert that.
-    auto size = ret->size(target());
-    auto align = std::max(Align(Eightbyte), ret->align(target()));
-    auto tmp = indirect_ptr ?: cg.CreateAlloca(call.getLoc(), size, align);
+    if (not target().is_returned_as_mrvalue(proc_ty->ret())) return call.getResults();
 
     // Write the value to memory.
-    cg.CreateStore(call.getLoc(), tmp, call.getResult(0), ret->align(target()));
+    Assert(indirect_ptr);
+    cg.CreateStore(call.getLoc(), indirect_ptr, call.getResult(0), ret->align(target()));
     if (call.getNumResults() == 2) {
         Assert(call.getResult(0).getType().isInteger(64));
-        auto rest = cg.CreatePtrAdd(call.getLoc(), tmp, Eightbyte);
+        auto rest = cg.CreatePtrAdd(call.getLoc(), indirect_ptr, Eightbyte);
         cg.CreateStore(call.getLoc(), rest, call.getResult(1), Align(Eightbyte));
     }
 
-    // If it is an mrvalue type, we’re done.
-    if (ret->is_mrvalue()) return {};
-    return cg.CreateLoad(call.getLoc(), tmp, cg.C(proc_ty->ret()), align);
+    return {};
+}
+
+bool Impl::is_returned_as_mrvalue(Type ty) const {
+    if (isa<SliceType, ProcType, PtrType>(ty)) return false;
+    if (ty == Type::IntTy or ty == Type::BoolTy) return false;
+    if (auto i = dyn_cast<IntType>(ty)) return i->bit_width() > Eightbyte;
+    return true;
 }
 
 bool Impl::needs_indirect_return(Type ty) const {

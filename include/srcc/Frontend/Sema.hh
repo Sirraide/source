@@ -127,7 +127,7 @@ class srcc::Sema : public DiagsProducer {
             ArrayInit,
             DefaultInit,
             IntegralCast,
-            LValueToRValue,
+            LoadSRValue,
             MaterialisePoison,
             MaterialiseTemporary,
             SelectOverload,
@@ -157,7 +157,7 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
-        static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
+        static auto LoadSRValue() -> Conversion { return Conversion{Kind::LoadSRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
@@ -629,7 +629,7 @@ private:
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
-    [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
+    [[nodiscard]] auto LoadSRValue(Expr* expr) -> Expr*;
 
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;

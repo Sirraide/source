@@ -127,9 +127,22 @@ public:
         return Size::Bits(TI->getBitIntWidth(u32(width.bits())));
     }
 
+    /// Whether a value of this type as returned from a function should be modelled as
+    /// an MRValue, which causes us to always provide a memory location for it to be
+    /// written to.
+    ///
+    /// This is *not* the same as needs_indirect_return(): it might be that the type
+    /// is returned in registers according to a target’s ABI, but it may just be easier
+    /// for us to deal w/ a type if it’s in memory (rather than e.g. try and destructure
+    /// a single i64 register into six struct fields using a bunch of masking and shifting).
+    virtual bool is_returned_as_mrvalue(Type ty) const = 0;
+
     /// Whether this type must be returned indirectly via memory by passing an
     /// extra pointer argument to the function.
     virtual bool needs_indirect_return(Type ty) const = 0;
+
+    /// Whether an 'in' parameter of this type should be passed by value if possible.
+    virtual bool pass_in_parameter_by_value(Type ty) const = 0;
 
     /// Get the pointer alignment.
     [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }

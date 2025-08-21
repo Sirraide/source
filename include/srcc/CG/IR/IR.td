@@ -164,7 +164,6 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
     let arguments = (ins
         SRCC_Ptr:$addr,
         Optional<SRCC_Ptr>:$env,
-        Optional<SRCC_Ptr>:$mrvalue_slot,
         CConv:$cc,
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
@@ -178,8 +177,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
         OpBuilder<(ins
             "ProcRefOp":$ref,
             CArg<"::mlir::ValueRange", "{}">:$args,
-            CArg<"::mlir::Value", "{}">:$env,
-            CArg<"::mlir::Value", "{}">:$mrvalue_slot
+            CArg<"::mlir::Value", "{}">:$env
         ), [{
             auto proc = ref.proc();
             build(
@@ -188,7 +186,6 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
                 proc.getResultTypes(),
                 ref,
                 env,
-                mrvalue_slot,
                 proc.getCc(),
                 proc.getFunctionType(),
                 proc.getVariadic(),

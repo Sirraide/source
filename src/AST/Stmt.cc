@@ -67,10 +67,11 @@ auto BuiltinCallExpr::Create(
 
 CallExpr::CallExpr(
     Type type,
+    ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
-) : Expr{Kind::CallExpr, type, type->rvalue_category(), location},
+) : Expr{Kind::CallExpr, type, vc, location},
     callee{callee}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
 }
@@ -78,13 +79,14 @@ CallExpr::CallExpr(
 auto CallExpr::Create(
     TranslationUnit& mod,
     Type type,
+    ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
 ) -> CallExpr* {
     const auto size = totalSizeToAlloc<Expr*>(args.size());
     auto mem = mod.allocate(size, alignof(CallExpr));
-    return ::new (mem) CallExpr{type, callee, args, location};
+    return ::new (mem) CallExpr{type, vc, callee, args, location};
 }
 
 ConstExpr::ConstExpr(
@@ -194,7 +196,7 @@ auto ParamDecl::intent() const -> Intent {
 
 bool ParamDecl::is_srvalue_in_parameter() const {
     auto i = intent();
-    return i == Intent::In and type->is_srvalue();
+    return i == Intent::In and is_srvalue();
 }
 
 ProcRefExpr::ProcRefExpr(
@@ -348,7 +350,7 @@ StructInitExpr::StructInitExpr(
     StructType* ty,
     ArrayRef<Expr*> fields,
     Location location
-) : Expr{Kind::StructInitExpr, ty, ty->rvalue_category(), location} {
+) : Expr{Kind::StructInitExpr, ty, MRValue, location} {
     std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
 }
 

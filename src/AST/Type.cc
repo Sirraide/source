@@ -6,8 +6,6 @@
 
 #include <clang/Basic/TargetInfo.h>
 
-#include <llvm/Support/MathExtras.h>
-
 #include <memory>
 #include <print>
 
@@ -152,28 +150,6 @@ void TypeBase::dump(bool use_colour) const {
 
 bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
-}
-
-bool TypeBase::is_srvalue() const {
-    switch (type_kind) {
-        case Kind::BuiltinType:
-        case Kind::IntType:
-        case Kind::ProcType:
-        case Kind::PtrType:
-        case Kind::RangeType:
-        case Kind::SliceType:
-            return true;
-
-        // Zero-sized arrays are invalid, so treat all arrays as mrvalues.
-        case Kind::ArrayType:
-            return false;
-
-        // Zero-sized types are passed around as 'void', which is an srvalue.
-        case Kind::StructType:
-            return cast<StructType>(this)->size() == Size();
-    }
-
-    Unreachable("Invalid type kind");
 }
 
 bool TypeBase::is_void() const {

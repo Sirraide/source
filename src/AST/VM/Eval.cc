@@ -332,9 +332,6 @@ class eval::Eval : DiagsProducer {
         /// Return value slots.
         RetVals ret_vals{};
 
-        /// Address used for indirect returns.
-        SRValue ret_ptr{};
-
         /// Environment pointer.
         SRValue env_ptr{};
     };
@@ -379,7 +376,6 @@ private:
         ir::ProcOp proc,
         MutableArrayRef<SRValue> args,
         StackFrame::RetVals ret_vals,
-        SRValue ret_ptr = {},
         SRValue env_ptr = {}
     );
 
@@ -580,9 +576,8 @@ bool Eval::EvalLoop() {
             // Enter the stack frame.
             SmallVector<SRValue, 6> args;
             for (auto a : c.getArgs()) args.push_back(Val(a));
-            SRValue ret_ptr = c.getMrvalueSlot() ? Val(c.getMrvalueSlot()) : SRValue();
             SRValue env_ptr = c.getEnv() ? Val(c.getEnv()) : SRValue();
-            PushFrame(callee, args, std::move(ret_vals), ret_ptr, env_ptr);
+            PushFrame(callee, args, std::move(ret_vals), env_ptr);
             continue;
         }
 
@@ -667,11 +662,6 @@ bool Eval::EvalLoop() {
 
         if (isa<mlir::LLVM::UnreachableOp>(i))
             return Error(Location::Decode(i->getLoc()), "Unreachable code reached");
-
-        if (isa<ir::ReturnPointerOp>(i)) {
-            Temp(i->getResult(0)) = frame().ret_ptr;
-            continue;
-        }
 
         if (auto c = dyn_cast<mlir::arith::ExtSIOp>(i)) {
             TRY(CastOp(i, c.getType(), &APInt::sext));
@@ -762,14 +752,6 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
             "The target triple is set to '{}', but the host triple is '{}'",
             vm.owner_tu.target().triple().str(),
             llvm::sys::getDefaultTargetTriple()
-        );
-        return std::nullopt;
-    }
-
-    if (call.getMrvalueSlot()) {
-        ICE(
-            Location::Decode(call.getLoc()),
-            "Compile-time FFI calls returning a structure in memory are currently not supported"
         );
         return std::nullopt;
     }
@@ -941,13 +923,11 @@ void Eval::PushFrame(
     ir::ProcOp proc,
     MutableArrayRef<SRValue> args,
     StackFrame::RetVals ret_vals,
-    SRValue ret_ptr,
     SRValue env_ptr
 ) {
     Assert(not proc.empty());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
-    frame.ret_ptr = ret_ptr;
     frame.env_ptr = env_ptr;
 
     // Allocate temporaries for instructions and block arguments.
@@ -1017,12 +997,13 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     // If statement returns an mrvalue, allocate one and set it
     // as the first argument to the call.
     auto ty = s->type_or_void();
-    if (ty->rvalue_category() == Expr::MRValue) {
+    Todo();
+    /*if (ty->rvalue_category() == Expr::MRValue) {
         auto mrv = vm.allocate_mrvalue(ty);
         frame().ret_ptr = SRValue(vm.memory->make_host_pointer(uptr(mrv.data())));
         TRY(EvalLoop());
         return RValue(mrv, ty);
-    }
+    }*/
 
     // Otherwise, just run the procedure and convert the results to an rvalue.
     TRY(EvalLoop());

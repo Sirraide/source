@@ -142,7 +142,7 @@ proc returns {
     var x11 = r11();
     var x12 = r12();
     var x13 = r13();
-    // var x14 = r14();
+    var x14 = r14();
     var x15 = r15();
     var x16 = r16();
     var x17 = r17();

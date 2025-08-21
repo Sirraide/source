@@ -106,11 +106,6 @@ LOWERING(CallOp, {
     auto ptr = LLVM::LLVMPointerType::get(getContext());
 
     args.push_back(a.getAddr());
-    if (a.getMrvalueSlot()) {
-        args.push_back(a.getMrvalueSlot());
-        arg_types.push_back(ptr);
-    }
-
     for (auto arg : a.getArgs()) args.push_back(arg);
     for (auto arg : op.getProcType().getInputs()) arg_types.push_back(arg);
 

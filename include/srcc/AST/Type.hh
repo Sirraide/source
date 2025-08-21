@@ -138,12 +138,6 @@ public:
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
-    /// Whether values of this type are mrvalues.
-    [[nodiscard]] bool is_mrvalue() const { return not is_srvalue(); }
-
-    /// Whether values of this type are srvalues.
-    [[nodiscard]] bool is_srvalue() const;
-
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
@@ -152,11 +146,6 @@ public:
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
-
-    /// Get what kind of rvalue this type produced.
-    [[nodiscard]] auto rvalue_category() const -> ValueCategory {
-        return is_srvalue() ? ValueCategory::SRValue : ValueCategory::MRValue;
-    }
 
     /// Get the size of this type. This does NOT include tail padding!
     [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;

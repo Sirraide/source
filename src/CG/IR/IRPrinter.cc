@@ -239,7 +239,6 @@ void CodeGen::Printer::print_op(Operation* op) {
         }
         out += ")";
 
-        if (auto v = c.getMrvalueSlot()) out += std::format(" into {}", val(v, false));
         if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
         return;
     }

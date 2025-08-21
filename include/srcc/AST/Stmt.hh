@@ -381,6 +381,7 @@ private:
 
     CallExpr(
         Type type,
+        ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -390,6 +391,7 @@ public:
     static auto Create(
         TranslationUnit& mod,
         Type type,
+        ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -477,7 +479,7 @@ public:
     DefaultInitExpr(
         Type type,
         Location location
-    ) : Expr{Kind::DefaultInitExpr, type, type->rvalue_category(), location} {}
+    ) : Expr{Kind::DefaultInitExpr, type, isa<StructType, ArrayType>(type) ? MRValue : SRValue, location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
 };

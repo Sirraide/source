@@ -105,7 +105,7 @@ auto CodeGen::ConvertProcType(ProcType* ty) -> IRProcType {
 
     // Collect the return type(s).
     SmallVector<Ty, 2> ret_types;
-    if (ty->ret()->is_mrvalue()) ptype.has_indirect_return = true;
+    if (tu.target().needs_indirect_return(ty->ret())) ptype.has_indirect_return = true;
     else if (not IsZeroSizedType(ty->ret())) C(ty->ret()).into(ret_types);
 
     // Collect the arguments.
@@ -586,8 +586,7 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // Large or non-trivially copyable 'in' parameters are references.
     if (i == Intent::In) {
         if (not ty->trivially_copyable()) return true;
-        if (ty->is_srvalue()) return false;
-        return ty->size(tu) > tu.target().ptr_size() * 3;
+        return not tu.target().pass_in_parameter_by_value(ty);
     }
 
     // Move parameters are references only if the type is not trivial
@@ -773,7 +772,7 @@ void CodeGen::StructInitHelper::emit_next_field(SRValue v) {
 
 void CodeGen::EmitInitialiser(Value addr, Expr* init) {
     Assert(not IsZeroSizedType(init->type), "Should have been checked before calling this");
-    if (init->type->is_mrvalue()) EmitMRValue(addr, init);
+    if (init->is_mrvalue()) EmitMRValue(addr, init);
     else CreateStore(C(init->location()), addr, Emit(init), init->type->align(tu));
 }
 
@@ -1447,7 +1446,6 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
         cb->get_result_types(),
         callee.first(),
         callee.second(),
-        mrvalue_slot, // FIXME: REMOVE THIS.
         C(ty->cconv()),
         cb->get_proc_type(),
         ty->variadic(),
@@ -1486,7 +1484,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr, Value mrvalue_slot) -> SRValue {
         case CastExpr::LValueToRValue: {
             Assert(expr->arg->value_category == Expr::LValue);
             if (IsZeroSizedType(expr->type)) return {};
-            if (expr->type->is_srvalue()) return CreateLoad(
+            if (expr->is_srvalue()) return CreateLoad(
                 C(expr->location()),
                 val.scalar(),
                 C(expr->type),
@@ -1515,7 +1513,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> SRValue {
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> SRValue {
     if (IsZeroSizedType(stmt->type)) return {};
-    Assert(stmt->type->rvalue_category() == Expr::SRValue, "Emitting non-srvalue on its own?");
+    Assert(stmt->is_srvalue(), "Emitting non-srvalue on its own?");
     return CreateNil(C(stmt->location()), C(stmt->type));
 }
 
