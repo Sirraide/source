@@ -1,0 +1,98 @@
+program test;
+
+proc ints {
+    proc f1 (i64, i64, i64, i64, i64, i64, i64, i64) extern native;
+    proc f2 (i32, i32, i32, i32, i32, i32, i32, i32) extern native;
+    proc f3 (i17, i17, i17, i17, i17, i17, i17, i17) extern native;
+    proc f4 (i42, i42, i42, i42, i42, i42, i42, i42) extern native;
+    proc f5 (i128, i128, i128, i128, i128) extern native;
+    proc f6 (i112, i112, i112, i112, i112) extern native;
+    proc f7 (i65, i65, i65, i65, i65) extern native;
+    proc f8 (i256) extern native;
+
+    f1(1, 2, 3, 4, 5, 6, 7, 8);
+    f2(1, 2, 3, 4, 5, 6, 7, 8);
+    f3(1, 2, 3, 4, 5, 6, 7, 8);
+    f4(1, 2, 3, 4, 5, 6, 7, 8);
+    f5(1, 2, 3, 4, 5);
+    f6(1, 2, 3, 4, 5);
+    f7(1, 2, 3, 4, 5);
+    f8(1);
+}
+
+
+proc int_lvalues {
+    proc f9(i64, i32, i17, i42, i128, i112, i65, i256, i1, bool) extern native;
+    i64 j1 = 1;
+    i32 j2 = 1;
+    i17 j3 = 1;
+    i42 j4 = 1;
+    i128 j5 = 1;
+    i112 j6 = 1;
+    i65 j7 = 1;
+    i256 j8 = 1;
+    i1 j9 = 0;
+    bool j10 = true;
+    f9(j1, j2, j3, j4, j5, j6, j7, j8, j9, j10);
+}
+
+struct a { i32 x; }
+struct b { i32 x; i32 y; }
+struct c { i64 x; i64 y; }
+
+proc g1 (a, a, a, a, a, a, a, a) extern native;
+proc g2 (b, b, b, b, b, b, b, b) extern native;
+proc g3 (c, c, c, c) extern native;
+proc g4 (b, c, c, c, c, b, b) extern native;
+proc g5 (i256, a, a, a, a, a, a, a) extern native;
+
+proc struct_rvalues {
+    g1(a(1), a(1), a(1), a(1), a(1), a(1), a(1), a(1));
+    g2(b(1, 2), b(1, 2), b(1, 2), b(1, 2), b(1, 2), b(1, 2), b(1, 2), b(1, 2));
+    g3(c(1, 2), c(1, 2), c(1, 2), c(1, 2));
+    g4(b(1, 2), c(1, 2), c(1, 2), c(1, 2), c(1, 2), b(1, 2), b(1, 2));
+    g5(1, a(1), a(1), a(1), a(1), a(1), a(1), a(1));
+}
+
+proc struct_lvalues {
+    a a1 = 1;
+    b b1 = b(1, 2);
+    c c1 = c(1, 2);
+    g1(a1, a1, a1, a1, a1, a1, a1, a1);
+    g2(b1, b1, b1, b1, b1, b1, b1, b1);
+    g3(c1, c1, c1, c1);
+    g4(b1, c1, c1, c1, c1, b1, b1);
+    g5(1, a1, a1, a1, a1, a1, a1, a1);
+}
+
+proc h1(inout a, inout a, inout a, inout a, inout a, a, a, inout a) extern nomangle;
+proc h2(out a, out a, out a, out a, out a, a, a, out a) extern nomangle;
+
+proc in_out {
+    a a1 = 1;
+    h1(a1, a1, a1, a1, a1, a1, a1, a1);
+    h2(a1, a1, a1, a1, a1, a1, a1, a1);
+}
+
+proc h3(in a, in a, in a, in a, in a, in a, a, in a) extern nomangle;
+proc h4(a, a, a, a, a, a, a, a) extern nomangle;
+proc in_move_small {
+    a a1 = 1;
+    h3(a1, a1, a1, a1, a1, a1, a1, a1);
+    h4(a1, a1, a1, a1, a1, a1, a1, a1);
+}
+
+struct big { i64[50] x; }
+proc big1(in big, in big, in big, in big, in big, in big, big, in big, a) extern nomangle;
+proc big2(big, big, big, big, big, big, big, big, a) extern nomangle;
+proc big3(copy big, copy big, copy big, copy big, copy big, copy big, copy big, big, a) extern nomangle;
+proc big4(inout big, inout big, inout big, inout big, inout big, inout big, big, inout big, a) extern nomangle;
+proc big5(out big, out big, out big, out big, out big, out big, big, out big, a) extern nomangle;
+proc big_struct {
+    big b;
+    big1(b, b, b, b, b, b, b, b, 42);
+    big2(b, b, b, b, b, b, b, b, 42);
+    big3(b, b, b, b, b, b, b, b, 42);
+    big4(b, b, b, b, b, b, b, b, 42);
+    big5(b, b, b, b, b, b, b, b, 42);
+}

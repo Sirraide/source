@@ -53,6 +53,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
+    I8PtrTy = PtrType::Get(*this, I8Ty);
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and

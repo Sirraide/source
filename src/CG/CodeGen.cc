@@ -79,9 +79,9 @@ auto CodeGen::C(Location l) -> mlir::Location {
 
 auto CodeGen::C(Type ty) -> SType {
     // Integer types.
-    if (ty == Type::BoolTy) return getIntegerType(1);
-    if (ty == Type::IntTy) return getIntegerType(u32(tu.target().int_size().bits()));
-    if (auto i = dyn_cast<IntType>(ty)) return getIntegerType(u32(i->bit_width().bits()));
+    if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
+    if (ty == Type::IntTy) return IntTy(tu.target().int_size());
+    if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
 
     // Pointer types.
     if (isa<PtrType>(ty)) return ptr_ty;
@@ -166,6 +166,10 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue ms
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
+    return CreateAlloca(loc, ty->size(tu), ty->align(tu));
+}
+
+auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     InsertionGuard _{*this};
 
     // Do this stupid garbage because allowing a separate region in a function for
@@ -177,7 +181,7 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
     while (it != end and isa<ir::FrameSlotOp>(*it)) ++it;
     if (it == end) setInsertionPointToEnd(&curr_proc.front());
     else setInsertionPoint(&*it);
-    return create<ir::FrameSlotOp>(loc, ty->size(tu), ty->align(tu));
+    return create<ir::FrameSlotOp>(loc, sz, a);
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, mlir::Location loc, String name) {
@@ -475,6 +479,10 @@ bool CodeGen::HasTerminator() {
     return curr and curr->mightHaveTerminator();
 }
 
+auto CodeGen::IntTy(Size wd) -> mlir::Type {
+    return getIntegerType(unsigned(wd.bits()));
+}
+
 auto CodeGen::If(
     mlir::Location loc,
     Value cond,
@@ -575,12 +583,18 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // 'inout' and 'out' parameters are always references.
     if (i == Intent::Inout or i == Intent::Out) return true;
 
-    // Large or non-trivially copyable 'move' and 'in' parameters
-    // are references as well.
-    if (i == Intent::In or i == Intent::Move) {
+    // Large or non-trivially copyable 'in' parameters are references.
+    if (i == Intent::In) {
         if (not ty->trivially_copyable()) return true;
         if (ty->is_srvalue()) return false;
         return ty->size(tu) > tu.target().ptr_size() * 3;
+    }
+
+    // Move parameters are references only if the type is not trivial
+    // (because 'move' is equivalent to 'copy' otherwise).
+    if (i == Intent::Move) {
+        if (not ty->trivially_copyable()) return true;
+        return false;
     }
 
     // Copy parameters are always passed by value; whether this is
@@ -1375,18 +1389,21 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     auto callee = Emit(expr->callee);
 
     // Evaluate the arguments and add them to the call.
-    SmallVector<Value> args;
+    auto cb = tu.target().get_call_builder(*this, ty, mrvalue_slot);
     for (auto [param, arg] : zip(ty->params(), expr->args())) {
         if (IsZeroSizedType(arg->type)) {
             Emit(arg);
             continue;
         }
 
-        // Helper to pass an mrvalue ‘by value’. This just inserts a very ugly
-        // load that is cleaned up in a subsequent lowering pass.
-        auto PassMRValueTypeByValue = [&] {
-            Value addr = arg->lvalue() ? Emit(arg).scalar() : MakeTemporary(l, arg);
-            CreateLoad(l, addr, C(arg->type), arg->type->align(tu)).into(args);
+        auto PassByValue = [&] {
+            // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
+            // get here then 'move' is equivalent to 'copy' for this type (otherwise we’d be passing by reference
+            // anyway).
+            if (arg->lvalue()) cb->add_argument(param.type, Emit(arg).scalar(), true);
+            else if (arg->is_mrvalue()) cb->add_argument(param.type, MakeTemporary(l, arg), false);
+            else if (param.type == Type::BoolTy) cb->add_argument(Type::BoolTy, Emit(arg).scalar(), false);
+            else Emit(arg).each([&](Value v){ cb->add_pointer_or_integer(v); });
         };
 
         // How this is passed depends on the intent.
@@ -1395,32 +1412,29 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
             // which can be emitted on their own.
             case Intent::Inout:
             case Intent::Out:
-                Emit(arg).into(args);
+                cb->add_pointer(Emit(arg).scalar());
                 break;
 
             // 'copy' arguments are always rvalues.
             case Intent::Copy:
-                if (arg->is_mrvalue()) PassMRValueTypeByValue();
-                else Emit(arg).into(args);
+                PassByValue();
                 break;
 
             // 'in' and 'move' arguments may have any value category.
             case Intent::In:
             case Intent::Move: {
-                // Handle lvalues and srvalues that should just be passed along.
-                if (
-                    (arg->lvalue() and PassByReference(arg->type, param.intent)) or
-                    arg->is_srvalue()
-                ) Emit(arg).into(args);
+                // LValues that are passed by reference can just be passed along.
+                if (arg->lvalue() and PassByReference(arg->type, param.intent))
+                    cb->add_pointer(Emit(arg).scalar());
 
                 // If we’re passing by reference here, then this can only be an mrvalue
                 // (srvalues are never passed by reference under these intents, and lvalues
                 // are handled above); throw it into a temporary.
                 else if (PassByReference(arg->type, param.intent))
-                    args.push_back(MakeTemporary(l, arg));
+                    cb->add_pointer(MakeTemporary(l, arg));
 
-                // Otherwise, we’re passing by value.
-                else PassMRValueTypeByValue();
+                /// Otherwise, we’re passing by value here.
+                else PassByValue();
             } break;
         }
     }
@@ -1434,7 +1448,8 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
         C(ty->cconv()),
         ConvertProcType(ty).type,
         ty->variadic(),
-        args
+        cb->get_final_args(),
+        cb->get_arg_attrs()
     );
 
     // Calls are one of the very few expressions whose type can be 'noreturn', so

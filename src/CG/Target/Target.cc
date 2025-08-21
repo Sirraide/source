@@ -1,3 +1,4 @@
+#include <srcc/CG/CodeGen.hh>
 #include <srcc/CG/Target/Target.hh>
 
 
@@ -14,3 +15,6 @@ auto Target::Create(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::uniq
     Fatal("Unsupported target '{}'", triple.str());
 }
 
+auto cg::CallBuilder::target() -> const Target& {
+    return cg.translation_unit().target();
+}

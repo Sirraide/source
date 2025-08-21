@@ -2448,6 +2448,18 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
         curr_proc().locals
     );
 
+    // Perform any checks that require translation to be complete.
+    if (not ctx.diags().has_error()) {
+        for (auto [s, loc] : incomplete_structs_passed_to_native_proc) {
+            Assert(s->is_complete());
+            if (s->size() == Size()) Error(
+                loc,
+                "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
+                s
+            );
+        }
+    }
+
     // Sanity check.
     Assert(proc_stack.size() == 1);
     Assert(scope_stack.size() == 1);
@@ -3231,16 +3243,23 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
         // harmful if we emit LLVM IR for it, and we won’t be getting there
         // anyway because of this error.
         if (ty and parsed->attrs.native) {
-            if (ty == Type::VoidTy) Error(
-                a.type->loc,
-                "Passing '%1(void%)' to a '%1(native%)' procedure is not supported"
-            );
-
-            else if (ty->size(*M) == Size()) Error(
-                a.type->loc,
-                "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
-                ty
-            );
+            if (ty == Type::VoidTy) {
+                Error(
+                    a.type->loc,
+                    "Passing '%1(void%)' to a '%1(native%)' procedure is not supported"
+                );
+            } else if (ty->size(*M) == Size()) {
+                // Delay this check if this is an incomplete type.
+                if (auto s = dyn_cast<StructType>(ty->strip_arrays()); s and not s->is_complete()) {
+                    incomplete_structs_passed_to_native_proc[s] = a.type->loc;
+                } else {
+                    Error(
+                        a.type->loc,
+                        "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
+                        ty
+                    );
+                }
+            }
         }
 
         ty = AdjustVariableType(ty, a.type->loc);

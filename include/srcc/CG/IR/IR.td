@@ -168,7 +168,8 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
         CConv:$cc,
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
-        Variadic<SRCC_Type>:$args
+        Variadic<SRCC_Type>:$args,
+        OptionalAttr<DictArrayAttr>:$arg_attrs
     );
 
     let results = (outs Variadic<SRCC_Type>:$res);
@@ -191,7 +192,8 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
                 proc.getCc(),
                 proc.getFunctionType(),
                 proc.getVariadic(),
-                args
+                args,
+                {}
             );
         }]>
     ];

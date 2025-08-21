@@ -2,3 +2,4 @@
 - Rename `Sema::M` to `Sema::tu`
 - Heterogeneous Ranges
 - Named Parameters
+- Make use of `PromoteMemOpInterface` and friends.

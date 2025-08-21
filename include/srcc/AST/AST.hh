@@ -121,6 +121,7 @@ public:
     Type I64Ty;
     Type I128Ty;
     Type AbortInfoTy; // TODO: Get this from the runtime.
+    Type I8PtrTy;
     SliceType* StrLitTy;
 
     /// Type caches.

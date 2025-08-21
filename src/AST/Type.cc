@@ -95,9 +95,13 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
 } // clang-format on
 
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
+    return array_size(tu.target());
+}
+
+auto TypeBase::array_size(const Target& t) const -> Size {
     if (auto s = dyn_cast<StructType>(this)) return s->array_size();
-    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(tu) * 2;
-    return size(tu);
+    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(t) * 2;
+    return size(t);
 }
 
 template <bool (StructType::*struct_predicate)() const>
@@ -233,13 +237,17 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 }
 
 auto TypeBase::size(TranslationUnit& tu) const -> Size {
+    return size(tu.target());
+}
+
+auto TypeBase::size(const Target& t) const -> Size {
     switch (type_kind) {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
-                case BuiltinKind::Int: return tu.target().int_size();
+                case BuiltinKind::Int: return t.int_size();
                 case BuiltinKind::Type: return Size::Of<Type>();
-                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_size();
+                case BuiltinKind::UnresolvedOverloadSet: return t.closure_size();
 
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
@@ -251,12 +259,12 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
         }
 
         case Kind::IntType: return cast<IntType>(this)->bit_width();
-        case Kind::PtrType: return tu.target().ptr_size();
-        case Kind::ProcType: return tu.target().closure_size();
-        case Kind::SliceType: return tu.target().slice_size();
+        case Kind::PtrType: return t.ptr_size();
+        case Kind::ProcType: return t.closure_size();
+        case Kind::SliceType: return t.slice_size();
         case Kind::RangeType: {
             auto elem = cast<RangeType>(this)->elem();
-            return elem->array_size(tu) + elem->size(tu);
+            return elem->array_size(t) + elem->size(t);
         }
 
         case Kind::StructType: {
@@ -266,7 +274,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
 
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
-            return arr->elem()->array_size(tu) * u64(arr->dimension());
+            return arr->elem()->array_size(t) * u64(arr->dimension());
         }
     }
 

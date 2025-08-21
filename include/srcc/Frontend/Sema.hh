@@ -398,6 +398,10 @@ class srcc::Sema : public DiagsProducer {
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
+    /// Struct types that are passed to a native procedure (type) by value,
+    /// and whose size is thus required to be non-zero.
+    DenseMap<StructType*, Location> incomplete_structs_passed_to_native_proc;
+
     /// Whether we’re currently parsing imported declarations.
     bool importing_module = false;
 

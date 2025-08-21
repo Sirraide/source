@@ -12,6 +12,7 @@
 #include <llvm/Support/Casting.h>
 
 namespace srcc {
+class Target;
 class Scope;
 class StructScope;
 class TemplateTypeParamDecl;
@@ -119,6 +120,7 @@ public:
 
     /// Get the size of this type when stored in an array.
     [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto array_size(const Target& t) const -> Size;
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
@@ -157,6 +159,7 @@ public:
 
     /// Get the size of this type. This does NOT include tail padding!
     [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto size(const Target& t) const -> Size;
 
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() -> Type;

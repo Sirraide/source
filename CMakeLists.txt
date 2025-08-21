@@ -106,6 +106,7 @@ include(FetchContent)
 ## Get libbase.
 message(STATUS "Downloading libbase ...")
 set(LIBBASE_CXXFLAGS -fno-exceptions -fno-rtti -fwrapv -fnew-infallible)
+set(LIBBASE_LLVM_BINDINGS ON)
 FetchContent_Declare(libbase
     GIT_REPOSITORY https://github.com/Sirraide/libbase
     GIT_TAG master

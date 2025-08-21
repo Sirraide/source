@@ -12,6 +12,7 @@
 
 namespace srcc::cg {
 class CodeGen;
+class CallBuilder;
 class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
@@ -162,12 +163,13 @@ public:
 
 class srcc::cg::CodeGen : DiagsProducer
     , detail::CodeGenBase
-    , mlir::OpBuilder {
+    , public mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
     struct Printer;
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
+    friend CallBuilder;
 
     TranslationUnit& tu;
     Opt<ir::ProcOp> printf;
@@ -243,7 +245,6 @@ public:
         StringRef program_file_name_override
     );
 
-private:
     class EnterProcedure {
         SRCC_IMMOVABLE(EnterProcedure);
 
@@ -279,6 +280,7 @@ private:
 
     auto ConvertProcType(ProcType* ty) -> IRProcType;
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
+    auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
     void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
 
     void CreateArithFailure(
@@ -350,6 +352,9 @@ private:
 
     auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;
     auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
+
+    /// Get an integer type.
+    auto IntTy(Size wd) -> mlir::Type;
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
     auto GetOrCreateProc(

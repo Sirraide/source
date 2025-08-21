@@ -213,7 +213,31 @@ void CodeGen::Printer::print_op(Operation* op) {
         }
         out += " ";
 
-        out += std::format("{}({})", val(c.getAddr(), false), ops(c.getArgs()));
+        out += std::format("{}(", val(c.getAddr(), false));
+        bool first = true;
+        for (auto [i, a] : llvm::enumerate(c.getArgs())) {
+            if (first) first = false;
+            else out += ", ";
+            out += val(a, true);
+
+            // Print any argument attributes.
+            if (auto attrs = c.getArgAttrs()) {
+                if (auto attr = cast_if_present<mlir::DictionaryAttr>((*attrs)[unsigned(i)])) {
+                    for (auto named_attr : attr) {
+                        if (named_attr.getName() == mlir::LLVM::LLVMDialect::getByValAttrName()) {
+                            out += std::format(" byval {}", FormatType(cast<mlir::TypeAttr>(named_attr.getValue()).getValue()));
+                        } else if (named_attr.getName() == mlir::LLVM::LLVMDialect::getZExtAttrName()) {
+                            out += " zeroext";
+                        } else if (named_attr.getName() == mlir::LLVM::LLVMDialect::getSExtAttrName()) {
+                            out += " signext";
+                        } else {
+                            Todo("Print this attribute: {}", named_attr.getName());
+                        }
+                    }
+                }
+            }
+        }
+        out += ")";
 
         if (auto v = c.getMrvalueSlot()) out += std::format(" into {}", val(v, false));
         if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
@@ -239,7 +263,7 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(op)) {
         out += std::format(
-            "copy{} {}, {}, {}",
+            "copy{} {} <- {}, {}",
             m.getIsVolatile() ? " volatile" : "",
             val(m.getDst(), false),
             val(m.getSrc(), false),
@@ -373,7 +397,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     if (proc.getNumArguments()) {
         if (proc.isDeclaration()) {
             auto args = proc.getArgumentTypes();
-            out += std::format(" %1((%){}%1()%)", utils::join(args, "%1(,%)", "{}", FormatType));
+            out += std::format(" %1((%){}%1()%)", utils::join(args, "%1(, %)", "{}", FormatType));
         } else {
             out += std::format(" %1((%){}%1()%)", ops(proc.getArguments()));
         }
