@@ -19,10 +19,17 @@ class Target;
 namespace srcc::cg {
 class CallBuilder;
 class CodeGen;
+class SRValue;
+}
+
+namespace srcc::cg::ir {
+class CallOp;
 }
 
 namespace mlir {
 class ArrayAttr;
+class FunctionType;
+class Type;
 class Value;
 }
 
@@ -59,6 +66,15 @@ public:
 
     /// Get the final call arguments.
     [[nodiscard]] virtual auto get_final_args() -> ArrayRef<mlir::Value> = 0;
+
+    /// Get the function type for this call.
+    [[nodiscard]] virtual auto get_proc_type() -> mlir::FunctionType = 0;
+
+    /// Get the result types of the call.
+    [[nodiscard]] virtual auto get_result_types() -> SmallVector<mlir::Type, 2> = 0;
+
+    /// Convert the ABI-dependent result values into what the rest of CodeGen expects.
+    [[nodiscard]] virtual auto get_result_vals(ir::CallOp call) -> SRValue = 0;
 
     /// Get the current target.
     [[nodiscard]] auto target() -> const Target&;

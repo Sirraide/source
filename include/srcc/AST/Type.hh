@@ -117,6 +117,7 @@ public:
 
     /// Get the alignment of this type.
     [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
+    [[nodiscard]] auto align(const Target& t) const -> Align;
 
     /// Get the size of this type when stored in an array.
     [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;

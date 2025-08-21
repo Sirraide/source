@@ -39,12 +39,16 @@ proc int_lvalues {
 struct a { i32 x; }
 struct b { i32 x; i32 y; }
 struct c { i64 x; i64 y; }
+struct d { i64 x; i32 y; }
+struct e { i32 x; i64 y; }
 
 proc g1 (a, a, a, a, a, a, a, a) extern native;
 proc g2 (b, b, b, b, b, b, b, b) extern native;
 proc g3 (c, c, c, c) extern native;
 proc g4 (b, c, c, c, c, b, b) extern native;
 proc g5 (i256, a, a, a, a, a, a, a) extern native;
+proc g6 (d, d, d, d) extern native;
+proc g7 (e, e, e, e) extern native;
 
 proc struct_rvalues {
     g1(a(1), a(1), a(1), a(1), a(1), a(1), a(1), a(1));
@@ -52,6 +56,8 @@ proc struct_rvalues {
     g3(c(1, 2), c(1, 2), c(1, 2), c(1, 2));
     g4(b(1, 2), c(1, 2), c(1, 2), c(1, 2), c(1, 2), b(1, 2), b(1, 2));
     g5(1, a(1), a(1), a(1), a(1), a(1), a(1), a(1));
+    g6(d(1, 2), d(1, 2), d(1, 2), d(1, 2));
+    g7(e(1, 2), e(1, 2), e(1, 2), e(1, 2));
 }
 
 proc struct_lvalues {
@@ -95,4 +101,53 @@ proc big_struct {
     big3(b, b, b, b, b, b, b, b, 42);
     big4(b, b, b, b, b, b, b, b, 42);
     big5(b, b, b, b, b, b, b, b, 42);
+}
+
+struct small { i16 a; i16 b; }
+struct tiny { i8 a; i8 b; }
+struct bits { i1 a; bool b; }
+
+proc r1 extern native -> bool;
+proc r2 extern native -> i1;
+proc r3 extern native -> i4;
+proc r4 extern native -> i7;
+proc r5 extern native -> i8;
+proc r6 extern native -> i16;
+proc r7 extern native -> i17;
+proc r8 extern native -> i32;
+proc r9 extern native -> i42;
+proc r10 extern native -> i64;
+proc r11 extern native -> i65;
+proc r12 extern native -> i111;
+proc r13 extern native -> i128;
+proc r14 extern native -> i129;
+proc r15 extern native -> a;
+proc r16 extern native -> b;
+proc r17 extern native -> c;
+proc r18 extern native -> big;
+proc r19 extern native -> small;
+proc r20 extern native -> tiny;
+proc r21 extern native -> bits;
+proc returns {
+    var x1 = r1();
+    var x2 = r2();
+    var x3 = r3();
+    var x4 = r4();
+    var x5 = r5();
+    var x6 = r6();
+    var x7 = r7();
+    var x8 = r8();
+    var x9 = r9();
+    var x10 = r10();
+    var x11 = r11();
+    var x12 = r12();
+    var x13 = r13();
+    // var x14 = r14();
+    var x15 = r15();
+    var x16 = r16();
+    var x17 = r17();
+    var x18 = r18();
+    var x19 = r19();
+    var x20 = r20();
+    var x21 = r21();
 }

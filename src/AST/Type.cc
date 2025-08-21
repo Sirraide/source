@@ -66,27 +66,31 @@ void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
+auto TypeBase::align(TranslationUnit& tu) const -> Align {
+    return align(tu.target());
+}
+
 // TODO: Cache type size and alignment in the TU.
-auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
+auto TypeBase::align(const Target& t) const -> Align { // clang-format off
     return visit(utils::Overloaded{
-        [&](const ArrayType* ty) -> Align { return ty->elem()->align(tu); },
+        [&](const ArrayType* ty) -> Align { return ty->elem()->align(t); },
         [&](const BuiltinType* ty) -> Align {
             switch (ty->builtin_kind()) {
                 case BuiltinKind::Bool: return Align{1};
-                case BuiltinKind::Int: return tu.target().int_align();
+                case BuiltinKind::Int: return t.int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Type: return Align::Of<Type>(); // This is a compile-time only type.
-                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_align();;
+                case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
                 case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
             }
             Unreachable();
         },
-        [&](const IntType* ty) { return tu.target().int_align(ty); },
-        [&](const ProcType*) { return tu.target().closure_align(); },
-        [&](const PtrType*) { return tu.target().ptr_align(); },
-        [&](const RangeType* ty) { return ty->elem()->align(tu); },
-        [&](const SliceType*) { return tu.target().slice_align(); },
+        [&](const IntType* ty) { return t.int_align(ty); },
+        [&](const ProcType*) { return t.closure_align(); },
+        [&](const PtrType*) { return t.ptr_align(); },
+        [&](const RangeType* ty) { return ty->elem()->align(t); },
+        [&](const SliceType*) { return t.slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->align();

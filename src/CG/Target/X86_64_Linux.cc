@@ -46,6 +46,8 @@ struct Builder final : CallBuilder {
     SmallVector<mlir::Attribute> args_attrs;
     ProcType* proc_ty;
     Classification ret_class;
+    Value indirect_ptr;
+    bool indirect = false;
     u32 num_regs = 0;
 
     Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr);
@@ -58,6 +60,9 @@ struct Builder final : CallBuilder {
     void add_pointer(Value v) override;
     auto get_arg_attrs() -> mlir::ArrayAttr override;
     auto get_final_args() -> ArrayRef<Value> override;
+    auto get_proc_type() -> mlir::FunctionType override;
+    auto get_result_types() -> SmallVector<mlir::Type, 2> override;
+    auto get_result_vals(ir::CallOp call) -> SRValue override;
 };
 }
 
@@ -124,14 +129,13 @@ auto Impl::get_call_builder(
     return std::make_unique<Builder>(cg, ty, indirect_ptr);
 }
 
-Builder::Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr) : CallBuilder{cg}, proc_ty{ty} {
+Builder::Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr)
+    : CallBuilder{cg}, proc_ty{ty}, indirect_ptr{indirect_ptr} {
     auto ret = ty->ret();
-    if (
-        not cg.IsZeroSizedType(ret) and
-        target().needs_indirect_return(ret)
-    ) {
+    if (target().needs_indirect_return(ret)) {
         Assert(indirect_ptr);
         add_pointer(indirect_ptr);
+        indirect = true;
     }
 
     ret_class = ClassifyEightbytes(target(), ret);
@@ -255,12 +259,106 @@ auto Builder::get_arg_attrs() -> mlir::ArrayAttr {
     return mlir::ArrayAttr::get(cg.mlir_context(), args_attrs);
 }
 
-
 auto Builder::get_final_args() -> ArrayRef<Value> {
     return args;
 }
 
+auto Builder::get_proc_type() -> mlir::FunctionType {
+    SmallVector<mlir::Type> arg_types;
+    for (auto a : args) arg_types.push_back(a.getType());
+    auto ret = get_result_types();
+    return mlir::FunctionType::get(cg.mlir_context(), arg_types, mlir::TypeRange{ret});
+}
+
+auto Builder::get_result_types() -> SmallVector<mlir::Type, 2> {
+    if (indirect or cg.IsZeroSizedType(proc_ty->ret())) return {};
+
+    // Classify the return type.
+    auto ret_cls = ClassifyEightbytes(target(), proc_ty->ret());
+    Assert(all_of(ret_cls, [](Class c) { return c == INTEGER; }));
+
+    // And split it into word-sized chunks.
+    SmallVector<mlir::Type, 2> chunks;
+    Size remaining = proc_ty->ret()->size(target());
+    for (;;) {
+        if (remaining <= Eightbyte) {
+            chunks.push_back(cg.IntTy(remaining));
+            return chunks;
+        }
+
+        chunks.push_back(cg.getI64Type());
+        remaining -= Eightbyte;
+    }
+}
+
+auto Builder::get_result_vals(ir::CallOp call) -> SRValue {
+    if (call.getNumResults() == 0) {
+        if (indirect) return {};
+
+        // If there are no results, but this is not an indirect return from the
+        // point of view of Sema/CodeGen, then we need to insert a load here to
+        // retrieve the actual value.
+        Assert(proc_ty->ret()->is_srvalue());
+        Assert(indirect_ptr);
+        return cg.CreateLoad(
+            call.getLoc(),
+            indirect_ptr,
+            cg.C(proc_ty->ret()),
+            proc_ty->ret()->align(target())
+        );
+    }
+
+    // If this is a range, slice, or closure, and we have 2 return values,
+    // then alignment requirements around integer types imply that they the
+    // two results map to the first and second element of the range/slice/closure.
+    auto ret = proc_ty->ret();
+    if (
+        call.getNumResults() == 2 and
+        isa<RangeType, SliceType, ProcType>(ret)
+    ) return call.getResults();
+
+    // If we’re returning a pointer or integer with bit width <= i64, then we
+    // expect a single register.
+    if (
+        isa<PtrType>(ret) or
+        (ret->is_integer() and ret->size(target()) <= Eightbyte) or
+        ret == Type::BoolTy
+    ) {
+        Assert(call.getNumResults() == 1);
+        return call.getResult(0);
+    }
+
+    // Otherwise, we can’t take any shortcuts here: we might have e.g. an i8..i8
+    // range that has been merged into a single i64.
+    Assert(
+        call.getNumResults() <= 2 and
+        llvm::all_of(call.getResultTypes(), [](mlir::Type t){ return t.isInteger(); })
+    );
+
+    // We may have an mrvalue slot here even though we’re not returning
+    // indirectly. This is because structs are always *logically* mrvalues,
+    // even if they are passed in registers. If there is no slot, then this
+    // must be an srvalue that is split across multiple registers.
+    // TODO: Assert that.
+    auto size = ret->size(target());
+    auto align = std::max(Align(Eightbyte), ret->align(target()));
+    auto tmp = indirect_ptr ?: cg.CreateAlloca(call.getLoc(), size, align);
+
+    // Write the value to memory.
+    cg.CreateStore(call.getLoc(), tmp, call.getResult(0), ret->align(target()));
+    if (call.getNumResults() == 2) {
+        Assert(call.getResult(0).getType().isInteger(64));
+        auto rest = cg.CreatePtrAdd(call.getLoc(), tmp, Eightbyte);
+        cg.CreateStore(call.getLoc(), rest, call.getResult(1), Align(Eightbyte));
+    }
+
+    // If it is an mrvalue type, we’re done.
+    if (ret->is_mrvalue()) return {};
+    return cg.CreateLoad(call.getLoc(), tmp, cg.C(proc_ty->ret()), align);
+}
+
 bool Impl::needs_indirect_return(Type ty) const {
+    if (ty->size(*this) == Size()) return false;
     auto ret_cls = ClassifyEightbytes(*this, ty);
     return ret_cls.front() == MEMORY;
 }

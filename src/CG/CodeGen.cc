@@ -96,7 +96,7 @@ auto CodeGen::C(Type ty) -> SType {
 
     // Structs and arrays are just turned into blobs of bytes.
     auto sz = ty->size(tu);
-    Assert(sz != Size(), "Should have eliminated zero-sized types");
+    Assert(sz != Size(), "Should have eliminated zero-sized type '{}'", ty);
     return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
 }
 
@@ -1382,11 +1382,14 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> SRValue {
 
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     auto ty = cast<ProcType>(expr->callee->type);
-    auto has_result = not IsZeroSizedType(ty->ret()) and not ty->ret()->is_mrvalue();
     auto l = C(expr->location());
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
+
+    // Make sure we have a slot for the return type.
+    if (tu.target().needs_indirect_return(ty->ret()) and not mrvalue_slot)
+        mrvalue_slot = CreateAlloca(l, ty->ret());
 
     // Evaluate the arguments and add them to the call.
     auto cb = tu.target().get_call_builder(*this, ty, mrvalue_slot);
@@ -1441,12 +1444,12 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
 
     auto op = create<ir::CallOp>(
         l,
-        has_result ? mlir::TypeRange(C(ty->ret())) : mlir::TypeRange(),
+        cb->get_result_types(),
         callee.first(),
         callee.second(),
-        mrvalue_slot,
+        mrvalue_slot, // FIXME: REMOVE THIS.
         C(ty->cconv()),
-        ConvertProcType(ty).type,
+        cb->get_proc_type(),
         ty->variadic(),
         cb->get_final_args(),
         cb->get_arg_attrs()
@@ -1460,7 +1463,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
         EnterBlock(CreateBlock());
     }
 
-    if (has_result) return op->getResults();
+    if (op.getNumResults()) return cb->get_result_vals(op);
     return {};
 }
 
