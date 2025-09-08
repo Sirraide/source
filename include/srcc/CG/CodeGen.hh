@@ -258,6 +258,7 @@ public:
     struct ABICallInfo {
         SmallVector<mlir::Type> result_types;
         SmallVector<mlir::Type> arg_types;
+        SmallVector<mlir::Attribute> result_attrs;
         SmallVector<mlir::Attribute> arg_attrs;
         SmallVector<Value> args;
         mlir::FunctionType func;
@@ -439,7 +440,7 @@ public:
     void Loop(llvm::function_ref<void()> emit_body);
 
     /// Perform ABI lowering for a call or argument list.
-    auto LowerProcedureArgs(
+    auto LowerProcedureSignature(
         mlir::Location l,
         ProcType* proc,
         Value indirect_ptr,

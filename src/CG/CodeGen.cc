@@ -106,7 +106,7 @@ auto CodeGen::C(Type ty) -> SType {
 }
 
 auto CodeGen::ConvertProcType(ProcType* ty) -> ABICallInfo {
-    return LowerProcedureArgs(getUnknownLoc(), ty, nullptr, {});
+    return LowerProcedureSignature(getUnknownLoc(), ty, nullptr, {});
 }
 
 void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2) {
@@ -405,7 +405,7 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
         ty->variadic(),
         false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
-        mlir::ArrayAttr::get(&mlir, {})
+        mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
     // Erase the body for now; additionally, declarations can’t have public
@@ -870,7 +870,7 @@ void CodeGen::AssertTriple() {
     );
 }
 
-auto CodeGen::LowerProcedureArgs(
+auto CodeGen::LowerProcedureSignature(
     mlir::Location l,
     ProcType* proc,
     Value indirect_ptr,
@@ -880,6 +880,11 @@ auto CodeGen::LowerProcedureArgs(
     auto AddArgType = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
         info.arg_types.push_back(t);
         info.arg_attrs.push_back(getDictionaryAttr(attrs));
+    };
+
+    auto AddReturnType = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
+        info.result_types.push_back(t);
+        info.result_attrs.push_back(getDictionaryAttr(attrs));
     };
 
     auto AddByRefArg = [&](SRValue v, Type t) {
@@ -940,9 +945,18 @@ auto CodeGen::LowerProcedureArgs(
         );
     }
 
+    // i65–i128 are returned in two registers.
+    else if (ret->is_integer()) {
+        auto sz = ret->size(tu);
+        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+            AddReturnType(int_ty);
+            AddReturnType(int_ty);
+        }
+    }
+
     // Zero-sized return types are dropped entirely.
     else if (not IsZeroSizedType(ret)) {
-        C(ret).into(info.result_types);
+        C(ret).each(AddReturnType);
     }
 
     // Evaluate the arguments and add them to the call.
@@ -1520,11 +1534,12 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
 
     // Make sure we have a slot for the return type.
     // FIXME: Sema should create a temporary instead.
-    if (NeedsIndirectReturn(proc->ret()) and not mrvalue_slot)
-        mrvalue_slot = CreateAlloca(l, proc->ret());
+    auto ret = proc->ret();
+    if (NeedsIndirectReturn(ret) and not mrvalue_slot)
+        mrvalue_slot = CreateAlloca(l, ret);
 
     // Emit the arguments.
-    auto info = LowerProcedureArgs(l, proc, mrvalue_slot, expr->args());
+    auto info = LowerProcedureSignature(l, proc, mrvalue_slot, expr->args());
 
     // Build the call.
     auto op = create<ir::CallOp>(
@@ -1542,14 +1557,27 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     // Calls are one of the very few expressions whose type can be 'noreturn', so
     // take care to handle that here; omitting this would still work, but doing so
     // allows us to throw away a lot of dead code.
-    if (proc->ret() == Type::NoReturnTy) {
+    if (ret == Type::NoReturnTy) {
         create<LLVM::UnreachableOp>(C(expr->location()));
         EnterBlock(CreateBlock());
     }
 
+    // Convert the return type.
+    if (op.getNumResults() == 0) return {};
+
+    // i65–i128 are returned in two registers.
+    if (ret->is_integer()) {
+        auto sz = ret->size(tu);
+        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+            auto tmp = CreateAlloca(l, ret);
+            CreateStore(l, tmp, op.getResults(), Align(16));
+            return CreateLoad(l, tmp, C(ret), Align(16));
+        }
+    }
+
+    // Every other type is returned in a single register.
     return op.getResults();
 }
-
 
 /*auto ByValue = [&] {
     // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
@@ -1938,24 +1966,53 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> SRValue {
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
     auto val = expr->value.get_or_null();
+    auto ty = val ? val->type : Type::VoidTy;
     auto l = C(expr->location());
 
     // An indirect return is a store to a pointer.
-    if (val and NeedsIndirectReturn(val->type)) {
+    if (NeedsIndirectReturn(ty)) {
         EmitInitialiser(curr_proc.getArgument(0), expr->value.get());
         if (not HasTerminator()) create<ir::RetOp>(l, mlir::ValueRange());
         return {};
     }
 
-    // A direct return depends on the ABI.
+    // Emit the return expression if there is one, and give up if
+    // we don’t have an insert point.
     auto ret_vals = val ? Emit(val) : SRValue{};
-    if (not HasTerminator()) {
-        if (val) {
-            if (IsZeroSizedType(val->type)) ret_vals = {};
-            else if (val->lvalue()) ret_vals = CreateLoad(l, ret_vals.scalar(), C(val->type), val->type->align(tu));
-        }
-        create<ir::RetOp>(l, ret_vals);
+    if (HasTerminator()) return {};
+    if (not val) {
+        create<ir::RetOp>(l, Vals{});
+        return {};
     }
+
+    // Ignore zero-sized types.
+    if (IsZeroSizedType(ty)) ret_vals = {};
+
+    // i65–i128 are returned in two registers.
+    else if (ty->is_integer()) {
+        auto sz = ty->size(tu);
+        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+            if (not val->lvalue()) {
+                auto tmp = CreateAlloca(l, ty);
+                CreateStore(l, tmp, ret_vals, Align(16));
+                ret_vals = tmp;
+            }
+            ret_vals = CreateLoad(l, ret_vals.scalar(), SType(int_ty, int_ty), Align(16));
+        }
+    }
+
+    // Any other type is returned in a single register; load it if
+    // it is an lvalue.
+    else if (val->lvalue()) {
+        ret_vals = CreateLoad(
+            l,
+            ret_vals.scalar(),
+            C(val->type),
+            val->type->align(tu)
+        );
+    }
+
+    create<ir::RetOp>(l, ret_vals);
     return {};
 }
 
@@ -2104,7 +2161,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         false,
         false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
-        mlir::ArrayAttr::get(&mlir, {})
+        mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
     // Sema has already ensured that this is an initialiser, so throw it
