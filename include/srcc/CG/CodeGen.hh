@@ -255,10 +255,11 @@ public:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    struct CallInfo {
+    struct ABICallInfo {
         SmallVector<mlir::Type> result_types;
         SmallVector<mlir::Type> arg_types;
         SmallVector<mlir::Attribute> arg_attrs;
+        SmallVector<Value> args;
         mlir::FunctionType func;
     };
 
@@ -278,7 +279,7 @@ public:
     auto C(Location l) -> mlir::Location;
     auto C(Type ty) -> SType;
 
-    auto ConvertProcType(ProcType* ty) -> CallInfo;
+    auto ConvertProcType(ProcType* ty) -> ABICallInfo;
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
     void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
@@ -436,6 +437,14 @@ public:
     /// are passed to the condition block of the loop. The callback may
     /// return an empty vector if the loop is infinite or has no arguments.
     void Loop(llvm::function_ref<void()> emit_body);
+
+    /// Perform ABI lowering for a call or argument list.
+    auto LowerProcedureArgs(
+        mlir::Location l,
+        ProcType* proc,
+        Value indirect_ptr,
+        ArrayRef<Expr*> args
+    ) -> ABICallInfo;
 
     /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;

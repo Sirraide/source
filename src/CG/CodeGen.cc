@@ -105,63 +105,8 @@ auto CodeGen::C(Type ty) -> SType {
     return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
 }
 
-auto CodeGen::ConvertProcType(ProcType* ty) -> CallInfo {
-    CallInfo info;
-    auto AddArg = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
-        info.arg_types.push_back(t);
-        info.arg_attrs.push_back(getDictionaryAttr(attrs));
-    };
-
-    auto AddByRefArg = [&](Type t) {
-        AddArg(
-            ptr_ty,
-            getNamedAttr(
-                LLVMDialect::getDereferenceableAttrName(),
-                getI64IntegerAttr(i64(t->size(tu).bytes()))
-            )
-        );
-    };
-
-    auto AddByValArg = [&](Type t) {
-        C(t).each(AddArg);
-    };
-
-    if (NeedsIndirectReturn(ty->ret())) {
-        AddArg(
-            ptr_ty,
-            getNamedAttr(
-                LLVMDialect::getStructRetAttrName(),
-                mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), ty->ret()->size(tu).bytes()))
-            )
-        );
-    }
-
-    else if (not IsZeroSizedType(ty->ret())) {
-        C(ty->ret()).into(info.result_types);
-    }
-
-    for (auto [intent, t] : ty->params()) {
-        if (IsZeroSizedType(t)) continue;
-        switch (intent) {
-            case Intent::Inout:
-            case Intent::Out:
-                AddByRefArg(t);
-                break;
-
-            case Intent::Copy:
-                AddByValArg(t);
-                break;
-
-            case Intent::In:
-            case Intent::Move: {
-                if (PassByReference(t, intent)) AddByRefArg(t);
-                else AddByValArg(t);
-            } break;
-        }
-    }
-
-    info.func = mlir::FunctionType::get(&mlir, info.arg_types, info.result_types);
-    return info;
+auto CodeGen::ConvertProcType(ProcType* ty) -> ABICallInfo {
+    return LowerProcedureArgs(getUnknownLoc(), ty, nullptr, {});
 }
 
 void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2) {
@@ -925,6 +870,107 @@ void CodeGen::AssertTriple() {
     );
 }
 
+auto CodeGen::LowerProcedureArgs(
+    mlir::Location l,
+    ProcType* proc,
+    Value indirect_ptr,
+    ArrayRef<Expr*> args
+) -> ABICallInfo {
+    ABICallInfo info;
+    auto AddArgType = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
+        info.arg_types.push_back(t);
+        info.arg_attrs.push_back(getDictionaryAttr(attrs));
+    };
+
+    auto AddByRefArg = [&](SRValue v, Type t) {
+        v.into(info.args);
+        AddArgType(
+            ptr_ty,
+            getNamedAttr(
+                LLVMDialect::getDereferenceableAttrName(),
+                getI64IntegerAttr(i64(t->size(tu).bytes()))
+            )
+        );
+    };
+
+    auto AddByValArg = [&](SRValue v, Type t) {
+        v.into(info.args);
+        C(t).each(AddArgType);
+    };
+
+    auto EmitArg = [&](usz i) -> SRValue {
+        if (i < args.size()) return Emit(args[i]);
+        return {};
+    };
+
+    // Some types are returned via a store to a hidden argument pointer.
+    auto ret = proc->ret();
+    if (NeedsIndirectReturn(ret)) {
+        info.args.push_back(indirect_ptr);
+        AddArgType(
+            ptr_ty,
+            getNamedAttr(
+                LLVMDialect::getStructRetAttrName(),
+                mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), ret->size(tu).bytes()))
+            )
+        );
+    }
+
+    // Zero-sized return types are dropped entirely.
+    else if (not IsZeroSizedType(ret)) {
+        C(ret).into(info.result_types);
+    }
+
+    // Evaluate the arguments and add them to the call.
+    for (auto [i, param] : enumerate(proc->params())) {
+        if (IsZeroSizedType(param.type)) {
+            EmitArg(i);
+            continue;
+        }
+
+        // How this is passed depends on the intent.
+        switch (param.intent) {
+            // 'inout' and 'out' arguments are always existing lvalues,
+            // which can be emitted on their own.
+            case Intent::Inout:
+            case Intent::Out:
+                AddByRefArg(EmitArg(i), param.type);
+                break;
+
+            // 'copy' arguments are always rvalues.
+            case Intent::Copy:
+                AddByValArg(EmitArg(i), param.type);
+                break;
+
+            // 'in' and 'move' arguments may have any value category.
+            case Intent::In:
+            case Intent::Move: {
+                if (PassByReference(param.type, param.intent)) {
+                    SRValue arg;
+                    if (i < args.size()) {
+                        if (args[i]->lvalue()) arg = EmitArg(i);
+                        else arg = MakeTemporary(l, args[i]);
+                    }
+                    AddByRefArg(arg, param.type);
+                } else {
+                    AddByValArg(EmitArg(i), param.type);
+                }
+            } break;
+        }
+    }
+
+    // Extra variadic arguments are always passed as 'copy' parameters.
+    if (args.size() > proc->params().size()) {
+        for (auto arg : args.drop_front(proc->params().size())) {
+            Assert(not IsZeroSizedType(arg->type), "Passing zero-sized type as variadic argument?");
+            AddByValArg(Emit(arg), arg->type);
+        }
+    }
+
+    info.func = mlir::FunctionType::get(&mlir, info.arg_types, info.result_types);
+    return info;
+}
+
 bool CodeGen::NeedsIndirectReturn(Type ty) {
     AssertTriple();
     return ty->size(tu) > Size::Bits(128);
@@ -1442,10 +1488,6 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> SRValue {
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
-    static constexpr unsigned MaxArgs = 6;
-    SmallVector<mlir::Type> results;
-    SmallVector<mlir::DictionaryAttr> arg_attrs;
-    SmallVector<Value> args;
     auto proc = cast<ProcType>(expr->callee->type);
     auto l = C(expr->location());
 
@@ -1453,99 +1495,24 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     auto callee = Emit(expr->callee);
 
     // Make sure we have a slot for the return type.
-    if (NeedsIndirectReturn(proc->ret())) {
-        if (not mrvalue_slot) mrvalue_slot = CreateAlloca(l, proc->ret());
+    // FIXME: Sema should create a temporary instead.
+    if (NeedsIndirectReturn(proc->ret()) and not mrvalue_slot)
+        mrvalue_slot = CreateAlloca(l, proc->ret());
 
-        // Add the indirect return pointer.
-        args.push_back(mrvalue_slot);
-        arg_attrs.push_back(
-            getDictionaryAttr(
-                getNamedAttr(
-                    LLVMDialect::getStructRetAttrName(),
-                    mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), proc->ret()->size(tu).bytes()))
-                )
-            )
-        );
-    }
-
-    else if (not IsZeroSizedType(proc->ret())) {
-        C(proc->ret()).into(results);
-    }
-
-    // Evaluate the arguments and add them to the call.
-    for (auto [param, arg] : zip(proc->params(), expr->args())) {
-        if (IsZeroSizedType(arg->type)) {
-            Emit(arg);
-            continue;
-        }
-
-        auto ByReference = [&](SRValue v) {
-            v.into(args);
-        };
-
-        auto ByValue = [&] {
-            Emit(arg).into(args);
-        };
-
-        /*auto ByValue = [&] {
-            // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
-            // get here then 'move' is equivalent to 'copy' for this type (otherwise we’d be passing by reference
-            // anyway).
-            if (arg->lvalue()) ByValueImpl(param.type, Emit(arg).scalar());
-            else if (arg->is_mrvalue()) ByValueImpl(param.type, MakeTemporary(l, arg));
-            else if (param.type == Type::BoolTy) ByValueImpl(Type::BoolTy, Emit(arg).scalar());
-            else ByValueImpl(param.type, Emit(arg));
-        };
-        */
-
-        // How this is passed depends on the intent.
-        switch (param.intent) {
-            // 'inout' and 'out' arguments are always existing lvalues,
-            // which can be emitted on their own.
-            case Intent::Inout:
-            case Intent::Out:
-                ByReference(Emit(arg));
-                break;
-
-            // 'copy' arguments are always rvalues.
-            case Intent::Copy:
-                ByValue();
-                break;
-
-            // 'in' and 'move' arguments may have any value category.
-            case Intent::In:
-            case Intent::Move: {
-                // LValues that are passed by reference can just be passed along.
-                if (arg->lvalue() and PassByReference(arg->type, param.intent))
-                    ByReference(Emit(arg));
-
-                // If we’re passing by reference here, then this can only be an mrvalue
-                // (srvalues are never passed by reference under these intents, and lvalues
-                // are handled above); throw it into a temporary.
-                else if (PassByReference(arg->type, param.intent))
-                    ByReference(MakeTemporary(l, arg));
-
-                /// Otherwise, we’re passing by value here.
-                else ByValue();
-            } break;
-        }
-    }
-
-    // Collect argument types.
-    SmallVector<mlir::Type> arg_types;
-    for (auto a : args) arg_types.push_back(a.getType());
+    // Emit the arguments.
+    auto info = LowerProcedureArgs(l, proc, mrvalue_slot, expr->args());
 
     // Build the call.
     auto op = create<ir::CallOp>(
         l,
-        results,
+        info.result_types,
         callee.first(),
         callee.second(),
         C(proc->cconv()),
-        mlir::FunctionType::get(&mlir, arg_types, results),
+        info.func,
         proc->variadic(),
-        args,
-        mlir::ArrayAttr::get(&mlir, {})
+        info.args,
+        mlir::ArrayAttr::get(&mlir, info.arg_attrs)
     );
 
     // Calls are one of the very few expressions whose type can be 'noreturn', so
@@ -1558,6 +1525,18 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
 
     return op.getResults();
 }
+
+
+/*auto ByValue = [&] {
+    // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
+    // get here then 'move' is equivalent to 'copy' for this type (otherwise we’d be passing by reference
+    // anyway).
+    if (arg->lvalue()) ByValueImpl(param.type, Emit(arg).scalar());
+    else if (arg->is_mrvalue()) ByValueImpl(param.type, MakeTemporary(l, arg));
+    else if (param.type == Type::BoolTy) ByValueImpl(Type::BoolTy, Emit(arg).scalar());
+    else ByValueImpl(param.type, Emit(arg));
+};
+*/
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> SRValue {
     return EmitCastExpr(expr, nullptr);
