@@ -184,7 +184,6 @@ LOWERING(ProcOp, {
     // Add the return pointer, if need be.
     mlir::Type ret;
     if (op.getNumResults() == 0) {
-        if (op.getHasIndirectReturn()) sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
         ret = LLVM::LLVMVoidType::get(getContext());
     }  else if (op.getNumResults() == 1) {
         ret = tc->convertType(old.getResult(0));

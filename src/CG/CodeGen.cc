@@ -17,6 +17,8 @@ using namespace srcc::cg;
 namespace arith = mlir::arith;
 using Vals = mlir::ValueRange;
 using Ty = mlir::Type;
+namespace LLVM = mlir::LLVM;
+using mlir::LLVM::LLVMDialect;
 
 CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     : CodeGenBase(),
@@ -28,6 +30,9 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     mlir.getDiagEngine().registerHandler([&](mlir::Diagnostic& diag) {
         HandleMLIRDiagnostic(diag);
     });
+
+    Assert(+tu.target().triple().getArch() == +llvm::Triple::x86_64);
+    Assert(tu.target().triple().isOSLinux());
 
     ir::SRCCDialect::InitialiseContext(mlir);
     ptr_ty = mlir::LLVM::LLVMPointerType::get(&mlir);
@@ -100,24 +105,63 @@ auto CodeGen::C(Type ty) -> SType {
     return mlir::LLVM::LLVMArrayType::get(&mlir, getI8Type(), sz.bytes());
 }
 
-auto CodeGen::ConvertProcType(ProcType* ty) -> IRProcType {
-    IRProcType ptype;
+auto CodeGen::ConvertProcType(ProcType* ty) -> CallInfo {
+    CallInfo info;
+    auto AddArg = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
+        info.arg_types.push_back(t);
+        info.arg_attrs.push_back(getDictionaryAttr(attrs));
+    };
 
-    // Collect the return type(s).
-    SmallVector<Ty, 2> ret_types;
-    if (tu.target().needs_indirect_return(ty->ret())) ptype.has_indirect_return = true;
-    else if (not IsZeroSizedType(ty->ret())) C(ty->ret()).into(ret_types);
+    auto AddByRefArg = [&](Type t) {
+        AddArg(
+            ptr_ty,
+            getNamedAttr(
+                LLVMDialect::getDereferenceableAttrName(),
+                getI64IntegerAttr(i64(t->size(tu).bytes()))
+            )
+        );
+    };
 
-    // Collect the arguments.
-    SmallVector<Ty> arg_types;
-    for (auto [intent, t] : ty->params()) {
-        if (IsZeroSizedType(t)) continue;
-        if (PassByReference(ty, intent)) arg_types.push_back(ptr_ty);
-        else C(t).into(arg_types);
+    auto AddByValArg = [&](Type t) {
+        C(t).each(AddArg);
+    };
+
+    if (NeedsIndirectReturn(ty->ret())) {
+        AddArg(
+            ptr_ty,
+            getNamedAttr(
+                LLVMDialect::getStructRetAttrName(),
+                mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), ty->ret()->size(tu).bytes()))
+            )
+        );
     }
 
-    ptype.type = mlir::FunctionType::get(&mlir, arg_types, mlir::TypeRange{ret_types});
-    return ptype;
+    else if (not IsZeroSizedType(ty->ret())) {
+        C(ty->ret()).into(info.result_types);
+    }
+
+    for (auto [intent, t] : ty->params()) {
+        if (IsZeroSizedType(t)) continue;
+        switch (intent) {
+            case Intent::Inout:
+            case Intent::Out:
+                AddByRefArg(t);
+                break;
+
+            case Intent::Copy:
+                AddByValArg(t);
+                break;
+
+            case Intent::In:
+            case Intent::Move: {
+                if (PassByReference(t, intent)) AddByRefArg(t);
+                else AddByValArg(t);
+            } break;
+        }
+    }
+
+    info.func = mlir::FunctionType::get(&mlir, info.arg_types, info.result_types);
+    return info;
 }
 
 void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2) {
@@ -404,16 +448,17 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
     if (auto op = mlir_module.lookupSymbol<ir::ProcOp>(name)) return op;
     InsertionGuard _{*this};
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
-    auto [ftype, has_indirect_return] = ConvertProcType(ty);
+    auto info = ConvertProcType(ty);
     auto ir_proc = create<ir::ProcOp>(
         C(loc),
         name,
         C(linkage),
         C(ty->cconv()),
-        ftype,
+        info.func,
         ty->variadic(),
-        has_indirect_return,
-        false
+        false,
+        mlir::ArrayAttr::get(&mlir, info.arg_attrs),
+        mlir::ArrayAttr::get(&mlir, {})
     );
 
     // Erase the body for now; additionally, declarations can’t have public
@@ -557,11 +602,10 @@ bool CodeGen::IsZeroSizedType(Type ty) {
 }
 
 bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
+    Assert(not isa<ParamDecl>(local), "Should not be used for parameters");
     if (IsZeroSizedType(local->type)) return false;
     if (local->category == Expr::SRValue) return false;
-    auto p = dyn_cast<ParamDecl>(local);
-    if (not p) return true;
-    return not PassByReference(p->type, p->intent());
+    return true;
 }
 
 void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
@@ -586,7 +630,7 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // Large or non-trivially copyable 'in' parameters are references.
     if (i == Intent::In) {
         if (not ty->trivially_copyable()) return true;
-        return not tu.target().pass_in_parameter_by_value(ty);
+        return ty->size(tu) > Size::Bits(128);
     }
 
     // Move parameters are references only if the type is not trivial
@@ -867,6 +911,22 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
         }
     });
 } // clang-format on
+
+// ============================================================================
+//  ABI
+// ============================================================================
+void CodeGen::AssertTriple() {
+    auto& tt = tu.target().triple();
+    Assert(
+        tt.isOSLinux() and tt.getArch() == llvm::Triple::x86_64,
+        "Unsupported target: {}", tt.str()
+    );
+}
+
+bool CodeGen::NeedsIndirectReturn(Type ty) {
+    AssertTriple();
+    return ty->size(tu) > Size::Bits(128);
+}
 
 // ============================================================================
 //  CG
@@ -1380,33 +1440,61 @@ auto CodeGen::EmitCallExpr(CallExpr* expr) -> SRValue {
 }
 
 auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
-    auto ty = cast<ProcType>(expr->callee->type);
+    static constexpr unsigned MaxArgs = 6;
+    SmallVector<mlir::Type> results;
+    SmallVector<mlir::DictionaryAttr> arg_attrs;
+    SmallVector<Value> args;
+    auto proc = cast<ProcType>(expr->callee->type);
     auto l = C(expr->location());
 
     // Callee is evaluated first.
     auto callee = Emit(expr->callee);
 
     // Make sure we have a slot for the return type.
-    if (tu.target().needs_indirect_return(ty->ret()) and not mrvalue_slot)
-        mrvalue_slot = CreateAlloca(l, ty->ret());
+    if (NeedsIndirectReturn(proc->ret())) {
+        if (not mrvalue_slot) mrvalue_slot = CreateAlloca(l, proc->ret());
+
+        // Add the indirect return pointer.
+        args.push_back(mrvalue_slot);
+        arg_attrs.push_back(
+            getDictionaryAttr(
+                getNamedAttr(
+                    LLVMDialect::getStructRetAttrName(),
+                    mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), proc->ret()->size(tu).bytes()))
+                )
+            )
+        );
+    }
+
+    else if (not IsZeroSizedType(proc->ret())) {
+        C(proc->ret()).into(results);
+    }
 
     // Evaluate the arguments and add them to the call.
-    auto cb = tu.target().get_call_builder(*this, ty, mrvalue_slot);
-    for (auto [param, arg] : zip(ty->params(), expr->args())) {
+    for (auto [param, arg] : zip(proc->params(), expr->args())) {
         if (IsZeroSizedType(arg->type)) {
             Emit(arg);
             continue;
         }
 
-        auto PassByValue = [&] {
+        auto ByReference = [&](SRValue v) {
+            v.into(args);
+        };
+
+        auto ByValue = [&] {
+            Emit(arg).into(args);
+        };
+
+        /*auto ByValue = [&] {
             // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
             // get here then 'move' is equivalent to 'copy' for this type (otherwise we’d be passing by reference
             // anyway).
-            if (arg->lvalue()) cb->add_argument(param.type, Emit(arg).scalar(), true);
-            else if (arg->is_mrvalue()) cb->add_argument(param.type, MakeTemporary(l, arg), false);
-            else if (param.type == Type::BoolTy) cb->add_argument(Type::BoolTy, Emit(arg).scalar(), false);
-            else Emit(arg).each([&](Value v){ cb->add_pointer_or_integer(v); });
+            if (arg->lvalue()) ByValueImpl(param.type, Emit(arg).scalar());
+            else if (arg->is_mrvalue()) ByValueImpl(param.type, MakeTemporary(l, arg));
+            else if (param.type == Type::BoolTy) ByValueImpl(Type::BoolTy, Emit(arg).scalar());
+            else ByValueImpl(param.type, Emit(arg));
         };
+        */
 
         // How this is passed depends on the intent.
         switch (param.intent) {
@@ -1414,12 +1502,12 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
             // which can be emitted on their own.
             case Intent::Inout:
             case Intent::Out:
-                cb->add_pointer(Emit(arg).scalar());
+                ByReference(Emit(arg));
                 break;
 
             // 'copy' arguments are always rvalues.
             case Intent::Copy:
-                PassByValue();
+                ByValue();
                 break;
 
             // 'in' and 'move' arguments may have any value category.
@@ -1427,42 +1515,46 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
             case Intent::Move: {
                 // LValues that are passed by reference can just be passed along.
                 if (arg->lvalue() and PassByReference(arg->type, param.intent))
-                    cb->add_pointer(Emit(arg).scalar());
+                    ByReference(Emit(arg));
 
                 // If we’re passing by reference here, then this can only be an mrvalue
                 // (srvalues are never passed by reference under these intents, and lvalues
                 // are handled above); throw it into a temporary.
                 else if (PassByReference(arg->type, param.intent))
-                    cb->add_pointer(MakeTemporary(l, arg));
+                    ByReference(MakeTemporary(l, arg));
 
                 /// Otherwise, we’re passing by value here.
-                else PassByValue();
+                else ByValue();
             } break;
         }
     }
 
+    // Collect argument types.
+    SmallVector<mlir::Type> arg_types;
+    for (auto a : args) arg_types.push_back(a.getType());
+
+    // Build the call.
     auto op = create<ir::CallOp>(
         l,
-        cb->get_result_types(),
+        results,
         callee.first(),
         callee.second(),
-        C(ty->cconv()),
-        cb->get_proc_type(),
-        ty->variadic(),
-        cb->get_final_args(),
-        cb->get_arg_attrs()
+        C(proc->cconv()),
+        mlir::FunctionType::get(&mlir, arg_types, results),
+        proc->variadic(),
+        args,
+        mlir::ArrayAttr::get(&mlir, {})
     );
 
     // Calls are one of the very few expressions whose type can be 'noreturn', so
     // take care to handle that here; omitting this would still work, but doing so
     // allows us to throw away a lot of dead code.
-    if (ty->ret() == Type::NoReturnTy) {
-        create<mlir::LLVM::UnreachableOp>(C(expr->location()));
+    if (proc->ret() == Type::NoReturnTy) {
+        create<LLVM::UnreachableOp>(C(expr->location()));
         EnterBlock(CreateBlock());
     }
 
-    if (op.getNumResults()) return cb->get_result_vals(op);
-    return {};
+    return op.getResults();
 }
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> SRValue {
@@ -1746,48 +1838,53 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     //        whether we can reenable this.
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
-    // Emit locals.
-    u32 arg_idx = 0;
-    for (auto l : proc->locals) {
-        if (IsZeroSizedType(l->type)) continue;
-        auto p = dyn_cast<ParamDecl>(l);
-        if (not p) {
-            EmitLocal(l);
-            continue;
-        }
+    // Lower parameters.
+    u32 arg_idx = NeedsIndirectReturn(proc->return_type());
+    for (auto param : proc->params()) {
+        if (IsZeroSizedType(param->type)) continue;
 
-        // Ranges, slice, and procedures are passed by value if the intent
-        // it 'copy', 'in', or 'move'. Such values take up two argument slots.
-        SRValue arg;
-        auto i = p->intent();
-        if (
-            isa<ProcType, RangeType, SliceType>(p->type) and
-            (i == Intent::Copy or i == Intent::In or i == Intent::Move)
-        ) {
+        auto GetByValArg = [&] {
+            if (not isa<ProcType, RangeType, SliceType>(param->type))
+                return SRValue(curr_proc.getArgument(arg_idx++));
+
             auto first = curr_proc.getArgument(arg_idx++);
             auto second = curr_proc.getArgument(arg_idx++);
-            arg = {first, second};
-        } else {
-            arg = curr_proc.getArgument(arg_idx++);
-        }
+            return SRValue{first, second};
+        };
 
-        // SRValue 'in' parameters do not actually create a variable
-        // in the callee, so use their value directly; similarly, any
-        // parameters that are passed by reference can be used directly.
-        if (p->is_srvalue_in_parameter() or PassByReference(p->type, p->intent())) {
-            locals[p] = arg;
-            continue;
-        }
+        auto ByRef = [&] {
+            locals[param] = curr_proc.getArgument(arg_idx++);
+        };
 
-        // Any other parameters require a stack variable.
-        auto loc = C(p->location());
-        auto v = locals[p] = CreateAlloca(loc, p->type);
-        CreateStore(
-            loc,
-            v.scalar(),
-            arg,
-            p->type->align(tu)
-        );
+        auto CreateVar = [&] {
+            auto l = C(param->location());
+            auto alloca = CreateAlloca(l, param->type);
+            locals[param] = alloca;
+            CreateStore(l, alloca, GetByValArg(), param->type->align(tu));
+        };
+
+        switch (param->intent()) {
+            case Intent::Inout:
+            case Intent::Out:
+                ByRef();
+                break;
+
+            case Intent::Copy:
+                CreateVar();
+                break;
+
+            case Intent::In:
+            case Intent::Move: {
+                if (PassByReference(param->type, param->intent())) ByRef();
+                else locals[param] = GetByValArg();
+            } break;
+        }
+    }
+
+    // Declare other local variables.
+    for (auto l : proc->locals) {
+        if (IsZeroSizedType(l->type) or isa<ParamDecl>(l)) continue;
+        EmitLocal(l);
     }
 
     // Emit the body.
@@ -1801,13 +1898,13 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> SRValue {
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
-    if (curr_proc.getHasIndirectReturn()) {
-        EmitInitialiser(create<ir::ReturnPointerOp>(getUnknownLoc()), expr->value.get());
+    auto val = expr->value.get_or_null();
+    if (val and NeedsIndirectReturn(val->type)) {
+        EmitInitialiser(curr_proc.getArgument(0), expr->value.get());
         if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), mlir::ValueRange());
         return {};
     }
 
-    auto val = expr->value.get_or_null();
     auto ret_vals = val ? Emit(val) : SRValue{};
     if (val and IsZeroSizedType(val->type)) ret_vals = {};
     if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), ret_vals);
@@ -1949,16 +2046,17 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
     auto ty = stmt->type_or_void();
-    auto [ftype, has_indirect_return] = ConvertProcType(ProcType::Get(tu, ty));
+    auto info = ConvertProcType(ProcType::Get(tu, ty));
     vm_entry_point = create<ir::ProcOp>(
         C(stmt->location()),
         constants::VMEntryPointName,
         C(Linkage::Internal),
         C(CallingConvention::Native),
-        ftype,
+        info.func,
         false,
-        has_indirect_return,
-        false
+        false,
+        mlir::ArrayAttr::get(&mlir, info.arg_attrs),
+        mlir::ArrayAttr::get(&mlir, {})
     );
 
     // Sema has already ensured that this is an initialiser, so throw it

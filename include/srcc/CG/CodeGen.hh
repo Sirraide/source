@@ -12,7 +12,6 @@
 
 namespace srcc::cg {
 class CodeGen;
-class CallBuilder;
 class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
@@ -169,7 +168,6 @@ class srcc::cg::CodeGen : DiagsProducer
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
-    friend CallBuilder;
 
     TranslationUnit& tu;
     Opt<ir::ProcOp> printf;
@@ -257,9 +255,11 @@ public:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    struct IRProcType {
-        mlir::FunctionType type;
-        bool has_indirect_return = false;
+    struct CallInfo {
+        SmallVector<mlir::Type> result_types;
+        SmallVector<mlir::Type> arg_types;
+        SmallVector<mlir::Attribute> arg_attrs;
+        mlir::FunctionType func;
     };
 
     struct StructInitHelper {
@@ -278,7 +278,7 @@ public:
     auto C(Location l) -> mlir::Location;
     auto C(Type ty) -> SType;
 
-    auto ConvertProcType(ProcType* ty) -> IRProcType;
+    auto ConvertProcType(ProcType* ty) -> CallInfo;
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
     void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
@@ -444,6 +444,9 @@ public:
     /// the temporary.
     auto MakeTemporary(mlir::Location l, Expr* init) -> Value;
 
+    /// Whether a value of this type needs to be returned indirectly.
+    bool NeedsIndirectReturn(Type ty);
+
     /// Determine whether this parameter type is passed by reference under
     /// the given intent.
     ///
@@ -463,6 +466,9 @@ public:
         llvm::function_ref<Value()> emit_cond,
         llvm::function_ref<void()> emit_body
     );
+
+private:
+    void AssertTriple();
 };
 
 #endif // SRCC_CG_HH

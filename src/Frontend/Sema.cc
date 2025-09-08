@@ -1955,7 +1955,9 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     return CallExpr::Create(
         *M,
         proc->ret(),
-        M->target().is_returned_as_mrvalue(proc->ret()) ? Expr::MRValue : Expr::SRValue,
+        // FIXME: Eliminate the distinction between MRValue and SRValue; it has overstayed its
+        // welcome and is no longer useful.
+        isa<ArrayType, StructType>(proc->ret()) ? Expr::MRValue : Expr::SRValue,
         resolved_callee,
         converted_args,
         loc

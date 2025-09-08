@@ -67,7 +67,6 @@ def ProcOp : SRCC_Op<"proc", [
         CConv:$cc,
         TypeAttrOf<FunctionType>:$function_type,
         UnitAttr:$variadic,
-        UnitAttr:$has_indirect_return,
         UnitAttr:$has_static_chain,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
@@ -81,15 +80,17 @@ def ProcOp : SRCC_Op<"proc", [
             "::mlir::LLVM::CConv":$cc,
             "::mlir::FunctionType":$type,
             "bool":$variadic,
-            "bool":$has_indirect_return,
             "bool":$has_static_chain,
-            CArg<"ArrayRef<::mlir::NamedAttribute>", "{}">:$attrs
+            "::mlir::ArrayAttr":$arg_attrs,
+            "::mlir::ArrayAttr":$res_attrs,
+            CArg<"ArrayRef<mlir::NamedAttribute>", "{}">:$func_attrs
         ), [{
-            buildWithEntryBlock($_builder, $_state, name, type, attrs, type.getInputs());
+            buildWithEntryBlock($_builder, $_state, name, type, func_attrs, type.getInputs());
             $_state.addAttribute(getCcAttrName($_state.name), ::mlir::LLVM::CConvAttr::get($_state.getContext(), cc));
             $_state.addAttribute(getLinkageAttrName($_state.name), ::mlir::LLVM::LinkageAttr::get($_state.getContext(), linkage));
+            $_state.addAttribute(getArgAttrsAttrName($_state.name), arg_attrs);
+            $_state.addAttribute(getResAttrsAttrName($_state.name), res_attrs);
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
-            if (has_indirect_return) $_state.addAttribute(getHasIndirectReturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_static_chain) $_state.addAttribute(getHasStaticChainAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
         }]>
     ];

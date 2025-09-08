@@ -394,17 +394,30 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
 
     // Print args.
     if (proc.getNumArguments()) {
-        if (proc.isDeclaration()) {
-            auto args = proc.getArgumentTypes();
-            out += std::format(" %1((%){}%1()%)", utils::join(args, "%1(, %)", "{}", FormatType));
-        } else {
-            out += std::format(" %1((%){}%1()%)", ops(proc.getArguments()));
+        out += " %1((%)\n";
+        for (unsigned i = 0; i < proc.getNumArguments(); i++) {
+            out += "    ";
+            if (proc.isDeclaration()) out += FormatType(proc.getArgumentTypes()[i]);
+            else out += val(proc.getArgument(i));
+            if (proc.getArgAttrs() and i < proc.getArgAttrs()->size()) {
+                for (auto attr : cast<mlir::DictionaryAttr>(proc.getArgAttrs().value()[i])) {
+                    using mlir::LLVM::LLVMDialect;
+                    if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
+                        out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+                    } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
+                        out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
+                    } else {
+                        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName());
+                    }
+                }
+            }
+            out += "%1(,%)\n";
         }
+        out += "%1()%)";
     }
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
-    if (proc.getHasIndirectReturn()) out += " %1(indirect%)";
     if (proc.getHasStaticChain()) out += " %1(nested%)";
     out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));

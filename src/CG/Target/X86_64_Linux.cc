@@ -33,39 +33,25 @@ using Classification = SmallVector<Class, 8>;
 
 struct Impl final : Target {
     Impl(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) : Target(std::move(TI)) {}
+    /*auto indirect_return_index(Type ty) const -> unsigned override;
     bool is_returned_as_mrvalue(Type ty) const override;
     bool needs_indirect_return(Type ty) const override;
-    auto get_call_builder(
+    auto get_abi_lowering(
         CodeGen& cg,
-        ProcType* ty,
-        Value indirect_ptr
-    ) const -> std::unique_ptr<CallBuilder> override;
-    bool pass_in_parameter_by_value(Type ty) const override;
+        ProcType* ty
+    ) const -> std::unique_ptr<ABILowering> override;
+    bool pass_in_parameter_by_value(Type ty) const override;*/
 };
 
-struct Builder final : CallBuilder {
-    SmallVector<Value> args;
-    SmallVector<mlir::Attribute> args_attrs;
-    ProcType* proc_ty;
-    Classification ret_class;
-    Value indirect_ptr;
-    bool indirect = false;
+/*
+struct Lowering final : ABILowering {
+    ABIReturnMode return_mode = ABIReturnMode::None;
     u32 num_regs = 0;
-
-    Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr);
-
-    void add(Value v, mlir::DictionaryAttr a = {});
-    void add_argument(Type param_ty, Value v, bool require_copy) override;
-    void add_byval_arg(mlir::Type ty, Value ptr);
-    void add_copy(Type ty, Value ptr, bool require_copy);
-    void add_pointer_or_integer(Value v) override;
-    void add_pointer(Value v) override;
-    auto get_arg_attrs() -> mlir::ArrayAttr override;
-    auto get_final_args() -> ArrayRef<Value> override;
-    auto get_proc_type() -> mlir::FunctionType override;
-    auto get_result_types() -> SmallVector<mlir::Type, 2> override;
-    auto get_result_vals(ir::CallOp call) -> SRValue override;
-};
+    Lowering(CodeGen& cg, ProcType* ty);
+    auto add_argument(Type param_ty) -> ABIArgPassingMode override;
+    auto add_pointer() -> ABIArgPassingMode override;
+    auto get_return_mode() -> ABIReturnMode override { return return_mode; }
+};*/
 }
 
 static auto ClassifyEightbytes(const Target& t, Type ty) -> Classification {
@@ -123,36 +109,72 @@ static auto ClassifyEightbytes(const Target& t, Type ty) -> Classification {
     return {INTEGER};
 }
 
-auto Impl::get_call_builder(
+/*
+auto Impl::get_abi_lowering(
     CodeGen& cg,
-    ProcType *ty,
-    Value indirect_ptr
-) const -> std::unique_ptr<CallBuilder> {
-    return std::make_unique<Builder>(cg, ty, indirect_ptr);
+    ProcType *ty
+) const -> std::unique_ptr<ABILowering> {
+    return std::make_unique<Lowering>(cg, ty);
 }
 
 bool Impl::pass_in_parameter_by_value(Type ty) const {
     return ty->size(*this) <= Eightbyte * 2;
 }
 
-Builder::Builder(CodeGen& cg, ProcType* ty, Value indirect_ptr)
-    : CallBuilder{cg}, proc_ty{ty}, indirect_ptr{indirect_ptr} {
+Lowering::Lowering(CodeGen& cg, ProcType* ty)
+    : ABILowering{cg} {
     auto ret = ty->ret();
-    if (target().needs_indirect_return(ret)) {
-        Assert(indirect_ptr);
-        add_pointer(indirect_ptr);
-        indirect = true;
+    if (cg.IsZeroSizedType(ret)) return;
+
+    auto conv = cg.C(ret).scalar();
+    if (isa<mlir::LLVM::LLVMPointerType>(conv)) {
+        return_mode = ABIReturnMode::Register;
+        return;
     }
 
-    ret_class = ClassifyEightbytes(target(), ret);
+    if (conv.isInteger()) {
+        Assert(llvm::has_single_bit(conv.getIntOrFloatBitWidth()), "TODO");
+        Assert(conv.getIntOrFloatBitWidth() <= 64, "TODO");
+        return_mode = ABIReturnMode::Register;
+        return;
+    }
+
+    Todo();
+
+    /*if (target().needs_indirect_return(ret)) {
+        Todo();
+        add_pointer();
+    }#1#
 }
 
-void Builder::add(Value v, mlir::DictionaryAttr a) {
+auto Lowering::add_pointer() -> ABIArgPassingMode {
+    if (num_regs < MaxRegs) num_regs++;
+    return ABIArgPassingMode::Passthrough; /// No special handling for pointer args.
+}
+
+auto Lowering::add_argument(Type param_ty) -> ABIArgPassingMode {
+    Assert(not cg.IsZeroSizedType(param_ty));
+    auto conv = cg.C(param_ty).scalar();
+    if (isa<mlir::LLVM::LLVMPointerType>(conv)) return add_pointer();
+    if (conv.isInteger()) {
+        Assert(llvm::has_single_bit(conv.getIntOrFloatBitWidth()), "TODO");
+        Assert(conv.getIntOrFloatBitWidth() <= 64, "TODO");
+        num_regs++;
+        return ABIArgPassingMode::Passthrough;
+    }
+
+    Todo();
+}
+*/
+
+
+
+/*void Lowering::add(Value v, mlir::DictionaryAttr a) {
     args.push_back(v);
     args_attrs.push_back(a);
 }
 
-void Builder::add_argument(Type param_ty, Value v, bool require_copy) {
+void Lowering::add_argument(Type param_ty, Value v, bool require_copy) {
     Assert(not cg.IsZeroSizedType(param_ty));
     auto conv = cg.C(param_ty).scalar();
 
@@ -201,12 +223,12 @@ void Builder::add_argument(Type param_ty, Value v, bool require_copy) {
     }
 }
 
-void Builder::add_byval_arg(mlir::Type ty, Value ptr) {
+void Lowering::add_byval_arg(mlir::Type ty, Value ptr) {
     auto byval = cg.getNamedAttr(mlir::LLVM::LLVMDialect::getByValAttrName(), mlir::TypeAttr::get(ty));
     add(ptr, mlir::DictionaryAttr::get(cg.mlir_context(), {byval}));
 }
 
-void Builder::add_copy(Type ty, Value ptr, bool require_copy) {
+void Lowering::add_copy(Type ty, Value ptr, bool require_copy) {
     Assert(isa<mlir::LLVM::LLVMPointerType>(ptr.getType()), "Expected lvalue");
     if (require_copy) {
         auto tmp = cg.CreateAlloca(ptr.getLoc(), ty);
@@ -224,14 +246,14 @@ void Builder::add_copy(Type ty, Value ptr, bool require_copy) {
 }
 
 
-void Builder::add_pointer(Value v) {
+void Lowering::add_pointer(Value v) {
     // No need to add 'byval' or anything like these; LLVM will just throw them
     // into stack slots if we’re out of registers either way.
     add(v);
     num_regs++;
 }
 
-void Builder::add_pointer_or_integer(Value v) {
+void Lowering::add_pointer_or_integer(Value v) {
     auto ty = v.getType();
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         add_pointer(v);
@@ -261,22 +283,22 @@ void Builder::add_pointer_or_integer(Value v) {
     add(v, attr);
 }
 
-auto Builder::get_arg_attrs() -> mlir::ArrayAttr {
+auto Lowering::get_arg_attrs() -> mlir::ArrayAttr {
     return mlir::ArrayAttr::get(cg.mlir_context(), args_attrs);
 }
 
-auto Builder::get_final_args() -> ArrayRef<Value> {
+auto Lowering::get_final_args() -> ArrayRef<Value> {
     return args;
 }
 
-auto Builder::get_proc_type() -> mlir::FunctionType {
+auto Lowering::get_proc_type() -> mlir::FunctionType {
     SmallVector<mlir::Type> arg_types;
     for (auto a : args) arg_types.push_back(a.getType());
     auto ret = get_result_types();
     return mlir::FunctionType::get(cg.mlir_context(), arg_types, mlir::TypeRange{ret});
 }
 
-auto Builder::get_result_types() -> SmallVector<mlir::Type, 2> {
+auto Lowering::get_result_types() -> SmallVector<mlir::Type, 2> {
     if (indirect or cg.IsZeroSizedType(proc_ty->ret())) return {};
 
     // Classify the return type.
@@ -297,7 +319,7 @@ auto Builder::get_result_types() -> SmallVector<mlir::Type, 2> {
     }
 }
 
-auto Builder::get_result_vals(ir::CallOp call) -> SRValue {
+auto Lowering::get_result_vals(ir::CallOp call) -> SRValue {
     if (indirect) return {};
 
     // If this is an mrvalue, write it to memory.
@@ -321,6 +343,12 @@ bool Impl::is_returned_as_mrvalue(Type ty) const {
     if (ty == Type::IntTy or ty == Type::BoolTy) return false;
     if (auto i = dyn_cast<IntType>(ty)) return i->bit_width() > Eightbyte;
     return true;
+}*/
+
+/*
+auto Impl::indirect_return_index(Type ty) const -> unsigned {
+    Assert(needs_indirect_return(ty));
+    return 0;
 }
 
 bool Impl::needs_indirect_return(Type ty) const {
@@ -328,6 +356,7 @@ bool Impl::needs_indirect_return(Type ty) const {
     auto ret_cls = ClassifyEightbytes(*this, ty);
     return ret_cls.front() == MEMORY;
 }
+*/
 
 auto target::CreateX86_64_Linux(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::unique_ptr<Target> {
     return std::make_unique<Impl>(std::move(TI));

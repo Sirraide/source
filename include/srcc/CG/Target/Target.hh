@@ -17,7 +17,6 @@ class Target;
 }
 
 namespace srcc::cg {
-class CallBuilder;
 class CodeGen;
 class SRValue;
 }
@@ -38,48 +37,6 @@ namespace srcc::target {
 auto CreateX86_64_Linux(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::unique_ptr<Target>;
 }
 
-class srcc::cg::CallBuilder {
-    LIBBASE_IMMOVABLE(CallBuilder);
-
-protected:
-    CodeGen& cg;
-    CallBuilder(CodeGen& cg) : cg{cg} {}
-
-public:
-    virtual ~CallBuilder() = default;
-
-    /// Add a by-value argument.
-    ///
-    /// If 'require_copy' is true, then we need to emit a stack copy to avoid
-    /// modifying the original if we end up passing this by pointer. If it is
-    /// 'false', the original value can be used directly.
-    virtual void add_argument(Type param_ty, mlir::Value v, bool require_copy) = 0;
-
-    /// Add a pointer or integer argument. This is NOT to be used for 'bool'!
-    virtual void add_pointer_or_integer(mlir::Value v) = 0;
-
-    /// Add a pointer argument.
-    virtual void add_pointer(mlir::Value v) = 0;
-
-    /// Get the argument attributes.
-    [[nodiscard]] virtual auto get_arg_attrs() -> mlir::ArrayAttr = 0;
-
-    /// Get the final call arguments.
-    [[nodiscard]] virtual auto get_final_args() -> ArrayRef<mlir::Value> = 0;
-
-    /// Get the function type for this call.
-    [[nodiscard]] virtual auto get_proc_type() -> mlir::FunctionType = 0;
-
-    /// Get the result types of the call.
-    [[nodiscard]] virtual auto get_result_types() -> SmallVector<mlir::Type, 2> = 0;
-
-    /// Convert the ABI-dependent result values into what the rest of CodeGen expects.
-    [[nodiscard]] virtual auto get_result_vals(ir::CallOp call) -> SRValue = 0;
-
-    /// Get the current target.
-    [[nodiscard]] auto target() -> const Target&;
-};
-
 class srcc::Target {
     LIBBASE_IMMOVABLE(Target);
 
@@ -91,16 +48,6 @@ protected:
 public:
     virtual ~Target();
     static auto Create(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::unique_ptr<Target>;
-
-    /// Get a helper to build a function call.
-    ///
-    /// \param ty The type of the call.
-    /// \param indirect_ptr The indirect return pointer, if any.
-    [[nodiscard]] virtual auto get_call_builder(
-        cg::CodeGen& cg,
-        ProcType* ty,
-        mlir::Value indirect_ptr
-    ) const -> std::unique_ptr<cg::CallBuilder> = 0;
 
     /// Get the underlying Clang target.
     [[nodiscard]] auto clang() const -> const clang::TargetInfo& { return *TI; }
@@ -126,23 +73,6 @@ public:
     [[nodiscard]] auto int_size(Size width) const -> Size {
         return Size::Bits(TI->getBitIntWidth(u32(width.bits())));
     }
-
-    /// Whether a value of this type as returned from a function should be modelled as
-    /// an MRValue, which causes us to always provide a memory location for it to be
-    /// written to.
-    ///
-    /// This is *not* the same as needs_indirect_return(): it might be that the type
-    /// is returned in registers according to a target’s ABI, but it may just be easier
-    /// for us to deal w/ a type if it’s in memory (rather than e.g. try and destructure
-    /// a single i64 register into six struct fields using a bunch of masking and shifting).
-    virtual bool is_returned_as_mrvalue(Type ty) const = 0;
-
-    /// Whether this type must be returned indirectly via memory by passing an
-    /// extra pointer argument to the function.
-    virtual bool needs_indirect_return(Type ty) const = 0;
-
-    /// Whether an 'in' parameter of this type should be passed by value if possible.
-    virtual bool pass_in_parameter_by_value(Type ty) const = 0;
 
     /// Get the pointer alignment.
     [[nodiscard]] auto ptr_align() const -> Align { return Align(TI->PointerAlign / 8); }
