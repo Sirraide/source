@@ -317,6 +317,7 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
 }
 
 auto CodeGen::CreateLoad(mlir::Location loc, Value addr, SType type, Align align) -> SRValue {
+    Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of load must be a pointer");
     auto first = create<ir::LoadOp>(loc, type.scalar_or_first(), addr, align);
     if (not type.is_aggregate()) return first.getRes();
     auto [ptr, alignment] = GetPtrToSecondAggregateElem(loc, addr, type);
@@ -375,6 +376,7 @@ auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) ->
 }
 
 void CodeGen::CreateStore(mlir::Location loc, Value addr, SRValue val, Align align) {
+    Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of store must be a pointer");
     create<ir::StoreOp>(loc, addr, val.scalar_or_first(), align);
     if (val.is_aggregate()) {
         auto [ptr, alignment] = GetPtrToSecondAggregateElem(loc, addr, val.type());
@@ -1876,6 +1878,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             case Intent::In:
             case Intent::Move: {
                 if (PassByReference(param->type, param->intent())) ByRef();
+                else if (not param->is_srvalue_in_parameter()) CreateVar();
                 else locals[param] = GetByValArg();
             } break;
         }
@@ -1899,15 +1902,24 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> SRValue {
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
     auto val = expr->value.get_or_null();
+    auto l = C(expr->location());
+
+    // An indirect return is a store to a pointer.
     if (val and NeedsIndirectReturn(val->type)) {
         EmitInitialiser(curr_proc.getArgument(0), expr->value.get());
-        if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), mlir::ValueRange());
+        if (not HasTerminator()) create<ir::RetOp>(l, mlir::ValueRange());
         return {};
     }
 
+    // A direct return depends on the ABI.
     auto ret_vals = val ? Emit(val) : SRValue{};
-    if (val and IsZeroSizedType(val->type)) ret_vals = {};
-    if (not HasTerminator()) create<ir::RetOp>(C(expr->location()), ret_vals);
+    if (not HasTerminator()) {
+        if (val) {
+            if (IsZeroSizedType(val->type)) ret_vals = {};
+            else if (val->lvalue()) ret_vals = CreateLoad(l, ret_vals.scalar(), C(val->type), val->type->align(tu));
+        }
+        create<ir::RetOp>(l, ret_vals);
+    }
     return {};
 }
 

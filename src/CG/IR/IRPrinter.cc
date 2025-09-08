@@ -25,6 +25,7 @@ struct CodeGen::Printer {
 
     Printer(CodeGen& cg, bool verbose = false) : cg{cg}, verbose{verbose} {}
     void print(mlir::ModuleOp module);
+    void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap);
     void print_op(Operation* op);
     void print_procedure(ProcOp op);
     void print_top_level_op(Operation* op);
@@ -94,6 +95,47 @@ void CodeGen::Printer::print(mlir::ModuleOp module) {
     for (auto& op : module.getBodyRegion().front())
         print_top_level_op(&op);
 }
+
+void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap) {
+    if (proc_or_call.getNumCallArgs()) {
+        if (wrap) out += " %1((%)\n";
+        else out += " %1((%)";
+
+        bool first = true;
+        for (unsigned i = 0; i < proc_or_call.getNumCallArgs(); i++) {
+            if (wrap) out += "    ";
+            if (first) first = false;
+            else if (not wrap) out += "%1(, %)";
+
+            if (types_only) out += FormatType(proc_or_call.getCallArgType(i));
+            else out += val(proc_or_call.getCallArg(i));
+
+            if (auto attrs = proc_or_call.getCallArgAttrs(i)) {
+                for (auto attr : attrs) {
+                    using mlir::LLVM::LLVMDialect;
+                    if (attr.getName() == LLVMDialect::getByValAttrName()) {
+                        out += std::format(" byval {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+                    } else if (attr.getName() == LLVMDialect::getZExtAttrName()) {
+                        out += " zeroext";
+                    } else if (attr.getName() == LLVMDialect::getSExtAttrName()) {
+                        out += " signext";
+                    } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
+                        out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+                    } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
+                        out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
+                    } else {
+                        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName());
+                    }
+                }
+            }
+
+            if (wrap) out += "%1(,%)\n";
+        }
+
+        out += "%1()%)";
+    }
+}
+
 
 void CodeGen::Printer::print_op(Operation* op) {
     out += "    %1(";
@@ -211,34 +253,10 @@ void CodeGen::Printer::print_op(Operation* op) {
                 )
             );
         }
+
         out += " ";
-
-        out += std::format("{}(", val(c.getAddr(), false));
-        bool first = true;
-        for (auto [i, a] : llvm::enumerate(c.getArgs())) {
-            if (first) first = false;
-            else out += ", ";
-            out += val(a, true);
-
-            // Print any argument attributes.
-            if (auto attrs = c.getArgAttrs()) {
-                if (auto attr = cast_if_present<mlir::DictionaryAttr>((*attrs)[unsigned(i)])) {
-                    for (auto named_attr : attr) {
-                        if (named_attr.getName() == mlir::LLVM::LLVMDialect::getByValAttrName()) {
-                            out += std::format(" byval {}", FormatType(cast<mlir::TypeAttr>(named_attr.getValue()).getValue()));
-                        } else if (named_attr.getName() == mlir::LLVM::LLVMDialect::getZExtAttrName()) {
-                            out += " zeroext";
-                        } else if (named_attr.getName() == mlir::LLVM::LLVMDialect::getSExtAttrName()) {
-                            out += " signext";
-                        } else {
-                            Todo("Print this attribute: {}", named_attr.getName());
-                        }
-                    }
-                }
-            }
-        }
-        out += ")";
-
+        out += val(c.getAddr(), false);
+        print_arg_list(c, false, false);
         if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
         return;
     }
@@ -393,28 +411,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += std::format("%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
 
     // Print args.
-    if (proc.getNumArguments()) {
-        out += " %1((%)\n";
-        for (unsigned i = 0; i < proc.getNumArguments(); i++) {
-            out += "    ";
-            if (proc.isDeclaration()) out += FormatType(proc.getArgumentTypes()[i]);
-            else out += val(proc.getArgument(i));
-            if (proc.getArgAttrs() and i < proc.getArgAttrs()->size()) {
-                for (auto attr : cast<mlir::DictionaryAttr>(proc.getArgAttrs().value()[i])) {
-                    using mlir::LLVM::LLVMDialect;
-                    if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
-                        out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
-                    } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
-                        out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
-                    } else {
-                        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName());
-                    }
-                }
-            }
-            out += "%1(,%)\n";
-        }
-        out += "%1()%)";
-    }
+    print_arg_list(proc, proc.isDeclaration(), proc.getNumCallArgs() > 3);
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";

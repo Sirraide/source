@@ -21,5 +21,9 @@ mlir_tablegen(IREnums.cc.inc -gen-enum-defs)
 mlir_tablegen(IREnumAttrs.hh.inc -gen-attrdef-decls -attrdefs-dialect=srcc)
 mlir_tablegen(IREnumAttrs.cc.inc -gen-attrdef-defs -attrdefs-dialect=srcc)
 
+set(LLVM_TARGET_DEFINITIONS "IRInterfaces.td")
+mlir_tablegen(IRInterfaces.hh.inc -gen-op-interface-decls -dialect=srcc)
+mlir_tablegen(IRInterfaces.cc.inc -gen-op-interface-defs -dialect=srcc)
+
 add_public_tablegen_target(MLIRSourceEnumsIncGen)
 add_dependencies(mlir-headers MLIRSourceEnumsIncGen)

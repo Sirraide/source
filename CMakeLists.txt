@@ -5,6 +5,9 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR "This project must be built with Clang (or, on Windows, clang-cl)")
 endif()
 
+## FIXME: REMOVE
+add_compile_options(-Wno-deprecated-declarations)
+
 ## ============================================================================
 ##  Global CMake Variables.
 ## ============================================================================

@@ -4,7 +4,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Process.h>
 
-#include <base/Stream.hh>
+#include <base/Str.hh>
 
 using namespace srcc;
 
@@ -509,7 +509,7 @@ void VerifyDiagnosticsEngine::ParseMagicComment(stream comment, Location loc) {
     // Parse the diagnostic type. 'ICE' is not supported, but used here
     // as a failure state so we don’t have to bother with optionals.
     auto type = comment.take_while(llvm::isAlnum);
-    auto level = llvm::StringSwitch<Diagnostic::Level>(type)
+    auto level = llvm::StringSwitch<Diagnostic::Level>(type.text())
                      .Case("error", Diagnostic::Level::Error)
                      .Case("warning", Diagnostic::Level::Warning)
                      .Case("note", Diagnostic::Level::Note)

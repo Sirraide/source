@@ -1735,8 +1735,8 @@ auto Sema::BuildBinaryExpr(
 
             // Regular assignment.
             if (op == Tk::Assign) {
-                if (auto init = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null()) rhs = init;
-                else return nullptr;
+                if (isa<StructType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
+                if (not MakeSRValue(lhs->type, rhs, "value", "assignment")) return nullptr;
                 return Build(lhs->type, LValue);
             }
 

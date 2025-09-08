@@ -84,18 +84,18 @@ auto Location::seek(const Context& ctx) const -> std::optional<LocInfo> {
     SeekLineColumn(info, data, pos);
 
     // Get everything before the range.
-    stream s{data, pos};
-    info.before = String::CreateUnsafe(s.take_back_until_any("\r\n"));
+    str s{data, pos};
+    info.before = String::CreateUnsafe(s.take_back_until_any("\r\n").text());
 
     // If the position is directly on a '\n', then we treat this as being
     // at the very end of the previous line, so stop here.
     if (data[pos] == '\n' or data[pos] == '\r') return info;
 
     // Next, get everything in and after the range.
-    s = stream{f->contents()};
+    s = str{f->contents().value()};
     s.drop(pos);
-    info.range = String::CreateUnsafe(s.take(len));
-    info.after = String::CreateUnsafe(s.take_until('\n'));
+    info.range = String::CreateUnsafe(s.take(len).text());
+    info.after = String::CreateUnsafe(s.take_until('\n').text());
 
     // Done!
     return info;

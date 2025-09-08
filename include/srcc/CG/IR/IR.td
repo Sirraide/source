@@ -18,6 +18,7 @@ include "mlir/IR/OpBase.td"
 
 include "IRDialect.td"
 include "IREnums.td"
+include "IRInterfaces.td"
 
 // ============================================================================
 //  Dialect
@@ -57,7 +58,8 @@ def SRCC_Type : AnyTypeOf<[
 // ============================================================================
 def ProcOp : SRCC_Op<"proc", [
     AffineScope, AutomaticAllocationScope, CallableOpInterface,
-    FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
+    FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface,
+    ProcAndCallOpInterface
 ]> {
     let summary = "Procedure";
     let regions = (region AnyRegion:$body);
@@ -100,6 +102,29 @@ def ProcOp : SRCC_Op<"proc", [
         ::mlir::Block* getOrCreateEntryBlock() {
             if (empty()) addEntryBlock();
             return &front();
+        }
+
+        //===------------------------------------------------------------------===//
+        // ProcAndCallOpInterface
+        //===------------------------------------------------------------------===//
+        unsigned getNumCallArgs() {
+            return getNumArguments();
+        }
+
+        ::mlir::Value getCallArg(unsigned idx) {
+            if (idx < getNumArguments()) return getArgument(idx);
+            return {};
+        }
+
+        ::mlir::Type getCallArgType(unsigned idx) {
+            if (idx < getNumArguments()) return getArgumentTypes()[idx];
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallArgAttrs(unsigned idx) {
+            if (getArgAttrs() and idx < getArgAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getArgAttrs().value()[idx]);
+            return {};
         }
 
         //===------------------------------------------------------------------===//
@@ -160,7 +185,7 @@ def AbortOp : SRCC_Op<"abort", [Terminator]> {
     );
 }
 
-def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
+def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments, ProcAndCallOpInterface]> {
     let summary = "Call a procedure";
     let arguments = (ins
         SRCC_Ptr:$addr,
@@ -195,6 +220,31 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
             );
         }]>
     ];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // ProcAndCallOpInterface
+        //===------------------------------------------------------------------===//
+        unsigned getNumCallArgs() {
+            return unsigned(getArgs().size());
+        }
+
+        ::mlir::Value getCallArg(unsigned idx) {
+            if (idx < getNumCallArgs()) return getArgs()[idx];
+            return {};
+        }
+
+        ::mlir::Type getCallArgType(unsigned idx) {
+            if (idx < getNumCallArgs()) return getArgs()[idx].getType();
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallArgAttrs(unsigned idx) {
+            if (getArgAttrs() and idx < getArgAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getArgAttrs().value()[idx]);
+            return {};
+        }
+    }];
 }
 
 def FrameSlotOp : SRCC_Op<"slot", [Pure]> {

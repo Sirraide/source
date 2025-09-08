@@ -13,6 +13,7 @@
 
 #include <srcc/CG/IR/IRDialect.hh.inc>
 #include <srcc/CG/IR/IREnums.hh.inc>
+#include <srcc/CG/IR/IRInterfaces.hh.inc>
 
 #define GET_ATTRDEF_CLASSES
 #include <srcc/CG/IR/IREnumAttrs.hh.inc>
