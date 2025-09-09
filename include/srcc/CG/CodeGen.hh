@@ -8,6 +8,7 @@
 #include <srcc/Macros.hh>
 
 #include <base/Assert.hh>
+#include <base/FixedVector.hh>
 #include <mlir/Pass/PassManager.h>
 
 namespace srcc::cg {
@@ -262,20 +263,6 @@ public:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    class ValueSource {
-        mlir::ValueRange range;
-        unsigned i = 0;
-
-    public:
-        explicit ValueSource(mlir::ValueRange r) : range(r) {}
-
-        /// Get the next value and consume it.
-        [[nodiscard]] auto next() -> Value {
-            Assert(i < range.size());
-            return range[i++];
-        }
-    };
-
     struct StructInitHelper {
         CodeGen& CG;
         StructType* ty;
@@ -482,6 +469,63 @@ public:
         mlir::FunctionType func;
     };
 
+    /// ABI lowering information about an argument that is passed by value.
+    struct ABIArgInfo {
+        using Attrs = std::array<SmallVector<mlir::NamedAttribute, 1>, 2>;
+
+        // TODO: Yeet SRValue/SRType and treat slices/closures/ranges as aggregates.
+        SRValue value;
+        SType type;
+        Attrs attrs;
+    };
+
+    /// Context used to convert a bundle of IR arguments back to a Source type.
+    ///
+    /// One of these is created for each AST-level argument or return type; an
+    /// instance of this should not be reused.
+    class ABITypeRaisingContext {
+        CodeGen& cg;
+        mlir::Location loc;
+        mlir::ValueRange range;
+        Type ty;
+        Value indirect_ptr = {};
+        unsigned i = 0;
+
+    public:
+        /// Create a new context.
+        ///
+        /// \param cg The CodeGen instance.
+        /// \param loc The location of the thing we’re creating.
+        /// \param r The input values.
+        /// \param ty The type we’re creating.
+        /// \param addr The memory location to write to.
+        explicit ABITypeRaisingContext(
+            CodeGen& cg,
+            mlir::Location loc,
+            mlir::ValueRange r,
+            Type ty,
+            Value addr = nullptr
+        ) : cg(cg), loc(loc), range(r), ty(ty), indirect_ptr(addr) {}
+
+        /// Get or create address into which to store the value, if any.
+        [[nodiscard]] auto addr() -> Value;
+
+        /// Get the number of IR arguments that were consumed.
+        [[nodiscard]] auto consumed() -> unsigned { return i; }
+
+        /// Get the location of the value that this is initialising.
+        [[nodiscard]] auto location() -> mlir::Location { return loc; }
+
+        /// Get the next value and consume it.
+        [[nodiscard]] auto next() -> Value {
+            Assert(i < range.size());
+            return range[i++];
+        }
+
+        /// Get the type that we’re creating.
+        [[nodiscard]] auto type() -> Type { return ty; }
+    };
+
     /// Lower a procedure type.
     auto ConvertProcType(ProcType* ty) -> ABICallInfo;
 
@@ -500,7 +544,7 @@ public:
     bool CanUseReturnValueDirectly(Type ty);
 
     /// Lower a single argument that is passed or returned by value.
-    auto LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pair<SRValue, SType>;
+    auto LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;
 
     /// Lower a direct return value.
     auto LowerDirectReturn(mlir::Location l, Expr* arg) -> SRValue;
@@ -514,12 +558,14 @@ public:
     ) -> ABICallInfo;
 
     /// Take a bundle of IR arguments that represent a value that has been passed
-    /// in one or more registers and write it to a new memory address.
-    void WriteByValArgToMemory(mlir::Location l, Value addr, ValueSource& vals, Type ty);
+    /// in one or more registers, write it to a memory address, and return that
+    /// address; if this value was actually passed on the stack, the stack address
+    /// is returned directly. Otherwise, a new variable is allocated via the 'vals'
+    /// object.
+    [[nodiscard]] auto WriteByValArgToMemory(ABITypeRaisingContext& ctx) -> Value;
 
-    /// Take a bundle of IR arguments that represent a direct return value and write
-    /// it to a new memory address.
-    void WriteDirectReturnToMemory(mlir::Location l, Value addr, ValueSource& vals, Type ty);
+    /// As WriteByValArgToMemory(), but lowers a call result instead.
+    [[nodiscard]] auto WriteDirectReturnToMemory(ABITypeRaisingContext& ctx) -> Value;
 
 private:
     void AssertTriple();

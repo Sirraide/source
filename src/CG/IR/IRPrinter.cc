@@ -97,13 +97,15 @@ void CodeGen::Printer::print(mlir::ModuleOp module) {
 }
 
 void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap) {
+    bool is_proc = isa<ProcOp>(proc_or_call);
+    auto indent = is_proc ? "    "sv : "        "sv;
     if (proc_or_call.getNumCallArgs()) {
         if (wrap) out += " %1((%)\n";
         else out += " %1((%)";
 
         bool first = true;
         for (unsigned i = 0; i < proc_or_call.getNumCallArgs(); i++) {
-            if (wrap) out += "    ";
+            if (wrap) out += indent;
             if (first) first = false;
             else if (not wrap) out += "%1(, %)";
 
@@ -114,11 +116,11 @@ void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool 
                 for (auto attr : attrs) {
                     using mlir::LLVM::LLVMDialect;
                     if (attr.getName() == LLVMDialect::getByValAttrName()) {
-                        out += std::format(" byval {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+                        out += std::format(" %1(byval%) {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
                     } else if (attr.getName() == LLVMDialect::getZExtAttrName()) {
-                        out += " zeroext";
+                        out += " %1(zeroext%)";
                     } else if (attr.getName() == LLVMDialect::getSExtAttrName()) {
-                        out += " signext";
+                        out += " %1(signext%)";
                     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
                         out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
                     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
@@ -129,7 +131,10 @@ void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool 
                 }
             }
 
-            if (wrap) out += "%1(,%)\n";
+            if (wrap) {
+                bool last = i == proc_or_call.getNumCallArgs() - 1;
+                if (not last or is_proc) out += "%1(,%)\n";
+            }
         }
 
         out += "%1()%)";
@@ -256,7 +261,7 @@ void CodeGen::Printer::print_op(Operation* op) {
 
         out += " ";
         out += val(c.getAddr(), false);
-        print_arg_list(c, false, false);
+        print_arg_list(c, false, c.getNumCallArgs() > 3);
         if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
         return;
     }

@@ -862,6 +862,12 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
 // ============================================================================
 //  ABI
 // ============================================================================
+auto CodeGen::ABITypeRaisingContext::addr() -> Value {
+    if (indirect_ptr) return indirect_ptr;
+    indirect_ptr = cg.CreateAlloca(loc, ty);
+    return indirect_ptr;
+}
+
 void CodeGen::AssertTriple() {
     auto& tt = tu.target().triple();
     Assert(
@@ -876,10 +882,11 @@ bool CodeGen::CanUseReturnValueDirectly(Type ty) {
     return false;
 }
 
-auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pair<SRValue, SType> {
+auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo {
     static constexpr Size Word = Size::Bits(64);
     SRValue v;
     SType ty;
+    ABIArgInfo::Attrs attrs;
     auto sz = t->size(tu);
 
     // Small aggregates are passed in registers.
@@ -900,7 +907,27 @@ auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pai
                 LoadWord(CreatePtrAdd(l, addr, Word), sz - Word)
             };
         } else {
-            Todo();
+            ty = SType{ptr_ty};
+            attrs[0].push_back(getNamedAttr(
+                LLVMDialect::getByValAttrName(),
+                mlir::TypeAttr::get(C(t).scalar())
+            ));
+
+            if (arg) {
+                // Take care not to modify the original object if we’re passing by value.
+                if (arg.get()->lvalue()) {
+                    v = CreateAlloca(l, t);
+                    create<LLVM::MemcpyOp>(
+                        l,
+                        v.scalar(),
+                        addr,
+                        CreateInt(l, i64(t->size(tu).bytes())),
+                        false
+                    );
+                } else {
+                    v = addr;
+                }
+            }
         }
     }
 
@@ -922,11 +949,11 @@ auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pai
         }
     }
 
-    return {v, ty};
+    return ABIArgInfo{v, ty, std::move(attrs)};
 }
 
 auto CodeGen::LowerDirectReturn(mlir::Location l, Expr* arg) -> SRValue {
-    return LowerByValArg(l, arg, arg->type).first;
+    return LowerByValArg(l, arg, arg->type).value;
 }
 
 auto CodeGen::LowerProcedureSignature(
@@ -959,9 +986,9 @@ auto CodeGen::LowerProcedureSignature(
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {
-        auto [v, ty] = LowerByValArg(l, arg, t);
+        auto [v, ty, attrs] = LowerByValArg(l, arg, t);
         v.into(info.args);
-        ty.each(AddArgType);
+        for (auto [type, attr] : zip(ty, attrs)) AddArgType(type, attr);
     };
 
     auto Arg = [&](usz i) -> Expr* {
@@ -992,7 +1019,7 @@ auto CodeGen::LowerProcedureSignature(
             AddReturnType(int_ty);
             AddReturnType(IntTy((sz - Word).as_bytes()));
         } else {
-            Todo();
+            Unreachable("Should never be returned directly");
         }
     }
 
@@ -1037,44 +1064,38 @@ bool CodeGen::NeedsIndirectReturn(Type ty) {
     return ty->size(tu) > Size::Bits(128);
 }
 
-void CodeGen::WriteByValArgToMemory(
-    mlir::Location l,
-    Value addr,
-    ValueSource& vals,
-    Type type
-) {
+auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
     static constexpr Size Word = Size::Bits(64);
-    auto StoreValue = [&](SRValue v) {
-        CreateStore(l, addr, v, type->align(tu));
+    auto StoreValue = [&](SRValue v) -> Value {
+        CreateStore(vals.location(), vals.addr(), v, vals.type()->align(tu));
+        return vals.addr();
     };
 
     // Small aggregates are passed in registers.
-    if (type->is_aggregate()) {
+    if (vals.type()->is_aggregate()) {
         auto StoreWord = [&](Value addr, Value v) {
             CreateStore(
-                l,
+                vals.location(),
                 addr,
                 v,
                 tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()))
             );
         };
 
-        auto sz = type->size(tu);
+        auto sz = vals.type()->size(tu);
         if (sz <= Word) {
-            StoreWord(addr, vals.next());
+            StoreWord(vals.addr(), vals.next());
         } else if (sz <= Word * 2) {
-            StoreWord(addr, vals.next());
-            StoreWord(CreatePtrAdd(l, addr, Word), vals.next());
+            StoreWord(vals.addr(), vals.next());
+            StoreWord(CreatePtrAdd(vals.location(), vals.addr(), Word), vals.next());
         } else {
-            Todo();
+            return vals.next(); // Reuse the stack address.
         }
-
-        return;
     }
 
     // i65-i128 are passed in two registers.
-    if (type->is_integer()) {
-        auto sz = type->size(tu);
+    if (vals.type()->is_integer()) {
+        auto sz = vals.type()->size(tu);
         if (sz > Word and sz <= Word * 2) {
             auto first = vals.next();
             auto second = vals.next();
@@ -1082,7 +1103,7 @@ void CodeGen::WriteByValArgToMemory(
         }
     }
 
-    if (isa<ProcType, RangeType, SliceType>(type)) {
+    if (isa<ProcType, RangeType, SliceType>(vals.type())) {
         auto first = vals.next();
         auto second = vals.next();
         return StoreValue({first, second});
@@ -1091,13 +1112,8 @@ void CodeGen::WriteByValArgToMemory(
     return StoreValue(vals.next());
 }
 
-void CodeGen::WriteDirectReturnToMemory(
-    mlir::Location l,
-    Value addr,
-    ValueSource& vals,
-    Type ty
-) {
-   WriteByValArgToMemory(l, addr, vals, ty);
+auto CodeGen::WriteDirectReturnToMemory(ABITypeRaisingContext& vals) -> Value {
+   return WriteByValArgToMemory(vals);
 }
 
 // ============================================================================
@@ -1656,11 +1672,20 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
     if (CanUseReturnValueDirectly(ret)) return op.getResults();
 
     // More complicated ones need to be written to memory.
-    ValueSource vals{op.getResults()};
-    if (not mrvalue_slot) mrvalue_slot = CreateAlloca(l, ret);
-    WriteDirectReturnToMemory(l, mrvalue_slot, vals, ret);
-    if (expr->is_srvalue()) return CreateLoad(l, mrvalue_slot, C(ret), ret->align(tu));
-    return mrvalue_slot;
+    ABITypeRaisingContext ctx{*this, l, op.getResults(), ret, mrvalue_slot};
+    auto mem = WriteDirectReturnToMemory(ctx);
+
+    // If this is an srvalue, just load it.
+    if (expr->is_srvalue()) return CreateLoad(l, mem, C(ret), ret->align(tu));
+
+    // Sanity check: if this is an mrvalue, we should always construct into
+    // the address that was provided to us, if there was one at all. If this
+    // is somehow not the case, that indicates that this function should have
+    // probably returned this type indirectly.
+    Assert(not mrvalue_slot or mem == mrvalue_slot, "Should have been an indirect return");
+
+    // This is an MRValue and shouldn’t yield anything.
+    return {};
 }
 
 /*auto ByValue = [&] {
@@ -1956,17 +1981,15 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Lower parameters.
-    ValueSource proc_args{curr_proc.getArguments()};
-    if (NeedsIndirectReturn(proc->return_type())) (void) proc_args.next();
+    unsigned num_args = NeedsIndirectReturn(proc->return_type());
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
         if (PassByReference(param->type, param->intent())) {
-            locals[param] = proc_args.next();
+            locals[param] = curr_proc.getArgument(num_args++);
         } else {
             auto l = C(param->location());
-            auto var = CreateAlloca(l, param->type);
-            locals[param] = var;
-            WriteByValArgToMemory(l, var, proc_args, param->type);
+            ABITypeRaisingContext ctx{*this, l, curr_proc.getArguments().drop_front(num_args), param->type};
+            locals[param] = WriteByValArgToMemory(ctx);
         }
     }
 
