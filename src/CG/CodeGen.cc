@@ -1160,9 +1160,22 @@ auto CodeGen::LowerProcedureSignature(
         AddReturnType(int_ty);
     }
 
-    // Zero-sized return types are dropped entirely.
+    // Zero-sized return types are dropped entirely. Everything else
+    // is passed through as is.
     else if (not IsZeroSizedType(ret)) {
-        AddReturnType(C(ret));
+        SmallVector<mlir::NamedAttribute, 1> attrs;
+
+        // Extend integers that don’t have their preferred size.
+        auto ty = C(ret);
+        if (ty.isInteger()) {
+            auto pref_ty = GetPreferredIntType(ty);
+            if (ty != pref_ty) {
+                if (ret == Type::BoolTy) attrs.push_back(getNamedAttr(LLVMDialect::getZExtAttrName(), getUnitAttr()));
+                else attrs.push_back(getNamedAttr(LLVMDialect::getSExtAttrName(), getUnitAttr()));
+            }
+        }
+
+        AddReturnType(ty, attrs);
     }
 
     // Evaluate the arguments and add them to the call.
@@ -1802,7 +1815,8 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
         info.func,
         proc->variadic(),
         info.args,
-        mlir::ArrayAttr::get(&mlir, info.arg_attrs)
+        mlir::ArrayAttr::get(&mlir, info.arg_attrs),
+        mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
     // Calls are one of the very few expressions whose type can be 'noreturn', so

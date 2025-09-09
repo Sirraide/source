@@ -127,6 +127,12 @@ def ProcOp : SRCC_Op<"proc", [
             return {};
         }
 
+        ::mlir::DictionaryAttr getCallResultAttrs(unsigned idx) {
+            if (getResAttrs() and idx < getResAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getResAttrs().value()[idx]);
+            return {};
+        }
+
         //===------------------------------------------------------------------===//
         // CallableOpInterface
         //===------------------------------------------------------------------===//
@@ -194,7 +200,8 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments, ProcAndCallOpInterface]>
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
         Variadic<SRCC_Type>:$args,
-        OptionalAttr<DictArrayAttr>:$arg_attrs
+        OptionalAttr<DictArrayAttr>:$arg_attrs,
+        OptionalAttr<DictArrayAttr>:$result_attrs
     );
 
     let results = (outs Variadic<SRCC_Type>:$res);
@@ -216,6 +223,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments, ProcAndCallOpInterface]>
                 proc.getFunctionType(),
                 proc.getVariadic(),
                 args,
+                {},
                 {}
             );
         }]>
@@ -242,6 +250,12 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments, ProcAndCallOpInterface]>
         ::mlir::DictionaryAttr getCallArgAttrs(unsigned idx) {
             if (getArgAttrs() and idx < getArgAttrs()->size())
                 return cast<mlir::DictionaryAttr>(getArgAttrs().value()[idx]);
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallResultAttrs(unsigned idx) {
+            if (getResultAttrs() and idx < getResultAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getResultAttrs().value()[idx]);
             return {};
         }
     }];

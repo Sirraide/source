@@ -142,9 +142,10 @@ LOWERING(CallOp, {
     auto call = r.create<LLVM::CallOp>(op.getLoc(), fty, args);
     call.setCConv(op.getCc());
 
-    // Preserve argument attributes. We can’t preserve return value attributes
-    // since the number of return values may be different.
+    // Preserve argument and return value. attributes.
     call.setArgAttrsAttr(op.getArgAttrsAttr());
+    if (auto attrs = op.getCallResultAttrs(0))
+        call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
 
     // Split aggregate returns.
     if (op.getNumResults() > 1) {
@@ -227,9 +228,10 @@ LOWERING(ProcOp, {
         op.getCc()
     );
 
-    // Preserve argument attributes. We can’t preserve return value attributes
-    // since the number of return values may be different.
+    // Preserve argument and return value attributes.
     func.setArgAttrsAttr(op.getArgAttrsAttr());
+    if (auto attrs = op.getCallResultAttrs(0))
+        func.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
 
     // And inline the body.
     r.inlineRegionBefore(op.getBody(), func.getBody(), func.end());
