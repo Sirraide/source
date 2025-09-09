@@ -1929,11 +1929,8 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             CreateVar(curr_proc.getArgument(arg_idx++));
         };
 
-        if (PassByReference(param->type, param->intent())) {
-            HandleByRefArg();
-        } else {
-            HandleByValArg();
-        }
+        if (PassByReference(param->type, param->intent())) HandleByRefArg();
+        else HandleByValArg();
     }
 
     // Declare other local variables.
