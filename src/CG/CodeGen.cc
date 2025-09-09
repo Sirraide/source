@@ -985,7 +985,7 @@ auto CodeGen::LowerProcedureSignature(
             if (auto a = Arg(i)) Emit(a);
         } else if (PassByReference(param.type, param.intent)) {
             SRValue arg;
-            if (i < args.size()) arg = EmitToMemory(l, args[i]);
+            if (auto a = Arg(i)) arg = EmitToMemory(l, a);
             AddByRefArg(arg, param.type);
         } else {
             AddByValArg(Arg(i), param.type);
