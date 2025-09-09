@@ -100,8 +100,9 @@ void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool 
     bool is_proc = isa<ProcOp>(proc_or_call);
     auto indent = is_proc ? "    "sv : "        "sv;
     if (proc_or_call.getNumCallArgs()) {
-        if (wrap) out += " %1((%)\n";
-        else out += " %1((%)";
+        if (not wrap or is_proc) out += ' ';
+        if (wrap) out += "%1((%)\n";
+        else out += "%1((%)";
 
         bool first = true;
         for (unsigned i = 0; i < proc_or_call.getNumCallArgs(); i++) {
