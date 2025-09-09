@@ -915,6 +915,7 @@ auto CodeGen::LowerProcedureSignature(
                 ty = SType{IntTy(sz.as_bytes())};
                 if (arg) v = LoadWord(addr, sz);
             } else if (sz <= Word * 2) {
+                // TODO: This loads padding bytes if the struct is (i32, i64); do we care?
                 ty = SType{int_ty, IntTy(sz - Word)};
                 if (arg) v = {
                     LoadWord(addr, Word),
@@ -1907,12 +1908,39 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         };
 
         auto CreateVar = [&] {
+            static constexpr Size Word = Size::Bits(64);
             auto l = C(param->location());
+
+            // Small aggregates are passed in registers.
+            if (param->type->is_aggregate()) {
+                auto StoreWord = [&](Value addr, Value v) {
+                    CreateStore(
+                        l,
+                        addr,
+                        v,
+                        tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()))
+                    );
+                };
+
+                auto tmp = CreateAlloca(l, param->type);
+                auto sz = param->type->size(tu);
+                if (sz <= Word) {
+                    StoreWord(tmp, curr_proc.getArgument(arg_idx++));
+                } else if (sz <= Word * 2) {
+                    StoreWord(tmp, curr_proc.getArgument(arg_idx++));
+                    StoreWord(CreatePtrAdd(l, tmp, Word), curr_proc.getArgument(arg_idx++));
+                } else {
+                    Todo();
+                }
+
+                locals[param] = tmp;
+                return;
+            }
 
             // i65-i128 are passed in two registers.
             if (param->type->is_integer()) {
                 auto sz = param->type->size(tu);
-                if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+                if (sz > Word and sz <= Word * 2) {
                     auto first = curr_proc.getArgument(arg_idx++);
                     auto second = curr_proc.getArgument(arg_idx++);
                     auto v = SRValue(first, second);
