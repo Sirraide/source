@@ -61,6 +61,7 @@ public:
     /// Get the alignment of an integer type.
     [[nodiscard]] auto int_align(const IntType* ty) const -> Align { return int_align(ty->bit_width()); }
     [[nodiscard]] auto int_align(Size width) const -> Align {
+        if (width == Size::Bits(128)) return Align(Size::Bits(TI->getInt128Align()));
         return Align(TI->getBitIntAlign(u32(width.bits())) / 8);
     }
 

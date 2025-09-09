@@ -637,7 +637,9 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     }
 
     // Move parameters are references only if the type is not trivial
-    // (because 'move' is equivalent to 'copy' otherwise).
+    // (because 'move' is equivalent to 'copy' otherwise); that is, for
+    // trivially-copyable types, any modification of the ‘moved’ value
+    // must not be reflected in the caller.
     if (i == Intent::Move) {
         if (not ty->trivially_copyable()) return true;
         return false;
@@ -962,7 +964,11 @@ void CodeGen::AssertTriple() {
 
 bool CodeGen::CanUseReturnValueDirectly(Type ty) {
     if (isa<PtrType, SliceType, ProcType>(ty)) return true;
-    if (ty->is_integer()) return ty->size(tu) <= Size::Bits(64);
+    if (ty == Type::BoolTy) return true;
+    if (ty->is_integer()) {
+        auto sz = ty->size(tu);
+        return sz <= Size::Bits(64) or sz == Size::Bits(128);
+    }
     return false;
 }
 
@@ -1000,8 +1006,10 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
             return CreateLoad(l, addr, IntTy(wd.as_bytes()), Align(wd.as_bytes()));
         };
 
-        // This is passed in a single register.
-        if (sz <= Word and ctx.allocate()) {
+        // This is passed in a single register. Structs that are this small are never
+        // annotated with 'byval' for some reason.
+        if (sz <= Word) {
+            ctx.allocate();
             auto& a = info.emplace_back(IntTy(sz.as_bytes()));
             if (arg) a.value = LoadWord(EmitToMemory(l, arg.get()), sz);
         }
@@ -1154,8 +1162,8 @@ auto CodeGen::LowerProcedureSignature(
         }
     }
 
-    // i65–i128 are returned in two registers.
-    else if (ret->is_integer() and sz > Word and sz <= Word * 2) {
+    // i65–i127 (but *not* i128) are returned in two registers.
+    else if (ret->is_integer() and sz > Word and sz < Word * 2) {
         AddReturnType(int_ty);
         AddReturnType(int_ty);
     }
