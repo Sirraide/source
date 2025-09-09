@@ -149,7 +149,7 @@ void TypeBase::dump(bool use_colour) const {
 }
 
 bool TypeBase::is_aggregate() const {
-    return isa<StructType, ArrayType>(this);
+    return isa<StructType, ArrayType, SliceType, RangeType, ProcType>(this);
 }
 
 bool TypeBase::is_integer() const {

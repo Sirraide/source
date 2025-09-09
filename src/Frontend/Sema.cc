@@ -560,6 +560,7 @@ auto Sema::BuildConversionSequence(
     // point in the program where the value would be needed, so it’s fine to just
     // pretend that we have one.
     if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
+        // FIXME: DON'T DO THIS. And instead just check 'HasTerminator()' in codegen...
         seq.add(Conversion::Poison(var_type, Expr::SRValue));
         return seq;
     }

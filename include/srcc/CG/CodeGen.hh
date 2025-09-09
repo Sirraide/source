@@ -16,8 +16,7 @@ class CodeGen;
 class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
-class SRValue;
-class SType;
+class IRValue;
 
 namespace detail {
 template <typename Elem, typename Range>
@@ -139,17 +138,9 @@ public:
     explicit operator bool() const { return not is_null(); }
 };
 
-/// Type equivalent of 'SRValue'
-class srcc::cg::SType : public detail::ValueOrTypePair<mlir::Type, mlir::TypeRange> {
-    friend SRValue;
-
-public:
-    using ValueOrTypePair::ValueOrTypePair;
-};
-
 /// This is either a single SSA value or a pair of SSA values; the
 /// latter is used for slices, ranges, and closures.
-class srcc::cg::SRValue : public detail::ValueOrTypePair<Value, mlir::ValueRange> {
+class srcc::cg::IRValue : public detail::ValueOrTypePair<Value, mlir::ValueRange> {
 public:
     using ValueOrTypePair::ValueOrTypePair;
 
@@ -157,14 +148,6 @@ public:
     [[nodiscard]] auto loc() const -> mlir::Location {
         Assert(not is_null());
         return scalar_or_first().getLoc();
-    }
-
-    /// Get the type(s) of this value.
-    [[nodiscard]] auto type() const -> SType {
-        SType ty;
-        if (vals[0]) ty.vals[0] = vals[0].getType();
-        if (vals[1]) ty.vals[1] = vals[1].getType();
-        return ty;
     }
 };
 
@@ -179,7 +162,7 @@ class srcc::cg::CodeGen : DiagsProducer
 
     TranslationUnit& tu;
     Opt<ir::ProcOp> printf;
-    DenseMap<LocalDecl*, SRValue> locals;
+    DenseMap<LocalDecl*, Value> locals;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ProcDecl*, String> mangled_names;
@@ -193,8 +176,6 @@ class srcc::cg::CodeGen : DiagsProducer
     mlir::Type ptr_ty;
     mlir::Type int_ty;
     mlir::Type bool_ty;
-    SType closure_ty;
-    SType slice_ty;
     usz strings = 0;
 
 public:
@@ -270,18 +251,22 @@ public:
         usz i = 0;
 
         StructInitHelper(CodeGen& CG, StructType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
-        void emit_next_field(SRValue v);
+        void emit_next_field(Value v);
+        void emit_next_field(IRValue v);
     };
 
     // AST -> IR converters
     auto C(CallingConvention l) -> mlir::LLVM::CConv;
     auto C(Linkage l) -> mlir::LLVM::Linkage;
     auto C(Location l) -> mlir::Location;
-    auto C(Type ty) -> SType;
+
+    /// Convert a type to an IR type; does not support aggregates.
+    auto C(Type ty) -> mlir::Type;
+    auto ConvertAggregateToLLVMArray(Type ty) -> mlir::Type;
 
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
-    void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
+    void CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2);
 
     void CreateArithFailure(
         Value failure_cond,
@@ -301,21 +286,22 @@ public:
 
     auto CreateBlock(ArrayRef<mlir::Type> args = {}) -> std::unique_ptr<Block>;
     auto CreateBool(mlir::Location loc, bool b) -> Value;
+    void CreateBuiltinAggregateStore(mlir::Location loc, Value addr, Type ty, IRValue aggregate);
+    auto CreateEmptySlice(mlir::Location loc) -> IRValue;
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
-    auto CreateGlobalStringSlice(mlir::Location loc, String data) -> SRValue;
+    auto CreateGlobalStringSlice(mlir::Location loc, String data) -> IRValue;
     auto CreateICmp(mlir::Location loc, mlir::arith::CmpIPredicate pred, Value lhs, Value rhs) -> Value;
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
-    auto CreateLoad(mlir::Location loc, Value addr, SType ty, Align align) -> SRValue;
-    auto CreateNil(mlir::Location loc, SType ty) -> SRValue;
+    auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
+    auto CreateNil(mlir::Location loc, mlir::Type ty) -> Value;
     auto CreateNullPointer(mlir::Location loc) -> Value;
-    auto CreatePoison(mlir::Location loc, SType ty) -> SRValue;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
-    void CreateStore(mlir::Location loc, Value addr, SRValue val, Align align);
+    void CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset = {});
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
@@ -326,21 +312,22 @@ public:
     auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 
     void Emit(ArrayRef<ProcDecl*> procs);
-    auto Emit(Stmt* stmt) -> SRValue;
+    auto Emit(Stmt* stmt) -> IRValue;
+    auto EmitScalar(Stmt* stmt) -> Value;
     void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc);
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
     void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
-    auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> SRValue;
-    auto EmitCastExpr(CastExpr* cast, Value mrvalue_slot) -> SRValue;
-    auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> SRValue;
-    auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> SRValue;
+    auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> IRValue;
+    auto EmitCastExpr(CastExpr* cast, Value mrvalue_slot) -> IRValue;
+    auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue;
+    auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> IRValue;
 #define AST_DECL_LEAF(Class)
-#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->SRValue;
+#define AST_STMT_LEAF(Class) auto Emit##Class(Class* stmt)->IRValue;
 #include "srcc/AST.inc"
 
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(Location loc, const eval::RValue& val) -> SRValue;
+    auto EmitValue(Location loc, const eval::RValue& val) -> IRValue;
 
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitInitialiser(Value addr, Expr* init);
@@ -364,11 +351,11 @@ public:
     ) -> ir::ProcOp;
 
     /// Offset a pointer to load the second element of an aggregate value.
-    auto GetPtrToSecondAggregateElem(
+    /*auto GetPtrToSecondAggregateElem(
         mlir::Location loc,
         Value addr,
         SType aggregate
-    ) -> std::pair<Value, Align>;
+    ) -> std::pair<Value, Align>;*/
 
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
@@ -419,8 +406,8 @@ public:
     auto If(
         mlir::Location loc,
         Value cond,
-        llvm::function_ref<SRValue()> emit_then,
-        llvm::function_ref<SRValue()> emit_else
+        llvm::function_ref<IRValue()> emit_then,
+        llvm::function_ref<IRValue()> emit_else
     ) -> Block*;
 
     /// Check if the size of a type is zero; this also means that every
@@ -469,15 +456,26 @@ public:
         mlir::FunctionType func;
     };
 
-    /// ABI lowering information about an argument that is passed by value.
-    struct ABIArgInfo {
-        using Attrs = std::array<SmallVector<mlir::NamedAttribute, 1>, 2>;
+    /// A single IR-level argument.
+    struct ABIArg {
+        LIBBASE_MOVE_ONLY(ABIArg);
 
-        // TODO: Yeet SRValue/SRType and treat slices/closures/ranges as aggregates.
-        SRValue value;
-        SType type;
-        Attrs attrs;
+    public:
+        mlir::Type ty;
+        Value value = nullptr; ///< Only populated if we’re lowering a call.
+        SmallVector<mlir::NamedAttribute, 1> attrs{};
+
+        ABIArg(mlir::Type ty): ty(ty) {}
+
+        /// Add a 'byval' attribute.
+        void add_byval(mlir::Type ty);
+
+        /// Add an 'sret' attribute.
+        void add_sret(mlir::Type ty);
     };
+
+    /// ABI lowering information about an argument that is passed by value.
+    using ABIArgInfo = SmallVector<ABIArg, 2>;
 
     /// Context used to convert a bundle of IR arguments back to a Source type.
     ///
@@ -547,7 +545,7 @@ public:
     auto LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;
 
     /// Lower a direct return value.
-    auto LowerDirectReturn(mlir::Location l, Expr* arg) -> SRValue;
+    auto LowerDirectReturn(mlir::Location l, Expr* arg) -> ABIArgInfo;
 
     /// Perform ABI lowering for a call or argument list.
     auto LowerProcedureSignature(

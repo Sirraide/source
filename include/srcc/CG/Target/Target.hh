@@ -18,7 +18,6 @@ class Target;
 
 namespace srcc::cg {
 class CodeGen;
-class SRValue;
 }
 
 namespace srcc::cg::ir {

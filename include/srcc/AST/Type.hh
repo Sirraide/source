@@ -135,7 +135,7 @@ public:
     void dump(bool use_colour = false) const;
     void dump_colour() const;
 
-    /// Check if this is an array or struct.
+    /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
 
     /// Check if this is 'int' or a sized integer.
