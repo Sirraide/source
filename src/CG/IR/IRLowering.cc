@@ -113,6 +113,9 @@ LOWERING(CallOp, {
     // even if the function we’re calling doesn’t take an environment–at
     // least on x64. For some targets, we’ll probably have to guard the
     // call and not pass an environment if it ends up being null.
+    //
+    // FIXME: This should be done in codegen.
+    // FIXME: The environment should have the 'nest' attribute (at least on x86_64 Linux).
     if (a.getEnv()) {
         args.push_back(a.getEnv());
         arg_types.push_back(ptr);
@@ -138,6 +141,10 @@ LOWERING(CallOp, {
 
     auto call = r.create<LLVM::CallOp>(op.getLoc(), fty, args);
     call.setCConv(op.getCc());
+
+    // Preserve argument attributes. We can’t preserve return value attributes
+    // since the number of return values may be different.
+    call.setArgAttrsAttr(op.getArgAttrsAttr());
 
     // Split aggregate returns.
     if (op.getNumResults() > 1) {
@@ -199,6 +206,8 @@ LOWERING(ProcOp, {
         sc.addInputs(unsigned(i), tc->convertType(arg));
 
     // Add the static chain pointer.
+    // FIXME: This should be done in codegen.
+    // FIXME: The static chain pointer should have the 'nest' attribute (at least on x86_64 Linux).
     if (op.getHasStaticChain())
         sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
 
@@ -217,6 +226,10 @@ LOWERING(ProcOp, {
         /*dsoLocal=*/false,
         op.getCc()
     );
+
+    // Preserve argument attributes. We can’t preserve return value attributes
+    // since the number of return values may be different.
+    func.setArgAttrsAttr(op.getArgAttrsAttr());
 
     // And inline the body.
     r.inlineRegionBefore(op.getBody(), func.getBody(), func.end());

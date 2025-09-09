@@ -1085,12 +1085,17 @@ auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
         auto sz = vals.type()->size(tu);
         if (sz <= Word) {
             StoreWord(vals.addr(), vals.next());
-        } else if (sz <= Word * 2) {
+            return vals.addr();
+        }
+
+        if (sz <= Word * 2) {
             StoreWord(vals.addr(), vals.next());
             StoreWord(CreatePtrAdd(vals.location(), vals.addr(), Word), vals.next());
-        } else {
-            return vals.next(); // Reuse the stack address.
+            return vals.addr();
         }
+
+        // Reuse the stack address.
+        return vals.next();
     }
 
     // i65-i128 are passed in two registers.
