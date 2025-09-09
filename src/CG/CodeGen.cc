@@ -471,35 +471,6 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
     return ir_proc;
 }
 
-/*auto CodeGen::GetPtrToSecondAggregateElem(
-    mlir::Location loc,
-    Value addr,
-    SType aggregate
-) -> std::pair<Value, Align> {
-    auto [offs, align] = [&] -> std::pair<Size, Align> {
-        auto& t = tu.target();
-        // Slices and closures.
-        if (isa<LLVM::LLVMPointerType>(aggregate.first())) {
-            // Closure.
-            if (isa<LLVM::LLVMPointerType>(aggregate.second()))
-                return {t.ptr_size(), t.ptr_align()};
-
-            // Slice.
-            Assert(aggregate.second() == int_ty);
-            return {t.ptr_size(), t.int_align()};
-        }
-
-        // Ranges.
-        auto size = Size::Bits(cast<mlir::IntegerType>(aggregate.first()).getWidth());
-        Assert(aggregate.first() == aggregate.second());
-        return {t.int_size(size), t.int_align(size)};
-    }();
-
-    offs = offs.align(align);
-    addr = CreatePtrAdd(loc, addr, offs);
-    return {addr, align};
-}*/
-
 void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
     auto EmitDiagnostic = [&](mlir::Diagnostic& d) {
         auto level = [&] {
@@ -1876,17 +1847,6 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     // This is an MRValue and shouldn’t yield anything.
     return {};
 }
-
-/*auto ByValue = [&] {
-    // Always require a copy here if we have an lvalue, even if the intent is 'move', because if we
-    // get here then 'move' is equivalent to 'copy' for this type (otherwise we’d be passing by reference
-    // anyway).
-    if (arg->lvalue()) ByValueImpl(param.type, Emit(arg));
-    else if (arg->is_mrvalue()) ByValueImpl(param.type, MakeTemporary(l, arg));
-    else if (param.type == Type::BoolTy) ByValueImpl(Type::BoolTy, Emit(arg));
-    else ByValueImpl(param.type, Emit(arg));
-};
-*/
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
     return EmitCastExpr(expr, nullptr);

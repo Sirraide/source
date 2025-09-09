@@ -352,13 +352,6 @@ public:
         ProcType* ty
     ) -> ir::ProcOp;
 
-    /// Offset a pointer to load the second element of an aggregate value.
-    /*auto GetPtrToSecondAggregateElem(
-        mlir::Location loc,
-        Value addr,
-        SType aggregate
-    ) -> std::pair<Value, Align>;*/
-
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
