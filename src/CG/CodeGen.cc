@@ -922,7 +922,7 @@ void CodeGen::AssertTriple() {
 }
 
 bool CodeGen::CanUseReturnValueDirectly(Type ty) {
-    if (isa<PtrType>(ty)) return true;
+    if (isa<PtrType, SliceType, ProcType>(ty)) return true;
     if (ty->is_integer()) return ty->size(tu) <= Size::Bits(64);
     return false;
 }
