@@ -263,7 +263,7 @@ public:
 
     /// Convert a type to an IR type; does not support aggregates.
     auto C(Type ty) -> mlir::Type;
-    auto ConvertAggregateToLLVMArray(Type ty) -> mlir::Type;
+    auto ConvertToByteArrayType(Type ty) -> mlir::Type;
 
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;

@@ -94,10 +94,9 @@ auto CodeGen::C(Type ty) -> mlir::Type {
     Unreachable("C() does not support aggregate type: '{}'", ty);
 }
 
-auto CodeGen::ConvertAggregateToLLVMArray(Type ty) -> mlir::Type {
+auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
     Assert(not IsZeroSizedType(ty));
-    Assert((isa<ProcType, SliceType, RangeType, StructType, ArrayType>(ty)));
-    return LLVM::LLVMArrayType::get(&mlir, getI8Type(), ty->size(tu).bytes());
+    return LLVM::LLVMArrayType::get(&mlir, getI8Type(), tu.target().preferred_size(ty).bytes());
 }
 
 auto CodeGen::ConvertProcType(ProcType* ty) -> ABICallInfo {
@@ -150,7 +149,7 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue ms
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
-    return CreateAlloca(loc, ty->size(tu), ty->align(tu));
+    return CreateAlloca(loc, tu.target().preferred_size(ty), tu.target().preferred_align(ty));
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
@@ -973,7 +972,7 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
     ABIArgInfo info;
     auto sz = t->size(tu);
     auto AddStackArg = [&] (mlir::Type arg_ty = {}) {
-        if (not arg_ty) arg_ty = ConvertAggregateToLLVMArray(t);
+        if (not arg_ty) arg_ty = ConvertToByteArrayType(t);
         info.emplace_back(ptr_ty).add_byval(arg_ty);
         if (auto a = arg.get_or_null()) {
             auto addr = EmitToMemory(l, a);
@@ -1136,7 +1135,7 @@ auto CodeGen::LowerProcedureSignature(
             ptr_ty,
             getNamedAttr(
                 LLVMDialect::getStructRetAttrName(),
-                mlir::TypeAttr::get(LLVM::LLVMArrayType::get(getI8Type(), ret->size(tu).bytes()))
+                mlir::TypeAttr::get(ConvertToByteArrayType(ret))
             )
         );
     }
@@ -1827,9 +1826,26 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
         EnterBlock(CreateBlock());
     }
 
-    // If this operation doesn’t yield anything, we’re done. This handles
-    // zero-sized and indirect returns.
-    if (op.getNumResults() == 0) return {};
+    // Check if this operation doesn’t yield anything; this handles zero-sized and
+    // indirect returns.
+    if (op.getNumResults() == 0) {
+        // However, if we’re returning an integer indirectly, do load it because
+        // Sema expects that these are always treated as values, and we currently
+        // don’t build the AST differently depending on ABI decisions.
+        //
+        // TODO: Should we do that though? It’d only really be a problem if we wanted
+        // constant evaluation and codegen proper to have different ABIs, which would
+        // almost certainly be nonsense.
+        if (expr->type->is_integer()) return CreateLoad(
+            l,
+            mrvalue_slot,
+            C(ret),
+            ret->align(tu)
+        );
+
+        // Regular indirect return.
+        return {};
+    }
 
     // Simple return types can be used as-is.
     if (CanUseReturnValueDirectly(ret)) return op.getResults();
