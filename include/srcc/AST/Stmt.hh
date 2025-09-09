@@ -951,15 +951,15 @@ class srcc::ParamDecl : public LocalDecl {
 public:
     ParamDecl(
         const ParamTypeData* param,
+        ValueCategory vc,
         String name,
         ProcDecl* parent,
         u32 index,
         bool with_param,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, param->type, Expr::LValue, name, parent, location},
+    ) : LocalDecl{Kind::ParamDecl, param->type, vc, name, parent, location},
         idx{index},
         with{with_param} {
-        if (is_srvalue_in_parameter()) category = Expr::SRValue;
     }
 
     /// Get the parameter’s index.
@@ -967,10 +967,6 @@ public:
 
     /// Get the parameter’s intent.
     [[nodiscard]] auto intent() const -> Intent;
-
-    /// SRValue 'in' parameters do not create a variable in the callee; instead
-    /// the parameter name directly refers to the argument value.
-    [[nodiscard]] bool is_srvalue_in_parameter() const;
 
     /// Whether this is a 'with' parameter.
     [[nodiscard]] bool is_with_param() const { return with; }

@@ -135,6 +135,9 @@ public:
     void dump(bool use_colour = false) const;
     void dump_colour() const;
 
+    /// Check if this is an array or struct.
+    [[nodiscard]] bool is_aggregate() const;
+
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
@@ -151,6 +154,14 @@ public:
     [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
     [[nodiscard]] auto size(const Target& t) const -> Size;
 
+    /// Stream the fields that make up this aggregate together with
+    /// their offsets.
+    ///
+    /// Do NOT use this for large arrays!!!
+    /*[[nodiscard]] auto stream_fields(TranslationUnit& tu) {
+        return stream_fields_impl(tu, {});
+    }*/
+
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() -> Type;
 
@@ -163,6 +174,9 @@ public:
 
     /// Get the type kind.
     [[nodiscard]] auto kind() const -> Kind { return type_kind; }
+
+private:
+    [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
 };
 
 class srcc::BuiltinType final : public TypeBase {
@@ -578,6 +592,24 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     }
     Unreachable();
 }
+
+/*inline auto srcc::TypeBase::stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>> {
+    if (auto a = dyn_cast<ArrayType>(this)) {
+        const Type el = a->elem();
+        const Size el_sz = el->array_size(tu);
+        const i64 dim = a->dimension();
+        for (i64 i = 0; i < dim; i++) {
+            co_yield rgs::elements_of(el->stream_fields_impl(tu, offs));
+            offs += el_sz;
+        }
+    } else if (auto s = dyn_cast<StructType>(this)) {
+        for (auto f : s->fields()) {
+            co_yield rgs::elements_of(f->type->stream_fields_impl(tu, f->offset + offs));
+        }
+    } else {
+        co_yield {this, offs};
+    }
+}*/
 
 template <>
 struct std::formatter<srcc::Type> : std::formatter<std::string_view> {

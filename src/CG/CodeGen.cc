@@ -561,8 +561,8 @@ void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
     EnterBlock(bb_cond);
 }
 
-auto CodeGen::MakeTemporary(mlir::Location l, Expr* init) -> Value {
-    Assert(init->is_mrvalue());
+auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
+    if (init->lvalue()) return Emit(init).scalar();
     auto temp = CreateAlloca(l, init->type);
     EmitMRValue(temp, init);
     return temp;
@@ -899,15 +899,39 @@ auto CodeGen::LowerProcedureSignature(
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {
+        static constexpr Size Word = Size::Bits(64);
         SType ty = C(t);
-        SRValue v = arg ? Emit(arg) : SRValue();
+        SRValue v;
+
+        // Small aggregates are passed in registers.
+        if (t->is_aggregate()) {
+            auto LoadWord = [&](Value addr, Size wd) -> Value {
+                return CreateLoad(l, addr, IntTy(wd.as_bytes()), Align(wd.as_bytes())).scalar();
+            };
+
+            auto sz = t->size(tu);
+            auto addr = arg ? EmitToMemory(l, arg) : nullptr;
+            if (sz <= Word) {
+                ty = SType{IntTy(sz.as_bytes())};
+                if (arg) v = LoadWord(addr, sz);
+            } else if (sz <= Word * 2) {
+                ty = SType{int_ty, IntTy(sz - Word)};
+                if (arg) v = {
+                    LoadWord(addr, Word),
+                    LoadWord(CreatePtrAdd(l, addr, Word), sz - Word)
+                };
+            } else {
+                Todo();
+            }
+        }
 
         // i65-i128 are passed in two registers.
-        if (t->is_integer()) {
+        else if (t->is_integer()) {
             auto sz = t->size(tu);
-            if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+            if (sz > Word and sz <= Word * 2) {
                 ty = SType(int_ty, int_ty);
                 if (arg) {
+                    v = Emit(arg);
                     if (not arg->lvalue()) {
                         auto tmp = CreateAlloca(l, t);
                         CreateStore(l, tmp, v, Align(16));
@@ -916,6 +940,11 @@ auto CodeGen::LowerProcedureSignature(
                     v = CreateLoad(l, v.scalar(), ty, Align(16));
                 }
             }
+        }
+
+        // Any other type is just passed through.
+        else if (arg) {
+            v = Emit(arg);
         }
 
         v.into(info.args);
@@ -985,10 +1014,7 @@ auto CodeGen::LowerProcedureSignature(
             case Intent::Move: {
                 if (PassByReference(param.type, param.intent)) {
                     SRValue arg;
-                    if (i < args.size()) {
-                        if (args[i]->lvalue()) arg = Emit(args[i]);
-                        else arg = MakeTemporary(l, args[i]);
-                    }
+                    if (i < args.size()) arg = EmitToMemory(l, args[i]);
                     AddByRefArg(arg, param.type);
                 } else {
                     AddByValArg(Arg(i), param.type);
@@ -1880,48 +1906,45 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             bool has_temporary_var = false;
         };
 
-        auto GetByValArg = [&] -> ArgValue {
+        auto CreateVar = [&] {
+            auto l = C(param->location());
+
             // i65-i128 are passed in two registers.
             if (param->type->is_integer()) {
                 auto sz = param->type->size(tu);
                 if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
-                    auto l = C(param->location());
                     auto first = curr_proc.getArgument(arg_idx++);
                     auto second = curr_proc.getArgument(arg_idx++);
                     auto v = SRValue(first, second);
                     auto tmp = CreateAlloca(l, param->type);
                     CreateStore(l, tmp, v, Align(16));
-                    return {tmp, true};
+                    locals[param] = tmp;
+                    return;
                 }
             }
 
-            if (not isa<ProcType, RangeType, SliceType>(param->type))
-                return {SRValue(curr_proc.getArgument(arg_idx++))};
-
-            auto first = curr_proc.getArgument(arg_idx++);
-            auto second = curr_proc.getArgument(arg_idx++);
-            return {SRValue{first, second}};
-        };
-
-        auto ByRef = [&] {
-            locals[param] = curr_proc.getArgument(arg_idx++);
-        };
-
-        auto CreateVar = [&] {
-            auto l = C(param->location());
-            auto arg = GetByValArg();
-            if (arg.has_temporary_var) locals[param] = arg.val;
-            else {
-                auto alloca = CreateAlloca(l, param->type);
-                locals[param] = alloca;
-                CreateStore(l, alloca, arg.val, param->type->align(tu));
+            SRValue v;
+            if (not isa<ProcType, RangeType, SliceType>(param->type)) {
+                v = SRValue(curr_proc.getArgument(arg_idx++));
+            } else {
+                auto first = curr_proc.getArgument(arg_idx++);
+                auto second = curr_proc.getArgument(arg_idx++);
+                v = SRValue{first, second};
             }
+
+            auto alloca = CreateAlloca(l, param->type);
+            locals[param] = alloca;
+            CreateStore(l, alloca, v, param->type->align(tu));
+        };
+
+        auto AssignRef = [&] {
+            locals[param] = curr_proc.getArgument(arg_idx++);
         };
 
         switch (param->intent()) {
             case Intent::Inout:
             case Intent::Out:
-                ByRef();
+                AssignRef();
                 break;
 
             case Intent::Copy:
@@ -1930,20 +1953,8 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 
             case Intent::In:
             case Intent::Move: {
-                if (PassByReference(param->type, param->intent())) ByRef();
-                else if (not param->is_srvalue_in_parameter()) CreateVar();
-                else {
-                    auto arg = GetByValArg();
-                    if (arg.has_temporary_var) {
-                        arg.val = CreateLoad(
-                            C(param->location()),
-                            arg.val.scalar(),
-                            C(param->type),
-                            param->type->align(tu)
-                        );
-                    }
-                    locals[param] = arg.val;
-                }
+                if (PassByReference(param->type, param->intent())) AssignRef();
+                else CreateVar();
             } break;
         }
     }

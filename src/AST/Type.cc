@@ -148,6 +148,10 @@ void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
+bool TypeBase::is_aggregate() const {
+    return isa<StructType, ArrayType>(this);
+}
+
 bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
 }

@@ -79,6 +79,13 @@ public:
         }
     }
 
+    /// Add an additional value.
+    auto extend(Elem e) {
+        if (vals[0] == nullptr) vals[0] = e;
+        else if (vals[1] == nullptr) vals[1] = e;
+        else Unreachable();
+    }
+
     /// Get the first value of an aggregate.
     [[nodiscard]] auto first() const -> Elem {
         Assert(is_aggregate());
@@ -452,7 +459,7 @@ public:
 
     /// Create a temporary value to hold an mrvalue. Returns the address of
     /// the temporary.
-    auto MakeTemporary(mlir::Location l, Expr* init) -> Value;
+    auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
 
     /// Whether a value of this type needs to be returned indirectly.
     bool NeedsIndirectReturn(Type ty);

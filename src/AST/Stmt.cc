@@ -194,11 +194,6 @@ auto ParamDecl::intent() const -> Intent {
     return parent->param_types()[idx].intent;
 }
 
-bool ParamDecl::is_srvalue_in_parameter() const {
-    auto i = intent();
-    return i == Intent::In and is_srvalue();
-}
-
 ProcRefExpr::ProcRefExpr(
     ProcDecl* decl,
     Location location

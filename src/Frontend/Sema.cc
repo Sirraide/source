@@ -2081,7 +2081,7 @@ auto Sema::BuildParamDecl(
     String name,
     Location loc
 ) -> ParamDecl* {
-    auto decl = new (*M) ParamDecl(param, name, proc.proc, index, with_param, loc);
+    auto decl = new (*M) ParamDecl(param, Expr::LValue, name, proc.proc, index, with_param, loc);
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
