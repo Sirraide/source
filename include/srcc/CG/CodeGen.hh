@@ -297,6 +297,7 @@ public:
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
+    void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
     auto CreateNil(mlir::Location loc, mlir::Type ty) -> Value;
     auto CreateNullPointer(mlir::Location loc) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;

@@ -311,6 +311,25 @@ auto CodeGen::CreateLoad(
     return create<ir::LoadOp>(loc, type, CreatePtrAdd(loc, addr, offset), align);
 }
 
+void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
+    // For integer types and pointers, emit a load-store pair.
+    if (ty->is_integer() or isa<PtrType>(ty)) {
+        auto a = ty->align(tu);
+        auto v = CreateLoad(loc, from, C(ty), a);
+        CreateStore(loc, to, v, a);
+        return;
+    }
+
+    // For everything else, emit a memcpy.
+    create<LLVM::MemcpyOp>(
+        loc,
+        to,
+        from,
+        CreateInt(loc, i64(ty->size(tu).bytes())),
+        false
+    );
+}
+
 auto CodeGen::CreateNil(mlir::Location loc, mlir::Type ty) -> Value {
     auto s = ty;
     if (s.isInteger()) return CreateInt(loc, 0, s);
@@ -822,13 +841,7 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
     // We support treating lvalues as mrvalues.
     if (init->value_category == Expr::LValue) {
         auto loc = C(init->location());
-        create<LLVM::MemcpyOp>(
-            loc,
-            addr,
-            EmitScalar(init),
-            CreateInt(loc, i64(init->type->size(tu).bytes())),
-            false
-        );
+        CreateMemCpy(loc, addr, EmitScalar(init), init->type);
         return;
     }
 
@@ -868,13 +881,7 @@ void CodeGen::EmitMRValue(Value addr, Expr* init) { // clang-format off
             );
 
             auto loc = C(init->location());
-            create<LLVM::MemcpyOp>(
-                loc,
-                addr,
-                c,
-                CreateInt(loc, i64(init->type->size(tu).bytes())),
-                false
-            );
+            CreateMemCpy(loc, addr, c, init->type);
         },
 
         // Default initialiser here is a memset to 0.
@@ -980,13 +987,7 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
             // Take care not to modify the original object if we’re passing by value.
             if (a->lvalue()) {
                 info[0].value = CreateAlloca(l, t);
-                create<LLVM::MemcpyOp>(
-                    l,
-                    info[0].value,
-                    addr,
-                    CreateInt(l, i64(t->size(tu).bytes())),
-                    false
-                );
+                CreateMemCpy(l, info[0].value, addr, t);
             } else {
                 info[0].value = addr;
             }
@@ -1028,8 +1029,8 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
             info.emplace_back(int_ty);
             if (auto a = arg.get_or_null()) {
                 auto mem = EmitToMemory(l, a);
-                info[0].value = CreateLoad(l, mem, int_ty, Align(8));
-                info[1].value = CreateLoad(l, mem, int_ty, Align(8), Word);
+                info[0].value = CreateLoad(l, mem, int_ty, t->align(tu));
+                info[1].value = CreateLoad(l, mem, int_ty, t->align(tu), Word);
             }
         } else {
             // For some reason Clang passes e.g. i127 as an i128 rather than
@@ -1046,7 +1047,7 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
         ctx.allocate(2);
         info.emplace_back(i128_ty);
         if (auto a = arg.get_or_null())
-            info[0].value = CreateLoad(l, EmitToMemory(l, a), i128_ty, Align(16));
+            info[0].value = CreateLoad(l, EmitToMemory(l, a), i128_ty, t->align(tu));
     }
 
     // Any integers that are larger than i128 are passed on the stack.
@@ -1142,7 +1143,7 @@ auto CodeGen::LowerProcedureSignature(
 
     // Small aggregates are returned in registers.
     else if (ret->is_aggregate()) {
-        if (sz < Word) {
+        if (sz <= Word) {
             AddReturnType(IntTy(sz.as_bytes()));
         } else if (sz <= Word * 2) {
             // TODO: This returns padding bytes if the struct is e.g. (i32, i64); do we care?
