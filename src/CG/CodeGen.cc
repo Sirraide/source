@@ -564,7 +564,7 @@ void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
 auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
     if (init->lvalue()) return Emit(init).scalar();
     auto temp = CreateAlloca(l, init->type);
-    EmitMRValue(temp, init);
+    EmitInitialiser(temp, init);
     return temp;
 }
 
@@ -932,12 +932,7 @@ auto CodeGen::LowerProcedureSignature(
             if (sz > Word and sz <= Word * 2) {
                 ty = SType(int_ty, int_ty);
                 if (arg) {
-                    v = Emit(arg);
-                    if (not arg->lvalue()) {
-                        auto tmp = CreateAlloca(l, t);
-                        CreateStore(l, tmp, v, Align(16));
-                        v = tmp;
-                    }
+                    v = EmitToMemory(l, arg);
                     v = CreateLoad(l, v.scalar(), ty, Align(16));
                 }
             }
@@ -955,11 +950,6 @@ auto CodeGen::LowerProcedureSignature(
     auto Arg = [&](usz i) -> Expr* {
         if (i < args.size()) return args[i];
         return nullptr;
-    };
-
-    auto EmitArg = [&](usz i) -> SRValue {
-        if (auto a = Arg(i)) return Emit(a);
-        return {};
     };
 
     // Some types are returned via a store to a hidden argument pointer.
@@ -992,35 +982,13 @@ auto CodeGen::LowerProcedureSignature(
     // Evaluate the arguments and add them to the call.
     for (auto [i, param] : enumerate(proc->params())) {
         if (IsZeroSizedType(param.type)) {
-            EmitArg(i);
-            continue;
-        }
-
-        // How this is passed depends on the intent.
-        switch (param.intent) {
-            // 'inout' and 'out' arguments are always existing lvalues,
-            // which can be emitted on their own.
-            case Intent::Inout:
-            case Intent::Out:
-                AddByRefArg(EmitArg(i), param.type);
-                break;
-
-            // 'copy' arguments are always rvalues.
-            case Intent::Copy:
-                AddByValArg(Arg(i), param.type);
-                break;
-
-            // 'in' and 'move' arguments may have any value category.
-            case Intent::In:
-            case Intent::Move: {
-                if (PassByReference(param.type, param.intent)) {
-                    SRValue arg;
-                    if (i < args.size()) arg = EmitToMemory(l, args[i]);
-                    AddByRefArg(arg, param.type);
-                } else {
-                    AddByValArg(Arg(i), param.type);
-                }
-            } break;
+            if (auto a = Arg(i)) Emit(a);
+        } else if (PassByReference(param.type, param.intent)) {
+            SRValue arg;
+            if (i < args.size()) arg = EmitToMemory(l, args[i]);
+            AddByRefArg(arg, param.type);
+        } else {
+            AddByValArg(Arg(i), param.type);
         }
     }
 
@@ -1902,14 +1870,18 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     u32 arg_idx = NeedsIndirectReturn(proc->return_type());
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
-        struct ArgValue {
-            SRValue val;
-            bool has_temporary_var = false;
+        auto HandleByRefArg = [&] {
+            locals[param] = curr_proc.getArgument(arg_idx++);
         };
 
-        auto CreateVar = [&] {
+        auto HandleByValArg = [&] {
             static constexpr Size Word = Size::Bits(64);
             auto l = C(param->location());
+            auto CreateVar = [&](SRValue v) {
+                auto tmp = CreateAlloca(l, param->type);
+                CreateStore(l, tmp, v, param->type->align(tu));
+                locals[param] = tmp;
+            };
 
             // Small aggregates are passed in registers.
             if (param->type->is_aggregate()) {
@@ -1943,47 +1915,24 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
                 if (sz > Word and sz <= Word * 2) {
                     auto first = curr_proc.getArgument(arg_idx++);
                     auto second = curr_proc.getArgument(arg_idx++);
-                    auto v = SRValue(first, second);
-                    auto tmp = CreateAlloca(l, param->type);
-                    CreateStore(l, tmp, v, Align(16));
-                    locals[param] = tmp;
-                    return;
+                    return CreateVar(SRValue(first, second));
                 }
             }
 
-            SRValue v;
-            if (not isa<ProcType, RangeType, SliceType>(param->type)) {
-                v = SRValue(curr_proc.getArgument(arg_idx++));
-            } else {
+            if (isa<ProcType, RangeType, SliceType>(param->type)) {
                 auto first = curr_proc.getArgument(arg_idx++);
                 auto second = curr_proc.getArgument(arg_idx++);
-                v = SRValue{first, second};
+                CreateVar({first, second});
+                return;
             }
 
-            auto alloca = CreateAlloca(l, param->type);
-            locals[param] = alloca;
-            CreateStore(l, alloca, v, param->type->align(tu));
+            CreateVar(curr_proc.getArgument(arg_idx++));
         };
 
-        auto AssignRef = [&] {
-            locals[param] = curr_proc.getArgument(arg_idx++);
-        };
-
-        switch (param->intent()) {
-            case Intent::Inout:
-            case Intent::Out:
-                AssignRef();
-                break;
-
-            case Intent::Copy:
-                CreateVar();
-                break;
-
-            case Intent::In:
-            case Intent::Move: {
-                if (PassByReference(param->type, param->intent())) AssignRef();
-                else CreateVar();
-            } break;
+        if (PassByReference(param->type, param->intent())) {
+            HandleByRefArg();
+        } else {
+            HandleByValArg();
         }
     }
 
