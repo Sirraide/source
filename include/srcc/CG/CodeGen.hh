@@ -175,6 +175,7 @@ class srcc::cg::CodeGen : DiagsProducer
     LangOpts lang_opts;
     mlir::Type ptr_ty;
     mlir::Type int_ty;
+    mlir::Type i128_ty;
     mlir::Type bool_ty;
     usz strings = 0;
 
@@ -477,12 +478,30 @@ public:
     /// ABI lowering information about an argument that is passed by value.
     using ABIArgInfo = SmallVector<ABIArg, 2>;
 
+    /// Context used to convert an entire argument list.
+    class ABILoweringContext {
+        LIBBASE_MOVE_ONLY(ABILoweringContext);
+        static constexpr int MaxRegs = 6;
+        int regs_left = MaxRegs;
+
+    public:
+        ABILoweringContext() = default;
+
+        /// Attempt to allocate 'n' argument registers.
+        bool allocate(int n = 1) {
+            if (regs_left < n) return false;
+            regs_left -= n;
+            return true;
+        }
+    };
+
     /// Context used to convert a bundle of IR arguments back to a Source type.
     ///
     /// One of these is created for each AST-level argument or return type; an
     /// instance of this should not be reused.
     class ABITypeRaisingContext {
         CodeGen& cg;
+        ABILoweringContext& ctx;
         mlir::Location loc;
         mlir::ValueRange range;
         Type ty;
@@ -499,11 +518,12 @@ public:
         /// \param addr The memory location to write to.
         explicit ABITypeRaisingContext(
             CodeGen& cg,
+            ABILoweringContext& ctx,
             mlir::Location loc,
             mlir::ValueRange r,
             Type ty,
             Value addr = nullptr
-        ) : cg(cg), loc(loc), range(r), ty(ty), indirect_ptr(addr) {}
+        ) : cg(cg), ctx(ctx), loc(loc), range(r), ty(ty), indirect_ptr(addr) {}
 
         /// Get or create address into which to store the value, if any.
         [[nodiscard]] auto addr() -> Value;
@@ -513,6 +533,9 @@ public:
 
         /// Get the location of the value that this is initialising.
         [[nodiscard]] auto location() -> mlir::Location { return loc; }
+
+        /// Get the lowering context.
+        [[nodiscard]] auto lowering() -> ABILoweringContext& { return ctx; }
 
         /// Get the next value and consume it.
         [[nodiscard]] auto next() -> Value {
@@ -542,7 +565,7 @@ public:
     bool CanUseReturnValueDirectly(Type ty);
 
     /// Lower a single argument that is passed or returned by value.
-    auto LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;
+    auto LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;
 
     /// Lower a direct return value.
     auto LowerDirectReturn(mlir::Location l, Expr* arg) -> ABIArgInfo;

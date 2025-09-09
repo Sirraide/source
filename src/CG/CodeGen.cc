@@ -38,6 +38,7 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     ptr_ty = LLVM::LLVMPointerType::get(&mlir);
     bool_ty = getI1Type();
     int_ty = C(Type::IntTy);
+    i128_ty = getIntegerType(128);
     mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
 
     // Declare the abort handlers.
@@ -927,10 +928,31 @@ bool CodeGen::CanUseReturnValueDirectly(Type ty) {
     return false;
 }
 
-auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo {
+auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo {
     static constexpr Size Word = Size::Bits(64);
     ABIArgInfo info;
     auto sz = t->size(tu);
+    auto AddStackArg = [&] (mlir::Type arg_ty = {}) {
+        if (not arg_ty) arg_ty = ConvertAggregateToLLVMArray(t);
+        info.emplace_back(ptr_ty).add_byval(arg_ty);
+        if (auto a = arg.get_or_null()) {
+            auto addr = EmitToMemory(l, a);
+
+            // Take care not to modify the original object if we’re passing by value.
+            if (a->lvalue()) {
+                info[0].value = CreateAlloca(l, t);
+                create<LLVM::MemcpyOp>(
+                    l,
+                    info[0].value,
+                    addr,
+                    CreateInt(l, i64(t->size(tu).bytes())),
+                    false
+                );
+            } else {
+                info[0].value = addr;
+            }
+        }
+    };
 
     // Small aggregates are passed in registers.
     if (t->is_aggregate()) {
@@ -938,51 +960,64 @@ auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgIn
             return CreateLoad(l, addr, IntTy(wd.as_bytes()), Align(wd.as_bytes()));
         };
 
-        auto addr = arg ? EmitToMemory(l, arg.get()) : nullptr;
-        if (sz <= Word) {
+        // This is passed in a single register.
+        if (sz <= Word and ctx.allocate()) {
             auto& a = info.emplace_back(IntTy(sz.as_bytes()));
-            if (arg) a.value = LoadWord(addr, sz);
-        } else if (sz <= Word * 2) {
+            if (arg) a.value = LoadWord(EmitToMemory(l, arg.get()), sz);
+        }
+
+        // This is passed in two registers.
+        else if (sz <= Word * 2 and ctx.allocate(2)) {
             // TODO: This loads padding bytes if the struct is e.g. (i32, i64); do we care?
             info.emplace_back(int_ty);
             info.emplace_back(IntTy(sz - Word));
             if (arg) {
+                auto addr = EmitToMemory(l, arg.get());
                 info[0].value = LoadWord(addr, Word);
                 info[1].value = LoadWord(CreatePtrAdd(l, addr, Word), sz - Word);
             }
-        } else {
-            info.emplace_back(ptr_ty).add_byval(ConvertAggregateToLLVMArray(t));
-            if (arg) {
-                // Take care not to modify the original object if we’re passing by value.
-                if (arg.get()->lvalue()) {
-                    info[0].value = CreateAlloca(l, t);
-                    create<LLVM::MemcpyOp>(
-                        l,
-                        info[0].value,
-                        addr,
-                        CreateInt(l, i64(t->size(tu).bytes())),
-                        false
-                    );
-                } else {
-                    info[0].value = addr;
-                }
+        }
+
+        // This is passed on the stack.
+        else { AddStackArg(); }
+    }
+
+    // i65-i127 are passed in two registers.
+    else if (t->is_integer() and sz > Word and sz < Word * 2) {
+        if (ctx.allocate(2)) {
+            info.emplace_back(int_ty);
+            info.emplace_back(int_ty);
+            if (auto a = arg.get_or_null()) {
+                auto mem = EmitToMemory(l, a);
+                info[0].value = CreateLoad(l, mem, int_ty, Align(8));
+                info[1].value = CreateLoad(l, mem, int_ty, Align(8), Word);
             }
+        } else {
+            // For some reason Clang passes e.g. i127 as an i128 rather than
+            // as an array of 16 bytes.
+            AddStackArg(i128_ty);
         }
     }
 
-    // i65-i128 are passed in two registers.
-    else if (t->is_integer() and sz > Word and sz <= Word * 2) {
-        info.emplace_back(int_ty);
-        info.emplace_back(int_ty);
-        if (auto a = arg.get_or_null()) {
-            auto mem = EmitToMemory(l, a);
-            info[0].value = CreateLoad(l, mem, int_ty, Align(16));
-            info[0].value = CreateLoad(l, mem, int_ty, Align(16), Word);
-        }
+    // i128’s ABI is apparently somewhat cursed; it is never marked as 'byval'
+    // and is passed as a single value; this specifically applies only to the
+    // C __i128 type and *not* _BitInt(128) for some ungodly reason; treat our
+    // i128 as the former because it’s more of a builtin type.
+    else if (t->is_integer() and sz == Word * 2) {
+        ctx.allocate(2);
+        info.emplace_back(i128_ty);
+        if (auto a = arg.get_or_null())
+            info[0].value = CreateLoad(l, EmitToMemory(l, a), i128_ty, Align(16));
+    }
+
+    // Any integers that are larger than i128 are passed on the stack.
+    else if (t->is_integer() and sz > Word * 2) {
+        AddStackArg();
     }
 
     // Any other type is just passed through.
     else {
+        ctx.allocate();
         auto ty = C(t);
         info.emplace_back(ty);
         if (auto a = arg.get_or_null()) {
@@ -995,7 +1030,8 @@ auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgIn
 }
 
 auto CodeGen::LowerDirectReturn(mlir::Location l, Expr* arg) -> ABIArgInfo {
-    return LowerByValArg(l, arg, arg->type);
+    ABILoweringContext ctx;
+    return LowerByValArg(ctx, l, arg, arg->type);
 }
 
 auto CodeGen::LowerProcedureSignature(
@@ -1006,6 +1042,7 @@ auto CodeGen::LowerProcedureSignature(
 ) -> ABICallInfo {
     static constexpr Size Word = Size::Bits(64);
     ABICallInfo info;
+    ABILoweringContext ctx;
     auto AddArgType = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
         info.arg_types.push_back(t);
         info.arg_attrs.push_back(getDictionaryAttr(attrs));
@@ -1017,6 +1054,7 @@ auto CodeGen::LowerProcedureSignature(
     };
 
     auto AddByRefArg = [&](Value v, Type t) {
+        ctx.allocate();
         info.args.push_back(v);
         AddArgType(
             ptr_ty,
@@ -1028,7 +1066,7 @@ auto CodeGen::LowerProcedureSignature(
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {
-        for (const auto& a : LowerByValArg(l, arg, t)) {
+        for (const auto& a : LowerByValArg(ctx, l, arg, t)) {
             info.args.push_back(a.value);
             AddArgType(a.ty, a.attrs);
         }
@@ -1043,6 +1081,7 @@ auto CodeGen::LowerProcedureSignature(
     auto ret = proc->ret();
     auto sz = ret->size(tu);
     if (NeedsIndirectReturn(ret)) {
+        ctx.allocate();
         info.args.push_back(indirect_ptr);
         AddArgType(
             ptr_ty,
@@ -1109,6 +1148,8 @@ bool CodeGen::NeedsIndirectReturn(Type ty) {
 
 auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
     static constexpr Size Word = Size::Bits(64);
+    auto sz = vals.type()->size(tu);
+    auto ReuseStackAddress = [&] { return vals.next(); };
 
     // Small aggregates are passed in registers.
     if (vals.type()->is_aggregate()) {
@@ -1121,34 +1162,48 @@ auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
             );
         };
 
-        auto sz = vals.type()->size(tu);
-        if (sz <= Word) {
+        // This is passed in a single register.
+        if (sz <= Word and vals.lowering().allocate()) {
             StoreWord(vals.addr(), vals.next());
             return vals.addr();
         }
 
-        if (sz <= Word * 2) {
+        // This is passed in two registers.
+        if (sz <= Word * 2 and vals.lowering().allocate(2)) {
             StoreWord(vals.addr(), vals.next());
             StoreWord(CreatePtrAdd(vals.location(), vals.addr(), Word), vals.next());
             return vals.addr();
         }
 
-        // Reuse the stack address.
-        return vals.next();
+        return ReuseStackAddress();
     }
 
-    // i65-i128 are passed in two registers.
     if (vals.type()->is_integer()) {
-        auto sz = vals.type()->size(tu);
-        if (sz > Word and sz <= Word * 2) {
-            auto first = vals.next();
-            auto second = vals.next();
-            CreateStore(vals.location(), vals.addr(), first, vals.type()->align(tu));
-            CreateStore(vals.location(), vals.addr(), second, vals.type()->align(tu), Word);
+        // i65-i127 are passed in two registers.
+        if (sz > Word and sz < Word * 2) {
+            if (vals.lowering().allocate(2)) {
+                auto first = vals.next();
+                auto second = vals.next();
+                CreateStore(vals.location(), vals.addr(), first, vals.type()->align(tu));
+                CreateStore(vals.location(), vals.addr(), second, vals.type()->align(tu), Word);
+                return vals.addr();
+            }
+
+            return ReuseStackAddress();
+        }
+
+        // i128 is a single register.
+        if (sz == Word * 2) {
+            vals.lowering().allocate(2);
+            CreateStore(vals.location(), vals.addr(), vals.next(), vals.type()->align(tu));
             return vals.addr();
         }
+
+        // Anything larger goes on the stack..
+        if (sz > Word * 2) return ReuseStackAddress();
     }
 
+    vals.lowering().allocate();
     CreateStore(vals.location(), vals.addr(), vals.next(), vals.type()->align(tu));
     return vals.addr();
 }
@@ -1717,7 +1772,8 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     if (CanUseReturnValueDirectly(ret)) return op.getResults();
 
     // More complicated ones need to be written to memory.
-    ABITypeRaisingContext ctx{*this, l, op.getResults(), ret, mrvalue_slot};
+    ABILoweringContext actx;
+    ABITypeRaisingContext ctx{*this, actx, l, op.getResults(), ret, mrvalue_slot};
     auto mem = WriteDirectReturnToMemory(ctx);
 
     // If this is an srvalue, just load it.
@@ -2020,14 +2076,17 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Lower parameters.
+    ABILoweringContext actx;
     unsigned num_args = NeedsIndirectReturn(proc->return_type());
+    if (num_args) actx.allocate();
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
         if (PassByReference(param->type, param->intent())) {
+            actx.allocate();
             locals[param] = curr_proc.getArgument(num_args++);
         } else {
             auto l = C(param->location());
-            ABITypeRaisingContext ctx{*this, l, curr_proc.getArguments().drop_front(num_args), param->type};
+            ABITypeRaisingContext ctx{*this, actx, l, curr_proc.getArguments().drop_front(num_args), param->type};
             locals[param] = WriteByValArgToMemory(ctx);
         }
     }
