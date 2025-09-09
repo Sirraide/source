@@ -262,13 +262,18 @@ public:
         ~EnterProcedure() { CG.curr_proc = old_func; }
     };
 
-    struct ABICallInfo {
-        SmallVector<mlir::Type> result_types;
-        SmallVector<mlir::Type> arg_types;
-        SmallVector<mlir::Attribute> result_attrs;
-        SmallVector<mlir::Attribute> arg_attrs;
-        SmallVector<Value> args;
-        mlir::FunctionType func;
+    class ValueSource {
+        mlir::ValueRange range;
+        unsigned i = 0;
+
+    public:
+        explicit ValueSource(mlir::ValueRange r) : range(r) {}
+
+        /// Get the next value and consume it.
+        [[nodiscard]] auto next() -> Value {
+            Assert(i < range.size());
+            return range[i++];
+        }
     };
 
     struct StructInitHelper {
@@ -287,7 +292,6 @@ public:
     auto C(Location l) -> mlir::Location;
     auto C(Type ty) -> SType;
 
-    auto ConvertProcType(ProcType* ty) -> ABICallInfo;
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
     void CreateAbort(mlir::Location loc, ir::AbortReason reason, SRValue msg1, SRValue msg2);
@@ -446,31 +450,12 @@ public:
     /// return an empty vector if the loop is infinite or has no arguments.
     void Loop(llvm::function_ref<void()> emit_body);
 
-    /// Perform ABI lowering for a call or argument list.
-    auto LowerProcedureSignature(
-        mlir::Location l,
-        ProcType* proc,
-        Value indirect_ptr,
-        ArrayRef<Expr*> args
-    ) -> ABICallInfo;
-
     /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;
 
     /// Create a temporary value to hold an mrvalue. Returns the address of
     /// the temporary.
     auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
-
-    /// Whether a value of this type needs to be returned indirectly.
-    bool NeedsIndirectReturn(Type ty);
-
-    /// Determine whether this parameter type is passed by reference under
-    /// the given intent.
-    ///
-    /// No calling convention is passed to this since parameters to native
-    /// procedures should always have the 'copy' intent, which by definition
-    /// always passes by value.
-    bool PassByReference(Type ty, Intent i);
 
     /// Opposite of If().
     void Unless(
@@ -483,6 +468,58 @@ public:
         llvm::function_ref<Value()> emit_cond,
         llvm::function_ref<void()> emit_body
     );
+
+    /// ===================================================================
+    ///  ABI
+    /// ===================================================================
+    /// ABI lowering information about a function argument list.
+    struct ABICallInfo {
+        SmallVector<mlir::Type> result_types;
+        SmallVector<mlir::Type> arg_types;
+        SmallVector<mlir::Attribute> result_attrs;
+        SmallVector<mlir::Attribute> arg_attrs;
+        SmallVector<Value> args;
+        mlir::FunctionType func;
+    };
+
+    /// Lower a procedure type.
+    auto ConvertProcType(ProcType* ty) -> ABICallInfo;
+
+    /// Whether a value of this type needs to be returned indirectly.
+    bool NeedsIndirectReturn(Type ty);
+
+    /// Determine whether this parameter type is passed by reference under
+    /// the given intent.
+    ///
+    /// No calling convention is passed to this since parameters to native
+    /// procedures should always have the 'copy' intent, which by definition
+    /// always passes by value.
+    bool PassByReference(Type ty, Intent i);
+
+    /// Whether a value of this type can be used as-is when returned from a function.
+    bool CanUseReturnValueDirectly(Type ty);
+
+    /// Lower a single argument that is passed or returned by value.
+    auto LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pair<SRValue, SType>;
+
+    /// Lower a direct return value.
+    auto LowerDirectReturn(mlir::Location l, Expr* arg) -> SRValue;
+
+    /// Perform ABI lowering for a call or argument list.
+    auto LowerProcedureSignature(
+        mlir::Location l,
+        ProcType* proc,
+        Value indirect_ptr,
+        ArrayRef<Expr*> args
+    ) -> ABICallInfo;
+
+    /// Take a bundle of IR arguments that represent a value that has been passed
+    /// in one or more registers and write it to a new memory address.
+    void WriteByValArgToMemory(mlir::Location l, Value addr, ValueSource& vals, Type ty);
+
+    /// Take a bundle of IR arguments that represent a direct return value and write
+    /// it to a new memory address.
+    void WriteDirectReturnToMemory(mlir::Location l, Value addr, ValueSource& vals, Type ty);
 
 private:
     void AssertTriple();

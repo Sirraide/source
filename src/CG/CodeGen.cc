@@ -870,12 +870,72 @@ void CodeGen::AssertTriple() {
     );
 }
 
+bool CodeGen::CanUseReturnValueDirectly(Type ty) {
+    if (isa<PtrType>(ty)) return true;
+    if (ty->is_integer()) return ty->size(tu) <= Size::Bits(64);
+    return false;
+}
+
+auto CodeGen::LowerByValArg(mlir::Location l, Ptr<Expr> arg, Type t) -> std::pair<SRValue, SType> {
+    static constexpr Size Word = Size::Bits(64);
+    SRValue v;
+    SType ty;
+    auto sz = t->size(tu);
+
+    // Small aggregates are passed in registers.
+    if (t->is_aggregate()) {
+        auto LoadWord = [&](Value addr, Size wd) -> Value {
+            return CreateLoad(l, addr, IntTy(wd.as_bytes()), Align(wd.as_bytes())).scalar();
+        };
+
+        auto addr = arg ? EmitToMemory(l, arg.get()) : nullptr;
+        if (sz <= Word) {
+            ty = SType{IntTy(sz.as_bytes())};
+            if (arg) v = LoadWord(addr, sz);
+        } else if (sz <= Word * 2) {
+            // TODO: This loads padding bytes if the struct is e.g. (i32, i64); do we care?
+            ty = SType{int_ty, IntTy(sz - Word)};
+            if (arg) v = {
+                LoadWord(addr, Word),
+                LoadWord(CreatePtrAdd(l, addr, Word), sz - Word)
+            };
+        } else {
+            Todo();
+        }
+    }
+
+    // i65-i128 are passed in two registers.
+    else if (t->is_integer() and sz > Word and sz <= Word * 2) {
+        ty = SType(int_ty, int_ty);
+        if (auto a = arg.get_or_null()) {
+            v = EmitToMemory(l, a);
+            v = CreateLoad(l, v.scalar(), ty, Align(16));
+        }
+    }
+
+    // Any other type is just passed through.
+    else {
+        ty = C(t);
+        if (auto a = arg.get_or_null()) {
+            v = Emit(a);
+            if (a->lvalue()) v = CreateLoad(l, v.scalar(), ty, a->type->align(tu));
+        }
+    }
+
+    return {v, ty};
+}
+
+auto CodeGen::LowerDirectReturn(mlir::Location l, Expr* arg) -> SRValue {
+    return LowerByValArg(l, arg, arg->type).first;
+}
+
 auto CodeGen::LowerProcedureSignature(
     mlir::Location l,
     ProcType* proc,
     Value indirect_ptr,
     ArrayRef<Expr*> args
 ) -> ABICallInfo {
+    static constexpr Size Word = Size::Bits(64);
     ABICallInfo info;
     auto AddArgType = [&](mlir::Type t, ArrayRef<mlir::NamedAttribute> attrs = {}) {
         info.arg_types.push_back(t);
@@ -899,50 +959,7 @@ auto CodeGen::LowerProcedureSignature(
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {
-        static constexpr Size Word = Size::Bits(64);
-        SType ty = C(t);
-        SRValue v;
-
-        // Small aggregates are passed in registers.
-        if (t->is_aggregate()) {
-            auto LoadWord = [&](Value addr, Size wd) -> Value {
-                return CreateLoad(l, addr, IntTy(wd.as_bytes()), Align(wd.as_bytes())).scalar();
-            };
-
-            auto sz = t->size(tu);
-            auto addr = arg ? EmitToMemory(l, arg) : nullptr;
-            if (sz <= Word) {
-                ty = SType{IntTy(sz.as_bytes())};
-                if (arg) v = LoadWord(addr, sz);
-            } else if (sz <= Word * 2) {
-                // TODO: This loads padding bytes if the struct is (i32, i64); do we care?
-                ty = SType{int_ty, IntTy(sz - Word)};
-                if (arg) v = {
-                    LoadWord(addr, Word),
-                    LoadWord(CreatePtrAdd(l, addr, Word), sz - Word)
-                };
-            } else {
-                Todo();
-            }
-        }
-
-        // i65-i128 are passed in two registers.
-        else if (t->is_integer()) {
-            auto sz = t->size(tu);
-            if (sz > Word and sz <= Word * 2) {
-                ty = SType(int_ty, int_ty);
-                if (arg) {
-                    v = EmitToMemory(l, arg);
-                    v = CreateLoad(l, v.scalar(), ty, Align(16));
-                }
-            }
-        }
-
-        // Any other type is just passed through.
-        else if (arg) {
-            v = Emit(arg);
-        }
-
+        auto [v, ty] = LowerByValArg(l, arg, t);
         v.into(info.args);
         ty.each(AddArgType);
     };
@@ -954,6 +971,7 @@ auto CodeGen::LowerProcedureSignature(
 
     // Some types are returned via a store to a hidden argument pointer.
     auto ret = proc->ret();
+    auto sz = ret->size(tu);
     if (NeedsIndirectReturn(ret)) {
         info.args.push_back(indirect_ptr);
         AddArgType(
@@ -965,13 +983,23 @@ auto CodeGen::LowerProcedureSignature(
         );
     }
 
-    // i65–i128 are returned in two registers.
-    else if (ret->is_integer()) {
-        auto sz = ret->size(tu);
-        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
+    // Small aggregates are returned in registers.
+    else if (ret->is_aggregate()) {
+        if (sz < Word) {
+            AddReturnType(IntTy(sz.as_bytes()));
+        } else if (sz <= Word * 2) {
+            // TODO: This returns padding bytes if the struct is e.g. (i32, i64); do we care?
             AddReturnType(int_ty);
-            AddReturnType(int_ty);
+            AddReturnType(IntTy((sz - Word).as_bytes()));
+        } else {
+            Todo();
         }
+    }
+
+    // i65–i128 are returned in two registers.
+    else if (ret->is_integer() and sz > Word and sz <= Word * 2) {
+        AddReturnType(int_ty);
+        AddReturnType(int_ty);
     }
 
     // Zero-sized return types are dropped entirely.
@@ -1007,6 +1035,69 @@ auto CodeGen::LowerProcedureSignature(
 bool CodeGen::NeedsIndirectReturn(Type ty) {
     AssertTriple();
     return ty->size(tu) > Size::Bits(128);
+}
+
+void CodeGen::WriteByValArgToMemory(
+    mlir::Location l,
+    Value addr,
+    ValueSource& vals,
+    Type type
+) {
+    static constexpr Size Word = Size::Bits(64);
+    auto StoreValue = [&](SRValue v) {
+        CreateStore(l, addr, v, type->align(tu));
+    };
+
+    // Small aggregates are passed in registers.
+    if (type->is_aggregate()) {
+        auto StoreWord = [&](Value addr, Value v) {
+            CreateStore(
+                l,
+                addr,
+                v,
+                tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()))
+            );
+        };
+
+        auto sz = type->size(tu);
+        if (sz <= Word) {
+            StoreWord(addr, vals.next());
+        } else if (sz <= Word * 2) {
+            StoreWord(addr, vals.next());
+            StoreWord(CreatePtrAdd(l, addr, Word), vals.next());
+        } else {
+            Todo();
+        }
+
+        return;
+    }
+
+    // i65-i128 are passed in two registers.
+    if (type->is_integer()) {
+        auto sz = type->size(tu);
+        if (sz > Word and sz <= Word * 2) {
+            auto first = vals.next();
+            auto second = vals.next();
+            return StoreValue(SRValue(first, second));
+        }
+    }
+
+    if (isa<ProcType, RangeType, SliceType>(type)) {
+        auto first = vals.next();
+        auto second = vals.next();
+        return StoreValue({first, second});
+    }
+
+    return StoreValue(vals.next());
+}
+
+void CodeGen::WriteDirectReturnToMemory(
+    mlir::Location l,
+    Value addr,
+    ValueSource& vals,
+    Type ty
+) {
+   WriteByValArgToMemory(l, addr, vals, ty);
 }
 
 // ============================================================================
@@ -1557,21 +1648,19 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> SRValue {
         EnterBlock(CreateBlock());
     }
 
-    // Convert the return type.
+    // If this operation doesn’t yield anything, we’re done. This handles
+    // zero-sized and indirect returns.
     if (op.getNumResults() == 0) return {};
 
-    // i65–i128 are returned in two registers.
-    if (ret->is_integer()) {
-        auto sz = ret->size(tu);
-        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
-            auto tmp = CreateAlloca(l, ret);
-            CreateStore(l, tmp, op.getResults(), Align(16));
-            return CreateLoad(l, tmp, C(ret), Align(16));
-        }
-    }
+    // Simple return types can be used as-is.
+    if (CanUseReturnValueDirectly(ret)) return op.getResults();
 
-    // Every other type is returned in a single register.
-    return op.getResults();
+    // More complicated ones need to be written to memory.
+    ValueSource vals{op.getResults()};
+    if (not mrvalue_slot) mrvalue_slot = CreateAlloca(l, ret);
+    WriteDirectReturnToMemory(l, mrvalue_slot, vals, ret);
+    if (expr->is_srvalue()) return CreateLoad(l, mrvalue_slot, C(ret), ret->align(tu));
+    return mrvalue_slot;
 }
 
 /*auto ByValue = [&] {
@@ -1867,70 +1956,18 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Lower parameters.
-    u32 arg_idx = NeedsIndirectReturn(proc->return_type());
+    ValueSource proc_args{curr_proc.getArguments()};
+    if (NeedsIndirectReturn(proc->return_type())) (void) proc_args.next();
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
-        auto HandleByRefArg = [&] {
-            locals[param] = curr_proc.getArgument(arg_idx++);
-        };
-
-        auto HandleByValArg = [&] {
-            static constexpr Size Word = Size::Bits(64);
+        if (PassByReference(param->type, param->intent())) {
+            locals[param] = proc_args.next();
+        } else {
             auto l = C(param->location());
-            auto CreateVar = [&](SRValue v) {
-                auto tmp = CreateAlloca(l, param->type);
-                CreateStore(l, tmp, v, param->type->align(tu));
-                locals[param] = tmp;
-            };
-
-            // Small aggregates are passed in registers.
-            if (param->type->is_aggregate()) {
-                auto StoreWord = [&](Value addr, Value v) {
-                    CreateStore(
-                        l,
-                        addr,
-                        v,
-                        tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()))
-                    );
-                };
-
-                auto tmp = CreateAlloca(l, param->type);
-                auto sz = param->type->size(tu);
-                if (sz <= Word) {
-                    StoreWord(tmp, curr_proc.getArgument(arg_idx++));
-                } else if (sz <= Word * 2) {
-                    StoreWord(tmp, curr_proc.getArgument(arg_idx++));
-                    StoreWord(CreatePtrAdd(l, tmp, Word), curr_proc.getArgument(arg_idx++));
-                } else {
-                    Todo();
-                }
-
-                locals[param] = tmp;
-                return;
-            }
-
-            // i65-i128 are passed in two registers.
-            if (param->type->is_integer()) {
-                auto sz = param->type->size(tu);
-                if (sz > Word and sz <= Word * 2) {
-                    auto first = curr_proc.getArgument(arg_idx++);
-                    auto second = curr_proc.getArgument(arg_idx++);
-                    return CreateVar(SRValue(first, second));
-                }
-            }
-
-            if (isa<ProcType, RangeType, SliceType>(param->type)) {
-                auto first = curr_proc.getArgument(arg_idx++);
-                auto second = curr_proc.getArgument(arg_idx++);
-                CreateVar({first, second});
-                return;
-            }
-
-            CreateVar(curr_proc.getArgument(arg_idx++));
-        };
-
-        if (PassByReference(param->type, param->intent())) HandleByRefArg();
-        else HandleByValArg();
+            auto var = CreateAlloca(l, param->type);
+            locals[param] = var;
+            WriteByValArgToMemory(l, var, proc_args, param->type);
+        }
     }
 
     // Declare other local variables.
@@ -1950,6 +1987,7 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> SRValue {
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
+    if (HasTerminator()) return {};
     auto val = expr->value.get_or_null();
     auto ty = val ? val->type : Type::VoidTy;
     auto l = C(expr->location());
@@ -1961,43 +1999,21 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> SRValue {
         return {};
     }
 
-    // Emit the return expression if there is one, and give up if
-    // we don’t have an insert point.
-    auto ret_vals = val ? Emit(val) : SRValue{};
-    if (HasTerminator()) return {};
+    // Handle returns without a value.
     if (not val) {
         create<ir::RetOp>(l, Vals{});
         return {};
     }
 
     // Ignore zero-sized types.
-    if (IsZeroSizedType(ty)) ret_vals = {};
-
-    // i65–i128 are returned in two registers.
-    else if (ty->is_integer()) {
-        auto sz = ty->size(tu);
-        if (sz >= Size::Bits(65) and sz <= Size::Bits(128)) {
-            if (not val->lvalue()) {
-                auto tmp = CreateAlloca(l, ty);
-                CreateStore(l, tmp, ret_vals, Align(16));
-                ret_vals = tmp;
-            }
-            ret_vals = CreateLoad(l, ret_vals.scalar(), SType(int_ty, int_ty), Align(16));
-        }
+    if (IsZeroSizedType(ty)) {
+        if (val) Emit(val);
+        if (not HasTerminator()) create<ir::RetOp>(l, Vals{});
+        return {};
     }
 
-    // Any other type is returned in a single register; load it if
-    // it is an lvalue.
-    else if (val->lvalue()) {
-        ret_vals = CreateLoad(
-            l,
-            ret_vals.scalar(),
-            C(val->type),
-            val->type->align(tu)
-        );
-    }
-
-    create<ir::RetOp>(l, ret_vals);
+    auto ret_vals = LowerDirectReturn(l, val);
+    if (not HasTerminator()) create<ir::RetOp>(l, ret_vals);
     return {};
 }
 
