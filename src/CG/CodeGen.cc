@@ -298,6 +298,19 @@ auto CodeGen::CreateLoad(
     Size offset
 ) -> Value {
     Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of load must be a pointer");
+
+    // Adjust weird integers to a more proper size before loading them and truncate the
+    // result afterwards.
+    if (type.isInteger()) {
+        auto bits = Size::Bits(type.getIntOrFloatBitWidth());
+        auto preferred = tu.target().int_size(bits);
+        if (preferred != bits) {
+            auto pref_ty = getIntegerType(unsigned(preferred.bits()));
+            auto pref_val = create<ir::LoadOp>(loc, pref_ty, CreatePtrAdd(loc, addr, offset), align);
+            return create<arith::TruncIOp>(loc, type, pref_val);
+        }
+    }
+
     return create<ir::LoadOp>(loc, type, CreatePtrAdd(loc, addr, offset), align);
 }
 
@@ -346,6 +359,20 @@ auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) ->
 
 void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset) {
     Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of store must be a pointer");
+
+    // Sign-extend weird integers to a more proper size before storing them.
+    if (val.getType().isInteger()) {
+        auto bits = Size::Bits(val.getType().getIntOrFloatBitWidth());
+        auto preferred = tu.target().int_size(bits);
+        if (preferred != bits) {
+            val = createOrFold<arith::ExtSIOp>(
+               loc,
+               getIntegerType(unsigned(preferred.bits())),
+               val
+           );
+        }
+    }
+
     create<ir::StoreOp>(loc, CreatePtrAdd(loc, addr, offset), val, align);
 }
 
@@ -1425,10 +1452,10 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
         case Tk::ShiftRightLogicalEq: {
             auto a = expr->lhs->type->align(tu);
             auto lvalue = EmitScalar(expr->lhs);
-            auto lhs = create<ir::LoadOp>(
+            auto lhs = CreateLoad(
                 lvalue.getLoc(),
-                C(expr->lhs->type),
                 lvalue,
+                C(expr->lhs->type),
                 a
             );
 
@@ -1441,7 +1468,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
                 C(expr->location())
             );
 
-            create<ir::StoreOp>(
+            CreateStore(
                 C(expr->location()),
                 lvalue,
                 res,
@@ -2166,7 +2193,7 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
     auto EmitIncrement = [&] -> Increment {
         auto ptr = EmitScalar(expr->arg);
         auto a = expr->type->align(tu);
-        auto val = create<ir::LoadOp>(ptr.getLoc(), C(expr->type), ptr, a);
+        auto val = CreateLoad(ptr.getLoc(), ptr, C(expr->type), a);
         auto new_val = EmitArithmeticOrComparisonOperator(
             expr->op == Tk::PlusPlus ? Tk::Plus : Tk::Minus,
             expr->type,
@@ -2175,7 +2202,7 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
             l
         );
 
-        create<ir::StoreOp>(l, ptr, new_val, a);
+        CreateStore(l, ptr, new_val, a);
         return {.old_val = val, .addr = ptr};
     };
 
