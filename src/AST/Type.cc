@@ -413,7 +413,11 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 }
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
-    auto CreateNew = [&] { return new (mod) RangeType{elem}; };
+    auto CreateNew = [&] {
+        Type fields[] { elem, elem };
+        return new (mod) RangeType{elem, StructType::CreateTrivialBuiltinTuple(mod, fields)};
+    };
+
     return GetOrCreateType(mod.range_types, CreateNew, elem);
 }
 
@@ -443,6 +447,34 @@ auto StructType::Create(
     )) StructType{owner, scope, num_fields};
     type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
     return type;
+}
+
+auto StructType::CreateTrivialBuiltinTuple(
+    TranslationUnit& owner,
+    ArrayRef<Type> fields
+) -> StructType* {
+    // FIXME: This logic is duplicated from Sema; fix that.
+    Size sz;
+    Align a;
+    SmallVector<FieldDecl*> decls;
+    for (auto f : fields) {
+        auto fa = f->align(owner);
+        sz = sz.align(fa);
+        decls.push_back(new (owner) FieldDecl(f, sz, "", Location()));
+        sz += f->size(owner);
+        a = std::max(a, fa);
+    }
+
+    auto s = Create(
+        owner,
+        owner.create_scope<StructScope>(owner.global_scope()),
+        "",
+        2,
+        Location()
+    );
+
+    s->finalise(decls, sz, a, Bits::Trivial());
+    return s;
 }
 
 auto StructType::name() const -> String {

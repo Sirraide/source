@@ -215,29 +215,12 @@ void CodeGen::CreateBuiltinAggregateStore(
     Type ty,
     IRValue aggregate
 ) {
-    if (isa<SliceType>(ty)) {
-        CreateStore(loc, addr, aggregate.first(), tu.target().ptr_align());
-        CreateStore(loc, addr, aggregate.second(), tu.target().int_align(), tu.target().ptr_size());
-        return;
-    }
-
-    if (isa<ProcType>(ty)) {
-        CreateStore(loc, addr, aggregate.first(), tu.target().ptr_align());
-        CreateStore(loc, addr, aggregate.second(), tu.target().ptr_align(), tu.target().ptr_size());
-        return;
-    }
-
-    if (auto r = dyn_cast<RangeType>(ty)) {
-        auto sz = r->elem()->array_size(tu);
-        auto align = r->elem()->align(tu);
-        CreateStore(loc, addr, aggregate.first(), align);
-        CreateStore(loc, addr, aggregate.second(), align, sz);
-        return;
-    }
-
-    Unreachable("Expected slice, proc, or range, got '{}'", ty);
+    auto eqv = GetEquivalentStructTypeForAggregate(ty);
+    auto f1 = eqv->fields()[0];
+    auto f2 = eqv->fields()[1];
+    CreateStore(loc, addr, aggregate.first(), f1->type->align(tu), f1->offset);
+    CreateStore(loc, addr, aggregate.second(), f2->type->align(tu), f2->offset);
 }
-
 
 auto CodeGen::CreateEmptySlice(mlir::Location loc) -> IRValue {
     return IRValue{CreateNil(loc, ptr_ty), CreateNil(loc, int_ty)};
@@ -287,6 +270,18 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Type ty) -> Value {
 
 auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
     return create<arith::ConstantOp>(loc, getIntegerAttr(ty, value));
+}
+
+auto CodeGen::CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset) -> IRValue {
+    if (auto eqv = GetEquivalentStructTypeForAggregate(ty)) {
+        auto f1 = eqv->fields()[0];
+        auto f2 = eqv->fields()[1];
+        auto v1 = CreateLoad(loc, addr, C(f1->type), f1->type->align(tu), f1->offset + offset);
+        auto v2 = CreateLoad(loc, addr, C(f2->type), f2->type->align(tu), f2->offset + offset);
+        return {v1, v2};
+    }
+
+    return CreateLoad(loc, addr, C(ty), ty->align(tu), offset);
 }
 
 auto CodeGen::CreateLoad(
@@ -445,6 +440,13 @@ CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc)
     : CG(CG), old_func(CG.curr_proc), guard{CG} {
     CG.curr_proc = proc;
     CG.EnterBlock(proc.getOrCreateEntryBlock());
+}
+
+auto CodeGen::GetEquivalentStructTypeForAggregate(Type ty) -> StructType* {
+    if (isa<ProcType>(ty)) return tu.ClosureEquivalentStructTy;
+    if (isa<SliceType>(ty)) return tu.SliceEquivalentStructTy;
+    if (auto r = dyn_cast<RangeType>(ty)) return r->equivalent_struct_type();
+    return nullptr;
 }
 
 auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp {
@@ -802,8 +804,10 @@ void CodeGen::EmitInitialiser(Value addr, Expr* init) {
     if (init->is_mrvalue()) {
         EmitMRValue(addr, init);
     } else if (init->type->is_aggregate()) {
-        CreateBuiltinAggregateStore(C(init->location()), addr, init->type, Emit(init));
+        if (init->lvalue()) CreateMemCpy(C(init->location()), addr, EmitScalar(init), init->type);
+        else CreateBuiltinAggregateStore(C(init->location()), addr, init->type, Emit(init));
     } else {
+        Assert(not init->lvalue());
         CreateStore(C(init->location()), addr, EmitScalar(init), init->type->align(tu));
     }
 }
@@ -1870,8 +1874,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr, Value mrvalue_slot) -> IRValue {
             if (expr->is_srvalue()) return CreateLoad(
                 C(expr->location()),
                 val.scalar(),
-                C(expr->type),
-                expr->type->align(tu)
+                expr->type
             );
 
             Assert(mrvalue_slot);

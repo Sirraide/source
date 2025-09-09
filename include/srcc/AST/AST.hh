@@ -123,6 +123,8 @@ public:
     Type AbortInfoTy; // TODO: Get this from the runtime.
     Type I8PtrTy;
     SliceType* StrLitTy;
+    StructType* SliceEquivalentStructTy;
+    StructType* ClosureEquivalentStructTy;
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;
@@ -176,6 +178,12 @@ public:
 
     /// Dump the contents of the module.
     void dump() const;
+
+    /// Get the global scope.
+    auto global_scope() const -> Scope* {
+        Assert(not all_scopes.empty(), "Scopes not initialised");
+        return all_scopes.front().get();
+    }
 
     /// Get the language options for this module.
     [[nodiscard]] auto lang_opts() const -> const LangOpts& { return language_opts; }

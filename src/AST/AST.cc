@@ -35,6 +35,9 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     tgt = Target::Create(ci->getTargetPtr());
     vm.init(*tgt);
 
+    // Create the global scope.
+    create_scope(nullptr);
+
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
     I16Ty = IntType::Get(*this, Size::Bits(16));
@@ -54,6 +57,8 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
     I8PtrTy = PtrType::Get(*this, I8Ty);
+    SliceEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, Type::IntTy});
+    ClosureEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, I8PtrTy});
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and

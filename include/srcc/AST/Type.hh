@@ -440,9 +440,16 @@ public:
 
 class srcc::RangeType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit RangeType(Type elem) : SingleElementTypeBase{Kind::RangeType, elem} {}
+    StructType* equivalent_struct;
+    explicit RangeType(Type elem, StructType* equivalent_struct)
+        : SingleElementTypeBase{Kind::RangeType, elem}, equivalent_struct{equivalent_struct} {}
 
 public:
+    /// Get the struct type that is structurally equivalent to this range.
+    [[nodiscard]] auto equivalent_struct_type() const -> StructType* {
+        return equivalent_struct;
+    }
+
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
     static auto Get(TranslationUnit& mod, Type elem) -> RangeType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
@@ -473,6 +480,10 @@ public:
         bool default_initialiser : 1 = false;
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
+
+        static auto Trivial() -> Bits {
+            return {true, true, true};
+        }
     };
 
 private:
@@ -504,6 +515,12 @@ public:
         String name,
         u32 num_fields,
         Location decl_loc
+    ) -> StructType*;
+
+    /// Create a trivial builtin struct type.
+    static auto CreateTrivialBuiltinTuple(
+        TranslationUnit& owner,
+        ArrayRef<Type> fields
     ) -> StructType*;
 
     /// Get the computed alignment of this struct.

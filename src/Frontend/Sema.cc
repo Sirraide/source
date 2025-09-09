@@ -2383,7 +2383,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     }
 
     // Set up scope stacks.
-    M->initialiser_proc->scope = M->create_scope(nullptr);
+    M->initialiser_proc->scope = global_scope();
     EnterProcedure _{*this, M->initialiser_proc};
 
     // Translate the preamble first since the runtime and other modules rely

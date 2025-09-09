@@ -436,7 +436,7 @@ public:
     auto curr_scope() -> Scope* { return scope_stack.back(); }
 
     /// Get the global scope.
-    auto global_scope() -> Scope* { return scope_stack.front(); }
+    auto global_scope() -> Scope* { return M->global_scope(); }
 
 private:
     /// Add a declaration to a scope.

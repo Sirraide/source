@@ -296,6 +296,7 @@ public:
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
+    auto CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset = {}) -> IRValue;
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
     void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
     auto CreateNil(mlir::Location loc, mlir::Type ty) -> Value;
@@ -343,6 +344,9 @@ public:
 
     /// Get an integer type.
     auto IntTy(Size wd) -> mlir::Type;
+
+    /// Get the struct type equivalent to a builtin aggregate type.
+    auto GetEquivalentStructTypeForAggregate(Type ty) -> StructType*;
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
     auto GetOrCreateProc(
