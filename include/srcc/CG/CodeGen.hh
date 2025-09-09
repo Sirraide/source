@@ -471,8 +471,14 @@ public:
         /// Add a 'byval' attribute.
         void add_byval(mlir::Type ty);
 
+        /// Add an 'signext' attribute.
+        void add_sext(CodeGen& cg);
+
         /// Add an 'sret' attribute.
         void add_sret(mlir::Type ty);
+
+        /// Add an 'zeroext' attribute.
+        void add_zext(CodeGen& cg);
     };
 
     /// ABI lowering information about an argument that is passed by value.
@@ -563,6 +569,10 @@ public:
 
     /// Whether a value of this type can be used as-is when returned from a function.
     bool CanUseReturnValueDirectly(Type ty);
+
+    /// For an integer type, get what type we prefer to treat this as. This converts
+    /// ‘weird’ types like 'i17' to something more sensible like 'i32'.
+    auto GetPreferredIntType(mlir::Type ty) -> mlir::Type;
 
     /// Lower a single argument that is passed or returned by value.
     auto LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;

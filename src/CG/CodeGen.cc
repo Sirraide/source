@@ -302,10 +302,8 @@ auto CodeGen::CreateLoad(
     // Adjust weird integers to a more proper size before loading them and truncate the
     // result afterwards.
     if (type.isInteger()) {
-        auto bits = Size::Bits(type.getIntOrFloatBitWidth());
-        auto preferred = tu.target().int_size(bits);
-        if (preferred != bits) {
-            auto pref_ty = getIntegerType(unsigned(preferred.bits()));
+        auto pref_ty = GetPreferredIntType(type);
+        if (type != pref_ty) {
             auto pref_val = create<ir::LoadOp>(loc, pref_ty, CreatePtrAdd(loc, addr, offset), align);
             return create<arith::TruncIOp>(loc, type, pref_val);
         }
@@ -362,15 +360,8 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
 
     // Sign-extend weird integers to a more proper size before storing them.
     if (val.getType().isInteger()) {
-        auto bits = Size::Bits(val.getType().getIntOrFloatBitWidth());
-        auto preferred = tu.target().int_size(bits);
-        if (preferred != bits) {
-            val = createOrFold<arith::ExtSIOp>(
-               loc,
-               getIntegerType(unsigned(preferred.bits())),
-               val
-           );
-        }
+        auto pref_ty = GetPreferredIntType(val.getType());
+        if (val.getType() != pref_ty) val = createOrFold<arith::ExtSIOp>(loc, pref_ty, val);
     }
 
     create<ir::StoreOp>(loc, CreatePtrAdd(loc, addr, offset), val, align);
@@ -928,10 +919,24 @@ void CodeGen::ABIArg::add_byval(mlir::Type ty) {
     ));
 }
 
+void CodeGen::ABIArg::add_sext(CodeGen& cg) {
+    attrs.push_back(mlir::NamedAttribute(
+        LLVMDialect::getSExtAttrName(),
+        mlir::UnitAttr::get(cg.mlir_context())
+    ));
+}
+
 void CodeGen::ABIArg::add_sret(mlir::Type ty) {
     attrs.push_back(mlir::NamedAttribute(
         LLVMDialect::getStructRetAttrName(),
         mlir::TypeAttr::get(ty)
+    ));
+}
+
+void CodeGen::ABIArg::add_zext(CodeGen& cg) {
+    attrs.push_back(mlir::NamedAttribute(
+        LLVMDialect::getZExtAttrName(),
+        mlir::UnitAttr::get(cg.mlir_context())
     ));
 }
 
@@ -953,6 +958,14 @@ bool CodeGen::CanUseReturnValueDirectly(Type ty) {
     if (isa<PtrType, SliceType, ProcType>(ty)) return true;
     if (ty->is_integer()) return ty->size(tu) <= Size::Bits(64);
     return false;
+}
+
+auto CodeGen::GetPreferredIntType(mlir::Type ty) -> mlir::Type {
+    Assert(ty.isInteger());
+    auto bits = Size::Bits(ty.getIntOrFloatBitWidth());
+    auto preferred = tu.target().int_size(bits);
+    if (preferred != bits) return getIntegerType(unsigned(preferred.bits()));
+    return ty;
 }
 
 auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo {
@@ -1050,6 +1063,15 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
         if (auto a = arg.get_or_null()) {
             info[0].value = EmitScalar(a);
             if (a->lvalue()) info[0].value = CreateLoad(l, info[0].value, ty, a->type->align(tu));
+        }
+
+        // Extend integers that don’t have their preferred size.
+        if (ty.isInteger()) {
+            auto pref_ty = GetPreferredIntType(ty);
+            if (ty != pref_ty) {
+                if (t == Type::BoolTy) info[0].add_zext(*this);
+                else info[0].add_sext(*this);
+            }
         }
     }
 
