@@ -1006,13 +1006,30 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
 
         // This is passed in two registers.
         else if (sz <= Word * 2 and ctx.allocate(2)) {
-            // TODO: This loads padding bytes if the struct is e.g. (i32, i64); do we care?
-            info.emplace_back(int_ty);
-            info.emplace_back(IntTy(sz - Word));
-            if (arg) {
-                auto addr = EmitToMemory(l, arg.get());
-                info[0].value = LoadWord(addr, Word);
-                info[1].value = LoadWord(CreatePtrAdd(l, addr, Word), sz - Word);
+            // As an optimisation, pass closures and slices directly.
+            if (isa<SliceType, ProcType>(t)) {
+                auto ty = GetEquivalentStructTypeForAggregate(t);
+                info.emplace_back(C(ty->fields()[0]->type));
+                info.emplace_back(C(ty->fields()[1]->type));
+                if (auto a = arg.get_or_null()) {
+                    auto v = Emit(a);
+                    if (a->is_lvalue()) v = CreateLoad(l, v.scalar(), t);
+                    info[0].value = v.first();
+                    info[1].value = v.second();
+                }
+            }
+
+            // Other aggregates (including ranges) are more complex; just load them
+            // from memory in chunks.
+            else {
+                // TODO: This loads padding bytes if the struct is e.g. (i32, i64); do we care?
+                info.emplace_back(int_ty);
+                info.emplace_back(IntTy(sz - Word));
+                if (arg) {
+                    auto addr = EmitToMemory(l, arg.get());
+                    info[0].value = LoadWord(addr, Word);
+                    info[1].value = LoadWord(CreatePtrAdd(l, addr, Word), sz - Word);
+                }
             }
         }
 
@@ -1215,11 +1232,14 @@ auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
     // Small aggregates are passed in registers.
     if (vals.type()->is_aggregate()) {
         auto StoreWord = [&](Value addr, Value v) {
+            auto a = v.getType() == ptr_ty
+                ? tu.target().ptr_align()
+                : tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()));
             CreateStore(
                 vals.location(),
                 addr,
                 v,
-                tu.target().int_align(Size::Bits(v.getType().getIntOrFloatBitWidth()))
+                a
             );
         };
 
