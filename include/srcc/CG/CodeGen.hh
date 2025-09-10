@@ -17,6 +17,7 @@ class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
 class IRValue;
+enum class EvalMode : u8;
 
 namespace detail {
 template <typename Elem, typename Range>
@@ -149,6 +150,16 @@ public:
         Assert(not is_null());
         return scalar_or_first().getLoc();
     }
+};
+
+/// Value category of an rvalue used for evaluation; this is strictly
+/// type-dependent.
+///
+/// This used to be expressed by splitting RValue into SRValue and
+/// MRValue, but this distinction has proven unuseful outside codegen.
+enum class srcc::cg::EvalMode : base::u8 {
+    Scalar,
+    Memory,
 };
 
 class srcc::cg::CodeGen : DiagsProducer
@@ -333,11 +344,10 @@ public:
     auto EmitValue(Location loc, const eval::RValue& val) -> IRValue;
 
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
-    void EmitInitialiser(Value addr, Expr* init);
     void EmitLocal(LocalDecl* decl);
 
     /// Emit an mrvalue into a memory location.
-    void EmitMRValue(Value addr, Expr* init);
+    void EmitRValue(Value addr, Expr* init);
 
     auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;
     auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
@@ -347,6 +357,9 @@ public:
 
     /// Get the struct type equivalent to a builtin aggregate type.
     auto GetEquivalentStructTypeForAggregate(Type ty) -> StructType*;
+
+    /// Determine the evaluation mode for a type.
+    auto GetEvalMode(Type ty) -> EvalMode;
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
     auto GetOrCreateProc(

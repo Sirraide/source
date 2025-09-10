@@ -155,12 +155,8 @@ void Stmt::Printer::PrintBasicNode(
     }
 
     if (auto e = dyn_cast<Expr>(s); e and print_type) {
-        if (e->value_category != Expr::SRValue) {
-            switch (e->value_category) {
-                case ValueCategory::SRValue: Unreachable();
-                case ValueCategory::MRValue: print(" mrvalue"); break;
-                case ValueCategory::LValue: print(" lvalue"); break;
-            }
+        if (e->value_category != Expr::RValue) {
+            print(" lvalue");
         }
     }
 
@@ -170,8 +166,7 @@ void Stmt::Printer::PrintBasicNode(
 void Stmt::Printer::Print(Stmt* e) {
     auto VCLowercase = [&](ValueCategory v) -> String {
         switch (v) {
-            case ValueCategory::SRValue: return "srvalue";
-            case ValueCategory::MRValue: return "mrvalue";
+            case ValueCategory::RValue: return "rvalue";
             case ValueCategory::LValue: return "lvalue";
         }
         return "<invalid value category>";

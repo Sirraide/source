@@ -274,10 +274,6 @@ LOWERING(RetOp, {
     return r.create<LLVM::ReturnOp>(op.getLoc(), res);
 });
 
-LOWERING(ReturnPointerOp, {
-    return op->getParentOfType<LLVM::LLVMFuncOp>().getArgument(0);
-});
-
 LOWERING(SAddOvOp, { return LowerOverflowOp<LLVM::SAddWithOverflowOp>(op, a, r); });
 LOWERING(SMulOvOp, { return LowerOverflowOp<LLVM::SMulWithOverflowOp>(op, a, r); });
 LOWERING(SSubOvOp, { return LowerOverflowOp<LLVM::SSubWithOverflowOp>(op, a, r); });
@@ -311,7 +307,6 @@ void LoweringPass::runOnOperation() {
         ProcOpLowering,
         ProcRefOpLowering,
         RetOpLowering,
-        ReturnPointerOpLowering,
         SAddOvOpLowering,
         SMulOvOpLowering,
         SSubOvOpLowering,

@@ -68,20 +68,11 @@ public:
     /// Get the kind of this statement.
     Kind kind() const { return stmt_kind; }
 
-    /// Get whether this is an mrvalue.
-    bool is_mrvalue() const { return value_category_or_srvalue() == ValueCategory::MRValue; }
-
-    /// Get whether this is an srvalue.
-    bool is_srvalue() const { return value_category_or_srvalue() == ValueCategory::SRValue; }
-
     /// Get the source location of this statement.
     auto location() const -> Location { return loc; }
 
     /// Get the type of this if it is an expression and Void otherwise.
     auto type_or_void() const -> Type;
-
-    /// Get the value category if this is an expression and SRValue otherwise.
-    auto value_category_or_srvalue() const -> ValueCategory;
 
     /// Visit this statement.
     template <typename Visitor>
@@ -169,10 +160,10 @@ public:
     using enum ValueCategory;
 
     /// Check if this expression is an lvalue.
-    [[nodiscard]] bool lvalue() const { return value_category == LValue; }
+    [[nodiscard]] bool is_lvalue() const { return value_category == LValue; }
 
     /// Check if this expression is an rvalue.
-    [[nodiscard]] bool rvalue() const { return not lvalue(); }
+    [[nodiscard]] bool is_rvalue() const { return value_category == RValue; }
 
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::UnaryExpr;
@@ -184,7 +175,7 @@ public:
     Expr* element;
 
     ArrayBroadcastExpr(ArrayType* type, Expr* element, Location loc)
-        : Expr{Kind::ArrayBroadcastExpr, type, MRValue, loc}, element{element} {}
+        : Expr{Kind::ArrayBroadcastExpr, type, RValue, loc}, element{element} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayBroadcastExpr; }
 };
@@ -221,7 +212,7 @@ public:
         Ptr<Expr> message,
         bool is_static,
         Location location
-    ) : Expr{Kind::AssertExpr, Type::VoidTy, SRValue, location},
+    ) : Expr{Kind::AssertExpr, Type::VoidTy, RValue, location},
         cond{cond},
         message{message},
         is_static{is_static} {}
@@ -292,7 +283,7 @@ public:
     BoolLitExpr(
         bool value,
         Location location
-    ) : Expr{Kind::BoolLitExpr, Type::BoolTy, SRValue, location}, value{value} {}
+    ) : Expr{Kind::BoolLitExpr, Type::BoolTy, RValue, location}, value{value} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
 };
@@ -405,18 +396,16 @@ public:
 class srcc::CastExpr final : public Expr {
 public:
     enum class CastKind : u8 {
-        /// Convert an srvalue 'T^' to an lvalue 'T'.
+        /// Convert an rvalue 'T^' to an lvalue 'T'.
         Deref,
 
         /// This is a cast to void.
         ExplicitDiscard,
 
-        /// Cast an srvalue integer to an srvalue integer.
+        /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
-        /// Convert an lvalue to an srvalue.
-        ///
-        /// This is only valid for types that can be srvalues.
+        /// Convert an lvalue to an rvalue.
         LValueToRValue,
 
         /// Materialise a poison value of the given type.
@@ -435,7 +424,7 @@ public:
         Expr* expr,
         Location location,
         bool implicit = false,
-        ValueCategory value_category = SRValue
+        ValueCategory value_category = RValue
     ) : Expr{Kind::CastExpr, type, value_category, location},
         arg{expr},
         kind{kind},
@@ -479,7 +468,7 @@ public:
     DefaultInitExpr(
         Type type,
         Location location
-    ) : Expr{Kind::DefaultInitExpr, type, isa<StructType, ArrayType>(type) ? MRValue : SRValue, location} {}
+    ) : Expr{Kind::DefaultInitExpr, type, RValue, location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
 };
@@ -534,7 +523,7 @@ public:
         Type ty,
         StoredInteger integer,
         Location location
-    ) : Expr{Kind::IntLitExpr, ty, SRValue, location}, storage{integer} {}
+    ) : Expr{Kind::IntLitExpr, ty, RValue, location}, storage{integer} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
 };
@@ -551,7 +540,7 @@ public:
     Ptr<Stmt> body;
 
     LoopExpr(Ptr<Stmt> body, Location loc)
-        : Expr{Kind::LoopExpr, Type::NoReturnTy, SRValue, loc},
+        : Expr{Kind::LoopExpr, Type::NoReturnTy, RValue, loc},
           body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::LoopExpr; }
@@ -627,7 +616,7 @@ private:
         Type ty,
         String value,
         Location location
-    ) : Expr{Kind::StrLitExpr, ty, SRValue, location}, value{value} {}
+    ) : Expr{Kind::StrLitExpr, ty, RValue, location}, value{value} {}
 
 public:
     static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
@@ -669,7 +658,7 @@ public:
     TypeExpr(
         Type type,
         Location location
-    ) : Expr{Kind::TypeExpr, Type::TypeTy, SRValue, location}, value{type} {}
+    ) : Expr{Kind::TypeExpr, Type::TypeTy, RValue, location}, value{type} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeExpr; }
 };
 
@@ -685,7 +674,7 @@ public:
     ) : Expr{
             Kind::ReturnExpr,
             Type::NoReturnTy,
-            SRValue,
+            RValue,
             location,
         },
         value{value}, implicit{implicit} {}

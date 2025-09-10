@@ -127,7 +127,7 @@ class srcc::Sema : public DiagsProducer {
             ArrayInit,
             DefaultInit,
             IntegralCast,
-            LoadSRValue,
+            LValueToRValue,
             MaterialisePoison,
             MaterialiseTemporary,
             SelectOverload,
@@ -145,7 +145,7 @@ class srcc::Sema : public DiagsProducer {
 
     private:
         Conversion(Kind kind) : kind{kind} {}
-        Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
+        Conversion(Kind kind, Type ty, ValueCategory val = Expr::RValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
         Conversion(StructInitData conversions) : kind{Kind::StructInit}, data{std::move(conversions)} {}
         Conversion(ArrayInitData data): kind{Kind::ArrayInit}, data{std::move(data)} {}
@@ -157,7 +157,7 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
-        static auto LoadSRValue() -> Conversion { return Conversion{Kind::LoadSRValue}; }
+        static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
@@ -498,21 +498,14 @@ private:
     ///    initialisation.
     ///
     /// \param init_loc Location to report diagnostics at.
-    /// \param intent If the variable is a parameter, its intent.
-    ///
-    /// \param cc If this is an argument to a call, the calling convention
-    ///    of the called procedure.
-    ///
-    /// \param in_call Whether this is argument passing.
+    /// \param want_lvalue If do, try to produce an lvalue.
     ///
     /// \return Whether initialisation was successful.
     auto BuildConversionSequence(
         Type var_type,
         ArrayRef<Expr*> args,
         Location init_loc,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source,
-        bool in_call = false
+        bool want_lvalue = false
     ) -> ConversionSequenceOrDiags;
 
     /// Overload of BuildInitialiser() that builds the initialiser immediately.
@@ -520,10 +513,11 @@ private:
         Type var_type,
         ArrayRef<Expr*> args,
         Location loc,
-        bool in_call = false,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source
+        bool want_lvalue = false
     ) -> Ptr<Expr>;
+
+    /// Check additional constraints on a call that need to happen after overload resolution.
+    bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
 
     /// Check if the declaration of an overloaded operator is well-formed.
     bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
@@ -629,7 +623,7 @@ private:
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
-    [[nodiscard]] auto LoadSRValue(Expr* expr) -> Expr*;
+    [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
 
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;

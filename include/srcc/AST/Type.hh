@@ -287,7 +287,7 @@ public:
     }
 
     /// Create a void SRValue pair.
-    TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::SRValue) {}
+    TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::RValue) {}
 
     /// Get the type.
     [[nodiscard]] auto type() const -> Type { return data.getPointer(); }
@@ -641,6 +641,13 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(Ty* t, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
+    }
+};
+
+template <>
+struct libassert::stringifier<srcc::Type> {
+    auto stringify(srcc::Type ty) -> std::string {
+        return base::text::RenderColours(false, ty->print().str());
     }
 };
 

@@ -233,16 +233,15 @@ auto Sema::LookUpName(
     return res;
 }
 
-auto Sema::LoadSRValue(Expr* expr) -> Expr* {
-    Assert(not expr->is_mrvalue());
-    if (expr->rvalue()) return expr;
+auto Sema::LValueToRValue(Expr* expr) -> Expr* {
+    if (expr->is_rvalue()) return expr;
     return new (*M) CastExpr(
         expr->type,
         CastExpr::LValueToRValue,
         expr,
         expr->location(),
         true,
-        Expr::SRValue
+        Expr::RValue
     );
 }
 
@@ -271,13 +270,12 @@ bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
     }
 
     // Make sure it’s an srvalue.
-    e = LoadSRValue(init.get());
+    e = LValueToRValue(init.get());
     return true;
 }
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
-    if (expr->lvalue()) return expr;
-    Assert(expr->value_category == Expr::MRValue, "Cannot materialise srvalue");
+    if (expr->is_lvalue()) return expr;
     return new (*M) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
@@ -318,7 +316,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             true
         );
 
-        case K::LoadSRValue: return LoadSRValue(e);
+        case K::LValueToRValue: return LValueToRValue(e);
         case K::MaterialisePoison: return new (*M) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
@@ -371,7 +369,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         }
 
         case K::IntegralCast:
-        case K::LoadSRValue:
+        case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
         case K::SelectOverload: {
@@ -540,9 +538,7 @@ auto Sema::BuildConversionSequence(
     Type var_type,
     ArrayRef<Expr*> args,
     Location init_loc,
-    Intent intent,
-    CallingConvention cc,
-    bool in_call
+    bool want_lvalue
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
 
@@ -561,96 +557,51 @@ auto Sema::BuildConversionSequence(
     // pretend that we have one.
     if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
         // FIXME: DON'T DO THIS. And instead just check 'HasTerminator()' in codegen...
-        seq.add(Conversion::Poison(var_type, Expr::SRValue));
+        seq.add(Conversion::Poison(var_type, Expr::RValue));
         return seq;
     }
 
     // If we have zero or more than one argument, we need to build an RValue
     // of the target type first.
-    bool lvalue;
-    Type ty;
 
     // If there are no arguments, this is default initialisation.
     if (args.empty()) {
         if (var_type->can_default_init()) {
             seq.add(Conversion::DefaultInit(var_type));
-            ty = var_type;
-            lvalue = false;
-        } else if (var_type->can_init_from_no_args()) {
+            return seq;
+        }
+
+        if (var_type->can_init_from_no_args()) {
             return CreateICE(
                 init_loc,
                 "TODO: non-default empty initialisation of '{}'",
                 var_type
             );
-        } else {
-            return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
         }
+
+        return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
     }
 
     // There are only few (classes of) types that support initialisation
     // from more than one argument.
-    else if (args.size() > 1) {
-        ty = var_type;
-        lvalue = false;
-        if (auto a = dyn_cast<ArrayType>(var_type)) {
-            seq = Try(BuildArrayInitialiser(a, args, init_loc).result);
-        } else if (auto s = dyn_cast<StructType>(var_type.ptr())) {
-            seq = Try(BuildAggregateInitialiser(s, args, init_loc).result);
-        } else {
-            return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
-        }
+    if (args.size() > 1) {
+        if (auto a = dyn_cast<ArrayType>(var_type)) return BuildArrayInitialiser(a, args, init_loc);
+        if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, init_loc);
+        return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
     }
 
-    // There is only a single argument; if the type matches, use it directly.
-    else {
-        ty = args.front()->type;
-        lvalue = args.front()->lvalue();
-    }
-
-    // 'inout' and 'out' allow modifying the original value, which means that
-    // we always have to pass an existing lvalue here.
-    // FIXME: I don’t think this should be checked here; in particular, this should
-    // be a hard error during overload resolution.
-    if (in_call and (intent == Intent::Inout or intent == Intent::Out)) {
-        if (ty != var_type) return CreateError(
-            init_loc,
-            "Cannot pass type {} to %1({}%) parameter of type {}",
-            ty,
-            intent,
-            var_type
-        );
-
-        // If the argument is not an lvalue, try to explain what the issue is.
-        if (not lvalue) {
-            ConversionSequenceOrDiags::Diags diags;
-
-            // If this is itself a parameter, issue a better error.
-            auto a = args.size() == 1 ? args.front() : nullptr;
-            if (auto dre = dyn_cast_if_present<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
-                diags.push_back(CreateError(
-                    init_loc,
-                    "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
-                    cast<ParamDecl>(dre->decl)->intent(),
-                    intent
-                ));
-                diags.push_back(CreateNote(dre->decl->location(), "Parameter declared here"));
-            } else {
-                diags.push_back(CreateError(init_loc, "Cannot bind this expression to an %1({}%) parameter.", intent));
-            }
-
-            diags.back().extra = "Try storing this in a variable first.";
-            return diags;
-        }
-
-        // Otherwise, we have an lvalue of the same type; there is nothing
-        // to be done here.
-        return ConversionSequence();
-    }
-
-    // At this point, if the types don’t match, we need to perform a type conversion.
-    if (ty == var_type) return seq;
+    // If we get here, there is only a single argument.
     Assert(args.size() == 1);
     Assert(seq.conversions.empty());
+
+    // If the types match, ensure this is an rvalue.
+    auto ty = args.front()->type;
+    if (ty == var_type) {
+        if (args.front()->is_lvalue() and not want_lvalue) seq.add(Conversion::LValueToRValue());
+        return seq;
+    }
+
+    // At this point, , we need to perform a type conversion.
     auto a = args.front();
     auto TypeMismatch = [&] {
         return CreateError(
@@ -668,12 +619,10 @@ auto Sema::BuildConversionSequence(
             return TypeMismatch();
 
         case TypeBase::Kind::ArrayType:
-            seq = Try(BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc).result);
-            return seq;
+            return BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc);
 
         case TypeBase::Kind::StructType:
-            seq = Try(BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc).result);
-            return seq;
+            return BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc);
 
         case TypeBase::Kind::ProcType:
             // Type is an overload set; attempt to convert it.
@@ -750,7 +699,7 @@ auto Sema::BuildConversionSequence(
             auto ivar = cast<IntType>(var_type);
             auto iinit = dyn_cast<IntType>(a->type);
             if (not iinit or iinit->bit_width() > ivar->bit_width()) return TypeMismatch();
-            seq.add(Conversion::LoadSRValue());
+            seq.add(Conversion::LValueToRValue());
             seq.add(Conversion::IntegralCast(var_type));
             return seq;
         }
@@ -785,11 +734,9 @@ auto Sema::BuildInitialiser(
     Type var_type,
     ArrayRef<Expr*> args,
     Location loc,
-    bool in_call,
-    Intent intent,
-    CallingConvention cc
+    bool want_lvalue
 ) -> Ptr<Expr> {
-    auto seq_or_err = BuildConversionSequence(var_type, args, loc, intent, cc, in_call);
+    auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue);
 
     // The conversion succeeded.
     if (seq_or_err.result.has_value())
@@ -971,7 +918,7 @@ u32 Sema::ConversionSequence::badness() {
 
             // These don’t perform type conversion.
             case K::DefaultInit:
-            case K::LoadSRValue:
+            case K::LValueToRValue:
             case K::MaterialiseTemporary:
             case K::SelectOverload:
                 break;
@@ -1020,6 +967,32 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
 
     if (name.empty()) S.Note(loc, "In argument to parameter declared here");
     else S.Note(loc, "In argument to parameter '{}'", name);
+}
+
+bool Sema::CheckIntents(ProcType* ty, ArrayRef<Expr*> args) {
+    bool ok = true;
+    for (auto [p, a] : zip(ty->params(), args)) {
+        if (
+            (p.intent == Intent::Inout or p.intent == Intent::Out) and
+            not a->is_lvalue()
+        ) {
+            ok = false;
+            if (auto dre = dyn_cast_if_present<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
+                // If this is itself a parameter, issue a better error.
+                Error(
+                    a->location(),
+                    "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
+                    cast<ParamDecl>(dre->decl)->intent(),
+                    p.intent
+                );
+                Note(dre->decl->location(), "Parameter declared here");
+            } else {
+                Error(a->location(), "Cannot bind this expression to an %1({}%) parameter.", p.intent);
+                Remark("Try storing this in a variable first.");
+            }
+        }
+    }
+    return ok;
 }
 
 bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
@@ -1221,9 +1194,7 @@ auto Sema::PerformOverloadResolution(
                 p.type,
                 {a},
                 a->location(),
-                p.intent,
-                ty->cconv(),
-                true
+                p.intent == Intent::Out or p.intent == Intent::Inout
             );
 
             // If this failed, stop checking this candidate.
@@ -1309,6 +1280,7 @@ auto Sema::PerformOverloadResolution(
         actual_args.reserve(args.size());
         for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
             actual_args.emplace_back(ApplyConversionSequence(args[i], conv, args[i]->location()));
+        if (not CheckIntents(final_callee->proc_type(), actual_args)) return {};
         return {final_callee, std::move(actual_args)};
     }
 
@@ -1517,7 +1489,7 @@ auto Sema::BuildBinaryExpr(
     Location loc
 ) -> Ptr<Expr> {
     using enum ValueCategory;
-    auto Build = [&](Type ty, ValueCategory cat = SRValue) {
+    auto Build = [&](Type ty, ValueCategory cat = RValue) {
         return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
     };
 
@@ -1558,8 +1530,8 @@ auto Sema::BuildBinaryExpr(
         }
 
         // Now they’re the same type, so ensure both are srvalues.
-        lhs = LoadSRValue(lhs);
-        rhs = LoadSRValue(rhs);
+        lhs = LValueToRValue(lhs);
+        rhs = LValueToRValue(rhs);
         return true;
     };
 
@@ -1600,7 +1572,7 @@ auto Sema::BuildBinaryExpr(
             // with them; slices are srvalues and should be loaded
             // whole.
             if (isa<ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
-            else lhs = LoadSRValue(lhs);
+            else lhs = LValueToRValue(lhs);
 
             // A subscripting operation yields an lvalue.
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
@@ -1618,7 +1590,7 @@ auto Sema::BuildBinaryExpr(
             if (lhs->type->is_integer() and ty->is_integer()) return new (*M) CastExpr(
                 ty,
                 CastExpr::Integral,
-                LoadSRValue(lhs),
+                LValueToRValue(lhs),
                 loc
             );
 
@@ -1743,7 +1715,7 @@ auto Sema::BuildBinaryExpr(
 
             // Compound assignment.
             if (not CheckIntegral()) return nullptr;
-            rhs = BuildInitialiser(lhs->type, rhs, rhs->location()).get_or_null();
+            if (not MakeSRValue(lhs->type, rhs, "value", "assignment")) return nullptr;
             if (not rhs) return nullptr;
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
@@ -1780,7 +1752,7 @@ auto Sema::BuildBuiltinCallExpr(
                     "__srcc_print only accepts i8[] and integers, but got {}",
                     arg->type
                 );
-                arg = LoadSRValue(arg);
+                arg = LValueToRValue(arg);
             }
             return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
         }
@@ -1809,7 +1781,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::IntTy;
 
             case AK::SliceSize:
-                operand = LoadSRValue(operand);
+                operand = LValueToRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1817,7 +1789,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
-                operand = LoadSRValue(operand);
+                operand = LValueToRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1825,7 +1797,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
-                operand = LoadSRValue(operand);
+                operand = LValueToRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
@@ -1833,7 +1805,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
     return new (*M) BuiltinMemberAccessExpr{
         type,
-        Expr::SRValue,
+        Expr::RValue,
         operand,
         ak,
         loc
@@ -1873,7 +1845,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // work for indirect calls since for those we don’t have a reference
     // to the procedure declaration.
     else if (auto ty = dyn_cast<ProcType>(callee_expr->type)) {
-        resolved_callee = LoadSRValue(callee_expr);
+        resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
         auto params = ty->params().size();
@@ -1896,7 +1868,12 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // Convert each non-variadic parameter.
         converted_args.reserve(args.size());
         for (auto [i, p, a] : enumerate(ty->params(), args.take_front(ty->params().size()))) {
-            auto arg = BuildInitialiser(p.type, a, a->location(), true, p.intent, ty->cconv());
+            auto arg = BuildInitialiser(
+                p.type,
+                a,
+                a->location(),
+                p.intent == Intent::Out or p.intent == Intent::Inout
+            );
 
             // Point to the procedure if this is a direct call.
             if (not arg and isa<ProcRefExpr>(callee_expr)) {
@@ -1907,6 +1884,11 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
             converted_args.push_back(arg.get());
         }
+
+        // We can do this now since variadic arguments always have the 'copy'
+        // intent, which requires no checks.
+        if (not CheckIntents(ty, converted_args))
+            return nullptr;
     }
 
     // Otherwise, we have no idea how to call this thing.
@@ -1931,7 +1913,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
             isa<PtrType>(a->type)
         ) {
-            converted_args.push_back(LoadSRValue(a));
+            converted_args.push_back(LValueToRValue(a));
         } else {
             Error(
                 a->location(),
@@ -1956,9 +1938,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     return CallExpr::Create(
         *M,
         proc->ret(),
-        // FIXME: Eliminate the distinction between MRValue and SRValue; it has overstayed its
-        // welcome and is no longer useful.
-        isa<ArrayType, StructType>(proc->ret()) ? Expr::MRValue : Expr::SRValue,
+        Expr::RValue,
         resolved_callee,
         converted_args,
         loc
@@ -2007,7 +1987,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     };
 
     // Degenerate case: the condition does not return.
-    if (cond->type == Type::NoReturnTy) return Build(Type::NoReturnTy, Expr::SRValue);
+    if (cond->type == Type::NoReturnTy) return Build(Type::NoReturnTy, Expr::RValue);
 
     // Condition must be a bool.
     if (not MakeCondition(cond, "if")) return {};
@@ -2018,7 +1998,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
         not else_ or
         not isa<Expr>(then) or
         not isa<Expr>(else_.get())
-    ) return Build(Type::VoidTy, Expr::SRValue);
+    ) return Build(Type::VoidTy, Expr::RValue);
 
     // Otherwise, if either branch is dependent, we can’t determine the type yet.
     auto t = cast<Expr>(then);
@@ -2033,7 +2013,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
             both                          ? Type::NoReturnTy
             : t->type == Type::NoReturnTy ? e->type
                                           : t->type,
-            both                          ? Expr::SRValue
+            both                          ? Expr::RValue
             : t->type == Type::NoReturnTy ? e->value_category
                                           : t->value_category
         );
@@ -2057,21 +2037,15 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     // side will actually be used if there is no common type.
     // TODO: If there is no common type, both sides need to be marked
     //       as discarded.
-    if (common_ty == Type::VoidTy) return Build(Type::VoidTy, Expr::SRValue);
+    if (common_ty == Type::VoidTy) return Build(Type::VoidTy, Expr::RValue);
 
-    // If either side is an srvalue, both sides are.
-    if (t->is_srvalue() or e->is_srvalue()) {
-        t = LoadSRValue(t);
-        e = LoadSRValue(e);
+    // If either side is an rvalue, both sides are.
+    if (t->is_rvalue() or e->is_rvalue()) {
+        t = LValueToRValue(t);
+        e = LValueToRValue(e);
     }
 
-    // If either side is an mrvalue, materialise a temporary.
-    else if (t->is_mrvalue() or e->is_mrvalue()) {
-        t = MaterialiseTemporary(t);
-        e = MaterialiseTemporary(e);
-    }
-
-    return new (*M) IfExpr(common_ty, Expr::SRValue, cond, t, e, false, loc);
+    return new (*M) IfExpr(common_ty, t->value_category, cond, t, e, false, loc);
 }
 
 auto Sema::BuildParamDecl(
@@ -2222,7 +2196,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
             default: Unreachable("Invalid postfix operator: {}", op);
             case Tk::PlusPlus:
             case Tk::MinusMinus: {
-                if (not operand->lvalue()) return Error(
+                if (not operand->is_lvalue()) return Error(
                     loc,
                     "Operand of '%1({}%)' must be an lvalue",
                     Spelling(op)
@@ -2235,7 +2209,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
                     operand->type
                 );
 
-                return Build(operand->type, Expr::SRValue);
+                return Build(operand->type, Expr::RValue);
             }
         }
     }
@@ -2253,8 +2227,8 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 
         // Lvalue -> Pointer
         case Tk::Ampersand: {
-            if (not operand->lvalue()) return Error(loc, "Cannot take address of non-lvalue");
-            return Build(PtrType::Get(*M, operand->type), Expr::SRValue);
+            if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
+            return Build(PtrType::Get(*M, operand->type), Expr::RValue);
         }
 
         // Pointer -> Lvalue.
@@ -2266,14 +2240,14 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
                 operand->type
             );
 
-            operand = LoadSRValue(operand);
+            operand = LValueToRValue(operand);
             return Build(ptr->elem(), Expr::LValue);
         }
 
         // Boolean negation.
         case Tk::Not: {
             if (not MakeSRValue(Type::BoolTy, operand, "Operand", "not")) return {};
-            return Build(Type::BoolTy, Expr::SRValue);
+            return Build(Type::BoolTy, Expr::RValue);
         }
 
         // Arithmetic operators.
@@ -2281,7 +2255,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         case Tk::Plus:
         case Tk::Tilde: {
             if (not MakeSRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
-            return Build(Type::IntTy, Expr::SRValue);
+            return Build(Type::IntTy, Expr::RValue);
         }
 
         // Increment and decrement.
@@ -2652,7 +2626,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // Make sure the ranges are something we can actually iterate over.
     for (auto& r : ranges) {
         if (isa<RangeType, SliceType>(r->type)) {
-            r = LoadSRValue(r);
+            r = LValueToRValue(r);
         } else if (isa<ArrayType>(r->type)) {
             r = MaterialiseTemporary(r);
         } else {
@@ -2672,7 +2646,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     if (parsed->has_enumerator()) {
         enum_var = new (*M) LocalDecl(
             Type::IntTy,
-            Expr::SRValue,
+            Expr::RValue,
             parsed->enum_name,
             curr_proc().proc,
             parsed->enum_loc
@@ -2702,7 +2676,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
             [&](auto*) { Unreachable(); },
             [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue); },
             [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue); },
-            [&](RangeType* ty) { MakeVar(ty->elem(), Expr::SRValue); },
+            [&](RangeType* ty) { MakeVar(ty->elem(), Expr::RValue); },
         });
     }
 

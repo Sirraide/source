@@ -354,20 +354,6 @@ def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> 
     let arguments = (ins Variadic<SRCC_Type>:$vals);
 }
 
-def ReturnPointerOp : SRCC_Op<"retptr", [Pure, HasParent<"ProcOp">]> {
-    let summary = "Get the return pointer for a procedure";
-    let results = (outs SRCC_Ptr:$pointer);
-    let builders = [
-        OpBuilder<(ins), [{
-            build(
-                $_builder,
-                $_state,
-                mlir::LLVM::LLVMPointerType::get($_builder.getContext())
-            );
-        }]>
-    ];
-}
-
 def SAddOvOp : SRCC_Op<"sadd.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {
     let summary = "Add and check for overflow";
     let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);

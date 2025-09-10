@@ -44,14 +44,13 @@ struct CodeGen::Printer {
             FrameSlotOp,
             NilOp,
             ProcRefOp,
-            ReturnPointerOp,
             mlir::LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
         >(op); // clang-format on
     }
 };
 
-static auto FormatType(mlir::Type ty) -> std::string {
+auto ir::FormatType(mlir::Type ty) -> std::string {
     std::string tmp;
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
@@ -345,11 +344,6 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (isa<ReturnPointerOp>(op)) {
-        out += "%3(retptr%)";
-        return;
-    }
-
     if (auto ext = dyn_cast<mlir::arith::ExtUIOp>(op)) {
         out += std::format("zext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
         return;
@@ -591,11 +585,6 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (isa<NilOp>(op)) {
             tmp += "nil";
-            return tmp;
-        }
-
-        if (isa<ReturnPointerOp>(op)) {
-            tmp += "%3(retptr%)";
             return tmp;
         }
 
