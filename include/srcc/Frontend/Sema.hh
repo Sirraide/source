@@ -130,6 +130,7 @@ class srcc::Sema : public DiagsProducer {
             LValueToRValue,
             MaterialisePoison,
             MaterialiseTemporary,
+            RangeCast,
             SelectOverload,
             StructInit,
         };
@@ -160,6 +161,7 @@ class srcc::Sema : public DiagsProducer {
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
+        static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto StructInit(StructInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
 

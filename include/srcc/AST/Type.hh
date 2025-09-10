@@ -141,6 +141,9 @@ public:
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
+    /// Check if this is 'int', 'bool', or a sized integer.
+    [[nodiscard]] bool is_integer_or_bool() const;
+
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
@@ -646,7 +649,7 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
 
 template <>
 struct libassert::stringifier<srcc::Type> {
-    auto stringify(srcc::Type ty) -> std::string {
+    static auto stringify(srcc::Type ty) -> std::string {
         return base::text::RenderColours(false, ty->print().str());
     }
 };

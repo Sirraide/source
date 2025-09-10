@@ -76,13 +76,11 @@ public:
 
     /// Get the preferred alignment of this type.
     [[nodiscard]] auto preferred_align(Type ty) const -> Align {
-        if (ty->is_integer()) return int_align(ty->size(*this));
         return ty->align(*this);
     }
 
     /// Get the preferred size of this type.
     [[nodiscard]] auto preferred_size(Type ty) const -> Size {
-        if (ty->is_integer()) return int_size(ty->size(*this));
         return ty->size(*this);
     }
 

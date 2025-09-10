@@ -410,6 +410,9 @@ public:
 
         /// Materialise a poison value of the given type.
         MaterialisePoisonValue,
+
+        /// Convert between range types.
+        Range,
     };
 
     using enum CastKind;

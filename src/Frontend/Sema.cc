@@ -109,7 +109,7 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
 }
 
 bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
-    if (not ty->is_integer()) return false;
+    Assert(ty->is_integer(), "Not an integer: '{}'", ty);
     auto to_bits //
         = ty == Type::IntTy
             ? Type::IntTy->size(*M)
@@ -316,7 +316,9 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             true
         );
 
-        case K::LValueToRValue: return LValueToRValue(e);
+        case K::LValueToRValue:
+            return LValueToRValue(e);
+
         case K::MaterialisePoison: return new (*M) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
@@ -328,6 +330,14 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
 
         case K::MaterialiseTemporary:
             return MaterialiseTemporary(e);
+
+        case K::RangeCast: return new (*M) CastExpr(
+            conv.type(),
+            CastExpr::Range,
+            e,
+            loc,
+            true
+        );
 
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
@@ -372,6 +382,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
+        case K::RangeCast:
         case K::SelectOverload: {
             Assert(exprs.size() == 1);
             exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
@@ -555,8 +566,11 @@ auto Sema::BuildConversionSequence(
     // category). This is because 'noreturn' means we never actually reach the
     // point in the program where the value would be needed, so it’s fine to just
     // pretend that we have one.
+    //
+    // Materialise a poison value so we don’t crash in codegen; this is admittedly
+    // a bit of a hack, but it avoids having to check if we have an insert point
+    // everywhere in codegen.
     if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
-        // FIXME: DON'T DO THIS. And instead just check 'HasTerminator()' in codegen...
         seq.add(Conversion::Poison(var_type, Expr::RValue));
         return seq;
     }
@@ -612,8 +626,29 @@ auto Sema::BuildConversionSequence(
         );
     };
 
+    // A 'trivial' integer constant expression for the purposes
+    // of this is a (possibly negated) integer literal.
+    auto ConstantIntFits = [&](Expr* e, Type ty) {
+        // If this is a (possibly parenthesised and negated) integer
+        // that fits in the type of the lhs, convert it. If it doesn’t
+        // fit, the type must be larger, so give up.
+        Expr* lit = e;
+        for (;;) {
+            auto u = dyn_cast<UnaryExpr>(lit);
+            if (not u or u->op != Tk::Minus) break;
+            lit = u->arg;
+        }
+
+        // If we ultimately found a literal, evaluate the original expression.
+        if (isa_and_present<IntLitExpr>(lit)) {
+            auto val = M->vm.eval(e, false);
+            return val and IntegerFitsInType(val->cast<APInt>(), ty);
+        }
+
+        return false;
+    };
+
     switch (var_type->kind()) {
-        case TypeBase::Kind::RangeType:
         case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
             return TypeMismatch();
@@ -672,26 +707,30 @@ auto Sema::BuildConversionSequence(
             // Otherwise, the types don’t match.
             return TypeMismatch();
 
-        // For integers, we can use the common type rule.
-        case TypeBase::Kind::IntType: {
-            // If this is a (possibly parenthesised and negated) integer
-            // that fits in the type of the lhs, convert it. If it doesn’t
-            // fit, the type must be larger, so give up.
-            Expr* lit = a;
-            for (;;) {
-                auto u = dyn_cast<UnaryExpr>(lit);
-                if (not u or u->op != Tk::Minus) break;
-                lit = u->arg;
+        case TypeBase::Kind::RangeType: {
+            auto el = cast<RangeType>(var_type)->elem();
+
+            // If the initialising range is a constant expression, try
+            // to see if it fits.
+            if (
+                auto range = dyn_cast<BinaryExpr>(a);
+                range and
+                (range->op == Tk::DotDotEq or range->op == Tk::DotDotLess) and
+                ConstantIntFits(range->lhs, el) and ConstantIntFits(range->rhs, el)
+            ) {
+                seq.add(Conversion::RangeCast(var_type));
+                return seq;
             }
 
-            // If we ultimately found a literal, evaluate the original expression.
-            if (isa_and_present<IntLitExpr>(lit)) {
-                auto val = M->vm.eval(a, false);
-                if (val and IntegerFitsInType(val->cast<APInt>(), var_type)) {
-                    // Integer literals are srvalues so no need fo l2r conv here.
-                    seq.add(Conversion::IntegralCast(var_type));
-                    return seq;
-                }
+            // Ranges that are not constant expressions require an explicit cast.
+            return TypeMismatch();
+        }
+
+        // For integers, we can use the common type rule.
+        case TypeBase::Kind::IntType: {
+            if (ConstantIntFits(a, var_type)) {
+                seq.add(Conversion::IntegralCast(var_type));
+                return seq;
             }
 
             // Otherwise, if both are sized integer types, and the initialiser
@@ -926,6 +965,7 @@ u32 Sema::ConversionSequence::badness() {
             // These are actual type conversions.
             case K::IntegralCast:
             case K::MaterialisePoison:
+            case K::RangeCast:
                 badness++;
                 break;
 
@@ -974,6 +1014,7 @@ bool Sema::CheckIntents(ProcType* ty, ArrayRef<Expr*> args) {
     for (auto [p, a] : zip(ty->params(), args)) {
         if (
             (p.intent == Intent::Inout or p.intent == Intent::Out) and
+            (not isa<CastExpr>(a) or cast<CastExpr>(a)->kind != CastExpr::MaterialisePoisonValue) and
             not a->is_lvalue()
         ) {
             ok = false;
@@ -1781,7 +1822,6 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::IntTy;
 
             case AK::SliceSize:
-                operand = LValueToRValue(operand);
                 return Type::IntTy;
 
             case AK::TypeName:
@@ -1789,7 +1829,6 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::RangeStart:
             case AK::RangeEnd:
-                operand = LValueToRValue(operand);
                 return cast<RangeType>(operand->type)->elem();
 
             case AK::TypeMaxVal:
@@ -1797,7 +1836,6 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
-                operand = LValueToRValue(operand);
                 return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();

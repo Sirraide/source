@@ -127,6 +127,8 @@ void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool 
         }
 
         out += "%1()%)";
+    } else if (not is_proc) {
+        out += "%1(()%)";
     }
 }
 
@@ -137,7 +139,6 @@ void CodeGen::Printer::print_result_attrs(ProcAndCallOpInterface proc_or_call, u
         }
     }
 }
-
 
 void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
     using mlir::LLVM::LLVMDialect;

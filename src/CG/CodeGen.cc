@@ -223,7 +223,7 @@ void CodeGen::CreateBuiltinAggregateStore(
 }
 
 auto CodeGen::CreateEmptySlice(mlir::Location loc) -> IRValue {
-    return IRValue{CreateNil(loc, ptr_ty), CreateNil(loc, int_ty)};
+    return IRValue{CreateNullPointer(loc), CreateInt(loc, 0, int_ty)};
 }
 
 auto CodeGen::CreateGlobalStringPtr(String data) -> Value {
@@ -323,13 +323,6 @@ void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
         CreateInt(loc, i64(ty->size(tu).bytes())),
         false
     );
-}
-
-auto CodeGen::CreateNil(mlir::Location loc, mlir::Type ty) -> Value {
-    auto s = ty;
-    if (s.isInteger()) return CreateInt(loc, 0, s);
-    Assert(isa<LLVM::LLVMPointerType>(s));
-    return CreateNullPointer(loc);
 }
 
 auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
@@ -451,12 +444,17 @@ auto CodeGen::GetEquivalentStructTypeForAggregate(Type ty) -> StructType* {
 
 auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
     switch (ty->kind()) {
-        case TypeBase::Kind::SliceType:
-        case TypeBase::Kind::PtrType:
-        case TypeBase::Kind::RangeType:
         case TypeBase::Kind::BuiltinType:
         case TypeBase::Kind::IntType:
         case TypeBase::Kind::ProcType:
+        case TypeBase::Kind::PtrType:
+        case TypeBase::Kind::SliceType:
+            return EvalMode::Scalar;
+
+        // TODO: Ranges are weird in that both eval modes make sense: memory
+        // for calls and scalar for casts and for how they’re created; maybe
+        // this warrants a separate eval mode (like Clang’s complex eval mode)?
+        case TypeBase::Kind::RangeType:
             return EvalMode::Scalar;
 
         case TypeBase::Kind::ArrayType:
@@ -1791,12 +1789,20 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
 
 auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRValue {
     auto l = C(expr->location());
+    auto GetField = [&] (unsigned i) -> IRValue {
+        if (expr->operand->is_rvalue()) return Emit(expr->operand)[i];
+        auto r = GetEquivalentStructTypeForAggregate(expr->operand->type);
+        auto f = r->fields()[i];
+        auto addr = EmitScalar(expr->operand);
+        return CreateLoad(l, addr, f->type, f->offset);
+    };
+
     switch (expr->access_kind) {
         using AK = BuiltinMemberAccessExpr::AccessKind;
-        case AK::SliceData: return Emit(expr->operand).first();
-        case AK::SliceSize: return Emit(expr->operand).second();
-        case AK::RangeStart: return Emit(expr->operand).first();
-        case AK::RangeEnd: return Emit(expr->operand).second();
+        case AK::SliceData: return GetField(0);
+        case AK::SliceSize: return GetField(1);
+        case AK::RangeStart: return GetField(0);
+        case AK::RangeEnd: return GetField(1);
         case AK::TypeAlign: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes()));
         case AK::TypeArraySize: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes()));
         case AK::TypeBits: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->size(tu).bits()));
@@ -1806,6 +1812,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
             auto ty = cast<TypeExpr>(expr->operand)->value;
             return CreateInt(l, APInt::getSignedMaxValue(u32(ty->size(tu).bits())), ty);
         }
+
         case AK::TypeMinVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
             return CreateInt(l, APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
@@ -1826,7 +1833,6 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     auto callee = Emit(expr->callee);
 
     // Make sure we have a slot for the return type.
-    // FIXME: Sema should create a temporary instead.
     auto ret = proc->ret();
     if (NeedsIndirectReturn(ret) and not mrvalue_slot)
         mrvalue_slot = CreateAlloca(l, ret);
@@ -1887,7 +1893,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
 
     // If this is an srvalue, just load it.
     if (GetEvalMode(expr->type) == EvalMode::Scalar)
-        return CreateLoad(l, mem, C(ret), ret->align(tu));
+        return CreateLoad(l, mem, ret);
 
     // Sanity check: if this is an mrvalue, we should always construct into
     // the address that was provided to us, if there was one at all. If this
@@ -1918,7 +1924,22 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
         }
 
         case CastExpr::MaterialisePoisonValue: {
-            Unreachable("This cast expression kind should be removed entirely");
+            auto op = create<LLVM::PoisonOp>(
+                C(expr->location()),
+                expr->is_rvalue() ? C(expr->type) : ptr_ty
+            );
+
+            return op.getRes();
+        }
+
+        case CastExpr::Range: {
+            auto l = C(expr->location());
+            auto to = cast<RangeType>(expr->type)->elem();
+            auto from = cast<RangeType>(expr->arg->type)->elem();
+            return {
+                CreateSICast(l, val.first(), from, to),
+                CreateSICast(l, val.second(), from, to),
+            };
         }
     }
 
@@ -1930,9 +1951,22 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
 }
 
 auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
-    if (IsZeroSizedType(stmt->type)) return {};
-    Assert(GetEvalMode(stmt->type) == EvalMode::Scalar, "Emitting non-srvalue on its own?");
-    return CreateNil(C(stmt->location()), C(stmt->type));
+    auto ty = stmt->type;
+    auto l = C(stmt->location());
+
+    if (IsZeroSizedType(ty)) return {};
+    Assert(GetEvalMode(ty) == EvalMode::Scalar, "Emitting non-srvalue on its own?");
+
+    if (ty->is_integer_or_bool()) return CreateInt(l, 0, C(ty));
+    if (isa<PtrType>(ty)) return CreateNullPointer(l);
+    if (isa<SliceType>(ty)) return CreateEmptySlice(l);
+    if (isa<ProcType>(ty)) return {CreateNullPointer(l), CreateNullPointer(l)};
+    if (auto r = dyn_cast<RangeType>(ty)) {
+        auto e = C(r->elem());
+        return {CreateInt(l, 0, e), CreateInt(l, 0, e)};
+    }
+
+    Unreachable("Don’t know how to emit DefaultInitExpr of type '{}'", stmt->type);
 }
 
 auto CodeGen::EmitEmptyStmt(EmptyStmt*) -> IRValue {
@@ -2163,16 +2197,15 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 
     // Lower parameters.
     ABILoweringContext actx;
-    unsigned num_args = NeedsIndirectReturn(proc->return_type());
-    if (num_args) actx.allocate();
+    if (NeedsIndirectReturn(proc->return_type())) actx.allocate();
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
         if (PassByReference(param->type, param->intent())) {
+            locals[param] = curr_proc.getArgument(actx.used());
             actx.allocate();
-            locals[param] = curr_proc.getArgument(num_args++);
         } else {
             auto l = C(param->location());
-            ABITypeRaisingContext ctx{*this, actx, l, curr_proc.getArguments().drop_front(num_args), param->type};
+            ABITypeRaisingContext ctx{*this, actx, l, curr_proc.getArguments().drop_front(actx.used()), param->type};
             locals[param] = WriteByValArgToMemory(ctx);
         }
     }

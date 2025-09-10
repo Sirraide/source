@@ -128,6 +128,13 @@ public:
         return vals[0];
     }
 
+    /// Get the n-th element.
+    [[nodiscard]] auto operator[](unsigned i) const -> Elem {
+        Assert(is_aggregate());
+        Assert(i <= 2);
+        return vals[i];
+    }
+
     /// Convert this to a range of types.
     operator Range() const {
         if (is_null()) return {};
@@ -310,7 +317,6 @@ public:
     auto CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset = {}) -> IRValue;
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
     void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
-    auto CreateNil(mlir::Location loc, mlir::Type ty) -> Value;
     auto CreateNullPointer(mlir::Location loc) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
@@ -497,18 +503,21 @@ public:
     /// Context used to convert an entire argument list.
     class ABILoweringContext {
         LIBBASE_MOVE_ONLY(ABILoweringContext);
-        static constexpr int MaxRegs = 6;
-        int regs_left = MaxRegs;
+        static constexpr unsigned MaxRegs = 6;
+        unsigned regs = 0;
 
     public:
         ABILoweringContext() = default;
 
         /// Attempt to allocate 'n' argument registers.
-        bool allocate(int n = 1) {
-            if (regs_left < n) return false;
-            regs_left -= n;
+        bool allocate(unsigned n = 1) {
+            if (regs + n > MaxRegs) return false;
+            regs += n;
             return true;
         }
+
+        /// Get the total number of registers that have been allocated.
+        [[nodiscard]] unsigned used() const { return regs; }
     };
 
     /// Context used to convert a bundle of IR arguments back to a Source type.

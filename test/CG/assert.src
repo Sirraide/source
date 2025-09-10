@@ -28,7 +28,7 @@ proc foo(in int a, in int b) {
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
-// +     store #1, i64 %0, align 8
+// +     store #1, i64 %1, align 8
 // +     %2 = load i64, #0, align 8
 // +     %3 = load i64, #1, align 8
 // +     %4 = icmp eq i64 %2, %3
@@ -102,7 +102,7 @@ proc foo(in int a, in int b) {
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 64, align 8
 //L +   store i64 %0, ptr %3, align 8
-//L +   store i64 %0, ptr %4, align 8
+//L +   store i64 %1, ptr %4, align 8
 //L +   %6 = load i64, ptr %3, align 8
 //L +   %7 = load i64, ptr %4, align 8
 //L +   %8 = icmp eq i64 %6, %7

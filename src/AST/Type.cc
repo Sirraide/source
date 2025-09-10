@@ -156,6 +156,10 @@ bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
 }
 
+bool TypeBase::is_integer_or_bool() const {
+    return is_integer() or this == Type::BoolTy;
+}
+
 bool TypeBase::is_void() const {
     return kind() == Kind::BuiltinType and
            cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
@@ -242,7 +246,7 @@ auto TypeBase::size(const Target& t) const -> Size {
             }
         }
 
-        case Kind::IntType: return cast<IntType>(this)->bit_width();
+        case Kind::IntType: return t.int_size(cast<IntType>(this));
         case Kind::PtrType: return t.ptr_size();
         case Kind::ProcType: return t.closure_size();
         case Kind::SliceType: return t.slice_size();

@@ -102,7 +102,7 @@ proc d (in bool x) {
 // +     br bb3
 // +
 // + bb2:
-// +     %4 = call fastcc i64 _S1aFT1sE
+// +     %4 = call fastcc i64 _S1aFT1sE()
 // +     store #1, i64 %4, align 8
 // +     br bb3
 // +
@@ -116,7 +116,7 @@ proc d (in bool x) {
 // +     br bb6
 // +
 // + bb5:
-// +     %7 = call fastcc i64 _S1aFT1sE
+// +     %7 = call fastcc i64 _S1aFT1sE()
 // +     store #2, i64 %7, align 8
 // +     br bb6
 // +
