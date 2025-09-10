@@ -850,7 +850,11 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 
         // The initialiser might be an lvalue-to-rvalue conversion; this is used to
         // pass trivially-copyable structs by value.
-        [&](CastExpr *e) { EmitCastExpr(e, addr); },
+        [&](CastExpr *e) {
+            Assert(e->kind == CastExpr::CastKind::LValueToRValue);
+            auto loc = C(e->location());
+            CreateMemCpy(loc, addr, EmitScalar(e->arg), e->type);
+        },
 
         // If the initialiser is a constant expression, create a global constant for it.
         //
@@ -1876,10 +1880,6 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
 }
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
-    return EmitCastExpr(expr, nullptr);
-}
-
-auto CodeGen::EmitCastExpr(CastExpr* expr, Value mrvalue_slot) -> IRValue {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
         case CastExpr::Deref:
@@ -1894,15 +1894,6 @@ auto CodeGen::EmitCastExpr(CastExpr* expr, Value mrvalue_slot) -> IRValue {
         case CastExpr::LValueToRValue: {
             Assert(expr->arg->value_category == Expr::LValue);
             if (IsZeroSizedType(expr->type)) return {};
-
-            // When called via 'EmitRValue()', this copies the value into an address.
-            if (mrvalue_slot) {
-                auto loc = C(expr->location());
-                CreateMemCpy(loc, mrvalue_slot, val.scalar(), expr->type);
-                return {};
-            }
-
-            // Otherwise, this produces a value.
             return CreateLoad(C(expr->location()), val.scalar(), expr->type);
         }
 

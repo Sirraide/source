@@ -4,6 +4,7 @@
 #include <llvm/Support/Process.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Signals.h>
+#include <llvm/TargetParser/Host.h>
 
 #include <clopts.hh>
 #include <thread>
@@ -26,6 +27,7 @@ using options = clopts< // clang-format off
     option<"-o", "Override the default output file name">,
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
     option<"--preamble", "Override preamble; only use this if you know what you’re doing since it may cause unintended behaviour">,
+    option<"--target", "Target triple to compile for">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
@@ -108,6 +110,14 @@ int main(int argc, char** argv) {
 
     module_search_paths.push_back(SOURCE_PROJECT_DIR_NAME "/modules");
 
+    // Determine the target triple.
+    llvm::Triple triple;
+    if (auto tgt = opts.get<"--target">()) {
+        triple = llvm::Triple(llvm::Triple::normalize(*tgt));
+    } else {
+        triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
+    }
+
     // TODO:
     //  - Move lang opts to be TU-specific in case the TU wants
     //    to alter them using e.g. pragmas.
@@ -123,6 +133,7 @@ int main(int argc, char** argv) {
 
     // Create driver.
     Driver driver{{// clang-format off
+        .triple = std::move(triple),
         .module_output_path = opts.get<"--mo">("."),
         .output_file_name = opts.get<"-o">(""),
         .preamble_path = opts.get<"--preamble">(SOURCE_PROJECT_DIR_NAME "/std/preamble.src"),

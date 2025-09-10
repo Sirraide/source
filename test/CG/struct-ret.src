@@ -1,5 +1,5 @@
-// R      %srcc --ir %s
-// R[//L] %srcc --llvm %s
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
 program test;
 
 struct x { int a; }

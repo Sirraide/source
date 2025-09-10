@@ -1,5 +1,5 @@
-// R      %srcc --ir %s
-// R[//L] %srcc --llvm %s
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
 program test;
 
 struct s { i64 x; }
@@ -132,8 +132,6 @@ proc d (in bool x) {
 // +     #3 = 8, align 8
 // +     #4 = 8, align 8
 // +     #5 = 8, align 8
-// +     #6 = 8, align 8
-// +     #7 = 8, align 8
 // +
 // + entry:
 // +     %1 = sext i1 %0 to i8
@@ -146,24 +144,30 @@ proc d (in bool x) {
 // +     copy #3 <- %4, 8
 // +     %5 = load i8, #0, align 1
 // +     %6 = trunc i8 %5 to i1
-// +     br %6 to bb1 else bb2(#2)
+// +     br %6 to bb1 else bb2
 // +
 // + bb1:
-// +     store #6, i64 1, align 8
-// +     br bb2(#6)
+// +     store #4, i64 1, align 8
+// +     br bb3
 // +
-// + bb2(ptr %7):
-// +     copy #4 <- %7, 8
-// +     %8 = load i8, #0, align 1
-// +     %9 = trunc i8 %8 to i1
-// +     br %9 to bb4(#1) else bb3
+// + bb2:
+// +     copy #4 <- #2, 8
+// +     br bb3
 // +
 // + bb3:
-// +     store #7, i64 1, align 8
-// +     br bb4(#7)
+// +     %7 = load i8, #0, align 1
+// +     %8 = trunc i8 %7 to i1
+// +     br %8 to bb4 else bb5
 // +
-// + bb4(ptr %10):
-// +     copy #5 <- %10, 8
+// + bb4:
+// +     copy #5 <- #1, 8
+// +     br bb6
+// +
+// + bb5:
+// +     store #5, i64 1, align 8
+// +     br bb6
+// +
+// + bb6:
 // +     ret
 // + }
 
@@ -270,38 +274,40 @@ proc d (in bool x) {
 //L +   %5 = alloca i8, i64 8, align 8
 //L +   %6 = alloca i8, i64 8, align 8
 //L +   %7 = alloca i8, i64 8, align 8
-//L +   %8 = alloca i8, i64 8, align 8
-//L +   %9 = alloca i8, i64 8, align 8
-//L +   %10 = sext i1 %0 to i8
-//L +   store i8 %10, ptr %2, align 1
+//L +   %8 = sext i1 %0 to i8
+//L +   store i8 %8, ptr %2, align 1
 //L +   store i64 1, ptr %3, align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %3, i64 8, i1 false)
-//L +   %11 = load i8, ptr %2, align 1
-//L +   %12 = trunc i8 %11 to i1
-//L +   %13 = select i1 %12, ptr %3, ptr %4
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %13, i64 8, i1 false)
-//L +   %14 = load i8, ptr %2, align 1
-//L +   %15 = trunc i8 %14 to i1
-//L +   br i1 %15, label %16, label %17
+//L +   %9 = load i8, ptr %2, align 1
+//L +   %10 = trunc i8 %9 to i1
+//L +   %11 = select i1 %10, ptr %3, ptr %4
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %11, i64 8, i1 false)
+//L +   %12 = load i8, ptr %2, align 1
+//L +   %13 = trunc i8 %12 to i1
+//L +   br i1 %13, label %14, label %15
 //L +
-//L + 16:                                               ; preds = %1
-//L +   store i64 1, ptr %8, align 8
-//L +   br label %17
+//L + 14:                                               ; preds = %1
+//L +   store i64 1, ptr %6, align 8
+//L +   br label %16
 //L +
-//L + 17:                                               ; preds = %16, %1
-//L +   %18 = phi ptr [ %8, %16 ], [ %4, %1 ]
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %6, ptr %18, i64 8, i1 false)
-//L +   %19 = load i8, ptr %2, align 1
-//L +   %20 = trunc i8 %19 to i1
-//L +   br i1 %20, label %22, label %21
+//L + 15:                                               ; preds = %1
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %6, ptr %4, i64 8, i1 false)
+//L +   br label %16
 //L +
-//L + 21:                                               ; preds = %17
-//L +   store i64 1, ptr %9, align 8
-//L +   br label %22
+//L + 16:                                               ; preds = %14, %15
+//L +   %17 = load i8, ptr %2, align 1
+//L +   %18 = trunc i8 %17 to i1
+//L +   br i1 %18, label %19, label %20
 //L +
-//L + 22:                                               ; preds = %21, %17
-//L +   %23 = phi ptr [ %9, %21 ], [ %3, %17 ]
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %7, ptr %23, i64 8, i1 false)
+//L + 19:                                               ; preds = %16
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %7, ptr %3, i64 8, i1 false)
+//L +   br label %21
+//L +
+//L + 20:                                               ; preds = %16
+//L +   store i64 1, ptr %7, align 8
+//L +   br label %21
+//L +
+//L + 21:                                               ; preds = %19, %20
 //L +   ret void
 //L + }
 //L +

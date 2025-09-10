@@ -25,9 +25,13 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     std::array args {
         "-x",
         "c++",
-        "foo.cc"
+        "foo.cc",
+        "-triple",
+        ctx.triple().getTriple().c_str(),
     };
 
+    // FIXME: Remove the dependence on 'CompilerInstance'/'CompilerInvocation' and just
+    // create the target directly.
     ci = std::make_unique<clang::CompilerInstance>();
     ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
     Assert(clang::CompilerInvocation::CreateFromArgs(ci->getInvocation(), args, ci->getDiagnostics()));

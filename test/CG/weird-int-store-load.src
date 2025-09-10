@@ -1,4 +1,4 @@
-// R %srcc --ir -fno-overflow-checks %s
+// R %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
 program test;
 
 i7 a = 1;

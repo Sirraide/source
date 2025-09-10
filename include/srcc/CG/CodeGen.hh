@@ -332,7 +332,6 @@ public:
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
     void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
     auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> IRValue;
-    auto EmitCastExpr(CastExpr* cast, Value mrvalue_slot) -> IRValue;
     auto EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue;
     auto EmitIfExpr(IfExpr* expr, Value mrvalue_slot) -> IRValue;
 #define AST_DECL_LEAF(Class)

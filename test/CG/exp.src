@@ -1,4 +1,4 @@
-// R %srcc --ir --short-filenames %s
+// R %srcc --ir --short-filenames --target x86_64-unknown-linux %s
 program test;
 
 proc sink (in int) {}
