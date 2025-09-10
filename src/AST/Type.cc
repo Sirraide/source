@@ -103,7 +103,13 @@ auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
 auto TypeBase::array_size(const Target& t) const -> Size {
     if (auto s = dyn_cast<StructType>(this)) return s->array_size();
     if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(t) * 2;
-    return size(t);
+    return memory_size(t);
+}
+
+auto TypeBase::bit_width(TranslationUnit& tu) const -> Size {
+    if (this == Type::BoolTy) return Size::Bits(1);
+    if (auto i = dyn_cast<IntType>(this)) return i->bit_width();
+    return size_impl(tu.target());
 }
 
 template <bool (StructType::*struct_predicate)() const>
@@ -224,11 +230,15 @@ auto TypeBase::print() const -> SmallUnrenderedString {
     return out;
 }
 
-auto TypeBase::size(TranslationUnit& tu) const -> Size {
-    return size(tu.target());
+auto TypeBase::memory_size(TranslationUnit& tu) const -> Size {
+    return memory_size(tu.target());
 }
 
-auto TypeBase::size(const Target& t) const -> Size {
+auto TypeBase::memory_size(const Target& t) const -> Size {
+    return size_impl(t).as_bytes();
+}
+
+auto TypeBase::size_impl(const Target& t) const -> Size {
     switch (type_kind) {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
@@ -252,7 +262,7 @@ auto TypeBase::size(const Target& t) const -> Size {
         case Kind::SliceType: return t.slice_size();
         case Kind::RangeType: {
             auto elem = cast<RangeType>(this)->elem();
-            return elem->array_size(t) + elem->size(t);
+            return elem->array_size(t) + elem->memory_size(t);
         }
 
         case Kind::StructType: {
@@ -465,7 +475,7 @@ auto StructType::CreateTrivialBuiltinTuple(
         auto fa = f->align(owner);
         sz = sz.align(fa);
         decls.push_back(new (owner) FieldDecl(f, sz, "", Location()));
-        sz += f->size(owner);
+        sz += f->memory_size(owner);
         a = std::max(a, fa);
     }
 

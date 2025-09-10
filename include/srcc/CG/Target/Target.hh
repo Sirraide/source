@@ -81,7 +81,7 @@ public:
 
     /// Get the preferred size of this type.
     [[nodiscard]] auto preferred_size(Type ty) const -> Size {
-        return ty->size(*this);
+        return ty->memory_size(*this);
     }
 
     /// Get the pointer alignment.

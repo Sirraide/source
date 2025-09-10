@@ -44,7 +44,7 @@ struct Impl final : Target {
     // in memory.'
     //
     // We don’t have floats at the moment, so short-circuit that here.
-    auto sz = ty->size(t);
+    auto sz = ty->memory_size(t);
     if (sz > Eightbyte * 2) return {MEMORY};
 
     // Integer types and pointers are INTEGER. >64 bit integers are split into

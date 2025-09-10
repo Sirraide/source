@@ -24,13 +24,13 @@ var d = c;
 // +
 // + entry:
 // +     store #0, i64 1, align 8
-// +     copy #1, #0, 8
+// +     copy #1 <- #0, 8
 // +     store #2, i64 1, align 8
 // +     %0 = ptradd #2, 8
 // +     store %0, i64 2, align 8
 // +     %1 = ptradd #2, 16
 // +     store %1, i64 3, align 8
-// +     copy #3, #2, 24
+// +     copy #3 <- #2, 24
 // +     ret
 // + }
 

@@ -149,6 +149,7 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue ms
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
+    Assert(not IsZeroSizedType(ty));
     return CreateAlloca(loc, tu.target().preferred_size(ty), tu.target().preferred_align(ty));
 }
 
@@ -308,7 +309,7 @@ auto CodeGen::CreateLoad(
 
 void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
     // For integer types and pointers, emit a load-store pair.
-    if (ty->is_integer() or isa<PtrType>(ty)) {
+    if (ty->is_integer_or_bool() or isa<PtrType>(ty)) {
         auto a = ty->align(tu);
         auto v = CreateLoad(loc, from, C(ty), a);
         CreateStore(loc, to, v, a);
@@ -320,7 +321,7 @@ void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
         loc,
         to,
         from,
-        CreateInt(loc, i64(ty->size(tu).bytes())),
+        CreateInt(loc, i64(ty->memory_size(tu).bytes())),
         false
     );
 }
@@ -353,8 +354,8 @@ auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value 
 }
 
 auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value {
-    auto from_sz = from->size(tu);
-    auto to_sz = to->size(tu);
+    auto from_sz = from->bit_width(tu);
+    auto to_sz = to->bit_width(tu);
     if (from_sz == to_sz) return val;
     if (from_sz > to_sz) return createOrFold<arith::TruncIOp>(loc, C(to), val);
     if (from == Type::BoolTy) return createOrFold<arith::ExtUIOp>(loc, C(to), val);
@@ -591,7 +592,7 @@ auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<v
 }
 
 bool CodeGen::IsZeroSizedType(Type ty) {
-    return ty->size(tu) == Size();
+    return ty->memory_size(tu) == Size();
 }
 
 bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
@@ -623,7 +624,7 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // Large or non-trivially copyable 'in' parameters are references.
     if (i == Intent::In) {
         if (not ty->trivially_copyable()) return true;
-        return ty->size(tu) > Size::Bits(128);
+        return ty->bit_width(tu) > Size::Bits(128);
     }
 
     // Move parameters are references only if the type is not trivial
@@ -881,7 +882,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
                 loc,
                 addr,
                 CreateInt(loc, 0, tu.I8Ty),
-                CreateInt(loc, i64(e->type->size(tu).bytes())),
+                CreateInt(loc, i64(e->type->memory_size(tu).bytes())),
                 false
             );
         },
@@ -954,7 +955,7 @@ bool CodeGen::CanUseReturnValueDirectly(Type ty) {
     if (isa<PtrType, SliceType, ProcType>(ty)) return true;
     if (ty == Type::BoolTy) return true;
     if (ty->is_integer()) {
-        auto sz = ty->size(tu);
+        auto sz = ty->bit_width(tu);
         return sz <= Size::Bits(64) or sz == Size::Bits(128);
     }
     return false;
@@ -971,7 +972,7 @@ auto CodeGen::GetPreferredIntType(mlir::Type ty) -> mlir::Type {
 auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo {
     static constexpr Size Word = Size::Bits(64);
     ABIArgInfo info;
-    auto sz = t->size(tu);
+    auto sz = t->bit_width(tu);
     auto AddStackArg = [&] (mlir::Type arg_ty = {}) {
         if (not arg_ty) arg_ty = ConvertToByteArrayType(t);
         info.emplace_back(ptr_ty).add_byval(arg_ty);
@@ -985,6 +986,16 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
             } else {
                 info[0].value = addr;
             }
+        }
+    };
+
+    auto PassThrough = [&] {
+        ctx.allocate();
+        auto ty = C(t);
+        info.emplace_back(ty);
+        if (auto a = arg.get_or_null()) {
+            info[0].value = EmitScalar(a);
+            if (a->is_lvalue()) info[0].value = CreateLoad(l, info[0].value, ty, a->type->align(tu));
         }
     };
 
@@ -1035,57 +1046,62 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
         else { AddStackArg(); }
     }
 
-    // i65-i127 are passed in two registers.
-    else if (t->is_integer() and sz > Word and sz < Word * 2) {
-        if (ctx.allocate(2)) {
-            info.emplace_back(int_ty);
-            info.emplace_back(int_ty);
-            if (auto a = arg.get_or_null()) {
-                auto mem = EmitToMemory(l, a);
-                info[0].value = CreateLoad(l, mem, int_ty, t->align(tu));
-                info[1].value = CreateLoad(l, mem, int_ty, t->align(tu), Word);
+    // For integers, it depends on the bit width.
+    else if (t->is_integer_or_bool()) {
+        // i65-i127 are passed in two registers.
+        if (sz > Word and sz < Word * 2) {
+            if (ctx.allocate(2)) {
+                info.emplace_back(int_ty);
+                info.emplace_back(int_ty);
+                if (auto a = arg.get_or_null()) {
+                    auto mem = EmitToMemory(l, a);
+                    info[0].value = CreateLoad(l, mem, int_ty, t->align(tu));
+                    info[1].value = CreateLoad(l, mem, int_ty, t->align(tu), Word);
+                }
+            } else {
+                // For some reason Clang passes e.g. i127 as an i128 rather than
+                // as an array of 16 bytes.
+                AddStackArg(i128_ty);
             }
-        } else {
-            // For some reason Clang passes e.g. i127 as an i128 rather than
-            // as an array of 16 bytes.
-            AddStackArg(i128_ty);
-        }
-    }
-
-    // i128’s ABI is apparently somewhat cursed; it is never marked as 'byval'
-    // and is passed as a single value; this specifically applies only to the
-    // C __i128 type and *not* _BitInt(128) for some ungodly reason; treat our
-    // i128 as the former because it’s more of a builtin type.
-    else if (t->is_integer() and sz == Word * 2) {
-        ctx.allocate(2);
-        info.emplace_back(i128_ty);
-        if (auto a = arg.get_or_null())
-            info[0].value = CreateLoad(l, EmitToMemory(l, a), i128_ty, t->align(tu));
-    }
-
-    // Any integers that are larger than i128 are passed on the stack.
-    else if (t->is_integer() and sz > Word * 2) {
-        AddStackArg();
-    }
-
-    // Any other type is just passed through.
-    else {
-        ctx.allocate();
-        auto ty = C(t);
-        info.emplace_back(ty);
-        if (auto a = arg.get_or_null()) {
-            info[0].value = EmitScalar(a);
-            if (a->is_lvalue()) info[0].value = CreateLoad(l, info[0].value, ty, a->type->align(tu));
         }
 
-        // Extend integers that don’t have their preferred size.
-        if (ty.isInteger()) {
+        // i128’s ABI is apparently somewhat cursed; it is never marked as 'byval'
+        // and is passed as a single value; this specifically applies only to the
+        // C __i128 type and *not* _BitInt(128) for some ungodly reason; treat our
+        // i128 as the former because it’s more of a builtin type.
+        else if (sz == Word * 2) {
+            ctx.allocate(2);
+            info.emplace_back(i128_ty);
+            if (auto a = arg.get_or_null())
+                info[0].value = CreateLoad(l, EmitToMemory(l, a), i128_ty, t->align(tu));
+        }
+
+        // Any integers that are larger than i128 are passed on the stack.
+        else if (sz > Word * 2) {
+            AddStackArg();
+        }
+
+        // Lastly, any other integers are just passed through; extend them if
+        // they don’t have their preferred size.
+        else {
+            PassThrough();
+            auto ty = C(t);
             auto pref_ty = GetPreferredIntType(ty);
             if (ty != pref_ty) {
                 if (t == Type::BoolTy) info[0].add_zext(*this);
                 else info[0].add_sext(*this);
             }
         }
+    }
+
+    // Pointers are just passed through.
+    else if (isa<PtrType>(t)) {
+        PassThrough();
+    }
+
+    // Make sure that we explicitly handle all possible type kinds.
+    else {
+        ICE(Location::Decode(l), "Unsupported type in call lowering: {}", t);
     }
 
     return info;
@@ -1122,7 +1138,7 @@ auto CodeGen::LowerProcedureSignature(
             ptr_ty,
             getNamedAttr(
                 LLVMDialect::getDereferenceableAttrName(),
-                getI64IntegerAttr(i64(t->size(tu).bytes()))
+                getI64IntegerAttr(i64(t->memory_size(tu).bytes()))
             )
         );
     };
@@ -1139,10 +1155,14 @@ auto CodeGen::LowerProcedureSignature(
         return nullptr;
     };
 
-    // Some types are returned via a store to a hidden argument pointer.
     auto ret = proc->ret();
-    auto sz = ret->size(tu);
-    if (NeedsIndirectReturn(ret)) {
+    auto sz = ret->bit_width(tu);
+    if (IsZeroSizedType(ret)) {
+        // Nothing.
+    }
+
+    // Some types are returned via a store to a hidden argument pointer.
+    else if (NeedsIndirectReturn(ret)) {
         ctx.allocate();
         info.args.push_back(indirect_ptr);
         AddArgType(
@@ -1173,9 +1193,8 @@ auto CodeGen::LowerProcedureSignature(
         AddReturnType(int_ty);
     }
 
-    // Zero-sized return types are dropped entirely. Everything else
-    // is passed through as is.
-    else if (not IsZeroSizedType(ret)) {
+    // Everything else is passed through as is.
+    else {
         SmallVector<mlir::NamedAttribute, 1> attrs;
 
         // Extend integers that don’t have their preferred size.
@@ -1219,12 +1238,13 @@ auto CodeGen::LowerProcedureSignature(
 
 bool CodeGen::NeedsIndirectReturn(Type ty) {
     AssertTriple();
-    return ty->size(tu) > Size::Bits(128);
+    return ty->memory_size(tu) > Size::Bits(128);
 }
 
 auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
+    Assert(not IsZeroSizedType(vals.type()));
     static constexpr Size Word = Size::Bits(64);
-    auto sz = vals.type()->size(tu);
+    auto sz = vals.type()->bit_width(tu);
     auto ReuseStackAddress = [&] { return vals.next(); };
 
     // Small aggregates are passed in registers.
@@ -1257,7 +1277,7 @@ auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
         return ReuseStackAddress();
     }
 
-    if (vals.type()->is_integer()) {
+    if (vals.type()->is_integer_or_bool()) {
         // i65-i127 are passed in two registers.
         if (sz > Word and sz < Word * 2) {
             if (vals.lowering().allocate(2)) {
@@ -1450,9 +1470,14 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
 
         // Assignment.
         case Tk::Assign: {
+            if (IsZeroSizedType(expr->lhs->type)) {
+                Emit(expr->lhs);
+                Emit(expr->rhs);
+                return {};
+            }
+
             auto addr = EmitScalar(expr->lhs);
-            if (IsZeroSizedType(expr->lhs->type)) Emit(expr->rhs);
-            else EmitRValue(addr, expr->rhs);
+            EmitRValue(addr, expr->rhs);
             return addr;
         }
 
@@ -1635,7 +1660,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         case Tk::Percent: {
             CheckDivByZero();
             if (lang_opts.overflow_checking) {
-                auto int_min = CreateInt(loc, APInt::getSignedMinValue(u32(type->size(tu).bits())), type);
+                auto int_min = CreateInt(loc, APInt::getSignedMinValue(u32(type->bit_width(tu).bits())), type);
                 auto minus_one = CreateInt(loc, -1, ty);
                 auto check_lhs = CreateICmp(loc, arith::CmpIPredicate::eq, lhs, int_min);
                 auto check_rhs = CreateICmp(loc, arith::CmpIPredicate::eq, rhs, minus_one);
@@ -1655,7 +1680,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         // to or exceeds the bit width.
         case Tk::ShiftLeftLogical: {
             if (lang_opts.overflow_checking) {
-                auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
+                auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->bit_width(tu).bits())));
                 CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
             }
             return createOrFold<arith::ShLIOp>(loc, lhs, rhs);
@@ -1664,7 +1689,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         // Signed left shift additionally does not allow a sign change.
         case Tk::ShiftLeft: {
             if (lang_opts.overflow_checking) {
-                auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->size(tu).bits())));
+                auto check = CreateICmp(loc, arith::CmpIPredicate::uge, rhs, CreateInt(loc, i64(type->bit_width(tu).bits())));
                 CreateArithFailure(check, op, loc, "shift amount exceeds bit width");
             }
 
@@ -1672,8 +1697,8 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
 
             // Check sign.
             if (lang_opts.overflow_checking) {
-                auto sign = createOrFold<arith::ShRSIOp>(loc, lhs, CreateInt(loc, i64(type->size(tu).bits()) - 1));
-                auto new_sign = createOrFold<arith::ShRSIOp>(loc, res, CreateInt(loc, i64(type->size(tu).bits()) - 1));
+                auto sign = createOrFold<arith::ShRSIOp>(loc, lhs, CreateInt(loc, i64(type->bit_width(tu).bits()) - 1));
+                auto new_sign = createOrFold<arith::ShRSIOp>(loc, res, CreateInt(loc, i64(type->bit_width(tu).bits()) - 1));
                 auto sign_change = CreateICmp(loc, arith::CmpIPredicate::ne, sign, new_sign);
                 CreateArithFailure(sign_change, op, loc);
             }
@@ -1721,8 +1746,12 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
         // allow these here, but we need to provide stack space for them.
         else if (GetEvalMode(s->type_or_void()) == EvalMode::Memory) {
             auto e = cast<Expr>(s);
-            auto l = CreateAlloca(C(e->location()), e->type);
-            EmitRValue(l, e);
+            if (IsZeroSizedType(e->type)) {
+                Emit(s);
+            } else {
+                auto l = CreateAlloca(C(e->location()), e->type);
+                EmitRValue(l, e);
+            }
         }
 
         // Otherwise, this is a regular statement or expression.
@@ -1805,17 +1834,17 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         case AK::RangeEnd: return GetField(1);
         case AK::TypeAlign: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes()));
         case AK::TypeArraySize: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes()));
-        case AK::TypeBits: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->size(tu).bits()));
-        case AK::TypeBytes: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->size(tu).bytes()));
+        case AK::TypeBits: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->bit_width(tu).bits()));
+        case AK::TypeBytes: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->memory_size(tu).bytes()));
         case AK::TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
         case AK::TypeMaxVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
-            return CreateInt(l, APInt::getSignedMaxValue(u32(ty->size(tu).bits())), ty);
+            return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
         }
 
         case AK::TypeMinVal: {
             auto ty = cast<TypeExpr>(expr->operand)->value;
-            return CreateInt(l, APInt::getSignedMinValue(u32(ty->size(tu).bits())), ty);
+            return CreateInt(l, APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
         }
     }
     Unreachable();
@@ -2003,7 +2032,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
         if (isa<ArrayType>(expr->type)) {
             arg_types.push_back(ptr_ty);
             args.push_back(r.scalar());
-            end_vals.push_back(CreatePtrAdd(r.loc(), r.scalar(), expr->type->size(tu)));
+            end_vals.push_back(CreatePtrAdd(r.loc(), r.scalar(), expr->type->memory_size(tu)));
         } else if (isa<RangeType>(expr->type)) {
             arg_types.push_back(r.first().getType());
             args.push_back(r.first());
@@ -2327,7 +2356,7 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
             // this here.
             if (
                 auto val = dyn_cast<IntLitExpr>(expr->arg);
-                val and val->storage.value() - 1 == APInt::getSignedMaxValue(u32(val->type->size(tu).bits()))
+                val and val->storage.value() - 1 == APInt::getSignedMaxValue(u32(val->type->bit_width(tu).bits()))
             ) {
                 auto copy = val->storage.value();
                 copy.negate();

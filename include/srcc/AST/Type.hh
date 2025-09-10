@@ -120,8 +120,15 @@ public:
     [[nodiscard]] auto align(const Target& t) const -> Align;
 
     /// Get the size of this type when stored in an array.
+    ///
+    /// \see bit_width(), memory_size()
     [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;
     [[nodiscard]] auto array_size(const Target& t) const -> Size;
+
+    /// Get the exact bit width of this type.
+    ///
+    /// \see array_size(), memory_size()
+    [[nodiscard]] auto bit_width(TranslationUnit& tu) const -> Size;
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
@@ -147,15 +154,17 @@ public:
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
+    /// Get the in-memory size of this type, excluding tail padding.
+    ///
+    /// \see array_size(), bit_width()
+    [[nodiscard]] auto memory_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto memory_size(const Target& t) const -> Size;
+
     /// Whether moving this type is the same as a copy.
     [[nodiscard]] bool move_is_copy() const;
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
-
-    /// Get the size of this type. This does NOT include tail padding!
-    [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
-    [[nodiscard]] auto size(const Target& t) const -> Size;
 
     /// Stream the fields that make up this aggregate together with
     /// their offsets.
@@ -180,6 +189,7 @@ public:
 
 private:
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
+    [[nodiscard]] auto size_impl(const Target& t) const -> Size;
 };
 
 class srcc::BuiltinType final : public TypeBase {

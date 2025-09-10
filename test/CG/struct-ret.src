@@ -4,7 +4,6 @@ program test;
 
 struct x { int a; }
 
-proc a extern -> x;
 proc b = x(1);
 proc c(int a) -> x {
     return x(a);
@@ -33,45 +32,57 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1bFT1xE indirect private fastcc {
-// + entry:
-// +     store retptr, i64 1, align 8
-// +     ret
-// + }
-// +
-// + proc _S1cFT1xiE (i64 %0) indirect private fastcc {
-// +     #0 = 8, align 8
-// +
-// + entry:
-// +     store #0, i64 %0, align 8
-// +     %1 = load i64, #0, align 8
-// +     store retptr, i64 %1, align 8
-// +     ret
-// + }
-// +
-// + proc _S1dFT1xE indirect private fastcc {
+// + proc _S1bFT1xE private fastcc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 1, align 8
-// +     copy retptr, #0, 8
-// +     ret
+// +     %0 = load i64, #0, align 8
+// +     ret i64 %0
 // + }
 // +
-// + proc _S1eFT1xE indirect private fastcc {
+// + proc _S1cFT1xiE (i64 %0) private fastcc -> i64 {
 // +     #0 = 8, align 8
+// +     #1 = 8, align 8
 // +
 // + entry:
-// +     call fastcc void _S1dFT1xE() into #0
-// +     call fastcc void _S1dFT1xE() into retptr
-// +     ret
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S1dFT1xE private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     copy #1 <- #0, 8
+// +     %0 = load i64, #1, align 8
+// +     ret i64 %0
+// + }
+// +
+// + proc _S1eFT1xE private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     %0 = call fastcc i64 _S1dFT1xE()
+// +     store #0, i64 %0, align 8
+// +     %1 = call fastcc i64 _S1dFT1xE()
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #1, align 8
+// +     ret i64 %2
 // + }
 // +
 // + proc _S1fFvE private fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:
-// +     call fastcc void _S1dFT1xE() into #0
+// +     %0 = call fastcc i64 _S1dFT1xE()
+// +     store #0, i64 %0, align 8
 // +     ret
 // + }
 
@@ -88,36 +99,47 @@ proc f {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1bFT1xE(ptr %0) {
-//L +   store i64 1, ptr %0, align 8
-//L +   ret void
+//L + define private fastcc i64 @_S1bFT1xE() {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %2 = load i64, ptr %1, align 8
+//L +   ret i64 %2
 //L + }
 //L +
-//L + define private fastcc void @_S1cFT1xiE(ptr %0, i64 %1) {
+//L + define private fastcc i64 @_S1cFT1xiE(i64 %0) {
+//L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
-//L +   store i64 %1, ptr %3, align 8
-//L +   %4 = load i64, ptr %3, align 8
-//L +   store i64 %4, ptr %0, align 8
-//L +   ret void
+//L +   store i64 %0, ptr %2, align 8
+//L +   %4 = load i64, ptr %2, align 8
+//L +   store i64 %4, ptr %3, align 8
+//L +   %5 = load i64, ptr %3, align 8
+//L +   ret i64 %5
 //L + }
 //L +
-//L + define private fastcc void @_S1dFT1xE(ptr %0) {
+//L + define private fastcc i64 @_S1dFT1xE() {
+//L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
-//L +   store i64 1, ptr %2, align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %0, ptr %2, i64 8, i1 false)
-//L +   ret void
+//L +   store i64 1, ptr %1, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %2, ptr %1, i64 8, i1 false)
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
 //L + }
 //L +
-//L + define private fastcc void @_S1eFT1xE(ptr %0) {
+//L + define private fastcc i64 @_S1eFT1xE() {
+//L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
-//L +   call fastcc void @_S1dFT1xE(ptr %2)
-//L +   call fastcc void @_S1dFT1xE(ptr %0)
-//L +   ret void
+//L +   %3 = call fastcc i64 @_S1dFT1xE()
+//L +   store i64 %3, ptr %1, align 8
+//L +   %4 = call fastcc i64 @_S1dFT1xE()
+//L +   store i64 %4, ptr %2, align 8
+//L +   %5 = load i64, ptr %2, align 8
+//L +   ret i64 %5
 //L + }
 //L +
 //L + define private fastcc void @_S1fFvE() {
 //L +   %1 = alloca i8, i64 8, align 8
-//L +   call fastcc void @_S1dFT1xE(ptr %1)
+//L +   %2 = call fastcc i64 @_S1dFT1xE()
+//L +   store i64 %2, ptr %1, align 8
 //L +   ret void
 //L + }
 //L +

@@ -1055,7 +1055,7 @@ VM::VM(TranslationUnit& owner_tu)
       memory(std::make_unique<VirtualMemoryMap>()) {}
 
 auto VM::allocate_mrvalue(Type ty) -> MRValue {
-    auto sz = ty->size(owner());
+    auto sz = ty->memory_size(owner());
     auto align = ty->align(owner());
     auto mem = owner().allocate(sz.bytes(), align.value().bytes());
     std::memset(mem, 0, sz.bytes());

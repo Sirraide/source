@@ -11,12 +11,14 @@ struct s {
 proc a() extern -> zero;
 proc b() extern -> zero;
 proc c() extern -> zero;
+proc d() extern -> s;
 
-s d;
+s e;
 s(zero(), zero(), zero());
 
 proc call {
     s(a(), b(), c());
+    d();
 }
 
 // * proc __src_assert_fail (ptr) external fastcc;
@@ -33,6 +35,7 @@ proc call {
 // +     call fastcc void _S1aFT4zeroE()
 // +     call fastcc void _S1bFT4zeroE()
 // +     call fastcc void _S1cFT4zeroE()
+// +     call fastcc void _S1dFT1sE()
 // +     ret
 // + }
 // +
@@ -41,3 +44,5 @@ proc call {
 // + proc _S1bFT4zeroE external fastcc;
 // +
 // + proc _S1cFT4zeroE external fastcc;
+// +
+// + proc _S1dFT1sE external fastcc;

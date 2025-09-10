@@ -112,7 +112,7 @@ bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
     Assert(ty->is_integer(), "Not an integer: '{}'", ty);
     auto to_bits //
         = ty == Type::IntTy
-            ? Type::IntTy->size(*M)
+            ? Type::IntTy->memory_size(*M)
             : cast<IntType>(ty)->bit_width();
     return Size::Bits(i.getSignificantBits()) <= to_bits;
 }
@@ -2193,7 +2193,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     //
     // If the type is zero-sized, there is no need to do anything since we’ll
     // drop it anyway.
-    if (auto val = value.get_or_null(); val and val->type->size(*M) != Size())
+    if (auto val = value.get_or_null(); val and val->type->memory_size(*M) != Size())
         value = BuildInitialiser(proc->return_type(), {val}, loc);
 
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
@@ -2737,7 +2737,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
     auto small = val.tryZExtValue();
     if (small.has_value()) return new (*M) IntLitExpr(
         Type::IntTy,
-        M->store_int(APInt(u32(Type::IntTy->size(*M).bits()), u64(*small), false)),
+        M->store_int(APInt(u32(Type::IntTy->memory_size(*M).bits()), u64(*small), false)),
         parsed->loc
     );
 
@@ -3060,7 +3060,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
         // TODO: Optimise layout if this isn’t meant for FFI.
         size = size.align(ty->align(*M));
         fields.push_back(new (*M) FieldDecl(ty, size, f->name.str(), f->loc));
-        size += ty->size(*M);
+        size += ty->memory_size(*M);
         align = std::max(align, ty->align(*M));
         AddDeclToScope(s->scope(), fields.back());
     }
@@ -3237,7 +3237,7 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
                     a.type->loc,
                     "Passing '%1(void%)' to a '%1(native%)' procedure is not supported"
                 );
-            } else if (ty->size(*M) == Size()) {
+            } else if (ty->memory_size(*M) == Size()) {
                 // Delay this check if this is an incomplete type.
                 if (auto s = dyn_cast<StructType>(ty->strip_arrays()); s and not s->is_complete()) {
                     incomplete_structs_passed_to_native_proc[s] = a.type->loc;
