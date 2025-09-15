@@ -631,6 +631,10 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // (because 'move' is equivalent to 'copy' otherwise); that is, for
     // trivially-copyable types, any modification of the ‘moved’ value
     // must not be reflected in the caller.
+    //
+    // Specifically, moving for these types is *logically* a copy, that
+    // is the ‘moved’ value is not actually considered ‘moved’, and the
+    // caller may continue accessing it.
     if (i == Intent::Move) {
         if (not ty->trivially_copyable()) return true;
         return false;
@@ -1241,7 +1245,7 @@ bool CodeGen::NeedsIndirectReturn(Type ty) {
     return ty->memory_size(tu) > Size::Bits(128);
 }
 
-auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
+auto CodeGen::WriteByValParamToMemory(ABITypeRaisingContext& vals) -> Value {
     Assert(not IsZeroSizedType(vals.type()));
     static constexpr Size Word = Size::Bits(64);
     auto sz = vals.type()->bit_width(tu);
@@ -1308,7 +1312,7 @@ auto CodeGen::WriteByValArgToMemory(ABITypeRaisingContext& vals) -> Value {
 }
 
 auto CodeGen::WriteDirectReturnToMemory(ABITypeRaisingContext& vals) -> Value {
-   return WriteByValArgToMemory(vals);
+   return WriteByValParamToMemory(vals);
 }
 
 // ============================================================================
@@ -2225,17 +2229,26 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Lower parameters.
+    //
+    // We can’t rely on 'actx'’s allocation counts since that tracks ABI requirements,
+    // not actual argument slots, so track them separately.
     ABILoweringContext actx;
-    if (NeedsIndirectReturn(proc->return_type())) actx.allocate();
+    unsigned vals_used = 0;
+    if (NeedsIndirectReturn(proc->return_type())) {
+        vals_used++;
+        actx.allocate();
+    }
+
     for (auto param : proc->params()) {
         if (IsZeroSizedType(param->type)) continue;
         if (PassByReference(param->type, param->intent())) {
-            locals[param] = curr_proc.getArgument(actx.used());
+            locals[param] = curr_proc.getArgument(vals_used++);
             actx.allocate();
         } else {
             auto l = C(param->location());
-            ABITypeRaisingContext ctx{*this, actx, l, curr_proc.getArguments().drop_front(actx.used()), param->type};
-            locals[param] = WriteByValArgToMemory(ctx);
+            ABITypeRaisingContext ctx{*this, actx, l, curr_proc.getArguments().drop_front(vals_used), param->type};
+            locals[param] = WriteByValParamToMemory(ctx);
+            vals_used += ctx.consumed();
         }
     }
 

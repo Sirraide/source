@@ -504,6 +504,10 @@ public:
     class ABILoweringContext {
         LIBBASE_MOVE_ONLY(ABILoweringContext);
         static constexpr unsigned MaxRegs = 6;
+
+        // There is no correlation between this value and how many IR arguments
+        // a procedure has; do *not* attempt to use this for anything other than
+        // tracking ABI requirements.
         unsigned regs = 0;
 
     public:
@@ -515,9 +519,6 @@ public:
             regs += n;
             return true;
         }
-
-        /// Get the total number of registers that have been allocated.
-        [[nodiscard]] unsigned used() const { return regs; }
     };
 
     /// Context used to convert a bundle of IR arguments back to a Source type.
@@ -612,7 +613,7 @@ public:
     /// address; if this value was actually passed on the stack, the stack address
     /// is returned directly. Otherwise, a new variable is allocated via the 'vals'
     /// object.
-    [[nodiscard]] auto WriteByValArgToMemory(ABITypeRaisingContext& ctx) -> Value;
+    [[nodiscard]] auto WriteByValParamToMemory(ABITypeRaisingContext& ctx) -> Value;
 
     /// As WriteByValArgToMemory(), but lowers a call result instead.
     [[nodiscard]] auto WriteDirectReturnToMemory(ABITypeRaisingContext& ctx) -> Value;

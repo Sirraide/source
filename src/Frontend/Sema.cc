@@ -571,7 +571,7 @@ auto Sema::BuildConversionSequence(
     // a bit of a hack, but it avoids having to check if we have an insert point
     // everywhere in codegen.
     if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
-        seq.add(Conversion::Poison(var_type, Expr::RValue));
+        if (var_type != Type::NoReturnTy) seq.add(Conversion::Poison(var_type, Expr::RValue));
         return seq;
     }
 
