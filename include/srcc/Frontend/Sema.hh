@@ -400,9 +400,18 @@ class srcc::Sema : public DiagsProducer {
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
-    /// Struct types that are passed to a native procedure (type) by value,
-    /// and whose size is thus required to be non-zero.
-    DenseMap<StructType*, Location> incomplete_structs_passed_to_native_proc;
+    /// We disallow passing zero-sized structs to native procedures (or returning
+    /// them from them), because C doesn’t really have zero-sized types; however,
+    /// we might see a declaration of such a procedure before the type in question
+    /// is complete, at which point we don’t know its size yet, for such types, we
+    /// instead diagnose this at end of translation.
+    struct DeferredNativeProcArgOrReturn {
+        StructType* type;
+        Location loc;
+        bool is_return;
+    };
+
+    SmallVector<DeferredNativeProcArgOrReturn> incomplete_structs_in_native_proc_type;
 
     /// Whether we’re currently parsing imported declarations.
     bool importing_module = false;
@@ -537,6 +546,9 @@ private:
         ArrayRef<TypeLoc> input_types
     ) -> Type;
 
+    /// Diagnose that we’re using a zero-sized type in a native procedure signature.
+    void DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return);
+
     /// Evaluate a statement, returning the result as a ConstExpr on success
     /// and nullptr on failure.
     auto Evaluate(Stmt* e, Location loc) -> Ptr<Expr>;
@@ -547,9 +559,13 @@ private:
     /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
     [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
 
-    /// Ensure that an expression is an srvalue of the given type. This is
+    /// Ensure that an expression is an rvalue of the given type.
+    template <typename Callback>
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, Callback EmitDiag);
+
+    /// Ensure that an expression is an rvalue of the given type. This is
     /// mainly used for expressions involving operators.
-    [[nodiscard]] bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
@@ -572,6 +588,9 @@ private:
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
     bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
+
+    /// Check if a type is zero-sized or incomplete.
+    bool IsZeroSizedOrIncomplete(Type ty);
 
     /// Load a native header or Source module from the system include path.
     void LoadModule(

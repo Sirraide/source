@@ -10,7 +10,7 @@ struct S {
 S a;
 a.x = 1;
 a.y = 2;
-a.x = ""; // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+a.x = ""; // expected-error: Cannot assign value of type 'i8[]' to 'int'
 a.z = 3; // expected-error: Struct 'S' has no member named 'z'
 
 struct Nested {
@@ -22,7 +22,7 @@ Nested b;
 b.a.x = 1;
 b.a.y = 2;
 b.a.y = b.a.x;
-b.a.x = ""; // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+b.a.x = ""; // expected-error: Cannot assign value of type 'i8[]' to 'int'
 b.a.z = 3; // expected-error: Struct 'S' has no member named 'z'
 b.b = 4;
 b.b.b = 5; // expected-error: Cannot perform member access on type 'int'

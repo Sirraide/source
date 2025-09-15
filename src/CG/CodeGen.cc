@@ -2157,7 +2157,10 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
     );
 
     EnterBlock(CreateBlock());
-    return {};
+
+    // Just return a null pointer so we don’t crash.
+    // TODO: Should we instead just check if we have an insert point, like, *everywhere*?
+    return CreateNullPointer(getUnknownLoc());
 }
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {

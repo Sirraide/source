@@ -54,15 +54,10 @@ proc ~ (s a) = s(~a.x);
 proc + (s a) = s(+a.x);
 proc - (s a) = s(-a.x);
 
-
 proc ..< (in s a, in s b) = a.x ..< b.x;
 proc ..= (in s a, in s b) = a.x ..= b.x;
 
-
-
-
 proc not (t a) = t(not a.x);
-
 
 proc [] (s a) = a.x;
 proc () (inout s a) = a.x;
@@ -124,6 +119,6 @@ assert { var v = s1; v <<<= s2; v.x; } == { var v = 42; v <<<= 2; };
 assert { var v = s1; v >>= s2; v.x; } == { var v = 42; v >>= 2; };
 assert { var v = s1; v >>>= s2; v.x; } == { var v = 42; v >>>= 2; };
 
-assert ~s1 == ~42;
-assert +s1 == +42;
-assert -s1 == -42;
+assert ~s1.x == ~42;
+assert +s1.x == +42;
+assert -s1.x == -42;

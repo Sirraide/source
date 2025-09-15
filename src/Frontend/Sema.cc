@@ -91,6 +91,23 @@ void Sema::DeclareLocal(LocalDecl* d) {
     AddDeclToScope(curr_scope(), d);
 }
 
+void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return) {
+    // Delay this check if this is an incomplete struct type.
+    if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) {
+        incomplete_structs_in_native_proc_type.emplace_back(s, use, is_return);
+        return;
+    }
+
+    Error(
+        use,
+        "{} {}'{}' {} a '%1(native%)' procedure is not supported",
+        is_return ? "Returning"sv : "Passing"sv,
+        ty != Type::VoidTy ? "zero-sized type "sv : ""sv,
+        ty,
+        is_return ? "from"sv : "to"sv
+    );
+}
+
 auto Sema::Evaluate(Stmt* s, Location loc) -> Ptr<Expr> {
     // Evaluate the expression.
     auto value = M->vm.eval(s);
@@ -125,6 +142,12 @@ bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
         return null_type_is_complete;
 
     return true;
+}
+
+bool Sema::IsZeroSizedOrIncomplete(Type ty) {
+    Assert(ty, "Must check for null type before calling this");
+    if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) return true;
+    return ty->memory_size(*M) == Size();
 }
 
 auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult {
@@ -249,29 +272,36 @@ bool Sema::MakeCondition(Expr*& e, StringRef op) {
     if (auto ass = dyn_cast<BinaryExpr>(e); ass and ass->op == Tk::Assign)
         Warn(e->location(), "Assignment in condition. Did you mean to write '=='?");
 
-    if (not MakeSRValue(Type::BoolTy, e, "Condition", op))
+    if (not MakeRValue(Type::BoolTy, e, "Condition", op))
         return false;
 
     return true;
 }
 
-bool Sema::MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
+template <typename Callback>
+bool Sema::MakeRValue(Type ty, Expr*& e, Callback EmitDiag) {
     auto init = TryBuildInitialiser(ty, e);
     if (init.invalid()) {
-        Error(
-            e->location(),
-            "{} of '%1({}%)' must be of type\f'{}', but was '{}'",
-            elem_name,
-            op,
-            ty,
-            e->type
-        );
+        EmitDiag();
         return false;
     }
 
     // Make sure it’s an srvalue.
     e = LValueToRValue(init.get());
     return true;
+}
+
+bool Sema::MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
+    return MakeRValue(ty, e, [&] {
+        Error(
+             e->location(),
+             "{} of '%1({}%)' must be of type\f'{}', but was '{}'",
+             elem_name,
+             op,
+             ty,
+             e->type
+         );
+    });
 }
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
@@ -503,6 +533,10 @@ auto Sema::BuildArrayInitialiser(
     Location loc
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
+
+    // TODO: Currently, we’re *WAY* too liberal in terms of what counts as a
+    // ‘struct initialiser’, e.g. s() == 42 will coerce '42' to an 's' if
+    // possible, which is NOT what we want. Disallow that!!!
 
     // Error if there are more initialisers than array elements.
     if (args.size() > u64(a->dimension())) return CreateError(
@@ -1607,7 +1641,7 @@ auto Sema::BuildBinaryExpr(
                 lhs->type
             );
 
-            if (not MakeSRValue(Type::IntTy, rhs, "Index", "[]")) return {};
+            if (not MakeRValue(Type::IntTy, rhs, "Index", "[]")) return {};
 
             // Arrays need to be in memory before we can do anything
             // with them; slices are srvalues and should be loaded
@@ -1711,8 +1745,8 @@ auto Sema::BuildBinaryExpr(
         case Tk::And:
         case Tk::Or:
         case Tk::Xor: {
-            if (not MakeSRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
-            if (not MakeSRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
             return Build(Type::BoolTy);
         }
 
@@ -1731,32 +1765,32 @@ auto Sema::BuildBinaryExpr(
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
-            // LHS must be an lvalue.
-            if (lhs->value_category != LValue) {
-                // Issue a better diagnostic for 'in' parameters.
-                if (auto ref = dyn_cast<LocalRefExpr>(lhs)) {
-                    if (
-                        auto param = dyn_cast<ParamDecl>(ref->decl);
-                        param and param->intent() == Intent::In
-                    ) return Error(lhs->location(), "Cannot assign to '%1(in%)' parameter");
-                }
+            auto DiagnoseRHS = [&] {
+                Error(rhs->location(), "Cannot assign value of type '{}' to '{}'", rhs->type, lhs->type);
+            };
 
-                return Error(
-                    lhs->location(),
-                    "Invalid target for assignment"
-                );
+            // Prohibit assignment to 'in' parameters.
+            if (auto ref = dyn_cast<LocalRefExpr>(lhs)) {
+                if (
+                    auto param = dyn_cast<ParamDecl>(ref->decl);
+                    param and param->intent() == Intent::In
+                ) return Error(lhs->location(), "Cannot assign to '%1(in%)' parameter");
             }
+
+            // LHS must be an lvalue.
+            if (lhs->value_category != LValue)
+                return Error(lhs->location(), "Invalid target for assignment");
 
             // Regular assignment.
             if (op == Tk::Assign) {
                 if (isa<StructType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
-                if (not MakeSRValue(lhs->type, rhs, "value", "assignment")) return nullptr;
+                if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
                 return Build(lhs->type, LValue);
             }
 
             // Compound assignment.
             if (not CheckIntegral()) return nullptr;
-            if (not MakeSRValue(lhs->type, rhs, "value", "assignment")) return nullptr;
+            if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
             if (not rhs) return nullptr;
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
@@ -2211,9 +2245,11 @@ auto Sema::BuildStaticIfExpr(
     if (not val) return {};
 
     // If there is no else clause, and the condition is false, return
-    // an empty statement.
+    // an empty RValue. This must be an expression, otherwise something
+    // like 'a = #if false 1' (which is invalid), will produce a weird
+    // diagnostic instead of ‘cannot assign void to int’.
     auto cond_val = val->cast<APInt>().getBoolValue();
-    if (not cond_val and not else_) return new (*M) EmptyStmt(loc);
+    if (not cond_val and not else_) return new (*M) ConstExpr(*M, eval::RValue(), loc, nullptr);
 
     // Otherwise, translate the appropriate branch now, and throw
     // away the other one.
@@ -2284,7 +2320,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 
         // Boolean negation.
         case Tk::Not: {
-            if (not MakeSRValue(Type::BoolTy, operand, "Operand", "not")) return {};
+            if (not MakeRValue(Type::BoolTy, operand, "Operand", "not")) return {};
             return Build(Type::BoolTy, Expr::RValue);
         }
 
@@ -2292,7 +2328,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         case Tk::Minus:
         case Tk::Plus:
         case Tk::Tilde: {
-            if (not MakeSRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
+            if (not MakeRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
             return Build(Type::IntTy, Expr::RValue);
         }
 
@@ -2438,15 +2474,9 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     );
 
     // Perform any checks that require translation to be complete.
-    if (not ctx.diags().has_error()) {
-        for (auto [s, loc] : incomplete_structs_passed_to_native_proc) {
-            Assert(s->is_complete());
-            if (s->size() == Size()) Error(
-                loc,
-                "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
-                s
-            );
-        }
+    for (auto [s, loc, is_return] : incomplete_structs_in_native_proc_type) {
+        Assert(s->is_complete());
+        if (s->size() == Size()) DiagnoseZeroSizedTypeInNativeProc(s, loc, is_return);
     }
 
     // Sanity check.
@@ -3228,38 +3258,28 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     for (auto a : parsed->param_types()) {
         auto ty = TranslateType(a.type);
 
-        // Diagnose this here, but don’t do anything about it; this is only
+        // Check this here, but don’t do anything about it; this is only
         // harmful if we emit LLVM IR for it, and we won’t be getting there
         // anyway because of this error.
-        if (ty and parsed->attrs.native) {
-            if (ty == Type::VoidTy) {
-                Error(
-                    a.type->loc,
-                    "Passing '%1(void%)' to a '%1(native%)' procedure is not supported"
-                );
-            } else if (ty->memory_size(*M) == Size()) {
-                // Delay this check if this is an incomplete type.
-                if (auto s = dyn_cast<StructType>(ty->strip_arrays()); s and not s->is_complete()) {
-                    incomplete_structs_passed_to_native_proc[s] = a.type->loc;
-                } else {
-                    Error(
-                        a.type->loc,
-                        "Passing zero-sized type '%1({}%)' to a '%1(native%)' procedure is not supported",
-                        ty
-                    );
-                }
-            }
-        }
+        //
+        // see DeferredNativeProcArgOrReturn.
+        if (ty and parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
+            DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
         ty = AdjustVariableType(ty, a.type->loc);
         if (not ty) ok = false;
         params.emplace_back(a.intent, ty);
     }
 
+    auto ret = TranslateType(parsed->ret_type);
+    if (not ret) ret = Type::VoidTy;
+    else if (parsed->attrs.native and ret != Type::VoidTy and IsZeroSizedOrIncomplete(ret))
+        DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
+
     if (not ok) return Type();
     return ProcType::Get(
         *M,
-        TranslateType(parsed->ret_type, Type::VoidTy),
+        ret,
         params,
         parsed->attrs.native ? CallingConvention::Native : CallingConvention::Source
     );
