@@ -30,45 +30,36 @@ class Eval;
 class VM;
 class VirtualMemoryMap;
 
-/// Evaluated mrvalue.
+/// Memory holding the result of constant evaluation.
 ///
 /// This is non-owning. The actual data is allocated permanently
 /// in the TranslationUnit allocator.
-class MRValue {
+class MemoryValue {
     friend VM;
 
     void* storage;
     Size sz;
 
-    MRValue(void* data, Size sz)
+    MemoryValue(void* data, Size sz)
         : storage(std::move(data)), sz(sz) {}
 
 public:
     [[nodiscard]] auto data() -> void* { return storage; }
     [[nodiscard]] auto size() const -> Size { return sz; }
-    [[nodiscard]] auto operator<=>(const MRValue& other) const = default;
+    [[nodiscard]] auto operator<=>(const MemoryValue& other) const = default;
 };
 
 /// Evaluated rvalue.
 class RValue {
-public:
-    struct Range {
-        APInt start;
-        APInt end;
-        Range(APInt start,  APInt end) : start(std::move(start)), end(std::move(end)) {}
-    };
-
-private:
-    Variant<APInt, Range, bool, Type, MRValue, std::monostate> value;
+    Variant<APInt, Type, MemoryValue, std::monostate> value;
     Type ty{Type::VoidTy};
 
 public:
     RValue() = default;
     RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
-    RValue(bool val) : value(val), ty(Type::BoolTy) {}
+    RValue(bool val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
-    RValue(MRValue val, Type ty) : value(val), ty(ty) {}
-    RValue(Range range,  Type ty) : value(range), ty(ty) {}
+    RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
 
     /// cast<>() the contained value.
     template <typename Ty>
@@ -137,7 +128,7 @@ public:
     ~VM();
 
     /// Allocate an mrvalue.
-    [[nodiscard]] auto allocate_mrvalue(Type ty) -> MRValue;
+    [[nodiscard]] auto allocate_memory_value(Type ty) -> MemoryValue;
 
     /// Attempt to evaluate a statement.
     ///

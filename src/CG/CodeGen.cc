@@ -864,7 +864,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         //
         // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
         [&](ConstExpr* e) {
-            auto mrv = e->value->cast<eval::MRValue>();
+            auto mrv = e->value->cast<eval::MemoryValue>();
             auto c = CreateGlobalStringPtr(
                 init->type->align(tu),
                 String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()),
@@ -2400,14 +2400,10 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
 
 auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> IRValue { // clang-format off
     utils::Overloaded V {
-        [&](bool b) -> IRValue { return CreateBool(C(loc), b); },
         [&](std::monostate) -> IRValue { return {}; },
         [&](Type) -> IRValue { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
-        [&](eval::MRValue) -> IRValue { return {}; }, // This only happens if the value is unused.
-        [&](this auto& self, const eval::RValue::Range& range) -> IRValue {
-            return {self(range.start).scalar(), self(range.end).scalar()};
-        }
+        [&](eval::MemoryValue) -> IRValue { return {}; }, // This only happens if the value is unused.
     }; // clang-format on
     return val.visit(V);
 }
@@ -2418,12 +2414,20 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     // Delete any remnants of the last constant evaluation.
     if (vm_entry_point) vm_entry_point.erase();
 
+    // Irrespective of what the argument type is, we return it indirectly through
+    // a pointer to the first argument. This avoids having to make the constant
+    // evaluator aware of ABI type rules.
+    SmallVector<ParamTypeData> args;
+    auto ty = stmt->type_or_void();
+    auto yields_value = not IsZeroSizedType(ty);
+    if (yields_value) args.push_back({Intent::Copy, PtrType::Get(tu, ty)});
+
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
-    auto ty = stmt->type_or_void();
-    auto info = ConvertProcType(ProcType::Get(tu, ty));
+    auto info = ConvertProcType(ProcType::Get(tu, Type::VoidTy, args));
+    auto loc = C(stmt->location());
     vm_entry_point = create<ir::ProcOp>(
-        C(stmt->location()),
+        loc,
         constants::VMEntryPointName,
         C(Linkage::Internal),
         C(CallingConvention::Native),
@@ -2434,11 +2438,12 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
-    // Sema has already ensured that this is an initialiser, so throw it
-    // into a return expression to handle MRValues.
-    ReturnExpr re{dyn_cast<Expr>(stmt), stmt->location(), true};
     EnterProcedure _(*this, vm_entry_point);
-    Emit(isa<Expr>(stmt) ? &re : stmt);
+    if (yields_value) EmitRValue(vm_entry_point.getCallArg(0), cast<Expr>(stmt));
+    else Emit(stmt);
+
+    // Make sure to return from the procedure.
+    if (not HasTerminator()) create<ir::RetOp>(loc, Vals());
 
     // Run canonicalisation etc.
     if (not finalise(vm_entry_point)) return nullptr;

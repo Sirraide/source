@@ -2212,8 +2212,8 @@ auto Sema::BuildStaticIfExpr(
 
     // If there is no else clause, and the condition is false, return
     // an empty statement.
-    auto cond_val = val->cast<bool>();
-    if (not cond_val and not else_) return new (*M) ConstExpr(*M, {}, loc, nullptr);
+    auto cond_val = val->cast<APInt>().getBoolValue();
+    if (not cond_val and not else_) return new (*M) EmptyStmt(loc);
 
     // Otherwise, translate the appropriate branch now, and throw
     // away the other one.

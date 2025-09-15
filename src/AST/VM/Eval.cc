@@ -33,16 +33,10 @@ auto RValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
         // clang-format off
-        [&](bool) { out += std::format("%1({}%)", value.get<bool>()); },
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
-        [&](MRValue) { out += "<aggregate value>"; },
-        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
-        [&](this auto& self, const Range& range) {
-            self(range.start);
-            out += "%1(..%)";
-            self(range.end);
-        },
+        [&](MemoryValue) { out += "<aggregate value>"; },
+        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); }
     }; // clang-format on
     visit(V);
     return out;
@@ -107,7 +101,10 @@ public:
 
     /// cast<>() the contained value.
     template <typename Ty>
-    [[nodiscard]] auto cast() -> Ty& { return std::get<Ty>(value); }
+    [[nodiscard]] auto cast() & -> Ty& { return std::get<Ty>(value); }
+
+    template <typename Ty>
+    [[nodiscard]] auto cast() && -> Ty&& { return std::move(std::get<Ty>(value)); }
 
     template <typename Ty>
     [[nodiscard]] auto cast() const -> const Ty& { return std::get<Ty>(value); }
@@ -355,9 +352,14 @@ private:
     auto frame() -> StackFrame& { return call_stack.back(); }
 
     template <typename... Args>
-    bool Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
+    bool Error(Location where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
         return false;
+    }
+
+    template <typename... Args>
+    void Remark(std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
 
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
@@ -367,6 +369,8 @@ private:
     [[nodiscard]] auto FFIType(mlir::Type ty) -> ffi_type*;
     [[nodiscard]] auto GetHostMemoryPointer(Value v) -> void*;
     [[nodiscard]] auto LoadSRValue(const void* mem, mlir::Type ty) -> SRValue;
+    [[nodiscard]] auto LoadInt(const void* mem, Size width) -> SRValue;
+    [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
 
@@ -737,6 +741,7 @@ bool Eval::EvalLoop() {
             continue;
         }
 
+
         return ICE(Location::Decode(i->getLoc()), "Unsupported op in constant evaluation: '{}'", i->getName().getStringRef());
     }
 
@@ -889,33 +894,37 @@ auto Eval::GetHostMemoryPointer(Value v) -> void* {
     return vm.memory->get_host_pointer(p);
 }
 
+auto Eval::LoadInt(const void* mem, Size width) -> SRValue {
+    if (width == Size::Bits(1)) {
+        uptr b{};
+        std::memcpy(&b, mem, vm.owner().target().int_size(Size::Bits(1)).bytes());
+        return SRValue(b != 0);
+    }
+
+    APInt v{unsigned(width.bits()), 0};
+    auto available_size = vm.owner().target().int_size(width);
+    auto size_to_load = Size::Bits(v.getBitWidth()).as_bytes();
+    Assert(size_to_load <= available_size);
+    llvm::LoadIntFromMemory(
+        v,
+        static_cast<const u8*>(mem),
+        unsigned(size_to_load.bytes())
+    );
+    return SRValue(std::move(v));
+}
+
+auto Eval::LoadPointer(const void* mem) -> SRValue {
+    // Note: We currently assert in VM::VM that std::uintptr_t can store a target pointer.
+    uptr p{};
+    std::memcpy(&p, mem, vm.owner().target().ptr_size().bytes());
+    return SRValue(vm.memory->make_host_pointer(p));
+}
+
 auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
-    if (auto i = dyn_cast<mlir::IntegerType>(ty)) {
-        if (i.getWidth() == 1) {
-            uptr b{};
-            std::memcpy(&b, mem, vm.owner().target().int_size(Size::Bits(1)).bytes());
-            return SRValue(b != 0);
-        }
-
-        APInt v{i.getWidth(), 0};
-        auto available_size = vm.owner().target().int_size(Size::Bits(i.getWidth()));
-        auto size_to_load = Size::Bits(v.getBitWidth()).as_bytes();
-        Assert(size_to_load <= available_size);
-        llvm::LoadIntFromMemory(
-            v,
-            static_cast<const u8*>(mem),
-            unsigned(size_to_load.bytes())
-        );
-        return SRValue(std::move(v));
-    }
-
-    if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
-        // Note: We currently assert in VM::VM that std::uintptr_t can store a target pointer.
-        uptr p{};
-        std::memcpy(&p, mem, vm.owner().target().ptr_size().bytes());
-        return SRValue(vm.memory->make_host_pointer(p));
-    }
-
+    if (auto i = dyn_cast<mlir::IntegerType>(ty))
+        return LoadInt(mem, Size::Bits(i.getWidth()));
+    if (isa<mlir::LLVM::LLVMPointerType>(ty))
+        return LoadPointer(mem);
     Unreachable("Cannot load value of type '{}'", ty);
 }
 
@@ -926,6 +935,8 @@ void Eval::PushFrame(
     SRValue env_ptr
 ) {
     Assert(not proc.empty());
+    Assert(args.size() == proc.getNumCallArgs());
+    Assert(ret_vals.size() == proc.getNumResults());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
     frame.env_ptr = env_ptr;
@@ -983,67 +994,62 @@ auto Eval::Val(Value v) -> const SRValue& {
 }
 
 auto Eval::eval(Stmt* s) -> std::optional<RValue> {
+    // Always reset the stack pointer when we’re done.
+    tempset stack_top = stack_top;
+
     // Compile the procedure.
     entry = s->location();
     auto proc = cg.emit_stmt_as_proc_for_vm(s);
     if (not proc) return std::nullopt;
+    Assert(proc.getNumCallArgs() <= 1);
+    Assert(proc.getNumResults() == 0, "Eval procedure should return indirectly");
+    auto yields_value = proc.getNumCallArgs() == 1;
+
+    // Allocate stack memory for the return value.
+    SmallVector<SRValue> args;
+    Pointer ret;
+    auto ty = s->type_or_void();
+    if (yields_value) {
+        auto mem = AllocateStackMemory(proc->getLoc(), ty->memory_size(vm.owner()), ty->align(vm.owner()));
+
+        // FIXME: If the return type is really big, we may want to put it on the
+        // heap instead instead of failing evaluation—even if we *could* allocate
+        // it on the stack, we might not want to to avoid overflow.
+        if (not mem) return std::nullopt;
+        ret = mem.value();
+        args.push_back(SRValue(ret));
+    }
 
     // Set up a stack frame for it.
-    SmallVector<SRValue> ret(proc.getNumResults());
-    StackFrame::RetVals ret_val_pointers;
-    for (auto& v : ret) ret_val_pointers.push_back(&v);
-    PushFrame(proc, {}, std::move(ret_val_pointers));
-
-    // If statement returns an mrvalue, allocate one and set it
-    // as the first argument to the call.
-    auto ty = s->type_or_void();
-    Todo();
-    /*if (ty->rvalue_category() == Expr::MRValue) {
-        auto mrv = vm.allocate_mrvalue(ty);
-        frame().ret_ptr = SRValue(vm.memory->make_host_pointer(uptr(mrv.data())));
-        TRY(EvalLoop());
-        return RValue(mrv, ty);
-    }*/
+    PushFrame(proc, args, {});
 
     // Otherwise, just run the procedure and convert the results to an rvalue.
     TRY(EvalLoop());
+    if (not yields_value) return RValue();
+    Assert(ret);
+    auto mem = reinterpret_cast<const void*>(ret.raw_value());
 
-    // The procedure may have 2 results if it’s a range.
-    if (isa<RangeType>(ty)) {
-        Assert(proc.getFunctionType().getNumResults() == 2);
-        return RValue(
-            RValue::Range(
-                std::move(ret[0].cast<APInt>()),
-                std::move(ret[1].cast<APInt>())
-            ),
-            ty
-        );
+    // If the return value is a primitive, return it directly.
+    if (isa<PtrType>(ty)) {
+        ICE(s->location(), "Top-level evaluations that return a pointer are not supported yet");
+        return std::nullopt;
     }
 
-    if (isa<IntType>(ty) or ty == Type::IntTy) {
-        Assert(proc.getFunctionType().getNumResults() == 1);
-        return RValue(std::move(ret[0].cast<APInt>()), ty);
-    }
-
-    if (ty == Type::BoolTy) {
-        Assert(proc.getFunctionType().getNumResults() == 1);
-        return RValue(ret[0].cast<APInt>().getBoolValue());
-    }
+    if (ty->is_integer_or_bool()) return RValue(
+        LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
+        ty
+    );
 
     if (ty == Type::TypeTy) {
-        Assert(proc.getFunctionType().getNumResults() == 1);
-        return RValue(
-            vm.memory->get_host_pointer<TypeBase>(ret[0].cast<Pointer>())
-        );
+        ICE(s->location(), "TODO: Load value of type 'type'");
+        return std::nullopt;
     }
 
-    if (ty == Type::VoidTy) {
-        Assert(proc.getFunctionType().getNumResults() == 0);
-        return RValue();
-    }
-
-    ICE(entry, "Don’t know how to materialise an RValue for this type: '{}'", ty);
-    return std::nullopt;
+    // Otherwise, allocate memory for it and store it there.
+    Assert((isa<RangeType, SliceType, ProcType, StructType, ArrayType>(ty)));
+    auto mrv = vm.allocate_memory_value(ty);
+    std::memcpy(mrv.data(), mem, mrv.size().bytes());
+    return RValue(mrv, ty);
 }
 
 // ============================================================================
@@ -1054,12 +1060,12 @@ VM::VM(TranslationUnit& owner_tu)
     : owner_tu{owner_tu},
       memory(std::make_unique<VirtualMemoryMap>()) {}
 
-auto VM::allocate_mrvalue(Type ty) -> MRValue {
+auto VM::allocate_memory_value(Type ty) -> MemoryValue {
     auto sz = ty->memory_size(owner());
     auto align = ty->align(owner());
     auto mem = owner().allocate(sz.bytes(), align.value().bytes());
     std::memset(mem, 0, sz.bytes());
-    return MRValue(mem, sz);
+    return MemoryValue(mem, sz);
 }
 
 auto VM::eval(
