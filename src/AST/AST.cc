@@ -1,6 +1,7 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Printer.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Constants.hh>
 #include <srcc/Core/Core.hh>
 
@@ -12,14 +13,9 @@
 using namespace srcc;
 
 // ============================================================================
-//  Target
-// ============================================================================
-Target::Target() = default;
-Target::~Target() = default;
-
-// ============================================================================
 //  TU
 // ============================================================================
+TranslationUnit::~TranslationUnit() = default;
 TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module)
     : ctx{ctx},
       language_opts{opts},
@@ -29,15 +25,22 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     std::array args {
         "-x",
         "c++",
-        "foo.cc"
+        "foo.cc",
+        "-triple",
+        ctx.triple().getTriple().c_str(),
     };
 
-    tgt.ci = std::make_unique<clang::CompilerInstance>();
-    tgt.ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
-    Assert(clang::CompilerInvocation::CreateFromArgs(tgt.ci->getInvocation(), args, tgt.ci->getDiagnostics()));
-    Assert(tgt.ci->createTarget());
-    tgt.TI = tgt.ci->getTargetPtr();
-    vm.init(tgt);
+    // FIXME: Remove the dependence on 'CompilerInstance'/'CompilerInvocation' and just
+    // create the target directly.
+    ci = std::make_unique<clang::CompilerInstance>();
+    ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
+    Assert(clang::CompilerInvocation::CreateFromArgs(ci->getInvocation(), args, ci->getDiagnostics()));
+    Assert(ci->createTarget());
+    tgt = Target::Create(ci->getTargetPtr());
+    vm.init(*tgt);
+
+    // Create the global scope.
+    create_scope(nullptr);
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
@@ -47,16 +50,19 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     I128Ty = IntType::Get(*this, Size::Bits(128));
 
     // Initialise FFI types.
-    FFIBoolTy = IntType::Get(*this, Size::Bits(target().TI->getBoolWidth()));
-    FFICharTy = IntType::Get(*this, Size::Bits(target().TI->getCharWidth()));
-    FFIShortTy = IntType::Get(*this, Size::Bits(target().TI->getShortWidth()));
-    FFIIntTy = IntType::Get(*this, Size::Bits(target().TI->getIntWidth()));
-    FFILongTy = IntType::Get(*this, Size::Bits(target().TI->getLongWidth()));
-    FFILongLongTy = IntType::Get(*this, Size::Bits(target().TI->getLongLongWidth()));
-    FFISizeTy = IntType::Get(*this, Size::Bits(target().TI->getTypeWidth(target().TI->getSizeType())));
+    FFIBoolTy = IntType::Get(*this, Size::Bits(target().clang().getBoolWidth()));
+    FFICharTy = IntType::Get(*this, Size::Bits(target().clang().getCharWidth()));
+    FFIShortTy = IntType::Get(*this, Size::Bits(target().clang().getShortWidth()));
+    FFIIntTy = IntType::Get(*this, Size::Bits(target().clang().getIntWidth()));
+    FFILongTy = IntType::Get(*this, Size::Bits(target().clang().getLongWidth()));
+    FFILongLongTy = IntType::Get(*this, Size::Bits(target().clang().getLongLongWidth()));
+    FFISizeTy = IntType::Get(*this, Size::Bits(target().clang().getTypeWidth(target().clang().getSizeType())));
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
+    I8PtrTy = PtrType::Get(*this, I8Ty);
+    SliceEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, Type::IntTy});
+    ClosureEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, I8PtrTy});
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and
@@ -153,12 +159,8 @@ void Stmt::Printer::PrintBasicNode(
     }
 
     if (auto e = dyn_cast<Expr>(s); e and print_type) {
-        if (e->value_category != Expr::SRValue) {
-            switch (e->value_category) {
-                case ValueCategory::SRValue: Unreachable();
-                case ValueCategory::MRValue: print(" mrvalue"); break;
-                case ValueCategory::LValue: print(" lvalue"); break;
-            }
+        if (e->value_category != Expr::RValue) {
+            print(" lvalue");
         }
     }
 
@@ -168,8 +170,7 @@ void Stmt::Printer::PrintBasicNode(
 void Stmt::Printer::Print(Stmt* e) {
     auto VCLowercase = [&](ValueCategory v) -> String {
         switch (v) {
-            case ValueCategory::SRValue: return "srvalue";
-            case ValueCategory::MRValue: return "mrvalue";
+            case ValueCategory::RValue: return "rvalue";
             case ValueCategory::LValue: return "lvalue";
         }
         return "<invalid value category>";
@@ -272,9 +273,10 @@ void Stmt::Printer::Print(Stmt* e) {
             switch (c->kind) {
                 case CastExpr::Deref: print("deref"); break;
                 case CastExpr::ExplicitDiscard: print("discard"); break;
-                case CastExpr::LValueToSRValue: print("lvalue->srvalue"); break;
+                case CastExpr::LValueToRValue: print("lvalue->rvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
+                case CastExpr::Range: print("range->range"); break;
             }
             print("\n");
             PrintChildren(c->arg);
@@ -390,6 +392,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "LoopExpr");
             if (auto b = cast<LoopExpr>(e)->body.get_or_null()) PrintChildren(b);
         } break;
+
+        case Kind::MaterialiseTemporaryExpr:
+            PrintBasicNode(e, "MaterialiseTemporaryExpr");
+            PrintChildren(cast<MaterialiseTemporaryExpr>(e)->temporary);
+            break;
 
         case Kind::MemberAccessExpr: {
             auto m = cast<MemberAccessExpr>(e);

@@ -106,11 +106,6 @@ LOWERING(CallOp, {
     auto ptr = LLVM::LLVMPointerType::get(getContext());
 
     args.push_back(a.getAddr());
-    if (a.getMrvalueSlot()) {
-        args.push_back(a.getMrvalueSlot());
-        arg_types.push_back(ptr);
-    }
-
     for (auto arg : a.getArgs()) args.push_back(arg);
     for (auto arg : op.getProcType().getInputs()) arg_types.push_back(arg);
 
@@ -118,6 +113,9 @@ LOWERING(CallOp, {
     // even if the function we’re calling doesn’t take an environment–at
     // least on x64. For some targets, we’ll probably have to guard the
     // call and not pass an environment if it ends up being null.
+    //
+    // FIXME: This should be done in codegen.
+    // FIXME: The environment should have the 'nest' attribute (at least on x86_64 Linux).
     if (a.getEnv()) {
         args.push_back(a.getEnv());
         arg_types.push_back(ptr);
@@ -143,6 +141,11 @@ LOWERING(CallOp, {
 
     auto call = r.create<LLVM::CallOp>(op.getLoc(), fty, args);
     call.setCConv(op.getCc());
+
+    // Preserve argument and return value. attributes.
+    call.setArgAttrsAttr(op.getArgAttrsAttr());
+    if (auto attrs = op.getCallResultAttrs(0))
+        call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
 
     // Split aggregate returns.
     if (op.getNumResults() > 1) {
@@ -189,7 +192,6 @@ LOWERING(ProcOp, {
     // Add the return pointer, if need be.
     mlir::Type ret;
     if (op.getNumResults() == 0) {
-        if (op.getHasIndirectReturn()) sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
         ret = LLVM::LLVMVoidType::get(getContext());
     }  else if (op.getNumResults() == 1) {
         ret = tc->convertType(old.getResult(0));
@@ -205,6 +207,8 @@ LOWERING(ProcOp, {
         sc.addInputs(unsigned(i), tc->convertType(arg));
 
     // Add the static chain pointer.
+    // FIXME: This should be done in codegen.
+    // FIXME: The static chain pointer should have the 'nest' attribute (at least on x86_64 Linux).
     if (op.getHasStaticChain())
         sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
 
@@ -223,6 +227,11 @@ LOWERING(ProcOp, {
         /*dsoLocal=*/false,
         op.getCc()
     );
+
+    // Preserve argument and return value attributes.
+    func.setArgAttrsAttr(op.getArgAttrsAttr());
+    if (auto attrs = op.getCallResultAttrs(0))
+        func.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
 
     // And inline the body.
     r.inlineRegionBefore(op.getBody(), func.getBody(), func.end());
@@ -265,10 +274,6 @@ LOWERING(RetOp, {
     return r.create<LLVM::ReturnOp>(op.getLoc(), res);
 });
 
-LOWERING(ReturnPointerOp, {
-    return op->getParentOfType<LLVM::LLVMFuncOp>().getArgument(0);
-});
-
 LOWERING(SAddOvOp, { return LowerOverflowOp<LLVM::SAddWithOverflowOp>(op, a, r); });
 LOWERING(SMulOvOp, { return LowerOverflowOp<LLVM::SMulWithOverflowOp>(op, a, r); });
 LOWERING(SSubOvOp, { return LowerOverflowOp<LLVM::SSubWithOverflowOp>(op, a, r); });
@@ -302,7 +307,6 @@ void LoweringPass::runOnOperation() {
         ProcOpLowering,
         ProcRefOpLowering,
         RetOpLowering,
-        ReturnPointerOpLowering,
         SAddOvOpLowering,
         SMulOvOpLowering,
         SSubOvOpLowering,

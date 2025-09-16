@@ -1,5 +1,5 @@
-// R      %srcc --ir %s
-// R[//L] %srcc --llvm %s
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
 program test;
 
 proc a (range<int> x) = 3..=4;
@@ -11,6 +11,7 @@ proc f1 {
     range<int> b = 1..=2;
     var c = 1..=2;
     var d = c.start..=c.end;
+    var e = (1..=2).start..=(1..=2).end;
 }
 
 proc f2 {
@@ -18,6 +19,14 @@ proc f2 {
     range<int> b = 1..<2;
     var c = 1..<2;
     var d = c.start..<c.end;
+    var e = (1..<2).start..=(1..<2).end;
+}
+
+proc f3 {
+    range<i27> a;
+    range<i27> b = 1..<2;
+    range<i27> d = b.start..<b.end;
+    range<i27> e = ((1..<2) as range<i27>).start..<((1..<2) as range<i27>).end;
 }
 
 range<i13> x;
@@ -30,41 +39,70 @@ var y = c();
 // + proc __src_main external fastcc {
 // +     #0 = 4, align 2
 // +     #1 = 16, align 8
+// +     #2 = 16, align 8
 // +
 // + entry:
-// +     store #0, i13 0, align 2
+// +     store #0, i16 0, align 2
 // +     %0 = ptradd #0, 2
-// +     store %0, i13 0, align 2
+// +     store %0, i16 0, align 2
 // +     %1 = call fastcc (i64, i64) _S1cFqiE()
-// +     store #1, i64 %1:0, align 8
-// +     %2 = ptradd #1, 8
+// +     store #2, i64 %1:0, align 8
+// +     %2 = ptradd #2, 8
 // +     store %2, i64 %1:1, align 8
+// +     %3 = load i64, #2, align 8
+// +     %4 = ptradd #2, 8
+// +     %5 = load i64, %4, align 8
+// +     store #1, i64 %3, align 8
+// +     %6 = ptradd #1, 8
+// +     store %6, i64 %5, align 8
 // +     ret
 // + }
 // +
 // + proc _S1cFqiE private fastcc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +
 // + entry:
-// +     ret i64 2, i64 5
+// +     store #0, i64 2, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 5, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
 // + }
 // +
 // + proc _S1aFqiqiE (i64 %0, i64 %1) private fastcc -> (i64, i64) {
 // +     #0 = 16, align 8
+// +     #1 = 16, align 8
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
 // +     %2 = ptradd #0, 8
 // +     store %2, i64 %1, align 8
-// +     ret i64 3, i64 5
+// +     store #1, i64 3, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 5, align 8
+// +     %4 = load i64, #1, align 8
+// +     %5 = ptradd #1, 8
+// +     %6 = load i64, %5, align 8
+// +     ret i64 %4, i64 %6
 // + }
 // +
 // + proc _S1bFqiqiE (i64 %0, i64 %1) private fastcc -> (i64, i64) {
 // +     #0 = 16, align 8
+// +     #1 = 16, align 8
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
 // +     %2 = ptradd #0, 8
 // +     store %2, i64 %1, align 8
-// +     ret i64 3, i64 4
+// +     store #1, i64 3, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 4, align 8
+// +     %4 = load i64, #1, align 8
+// +     %5 = ptradd #1, 8
+// +     %6 = load i64, %5, align 8
+// +     ret i64 %4, i64 %6
 // + }
 // +
 // + proc _S2f1FvE private fastcc {
@@ -72,6 +110,7 @@ var y = c();
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
 // +     #3 = 16, align 8
+// +     #4 = 16, align 8
 // +
 // + entry:
 // +     store #0, i64 0, align 8
@@ -86,13 +125,13 @@ var y = c();
 // +     %3 = load i64, #2, align 8
 // +     %4 = ptradd #2, 8
 // +     %5 = load i64, %4, align 8
-// +     %6 = load i64, #2, align 8
-// +     %7 = ptradd #2, 8
-// +     %8 = load i64, %7, align 8
-// +     %9 = add i64 %8, 1
+// +     %6 = add i64 %5, 1
 // +     store #3, i64 %3, align 8
-// +     %10 = ptradd #3, 8
-// +     store %10, i64 %9, align 8
+// +     %7 = ptradd #3, 8
+// +     store %7, i64 %6, align 8
+// +     store #4, i64 1, align 8
+// +     %8 = ptradd #4, 8
+// +     store %8, i64 4, align 8
 // +     ret
 // + }
 // +
@@ -101,6 +140,7 @@ var y = c();
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
 // +     #3 = 16, align 8
+// +     #4 = 16, align 8
 // +
 // + entry:
 // +     store #0, i64 0, align 8
@@ -115,12 +155,41 @@ var y = c();
 // +     %3 = load i64, #2, align 8
 // +     %4 = ptradd #2, 8
 // +     %5 = load i64, %4, align 8
-// +     %6 = load i64, #2, align 8
-// +     %7 = ptradd #2, 8
-// +     %8 = load i64, %7, align 8
 // +     store #3, i64 %3, align 8
-// +     %9 = ptradd #3, 8
-// +     store %9, i64 %8, align 8
+// +     %6 = ptradd #3, 8
+// +     store %6, i64 %5, align 8
+// +     store #4, i64 1, align 8
+// +     %7 = ptradd #4, 8
+// +     store %7, i64 3, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f3FvE private fastcc {
+// +     #0 = 8, align 4
+// +     #1 = 8, align 4
+// +     #2 = 8, align 4
+// +     #3 = 8, align 4
+// +
+// + entry:
+// +     store #0, i32 0, align 4
+// +     %0 = ptradd #0, 4
+// +     store %0, i32 0, align 4
+// +     store #1, i32 1, align 4
+// +     %1 = ptradd #1, 4
+// +     store %1, i32 2, align 4
+// +     %2 = load i32, #1, align 4
+// +     %3 = trunc i32 %2 to i27
+// +     %4 = ptradd #1, 4
+// +     %5 = load i32, %4, align 4
+// +     %6 = trunc i32 %5 to i27
+// +     %7 = sext i27 %3 to i32
+// +     store #2, i32 %7, align 4
+// +     %8 = sext i27 %6 to i32
+// +     %9 = ptradd #2, 4
+// +     store %9, i32 %8, align 4
+// +     store #3, i32 1, align 4
+// +     %10 = ptradd #3, 4
+// +     store %10, i32 2, align 4
 // +     ret
 // + }
 
@@ -136,36 +205,70 @@ var y = c();
 //L + define fastcc void @__src_main() {
 //L +   %1 = alloca i8, i64 4, align 2
 //L +   %2 = alloca i8, i64 16, align 8
-//L +   store i13 0, ptr %1, align 2
-//L +   %3 = getelementptr inbounds nuw i8, ptr %1, i32 2
-//L +   store i13 0, ptr %3, align 2
-//L +   %4 = call fastcc { i64, i64 } @_S1cFqiE()
-//L +   %5 = extractvalue { i64, i64 } %4, 0
-//L +   %6 = extractvalue { i64, i64 } %4, 1
-//L +   store i64 %5, ptr %2, align 8
-//L +   %7 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 %6, ptr %7, align 8
+//L +   %3 = alloca i8, i64 16, align 8
+//L +   store i16 0, ptr %1, align 2
+//L +   %4 = getelementptr inbounds nuw i8, ptr %1, i32 2
+//L +   store i16 0, ptr %4, align 2
+//L +   %5 = call fastcc { i64, i64 } @_S1cFqiE()
+//L +   %6 = extractvalue { i64, i64 } %5, 0
+//L +   %7 = extractvalue { i64, i64 } %5, 1
+//L +   store i64 %6, ptr %3, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 %7, ptr %8, align 8
+//L +   %9 = load i64, ptr %3, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %11 = load i64, ptr %10, align 8
+//L +   store i64 %9, ptr %2, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i64 %11, ptr %12, align 8
 //L +   ret void
 //L + }
 //L +
 //L + define private fastcc { i64, i64 } @_S1cFqiE() {
-//L +   ret { i64, i64 } { i64 2, i64 5 }
+//L +   %1 = alloca i8, i64 16, align 8
+//L +   store i64 2, ptr %1, align 8
+//L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 5, ptr %2, align 8
+//L +   %3 = load i64, ptr %1, align 8
+//L +   %4 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   %5 = load i64, ptr %4, align 8
+//L +   %6 = insertvalue { i64, i64 } undef, i64 %3, 0
+//L +   %7 = insertvalue { i64, i64 } %6, i64 %5, 1
+//L +   ret { i64, i64 } %7
 //L + }
 //L +
 //L + define private fastcc { i64, i64 } @_S1aFqiqiE(i64 %0, i64 %1) {
 //L +   %3 = alloca i8, i64 16, align 8
+//L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
-//L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   store i64 %1, ptr %4, align 8
-//L +   ret { i64, i64 } { i64 3, i64 5 }
+//L +   %5 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 %1, ptr %5, align 8
+//L +   store i64 3, ptr %4, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i64 5, ptr %6, align 8
+//L +   %7 = load i64, ptr %4, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   %9 = load i64, ptr %8, align 8
+//L +   %10 = insertvalue { i64, i64 } undef, i64 %7, 0
+//L +   %11 = insertvalue { i64, i64 } %10, i64 %9, 1
+//L +   ret { i64, i64 } %11
 //L + }
 //L +
 //L + define private fastcc { i64, i64 } @_S1bFqiqiE(i64 %0, i64 %1) {
 //L +   %3 = alloca i8, i64 16, align 8
+//L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
-//L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   store i64 %1, ptr %4, align 8
-//L +   ret { i64, i64 } { i64 3, i64 4 }
+//L +   %5 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 %1, ptr %5, align 8
+//L +   store i64 3, ptr %4, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i64 4, ptr %6, align 8
+//L +   %7 = load i64, ptr %4, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   %9 = load i64, ptr %8, align 8
+//L +   %10 = insertvalue { i64, i64 } undef, i64 %7, 0
+//L +   %11 = insertvalue { i64, i64 } %10, i64 %9, 1
+//L +   ret { i64, i64 } %11
 //L + }
 //L +
 //L + define private fastcc void @_S2f1FvE() {
@@ -173,25 +276,26 @@ var y = c();
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
+//L +   %5 = alloca i8, i64 16, align 8
 //L +   store i64 0, ptr %1, align 8
-//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 8
-//L +   store i64 0, ptr %5, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 0, ptr %6, align 8
 //L +   store i64 1, ptr %2, align 8
-//L +   %6 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 3, ptr %6, align 8
-//L +   store i64 1, ptr %3, align 8
-//L +   %7 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %2, i32 8
 //L +   store i64 3, ptr %7, align 8
-//L +   %8 = load i64, ptr %3, align 8
-//L +   %9 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   %10 = load i64, ptr %9, align 8
-//L +   %11 = load i64, ptr %3, align 8
-//L +   %12 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   %13 = load i64, ptr %12, align 8
-//L +   %14 = add i64 %13, 1
-//L +   store i64 %8, ptr %4, align 8
-//L +   %15 = getelementptr inbounds nuw i8, ptr %4, i32 8
-//L +   store i64 %14, ptr %15, align 8
+//L +   store i64 1, ptr %3, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 3, ptr %8, align 8
+//L +   %9 = load i64, ptr %3, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %11 = load i64, ptr %10, align 8
+//L +   %12 = add i64 %11, 1
+//L +   store i64 %9, ptr %4, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i64 %12, ptr %13, align 8
+//L +   store i64 1, ptr %5, align 8
+//L +   %14 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 4, ptr %14, align 8
 //L +   ret void
 //L + }
 //L +
@@ -200,24 +304,52 @@ var y = c();
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
+//L +   %5 = alloca i8, i64 16, align 8
 //L +   store i64 0, ptr %1, align 8
-//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 8
-//L +   store i64 0, ptr %5, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 0, ptr %6, align 8
 //L +   store i64 1, ptr %2, align 8
-//L +   %6 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 2, ptr %6, align 8
-//L +   store i64 1, ptr %3, align 8
-//L +   %7 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %2, i32 8
 //L +   store i64 2, ptr %7, align 8
-//L +   %8 = load i64, ptr %3, align 8
-//L +   %9 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   %10 = load i64, ptr %9, align 8
-//L +   %11 = load i64, ptr %3, align 8
-//L +   %12 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   %13 = load i64, ptr %12, align 8
-//L +   store i64 %8, ptr %4, align 8
-//L +   %14 = getelementptr inbounds nuw i8, ptr %4, i32 8
-//L +   store i64 %13, ptr %14, align 8
+//L +   store i64 1, ptr %3, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 2, ptr %8, align 8
+//L +   %9 = load i64, ptr %3, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   %11 = load i64, ptr %10, align 8
+//L +   store i64 %9, ptr %4, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i64 %11, ptr %12, align 8
+//L +   store i64 1, ptr %5, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 3, ptr %13, align 8
+//L +   ret void
+//L + }
+//L +
+//L + define private fastcc void @_S2f3FvE() {
+//L +   %1 = alloca i8, i64 8, align 4
+//L +   %2 = alloca i8, i64 8, align 4
+//L +   %3 = alloca i8, i64 8, align 4
+//L +   %4 = alloca i8, i64 8, align 4
+//L +   store i32 0, ptr %1, align 4
+//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 4
+//L +   store i32 0, ptr %5, align 4
+//L +   store i32 1, ptr %2, align 4
+//L +   %6 = getelementptr inbounds nuw i8, ptr %2, i32 4
+//L +   store i32 2, ptr %6, align 4
+//L +   %7 = load i32, ptr %2, align 4
+//L +   %8 = trunc i32 %7 to i27
+//L +   %9 = getelementptr inbounds nuw i8, ptr %2, i32 4
+//L +   %10 = load i32, ptr %9, align 4
+//L +   %11 = trunc i32 %10 to i27
+//L +   %12 = sext i27 %8 to i32
+//L +   store i32 %12, ptr %3, align 4
+//L +   %13 = sext i27 %11 to i32
+//L +   %14 = getelementptr inbounds nuw i8, ptr %3, i32 4
+//L +   store i32 %13, ptr %14, align 4
+//L +   store i32 1, ptr %4, align 4
+//L +   %15 = getelementptr inbounds nuw i8, ptr %4, i32 4
+//L +   store i32 2, ptr %15, align 4
 //L +   ret void
 //L + }
 //L +

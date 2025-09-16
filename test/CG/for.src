@@ -1,5 +1,5 @@
-// R      %srcc --ir -fno-overflow-checks %s
-// R[//L] %srcc --llvm -fno-overflow-checks %s
+// R      %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm -fno-overflow-checks --target x86_64-unknown-linux %s
 program test;
 
 proc foo(in int) extern;
@@ -179,7 +179,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxI16xiE (i16,i64) external fastcc;
+// + proc _S3fooFvxI16xiE (i16, i64) external fastcc;
 // +
 // + proc _S1fFvE private fastcc {
 // + entry:
@@ -194,7 +194,11 @@ proc l {
 // +     br %5 to bb3 else bb4
 // +
 // + bb3:
-// +     call fastcc void _S3fooFvxixixixiE(i64 %0, i64 %3, i64 %1, i64 %4)
+// +     call fastcc void _S3fooFvxixixixiE(
+// +         i64 %0,
+// +         i64 %3,
+// +         i64 %1,
+// +         i64 %4)
 // +     %6 = add i64 %3, 1
 // +     %7 = add i64 %4, 1
 // +     br bb2(%6, %7)
@@ -208,7 +212,12 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixixixiE (i64,i64,i64,i64) external fastcc;
+// + proc _S3fooFvxixixixiE (
+// +     i64,
+// +     i64,
+// +     i64,
+// +     i64,
+// + ) external fastcc;
 // +
 // + proc _S1gFvE private fastcc {
 // + entry:
@@ -232,7 +241,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixiE (i64,i64) external fastcc;
+// + proc _S3fooFvxixiE (i64, i64) external fastcc;
 // +
 // + proc _S1hFvE private fastcc {
 // + entry:
@@ -257,7 +266,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixixiE (i64,i64,i64) external fastcc;
+// + proc _S3fooFvxixixiE (i64, i64, i64) external fastcc;
 // +
 // + proc _S1iFvE private fastcc {
 // + entry:

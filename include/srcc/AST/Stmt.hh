@@ -1,6 +1,7 @@
 #ifndef SRCC_AST_STMT_HH
 #define SRCC_AST_STMT_HH
 
+#include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
@@ -16,7 +17,6 @@
 #include <functional>
 #include <memory>
 #include <ranges>
-#include <srcc/AST/DeclName.hh>
 
 namespace clang {
 class ASTUnit;
@@ -68,17 +68,11 @@ public:
     /// Get the kind of this statement.
     Kind kind() const { return stmt_kind; }
 
-    /// Get whether this is an mrvalue.
-    bool is_mrvalue() const { return value_category_or_srvalue() == ValueCategory::MRValue; }
-
     /// Get the source location of this statement.
     auto location() const -> Location { return loc; }
 
     /// Get the type of this if it is an expression and Void otherwise.
     auto type_or_void() const -> Type;
-
-    /// Get the value category if this is an expression and SRValue otherwise.
-    auto value_category_or_srvalue() const -> ValueCategory;
 
     /// Visit this statement.
     template <typename Visitor>
@@ -166,10 +160,10 @@ public:
     using enum ValueCategory;
 
     /// Check if this expression is an lvalue.
-    [[nodiscard]] bool lvalue() const { return value_category == LValue; }
+    [[nodiscard]] bool is_lvalue() const { return value_category == LValue; }
 
     /// Check if this expression is an rvalue.
-    [[nodiscard]] bool rvalue() const { return not lvalue(); }
+    [[nodiscard]] bool is_rvalue() const { return value_category == RValue; }
 
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::UnaryExpr;
@@ -181,7 +175,7 @@ public:
     Expr* element;
 
     ArrayBroadcastExpr(ArrayType* type, Expr* element, Location loc)
-        : Expr{Kind::ArrayBroadcastExpr, type, MRValue, loc}, element{element} {}
+        : Expr{Kind::ArrayBroadcastExpr, type, RValue, loc}, element{element} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayBroadcastExpr; }
 };
@@ -218,7 +212,7 @@ public:
         Ptr<Expr> message,
         bool is_static,
         Location location
-    ) : Expr{Kind::AssertExpr, Type::VoidTy, SRValue, location},
+    ) : Expr{Kind::AssertExpr, Type::VoidTy, RValue, location},
         cond{cond},
         message{message},
         is_static{is_static} {}
@@ -289,7 +283,7 @@ public:
     BoolLitExpr(
         bool value,
         Location location
-    ) : Expr{Kind::BoolLitExpr, Type::BoolTy, SRValue, location}, value{value} {}
+    ) : Expr{Kind::BoolLitExpr, Type::BoolTy, RValue, location}, value{value} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
 };
@@ -378,6 +372,7 @@ private:
 
     CallExpr(
         Type type,
+        ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -387,6 +382,7 @@ public:
     static auto Create(
         TranslationUnit& mod,
         Type type,
+        ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
         Location location
@@ -400,22 +396,23 @@ public:
 class srcc::CastExpr final : public Expr {
 public:
     enum class CastKind : u8 {
-        /// Convert an srvalue 'T^' to an lvalue 'T'.
+        /// Convert an rvalue 'T^' to an lvalue 'T'.
         Deref,
 
         /// This is a cast to void.
         ExplicitDiscard,
 
-        /// Cast an srvalue integer to an srvalue integer.
+        /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
-        /// Convert an lvalue to an srvalue.
-        ///
-        /// This is only valid for types that can be srvalues.
-        LValueToSRValue,
+        /// Convert an lvalue to an rvalue.
+        LValueToRValue,
 
         /// Materialise a poison value of the given type.
         MaterialisePoisonValue,
+
+        /// Convert between range types.
+        Range,
     };
 
     using enum CastKind;
@@ -430,7 +427,7 @@ public:
         Expr* expr,
         Location location,
         bool implicit = false,
-        ValueCategory value_category = SRValue
+        ValueCategory value_category = RValue
     ) : Expr{Kind::CastExpr, type, value_category, location},
         arg{expr},
         kind{kind},
@@ -474,7 +471,7 @@ public:
     DefaultInitExpr(
         Type type,
         Location location
-    ) : Expr{Kind::DefaultInitExpr, type, type->rvalue_category(), location} {}
+    ) : Expr{Kind::DefaultInitExpr, type, RValue, location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
 };
@@ -529,7 +526,7 @@ public:
         Type ty,
         StoredInteger integer,
         Location location
-    ) : Expr{Kind::IntLitExpr, ty, SRValue, location}, storage{integer} {}
+    ) : Expr{Kind::IntLitExpr, ty, RValue, location}, storage{integer} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
 };
@@ -546,10 +543,23 @@ public:
     Ptr<Stmt> body;
 
     LoopExpr(Ptr<Stmt> body, Location loc)
-        : Expr{Kind::LoopExpr, Type::NoReturnTy, SRValue, loc},
+        : Expr{Kind::LoopExpr, Type::NoReturnTy, RValue, loc},
           body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::LoopExpr; }
+};
+
+class srcc::MaterialiseTemporaryExpr final : public Expr {
+public:
+    Expr* temporary;
+
+    MaterialiseTemporaryExpr(Expr* temporary, Location location)
+        : Expr(Kind::MaterialiseTemporaryExpr, temporary->type, LValue, location),
+          temporary{temporary} {}
+
+    static bool classof(const Stmt* e) {
+        return e->kind() == Kind::MaterialiseTemporaryExpr;
+    }
 };
 
 class srcc::MemberAccessExpr final : public Expr {
@@ -580,6 +590,7 @@ public:
         Location location
     ) -> OverloadSetExpr*;
 
+    auto name() -> DeclName;
     auto overloads() -> ArrayRef<Decl*> { return getTrailingObjects(num_overloads); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
@@ -608,7 +619,7 @@ private:
         Type ty,
         String value,
         Location location
-    ) : Expr{Kind::StrLitExpr, ty, SRValue, location}, value{value} {}
+    ) : Expr{Kind::StrLitExpr, ty, RValue, location}, value{value} {}
 
 public:
     static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
@@ -650,7 +661,7 @@ public:
     TypeExpr(
         Type type,
         Location location
-    ) : Expr{Kind::TypeExpr, Type::TypeTy, SRValue, location}, value{type} {}
+    ) : Expr{Kind::TypeExpr, Type::TypeTy, RValue, location}, value{type} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeExpr; }
 };
 
@@ -666,7 +677,7 @@ public:
     ) : Expr{
             Kind::ReturnExpr,
             Type::NoReturnTy,
-            SRValue,
+            RValue,
             location,
         },
         value{value}, implicit{implicit} {}
@@ -932,15 +943,15 @@ class srcc::ParamDecl : public LocalDecl {
 public:
     ParamDecl(
         const ParamTypeData* param,
+        ValueCategory vc,
         String name,
         ProcDecl* parent,
         u32 index,
         bool with_param,
         Location location
-    ) : LocalDecl{Kind::ParamDecl, param->type, Expr::LValue, name, parent, location},
+    ) : LocalDecl{Kind::ParamDecl, param->type, vc, name, parent, location},
         idx{index},
         with{with_param} {
-        if (is_rvalue_in_parameter()) category = Expr::SRValue;
     }
 
     /// Get the parameter’s index.
@@ -953,11 +964,6 @@ public:
     [[nodiscard]] bool is_with_param() const { return with; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
-
-private:
-    /// Whether this is an 'in' parameter that is passed by value
-    /// under the hood.
-    [[nodiscard]] bool is_rvalue_in_parameter() const;
 };
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
@@ -1105,6 +1111,9 @@ public:
 
     /// Get all instantiations of this template.
     auto instantiations() -> ArrayRef<ProcDecl*>;
+
+    /// Whether this template is used to implement a builtin operator.
+    bool is_builtin_operator_template() const;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcTemplateDecl; }
 };

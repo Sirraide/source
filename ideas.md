@@ -479,6 +479,42 @@ Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for
 - `and` and `or` should not associate.
 - 
 
+## Variadic templates.
+A homogeneous pack can be declared with the syntax `<type> "..." [ IDENT ]`, where
+`<type>` can also be a (possibly deduced) template parameter. A heterogeneous pack
+is declared using `var` as the `<type>`. When instantiated, a homogeneous pack is 
+passed as an array, and a heterogeneous pack as a tuple, e.g.
+```
+struct s { int x; }
+proc f1 (int... as) {}
+proc f2 ($T...  ts) {}
+proc f3 (var... vs) {}
+
+f1(1, 2, 3);       // 'as' is 'int[3]'.
+f2("a", "b", "c"); // 'ts' is 'i8[][3]'.
+f3(1, "a", s(3));  // 'vs' is '(int, i8[], s)'.
+```
+These can then be used like any other array/tuple; additionally, the '...' operator
+can be used to spread an array/tuple into a function call or initialiser list:
+```
+// Iterative example.
+//
+// The 'for' here is actually a compile-time loop, just like how '[]' on a tuple is
+// also a compile-time operation; we could require writing '#for' for consistency, but
+// it feels a bit to require '#for' if 'for' would then be a syntax error.
+proc sum(var ...vs) -> int {
+    int x;
+    for v in vs do x += v;
+    return x;
+}
+
+// Recursive example.
+proc sum (var ...vs) -> int {
+    #if vs.size == 0 return 0;
+    #else return vs[0] + sum(vs[1..]...); // '1..' is eqv. to '1..<vs.size' here.
+}
+```
+
 # Failed Ideas
 ## Renaming copy to var
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this 

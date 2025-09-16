@@ -45,6 +45,9 @@ enum struct srcc::Action : srcc::u8 {
 class srcc::Driver : DiagsProducer {
 public:
     struct Options {
+        /// Target triple.
+        llvm::Triple triple;
+
         /// The path to a directory where modules should be stored.
         std::string module_output_path;
 

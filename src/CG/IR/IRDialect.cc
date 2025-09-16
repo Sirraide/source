@@ -15,6 +15,7 @@
 
 #include <srcc/CG/IR/IREnums.cc.inc>
 #include <srcc/CG/IR/IRDialect.cc.inc>
+#include <srcc/CG/IR/IRInterfaces.cc.inc>
 
 #define GET_ATTRDEF_CLASSES
 #include <srcc/CG/IR/IREnumAttrs.cc.inc>

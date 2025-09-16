@@ -5,10 +5,10 @@ int i;
 int^ a = &i;
 int^^ b = &a;
 
-a = i; // expected-error: Cannot convert expression of type 'int' to 'int^'
-b = i; // expected-error: Cannot convert expression of type 'int' to 'int^^'
-b = a; // expected-error: Cannot convert expression of type 'int^' to 'int^^'
-a = b; // expected-error: Cannot convert expression of type 'int^^' to 'int^'
+a = i; // expected-error: Cannot assign value of type 'int' to 'int^'
+b = i; // expected-error: Cannot assign value of type 'int' to 'int^^'
+b = a; // expected-error: Cannot assign value of type 'int^' to 'int^^'
+a = b; // expected-error: Cannot assign value of type 'int^^' to 'int^'
 a = ^b;
 ^a;
 ^^b;

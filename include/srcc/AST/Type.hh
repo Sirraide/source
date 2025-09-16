@@ -12,6 +12,7 @@
 #include <llvm/Support/Casting.h>
 
 namespace srcc {
+class Target;
 class Scope;
 class StructScope;
 class TemplateTypeParamDecl;
@@ -116,9 +117,18 @@ public:
 
     /// Get the alignment of this type.
     [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
+    [[nodiscard]] auto align(const Target& t) const -> Align;
 
     /// Get the size of this type when stored in an array.
+    ///
+    /// \see bit_width(), memory_size()
     [[nodiscard]] auto array_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto array_size(const Target& t) const -> Size;
+
+    /// Get the exact bit width of this type.
+    ///
+    /// \see array_size(), memory_size()
+    [[nodiscard]] auto bit_width(TranslationUnit& tu) const -> Size;
 
     /// Get whether this type can be initialised using an empty
     /// argument list. For struct types, this can entail calling
@@ -132,50 +142,43 @@ public:
     void dump(bool use_colour = false) const;
     void dump_colour() const;
 
+    /// Check if this is an array/struct/range/slice/closure.
+    [[nodiscard]] bool is_aggregate() const;
+
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
-    /// Whether values of this type are mrvalues.
-    [[nodiscard]] bool is_mrvalue() const { return not is_srvalue(); }
-
-    /// Whether values of this type are srvalues.
-    [[nodiscard]] bool is_srvalue() const;
+    /// Check if this is 'int', 'bool', or a sized integer.
+    [[nodiscard]] bool is_integer_or_bool() const;
 
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
+    /// Get the in-memory size of this type, excluding tail padding.
+    ///
+    /// \see array_size(), bit_width()
+    [[nodiscard]] auto memory_size(TranslationUnit& tu) const -> Size;
+    [[nodiscard]] auto memory_size(const Target& t) const -> Size;
+
     /// Whether moving this type is the same as a copy.
     [[nodiscard]] bool move_is_copy() const;
-
-    /// Whether this type should be passed as an lvalue given a specific intent.
-    [[nodiscard]] bool pass_by_lvalue(CallingConvention cc, Intent intent) const {
-        return not pass_by_rvalue(cc, intent);
-    }
-
-    /// Whether this type should be passed as an rvalue given a specific intent.
-    [[nodiscard]] bool pass_by_rvalue(CallingConvention cc, Intent intent) const;
-
-    /// Get the value category that should be used to pass this as a parameter.
-    [[nodiscard]] auto pass_value_category(
-        CallingConvention cc,
-        Intent intent
-    ) const -> ValueCategory {
-        return pass_by_lvalue(cc, intent) ? ValueCategory::LValue : rvalue_category();
-    }
 
     /// Get a string representation of this type.
     [[nodiscard]] auto print() const -> SmallUnrenderedString;
 
-    /// Get what kind of rvalue this type produced.
-    [[nodiscard]] auto rvalue_category() const -> ValueCategory {
-        return is_srvalue() ? ValueCategory::SRValue : ValueCategory::MRValue;
-    }
-
-    /// Get the size of this type. This does NOT include tail padding!
-    [[nodiscard]] auto size(TranslationUnit& tu) const -> Size;
+    /// Stream the fields that make up this aggregate together with
+    /// their offsets.
+    ///
+    /// Do NOT use this for large arrays!!!
+    /*[[nodiscard]] auto stream_fields(TranslationUnit& tu) {
+        return stream_fields_impl(tu, {});
+    }*/
 
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() -> Type;
+
+    /// Whether this type is trivially copyable.
+    [[nodiscard]] bool trivially_copyable() { return true; }
 
     /// Visit this type.
     template <typename Visitor>
@@ -183,6 +186,10 @@ public:
 
     /// Get the type kind.
     [[nodiscard]] auto kind() const -> Kind { return type_kind; }
+
+private:
+    [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
+    [[nodiscard]] auto size_impl(const Target& t) const -> Size;
 };
 
 class srcc::BuiltinType final : public TypeBase {
@@ -293,7 +300,7 @@ public:
     }
 
     /// Create a void SRValue pair.
-    TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::SRValue) {}
+    TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::RValue) {}
 
     /// Get the type.
     [[nodiscard]] auto type() const -> Type { return data.getPointer(); }
@@ -446,9 +453,16 @@ public:
 
 class srcc::RangeType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit RangeType(Type elem) : SingleElementTypeBase{Kind::RangeType, elem} {}
+    StructType* equivalent_struct;
+    explicit RangeType(Type elem, StructType* equivalent_struct)
+        : SingleElementTypeBase{Kind::RangeType, elem}, equivalent_struct{equivalent_struct} {}
 
 public:
+    /// Get the struct type that is structurally equivalent to this range.
+    [[nodiscard]] auto equivalent_struct_type() const -> StructType* {
+        return equivalent_struct;
+    }
+
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
     static auto Get(TranslationUnit& mod, Type elem) -> RangeType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
@@ -479,6 +493,10 @@ public:
         bool default_initialiser : 1 = false;
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
+
+        static auto Trivial() -> Bits {
+            return {true, true, true};
+        }
     };
 
 private:
@@ -510,6 +528,12 @@ public:
         String name,
         u32 num_fields,
         Location decl_loc
+    ) -> StructType*;
+
+    /// Create a trivial builtin struct type.
+    static auto CreateTrivialBuiltinTuple(
+        TranslationUnit& owner,
+        ArrayRef<Type> fields
     ) -> StructType*;
 
     /// Get the computed alignment of this struct.
@@ -599,6 +623,24 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     Unreachable();
 }
 
+/*inline auto srcc::TypeBase::stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>> {
+    if (auto a = dyn_cast<ArrayType>(this)) {
+        const Type el = a->elem();
+        const Size el_sz = el->array_size(tu);
+        const i64 dim = a->dimension();
+        for (i64 i = 0; i < dim; i++) {
+            co_yield rgs::elements_of(el->stream_fields_impl(tu, offs));
+            offs += el_sz;
+        }
+    } else if (auto s = dyn_cast<StructType>(this)) {
+        for (auto f : s->fields()) {
+            co_yield rgs::elements_of(f->type->stream_fields_impl(tu, f->offset + offs));
+        }
+    } else {
+        co_yield {this, offs};
+    }
+}*/
+
 template <>
 struct std::formatter<srcc::Type> : std::formatter<std::string_view> {
     template <typename FormatContext>
@@ -612,6 +654,13 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(Ty* t, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
+    }
+};
+
+template <>
+struct libassert::stringifier<srcc::Type> {
+    static auto stringify(srcc::Type ty) -> std::string {
+        return base::text::RenderColours(false, ty->print().str());
     }
 };
 

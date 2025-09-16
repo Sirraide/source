@@ -25,6 +25,9 @@ struct CodeGen::Printer {
 
     Printer(CodeGen& cg, bool verbose = false) : cg{cg}, verbose{verbose} {}
     void print(mlir::ModuleOp module);
+    void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap);
+    void print_result_attrs(ProcAndCallOpInterface proc_or_call, unsigned idx);
+    void print_attr(mlir::NamedAttribute attr);
     void print_op(Operation* op);
     void print_procedure(ProcOp op);
     void print_top_level_op(Operation* op);
@@ -41,14 +44,13 @@ struct CodeGen::Printer {
             FrameSlotOp,
             NilOp,
             ProcRefOp,
-            ReturnPointerOp,
             mlir::LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
         >(op); // clang-format on
     }
 };
 
-static auto FormatType(mlir::Type ty) -> std::string {
+auto ir::FormatType(mlir::Type ty) -> std::string {
     std::string tmp;
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
@@ -71,7 +73,7 @@ auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
         llvm::raw_svector_ostream os{s};
         auto f = mlir::OpPrintingFlags().assumeVerified(true).printUniqueSSAIDs(true).enableDebugInfo(verbose, verbose);
         mlir_module.print(os, f);
-        return SmallUnrenderedString(stream{s.str()}.replace('%', "%%"));
+        return SmallUnrenderedString(str{s.str()}.replace('%', "%%"));
     }
 
     Printer p{*this, verbose};
@@ -93,6 +95,66 @@ auto CodeGen::Printer::ops(mlir::ValueRange args, bool include_types) -> SmallUn
 void CodeGen::Printer::print(mlir::ModuleOp module) {
     for (auto& op : module.getBodyRegion().front())
         print_top_level_op(&op);
+}
+
+void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap) {
+    bool is_proc = isa<ProcOp>(proc_or_call);
+    auto indent = is_proc ? "    "sv : "        "sv;
+    if (proc_or_call.getNumCallArgs()) {
+        if (is_proc) out += ' ';
+        if (wrap) out += "%1((%)\n";
+        else out += "%1((%)";
+
+        bool first = true;
+        for (unsigned i = 0; i < proc_or_call.getNumCallArgs(); i++) {
+            if (wrap) out += indent;
+            if (first) first = false;
+            else if (not wrap) out += "%1(, %)";
+
+            if (types_only) out += FormatType(proc_or_call.getCallArgType(i));
+            else out += val(proc_or_call.getCallArg(i));
+
+            if (auto attrs = proc_or_call.getCallArgAttrs(i)) {
+                for (auto attr : attrs) {
+                    print_attr(attr);
+                }
+            }
+
+            if (wrap) {
+                bool last = i == proc_or_call.getNumCallArgs() - 1;
+                if (not last or is_proc) out += "%1(,%)\n";
+            }
+        }
+
+        out += "%1()%)";
+    } else if (not is_proc) {
+        out += "%1(()%)";
+    }
+}
+
+void CodeGen::Printer::print_result_attrs(ProcAndCallOpInterface proc_or_call, unsigned idx) {
+    if (auto attrs = proc_or_call.getCallResultAttrs(idx)) {
+        for (auto attr : attrs) {
+            print_attr(attr);
+        }
+    }
+}
+
+void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
+    using mlir::LLVM::LLVMDialect;
+    if (attr.getName() == LLVMDialect::getByValAttrName()) {
+        out += std::format(" %1(byval%) {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+    } else if (attr.getName() == LLVMDialect::getZExtAttrName()) {
+        out += " %1(zeroext%)";
+    } else if (attr.getName() == LLVMDialect::getSExtAttrName()) {
+        out += " %1(signext%)";
+    } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
+        out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+    } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
+        out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
+    } else {
+        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName());
+    }
 }
 
 void CodeGen::Printer::print_op(Operation* op) {
@@ -194,15 +256,16 @@ void CodeGen::Printer::print_op(Operation* op) {
         out += "call ";
         if (c.getVariadic()) out += "variadic ";
         out += stringifyCConv(c.getCc());
-        out += " ";
 
         if (c.getNumResults() == 0) {
-            out += "%6(void%)";
+            out += " %6(void%)";
         } else if (c.getNumResults() == 1) {
+            print_result_attrs(c, 0);
+            out += " ";
             out += FormatType(c.getResultTypes().front());
         } else {
             out += std::format(
-                "%1(({})%)",
+                " %1(({})%)",
                 utils::join(
                     SmallVector<mlir::Type>{c.getResultTypes()},
                     ", ",
@@ -211,11 +274,10 @@ void CodeGen::Printer::print_op(Operation* op) {
                 )
             );
         }
+
         out += " ";
-
-        out += std::format("{}({})", val(c.getAddr(), false), ops(c.getArgs()));
-
-        if (auto v = c.getMrvalueSlot()) out += std::format(" into {}", val(v, false));
+        out += val(c.getAddr(), false);
+        print_arg_list(c, false, c.getNumCallArgs() > 3);
         if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
         return;
     }
@@ -239,7 +301,7 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(op)) {
         out += std::format(
-            "copy{} {}, {}, {}",
+            "copy{} {} <- {}, {}",
             m.getIsVolatile() ? " volatile" : "",
             val(m.getDst(), false),
             val(m.getSrc(), false),
@@ -280,11 +342,6 @@ void CodeGen::Printer::print_op(Operation* op) {
             val(s.getTrueValue()),
             val(s.getFalseValue(), false)
         );
-        return;
-    }
-
-    if (isa<ReturnPointerOp>(op)) {
-        out += "%3(retptr%)";
         return;
     }
 
@@ -367,21 +424,13 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     }
 
     // Print name.
-    out += std::format("%1(proc%) %2({}%)", proc.getName());
+    out += std::format("%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
 
     // Print args.
-    if (proc.getNumArguments()) {
-        if (proc.isDeclaration()) {
-            auto args = proc.getArgumentTypes();
-            out += std::format(" %1((%){}%1()%)", utils::join(args, "%1(,%)", "{}", FormatType));
-        } else {
-            out += std::format(" %1((%){}%1()%)", ops(proc.getArguments()));
-        }
-    }
+    print_arg_list(proc, proc.isDeclaration(), proc.getNumCallArgs() > 3);
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
-    if (proc.getHasIndirectReturn()) out += " %1(indirect%)";
     if (proc.getHasStaticChain()) out += " %1(nested%)";
     out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
@@ -391,6 +440,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
         out += " %1(->%) ";
         if (proc.getNumResults() == 1) {
             out += FormatType(proc.getResultTypes().front());
+            print_result_attrs(proc, 0);
         } else {
             out += std::format(
                 "%1(({})%)",
@@ -471,7 +521,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             SmallString<128> tmp;
             llvm::raw_svector_ostream os{tmp};
             init.print(os, true);
-            out += std::format("%3({}%)", stream{tmp.str()}.replace('%', "%%"));
+            out += std::format("%3({}%)", str{tmp.str()}.replace('%', "%%"));
         }
 
         if (g.getAlignment().value_or(1) != 1)
@@ -524,7 +574,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (auto p = dyn_cast<ProcRefOp>(op)) {
             tmp.clear(); // Never print the type of a proc ref.
-            tmp += std::format("%2({}%)", p.proc().getName());
+            tmp += std::format("%2({}%)", utils::Escape(p.proc().getName(), false, true));
             return tmp;
         }
 
@@ -536,11 +586,6 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (isa<NilOp>(op)) {
             tmp += "nil";
-            return tmp;
-        }
-
-        if (isa<ReturnPointerOp>(op)) {
-            tmp += "%3(retptr%)";
             return tmp;
         }
 

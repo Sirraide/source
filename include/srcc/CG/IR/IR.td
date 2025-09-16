@@ -18,6 +18,7 @@ include "mlir/IR/OpBase.td"
 
 include "IRDialect.td"
 include "IREnums.td"
+include "IRInterfaces.td"
 
 // ============================================================================
 //  Dialect
@@ -57,7 +58,8 @@ def SRCC_Type : AnyTypeOf<[
 // ============================================================================
 def ProcOp : SRCC_Op<"proc", [
     AffineScope, AutomaticAllocationScope, CallableOpInterface,
-    FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface
+    FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface,
+    ProcAndCallOpInterface
 ]> {
     let summary = "Procedure";
     let regions = (region AnyRegion:$body);
@@ -67,7 +69,6 @@ def ProcOp : SRCC_Op<"proc", [
         CConv:$cc,
         TypeAttrOf<FunctionType>:$function_type,
         UnitAttr:$variadic,
-        UnitAttr:$has_indirect_return,
         UnitAttr:$has_static_chain,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
@@ -81,15 +82,17 @@ def ProcOp : SRCC_Op<"proc", [
             "::mlir::LLVM::CConv":$cc,
             "::mlir::FunctionType":$type,
             "bool":$variadic,
-            "bool":$has_indirect_return,
             "bool":$has_static_chain,
-            CArg<"ArrayRef<::mlir::NamedAttribute>", "{}">:$attrs
+            "::mlir::ArrayAttr":$arg_attrs,
+            "::mlir::ArrayAttr":$res_attrs,
+            CArg<"ArrayRef<mlir::NamedAttribute>", "{}">:$func_attrs
         ), [{
-            buildWithEntryBlock($_builder, $_state, name, type, attrs, type.getInputs());
+            buildWithEntryBlock($_builder, $_state, name, type, func_attrs, type.getInputs());
             $_state.addAttribute(getCcAttrName($_state.name), ::mlir::LLVM::CConvAttr::get($_state.getContext(), cc));
             $_state.addAttribute(getLinkageAttrName($_state.name), ::mlir::LLVM::LinkageAttr::get($_state.getContext(), linkage));
+            $_state.addAttribute(getArgAttrsAttrName($_state.name), arg_attrs);
+            $_state.addAttribute(getResAttrsAttrName($_state.name), res_attrs);
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
-            if (has_indirect_return) $_state.addAttribute(getHasIndirectReturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (has_static_chain) $_state.addAttribute(getHasStaticChainAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
         }]>
     ];
@@ -99,6 +102,35 @@ def ProcOp : SRCC_Op<"proc", [
         ::mlir::Block* getOrCreateEntryBlock() {
             if (empty()) addEntryBlock();
             return &front();
+        }
+
+        //===------------------------------------------------------------------===//
+        // ProcAndCallOpInterface
+        //===------------------------------------------------------------------===//
+        unsigned getNumCallArgs() {
+            return getNumArguments();
+        }
+
+        ::mlir::Value getCallArg(unsigned idx) {
+            if (idx < getNumArguments()) return getArgument(idx);
+            return {};
+        }
+
+        ::mlir::Type getCallArgType(unsigned idx) {
+            if (idx < getNumArguments()) return getArgumentTypes()[idx];
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallArgAttrs(unsigned idx) {
+            if (getArgAttrs() and idx < getArgAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getArgAttrs().value()[idx]);
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallResultAttrs(unsigned idx) {
+            if (getResAttrs() and idx < getResAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getResAttrs().value()[idx]);
+            return {};
         }
 
         //===------------------------------------------------------------------===//
@@ -159,16 +191,17 @@ def AbortOp : SRCC_Op<"abort", [Terminator]> {
     );
 }
 
-def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
+def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments, ProcAndCallOpInterface]> {
     let summary = "Call a procedure";
     let arguments = (ins
         SRCC_Ptr:$addr,
         Optional<SRCC_Ptr>:$env,
-        Optional<SRCC_Ptr>:$mrvalue_slot,
         CConv:$cc,
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
-        Variadic<SRCC_Type>:$args
+        Variadic<SRCC_Type>:$args,
+        OptionalAttr<DictArrayAttr>:$arg_attrs,
+        OptionalAttr<DictArrayAttr>:$result_attrs
     );
 
     let results = (outs Variadic<SRCC_Type>:$res);
@@ -177,8 +210,7 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
         OpBuilder<(ins
             "ProcRefOp":$ref,
             CArg<"::mlir::ValueRange", "{}">:$args,
-            CArg<"::mlir::Value", "{}">:$env,
-            CArg<"::mlir::Value", "{}">:$mrvalue_slot
+            CArg<"::mlir::Value", "{}">:$env
         ), [{
             auto proc = ref.proc();
             build(
@@ -187,14 +219,46 @@ def CallOp : SRCC_Op<"call", [AttrSizedOperandSegments]> {
                 proc.getResultTypes(),
                 ref,
                 env,
-                mrvalue_slot,
                 proc.getCc(),
                 proc.getFunctionType(),
                 proc.getVariadic(),
-                args
+                args,
+                {},
+                {}
             );
         }]>
     ];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // ProcAndCallOpInterface
+        //===------------------------------------------------------------------===//
+        unsigned getNumCallArgs() {
+            return unsigned(getArgs().size());
+        }
+
+        ::mlir::Value getCallArg(unsigned idx) {
+            if (idx < getNumCallArgs()) return getArgs()[idx];
+            return {};
+        }
+
+        ::mlir::Type getCallArgType(unsigned idx) {
+            if (idx < getNumCallArgs()) return getArgs()[idx].getType();
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallArgAttrs(unsigned idx) {
+            if (getArgAttrs() and idx < getArgAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getArgAttrs().value()[idx]);
+            return {};
+        }
+
+        ::mlir::DictionaryAttr getCallResultAttrs(unsigned idx) {
+            if (getResultAttrs() and idx < getResultAttrs()->size())
+                return cast<mlir::DictionaryAttr>(getResultAttrs().value()[idx]);
+            return {};
+        }
+    }];
 }
 
 def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
@@ -288,20 +352,6 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
 def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {
     let summary = "Return from a procedure";
     let arguments = (ins Variadic<SRCC_Type>:$vals);
-}
-
-def ReturnPointerOp : SRCC_Op<"retptr", [Pure, HasParent<"ProcOp">]> {
-    let summary = "Get the return pointer for a procedure";
-    let results = (outs SRCC_Ptr:$pointer);
-    let builders = [
-        OpBuilder<(ins), [{
-            build(
-                $_builder,
-                $_state,
-                mlir::LLVM::LLVMPointerType::get($_builder.getContext())
-            );
-        }]>
-    ];
 }
 
 def SAddOvOp : SRCC_Op<"sadd.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {

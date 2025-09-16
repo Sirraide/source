@@ -18,6 +18,7 @@ enum class Mangling : u8;
 enum class ValueCategory : u8;
 enum class OverflowBehaviour : u8;
 enum class ScopeKind : u8;
+enum class ParamPassingMode : u8;
 } // namespace srcc
 
 /// Parameter intents.
@@ -44,6 +45,36 @@ enum class srcc::Intent : base::u8 {
     /// the callee. This is the only valid intent for procedures that
     /// use the C++ ABI.
     Copy,
+};
+
+/// Parameter passing modes.
+///
+/// These are what intents are lowered to.
+enum class srcc::ParamPassingMode : base::u8 {
+    /// Pass an lvalue of the same type.
+    ///
+    /// This is used in cases where the callee wants to modify a
+    /// value in the caller’s stack frame.
+    ///
+    /// Sema will ensure that this is an lvalue.
+    SameTypeLValue,
+
+    /// Pass an rvalue to the callee.
+    ///
+    /// Depending on the calling convention, target, and size of the
+    /// type, this may entail passing the value indirectly by storing
+    /// it to memory and passing a pointer instead.
+    ///
+    /// Sema will ensure that this is an srvalue or mrvalue.
+    RValue,
+
+    /// Pass an lvalue if we already have one, and materialise a
+    /// temporary and pass it otherwise.
+    ///
+    /// This mode cannot be used for SRValue types.
+    ///
+    /// Sema will ensure that this is an lvalue.
+    AnyLValue,
 };
 
 /// Builtin types.
@@ -80,19 +111,26 @@ enum class srcc::CallingConvention : base::u8 {
 };
 
 enum class srcc::ValueCategory : base::u8 {
-    /// Scalar rvalue, i.e. an rvalue that is passed in registers
-    /// and available as an SSA variable. This is everything that
-    /// we can construct w/o needing a memory location.
+    /// A value that doesn’t have identity; there are two types
+    /// of rvalues:
     ///
-    /// These roughly correspond to scalar prvalues in C++.
-    SRValue,
-
-    /// Class rvalues, i.e. an rvalue (usually of class type) that
-    /// needs a memory location to construct into.
+    /// Scalar rvalues, i.e. an rvalue available as one or more SSA
+    /// variables. This is everything that we can construct w/o
+    /// needing a memory location.
     ///
-    /// These roughly correspond to prvalues of class type in C++;
-    /// note that these are *not* xvalues; we don’t have xvalues.
-    MRValue,
+    /// Memory rvalues, really a set of instructions to initialise
+    /// a memory location; evaluating this usually entails writing
+    /// values into memory and doesn’t actually produce a value.
+    ///
+    /// The former roughly correspond to scalar prvalues in C++,
+    /// the latter to prvalues of class type; note that these are
+    /// *not* xvalues; we don’t have xvalues.
+    ///
+    /// We used to have an actual distinction between MRValue and
+    /// SRValue throughout the compiler, but really, only codegen
+    /// cares about this and at that point the distinction is also
+    /// ABI-dependent, so it was removed from the AST.
+    RValue,
 
     /// An object on the stack or heap that stores a value and has
     /// a memory location that can be references.

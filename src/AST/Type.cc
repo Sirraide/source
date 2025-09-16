@@ -1,10 +1,10 @@
 #include <srcc/AST/AST.hh>
+#include <srcc/AST/Enums.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/CG/Target/Target.hh>
 
 #include <clang/Basic/TargetInfo.h>
-
-#include <llvm/Support/MathExtras.h>
 
 #include <memory>
 #include <print>
@@ -64,27 +64,31 @@ void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
+auto TypeBase::align(TranslationUnit& tu) const -> Align {
+    return align(tu.target());
+}
+
 // TODO: Cache type size and alignment in the TU.
-auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
+auto TypeBase::align(const Target& t) const -> Align { // clang-format off
     return visit(utils::Overloaded{
-        [&](const ArrayType* ty) -> Align { return ty->elem()->align(tu); },
+        [&](const ArrayType* ty) -> Align { return ty->elem()->align(t); },
         [&](const BuiltinType* ty) -> Align {
             switch (ty->builtin_kind()) {
                 case BuiltinKind::Bool: return Align{1};
-                case BuiltinKind::Int: return tu.target().int_align();
+                case BuiltinKind::Int: return t.int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
                 case BuiltinKind::Type: return Align::Of<Type>(); // This is a compile-time only type.
-                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_align();;
+                case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
                 case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
             }
             Unreachable();
         },
-        [&](const IntType* ty) { return tu.target().int_align(ty); },
-        [&](const ProcType*) { return tu.target().closure_align(); },
-        [&](const PtrType*) { return tu.target().ptr_align(); },
-        [&](const RangeType* ty) { return ty->elem()->align(tu); },
-        [&](const SliceType*) { return tu.target().slice_align(); },
+        [&](const IntType* ty) { return t.int_align(ty); },
+        [&](const ProcType*) { return t.closure_align(); },
+        [&](const PtrType*) { return t.ptr_align(); },
+        [&](const RangeType* ty) { return ty->elem()->align(t); },
+        [&](const SliceType*) { return t.slice_align(); },
         [&](const StructType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->align();
@@ -93,9 +97,19 @@ auto TypeBase::align(TranslationUnit& tu) const -> Align { // clang-format off
 } // clang-format on
 
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
+    return array_size(tu.target());
+}
+
+auto TypeBase::array_size(const Target& t) const -> Size {
     if (auto s = dyn_cast<StructType>(this)) return s->array_size();
-    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(tu) * 2;
-    return size(tu);
+    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(t) * 2;
+    return memory_size(t);
+}
+
+auto TypeBase::bit_width(TranslationUnit& tu) const -> Size {
+    if (this == Type::BoolTy) return Size::Bits(1);
+    if (auto i = dyn_cast<IntType>(this)) return i->bit_width();
+    return size_impl(tu.target());
 }
 
 template <bool (StructType::*struct_predicate)() const>
@@ -140,30 +154,16 @@ void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
+bool TypeBase::is_aggregate() const {
+    return isa<StructType, ArrayType, SliceType, RangeType, ProcType>(this);
+}
+
 bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
 }
 
-bool TypeBase::is_srvalue() const {
-    switch (type_kind) {
-        case Kind::BuiltinType:
-        case Kind::IntType:
-        case Kind::ProcType:
-        case Kind::PtrType:
-        case Kind::RangeType:
-        case Kind::SliceType:
-            return true;
-
-        // Zero-sized arrays are invalid, so treat all arrays as mrvalues.
-        case Kind::ArrayType:
-            return false;
-
-        // Zero-sized types are passed around as 'void', which is an srvalue.
-        case Kind::StructType:
-            return cast<StructType>(this)->size() == Size();
-    }
-
-    Unreachable("Invalid type kind");
+bool TypeBase::is_integer_or_bool() const {
+    return is_integer() or this == Type::BoolTy;
 }
 
 bool TypeBase::is_void() const {
@@ -174,50 +174,6 @@ bool TypeBase::is_void() const {
 bool TypeBase::move_is_copy() const {
     // This will have to change once we have destructors.
     return true;
-}
-
-bool TypeBase::pass_by_rvalue(CallingConvention cc, Intent intent) const {
-    // Always pass parameters to C or C++ functions by value.
-    if (cc == CallingConvention::Native) return true;
-    Assert(cc == CallingConvention::Source, "Unsupported calling convention");
-    switch (intent) {
-        // These allow modifying the original value, which means that
-        // we always have to pass by reference here.
-        case Intent::Inout:
-        case Intent::Out:
-            return false;
-
-        // Always pass by value if we’re making a copy.
-        case Intent::Copy:
-            return true;
-
-        // If we only want to inspect the value, pass by value if small,
-        // and by reference otherwise.
-        //
-        // On the caller side, moving is treated the same as 'in', the
-        // only difference is that the latter creates a variable in the
-        // callee, whereas the former doesn’t.
-        //
-        // The intent behind the latter is that e.g. 'moving' a large
-        // struct should not require a memcpy unless the callee actually
-        // moves it somewhere else; otherwise, it doesn't matter where
-        // it is stored, and we save a memcpy that way.
-        case Intent::In:
-        case Intent::Move:
-            return visit(utils::Overloaded{
-                // clang-format off
-                [](ArrayType*) { return false; },                        // Arrays are usually big, so pass by reference.
-                [](BuiltinType*) { return true; },                       // All builtin types are small.
-                [](IntType* t) { return t->bit_width().bits() <= 128; }, // Only pass small ints by value.
-                [](ProcType*) { return true; },                          // Closures are two pointers.
-                [](PtrType*) { return true; },                           // Pointers are small.
-                [](RangeType*) { return true; },                         // Ranges are two integers.
-                [](SliceType*) { return true; },                         // Slices are two pointers.
-                [](StructType* s) { return s->is_srvalue(); },           // Pass structs by reference (TODO: small ones by value).
-            }); // clang-format on
-    }
-
-    Unreachable();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
@@ -274,14 +230,22 @@ auto TypeBase::print() const -> SmallUnrenderedString {
     return out;
 }
 
-auto TypeBase::size(TranslationUnit& tu) const -> Size {
+auto TypeBase::memory_size(TranslationUnit& tu) const -> Size {
+    return memory_size(tu.target());
+}
+
+auto TypeBase::memory_size(const Target& t) const -> Size {
+    return size_impl(t).as_bytes();
+}
+
+auto TypeBase::size_impl(const Target& t) const -> Size {
     switch (type_kind) {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
-                case BuiltinKind::Int: return tu.target().int_size();
+                case BuiltinKind::Int: return t.int_size();
                 case BuiltinKind::Type: return Size::Of<Type>();
-                case BuiltinKind::UnresolvedOverloadSet: return tu.target().closure_size();
+                case BuiltinKind::UnresolvedOverloadSet: return t.closure_size();
 
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
@@ -292,13 +256,13 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
             }
         }
 
-        case Kind::IntType: return cast<IntType>(this)->bit_width();
-        case Kind::PtrType: return tu.target().ptr_size();
-        case Kind::ProcType: return tu.target().closure_size();
-        case Kind::SliceType: return tu.target().slice_size();
+        case Kind::IntType: return t.int_size(cast<IntType>(this));
+        case Kind::PtrType: return t.ptr_size();
+        case Kind::ProcType: return t.closure_size();
+        case Kind::SliceType: return t.slice_size();
         case Kind::RangeType: {
             auto elem = cast<RangeType>(this)->elem();
-            return elem->array_size(tu) + elem->size(tu);
+            return elem->array_size(t) + elem->memory_size(t);
         }
 
         case Kind::StructType: {
@@ -308,7 +272,7 @@ auto TypeBase::size(TranslationUnit& tu) const -> Size {
 
         case Kind::ArrayType: {
             auto arr = cast<ArrayType>(this);
-            return arr->elem()->array_size(tu) * u64(arr->dimension());
+            return arr->elem()->array_size(t) * u64(arr->dimension());
         }
     }
 
@@ -463,7 +427,11 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 }
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
-    auto CreateNew = [&] { return new (mod) RangeType{elem}; };
+    auto CreateNew = [&] {
+        Type fields[] { elem, elem };
+        return new (mod) RangeType{elem, StructType::CreateTrivialBuiltinTuple(mod, fields)};
+    };
+
     return GetOrCreateType(mod.range_types, CreateNew, elem);
 }
 
@@ -493,6 +461,34 @@ auto StructType::Create(
     )) StructType{owner, scope, num_fields};
     type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
     return type;
+}
+
+auto StructType::CreateTrivialBuiltinTuple(
+    TranslationUnit& owner,
+    ArrayRef<Type> fields
+) -> StructType* {
+    // FIXME: This logic is duplicated from Sema; fix that.
+    Size sz;
+    Align a;
+    SmallVector<FieldDecl*> decls;
+    for (auto f : fields) {
+        auto fa = f->align(owner);
+        sz = sz.align(fa);
+        decls.push_back(new (owner) FieldDecl(f, sz, "", Location()));
+        sz += f->memory_size(owner);
+        a = std::max(a, fa);
+    }
+
+    auto s = Create(
+        owner,
+        owner.create_scope<StructScope>(owner.global_scope()),
+        "",
+        2,
+        Location()
+    );
+
+    s->finalise(decls, sz, a, Bits::Trivial());
+    return s;
 }
 
 auto StructType::name() const -> String {

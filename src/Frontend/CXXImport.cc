@@ -137,6 +137,7 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     for (auto [I, P] : enumerate(D->parameters())) {
         Params.push_back(new (*S.M) ParamDecl(
             &PD->param_types()[I],
+            Expr::LValue,
             S.M->save(P->getName()),
             PD,
             u32(I),

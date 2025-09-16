@@ -235,6 +235,7 @@ public:
     /// Get the string.
     [[nodiscard]] constexpr operator StringRef() const { return val; }
     [[nodiscard]] constexpr operator std::string_view() const { return val; }
+    [[nodiscard]] constexpr operator str() const { return val; }
 };
 
 auto operator+=(std::string& s, String str) -> std::string&;

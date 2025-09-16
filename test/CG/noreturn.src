@@ -1,6 +1,6 @@
-// V      %srcc --sema --verify %s
-// R      %srcc --ir -fno-overflow-checks %s
-// R[//L] %srcc --llvm -fno-overflow-checks %s
+// V      %srcc --sema --verify --target x86_64-unknown-linux %s
+// R      %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm -fno-overflow-checks --target x86_64-unknown-linux %s
 // expected-no-diagnostics
 program test;
 
@@ -55,7 +55,7 @@ proc a5 { sink_lv(exit()); }
 // +     unreachable
 // + }
 // +
-// + proc _S7sink_lvFvx2iE (ptr) external fastcc;
+// + proc _S7sink_lvFvx2iE (ptr dereferenceable 8) external fastcc;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -97,7 +97,7 @@ proc a5 { sink_lv(exit()); }
 //L +   unreachable
 //L + }
 //L +
-//L + declare fastcc void @_S7sink_lvFvx2iE(ptr)
+//L + declare fastcc void @_S7sink_lvFvx2iE(ptr dereferenceable(8))
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

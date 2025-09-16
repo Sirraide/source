@@ -13,6 +13,7 @@
 
 #include <srcc/CG/IR/IRDialect.hh.inc>
 #include <srcc/CG/IR/IREnums.hh.inc>
+#include <srcc/CG/IR/IRInterfaces.hh.inc>
 
 #define GET_ATTRDEF_CLASSES
 #include <srcc/CG/IR/IREnumAttrs.hh.inc>
@@ -31,6 +32,30 @@ namespace srcc::cg {
 using mlir::Block;
 using mlir::Operation;
 using mlir::Value;
+
+namespace ir {
+auto FormatType(mlir::Type ty) -> std::string;
 }
+}
+
+template <typename Ty>
+requires requires (const Ty& t, llvm::raw_string_ostream os) {
+    os << t;
+}
+struct libassert::stringifier<Ty> {
+    auto stringify(const Ty& val) -> std::string {
+        std::string s;
+        llvm::raw_string_ostream os{s};
+        os << val;
+        return s;
+    }
+};
+
+template <>
+struct libassert::stringifier<mlir::Type> {
+    auto stringify(mlir::Type ty) -> std::string {
+        return base::text::RenderColours(false, srcc::cg::ir::FormatType(ty));
+    }
+};
 
 #endif // SRCC_CG_IR_HH

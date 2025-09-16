@@ -1,4 +1,4 @@
-// R %srcc --ir %s
+// R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
 proc a (void a, void b) {}
@@ -39,9 +39,16 @@ interleaved2(2, void(), 3, void());
 // + }
 // +
 // + proc _S12interleaved1FixivxivE (i64 %0, i64 %1) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
 // + entry:
-// +     %2 = or i64 %0, %1
-// +     ret i64 %2
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = load i64, #1, align 8
+// +     %4 = or i64 %2, %3
+// +     ret i64 %4
 // + }
 // +
 // + proc _S12interleaved2FiivivE (i64 %0, i64 %1) private fastcc -> i64 {

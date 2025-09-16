@@ -21,17 +21,23 @@
 
 namespace srcc {
 class Context;
+class Driver;
 class DiagnosticsEngine;
 class File;
 struct LangOpts;
 } // namespace srcc
 
 class srcc::Context {
+    friend Driver;
+
     /// Module dir.
     fs::Path module_dir;
 
     /// Diagnostics engine.
     llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_engine;
+
+    /// Target.
+    llvm::Triple target_triple;
 
     /// Files loaded by the context.
     std::vector<std::unique_ptr<File>> files;
@@ -82,6 +88,9 @@ public:
 
     /// Set the diagnostics engine.
     void set_diags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags);
+
+    /// Get the target triple.
+    [[nodiscard]] auto triple() const -> const llvm::Triple& { return target_triple; }
 
     /// Attempt to get a file from disk.
     ///

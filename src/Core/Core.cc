@@ -251,7 +251,7 @@ srcc::File::File(
     file_name(name),
     buffer(std::move(contents)),
     id(id) {
-    short_file_name = String::CreateUnsafe(stream{name}.take_back_until_any("/\\"));
+    short_file_name = String::CreateUnsafe(str{name}.take_back_until_any("/\\").text());
 }
 
 auto srcc::File::LoadFileData(fs::PathRef path) -> Result<std::unique_ptr<llvm::MemoryBuffer>> {

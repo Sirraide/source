@@ -1,5 +1,5 @@
-// R      %srcc --ir %s
-// R[//L] %srcc --llvm %s
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
 program test;
 
 struct x { int a; int b; int c; }
@@ -19,15 +19,15 @@ proc b = eval x(-1, -2, -3);
 // +     ret
 // + }
 // +
-// + proc _S1aFT1xE indirect private fastcc {
+// + proc _S1aFT1xE (ptr %0 sret i8[24]) private fastcc {
 // + entry:
-// +     copy retptr, @1, 24
+// +     copy %0 <- @1, 24
 // +     ret
 // + }
 // +
-// + proc _S1bFT1xE indirect private fastcc {
+// + proc _S1bFT1xE (ptr %0 sret i8[24]) private fastcc {
 // + entry:
-// +     copy retptr, @0, 24
+// +     copy %0 <- @0, 24
 // +     ret
 // + }
 
@@ -47,12 +47,12 @@ proc b = eval x(-1, -2, -3);
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1aFT1xE(ptr %0) {
+//L + define private fastcc void @_S1aFT1xE(ptr sret([24 x i8]) %0) {
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %0, ptr @__srcc_str.0, i64 24, i1 false)
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1bFT1xE(ptr %0) {
+//L + define private fastcc void @_S1bFT1xE(ptr sret([24 x i8]) %0) {
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %0, ptr @__srcc_str.1, i64 24, i1 false)
 //L +   ret void
 //L + }

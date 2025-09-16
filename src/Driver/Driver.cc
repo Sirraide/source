@@ -40,6 +40,7 @@
 #include <print>
 #include <ranges>
 #include <unordered_set>
+#include <srcc/CG/Target/Target.hh>
 
 namespace srcc {
 class ParsedModule;
@@ -61,6 +62,14 @@ int Driver::run_job() {
 
     /// Print pending diagnostics on exit.
     defer { ctx.diags().flush(); };
+
+    // Check if the target is supported.
+    if (not opts.triple.isOSLinux() or opts.triple.getArch() != llvm::Triple::x86_64) {
+        return Error(
+            "Unsupported target triple '{}'. Only x86_64 Linux is supported at the moment.",
+            opts.triple.getTriple()
+        );
+    }
 
     // Disable colours in verify mode.
     ctx.use_colours = opts.colours and not opts.verify;
@@ -92,6 +101,7 @@ int Driver::run_job() {
     // Forward options to context.
     ctx.eval_steps = opts.eval_steps;
     ctx.use_short_filenames = opts.short_filenames;
+    ctx.target_triple = opts.triple;
 
     // Handle this first; it only supports 1 file.
     if (a == Action::DumpModule) {

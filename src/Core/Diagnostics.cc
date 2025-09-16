@@ -4,7 +4,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Process.h>
 
-#include <base/Stream.hh>
+#include <base/Str.hh>
 
 using namespace srcc;
 
@@ -37,7 +37,7 @@ static auto Name(Diagnostic::Level kind) -> std::string_view {
     Unreachable();
 }
 
-static auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
+static auto TakeColumns(str32& s, usz n) -> std::pair<std::u32string, usz> {
     static constexpr usz TabSize = 4;
     static constexpr std::u32string_view Tab = U"    ";
 
@@ -60,7 +60,7 @@ static auto TakeColumns(u32stream& s, usz n) -> std::pair<std::u32string, usz> {
 }
 
 static auto TextWidth(std::u32string_view data) -> usz {
-    u32stream text{data};
+    str32 text{data};
     auto [_, sz] = TakeColumns(text, std::numeric_limits<usz>::max());
     return sz;
 }
@@ -113,9 +113,9 @@ static auto FormatDiagnostic(
     }
 
     // Replace tabs with spaces.
-    auto before = stream(l->before).replace("\n", "    ");
-    auto range = stream(l->range).replace("\n", "    ");
-    auto after = stream(l->after).replace("\n", "    ");
+    auto before = str(l->before).replace("\n", "    ");
+    auto range = str(l->range).replace("\n", "    ");
+    auto after = str(l->after).replace("\n", "    ");
     auto before_wd = TextWidth(text::ToUTF32(before));
     auto range_wd = TextWidth(text::ToUTF32(range));
 
@@ -224,7 +224,7 @@ auto Diagnostic::Render(
         if (render_colours) out = text::RenderColours(use_colours, out);
 
         // Then, indent everything properly.
-        auto lines = stream{out}.split("\n");
+        auto lines = str{out}.split("\n");
         auto count = rgs::distance(lines);
         for (auto [i, line] : lines | vws::enumerate) {
             auto EmitLeading = [&](bool last_line_segment, bool segment_empty = false) {
@@ -283,13 +283,13 @@ auto Diagnostic::Render(
                         if (c == '\f') s.push_back(' ');
                         else if (c != '\v') s.push_back(c);
                     }
-                    buffer += stream{s.str()}.text();
+                    buffer += str{s.str()}.text();
                     buffer += "\n";
                 }
 
                 // Otherwise, we need to break the line.
                 else {
-                    u32stream s{utf32};
+                    str32 s{utf32};
 
                     // Determine hanging indentation. This is the position of
                     // the first '\v', or all leading whitespace if there is
@@ -313,7 +313,7 @@ auto Diagnostic::Render(
 
                     // Emit the rest of the line.
                     std::string hang_indent(hang, ' ');
-                    auto EmitRestOfLine = [&](u32stream rest_of_line, auto parts) {
+                    auto EmitRestOfLine = [&](str32 rest_of_line, auto parts) {
                         buffer += text::ToUTF8(rest_of_line.trim().text());
                         buffer += "\n";
 
@@ -323,7 +323,7 @@ auto Diagnostic::Render(
                             EmitLeading(j == total - 1, part.empty());
                             if (not part.empty()) {
                                 buffer += hang_indent;
-                                buffer += text::ToUTF8(u32stream{std::u32string_view{part.data(), part.size()}}.trim().text());
+                                buffer += text::ToUTF8(str32{std::u32string_view{part.data(), part.size()}}.trim().text());
                             }
                             buffer += "\n";
                         }
@@ -488,11 +488,11 @@ auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> Opt<DecodedLocatio
 
 /// This is called by the lexer when a comment token is encountered.
 void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
-    stream comment{tok.text.sv()};
+    str comment{tok.text.sv()};
     ParseMagicComment(comment, tok.location);
 }
 
-void VerifyDiagnosticsEngine::ParseMagicComment(stream comment, Location loc) {
+void VerifyDiagnosticsEngine::ParseMagicComment(str comment, Location loc) {
     // Skip slashes and initial whitespace.
     comment.trim_front().drop_while('/').trim_front();
 
@@ -509,7 +509,7 @@ void VerifyDiagnosticsEngine::ParseMagicComment(stream comment, Location loc) {
     // Parse the diagnostic type. 'ICE' is not supported, but used here
     // as a failure state so we don’t have to bother with optionals.
     auto type = comment.take_while(llvm::isAlnum);
-    auto level = llvm::StringSwitch<Diagnostic::Level>(type)
+    auto level = llvm::StringSwitch<Diagnostic::Level>(type.text())
                      .Case("error", Diagnostic::Level::Error)
                      .Case("warning", Diagnostic::Level::Warning)
                      .Case("note", Diagnostic::Level::Note)
@@ -581,7 +581,7 @@ void VerifyDiagnosticsEngine::ParseMagicComment(stream comment, Location loc) {
     // we find a matching amount of parentheses.
     if (comment.starts_with('(')) {
         std::string closing_parens(comment.take_while('(').size(), ')');
-        auto text = stream(comment.take_until_or_empty(closing_parens)).trim();
+        auto text = comment.take_until_or_empty(closing_parens).trim();
         if (text.empty()) return Error(loc, "End of comment reached while looking for '{}'", closing_parens);
         expected_diags.emplace_back(level, std::string{text.text()}, diag_loc, count);
         comment.drop(closing_parens.size());

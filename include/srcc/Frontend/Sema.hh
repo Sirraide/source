@@ -127,8 +127,10 @@ class srcc::Sema : public DiagsProducer {
             ArrayInit,
             DefaultInit,
             IntegralCast,
-            LValueToSRValue,
+            LValueToRValue,
             MaterialisePoison,
+            MaterialiseTemporary,
+            RangeCast,
             SelectOverload,
             StructInit,
         };
@@ -144,7 +146,7 @@ class srcc::Sema : public DiagsProducer {
 
     private:
         Conversion(Kind kind) : kind{kind} {}
-        Conversion(Kind kind, Type ty, ValueCategory val = Expr::SRValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
+        Conversion(Kind kind, Type ty, ValueCategory val = Expr::RValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
         Conversion(StructInitData conversions) : kind{Kind::StructInit}, data{std::move(conversions)} {}
         Conversion(ArrayInitData data): kind{Kind::ArrayInit}, data{std::move(data)} {}
@@ -156,8 +158,10 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
-        static auto LValueToSRValue() -> Conversion { return Conversion{Kind::LValueToSRValue}; }
+        static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
+        static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
+        static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto StructInit(StructInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
 
@@ -183,6 +187,7 @@ class srcc::Sema : public DiagsProducer {
         std::expected<ConversionSequence, Diags> result;
         ConversionSequenceOrDiags(ConversionSequence result) : result{std::move(result)} {}
         ConversionSequenceOrDiags(Diags diags) : result{std::unexpected(std::move(diags))} {}
+        ConversionSequenceOrDiags(std::unexpected<Diags> diags) : result{std::move(diags)} {}
         ConversionSequenceOrDiags(Diagnostic diag) : result{std::unexpected(Diags{})} {
             result.error().push_back(std::move(diag));
         }
@@ -395,6 +400,19 @@ class srcc::Sema : public DiagsProducer {
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
+    /// We disallow passing zero-sized structs to native procedures (or returning
+    /// them from them), because C doesn’t really have zero-sized types; however,
+    /// we might see a declaration of such a procedure before the type in question
+    /// is complete, at which point we don’t know its size yet, for such types, we
+    /// instead diagnose this at end of translation.
+    struct DeferredNativeProcArgOrReturn {
+        StructType* type;
+        Location loc;
+        bool is_return;
+    };
+
+    SmallVector<DeferredNativeProcArgOrReturn> incomplete_structs_in_native_proc_type;
+
     /// Whether we’re currently parsing imported declarations.
     bool importing_module = false;
 
@@ -429,7 +447,7 @@ public:
     auto curr_scope() -> Scope* { return scope_stack.back(); }
 
     /// Get the global scope.
-    auto global_scope() -> Scope* { return scope_stack.front(); }
+    auto global_scope() -> Scope* { return M->global_scope(); }
 
 private:
     /// Add a declaration to a scope.
@@ -491,21 +509,14 @@ private:
     ///    initialisation.
     ///
     /// \param init_loc Location to report diagnostics at.
-    /// \param intent If the variable is a parameter, its intent.
-    ///
-    /// \param cc If this is an argument to a call, the calling convention
-    ///    of the called procedure.
-    ///
-    /// \param in_call Whether this is argument passing.
+    /// \param want_lvalue If do, try to produce an lvalue.
     ///
     /// \return Whether initialisation was successful.
     auto BuildConversionSequence(
         Type var_type,
         ArrayRef<Expr*> args,
         Location init_loc,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source,
-        bool in_call = false
+        bool want_lvalue = false
     ) -> ConversionSequenceOrDiags;
 
     /// Overload of BuildInitialiser() that builds the initialiser immediately.
@@ -513,10 +524,11 @@ private:
         Type var_type,
         ArrayRef<Expr*> args,
         Location loc,
-        bool in_call = false,
-        Intent intent = Intent::Move,
-        CallingConvention cc = CallingConvention::Source
+        bool want_lvalue = false
     ) -> Ptr<Expr>;
+
+    /// Check additional constraints on a call that need to happen after overload resolution.
+    bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
 
     /// Check if the declaration of an overloaded operator is well-formed.
     bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
@@ -534,6 +546,9 @@ private:
         ArrayRef<TypeLoc> input_types
     ) -> Type;
 
+    /// Diagnose that we’re using a zero-sized type in a native procedure signature.
+    void DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return);
+
     /// Evaluate a statement, returning the result as a ConstExpr on success
     /// and nullptr on failure.
     auto Evaluate(Stmt* e, Location loc) -> Ptr<Expr>;
@@ -544,9 +559,13 @@ private:
     /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
     [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
 
-    /// Ensure that an expression is an srvalue of the given type. This is
+    /// Ensure that an expression is an rvalue of the given type.
+    template <typename Callback>
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, Callback EmitDiag);
+
+    /// Ensure that an expression is an rvalue of the given type. This is
     /// mainly used for expressions involving operators.
-    [[nodiscard]] bool MakeSRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
 
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
@@ -568,7 +587,10 @@ private:
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
-    bool IsOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
+    bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
+
+    /// Check if a type is zero-sized or incomplete.
+    bool IsZeroSizedOrIncomplete(Type ty);
 
     /// Load a native header or Source module from the system include path.
     void LoadModule(
@@ -622,7 +644,7 @@ private:
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
-    [[nodiscard]] auto LValueToSRValue(Expr* expr) -> Expr*;
+    [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
 
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
@@ -673,7 +695,7 @@ private:
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
-    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<UnaryExpr>;
+    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr>;
     auto BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt>;
 
     /// Entry point.

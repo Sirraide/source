@@ -1,5 +1,5 @@
-// R      %srcc --ir -fno-overflow-checks %s
-// R[//L] %srcc --llvm -fno-overflow-checks %s
+// R      %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm -fno-overflow-checks --target x86_64-unknown-linux %s
 program test;
 
 proc f_move(int i) = i * 2;
@@ -52,35 +52,57 @@ f_copy(j);
 // +
 // + proc __src_main external fastcc {
 // +     #0 = 8, align 8
-// +     #1 = 1250, align 8
+// +     #1 = 1256, align 8
 // +     #2 = 8, align 8
-// +     #3 = 1250, align 8
+// +     #3 = 1256, align 8
+// +     #4 = 1256, align 8
+// +     #5 = 1256, align 8
+// +     #6 = 1256, align 8
+// +     #7 = 1256, align 8
+// +     #8 = 1256, align 8
+// +     #9 = 1256, align 8
+// +     #10 = 1256, align 8
 // +
 // + entry:
 // +     store #0, i64 5, align 8
-// +     store #1, i10000 10, align 8
+// +     store #1, i10048 10, align 8
 // +     %0 = load i64, #0, align 8
 // +     %1 = call fastcc i64 _S6f_moveFiiE(i64 %0)
-// +     %2 = call fastcc i10000 _S6f_moveFI10000I10000E(ptr #1)
-// +     %3 = call fastcc i64 _S6f_moveFiiE(i64 20)
+// +     %2 = load i10048, #1, align 8
+// +     %3 = trunc i10048 %2 to i10000
+// +     %4 = sext i10000 %3 to i10048
+// +     store #5, i10048 %4, align 8
+// +     call fastcc void _S6f_moveFI10000I10000E(ptr #4 sret i8[1256], ptr #5 byval i8[1256])
+// +     %5 = load i10048, #4, align 8
+// +     %6 = call fastcc i64 _S6f_moveFiiE(i64 20)
 // +     store #2, i64 5, align 8
-// +     store #3, i10000 10, align 8
-// +     %4 = load i64, #2, align 8
-// +     %5 = call fastcc i64 _S4f_inFixiE(i64 %4)
-// +     %6 = call fastcc i10000 _S4f_inFI10000xI10000E(ptr #3)
-// +     %7 = call fastcc i64 _S4f_inFixiE(i64 20)
-// +     call fastcc void _S5f_outFvx1iE(ptr #2)
-// +     call fastcc void _S5f_outFvx1I10000E(ptr #3)
+// +     store #3, i10048 10, align 8
+// +     %7 = load i64, #2, align 8
+// +     %8 = call fastcc i64 _S4f_inFixiE(i64 %7)
+// +     %9 = load i10048, #3, align 8
+// +     %10 = trunc i10048 %9 to i10000
+// +     %11 = sext i10000 %10 to i10048
+// +     store #7, i10048 %11, align 8
+// +     call fastcc void _S4f_inFI10000xI10000E(ptr #6 sret i8[1256], ptr #7 dereferenceable 1256)
+// +     %12 = load i10048, #6, align 8
+// +     %13 = call fastcc i64 _S4f_inFixiE(i64 20)
+// +     call fastcc void _S5f_outFvx1iE(ptr #2 dereferenceable 8)
+// +     call fastcc void _S5f_outFvx1I10000E(ptr #3 dereferenceable 1256)
 // +     store #2, i64 5, align 8
-// +     store #3, i10000 10, align 8
-// +     %8 = call fastcc i64 _S7f_inoutFix2iE(ptr #2)
-// +     %9 = call fastcc i10000 _S7f_inoutFI10000x2I10000E(ptr #3)
+// +     store #3, i10048 10, align 8
+// +     %14 = call fastcc i64 _S7f_inoutFix2iE(ptr #2 dereferenceable 8)
+// +     call fastcc void _S7f_inoutFI10000x2I10000E(ptr #8 sret i8[1256], ptr #3 dereferenceable 1256)
+// +     %15 = load i10048, #8, align 8
 // +     store #2, i64 5, align 8
-// +     store #3, i10000 10, align 8
-// +     %10 = load i64, #2, align 8
-// +     %11 = call fastcc i64 _S6f_copyFix3iE(i64 %10)
-// +     %12 = load i10000, #3, align 8
-// +     %13 = call fastcc i10000 _S6f_copyFI10000x3I10000E(i10000 %12)
+// +     store #3, i10048 10, align 8
+// +     %16 = load i64, #2, align 8
+// +     %17 = call fastcc i64 _S6f_copyFix3iE(i64 %16)
+// +     %18 = load i10048, #3, align 8
+// +     %19 = trunc i10048 %18 to i10000
+// +     %20 = sext i10000 %19 to i10048
+// +     store #10, i10048 %20, align 8
+// +     call fastcc void _S6f_copyFI10000x3I10000E(ptr #9 sret i8[1256], ptr #10 byval i8[1256])
+// +     %21 = load i10048, #9, align 8
 // +     ret
 // + }
 // +
@@ -94,39 +116,49 @@ f_copy(j);
 // +     ret i64 %2
 // + }
 // +
-// + proc _S6f_moveFI10000I10000E (ptr %0) private fastcc -> i10000 {
+// + proc _S6f_moveFI10000I10000E (ptr %0 sret i8[1256], ptr %1 byval i8[1256]) private fastcc {
 // + entry:
-// +     %1 = load i10000, %0, align 8
-// +     %2 = mul i10000 %1, 2
-// +     ret i10000 %2
+// +     %2 = load i10048, %1, align 8
+// +     %3 = trunc i10048 %2 to i10000
+// +     %4 = mul i10000 %3, 2
+// +     %5 = sext i10000 %4 to i10048
+// +     store %0, i10048 %5, align 8
+// +     ret
 // + }
 // +
 // + proc _S4f_inFixiE (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
 // + entry:
-// +     %1 = mul i64 %0, 3
-// +     ret i64 %1
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = mul i64 %1, 3
+// +     ret i64 %2
 // + }
 // +
-// + proc _S4f_inFI10000xI10000E (ptr %0) private fastcc -> i10000 {
+// + proc _S4f_inFI10000xI10000E (ptr %0 sret i8[1256], ptr %1 dereferenceable 1256) private fastcc {
 // + entry:
-// +     %1 = load i10000, %0, align 8
-// +     %2 = mul i10000 %1, 3
-// +     ret i10000 %2
+// +     %2 = load i10048, %1, align 8
+// +     %3 = trunc i10048 %2 to i10000
+// +     %4 = mul i10000 %3, 3
+// +     %5 = sext i10000 %4 to i10048
+// +     store %0, i10048 %5, align 8
+// +     ret
 // + }
 // +
-// + proc _S5f_outFvx1iE (ptr %0) private fastcc {
+// + proc _S5f_outFvx1iE (ptr %0 dereferenceable 8) private fastcc {
 // + entry:
 // +     store %0, i64 100, align 8
 // +     ret
 // + }
 // +
-// + proc _S5f_outFvx1I10000E (ptr %0) private fastcc {
+// + proc _S5f_outFvx1I10000E (ptr %0 dereferenceable 1256) private fastcc {
 // + entry:
-// +     store %0, i10000 1000, align 8
+// +     store %0, i10048 1000, align 8
 // +     ret
 // + }
 // +
-// + proc _S7f_inoutFix2iE (ptr %0) private fastcc -> i64 {
+// + proc _S7f_inoutFix2iE (ptr %0 dereferenceable 8) private fastcc -> i64 {
 // + entry:
 // +     %1 = load i64, %0, align 8
 // +     %2 = mul i64 %1, 5
@@ -135,13 +167,18 @@ f_copy(j);
 // +     ret i64 %3
 // + }
 // +
-// + proc _S7f_inoutFI10000x2I10000E (ptr %0) private fastcc -> i10000 {
+// + proc _S7f_inoutFI10000x2I10000E (ptr %0 sret i8[1256], ptr %1 dereferenceable 1256) private fastcc {
 // + entry:
-// +     %1 = load i10000, %0, align 8
-// +     %2 = mul i10000 %1, 5
-// +     store %0, i10000 %2, align 8
-// +     %3 = load i10000, %0, align 8
-// +     ret i10000 %3
+// +     %2 = load i10048, %1, align 8
+// +     %3 = trunc i10048 %2 to i10000
+// +     %4 = mul i10000 %3, 5
+// +     %5 = sext i10000 %4 to i10048
+// +     store %1, i10048 %5, align 8
+// +     %6 = load i10048, %1, align 8
+// +     %7 = trunc i10048 %6 to i10000
+// +     %8 = sext i10000 %7 to i10048
+// +     store %0, i10048 %8, align 8
+// +     ret
 // + }
 // +
 // + proc _S6f_copyFix3iE (i64 %0) private fastcc -> i64 {
@@ -156,16 +193,18 @@ f_copy(j);
 // +     ret i64 %3
 // + }
 // +
-// + proc _S6f_copyFI10000x3I10000E (i10000 %0) private fastcc -> i10000 {
-// +     #0 = 1250, align 8
-// +
+// + proc _S6f_copyFI10000x3I10000E (ptr %0 sret i8[1256], ptr %1 byval i8[1256]) private fastcc {
 // + entry:
-// +     store #0, i10000 %0, align 8
-// +     %1 = load i10000, #0, align 8
-// +     %2 = mul i10000 %1, 6
-// +     store #0, i10000 %2, align 8
-// +     %3 = load i10000, #0, align 8
-// +     ret i10000 %3
+// +     %2 = load i10048, %1, align 8
+// +     %3 = trunc i10048 %2 to i10000
+// +     %4 = mul i10000 %3, 6
+// +     %5 = sext i10000 %4 to i10048
+// +     store %1, i10048 %5, align 8
+// +     %6 = load i10048, %1, align 8
+// +     %7 = trunc i10048 %6 to i10000
+// +     %8 = sext i10000 %7 to i10048
+// +     store %0, i10048 %8, align 8
+// +     ret
 // + }
 
 //L * ; ModuleID = 'test'
@@ -179,33 +218,55 @@ f_copy(j);
 //L +
 //L + define fastcc void @__src_main() {
 //L +   %1 = alloca i8, i64 8, align 8
-//L +   %2 = alloca i8, i64 1250, align 8
+//L +   %2 = alloca i8, i64 1256, align 8
 //L +   %3 = alloca i8, i64 8, align 8
-//L +   %4 = alloca i8, i64 1250, align 8
+//L +   %4 = alloca i8, i64 1256, align 8
+//L +   %5 = alloca i8, i64 1256, align 8
+//L +   %6 = alloca i8, i64 1256, align 8
+//L +   %7 = alloca i8, i64 1256, align 8
+//L +   %8 = alloca i8, i64 1256, align 8
+//L +   %9 = alloca i8, i64 1256, align 8
+//L +   %10 = alloca i8, i64 1256, align 8
+//L +   %11 = alloca i8, i64 1256, align 8
 //L +   store i64 5, ptr %1, align 8
-//L +   store i10000 10, ptr %2, align 8
-//L +   %5 = load i64, ptr %1, align 8
-//L +   %6 = call fastcc i64 @_S6f_moveFiiE(i64 %5)
-//L +   %7 = call fastcc i10000 @_S6f_moveFI10000I10000E(ptr %2)
-//L +   %8 = call fastcc i64 @_S6f_moveFiiE(i64 20)
+//L +   store i10048 10, ptr %2, align 8
+//L +   %12 = load i64, ptr %1, align 8
+//L +   %13 = call fastcc i64 @_S6f_moveFiiE(i64 %12)
+//L +   %14 = load i10048, ptr %2, align 8
+//L +   %15 = trunc i10048 %14 to i10000
+//L +   %16 = sext i10000 %15 to i10048
+//L +   store i10048 %16, ptr %6, align 8
+//L +   call fastcc void @_S6f_moveFI10000I10000E(ptr sret([1256 x i8]) %5, ptr byval([1256 x i8]) %6)
+//L +   %17 = load i10048, ptr %5, align 8
+//L +   %18 = call fastcc i64 @_S6f_moveFiiE(i64 20)
 //L +   store i64 5, ptr %3, align 8
-//L +   store i10000 10, ptr %4, align 8
-//L +   %9 = load i64, ptr %3, align 8
-//L +   %10 = call fastcc i64 @_S4f_inFixiE(i64 %9)
-//L +   %11 = call fastcc i10000 @_S4f_inFI10000xI10000E(ptr %4)
-//L +   %12 = call fastcc i64 @_S4f_inFixiE(i64 20)
-//L +   call fastcc void @_S5f_outFvx1iE(ptr %3)
-//L +   call fastcc void @_S5f_outFvx1I10000E(ptr %4)
+//L +   store i10048 10, ptr %4, align 8
+//L +   %19 = load i64, ptr %3, align 8
+//L +   %20 = call fastcc i64 @_S4f_inFixiE(i64 %19)
+//L +   %21 = load i10048, ptr %4, align 8
+//L +   %22 = trunc i10048 %21 to i10000
+//L +   %23 = sext i10000 %22 to i10048
+//L +   store i10048 %23, ptr %8, align 8
+//L +   call fastcc void @_S4f_inFI10000xI10000E(ptr sret([1256 x i8]) %7, ptr dereferenceable(1256) %8)
+//L +   %24 = load i10048, ptr %7, align 8
+//L +   %25 = call fastcc i64 @_S4f_inFixiE(i64 20)
+//L +   call fastcc void @_S5f_outFvx1iE(ptr dereferenceable(8) %3)
+//L +   call fastcc void @_S5f_outFvx1I10000E(ptr dereferenceable(1256) %4)
 //L +   store i64 5, ptr %3, align 8
-//L +   store i10000 10, ptr %4, align 8
-//L +   %13 = call fastcc i64 @_S7f_inoutFix2iE(ptr %3)
-//L +   %14 = call fastcc i10000 @_S7f_inoutFI10000x2I10000E(ptr %4)
+//L +   store i10048 10, ptr %4, align 8
+//L +   %26 = call fastcc i64 @_S7f_inoutFix2iE(ptr dereferenceable(8) %3)
+//L +   call fastcc void @_S7f_inoutFI10000x2I10000E(ptr sret([1256 x i8]) %9, ptr dereferenceable(1256) %4)
+//L +   %27 = load i10048, ptr %9, align 8
 //L +   store i64 5, ptr %3, align 8
-//L +   store i10000 10, ptr %4, align 8
-//L +   %15 = load i64, ptr %3, align 8
-//L +   %16 = call fastcc i64 @_S6f_copyFix3iE(i64 %15)
-//L +   %17 = load i10000, ptr %4, align 8
-//L +   %18 = call fastcc i10000 @_S6f_copyFI10000x3I10000E(i10000 %17)
+//L +   store i10048 10, ptr %4, align 8
+//L +   %28 = load i64, ptr %3, align 8
+//L +   %29 = call fastcc i64 @_S6f_copyFix3iE(i64 %28)
+//L +   %30 = load i10048, ptr %4, align 8
+//L +   %31 = trunc i10048 %30 to i10000
+//L +   %32 = sext i10000 %31 to i10048
+//L +   store i10048 %32, ptr %11, align 8
+//L +   call fastcc void @_S6f_copyFI10000x3I10000E(ptr sret([1256 x i8]) %10, ptr byval([1256 x i8]) %11)
+//L +   %33 = load i10048, ptr %10, align 8
 //L +   ret void
 //L + }
 //L +
@@ -217,34 +278,43 @@ f_copy(j);
 //L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc i10000 @_S6f_moveFI10000I10000E(ptr %0) {
-//L +   %2 = load i10000, ptr %0, align 8
-//L +   %3 = mul i10000 %2, 2
-//L +   ret i10000 %3
+//L + define private fastcc void @_S6f_moveFI10000I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) {
+//L +   %3 = load i10048, ptr %1, align 8
+//L +   %4 = trunc i10048 %3 to i10000
+//L +   %5 = mul i10000 %4, 2
+//L +   %6 = sext i10000 %5 to i10048
+//L +   store i10048 %6, ptr %0, align 8
+//L +   ret void
 //L + }
 //L +
 //L + define private fastcc i64 @_S4f_inFixiE(i64 %0) {
-//L +   %2 = mul i64 %0, 3
-//L +   ret i64 %2
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = mul i64 %3, 3
+//L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc i10000 @_S4f_inFI10000xI10000E(ptr %0) {
-//L +   %2 = load i10000, ptr %0, align 8
-//L +   %3 = mul i10000 %2, 3
-//L +   ret i10000 %3
+//L + define private fastcc void @_S4f_inFI10000xI10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) {
+//L +   %3 = load i10048, ptr %1, align 8
+//L +   %4 = trunc i10048 %3 to i10000
+//L +   %5 = mul i10000 %4, 3
+//L +   %6 = sext i10000 %5 to i10048
+//L +   store i10048 %6, ptr %0, align 8
+//L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S5f_outFvx1iE(ptr %0) {
+//L + define private fastcc void @_S5f_outFvx1iE(ptr dereferenceable(8) %0) {
 //L +   store i64 100, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S5f_outFvx1I10000E(ptr %0) {
-//L +   store i10000 1000, ptr %0, align 8
+//L + define private fastcc void @_S5f_outFvx1I10000E(ptr dereferenceable(1256) %0) {
+//L +   store i10048 1000, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S7f_inoutFix2iE(ptr %0) {
+//L + define private fastcc i64 @_S7f_inoutFix2iE(ptr dereferenceable(8) %0) {
 //L +   %2 = load i64, ptr %0, align 8
 //L +   %3 = mul i64 %2, 5
 //L +   store i64 %3, ptr %0, align 8
@@ -252,12 +322,17 @@ f_copy(j);
 //L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc i10000 @_S7f_inoutFI10000x2I10000E(ptr %0) {
-//L +   %2 = load i10000, ptr %0, align 8
-//L +   %3 = mul i10000 %2, 5
-//L +   store i10000 %3, ptr %0, align 8
-//L +   %4 = load i10000, ptr %0, align 8
-//L +   ret i10000 %4
+//L + define private fastcc void @_S7f_inoutFI10000x2I10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) {
+//L +   %3 = load i10048, ptr %1, align 8
+//L +   %4 = trunc i10048 %3 to i10000
+//L +   %5 = mul i10000 %4, 5
+//L +   %6 = sext i10000 %5 to i10048
+//L +   store i10048 %6, ptr %1, align 8
+//L +   %7 = load i10048, ptr %1, align 8
+//L +   %8 = trunc i10048 %7 to i10000
+//L +   %9 = sext i10000 %8 to i10048
+//L +   store i10048 %9, ptr %0, align 8
+//L +   ret void
 //L + }
 //L +
 //L + define private fastcc i64 @_S6f_copyFix3iE(i64 %0) {
@@ -270,14 +345,17 @@ f_copy(j);
 //L +   ret i64 %5
 //L + }
 //L +
-//L + define private fastcc i10000 @_S6f_copyFI10000x3I10000E(i10000 %0) {
-//L +   %2 = alloca i8, i64 1250, align 8
-//L +   store i10000 %0, ptr %2, align 8
-//L +   %3 = load i10000, ptr %2, align 8
-//L +   %4 = mul i10000 %3, 6
-//L +   store i10000 %4, ptr %2, align 8
-//L +   %5 = load i10000, ptr %2, align 8
-//L +   ret i10000 %5
+//L + define private fastcc void @_S6f_copyFI10000x3I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) {
+//L +   %3 = load i10048, ptr %1, align 8
+//L +   %4 = trunc i10048 %3 to i10000
+//L +   %5 = mul i10000 %4, 6
+//L +   %6 = sext i10000 %5 to i10048
+//L +   store i10048 %6, ptr %1, align 8
+//L +   %7 = load i10048, ptr %1, align 8
+//L +   %8 = trunc i10048 %7 to i10000
+//L +   %9 = sext i10000 %8 to i10048
+//L +   store i10048 %9, ptr %0, align 8
+//L +   ret void
 //L + }
 //L +
 //L + !llvm.module.flags = !{!0}

@@ -22,7 +22,7 @@ ArrayInitExpr::ArrayInitExpr(
     ArrayType* type,
     ArrayRef<Expr*> elements,
     Location loc
-) : Expr{Kind::ArrayInitExpr, type, MRValue, loc}, num_inits{u32(elements.size())} {
+) : Expr{Kind::ArrayInitExpr, type, RValue, loc}, num_inits{u32(elements.size())} {
     std::uninitialized_copy_n(elements.begin(), elements.size(), getTrailingObjects());
 }
 
@@ -42,7 +42,7 @@ BuiltinCallExpr::BuiltinCallExpr(
     Type return_type,
     ArrayRef<Expr*> args,
     Location location
-) : Expr{Kind::BuiltinCallExpr, return_type, SRValue, location}, builtin{kind}, num_args{u32(args.size())} {
+) : Expr{Kind::BuiltinCallExpr, return_type, RValue, location}, builtin{kind}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
     // Determine value category.
     switch (builtin) {
@@ -67,10 +67,11 @@ auto BuiltinCallExpr::Create(
 
 CallExpr::CallExpr(
     Type type,
+    ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
-) : Expr{Kind::CallExpr, type, type->rvalue_category(), location},
+) : Expr{Kind::CallExpr, type, vc, location},
     callee{callee}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
 }
@@ -78,13 +79,14 @@ CallExpr::CallExpr(
 auto CallExpr::Create(
     TranslationUnit& mod,
     Type type,
+    ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
     Location location
 ) -> CallExpr* {
     const auto size = totalSizeToAlloc<Expr*>(args.size());
     auto mem = mod.allocate(size, alignof(CallExpr));
-    return ::new (mem) CallExpr{type, callee, args, location};
+    return ::new (mem) CallExpr{type, vc, callee, args, location};
 }
 
 ConstExpr::ConstExpr(
@@ -92,7 +94,7 @@ ConstExpr::ConstExpr(
     eval::RValue value,
     Location location,
     Ptr<Stmt> stmt
-) : Expr{Kind::ConstExpr, value.type(), value.isa<eval::MRValue>() ? MRValue : SRValue, location},
+) : Expr{Kind::ConstExpr, value.type(), RValue, location},
     value{tu.save(std::move(value))},
     stmt{stmt} {}
 
@@ -101,7 +103,7 @@ BlockExpr::BlockExpr(
     Type type,
     ArrayRef<Stmt*> stmts,
     Location location
-) : Expr{Kind::BlockExpr, type, SRValue, location},
+) : Expr{Kind::BlockExpr, type, RValue, location},
     num_stmts{u32(stmts.size())},
     scope{parent_scope} {
     std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects());
@@ -168,8 +170,9 @@ MemberAccessExpr::MemberAccessExpr(
 OverloadSetExpr::OverloadSetExpr(
     ArrayRef<Decl*> decls,
     Location location
-) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, SRValue, location},
+) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, RValue, location},
     num_overloads{u32(decls.size())} {
+    Assert(num_overloads != 0, "Empty overload set?");
     std::uninitialized_copy(decls.begin(), decls.end(), getTrailingObjects());
 }
 
@@ -183,19 +186,18 @@ auto OverloadSetExpr::Create(
     return ::new (mem) OverloadSetExpr{decls, location};
 }
 
-auto ParamDecl::intent() const -> Intent {
-    return parent->param_types()[idx].intent;
+auto OverloadSetExpr::name() -> DeclName {
+    return overloads().front()->name;
 }
 
-bool ParamDecl::is_rvalue_in_parameter() const {
-    auto i = intent();
-    return i == Intent::In and type->pass_by_rvalue(parent->proc_type()->cconv(), i);
+auto ParamDecl::intent() const -> Intent {
+    return parent->param_types()[idx].intent;
 }
 
 ProcRefExpr::ProcRefExpr(
     ProcDecl* decl,
     Location location
-) : Expr(Kind::ProcRefExpr, decl->type, SRValue, location),
+) : Expr(Kind::ProcRefExpr, decl->type, RValue, location),
     decl{decl} {}
 
 auto ProcRefExpr::return_type() const -> Type {
@@ -213,11 +215,6 @@ auto StrLitExpr::Create(
 auto Stmt::type_or_void() const -> Type {
     if (auto e = dyn_cast<Expr>(this)) return e->type;
     return Type::VoidTy;
-}
-
-auto Stmt::value_category_or_srvalue() const -> ValueCategory {
-    if (auto e = dyn_cast<Expr>(this)) return e->value_category;
-    return Expr::SRValue;
 }
 
 // ============================================================================
@@ -335,11 +332,15 @@ auto ProcTemplateDecl::instantiations() -> ArrayRef<ProcDecl*> {
     return owner->template_instantiations[this];
 }
 
+bool ProcTemplateDecl::is_builtin_operator_template() const {
+    return pattern->type->attrs.builtin_operator;
+}
+
 StructInitExpr::StructInitExpr(
     StructType* ty,
     ArrayRef<Expr*> fields,
     Location location
-) : Expr{Kind::StructInitExpr, ty, ty->rvalue_category(), location} {
+) : Expr{Kind::StructInitExpr, ty, RValue, location} {
     std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
 }
 
