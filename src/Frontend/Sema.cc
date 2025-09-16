@@ -2805,6 +2805,10 @@ auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed) -> Ptr<Stmt> {
     return new (*M) LoopExpr(body, parsed->loc);
 }
 
+auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
+    Todo();
+}
+
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
 

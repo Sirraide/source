@@ -9,15 +9,27 @@ struct A {
     B b;
 }
 
-// The semicolons are to help w/ synchronisation so
-// we can test this; they’re not required by the
-// grammar.
-struct {}; // expected-error: Expected identifier after 'struct'
-struct {; // expected-error: Expected identifier after 'struct'
-struct }; // expected-error: Expected identifier after 'struct'
-struct a { int } // expected-error: Expected identifier
-struct b { int x; int } // expected-error: Expected identifier
+struct { // expected-error: Expected identifier after 'struct'
+}
+
+struct a
+    int // expected-error: Expected '{'
+    x;
+}
+
+struct a {
+    int ; // expected-error: Expected identifier
+}
+
+struct a {
+    int x;
+    int // expected-error: Expected ';'
+} // expected-error: Expected identifier
 
 struct C {
     int x // expected-error: Expected ';'
 }
+
+struct a { int x;
+
+// expected-error@+1: Expected '}'

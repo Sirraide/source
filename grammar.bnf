@@ -48,7 +48,7 @@
 //  Expressions
 // ============================================================================
 <expr>           ::= <expr-braces> | <expr-no-braces>
-<expr-braces>    ::= <expr-block>
+<expr-braces>    ::= <expr-block> | <expr-match>
 <expr-no-braces> ::= <expr-assert>
                    | <expr-if>
                    | <expr-binary>
@@ -80,12 +80,15 @@
 <expr-return>    ::= RETURN [ <expr> ]
 <expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
 <expr-postfix>   ::= <expr> ( "++" | "--" )
+<expr-match>     ::= MATCH <expr> "{" <match-case> "}"
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | NOT | "~" | "&" | "^"
 <if-expr-body> ::= [ THEN ] <expr>
 <binary> ::= // TODO: list all binary operators here.
 
+<match-case> ::= <pattern> ":" <stmt>
+<pattern>    ::= <expr>
 
 // ============================================================================
 //  Declarations

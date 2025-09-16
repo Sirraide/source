@@ -1,0 +1,29 @@
+// V %srcc --parse --verify %s
+program test;
+
+match 1 {}
+match 1 { 1: 1; }
+match 1 { 1: 2; }
+match 1 { 1: 1; 1: 1; }
+match 1 { 1: 1; 1: 1; 1: 1; 1: 1; 1: 1; 1: 1; }
+match {} { {}: {} }
+match 1 + foo() { bar() / baz(): for x in xs do q(x); }
+
+match 1 { 1:
+    1 // expected-error: Expected ';'
+}
+
+match 1 {
+    1
+    1 // expected-error: Expected ':' after pattern
+    ;
+}
+
+match 1
+    1 // expected-error: Expected '{'
+    : 1;
+}
+
+match 1 { 1: 1;
+
+// expected-error@+1: Expected '}'

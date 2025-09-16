@@ -132,6 +132,25 @@ auto ParsedDeclRefExpr::Create(
     return ::new (mem) ParsedDeclRefExpr{names, location};
 }
 
+ParsedMatchExpr::ParsedMatchExpr(
+    ParsedStmt* control_expr,
+    ArrayRef<ParsedMatchCase> cases,
+    Location loc
+) : ParsedStmt{Kind::MatchExpr, loc}, num_cases{u32(cases.size())}, control_expr{control_expr} {
+    std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects());
+}
+
+auto ParsedMatchExpr::Create(
+    Parser& p,
+    ParsedStmt* control_expr,
+    ArrayRef<ParsedMatchCase> cases,
+    Location loc
+) -> ParsedMatchExpr* {
+    const auto size = totalSizeToAlloc<ParsedMatchCase>(cases.size());
+    auto mem = p.allocate(size, alignof(ParsedMatchExpr));
+    return ::new (mem) ParsedMatchExpr(control_expr, cases, loc);
+}
+
 ParsedForStmt::ParsedForStmt(
     Location for_loc,
     Location enum_loc,
@@ -373,6 +392,17 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::LoopExpr: {
             PrintHeader(s, "LoopExpr");
             if (auto b = cast<ParsedLoopExpr>(s)->body.get_or_null()) PrintChildren(b);
+        } break;
+
+        case Kind::MatchExpr: {
+            auto m = cast<ParsedMatchExpr>(s);
+            PrintHeader(s, "MatchExpr");
+            SmallVector<ParsedStmt*, 8> children{m->control_expr};
+            for (auto c : m->cases()) {
+                children.push_back(c.cond);
+                children.push_back(c.body);
+            }
+            PrintChildren(children);
         } break;
 
         case Kind::MemberExpr: {

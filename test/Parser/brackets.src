@@ -1,0 +1,5 @@
+// V %srcc --parse --verify %s
+program test;
+
+int x = ({);
+int x = {(};

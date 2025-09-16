@@ -16,16 +16,6 @@ using namespace srcc;
 #define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(, ) __VA_ARGS__)
 #define TryParseType(...) TRY(ParseType() __VA_OPT__(, ) __VA_ARGS__)
 
-#define SkipTo(...)                                 \
-    do {                                            \
-        if (not SkipToImpl(__VA_ARGS__)) return {}; \
-    } while (false)
-
-#define SkipPast(...)                                 \
-    do {                                              \
-        if (not SkipPastImpl(__VA_ARGS__)) return {}; \
-    } while (false)
-
 // ============================================================================
 //  Parser Helpers
 // ============================================================================
@@ -194,6 +184,47 @@ constexpr bool IsPrefix(Tk t) {
     }
 }
 
+Parser::BracketTracker::BracketTracker(Parser& p, Tk open, bool diagnose)
+    : p{p}, diagnose{diagnose}, open_bracket{open} {
+    switch (open) {
+        case Tk::LParen: close_bracket = Tk::RParen; p.num_parens++; break;
+        case Tk::LBrace: close_bracket = Tk::RBrace; p.num_braces++; break;
+        case Tk::LBrack: close_bracket = Tk::RBrack; p.num_brackets++; break;
+        default: Unreachable("Invalid bracket: {}", open);
+    }
+
+    left = p.tok->location;
+    if (p.At(open_bracket)) p.NextTokenImpl();
+    else if (diagnose) p.Error("Expected '{}'", open_bracket);
+}
+
+Parser::BracketTracker::~BracketTracker() {
+    if (not consumed_close) decrement();
+}
+
+bool Parser::BracketTracker::close() {
+    Assert(not consumed_close);
+    consumed_close = true;
+    decrement();
+    right = p.tok->location;
+    if (p.At(close_bracket)) {
+        p.NextTokenImpl();
+        return true;
+    }
+
+    if (diagnose) p.Error("Expected '{}'", close_bracket);
+    return false;
+}
+
+void Parser::BracketTracker::decrement() {
+    switch (close_bracket) {
+        case Tk::RParen: if (p.num_parens) p.num_parens--; break;
+        case Tk::RBrace: if (p.num_braces) p.num_braces--; break;
+        case Tk::RBrack: if (p.num_brackets) p.num_brackets--; break;
+        default: Unreachable("Invalid bracket: {}", close_bracket);
+    }
+}
+
 /// Check if this token could start an expression (that doesn’t
 /// imply that it actually does!).
 bool Parser::AtStartOfExpression() {
@@ -211,6 +242,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Int:
         case Tk::IntegerType:
         case Tk::Integer:
+        case Tk::Match:
         case Tk::Minus:
         case Tk::MinusMinus:
         case Tk::NoReturn:
@@ -268,6 +300,7 @@ bool Parser::ConsumeOrError(Tk tk) {
     return true;
 }
 
+
 auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     // If no return type was provided, default to 'void' here.
     if (sig.ret.invalid()) {
@@ -296,6 +329,21 @@ bool Parser::ExpectSemicolon() {
     return false;
 }
 
+bool Parser::IsBracket(Tk t) {
+    switch (t) {
+        case Tk::LParen:
+        case Tk::RParen:
+        case Tk::LBrace:
+        case Tk::RBrace:
+        case Tk::LBrack:
+        case Tk::RBrack:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 auto Parser::LookAhead(usz n) -> Token& {
     usz curr = usz(tok - stream.begin());
     if (n + curr >= stream.size()) return stream.back();
@@ -303,13 +351,69 @@ auto Parser::LookAhead(usz n) -> Token& {
 }
 
 auto Parser::Next() -> Location {
-    return NextToken()->location;
+    Assert(not IsBracket(tok->type), "Should not consume brackets this way");
+    return NextTokenImpl();
 }
 
-auto Parser::NextToken() -> Token* {
+auto Parser::NextTokenImpl() -> Location {
     auto* t = &*tok;
     if (not At(Tk::Eof)) ++tok;
-    return t;
+    return t->location;
+}
+
+bool Parser::SkipTo(std::same_as<Tk> auto... tks) {
+    // Always skip at least one token. It’s easy to fall into an infinite
+    // loop otherwise.
+    bool skipped = false;
+    for (;;) {
+        if (At(tks...)) return true;
+        switch (tok->type) {
+            default: Next(); break;
+            case Tk::Eof: return false;
+
+            // Skip over properly nested brackets.
+            case Tk::LParen:
+            case Tk::LBrace:
+            case Tk::LBrack: {
+                BracketTracker t{*this, tok->type, false};
+                SkipTo(t.corresponding_closing_bracket());
+                t.close();
+            } break;
+
+            // Discard any stray closing delimiters, but do not consume any
+            // that match a preceding open bracket, e.g. we don’t want to skip
+            // over the '}' of a block if its last statement is missing a semicolon.
+            //
+            // We don’t care if the matching open bracket isn’t the directly preceding
+            // open bracket; e.g. in '({)', we don’t want to skip the ')', even though
+            // the preceding open bracket is '{'.
+            case Tk::RParen:
+                if (num_parens and skipped) return false;
+                NextTokenImpl();
+                break;
+
+            case Tk::RBrace:
+                if (num_braces and skipped) return false;
+                NextTokenImpl();
+                break;
+
+            case Tk::RBrack:
+                if (num_brackets and skipped) return false;
+                NextTokenImpl();
+                break;
+        }
+        skipped = true;
+    }
+}
+
+/// Skip up to and past a token.
+bool Parser::SkipPast(std::same_as<Tk> auto... tks) {
+    if (SkipTo(tks...)) {
+        Next();
+        return true;
+    }
+
+    return false;
 }
 
 // ============================================================================
@@ -344,7 +448,7 @@ auto Parser::ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr> {
 }
 
 auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
-    auto loc = Next();
+    BracketTracker braces{*this, Tk::LBrace};
 
     // Parse statements.
     SmallVector<ParsedStmt*> stmts;
@@ -352,12 +456,8 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
         if (auto s = ParseStmt())
             stmts.push_back(s.get());
 
-    if (not Consume(Tk::RBrace)) {
-        Error("Expected '}}'");
-        Note(loc, "To match this '{{'");
-    }
-
-    return ParsedBlockExpr::Create(*this, stmts, loc);
+    braces.close();
+    return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
 // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
@@ -389,6 +489,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-if>
 //          | <expr-lit>
 //          | <expr-loop>
+//          | <expr-match>
 //          | <expr-member>
 //          | <expr-paren>
 //          | <expr-prefix>
@@ -463,6 +564,10 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParseDeclRefExpr();
             break;
 
+        case Tk::Match:
+            lhs = ParseMatchExpr();
+            break;
+
         // STRING-LITERAL
         case Tk::StringLiteral:
             lhs = new (*this) ParsedStrLitExpr{tok->text, tok->location};
@@ -494,17 +599,11 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
         // <expr-paren> ::= "(" <expr> ")"
         case Tk::LParen: {
-            Location rparen;
-            auto lparen = Next();
-
+            BracketTracker parens{*this, Tk::LParen};
             lhs = ParseExpr();
-            if (not Consume(rparen, Tk::RParen)) {
-                Error("Expected ')'");
-                SkipTo(Tk::RParen, Tk::Semicolon);
-                if (not Consume(rparen, Tk::RParen)) return {};
-            }
-
-            lhs = new (*this) ParsedParenExpr{lhs.get(), {lparen, rparen}};
+            parens.close();
+            if (not lhs) return {};
+            lhs = new (*this) ParsedParenExpr{lhs.get(), parens.span()};
         } break;
 
         // <type-prim> ::= BOOL | INT | VOID | VAR | NORETURN
@@ -595,40 +694,38 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
             // <call-args> ::= <expr> { "," <expr> } [ "," ]
             case Tk::LParen: {
-                Next();
+                BracketTracker parens{*this, Tk::LParen};
                 SmallVector<ParsedStmt*> args;
                 while (not At(Tk::RParen)) {
                     if (auto arg = ParseExpr()) {
                         args.push_back(arg.get());
                         if (not Consume(Tk::Comma)) break;
                     } else {
-                        SkipTo(Tk::RParen);
                         break;
                     }
                 }
 
-                auto end = tok->location;
-                ConsumeOrError(Tk::RParen);
-                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc, end});
+                parens.close();
+                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc, parens.right});
                 continue;
             }
 
             // <expr=subscript> ::= <expr> "[" <expr> "]"
             case Tk::LBrack: {
-                Next();
+                BracketTracker brackets{*this, Tk::LBrack};
                 if (At(Tk::RBrack)) {
-                    lhs = new (*this) ParsedSliceType(lhs.get(), {lhs.get()->loc, Next()});
+                    brackets.close();
+                    lhs = new (*this) ParsedSliceType(lhs.get(), {lhs.get()->loc, brackets.right});
                     continue;
                 }
 
                 auto index = TryParseExpr();
-                auto end = tok->location;
-                ConsumeOrError(Tk::RBrack);
+                brackets.close();
                 lhs = new (*this) ParsedBinaryExpr{
                     Tk::LBrack,
                     lhs.get(),
                     index,
-                    {lhs.get()->loc, end}
+                    {lhs.get()->loc, brackets.right}
                 };
                 continue;
             }
@@ -774,13 +871,13 @@ void Parser::ParseHeader() {
         not ConsumeContextual(mod->program_or_module_loc, "program")
     ) {
         Error("Expected '%1(program%)' or '%1(module%)' directive at start of file");
-        SkipPastImpl(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
     if (not At(Tk::Identifier)) {
         Error("Expected identifier after '%1({}%)'", module ? "module" : "program");
-        SkipPastImpl(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
@@ -933,7 +1030,7 @@ void Parser::ParseImport() {
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
     if (not At(Tk::CXXHeaderName)) {
         Error("Expected C++ header name after 'import'");
-        SkipPastImpl(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
@@ -948,13 +1045,13 @@ void Parser::ParseImport() {
     // Read import name.
     if (not Consume(Tk::As)) {
         Error("Syntax for header imports is '%1(import%) %3(<header>%) %1(as%) name`");
-        SkipPastImpl(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
     if (not At(Tk::Identifier)) {
         Error("Expected identifier after '%1(as%)' in import directive");
-        SkipPastImpl(Tk::Semicolon);
+        SkipPast(Tk::Semicolon);
         return;
     }
 
@@ -989,7 +1086,28 @@ auto Parser::ParseIntent() -> std::pair<Location, Intent> {
     return {{}, Intent::Move};
 }
 
-// <decl-var>   ::= <type> IDENTIFIER [ "=" <expr> ] ";"
+// <expr-match> ::= MATCH <expr> "{" <match-case> "}"
+// <match-case> ::= <pattern> ":" <stmt>
+// <pattern>    ::= <expr>
+auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
+    auto match_loc = Next();
+    auto control_expr = TryParseExpr();
+    BracketTracker braces{*this, Tk::LBrace};
+
+    // Parse cases.
+    SmallVector<ParsedMatchCase> cases;
+    while (not At(Tk::RBrace, Tk::Eof)) {
+        auto pattern = ParseExpr();
+        if (not Consume(Tk::Colon)) Error("Expected ':' after pattern");
+        auto body = ParseStmt();
+        if (pattern and body) cases.emplace_back(pattern.get(), body.get());
+    }
+
+    braces.close();
+    return ParsedMatchExpr::Create(*this, control_expr, cases, match_loc);
+}
+
+// <decl-var> ::= <type> IDENTIFIER [ "=" <expr> ] ";"
 auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
     auto decl = new (*this) ParsedLocalDecl(
         tok->text,
@@ -1028,9 +1146,9 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
     if (At(Tk::LParen)) {
         if (LookAhead().is(Tk::RParen, Tk::LParen)) {
             sig.name = Tk::LParen;
-            auto loc = Next(); // Yeet '('.
-            if (not Consume(Tk::RParen)) Error(
-                loc,
+            BracketTracker parens{*this, Tk::LParen, false};
+            if (not parens.close()) Error(
+                parens.span(),
                 "To overload the call operator, write '%1(proc ()%)'"
             );
         }
@@ -1039,9 +1157,9 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
     // Similarly, '[]' is a valid operator.
     else if (At(Tk::LBrack)) {
         sig.name = Tk::LBrack;
-        auto loc = Next(); // Yeet '['.
-        if (not Consume(Tk::RBrack)) Error(
-            loc,
+        BracketTracker brackets{*this, Tk::LBrack, false};
+        if (not brackets.close()) Error(
+            brackets.span(),
             "To overload the subscript operator, write '%1(proc []%)'"
         );
     }
@@ -1060,6 +1178,85 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
         sig.name = tok->type;
         Next();
     }
+}
+
+bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls) {
+    Ptr<ParsedStmt> type;
+    String name;
+    Location name_loc;
+
+    // Parse intent.
+    auto [start_loc, intent] = ParseIntent();
+    if (intent == Intent::Move) start_loc = tok->location;
+
+    // And do it again; two intents are an error.
+    else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
+        Error(loc, "Cannot specify more than one parameter intent");
+        return false;
+    }
+
+    // Special handling for signatures, which may have
+    // a name in this position.
+    if (At(Tk::Proc)) {
+        Signature inner;
+        if (not ParseSignature(inner, nullptr)) return false;
+        if (inner.name.is_operator_name()) {
+            Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name);
+        } else {
+            name = inner.name.str();
+            name_loc = inner.tok_after_proc;
+        }
+
+        type = CreateType(inner);
+
+        // For all template parameters that appear in the signature,
+        // add the index of the parameter that is the signature.
+        for (const auto& p : inner.deduction_info)
+            sig.add_deduced_template_param(p.first);
+    }
+
+    // Otherwise, parse a regular type and a name if we’re
+    // creating declarations.
+    else {
+        type = ParseType();
+        if (not type) return false;
+    }
+
+    sig.param_types.emplace_back(intent, type.get());
+
+    // If decls is not null, then we allow named parameters here; parse
+    // the name if there is one and create the declaration.
+    if (decls) {
+        Location end = type.get()->loc;
+        if (At(Tk::Identifier)) {
+            if (not name.empty()) {
+                Error("Parameter cannot have two names");
+                Note(name_loc, "Name was already specified here");
+            }
+
+            name = tok->text;
+            end = Next();
+        } else if (not At(Tk::Comma, Tk::RParen)) {
+            if (IsKeyword(tok->type)) {
+                Error(
+                    "'%1({})' is not a valid parameter name because it is "
+                    "a reserved word.",
+                    tok->text
+                );
+            } else {
+                Error("Unexpected token in procedure argument list");
+            }
+
+            SkipTo(Tk::Comma, Tk::RParen);
+        }
+
+        decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {start_loc, end}, intent});
+    } else if (At(Tk::Identifier)) {
+        Error("Named parameters are not allowed here");
+        Next();
+    }
+
+    return true;
 }
 
 // <preamble> ::= <header> { <import> }
@@ -1098,8 +1295,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign)) {
         complained_about_body = true;
         Error("Expected procedure body");
-        do Next();
-        while (not At(Tk::LBrace, Tk::Semicolon, Tk::Assign, Tk::Eof));
+        SkipTo(Tk::LBrace, Tk::Semicolon, Tk::Assign);
     }
 
     // Parse the body.
@@ -1170,92 +1366,13 @@ bool Parser::ParseSignatureImpl(
     }
 
     // Parse params.
-    if (Consume(Tk::LParen) and not Consume(Tk::RParen)) {
-        do {
-            Ptr<ParsedStmt> type;
-            String name;
-            Location name_loc;
-
-            // Parse intent.
-            auto [start_loc, intent] = ParseIntent();
-            if (intent == Intent::Move) start_loc = tok->location;
-
-            // And do it again; two intents are an error.
-            else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
-                Error(loc, "Cannot specify more than one parameter intent");
-                SkipTo(Tk::Comma, Tk::RParen);
-                continue;
-            }
-
-            // Special handling for signatures, which may have
-            // a name in this position.
-            if (At(Tk::Proc)) {
-                Signature inner;
-                if (not ParseSignature(inner, nullptr)) {
-                    SkipTo(Tk::Comma, Tk::RParen);
-                    continue;
-                }
-
-                if (inner.name.is_operator_name()) {
-                    Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name);
-                } else {
-                    name = inner.name.str();
-                    name_loc = inner.tok_after_proc;
-                }
-
-                type = CreateType(inner);
-
-                // For all template parameters that appear in the signature,
-                // add the index of the parameter that is the signature.
-                for (const auto& p : inner.deduction_info)
-                    sig.add_deduced_template_param(p.first);
-            }
-
-            // Otherwise, parse a regular type and a name if we’re
-            // creating declarations.
-            else {
-                type = ParseType();
-                if (not type) {
-                    SkipTo(Tk::Comma, Tk::RParen);
-                    continue;
-                }
-            }
-
-            sig.param_types.emplace_back(intent, type.get());
-
-            // If decls is not null, then we allow named parameters here; parse
-            // the name if there is one and create the declaration.
-            if (decls) {
-                Location end = type.get()->loc;
-                if (At(Tk::Identifier)) {
-                    if (not name.empty()) {
-                        Error("Parameter cannot have two names");
-                        Note(name_loc, "Name was already specified here");
-                    }
-
-                    name = tok->text;
-                    end = Next();
-                } else if (not At(Tk::Comma, Tk::RParen)) {
-                    if (IsKeyword(tok->type)) {
-                        Error(
-                            "'%1({})' is not a valid parameter name because it is "
-                            "a reserved word.",
-                            tok->text
-                        );
-                    } else {
-                        Error("Unexpected token in procedure argument list");
-                    }
-
-                    SkipTo(Tk::Comma, Tk::RParen);
-                }
-
-                decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {start_loc, end}, intent});
-            } else if (At(Tk::Identifier)) {
-                Error("Named parameters are not allowed here");
-                Next();
-            }
-        } while (Consume(Tk::Comma));
-        if (not Consume(Tk::RParen)) Error("Expected ')'");
+    if (At(Tk::LParen)) {
+        BracketTracker parens{*this, Tk::LParen};
+        while (not At(Tk::RParen, Tk::Eof)) {
+            if (not ParseParameter(sig, decls)) SkipTo(Tk::Comma, Tk::RParen);
+            if (not Consume(Tk::Comma)) break;
+        }
+        parens.close();
     }
 
     // Parse attributes.
@@ -1389,7 +1506,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // Don't skip to the next semicolon if we're at 'else' or 'elif' to
             // improve error recovery in 'if' statements.
             if (
-                not isa<ParsedBlockExpr>(e) and
+                not isa<ParsedBlockExpr, ParsedMatchExpr>(e) and
                 not ExpectSemicolon() and
                 not At(Tk::Else, Tk::Elif)
             ) SkipPast(Tk::Semicolon);
@@ -1405,33 +1522,37 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
 
     // Name.
     String name = tok->text;
-    if (not Consume(Tk::Identifier)) {
+    if (not Consume(Tk::Identifier))
         Error("Expected identifier after '%1(struct%)'");
-        SkipTo(Tk::Semicolon);
-        return {};
-    }
 
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
-    if (not ExpectAndConsume(Tk::LBrace, "Expected '{{'")) return {};
-    while (not At(Tk::RBrace)) {
-        auto ty = ParseType();
-        if (not ty) {
-            SkipTo(Tk::RBrace, Tk::Semicolon);
-            break;
-        }
+    BracketTracker braces{*this, Tk::LBrace};
+    while (not At(Tk::RBrace, Tk::Eof)) {
+        auto ParseField = [&] {
+            auto ty = ParseType();
+            if (not ty) {
+                SkipTo(Tk::Semicolon, Tk::RBrace);
+                return;
+            }
 
-        String field_name = tok->text;
-        if (not Consume(Tk::Identifier)) {
-            Error("Expected identifier");
-            SkipTo(Tk::RBrace, Tk::Semicolon);
-            break;
-        }
+            String field_name = tok->text;
+            if (not Consume(Tk::Identifier)) {
+                Error("Expected identifier");
+                SkipTo(Tk::Semicolon, Tk::RBrace);
+                return;
+            }
 
-        fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), {ty.get()->loc, tok->location}});
-        if (not ExpectSemicolon()) SkipTo(Tk::RBrace, Tk::Semicolon);
+            fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), {ty.get()->loc, tok->location}});
+        };
+
+        ParseField();
+        if (not ExpectSemicolon()) {
+            SkipTo(Tk::Semicolon, Tk::RBrace);
+            Consume(Tk::Semicolon);
+        }
     }
 
-    if (not Consume(Tk::RBrace)) Error("Expected '}}'");
+    braces.close();
     return ParsedStructDecl::Create(*this, name, fields, struct_loc);
 }

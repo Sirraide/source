@@ -16,6 +16,7 @@ namespace srcc {
 class Parser;
 class ParsedModule;
 class ParsedStmt;
+struct ParsedMatchCase;
 struct LexedTokenStream;
 struct ImportedModule;
 struct ParsedParameter;
@@ -504,6 +505,43 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LoopExpr; }
 };
 
+struct srcc::ParsedMatchCase {
+    ParsedStmt* cond;
+    ParsedStmt* body;
+    ParsedMatchCase(ParsedStmt* cond, ParsedStmt* body): cond{cond}, body{body} {}
+};
+
+/// Pattern matching.
+class srcc::ParsedMatchExpr final : public ParsedStmt,
+    TrailingObjects<ParsedMatchExpr, ParsedMatchCase> {
+    friend TrailingObjects;
+    const u32 num_cases;
+
+public:
+    ParsedStmt* control_expr;
+
+private:
+    ParsedMatchExpr(
+        ParsedStmt* control_expr,
+        ArrayRef<ParsedMatchCase> cases,
+        Location loc
+    );
+
+public:
+    static auto Create(
+        Parser& p,
+        ParsedStmt* control_expr,
+        ArrayRef<ParsedMatchCase> cases,
+        Location loc
+    ) -> ParsedMatchExpr*;
+
+    [[nodiscard]] auto cases() const -> ArrayRef<ParsedMatchCase> {
+        return getTrailingObjects(num_cases);
+    }
+
+    static bool classof(const ParsedStmt* s) { return s->kind() == Kind::MatchExpr; }
+};
+
 /// A member access.
 class srcc::ParsedMemberExpr final : public ParsedStmt {
 public:
@@ -736,12 +774,33 @@ private:
         }
     };
 
+    class BracketTracker {
+        LIBBASE_IMMOVABLE(BracketTracker);
+        Parser& p;
+        const bool diagnose;
+        Tk open_bracket, close_bracket;
+        bool consumed_close = false;
+
+    public:
+        Location left, right;
+
+        BracketTracker(Parser& p, Tk open, bool diagnose = true);
+        ~BracketTracker();
+        bool close();
+        [[nodiscard]] auto span() -> Location { return Location(left, right); }
+        [[nodiscard]] auto corresponding_closing_bracket() -> Tk { return close_bracket; }
+
+    private:
+        void decrement();
+    };
+
     ParsedModule::Ptr mod;
     TokenStream stream;
     TokenStream::iterator tok;
     Context& ctx;
     Signature* current_signature = nullptr;
     bool parsing_imported_module = false;
+    int num_parens{}, num_brackets{}, num_braces{};
 
 public:
     /// Parse a file.
@@ -782,7 +841,9 @@ private:
     auto ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr>;
     void ParseImport();
     auto ParseIntent() -> std::pair<Location, Intent>;
+    auto ParseMatchExpr() -> Ptr<ParsedMatchExpr>;
     void ParseOverloadableOperatorName(Signature& sig);
+    bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
@@ -808,14 +869,14 @@ private:
     template <typename... Args>
     auto ErrorSync(Location loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         Error(loc, fmt, std::forward<Args>(args)...);
-        SkipToImpl(Tk::Semicolon);
+        SkipTo(Tk::Semicolon);
         return {};
     }
 
     template <typename... Args>
     auto ErrorSync(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         Error(tok->location, fmt, std::forward<Args>(args)...);
-        SkipToImpl(Tk::Semicolon);
+        SkipTo(Tk::Semicolon);
         return {};
     }
 
@@ -849,6 +910,9 @@ private:
     /// Consume a semicolon and issue an error on the previous line if it is missing.
     bool ExpectSemicolon();
 
+    /// Check if a token is one of (), [], {}.
+    bool IsBracket(Tk t);
+
     /// Check if a token is a keyword (implemented in the lexer).
     bool IsKeyword(Tk t);
 
@@ -858,20 +922,16 @@ private:
     /// Consume a token and return it (or its location). If the parser is at
     /// end of file, the token iterator is not advanced.
     auto Next() -> Location;
-    auto NextToken() -> Token*;
+
+    /// Actually advance to the next token. This only exists to implement Next(),
+    /// SkipTo(), and BracketTracker; do not call this from anywhere else!
+    auto NextTokenImpl() -> Location;
 
     /// Skip up to a token.
-    bool SkipToImpl(std::same_as<Tk> auto... tks) {
-        while (not At(tks..., Tk::Eof)) Next();
-        return not At(Tk::Eof);
-    }
+    bool SkipTo(std::same_as<Tk> auto... tks);
 
     /// Skip up and past a token.
-    bool SkipPastImpl(std::same_as<Tk> auto... tks) {
-        SkipToImpl(tks...);
-        Next();
-        return not At(Tk::Eof);
-    }
+    bool SkipPast(std::same_as<Tk> auto... tks);
 
     /// Read all tokens from a file.
     static void ReadTokens(TokenStream& s, const File& file, CommentTokenCallback cb);
