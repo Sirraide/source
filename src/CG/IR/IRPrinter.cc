@@ -73,7 +73,7 @@ auto CodeGen::dump(bool verbose, bool generic) -> SmallUnrenderedString {
         llvm::raw_svector_ostream os{s};
         auto f = mlir::OpPrintingFlags().assumeVerified(true).printUniqueSSAIDs(true).enableDebugInfo(verbose, verbose);
         mlir_module.print(os, f);
-        return SmallUnrenderedString(stream{s.str()}.replace('%', "%%"));
+        return SmallUnrenderedString(str{s.str()}.replace('%', "%%"));
     }
 
     Printer p{*this, verbose};
@@ -521,7 +521,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             SmallString<128> tmp;
             llvm::raw_svector_ostream os{tmp};
             init.print(os, true);
-            out += std::format("%3({}%)", stream{tmp.str()}.replace('%', "%%"));
+            out += std::format("%3({}%)", str{tmp.str()}.replace('%', "%%"));
         }
 
         if (g.getAlignment().value_or(1) != 1)
