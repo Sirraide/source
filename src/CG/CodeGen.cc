@@ -2227,8 +2227,6 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     //         return 3;
     //     }
     //
-    // TODO: The upstream bug related to this seems to have been fixed. Investigate
-    //        whether we can reenable this.
     curr_proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // Lower parameters.
