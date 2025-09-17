@@ -141,3 +141,14 @@ match true {
     _: 1; // expected-note: Because this pattern already makes the 'match' fully exhaustive
     _: 2; // expected-warning: This and any following patterns will never be matched
 }
+
+int x = match 1 {
+    1: 2;
+    _: 3;
+};
+
+int x = match 1 {
+    1: 2;
+    _: 3; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    1: 2; // expected-warning: This and any following patterns will never be matched
+};

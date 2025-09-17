@@ -1643,26 +1643,145 @@ void Sema::BoolMatchContext::note_missing(Location match_loc) {
     }
 }
 
-Sema::IntMatchContext::IntMatchContext(Sema& s, Type ty) : MatchContext(s) {
-    Todo();
+Sema::IntMatchContext::IntMatchContext(Sema& s, Type ty) : MatchContext{s}, ty{ty} {
+    auto int_width = ty->bit_width(*S.M);
+    min = APInt::getSignedMinValue(unsigned(int_width.bits()));
+    max = APInt::getSignedMaxValue(unsigned(int_width.bits()));
 }
 
 auto Sema::IntMatchContext::add_constant_pattern(
     const eval::RValue& pattern,
     Location loc
 ) -> AddResult {
-    Todo();
+    if (pattern.type()->is_integer()) {
+        auto& i = pattern.cast<APInt>();
+        return add_range(Range(i, i, loc));
+    }
+
+    return InvalidType();
 }
+
+auto Sema::IntMatchContext::add_range(Range r) -> AddResult {
+    if (ranges.empty()) {
+        ranges.push_back(std::move(r));
+    } else {
+        // If we get here, there is at least one other range; find the
+        // smallest range that either overlaps 'r' or is entirely before
+        // 'r'.
+        auto it = rgs::lower_bound(ranges, r, [](const Range& a, const Range& b) {
+            return a.end.slt(b.start);
+        });
+
+        // If we found an element, then that means there is a range that
+        // is not entirely before 'r'; if it subsumes 'r', drop 'r' entirely,
+        // otherwise, merge it into r.
+        if (it != ranges.end() and it->overlaps(r)) {
+            if (it->subsumes(r)) return Subsumed(it->loc);
+            it->merge(r);
+        }
+
+        // Either we didn’t find anything, or the range we found is entirely
+        // after 'r'; insert 'r' before it (in the former case, this just
+        // appends 'r').
+        else {
+            it = ranges.insert(it, std::move(r));
+        }
+
+        // We just modified a range; check if we need to merge it with the
+        // range before or after it.
+        for (;;) {
+            if (it != ranges.end() - 1 and it->adjacent(*(it + 1))) {
+                it->merge(*(it + 1));
+                ranges.erase(it + 1);
+            } else if (it != ranges.begin() and it->adjacent(*(it - 1))) {
+                (it -1)->merge(*it);
+                ranges.erase(std::exchange(it, it - 1));
+            } else {
+                break;
+            }
+        }
+    }
+
+    if (
+        ranges.size() == 1 and
+        ranges.front().start == min and
+        ranges.front().end == max
+    ) return Exhaustive();
+    return Ok();
+}
+
 
 auto Sema::IntMatchContext::build_comparison(
     Expr* control_expr,
     Expr* pattern_expr
 ) -> Ptr<Expr> {
-    Todo();
+    return S.BuildBinaryExpr(
+        Tk::EqEq,
+        control_expr,
+        pattern_expr,
+        pattern_expr->location()
+    );
 }
 
-void Sema::IntMatchContext::note_missing(Location match_loc) {
-    Todo();
+void Sema::IntMatchContext::note_missing(Location loc) {
+    std::string msg;
+    auto Format = [&](const APInt& start, const APInt& end) {
+        auto FormatVal = [&](const APInt& i) {
+            if (i == min) return std::format("{}%1(.%)%5(min%)", ty);
+            if (i == max) return std::format("{}%1(.%)%5(max%)", ty);
+            return std::format("%5({}%)", i);
+        };
+
+        if (start == end) {
+            msg += std::format("\n    {},", FormatVal(start));
+        } else {
+            msg += std::format(
+                "\n    {}%1(..=%){},",
+                FormatVal(start),
+                FormatVal(end)
+            );
+        }
+    };
+
+#if 0
+    // For debugging the merge algorithm.
+    for (auto& r : ranges) {
+        msg += std::format("\n    {}, {}", r.start, r.end);
+    }
+#endif
+
+    // Compute the first unsatisfied value.
+    //
+    // This is normally '<type>.min', unless the first range starts
+    // with that value. In that case, take that range’s 'end' value
+    // plus 1. Note that this cannot overflow since in that case,
+    // the span of that range would be the entire value domain, in
+    // which case we should never get here in the first place since
+    // the match would exhaustive.
+    auto sz = ranges.size();
+    bool first_is_min = sz >= 1 and ranges.front().start == min;
+    APInt first_unsatisfied = first_is_min ? ranges.front().end + 1 :  min;
+
+    // Go through all ranges (except the first if its start is the
+    // minimum value) and collect all unsatisfied values between
+    // them.
+    APInt one{min.getBitWidth(), 1};
+    for (auto& r : ArrayRef(ranges).drop_front(first_is_min ? 1 : 0)) {
+        Format(first_unsatisfied, r.start.ssub_sat(one));
+        first_unsatisfied = r.end.sadd_sat(one);
+    }
+
+    // Append any remaining values after the last range.
+    //
+    // Note that there is an edge case here: the last range may
+    // end immediately before '<type>.max'.
+    if (
+        first_unsatisfied != max or
+        (sz != 0 and ranges.back().start == max - 1)
+    ) Format(first_unsatisfied, max);
+
+    if (msg.ends_with(",")) msg.pop_back();
+    S.Note(loc, "Possible value ranges not handled:\n%r({}%)", msg);
 }
 
 // TODO:

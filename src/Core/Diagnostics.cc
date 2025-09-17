@@ -583,7 +583,7 @@ void VerifyDiagnosticsEngine::ParseMagicComment(str comment, Location loc) {
         std::string closing_parens(comment.take_while('(').size(), ')');
         auto text = comment.take_until_or_empty(closing_parens).trim();
         if (text.empty()) return Error(loc, "End of comment reached while looking for '{}'", closing_parens);
-        expected_diags.emplace_back(level, std::string{text.text()}, diag_loc, count);
+        expected_diags.emplace_back(level, text.fold_ws(), diag_loc, count);
         comment.drop(closing_parens.size());
 
         // Recurse to parse the rest of the comment.
@@ -599,7 +599,7 @@ void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
     // Remove line-wrap formatting codes.
     std::erase_if(diag.msg, [](char c) { return c == '\v' or c == '\r'; });
     rgs::replace(diag.msg, '\f', ' ');
-    diag.msg = text::RenderColours(false, diag.msg);
+    diag.msg = str(text::RenderColours(false, diag.msg)).fold_ws();
     seen_diags.emplace_back(std::move(diag), DecodeLocation(diag.where));
 }
 

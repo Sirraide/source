@@ -410,20 +410,53 @@ class srcc::Sema : public DiagsProducer {
     };
 
     class IntMatchContext : public MatchContext {
-        /// Range of values that are still missing.
+        /// Range of values that is satisfied.
         struct Range {
             APInt start;
             APInt end;
+            Location loc;
+
+            Range(APInt start, APInt end, Location loc)
+                : start{std::move(start)}, end{std::move(end)} {
+                Assert(this->start.sle(this->end));
+            }
+
+            /// Check if this range is adjacent to another range.
+            [[nodiscard]] bool adjacent(const Range& r) {
+                APInt one{start.getBitWidth(), 1};
+                return r.start.ssub_sat(one).sle(end) and r.end.sadd_sat(one).sge(start);
+            }
+
+            /// Merge another range into this one.
+            void merge(const Range& r) {
+                start = llvm::APIntOps::smin(start, r.start);
+                end = llvm::APIntOps::smax(end, r.end);
+            }
+
+            /// Check if this range overlaps another range.
+            [[nodiscard]] bool overlaps(const Range& r) {
+                return r.start.sle(end) and r.end.sge(start);
+            }
+
+            /// Check if this range fully includes another range.
+            bool subsumes(const Range& r) {
+                return r.start.sge(start) and r.end.slt(end);
+            }
         };
 
         SmallVector<Range> ranges;
-        Size int_width;
+        APInt max;
+        APInt min;
+        Type ty;
 
     public:
         IntMatchContext(Sema& s, Type ty);
         [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
         [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
         void note_missing(Location match_loc);
+
+    private:
+        [[nodiscard]] auto add_range(Range r) -> AddResult;
     };
 
     Context& ctx;
