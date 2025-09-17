@@ -327,6 +327,24 @@ auto Sema::MakeConstExpr(
     return new (*M) ConstExpr(*M, std::move(val), loc, evaluated_stmt);
 }
 
+auto Sema::MakeLocal(
+    Type ty,
+    ValueCategory vc,
+    String name,
+    Location loc
+) -> LocalDecl* {
+    auto local = new (*M) LocalDecl(
+        ty,
+        vc,
+        name,
+        curr_proc().proc,
+        loc
+    );
+
+    DeclareLocal(local);
+    return local;
+}
+
 template <typename Callback>
 bool Sema::MakeRValue(Type ty, Expr*& e, Callback EmitDiag) {
     auto init = TryBuildInitialiser(ty, e);
@@ -356,6 +374,20 @@ bool Sema::MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->is_lvalue()) return expr;
     return new (*M) MaterialiseTemporaryExpr(expr, expr->location());
+}
+
+auto Sema::MaterialiseVariable(Expr* expr) -> Expr* {
+    if (isa<LocalRefExpr>(expr)) return expr;
+    auto init = BuildInitialiser(expr->type, expr, expr->location()).get(); // Should never fail.
+    auto local = MakeLocal(
+        expr->type,
+        Expr::LValue,
+        "",
+        expr->location()
+    );
+
+    local->set_init(init);
+    return CreateReference(local, expr->location()).get();
 }
 
 void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
@@ -1633,6 +1665,11 @@ void Sema::IntMatchContext::note_missing(Location match_loc) {
     Todo();
 }
 
+// TODO:
+//   - integer patterns
+//   - wildcard pattern
+//   - named wildcard pattern (`match x { var y: }`)
+
 template <typename MContext>
 bool Sema::CheckMatchExhaustive(
     MContext& mc,
@@ -2262,7 +2299,7 @@ auto Sema::BuildMatchExpr(
     MutableArrayRef<MatchCase> cases,
     Location loc
 ) -> Ptr<Expr> {
-    control_expr = MaterialiseTemporary(control_expr);
+    control_expr = MaterialiseVariable(control_expr);
     auto ty = control_expr->type;
     bool exhaustive;
     if (ty->is_integer()) {
@@ -2335,6 +2372,8 @@ auto Sema::BuildProcDeclInitial(
     // 'nested' inside the initialiser procedure, which means that this
     // is only local if the procedure stack contains at least 3 entries
     // (the initialiser, our parent, and us).
+    //
+    // FIXME: Is this still true if we’re instantiating a template?
     auto proc = ProcDecl::Create(
         *M,
         ty,
@@ -2491,6 +2530,9 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 
         // Lvalue -> Pointer
         case Tk::Ampersand: {
+            // FIXME: This message needs improving; we shouldn’t expect users
+            // to know what an lvalue is (or why something isn’t an lvalue in
+            // the case of e.g. if/match).
             if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
             return Build(PtrType::Get(*M, operand->type), Expr::RValue);
         }
@@ -2902,15 +2944,12 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     // Declare the enumerator variable if there is one.
     Ptr<LocalDecl> enum_var;
     if (parsed->has_enumerator()) {
-        enum_var = new (*M) LocalDecl(
+        enum_var = MakeLocal(
             Type::IntTy,
             Expr::RValue,
             parsed->enum_name,
-            curr_proc().proc,
             parsed->enum_loc
         );
-
-        DeclareLocal(enum_var.get());
     }
 
     // Create the loop variables; they have no initialisers since they’re really
@@ -2918,16 +2957,14 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     SmallVector<LocalDecl*> vars;
     for (auto [v, r] : zip(parsed->vars(), ranges)) {
         auto MakeVar = [&](Type ty, ValueCategory cat) {
-            auto var = new (*M) LocalDecl(
+            auto var = MakeLocal(
                 ty,
                 cat,
                 v.first,
-                curr_proc().proc,
                 v.second
             );
 
             vars.push_back(var);
-            DeclareLocal(var);
         };
 
         r->type->visit(utils::Overloaded{
@@ -3095,16 +3132,12 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
-    auto decl = new (*M) LocalDecl(
+    auto decl = MakeLocal(
         TranslateType(parsed->type),
         Expr::LValue,
         parsed->name.str(),
-        curr_proc().proc,
         parsed->loc
     );
-
-    // Add the declaration to the current scope.
-    DeclareLocal(decl);
 
     // Don’t even bother with the initialiser if the type is ill-formed.
     if (not decl->type) {
@@ -3114,8 +3147,10 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
 
     // Translate the initialiser.
     Ptr<Expr> init;
+    bool init_valid = true;
     if (auto val = parsed->init.get_or_null()) {
         init = TranslateExpr(val);
+        init_valid = init.present();
 
         // If the initialiser is invalid, we can get bogus errors
         // if the variable type is deduced, so give up in that case.
@@ -3143,7 +3178,9 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     // If this fails, the initialiser is simply discarded; we can
     // still continue analysing this though as most of sema doesn’t
     // care about variable initialisers.
-    decl->set_init(BuildInitialiser(
+    //
+    // Skip this if there was an error in the initialiser.
+    if (init_valid) decl->set_init(BuildInitialiser(
         decl->type,
         init ? init.get() : ArrayRef<Expr*>{},
         init ? init.get()->location() : decl->location()

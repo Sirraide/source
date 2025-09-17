@@ -626,25 +626,6 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
-    /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
-    [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
-
-    /// Wrap the result of constant evaluation in a ConstExpr for caching, if doing
-    /// so is beneficial (e.g. we don’t wrap integer literals).
-    [[nodiscard]] auto MakeConstExpr(
-        Stmt* evaluated_stmt,
-        eval::RValue val,
-        Location loc
-    ) -> Expr*;
-
-    /// Ensure that an expression is an rvalue of the given type.
-    template <typename Callback>
-    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, Callback EmitDiag);
-
-    /// Ensure that an expression is an rvalue of the given type. This is
-    /// mainly used for expressions involving operators.
-    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
-
     /// Import a declaration from a C++ AST.
     auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
 
@@ -724,8 +705,40 @@ private:
     /// Convert an lvalue to an srvalue.
     [[nodiscard]] auto LValueToRValue(Expr* expr) -> Expr*;
 
+    /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
+    [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
+
+    /// Wrap the result of constant evaluation in a ConstExpr for caching, if doing
+    /// so is beneficial (e.g. we don’t wrap integer literals).
+    [[nodiscard]] auto MakeConstExpr(
+        Stmt* evaluated_stmt,
+        eval::RValue val,
+        Location loc
+    ) -> Expr*;
+
+    /// Create a local variable and add it to the current scope and procedure.
+    [[nodiscard]] auto MakeLocal(
+        Type ty,
+        ValueCategory vc,
+        String name,
+        Location loc
+    ) -> LocalDecl*;
+
+    /// Ensure that an expression is an rvalue of the given type.
+    template <typename Callback>
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, Callback EmitDiag);
+
+    /// Ensure that an expression is an rvalue of the given type. This is
+    /// mainly used for expressions involving operators.
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op);
+
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
+
+    /// Materialise a temporary value and create a variable to store it;
+    /// returns a reference to the variable. If 'expr' already is a variable,
+    /// no new variable is created.
+    [[nodiscard]] auto MaterialiseVariable(Expr* expr) -> Expr*;
 
     /// Resolve an overload set.
     auto PerformOverloadResolution(

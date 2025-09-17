@@ -280,7 +280,9 @@ public:
     auto C(Location l) -> mlir::Location;
 
     /// Convert a type to an IR type; does not support aggregates.
-    auto C(Type ty) -> mlir::Type;
+    auto C(Type ty, ValueCategory vc = Expr::RValue) -> mlir::Type;
+
+    /// Convert a type to an array of bytes whose dimension is the type size.
     auto ConvertToByteArrayType(Type ty) -> mlir::Type;
 
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;

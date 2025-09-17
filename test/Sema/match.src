@@ -89,3 +89,44 @@ match true { // expected-error ('match' is not exhaustive) expected-note (Possib
     1 == 1: 4; // expected-note: Because it is subsumed by this preceding pattern
     2 == 2: 3; // expected-warning: Pattern will never be matched
 }
+
+int z1 = match true { // expected-error: Cannot convert expression of type 'void' to 'int'
+    true: 1;
+    false: "";
+};
+
+int^ z2 = &match true {
+    true: x;
+    false: y;
+};
+
+int^ z3 = &match true { // expected-error: Cannot take address of non-lvalue
+    true: x;
+    false: 1;
+};
+
+int^ z4 = &match true {
+    b: x;
+    b: y;
+    true: x;
+    false: y;
+};
+
+int^ z5 = &match true { // expected-error: Cannot take address of non-lvalue
+    b: x;
+    b: 1;
+    true: x;
+    false: y;
+};
+
+int^ z6 = &match true {
+    true: x; // expected-note: Because it is subsumed by this preceding pattern
+    true: 1; // expected-warning: Pattern will never be matched
+    false: y;
+};
+
+int^ z6 = &match true {
+    true: x;
+    false: y; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    true: 1; // expected-warning: This and any following patterns will never be matched
+};

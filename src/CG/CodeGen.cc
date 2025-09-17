@@ -81,7 +81,9 @@ auto CodeGen::C(Location l) -> mlir::Location {
     return mlir::OpaqueLoc::get(l.encode(), mlir::TypeID::get<Location>(), flc);
 }
 
-auto CodeGen::C(Type ty) -> mlir::Type {
+auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
+    if (vc == Expr::LValue) return ptr_ty;
+
     // Integer types.
     if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
     if (ty == Type::IntTy) return IntTy(tu.target().int_size());
@@ -1959,7 +1961,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
         case CastExpr::MaterialisePoisonValue: {
             auto op = create<LLVM::PoisonOp>(
                 C(expr->location()),
-                expr->is_rvalue() ? C(expr->type) : ptr_ty
+                C(expr->type, expr->value_category)
             );
 
             return op.getRes();
@@ -2170,7 +2172,29 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
 }
 
 auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
-    Todo();
+    Assert(llvm::any_of(expr->cases(), [](auto& c) { return not c.unreachable; }));
+    auto join = CreateBlock();
+    if (not IsZeroSizedType(expr->type)) {
+        join->addArgument(
+            C(expr->type, expr->value_category),
+            C(expr->location())
+        );
+    }
+
+    for (auto [i, c] : enumerate(expr->cases())) {
+        if (c.unreachable) continue;
+        auto loc = C(c.cond->location());
+        If(loc, Emit(c.cond).scalar(), [&] {
+            SmallVector<Value, 2> vals;
+            Emit(c.body).into(vals);
+            create<mlir::cf::BranchOp>(loc, join.get(), vals);
+        });
+    }
+
+    create<LLVM::UnreachableOp>(C(expr->location()));
+    IRValue vals{join->getArguments()};
+    EnterBlock(std::move(join));
+    return vals;
 }
 
 auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> IRValue {
