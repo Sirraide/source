@@ -13,6 +13,11 @@ match 1 { 1:
     1 // expected-error: Expected ';'
 }
 
+// FIXME: Error recovery here is pretty bad: the above skips to the ';' here and
+// then interprets the following '}' as matching the '{' of the match expression
+// on line 12.
+;}
+
 match 1 {
     1
     1 // expected-error: Expected ':' after pattern

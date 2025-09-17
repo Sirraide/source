@@ -159,6 +159,29 @@ auto ForStmt::Create(
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 
+MatchExpr::MatchExpr(
+    Expr* control_expr,
+    Type ty,
+    ValueCategory vc,
+    ArrayRef<MatchCase> cases,
+    Location loc
+) : Expr(Kind::MatchExpr, ty, vc, loc), num_cases{u32(cases.size())}, control_expr{control_expr} {
+    std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects());
+}
+
+auto MatchExpr::Create(
+    TranslationUnit& tu,
+    Expr* control_expr,
+    Type ty,
+    ValueCategory vc,
+    ArrayRef<MatchCase> cases,
+    Location loc
+) -> MatchExpr* {
+    auto size = totalSizeToAlloc<MatchCase>(cases.size());
+    auto mem = tu.allocate(size, alignof(MatchExpr));
+    return ::new (mem) MatchExpr{control_expr, ty, vc, cases, loc};
+}
+
 MemberAccessExpr::MemberAccessExpr(
     Expr* base,
     FieldDecl* field,

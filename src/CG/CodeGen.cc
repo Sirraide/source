@@ -2169,6 +2169,10 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
     return {};
 }
 
+auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
+    Todo();
+}
+
 auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> IRValue {
     if (IsZeroSizedType(stmt->type)) {
         Emit(stmt->temporary);

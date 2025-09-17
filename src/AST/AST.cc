@@ -125,6 +125,7 @@ struct Stmt::Printer : PrinterBase<Stmt> {
     bool print_procedure_bodies = true;
     bool print_instantiations = true;
     Printer(bool use_colour, Stmt* E) : PrinterBase{use_colour} { Print(E); }
+    using PrinterBase::Print;
     void Print(Stmt* E);
     void PrintBasicHeader(Stmt* s, StringRef name);
     void PrintBasicNode(
@@ -187,7 +188,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::ArrayInitExpr: {
             auto a = cast<ArrayInitExpr>(e);
             PrintBasicNode(e, "ArrayInitExpr");
-            PrintChildren<Expr>(a->initialisers());
+            PrintChildren<Expr*>(a->initialisers());
         } break;
 
         case Kind::AssertExpr: {
@@ -229,7 +230,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 }());
             });
 
-            PrintChildren<Expr>(c.args());
+            PrintChildren<Expr*>(c.args());
         } break;
 
         case Kind::BuiltinMemberAccessExpr: {
@@ -351,7 +352,7 @@ void Stmt::Printer::Print(Stmt* e) {
                     print("{}", s->name);
                 }
             });
-            PrintChildren<Decl>(s->exports.decls() | rgs::to<std::vector>());
+            PrintChildren<Decl*>(s->exports.decls() | rgs::to<std::vector>());
         } break;
 
         case Kind::IntLitExpr: {
@@ -393,6 +394,23 @@ void Stmt::Printer::Print(Stmt* e) {
             if (auto b = cast<LoopExpr>(e)->body.get_or_null()) PrintChildren(b);
         } break;
 
+        case Kind::MatchExpr: {
+            PrintBasicNode(e, "MatchExpr");
+            auto m = cast<MatchExpr>(e);
+            SmallVector<Child> children;
+            children.emplace_back([&] { Print(m->control_expr); });
+            for (auto& c : m->cases()) {
+                children.emplace_back([&] {
+                    print("%1(Case%)");
+                    if (c.unreachable) print(" unreachable");
+                    print("\n");
+                    Stmt* ch[2] { c.cond, c.body };
+                    PrintChildren(ch);
+                 });
+            }
+            PrintChildren<Child>(children);
+        } break;
+
         case Kind::MaterialiseTemporaryExpr:
             PrintBasicNode(e, "MaterialiseTemporaryExpr");
             PrintChildren(cast<MaterialiseTemporaryExpr>(e)->temporary);
@@ -410,7 +428,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto o = cast<OverloadSetExpr>(e);
             PrintBasicNode(e, "OverloadSetExpr");
             tempset print_procedure_bodies = false;
-            PrintChildren<Decl>(o->overloads());
+            PrintChildren<Decl*>(o->overloads());
         } break;
 
         case Kind::ProcDecl: {
@@ -442,7 +460,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto p = cast<ProcTemplateDecl>(e);
             PrintBasicHeader(p, "ProcTemplateDecl");
             print(" %2({}%)\n", utils::Escape(p->name.str(), false, true));
-            if (print_instantiations) PrintChildren<ProcDecl>(p->instantiations());
+            if (print_instantiations) PrintChildren<ProcDecl*>(p->instantiations());
         } break;
 
         case Kind::ProcRefExpr: {
@@ -468,7 +486,7 @@ void Stmt::Printer::Print(Stmt* e) {
         case Kind::StructInitExpr: {
             auto s = cast<StructInitExpr>(e);
             PrintBasicNode(e, "StructInitExpr");
-            PrintChildren<Expr>(s->values());
+            PrintChildren<Expr*>(s->values());
         } break;
 
         case Kind::TemplateTypeParamDecl: {

@@ -1,0 +1,91 @@
+// V %srcc --sema --verify %s
+program test;
+
+var x = match true {
+    true: 1;
+    false: 2;
+};
+
+var y = match false {
+    true: 3;
+    false: 4;
+};
+
+bool b;
+
+match true {}; // expected-error ('match' is not exhaustive) expected-note (Possible values 'true' and 'false' are not handled)
+
+match true { // expected-error ('match' is not exhaustive) expected-note (Possible values 'true' and 'false' are not handled)
+    b: 1;
+}
+
+match true { // expected-error ('match' is not exhaustive) expected-note (Possible value 'false' is not handled)
+    true: 1;
+};
+
+match true { // expected-error ('match' is not exhaustive) expected-note (Possible value 'true' is not handled)
+    false: 1;
+};
+
+match true {
+    true: 1; // expected-note: Because it is subsumed by this preceding pattern
+    true: 2; // expected-warning: Pattern will never be matched
+    false: 3;
+};
+
+match true {
+    false: 2; // expected-note: Because it is subsumed by this preceding pattern
+    false: 3; // expected-warning: Pattern will never be matched
+    true: 1;
+};
+
+match true {
+    true: 1;
+    false: 1; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    true: 1;  // expected-warning: This and any following patterns will never be matched
+};
+
+match false {
+    false: 1;
+    true: 1;  // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    false: 1; // expected-warning: This and any following patterns will never be matched
+};
+match false {
+    false: 1;
+    true: 1;  // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    false: 1; // expected-warning: This and any following patterns will never be matched
+    false: 1;
+    true: 1;
+};
+
+match true {
+    false: 1;
+    true: 2; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    b: 3;    // expected-warning: This and any following patterns will never be matched
+}
+
+match true {
+    b: 3;
+    b: 3;
+    b: 3;
+    b: 3;
+    b: 3;
+    b: 3;
+    true: 1;
+    false: 3;
+}
+
+match true {
+    2: true; // expected-error: Cannot match 'int' against 'bool'
+    {}: true; // expected-error: Cannot match 'void' against 'bool'
+}
+
+match true {
+    1 == 1: 4;
+    1 != 1: 3;
+}
+
+match true { // expected-error ('match' is not exhaustive) expected-note (Possible value 'false' is not handled)
+    1 == 1: 4; // expected-note: Because it is subsumed by this preceding pattern
+    2 == 2: 3; // expected-warning: Pattern will never be matched
+}

@@ -373,6 +373,59 @@ class srcc::Sema : public DiagsProducer {
         bool viable() const { return status.is<Viable>(); }
     };
 
+    /// Pattern matching.
+    class MatchContext {
+        LIBBASE_IMMOVABLE(MatchContext);
+
+    protected:
+        Sema& S;
+        MatchContext(Sema& s) : S{s} {}
+
+    public:
+        struct AddResult {
+            enum struct Kind {
+                Ok,
+                Exhaustive,        ///< This pattern makes the match exhaustive.
+                InvalidType,       ///< We don’t know what to do w/ this (e.g. if someone passes "foo" to an integer match).
+                Subsumed,          ///< Subsumed by an earlier pattern.
+            } kind{};
+            Location loc{};
+        };
+
+        static auto Ok() -> AddResult { return {AddResult::Kind::Ok}; }
+        static auto Exhaustive() -> AddResult { return {AddResult::Kind::Exhaustive}; }
+        static auto InvalidType() -> AddResult { return {AddResult::Kind::InvalidType}; }
+        static auto Subsumed(Location loc) -> AddResult { return {AddResult::Kind::Subsumed, loc}; }
+    };
+
+    class BoolMatchContext : public MatchContext {
+        Location true_loc;
+        Location false_loc;
+
+    public:
+        BoolMatchContext(Sema& s) : MatchContext{s} {}
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
+        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
+        void note_missing(Location match_loc);
+    };
+
+    class IntMatchContext : public MatchContext {
+        /// Range of values that are still missing.
+        struct Range {
+            APInt start;
+            APInt end;
+        };
+
+        SmallVector<Range> ranges;
+        Size int_width;
+
+    public:
+        IntMatchContext(Sema& s, Type ty);
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
+        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
+        void note_missing(Location match_loc);
+    };
+
     Context& ctx;
     TranslationUnit::Ptr M;
     SmallVector<ParsedModule::Ptr> parsed_modules;
@@ -530,8 +583,22 @@ private:
     /// Check additional constraints on a call that need to happen after overload resolution.
     bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
 
+    /// Check that a collection of patterns is exhaustive, and return 'true' if so.
+    template <typename MContext>
+    bool CheckMatchExhaustive(
+        MContext& ctx,
+        Location match_loc,
+        Expr* control_expr,
+        Type ty,
+        MutableArrayRef<MatchCase> cases
+    );
+
     /// Check if the declaration of an overloaded operator is well-formed.
     bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
+
+    /// Determine the common type and value category of a set of expressions and,
+    /// if there is one, ensure they all have the same type and value category.
+    auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
 
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
@@ -549,15 +616,26 @@ private:
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return);
 
-    /// Evaluate a statement, returning the result as a ConstExpr on success
-    /// and nullptr on failure.
+    /// Evaluate a statement, returning an expression that caches the result on success
+    /// and nullptr on failure. The returned expression need not be a ConstExpr.
     auto Evaluate(Stmt* e, Location loc) -> Ptr<Expr>;
+
+    /// Evaluate a statement as an integer or bool value.
+    auto EvaluateAsIntOrBool(Stmt* s) -> std::optional<eval::RValue>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Ensure that an expression is a condition (e.g. for 'if', 'assert', etc.)
     [[nodiscard]] bool MakeCondition(Expr*& e, StringRef op);
+
+    /// Wrap the result of constant evaluation in a ConstExpr for caching, if doing
+    /// so is beneficial (e.g. we don’t wrap integer literals).
+    [[nodiscard]] auto MakeConstExpr(
+        Stmt* evaluated_stmt,
+        eval::RValue val,
+        Location loc
+    ) -> Expr*;
 
     /// Ensure that an expression is an rvalue of the given type.
     template <typename Callback>
@@ -689,6 +767,7 @@ private:
     auto BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
+    auto BuildMatchExpr(Expr* control_expr, MutableArrayRef<MatchCase> cases, Location loc) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
     auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;

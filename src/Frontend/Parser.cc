@@ -1099,7 +1099,7 @@ auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     while (not At(Tk::RBrace, Tk::Eof)) {
         auto pattern = ParseExpr();
         if (not Consume(Tk::Colon)) Error("Expected ':' after pattern");
-        auto body = ParseStmt();
+        auto body = ParseStmt(); // FIXME: ParseStmt() should skip to ';' or '}' here.
         if (pattern and body) cases.emplace_back(pattern.get(), body.get());
     }
 

@@ -66,6 +66,48 @@ Type Sema::AdjustVariableType(Type ty, Location loc) {
     return ty;
 }
 
+auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory {
+    Assert(not exprs.empty());
+    auto t = exprs.front()->type;
+    auto vc = exprs.front()->value_category;
+    for (auto e : exprs.drop_front()) {
+        // If either type is 'noreturn', the common type is the type of the other
+        // branch (unless both are noreturn, in which case the type is just 'noreturn').
+        if (e->type == Type::NoReturnTy) continue;
+        if (t == Type::NoReturnTy) {
+            t = e->type;
+            vc = e->value_category;
+            continue;
+        }
+
+        // If both are lvalues of the same type, the result is an lvalue
+        // of that type.
+        if (
+            t == e->type and
+            vc == Expr::LValue and
+            e->value_category == Expr::LValue
+        ) continue;
+
+        // Finally, if there is a common type, the result is an rvalue of
+        // that type. If there isn’t, then we don’t convert lvalues to rvalues
+        // because neither side will actually be used..
+        // TODO: Actually implement calculating the common type; for now
+        //       we just use 'void' if the types don’t match.
+        if (t != e->type) return {Type::VoidTy, Expr::RValue};
+        vc = Expr::RValue;
+    }
+
+    // Perform lvalue-to-rvalue conversion if the final result is an rvalue.
+    if (vc == Expr::RValue) {
+        for (auto& e : exprs) {
+            if (e->type == Type::NoReturnTy) continue;
+            e = LValueToRValue(e);
+        }
+    }
+
+    return {t, vc};
+}
+
 auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     if (not d->valid()) return nullptr;
     switch (d->kind()) {
@@ -109,12 +151,9 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_retu
 }
 
 auto Sema::Evaluate(Stmt* s, Location loc) -> Ptr<Expr> {
-    // Evaluate the expression.
     auto value = M->vm.eval(s);
     if (not value.has_value()) return nullptr;
-
-    // And cache the value for later.
-    return new (*M) ConstExpr(*M, std::move(*value), loc, s);
+    return MakeConstExpr(s, std::move(*value), loc);
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -276,6 +315,16 @@ bool Sema::MakeCondition(Expr*& e, StringRef op) {
         return false;
 
     return true;
+}
+
+auto Sema::MakeConstExpr(
+    Stmt* evaluated_stmt,
+    eval::RValue val,
+    Location loc
+) -> Expr* {
+    if (isa_and_present<BoolLitExpr, StrLitExpr, IntLitExpr, TypeExpr>(evaluated_stmt))
+        return cast<Expr>(evaluated_stmt);
+    return new (*M) ConstExpr(*M, std::move(val), loc, evaluated_stmt);
 }
 
 template <typename Callback>
@@ -1525,6 +1574,128 @@ void Sema::ReportOverloadResolutionFailure(
 }
 
 // ============================================================================
+//  Pattern matching.
+// ============================================================================
+auto Sema::BoolMatchContext::add_constant_pattern(
+    const eval::RValue& pattern,
+    Location loc
+) -> AddResult {
+    if (pattern.type() != Type::BoolTy) return InvalidType();
+    bool v = pattern.cast<APInt>().getBoolValue();
+    auto& matched = v ? true_loc : false_loc;
+    auto& other = v ? false_loc : true_loc;
+    if (matched.is_valid()) return Subsumed(matched);
+    matched = loc;
+    return other.is_valid() ? Exhaustive() : Ok();
+}
+
+auto Sema::BoolMatchContext::build_comparison(
+    Expr* control_expr,
+    Expr* pattern_expr
+) -> Ptr<Expr> {
+    return S.BuildBinaryExpr(
+        Tk::EqEq,
+        control_expr,
+        pattern_expr,
+        pattern_expr->location()
+    );
+}
+
+void Sema::BoolMatchContext::note_missing(Location match_loc) {
+    if (true_loc.is_valid()) {
+        S.Note(match_loc, "Possible value '%1(false%)' is not handled");
+    } else if (false_loc.is_valid()) {
+        S.Note(match_loc ,"Possible value '%1(true%)' is not handled");
+    } else {
+        S.Note(match_loc ,"Possible values '%1(true%)' and '%1(false%)' are not handled");
+    }
+}
+
+Sema::IntMatchContext::IntMatchContext(Sema& s, Type ty) : MatchContext(s) {
+    Todo();
+}
+
+auto Sema::IntMatchContext::add_constant_pattern(
+    const eval::RValue& pattern,
+    Location loc
+) -> AddResult {
+    Todo();
+}
+
+auto Sema::IntMatchContext::build_comparison(
+    Expr* control_expr,
+    Expr* pattern_expr
+) -> Ptr<Expr> {
+    Todo();
+}
+
+void Sema::IntMatchContext::note_missing(Location match_loc) {
+    Todo();
+}
+
+template <typename MContext>
+bool Sema::CheckMatchExhaustive(
+    MContext& mc,
+    Location match_loc,
+    Expr* control_expr,
+    Type ty,
+    MutableArrayRef<MatchCase> cases
+) {
+    bool ok = true;
+    for (auto [i, c] : enumerate(cases)) {
+        auto BuildComparison = [&] {
+            auto cmp = mc.build_comparison(control_expr, c.cond);
+            if (cmp) c.cond = cmp.get();
+        };
+
+        // We only really care about constants here.
+        auto rv = M->vm.eval(LValueToRValue(c.cond), false);
+        if (not rv.has_value()) {
+            BuildComparison();
+            continue;
+        }
+
+        // Add the constant.
+        auto [res, loc] = mc.add_constant_pattern(rv.value(), c.cond->location());
+        c.cond = MakeConstExpr(c.cond, std::move(rv.value()), c.cond->location());
+        switch (res) {
+            using K = MatchContext::AddResult::Kind;
+            case K::Ok: BuildComparison(); break;
+            case K::Exhaustive: {
+                if (i != cases.size() - 1) {
+                    Warn(cases[i + 1].cond->location(), "This and any following patterns will never be matched");
+                    Note(c.cond->location(), "Because this pattern already makes the 'match' fully exhaustive");
+                    for (auto& u : cases.drop_front(i + 1)) u.unreachable = true;
+                }
+
+                BuildComparison();
+                return true;
+            }
+
+            case K::InvalidType: {
+                Error(c.cond->location(), "Cannot match '{}' against '{}'", c.cond->type, ty);
+                ok = false;
+                c.unreachable = true;
+                break;
+            }
+
+            case K::Subsumed: {
+                Warn(c.cond->location(), "Pattern will never be matched");
+                Note(loc, "Because it is subsumed by this preceding pattern");
+                c.unreachable = true;
+                break;
+            }
+        }
+    }
+
+    if (ok) {
+        Error(match_loc, "'match' is not exhaustive");
+        mc.note_missing(match_loc);
+    }
+    return false;
+}
+
+// ============================================================================
 //  Building nodes.
 // ============================================================================
 auto Sema::BuildAssertExpr(
@@ -2072,52 +2243,71 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
         not isa<Expr>(else_.get())
     ) return Build(Type::VoidTy, Expr::RValue);
 
-    // Otherwise, if either branch is dependent, we can’t determine the type yet.
-    auto t = cast<Expr>(then);
-    auto e = cast<Expr>(else_.get());
+    // Otherwise, the type and value category are the common type / vc.
+    Expr* exprs[2] { cast<Expr>(then), cast<Expr>(else_.get()) };
+    auto tvc = ComputeCommonTypeAndValueCategory(exprs);
+    return new (*M) IfExpr(
+        tvc.type(),
+        tvc.value_category(),
+        cond,
+        exprs[0],
+        exprs[1],
+        false,
+        loc
+    );
+}
 
-    // Next, if either branch is 'noreturn', the type of the 'if' is the type
-    // of the other branch (unless both are noreturn, in which case the type
-    // is just 'noreturn').
-    if (t->type == Type::NoReturnTy or e->type == Type::NoReturnTy) {
-        bool both = t->type == Type::NoReturnTy and e->type == Type::NoReturnTy;
-        return Build(
-            both                          ? Type::NoReturnTy
-            : t->type == Type::NoReturnTy ? e->type
-                                          : t->type,
-            both                          ? Expr::RValue
-            : t->type == Type::NoReturnTy ? e->value_category
-                                          : t->value_category
+auto Sema::BuildMatchExpr(
+    Expr* control_expr,
+    MutableArrayRef<MatchCase> cases,
+    Location loc
+) -> Ptr<Expr> {
+    control_expr = MaterialiseTemporary(control_expr);
+    auto ty = control_expr->type;
+    bool exhaustive;
+    if (ty->is_integer()) {
+        IntMatchContext mc{*this, ty};
+        exhaustive = CheckMatchExhaustive(mc, loc, control_expr, ty, cases);
+    } else if (ty == Type::BoolTy) {
+        BoolMatchContext mc{*this};
+        exhaustive = CheckMatchExhaustive(mc, loc, control_expr, ty, cases);
+    } else {
+        return Error(
+            control_expr->location(),
+            "Matching a value of type '{}' is not supported",
+            control_expr->type
         );
     }
 
-    // If both are lvalues of the same type, the result is an lvalue
-    // of that type.
-    if (
-        t->type == e->type and
-        t->value_category == Expr::LValue and
-        e->value_category == Expr::LValue
-    ) return Build(t->type, Expr::LValue);
+    // Compute the common type of the bodies of any reachable cases, provided
+    // that all of them are expressions.
+    TypeAndValueCategory tvc;
+    if (exhaustive and llvm::all_of(cases, [](auto& c) { return c.unreachable or isa<Expr>(c.body); })) {
+        SmallVector<Expr*> exprs;
+        SmallVector<u32> indices;
+        for (auto [i, c] : enumerate(cases)) {
+            if (not c.unreachable) {
+                exprs.push_back(cast<Expr>(c.body));
+                indices.push_back(u32(i));
+            }
+        }
 
-    // Finally, if there is a common type, the result is an rvalue of
-    // that type.
-    // TODO: Actually implement calculating the common type; for now
-    //       we just use 'void' if the types don’t match.
-    auto common_ty = t->type == e->type ? t->type : Type::VoidTy;
+        tvc = ComputeCommonTypeAndValueCategory(exprs);
 
-    // We don’t convert lvalues to rvalues in this case because neither
-    // side will actually be used if there is no common type.
-    // TODO: If there is no common type, both sides need to be marked
-    //       as discarded.
-    if (common_ty == Type::VoidTy) return Build(Type::VoidTy, Expr::RValue);
-
-    // If either side is an rvalue, both sides are.
-    if (t->is_rvalue() or e->is_rvalue()) {
-        t = LValueToRValue(t);
-        e = LValueToRValue(e);
+        // This process may emit lvalue-to-rvalue conversions.
+        for (auto [i, e] : zip(indices, exprs)) cases[i].body = e;
+    } else {
+        tvc = {Type::VoidTy, Expr::RValue};
     }
 
-    return new (*M) IfExpr(common_ty, t->value_category, cond, t, e, false, loc);
+    return MatchExpr::Create(
+        *M,
+        control_expr,
+        tvc.type(),
+        tvc.value_category(),
+        cases,
+        loc
+    );
 }
 
 auto Sema::BuildParamDecl(
@@ -2249,7 +2439,7 @@ auto Sema::BuildStaticIfExpr(
     // like 'a = #if false 1' (which is invalid), will produce a weird
     // diagnostic instead of ‘cannot assign void to int’.
     auto cond_val = val->cast<APInt>().getBoolValue();
-    if (not cond_val and not else_) return new (*M) ConstExpr(*M, eval::RValue(), loc, nullptr);
+    if (not cond_val and not else_) return MakeConstExpr(nullptr, eval::RValue(), loc);
 
     // Otherwise, translate the appropriate branch now, and throw
     // away the other one.
@@ -2806,7 +2996,18 @@ auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
-    Todo();
+    SmallVector<MatchCase> cases;
+    bool ok = true;
+    auto control_expr = TRY(TranslateExpr(parsed->control_expr));
+    for (auto c : parsed->cases()) {
+        auto cond = TranslateExpr(c.cond);
+        auto body = TranslateStmt(c.body);
+        if (cond and body) cases.emplace_back(cond.get(), body.get());
+        else ok = false;
+    }
+
+    if (not ok) return {};
+    return BuildMatchExpr(control_expr, cases, parsed->loc);
 }
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
@@ -3176,8 +3377,9 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed) -> Ptr<Stmt> {
 //  Translation of Types
 // ============================================================================
 auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
-    auto size = cast<ConstExpr>(TRY(Evaluate(size_expr, size_expr->location())));
-    auto integer = size->value->dyn_cast<APInt>();
+    auto size = M->vm.eval(size_expr);
+    if (not size) return Type();
+    auto integer = size->dyn_cast<APInt>();
 
     // Check that the element type makes sense.
     base.ty = AdjustVariableType(base.ty, base.loc);
@@ -3187,7 +3389,7 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     if (not integer) return Error(
         size_expr->location(),
         "Array size must be an integer, but was '{}'",
-        size->type
+        size->type()
     );
 
     if (not integer->isSingleWord()) return Error(

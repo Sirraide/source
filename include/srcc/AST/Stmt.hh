@@ -26,6 +26,7 @@ namespace srcc {
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
+struct MatchCase;
 class ParsedStmt;
 class ParsedProcDecl;
 } // namespace srcc
@@ -560,6 +561,45 @@ public:
     static bool classof(const Stmt* e) {
         return e->kind() == Kind::MaterialiseTemporaryExpr;
     }
+};
+
+struct srcc::MatchCase {
+    Expr* cond;
+    Stmt* body;
+    bool unreachable = false;
+    MatchCase(Expr* cond, Stmt* body) : cond{cond}, body{body} {}
+};
+
+class srcc::MatchExpr final : public Expr,
+    TrailingObjects<MatchExpr, MatchCase> {
+    friend TrailingObjects;
+    const u32 num_cases;
+
+public:
+    Expr* control_expr;
+
+private:
+    MatchExpr(
+        Expr* control_expr,
+        Type ty,
+        ValueCategory vc,
+        ArrayRef<MatchCase> cases,
+        Location loc
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        Expr* control_expr,
+        Type ty,
+        ValueCategory vc,
+        ArrayRef<MatchCase> cases,
+        Location loc
+    ) -> MatchExpr*;
+
+    [[nodiscard]] auto cases() { return getTrailingObjects(num_cases); }
+
+    static auto classof(const Stmt* s) { return s->kind() == Kind::MatchExpr; }
 };
 
 class srcc::MemberAccessExpr final : public Expr {

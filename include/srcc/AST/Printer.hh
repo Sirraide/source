@@ -16,14 +16,18 @@ class srcc::PrinterBase : protected base::text::ColourFormatter {
     bool use_colour_;
 
 protected:
+    struct Child {
+        std::function<void()> printer;
+    };
+
     SmallString<128> leading;
 
     explicit PrinterBase(bool use_colour) : use_colour_{use_colour} {}
 
     bool use_colour() const { return use_colour_; }
 
-    template <typename Node = NodeType>
-    void PrintChildren(this auto&& self, std::type_identity_t<ArrayRef<Node*>> children) {
+    template <typename Node = NodeType*>
+    void PrintChildren(this auto&& self, std::type_identity_t<ArrayRef<Node>> children) {
         if (children.empty()) return;
         auto& leading = self.leading;
 
@@ -46,6 +50,10 @@ protected:
 
         // And reset the leading text.
         leading.resize(size);
+    }
+
+    void Print(const Child& c) {
+        c.printer();
     }
 };
 

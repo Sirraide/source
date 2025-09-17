@@ -36,7 +36,10 @@ auto RValue::print() const -> SmallUnrenderedString {
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
         [&](MemoryValue) { out += "<aggregate value>"; },
-        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); }
+        [&](const APInt& value) {
+            if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
+            else out += std::format("%5({}%)", toString(value, 10, true));
+        }
     }; // clang-format on
     visit(V);
     return out;
@@ -1082,6 +1085,7 @@ auto VM::eval(
             [](IntLitExpr* i) -> OptVal { return RValue{i->storage.value(), i->type}; },
             [](BoolLitExpr* b) -> OptVal { return RValue(b->value); },
             [](TypeExpr* t) -> OptVal { return RValue{t->value}; },
+            [](ConstExpr* t) -> OptVal { return *t->value; },
         });
 
         // If we got a value, just return it.

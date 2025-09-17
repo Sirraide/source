@@ -255,6 +255,7 @@ struct ParsedStmt::Printer : PrinterBase<ParsedStmt> {
         Print(s);
     }
 
+    using PrinterBase::Print;
     void PrintHeader(ParsedStmt* s, StringRef name, bool full = true);
     void Print(ParsedStmt* s);
 };
@@ -458,7 +459,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             auto& d = *cast<ParsedStructDecl>(s);
             PrintHeader(s, "StructDecl", false);
             print("%6({}%)\n", d.name);
-            PrintChildren<ParsedFieldDecl>(d.fields());
+            PrintChildren<ParsedFieldDecl*>(d.fields());
         } break;
 
         case Kind::UnaryExpr: {
