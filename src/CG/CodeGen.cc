@@ -2181,17 +2181,30 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
         );
     }
 
+    bool has_wildcard = false;
     for (auto [i, c] : enumerate(expr->cases())) {
         if (c.unreachable) continue;
-        auto loc = C(c.cond->location());
-        If(loc, Emit(c.cond).scalar(), [&] {
+        auto loc = C(c.loc);
+        auto EmitVal = [&](Stmt* s) {
+            SmallVector<Value, 2> vals;
+            Emit(s).into(vals);
+            create<mlir::cf::BranchOp>(loc, join.get(), vals);
+        };
+
+        if (c.cond.is_wildcard()) {
+            has_wildcard = true;
+            EmitVal(c.body);
+            break;
+        }
+
+        If(loc, Emit(c.cond.expr()).scalar(), [&] {
             SmallVector<Value, 2> vals;
             Emit(c.body).into(vals);
             create<mlir::cf::BranchOp>(loc, join.get(), vals);
         });
     }
 
-    create<LLVM::UnreachableOp>(C(expr->location()));
+    if (not has_wildcard) create<LLVM::UnreachableOp>(C(expr->location()));
     IRValue vals{join->getArguments()};
     EnterBlock(std::move(join));
     return vals;

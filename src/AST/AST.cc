@@ -395,6 +395,11 @@ void Stmt::Printer::Print(Stmt* e) {
         } break;
 
         case Kind::MatchExpr: {
+            auto PrintPattern = [&](const MatchCase::Pattern& p) {
+                if (p.is_wildcard()) print("%1(Wildcard%)\n");
+                else Print(p.expr());
+            };
+
             PrintBasicNode(e, "MatchExpr");
             auto m = cast<MatchExpr>(e);
             SmallVector<Child> children;
@@ -404,8 +409,10 @@ void Stmt::Printer::Print(Stmt* e) {
                     print("%1(Case%)");
                     if (c.unreachable) print(" unreachable");
                     print("\n");
-                    Stmt* ch[2] { c.cond, c.body };
-                    PrintChildren(ch);
+                    PrintChildren<Child>({
+                        Child([&] { PrintPattern(c.cond); }),
+                        Child([&] { Print(c.body); }),
+                    });
                  });
             }
             PrintChildren<Child>(children);

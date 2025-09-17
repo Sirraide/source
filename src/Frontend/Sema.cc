@@ -1681,43 +1681,53 @@ bool Sema::CheckMatchExhaustive(
     bool ok = true;
     for (auto [i, c] : enumerate(cases)) {
         auto BuildComparison = [&] {
-            auto cmp = mc.build_comparison(control_expr, c.cond);
+            auto cmp = mc.build_comparison(control_expr, c.cond.expr());
             if (cmp) c.cond = cmp.get();
         };
 
+        auto WarnAlreadyExhaustive = [&] {
+            if (i != cases.size() - 1) {
+                Warn(cases[i + 1].loc, "This and any following patterns will never be matched");
+                Note(c.loc, "Because this pattern already makes the 'match' fully exhaustive");
+                for (auto& u : cases.drop_front(i + 1)) u.unreachable = true;
+            }
+        };
+
+        // A wildcard pattern means we don’t need to look at anything else.
+        if (c.cond.is_wildcard()) {
+            WarnAlreadyExhaustive();
+            return true;
+        }
+
         // We only really care about constants here.
-        auto rv = M->vm.eval(LValueToRValue(c.cond), false);
+        auto e = c.cond.expr();
+        auto rv = M->vm.eval(LValueToRValue(e), false);
         if (not rv.has_value()) {
             BuildComparison();
             continue;
         }
 
         // Add the constant.
-        auto [res, loc] = mc.add_constant_pattern(rv.value(), c.cond->location());
-        c.cond = MakeConstExpr(c.cond, std::move(rv.value()), c.cond->location());
+        auto [res, loc] = mc.add_constant_pattern(rv.value(), e->location());
+        c.cond = MakeConstExpr(e, std::move(rv.value()), e->location());
         switch (res) {
             using K = MatchContext::AddResult::Kind;
             case K::Ok: BuildComparison(); break;
             case K::Exhaustive: {
-                if (i != cases.size() - 1) {
-                    Warn(cases[i + 1].cond->location(), "This and any following patterns will never be matched");
-                    Note(c.cond->location(), "Because this pattern already makes the 'match' fully exhaustive");
-                    for (auto& u : cases.drop_front(i + 1)) u.unreachable = true;
-                }
-
+                WarnAlreadyExhaustive();
                 BuildComparison();
                 return true;
             }
 
             case K::InvalidType: {
-                Error(c.cond->location(), "Cannot match '{}' against '{}'", c.cond->type, ty);
+                Error(e->location(), "Cannot match '{}' against '{}'", e->type, ty);
                 ok = false;
                 c.unreachable = true;
                 break;
             }
 
             case K::Subsumed: {
-                Warn(c.cond->location(), "Pattern will never be matched");
+                Warn(e->location(), "Pattern will never be matched");
                 Note(loc, "Because it is subsumed by this preceding pattern");
                 c.unreachable = true;
                 break;
@@ -3037,10 +3047,28 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
     bool ok = true;
     auto control_expr = TRY(TranslateExpr(parsed->control_expr));
     for (auto c : parsed->cases()) {
-        auto cond = TranslateExpr(c.cond);
         auto body = TranslateStmt(c.body);
-        if (cond and body) cases.emplace_back(cond.get(), body.get());
-        else ok = false;
+        if (not body) ok = false;
+
+        // The wildcard pattern isn’t an expression and requires special handling.
+        if (
+            auto dre = dyn_cast<ParsedDeclRefExpr>(c.cond);
+            dre and
+            dre->names().size() == 1 and
+            dre->names().front().str() == "_"
+        ) {
+            if (body) cases.emplace_back(MatchCase::Pattern::Wildcard(), body.get(), dre->loc);
+            continue;
+        }
+
+        auto cond = TranslateExpr(c.cond);
+        if (cond and body) {
+            cases.emplace_back(
+                cond.get(),
+                body.get(),
+                c.cond->loc
+            );
+        }
     }
 
     if (not ok) return {};

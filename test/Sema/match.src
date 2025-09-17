@@ -130,3 +130,14 @@ int^ z6 = &match true {
     false: y; // expected-note: Because this pattern already makes the 'match' fully exhaustive
     true: 1; // expected-warning: This and any following patterns will never be matched
 };
+
+match true { _: 1; }
+match true {
+    _: 1; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    true: 2; // expected-warning: This and any following patterns will never be matched
+}
+
+match true {
+    _: 1; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    _: 2; // expected-warning: This and any following patterns will never be matched
+}

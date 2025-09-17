@@ -564,10 +564,32 @@ public:
 };
 
 struct srcc::MatchCase {
-    Expr* cond;
+    class Pattern {
+        Expr* data = nullptr;
+
+        Pattern() = default;
+
+    public:
+        Pattern(Expr* e) : data{e} { Assert(e); }
+
+        /// Get the wildcard pattern.
+        static auto Wildcard() -> Pattern { return Pattern(); }
+
+        /// Check if this is a wildcard pattern.
+        [[nodiscard]] bool is_wildcard() const { return data == nullptr; }
+
+        /// Get the expression that makes up this pattern.
+        [[nodiscard]] auto expr() const -> Expr* {
+            Assert(not is_wildcard());
+            return data;
+        }
+    };
+
+    Pattern cond;
     Stmt* body;
+    Location loc;
     bool unreachable = false;
-    MatchCase(Expr* cond, Stmt* body) : cond{cond}, body{body} {}
+    MatchCase(Pattern cond, Stmt* body, Location loc) : cond{cond}, body{body}, loc{loc} {}
 };
 
 class srcc::MatchExpr final : public Expr,
