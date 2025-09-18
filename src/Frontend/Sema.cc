@@ -3505,72 +3505,31 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
     auto s = cast<StructType>(decl->type);
     Assert(not s->is_complete(), "Type is already complete?");
 
-    // Translate the fields. While we’re at it, also keep track
-    // of the struct’s size, and alignment.
-    // FIXME: Move most of this logic into some BuildStructType() function.
+    // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
-    Size size{};
-    Align align{1};
-    SmallVector<FieldDecl*> fields;
-    StructType::Bits bits;
+    StructType::LayoutBuilder lb{*M};
     for (auto f : parsed->fields()) {
         auto ty = AdjustVariableType(TranslateType(f->type), f->loc);
-
-        // If the field’s type is invalid, we can’t query any of its
-        // properties, so just insert a dummy field and continue.
         bool complete = IsCompleteType(ty);
-        if (not ty or not complete) {
-            // TODO: Allow this and instead actually perform recursive translation and
-            // cycle checking.
-            if (not complete) Error(
-                f->loc,
-                "Cannot declare field of incomplete type '{}'",
-                ty
-            );
-
-            fields.emplace_back(new (*M) FieldDecl(Type::VoidTy, size, f->name.str(), f->loc))->set_invalid();
+        if (ty and complete) {
+            AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
             continue;
         }
 
-        // Otherwise, add the field and adjust our size and alignment.
-        // TODO: Optimise layout if this isn’t meant for FFI.
-        size = size.align(ty->align(*M));
-        fields.push_back(new (*M) FieldDecl(ty, size, f->name.str(), f->loc));
-        size += ty->memory_size(*M);
-        align = std::max(align, ty->align(*M));
-        AddDeclToScope(s->scope(), fields.back());
-    }
-
-    // TODO: Initialisers are declared out-of-line, but they should
-    // have been picked up during initial translation when we find
-    // all the procedures in the current scope. Add any that we found
-    // here, and if we didn’t find any (or the 'default' attribute was
-    // specified on the struct declaration), declare the default initialiser.
-
-    // TODO: If we decide to allow this:
-    //
-    // struct S { ... }
-    // proc f {
-    //    init S(...) { ... }
-    // }
-    //
-    // Then the initialiser should still respect normal lookup rules (i.e.
-    // it should only be visible within 'f'). Perhaps we want to store
-    // local member functions outside the struct itself and in the local
-    // scope instead?
-    if (s->initialisers().empty()) {
-        // Compute whether we can define a default initialiser for this.
-        bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
-            fields,
-            [](FieldDecl* d) { return d->type->can_init_from_no_args(); }
+        // TODO: Allow this and instead actually perform recursive translation and
+        // cycle checking.
+        if (not complete) Error(
+            f->loc,
+            "Cannot declare field of incomplete type '{}'",
+            ty
         );
 
-        // We always provide a literal initialiser in this case.
-        bits.literal_initialiser = true;
+        // If the field’s type is invalid, we can’t query any of its
+        // properties, so just insert a dummy field and continue.
+        lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
     }
 
-    // Finally, mark the struct as complete.
-    s->finalise(fields, size, align, bits);
+    lb.apply(s);
     return decl;
 }
 

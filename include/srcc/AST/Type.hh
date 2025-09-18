@@ -499,6 +499,33 @@ public:
         }
     };
 
+    class LayoutBuilder {
+        TranslationUnit& tu;
+        Size sz;
+        Align a;
+        Bits bits;
+        SmallVector<FieldDecl*> decls;
+
+    public:
+        explicit LayoutBuilder(TranslationUnit& tu): tu{tu} {}
+
+        /// Add a field with the specified type and name.
+        ///
+        /// This does not perform any checking as to whether the type is even
+        /// valid for a field; this must be done before calling this.
+        auto add_field(Type ty, String name = "", Location loc = {}) -> FieldDecl*;
+
+        /// Apply the layout to an existing struct type.
+        void apply(StructType* ty);
+
+        /// Get the final type.
+        [[nodiscard]] auto build(
+            StructScope* scope = nullptr,
+            String struct_name = "",
+            Location loc = {}
+        ) -> StructType*;
+    };
+
 private:
     Size computed_size;
     Size computed_array_size;
@@ -558,15 +585,6 @@ public:
         return getTrailingObjects(num_fields);
     }
 
-    /// Initialise fields and other properties; this marks
-    /// the struct as complete.
-    void finalise(
-        ArrayRef<FieldDecl*> fields,
-        Size size,
-        Align alignment,
-        Bits bits
-    );
-
     /// Whether this struct has a default initialiser (i.e.
     /// an initialiser that takes no arguments and is *not*
     /// declared by the user).
@@ -605,6 +623,16 @@ public:
     auto size() const -> Size { return computed_size; }
 
     static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
+
+private:
+    /// Initialise fields and other properties; this marks
+    /// the struct as complete.
+    void finalise(
+        ArrayRef<FieldDecl*> fields,
+        Size size,
+        Align alignment,
+        Bits bits
+    );
 };
 
 /// Visit this type.

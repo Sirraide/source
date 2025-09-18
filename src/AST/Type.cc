@@ -429,6 +429,7 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
     auto CreateNew = [&] {
         Type fields[] { elem, elem };
+        // FIXME: Should store only a struct layout, not a type.
         return new (mod) RangeType{elem, StructType::CreateTrivialBuiltinTuple(mod, fields)};
     };
 
@@ -463,32 +464,73 @@ auto StructType::Create(
     return type;
 }
 
+auto StructType::LayoutBuilder::add_field(Type ty, String name, Location loc) -> FieldDecl* {
+    // TODO: Optimise layout if this isn’t meant for FFI.
+    auto fa = ty->align(tu);
+    sz = sz.align(fa);
+    decls.push_back(new (tu) FieldDecl(ty, sz, name, loc));
+    sz += ty->memory_size(tu);
+    a = std::max(a, fa);
+    return decls.back();
+}
+
+void StructType::LayoutBuilder::apply(StructType* ty) {
+    // TODO: Initialisers are declared out-of-line, but they should
+    // have been picked up during initial translation when we find
+    // all the procedures in the current scope. Add any that we found
+    // here, and if we didn’t find any (or the 'default' attribute was
+    // specified on the struct declaration), declare the default initialiser.
+
+    // TODO: If we decide to allow this:
+    //
+    // struct S { ... }
+    // proc f {
+    //    init S(...) { ... }
+    // }
+    //
+    // Then the initialiser should still respect normal lookup rules (i.e.
+    // it should only be visible within 'f'). Perhaps we want to store
+    // local member functions outside the struct itself and in the local
+    // scope instead?
+    if (ty->initialisers().empty()) {
+        // Compute whether we can define a default initialiser for this.
+        bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
+            decls,
+            [](FieldDecl* d) { return d->type->can_init_from_no_args(); }
+        );
+
+        // We always provide a literal initialiser in this case.
+        bits.literal_initialiser = true;
+    }
+
+    ty->finalise(decls, sz, a, bits);
+}
+
+auto StructType::LayoutBuilder::build(
+    StructScope* scope,
+    String struct_name,
+    Location loc
+) -> StructType* {
+    if (not scope) scope = tu.create_scope<StructScope>(tu.global_scope());
+    auto s = Create(
+        tu,
+        scope,
+        struct_name,
+        u32(decls.size()),
+        loc
+    );
+
+    apply(s);
+    return s;
+}
+
 auto StructType::CreateTrivialBuiltinTuple(
     TranslationUnit& owner,
     ArrayRef<Type> fields
 ) -> StructType* {
-    // FIXME: This logic is duplicated from Sema; fix that.
-    Size sz;
-    Align a;
-    SmallVector<FieldDecl*> decls;
-    for (auto f : fields) {
-        auto fa = f->align(owner);
-        sz = sz.align(fa);
-        decls.push_back(new (owner) FieldDecl(f, sz, "", Location()));
-        sz += f->memory_size(owner);
-        a = std::max(a, fa);
-    }
-
-    auto s = Create(
-        owner,
-        owner.create_scope<StructScope>(owner.global_scope()),
-        "",
-        2,
-        Location()
-    );
-
-    s->finalise(decls, sz, a, Bits::Trivial());
-    return s;
+    LayoutBuilder lb{owner};
+    for (auto f : fields) lb.add_field(f);
+    return lb.build();
 }
 
 auto StructType::name() const -> String {
