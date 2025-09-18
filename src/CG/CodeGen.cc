@@ -1331,7 +1331,13 @@ auto CodeGen::LowerProcedureSignature(
 
     // Throw the environment pointer at the end.
     if (needs_environment) {
-        AddArgType(ptr_ty, {getNamedAttr(LLVMDialect::getNestAttrName(), getUnitAttr())});
+        AddArgType(ptr_ty, {
+            getNamedAttr(LLVMDialect::getNestAttrName(), getUnitAttr()),
+            getNamedAttr(LLVMDialect::getReadonlyAttrName(), getUnitAttr()),
+            getNamedAttr(LLVMDialect::getNoUndefAttrName(), getUnitAttr()),
+            getNamedAttr(LLVMDialect::getNoFreeAttrName(), getUnitAttr()),
+        });
+
         if (env_ptr) info.args.push_back(env_ptr);
     }
 

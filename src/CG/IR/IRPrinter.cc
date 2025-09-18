@@ -150,6 +150,12 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
         out += " %1(signext%)";
     } else if (attr.getName() == LLVMDialect::getNestAttrName()) {
         out += " %1(nest%)";
+    } else if (attr.getName() == LLVMDialect::getNoFreeAttrName()) {
+        out += " %1(nofree%)";
+    } else if (attr.getName() == LLVMDialect::getNoUndefAttrName()) {
+        out += " %1(noundef%)";
+    } else if (attr.getName() == LLVMDialect::getReadonlyAttrName()) {
+        out += " %1(readonly%)";
     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
         out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {

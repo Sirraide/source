@@ -79,6 +79,12 @@ auto LowerOverflowOp(auto op, auto& a, mlir::ConversionPatternRewriter& r) -> Sm
     return SmallVector<Value, 2>{val, overflow};
 }
 
+static void PropagateArgAndResultAttrs(auto func_or_call, auto op) {
+    func_or_call.setArgAttrsAttr(op.getArgAttrsAttr());
+    if (auto attrs = op.getCallResultAttrs(0))
+        func_or_call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
+}
+
 LOWERING(AbortOp, {
     // Just call the appropriate handler.
     String name = [&] {
@@ -130,9 +136,7 @@ LOWERING(CallOp, {
     call.setCConv(op.getCc());
 
     // Preserve argument and return value. attributes.
-    call.setArgAttrsAttr(op.getArgAttrsAttr());
-    if (auto attrs = op.getCallResultAttrs(0))
-        call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
+    PropagateArgAndResultAttrs(call, op);
 
     // Split aggregate returns.
     if (op.getNumResults() > 1) {
@@ -210,9 +214,7 @@ LOWERING(ProcOp, {
     );
 
     // Preserve argument and return value attributes.
-    func.setArgAttrsAttr(op.getArgAttrsAttr());
-    if (auto attrs = op.getCallResultAttrs(0))
-        func.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
+    PropagateArgAndResultAttrs(func, op);
 
     // And inline the body.
     r.inlineRegionBefore(op.getBody(), func.getBody(), func.end());
