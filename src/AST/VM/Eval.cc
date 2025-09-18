@@ -351,9 +351,6 @@ class eval::Eval : DiagsProducer {
 
         /// Return value slots.
         RetVals ret_vals{};
-
-        /// Environment pointer.
-        SRValue env_ptr{};
     };
 
     VM& vm;
@@ -402,8 +399,7 @@ private:
     void PushFrame(
         ir::ProcOp proc,
         MutableArrayRef<SRValue> args,
-        StackFrame::RetVals ret_vals,
-        SRValue env_ptr = {}
+        StackFrame::RetVals ret_vals
     );
 
     void StoreSRValue(void* mem, const SRValue& val);
@@ -603,8 +599,7 @@ bool Eval::EvalLoop() {
             // Enter the stack frame.
             SmallVector<SRValue, 6> args;
             for (auto a : c.getArgs()) args.push_back(Val(a));
-            SRValue env_ptr = c.getEnv() ? Val(c.getEnv()) : SRValue();
-            PushFrame(callee, args, std::move(ret_vals), env_ptr);
+            PushFrame(callee, args, std::move(ret_vals));
             continue;
         }
 
@@ -784,14 +779,6 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
         return std::nullopt;
     }
 
-    if (call.getEnv()) {
-        ICE(
-            Location::Decode(call.getLoc()),
-            "Compile-time calls to compiled closures are currently not supported"
-        );
-        return std::nullopt;
-    }
-
     // Determine the return type.
     Assert(proc.getNumResults() < 2, "FFI procedure has more than 1 result?");
     auto ffi_ret = proc->getNumResults() ? FFIType(proc.getResultTypes()[0]) : &ffi_type_void;
@@ -954,15 +941,27 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
 void Eval::PushFrame(
     ir::ProcOp proc,
     MutableArrayRef<SRValue> args,
-    StackFrame::RetVals ret_vals,
-    SRValue env_ptr
+    StackFrame::RetVals ret_vals
 ) {
     Assert(not proc.empty());
+
+    // We allow passing 1 extra argument if it is a null pointer; this is
+    // used to simplify indirect calls: we unconditionally pass the env
+    // pointer to an indirect call, irrespective of whether the callee
+    // actually expects one (which we don’t know because it’s an indirect
+    // call).
+    if (
+        args.size() == proc.getNumCallArgs() + 1 and
+        not proc.getVariadic() and
+        args.back().isa<Pointer>() and
+        args.back().cast<Pointer>().is_null()
+    ) args = args.drop_back(1);
+
+    // Set up the stack frame.
     Assert(args.size() == proc.getNumCallArgs());
     Assert(ret_vals.size() == proc.getNumResults());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
-    frame.env_ptr = env_ptr;
 
     // Allocate temporaries for instructions and block arguments.
     for (auto& b : proc.getBody()) {

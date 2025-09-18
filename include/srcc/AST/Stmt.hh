@@ -961,6 +961,9 @@ public:
     /// and loop variables.
     ValueCategory category;
 
+    /// Whether this declaration is captured by a nested procedure.
+    bool captured = false;
+
     /// Initialiser, if any.
     ///
     /// For SRValues, this is a normal expression that is emitted
@@ -1078,6 +1081,15 @@ public:
     /// The template this was instantiated from.
     ProcTemplateDecl* instantiated_from = nullptr;
 
+    /// Whether this procedure (or any of its nested procedures) contain
+    /// variable accesses that refer to variables declared in a parent
+    /// procedure.
+    bool has_captures = false;
+
+    /// Whether any variables declared this procedure specifically are
+    /// captured by any nested procedures.
+    bool introduces_captures = false;
+
 private:
     ProcDecl(
         TranslationUnit* owner,
@@ -1102,6 +1114,12 @@ public:
 
     /// Get the procedure body.
     auto body() -> Ptr<Stmt> { return body_stmt; }
+
+    /// Get all variables declared in this procedure that are captured
+    /// by any nested procedures.
+    auto captured_vars() {
+        return vws::filter(locals, [](auto* decl) { return decl->captured; });
+    }
 
     /// Get the procedure's calling convention.
     auto cconv() const { return proc_type()->cconv(); }
@@ -1134,6 +1152,20 @@ public:
     /// Get the param types without the intent.
     auto param_types_no_intent() const {
         return proc_type()->params() | vws::transform(&ParamTypeData::type);
+    }
+
+    /// Iterate over all parents of this procedure.
+    auto parents() -> std::generator<ProcDecl*> {
+        for (auto p = parent.get_or_null(); p; p = p->parent.get_or_null())
+            co_yield p;
+    }
+
+    /// Iterate over all parents of this procedure, top-down.
+    auto parents_top_down() {
+        SmallVector<ProcDecl*> ps;
+        for (auto p : parents()) ps.push_back(p);
+        rgs::reverse(ps);
+        return ps;
     }
 
     /// Get the procedure type.

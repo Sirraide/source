@@ -118,6 +118,39 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
         case Stmt::Kind::LocalDecl:
         case Stmt::Kind::ParamDecl: {
             auto local = cast<LocalDecl>(d);
+
+            // Check if this variable is declared in a parent procedure and captured it
+            // if so; do *not* capture zero-sized variables however since they’ll be deleted
+            // entirely anyway.
+            if (
+                curr_proc().proc != local->parent and
+                local->type->memory_size(*M) != Size()
+            ) {
+                local->captured = true;
+                local->parent->introduces_captures = true;
+
+                // Find the active procedure scope that corresponds to the local’s parent.
+                auto st = vws::reverse(proc_stack);
+                auto parent_scope = rgs::find_if(st, [&](ProcScopeInfo* i) { return i->proc == local->parent; });
+                Assert(parent_scope != st.end());
+
+                // Walk the procedure stack between it and the current procedure.
+                //
+                // Captures need to be passed down transitively, i.e. if procedure 'a' contains
+                // 'b' which contains 'c', and 'c' captures a variable declared in 'a', then
+                // 'b' needs to capture it as well even if it doesn’t use it so it can pass it
+                // down to 'c'.
+                //
+                // Because we always propagate captures up whenever we first encounter them, if
+                // a local has already been marked for capture in a scope, this loop will have
+                // also marked it for capture in any parent scopes, so we can stop if we encounter
+                // this situation.
+                for (auto p = curr_proc().proc; p != (*parent_scope)->proc; p = p->parent.get_or_null()) {
+                    if (p->has_captures) break;
+                    p->has_captures = true;
+                }
+            }
+
             return new (*M) LocalRefExpr(
                 cast<LocalDecl>(d),
                 local->category,
@@ -933,11 +966,11 @@ auto Sema::InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> Pro
         s->type,
         info.pattern->name,
         info.pattern->location(),
-        info.pattern->pattern->type->attrs
+        info.pattern->pattern->type->attrs,
+        info.pattern
     );
 
-    // Remember what pattern we were instantiated from.
-    s->instantiation->instantiated_from = info.pattern;
+    // Cache the instantiation.
     M->template_instantiations[info.pattern].push_back(s->instantiation);
 
     // Translate the body and record the instantiation.
@@ -2549,23 +2582,38 @@ auto Sema::BuildProcDeclInitial(
     ProcType* ty,
     DeclName name,
     Location loc,
-    ParsedProcAttrs attrs
+    ParsedProcAttrs attrs,
+    ProcTemplateDecl* pattern
 ) -> ProcDecl* {
-    // Create the declaration. A top-level procedure is not considered
-    // 'nested' inside the initialiser procedure, which means that this
-    // is only local if the procedure stack contains at least 3 entries
-    // (the initialiser, our parent, and us).
+    // Get the parent procedure, which determines whether this is a nested
+    // procedure; top-level procedures are *not* considered nested inside
+    // the initialiser procedure (since the latter is just an implementation
+    // detail).
     //
-    // FIXME: Is this still true if we’re instantiating a template?
+    // Note that the parent computation assumes that we’re currently inside the
+    // lexical parent of this procedure; this *should* always be true since we
+    // can’t e.g. refer to a nested procedure template from outside its parent,
+    // but if we ever start doing weird things with templates (like returning a
+    // *template* from a procedure), then this will no longer work properly and
+    // we’ll require some other way of keeping track of the lexical parent.
+    //
+    // For templates, instead use the parent of the pattern.
+    ProcDecl* parent{};
+    if (pattern) parent = pattern->parent.get_or_null();
+    else parent = curr_proc().proc;
+    if (parent == M->initialiser_proc) parent = {};
     auto proc = ProcDecl::Create(
         *M,
         ty,
         name,
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,
         attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
-        proc_stack.size() >= 3 ? proc_stack.back()->proc : nullptr,
+        parent,
         loc
     );
+
+    // Remember what template we were instantiated from.
+    proc->instantiated_from = pattern;
 
     // If this is an overloaded operator, check its arity and other properties.
     if (

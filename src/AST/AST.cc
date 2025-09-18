@@ -369,12 +369,9 @@ void Stmt::Printer::Print(Stmt* e) {
             bool is_param = e->kind() == Kind::ParamDecl;
             auto d = cast<LocalDecl>(e);
             auto PrintNameAndType = [&] {
-                print(
-                    "%{}({}%)",
-                    is_param ? '4' : '8',
-                    d->name
-                );
+                print("%{}({}%)", is_param ? '4' : '8', d->name);
                 if (is_param) print(" %1({}%)", cast<ParamDecl>(d)->intent());
+                if (d->captured) print(" captured");
                 print(" {}", d->type->print());
             };
 
@@ -443,10 +440,12 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(p, "ProcDecl");
             print(" %2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
+            if (p->parent.present()) print(" nested");
             if (p->instantiated_from) print(" instantiation");
             if (p->linkage == Linkage::Exported or p->linkage == Linkage::Reexported) print(" exported");
             if (p->linkage == Linkage::Imported or p->linkage == Linkage::Reexported) print(" imported");
-            if (p->parent) print(" local");
+            if (p->has_captures) print(" has_captures");
+            if (p->introduces_captures) print(" introduces_captures");
             print("\n");
             if (not print_procedure_bodies) break;
 

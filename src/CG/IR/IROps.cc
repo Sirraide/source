@@ -48,15 +48,6 @@ static auto FoldOv(
     return mlir::success();
 }
 
-llvm::LogicalResult CallOp::canonicalize(CallOp op, mlir::PatternRewriter& rewriter) {
-    if (op.getEnv() and isa_and_present<NilOp>(op.getEnv().getDefiningOp())) {
-        rewriter.modifyOpInPlace(op, [&] { op.getEnvMutable().clear(); });
-        return mlir::success();
-    }
-
-    return mlir::failure();
-}
-
 auto SAddOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& results) -> llvm::LogicalResult {
     return FoldOv(adaptor.getLhs(), adaptor.getRhs(), results, &APInt::sadd_ov);
 }

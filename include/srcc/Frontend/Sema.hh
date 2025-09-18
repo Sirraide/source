@@ -76,7 +76,8 @@ class srcc::Sema : public DiagsProducer {
         SmallVector<LocalDecl*> locals;
         const EnterScope es;
 
-        ProcScopeInfo(Sema& S, ProcDecl* proc) : proc{proc}, es{S, proc->scope} {}
+        ProcScopeInfo(Sema& S, ProcDecl* proc)
+            : proc{proc}, es{S, proc->scope} {}
     };
 
     class [[nodiscard]] EnterProcedure {
@@ -818,7 +819,7 @@ private:
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Expr* control_expr, MutableArrayRef<MatchCase> cases, Location loc) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
-    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs) -> ProcDecl*;
+    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs, ProcTemplateDecl* pattern = nullptr) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;

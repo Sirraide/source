@@ -46,8 +46,8 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size)
     if (tu.abort_info_type) {
         auto ptr = PtrType::Get(tu, tu.abort_info_type);
         auto ty = ProcType::Get(tu, Type::VoidTy, {ParamTypeData{Intent::In, ptr}});
-        GetOrCreateProc({}, constants::AssertFailureHandlerName, Linkage::Imported, ty);
-        GetOrCreateProc({}, constants::ArithmeticFailureHandlerName, Linkage::Imported, ty);
+        GetOrCreateProc({}, constants::AssertFailureHandlerName, Linkage::Imported, ty, false);
+        GetOrCreateProc({}, constants::ArithmeticFailureHandlerName, Linkage::Imported, ty, false);
     }
 }
 
@@ -101,8 +101,15 @@ auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
     return LLVM::LLVMArrayType::get(&mlir, getI8Type(), tu.target().preferred_size(ty).bytes());
 }
 
-auto CodeGen::ConvertProcType(ProcType* ty) -> ABICallInfo {
-    return LowerProcedureSignature(getUnknownLoc(), ty, nullptr, {});
+auto CodeGen::ConvertProcType(ProcType* ty, bool needs_environment) -> ABICallInfo {
+    return LowerProcedureSignature(
+        getUnknownLoc(),
+        ty,
+        needs_environment,
+        nullptr,
+        nullptr,
+        {}
+    );
 }
 
 void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2) {
@@ -388,7 +395,8 @@ auto CodeGen::DeclarePrintf() -> ir::ProcOp {
                 {{Intent::Copy, PtrType::Get(tu, tu.I8Ty)}},
                 CallingConvention::Native,
                 true
-            )
+            ),
+            false
         );
     }
 
@@ -402,7 +410,8 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
             proc->location(),
             MangledName(proc),
             proc->linkage,
-            proc->proc_type()
+            proc->proc_type(),
+            proc->has_captures
         );
 
         proc_reverse_lookup[ir_proc] = proc;
@@ -432,10 +441,62 @@ auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
     return bb;
 }
 
-CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc)
-    : CG(CG), old_func(CG.curr_proc), guard{CG} {
+CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc, ProcDecl* decl)
+    : CG(CG), old_func(CG.curr_proc), old_proc(decl), guard{CG} {
     CG.curr_proc = proc;
+    CG.curr_proc_decl = old_proc;
     CG.EnterBlock(proc.getOrCreateEntryBlock());
+}
+
+auto CodeGen::GetAddressOfLocal(LocalDecl* decl, Location location) -> Value {
+    if (IsZeroSizedType(decl->type)) return {};
+
+    // First, try to find the variable in the current procedure. We
+    // also cache capture lookups here.
+    auto l = locals.find(decl);
+    if (l != locals.end()) return l->second;
+
+    // If this is a captured variable (and we’re actually in a nested
+    // procedure), we need to load its address via the static chain.
+    //
+    // Note: It’s possible for there to be no current proc *decl*, if
+    // we’re performing constant evaluation in the middle of a nested
+    // procedure.
+    if (decl->captured and curr_proc_decl and decl->parent != curr_proc_decl) {
+        auto env = GetStaticChainPointer(decl->parent, location);
+        auto vars = decl->parent->captured_vars();
+        auto it = rgs::find(vars, decl);
+        Assert(it != vars.end());
+        auto extra_ptr = decl->parent->has_captures; // See EmitProcRefExpr().
+        auto idx = u32(rgs::distance(vars.begin(), it)) + extra_ptr;
+        auto ptr = CreateLoad(
+            C(location),
+            env,
+            ptr_ty,
+            tu.target().ptr_align(),
+            tu.target().ptr_size() * idx
+        );
+
+        locals[decl] = ptr;
+        return ptr;
+    }
+
+    // This can fail, but only if we’re performing constant evaluation,
+    // e.g. if the user writes `int x; eval x;`.
+    Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
+    auto loc = C(location);
+    CreateAbort(
+        loc,
+        ir::AbortReason::InvalidLocalRef,
+        CreateGlobalStringSlice(loc, decl->name.str()),
+        CreateEmptySlice(loc)
+    );
+
+    EnterBlock(CreateBlock());
+
+    // Just return a null pointer so we don’t crash.
+    // TODO: Should we instead just check if we have an insert point, like, *everywhere*?
+    return CreateNullPointer(getUnknownLoc());
 }
 
 auto CodeGen::GetEquivalentStructTypeForAggregate(Type ty) -> StructType* {
@@ -468,12 +529,22 @@ auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
     Unreachable();
 }
 
+auto CodeGen::GetEnvPtr() -> Value {
+    Assert(curr_proc_decl and curr_proc_decl->has_captures);
+    return curr_proc.getArguments().back();
+}
 
-auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcType* ty) -> ir::ProcOp {
+auto CodeGen::GetOrCreateProc(
+    Location loc,
+    String name,
+    Linkage linkage,
+    ProcType* ty,
+    bool needs_environment
+) -> ir::ProcOp {
     if (auto op = mlir_module.lookupSymbol<ir::ProcOp>(name)) return op;
     InsertionGuard _{*this};
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
-    auto info = ConvertProcType(ty);
+    auto info = ConvertProcType(ty, needs_environment);
     auto ir_proc = create<ir::ProcOp>(
         C(loc),
         name,
@@ -481,7 +552,6 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
         C(ty->cconv()),
         info.func,
         ty->variadic(),
-        false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
@@ -491,6 +561,29 @@ auto CodeGen::GetOrCreateProc(Location loc, String name, Linkage linkage, ProcTy
     ir_proc.eraseBody();
     ir_proc.setVisibility(mlir::SymbolTable::Visibility::Private);
     return ir_proc;
+}
+
+auto CodeGen::GetStaticChainPointer(ProcDecl* proc, Location location) -> Value {
+    // Walk up the static chain until we get the procedure whose parent
+    // actually contains the variable. Procedures that don’t actually
+    // introduce any new captures just reuse the parent’s environment.
+    auto env = GetEnvPtr();
+    auto loc = C(location);
+
+    // Start at our parent; we don’t want to insert an extra load if
+    // the current procedure introduces captures since we already have
+    // our own environment pointer.
+    auto p = curr_proc_decl->parent.get_or_null();
+    while (p and p != proc) {
+        if (p->introduces_captures) env = CreateLoad(loc, env, ptr_ty, tu.target().ptr_align());
+        p = p->parent.get_or_null();
+    }
+
+    // TODO: I don’t think this can fail? What could happen though is
+    // that we break out of the current constant evaluation context,
+    // make sure to test that at some point.
+    Assert(p);
+    return env;
 }
 
 void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
@@ -707,6 +800,11 @@ struct CodeGen::Mangler {
 
     explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
         name = "_S";
+        for (auto p : proc->parents_top_down()) {
+            Append(p->name.str());
+            name += "$";
+        }
+
         Append(proc->name.str());
         Append(proc->type);
     }
@@ -1121,7 +1219,9 @@ auto CodeGen::LowerDirectReturn(mlir::Location l, Expr* arg) -> ABIArgInfo {
 auto CodeGen::LowerProcedureSignature(
     mlir::Location l,
     ProcType* proc,
+    bool needs_environment,
     Value indirect_ptr,
+    Value env_ptr,
     ArrayRef<Expr*> args
 ) -> ABICallInfo {
     static constexpr Size Word = Size::Bits(64);
@@ -1227,6 +1327,12 @@ auto CodeGen::LowerProcedureSignature(
         } else {
             AddByValArg(Arg(i), param.type);
         }
+    }
+
+    // Throw the environment pointer at the end.
+    if (needs_environment) {
+        AddArgType(ptr_ty, {getNamedAttr(LLVMDialect::getNestAttrName(), getUnitAttr())});
+        if (env_ptr) info.args.push_back(env_ptr);
     }
 
     // Extra variadic arguments are always passed as 'copy' parameters.
@@ -1884,15 +1990,28 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     if (NeedsIndirectReturn(ret) and not mrvalue_slot)
         mrvalue_slot = CreateAlloca(l, ret);
 
+    // Try to avoid passing an environment to it if possible.
+    bool env_is_nil = callee.is_aggregate() and isa_and_present<ir::NilOp>(callee.second().getDefiningOp());
+    bool needs_env = not env_is_nil and (
+        not isa<ProcRefExpr>(expr->callee) or
+        cast<ProcRefExpr>(expr->callee)->decl->has_captures
+    );
+
     // Emit the arguments.
-    auto info = LowerProcedureSignature(l, proc, mrvalue_slot, expr->args());
+    auto info = LowerProcedureSignature(
+        l,
+        proc,
+        needs_env,
+        mrvalue_slot,
+        needs_env ? callee.second() : nullptr,
+        expr->args()
+    );
 
     // Build the call.
     auto op = create<ir::CallOp>(
         l,
         info.result_types,
         callee.first(),
-        callee.second(),
         C(proc->cconv()),
         info.func,
         proc->variadic(),
@@ -2157,24 +2276,7 @@ void CodeGen::EmitLocal(LocalDecl* decl) {
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
-    if (IsZeroSizedType(expr->type)) return {};
-    auto l = locals.find(expr->decl);
-    if (l != locals.end()) return l->second;
-
-    Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
-    auto loc = C(expr->location());
-    CreateAbort(
-        loc,
-        ir::AbortReason::InvalidLocalRef,
-        CreateGlobalStringSlice(loc, expr->decl->name.str()),
-        CreateEmptySlice(loc)
-    );
-
-    EnterBlock(CreateBlock());
-
-    // Just return a null pointer so we don’t crash.
-    // TODO: Should we instead just check if we have an insert point, like, *everywhere*?
-    return CreateNullPointer(getUnknownLoc());
+    return GetAddressOfLocal(expr->decl, expr->location());
 }
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
@@ -2254,7 +2356,22 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     if (not proc->body()) return;
 
     // Create the entry block.
-    EnterProcedure _(*this, curr_proc);
+    EnterProcedure _(*this, curr_proc, proc);
+
+    // If there is a name collision between procedures, then we will emit
+    // both into a single IR function; this is very much not good, so give
+    // up if that happens.
+    //
+    // This should never actually happen if Sema does its job properly and
+    // provided we mangle nested procedures accordingly.
+    if (HasTerminator()) {
+        ICE(
+            proc->location(),
+            "An IR function with this name already exists: '{}'",
+            curr_proc.getName()
+        );
+        return;
+    }
 
     // Always set the visibility to public.
     //
@@ -2317,9 +2434,66 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 }
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
-    auto op = DeclareProcedure(expr->decl);
     auto l = C(expr->location());
-    return {create<ir::ProcRefOp>(l, op), CreateNullPointer(l)};
+    auto op = DeclareProcedure(expr->decl);
+    auto ref = create<ir::ProcRefOp>(l, op);
+    if (not expr->decl->has_captures) return {ref, CreateNullPointer(l)};
+    Assert(expr->decl->parent.present(), "Procedure without a parent should not have captures");
+
+    // This procedure is directly nested within the current procedure; build
+    // the environment for it.
+    if (expr->decl->parent.get() == curr_proc_decl) {
+        Assert(curr_proc_decl);
+        Value env;
+
+        // If this procedure introduces new captures, we need to build
+        // a new environment.
+        if (curr_proc_decl->introduces_captures) {
+            // If, additionally, the environment already contained captures before
+            // that, store a pointer to that environment in the new one.
+            auto captures = curr_proc_decl->captured_vars();
+            auto extra_ptr = curr_proc_decl->has_captures;
+            auto size = tu.target().ptr_size();
+            auto align = tu.target().ptr_align();
+            env = CreateAlloca(
+                l,
+                size * (u64(rgs::distance(captures)) + extra_ptr),
+                align
+            );
+
+            if (extra_ptr) CreateStore(l, env, GetEnvPtr(), align);
+            for (auto [i, c] : enumerate(captures)) CreateStore(
+                l,
+                env,
+                GetAddressOfLocal(c, expr->location()),
+                align,
+                size * (i + extra_ptr)
+            );
+        }
+
+        // Otherwise, reuse our own environment.
+        else { env = GetEnvPtr(); }
+        return {ref, env};
+    }
+
+    // Otherwise, we’re calling a sibling procedure, e.g.
+    //
+    //   proc f() {
+    //       proc g = ...;
+    //       proc h = g();
+    //   }
+    //
+    // For this, we need to retrieve the environment pointer of the nearest
+    // common ancestor of the current procedure and the one we’re calling;
+    // the callee must be a direct child of that ancestor (else it would not
+    // be in scope and we couldn’t call it in the first place); thus, the
+    // ancestor’s environment pointer is also the environment pointer for
+    // the callee. Walk the static chain to extract it.
+    llvm::SmallPtrSet<ProcDecl*, 16> our_ancestors;
+    for (auto p : curr_proc_decl->parents()) our_ancestors.insert(p);
+    auto ancestor = our_ancestors.find(expr->decl->parent.get());
+    Assert(ancestor != our_ancestors.end(), "No common ancestor!");
+    return {ref, GetStaticChainPointer(*ancestor, expr->location())};
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
@@ -2496,7 +2670,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
 
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
-    auto info = ConvertProcType(ProcType::Get(tu, Type::VoidTy, args));
+    auto info = ConvertProcType(ProcType::Get(tu, Type::VoidTy, args), false);
     auto loc = C(stmt->location());
     vm_entry_point = create<ir::ProcOp>(
         loc,
@@ -2505,12 +2679,11 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         C(CallingConvention::Native),
         info.func,
         false,
-        false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
-    EnterProcedure _(*this, vm_entry_point);
+    EnterProcedure _(*this, vm_entry_point, nullptr);
     if (yields_value) EmitRValue(vm_entry_point.getCallArg(0), cast<Expr>(stmt));
     else Emit(stmt);
 

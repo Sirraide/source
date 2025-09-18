@@ -103,23 +103,10 @@ LOWERING(CallOp, {
     SmallVector<mlir::Value> args;
     SmallVector<mlir::Type> arg_types;
     auto tc = getTypeConverter<mlir::LLVMTypeConverter>();
-    auto ptr = LLVM::LLVMPointerType::get(getContext());
 
     args.push_back(a.getAddr());
     for (auto arg : a.getArgs()) args.push_back(arg);
     for (auto arg : op.getProcType().getInputs()) arg_types.push_back(arg);
-
-    // Note: I *think* it’s fine to just throw the environment in there
-    // even if the function we’re calling doesn’t take an environment–at
-    // least on x64. For some targets, we’ll probably have to guard the
-    // call and not pass an environment if it ends up being null.
-    //
-    // FIXME: This should be done in codegen.
-    // FIXME: The environment should have the 'nest' attribute (at least on x86_64 Linux).
-    if (a.getEnv()) {
-        args.push_back(a.getEnv());
-        arg_types.push_back(ptr);
-    }
 
     mlir::Type result;
     if (op.getNumResults() == 0) {
@@ -205,12 +192,6 @@ LOWERING(ProcOp, {
     // Add the arguments.
     for (auto [i, arg] : enumerate(old.getInputs()))
         sc.addInputs(unsigned(i), tc->convertType(arg));
-
-    // Add the static chain pointer.
-    // FIXME: This should be done in codegen.
-    // FIXME: The static chain pointer should have the 'nest' attribute (at least on x86_64 Linux).
-    if (op.getHasStaticChain())
-        sc.addInputs(LLVM::LLVMPointerType::get(getContext()));
 
     // Build the new function.
     auto llvm_fty = LLVM::LLVMFunctionType::get(

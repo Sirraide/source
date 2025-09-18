@@ -148,12 +148,14 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
         out += " %1(zeroext%)";
     } else if (attr.getName() == LLVMDialect::getSExtAttrName()) {
         out += " %1(signext%)";
+    } else if (attr.getName() == LLVMDialect::getNestAttrName()) {
+        out += " %1(nest%)";
     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
         out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
         out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
     } else {
-        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName());
+        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName().strref());
     }
 }
 
@@ -278,7 +280,6 @@ void CodeGen::Printer::print_op(Operation* op) {
         out += " ";
         out += val(c.getAddr(), false);
         print_arg_list(c, false, c.getNumCallArgs() > 3);
-        if (auto v = c.getEnv()) out += std::format(", env {}", val(v, false));
         return;
     }
 
@@ -431,7 +432,6 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
-    if (proc.getHasStaticChain()) out += " %1(nested%)";
     out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
 

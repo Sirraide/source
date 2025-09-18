@@ -30,7 +30,7 @@ caller2(foo);
 // +     %3 = load ptr, #0, align 8
 // +     %4 = ptradd #0, 8
 // +     %5 = load ptr, %4, align 8
-// +     %6 = call fastcc i64 %3(), env %5
+// +     %6 = call fastcc i64 %3(ptr %5 nest)
 // +     ret i64 %6
 // + }
 // +
@@ -49,7 +49,7 @@ caller2(foo);
 // +     %3 = load ptr, #0, align 8
 // +     %4 = ptradd #0, 8
 // +     %5 = load ptr, %4, align 8
-// +     %6 = call fastcc i64 %3(), env %5
+// +     %6 = call fastcc i64 %3(ptr %5 nest)
 // +     ret i64 %6
 // + }
 
@@ -76,7 +76,7 @@ caller2(foo);
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
 //L +   %7 = load ptr, ptr %6, align 8
-//L +   %8 = call fastcc i64 %5(ptr %7)
+//L +   %8 = call fastcc i64 %5(ptr nest %7)
 //L +   ret i64 %8
 //L + }
 //L +
@@ -92,7 +92,7 @@ caller2(foo);
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
 //L +   %7 = load ptr, ptr %6, align 8
-//L +   %8 = call fastcc i64 %5(ptr %7)
+//L +   %8 = call fastcc i64 %5(ptr nest %7)
 //L +   ret i64 %8
 //L + }
 //L +

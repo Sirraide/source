@@ -44,7 +44,7 @@ protected:
 public:
     ValueOrTypePair() = default;
     ValueOrTypePair(std::nullptr_t) = delete("Use '{}' instead to create an empty SRValue or RType");
-    ValueOrTypePair(Elem first_val) : vals{first_val, nullptr} { Assert(first_val); }
+    ValueOrTypePair(Elem first_val) : vals{first_val, nullptr} {}
     ValueOrTypePair(Elem first_val, Elem second_val) : vals{first_val, second_val} {
         Assert(vals[0] and vals[1]);
     }
@@ -189,6 +189,7 @@ class srcc::cg::CodeGen : DiagsProducer
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;
     ir::ProcOp curr_proc;
+    ProcDecl* curr_proc_decl = nullptr;
     Size word_size;
     LangOpts lang_opts;
     mlir::Type ptr_ty;
@@ -256,11 +257,15 @@ public:
 
         CodeGen& CG;
         ir::ProcOp old_func;
+        ProcDecl* old_proc;
         InsertionGuard guard;
 
     public:
-        EnterProcedure(CodeGen& CG, ir::ProcOp func);
-        ~EnterProcedure() { CG.curr_proc = old_func; }
+        EnterProcedure(CodeGen& CG, ir::ProcOp func, ProcDecl* old_proc);
+        ~EnterProcedure() {
+            CG.curr_proc = old_func;
+            CG.curr_proc_decl = old_proc;
+        }
     };
 
     struct StructInitHelper {
@@ -362,6 +367,9 @@ public:
     /// Get an integer type.
     auto IntTy(Size wd) -> mlir::Type;
 
+    /// Get the address of a local variable.
+    auto GetAddressOfLocal(LocalDecl* decl, Location loc) -> Value;
+
     /// Get the struct type equivalent to a builtin aggregate type.
     auto GetEquivalentStructTypeForAggregate(Type ty) -> StructType*;
 
@@ -373,8 +381,14 @@ public:
         Location loc,
         String name,
         Linkage linkage,
-        ProcType* ty
+        ProcType* ty,
+        bool needs_environment
     ) -> ir::ProcOp;
+
+    /// Retrieve the static chain pointer of a procedure relative to
+    /// the current procedure. This is the environment pointer that
+    /// is passed to any procedures defined within that procedure.
+    auto GetStaticChainPointer(ProcDecl* proc, Location location) -> Value;
 
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
@@ -576,7 +590,7 @@ public:
     };
 
     /// Lower a procedure type.
-    auto ConvertProcType(ProcType* ty) -> ABICallInfo;
+    auto ConvertProcType(ProcType* ty, bool needs_environment) -> ABICallInfo;
 
     /// Whether a value of this type needs to be returned indirectly.
     bool NeedsIndirectReturn(Type ty);
@@ -592,6 +606,9 @@ public:
     /// Whether a value of this type can be used as-is when returned from a function.
     bool CanUseReturnValueDirectly(Type ty);
 
+    /// Get the current procedure’s environment pointer.
+    auto GetEnvPtr() -> Value;
+
     /// For an integer type, get what type we prefer to treat this as. This converts
     /// ‘weird’ types like 'i17' to something more sensible like 'i32'.
     auto GetPreferredIntType(mlir::Type ty) -> mlir::Type;
@@ -606,7 +623,9 @@ public:
     auto LowerProcedureSignature(
         mlir::Location l,
         ProcType* proc,
+        bool needs_environment,
         Value indirect_ptr,
+        Value env_ptr,
         ArrayRef<Expr*> args
     ) -> ABICallInfo;
 
