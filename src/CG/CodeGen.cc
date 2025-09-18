@@ -2459,6 +2459,11 @@ auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> IRValue { // c
         [&](Type) -> IRValue { Unreachable("Cannot emit type constant"); },
         [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
         [&](eval::MemoryValue) -> IRValue { return {}; }, // This only happens if the value is unused.
+        [&](const eval::Range& r) -> IRValue {
+            auto el = cast<RangeType>(val.type())->elem();
+            auto l = C(loc);
+            return {CreateInt(l, r.start, el), CreateInt(l, r.end, el)};
+        },
     }; // clang-format on
     return val.visit(V);
 }

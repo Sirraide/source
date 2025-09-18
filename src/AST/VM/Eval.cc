@@ -29,28 +29,18 @@ namespace ir = cg::ir;
 using mlir::Block;
 using mlir::Value;
 
-auto RValue::as_range_of(
+static auto LoadRangeFromMemory(
+    const void* ptr,
     TranslationUnit& tu,
     RangeType* r
-) const -> std::pair<APInt, APInt> {
-    auto mem = cast<MemoryValue>();
-    auto ptr = static_cast<const u8*>(mem.data());
-
-    // Sanity check.
-    auto range_sz = r->memory_size(tu);
-    auto range_a = r->align(tu);
-    Assert(range_sz == mem.size());
-    Assert(llvm::isAligned(range_a, uptr(ptr)));
-
-    // Load the values.
+) -> Range {
+    auto ptr_u = static_cast<const u8*>(ptr);
     auto elem_a = r->elem()->align(tu);
     auto bytes = unsigned(r->elem()->memory_size(tu).bytes());
     auto bits = unsigned(r->elem()->bit_width(tu).bits());
     APInt start{bits, 0}, end{bits, 0};
-    llvm::LoadIntFromMemory(start, ptr, bytes);
-    llvm::LoadIntFromMemory(end, elem_a.align(ptr + bytes), bytes);
-
-    // Truncate them if they’re weirdly sized.
+    llvm::LoadIntFromMemory(start, ptr_u, bytes);
+    llvm::LoadIntFromMemory(end, elem_a.align(ptr_u + bytes), bytes);
     return {start.trunc(bits), end.trunc(bits)};
 }
 
@@ -61,6 +51,11 @@ auto RValue::print() const -> SmallUnrenderedString {
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
         [&](MemoryValue) { out += "<aggregate value>"; },
+        [&](this auto& self, const Range& r) {
+            self(r.start);
+            out += "%1(..<%)";
+            self(r.end);
+        },
         [&](const APInt& value) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
             else out += std::format("%5({}%)", toString(value, 10, true));
@@ -1068,13 +1063,18 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         ty
     );
 
+    if (auto r = dyn_cast<RangeType>(ty)) return RValue(
+        LoadRangeFromMemory(mem, vm.owner(), r),
+        ty
+    );
+
     if (ty == Type::TypeTy) {
         ICE(s->location(), "TODO: Load value of type 'type'");
         return std::nullopt;
     }
 
     // Otherwise, allocate memory for it and store it there.
-    Assert((isa<RangeType, SliceType, ProcType, StructType, ArrayType>(ty)));
+    Assert((isa<SliceType, ProcType, StructType, ArrayType>(ty)));
     auto mrv = vm.allocate_memory_value(ty);
     std::memcpy(mrv.data(), mem, mrv.size().bytes());
     return RValue(mrv, ty);

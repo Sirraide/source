@@ -54,9 +54,15 @@ public:
     [[nodiscard]] auto operator<=>(const MemoryValue& other) const = default;
 };
 
+/// Evaluated range.
+struct Range {
+    APInt start;
+    APInt end;
+};
+
 /// Evaluated rvalue.
 class RValue {
-    Variant<APInt, Type, MemoryValue, std::monostate> value;
+    Variant<APInt, Range, Type, MemoryValue, std::monostate> value;
     Type ty{Type::VoidTy};
 
 public:
@@ -64,13 +70,8 @@ public:
     RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     RValue(bool val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
+    RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
-
-    /// Treat this value as a range of type 'r' and extract the start/end values.
-    [[nodiscard]] auto as_range_of(
-        TranslationUnit& tu,
-        RangeType* r
-    ) const -> std::pair<APInt, APInt>;
 
     /// cast<>() the contained value.
     template <typename Ty>

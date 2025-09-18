@@ -1659,7 +1659,7 @@ auto Sema::IntMatchContext::add_constant_pattern(
     }
 
     if (auto r = dyn_cast<RangeType>(pattern.type()); r and r->elem() == ty) {
-        auto [start, end] = pattern.as_range_of(*S.M, r);
+        const auto& [start, end] = pattern.cast<eval::Range>();
         return add_range(Range(start, end - 1 /* End is exclusive */, loc));
     }
 
