@@ -185,6 +185,7 @@ class srcc::cg::CodeGen : DiagsProducer
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ProcDecl*, String> mangled_names;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
+    Value environment_for_nested_procs;
     Value abort_info_slot;
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;

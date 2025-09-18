@@ -2347,6 +2347,7 @@ auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> IRValue {
 
 void CodeGen::EmitProcedure(ProcDecl* proc) {
     locals.clear();
+    environment_for_nested_procs = {};
     abort_info_slot = {};
 
     // Create the procedure.
@@ -2444,7 +2445,9 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
     // the environment for it.
     if (expr->decl->parent.get() == curr_proc_decl) {
         Assert(curr_proc_decl);
-        Value env;
+
+        // Check if we’ve already cached the computation of the environment.
+        if (environment_for_nested_procs) return {ref, environment_for_nested_procs};
 
         // If this procedure introduces new captures, we need to build
         // a new environment.
@@ -2455,16 +2458,16 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
             auto extra_ptr = curr_proc_decl->has_captures;
             auto size = tu.target().ptr_size();
             auto align = tu.target().ptr_align();
-            env = CreateAlloca(
+            environment_for_nested_procs = CreateAlloca(
                 l,
                 size * (u64(rgs::distance(captures)) + extra_ptr),
                 align
             );
 
-            if (extra_ptr) CreateStore(l, env, GetEnvPtr(), align);
+            if (extra_ptr) CreateStore(l, environment_for_nested_procs, GetEnvPtr(), align);
             for (auto [i, c] : enumerate(captures)) CreateStore(
                 l,
-                env,
+                environment_for_nested_procs,
                 GetAddressOfLocal(c, expr->location()),
                 align,
                 size * (i + extra_ptr)
@@ -2472,8 +2475,8 @@ auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
         }
 
         // Otherwise, reuse our own environment.
-        else { env = GetEnvPtr(); }
-        return {ref, env};
+        else { environment_for_nested_procs = GetEnvPtr(); }
+        return {ref, environment_for_nested_procs};
     }
 
     // Otherwise, we’re calling a sibling procedure, e.g.
