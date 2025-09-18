@@ -1571,6 +1571,18 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
             };
         }
 
+        // 'in' operator.
+        case Tk::In: {
+            // Currently, the RHS must be a range.
+            Assert(isa<RangeType>(expr->rhs->type));
+            auto loc = C(expr->location());
+            auto lhs = EmitScalar(expr->lhs);
+            auto rhs = Emit(expr->rhs);
+            auto start_cmp = CreateICmp(loc, arith::CmpIPredicate::sge, lhs, rhs.first());
+            auto end_cmp = CreateICmp(loc, arith::CmpIPredicate::sle, lhs, rhs.second());
+            return create<arith::AndIOp>(loc, start_cmp, end_cmp).getResult();
+        }
+
         // Anything else.
         default: {
             auto lhs = EmitScalar(expr->lhs);

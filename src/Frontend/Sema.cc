@@ -3465,6 +3465,9 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         return decl;
     }
 
+    // TODO: Check for redeclaration here. Codegen will crash horribly if
+    // there are two procedures w/ the same name.
+
     // Convert the type.
     EnterScope scope{*this, ScopeKind::Procedure};
     auto type = TranslateProcType(parsed->type);
