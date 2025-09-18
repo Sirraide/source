@@ -105,17 +105,21 @@ proc x(int a, int b, bool d) {
 //L + @__srcc_str.1 = private constant [10 x i8] c"d = true\0A\00", align 1
 //L + @__srcc_str.0 = private constant [5 x i8] c"%.*s\00", align 1
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   call fastcc void @_S1xFviibE(i64 1, i64 2, i1 zeroext true)
 //L +   call fastcc void @_S1xFviibE(i64 2, i64 1, i1 zeroext false)
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1xFviibE(i64 %0, i64 %1, i1 zeroext %2) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1xFviibE(i64 %0, i64 %1, i1 zeroext %2) #0 {
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 8, align 8
 //L +   %6 = alloca i8, i64 1, align 1
@@ -171,7 +175,10 @@ proc x(int a, int b, bool d) {
 //L +   ret void
 //L + }
 //L +
-//L + declare i32 @printf(ptr, ...)
+//L + ; Function Attrs: nounwind
+//L + declare i32 @printf(ptr, ...) #0
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

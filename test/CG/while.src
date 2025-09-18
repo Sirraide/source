@@ -123,15 +123,19 @@ proc while_infinite_empty {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S12while_simpleFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S12while_simpleFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -151,7 +155,8 @@ proc while_infinite_empty {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S12while_nestedFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S12while_nestedFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -187,7 +192,8 @@ proc while_infinite_empty {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S14while_infiniteFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S14while_infiniteFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -199,12 +205,15 @@ proc while_infinite_empty {
 //L +   br label %2
 //L + }
 //L +
-//L + define private fastcc void @_S20while_infinite_emptyFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S20while_infinite_emptyFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %1, %0
 //L +   br label %1
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

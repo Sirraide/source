@@ -332,15 +332,19 @@ proc f12(int i) -> int {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f1FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f1FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = load i8, ptr %2, align 1
@@ -362,7 +366,8 @@ proc f12(int i) -> int {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f2FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f2FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = load i8, ptr %2, align 1
@@ -384,7 +389,8 @@ proc f12(int i) -> int {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f3FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f3FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = load i8, ptr %2, align 1
@@ -406,7 +412,8 @@ proc f12(int i) -> int {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f4FibbE(i1 zeroext %0, i1 zeroext %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f4FibbE(i1 zeroext %0, i1 zeroext %1) #0 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = alloca i8, i64 1, align 1
 //L +   %5 = sext i1 %0 to i8
@@ -439,7 +446,8 @@ proc f12(int i) -> int {
 //L +   ret i64 %21
 //L + }
 //L +
-//L + define private fastcc void @_S2f5FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f5FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -467,19 +475,22 @@ proc f12(int i) -> int {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f6FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f6FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f7FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f7FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f8FvbE(i1 zeroext %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f8FvbE(i1 zeroext %0) #0 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = sext i1 %0 to i8
@@ -491,7 +502,8 @@ proc f12(int i) -> int {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f9FiiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f9FiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -502,7 +514,8 @@ proc f12(int i) -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + define private fastcc i64 @_S3f10FiiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S3f10FiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -534,7 +547,8 @@ proc f12(int i) -> int {
 //L +   br label %17
 //L + }
 //L +
-//L + define private fastcc i64 @_S3f11FiiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S3f11FiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -545,12 +559,15 @@ proc f12(int i) -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + define private fastcc i64 @_S3f12FiiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S3f12FiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 1
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

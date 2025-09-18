@@ -198,11 +198,14 @@ var y = c();
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   %1 = alloca i8, i64 4, align 2
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -224,7 +227,8 @@ var y = c();
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc { i64, i64 } @_S1cFqiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc { i64, i64 } @_S1cFqiE() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   store i64 2, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -237,7 +241,8 @@ var y = c();
 //L +   ret { i64, i64 } %7
 //L + }
 //L +
-//L + define private fastcc { i64, i64 } @_S1aFqiqiE(i64 %0, i64 %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc { i64, i64 } @_S1aFqiqiE(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -254,7 +259,8 @@ var y = c();
 //L +   ret { i64, i64 } %11
 //L + }
 //L +
-//L + define private fastcc { i64, i64 } @_S1bFqiqiE(i64 %0, i64 %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc { i64, i64 } @_S1bFqiqiE(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -271,7 +277,8 @@ var y = c();
 //L +   ret { i64, i64 } %11
 //L + }
 //L +
-//L + define private fastcc void @_S2f1FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f1FvE() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -299,7 +306,8 @@ var y = c();
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f2FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f2FvE() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -326,7 +334,8 @@ var y = c();
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S2f3FvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2f3FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 4
 //L +   %2 = alloca i8, i64 8, align 4
 //L +   %3 = alloca i8, i64 8, align 4
@@ -352,6 +361,8 @@ var y = c();
 //L +   store i32 2, ptr %15, align 4
 //L +   ret void
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

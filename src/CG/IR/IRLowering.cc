@@ -213,6 +213,9 @@ LOWERING(ProcOp, {
         op.getCc()
     );
 
+    // We don’t support exception handling.
+    func.setNoUnwind(true);
+
     // Preserve argument and return value attributes.
     PropagateArgAndResultAttrs(func, op);
 

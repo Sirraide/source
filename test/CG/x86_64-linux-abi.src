@@ -1852,15 +1852,19 @@ proc closures {
 //L + @__srcc_str.1 = private constant [2 x i8] c"1\00", align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"q\00", align 1
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S4intsFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S4intsFvE() #0 {
 //L +   %1 = alloca i8, i64 16, align 16
 //L +   %2 = alloca i8, i64 16, align 16
 //L +   %3 = alloca i8, i64 16, align 16
@@ -1927,23 +1931,32 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare void @f1(i64, i64, i64, i64, i64, i64, i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare void @f1(i64, i64, i64, i64, i64, i64, i64, i64) #0
 //L +
-//L + declare void @f2(i32, i32, i32, i32, i32, i32, i32, i32)
+//L + ; Function Attrs: nounwind
+//L + declare void @f2(i32, i32, i32, i32, i32, i32, i32, i32) #0
 //L +
-//L + declare void @f3(i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext)
+//L + ; Function Attrs: nounwind
+//L + declare void @f3(i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext, i17 signext) #0
 //L +
-//L + declare void @f4(i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext)
+//L + ; Function Attrs: nounwind
+//L + declare void @f4(i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext, i42 signext) #0
 //L +
-//L + declare void @f5(i128, i128, i128, i128, i128)
+//L + ; Function Attrs: nounwind
+//L + declare void @f5(i128, i128, i128, i128, i128) #0
 //L +
-//L + declare void @f6(i64, i64, i64, i64, i64, i64, ptr byval(i128), ptr byval(i128))
+//L + ; Function Attrs: nounwind
+//L + declare void @f6(i64, i64, i64, i64, i64, i64, ptr byval(i128), ptr byval(i128)) #0
 //L +
-//L + declare void @f7(i64, i64, i64, i64, i64, i64, ptr byval(i128), ptr byval(i128))
+//L + ; Function Attrs: nounwind
+//L + declare void @f7(i64, i64, i64, i64, i64, i64, ptr byval(i128), ptr byval(i128)) #0
 //L +
-//L + declare void @f8(ptr byval([32 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @f8(ptr byval([32 x i8])) #0
 //L +
-//L + define private fastcc void @_S11int_lvaluesFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S11int_lvaluesFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -1995,9 +2008,11 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare void @f9(i64, i32, i17 signext, i42 signext, i128, ptr byval(i128), ptr byval(i128), ptr byval([32 x i8]), i1 signext, i1 zeroext)
+//L + ; Function Attrs: nounwind
+//L + declare void @f9(i64, i32, i17 signext, i42 signext, i128, ptr byval(i128), ptr byval(i128), ptr byval([32 x i8]), i1 signext, i1 zeroext) #0
 //L +
-//L + define private fastcc void @_S14struct_rvaluesFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S14struct_rvaluesFvE() #0 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2225,23 +2240,32 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare void @g1(i32, i32, i32, i32, i32, i32, i32, i32)
+//L + ; Function Attrs: nounwind
+//L + declare void @g1(i32, i32, i32, i32, i32, i32, i32, i32) #0
 //L +
-//L + declare void @g2(i64, i64, i64, i64, i64, i64, i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare void @g2(i64, i64, i64, i64, i64, i64, i64, i64) #0
 //L +
-//L + declare void @g3(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @g3(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8])) #0
 //L +
-//L + declare void @g4(i64, i64, i64, i64, i64, ptr byval([16 x i8]), ptr byval([16 x i8]), i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare void @g4(i64, i64, i64, i64, i64, ptr byval([16 x i8]), ptr byval([16 x i8]), i64, i64) #0
 //L +
-//L + declare void @g5(ptr byval([32 x i8]), i32, i32, i32, i32, i32, i32, i32)
+//L + ; Function Attrs: nounwind
+//L + declare void @g5(ptr byval([32 x i8]), i32, i32, i32, i32, i32, i32, i32) #0
 //L +
-//L + declare void @g6(i64, i32, i64, i32, i64, i32, ptr byval([12 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @g6(i64, i32, i64, i32, i64, i32, ptr byval([12 x i8])) #0
 //L +
-//L + declare void @g7(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @g7(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8])) #0
 //L +
-//L + declare void @g8(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @g8(i64, i64, i64, i64, i64, i64, ptr byval([16 x i8])) #0
 //L +
-//L + define private fastcc void @_S14struct_lvaluesFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S14struct_lvaluesFvE() #0 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 8, align 4
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2435,7 +2459,8 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S6in_outFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S6in_outFvE() #0 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2455,11 +2480,14 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @h1(ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), i32, i32, ptr dereferenceable(4))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @h1(ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), i32, i32, ptr dereferenceable(4)) #0
 //L +
-//L + declare fastcc void @h2(ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), i32, i32, ptr dereferenceable(4))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @h2(ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), ptr dereferenceable(4), i32, i32, ptr dereferenceable(4)) #0
 //L +
-//L + define private fastcc void @_S13in_move_smallFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S13in_move_smallFvE() #0 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2515,11 +2543,14 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @h3(i32, i32, i32, i32, i32, i32, i32, i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @h3(i32, i32, i32, i32, i32, i32, i32, i32) #0
 //L +
-//L + declare fastcc void @h4(i32, i32, i32, i32, i32, i32, i32, i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @h4(i32, i32, i32, i32, i32, i32, i32, i32) #0
 //L +
-//L + define private fastcc void @_S10big_structFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S10big_structFvE() #0 {
 //L +   %1 = alloca i8, i64 400, align 8
 //L +   %2 = alloca i8, i64 400, align 8
 //L +   %3 = alloca i8, i64 400, align 8
@@ -2597,17 +2628,23 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @big1(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @big1(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32) #0
 //L +
-//L + declare fastcc void @big2(ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @big2(ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), i32) #0
 //L +
-//L + declare fastcc void @big3(ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @big3(ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), ptr byval([400 x i8]), i32) #0
 //L +
-//L + declare fastcc void @big4(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @big4(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32) #0
 //L +
-//L + declare fastcc void @big5(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @big5(ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr dereferenceable(400), ptr byval([400 x i8]), ptr dereferenceable(400), i32) #0
 //L +
-//L + define private fastcc void @_S7returnsFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S7returnsFvE() #0 {
 //L +   %1 = alloca i8, i64 1, align 1
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 1, align 1
@@ -2705,49 +2742,71 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare zeroext i1 @r1()
+//L + ; Function Attrs: nounwind
+//L + declare zeroext i1 @r1() #0
 //L +
-//L + declare signext i1 @r2()
+//L + ; Function Attrs: nounwind
+//L + declare signext i1 @r2() #0
 //L +
-//L + declare signext i4 @r3()
+//L + ; Function Attrs: nounwind
+//L + declare signext i4 @r3() #0
 //L +
-//L + declare signext i7 @r4()
+//L + ; Function Attrs: nounwind
+//L + declare signext i7 @r4() #0
 //L +
-//L + declare i8 @r5()
+//L + ; Function Attrs: nounwind
+//L + declare i8 @r5() #0
 //L +
-//L + declare i16 @r6()
+//L + ; Function Attrs: nounwind
+//L + declare i16 @r6() #0
 //L +
-//L + declare signext i17 @r7()
+//L + ; Function Attrs: nounwind
+//L + declare signext i17 @r7() #0
 //L +
-//L + declare i32 @r8()
+//L + ; Function Attrs: nounwind
+//L + declare i32 @r8() #0
 //L +
-//L + declare signext i42 @r9()
+//L + ; Function Attrs: nounwind
+//L + declare signext i42 @r9() #0
 //L +
-//L + declare i64 @r10()
+//L + ; Function Attrs: nounwind
+//L + declare i64 @r10() #0
 //L +
-//L + declare { i64, i64 } @r11()
+//L + ; Function Attrs: nounwind
+//L + declare { i64, i64 } @r11() #0
 //L +
-//L + declare { i64, i64 } @r12()
+//L + ; Function Attrs: nounwind
+//L + declare { i64, i64 } @r12() #0
 //L +
-//L + declare i128 @r13()
+//L + ; Function Attrs: nounwind
+//L + declare i128 @r13() #0
 //L +
-//L + declare void @r14(ptr sret([24 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @r14(ptr sret([24 x i8])) #0
 //L +
-//L + declare i32 @r15()
+//L + ; Function Attrs: nounwind
+//L + declare i32 @r15() #0
 //L +
-//L + declare i64 @r16()
+//L + ; Function Attrs: nounwind
+//L + declare i64 @r16() #0
 //L +
-//L + declare { i64, i64 } @r17()
+//L + ; Function Attrs: nounwind
+//L + declare { i64, i64 } @r17() #0
 //L +
-//L + declare void @r18(ptr sret([400 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare void @r18(ptr sret([400 x i8])) #0
 //L +
-//L + declare i32 @r19()
+//L + ; Function Attrs: nounwind
+//L + declare i32 @r19() #0
 //L +
-//L + declare i16 @r20()
+//L + ; Function Attrs: nounwind
+//L + declare i16 @r20() #0
 //L +
-//L + declare i16 @r21()
+//L + ; Function Attrs: nounwind
+//L + declare i16 @r21() #0
 //L +
-//L + define private fastcc void @_S6slicesFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S6slicesFvE() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2812,15 +2871,20 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @s1(ptr, i64, ptr, i64, ptr, i64, ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @s1(ptr, i64, ptr, i64, ptr, i64, ptr byval([16 x i8])) #0
 //L +
-//L + declare fastcc void @s2(ptr dereferenceable(16), ptr, i64, ptr dereferenceable(16), ptr, i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @s2(ptr dereferenceable(16), ptr, i64, ptr dereferenceable(16), ptr, i64) #0
 //L +
-//L + declare fastcc void @s3(ptr dereferenceable(16), ptr, i64, ptr dereferenceable(16), ptr, i64, ptr byval([16 x i8]), ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @s3(ptr dereferenceable(16), ptr, i64, ptr dereferenceable(16), ptr, i64, ptr byval([16 x i8]), ptr byval([16 x i8])) #0
 //L +
-//L + declare fastcc { i64, i64 } @s4()
+//L + ; Function Attrs: nounwind
+//L + declare fastcc { i64, i64 } @s4() #0
 //L +
-//L + define private fastcc void @_S8closuresFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S8closuresFvE() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2885,24 +2949,30 @@ proc closures {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @cx()
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @cx() #0
 //L +
-//L + declare fastcc void @c1(ptr, ptr, ptr, ptr, ptr, ptr, ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @c1(ptr, ptr, ptr, ptr, ptr, ptr, ptr byval([16 x i8])) #0
 //L +
-//L + declare fastcc void @c2(ptr dereferenceable(16), ptr, ptr, ptr dereferenceable(16), ptr, ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @c2(ptr dereferenceable(16), ptr, ptr, ptr dereferenceable(16), ptr, ptr) #0
 //L +
-//L + declare fastcc void @c3(ptr dereferenceable(16), ptr, ptr, ptr dereferenceable(16), ptr, ptr, ptr byval([16 x i8]), ptr byval([16 x i8]))
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @c3(ptr dereferenceable(16), ptr, ptr, ptr dereferenceable(16), ptr, ptr, ptr byval([16 x i8]), ptr byval([16 x i8])) #0
 //L +
-//L + declare fastcc { i64, i64 } @c4()
+//L + ; Function Attrs: nounwind
+//L + declare fastcc { i64, i64 } @c4() #0
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
-//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #0
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
-//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #0 = { nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

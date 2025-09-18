@@ -232,20 +232,25 @@ proc e (i64[] a, i64[] b) = a == b;
 //L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
 //L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @_S1aFbE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @_S1aFbE() #0 {
 //L +   %1 = call fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.0, i64 4, ptr @__srcc_str.1, i64 4)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -303,22 +308,26 @@ proc e (i64[] a, i64[] b) = a == b;
 //L +   ret i1 true
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @_S1bFbE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @_S1bFbE() #0 {
 //L +   %1 = call fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.3, i64 2)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @_S1cFbE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @_S1cFbE() #0 {
 //L +   %1 = call fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.2, i64 1)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @_S1dFbE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @_S1dFbE() #0 {
 //L +   %1 = call fastcc zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.4, i64 0, ptr @__srcc_str.4, i64 0)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @_S1eFbSI64SI64E(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @_S1eFbSI64SI64E(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -337,7 +346,8 @@ proc e (i64[] a, i64[] b) = a == b;
 //L +   ret i1 %15
 //L + }
 //L +
-//L + define private fastcc zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %0, i64 %1, ptr %2, i64 %3) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -396,6 +406,8 @@ proc e (i64[] a, i64[] b) = a == b;
 //L + 40:                                               ; preds = %30, %26
 //L +   ret i1 true
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

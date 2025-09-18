@@ -552,6 +552,7 @@ auto CodeGen::GetOrCreateProc(
         C(ty->cconv()),
         info.func,
         ty->variadic(),
+        info.no_return,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
@@ -1264,7 +1265,7 @@ auto CodeGen::LowerProcedureSignature(
     auto ret = proc->ret();
     auto sz = ret->bit_width(tu);
     if (IsZeroSizedType(ret)) {
-        // Nothing.
+        if (ret == Type::NoReturnTy) info.no_return = true;
     }
 
     // Some types are returned via a store to a hidden argument pointer.
@@ -2687,6 +2688,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         C(Linkage::Internal),
         C(CallingConvention::Native),
         info.func,
+        false,
         false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)

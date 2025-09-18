@@ -258,15 +258,19 @@ proc f4 -> int {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f1FiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f1FiE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -280,17 +284,20 @@ proc f4 -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f1$1gFiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f1$1gFiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 %3
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f1$1hFiE"() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f1$1hFiE"() #0 {
 //L +   ret i64 20
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f2FiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f2FiE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 20, ptr %1, align 8
@@ -299,7 +306,8 @@ proc f4 -> int {
 //L +   ret i64 %3
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f2$1gFiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f2$1gFiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store i64 30, ptr %2, align 8
@@ -310,7 +318,8 @@ proc f4 -> int {
 //L +   ret i64 %5
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f3FiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f3FiE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -325,7 +334,8 @@ proc f4 -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f3$1hFibE"(i1 zeroext %0, ptr nest nofree noundef readonly %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f3$1hFibE"(i1 zeroext %0, ptr nest nofree noundef readonly %1) #0 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
 //L +   store i8 %4, ptr %3, align 1
@@ -347,7 +357,8 @@ proc f4 -> int {
 //L +   ret i64 %13
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f3$1gFibE"(i1 zeroext %0, ptr nest nofree noundef readonly %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f3$1gFibE"(i1 zeroext %0, ptr nest nofree noundef readonly %1) #0 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
 //L +   store i8 %4, ptr %3, align 1
@@ -370,7 +381,8 @@ proc f4 -> int {
 //L +   ret i64 %14
 //L + }
 //L +
-//L + define private fastcc i64 @_S2f4FiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S2f4FiE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -381,13 +393,15 @@ proc f4 -> int {
 //L +   ret i64 %5
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f4$2g1FiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f4$2g1FiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 %3
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f4$2g2FiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f4$2g2FiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store i64 2, ptr %2, align 8
@@ -405,7 +419,8 @@ proc f4 -> int {
 //L +   ret i64 %12
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f2$1g$1hFiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f2$1g$1hFiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load ptr, ptr %2, align 8
 //L +   %4 = load i64, ptr %3, align 8
@@ -416,7 +431,8 @@ proc f4 -> int {
 //L +   ret i64 %8
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f4$2g2$2g3FiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f4$2g2$2g3FiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load ptr, ptr %2, align 8
 //L +   %4 = load i64, ptr %3, align 8
@@ -427,7 +443,8 @@ proc f4 -> int {
 //L +   ret i64 %8
 //L + }
 //L +
-//L + define private fastcc i64 @"_S2f4$2g2$2g4FiE"(ptr nest nofree noundef readonly %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @"_S2f4$2g2$2g4FiE"(ptr nest nofree noundef readonly %0) #0 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = call fastcc i64 @"_S2f4$2g1FiE"(ptr nest nofree noundef readonly %2)
 //L +   %4 = call fastcc i64 @"_S2f4$2g2$2g3FiE"(ptr nest nofree noundef readonly %0)
@@ -442,6 +459,8 @@ proc f4 -> int {
 //L +   %13 = add i64 %9, %12
 //L +   ret i64 %13
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

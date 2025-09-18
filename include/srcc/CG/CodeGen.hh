@@ -488,6 +488,7 @@ public:
         SmallVector<mlir::Attribute> arg_attrs;
         SmallVector<Value> args;
         mlir::FunctionType func;
+        bool no_return = false;
     };
 
     /// A single IR-level argument.

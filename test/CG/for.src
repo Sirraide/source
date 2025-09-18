@@ -371,15 +371,19 @@ proc l {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1aFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1aFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -395,7 +399,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1bFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1bFvE() #0 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -416,9 +421,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxI16E(i16)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxI16E(i16) #0
 //L +
-//L + define private fastcc void @_S1cFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1cFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %9, %0
@@ -444,9 +451,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxiE(i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxiE(i64) #0
 //L +
-//L + define private fastcc void @_S1dFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1dFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -462,7 +471,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1eFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1eFvE() #0 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -485,9 +495,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxI16xiE(i16, i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxI16xiE(i16, i64) #0
 //L +
-//L + define private fastcc void @_S1fFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1fFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %12, %0
@@ -517,9 +529,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxixixixiE(i64, i64, i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxixixixiE(i64, i64, i64, i64) #0
 //L +
-//L + define private fastcc void @_S1gFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1gFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %7, %0
@@ -542,9 +556,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxixiE(i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxixiE(i64, i64) #0
 //L +
-//L + define private fastcc void @_S1hFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1hFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %8, %0
@@ -569,9 +585,11 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + declare fastcc void @_S3fooFvxixixiE(i64, i64, i64)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S3fooFvxixixiE(i64, i64, i64) #0
 //L +
-//L + define private fastcc void @_S1iFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1iFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %5, %0
@@ -590,7 +608,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1jFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1jFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %14, %0
@@ -627,7 +646,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1kFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1kFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -644,7 +664,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S1lFvE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S1lFvE() #0 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -672,6 +693,8 @@ proc l {
 //L + 13:                                               ; preds = %7
 //L +   ret void
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

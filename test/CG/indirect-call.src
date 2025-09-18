@@ -58,17 +58,21 @@ caller2(foo);
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   %1 = call fastcc i64 @_S7caller1FiFiEE(ptr @_S3fooFiE, ptr null)
 //L +   %2 = call fastcc i64 @_S7caller2FixFiEE(ptr @_S3fooFiE, ptr null)
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S7caller1FiFiEE(ptr %0, ptr %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S7caller1FiFiEE(ptr %0, ptr %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -80,11 +84,13 @@ caller2(foo);
 //L +   ret i64 %8
 //L + }
 //L +
-//L + define private fastcc i64 @_S3fooFiE() {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S3fooFiE() #0 {
 //L +   ret i64 42
 //L + }
 //L +
-//L + define private fastcc i64 @_S7caller2FixFiEE(ptr %0, ptr %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S7caller2FixFiEE(ptr %0, ptr %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -95,6 +101,8 @@ caller2(foo);
 //L +   %8 = call fastcc i64 %5(ptr nest nofree noundef readonly %7)
 //L +   ret i64 %8
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

@@ -212,11 +212,14 @@ f_copy(j);
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + declare fastcc void @__src_assert_fail(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
 //L +
-//L + declare fastcc void @__src_int_arith_error(ptr)
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
-//L + define fastcc void @__src_main() {
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1256, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -270,7 +273,8 @@ f_copy(j);
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S6f_moveFiiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S6f_moveFiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -278,7 +282,8 @@ f_copy(j);
 //L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc void @_S6f_moveFI10000I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S6f_moveFI10000I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) #0 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 2
@@ -287,7 +292,8 @@ f_copy(j);
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S4f_inFixiE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S4f_inFixiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -295,7 +301,8 @@ f_copy(j);
 //L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc void @_S4f_inFI10000xI10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S4f_inFI10000xI10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) #0 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 3
@@ -304,17 +311,20 @@ f_copy(j);
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S5f_outFvx1iE(ptr dereferenceable(8) %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S5f_outFvx1iE(ptr dereferenceable(8) %0) #0 {
 //L +   store i64 100, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc void @_S5f_outFvx1I10000E(ptr dereferenceable(1256) %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S5f_outFvx1I10000E(ptr dereferenceable(1256) %0) #0 {
 //L +   store i10048 1000, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S7f_inoutFix2iE(ptr dereferenceable(8) %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S7f_inoutFix2iE(ptr dereferenceable(8) %0) #0 {
 //L +   %2 = load i64, ptr %0, align 8
 //L +   %3 = mul i64 %2, 5
 //L +   store i64 %3, ptr %0, align 8
@@ -322,7 +332,8 @@ f_copy(j);
 //L +   ret i64 %4
 //L + }
 //L +
-//L + define private fastcc void @_S7f_inoutFI10000x2I10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S7f_inoutFI10000x2I10000E(ptr sret([1256 x i8]) %0, ptr dereferenceable(1256) %1) #0 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 5
@@ -335,7 +346,8 @@ f_copy(j);
 //L +   ret void
 //L + }
 //L +
-//L + define private fastcc i64 @_S6f_copyFix3iE(i64 %0) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @_S6f_copyFix3iE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -345,7 +357,8 @@ f_copy(j);
 //L +   ret i64 %5
 //L + }
 //L +
-//L + define private fastcc void @_S6f_copyFI10000x3I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) {
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S6f_copyFI10000x3I10000E(ptr sret([1256 x i8]) %0, ptr byval([1256 x i8]) %1) #0 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 6
@@ -357,6 +370,8 @@ f_copy(j);
 //L +   store i10048 %9, ptr %0, align 8
 //L +   ret void
 //L + }
+//L +
+//L + attributes #0 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

@@ -438,6 +438,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
+    if (proc.getNoreturn()) out += " %1(noreturn%)";
     out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
 

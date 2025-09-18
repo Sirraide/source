@@ -69,6 +69,7 @@ def ProcOp : SRCC_Op<"proc", [
         CConv:$cc,
         TypeAttrOf<FunctionType>:$function_type,
         UnitAttr:$variadic,
+        UnitAttr:$noreturn,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
     );
@@ -81,6 +82,7 @@ def ProcOp : SRCC_Op<"proc", [
             "::mlir::LLVM::CConv":$cc,
             "::mlir::FunctionType":$type,
             "bool":$variadic,
+            "bool":$noreturn,
             "::mlir::ArrayAttr":$arg_attrs,
             "::mlir::ArrayAttr":$res_attrs,
             CArg<"ArrayRef<mlir::NamedAttribute>", "{}">:$func_attrs
@@ -91,6 +93,7 @@ def ProcOp : SRCC_Op<"proc", [
             $_state.addAttribute(getArgAttrsAttrName($_state.name), arg_attrs);
             $_state.addAttribute(getResAttrsAttrName($_state.name), res_attrs);
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
+            if (noreturn) $_state.addAttribute(getNoreturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
         }]>
     ];
 
