@@ -29,6 +29,31 @@ namespace ir = cg::ir;
 using mlir::Block;
 using mlir::Value;
 
+auto RValue::as_range_of(
+    TranslationUnit& tu,
+    RangeType* r
+) const -> std::pair<APInt, APInt> {
+    auto mem = cast<MemoryValue>();
+    auto ptr = static_cast<const u8*>(mem.data());
+
+    // Sanity check.
+    auto range_sz = r->memory_size(tu);
+    auto range_a = r->align(tu);
+    Assert(range_sz == mem.size());
+    Assert(llvm::isAligned(range_a, uptr(ptr)));
+
+    // Load the values.
+    auto elem_a = r->elem()->align(tu);
+    auto bytes = unsigned(r->elem()->memory_size(tu).bytes());
+    auto bits = unsigned(r->elem()->bit_width(tu).bits());
+    APInt start{bits, 0}, end{bits, 0};
+    llvm::LoadIntFromMemory(start, ptr, bytes);
+    llvm::LoadIntFromMemory(end, elem_a.align(ptr + bytes), bytes);
+
+    // Truncate them if they’re weirdly sized.
+    return {start.trunc(bits), end.trunc(bits)};
+}
+
 auto RValue::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{

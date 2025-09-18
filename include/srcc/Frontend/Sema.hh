@@ -389,13 +389,15 @@ class srcc::Sema : public DiagsProducer {
                 InvalidType,       ///< We don’t know what to do w/ this (e.g. if someone passes "foo" to an integer match).
                 Subsumed,          ///< Subsumed by an earlier pattern.
             } kind{};
-            Location loc{};
+            ArrayRef<Location> locations{};
         };
 
         static auto Ok() -> AddResult { return {AddResult::Kind::Ok}; }
         static auto Exhaustive() -> AddResult { return {AddResult::Kind::Exhaustive}; }
         static auto InvalidType() -> AddResult { return {AddResult::Kind::InvalidType}; }
-        static auto Subsumed(Location loc) -> AddResult { return {AddResult::Kind::Subsumed, loc}; }
+        static auto Subsumed(ArrayRef<Location> locations) -> AddResult {
+            return {AddResult::Kind::Subsumed, locations};
+        }
     };
 
     class BoolMatchContext : public MatchContext {
@@ -413,11 +415,11 @@ class srcc::Sema : public DiagsProducer {
         /// Range of values that is satisfied.
         struct Range {
             APInt start;
-            APInt end;
-            Location loc;
+            APInt end; // Inclusive.
+            SmallVector<Location> locations;
 
             Range(APInt start, APInt end, Location loc)
-                : start{std::move(start)}, end{std::move(end)} {
+                : start{std::move(start)}, end{std::move(end)}, locations{loc} {
                 Assert(this->start.sle(this->end));
             }
 
@@ -431,6 +433,7 @@ class srcc::Sema : public DiagsProducer {
             void merge(const Range& r) {
                 start = llvm::APIntOps::smin(start, r.start);
                 end = llvm::APIntOps::smax(end, r.end);
+                locations.append(r.locations);
             }
 
             /// Check if this range overlaps another range.
@@ -440,7 +443,7 @@ class srcc::Sema : public DiagsProducer {
 
             /// Check if this range fully includes another range.
             bool subsumes(const Range& r) {
-                return r.start.sge(start) and r.end.slt(end);
+                return r.start.sge(start) and r.end.sle(end);
             }
         };
 

@@ -29,6 +29,7 @@ namespace srcc::eval {
 class Eval;
 class VM;
 class VirtualMemoryMap;
+class RValue;
 
 /// Memory holding the result of constant evaluation.
 ///
@@ -44,7 +45,11 @@ class MemoryValue {
         : storage(std::move(data)), sz(sz) {}
 
 public:
+    /// Access the data pointer.
     [[nodiscard]] auto data() -> void* { return storage; }
+    [[nodiscard]] auto data() const -> const void* { return storage; }
+
+    /// Get the size of this allocation.
     [[nodiscard]] auto size() const -> Size { return sz; }
     [[nodiscard]] auto operator<=>(const MemoryValue& other) const = default;
 };
@@ -60,6 +65,12 @@ public:
     RValue(bool val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
+
+    /// Treat this value as a range of type 'r' and extract the start/end values.
+    [[nodiscard]] auto as_range_of(
+        TranslationUnit& tu,
+        RangeType* r
+    ) const -> std::pair<APInt, APInt>;
 
     /// cast<>() the contained value.
     template <typename Ty>

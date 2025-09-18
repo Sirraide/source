@@ -1653,9 +1653,14 @@ auto Sema::IntMatchContext::add_constant_pattern(
     const eval::RValue& pattern,
     Location loc
 ) -> AddResult {
-    if (pattern.type()->is_integer()) {
+    if (pattern.type() == ty) {
         auto& i = pattern.cast<APInt>();
         return add_range(Range(i, i, loc));
+    }
+
+    if (auto r = dyn_cast<RangeType>(pattern.type()); r and r->elem() == ty) {
+        auto [start, end] = pattern.as_range_of(*S.M, r);
+        return add_range(Range(start, end - 1 /* End is exclusive */, loc));
     }
 
     return InvalidType();
@@ -1676,7 +1681,7 @@ auto Sema::IntMatchContext::add_range(Range r) -> AddResult {
         // is not entirely before 'r'; if it subsumes 'r', drop 'r' entirely,
         // otherwise, merge it into r.
         if (it != ranges.end() and it->overlaps(r)) {
-            if (it->subsumes(r)) return Subsumed(it->loc);
+            if (it->subsumes(r)) return Subsumed(it->locations);
             it->merge(r);
         }
 
@@ -1715,8 +1720,9 @@ auto Sema::IntMatchContext::build_comparison(
     Expr* control_expr,
     Expr* pattern_expr
 ) -> Ptr<Expr> {
+    Tk op = isa<RangeType>(pattern_expr->type) ? Tk::In : Tk::EqEq;
     return S.BuildBinaryExpr(
-        Tk::EqEq,
+        op,
         control_expr,
         pattern_expr,
         pattern_expr->location()
@@ -1748,37 +1754,46 @@ void Sema::IntMatchContext::note_missing(Location loc) {
     for (auto& r : ranges) {
         msg += std::format("\n    {}, {}", r.start, r.end);
     }
+
+    S.Note(loc, "DEBUG. VALUE RANGES ARE\n%r({}%)", msg);
+    return;
 #endif
 
-    // Compute the first unsatisfied value.
-    //
-    // This is normally '<type>.min', unless the first range starts
-    // with that value. In that case, take that range’s 'end' value
-    // plus 1. Note that this cannot overflow since in that case,
-    // the span of that range would be the entire value domain, in
-    // which case we should never get here in the first place since
-    // the match would exhaustive.
+    // It’s easiest to handle this case separately.
     auto sz = ranges.size();
-    bool first_is_min = sz >= 1 and ranges.front().start == min;
-    APInt first_unsatisfied = first_is_min ? ranges.front().end + 1 :  min;
+    if (sz == 0) {
+        Format(min, max);
+    } else {
+        // Compute the first unsatisfied value.
+        //
+        // This is normally '<type>.min', unless the first range starts
+        // with that value. In that case, take that range’s 'end' value
+        // plus 1. Note that this cannot overflow since in that case,
+        // the span of that range would be the entire value domain, in
+        // which case we should never get here in the first place since
+        // the match would exhaustive.
+        bool first_is_min = ranges.front().start == min;
+        APInt first_unsatisfied = first_is_min ? ranges.front().end + 1 : min;
 
-    // Go through all ranges (except the first if its start is the
-    // minimum value) and collect all unsatisfied values between
-    // them.
-    APInt one{min.getBitWidth(), 1};
-    for (auto& r : ArrayRef(ranges).drop_front(first_is_min ? 1 : 0)) {
-        Format(first_unsatisfied, r.start.ssub_sat(one));
-        first_unsatisfied = r.end.sadd_sat(one);
+        // Go through all ranges (except the first if its start is the
+        // minimum value) and collect all unsatisfied values between
+        // them.
+        APInt one{min.getBitWidth(), 1};
+        for (auto& r : ArrayRef(ranges).drop_front(first_is_min ? 1 : 0)) {
+            Format(first_unsatisfied, r.start.ssub_sat(one));
+            first_unsatisfied = r.end.sadd_sat(one);
+        }
+
+        // Append any remaining values after the last range.
+        //
+        // Note that there is an edge case here: the last range may
+        // end immediately before '<type>.max'.
+        if (
+            first_unsatisfied != max or
+            (sz != 0 and ranges.back().end == max - 1)
+        ) Format(first_unsatisfied, max);
     }
 
-    // Append any remaining values after the last range.
-    //
-    // Note that there is an edge case here: the last range may
-    // end immediately before '<type>.max'.
-    if (
-        first_unsatisfied != max or
-        (sz != 0 and ranges.back().start == max - 1)
-    ) Format(first_unsatisfied, max);
 
     if (msg.ends_with(",")) msg.pop_back();
     S.Note(loc, "Possible value ranges not handled:\n%r({}%)", msg);
@@ -1827,7 +1842,7 @@ bool Sema::CheckMatchExhaustive(
         }
 
         // Add the constant.
-        auto [res, loc] = mc.add_constant_pattern(rv.value(), e->location());
+        auto [res, locations] = mc.add_constant_pattern(rv.value(), e->location());
         c.cond = MakeConstExpr(e, std::move(rv.value()), e->location());
         switch (res) {
             using K = MatchContext::AddResult::Kind;
@@ -1847,7 +1862,16 @@ bool Sema::CheckMatchExhaustive(
 
             case K::Subsumed: {
                 Warn(e->location(), "Pattern will never be matched");
-                Note(loc, "Because it is subsumed by this preceding pattern");
+
+                // FIXME: Stuff like this should *really* just be rendered in-line.
+                if (locations.size() == 1) {
+                    Note(locations.front(), "Because it is subsumed by this preceding pattern");
+                } else {
+                    for (auto loc : locations) {
+                        Note(loc, "Because it is partially subsumed by this preceding pattern");
+                    }
+                }
+
                 c.unreachable = true;
                 break;
             }
@@ -2018,8 +2042,16 @@ auto Sema::BuildBinaryExpr(
             return BuildInitialiser(ty, lhs, loc);
         }
 
-        // TODO: Allow for slices and arrays.
-        case Tk::In: return ICE(loc, "Operator 'in' not yet implemented");
+        case Tk::In: {
+            if (auto r = dyn_cast<RangeType>(rhs->type)) {
+                if (not MakeRValue(r->elem(), lhs, "Left operand", Spelling(op))) return nullptr;
+                rhs = LValueToRValue(rhs);
+                return Build(Type::BoolTy);
+            }
+
+            // TODO: Allow for slices and arrays.
+            return ICE(loc, "Operator 'in' not yet implemented");
+        }
 
         // This is implemented as a function template.
         case Tk::StarStar: {
@@ -2031,6 +2063,28 @@ auto Sema::BuildBinaryExpr(
         case Tk::DotDotEq:
         case Tk::DotDotLess: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
+
+            // Check that the RHS is not the maximum representable value.
+            if (op == Tk::DotDotEq) {
+                auto max = M->vm.eval(rhs, false);
+                if (max.has_value()) {
+                    auto bits = lhs->type->bit_width(*M);
+
+                    // FIXME: Figure out SOME way to make it so BOTH 'a..=b' and 'a..<b' are ALWAYS valid.
+                    if (max->cast<APInt>() == APInt::getSignedMaxValue(unsigned(bits.bits()))) {
+                        Error(
+                            rhs->location(),
+                            "End of inclusive range of '{}' cannot be '{}.%5(max%)'",
+                            rhs->type,
+                            rhs->type
+                        );
+
+                        // This may cause issues if we try to evaluate it somehow, so give up.
+                        return nullptr;
+                    }
+                }
+            }
+
             return Build(RangeType::Get(*M, lhs->type));
         }
 
