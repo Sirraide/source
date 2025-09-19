@@ -58,6 +58,8 @@ int cg::CodeGen::write_to_file(
     llvm::TargetMachine& machine,
     TranslationUnit& tu,
     llvm::Module& m,
+    ArrayRef<std::string> lib_paths,
+    ArrayRef<std::string> link_libs,
     ArrayRef<std::string> additional_objects,
     StringRef program_file_name_override
 ) {
@@ -156,6 +158,16 @@ int cg::CodeGen::write_to_file(
     SmallVector<StringRef> args_ref;
     for (auto& arg : clang_link_args) args_ref.push_back(arg);
     for (auto& obj : additional_objects) args_ref.push_back(obj);
+    for (auto& obj : lib_paths) {
+        args_ref.push_back("-L");
+        args_ref.push_back(obj);
+    }
+
+    for (auto& obj : link_libs) {
+        args_ref.push_back("-l");
+        args_ref.push_back(obj);
+    }
+
     for (auto& [_, import] : tu.linkage_imports)
         if (auto src_mod = dyn_cast<ImportedSourceModuleDecl>(import))
             args_ref.push_back(src_mod->mod_path);

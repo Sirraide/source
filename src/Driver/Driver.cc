@@ -221,7 +221,8 @@ int Driver::run_job() {
         lang_opts,
         std::move(preamble),
         std::move(parsed_modules),
-        std::move(opts.module_search_paths),
+        opts.module_search_paths,
+        opts.clang_include_paths,
         opts.import_runtime
     );
 
@@ -287,6 +288,8 @@ int Driver::run_job() {
         *machine,
         *tu,
         *ir_module,
+        opts.lib_paths,
+        opts.link_libs,
         opts.link_objects,
         opts.output_file_name
     );

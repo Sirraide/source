@@ -106,7 +106,7 @@ public:
     llvm::LLVMContext llvm_context;
 
     /// FFI Types.
-    Type FFIBoolTy;
+    Type FFIBoolTy; // FIXME: REMOVE THIS.
     Type FFICharTy;
     Type FFIShortTy;
     Type FFIIntTy;

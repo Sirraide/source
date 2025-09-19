@@ -30,6 +30,9 @@ using options = clopts< // clang-format off
     option<"--target", "Target triple to compile for">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
+    multiple<experimental::short_option<"-I", "Add a directory to the C/C++ header search path">>,
+    multiple<experimental::short_option<"-L", "Add a directory to the library search path">>,
+    multiple<experimental::short_option<"-l", "Link against a library">>,
     experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
 
     // General flags.
@@ -137,13 +140,11 @@ int main(int argc, char** argv) {
         .module_output_path = opts.get<"--mo">("."),
         .output_file_name = opts.get<"-o">(""),
         .preamble_path = opts.get<"--preamble">(SOURCE_PROJECT_DIR_NAME "/std/preamble.src"),
-        .module_search_paths = std::move(module_search_paths),
-
-        .link_objects = std::vector<std::string>{
-            opts.get<"--link-object">().begin(),
-            opts.get<"--link-object">().end(),
-        },
-
+        .module_search_paths = module_search_paths,
+        .clang_include_paths = opts.get<"-I">(),
+        .lib_paths = opts.get<"-L">(),
+        .link_libs = opts.get<"-l">(),
+        .link_objects = opts.get<"--link-object">(),
         .action = action,
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get<"--error-limit">(20)),

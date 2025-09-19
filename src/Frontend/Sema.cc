@@ -2858,7 +2858,8 @@ auto Sema::Translate(
     const LangOpts& opts,
     ParsedModule::Ptr preamble,
     SmallVector<ParsedModule::Ptr> modules,
-    std::vector<std::string> module_search_paths,
+    ArrayRef<std::string> module_search_paths,
+    ArrayRef<std::string> clang_include_paths,
     bool load_runtime
 ) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
@@ -2877,7 +2878,8 @@ auto Sema::Translate(
     bool have_preamble = preamble != nullptr;
     if (have_preamble) S.parsed_modules.push_back(std::move(preamble));
     for (auto& m : modules) S.parsed_modules.push_back(std::move(m));
-    S.search_paths = std::move(module_search_paths);
+    S.search_paths = module_search_paths;
+    S.clang_include_paths = clang_include_paths;
 
     // Translate it.
     S.Translate(have_preamble, load_runtime);

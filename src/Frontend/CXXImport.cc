@@ -168,7 +168,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
                 using K = clang::BuiltinType::Kind;
                 default: return std::nullopt;
                 case K::Void: return Type::VoidTy;
-                case K::Bool: return S.M->FFIBoolTy;
+                case K::Bool: return Type::BoolTy;
 
                 case K::SChar:
                 case K::UChar:
@@ -275,6 +275,11 @@ auto Sema::ImportCXXHeaders(
         "-fcolor-diagnostics",
         "-fsyntax-only"
     };
+
+    for (const auto& p : clang_include_paths) {
+        args.push_back("-I");
+        args.push_back(p);
+    }
 
     auto AST = clang::tooling::buildASTFromCodeWithArgs(
         utils::join(header_names, "", "#include {}\n"),

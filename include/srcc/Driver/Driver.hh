@@ -58,10 +58,22 @@ public:
         std::string preamble_path;
 
         /// Directories to search for modules.
-        std::vector<std::string> module_search_paths;
+        std::span<std::string> module_search_paths;
+
+        /// Directories to add to the C/C++ header search path.
+        std::span<std::string> clang_include_paths;
+
+        /// Directories to add to the native library search path.
+        std::span<std::string> lib_paths;
+
+        /// Libraries to link against.
+        std::span<std::string> link_libs;
 
         /// Additional objects to link in.
-        std::vector<std::string> link_objects;
+        ///
+        /// Unlike 'link_libs', these are directly passed to the linker
+        /// as-is rather than via '-l'.
+        std::span<std::string> link_objects;
 
         /// The action to perform.
         Action action;

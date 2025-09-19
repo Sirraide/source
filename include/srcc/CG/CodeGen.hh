@@ -259,6 +259,8 @@ public:
         llvm::TargetMachine& machine,
         TranslationUnit& tu,
         llvm::Module& m,
+        ArrayRef<std::string> lib_paths,
+        ArrayRef<std::string> link_libs,
         ArrayRef<std::string> additional_objects,
         StringRef program_file_name_override
     );

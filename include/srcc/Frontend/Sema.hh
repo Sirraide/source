@@ -466,7 +466,8 @@ class srcc::Sema : public DiagsProducer {
     Context& ctx;
     TranslationUnit::Ptr M;
     SmallVector<ParsedModule::Ptr> parsed_modules;
-    std::vector<std::string> search_paths;
+    ArrayRef<std::string> search_paths;
+    ArrayRef<std::string> clang_include_paths;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
@@ -517,7 +518,8 @@ public:
         const LangOpts& opts,
         ParsedModule::Ptr preamble,
         SmallVector<ParsedModule::Ptr> modules,
-        std::vector<std::string> module_search_paths,
+        ArrayRef<std::string> module_search_paths,
+        ArrayRef<std::string> clang_include_paths,
         bool load_runtime
     ) -> TranslationUnit::Ptr;
 
