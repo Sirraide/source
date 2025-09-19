@@ -4,6 +4,7 @@
 namespace clang {
 class ASTUnit;
 class Decl;
+class RecordDecl;
 }
 
 namespace srcc {

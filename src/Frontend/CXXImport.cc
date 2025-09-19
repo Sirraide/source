@@ -2,12 +2,14 @@
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/AST/Decl.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
 #include <clang/Tooling/Tooling.h>
+#include <clang/AST/RecordLayout.h>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/VirtualFileSystem.h>
@@ -24,6 +26,7 @@ class Sema::Importer {
 public:
     explicit Importer(Sema& S, clang::ASTUnit& AST) : S(S), AST(AST) {}
     auto ImportDecl(clang::Decl* D) -> Ptr<Decl>;
+    auto ImportRecord(clang::RecordDecl* RD) -> std::optional<Type>;
     auto ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl>;
     auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
@@ -53,7 +56,6 @@ auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
         case K::Function: {
             auto f = ImportFunction(cast<clang::FunctionDecl>(D));
             if (not f) break;
-            S.imported_decls[D] = f;
             return f;
         }
 
@@ -61,11 +63,25 @@ auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
             // TODO
             break;
 
-        case K::Record:
-            // TODO
-            break;
+        case K::Record:{
+            auto ty = ImportRecord(cast<clang::RecordDecl>(D));
+            if (ty) return cast<StructType>(ty.value())->decl();
+        } break;
 
-        case K::Typedef:
+        case K::Typedef: {
+            auto td = cast<clang::TypedefDecl>(D);
+            auto clang_ty = AST.getASTContext().getTypedefType(
+                clang::ElaboratedTypeKeyword::None,
+                std::nullopt,
+                td
+            );
+
+            if (clang_ty->isRecordType()) {
+                auto ty = ImportType(clang_ty);
+                if (ty) return cast<StructType>(ty.value())->decl();
+            }
+        } break;
+
         case K::Using:
             // TODO
             break;
@@ -148,6 +164,71 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
 
     PD->finalise(nullptr, Params);
     return PD;
+}
+
+auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> {
+    Assert(RD);
+    auto it = S.imported_records.find(RD);
+    if (it != S.imported_records.end()) return it->second;
+
+    // Create the cache entry now so we fail fast next time if we can’t import
+    // this; don’t hold on to a reference to the cache entry here since we’re
+    // about to import more types, which might invalidate it.
+    S.imported_records[RD] = std::nullopt;
+
+    // Skip unions and incomplete types.
+    if (not RD or not RD->isCompleteDefinition() or RD->isUnion()) return std::nullopt;
+
+    // Import the fields.
+    auto& RL = AST.getASTContext().getASTRecordLayout(RD);
+    SmallVector<FieldDecl*> Fields;
+    for (auto [I, F] : enumerate(RD->fields())) {
+        if (F->isBitField()) return std::nullopt;
+        if (F->getMaxAlignment() != 0) return std::nullopt;
+        if (F->hasInClassInitializer()) return std::nullopt;
+        auto FTY = ImportType(F->getType());
+        if (not FTY) return std::nullopt;
+        Fields.push_back(new (*S.M) FieldDecl(
+            FTY.value(),
+            Size::Bits(RL.getFieldOffset(unsigned(I))),
+            S.M->save(F->getName()),
+            ImportSourceLocation(F->getLocation())
+        ));
+    }
+
+    // Validate other properties of this type.
+    if (auto CXX = dyn_cast<clang::CXXRecordDecl>(RD)) {
+        if (not CXX->isCLike()) return std::nullopt;
+    }
+
+    // Determine the name of this type.
+    StringRef Name;
+    if (RD->hasNameForLinkage()) {
+        if (RD->getDeclName().isIdentifier()) {
+            Name = RD->getName();
+        } else if (auto TD = RD->getTypedefNameForAnonDecl()) {
+            Name = TD->getName();
+        }
+    }
+
+    // Build the scope for the declaration.
+    auto Scope = S.M->create_scope<StructScope>(S.global_scope());
+    for (auto F : Fields) S.AddDeclToScope(Scope, F);
+
+    // Build the type.
+    auto Struct = StructType::CreateWithLayout(
+        *S.M,
+        Scope,
+        S.M->save(S.M->save(Name)),
+        Fields,
+        Size::Bytes(RL.getSize().getQuantity()),
+        Align(RL.getAlignment().getQuantity()),
+        StructType::Bits::Trivial(),
+        ImportSourceLocation(RD->getLocation())
+    );
+
+    S.imported_records[RD] = Struct;
+    return Struct;
 }
 
 auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
@@ -236,6 +317,12 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
                 FPT->isVariadic()
             );
         }
+
+        case K::Record: {
+            auto RD = T->getAsRecordDecl();
+            if (not RD) return std::nullopt;
+            return ImportRecord(RD);
+        }
     }
 }
 
@@ -252,7 +339,9 @@ auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> Locatio
 
 auto Sema::ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl> {
     Importer importer(*this, ast);
-    return importer.ImportDecl(decl);
+    auto d = importer.ImportDecl(decl);
+    imported_decls[decl] = d;
+    return d;
 }
 
 auto Sema::ImportCXXHeaders(
@@ -331,15 +420,23 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> Looku
         return LookupResult::Success(decl.get());
     }
 
-    // We found more than one; return them all if they’re all functions.
+    // If we found function declarations, import them all.
     SmallVector<Decl*> converted;
-    if (not llvm::all_of(res, [](auto* d) { return isa<clang::FunctionDecl>(d); }))
-        return LookupResult::NotFound(names.back());
+    if (llvm::all_of(res, [](auto* d) { return isa<clang::FunctionDecl>(d); })) {
+        for (auto d : res)
+            if (auto decl = ImportCXXDecl(*ast, d))
+                converted.push_back(decl.get());
+    }
 
-    // They are. Import them all.
-    for (auto d : res)
-        if (auto decl = ImportCXXDecl(*ast, d))
-            converted.push_back(decl.get());
+    // 'typedef struct X {} X' is a common pattern in C; in the Clang
+    // AST, we end up with both a RecordDecl and TypedefDecl for this.
+    else if (
+        auto it = rgs::find_if(res, [](auto* d) { return isa<clang::TypedefDecl>(d); });
+        it != res.end()
+    ) {
+        auto decl = ImportCXXDecl(*ast, *it);
+        if (decl) converted.push_back(decl.get());
+    }
 
     // We might end up with only one—or even none—if we couldn’t import
     // one of them.

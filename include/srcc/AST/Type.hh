@@ -557,6 +557,18 @@ public:
         Location decl_loc
     ) -> StructType*;
 
+    /// Create a type with a predefined layout.
+    static auto CreateWithLayout(
+        TranslationUnit& owner,
+        StructScope* scope,
+        String name,
+        ArrayRef<FieldDecl*> fields,
+        Size size,
+        Align alignment,
+        Bits bits,
+        Location decl_loc
+    ) -> StructType*;
+
     /// Create a trivial builtin struct type.
     static auto CreateTrivialBuiltinTuple(
         TranslationUnit& owner,

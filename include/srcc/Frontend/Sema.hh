@@ -482,6 +482,10 @@ class srcc::Sema : public DiagsProducer {
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
 
+    /// C++ records that have already been imported (or that
+    /// already failed to import before).
+    DenseMap<clang::RecordDecl*, std::optional<Type>> imported_records;
+
     /// C++ TUs that we own.
     SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
 

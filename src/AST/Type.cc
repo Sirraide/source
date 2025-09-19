@@ -464,6 +464,21 @@ auto StructType::Create(
     return type;
 }
 
+auto StructType::CreateWithLayout(
+    TranslationUnit& owner,
+    StructScope* scope,
+    String name,
+    ArrayRef<FieldDecl*> fields,
+    Size size,
+    Align alignment,
+    Bits bits,
+    Location decl_loc
+) -> StructType* {
+    auto ty = Create(owner, scope, name, u32(fields.size()), decl_loc);
+    ty->finalise(fields, size, alignment, bits);
+    return ty;
+}
+
 auto StructType::LayoutBuilder::add_field(Type ty, String name, Location loc) -> FieldDecl* {
     // TODO: Optimise layout if this isn’t meant for FFI.
     auto fa = ty->align(tu);
