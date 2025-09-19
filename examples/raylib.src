@@ -6,6 +6,6 @@ InitWindow(800, 600, "Hello from Source".data);
 SetTargetFPS(60);
 while not WindowShouldClose() {
     BeginDrawing();
-    ClearBackground(Color(255 as i8, 0, 0, 255 as i8));
+    ClearBackground(Color(200, 100, 80, 255));
     EndDrawing();
 }

@@ -1,0 +1,14 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Permit treating integer literals as unsigned.
+i8 a = -128;
+i8 a = 128;
+i8 a = 255;
+i16 a = -32768;
+i16 a = 65535;
+
+i8 a = -129; // expected-error: Cannot convert expression of type 'int' to 'i8'
+i16 a = -32769; // expected-error: Cannot convert expression of type 'int' to 'i16'
+i8 a = 256; // expected-error: Cannot convert expression of type 'int' to 'i8'
+i16 a = 65536; // expected-error: Cannot convert expression of type 'int' to 'i16'

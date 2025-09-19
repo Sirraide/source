@@ -1,0 +1,112 @@
+// R      %srcc --ir --target x86_64-unknown-linux -fno-overflow-checks %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -fno-overflow-checks %s
+program test;
+
+proc f1 -> i8 = -128;
+proc f2 -> i8 = 128;
+proc f3 -> i8 = 255;
+proc f4 -> i8 = 254;
+proc f5 -> i16 = -32768;
+proc f6 -> i16 = 65535;
+proc f7 -> i16 = 65534;
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2f1FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -128
+// + }
+// +
+// + proc _S2f2FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -128
+// + }
+// +
+// + proc _S2f3FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -1
+// + }
+// +
+// + proc _S2f4FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -2
+// + }
+// +
+// + proc _S2f5FI16E private fastcc -> i16 {
+// + entry:
+// +     ret i16 -32768
+// + }
+// +
+// + proc _S2f6FI16E private fastcc -> i16 {
+// + entry:
+// +     ret i16 -1
+// + }
+// +
+// + proc _S2f7FI16E private fastcc -> i16 {
+// + entry:
+// +     ret i16 -2
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i8 @_S2f1FI8E() #0 {
+//L +   ret i8 -128
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i8 @_S2f2FI8E() #0 {
+//L +   ret i8 -128
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i8 @_S2f3FI8E() #0 {
+//L +   ret i8 -1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i8 @_S2f4FI8E() #0 {
+//L +   ret i8 -2
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i16 @_S2f5FI16E() #0 {
+//L +   ret i16 -32768
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i16 @_S2f6FI16E() #0 {
+//L +   ret i16 -1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i16 @_S2f7FI16E() #0 {
+//L +   ret i16 -2
+//L + }
+//L +
+//L + attributes #0 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

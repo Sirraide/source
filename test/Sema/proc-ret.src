@@ -12,7 +12,7 @@ proc f -> int { return 1; }
 proc g -> int { return c(); }
 proc h = c();
 proc i -> int = e();
-proc j -> void = e(); // expected-error: Return type 'int' does not match procedure return type 'void'
+proc j -> void = e(); // expected-error: Cannot convert expression of type 'int' to 'void'
 
 sink(a()); // expected-error: Cannot convert expression of type 'void' to 'int'
 sink(b());

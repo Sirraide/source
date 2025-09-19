@@ -683,7 +683,7 @@ private:
     auto InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl*;
 
     /// Check if an integer literal can be stored in a given type.
-    bool IntegerFitsInType(const APInt& i, Type ty);
+    bool IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated);
 
     /// Check that we have a complete type.
     [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);

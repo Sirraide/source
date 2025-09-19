@@ -198,13 +198,11 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     }
 }
 
-bool Sema::IntegerFitsInType(const APInt& i, Type ty) {
+bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
     Assert(ty->is_integer(), "Not an integer: '{}'", ty);
-    auto to_bits //
-        = ty == Type::IntTy
-            ? Type::IntTy->memory_size(*M)
-            : cast<IntType>(ty)->bit_width();
-    return Size::Bits(i.getSignificantBits()) <= to_bits;
+    auto bits = ty->bit_width(*M);
+    if (negated) return Size::Bits(i.getSignificantBits()) <= bits;
+    else return Size::Bits(i.getActiveBits()) <= bits;
 }
 
 bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
@@ -790,16 +788,18 @@ auto Sema::BuildConversionSequence(
         // that fits in the type of the lhs, convert it. If it doesn’t
         // fit, the type must be larger, so give up.
         Expr* lit = e;
+        bool negated = false;
         for (;;) {
             auto u = dyn_cast<UnaryExpr>(lit);
             if (not u or u->op != Tk::Minus) break;
             lit = u->arg;
+            negated = not negated;
         }
 
         // If we ultimately found a literal, evaluate the original expression.
         if (isa_and_present<IntLitExpr>(lit)) {
             auto val = M->vm.eval(e, false);
-            return val and IntegerFitsInType(val->cast<APInt>(), ty);
+            return val and IntegerLiteralFitsInType(val->cast<APInt>(), ty, negated);
         }
 
         return false;
@@ -2676,20 +2676,6 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         Type deduced = Type::VoidTy;
         if (auto val = value.get_or_null()) deduced = val->type;
         proc->type = ProcType::AdjustRet(*M, proc_type, deduced);
-    }
-
-    // Or complain if the type doesn’t match.
-    else {
-        Type ret = value.invalid() ? Type::VoidTy : value.get()->type;
-        if (ret != proc->return_type()) {
-            value = nullptr;
-            Error(
-                loc,
-                "Return type '{}' does not match procedure return type '{}'",
-                ret,
-                proc->return_type()
-            );
-        }
     }
 
     // Perform any necessary conversions.
