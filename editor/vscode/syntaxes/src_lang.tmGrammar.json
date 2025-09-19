@@ -122,12 +122,13 @@
             ]
         },
         {
-            "match": "(import)\\s+(<[^>]+>)\\s+(as)\\s+([a-zA-Z_0-9]+|\\*)",
+            "match": "(import)\\s+((?:<[^>]+>(,?)\\s*)+)\\s+(as)\\s+([a-zA-Z_0-9]+|\\*)",
             "captures": {
                 "1": { "name": "keyword.other" },
                 "2": { "name": "string.other" },
                 "3": { "name": "keyword.other" },
-                "4": { "name": "entity.name.module" }
+                "4": { "name": "keyword.other" },
+                "5": { "name": "entity.name.module" }
             }
         },
         {
