@@ -207,7 +207,7 @@ ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, Location loc)
 ParsedProcDecl::ParsedProcDecl(
     DeclName name,
     ParsedProcType* type,
-    ArrayRef<ParsedLocalDecl*> param_decls,
+    ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
     Location location
 ) : ParsedDecl{Kind::ProcDecl, name, location},
@@ -224,11 +224,11 @@ auto ParsedProcDecl::Create(
     Parser& parser,
     DeclName name,
     ParsedProcType* type,
-    ArrayRef<ParsedLocalDecl*> param_decls,
+    ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
     Location location
 ) -> ParsedProcDecl* {
-    const auto size = totalSizeToAlloc<ParsedLocalDecl*>(param_decls.size());
+    const auto size = totalSizeToAlloc<ParsedVarDecl*>(param_decls.size());
     auto mem = parser.allocate(size, alignof(ParsedProcDecl));
     return ::new (mem) ParsedProcDecl{name, type, param_decls, body, location};
 }
@@ -428,11 +428,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(m.base);
         } break;
 
-        case Kind::LocalDecl: {
-            auto& p = *cast<ParsedLocalDecl>(s);
-            PrintHeader(s, "LocalDecl", false);
+        case Kind::VarDecl: {
+            auto& p = *cast<ParsedVarDecl>(s);
+            PrintHeader(s, "VarDecl", false);
             print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
             if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
+            if (p.is_static) print("static ");
             print("{}\n", p.type->dump_as_type());
             if (p.init) PrintChildren(p.init.get());
         } break;

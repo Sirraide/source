@@ -96,7 +96,7 @@
 //  Declarations
 // ============================================================================
 <decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | EXPORT <decl>
-<decl-var>    ::= <type> IDENT [ "=" <expr> ] ";"
+<decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ] ";"
 <decl-proc>   ::= <signature> <proc-body>
 <decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
 <signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]

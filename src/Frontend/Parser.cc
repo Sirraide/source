@@ -255,7 +255,6 @@ bool Parser::AtStartOfExpression() {
         case Tk::Range:
         case Tk::RBrace:
         case Tk::Return:
-        case Tk::Static:
         case Tk::StringLiteral:
         case Tk::TemplateType:
         case Tk::Tilde:
@@ -299,7 +298,6 @@ bool Parser::ConsumeOrError(Tk tk) {
     }
     return true;
 }
-
 
 auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     // If no return type was provided, default to 'void' here.
@@ -1127,16 +1125,18 @@ auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     return ParsedMatchExpr::Create(*this, control_expr, cases, match_loc);
 }
 
-// <decl-var> ::= <type> IDENTIFIER [ "=" <expr> ] ";"
-auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt> {
-    auto decl = new (*this) ParsedLocalDecl(
+// <decl-var> ::= [ STATIC ] <type> IDENTIFIER [ "=" <expr> ] ";"
+auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl> {
+    auto decl = new (*this) ParsedVarDecl(
         tok->text,
         type,
         {type->loc, tok->location}
     );
 
+    if (not Consume(Tk::Identifier))
+        Error("Expected identifier in variable declaration");
+
     // Parse the optional initialiser.
-    Next();
     if (Consume(Tk::Assign)) decl->init = ParseExpr();
 
     // We don’t allow declaration groups such as 'int a, b;'.
@@ -1200,7 +1200,7 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
     }
 }
 
-bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls) {
+bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
     String name;
     Location name_loc;
@@ -1270,7 +1270,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* d
             SkipTo(Tk::Comma, Tk::RParen);
         }
 
-        decls->push_back(new (*this) ParsedLocalDecl{name, type.get(), {start_loc, end}, intent});
+        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), {start_loc, end}, intent});
     } else if (At(Tk::Identifier)) {
         Error("Named parameters are not allowed here");
         Next();
@@ -1289,7 +1289,7 @@ void Parser::ParsePreamble() {
 // <proc-body> ::= <expr-block> | "=" <expr> ";" | ";"
 auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Parse signature.
-    SmallVector<ParsedLocalDecl*, 10> param_decls;
+    SmallVector<ParsedVarDecl*, 10> param_decls;
     Signature sig;
     if (not ParseSignature(sig, &param_decls)) return nullptr;
 
@@ -1358,7 +1358,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     return proc;
 }
 
-bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls) {
+bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     tempset current_signature = &sig;
     return ParseSignatureImpl(decls);
 }
@@ -1367,9 +1367,7 @@ bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* d
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
 // <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
-bool Parser::ParseSignatureImpl(
-    SmallVectorImpl<ParsedLocalDecl*>* decls
-) {
+bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
     Assert(current_signature);
     auto& sig = *current_signature;
 
@@ -1486,6 +1484,21 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
         // <stmt-for>
         case Tk::For: return ParseForStmt();
+
+        // <decl-var>
+        case Tk::Static: {
+            Next();
+            while (At(Tk::Static)) {
+                Error("'%1(static static%)' is invalid");
+                Next();
+            }
+
+            auto ty = TryParseExpr(SkipTo(Tk::Semicolon));
+            auto var = ParseVarDecl(ty);
+            if (not var) return {};
+            var.get()->is_static = true;
+            return var;
+        }
 
         // <decl-struct>
         case Tk::Struct: return ParseStructDecl();

@@ -849,8 +849,8 @@ private:
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedLocalDecl*> decls) -> ProcDecl*;
-    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedLocalDecl*> decls) -> Ptr<Stmt>;
+    auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
+    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
     auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;

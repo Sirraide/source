@@ -3383,7 +3383,8 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
     Todo();
 }
 
-auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
+auto Sema::TranslateVarDecl(ParsedVarDecl* parsed) -> Decl* {
+    if (parsed->is_static) Todo();
     auto decl = MakeLocal(
         TranslateType(parsed->type),
         Expr::LValue,
@@ -3443,7 +3444,7 @@ auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
 auto Sema::TranslateProc(
     ProcDecl* decl,
     Ptr<ParsedStmt> body,
-    ArrayRef<ParsedLocalDecl*> decls
+    ArrayRef<ParsedVarDecl*> decls
 ) -> ProcDecl* {
     if (not body) return decl;
 
@@ -3460,7 +3461,7 @@ auto Sema::TranslateProc(
 auto Sema::TranslateProcBody(
     ProcDecl* decl,
     ParsedStmt* parsed_body,
-    ArrayRef<ParsedLocalDecl*> decls
+    ArrayRef<ParsedVarDecl*> decls
 ) -> Ptr<Stmt> {
     Assert(parsed_body);
 

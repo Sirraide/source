@@ -1,0 +1,10 @@
+// R %srcc --parse --verify %s
+module test;
+
+static var x = 3;
+static int y;
+export static int z;
+static int q = 8;
+static int; // expected-error: Expected identifier in variable declaration
+static 9; // expected-error: Expected identifier in variable declaration
+static static int q; // expected-error: 'static static' is invalid

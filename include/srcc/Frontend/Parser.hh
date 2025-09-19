@@ -680,25 +680,27 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::FieldDecl; }
 };
 
-class srcc::ParsedLocalDecl final : public ParsedDecl {
+class srcc::ParsedVarDecl final : public ParsedDecl {
 public:
     ParsedStmt* type;
     Ptr<ParsedStmt> init;
     Intent intent; // Only used for parameters.
+    bool is_static;
 
-    ParsedLocalDecl(
+    ParsedVarDecl(
         String name,
         ParsedStmt* param_type,
         Location location,
-        Intent intent = Intent::Move
-    ) : ParsedDecl{Kind::LocalDecl, name, location}, type{param_type}, intent{intent} {}
+        Intent intent = Intent::Move,
+        bool is_static = false
+    ) : ParsedDecl{Kind::VarDecl, name, location}, type{param_type}, intent{intent}, is_static{is_static} {}
 
-    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LocalDecl; }
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::VarDecl; }
 };
 
 /// A procedure declaration.
 class srcc::ParsedProcDecl final : public ParsedDecl
-    , llvm::TrailingObjects<ParsedProcDecl, ParsedLocalDecl*> {
+    , llvm::TrailingObjects<ParsedProcDecl, ParsedVarDecl*> {
     friend TrailingObjects;
 
 public:
@@ -712,11 +714,11 @@ public:
     ParsedProcType* type;
 
 private:
-    auto numTrailingObjects(OverloadToken<ParsedLocalDecl*>) -> usz { return type->param_types().size(); }
+    auto numTrailingObjects(OverloadToken<ParsedVarDecl*>) -> usz { return type->param_types().size(); }
     ParsedProcDecl(
         DeclName name,
         ParsedProcType* type,
-        ArrayRef<ParsedLocalDecl*> param_decls,
+        ArrayRef<ParsedVarDecl*> param_decls,
         Ptr<ParsedStmt> body,
         Location location
     );
@@ -726,12 +728,12 @@ public:
         Parser& parser,
         DeclName name,
         ParsedProcType* type,
-        ArrayRef<ParsedLocalDecl*> param_names,
+        ArrayRef<ParsedVarDecl*> param_names,
         Ptr<ParsedStmt> body,
         Location location
     ) -> ParsedProcDecl*;
 
-    auto params() -> ArrayRef<ParsedLocalDecl*> {
+    auto params() -> ArrayRef<ParsedVarDecl*> {
         return getTrailingObjects(type->param_types().size());
     }
 
@@ -863,15 +865,15 @@ private:
     auto ParseIntent() -> std::pair<Location, Intent>;
     auto ParseMatchExpr() -> Ptr<ParsedMatchExpr>;
     void ParseOverloadableOperatorName(Signature& sig);
-    bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
+    bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
-    bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedLocalDecl*>* decls);
-    bool ParseSignatureImpl(SmallVectorImpl<ParsedLocalDecl*>* decls);
+    bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
+    bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType(int precedence = -1) { return ParseExpr(precedence, true); }
-    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedStmt>;
+    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl>;
 
     auto CreateType(Signature& sig) -> ParsedProcType*;
 
