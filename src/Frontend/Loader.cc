@@ -61,8 +61,16 @@ void Sema::LoadModule(
     String logical_name,
     ArrayRef<String> linkage_names,
     Location import_loc,
+    bool is_open,
     bool is_cxx_header
 ) {
+    if (is_open) {
+        Assert(is_cxx_header);
+        if (auto m = ImportCXXHeaders(logical_name, linkage_names, import_loc).get_or_null())
+            M->open_modules.push_back(m);
+        return;
+    }
+
     // Clang imports cannot be cached or redefined.
     auto& logical = M->logical_imports[logical_name];
     if (isa_and_present<ImportedClangModuleDecl>(logical)) {

@@ -122,7 +122,7 @@
             ]
         },
         {
-            "match": "(import)\\s+(<[^>]+>)\\s+(as)\\s+([a-zA-Z_0-9]+)",
+            "match": "(import)\\s+(<[^>]+>)\\s+(as)\\s+([a-zA-Z_0-9]+|\\*)",
             "captures": {
                 "1": { "name": "keyword.other" },
                 "2": { "name": "string.other" },

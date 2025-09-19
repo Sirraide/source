@@ -69,6 +69,7 @@ public:
         SmallVector<String> linkage_names; ///< The name of the modules on disk and for linking.
         String import_name;  ///< The name it is imported as.
         Location loc;        ///< The location of the import
+        bool is_open_import; ///< Whether this uses the 'as *' syntax.
         bool is_header_import;
     };
     SmallVector<Import> imports;

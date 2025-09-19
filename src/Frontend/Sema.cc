@@ -7,6 +7,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
+#include "srcc/AST/AST.hh"
 
 #include <print>
 #include <ranges>
@@ -310,6 +311,14 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope
         Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
         if (it->second.size() == 1) return LookupResult::Success(it->second.front());
         return LookupResult::Ambiguous(name, it->second);
+    }
+
+    // If we couldn’t find it, try to find it in the open modules.
+    if (not M->open_modules.empty()) {
+        Assert(M->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
+        auto mod = M->open_modules.front();
+        if (isa<ImportedSourceModuleDecl>(mod)) Todo();
+        return LookUpCXXName(&cast<ImportedClangModuleDecl>(mod)->clang_ast, name);
     }
 
     return LookupResult::NotFound(name);
@@ -2910,6 +2919,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
         "__src_runtime",
         String("__src_runtime"),
         modules.front()->program_or_module_loc,
+        false,
         false
     );
 
@@ -2920,6 +2930,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
                 i.import_name,
                 i.linkage_names,
                 i.loc,
+                i.is_open_import,
                 i.is_header_import
             );
         }

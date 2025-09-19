@@ -865,9 +865,7 @@ protected:
         Kind k,
         String logical_name,
         Location loc
-    ) : Decl{k, logical_name, loc} {
-        Assert(not logical_name.empty());
-    }
+    ) : Decl{k, logical_name, loc} {}
 
 public:
     static bool classof(const Stmt* e) {

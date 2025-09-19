@@ -1044,7 +1044,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
     };
 }
 
-// <import> ::= IMPORT CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ] AS IDENT ";"
+// <import> ::= IMPORT CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ] AS ( IDENT | "* ) ";"
 void Parser::ParseImport() {
     Location import_loc;
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
@@ -1069,13 +1069,13 @@ void Parser::ParseImport() {
         return;
     }
 
-    if (not At(Tk::Identifier)) {
-        Error("Expected identifier after '%1(as%)' in import directive");
+    if (not At(Tk::Identifier, Tk::Star)) {
+        Error("Expected identifier or '%1(*%)' after '%1(as%)' in import directive");
         SkipPast(Tk::Semicolon);
         return;
     }
 
-    mod->imports.emplace_back(std::move(linkage_names), tok->text, import_loc, true);
+    mod->imports.emplace_back(std::move(linkage_names), tok->text, import_loc, At(Tk::Star), true);
     Next();
     if (not Consume(Tk::Semicolon)) Error("Expected ';' at end of import");
 }

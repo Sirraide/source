@@ -80,6 +80,9 @@ public:
     /// Map from logical names to imported modules.
     StringMap<ModuleDecl*> logical_imports;
 
+    /// List of open modules.
+    SmallVector<ModuleDecl*> open_modules;
+
     /// The name of this program or module.
     String name;
 

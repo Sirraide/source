@@ -1,11 +1,11 @@
 program raylib_test;
 
-import <raylib.h> as raylib;
+import <raylib.h> as *;
 
-raylib::InitWindow(800, 600, "Hello from Source".data);
-raylib::SetTargetFPS(60);
-while not raylib::WindowShouldClose() {
-    raylib::BeginDrawing();
-    raylib::ClearBackground(raylib::Color(255 as i8, 0, 0, 255 as i8));
-    raylib::EndDrawing();
+InitWindow(800, 600, "Hello from Source".data);
+SetTargetFPS(60);
+while not WindowShouldClose() {
+    BeginDrawing();
+    ClearBackground(Color(255 as i8, 0, 0, 255 as i8));
+    EndDrawing();
 }

@@ -699,6 +699,7 @@ private:
         String logical_name,
         ArrayRef<String> linkage_names,
         Location import_loc,
+        bool is_open,
         bool is_cxx_header
     );
 
