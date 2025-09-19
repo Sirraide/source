@@ -253,7 +253,7 @@ int Driver::run_job() {
     if (ctx.diags().has_error()) return 1;
 
     // Run codegen.
-    cg::CodeGen cg{*tu, tu->lang_opts(), tu->target().ptr_size()};
+    cg::CodeGen cg{*tu, tu->lang_opts()};
     cg.emit_as_needed(tu->procs);
     if (ctx.diags().has_error()) return 1;
     bool finalise_ok = opts.ir_no_finalise or cg.finalise();

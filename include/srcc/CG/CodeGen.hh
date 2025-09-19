@@ -178,20 +178,30 @@ class srcc::cg::CodeGen : DiagsProducer
     friend DiagsProducer;
     friend LLVMCodeGen;
 
+    /// State used when emitting a procedure.
+    class ProcData {
+        LIBBASE_MOVE_ONLY(ProcData);
+
+    public:
+        DenseMap<LocalDecl*, Value> locals;
+        Value environment_for_nested_procs;
+        Value abort_info_slot;
+        ir::ProcOp proc;
+        ProcDecl* decl = nullptr;
+
+        ProcData() = default;
+        ProcData(ir::ProcOp proc, ProcDecl* decl) : proc{proc}, decl{decl} {}
+    };
+
     TranslationUnit& tu;
+    ProcData curr;
     Opt<ir::ProcOp> printf;
-    DenseMap<LocalDecl*, Value> locals;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ProcDecl*, String> mangled_names;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
-    Value environment_for_nested_procs;
-    Value abort_info_slot;
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;
-    ir::ProcOp curr_proc;
-    ProcDecl* curr_proc_decl = nullptr;
-    Size word_size;
     LangOpts lang_opts;
     mlir::Type ptr_ty;
     mlir::Type int_ty;
@@ -200,7 +210,7 @@ class srcc::cg::CodeGen : DiagsProducer
     usz strings = 0;
 
 public:
-    CodeGen(TranslationUnit& tu, LangOpts lang_opts, Size word_size);
+    CodeGen(TranslationUnit& tu, LangOpts lang_opts);
 
     /// Get the context.
     [[nodiscard]] auto context() const -> Context& { return tu.context(); }
@@ -257,16 +267,12 @@ public:
         SRCC_IMMOVABLE(EnterProcedure);
 
         CodeGen& CG;
-        ir::ProcOp old_func;
-        ProcDecl* old_proc;
+        ProcData old;
         InsertionGuard guard;
 
     public:
         EnterProcedure(CodeGen& CG, ir::ProcOp func, ProcDecl* old_proc);
-        ~EnterProcedure() {
-            CG.curr_proc = old_func;
-            CG.curr_proc_decl = old_proc;
-        }
+        ~EnterProcedure();
     };
 
     struct StructInitHelper {

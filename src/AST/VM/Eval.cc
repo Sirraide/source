@@ -407,7 +407,7 @@ private:
 
 Eval::Eval(VM& vm, bool complain)
     : vm{vm},
-      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts()), vm.owner().target().ptr_size()},
+      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
       stack_top{vm.stack.get()},
       complain{complain} {}
 
