@@ -318,7 +318,7 @@ set_target_properties(srcc PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_
 include(CTest)
 include(fchk/cmake/FCHKDiscoverTests.cmake)
 set(FCHK_EXE_PATH "${PROJECT_SOURCE_DIR}/fchk/out/fchk")
-FCHKAddAllTestsInDir(
+FCHKAddAllTestsInDir(srcc_tests
     IN test
     PATTERN "*.src"
     PREFIX  "//"
