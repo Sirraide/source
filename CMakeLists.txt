@@ -5,11 +5,19 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR "This project must be built with Clang (or, on Windows, clang-cl)")
 endif()
 
+if (NOT SOURCE_LLVM_ROOT)
+    message(FATAL_ERROR "SOURCE_LLVM_ROOT is not set. See README.md for instructions.")
+endif()
+if (NOT EXISTS "${SOURCE_LLVM_ROOT}/bin/clang")
+    message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
+endif()
+
 ## ============================================================================
 ##  Global CMake Variables.
 ## ============================================================================
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 ## ============================================================================
 ##  Global compiler options.
@@ -145,13 +153,6 @@ endif()
 ## ============================================================================
 ##  Add LLVM.
 ## ============================================================================
-if (NOT SOURCE_LLVM_ROOT)
-    message(FATAL_ERROR "SOURCE_LLVM_ROOT is not set. See README.md for instructions.")
-endif()
-if (NOT EXISTS "${SOURCE_LLVM_ROOT}/bin/clang")
-    message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
-endif()
-
 ## LLVM paths.
 set(SOURCE_LLVM_CMAKE_DIR "${SOURCE_LLVM_ROOT}/lib/cmake")
 set(SOURCE_LLVM_BIN_DIR "${SOURCE_LLVM_ROOT}/bin")

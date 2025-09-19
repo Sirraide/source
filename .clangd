@@ -1,0 +1,12 @@
+Hover:
+  ShowAKA: false
+Documentation:
+  CommentFormat: Doxygen
+InlayHints:
+  BlockEnd: true
+  Designators: true
+  Enabled: true
+  ParameterNames: false
+  DeducedTypes: true
+  DefaultArguments: false
+  TypeNameLimit: 24

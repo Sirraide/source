@@ -495,6 +495,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-prefix>
 //          | <expr-return>
 //          | <expr-subscript>
+//          | <expr-tuple>
 //          | <expr-postfix>
 //          | <type>
 //
@@ -598,12 +599,31 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         } break;
 
         // <expr-paren> ::= "(" <expr> ")"
+        // <expr-tuple> ::= "(" <expr> { "," <expr> } [ "," ] ")"
         case Tk::LParen: {
             BracketTracker parens{*this, Tk::LParen};
             lhs = ParseExpr();
-            parens.close();
-            if (not lhs) return {};
-            lhs = new (*this) ParsedParenExpr{lhs.get(), parens.span()};
+            if (At(Tk::RParen)) {
+                parens.close();
+                if (not lhs) return {};
+                lhs = new (*this) ParsedParenExpr{lhs.get(), parens.span()};
+            } else {
+                SmallVector<ParsedStmt*> exprs;
+                if (lhs) exprs.push_back(lhs.get());
+                do {
+                    // Error about a missing comma, and skip multiple consecutive commas.
+                    if (not Consume(Tk::Comma)) Error("Expected '%1(,%)' in tuple");
+                    while (Consume(Tk::Comma)) Error(std::prev(tok)->location, "Unexpected ','");
+                    if (At(Tk::RParen)) break;
+
+                    lhs = ParseExpr();
+                    if (lhs) exprs.push_back(lhs.get());
+                    else SkipTo(Tk::Comma, Tk::RParen);
+                } while (not At(Tk::RParen, Tk::Eof));
+                parens.close();
+                lhs = ParsedTupleExpr::Create(*this, exprs, parens.span());
+            }
+
         } break;
 
         // <type-prim> ::= BOOL | INT | VOID | VAR | NORETURN

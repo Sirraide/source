@@ -151,6 +151,21 @@ auto ParsedMatchExpr::Create(
     return ::new (mem) ParsedMatchExpr(control_expr, cases, loc);
 }
 
+ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, Location loc)
+    : ParsedStmt{Kind::TupleExpr, loc}, num_exprs{u32(exprs.size())} {
+    std::uninitialized_copy_n(exprs.begin(), exprs.size(), getTrailingObjects());
+}
+
+auto ParsedTupleExpr::Create(
+    Parser& p,
+    ArrayRef<ParsedStmt*> exprs,
+    Location loc
+) -> ParsedTupleExpr* {
+    const auto size = totalSizeToAlloc<ParsedStmt*>(exprs.size());
+    auto mem = p.allocate(size, alignof(ParsedTupleExpr));
+    return ::new (mem) ParsedTupleExpr(exprs, loc);
+}
+
 ParsedForStmt::ParsedForStmt(
     Location for_loc,
     Location enum_loc,
@@ -460,6 +475,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "StructDecl", false);
             print("%6({}%)\n", d.name);
             PrintChildren<ParsedFieldDecl*>(d.fields());
+        } break;
+
+        case Kind::TupleExpr: {
+            auto t = cast<ParsedTupleExpr>(s);
+            PrintHeader(s, "TupleExpr");
+            PrintChildren(t->exprs());
         } break;
 
         case Kind::UnaryExpr: {

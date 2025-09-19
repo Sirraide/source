@@ -3380,6 +3380,10 @@ auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
     return TranslateExpr(parsed->inner);
 }
 
+auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
+    Todo();
+}
+
 auto Sema::TranslateLocalDecl(ParsedLocalDecl* parsed) -> Decl* {
     auto decl = MakeLocal(
         TranslateType(parsed->type),

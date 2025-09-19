@@ -1,0 +1,13 @@
+// V %srcc --parse --verify %s
+program test;
+
+(1,);
+(1, 2);
+(1, 2,);
+(1, 2, 3, 4, 5);
+
+(1 2); // expected-error: Expected ',' in tuple
+(1,,2); // expected-error: Unexpected ','
+(1,,2,,); // expected-error 2: Unexpected ','
+(1, 2; // expected-error (Expected ',' in tuple) expected-error (Expected expression) expected-error (Expected ';')
+// expected-error@+1: Expected ')'

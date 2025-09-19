@@ -582,6 +582,25 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ReturnExpr; }
 };
 
+class srcc::ParsedTupleExpr final : public ParsedStmt,
+    TrailingObjects<ParsedTupleExpr, ParsedStmt*> {
+    friend TrailingObjects;
+    const u32 num_exprs;
+
+    ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, Location loc);
+
+public:
+    static auto Create(
+        Parser& p,
+        ArrayRef<ParsedStmt*> exprs,
+        Location loc
+    ) -> ParsedTupleExpr*;
+
+    auto exprs() -> ArrayRef<ParsedStmt*> { return getTrailingObjects(num_exprs); }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::TupleExpr; }
+};
+
 class srcc::ParsedUnaryExpr final : public ParsedStmt {
 public:
     Tk op;

@@ -340,7 +340,7 @@ invalid pattern is one that is not *valid*:
 ## Idea for formatting and syntax highlighting
 ‘Decorated parse tree’, i.e. optionally (or always, it oughtn’t be too expensive), Sema
 builds a mapping from parse tree nodes to AST nodes so that people can both
-use the parse tree for syntactic information and also known e.g. what an identifer actually
+use the parse tree for syntactic information and also known e.g. what an identifier actually
 is.
 
 This way, we also don’t have to worry about preserving too much syntactic sugar in Sema
