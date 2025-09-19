@@ -50,7 +50,7 @@
             }
         },
         {
-            "begin": "(//)\\s*(expected-(?:error|note|warning))(@([+-]?\\d+))?\\s*(\\s\\d+)?\\s*(:)\\s*(.*)",
+            "begin": "(//)\\s*(expected-(?:error|note|warning))(@([+-]?\\d+|\\*))?\\s*(\\s\\d+)?\\s*(:)\\s*(.*)",
             "end": "$",
             "beginCaptures": {
                 "1": { "name": "srcc.verify.diag_text" },
