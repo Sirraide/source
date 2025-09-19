@@ -2,7 +2,7 @@
     "scopeName": "source.src_lang",
     "patterns": [
         {
-            "begin": "// ([RV])[\\s\\[]",
+            "begin": "// ([RVX])[\\s\\[]",
             "end": "$",
             "beginCaptures": {
                 "1": { "name": "fchk.directive"}
@@ -35,12 +35,19 @@
             ]
         },
         {
-            "begin": "//[A-Z]* ([+*]|re\\*|re\\+)[\\s\\[]",
+            "begin": "//[A-Z]* ([+*p!bdeu]|re\\*|re\\+)[\\s\\[]",
             "end": "$",
             "beginCaptures": {
                 "1": { "name": "fchk.directive"}
             },
             "name": "comment.line.fchk"
+        },
+        {
+            "match": "(//)\\s*(expected-no-diagnostics)$",
+            "captures": {
+                "1": { "name": "srcc.verify.diag_text" },
+                "2": { "name": "srcc.verify.directive" }
+            }
         },
         {
             "begin": "(//)\\s*(expected-(?:error|note|warning))(@([+-]?\\d+))?\\s*(\\s\\d+)?\\s*(:)\\s*(.*)",
@@ -115,29 +122,13 @@
             ]
         },
         {
-            "name": "stmt.import",
-            "begin": "(import)",
-            "end": ";",
-            "beginCaptures": {
-                "0": { "name": "keyword.other" }
-            },
-            "endCaptures": {
-                "0": { "name": "keyword.other" }
-            },
-            "patterns": [
-                {
-                    "name": "string.other",
-                    "match": "<[^>]+>"
-                },
-                {
-                    "name": "keyword.other",
-                    "match": "\\bas\\b|,"
-                },
-                {
-                    "name": "entity.name.module",
-                    "match": "[a-zA-Z_0-9]+"
-                }
-            ]
+            "match": "(import)\\s+(<[^>]+>)\\s+(as)\\s+([a-zA-Z_0-9]+)",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "string.other" },
+                "3": { "name": "keyword.other" },
+                "4": { "name": "entity.name.module" }
+            }
         },
         {
             "match": "\\b(pragma)\\b\\s+\\b(include)\\b",
@@ -154,7 +145,7 @@
             }
         },
         {
-            "match": "\\b(proc)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "match": "\\b(proc)\\b\\s+([a-zA-Z_][a-zA-Z_0-9]*)",
             "captures": {
                 "1": { "name": "keyword.other" },
                 "2": { "name": "entity.name.function" }
@@ -195,7 +186,7 @@
         },
         {
             "name": "keyword.other",
-            "match": "[;,\\.=:/*\\-+&^(){}\\[\\]<>%~#]+"
+            "match": "[;,\\.=:|?!\\\\/*\\-+&\\^(){}\\[\\]<>%~#]+"
         },
         {
             "name": "stmt.call",
@@ -208,7 +199,7 @@
         },
         {
             "name": "constant.numeric",
-            "match": "\\b(0[xXbBoO])?\\d+\\b"
+            "match": "\\b(0[xXbBoO][a-fA-F0-9]+|\\d+)\\b"
         },
         {
             "name": "keyword.other",
