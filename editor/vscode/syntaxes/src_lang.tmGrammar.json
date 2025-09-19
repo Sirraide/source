@@ -1,0 +1,222 @@
+{
+    "scopeName": "source.src_lang",
+    "patterns": [
+        {
+            "begin": "// ([RV])[\\s\\[]",
+            "end": "$",
+            "beginCaptures": {
+                "1": { "name": "fchk.directive"}
+            },
+            "name": "comment.line.fchk",
+            "patterns": [
+                {
+                    "name": "fchk.program",
+                    "match": "%srcc"
+                },
+                {
+                    "name": "fchk.variable",
+                    "match": "(?<=\\s)%[a-zA-Z0-9_]+"
+                },
+                {
+                    "match": "(-+[a-zA-Z0-9_]*)(=)([^ ]*)",
+                    "captures": {
+                        "1": { "name": "fchk.arg" },
+                        "2": { "name": "fchk.eq" },
+                        "3": { "name": "fchk.value" }
+                    }
+                },
+                {
+                    "match": "(-+[a-zA-Z0-9_]*)(?:\\s+([^-% ][^ ]*))?",
+                    "captures": {
+                        "1": { "name": "fchk.arg" },
+                        "2": { "name": "fchk.value" }
+                    }
+                }
+            ]
+        },
+        {
+            "begin": "//[A-Z]* ([+*]|re\\*|re\\+)[\\s\\[]",
+            "end": "$",
+            "beginCaptures": {
+                "1": { "name": "fchk.directive"}
+            },
+            "name": "comment.line.fchk"
+        },
+        {
+            "begin": "(//)\\s*(expected-(?:error|note|warning))(@([+-]?\\d+))?\\s*(\\s\\d+)?\\s*(:)\\s*(.*)",
+            "end": "$",
+            "beginCaptures": {
+                "1": { "name": "srcc.verify.diag_text" },
+                "2": { "name": "srcc.verify.directive" },
+                "3": { "name": "srcc.verify.operator" },
+                "4": { "name": "srcc.verify.line" },
+                "5": { "name": "srcc.verify.count" },
+                "6": { "name": "srcc.verify.operator" },
+                "7": { "name": "srcc.verify.diag_text" }
+            },
+            "name": "comment.line"
+        },
+        {
+            "begin": "//\\s*?(?=expected)",
+            "end": "$",
+            "name": "comment.line",
+            "beginCaptures": { "0": { "name": "srcc.verify.diag_text" } },
+            "patterns": [
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\(\\()([^\n]*?)(\\)\\)\\))",
+                    "captures": {
+                        "1": { "name": "srcc.verify.directive" },
+                        "2": { "name": "srcc.verify.count" },
+                        "3": { "name": "srcc.verify.operator" },
+                        "4": { "name": "srcc.verify.diag_text" },
+                        "5": { "name": "srcc.verify.operator" }
+                    }
+                },
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\()([^\n]*?)(\\)\\))",
+                    "captures": {
+                        "1": { "name": "srcc.verify.directive" },
+                        "2": { "name": "srcc.verify.count" },
+                        "3": { "name": "srcc.verify.operator" },
+                        "4": { "name": "srcc.verify.diag_text" },
+                        "5": { "name": "srcc.verify.operator" }
+                    }
+                },
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\()([^\n]*?)(\\))",
+                    "captures": {
+                        "1": { "name": "srcc.verify.directive" },
+                        "2": { "name": "srcc.verify.count" },
+                        "3": { "name": "srcc.verify.operator" },
+                        "4": { "name": "srcc.verify.diag_text" },
+                        "5": { "name": "srcc.verify.operator" }
+                    }
+                }
+            ]
+        },
+        {
+            "begin": "//",
+            "end": "$",
+            "name": "comment.line"
+        },
+        {
+            "name": "string.quoted.single",
+            "match": "'[^']*'"
+        },
+        {
+            "name": "string.quoted.double",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        {
+            "name": "stmt.import",
+            "begin": "(import)",
+            "end": ";",
+            "beginCaptures": {
+                "0": { "name": "keyword.other" }
+            },
+            "endCaptures": {
+                "0": { "name": "keyword.other" }
+            },
+            "patterns": [
+                {
+                    "name": "string.other",
+                    "match": "<[^>]+>"
+                },
+                {
+                    "name": "keyword.other",
+                    "match": "\\bas\\b|,"
+                },
+                {
+                    "name": "entity.name.module",
+                    "match": "[a-zA-Z_0-9]+"
+                }
+            ]
+        },
+        {
+            "match": "\\b(pragma)\\b\\s+\\b(include)\\b",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "entity.name.pragma" }
+            }
+        },
+        {
+            "match": "\\b(program|module|__srcc_ser_module__)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "entity.name.module" }
+            }
+        },
+        {
+            "match": "\\b(proc)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "entity.name.function" }
+            }
+        },
+        {
+            "match": "\\b(struct)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "entity.name.type" }
+            }
+        },
+        {
+            "name": "keyword.other",
+            "match": "\\b(extern|native|nomangle|variadic|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|not|or|proc|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|while|with|xor)\\b"
+        },
+        {
+            "name": "entity.name.type",
+            "match": "\\$[a-zA-Z0-9_]+"
+        },
+        {
+            "name": "entity.name.type",
+            "match": "\\b(i\\d+|int|type|range|void|noreturn|bool|__srcc_ffi_char|__srcc_ffi_char16|__srcc_ffi_char32|__srcc_ffi_int|__srcc_ffi_long|__srcc_ffi_longdouble|__srcc_ffi_longlong|__srcc_ffi_short|__srcc_ffi_size_t|__srcc_ffi_wchar)\\b"
+        },
+        {
+            "match": "(\\.)(\\b([a-zA-Z_0-9]+)\\b)",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "variable.other.property" }
+            }
+        },
+        {
+            "match": "\\b([a-zA-Z_0-9]+)\\b(::)",
+            "captures": {
+                "1": { "name": "entity.name.module" },
+                "2": { "name": "keyword.other" }
+            }
+        },
+        {
+            "name": "keyword.other",
+            "match": "[;,\\.=:/*\\-+&^(){}\\[\\]<>%~#]+"
+        },
+        {
+            "name": "stmt.call",
+            "begin": "([a-zA-Z_0-9]+)\\s*\\(",
+            "end": "\\)",
+            "beginCaptures": {
+                "0": { "name": "entity.name.function" }
+            },
+            "patterns": [{ "include": "$self" }]
+        },
+        {
+            "name": "constant.numeric",
+            "match": "\\b(0[xXbBoO])?\\d+\\b"
+        },
+        {
+            "name": "keyword.other",
+            "match": "__srcc[a-zA-Z_0-9]+__"
+        },
+        {
+            "name": "keyword.other",
+            "match": "\\b_\\b"
+        }
+    ]
+}

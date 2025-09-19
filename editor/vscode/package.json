@@ -1,0 +1,55 @@
+{
+  "name": "vscode",
+  "version": "0.1.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "activationEvents": [],
+  "categories": [
+    "Other"
+  ],
+  "description": "Syntax highlighting for the Source Programming Language",
+  "displayName": "Source Programming Language",
+  "main": "./out/extension.js",
+  "packages": {},
+  "contributes": {
+    "grammars": [
+      {
+        "language": "src_lang",
+        "path": "./syntaxes/src_lang.tmGrammar.json",
+        "scopeName": "source.src_lang"
+      }
+    ],
+    "languages": [
+      {
+        "configuration": "./language-configuration.json",
+        "extensions": [
+          ".src"
+        ],
+        "id": "src_lang"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.100.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "lint": "eslint src",
+    "package": "vsce package",
+    "pretest": "npm run compile && npm run lint",
+    "test": "vscode-test",
+    "vscode:prepublish": "npm run compile",
+    "watch": "tsc -watch -p ./"
+  }
+}
