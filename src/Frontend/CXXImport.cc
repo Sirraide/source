@@ -219,7 +219,7 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
     auto Struct = StructType::CreateWithLayout(
         *S.M,
         Scope,
-        S.M->save(S.M->save(Name)),
+        S.M->save(Name),
         Fields,
         Size::Bytes(RL.getSize().getQuantity()),
         Align(RL.getAlignment().getQuantity()),
