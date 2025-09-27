@@ -7,9 +7,12 @@
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
+#include "base/Macros.hh"
+#include <ranges>
 
 namespace srcc {
 class Target;
@@ -24,6 +27,7 @@ class FieldDecl;
 class ProcTemplateDecl;
 class TypeDecl;
 class ProcDecl;
+class RecordLayout;
 struct BuiltinTypes;
 
 #define AST_TYPE(node) class node;
@@ -453,14 +457,14 @@ public:
 
 class srcc::RangeType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    StructType* equivalent_struct;
-    explicit RangeType(Type elem, StructType* equivalent_struct)
-        : SingleElementTypeBase{Kind::RangeType, elem}, equivalent_struct{equivalent_struct} {}
+    TupleType* equivalent_tuple;
+    explicit RangeType(Type elem, TupleType* equivalent_tuple)
+        : SingleElementTypeBase{Kind::RangeType, elem}, equivalent_tuple{equivalent_tuple} {}
 
 public:
-    /// Get the struct type that is structurally equivalent to this range.
-    [[nodiscard]] auto equivalent_struct_type() const -> StructType* {
-        return equivalent_struct;
+    /// Get the tuple type that is structurally equivalent to this range.
+    [[nodiscard]] auto equivalent_tuple_type() const -> TupleType* {
+        return equivalent_tuple;
     }
 
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
@@ -481,33 +485,49 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };
 
-class srcc::StructType final : public TypeBase
-    , TrailingObjects<StructType, FieldDecl*> {
+class srcc::RecordLayout final : llvm::TrailingObjects<RecordLayout, FieldDecl*> {
+    LIBBASE_IMMOVABLE(RecordLayout);
     friend TrailingObjects;
-
-    u32 num_fields;
-    auto numTrailingObjects(OverloadToken<FieldDecl*>) -> usz { return num_fields; }
 
 public:
     struct Bits {
         bool default_initialiser : 1 = false;
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
-
         static auto Trivial() -> Bits {
             return {true, true, true};
         }
     };
 
-    class LayoutBuilder {
+private:
+    const u32 num_fields;
+
+public:
+    const Align computed_alignment;
+    const Bits bits;
+    const Size computed_size;
+    const Size computed_array_size;
+
+private:
+    RecordLayout(
+        ArrayRef<FieldDecl*> fields,
+        Size sz,
+        Size arr_sz,
+        Align a,
+        Bits bits
+    );
+
+public:
+    /// Helper to build a record layout.
+    class Builder {
         TranslationUnit& tu;
         Size sz;
         Align a;
-        Bits bits;
+        RecordLayout::Bits bits;
         SmallVector<FieldDecl*> decls;
 
     public:
-        explicit LayoutBuilder(TranslationUnit& tu): tu{tu} {}
+        explicit Builder(TranslationUnit& tu): tu{tu} {}
 
         /// Add a field with the specified type and name.
         ///
@@ -515,109 +535,124 @@ public:
         /// valid for a field; this must be done before calling this.
         auto add_field(Type ty, String name = "", Location loc = {}) -> FieldDecl*;
 
-        /// Apply the layout to an existing struct type.
-        void apply(StructType* ty);
-
-        /// Get the final type.
-        [[nodiscard]] auto build(
-            StructScope* scope = nullptr,
-            String struct_name = "",
-            Location loc = {}
-        ) -> StructType*;
+        /// Build the layout.
+        [[nodiscard]] auto build(ArrayRef<ProcDecl*> initialisers = {}) -> RecordLayout*;
     };
 
-private:
-    Size computed_size;
-    Size computed_array_size;
-    Align computed_alignment;
-    bool finalised : 1 = false;
-    Bits bits;
+    static auto Create(
+        TranslationUnit& tu,
+        ArrayRef<FieldDecl*> fields,
+        Size sz,
+        Size arr_sz,
+        Align a,
+        Bits bits
+    ) -> RecordLayout*;
 
+    /// Get the computed alignment of this record.
+    auto align() const -> Align {
+        return computed_alignment;
+    }
+
+    /// Get the size that this record has when stored in an
+    /// array (this includes tail padding, unlike 'size()').
+    auto array_size() const -> Size {
+        return computed_array_size;
+    }
+
+    /// Get the record’s fields.
+    auto fields() const -> ArrayRef<FieldDecl*> {
+        return getTrailingObjects(num_fields);
+    }
+
+    /// Get the record’s field types.
+    // Defined out of line in Stmt.hh.
+    auto field_types() const;
+
+    /// Whether this record has a default initialiser (i.e.
+    /// an initialiser that takes no arguments and is *not*
+    /// declared by the user).
+    bool has_default_init() const { return bits.default_initialiser; }
+
+    /// Whether this record can be initialised with an empty
+    /// argument list; this need not entail using a default
+    /// initialiser.
+    bool has_init_from_no_args() const { return bits.init_from_no_args; }
+
+    /// Whether this record has a literal initialiser (i.e.
+    /// an initialiser that takes a list of rvalues and emits
+    /// them directly into the record’s memory).
+    bool has_literal_init() const { return bits.literal_initialiser; }
+
+    /// Get the size of a single instance of this type; this does
+    /// *not* include tail padding (use 'array_size()' instead for
+    /// that).
+    auto size() const -> Size { return computed_size; }
+};
+
+/// Base class for 'TupleType' and 'StructType'.
+class srcc::RecordType : public TypeBase {
+protected:
+    RecordLayout* record_layout = nullptr;
+    RecordType(Kind k) : TypeBase{k} {}
+
+public:
+    /// Get whether this type is complete, i.e. whether we can
+    /// declare variables and create objects of this type.
+    bool is_complete() const { return record_layout != nullptr; }
+
+
+    /// Get the layout of this type.
+    auto layout() const -> const RecordLayout& {
+        Assert(record_layout);
+        return *record_layout;
+    }
+
+    static bool classof(const TypeBase* t) {
+        return t->kind() == Kind::StructType or t->kind() == Kind::TupleType;
+    }
+};
+
+class srcc::TupleType final : public RecordType, public FoldingSetNode {
+    explicit TupleType(RecordLayout* layout) : RecordType{Kind::TupleType} {
+        record_layout = layout;
+    }
+
+public:
+    void Profile(FoldingSetNodeID& ID) const;
+    static auto Get(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
+    static void Profile(FoldingSetNodeID& tu, auto elem_types);
+    static bool classof(const TypeBase* t) {  return t->kind() == Kind::TupleType; }
+};
+
+class srcc::StructType final : public RecordType {
+private:
     TranslationUnit& owning_tu;
     TypeDecl* type_decl = nullptr;
     StructScope* struct_scope;
 
-    StructType(TranslationUnit& owner, StructScope* struct_scope, u32 num_fields)
-        : TypeBase{Kind::StructType},
-          num_fields{num_fields},
+    StructType(TranslationUnit& owner, StructScope* struct_scope)
+        : RecordType{Kind::StructType},
           owning_tu{owner},
           struct_scope{struct_scope} {}
 
 public:
     /// Create a type and the corresponding declaration.
-    ///
-    /// The fields will be filled in later, but note that the
-    /// field count cannot be changed once the type has been
-    /// created.
     static auto Create(
         TranslationUnit& owner,
         StructScope* scope,
         String name,
-        u32 num_fields,
-        Location decl_loc
+        Location decl_loc,
+        RecordLayout* layout = nullptr
     ) -> StructType*;
-
-    /// Create a type with a predefined layout.
-    static auto CreateWithLayout(
-        TranslationUnit& owner,
-        StructScope* scope,
-        String name,
-        ArrayRef<FieldDecl*> fields,
-        Size size,
-        Align alignment,
-        Bits bits,
-        Location decl_loc
-    ) -> StructType*;
-
-    /// Create a trivial builtin struct type.
-    static auto CreateTrivialBuiltinTuple(
-        TranslationUnit& owner,
-        ArrayRef<Type> fields
-    ) -> StructType*;
-
-    /// Get the computed alignment of this struct.
-    auto align() const -> Align {
-        Assert(finalised);
-        return computed_alignment;
-    }
-
-    /// Get the size that this struct has when stored in an
-    /// array (this includes tail padding, unlike 'size()').
-    auto array_size() const -> Size {
-        Assert(finalised);
-        return computed_array_size;
-    }
 
     /// Get the type declaration for this struct.
     auto decl() const -> TypeDecl* { return type_decl; }
 
-    /// Get the struct’s fields.
-    auto fields() const -> ArrayRef<FieldDecl*> {
-        Assert(finalised);
-        return getTrailingObjects(num_fields);
-    }
-
-    /// Whether this struct has a default initialiser (i.e.
-    /// an initialiser that takes no arguments and is *not*
-    /// declared by the user).
-    bool has_default_init() const { return bits.default_initialiser; }
-
-    /// Whether this struct can be initialised with an empty
-    /// argument list; this need not entail using a default
-    /// initialiser.
-    bool has_init_from_no_args() const { return bits.init_from_no_args; }
-
-    /// Whether this struct has a literal initialiser (i.e.
-    /// an initialiser that takes a list of rvalues and emits
-    /// them directly into the struct’s memory).
-    bool has_literal_init() const { return bits.literal_initialiser; }
+    /// Finalise the struct.
+    void finalise(RecordLayout* layout);
 
     /// Get the user-declared initialisers for this struct.
     auto initialisers() const -> ArrayRef<Decl*> { return struct_scope->inits; }
-
-    /// Get whether this type is complete, i.e. whether we can
-    /// declare variables and create objects of this type.
-    bool is_complete() const { return finalised; }
 
     /// Get the name of this type.
     auto name() const -> String;
@@ -629,22 +664,7 @@ public:
     /// initialisers of this struct.
     auto scope() const -> StructScope* { return struct_scope; }
 
-    /// Get the size of a single instance of this type; this does
-    /// *not* include tail padding (use 'array_size()' instead for
-    /// that).
-    auto size() const -> Size { return computed_size; }
-
     static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
-
-private:
-    /// Initialise fields and other properties; this marks
-    /// the struct as complete.
-    void finalise(
-        ArrayRef<FieldDecl*> fields,
-        Size size,
-        Align alignment,
-        Bits bits
-    );
 };
 
 /// Visit this type.
@@ -662,24 +682,6 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     }
     Unreachable();
 }
-
-/*inline auto srcc::TypeBase::stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>> {
-    if (auto a = dyn_cast<ArrayType>(this)) {
-        const Type el = a->elem();
-        const Size el_sz = el->array_size(tu);
-        const i64 dim = a->dimension();
-        for (i64 i = 0; i < dim; i++) {
-            co_yield rgs::elements_of(el->stream_fields_impl(tu, offs));
-            offs += el_sz;
-        }
-    } else if (auto s = dyn_cast<StructType>(this)) {
-        for (auto f : s->fields()) {
-            co_yield rgs::elements_of(f->type->stream_fields_impl(tu, f->offset + offs));
-        }
-    } else {
-        co_yield {this, offs};
-    }
-}*/
 
 template <>
 struct std::formatter<srcc::Type> : std::formatter<std::string_view> {

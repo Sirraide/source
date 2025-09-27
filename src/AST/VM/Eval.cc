@@ -1073,7 +1073,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     }
 
     // Otherwise, allocate memory for it and store it there.
-    Assert((isa<SliceType, ProcType, StructType, ArrayType>(ty)));
+    Assert((isa<SliceType, ProcType, RecordType, ArrayType>(ty)));
     auto mrv = vm.allocate_memory_value(ty);
     std::memcpy(mrv.data(), mem, mrv.size().bytes());
     return RValue(mrv, ty);

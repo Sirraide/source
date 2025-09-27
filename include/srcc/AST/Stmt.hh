@@ -4,7 +4,6 @@
 #include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Eval.hh>
-#include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Core/Token.hh>
@@ -15,7 +14,6 @@
 #include <llvm/Support/TrailingObjects.h>
 
 #include <functional>
-#include <memory>
 #include <ranges>
 
 namespace clang {
@@ -159,6 +157,9 @@ protected:
 
 public:
     using enum ValueCategory;
+
+    /// Look through any parentheses.
+    [[nodiscard]] auto ignore_parens() -> Expr*;
 
     /// Check if this expression is an lvalue.
     [[nodiscard]] bool is_lvalue() const { return value_category == LValue; }
@@ -658,14 +659,22 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::OverloadSetExpr; }
 };
 
+class srcc::ParenExpr final : public Expr {
+public:
+    Expr* expr;
+
+    ParenExpr(Expr* expr, Location loc)
+        : Expr{Kind::ParenExpr, expr->type, expr->value_category, loc},
+          expr{expr} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ParenExpr; }
+};
+
 class srcc::ProcRefExpr final : public Expr {
 public:
     ProcDecl* decl;
 
-    ProcRefExpr(
-        ProcDecl* decl,
-        Location location
-    );
+    ProcRefExpr(ProcDecl* decl, Location location);
 
     auto return_type() const -> Type;
 
@@ -689,16 +698,11 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
 };
 
-/// A literal initialiser for a struct.
-class srcc::StructInitExpr final : public Expr
-    , TrailingObjects<StructInitExpr, Expr*> {
+class srcc::TupleExpr final : public Expr
+    , TrailingObjects<TupleExpr, Expr*> {
     friend TrailingObjects;
-    auto numTrailingObjects(OverloadToken<Expr*>) -> usz {
-        return struct_type()->fields().size();
-    }
-
-    StructInitExpr(
-        StructType* ty,
+    TupleExpr(
+        RecordType* ty,
         ArrayRef<Expr*> fields,
         Location location
     );
@@ -706,15 +710,29 @@ class srcc::StructInitExpr final : public Expr
 public:
     static auto Create(
         TranslationUnit& tu,
-        StructType* type,
+        RecordType* type,
         ArrayRef<Expr*> fields,
         Location location
-    ) -> StructInitExpr*;
+    ) -> TupleExpr*;
 
-    auto struct_type() const -> StructType* { return cast<StructType>(type.ptr()); }
-    auto values() -> ArrayRef<Expr*> { return getTrailingObjects(struct_type()->fields().size()); }
+    /// Whether this is the empty tuple, i.e. '()' or ‘nil’.
+    bool is_nil() { return not is_struct() and num_values() == 0; }
 
-    static bool classof(const Stmt* e) { return e->kind() == Kind::StructInitExpr; }
+    /// Get the number of expressions in this tuple.
+    auto num_values() -> u32 { return u32(record_type()->layout().fields().size()); }
+
+    /// Get the type of this expression.
+    auto record_type() const -> RecordType* { return cast<RecordType>(type.ptr()); }
+
+    /// Whether this tuple is actually a struct initialiser.
+    bool is_struct() { return isa<StructType>(type); }
+
+    /// Get the expressions that make up this tuple.
+    auto values() -> ArrayRef<Expr*> {
+        return getTrailingObjects(num_values());
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::TupleExpr; }
 };
 
 class srcc::TypeExpr final : public Expr {
@@ -1215,6 +1233,12 @@ inline auto srcc::Scope::decls() {
     return decls_by_name                                                                           //
          | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; }) //
          | vws::join;
+}
+
+// This requires the definition of 'FieldDecl', so put it here.
+// FIXME: Stop storing decls in the record layout and store only offsets instead.
+inline auto srcc::RecordLayout::field_types() const {
+    return fields() | vws::transform([](FieldDecl* fd) -> Type { return fd->type; });
 }
 
 /// Visit this statement.

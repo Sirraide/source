@@ -12,6 +12,11 @@
 
 using namespace srcc;
 
+namespace {
+// Hack to access location information in the printer.
+thread_local const Context* printer_context_hack;
+}
+
 // ============================================================================
 //  TU
 // ============================================================================
@@ -33,7 +38,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     // FIXME: Remove the dependence on 'CompilerInstance'/'CompilerInvocation' and just
     // create the target directly.
     ci = std::make_unique<clang::CompilerInstance>();
-    ci->createDiagnostics(*llvm::vfs::getRealFileSystem());
+    ci->createDiagnostics();
     Assert(clang::CompilerInvocation::CreateFromArgs(ci->getInvocation(), args, ci->getDiagnostics()));
     Assert(ci->createTarget());
     tgt = Target::Create(ci->getTargetPtr());
@@ -61,8 +66,8 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);
     I8PtrTy = PtrType::Get(*this, I8Ty);
-    SliceEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, Type::IntTy});
-    ClosureEquivalentStructTy = StructType::CreateTrivialBuiltinTuple(*this, {I8PtrTy, I8PtrTy});
+    SliceEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, Type::IntTy});
+    ClosureEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, I8PtrTy});
 
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and
@@ -97,6 +102,7 @@ auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name,
 }
 
 void TranslationUnit::dump() const {
+    tempset printer_context_hack = &context();
     bool c = context().use_colours;
 
     // Print preamble.
@@ -138,11 +144,23 @@ struct Stmt::Printer : PrinterBase<Stmt> {
 
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     print(
-        "%1({}%) %4({}%) %5(<{}>%)",
+        "%1({}%) %4({}%)",
         name,
         static_cast<void*>(s),
         s->loc.pos
     );
+
+    if (printer_context_hack) {
+        auto lc = s->loc.seek_line_column(*printer_context_hack);
+        if (lc) {
+            print(" %5(<{}:{}>%)", lc->line, lc->col);
+            return;
+        }
+
+    }
+
+    // Fall back to printing just the position.
+    print(" %5(<{}>%)", s->loc.pos);
 }
 
 void Stmt::Printer::PrintBasicNode(
@@ -306,8 +324,9 @@ void Stmt::Printer::Print(Stmt* e) {
             auto f = cast<FieldDecl>(e);
             PrintBasicHeader(e, "FieldDecl");
             print(
-                " {} %5({}%) %1(offs%) %3({:y}%)\n",
+                " {}{}%5({}%) %1(offs%) %3({:y}%)\n",
                 f->type->print(),
+                f->name.empty() ? ""sv : " "sv,
                 f->name,
                 f->offset
             );
@@ -469,6 +488,12 @@ void Stmt::Printer::Print(Stmt* e) {
             if (print_instantiations) PrintChildren<ProcDecl*>(p->instantiations());
         } break;
 
+        case Kind::ParenExpr: {
+            auto p = cast<ParenExpr>(e);
+            PrintBasicNode(p, "ParenExpr");
+            PrintChildren(p->expr);
+        } break;
+
         case Kind::ProcRefExpr: {
             auto p = cast<ProcRefExpr>(e);
             PrintBasicHeader(p, "ProcRefExpr");
@@ -489,9 +514,9 @@ void Stmt::Printer::Print(Stmt* e) {
             print(" %3(\"{}\"%)\n", utils::Escape(cast<StrLitExpr>(e)->value, true, true));
         } break;
 
-        case Kind::StructInitExpr: {
-            auto s = cast<StructInitExpr>(e);
-            PrintBasicNode(e, "StructInitExpr");
+        case Kind::TupleExpr: {
+            auto s = cast<TupleExpr>(e);
+            PrintBasicNode(e, "TupleExpr");
             PrintChildren<Expr*>(s->values());
         } break;
 
@@ -508,13 +533,13 @@ void Stmt::Printer::Print(Stmt* e) {
                 print(
                     " %1(struct %3({}%) size %3({:y}%)/%3({:y}%) align %3({}%)%)\n",
                     s->name(),
-                    s->size(),
-                    s->array_size(),
-                    s->align()
+                    s->layout().size(),
+                    s->layout().array_size(),
+                    s->layout().align()
                 );
 
                 SmallVector<Stmt*, 10> children;
-                children.append(s->fields().begin(), s->fields().end());
+                children.append(s->layout().fields().begin(), s->layout().fields().end());
                 children.append(s->scope()->inits.begin(), s->scope()->inits.end());
                 PrintChildren(children);
             } else {

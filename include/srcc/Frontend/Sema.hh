@@ -9,6 +9,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/TinyPtrVector.h>
+#include "base/Macros.hh"
 
 #include <ranges>
 
@@ -97,8 +98,8 @@ class srcc::Sema : public DiagsProducer {
         LIBBASE_MOVE_ONLY(Conversion);
 
     public:
-        struct StructInitData {
-            StructType* ty;
+        struct RecordInitData {
+            RecordType* ty;
             std::vector<ConversionSequence> field_convs;
         };
 
@@ -126,6 +127,7 @@ class srcc::Sema : public DiagsProducer {
         enum struct Kind : u8 {
             ArrayBroadcast,
             ArrayInit,
+            ExpandTuple,
             DefaultInit,
             IntegralCast,
             LValueToRValue,
@@ -133,13 +135,15 @@ class srcc::Sema : public DiagsProducer {
             MaterialiseTemporary,
             RangeCast,
             SelectOverload,
-            StructInit,
+            StripParens,
+            TupleToFirstElement,
+            RecordInit,
         };
 
         Kind kind;
         Variant< // clang-format off
             TypeAndValueCategory,
-            StructInitData,
+            RecordInitData,
             ArrayInitData,
             ArrayBroadcastData,
             u32
@@ -149,22 +153,25 @@ class srcc::Sema : public DiagsProducer {
         Conversion(Kind kind) : kind{kind} {}
         Conversion(Kind kind, Type ty, ValueCategory val = Expr::RValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
-        Conversion(StructInitData conversions) : kind{Kind::StructInit}, data{std::move(conversions)} {}
-        Conversion(ArrayInitData data): kind{Kind::ArrayInit}, data{std::move(data)} {}
-        Conversion(ArrayBroadcastData data): kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
+        Conversion(RecordInitData conversions) : kind{Kind::RecordInit}, data{std::move(conversions)} {}
+        Conversion(ArrayInitData data) : kind{Kind::ArrayInit}, data{std::move(data)} {}
+        Conversion(ArrayBroadcastData data) : kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
 
     public:
         ~Conversion();
         static auto ArrayBroadcast(ArrayBroadcastData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
+        static auto ExpandTuple() -> Conversion { return Conversion{Kind::ExpandTuple}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
+        static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
-        static auto StructInit(StructInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
+        static auto StripParens() -> Conversion { return Conversion{Kind::StripParens}; }
+        static auto TupleToFirstElement() -> Conversion { return Conversion{Kind::TupleToFirstElement}; }
 
         Type type() const { return data.get<TypeAndValueCategory>().type(); }
         auto value_category() const -> ValueCategory {
@@ -180,6 +187,30 @@ class srcc::Sema : public DiagsProducer {
         ConversionSequence() = default;
         void add(Conversion conv) { conversions.push_back(std::move(conv)); }
         u32 badness();
+    };
+
+    class TentativeConversionContext {
+        LIBBASE_IMMOVABLE(TentativeConversionContext);
+        ConversionSequence& seq;
+        const usz num_conversions;
+        bool committed = false, rolled_back = false;
+
+    public:
+        TentativeConversionContext(ConversionSequence& seq)
+            : seq{seq}, num_conversions{seq.conversions.size()} {}
+
+        ~TentativeConversionContext() {
+            Assert(
+                committed or rolled_back,
+                "Must call either commit() or rollback()"
+            );
+        }
+
+        void commit() { committed = true; }
+        void rollback() {
+            rolled_back = true;
+            seq.conversions.truncate(num_conversions);
+        }
     };
 
     /// Result of building a conversion sequence.
@@ -386,9 +417,9 @@ class srcc::Sema : public DiagsProducer {
         struct AddResult {
             enum struct Kind {
                 Ok,
-                Exhaustive,        ///< This pattern makes the match exhaustive.
-                InvalidType,       ///< We don’t know what to do w/ this (e.g. if someone passes "foo" to an integer match).
-                Subsumed,          ///< Subsumed by an earlier pattern.
+                Exhaustive,  ///< This pattern makes the match exhaustive.
+                InvalidType, ///< We don’t know what to do w/ this (e.g. if someone passes "foo" to an integer match).
+                Subsumed,    ///< Subsumed by an earlier pattern.
             } kind{};
             ArrayRef<Location> locations{};
         };
@@ -570,7 +601,8 @@ private:
     ///
     /// This should not be called directly; call BuildInitialiser() instead.
     auto BuildAggregateInitialiser(
-        StructType* s,
+        ConversionSequence seq,
+        RecordType* s,
         ArrayRef<Expr*> args,
         Location loc
     ) -> ConversionSequenceOrDiags;
@@ -579,6 +611,7 @@ private:
     ///
     /// This should not be called directly; call BuildInitialiser() instead.
     auto BuildArrayInitialiser(
+        ConversionSequence seq,
         ArrayType* a,
         ArrayRef<Expr*> args,
         Location loc
@@ -838,9 +871,9 @@ private:
     void Translate(bool have_preamble, bool load_runtime);
 
     /// Statements.
-#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed)->Decl*;
-#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed)->Ptr<Stmt>;
+#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed) -> Ptr<Stmt>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed) -> Decl*;
+#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed) -> Ptr<Stmt>;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
 

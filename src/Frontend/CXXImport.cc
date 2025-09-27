@@ -1,21 +1,20 @@
+#include <srcc/AST/Type.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
 #include <clang/AST/Decl.h>
+#include <clang/AST/RecordLayout.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
 #include <clang/Tooling/Tooling.h>
-#include <clang/AST/RecordLayout.h>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
-
-#include <print>
 
 using namespace srcc;
 
@@ -215,16 +214,23 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
     auto Scope = S.M->create_scope<StructScope>(S.global_scope());
     for (auto F : Fields) S.AddDeclToScope(Scope, F);
 
+    // Build the layout.
+    auto rl = RecordLayout::Create(
+        *S.M,
+        Fields,
+        Size::Bytes(RL.getSize().getQuantity()),
+        Size::Bytes(RL.getSize().getQuantity()),
+        Align(RL.getAlignment().getQuantity()),
+        RecordLayout::Bits::Trivial()
+    );
+
     // Build the type.
-    auto Struct = StructType::CreateWithLayout(
+    auto Struct = StructType::Create(
         *S.M,
         Scope,
         S.M->save(Name),
-        Fields,
-        Size::Bytes(RL.getSize().getQuantity()),
-        Align(RL.getAlignment().getQuantity()),
-        StructType::Bits::Trivial(),
-        ImportSourceLocation(RD->getLocation())
+        ImportSourceLocation(RD->getLocation()),
+        rl
     );
 
     S.imported_records[RD] = Struct;

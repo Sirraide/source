@@ -14,7 +14,7 @@ var w = DefaultInit();
 }
 
 {
-var x = DefaultInit(1); // expected-error: Struct 'DefaultInit' has 2 fields, but got 1 argument
+var x = DefaultInit(1); // expected-error: Cannot initialise 'DefaultInit' from '(int)'
 var y = 1;
 var z = "";
 }

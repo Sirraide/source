@@ -138,7 +138,7 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue ms
     // Don’t require a valid location here as this is also called from within
     // implicitly generated code.
     auto l = Location::Decode(loc);
-    StructInitHelper init{*this, tu.abort_info_type, curr.abort_info_slot};
+    RecordInitHelper init{*this, tu.abort_info_type, curr.abort_info_slot};
     if (auto lc = l.seek_line_column(context())) {
         auto name = context().file_name(l.file_id);
         init.emit_next_field(CreateGlobalStringSlice(loc, name));
@@ -224,9 +224,9 @@ void CodeGen::CreateBuiltinAggregateStore(
     Type ty,
     IRValue aggregate
 ) {
-    auto eqv = GetEquivalentStructTypeForAggregate(ty);
-    auto f1 = eqv->fields()[0];
-    auto f2 = eqv->fields()[1];
+    auto eqv = GetEquivalentRecordTypeForAggregate(ty);
+    auto f1 = eqv->layout().fields()[0];
+    auto f2 = eqv->layout().fields()[1];
     CreateStore(loc, addr, aggregate.first(), f1->type->align(tu), f1->offset);
     CreateStore(loc, addr, aggregate.second(), f2->type->align(tu), f2->offset);
 }
@@ -282,9 +282,9 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
 }
 
 auto CodeGen::CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset) -> IRValue {
-    if (auto eqv = GetEquivalentStructTypeForAggregate(ty)) {
-        auto f1 = eqv->fields()[0];
-        auto f2 = eqv->fields()[1];
+    if (auto eqv = GetEquivalentRecordTypeForAggregate(ty)) {
+        auto f1 = eqv->layout().fields()[0];
+        auto f2 = eqv->layout().fields()[1];
         auto v1 = CreateLoad(loc, addr, C(f1->type), f1->type->align(tu), f1->offset + offset);
         auto v2 = CreateLoad(loc, addr, C(f2->type), f2->type->align(tu), f2->offset + offset);
         return {v1, v2};
@@ -501,10 +501,10 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, Location location) -> Value {
     return CreateNullPointer(getUnknownLoc());
 }
 
-auto CodeGen::GetEquivalentStructTypeForAggregate(Type ty) -> StructType* {
-    if (isa<ProcType>(ty)) return tu.ClosureEquivalentStructTy;
-    if (isa<SliceType>(ty)) return tu.SliceEquivalentStructTy;
-    if (auto r = dyn_cast<RangeType>(ty)) return r->equivalent_struct_type();
+auto CodeGen::GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType* {
+    if (isa<ProcType>(ty)) return tu.ClosureEquivalentTupleTy;
+    if (isa<SliceType>(ty)) return tu.SliceEquivalentTupleTy;
+    if (auto r = dyn_cast<RangeType>(ty)) return r->equivalent_tuple_type();
     return nullptr;
 }
 
@@ -525,6 +525,7 @@ auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
 
         case TypeBase::Kind::ArrayType:
         case TypeBase::Kind::StructType:
+        case TypeBase::Kind::TupleType:
             return EvalMode::Memory;
     }
 
@@ -882,6 +883,12 @@ void CodeGen::Mangler::Append(Type ty) {
             if (ty->name().empty()) Todo();
             M.name += std::format("T{}{}", ty->name().size(), ty->name());
         }
+
+        void operator()(TupleType* ty) {
+            M.name += "Q";
+            for (auto f : ty->layout().fields()) f->type->visit(*this);
+            M.name += "E";
+        }
     };
 
     ty->visit(Visitor{*this});
@@ -910,16 +917,16 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
 // ============================================================================
 //  Initialisation.
 // ============================================================================
-void CodeGen::StructInitHelper::emit_next_field(Value v) {
-    Assert(i < ty->fields().size());
-    auto field = ty->fields()[i++];
+void CodeGen::RecordInitHelper::emit_next_field(Value v) {
+    Assert(i < ty->layout().fields().size());
+    auto field = ty->layout().fields()[i++];
     auto ptr = CG.CreatePtrAdd(v.getLoc(), base, field->offset);
     CG.CreateStore(v.getLoc(), ptr, v, field->type->align(CG.tu));
 }
 
-void CodeGen::StructInitHelper::emit_next_field(IRValue v) {
-    Assert(i < ty->fields().size());
-    auto field = ty->fields()[i++];
+void CodeGen::RecordInitHelper::emit_next_field(IRValue v) {
+    Assert(i < ty->layout().fields().size());
+    auto field = ty->layout().fields()[i++];
     auto ptr = CG.CreatePtrAdd(v.loc(), base, field->offset);
     CG.CreateBuiltinAggregateStore(v.loc(), ptr, field->type, v);
 }
@@ -997,10 +1004,13 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // If expressions can be mrvalues if either branch is an mrvalue.
         [&](IfExpr* e) { EmitIfExpr(e, addr); },
 
+        // Parenthesised expressions may wrap an rvalue.
+        [&](ParenExpr* e) { EmitRValue(addr, e->expr); },
+
         // Structs literals are emitted field by field.
-        [&](StructInitExpr* e) {
-            auto s = e->struct_type();
-            for (auto [field, val] : zip(s->fields(), e->values())) {
+        [&](TupleExpr* e) {
+            auto s = e->record_type();
+            for (auto [field, val] : zip(s->layout().fields(), e->values())) {
                 if (IsZeroSizedType(field->type)) {
                     Emit(val);
                     continue;
@@ -1124,9 +1134,9 @@ auto CodeGen::LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr>
         else if (sz <= Word * 2 and ctx.allocate(2)) {
             // As an optimisation, pass closures and slices directly.
             if (isa<SliceType, ProcType>(t)) {
-                auto ty = GetEquivalentStructTypeForAggregate(t);
-                info.emplace_back(C(ty->fields()[0]->type));
-                info.emplace_back(C(ty->fields()[1]->type));
+                auto ty = GetEquivalentRecordTypeForAggregate(t);
+                info.emplace_back(C(ty->layout().fields()[0]->type));
+                info.emplace_back(C(ty->layout().fields()[1]->type));
                 if (auto a = arg.get_or_null()) {
                     auto v = Emit(a);
                     if (a->is_lvalue()) v = CreateLoad(l, v.scalar(), t);
@@ -1953,8 +1963,8 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
     auto l = C(expr->location());
     auto GetField = [&] (unsigned i) -> IRValue {
         if (expr->operand->is_rvalue()) return Emit(expr->operand)[i];
-        auto r = GetEquivalentStructTypeForAggregate(expr->operand->type);
-        auto f = r->fields()[i];
+        auto r = GetEquivalentRecordTypeForAggregate(expr->operand->type);
+        auto f = r->layout().fields()[i];
         auto addr = EmitScalar(expr->operand);
         return CreateLoad(l, addr, f->type, f->offset);
     };
@@ -2439,6 +2449,10 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     Emit(proc->body().get());
 }
 
+auto CodeGen::EmitParenExpr(ParenExpr* e) -> IRValue {
+    return Emit(e->expr);
+}
+
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
     auto l = C(expr->location());
     auto op = DeclareProcedure(expr->decl);
@@ -2539,13 +2553,13 @@ auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> IRValue {
     return CreateGlobalStringSlice(C(expr->location()), expr->value);
 }
 
-auto CodeGen::EmitStructInitExpr(StructInitExpr* e) -> IRValue {
+auto CodeGen::EmitTupleExpr(TupleExpr* e) -> IRValue {
     if (IsZeroSizedType(e->type)) {
         for (auto v : e->values()) Emit(v);
         return {};
     }
 
-    Unreachable("Emitting struct initialiser without memory location?");
+    Unreachable("Emitting tuple without memory location?");
 }
 
 auto CodeGen::EmitTypeExpr(TypeExpr*) -> IRValue {

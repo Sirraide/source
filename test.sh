@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-ctest --test-dir out -j`nproc` --progress --output-on-failure
+set -eu
+ctest --test-dir out/ -j`nproc` --progress --output-on-failure --max-width 200 --timeout 3s

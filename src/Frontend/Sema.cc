@@ -5,11 +5,15 @@
 
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
+#include <llvm/Support/Casting.h>
+#include "base/StringUtils.hh"
 #include "srcc/AST/AST.hh"
+#include "srcc/AST/Stmt.hh"
+#include "srcc/AST/Type.hh"
 
-#include <print>
 #include <ranges>
 
 using namespace srcc;
@@ -494,6 +498,18 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
             return CreateReference(proc, loc).get();
         }
+
+        case K::StripParens: {
+            auto p = cast<ParenExpr>(e);
+            return p->expr;
+        }
+
+        case K::TupleToFirstElement: {
+            if (auto te = dyn_cast<TupleExpr>(e)) return te->values().front();
+            auto ty = cast<TupleType>(e->type);
+            auto temp = MaterialiseTemporary(e);
+            return new (*M) MemberAccessExpr(temp, ty->layout().fields().front(), loc);
+        }
     }
 }
 
@@ -529,21 +545,31 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             return;
         }
 
+        case K::ExpandTuple: {
+            Assert(exprs.size() == 1);
+            auto e = cast<TupleExpr>(exprs.front());
+            exprs.clear();
+            append_range(exprs, e->values());
+            return;
+        }
+
         case K::IntegralCast:
         case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
         case K::RangeCast:
-        case K::SelectOverload: {
+        case K::SelectOverload:
+        case K::StripParens:
+        case K::TupleToFirstElement: {
             Assert(exprs.size() == 1);
             exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
             return;
         }
 
-        case K::StructInit: {
-            auto& data = conv.data.get<Conversion::StructInitData>();
+        case K::RecordInit: {
+            auto& data = conv.data.get<Conversion::RecordInitData>();
             for (auto [e, seq] : zip(exprs, data.field_convs)) e = ApplyConversionSequence(e, seq, loc);
-            auto e = StructInitExpr::Create(*M, data.ty, exprs, loc);
+            auto e = TupleExpr::Create(*M, data.ty, exprs, loc);
             exprs.clear();
             exprs.push_back(e);
             return;
@@ -596,22 +622,25 @@ auto Sema::ApplyConversionSequence(
 // If there are no initialisers, use option 2 if the argument list
 // is empty, and option 3 otherwise.
 auto Sema::BuildAggregateInitialiser(
-    StructType* s,
+    ConversionSequence seq,
+    RecordType* r,
     ArrayRef<Expr*> args,
     Location loc
 ) -> ConversionSequenceOrDiags {
+    auto& rl = r->layout();
+
     // First case: option 1 or 2.
-    if (not s->initialisers().empty())
+    if (auto s = dyn_cast<StructType>(r); s and not s->initialisers().empty())
         return CreateICE(loc, "TODO: Call struct initialiser");
 
     // Second case: option 3. Option 2 is handled before we get here,
     // i.e. at this point, we know we’re building a literal initialiser.
     Assert(not args.empty(), "Should have called BuildDefaultInitialiser() instead");
-    Assert(s->has_literal_init(), "Should have rejected before we ever get here");
+    Assert(rl.has_literal_init(), "Should have rejected before we ever get here");
 
     // Recursively build an initialiser for each element that the user provided.
     std::vector<ConversionSequence> field_seqs;
-    for (auto [field, arg] : zip(s->fields(), args)) {
+    for (auto [field, arg] : zip(rl.fields(), args)) {
         auto seq = BuildConversionSequence(field->type, arg, arg->location());
         if (not seq.result.has_value()) {
             auto note = field->name.empty()
@@ -624,45 +653,27 @@ auto Sema::BuildAggregateInitialiser(
     }
 
     // For now, the number of arguments must match the number of fields in the struct.
-    if (s->fields().size() != args.size()) {
-        auto err = CreateError(
-            loc,
-            "Struct '{}' has {} field{}, but got {} argument{}",
-            Type{s},
-            s->fields().size(),
-            s->fields().size() == 1 ? "" : "s",
-            args.size(),
-            args.size() == 1 ? "" : "s"
-        );
+    if (rl.fields().size() != args.size()) return CreateError(
+        loc,
+        "Cannot initialise '{}' from\f'%1(({})%)'",
+        Type{r},
+        utils::join(args | vws::transform(&Expr::type))
+    );
 
-        err.extra =
-            "\vIf you want to be able to initialise the struct using fewer "
-            "arguments, either define an initialisation procedure or provide "
-            "default values for the remaining fields.";
-
-        return err;
-    }
-
-    ConversionSequence seq;
-    seq.add(Conversion::StructInit(Conversion::StructInitData{s, std::move(field_seqs)}));
+    seq.add(Conversion::RecordInit(Conversion::RecordInitData{r, std::move(field_seqs)}));
     return seq;
 }
 
 auto Sema::BuildArrayInitialiser(
+    ConversionSequence seq,
     ArrayType* a,
     ArrayRef<Expr*> args,
     Location loc
 ) -> ConversionSequenceOrDiags {
-    ConversionSequence seq;
-
-    // TODO: Currently, we’re *WAY* too liberal in terms of what counts as a
-    // ‘struct initialiser’, e.g. s() == 42 will coerce '42' to an 's' if
-    // possible, which is NOT what we want. Disallow that!!!
-
     // Error if there are more initialisers than array elements.
     if (args.size() > u64(a->dimension())) return CreateError(
         loc,
-        "Too many elements in array initialiser for '{}' (elements: {})",
+        "Too many elements in array initialiser for '{}'\f(elements: {})",
         Type(a),
         args.size()
     );
@@ -715,6 +726,37 @@ auto Sema::BuildConversionSequence(
         var_type
     );
 
+    // Simplify tuples and parenthesised expressions.
+    //
+    // Note that this only handles literal tuples, e.g. a function returning a tuple
+    // won’t get unwrapped here, which is probably what we want.
+    {
+        auto single_arg = args.size() == 1 ? args.front() : nullptr;
+
+        // Unwrap TupleExprs that are not structs (e.g. unwrap '(1, 2)', but leave
+        // 'foo(1, 2)' as-is). This also means that '()' is converted to no arguments
+        // at all, which is exactly what we want because it is supposed to be equivalent
+        // to default initialisation in all contexts.
+        if (
+            auto t = dyn_cast_if_present<TupleExpr>(single_arg);
+            t and not t->is_struct()
+        ) {
+            seq.add(Conversion::ExpandTuple());
+            args = t->values();
+        }
+
+        // Parentheses are significant for array intialisers, e.g. if we have
+        // an 'int[2][2]', then '(1, 2)' is different from '((1, 2))': the former
+        // results in '[[1, 1], [2, 2]]', the latter in '[[1, 2], [0, 0]]'.
+        //
+        // Thus, we can’t just strip all parentheses around an expression; instead,
+        // remove only a single level here.
+        else if (auto p = dyn_cast_if_present<ParenExpr>(single_arg)) {
+            seq.add(Conversion::StripParens());
+            args = p->expr;
+        }
+    }
+
     // Handle a single argument of type 'noreturn'.
     //
     // As a special case, 'noreturn' can be converted to *any* type (and value
@@ -729,9 +771,6 @@ auto Sema::BuildConversionSequence(
         if (var_type != Type::NoReturnTy) seq.add(Conversion::Poison(var_type, Expr::RValue));
         return seq;
     }
-
-    // If we have zero or more than one argument, we need to build an RValue
-    // of the target type first.
 
     // If there are no arguments, this is default initialisation.
     if (args.empty()) {
@@ -754,14 +793,20 @@ auto Sema::BuildConversionSequence(
     // There are only few (classes of) types that support initialisation
     // from more than one argument.
     if (args.size() > 1) {
-        if (auto a = dyn_cast<ArrayType>(var_type)) return BuildArrayInitialiser(a, args, init_loc);
-        if (auto s = dyn_cast<StructType>(var_type.ptr())) return BuildAggregateInitialiser(s, args, init_loc);
-        return CreateError(init_loc, "Cannot create a value of type '{}' from more than one argument", var_type);
+        if (auto a = dyn_cast<ArrayType>(var_type))
+            return BuildArrayInitialiser(std::move(seq), a, args, init_loc);
+        if (auto r = dyn_cast<RecordType>(var_type.ptr()))
+            return BuildAggregateInitialiser(std::move(seq), r, args, init_loc);
+        return CreateError(
+            init_loc,
+            "Cannot initialise '{}' from\f'%1(({})%)'",
+            var_type,
+            utils::join(args | vws::transform(&Expr::type))
+        );
     }
 
     // If we get here, there is only a single argument.
     Assert(args.size() == 1);
-    Assert(seq.conversions.empty());
 
     // If the types match, ensure this is an rvalue.
     auto ty = args.front()->type;
@@ -770,8 +815,37 @@ auto Sema::BuildConversionSequence(
         return seq;
     }
 
-    // At this point, , we need to perform a type conversion.
+    // Also allow unwrapping any number of nested 1-tuples here, but *only*
+    // if the first non-1-tuple is an exact match (e.g. we only want to unwrap
+    // '((1, 2))' if we’re initialising an '(int, int)', but not if the target
+    // type is 'int[2]').
+    //
+    // This process is also applied to non-literal tuples, e.g. call to a function
+    // returning '(int,)' can be assigned to an 'int'.
     auto a = args.front();
+    if (isa<TupleType>(a->type)) {
+        TentativeConversionContext tc{seq};
+        Type unwrapped_type = a->type;
+        for (;;) {
+            // This is now an exact match; return it.
+            if (unwrapped_type == var_type) {
+                seq.add(Conversion::LValueToRValue());
+                tc.commit();
+                return seq;
+            }
+
+            // Unwrap 1-tuples.
+            auto t = dyn_cast<TupleType>(unwrapped_type);
+            if (not t or t->layout().fields().size() != 1) break;
+            unwrapped_type = t->layout().fields().front()->type;
+            seq.add(Conversion::TupleToFirstElement());
+        }
+
+        // We didn’t find an exact match; undo any conversions we may have added.
+        tc.rollback();
+    }
+
+    // At this point, we need to perform a type conversion.
     auto TypeMismatch = [&] {
         return CreateError(
             init_loc,
@@ -811,10 +885,11 @@ auto Sema::BuildConversionSequence(
             return TypeMismatch();
 
         case TypeBase::Kind::ArrayType:
-            return BuildArrayInitialiser(cast<ArrayType>(var_type), args, init_loc);
+            return BuildArrayInitialiser(std::move(seq), cast<ArrayType>(var_type), args, init_loc);
 
         case TypeBase::Kind::StructType:
-            return BuildAggregateInitialiser(cast<StructType>(var_type), args, init_loc);
+        case TypeBase::Kind::TupleType:
+            return BuildAggregateInitialiser(std::move(seq), cast<RecordType>(var_type), args, init_loc);
 
         case TypeBase::Kind::ProcType:
             // Type is an overload set; attempt to convert it.
@@ -1114,15 +1189,18 @@ u32 Sema::ConversionSequence::badness() {
 
             // These don’t perform type conversion.
             case K::DefaultInit:
+            case K::ExpandTuple:
             case K::LValueToRValue:
             case K::MaterialiseTemporary:
             case K::SelectOverload:
+            case K::StripParens:
                 break;
 
             // These are actual type conversions.
             case K::IntegralCast:
             case K::MaterialisePoison:
             case K::RangeCast:
+            case K::TupleToFirstElement:
                 badness++;
                 break;
 
@@ -1136,8 +1214,8 @@ u32 Sema::ConversionSequence::badness() {
                 for (auto& seq : data.elem_convs) badness += seq.badness();
             } break;
 
-            case K::StructInit: {
-                auto& data = conv.data.get<Conversion::StructInitData>();
+            case K::RecordInit: {
+                auto& data = conv.data.get<Conversion::RecordInitData>();
                 for (auto& seq : data.field_convs) badness += seq.badness();
             } break;
         }
@@ -2038,19 +2116,38 @@ auto Sema::BuildBinaryExpr(
                 return BuildTypeExpr(arr, loc);
             }
 
-            if (not isa<SliceType, ArrayType>(lhs->type)) return Error(
+            if (not isa<TupleType, SliceType, ArrayType>(lhs->type)) return Error(
                 lhs->location(),
-                "Cannot subscript non-array, non-slice type '{}'",
+                "Cannot subscript type '{}'",
                 lhs->type
             );
 
+            // RHS must be an integer.
             if (not MakeRValue(Type::IntTy, rhs, "Index", "[]")) return {};
 
-            // Arrays need to be in memory before we can do anything
-            // with them; slices are srvalues and should be loaded
-            // whole.
-            if (isa<ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
+            // Aggregates need to be in memory before we can do anything
+            // with them; slices are srvalues and should be loaded whole.
+            // FIXME: Stop doing that for slices.
+            if (isa<TupleType, ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
             else lhs = LValueToRValue(lhs);
+
+            // For tuples, the integer must be a compile-time constant, and
+            // the result of a subscript operation is a member access.
+            if (auto ty = dyn_cast<TupleType>(lhs->type)) {
+                auto res = M->vm.eval(rhs);
+                if (not res) return {};
+                auto idx = i64(res->cast<APInt>().getSExtValue());
+                auto tuple_elems = i64(ty->layout().fields().size());
+                if (idx < 0 or idx >= tuple_elems) return Error(
+                    loc,
+                    "Tuple index {} is out of bounds for {}-element tuple\f{}",
+                    idx,
+                    tuple_elems,
+                    ty
+                );
+
+                return new (*M) MemberAccessExpr(lhs, ty->layout().fields()[usz(idx)], loc);
+            }
 
             // A subscripting operation yields an lvalue.
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
@@ -2216,7 +2313,7 @@ auto Sema::BuildBinaryExpr(
 
             // Regular assignment.
             if (op == Tk::Assign) {
-                if (isa<StructType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
+                if (isa<RecordType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
                 if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
                 return Build(lhs->type, LValue);
             }
@@ -2938,7 +3035,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     // Perform any checks that require translation to be complete.
     for (auto [s, loc, is_return] : incomplete_structs_in_native_proc_type) {
         Assert(s->is_complete());
-        if (s->size() == Size()) DiagnoseZeroSizedTypeInNativeProc(s, loc, is_return);
+        if (s->layout().size() == Size()) DiagnoseZeroSizedTypeInNativeProc(s, loc, is_return);
     }
 
     // Sanity check.
@@ -3376,11 +3473,25 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
-    return TranslateExpr(parsed->inner);
+    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
-    Todo();
+    SmallVector<Expr*> exprs;
+    SmallVector<Type> types;
+    bool ok = true;
+    for (auto pe : parsed->exprs()) {
+        if (auto e = TranslateExpr(pe).get_or_null()) {
+            exprs.push_back(e);
+            types.push_back(e->type);
+        } else {
+            ok = false;
+        }
+    }
+
+    if (not ok) return {};
+    auto tt = TupleType::Get(*M, types);
+    return TupleExpr::Create(*M, tt, exprs, parsed->loc);
 }
 
 auto Sema::TranslateVarDecl(ParsedVarDecl* parsed) -> Decl* {
@@ -3559,7 +3670,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
-    StructType::LayoutBuilder lb{*M};
+    RecordLayout::Builder lb{*M};
     for (auto f : parsed->fields()) {
         auto ty = AdjustVariableType(TranslateType(f->type), f->loc);
         bool complete = IsCompleteType(ty);
@@ -3581,7 +3692,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
         lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
     }
 
-    lb.apply(s);
+    s->finalise(lb.build());
     return decl;
 }
 
@@ -3591,7 +3702,6 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
         *M,
         sc,
         parsed->name.str(),
-        u32(parsed->fields().size()),
         parsed->loc
     );
 

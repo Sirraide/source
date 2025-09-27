@@ -29,3 +29,27 @@ var a2 = i16[200](3);
 int[4](1, 2, 3, 4);
 int[100](1, 2, 3, 4);
 
+// Test that we differentiate between '(1, 2)' and '((1, 2))' properly;
+// (see Sema::BuildConversionSequence()).
+eval {
+    int[2][2] a1 = (1, 2);
+    assert a1[0][0] == 1;
+    assert a1[0][1] == 1;
+    assert a1[1][0] == 2;
+    assert a1[1][1] == 2;
+
+    int[2][2] a2 = ((1, 2));
+    assert a2[0][0] == 1;
+    assert a2[0][1] == 2;
+    assert a2[1][0] == 1;
+    assert a2[1][1] == 2;
+
+    // '((1, 2),)' should be equivalent to '((1, 2))', even though the
+    // AST is different: the former is a 1-tuple containing a 2-tuple,
+    // the latter a parenthesised 2-tuple.
+    int[2][2] a3 = ((1, 2),);
+    assert a3[0][0] == 1;
+    assert a3[0][1] == 2;
+    assert a3[1][0] == 1;
+    assert a3[1][1] == 2;
+}

@@ -62,10 +62,11 @@ AST_STMT_LEAF(MaterialiseTemporaryExpr)
 AST_STMT_LEAF(MatchExpr)
 AST_STMT_LEAF(MemberAccessExpr)
 AST_STMT_LEAF(OverloadSetExpr)
+AST_STMT_LEAF(ParenExpr)
 AST_STMT_LEAF(ProcRefExpr)
 AST_STMT_LEAF(ReturnExpr)
 AST_STMT_LEAF(StrLitExpr)
-AST_STMT_LEAF(StructInitExpr)
+AST_STMT_LEAF(TupleExpr)
 AST_STMT_LEAF(TypeExpr)
 AST_STMT_LEAF(UnaryExpr)
 
@@ -100,6 +101,9 @@ AST_TYPE_LEAF(RangeType)
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
 AST_TYPE_LEAF(ProcType)
+
+AST_TYPE(RecordType)
+AST_TYPE_LEAF(TupleType)
 AST_TYPE_LEAF(StructType)
 
 #undef AST_STMT_LEAF

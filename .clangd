@@ -2,6 +2,10 @@ Hover:
   ShowAKA: false
 Documentation:
   CommentFormat: Doxygen
+Style:
+  AngledHeaders: "*"
+Completion:
+  HeaderInsertion: Never
 InlayHints:
   BlockEnd: true
   Designators: true

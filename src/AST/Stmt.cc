@@ -1,6 +1,7 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Frontend/Parser.hh>
+#include <llvm/Support/Casting.h>
 
 #include <memory>
 #include <ranges>
@@ -127,6 +128,11 @@ auto BlockExpr::Create(
 auto BlockExpr::return_expr() -> Expr* {
     if (type->is_void()) return nullptr;
     return cast<Expr>(stmts().back());
+}
+
+auto Expr::ignore_parens() -> Expr* {
+    if (auto p = dyn_cast<ParenExpr>(this)) return p->expr->ignore_parens();
+    return this;
 }
 
 ForStmt::ForStmt(
@@ -359,22 +365,22 @@ bool ProcTemplateDecl::is_builtin_operator_template() const {
     return pattern->type->attrs.builtin_operator;
 }
 
-StructInitExpr::StructInitExpr(
-    StructType* ty,
+TupleExpr::TupleExpr(
+    RecordType* ty,
     ArrayRef<Expr*> fields,
     Location location
-) : Expr{Kind::StructInitExpr, ty, RValue, location} {
+) : Expr{Kind::TupleExpr, ty, RValue, location} {
     std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
 }
 
-auto StructInitExpr::Create(
+auto TupleExpr::Create(
     TranslationUnit& tu,
-    StructType* type,
+    RecordType* type,
     ArrayRef<Expr*> fields,
     Location location
-) -> StructInitExpr* {
-    Assert(fields.size() == type->fields().size(), "Argument count mismatch");
+) -> TupleExpr* {
+    Assert(fields.size() == type->layout().fields().size(), "Argument count mismatch");
     auto size = totalSizeToAlloc<Expr*>(fields.size());
-    auto mem = tu.allocate(size, alignof(StructInitExpr));
-    return ::new (mem) StructInitExpr{type, fields, location};
+    auto mem = tu.allocate(size, alignof(TupleExpr));
+    return ::new (mem) TupleExpr{type, fields, location};
 }

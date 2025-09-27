@@ -6,6 +6,10 @@
 
 #include <clang/Basic/TargetInfo.h>
 
+#include <llvm/ADT/FoldingSet.h>
+
+#include <base/StringUtils.hh>
+
 #include <memory>
 #include <print>
 
@@ -89,9 +93,9 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
         [&](const PtrType*) { return t.ptr_align(); },
         [&](const RangeType* ty) { return ty->elem()->align(t); },
         [&](const SliceType*) { return t.slice_align(); },
-        [&](const StructType* ty) {
+        [&](const RecordType* ty) {
             Assert(ty->is_complete(), "Requested size of incomplete struct");
-            return ty->align();
+            return ty->layout().align();
         },
     });
 } // clang-format on
@@ -101,7 +105,7 @@ auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
 }
 
 auto TypeBase::array_size(const Target& t) const -> Size {
-    if (auto s = dyn_cast<StructType>(this)) return s->array_size();
+    if (auto s = dyn_cast<RecordType>(this)) return s->layout().array_size();
     if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(t) * 2;
     return memory_size(t);
 }
@@ -112,7 +116,7 @@ auto TypeBase::bit_width(TranslationUnit& tu) const -> Size {
     return size_impl(tu.target());
 }
 
-template <bool (StructType::*struct_predicate)() const>
+template <bool (RecordLayout::*struct_predicate)() const>
 bool InitCheckHelper(const TypeBase* type) { // clang-format off
     return type->visit(utils::Overloaded{
         [&](const ArrayType* ty) { return InitCheckHelper<struct_predicate>(ty->elem().ptr()); },
@@ -138,16 +142,16 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
         [&](const PtrType*) { return false; },
         [&](const RangeType*) { return true; },
         [&](const SliceType*) { return true; },
-        [&](const StructType* ty) { return (ty->*struct_predicate)(); },
+        [&](const RecordType* ty) { return (ty->layout().*struct_predicate)(); },
     });
 } // clang-format on
 
 bool TypeBase::can_default_init() const {
-    return InitCheckHelper<&StructType::has_default_init>(this);
+    return InitCheckHelper<&RecordLayout::has_default_init>(this);
 }
 
 bool TypeBase::can_init_from_no_args() const {
-    return InitCheckHelper<&StructType::has_init_from_no_args>(this);
+    return InitCheckHelper<&RecordLayout::has_init_from_no_args>(this);
 }
 
 void TypeBase::dump(bool use_colour) const {
@@ -155,7 +159,7 @@ void TypeBase::dump(bool use_colour) const {
 }
 
 bool TypeBase::is_aggregate() const {
-    return isa<StructType, ArrayType, SliceType, RangeType, ProcType>(this);
+    return isa<RecordType, ArrayType, SliceType, RangeType, ProcType>(this);
 }
 
 bool TypeBase::is_integer() const {
@@ -225,6 +229,13 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             auto* s = cast<StructType>(this);
             out += std::format("%6({}%)", s->name());
         } break;
+
+        case Kind::TupleType: {
+            auto* s = cast<TupleType>(this);
+            out += std::format("%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d){
+                return d->type->print();
+            }));
+        } break;
     }
 
     return out;
@@ -265,9 +276,10 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             return elem->array_size(t) + elem->memory_size(t);
         }
 
-        case Kind::StructType: {
-            auto s = cast<StructType>(this);
-            return s->size();
+        case Kind::StructType:
+        case Kind::TupleType: {
+            auto s = cast<RecordType>(this);
+            return s->layout().size();
         }
 
         case Kind::ArrayType: {
@@ -428,9 +440,7 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
     auto CreateNew = [&] {
-        Type fields[] { elem, elem };
-        // FIXME: Should store only a struct layout, not a type.
-        return new (mod) RangeType{elem, StructType::CreateTrivialBuiltinTuple(mod, fields)};
+        return new (mod) RangeType{elem, TupleType::Get(mod, {elem, elem})};
     };
 
     return GetOrCreateType(mod.range_types, CreateNew, elem);
@@ -449,37 +459,10 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.ptr());
 }
 
-auto StructType::Create(
-    TranslationUnit& owner,
-    StructScope* scope,
-    String name,
-    u32 num_fields,
-    Location decl_loc
-) -> StructType* {
-    auto type = ::new (owner.allocate(
-        totalSizeToAlloc<FieldDecl*>(num_fields),
-        alignof(StructType)
-    )) StructType{owner, scope, num_fields};
-    type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
-    return type;
-}
-
-auto StructType::CreateWithLayout(
-    TranslationUnit& owner,
-    StructScope* scope,
-    String name,
-    ArrayRef<FieldDecl*> fields,
-    Size size,
-    Align alignment,
-    Bits bits,
-    Location decl_loc
-) -> StructType* {
-    auto ty = Create(owner, scope, name, u32(fields.size()), decl_loc);
-    ty->finalise(fields, size, alignment, bits);
-    return ty;
-}
-
-auto StructType::LayoutBuilder::add_field(Type ty, String name, Location loc) -> FieldDecl* {
+// ============================================================================
+//  Record Types
+// ============================================================================
+auto RecordLayout::Builder::add_field(Type ty, String name, Location loc) -> FieldDecl* {
     // TODO: Optimise layout if this isn’t meant for FFI.
     auto fa = ty->align(tu);
     sz = sz.align(fa);
@@ -489,7 +472,7 @@ auto StructType::LayoutBuilder::add_field(Type ty, String name, Location loc) ->
     return decls.back();
 }
 
-void StructType::LayoutBuilder::apply(StructType* ty) {
+auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLayout* {
     // TODO: Initialisers are declared out-of-line, but they should
     // have been picked up during initial translation when we find
     // all the procedures in the current scope. Add any that we found
@@ -507,7 +490,7 @@ void StructType::LayoutBuilder::apply(StructType* ty) {
     // it should only be visible within 'f'). Perhaps we want to store
     // local member functions outside the struct itself and in the local
     // scope instead?
-    if (ty->initialisers().empty()) {
+    if (initialisers.empty()) {
         // Compute whether we can define a default initialiser for this.
         bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
             decls,
@@ -518,55 +501,76 @@ void StructType::LayoutBuilder::apply(StructType* ty) {
         bits.literal_initialiser = true;
     }
 
-    ty->finalise(decls, sz, a, bits);
+    return RecordLayout::Create(tu, decls, sz, sz.align(a), a, bits);
 }
 
-auto StructType::LayoutBuilder::build(
-    StructScope* scope,
-    String struct_name,
-    Location loc
-) -> StructType* {
-    if (not scope) scope = tu.create_scope<StructScope>(tu.global_scope());
-    auto s = Create(
-        tu,
-        scope,
-        struct_name,
-        u32(decls.size()),
-        loc
+RecordLayout::RecordLayout(
+    ArrayRef<FieldDecl*> fields,
+    Size sz,
+    Size arr_sz,
+    Align a,
+    Bits bits
+) : num_fields{u32(fields.size())},
+    computed_alignment{a},
+    bits{bits},
+    computed_size{sz},
+    computed_array_size{arr_sz} {
+    std::uninitialized_copy_n(
+        fields.begin(),
+        fields.size(),
+        getTrailingObjects()
     );
-
-    apply(s);
-    return s;
 }
 
-auto StructType::CreateTrivialBuiltinTuple(
+auto RecordLayout::Create(
+    TranslationUnit &tu,
+    ArrayRef<FieldDecl *> fields,
+    Size sz,
+    Size arr_sz,
+    Align a,
+    Bits bits
+) -> RecordLayout* {
+    auto alloc_sz = totalSizeToAlloc<FieldDecl*>(fields.size());
+    auto mem = tu.allocate(alloc_sz, alignof(RecordLayout));
+    return ::new (mem) RecordLayout(fields, sz, sz.align(a), a, bits);
+}
+
+auto StructType::Create(
     TranslationUnit& owner,
-    ArrayRef<Type> fields
+    StructScope* scope,
+    String name,
+    Location decl_loc,
+    RecordLayout* layout
 ) -> StructType* {
-    LayoutBuilder lb{owner};
-    for (auto f : fields) lb.add_field(f);
-    return lb.build();
+    auto type = new (owner) StructType(owner, scope);
+    type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
+    type->record_layout = layout;
+    return type;
+}
+
+void StructType::finalise(RecordLayout* layout) {
+    Assert(not is_complete(), "Struct already finalised");
+    record_layout = layout;
 }
 
 auto StructType::name() const -> String {
     return type_decl->name.str();
 }
 
-void StructType::finalise(
-    ArrayRef<FieldDecl*> fields,
-    Size sz,
-    Align align,
-    Bits struct_bits
-) {
-    Assert(not finalised, "finalise() called twice?");
-    finalised = true;
-    bits = struct_bits;
-    computed_size = sz;
-    computed_alignment = align;
-    computed_array_size = sz.align(align);
-    std::uninitialized_copy_n(
-        fields.begin(),
-        fields.size(),
-        getTrailingObjects()
-    );
+void TupleType::Profile(FoldingSetNodeID& id, auto elem_types) {
+    for (Type ty : elem_types) id.AddPointer(ty.ptr());
+}
+
+void TupleType::Profile(FoldingSetNodeID& id) const {
+    Profile(id, layout().field_types());
+}
+
+auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
+    auto CreateNew = [&] {
+        RecordLayout::Builder lb{mod};
+        for (auto ty : elems) lb.add_field(ty);
+        return new (mod) TupleType{lb.build()};
+    };
+
+    return GetOrCreateType(mod.tuple_types, CreateNew, elems);
 }

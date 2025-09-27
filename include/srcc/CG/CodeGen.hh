@@ -277,13 +277,13 @@ public:
         ~EnterProcedure();
     };
 
-    struct StructInitHelper {
+    struct RecordInitHelper {
         CodeGen& CG;
-        StructType* ty;
+        RecordType* ty;
         Value base;
         usz i = 0;
 
-        StructInitHelper(CodeGen& CG, StructType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
+        RecordInitHelper(CodeGen& CG, RecordType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
         void emit_next_field(Value v);
         void emit_next_field(IRValue v);
     };
@@ -380,7 +380,7 @@ public:
     auto GetAddressOfLocal(LocalDecl* decl, Location loc) -> Value;
 
     /// Get the struct type equivalent to a builtin aggregate type.
-    auto GetEquivalentStructTypeForAggregate(Type ty) -> StructType*;
+    auto GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType*;
 
     /// Determine the evaluation mode for a type.
     auto GetEvalMode(Type ty) -> EvalMode;
