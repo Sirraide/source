@@ -61,3 +61,28 @@ int x = ((f(),));
 int x = ((f(),),);
 int x = ((((f(),),)));
 int x = ((((f(),),)),);
+
+proc f1 {
+    var x = (1, 1, 1);
+    x[1 + 1] = 1;
+    x[1 + 2] = 1; // expected-error: Tuple index 3 is out of bounds for 3-element tuple (int, int, int)
+    x[1 - 2] = 1; // expected-error: Tuple index -1 is out of bounds for 3-element tuple (int, int, int)
+    x[-2] = 1; // expected-error: Tuple index -2 is out of bounds for 3-element tuple (int, int, int)
+}
+
+(int, int, int) x = (1, 2, 3);
+(int) x = 1;
+(int) x = (1,);
+(int,) x = 1;
+(int,) x = (1);
+(int,) x = (1,);
+((int,)) x = (1,);
+(((((int))))) x = (1);
+
+(var,) x; // expected-error: Type deduction is not allowed here
+(noreturn,) x; // expected-error: 'noreturn' is not allowed here
+(incomplete,) x; // expected-error: Cannot declare field of incomplete type 'incomplete'
+
+struct incomplete {
+
+}

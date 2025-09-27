@@ -50,25 +50,28 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     }
 }
 
-Type Sema::AdjustVariableType(Type ty, Location loc) {
+bool Sema::CheckFieldType(Type type, Location loc) {
+    if (not CheckVariableType(type, loc)) return false;
+
+    // TODO: Allow this and instead actually perform recursive translation and
+    // cycle checking.
+    if (not IsCompleteType(type)) return Error(
+        loc,
+        "Cannot declare field of incomplete type '{}'",
+        type
+    );
+
+    return true;
+}
+
+bool Sema::CheckVariableType(Type ty, Location loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
-    if (ty == Type::DeducedTy) {
-        Error(loc, "Type deduction is not allowed here");
-        return Type();
-    }
-
-    if (ty == Type::NoReturnTy) {
-        Error(loc, "'{}' is not allowed here", Type::NoReturnTy);
-        return Type();
-    }
-
-    if (ty == Type::UnresolvedOverloadSetTy) {
-        Error(loc, "Unresolved overload set in parameter declaration");
-        return Type();
-    }
-
-    return ty;
+    if (not ty) return false;
+    if (ty == Type::DeducedTy) return Error(loc, "Type deduction is not allowed here");
+    if (ty == Type::NoReturnTy) return Error(loc, "'{}' is not allowed here", Type::NoReturnTy);
+    if (ty == Type::UnresolvedOverloadSetTy) return Error(loc, "Unresolved overload set in parameter declaration");
+    return true;
 }
 
 auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory {
@@ -2139,7 +2142,7 @@ auto Sema::BuildBinaryExpr(
                 auto idx = i64(res->cast<APInt>().getSExtValue());
                 auto tuple_elems = i64(ty->layout().fields().size());
                 if (idx < 0 or idx >= tuple_elems) return Error(
-                    loc,
+                    rhs->location(),
                     "Tuple index {} is out of bounds for {}-element tuple\f{}",
                     idx,
                     tuple_elems,
@@ -3484,6 +3487,7 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
         if (auto e = TranslateExpr(pe).get_or_null()) {
             exprs.push_back(e);
             types.push_back(e->type);
+            if (not CheckFieldType(e->type, pe->loc)) ok = false;
         } else {
             ok = false;
         }
@@ -3534,8 +3538,8 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed) -> Decl* {
 
     // Now that the type has been deduced (if necessary), we can check
     // if we can even create a variable of this type.
-    decl->type = AdjustVariableType(decl->type, decl->location());
-    if (not decl->type) return decl->set_invalid();
+    if (not CheckVariableType(decl->type, decl->location()))
+        return decl->set_invalid();
 
     // Then, perform initialisation.
     //
@@ -3672,24 +3676,14 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
     EnterScope _{*this, s->scope()};
     RecordLayout::Builder lb{*M};
     for (auto f : parsed->fields()) {
-        auto ty = AdjustVariableType(TranslateType(f->type), f->loc);
-        bool complete = IsCompleteType(ty);
-        if (ty and complete) {
+        auto ty = TranslateType(f->type);
+        if (not CheckFieldType(ty, f->loc)) {
+            // If the field’s type is invalid, we can’t query any of its
+            // properties, so just insert a dummy field and continue.
+            lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
+        } else {
             AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
-            continue;
         }
-
-        // TODO: Allow this and instead actually perform recursive translation and
-        // cycle checking.
-        if (not complete) Error(
-            f->loc,
-            "Cannot declare field of incomplete type '{}'",
-            ty
-        );
-
-        // If the field’s type is invalid, we can’t query any of its
-        // properties, so just insert a dummy field and continue.
-        lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
     }
 
     s->finalise(lb.build());
@@ -3744,8 +3738,7 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     auto integer = size->dyn_cast<APInt>();
 
     // Check that the element type makes sense.
-    base.ty = AdjustVariableType(base.ty, base.loc);
-    if (not base.ty) return Type();
+    if (not CheckVariableType(base.ty, base.loc)) return Type();
 
     // Check that the size is a positive 64-bit integer.
     if (not integer) return Error(
@@ -3834,8 +3827,7 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
         if (ty and parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
             DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
-        ty = AdjustVariableType(ty, a.type->loc);
-        if (not ty) ok = false;
+        if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty);
     }
 
@@ -3854,8 +3846,8 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
 }
 
 auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
-    auto ty = AdjustVariableType(TranslateType(stmt->elem), stmt->loc);
-    if (not ty) return Type();
+    auto ty = TranslateType(stmt->elem);
+    if (not CheckVariableType(ty, stmt->loc)) return Type();
     return PtrType::Get(*M, ty);
 }
 
@@ -3877,8 +3869,8 @@ auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
 }
 
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
-    auto ty = AdjustVariableType(TranslateType(parsed->elem), parsed->loc);
-    if (not ty) return Type();
+    auto ty = TranslateType(parsed->elem);
+    if (not CheckVariableType(ty, parsed->loc)) return Type();
     return SliceType::Get(*M, ty);
 }
 
@@ -3902,19 +3894,31 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::RangeType: t = TranslateRangeType(cast<ParsedRangeType>(parsed)); break;
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
+        case K::ParenExpr: t = TranslateType(cast<ParsedParenExpr>(parsed)->inner); break;
 
         // Array types are parsed as subscript expressions.
         case K::BinaryExpr: {
             auto b = cast<ParsedBinaryExpr>(parsed);
-            if (b->op == Tk::LBrack) {
-                t = TranslateArrayType(b);
-                break;
+            if (b->op != Tk::LBrack) goto default_;
+            t = TranslateArrayType(b);
+        } break;
+
+        // Tuples can be treated as types.
+        case K::TupleExpr: {
+            SmallVector<Type> types;
+            auto t = cast<ParsedTupleExpr>(parsed);
+            bool ok = true;
+            for (auto e : t->exprs()) {
+                auto ty = TranslateType(e);
+                if (not CheckFieldType(ty, e->loc)) ok = false;
+                types.push_back(ty);
             }
 
-            [[fallthrough]];
-        }
+            if (ok) return TupleType::Get(*M, types);
+        } break;
 
         default:
+        default_:
             Error(parsed->loc, "Expected type");
             break;
     }

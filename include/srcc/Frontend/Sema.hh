@@ -583,9 +583,6 @@ private:
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
 
-    /// Check that a type is valid for a variable declaration.
-    [[nodiscard]] Type AdjustVariableType(Type ty, Location loc);
-
     /// Apply a conversion to an expression or list of expressions.
     void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc);
     [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, Location loc) -> Expr*;
@@ -656,6 +653,9 @@ private:
         bool want_lvalue = false
     ) -> Ptr<Expr>;
 
+    /// Check that a type is valid for a record field.
+    [[nodiscard]] bool CheckFieldType(Type ty, Location loc);
+
     /// Check additional constraints on a call that need to happen after overload resolution.
     bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
 
@@ -671,6 +671,9 @@ private:
 
     /// Check if the declaration of an overloaded operator is well-formed.
     bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
+
+    /// Check that a type is valid for a variable declaration.
+    [[nodiscard]] bool CheckVariableType(Type ty, Location loc);
 
     /// Determine the common type and value category of a set of expressions and,
     /// if there is one, ensure they all have the same type and value category.
