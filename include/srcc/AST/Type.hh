@@ -142,6 +142,9 @@ public:
     /// Get whether this type has a default initialiser.
     [[nodiscard]] bool can_default_init() const;
 
+    /// Check if default initialisation for this type is zero-initialisation.
+    [[nodiscard]] bool can_zero_init() const;
+
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
     void dump_colour() const;
@@ -494,8 +497,9 @@ public:
         bool default_initialiser : 1 = false;
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
+        bool zero_init           : 1 = false;
         static auto Trivial() -> Bits {
-            return {true, true, true};
+            return {true, true, true, true};
         }
     };
 
@@ -582,6 +586,10 @@ public:
     /// an initialiser that takes a list of rvalues and emits
     /// them directly into the record’s memory).
     bool has_literal_init() const { return bits.literal_initialiser; }
+
+    /// Check if this type can be zero-initialised if default
+    /// initialisation is requested.
+    bool has_zero_init() const { return bits.zero_init; }
 
     /// Get the size of a single instance of this type; this does
     /// *not* include tail padding (use 'array_size()' instead for

@@ -154,6 +154,10 @@ bool TypeBase::can_init_from_no_args() const {
     return InitCheckHelper<&RecordLayout::has_init_from_no_args>(this);
 }
 
+bool TypeBase::can_zero_init() const {
+    return InitCheckHelper<&RecordLayout::has_zero_init>(this);
+}
+
 void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
@@ -495,6 +499,12 @@ auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLay
         bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
             decls,
             [](FieldDecl* d) { return d->type->can_init_from_no_args(); }
+        );
+
+        // Compute whether we can use zero-initialisation for this.
+        bits.zero_init = bits.default_initialiser and rgs::all_of(
+            decls,
+            [](FieldDecl* d) { return d->type->can_zero_init(); }
         );
 
         // We always provide a literal initialiser in this case.

@@ -175,45 +175,19 @@ proc c {
 // +     %4 = ptradd %3, 8
 // +     store %4, i64 0, align 8
 // +     %5 = ptradd %4, 8
-// +     br bb1(0)
-// +
-// + bb1(i64 %6):
-// +     %7 = icmp eq i64 %6, 1
-// +     br %7 to bb3 else bb2
-// +
-// + bb2:
-// +     %8 = mul i64 %6, 8
-// +     %9 = ptradd %5, i64 %8
-// +     store %9, i64 0, align 8
-// +     %10 = add i64 %6, 1
-// +     br bb1(%10)
-// +
-// + bb3:
+// +     set ptr %5, i8 0, i64 32
 // +     store #1, i16 61, align 2
-// +     %11 = ptradd #1, 2
-// +     store %11, i16 75, align 2
-// +     %12 = ptradd %11, 2
-// +     store %12, i16 230, align 2
-// +     %13 = ptradd %12, 2
-// +     store %13, i16 40, align 2
-// +     %14 = ptradd %13, 2
-// +     store %14, i16 25, align 2
-// +     %15 = ptradd %14, 2
-// +     store %15, i16 0, align 2
-// +     %16 = ptradd %15, 2
-// +     br bb4(0)
-// +
-// + bb4(i64 %17):
-// +     %18 = icmp eq i64 %17, 1
-// +     br %18 to bb6 else bb5
-// +
-// + bb5:
-// +     %19 = mul i64 %17, 2
-// +     %20 = ptradd %16, i64 %19
-// +     store %20, i16 0, align 2
-// +     %21 = add i64 %17, 1
-// +     br bb4(%21)
-// +
-// + bb6:
+// +     %6 = ptradd #1, 2
+// +     store %6, i16 75, align 2
+// +     %7 = ptradd %6, 2
+// +     store %7, i16 230, align 2
+// +     %8 = ptradd %7, 2
+// +     store %8, i16 40, align 2
+// +     %9 = ptradd %8, 2
+// +     store %9, i16 25, align 2
+// +     %10 = ptradd %9, 2
+// +     store %10, i16 0, align 2
+// +     %11 = ptradd %10, 2
+// +     set ptr %11, i8 0, i64 388
 // +     ret
 // + }

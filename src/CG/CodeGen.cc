@@ -5,6 +5,7 @@
 
 #include <clang/Basic/TargetInfo.h>
 
+#include "srcc/AST/Stmt.hh"
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Pass/PassManager.h>
@@ -617,6 +618,16 @@ bool CodeGen::HasTerminator() {
     return curr and curr->mightHaveTerminator();
 }
 
+void CodeGen::FillWithZeroes(mlir::Location loc, Value addr, Size bytes) {
+    create<LLVM::MemsetOp>(
+        loc,
+        addr,
+        CreateInt(loc, 0, tu.I8Ty),
+        CreateInt(loc, i64(bytes.bytes())),
+        false
+    );
+}
+
 auto CodeGen::IntTy(Size wd) -> mlir::Type {
     return getIntegerType(unsigned(wd.bits()));
 }
@@ -991,14 +1002,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 
         // Default initialiser here is a memset to 0.
         [&](DefaultInitExpr* e) {
-            auto loc = C(init->location());
-            create<LLVM::MemsetOp>(
-                loc,
-                addr,
-                CreateInt(loc, 0, tu.I8Ty),
-                CreateInt(loc, i64(e->type->memory_size(tu).bytes())),
-                false
-            );
+            FillWithZeroes(C(init->location()), addr, e->type->memory_size(tu));
         },
 
         // If expressions can be mrvalues if either branch is an mrvalue.
@@ -1474,6 +1478,12 @@ auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> IRValue {
 
 void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc) {
     auto l = C(loc);
+
+    // Check to see if we can replace this with a memset.
+    if (isa<DefaultInitExpr>(initialiser) and elem_ty->can_zero_init())
+        return FillWithZeroes(l, addr, elem_ty->array_size(tu) * elements);
+
+    // Otherwise, emit a loop.
     auto counter = CreateInt(l, 0);
     auto dimension = CreateInt(l, i64(elements));
     auto bb_cond = EnterBlock(CreateBlock(int_ty), counter);
@@ -1528,7 +1538,7 @@ auto CodeGen::EmitArrayInitExpr(ArrayInitExpr*) -> IRValue {
 
 void CodeGen::EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot) {
     auto ty = cast<ArrayType>(e->type);
-    bool broadcast_els = u64(ty->dimension()) - e->initialisers().size();
+    u64 broadcast_els = u64(ty->dimension()) - e->initialisers().size();
 
     // Emit each initialiser.
     for (auto init : e->initialisers()) {

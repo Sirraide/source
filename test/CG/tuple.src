@@ -1,0 +1,780 @@
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc f() nomangle = (1,);
+proc sink(inout $T) extern;
+
+struct s {
+    int x;
+    i8 y;
+}
+
+proc f1 nomangle {
+    var x = ();
+    var a = (1, 2, 3);
+    a[0] = 4;
+    a[1] = 5;
+    a[2] = 6;
+    sink(x);
+    sink(a);
+}
+
+proc f2 nomangle {
+    int j1 = ();
+    int j2 = (1);
+    int j3 = (2,);
+    sink(j1);
+    sink(j2);
+    sink(j3);
+}
+
+proc f3 nomangle {
+    i8 x1 = ();
+    i8 x2 = (128);
+    i8 x3 = (129 as i8,);
+    sink(x1);
+    sink(x2);
+    sink(x3);
+}
+
+proc f4 nomangle {
+    s s1 = ();
+    s s4 = (1, 2);
+    sink(s1);
+    sink(s4);
+}
+
+proc broadcast nomangle {
+    int[4] x1 = (1);
+    int[4] x2 = (1,);
+    sink(x1);
+    sink(x2);
+}
+
+proc f5 nomangle {
+    int[5] x4 = (1, 2);
+    int[5] x5 = (1, 2, 3);
+    int[5] x6 = (1, 2, 3, 4);
+    int[5] x7 = (1, 2, 3, 4, 5);
+    sink(x4);
+    sink(x5);
+    sink(x6);
+    sink(x7);
+}
+
+proc f6 nomangle {
+    s[3] x1 = ();
+    s[3] x2 = (s(1, 2));
+    s[3] x3 = ((3, 4));
+    s[3] x4 = (s(5, 6), s(7, 8));
+    s[3] x5 = ((9, 10), (11, 12));
+    sink(x1);
+    sink(x2);
+    sink(x3);
+    sink(x4);
+    sink(x5);
+}
+
+proc f7 nomangle {
+    int x1 = (1);
+    int x2 = (2,);
+    int x3 = ((3,));
+    int x4 = ((4,),);
+    int x5 = ((5),);
+    sink(x1);
+    sink(x2);
+    sink(x3);
+    sink(x4);
+    sink(x5);
+}
+
+proc f8 nomangle {
+    int x1 = f();
+    int x2 = (f());
+    int x3 = (f(),);
+    int x4 = ((f(),));
+    int x5 = ((f(),),);
+    int x6 = ((((f(),),)));
+    sink(x1);
+    sink(x2);
+    sink(x3);
+    sink(x4);
+    sink(x5);
+    sink(x6);
+}
+
+proc f9 nomangle {
+    int x7 = ((((f(),),)),);
+    sink(x7);
+}
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc f private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = load i64, #0, align 8
+// +     ret i64 %0
+// + }
+// +
+// + proc f1 private fastcc {
+// +     #0 = 24, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 2, align 8
+// +     %1 = ptradd #0, 16
+// +     store %1, i64 3, align 8
+// +     store #0, i64 4, align 8
+// +     %2 = ptradd #0, 8
+// +     store %2, i64 5, align 8
+// +     %3 = ptradd #0, 16
+// +     store %3, i64 6, align 8
+// +     call fastcc void _S4sinkFvx2QEE()
+// +     call fastcc void _S4sinkFvx2QiiiEE(ptr #0 dereferenceable 24)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2QEE external fastcc;
+// +
+// + proc _S4sinkFvx2QiiiEE (ptr dereferenceable 24) external fastcc;
+// +
+// + proc f2 private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 1, align 8
+// +     store #2, i64 2, align 8
+// +     call fastcc void _S4sinkFvx2iE(ptr #0 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #1 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #2 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2iE (ptr dereferenceable 8) external fastcc;
+// +
+// + proc f3 private fastcc {
+// +     #0 = 1, align 1
+// +     #1 = 1, align 1
+// +     #2 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 0, align 1
+// +     store #1, i8 -128, align 1
+// +     store #2, i8 -127, align 1
+// +     call fastcc void _S4sinkFvx2I8E(ptr #0 dereferenceable 1)
+// +     call fastcc void _S4sinkFvx2I8E(ptr #1 dereferenceable 1)
+// +     call fastcc void _S4sinkFvx2I8E(ptr #2 dereferenceable 1)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2I8E (ptr dereferenceable 1) external fastcc;
+// +
+// + proc f4 private fastcc {
+// +     #0 = 9, align 8
+// +     #1 = 9, align 8
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 9
+// +     store #1, i64 1, align 8
+// +     %0 = ptradd #1, 8
+// +     store %0, i8 2, align 1
+// +     call fastcc void _S4sinkFvx2T1sE(ptr #0 dereferenceable 9)
+// +     call fastcc void _S4sinkFvx2T1sE(ptr #1 dereferenceable 9)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2T1sE (ptr dereferenceable 9) external fastcc;
+// +
+// + proc broadcast private fastcc {
+// +     #0 = 32, align 8
+// +     #1 = 32, align 8
+// +
+// + entry:
+// +     br bb1(0)
+// +
+// + bb1(i64 %0):
+// +     %1 = icmp eq i64 %0, 4
+// +     br %1 to bb3(0) else bb2
+// +
+// + bb2:
+// +     %2 = mul i64 %0, 8
+// +     %3 = ptradd #0, i64 %2
+// +     store %3, i64 1, align 8
+// +     %4 = add i64 %0, 1
+// +     br bb1(%4)
+// +
+// + bb3(i64 %5):
+// +     %6 = icmp eq i64 %5, 4
+// +     br %6 to bb5 else bb4
+// +
+// + bb4:
+// +     %7 = mul i64 %5, 8
+// +     %8 = ptradd #1, i64 %7
+// +     store %8, i64 1, align 8
+// +     %9 = add i64 %5, 1
+// +     br bb3(%9)
+// +
+// + bb5:
+// +     call fastcc void _S4sinkFvx2A4iE(ptr #0 dereferenceable 32)
+// +     call fastcc void _S4sinkFvx2A4iE(ptr #1 dereferenceable 32)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2A4iE (ptr dereferenceable 32) external fastcc;
+// +
+// + proc f5 private fastcc {
+// +     #0 = 40, align 8
+// +     #1 = 40, align 8
+// +     #2 = 40, align 8
+// +     #3 = 40, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 2, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, i64 0, align 8
+// +     %2 = ptradd %1, 8
+// +     set ptr %2, i8 0, i64 16
+// +     store #1, i64 1, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 2, align 8
+// +     %4 = ptradd %3, 8
+// +     store %4, i64 3, align 8
+// +     %5 = ptradd %4, 8
+// +     store %5, i64 0, align 8
+// +     %6 = ptradd %5, 8
+// +     set ptr %6, i8 0, i64 8
+// +     store #2, i64 1, align 8
+// +     %7 = ptradd #2, 8
+// +     store %7, i64 2, align 8
+// +     %8 = ptradd %7, 8
+// +     store %8, i64 3, align 8
+// +     %9 = ptradd %8, 8
+// +     store %9, i64 4, align 8
+// +     %10 = ptradd %9, 8
+// +     store %10, i64 0, align 8
+// +     store #3, i64 1, align 8
+// +     %11 = ptradd #3, 8
+// +     store %11, i64 2, align 8
+// +     %12 = ptradd %11, 8
+// +     store %12, i64 3, align 8
+// +     %13 = ptradd %12, 8
+// +     store %13, i64 4, align 8
+// +     %14 = ptradd %13, 8
+// +     store %14, i64 5, align 8
+// +     call fastcc void _S4sinkFvx2A5iE(ptr #0 dereferenceable 40)
+// +     call fastcc void _S4sinkFvx2A5iE(ptr #1 dereferenceable 40)
+// +     call fastcc void _S4sinkFvx2A5iE(ptr #2 dereferenceable 40)
+// +     call fastcc void _S4sinkFvx2A5iE(ptr #3 dereferenceable 40)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2A5iE (ptr dereferenceable 40) external fastcc;
+// +
+// + proc f6 private fastcc {
+// +     #0 = 48, align 8
+// +     #1 = 48, align 8
+// +     #2 = 48, align 8
+// +     #3 = 48, align 8
+// +     #4 = 48, align 8
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 48
+// +     br bb1(0)
+// +
+// + bb1(i64 %0):
+// +     %1 = icmp eq i64 %0, 3
+// +     br %1 to bb3(0) else bb2
+// +
+// + bb2:
+// +     %2 = mul i64 %0, 16
+// +     %3 = ptradd #1, i64 %2
+// +     store %3, i64 1, align 8
+// +     %4 = ptradd %3, 8
+// +     store %4, i8 2, align 1
+// +     %5 = add i64 %0, 1
+// +     br bb1(%5)
+// +
+// + bb3(i64 %6):
+// +     %7 = icmp eq i64 %6, 3
+// +     br %7 to bb5 else bb4
+// +
+// + bb4:
+// +     %8 = mul i64 %6, 16
+// +     %9 = ptradd #2, i64 %8
+// +     store %9, i64 3, align 8
+// +     %10 = ptradd %9, 8
+// +     store %10, i8 4, align 1
+// +     %11 = add i64 %6, 1
+// +     br bb3(%11)
+// +
+// + bb5:
+// +     store #3, i64 5, align 8
+// +     %12 = ptradd #3, 8
+// +     store %12, i8 6, align 1
+// +     %13 = ptradd #3, 16
+// +     store %13, i64 7, align 8
+// +     %14 = ptradd %13, 8
+// +     store %14, i8 8, align 1
+// +     %15 = ptradd %13, 16
+// +     set ptr %15, i8 0, i64 9
+// +     store #4, i64 9, align 8
+// +     %16 = ptradd #4, 8
+// +     store %16, i8 10, align 1
+// +     %17 = ptradd #4, 16
+// +     store %17, i64 11, align 8
+// +     %18 = ptradd %17, 8
+// +     store %18, i8 12, align 1
+// +     %19 = ptradd %17, 16
+// +     set ptr %19, i8 0, i64 9
+// +     call fastcc void _S4sinkFvx2A3T1sE(ptr #0 dereferenceable 48)
+// +     call fastcc void _S4sinkFvx2A3T1sE(ptr #1 dereferenceable 48)
+// +     call fastcc void _S4sinkFvx2A3T1sE(ptr #2 dereferenceable 48)
+// +     call fastcc void _S4sinkFvx2A3T1sE(ptr #3 dereferenceable 48)
+// +     call fastcc void _S4sinkFvx2A3T1sE(ptr #4 dereferenceable 48)
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvx2A3T1sE (ptr dereferenceable 48) external fastcc;
+// +
+// + proc f7 private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     store #1, i64 2, align 8
+// +     store #2, i64 3, align 8
+// +     store #3, i64 4, align 8
+// +     store #4, i64 5, align 8
+// +     call fastcc void _S4sinkFvx2iE(ptr #0 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #1 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #2 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #3 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #4 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc f8 private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +     #5 = 8, align 8
+// +     #6 = 8, align 8
+// +     #7 = 8, align 8
+// +     #8 = 8, align 8
+// +     #9 = 8, align 8
+// +     #10 = 8, align 8
+// +     #11 = 8, align 8
+// +
+// + entry:
+// +     %0 = call fastcc i64 f()
+// +     store #6, i64 %0, align 8
+// +     %1 = load i64, #6, align 8
+// +     store #0, i64 %1, align 8
+// +     %2 = call fastcc i64 f()
+// +     store #7, i64 %2, align 8
+// +     %3 = load i64, #7, align 8
+// +     store #1, i64 %3, align 8
+// +     %4 = call fastcc i64 f()
+// +     store #8, i64 %4, align 8
+// +     %5 = load i64, #8, align 8
+// +     store #2, i64 %5, align 8
+// +     %6 = call fastcc i64 f()
+// +     store #9, i64 %6, align 8
+// +     %7 = load i64, #9, align 8
+// +     store #3, i64 %7, align 8
+// +     %8 = call fastcc i64 f()
+// +     store #10, i64 %8, align 8
+// +     %9 = load i64, #10, align 8
+// +     store #4, i64 %9, align 8
+// +     %10 = call fastcc i64 f()
+// +     store #11, i64 %10, align 8
+// +     %11 = load i64, #11, align 8
+// +     store #5, i64 %11, align 8
+// +     call fastcc void _S4sinkFvx2iE(ptr #0 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #1 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #2 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #3 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #4 dereferenceable 8)
+// +     call fastcc void _S4sinkFvx2iE(ptr #5 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc f9 private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     %0 = call fastcc i64 f()
+// +     store #1, i64 %0, align 8
+// +     %1 = load i64, #1, align 8
+// +     store #0, i64 %1, align 8
+// +     call fastcc void _S4sinkFvx2iE(ptr #0 dereferenceable 8)
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %2 = load i64, ptr %1, align 8
+//L +   ret i64 %2
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f1() #0 {
+//L +   %1 = alloca i8, i64 24, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 2, ptr %2, align 8
+//L +   %3 = getelementptr inbounds nuw i8, ptr %1, i32 16
+//L +   store i64 3, ptr %3, align 8
+//L +   store i64 4, ptr %1, align 8
+//L +   %4 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 5, ptr %4, align 8
+//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 16
+//L +   store i64 6, ptr %5, align 8
+//L +   call fastcc void @_S4sinkFvx2QEE()
+//L +   call fastcc void @_S4sinkFvx2QiiiEE(ptr dereferenceable(24) %1)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2QEE() #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2QiiiEE(ptr dereferenceable(24)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f2() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store i64 1, ptr %2, align 8
+//L +   store i64 2, ptr %3, align 8
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %1)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %2)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %3)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f3() #0 {
+//L +   %1 = alloca i8, i64 1, align 1
+//L +   %2 = alloca i8, i64 1, align 1
+//L +   %3 = alloca i8, i64 1, align 1
+//L +   store i8 0, ptr %1, align 1
+//L +   store i8 -128, ptr %2, align 1
+//L +   store i8 -127, ptr %3, align 1
+//L +   call fastcc void @_S4sinkFvx2I8E(ptr dereferenceable(1) %1)
+//L +   call fastcc void @_S4sinkFvx2I8E(ptr dereferenceable(1) %2)
+//L +   call fastcc void @_S4sinkFvx2I8E(ptr dereferenceable(1) %3)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2I8E(ptr dereferenceable(1)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f4() #0 {
+//L +   %1 = alloca i8, i64 9, align 8
+//L +   %2 = alloca i8, i64 9, align 8
+//L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 9, i1 false)
+//L +   store i64 1, ptr %2, align 8
+//L +   %3 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i8 2, ptr %3, align 1
+//L +   call fastcc void @_S4sinkFvx2T1sE(ptr dereferenceable(9) %1)
+//L +   call fastcc void @_S4sinkFvx2T1sE(ptr dereferenceable(9) %2)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2T1sE(ptr dereferenceable(9)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @broadcast() #0 {
+//L +   %1 = alloca i8, i64 32, align 8
+//L +   %2 = alloca i8, i64 32, align 8
+//L +   br label %3
+//L +
+//L + 3:                                                ; preds = %6, %0
+//L +   %4 = phi i64 [ %9, %6 ], [ 0, %0 ]
+//L +   %5 = icmp eq i64 %4, 4
+//L +   br i1 %5, label %10, label %6
+//L +
+//L + 6:                                                ; preds = %3
+//L +   %7 = mul nuw i64 %4, 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %1, i64 %7
+//L +   store i64 1, ptr %8, align 8
+//L +   %9 = add i64 %4, 1
+//L +   br label %3
+//L +
+//L + 10:                                               ; preds = %13, %3
+//L +   %11 = phi i64 [ %16, %13 ], [ 0, %3 ]
+//L +   %12 = icmp eq i64 %11, 4
+//L +   br i1 %12, label %17, label %13
+//L +
+//L + 13:                                               ; preds = %10
+//L +   %14 = mul nuw i64 %11, 8
+//L +   %15 = getelementptr inbounds nuw i8, ptr %2, i64 %14
+//L +   store i64 1, ptr %15, align 8
+//L +   %16 = add i64 %11, 1
+//L +   br label %10
+//L +
+//L + 17:                                               ; preds = %10
+//L +   call fastcc void @_S4sinkFvx2A4iE(ptr dereferenceable(32) %1)
+//L +   call fastcc void @_S4sinkFvx2A4iE(ptr dereferenceable(32) %2)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2A4iE(ptr dereferenceable(32)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f5() #0 {
+//L +   %1 = alloca i8, i64 40, align 8
+//L +   %2 = alloca i8, i64 40, align 8
+//L +   %3 = alloca i8, i64 40, align 8
+//L +   %4 = alloca i8, i64 40, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 2, ptr %5, align 8
+//L +   %6 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 0, ptr %6, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   call void @llvm.memset.p0.i64(ptr %7, i8 0, i64 16, i1 false)
+//L +   store i64 1, ptr %2, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i64 2, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %8, i32 8
+//L +   store i64 3, ptr %9, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %9, i32 8
+//L +   store i64 0, ptr %10, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %10, i32 8
+//L +   call void @llvm.memset.p0.i64(ptr %11, i8 0, i64 8, i1 false)
+//L +   store i64 1, ptr %3, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 2, ptr %12, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %12, i32 8
+//L +   store i64 3, ptr %13, align 8
+//L +   %14 = getelementptr inbounds nuw i8, ptr %13, i32 8
+//L +   store i64 4, ptr %14, align 8
+//L +   %15 = getelementptr inbounds nuw i8, ptr %14, i32 8
+//L +   store i64 0, ptr %15, align 8
+//L +   store i64 1, ptr %4, align 8
+//L +   %16 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i64 2, ptr %16, align 8
+//L +   %17 = getelementptr inbounds nuw i8, ptr %16, i32 8
+//L +   store i64 3, ptr %17, align 8
+//L +   %18 = getelementptr inbounds nuw i8, ptr %17, i32 8
+//L +   store i64 4, ptr %18, align 8
+//L +   %19 = getelementptr inbounds nuw i8, ptr %18, i32 8
+//L +   store i64 5, ptr %19, align 8
+//L +   call fastcc void @_S4sinkFvx2A5iE(ptr dereferenceable(40) %1)
+//L +   call fastcc void @_S4sinkFvx2A5iE(ptr dereferenceable(40) %2)
+//L +   call fastcc void @_S4sinkFvx2A5iE(ptr dereferenceable(40) %3)
+//L +   call fastcc void @_S4sinkFvx2A5iE(ptr dereferenceable(40) %4)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2A5iE(ptr dereferenceable(40)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f6() #0 {
+//L +   %1 = alloca i8, i64 48, align 8
+//L +   %2 = alloca i8, i64 48, align 8
+//L +   %3 = alloca i8, i64 48, align 8
+//L +   %4 = alloca i8, i64 48, align 8
+//L +   %5 = alloca i8, i64 48, align 8
+//L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 48, i1 false)
+//L +   br label %6
+//L +
+//L + 6:                                                ; preds = %9, %0
+//L +   %7 = phi i64 [ %13, %9 ], [ 0, %0 ]
+//L +   %8 = icmp eq i64 %7, 3
+//L +   br i1 %8, label %14, label %9
+//L +
+//L + 9:                                                ; preds = %6
+//L +   %10 = mul nuw i64 %7, 16
+//L +   %11 = getelementptr inbounds nuw i8, ptr %2, i64 %10
+//L +   store i64 1, ptr %11, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %11, i32 8
+//L +   store i8 2, ptr %12, align 1
+//L +   %13 = add i64 %7, 1
+//L +   br label %6
+//L +
+//L + 14:                                               ; preds = %17, %6
+//L +   %15 = phi i64 [ %21, %17 ], [ 0, %6 ]
+//L +   %16 = icmp eq i64 %15, 3
+//L +   br i1 %16, label %22, label %17
+//L +
+//L + 17:                                               ; preds = %14
+//L +   %18 = mul nuw i64 %15, 16
+//L +   %19 = getelementptr inbounds nuw i8, ptr %3, i64 %18
+//L +   store i64 3, ptr %19, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %19, i32 8
+//L +   store i8 4, ptr %20, align 1
+//L +   %21 = add i64 %15, 1
+//L +   br label %14
+//L +
+//L + 22:                                               ; preds = %14
+//L +   store i64 5, ptr %4, align 8
+//L +   %23 = getelementptr inbounds nuw i8, ptr %4, i32 8
+//L +   store i8 6, ptr %23, align 1
+//L +   %24 = getelementptr inbounds nuw i8, ptr %4, i32 16
+//L +   store i64 7, ptr %24, align 8
+//L +   %25 = getelementptr inbounds nuw i8, ptr %24, i32 8
+//L +   store i8 8, ptr %25, align 1
+//L +   %26 = getelementptr inbounds nuw i8, ptr %24, i32 16
+//L +   call void @llvm.memset.p0.i64(ptr %26, i8 0, i64 9, i1 false)
+//L +   store i64 9, ptr %5, align 8
+//L +   %27 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i8 10, ptr %27, align 1
+//L +   %28 = getelementptr inbounds nuw i8, ptr %5, i32 16
+//L +   store i64 11, ptr %28, align 8
+//L +   %29 = getelementptr inbounds nuw i8, ptr %28, i32 8
+//L +   store i8 12, ptr %29, align 1
+//L +   %30 = getelementptr inbounds nuw i8, ptr %28, i32 16
+//L +   call void @llvm.memset.p0.i64(ptr %30, i8 0, i64 9, i1 false)
+//L +   call fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48) %1)
+//L +   call fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48) %2)
+//L +   call fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48) %3)
+//L +   call fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48) %4)
+//L +   call fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48) %5)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @_S4sinkFvx2A3T1sE(ptr dereferenceable(48)) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f7() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   %5 = alloca i8, i64 8, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   store i64 2, ptr %2, align 8
+//L +   store i64 3, ptr %3, align 8
+//L +   store i64 4, ptr %4, align 8
+//L +   store i64 5, ptr %5, align 8
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %1)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %2)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %3)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %4)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %5)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f8() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   %5 = alloca i8, i64 8, align 8
+//L +   %6 = alloca i8, i64 8, align 8
+//L +   %7 = alloca i8, i64 8, align 8
+//L +   %8 = alloca i8, i64 8, align 8
+//L +   %9 = alloca i8, i64 8, align 8
+//L +   %10 = alloca i8, i64 8, align 8
+//L +   %11 = alloca i8, i64 8, align 8
+//L +   %12 = alloca i8, i64 8, align 8
+//L +   %13 = call fastcc i64 @f()
+//L +   store i64 %13, ptr %7, align 8
+//L +   %14 = load i64, ptr %7, align 8
+//L +   store i64 %14, ptr %1, align 8
+//L +   %15 = call fastcc i64 @f()
+//L +   store i64 %15, ptr %8, align 8
+//L +   %16 = load i64, ptr %8, align 8
+//L +   store i64 %16, ptr %2, align 8
+//L +   %17 = call fastcc i64 @f()
+//L +   store i64 %17, ptr %9, align 8
+//L +   %18 = load i64, ptr %9, align 8
+//L +   store i64 %18, ptr %3, align 8
+//L +   %19 = call fastcc i64 @f()
+//L +   store i64 %19, ptr %10, align 8
+//L +   %20 = load i64, ptr %10, align 8
+//L +   store i64 %20, ptr %4, align 8
+//L +   %21 = call fastcc i64 @f()
+//L +   store i64 %21, ptr %11, align 8
+//L +   %22 = load i64, ptr %11, align 8
+//L +   store i64 %22, ptr %5, align 8
+//L +   %23 = call fastcc i64 @f()
+//L +   store i64 %23, ptr %12, align 8
+//L +   %24 = load i64, ptr %12, align 8
+//L +   store i64 %24, ptr %6, align 8
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %1)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %2)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %3)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %4)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %5)
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %6)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f9() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = call fastcc i64 @f()
+//L +   store i64 %3, ptr %2, align 8
+//L +   %4 = load i64, ptr %2, align 8
+//L +   store i64 %4, ptr %1, align 8
+//L +   call fastcc void @_S4sinkFvx2iE(ptr dereferenceable(8) %1)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L +
+//L + attributes #0 = { nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

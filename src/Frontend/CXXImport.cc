@@ -238,6 +238,9 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
 }
 
 auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
+    // FIXME: C++ pointers should be imported as nullable pointers once
+    // we support optionals.
+
     // Handle known type sugar first.
     if (
         auto TD = T->getAs<clang::TypedefType>();

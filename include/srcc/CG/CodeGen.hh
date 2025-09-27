@@ -373,6 +373,9 @@ public:
     auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;
     auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
 
+    /// Zero-fill a region of memory.
+    void FillWithZeroes(mlir::Location loc, Value addr, Size bytes);
+
     /// Get an integer type.
     auto IntTy(Size wd) -> mlir::Type;
 
