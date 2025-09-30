@@ -7,6 +7,8 @@
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Macros.hh>
 
+#include <srcc/CG/ABI.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <base/Assert.hh>
 #include <base/FixedVector.hh>
 #include <mlir/Pass/PassManager.h>
@@ -17,6 +19,7 @@ class LLVMCodeGen;
 class VMCodeGen;
 class ArgumentMapping;
 class IRValue;
+class ProcData;
 enum class EvalMode : u8;
 
 namespace detail {
@@ -169,7 +172,22 @@ enum class srcc::cg::EvalMode : base::u8 {
     Memory,
 };
 
-class srcc::cg::CodeGen : DiagsProducer
+/// State used when emitting a procedure.
+class srcc::cg::ProcData {
+    LIBBASE_MOVE_ONLY(ProcData);
+
+public:
+    DenseMap<LocalDecl*, Value> locals;
+    Value environment_for_nested_procs;
+    Value abort_info_slot;
+    ir::ProcOp proc;
+    ProcDecl* decl = nullptr;
+
+    ProcData() = default;
+    ProcData(ir::ProcOp proc, ProcDecl* decl) : proc{proc}, decl{decl} {}
+};
+
+class srcc::cg::CodeGen : public DiagsProducer
     , detail::CodeGenBase
     , public mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
@@ -177,21 +195,6 @@ class srcc::cg::CodeGen : DiagsProducer
     struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
-
-    /// State used when emitting a procedure.
-    class ProcData {
-        LIBBASE_MOVE_ONLY(ProcData);
-
-    public:
-        DenseMap<LocalDecl*, Value> locals;
-        Value environment_for_nested_procs;
-        Value abort_info_slot;
-        ir::ProcOp proc;
-        ProcDecl* decl = nullptr;
-
-        ProcData() = default;
-        ProcData(ir::ProcOp proc, ProcDecl* decl) : proc{proc}, decl{decl} {}
-    };
 
     TranslationUnit& tu;
     ProcData curr;
@@ -211,6 +214,9 @@ class srcc::cg::CodeGen : DiagsProducer
 
 public:
     CodeGen(TranslationUnit& tu, LangOpts lang_opts);
+
+    /// Get the current ABI.
+    [[nodiscard]] auto abi() const -> const abi::ABI& { return tu.target().abi(); }
 
     /// Get the context.
     [[nodiscard]] auto context() const -> Context& { return tu.context(); }
@@ -241,6 +247,9 @@ public:
 
     /// Finalise a single procedure.
     [[nodiscard]] bool finalise(ir::ProcOp proc);
+
+    /// Get the MLIR pointer type.
+    [[nodiscard]] auto get_ptr_ty() -> mlir::Type { return ptr_ty; }
 
     /// Given an IR procedure, attempt to find the Source procedure it corresponds to.
     [[nodiscard]] auto lookup(ir::ProcOp op) -> Ptr<ProcDecl>;
@@ -367,6 +376,10 @@ public:
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitLocal(LocalDecl* decl);
 
+    /// Create a temporary value to hold an mrvalue. Returns the address of
+    /// the temporary.
+    auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
+
     /// Emit an mrvalue into a memory location.
     void EmitRValue(Value addr, Expr* init);
 
@@ -382,6 +395,9 @@ public:
     /// Get the address of a local variable.
     auto GetAddressOfLocal(LocalDecl* decl, Location loc) -> Value;
 
+    /// Get the current procedure’s environment pointer.
+    auto GetEnvPtr() -> Value;
+
     /// Get the struct type equivalent to a builtin aggregate type.
     auto GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType*;
 
@@ -396,6 +412,10 @@ public:
         ProcType* ty,
         bool needs_environment
     ) -> ir::ProcOp;
+
+    /// For an integer type, get what type we prefer to treat this as. This converts
+    /// ‘weird’ types like 'i17' to something more sensible like 'i32'.
+    auto GetPreferredIntType(mlir::Type ty) -> mlir::Type;
 
     /// Retrieve the static chain pointer of a procedure relative to
     /// the current procedure. This is the environment pointer that
@@ -472,9 +492,13 @@ public:
     /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;
 
-    /// Create a temporary value to hold an mrvalue. Returns the address of
-    /// the temporary.
-    auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
+    /// Determine whether this parameter type is passed by reference under
+    /// the given intent.
+    ///
+    /// No calling convention is passed to this since parameters to native
+    /// procedures should always have the 'copy' intent, which by definition
+    /// always passes by value.
+    bool PassByReference(Type ty, Intent i);
 
     /// Opposite of If().
     void Unless(
@@ -487,173 +511,6 @@ public:
         llvm::function_ref<Value()> emit_cond,
         llvm::function_ref<void()> emit_body
     );
-
-    /// ===================================================================
-    ///  ABI
-    /// ===================================================================
-    /// ABI lowering information about a function argument list.
-    struct ABICallInfo {
-        SmallVector<mlir::Type> result_types;
-        SmallVector<mlir::Type> arg_types;
-        SmallVector<mlir::Attribute> result_attrs;
-        SmallVector<mlir::Attribute> arg_attrs;
-        SmallVector<Value> args;
-        mlir::FunctionType func;
-        bool no_return = false;
-    };
-
-    /// A single IR-level argument.
-    struct ABIArg {
-        LIBBASE_MOVE_ONLY(ABIArg);
-
-    public:
-        mlir::Type ty;
-        Value value = nullptr; ///< Only populated if we’re lowering a call.
-        SmallVector<mlir::NamedAttribute, 1> attrs{};
-
-        ABIArg(mlir::Type ty): ty(ty) {}
-
-        /// Add a 'byval' attribute.
-        void add_byval(mlir::Type ty);
-
-        /// Add an 'signext' attribute.
-        void add_sext(CodeGen& cg);
-
-        /// Add an 'sret' attribute.
-        void add_sret(mlir::Type ty);
-
-        /// Add an 'zeroext' attribute.
-        void add_zext(CodeGen& cg);
-    };
-
-    /// ABI lowering information about an argument that is passed by value.
-    using ABIArgInfo = SmallVector<ABIArg, 2>;
-
-    /// Context used to convert an entire argument list.
-    class ABILoweringContext {
-        LIBBASE_MOVE_ONLY(ABILoweringContext);
-        static constexpr unsigned MaxRegs = 6;
-
-        // There is no correlation between this value and how many IR arguments
-        // a procedure has; do *not* attempt to use this for anything other than
-        // tracking ABI requirements.
-        unsigned regs = 0;
-
-    public:
-        ABILoweringContext() = default;
-
-        /// Attempt to allocate 'n' argument registers.
-        bool allocate(unsigned n = 1) {
-            if (regs + n > MaxRegs) return false;
-            regs += n;
-            return true;
-        }
-    };
-
-    /// Context used to convert a bundle of IR arguments back to a Source type.
-    ///
-    /// One of these is created for each AST-level argument or return type; an
-    /// instance of this should not be reused.
-    class ABITypeRaisingContext {
-        CodeGen& cg;
-        ABILoweringContext& ctx;
-        mlir::Location loc;
-        mlir::ValueRange range;
-        Type ty;
-        Value indirect_ptr = {};
-        unsigned i = 0;
-
-    public:
-        /// Create a new context.
-        ///
-        /// \param cg The CodeGen instance.
-        /// \param loc The location of the thing we’re creating.
-        /// \param r The input values.
-        /// \param ty The type we’re creating.
-        /// \param addr The memory location to write to.
-        explicit ABITypeRaisingContext(
-            CodeGen& cg,
-            ABILoweringContext& ctx,
-            mlir::Location loc,
-            mlir::ValueRange r,
-            Type ty,
-            Value addr = nullptr
-        ) : cg(cg), ctx(ctx), loc(loc), range(r), ty(ty), indirect_ptr(addr) {}
-
-        /// Get or create address into which to store the value, if any.
-        [[nodiscard]] auto addr() -> Value;
-
-        /// Get the number of IR arguments that were consumed.
-        [[nodiscard]] auto consumed() -> unsigned { return i; }
-
-        /// Get the location of the value that this is initialising.
-        [[nodiscard]] auto location() -> mlir::Location { return loc; }
-
-        /// Get the lowering context.
-        [[nodiscard]] auto lowering() -> ABILoweringContext& { return ctx; }
-
-        /// Get the next value and consume it.
-        [[nodiscard]] auto next() -> Value {
-            Assert(i < range.size());
-            return range[i++];
-        }
-
-        /// Get the type that we’re creating.
-        [[nodiscard]] auto type() -> Type { return ty; }
-    };
-
-    /// Lower a procedure type.
-    auto ConvertProcType(ProcType* ty, bool needs_environment) -> ABICallInfo;
-
-    /// Whether a value of this type needs to be returned indirectly.
-    bool NeedsIndirectReturn(Type ty);
-
-    /// Determine whether this parameter type is passed by reference under
-    /// the given intent.
-    ///
-    /// No calling convention is passed to this since parameters to native
-    /// procedures should always have the 'copy' intent, which by definition
-    /// always passes by value.
-    bool PassByReference(Type ty, Intent i);
-
-    /// Whether a value of this type can be used as-is when returned from a function.
-    bool CanUseReturnValueDirectly(Type ty);
-
-    /// Get the current procedure’s environment pointer.
-    auto GetEnvPtr() -> Value;
-
-    /// For an integer type, get what type we prefer to treat this as. This converts
-    /// ‘weird’ types like 'i17' to something more sensible like 'i32'.
-    auto GetPreferredIntType(mlir::Type ty) -> mlir::Type;
-
-    /// Lower a single argument that is passed or returned by value.
-    auto LowerByValArg(ABILoweringContext& ctx, mlir::Location l, Ptr<Expr> arg, Type t) -> ABIArgInfo;
-
-    /// Lower a direct return value.
-    auto LowerDirectReturn(mlir::Location l, Expr* arg) -> ABIArgInfo;
-
-    /// Perform ABI lowering for a call or argument list.
-    auto LowerProcedureSignature(
-        mlir::Location l,
-        ProcType* proc,
-        bool needs_environment,
-        Value indirect_ptr,
-        Value env_ptr,
-        ArrayRef<Expr*> args
-    ) -> ABICallInfo;
-
-    /// Take a bundle of IR arguments that represent a value that has been passed
-    /// in one or more registers, write it to a memory address, and return that
-    /// address; if this value was actually passed on the stack, the stack address
-    /// is returned directly. Otherwise, a new variable is allocated via the 'vals'
-    /// object.
-    [[nodiscard]] auto WriteByValParamToMemory(ABITypeRaisingContext& ctx) -> Value;
-
-    /// As WriteByValArgToMemory(), but lowers a call result instead.
-    [[nodiscard]] auto WriteDirectReturnToMemory(ABITypeRaisingContext& ctx) -> Value;
-
-private:
-    void AssertTriple();
 };
 
 #endif // SRCC_CG_HH

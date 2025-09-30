@@ -3,6 +3,7 @@
 
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Core.hh>
+#include <srcc/CG/ABI.hh>
 
 #include <clang/Basic/TargetInfo.h>
 
@@ -24,29 +25,26 @@ namespace srcc::cg::ir {
 class CallOp;
 }
 
-namespace mlir {
-class ArrayAttr;
-class FunctionType;
-class Type;
-class Value;
-}
-
-// TODO: Move these to a local header in lib/CG/Target
-namespace srcc::target {
-auto CreateX86_64_Linux(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::unique_ptr<Target>;
-}
-
 class srcc::Target {
     LIBBASE_IMMOVABLE(Target);
 
     llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI;
+    std::unique_ptr<cg::abi::ABI> target_abi;
 
 protected:
-    Target(llvm::IntrusiveRefCntPtr<clang::TargetInfo>);
+    Target(
+        llvm::IntrusiveRefCntPtr<clang::TargetInfo> ti,
+        std::unique_ptr<cg::abi::ABI> target_abi
+    );
 
 public:
     virtual ~Target();
-    static auto Create(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI) -> std::unique_ptr<Target>;
+    static auto Create(
+        llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI
+    ) -> std::unique_ptr<Target>;
+
+    /// Get the target’s ABI.
+    [[nodiscard]] auto abi() const -> const cg::abi::ABI& { return *target_abi; };
 
     /// Get the underlying Clang target.
     [[nodiscard]] auto clang() const -> const clang::TargetInfo& { return *TI; }
