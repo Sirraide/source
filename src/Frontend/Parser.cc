@@ -1114,12 +1114,12 @@ auto Parser::ParseIntent() -> std::pair<Location, Intent> {
     return {{}, Intent::Move};
 }
 
-// <expr-match> ::= MATCH <expr> "{" <match-case> "}"
+// <expr-match> ::= MATCH [ <expr> ] "{" <match-case> [ ";" ] "}"
 // <match-case> ::= <pattern> ":" <stmt>
 // <pattern>    ::= <expr>
 auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     auto match_loc = Next();
-    auto control_expr = TryParseExpr();
+    auto control_expr = At(Tk::LBrace) ? nullptr : ParseExpr();
     BracketTracker braces{*this, Tk::LBrace};
 
     // Parse cases.
@@ -1129,6 +1129,7 @@ auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
         if (not Consume(Tk::Colon)) Error("Expected ':' after pattern");
         auto body = ParseStmt(); // FIXME: ParseStmt() should skip to ';' or '}' here.
         if (pattern and body) cases.emplace_back(pattern.get(), body.get());
+        Consume(Tk::Semicolon); // Permit extra semicolons here.
     }
 
     braces.close();
@@ -1332,7 +1333,8 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     Ptr<ParsedStmt> body;
     if (Consume(Tk::Assign)) {
         body = ParseExpr();
-        ExpectSemicolon();
+        if (not isa_and_present<ParsedBlockExpr, ParsedMatchExpr>(body.get_or_null()))
+            ExpectSemicolon();
     } else if (Consume(Tk::Semicolon)) {
         // Nothing.
     } else if (At(Tk::LBrace)) {

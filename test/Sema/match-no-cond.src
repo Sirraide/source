@@ -1,0 +1,75 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc exit() extern -> noreturn;
+
+match {
+    1 == 1 : 1;
+    2 == 1 : 2;
+    true: 1;
+    false: 3;
+    _: 3;
+}
+
+match {}
+match { _: 2; }
+match {
+    1: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'int'
+    "": 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
+    "".data: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8^'
+    {}: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'void'
+    1..=2: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'range<int>'
+    _: 2;
+}
+
+match {
+    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
+    _: 2; // expected-note: Because this pattern already makes the 'match' fully exhaustive
+    "": 3; // expected-error (Condition of 'match' must be of type 'bool', but was 'i8[]') expected-warning (This and any following patterns will never be matched)
+    true: 1;
+    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
+}
+
+int x = match {
+    true: 2;
+    _: 3;
+};
+
+int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+    true: 2;
+};
+
+int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+    true: 2;
+    false: 2;
+};
+
+int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+    true: 2;
+    false: "";
+};
+
+int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+    true: "12";
+    false: "34";
+};
+
+int y = match { // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+    true: "12";
+    false: "34";
+    _: "56";
+};
+
+int y = match {
+    true: 2;
+    false: 3;
+    _: exit();
+};
+
+proc foo {
+    int y = match {
+        true: 2;
+        false: 3;
+        _: return;
+    };
+}

@@ -1922,6 +1922,16 @@ void Sema::IntMatchContext::note_missing(Location loc) {
     S.Note(loc, "Possible value ranges not handled:\n%r({}%)", msg);
 }
 
+void Sema::MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases) {
+    Assert(it != cases.end());
+    if (std::next(it) != cases.end()) {
+        auto next = std::next(it);
+        Warn(next->loc, "This and any following patterns will never be matched");
+        Note(it->loc, "Because this pattern already makes the 'match' fully exhaustive");
+        for (auto& u : MutableArrayRef<MatchCase>{next, cases.end()}) u.unreachable = true;
+    }
+}
+
 // TODO:
 //   - integer patterns
 //   - wildcard pattern
@@ -1943,11 +1953,7 @@ bool Sema::CheckMatchExhaustive(
         };
 
         auto WarnAlreadyExhaustive = [&] {
-            if (i != cases.size() - 1) {
-                Warn(cases[i + 1].loc, "This and any following patterns will never be matched");
-                Note(c.loc, "Because this pattern already makes the 'match' fully exhaustive");
-                for (auto& u : cases.drop_front(i + 1)) u.unreachable = true;
-            }
+            MarkUnreachableAfter(cases.begin() + i, cases);
         };
 
         // A wildcard pattern means we don’t need to look at anything else.
@@ -2620,25 +2626,40 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
 }
 
 auto Sema::BuildMatchExpr(
-    Expr* control_expr,
+    Ptr<Expr> control_expr,
     MutableArrayRef<MatchCase> cases,
     Location loc
 ) -> Ptr<Expr> {
-    control_expr = MaterialiseVariable(control_expr);
-    auto ty = control_expr->type;
-    bool exhaustive;
-    if (ty->is_integer()) {
-        IntMatchContext mc{*this, ty};
-        exhaustive = CheckMatchExhaustive(mc, loc, control_expr, ty, cases);
-    } else if (ty == Type::BoolTy) {
-        BoolMatchContext mc{*this};
-        exhaustive = CheckMatchExhaustive(mc, loc, control_expr, ty, cases);
+    Expr* control = control_expr.get_or_null();
+    bool exhaustive = false;
+    if (control) {
+        control = MaterialiseVariable(control);
+        auto ty = control->type;
+        if (ty->is_integer()) {
+            IntMatchContext mc{*this, ty};
+            exhaustive = CheckMatchExhaustive(mc, loc, control, ty, cases);
+        } else if (ty == Type::BoolTy) {
+            BoolMatchContext mc{*this};
+            exhaustive = CheckMatchExhaustive(mc, loc, control, ty, cases);
+        } else {
+            return Error(
+                control->location(),
+                "Matching a value of type '{}' is not supported",
+                control->type
+            );
+        }
     } else {
-        return Error(
-            control_expr->location(),
-            "Matching a value of type '{}' is not supported",
-            control_expr->type
-        );
+        for (auto& c : cases) {
+            if (c.cond.is_wildcard()) continue;
+            (void) MakeCondition(c.cond.expr(), "match");
+        }
+
+        // Warn about unreachable branches.
+        auto it = find_if(cases, [](auto& c) { return c.cond.is_wildcard(); });
+        if (it != cases.end()) {
+            exhaustive = true;
+            MarkUnreachableAfter(it, cases);
+        }
     }
 
     // Compute the common type of the bodies of any reachable cases, provided
@@ -3365,7 +3386,14 @@ auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed) -> Ptr<Stmt> {
 auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
     SmallVector<MatchCase> cases;
     bool ok = true;
-    auto control_expr = TRY(TranslateExpr(parsed->control_expr));
+
+    // Give up here if translating the controlling expression fails since
+    // the semantics of a 'match' w/ and w/o a controlling expression are
+    // completely different.
+    Ptr<Expr> control_expr = parsed->control_expr()
+        ? TRY(TranslateExpr(parsed->control_expr().get()))
+        : nullptr;
+
     for (auto c : parsed->cases()) {
         auto body = TranslateStmt(c.body);
         if (not body) ok = false;

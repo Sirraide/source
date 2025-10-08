@@ -1,0 +1,11 @@
+// V %srcc --parse --verify %s
+program test;
+
+match {
+    1: 1;
+}
+
+match {}
+match {
+    1 ; // expected-error: Expected ':' after pattern
+}

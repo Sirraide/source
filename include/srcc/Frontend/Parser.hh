@@ -514,16 +514,17 @@ struct srcc::ParsedMatchCase {
 
 /// Pattern matching.
 class srcc::ParsedMatchExpr final : public ParsedStmt,
-    TrailingObjects<ParsedMatchExpr, ParsedMatchCase> {
+    TrailingObjects<ParsedMatchExpr, ParsedStmt*, ParsedMatchCase> {
     friend TrailingObjects;
-    const u32 num_cases;
+    const u32 num_cases : 31;
+    const u32 has_control_expr : 1;
 
-public:
-    ParsedStmt* control_expr;
+    auto numTrailingObjects(OverloadToken<ParsedStmt*>) const -> usz { return has_control_expr; }
+    auto numTrailingObjects(OverloadToken<ParsedMatchCase>) const -> usz { return num_cases; }
 
 private:
     ParsedMatchExpr(
-        ParsedStmt* control_expr,
+        Ptr<ParsedStmt> control_expr,
         ArrayRef<ParsedMatchCase> cases,
         Location loc
     );
@@ -531,13 +532,17 @@ private:
 public:
     static auto Create(
         Parser& p,
-        ParsedStmt* control_expr,
+        Ptr<ParsedStmt> control_expr,
         ArrayRef<ParsedMatchCase> cases,
         Location loc
     ) -> ParsedMatchExpr*;
 
     [[nodiscard]] auto cases() const -> ArrayRef<ParsedMatchCase> {
-        return getTrailingObjects(num_cases);
+        return getTrailingObjects<ParsedMatchCase>(num_cases);
+    }
+
+    [[nodiscard]] auto control_expr() const -> Ptr<ParsedStmt> {
+        return has_control_expr ? *getTrailingObjects<ParsedStmt*>() : nullptr;
     }
 
     static bool classof(const ParsedStmt* s) { return s->kind() == Kind::MatchExpr; }

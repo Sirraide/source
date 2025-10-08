@@ -133,20 +133,23 @@ auto ParsedDeclRefExpr::Create(
 }
 
 ParsedMatchExpr::ParsedMatchExpr(
-    ParsedStmt* control_expr,
+    Ptr<ParsedStmt> control_expr,
     ArrayRef<ParsedMatchCase> cases,
     Location loc
-) : ParsedStmt{Kind::MatchExpr, loc}, num_cases{u32(cases.size())}, control_expr{control_expr} {
-    std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects());
+) : ParsedStmt{Kind::MatchExpr, loc},
+    num_cases{u32(cases.size())},
+    has_control_expr{control_expr.present()} {
+    if (auto c = control_expr.get_or_null()) *getTrailingObjects<ParsedStmt*>() = c;
+    std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects<ParsedMatchCase>());
 }
 
 auto ParsedMatchExpr::Create(
     Parser& p,
-    ParsedStmt* control_expr,
+    Ptr<ParsedStmt> control_expr,
     ArrayRef<ParsedMatchCase> cases,
     Location loc
 ) -> ParsedMatchExpr* {
-    const auto size = totalSizeToAlloc<ParsedMatchCase>(cases.size());
+    const auto size = totalSizeToAlloc<ParsedStmt*, ParsedMatchCase>(control_expr.present(), cases.size());
     auto mem = p.allocate(size, alignof(ParsedMatchExpr));
     return ::new (mem) ParsedMatchExpr(control_expr, cases, loc);
 }
@@ -413,7 +416,8 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::MatchExpr: {
             auto m = cast<ParsedMatchExpr>(s);
             PrintHeader(s, "MatchExpr");
-            SmallVector<ParsedStmt*, 8> children{m->control_expr};
+            SmallVector<ParsedStmt*, 8> children{};
+            if (auto e = m->control_expr().get_or_null()) children.push_back(e);
             for (auto c : m->cases()) {
                 children.push_back(c.cond);
                 children.push_back(c.body);

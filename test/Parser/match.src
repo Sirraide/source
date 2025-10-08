@@ -6,8 +6,24 @@ match 1 { 1: 1; }
 match 1 { 1: 2; }
 match 1 { 1: 1; 1: 1; }
 match 1 { 1: 1; 1: 1; 1: 1; 1: 1; 1: 1; 1: 1; }
-match {} { {}: {} }
+match ({}) { {}: {} }
 match 1 + foo() { bar() / baz(): for x in xs do q(x); }
+
+// Do not require a semicolon after the '}'.
+proc f1 (int x) = match { _: 1; }
+proc f1 (int x) = match x { _: 1; }
+
+match {
+    1 == 1: match {}
+}
+
+// Permit a single extra semicolon after a pattern.
+match {
+    1 == 1: match {}
+    1 == 1: match {};
+    1 == 1: 2;
+    1 == 1: 2;
+}
 
 match 1 { 1:
     1 // expected-error: Expected ';'

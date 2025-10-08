@@ -75,7 +75,7 @@
 <expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-loop>      ::= LOOP [ <expr> ]
-<expr-match>     ::= MATCH <expr> "{" <match-case> "}"
+<expr-match>     ::= MATCH [ <expr> ] "{" <match-case> [ ";" ] "}"
 <expr-member>    ::= <expr> "." IDENT
 <expr-paren>     ::= "(" <expr> ")"
 <expr-prefix>    ::= <prefix> <expr>

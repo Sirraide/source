@@ -419,7 +419,8 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "MatchExpr");
             auto m = cast<MatchExpr>(e);
             SmallVector<Child> children;
-            children.emplace_back([&] { Print(m->control_expr); });
+            if (auto c = m->control_expr().get_or_null())
+                children.emplace_back([&, c] { Print(c); });
             for (auto& c : m->cases()) {
                 children.emplace_back([&] {
                     print("%1(Case%)");

@@ -297,7 +297,10 @@ public:
         void emit_next_field(IRValue v);
     };
 
-    // AST -> IR converters
+    /// Append a block to the current procedure.
+    auto AppendBlock(std::unique_ptr<Block> bb) -> Block*;
+
+    /// AST -> IR converters
     auto C(CallingConvention l) -> mlir::LLVM::CConv;
     auto C(Linkage l) -> mlir::LLVM::Linkage;
     auto C(Location l) -> mlir::Location;

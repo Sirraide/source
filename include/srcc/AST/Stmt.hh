@@ -584,6 +584,12 @@ struct srcc::MatchCase {
             Assert(not is_wildcard());
             return data;
         }
+
+        /// Get the expression that makes up this pattern.
+        [[nodiscard]] auto expr() -> Expr*& {
+            Assert(not is_wildcard());
+            return data;
+        }
     };
 
     Pattern cond;
@@ -594,16 +600,17 @@ struct srcc::MatchCase {
 };
 
 class srcc::MatchExpr final : public Expr,
-    TrailingObjects<MatchExpr, MatchCase> {
+    TrailingObjects<MatchExpr, Expr*, MatchCase> {
     friend TrailingObjects;
-    const u32 num_cases;
+    const u32 num_cases : 31;
+    const u32 has_control_expr : 1;
 
-public:
-    Expr* control_expr;
+    auto numTrailingObjects(OverloadToken<Expr*>) const -> usz { return has_control_expr; }
+    auto numTrailingObjects(OverloadToken<MatchCase>) const -> usz { return num_cases; }
 
 private:
     MatchExpr(
-        Expr* control_expr,
+        Ptr<Expr> control_expr,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
@@ -613,14 +620,20 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
-        Expr* control_expr,
+        Ptr<Expr> control_expr,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
         Location loc
     ) -> MatchExpr*;
 
-    [[nodiscard]] auto cases() { return getTrailingObjects(num_cases); }
+    [[nodiscard]] auto cases() -> ArrayRef<MatchCase> {
+        return getTrailingObjects<MatchCase>(num_cases);
+    }
+
+    [[nodiscard]] auto control_expr() -> Ptr<Expr> {
+        return has_control_expr ? *getTrailingObjects<Expr*>() : nullptr;
+    }
 
     static auto classof(const Stmt* s) { return s->kind() == Kind::MatchExpr; }
 };

@@ -1,0 +1,276 @@
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc exit extern nomangle -> noreturn;
+
+proc f1 (int x) nomangle = match {}
+proc f2 (int x) nomangle = match {
+    _: 1;
+}
+
+proc f3 (int x) nomangle = match {
+    x == 1: 2;
+    _: 1;
+}
+
+proc f4 (int x) nomangle = match {
+    x == 1: 2;
+    x == 2: 3;
+    _: 4;
+}
+
+proc f5 (int x) nomangle = match {
+    x == 1: 2;
+    _: exit();
+}
+
+proc f6 (int x) nomangle = match {
+    x == 1: 2;
+    _: return 3;
+}
+
+proc f7 (int x, int y) nomangle = match {
+    x == 1: match {
+        y == 2: 3;
+        _: 4;
+    };
+    _: 5;
+}
+
+// * proc __src_assert_fail (ptr) external fastcc;
+// +
+// + proc __src_int_arith_error (ptr) external fastcc;
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc f1 (i64 %0) private fastcc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc f2 (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret i64 1
+// + }
+// +
+// + proc f3 (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = icmp eq i64 %1, 1
+// +     %3 = select %2, i64 2, 1
+// +     ret i64 %3
+// + }
+// +
+// + proc f4 (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = icmp eq i64 %1, 1
+// +     br %2 to bb2(2) else bb1
+// +
+// + bb1:
+// +     %3 = load i64, #0, align 8
+// +     %4 = icmp eq i64 %3, 2
+// +     br %4 to bb2(3) else bb2(4)
+// +
+// + bb2(i64 %5):
+// +     ret i64 %5
+// + }
+// +
+// + proc f5 (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = icmp eq i64 %1, 1
+// +     br %2 to bb2(2) else bb1
+// +
+// + bb1:
+// +     call fastcc void exit()
+// +     unreachable
+// +
+// + bb2(i64 %3):
+// +     ret i64 %3
+// + }
+// +
+// + proc exit noreturn external fastcc;
+// +
+// + proc f6 (i64 %0) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = icmp eq i64 %1, 1
+// +     br %2 to bb2(2) else bb1
+// +
+// + bb1:
+// +     ret i64 3
+// +
+// + bb2(i64 %3):
+// +     ret i64 %3
+// + }
+// +
+// + proc f7 (i64 %0, i64 %1) private fastcc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = icmp eq i64 %2, 1
+// +     br %3 to bb1 else bb2(5)
+// +
+// + bb1:
+// +     %4 = load i64, #1, align 8
+// +     %5 = icmp eq i64 %4, 2
+// +     br %5 to bb2(3) else bb2(4)
+// +
+// + bb2(i64 %6):
+// +     ret i64 %6
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_assert_fail(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @__src_int_arith_error(ptr) #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @f1(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f2(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   ret i64 1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f3(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = icmp eq i64 %3, 1
+//L +   %5 = select i1 %4, i64 2, i64 1
+//L +   ret i64 %5
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f4(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = icmp eq i64 %3, 1
+//L +   br i1 %4, label %8, label %5
+//L +
+//L + 5:                                                ; preds = %1
+//L +   %6 = load i64, ptr %2, align 8
+//L +   %7 = icmp eq i64 %6, 2
+//L +   br i1 %7, label %8, label %10
+//L +
+//L + 8:                                                ; preds = %10, %5, %1
+//L +   %9 = phi i64 [ %11, %10 ], [ 3, %5 ], [ 2, %1 ]
+//L +   ret i64 %9
+//L +
+//L + 10:                                               ; preds = %5
+//L +   %11 = phi i64 [ 4, %5 ]
+//L +   br label %8
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f5(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = icmp eq i64 %3, 1
+//L +   br i1 %4, label %6, label %5
+//L +
+//L + 5:                                                ; preds = %1
+//L +   call fastcc void @exit()
+//L +   unreachable
+//L +
+//L + 6:                                                ; preds = %1
+//L +   %7 = phi i64 [ 2, %1 ]
+//L +   ret i64 %7
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare fastcc void @exit() #0
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f6(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   %4 = icmp eq i64 %3, 1
+//L +   br i1 %4, label %6, label %5
+//L +
+//L + 5:                                                ; preds = %1
+//L +   ret i64 3
+//L +
+//L + 6:                                                ; preds = %1
+//L +   %7 = phi i64 [ 2, %1 ]
+//L +   ret i64 %7
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc i64 @f7(i64 %0, i64 %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %3, align 8
+//L +   store i64 %1, ptr %4, align 8
+//L +   %5 = load i64, ptr %3, align 8
+//L +   %6 = icmp eq i64 %5, 1
+//L +   br i1 %6, label %7, label %10
+//L +
+//L + 7:                                                ; preds = %2
+//L +   %8 = load i64, ptr %4, align 8
+//L +   %9 = icmp eq i64 %8, 2
+//L +   br i1 %9, label %10, label %12
+//L +
+//L + 10:                                               ; preds = %12, %7, %2
+//L +   %11 = phi i64 [ %13, %12 ], [ 3, %7 ], [ 5, %2 ]
+//L +   ret i64 %11
+//L +
+//L + 12:                                               ; preds = %7
+//L +   %13 = phi i64 [ 4, %7 ]
+//L +   br label %10
+//L + }
+//L +
+//L + attributes #0 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

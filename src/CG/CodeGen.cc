@@ -52,8 +52,14 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
 }
 
 // ============================================================================
-//  AST -> IR
+//  Helpers
 // ============================================================================
+auto CodeGen::AppendBlock(std::unique_ptr<Block> bb) -> Block* {
+    auto b = bb.release();
+    curr.proc.push_back(b);
+    return b;
+}
+
 auto CodeGen::C(CallingConvention l) -> LLVM::CConv {
     switch (l) {
         case CallingConvention::Source: return LLVM::CConv::Fast;
@@ -409,15 +415,12 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
 }
 
 auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, Vals args) -> Block* {
-    auto b = bb.release();
-    curr.proc.push_back(b);
-    return EnterBlock(b, args);
+    return EnterBlock(AppendBlock(std::move(bb)), args);
 }
 
 auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
-    // If we’re in a procedure, there is a current block, and it is not
-    // closed, branch to the newly inserted block, unless that block is
-    // the function’s entry block.
+    // Only branch to the block if we’re in a procedure and it’s
+    // sensible to do so.
     auto ib = getInsertionBlock();
     if (
         ib and
@@ -1893,6 +1896,10 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
 }
 
 auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
+    // If there are no cases at all, this does nothing.
+    if (expr->cases().empty()) return {};
+
+    // Otherwise, at least one case must be reachable.
     Assert(llvm::any_of(expr->cases(), [](auto& c) { return not c.unreachable; }));
     auto join = CreateBlock();
     if (not IsZeroSizedType(expr->type)) {
@@ -1903,13 +1910,13 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
     }
 
     bool has_wildcard = false;
-    for (auto [i, c] : enumerate(expr->cases())) {
+    for (const auto& [i, c] : enumerate(expr->cases())) {
         if (c.unreachable) continue;
         auto loc = C(c.loc);
         auto EmitVal = [&](Stmt* s) {
             SmallVector<Value, 2> vals;
             Emit(s).into(vals);
-            create<mlir::cf::BranchOp>(loc, join.get(), vals);
+            if (not HasTerminator()) create<mlir::cf::BranchOp>(loc, join.get(), vals);
         };
 
         if (c.cond.is_wildcard()) {
@@ -1918,17 +1925,12 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
             break;
         }
 
-        If(loc, Emit(c.cond.expr()).scalar(), [&] {
-            SmallVector<Value, 2> vals;
-            Emit(c.body).into(vals);
-            create<mlir::cf::BranchOp>(loc, join.get(), vals);
-        });
+        If(loc, Emit(c.cond.expr()).scalar(), [&] { EmitVal(c.body); });
     }
 
     if (not has_wildcard) create<LLVM::UnreachableOp>(C(expr->location()));
-    IRValue vals{join->getArguments()};
-    EnterBlock(std::move(join));
-    return vals;
+    setInsertionPointToEnd(join.get());
+    return AppendBlock(std::move(join))->getArguments();
 }
 
 auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> IRValue {
