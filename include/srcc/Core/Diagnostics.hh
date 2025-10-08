@@ -2,7 +2,6 @@
 #define SRCC_CORE_DIAGNOSTICS_HH
 
 #include <srcc/Core/Core.hh>
-#include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Location.hh>
 #include <srcc/Core/Token.hh>
 #include <srcc/Core/Utils.hh>
@@ -74,16 +73,6 @@ public:
 
 /// Mixin to provide helpers for creating errors.
 class srcc::DiagsProducer {
-    struct Falsy {
-        // Allow conversion to false.
-        constexpr /* implicit */ operator bool() const { return false; }
-
-        // Allow conversion to any nullable type.
-        template <typename ty>
-        requires std::convertible_to<std::nullptr_t, ty>
-        constexpr /* implicit */ operator ty() const { return nullptr; }
-    };
-
 public:
     template <typename... Args>
     static auto CreateError(
@@ -127,9 +116,9 @@ public:
         Location where,
         std::format_string<Args...> fmt,
         Args&&... args
-    ) -> Falsy {
+    ) -> utils::Falsy {
         This.diags().report(DiagsProducer::CreateError(where, fmt, std::forward<Args>(args)...));
-        return Falsy();
+        return utils::Falsy();
     }
 
     template <typename... Args>
@@ -138,9 +127,9 @@ public:
         Location where,
         std::format_string<Args...> fmt,
         Args&&... args
-    ) -> Falsy {
+    ) -> utils::Falsy {
         This.diags().report(DiagsProducer::CreateICE(where, fmt, std::forward<Args>(args)...));
-        return Falsy();
+        return utils::Falsy();
     }
 
     template <typename... Args>

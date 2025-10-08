@@ -291,6 +291,18 @@ auto StripColours(const SmallUnrenderedString& s) -> std::string;
 // We use the 'utils' namespace of 'base' for this to avoid creating
 // ambiguity between the two.
 namespace base::utils {
+/// Type that is implicitly convertible to various ‘falsy’
+/// values, such as 'nullptr' or 'false'.
+struct Falsy {
+    // Allow conversion to false.
+    constexpr /* implicit */ operator bool() const { return false; }
+
+    // Allow conversion to any nullable type.
+    template <typename ty>
+    requires std::convertible_to<std::nullptr_t, ty>
+    constexpr /* implicit */ operator ty() const { return nullptr; }
+};
+
 /// Format string that also stores the source location of the caller.
 template <typename... Args>
 struct FStringWithSrcLocImpl {

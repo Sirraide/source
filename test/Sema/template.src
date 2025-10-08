@@ -4,7 +4,7 @@ program test;
 proc add($T a, T b) = a + b; // expected-note (In argument to parameter 'b') expected-note (Declared here)
 proc add2(T a, $T b) = a + b;
 proc add3($T a, $T b) = a + b; // expected-note: Declared here
-proc add4($T a, $U b) = a + b; // expected-error: Invalid operation: + between int and bool
+proc add4($T a, $U b) = a + b; // expected-error: Invalid operation: '+' between 'int' and 'bool'
 
 add(1, 2);
 add2(1, 2);

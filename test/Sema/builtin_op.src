@@ -10,6 +10,15 @@ var x = s(1);
 
 // These are defined in the preamble as builtin operator templates; check
 // that we don’t try to use them for user-defined types.
-x **= 1; // expected-error:  Invalid operation: **= between s and int
-x ** 1; // expected-error:  Invalid operation: ** between s and int
-x == 1; // expected-error:  Invalid operation: == between s and int
+x **= 1; // expected-error:  Invalid operation: '**=' between 's' and 'int'
+x ** 1; // expected-error:  Invalid operation: '**' between 's' and 'int'
+x == 1; // expected-error:  Invalid operation: '==' between 's' and 'int'
+
+// '**' doesn’t make sense for anything below 'i2' (and even for 'i2' it’s
+// questionable, but we allow it regardless.)
+i1 a;
+i2 b;
+a ** a; // expected-error: '**' is not supported for type 'i1' (bit width must be at least 2)
+a **= a; // expected-error: '**=' is not supported for type 'i1' (bit width must be at least 2)
+b ** b;
+b **= b;

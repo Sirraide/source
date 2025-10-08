@@ -1505,7 +1505,7 @@ auto Sema::PerformOverloadResolution(
 
         Error(
             call_loc,
-            "Invalid operation: %1({}%) between {} and {}",
+            "Invalid operation: '%1({}%)' between '{}' and '{}'",
             Spelling(overload_set->name().operator_name()),
             args[0]->type,
             args[1]->type
@@ -2090,24 +2090,34 @@ auto Sema::BuildBinaryExpr(
         return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
     };
 
+    auto ErrorInvalid = [&] {
+        return Error(
+            loc,
+            "Invalid operation: '%1({}%)' between '{}' and '{}'",
+            Spelling(op),
+            lhs->type,
+            rhs->type
+        );
+    };
+
+    auto ErrorExpI1 = [&] {
+        return Error(
+            loc,
+            "'%1({}%)' is not supported for type '{}' (bit width must be at least 2)",
+            Spelling(op),
+            lhs->type
+        );
+    };
+
     auto CheckIntegral = [&] -> bool {
         // Either operand must be an integer.
         bool lhs_int = lhs->type->is_integer();
         bool rhs_int = rhs->type->is_integer();
-        if (not lhs_int and not rhs_int) {
-            Error(
-                loc,
-                "Unsupported %1({}%) of '{}' and '{}'",
-                Spelling(op),
-                lhs->type,
-                rhs->type
-            );
-            return false;
-        }
+        if (not lhs_int and not rhs_int) return ErrorInvalid();
         return true;
     };
 
-    auto ConvertToCommonType = [&] {
+    auto ConvertToCommonType = [&] -> bool {
         // Find the common type of the two. We need the same logic
         // during initialisation (and it actually turns out to be
         // easier to write it that way), so reuse it here.
@@ -2116,14 +2126,7 @@ auto Sema::BuildBinaryExpr(
         } else if (auto rhs_conv = TryBuildInitialiser(lhs->type, rhs).get_or_null()) {
             rhs = rhs_conv;
         } else {
-            Error(
-                loc,
-                "Invalid operation: %1({}%) between {} and {}",
-                Spelling(op),
-                lhs->type,
-                rhs->type
-            );
-            return false;
+            return ErrorInvalid();
         }
 
         // Now they’re the same type, so ensure both are srvalues.
@@ -2147,7 +2150,7 @@ auto Sema::BuildBinaryExpr(
         return BuildCall(DeclName(op));
 
     switch (op) {
-        default: Unreachable("Invalid binary operator: {}", op);
+        default: Unreachable("Invalid binary operator: '{}'", op);
 
         // Array or slice subscript.
         case Tk::LBrack: {
@@ -2236,6 +2239,7 @@ auto Sema::BuildBinaryExpr(
         // This is implemented as a function template.
         case Tk::StarStar: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
+            if (lhs->type->bit_width(*M) < Size::Bits(2)) return ErrorExpI1();
             return BuildCall(DeclName(Tk::StarStar));
         }
 
@@ -2366,6 +2370,7 @@ auto Sema::BuildBinaryExpr(
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
             // '**=' requires a separate function since it needs to return the lhs.
+            if (lhs->type->bit_width(*M) < Size::Bits(2)) return ErrorExpI1();
             return CastExpr::Dereference(*M, TRY(BuildCall(DeclName(Tk::StarStarEq))));
         }
     }

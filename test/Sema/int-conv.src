@@ -17,6 +17,6 @@ i = 4;
 j = 4;
 i = j;
 j = i; // expected-error: Cannot assign value of type 'i10000' to 'i1000'
-k + i; // expected-error: Invalid operation: + between int and i10000
-k + j; // expected-error: Invalid operation: + between int and i1000
-k + 100000000000000000000000000; // expected-error: Invalid operation: + between int and i128
+k + i; // expected-error: Invalid operation: '+' between 'int' and 'i10000'
+k + j; // expected-error: Invalid operation: '+' between 'int' and 'i1000'
+k + 100000000000000000000000000; // expected-error: Invalid operation: '+' between 'int' and 'i128'

@@ -3,4 +3,4 @@ program test;
 
 proc exit extern -> noreturn;
 
-proc a { exit() + exit(); } // expected-error: Unsupported + of 'noreturn' and 'noreturn'
+proc a { exit() + exit(); } // expected-error: Invalid operation: '+' between 'noreturn' and 'noreturn'
