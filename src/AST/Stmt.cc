@@ -2,6 +2,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Frontend/Parser.hh>
 #include <llvm/Support/Casting.h>
+#include "srcc/AST/Enums.hh"
 
 #include <memory>
 #include <ranges>
@@ -247,6 +248,11 @@ auto StrLitExpr::Create(
 auto Stmt::type_or_void() const -> Type {
     if (auto e = dyn_cast<Expr>(this)) return e->type;
     return Type::VoidTy;
+}
+
+auto Stmt::value_category_or_rvalue() const -> ValueCategory {
+    if (auto e = dyn_cast<Expr>(this)) return e->value_category;
+    return Expr::RValue;
 }
 
 // ============================================================================

@@ -25,6 +25,12 @@ match {
     1 == 1: 2;
 }
 
+match 1 -> i8 {}
+match 1 -> int^^ {}
+match 1 -> 3 {}
+match 1 -> {} {}
+match -> int {}
+
 match 1 { 1:
     1 // expected-error: Expected ';'
 }

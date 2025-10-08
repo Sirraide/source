@@ -152,3 +152,45 @@ int x = match 1 {
     _: 3; // expected-note: Because this pattern already makes the 'match' fully exhaustive
     1: 2; // expected-warning: This and any following patterns will never be matched
 };
+
+match 1 -> 2 { // expected-error: Expected type
+    _: 3;
+}
+
+i8 y = match 1 { // expected-error: Cannot convert expression of type 'int' to 'i8'
+    1: 2;
+    _: 4;
+};
+
+i8 y = match 1 -> i8 { // expected-error ('match' is not exhaustive) expected-note (Possible value ranges not handled)
+    1: 2;
+};
+
+match -> i8 { // expected-error: A 'match' with a fixed result type must have a wildcard arm
+    true: 2;
+};
+
+// These are explicitly allowed to not be exhaustive.
+match -> void { };
+match -> var { };
+
+i8 y = match 1 -> i8 {
+    1: 2;
+    _: 4;
+};
+
+i8 y = match 1 -> i8 {
+    1: ""; // expected-error: Cannot convert expression of type 'i8[]' to 'i8'
+    _: "".data; // expected-error (Cannot convert expression of type 'i8^' to 'i8') expected-note (Because this pattern already makes the 'match' fully exhaustive)
+
+    // No error here since we don’t attempt to convert unreachable patterns.
+    1: 2; // expected-warning: This and any following patterns will never be matched
+};
+
+int lvalue;
+
+// The first two are non-exhaustive, so they yield 'void'!
+(match { true: lvalue; false: lvalue; }) = 3; // expected-error: Invalid target for assignment
+(match -> int { true: lvalue; false: lvalue; }) = 3; // expected-error: A 'match' with a fixed result type must have a wildcard arm
+(match { true: lvalue; _: lvalue; }) = 3;
+(match -> int { true: lvalue; _: lvalue; }) = 3;

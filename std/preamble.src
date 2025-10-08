@@ -1,15 +1,18 @@
 __srcc_preamble__
 
-// TODO: Allow 'match' expressions to specify a result type.
 // TODO: If the body of a procedure is a 'match' expression, use its
 // declared return type (if it has one) as the result type of the
 // 'match' expression.
-proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
+proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match -> T {
     // Anything to the power of 0 is 1.
-    exp == 0: 1 as T;
+    exp == 0: 1;
 
     // Raising 0 to any non-negative power is 0. Raising 0 to a negative
     // power is an error since that is just division by zero.
+    //
+    // TODO: Introduce a ‘desired type’ in Sema that is passed to every call to
+    // 'TranslateXY()' which can be used to convert e.g. '{ 1; }' from an 'int'
+    // to an 'i8'. This will be required anyway for enumerators.
     base == 0: {
         assert exp >= 0, "attempting to raise 0 to a negative power";
         0;

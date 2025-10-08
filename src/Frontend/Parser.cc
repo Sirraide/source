@@ -1114,15 +1114,17 @@ auto Parser::ParseIntent() -> std::pair<Location, Intent> {
     return {{}, Intent::Move};
 }
 
-// <expr-match> ::= MATCH [ <expr> ] "{" <match-case> [ ";" ] "}"
+// <expr-match> ::= MATCH [ <expr> ] [ "->" <type> ] "{" <match-case> [ ";" ] "}"
 // <match-case> ::= <pattern> ":" <stmt>
 // <pattern>    ::= <expr>
 auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     auto match_loc = Next();
-    auto control_expr = At(Tk::LBrace) ? nullptr : ParseExpr();
-    BracketTracker braces{*this, Tk::LBrace};
+    auto control_expr = At(Tk::LBrace, Tk::RArrow) ? nullptr : ParseExpr();
+    Ptr<ParsedStmt> type;
+    if (Consume(Tk::RArrow)) type = ParseType();
 
     // Parse cases.
+    BracketTracker braces{*this, Tk::LBrace};
     SmallVector<ParsedMatchCase> cases;
     while (not At(Tk::RBrace, Tk::Eof)) {
         auto pattern = ParseExpr();
@@ -1133,7 +1135,7 @@ auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     }
 
     braces.close();
-    return ParsedMatchExpr::Create(*this, control_expr, cases, match_loc);
+    return ParsedMatchExpr::Create(*this, control_expr, type, cases, match_loc);
 }
 
 // <decl-var> ::= [ STATIC ] <type> IDENTIFIER [ "=" <expr> ] ";"

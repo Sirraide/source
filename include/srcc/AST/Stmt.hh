@@ -73,6 +73,9 @@ public:
     /// Get the type of this if it is an expression and Void otherwise.
     auto type_or_void() const -> Type;
 
+    /// Get the value category of this if it is an expression and RValue otherwise.
+    auto value_category_or_rvalue() const -> ValueCategory;
+
     /// Visit this statement.
     template <typename Visitor>
     auto visit(Visitor&& v) -> decltype(auto);

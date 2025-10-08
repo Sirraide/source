@@ -111,7 +111,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %8 = ptradd #3, 8
 // +     store %8, i64 12, align 8
 // +     %9 = ptradd #3, 16
-// +     store %9, i64 14, align 8
+// +     store %9, i64 17, align 8
 // +     %10 = ptradd #3, 24
 // +     store %10, i64 9, align 8
 // +     %11 = ptradd #3, 32
@@ -122,7 +122,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %13, ptr @5, align 8
 // +     %14 = ptradd %13, 8
 // +     store %14, i64 41, align 8
-// +     abort at loc("preamble.src":14:9) assert(ptr #3)
+// +     abort at loc("preamble.src":17:9) assert(ptr #3)
 // +
 // + bb4:
 // +     %15 = load i64, #1, align 8
@@ -166,7 +166,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %30 = ptradd #3, 8
 // +     store %30, i64 12, align 8
 // +     %31 = ptradd #3, 16
-// +     store %31, i64 32, align 8
+// +     store %31, i64 35, align 8
 // +     %32 = ptradd #3, 24
 // +     store %32, i64 13, align 8
 // +     %33 = ptradd #3, 32
@@ -177,7 +177,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %35, ptr @1, align 8
 // +     %36 = ptradd %35, 8
 // +     store %36, i64 16, align 8
-// +     abort at loc("preamble.src":32:13) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":35:13) arithmetic(ptr #3)
 // +
 // + bb12:
 // +     store #2, i64 %29:0, align 8
@@ -190,7 +190,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %39 = ptradd #3, 8
 // +     store %39, i64 12, align 8
 // +     %40 = ptradd #3, 16
-// +     store %40, i64 33, align 8
+// +     store %40, i64 36, align 8
 // +     %41 = ptradd #3, 24
 // +     store %41, i64 13, align 8
 // +     %42 = ptradd #3, 32
@@ -201,7 +201,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %44, ptr @1, align 8
 // +     %45 = ptradd %44, 8
 // +     store %45, i64 16, align 8
-// +     abort at loc("preamble.src":33:13) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":36:13) arithmetic(ptr #3)
 // +
 // + bb14:
 // +     store #1, i64 %38:0, align 8
@@ -243,7 +243,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %8 = ptradd #3, 8
 // +     store %8, i64 12, align 8
 // +     %9 = ptradd #3, 16
-// +     store %9, i64 14, align 8
+// +     store %9, i64 17, align 8
 // +     %10 = ptradd #3, 24
 // +     store %10, i64 9, align 8
 // +     %11 = ptradd #3, 32
@@ -254,7 +254,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %13, ptr @5, align 8
 // +     %14 = ptradd %13, 8
 // +     store %14, i64 41, align 8
-// +     abort at loc("preamble.src":14:9) assert(ptr #3)
+// +     abort at loc("preamble.src":17:9) assert(ptr #3)
 // +
 // + bb4:
 // +     %15 = load i8, #1, align 1
@@ -302,7 +302,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %32 = ptradd #3, 8
 // +     store %32, i64 12, align 8
 // +     %33 = ptradd #3, 16
-// +     store %33, i64 32, align 8
+// +     store %33, i64 35, align 8
 // +     %34 = ptradd #3, 24
 // +     store %34, i64 13, align 8
 // +     %35 = ptradd #3, 32
@@ -313,7 +313,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %37, ptr @1, align 8
 // +     %38 = ptradd %37, 8
 // +     store %38, i64 16, align 8
-// +     abort at loc("preamble.src":32:13) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":35:13) arithmetic(ptr #3)
 // +
 // + bb13:
 // +     store #2, i8 %31:0, align 1
@@ -326,7 +326,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %41 = ptradd #3, 8
 // +     store %41, i64 12, align 8
 // +     %42 = ptradd #3, 16
-// +     store %42, i64 33, align 8
+// +     store %42, i64 36, align 8
 // +     %43 = ptradd #3, 24
 // +     store %43, i64 13, align 8
 // +     %44 = ptradd #3, 32
@@ -337,7 +337,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store %46, ptr @1, align 8
 // +     %47 = ptradd %46, 8
 // +     store %47, i64 16, align 8
-// +     abort at loc("preamble.src":33:13) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":36:13) arithmetic(ptr #3)
 // +
 // + bb15:
 // +     store #1, i8 %40:0, align 1

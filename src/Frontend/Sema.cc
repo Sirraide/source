@@ -2664,6 +2664,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
 
 auto Sema::BuildMatchExpr(
     Ptr<Expr> control_expr,
+    Type ty,
     MutableArrayRef<MatchCase> cases,
     Location loc
 ) -> Ptr<Expr> {
@@ -2697,27 +2698,61 @@ auto Sema::BuildMatchExpr(
             exhaustive = true;
             MarkUnreachableAfter(it, cases);
         }
+
+        if (not exhaustive and ty != Type::VoidTy and ty != Type::DeducedTy) Error(
+            loc,
+            "A 'match' with a fixed result type must have a wildcard arm"
+        );
     }
 
-    // Compute the common type of the bodies of any reachable cases, provided
-    // that all of them are expressions.
+    // If type deduction is required, compute the common type of the bodies of
+    // any reachable cases, provided that all of them are expressions.
     TypeAndValueCategory tvc;
-    if (exhaustive and llvm::all_of(cases, [](auto& c) { return c.unreachable or isa<Expr>(c.body); })) {
-        SmallVector<Expr*> exprs;
-        SmallVector<u32> indices;
-        for (auto [i, c] : enumerate(cases)) {
-            if (not c.unreachable) {
-                exprs.push_back(cast<Expr>(c.body));
-                indices.push_back(u32(i));
+    if (ty == Type::DeducedTy) {
+        if (exhaustive and llvm::all_of(cases, [](auto& c) { return c.unreachable or isa<Expr>(c.body); })) {
+            SmallVector<Expr*> exprs;
+            SmallVector<u32> indices;
+            for (auto [i, c] : enumerate(cases)) {
+                if (not c.unreachable) {
+                    exprs.push_back(cast<Expr>(c.body));
+                    indices.push_back(u32(i));
+                }
             }
+
+            tvc = ComputeCommonTypeAndValueCategory(exprs);
+
+            // This process may emit lvalue-to-rvalue conversions.
+            for (auto [i, e] : zip(indices, exprs)) cases[i].body = e;
+        }
+    }
+
+    // Otherwise, we have a fixed target type.
+    else {
+        // If possible, produce an lvalue. We don’t reuse the common type
+        // computation algorithm since we already know what type we want to
+        // end up with here.
+        if (llvm::all_of(cases, [&](auto& c) {
+            return c.unreachable or (
+                c.body->type_or_void() == ty and
+                c.body->value_category_or_rvalue() == Expr::LValue
+            );
+        })) {
+            tvc = {ty, Expr::LValue};
         }
 
-        tvc = ComputeCommonTypeAndValueCategory(exprs);
-
-        // This process may emit lvalue-to-rvalue conversions.
-        for (auto [i, e] : zip(indices, exprs)) cases[i].body = e;
-    } else {
-        tvc = {Type::VoidTy, Expr::RValue};
+        // Convert each match arm. For 'void' we just skip this step because
+        // that just means that this produces no value.
+        else if (ty != Type::VoidTy) {
+            tvc = {ty, Expr::RValue};
+            for (auto& c : cases) {
+                if (c.unreachable) continue;
+                if (auto e = dyn_cast<Expr>(c.body); not e) {
+                    Error(c.body->location(), "Expected expression");
+                } else if (auto init = BuildInitialiser(ty, e, c.body->location()).get_or_null()) {
+                    c.body = init;
+                }
+            }
+        }
     }
 
     return MatchExpr::Create(
@@ -3430,6 +3465,11 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
         ? TRY(TranslateExpr(parsed->control_expr().get()))
         : nullptr;
 
+    // Translate the type if there is one.
+    auto ty = parsed->declared_type()
+        ? TranslateType(parsed->declared_type().get(), Type::VoidTy)
+        : Type::DeducedTy;
+
     for (auto c : parsed->cases()) {
         auto body = TranslateStmt(c.body);
         if (not body) ok = false;
@@ -3456,7 +3496,7 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
     }
 
     if (not ok) return {};
-    return BuildMatchExpr(control_expr, cases, parsed->loc);
+    return BuildMatchExpr(control_expr, ty, cases, parsed->loc);
 }
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
