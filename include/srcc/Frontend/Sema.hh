@@ -440,6 +440,7 @@ class srcc::Sema : public DiagsProducer {
         BoolMatchContext(Sema& s) : MatchContext{s} {}
         [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
         [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
+        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
         void note_missing(Location match_loc);
     };
 
@@ -488,6 +489,7 @@ class srcc::Sema : public DiagsProducer {
         IntMatchContext(Sema& s, Type ty);
         [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
         [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
+        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
         void note_missing(Location match_loc);
 
     private:

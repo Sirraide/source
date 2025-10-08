@@ -1,34 +1,41 @@
 __srcc_preamble__
 
-proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T {
+// TODO: Allow 'match' expressions to specify a result type.
+// TODO: If the body of a procedure is a 'match' expression, use its
+// declared return type (if it has one) as the result type of the
+// 'match' expression.
+proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     // Anything to the power of 0 is 1.
-    if exp == 0 then return 1;
+    exp == 0: 1 as T;
 
     // Raising 0 to any non-negative power is 0. Raising 0 to a negative
     // power is an error since that is just division by zero.
-    if base == 0 {
+    base == 0: {
         assert exp >= 0, "attempting to raise 0 to a negative power";
-        return 0;
-    }
+        0;
+    } as T;
 
     // Raising to a negative power.
     //
     // For any number that isn't -1 or 1, this results in a fraction in
     // the interval (-1, 1), which for integers is just 0.
-    if exp < 0 {
-        if base == -1 return (if exp & 1 != 0 then -1 else 1);
-        return if base == 1 then 1 else 0;
-    }
+    exp < 0: match base {
+        -1: if exp & 1 != 0 then -1; else 1;
+        1: 1;
+        _: 0;
+    } as T;
 
     // Perform the exponentiation.
-    var v = base;
-    while exp != 1 {
-        v *= base;
-        exp -= 1;
-    }
+    _: {
+        T v = base;
+        while exp != 1 {
+            v *= base;
+            exp -= 1;
+        }; // FIXME: This semicolon should not be required but the parser treats '{} v' as a declaration...
 
-    // We're done once 'exp' is 1.
-    return v;
+        // We're done once 'exp' is 1.
+        v;
+    };
 }
 
 proc **= (inout $T base, in $T exp) __srcc_builtin_op__ -> T^ {

@@ -122,7 +122,11 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
         default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
         case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
         case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*M, d, loc);
-        case Stmt::Kind::TypeDecl: return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
+
+        case Stmt::Kind::TypeDecl:
+        case Stmt::Kind::TemplateTypeParamDecl:
+            return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
+
         case Stmt::Kind::LocalDecl:
         case Stmt::Kind::ParamDecl: {
             auto local = cast<LocalDecl>(d);
@@ -1756,6 +1760,10 @@ auto Sema::BoolMatchContext::build_comparison(
     );
 }
 
+auto Sema::BoolMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
+    return pattern;
+}
+
 void Sema::BoolMatchContext::note_missing(Location match_loc) {
     if (true_loc.is_valid()) {
         S.Note(match_loc, "Possible value '%1(false%)' is not handled");
@@ -1838,7 +1846,6 @@ auto Sema::IntMatchContext::add_range(Range r) -> AddResult {
     return Ok();
 }
 
-
 auto Sema::IntMatchContext::build_comparison(
     Expr* control_expr,
     Expr* pattern_expr
@@ -1850,6 +1857,23 @@ auto Sema::IntMatchContext::build_comparison(
         pattern_expr,
         pattern_expr->location()
     );
+}
+
+auto Sema::IntMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
+    // Only preprocess integers and ranges of integers. We don’t want to
+    // try and convert other types to integers here (that should be done
+    // by the code that handles the '==' or 'in' operator).
+    if (not isa<RangeType>(pattern->type) and not pattern->type->is_integer())
+        return pattern;
+
+    // If the expression is a range, convert it to a range rather than a
+    // single integer.
+    if (isa<RangeType>(pattern->type)) return S.TryBuildInitialiser(
+        RangeType::Get(*S.M, ty),
+        pattern
+    );
+
+    return S.TryBuildInitialiser(ty, pattern);
 }
 
 void Sema::IntMatchContext::note_missing(Location loc) {
@@ -1961,6 +1985,14 @@ bool Sema::CheckMatchExhaustive(
             WarnAlreadyExhaustive();
             return true;
         }
+
+        // For some types, we want to perform an initial type conversion (e.g.
+        // we want to convert integer literals to 'i8' if we’re matching an 'i8'
+        // *before* evaluating the expression).
+        //
+        // This is allowed to fail and should never issue any diagnostics.
+        if (auto init = mc.preprocess(c.cond.expr()).get_or_null())
+            c.cond.expr() = init;
 
         // We only really care about constants here.
         auto e = c.cond.expr();
@@ -2803,7 +2835,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     //
     // If the type is zero-sized, there is no need to do anything since we’ll
     // drop it anyway.
-    if (auto val = value.get_or_null(); val and val->type->memory_size(*M) != Size())
+    if (auto val = value.get_or_null())
         value = BuildInitialiser(proc->return_type(), {val}, loc);
 
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
@@ -3121,7 +3153,6 @@ auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Stmt> {
-    // Translate LHS and RHS.
     auto lhs = TRY(TranslateExpr(expr->lhs));
     auto rhs = TRY(TranslateExpr(expr->rhs));
     return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);

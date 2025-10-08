@@ -423,7 +423,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 children.emplace_back([&, c] { Print(c); });
             for (auto& c : m->cases()) {
                 children.emplace_back([&] {
-                    print("%1(Case%)");
+                    print("%1(Case%) {}", c.body->type_or_void());
                     if (c.unreachable) print(" unreachable");
                     print("\n");
                     PrintChildren<Child>({

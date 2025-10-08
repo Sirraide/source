@@ -1,0 +1,4 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc a -> i8 = void(); // expected-error: Cannot convert expression of type 'void' to 'i8'

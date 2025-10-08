@@ -2,14 +2,18 @@
 program test;
 
 proc sink (in int) {}
-proc exp (in int a, in int b) {
+proc sink (in i8) {}
+
+proc exp (in int a, in int b, in i8 c, in i8 d) {
     sink(a ** b);
     sink(a ** b);
-    sink(a ** b);
+    sink(c ** d);
+    sink(c ** d);
 }
 
-proc exp_ass (copy int a, in int b) {
+proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
     a **= b;
+    c **= d;
 }
 
 // * @0 = "*\00"
@@ -36,25 +40,46 @@ proc exp_ass (copy int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S3expFvxixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S4sinkFvxI8E (i8 %0) private fastcc {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 %0, align 1
+// +     ret
+// + }
+// +
+// + proc _S3expFvxixixI8xI8E (
+// +     i64 %0,
+// +     i64 %1,
+// +     i8 %2,
+// +     i8 %3,
+// + ) private fastcc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
+// +     #2 = 1, align 1
+// +     #3 = 1, align 1
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
 // +     store #1, i64 %1, align 8
-// +     %2 = load i64, #0, align 8
-// +     %3 = load i64, #1, align 8
-// +     %4 = call fastcc i64 _S$2**Fixix3iE(i64 %2, i64 %3)
-// +     call fastcc void _S4sinkFvxiE(i64 %4)
-// +     %5 = load i64, #0, align 8
-// +     %6 = load i64, #1, align 8
-// +     %7 = call fastcc i64 _S$2**Fixix3iE(i64 %5, i64 %6)
-// +     call fastcc void _S4sinkFvxiE(i64 %7)
-// +     %8 = load i64, #0, align 8
-// +     %9 = load i64, #1, align 8
-// +     %10 = call fastcc i64 _S$2**Fixix3iE(i64 %8, i64 %9)
-// +     call fastcc void _S4sinkFvxiE(i64 %10)
+// +     store #2, i8 %2, align 1
+// +     store #3, i8 %3, align 1
+// +     %4 = load i64, #0, align 8
+// +     %5 = load i64, #1, align 8
+// +     %6 = call fastcc i64 _S$2**Fixix3iE(i64 %4, i64 %5)
+// +     call fastcc void _S4sinkFvxiE(i64 %6)
+// +     %7 = load i64, #0, align 8
+// +     %8 = load i64, #1, align 8
+// +     %9 = call fastcc i64 _S$2**Fixix3iE(i64 %7, i64 %8)
+// +     call fastcc void _S4sinkFvxiE(i64 %9)
+// +     %10 = load i8, #2, align 1
+// +     %11 = load i8, #3, align 1
+// +     %12 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %10, i8 %11)
+// +     call fastcc void _S4sinkFvxI8E(i8 %12)
+// +     %13 = load i8, #2, align 1
+// +     %14 = load i8, #3, align 1
+// +     %15 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %13, i8 %14)
+// +     call fastcc void _S4sinkFvxI8E(i8 %15)
 // +     ret
 // + }
 // +
@@ -69,27 +94,24 @@ proc exp_ass (copy int a, in int b) {
 // +     store #1, i64 %1, align 8
 // +     %2 = load i64, #1, align 8
 // +     %3 = icmp eq i64 %2, 0
-// +     br %3 to bb1 else bb2
+// +     br %3 to bb16(1) else bb1
 // +
 // + bb1:
-// +     ret i64 1
-// +
-// + bb2:
 // +     %4 = load i64, #0, align 8
 // +     %5 = icmp eq i64 %4, 0
-// +     br %5 to bb3 else bb6
+// +     br %5 to bb2 else bb4
 // +
-// + bb3:
+// + bb2:
 // +     %6 = load i64, #1, align 8
 // +     %7 = icmp sge i64 %6, 0
-// +     br %7 to bb5 else bb4
+// +     br %7 to bb16(0) else bb3
 // +
-// + bb4:
+// + bb3:
 // +     store #3, ptr @3, align 8
 // +     %8 = ptradd #3, 8
 // +     store %8, i64 12, align 8
 // +     %9 = ptradd #3, 16
-// +     store %9, i64 10, align 8
+// +     store %9, i64 14, align 8
 // +     %10 = ptradd #3, 24
 // +     store %10, i64 9, align 8
 // +     %11 = ptradd #3, 32
@@ -100,58 +122,189 @@ proc exp_ass (copy int a, in int b) {
 // +     store %13, ptr @5, align 8
 // +     %14 = ptradd %13, 8
 // +     store %14, i64 41, align 8
-// +     abort at loc("preamble.src":10:9) assert(ptr #3)
+// +     abort at loc("preamble.src":14:9) assert(ptr #3)
 // +
-// + bb5:
-// +     ret i64 0
-// +
-// + bb6:
+// + bb4:
 // +     %15 = load i64, #1, align 8
 // +     %16 = icmp slt i64 %15, 0
-// +     br %16 to bb7 else bb10
+// +     br %16 to bb5 else bb8
 // +
-// + bb7:
+// + bb5:
 // +     %17 = load i64, #0, align 8
 // +     %18 = icmp eq i64 %17, -1
-// +     br %18 to bb8 else bb9
+// +     br %18 to bb6 else bb7
 // +
-// + bb8:
+// + bb6:
 // +     %19 = load i64, #1, align 8
 // +     %20 = and i64 %19, 1
 // +     %21 = icmp ne i64 %20, 0
-// +     %22 = select %21, i64 -1, 1
-// +     ret i64 %22
+// +     br %21 to bb16(-1) else bb16(1)
+// +
+// + bb7:
+// +     %22 = load i64, #0, align 8
+// +     %23 = icmp eq i64 %22, 1
+// +     br %23 to bb16(1) else bb16(0)
+// +
+// + bb8:
+// +     %24 = load i64, #0, align 8
+// +     store #2, i64 %24, align 8
+// +     br bb9
 // +
 // + bb9:
-// +     %23 = load i64, #0, align 8
-// +     %24 = icmp eq i64 %23, 1
-// +     %25 = zext i1 %24 to i64
-// +     ret i64 %25
+// +     %25 = load i64, #1, align 8
+// +     %26 = icmp ne i64 %25, 1
+// +     br %26 to bb10 else bb15
 // +
 // + bb10:
-// +     %26 = load i64, #0, align 8
-// +     store #2, i64 %26, align 8
-// +     br bb11
+// +     %27 = load i64, #2, align 8
+// +     %28 = load i64, #0, align 8
+// +     %29 = smul ov i64 %27, %28
+// +     br %29:1 to bb11 else bb12
 // +
 // + bb11:
-// +     %27 = load i64, #1, align 8
-// +     %28 = icmp ne i64 %27, 1
-// +     br %28 to bb12 else bb17
+// +     store #3, ptr @3, align 8
+// +     %30 = ptradd #3, 8
+// +     store %30, i64 12, align 8
+// +     %31 = ptradd #3, 16
+// +     store %31, i64 32, align 8
+// +     %32 = ptradd #3, 24
+// +     store %32, i64 13, align 8
+// +     %33 = ptradd #3, 32
+// +     store %33, ptr @0, align 8
+// +     %34 = ptradd %33, 8
+// +     store %34, i64 1, align 8
+// +     %35 = ptradd #3, 48
+// +     store %35, ptr @1, align 8
+// +     %36 = ptradd %35, 8
+// +     store %36, i64 16, align 8
+// +     abort at loc("preamble.src":32:13) arithmetic(ptr #3)
 // +
 // + bb12:
-// +     %29 = load i64, #2, align 8
-// +     %30 = load i64, #0, align 8
-// +     %31 = smul ov i64 %29, %30
-// +     br %31:1 to bb13 else bb14
+// +     store #2, i64 %29:0, align 8
+// +     %37 = load i64, #1, align 8
+// +     %38 = ssub ov i64 %37, 1
+// +     br %38:1 to bb13 else bb14
 // +
 // + bb13:
+// +     store #3, ptr @3, align 8
+// +     %39 = ptradd #3, 8
+// +     store %39, i64 12, align 8
+// +     %40 = ptradd #3, 16
+// +     store %40, i64 33, align 8
+// +     %41 = ptradd #3, 24
+// +     store %41, i64 13, align 8
+// +     %42 = ptradd #3, 32
+// +     store %42, ptr @2, align 8
+// +     %43 = ptradd %42, 8
+// +     store %43, i64 1, align 8
+// +     %44 = ptradd #3, 48
+// +     store %44, ptr @1, align 8
+// +     %45 = ptradd %44, 8
+// +     store %45, i64 16, align 8
+// +     abort at loc("preamble.src":33:13) arithmetic(ptr #3)
+// +
+// + bb14:
+// +     store #1, i64 %38:0, align 8
+// +     br bb9
+// +
+// + bb15:
+// +     %46 = load i64, #2, align 8
+// +     br bb16(%46)
+// +
+// + bb16(i64 %47):
+// +     ret i64 %47
+// + }
+// +
+// + proc _S$2**FI8xI8x3I8E (i8 %0, i8 %1) private fastcc -> i8 {
+// +     #0 = 1, align 1
+// +     #1 = 1, align 1
+// +     #2 = 1, align 1
+// +     #3 = 64, align 8
+// +
+// + entry:
+// +     store #0, i8 %0, align 1
+// +     store #1, i8 %1, align 1
+// +     %2 = load i8, #1, align 1
+// +     %3 = icmp eq i8 %2, 0
+// +     br %3 to bb17(1) else bb1
+// +
+// + bb1:
+// +     %4 = load i8, #0, align 1
+// +     %5 = icmp eq i8 %4, 0
+// +     br %5 to bb2 else bb4
+// +
+// + bb2:
+// +     %6 = load i8, #1, align 1
+// +     %7 = icmp sge i8 %6, 0
+// +     br %7 to bb17(0) else bb3
+// +
+// + bb3:
+// +     store #3, ptr @3, align 8
+// +     %8 = ptradd #3, 8
+// +     store %8, i64 12, align 8
+// +     %9 = ptradd #3, 16
+// +     store %9, i64 14, align 8
+// +     %10 = ptradd #3, 24
+// +     store %10, i64 9, align 8
+// +     %11 = ptradd #3, 32
+// +     store %11, ptr @4, align 8
+// +     %12 = ptradd %11, 8
+// +     store %12, i64 8, align 8
+// +     %13 = ptradd #3, 48
+// +     store %13, ptr @5, align 8
+// +     %14 = ptradd %13, 8
+// +     store %14, i64 41, align 8
+// +     abort at loc("preamble.src":14:9) assert(ptr #3)
+// +
+// + bb4:
+// +     %15 = load i8, #1, align 1
+// +     %16 = icmp slt i8 %15, 0
+// +     br %16 to bb5 else bb9
+// +
+// + bb5:
+// +     %17 = load i8, #0, align 1
+// +     %18 = icmp eq i8 %17, -1
+// +     br %18 to bb6 else bb7
+// +
+// + bb6:
+// +     %19 = load i8, #1, align 1
+// +     %20 = and i8 %19, 1
+// +     %21 = icmp ne i8 %20, 0
+// +     br %21 to bb8(-1) else bb8(1)
+// +
+// + bb7:
+// +     %22 = load i8, #0, align 1
+// +     %23 = icmp eq i8 %22, 1
+// +     br %23 to bb8(1) else bb8(0)
+// +
+// + bb8(i64 %24):
+// +     %25 = trunc i64 %24 to i8
+// +     br bb17(%25)
+// +
+// + bb9:
+// +     %26 = load i8, #0, align 1
+// +     store #2, i8 %26, align 1
+// +     br bb10
+// +
+// + bb10:
+// +     %27 = load i8, #1, align 1
+// +     %28 = icmp ne i8 %27, 1
+// +     br %28 to bb11 else bb16
+// +
+// + bb11:
+// +     %29 = load i8, #2, align 1
+// +     %30 = load i8, #0, align 1
+// +     %31 = smul ov i8 %29, %30
+// +     br %31:1 to bb12 else bb13
+// +
+// + bb12:
 // +     store #3, ptr @3, align 8
 // +     %32 = ptradd #3, 8
 // +     store %32, i64 12, align 8
 // +     %33 = ptradd #3, 16
-// +     store %33, i64 26, align 8
+// +     store %33, i64 32, align 8
 // +     %34 = ptradd #3, 24
-// +     store %34, i64 9, align 8
+// +     store %34, i64 13, align 8
 // +     %35 = ptradd #3, 32
 // +     store %35, ptr @0, align 8
 // +     %36 = ptradd %35, 8
@@ -160,22 +313,22 @@ proc exp_ass (copy int a, in int b) {
 // +     store %37, ptr @1, align 8
 // +     %38 = ptradd %37, 8
 // +     store %38, i64 16, align 8
-// +     abort at loc("preamble.src":26:9) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":32:13) arithmetic(ptr #3)
+// +
+// + bb13:
+// +     store #2, i8 %31:0, align 1
+// +     %39 = load i8, #1, align 1
+// +     %40 = ssub ov i8 %39, 1
+// +     br %40:1 to bb14 else bb15
 // +
 // + bb14:
-// +     store #2, i64 %31:0, align 8
-// +     %39 = load i64, #1, align 8
-// +     %40 = ssub ov i64 %39, 1
-// +     br %40:1 to bb15 else bb16
-// +
-// + bb15:
 // +     store #3, ptr @3, align 8
 // +     %41 = ptradd #3, 8
 // +     store %41, i64 12, align 8
 // +     %42 = ptradd #3, 16
-// +     store %42, i64 27, align 8
+// +     store %42, i64 33, align 8
 // +     %43 = ptradd #3, 24
-// +     store %43, i64 9, align 8
+// +     store %43, i64 13, align 8
 // +     %44 = ptradd #3, 32
 // +     store %44, ptr @2, align 8
 // +     %45 = ptradd %44, 8
@@ -184,26 +337,40 @@ proc exp_ass (copy int a, in int b) {
 // +     store %46, ptr @1, align 8
 // +     %47 = ptradd %46, 8
 // +     store %47, i64 16, align 8
-// +     abort at loc("preamble.src":27:9) arithmetic(ptr #3)
+// +     abort at loc("preamble.src":33:13) arithmetic(ptr #3)
+// +
+// + bb15:
+// +     store #1, i8 %40:0, align 1
+// +     br bb10
 // +
 // + bb16:
-// +     store #1, i64 %40:0, align 8
-// +     br bb11
+// +     %48 = load i8, #2, align 1
+// +     br bb17(%48)
 // +
-// + bb17:
-// +     %48 = load i64, #2, align 8
-// +     ret i64 %48
+// + bb17(i8 %49):
+// +     ret i8 %49
 // + }
 // +
-// + proc _S7exp_assFvx3ixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S7exp_assFvx3ixix3I8xI8E (
+// +     i64 %0,
+// +     i64 %1,
+// +     i8 %2,
+// +     i8 %3,
+// + ) private fastcc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
+// +     #2 = 1, align 1
+// +     #3 = 1, align 1
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
 // +     store #1, i64 %1, align 8
-// +     %2 = load i64, #1, align 8
-// +     %3 = call fastcc ptr _S$3**=FRix2ixiE(ptr #0 dereferenceable 8, i64 %2)
+// +     store #2, i8 %2, align 1
+// +     store #3, i8 %3, align 1
+// +     %4 = load i64, #1, align 8
+// +     %5 = call fastcc ptr _S$3**=FRix2ixiE(ptr #0 dereferenceable 8, i64 %4)
+// +     %6 = load i8, #3, align 1
+// +     %7 = call fastcc ptr _S$3**=FRI8x2I8xI8E(ptr #2 dereferenceable 1, i8 %6)
 // +     ret
 // + }
 // +
@@ -216,5 +383,17 @@ proc exp_ass (copy int a, in int b) {
 // +     %3 = load i64, #0, align 8
 // +     %4 = call fastcc i64 _S$2**Fixix3iE(i64 %2, i64 %3)
 // +     store %0, i64 %4, align 8
+// +     ret ptr %0
+// + }
+// +
+// + proc _S$3**=FRI8x2I8xI8E (ptr %0 dereferenceable 1, i8 %1) private fastcc -> ptr {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 %1, align 1
+// +     %2 = load i8, %0, align 1
+// +     %3 = load i8, #0, align 1
+// +     %4 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %2, i8 %3)
+// +     store %0, i8 %4, align 1
 // +     ret ptr %0
 // + }

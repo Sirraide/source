@@ -848,9 +848,34 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
 };
 
-class srcc::TemplateTypeParamDecl final : public Decl {
-    Type ty;
+// A struct or type alias decl.
+class srcc::TypeDecl : public Decl {
+    friend StructType;
 
+public:
+    Type type;
+
+protected:
+    TypeDecl(
+        Kind k,
+        Type type,
+        String name,
+        Location location
+    ) : Decl{k, name, location}, type{type} {}
+
+    TypeDecl(
+        Type type,
+        String name,
+        Location location
+    ) : TypeDecl{Kind::TypeDecl, type, name, location} {}
+
+public:
+    static bool classof(const Stmt* e) {
+        return e->kind() == Kind::TypeDecl || e->kind() == Kind::TemplateTypeParamDecl;
+    }
+};
+
+class srcc::TemplateTypeParamDecl final : public TypeDecl {
 public:
     // Whether we’re currently substituting the type of the declaration that this
     // belongs to. This is used to allow translation of '$T' only in the parameter
@@ -862,30 +887,12 @@ public:
     TemplateTypeParamDecl(
         String name,
         TypeLoc tl
-    ) : Decl{Kind::TemplateTypeParamDecl, name, tl.loc}, ty{tl.ty} {}
+    ) : TypeDecl{Kind::TemplateTypeParamDecl, tl.ty, name, tl.loc} {}
 
     /// Get the template argument type bound to this parameter.
-    auto arg_type() -> Type { return ty; }
+    auto arg_type() -> Type { return type; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeParamDecl; }
-};
-
-// A struct or type alias decl.
-class srcc::TypeDecl : public Decl {
-    friend StructType;
-
-public:
-    Type type;
-
-private:
-    TypeDecl(
-        Type type,
-        String name,
-        Location location
-    ) : Decl{Kind::TypeDecl, name, location}, type{type} {}
-
-public:
-    static bool classof(const Stmt* e) { return e->kind() == Kind::TypeDecl; }
 };
 
 /// Base class for declarations that represent modules.
