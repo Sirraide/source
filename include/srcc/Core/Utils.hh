@@ -23,12 +23,8 @@
 #include <base/Text.hh>
 #include <base/Size.hh>
 
-#include <chrono>
-#include <cmath>
-#include <expected>
 #include <filesystem>
 #include <print>
-#include <ranges>
 #include <source_location>
 #include <string>
 

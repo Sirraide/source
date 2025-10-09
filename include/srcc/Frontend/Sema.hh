@@ -9,9 +9,8 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/TinyPtrVector.h>
-#include "base/Macros.hh"
 
-#include <ranges>
+#include <base/Macros.hh>
 
 namespace srcc {
 class ModuleLoader;

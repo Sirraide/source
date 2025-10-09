@@ -5,7 +5,6 @@
 #include <srcc/Frontend/Parser.hh>
 #include <srcc/Macros.hh>
 
-#include <algorithm>
 #include <memory>
 #include <utility>
 

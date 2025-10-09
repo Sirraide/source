@@ -11,8 +11,8 @@
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
-#include "base/Macros.hh"
-#include <ranges>
+
+#include <base/Macros.hh>
 
 namespace srcc {
 class Target;

@@ -2,6 +2,8 @@
 
 #include <llvm/ADT/StringExtras.h>
 
+#include <cmath>
+
 using namespace srcc;
 
 auto utils::FormatError(llvm::Error& e) -> std::string {

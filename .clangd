@@ -3,7 +3,7 @@ Hover:
 Documentation:
   CommentFormat: Doxygen
 Style:
-  AngledHeaders: "*"
+  AngledHeaders: ".*"
 Completion:
   HeaderInsertion: Never
 InlayHints:
