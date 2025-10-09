@@ -882,13 +882,13 @@ private:
     void Translate(bool have_preamble, bool load_runtime);
 
     /// Statements.
-#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed) -> Ptr<Stmt>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed) -> Decl*;
-#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed) -> Ptr<Stmt>;
+#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Ptr<Stmt>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Decl*;
+#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Ptr<Stmt>;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
 
-    auto TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr>;
+    auto TranslateExpr(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Expr>;
 
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
@@ -896,8 +896,8 @@ private:
     auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
     auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
-    auto TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt>;
-    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) -> void;
+    auto TranslateStmt(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Stmt>;
+    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type = Type()) -> void;
     auto TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
     auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 

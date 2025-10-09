@@ -157,7 +157,7 @@ match 1 -> 2 { // expected-error: Expected type
     _: 3;
 }
 
-i8 y = match 1 { // expected-error: Cannot convert expression of type 'int' to 'i8'
+i8 y = match 1 {
     1: 2;
     _: 4;
 };

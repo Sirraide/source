@@ -1,0 +1,4 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc f6 = {1;}; // expected-error: '= {' is invalid; remove the '='

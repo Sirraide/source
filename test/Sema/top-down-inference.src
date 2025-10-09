@@ -1,0 +1,42 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+proc f1 -> i8 {
+    return {{{ 1; }}};
+}
+
+proc f2 -> i8 {
+    return 1 + 1;
+}
+
+proc f3 -> i8 {
+    return {{{ 1 + 2 * 3 / 4; }}};
+}
+
+proc f4 -> i8 = 1;
+proc f5 -> i8 = (1);
+proc f6 -> i8 = (1) + (2) + {3;};
+proc f7 -> i8 = ({{{1;}}});
+
+proc f8 (int x) -> i8 = match x {
+    2: 3;
+    _: 4;
+}
+
+proc f9 (int x) -> i8 = match x {
+    2: 3;
+    _: match x {
+        3: 4;
+        _: 5;
+    };
+}
+
+proc f10 -> range<i17> = 1..=3;
+
+proc f11 {
+    i8 x = 4;
+    i8 x = (4);
+    i8 x = ({4;});
+    i8 x = if true then ({4;}) else 7;
+}

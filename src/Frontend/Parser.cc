@@ -1333,7 +1333,8 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     // Parse the body.
     Ptr<ParsedStmt> body;
-    if (Consume(Tk::Assign)) {
+    if (Location assign_loc; Consume(assign_loc, Tk::Assign)) {
+        if (At(Tk::LBrace)) Error({assign_loc, tok->location}, "'%1(= {{%)' is invalid; remove the '%1(=%)'");
         body = ParseExpr();
         if (not isa_and_present<ParsedBlockExpr, ParsedMatchExpr>(body.get_or_null()))
             ExpectSemicolon();

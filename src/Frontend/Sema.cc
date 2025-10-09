@@ -11,6 +11,7 @@
 #include <llvm/Support/Casting.h>
 #include "base/StringUtils.hh"
 #include "srcc/AST/AST.hh"
+#include "srcc/AST/Enums.hh"
 #include "srcc/AST/Stmt.hh"
 #include "srcc/AST/Type.hh"
 
@@ -2913,6 +2914,17 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
 
+    auto BuildIntOp = [&](ValueCategory vc = Expr::RValue) -> Ptr<Expr> {
+        if (not operand->type->is_integer()) return Error(
+            loc,
+            "Operand of '%1({}%)' must be an integer, but was '{}'",
+            Spelling(op),
+            operand->type
+        );
+
+        return Build(operand->type, vc);
+    };
+
     if (postfix) {
         switch (op) {
             default: Unreachable("Invalid postfix operator: {}", op);
@@ -2924,14 +2936,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
                     Spelling(op)
                 );
 
-                if (not operand->type->is_integer()) return Error(
-                    loc,
-                    "Operand of '%1({}%)' must be an integer, but was '{}'",
-                    Spelling(op),
-                    operand->type
-                );
-
-                return Build(operand->type, Expr::RValue);
+                return BuildIntOp();
             }
         }
     }
@@ -2975,33 +2980,39 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
             return Build(Type::BoolTy, Expr::RValue);
         }
 
-        // Arithmetic operators.
-        case Tk::Minus:
-        case Tk::Plus:
-        case Tk::Tilde: {
-            if (not MakeRValue(Type::IntTy, operand, "Operand", Spelling(op))) return {};
-            return Build(Type::IntTy, Expr::RValue);
+        // Check for overflow if the argument is a literal.
+        case Tk::Minus: {
+            if (auto i = dyn_cast<IntLitExpr>(operand->ignore_parens())) {
+                auto val = i->storage.value();
+                val.negate();
+                if (val.isStrictlyPositive()) Error(
+                    loc,
+                    "Type '{}' cannot represent the value '%1(-%)%5({}%)'",
+                    i->type,
+                    i->storage.str(false)
+                );
+            }
+
+            operand = LValueToRValue(operand);
+            return BuildIntOp();
         }
+
+        // Arithmetic operators.
+        case Tk::Plus:
+        case Tk::Tilde:
+            operand = LValueToRValue(operand);
+            return BuildIntOp();
 
         // Increment and decrement.
         case Tk::MinusMinus:
         case Tk::PlusPlus: {
-            // Operand must be an lvalue.
             if (operand->value_category != Expr::LValue) return Error(
                 operand->location(),
                 "Invalid operand for '{}'",
                 Spelling(op)
             );
 
-            // Operand must be an integer.
-            if (operand->type != Type::IntTy) return Error(
-                operand->location(),
-                "Operand of '{}' must be an integer",
-                Spelling(op)
-            );
-
-            // Result is an lvalue.
-            return Build(Type::IntTy, Expr::LValue);
+            return BuildIntOp(Expr::LValue);
         }
     }
 }
@@ -3139,7 +3150,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     Assert(scope_stack.size() == 1);
 }
 
-void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed) {
+void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type) {
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
@@ -3177,7 +3188,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
             continue;
         }
 
-        auto stmt = TranslateStmt(p);
+        auto stmt = TranslateStmt(p, p == parsed.back() ? desired_type : Type());
         if (stmt.present()) stmts.push_back(stmt.get());
     }
 }
@@ -3185,31 +3196,31 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed, Type) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
     return BuildAssertExpr(cond, msg, parsed->is_compile_time, parsed->loc);
 }
 
-auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr) -> Ptr<Stmt> {
-    auto lhs = TRY(TranslateExpr(expr->lhs));
-    auto rhs = TRY(TranslateExpr(expr->rhs));
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Type desired_type) -> Ptr<Stmt> {
+    auto lhs = TRY(TranslateExpr(expr->lhs, desired_type));
+    auto rhs = TRY(TranslateExpr(expr->rhs, desired_type));
     return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);
 }
 
-auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     EnterScope scope{*this};
     SmallVector<Stmt*> stmts;
-    TranslateStmts(stmts, parsed->stmts());
+    TranslateStmts(stmts, parsed->stmts(), desired_type);
     return BuildBlockExpr(scope.get(), stmts, parsed->loc);
 }
 
-auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Type) -> Ptr<Stmt> {
     return new (*M) BoolLitExpr(parsed->value, parsed->loc);
 }
 
-auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
     // Translate arguments.
     SmallVector<Expr*> args;
     bool errored = false;
@@ -3240,7 +3251,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed) -> Ptr<Stmt> {
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
-auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type) -> Ptr<Stmt> {
     return BuildDeclRefExpr(parsed->names(), parsed->loc);
 }
 
@@ -3302,32 +3313,32 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     return cast<Decl>(res.get());
 }
 
-auto Sema::TranslateExportDecl(ParsedExportDecl*) -> Decl* {
+auto Sema::TranslateExportDecl(ParsedExportDecl*, Type) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
-auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed, Type) -> Ptr<Stmt> {
     return new (*M) EmptyStmt(parsed->loc);
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
-auto Sema::TranslateExpr(ParsedStmt* parsed) -> Ptr<Expr> {
-    auto stmt = TranslateStmt(parsed);
+auto Sema::TranslateExpr(ParsedStmt* parsed, Type desired_type) -> Ptr<Expr> {
+    auto stmt = TranslateStmt(parsed, desired_type);
     if (stmt.invalid()) return nullptr;
     if (not isa<Expr>(stmt.get())) return Error(parsed->loc, "Expected expression");
     return cast<Expr>(stmt.get());
 }
 
-auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Type) -> Ptr<Stmt> {
     auto arg = TRY(TranslateStmt(parsed->expr));
     return BuildEvalExpr(arg, parsed->loc);
 }
 
-auto Sema::TranslateFieldDecl(ParsedFieldDecl*) -> Decl* {
+auto Sema::TranslateFieldDecl(ParsedFieldDecl*, Type) -> Decl* {
     Unreachable("Handled as part of StructDecl translation");
 }
 
-auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
     // The number of variables must be less than or equal to the number of ranges.
     if (parsed->vars().size() > parsed->ranges().size()) return Error(
         parsed->loc,
@@ -3402,30 +3413,30 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed) -> Ptr<Stmt> {
     return ForStmt::Create(*M, enum_var, vars, ranges, body, parsed->loc);
 }
 
-auto Sema::TranslateIfExpr(ParsedIfExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     if (parsed->is_static) return BuildStaticIfExpr(cond, parsed->then, parsed->else_, parsed->loc);
-    auto then = TRY(TranslateStmt(parsed->then));
-    Ptr else_ = parsed->else_ ? TRY(TranslateStmt(parsed->else_.get())) : nullptr;
+    auto then = TRY(TranslateStmt(parsed->then, desired_type));
+    Ptr else_ = parsed->else_ ? TRY(TranslateStmt(parsed->else_.get(), desired_type)) : nullptr;
     return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
-auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
-    // If the value fits in an 'int', its type is 'int'.
+auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    // Determine the type of this.
+    //
+    // If we have a desired type, and the value fits in that type,
+    // then the type of the literal is that type. Otherwise, if the
+    // value fits in an 'int', its type is 'int'. If not, the type
+    // is the smallest power of two large enough to store the value.
+    Type ty;
     auto val = parsed->storage.value();
-    auto small = val.tryZExtValue();
-    if (small.has_value()) return new (*M) IntLitExpr(
-        Type::IntTy,
-        M->store_int(APInt(u32(Type::IntTy->memory_size(*M).bits()), u64(*small), false)),
-        parsed->loc
-    );
-
-    // Otherwise, the type is the smallest power of two large enough
-    // to store the value.
-    auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits()));
-
-    // Too big.
-    if (bits > IntType::MaxBits) {
+    if (desired_type and desired_type->is_integer() and IntegerLiteralFitsInType(val, desired_type, false)) {
+        ty = desired_type;
+    } else if (IntegerLiteralFitsInType(val, Type::IntTy, false)) {
+        ty = Type::IntTy;
+    } else if (auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits())); bits <= IntType::MaxBits) {
+        ty = IntType::Get(*M, bits);
+    } else {
         // Print and colour the type names manually here since we can’t
         // even create a type this large properly...
         Error(parsed->loc, "Sorry, we can’t compile a number that big :(");
@@ -3441,20 +3452,26 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed) -> Ptr<Stmt> {
         return nullptr;
     }
 
+    auto desired_bits = ty->bit_width(*M);
+    auto stored_bits = Size::Bits(val.getBitWidth());
+    auto storage = desired_bits == stored_bits
+        ? parsed->storage
+        : M->store_int(val.zextOrTrunc(unsigned(desired_bits.bits())));
+
     return new (*M) IntLitExpr(
-        IntType::Get(*M, bits),
-        parsed->storage,
+        ty,
+        storage,
         parsed->loc
     );
 }
 
-auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
     Ptr<Stmt> body;
     if (auto b = parsed->body.get_or_null()) body = TRY(TranslateStmt(b));
     return new (*M) LoopExpr(body, parsed->loc);
 }
 
-auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     SmallVector<MatchCase> cases;
     bool ok = true;
 
@@ -3471,7 +3488,7 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
         : Type::DeducedTy;
 
     for (auto c : parsed->cases()) {
-        auto body = TranslateStmt(c.body);
+        auto body = TranslateStmt(c.body, desired_type);
         if (not body) ok = false;
 
         // The wildcard pattern isn’t an expression and requires special handling.
@@ -3499,7 +3516,7 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed) -> Ptr<Stmt> {
     return BuildMatchExpr(control_expr, ty, cases, parsed->loc);
 }
 
-auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
 
     // Struct member access.
@@ -3579,11 +3596,11 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed) -> Ptr<Stmt> {
     return BuildBuiltinMemberAccessExpr(kind.value(), base, parsed->loc);
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr* parsed) -> Ptr<Stmt> {
-    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner)), parsed->loc);
+auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
 }
 
-auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
     SmallVector<Expr*> exprs;
     SmallVector<Type> types;
     bool ok = true;
@@ -3602,7 +3619,7 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed) -> Ptr<Stmt> {
     return TupleExpr::Create(*M, tt, exprs, parsed->loc);
 }
 
-auto Sema::TranslateVarDecl(ParsedVarDecl* parsed) -> Decl* {
+auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     if (parsed->is_static) Todo();
     auto decl = MakeLocal(
         TranslateType(parsed->type),
@@ -3621,7 +3638,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed) -> Decl* {
     Ptr<Expr> init;
     bool init_valid = true;
     if (auto val = parsed->init.get_or_null()) {
-        init = TranslateExpr(val);
+        init = TranslateExpr(val, decl->type != Type::DeducedTy ? decl->type : Type());
         init_valid = init.present();
 
         // If the initialiser is invalid, we can get bogus errors
@@ -3699,11 +3716,12 @@ auto Sema::TranslateProcBody(
     }
 
     // Translate body.
-    auto body = TranslateExpr(parsed_body);
+    auto ret = decl->return_type();
+    auto body = TranslateExpr(parsed_body, ret != Type::DeducedTy ? ret : Type());
     if (body.invalid()) {
         // If we’re attempting to deduce the return type of this procedure,
         // but the body contains an error, just set it to void.
-        if (decl->return_type() == Type::DeducedTy) {
+        if (ret == Type::DeducedTy) {
             decl->type = ProcType::AdjustRet(*M, decl->proc_type(), Type::VoidTy);
             decl->set_invalid();
         }
@@ -3713,7 +3731,7 @@ auto Sema::TranslateProcBody(
     return BuildProcBody(decl, body.get());
 }
 
-auto Sema::TranslateProcDecl(ParsedProcDecl*) -> Decl* {
+auto Sema::TranslateProcDecl(ParsedProcDecl*, Type) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
@@ -3751,7 +3769,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 }
 
 /// Dispatch to translate a statement.
-auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateStmt(ParsedStmt* parsed, Type desired_type) -> Ptr<Stmt> {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
 #define PARSE_TREE_LEAF_TYPE(node)             \
@@ -3761,14 +3779,14 @@ auto Sema::TranslateStmt(ParsedStmt* parsed) -> Ptr<Stmt> {
         return BuildTypeExpr(ty, parsed->loc); \
     }
 #define PARSE_TREE_LEAF_NODE(node) \
-    case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed));
+    case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed), desired_type);
 #include "srcc/ParseTree.inc"
     }
 
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
 }
 
-auto Sema::TranslateStructDecl(ParsedStructDecl*) -> Decl* {
+auto Sema::TranslateStructDecl(ParsedStructDecl*, Type) -> Decl* {
     Unreachable("Should not be translated normally");
 }
 
@@ -3811,23 +3829,28 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
 }
 
 /// Translate a string literal.
-auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed, Type) -> Ptr<Stmt> {
     return StrLitExpr::Create(*M, parsed->value, parsed->loc);
 }
 
 /// Translate a return expression.
-auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed, Type) -> Ptr<Stmt> {
     Ptr<Expr> ret_val;
-    if (parsed->value.present()) ret_val = TranslateExpr(parsed->value.get());
+    if (parsed->value.present()) {
+        ret_val = TranslateExpr(
+            parsed->value.get(),
+            curr_proc().proc->return_type()
+        );
+    }
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
 
-auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed) -> Ptr<Stmt> {
-    auto arg = TRY(TranslateExpr(parsed->arg));
+auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    auto arg = TRY(TranslateExpr(parsed->arg, desired_type));
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
-auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed) -> Ptr<Stmt> {
+auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     auto body = TRY(TranslateStmt(parsed->body));
     return BuildWhileStmt(cond, body, parsed->loc);
