@@ -79,16 +79,6 @@ const llvm::StringMap<Tk> keywords = {
     {"while", Tk::While},
     {"with", Tk::With},
     {"xor", Tk::Xor},
-    {"__srcc_ffi_char", Tk::CChar},
-    {"__srcc_ffi_char16", Tk::CChar16T},
-    {"__srcc_ffi_char32", Tk::CChar32T},
-    {"__srcc_ffi_int", Tk::CInt},
-    {"__srcc_ffi_long", Tk::CLong},
-    {"__srcc_ffi_longdouble", Tk::CLongDouble},
-    {"__srcc_ffi_longlong", Tk::CLongLong},
-    {"__srcc_ffi_short", Tk::CShort},
-    {"__srcc_ffi_size_t", Tk::CSizeT},
-    {"__srcc_ffi_wchar", Tk::CWCharT},
 };
 
 bool Parser::IsKeyword(Tk t) {

@@ -109,13 +109,12 @@ public:
     llvm::LLVMContext llvm_context;
 
     /// FFI Types.
-    Type FFIBoolTy; // FIXME: REMOVE THIS.
     Type FFICharTy;
+    Type FFIWCharTy;
     Type FFIShortTy;
     Type FFIIntTy;
     Type FFILongTy;
     Type FFILongLongTy;
-    Type FFISizeTy;
 
     /// Convenience accessors because they’re used often.
     Type I8Ty;

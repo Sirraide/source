@@ -55,13 +55,12 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     I128Ty = IntType::Get(*this, Size::Bits(128));
 
     // Initialise FFI types.
-    FFIBoolTy = IntType::Get(*this, Size::Bits(target().clang().getBoolWidth()));
     FFICharTy = IntType::Get(*this, Size::Bits(target().clang().getCharWidth()));
+    FFIWCharTy = IntType::Get(*this, Size::Bits(target().clang().getWCharWidth()));
     FFIShortTy = IntType::Get(*this, Size::Bits(target().clang().getShortWidth()));
     FFIIntTy = IntType::Get(*this, Size::Bits(target().clang().getIntWidth()));
     FFILongTy = IntType::Get(*this, Size::Bits(target().clang().getLongWidth()));
     FFILongLongTy = IntType::Get(*this, Size::Bits(target().clang().getLongLongWidth()));
-    FFISizeTy = IntType::Get(*this, Size::Bits(target().clang().getTypeWidth(target().clang().getSizeType())));
 
     // Initialise other cached types.
     StrLitTy = SliceType::Get(*this, I8Ty);

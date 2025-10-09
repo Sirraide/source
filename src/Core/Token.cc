@@ -70,18 +70,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::While: return "while";
         case Tk::With: return "with";
         case Tk::Xor: return "xor";
-        case Tk::CChar8T: return "__srcc_ffi_char8";
-        case Tk::CChar16T: return "__srcc_ffi_char16";
-        case Tk::CChar32T: return "__srcc_ffi_char32";
-        case Tk::CChar: return "__srcc_ffi_char";
-        case Tk::CInt: return "__srcc_ffi_int";
-        case Tk::CLong: return "__srcc_ffi_long";
-        case Tk::CLongDouble: return "__srcc_ffi_longdouble";
-        case Tk::CLongLong: return "__srcc_ffi_longlong";
         case Tk::Continue: return "continue";
-        case Tk::CShort: return "__srcc_ffi_short";
-        case Tk::CSizeT: return "__srcc_ffi_size";
-        case Tk::CWCharT: return "__srcc_ffi_wchar";
 
         case Tk::Semicolon: return ";";
         case Tk::Colon: return ":";

@@ -1,0 +1,10 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+__srcc_ffi_char x;
+__srcc_ffi_wchar x;
+__srcc_ffi_short x;
+__srcc_ffi_int x;
+__srcc_ffi_long x;
+__srcc_ffi_longlong x;

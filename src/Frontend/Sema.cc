@@ -3099,6 +3099,19 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     M->initialiser_proc->scope = global_scope();
     EnterProcedure _{*this, M->initialiser_proc};
 
+    // Initialise FFI types.
+    auto DeclareBuiltinType = [&](String name, Type type) {
+        auto decl = new (*M) TypeDecl(type, name, Location());
+        AddDeclToScope(global_scope(), decl);
+    };
+
+    DeclareBuiltinType("__srcc_ffi_char", M->FFICharTy);
+    DeclareBuiltinType("__srcc_ffi_wchar", M->FFIWCharTy);
+    DeclareBuiltinType("__srcc_ffi_short", M->FFIShortTy);
+    DeclareBuiltinType("__srcc_ffi_int", M->FFIIntTy);
+    DeclareBuiltinType("__srcc_ffi_long", M->FFILongTy);
+    DeclareBuiltinType("__srcc_ffi_longlong", M->FFILongLongTy);
+
     // Translate the preamble first since the runtime and other modules rely
     // on it always being available.
     auto modules = ArrayRef(parsed_modules).drop_front(have_preamble ? 1 : 0);

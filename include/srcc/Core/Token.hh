@@ -39,7 +39,6 @@ enum struct srcc::Tk : base::u8 {
     Bool,
     Break,
     Continue,
-    CShort,
     Defer,
     Delete,
     Do,
@@ -87,18 +86,6 @@ enum struct srcc::Tk : base::u8 {
     While,
     With,
     Xor,
-
-    /// Extension keywords.
-    CChar,
-    CChar8T,
-    CChar16T,
-    CChar32T,
-    CInt,
-    CLong,
-    CLongDouble,
-    CLongLong,
-    CSizeT,
-    CWCharT,
 
     /// Punctuation.
     Semicolon,

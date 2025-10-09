@@ -866,6 +866,7 @@ protected:
         Location location
     ) : Decl{k, name, location}, type{type} {}
 
+public:
     TypeDecl(
         Type type,
         String name,

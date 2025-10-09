@@ -246,7 +246,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         auto TD = T->getAs<clang::TypedefType>();
         TD and TD->getDecl()->getName() == "size_t" and
         T->getCanonicalTypeUnqualified() == AST.getASTContext().getSizeType()
-    ) return S.M->FFISizeTy;
+    ) return Type::IntTy;
 
     // Only handle canonical types from here on.
     T = T->getCanonicalTypeUnqualified().getTypePtr();
@@ -265,6 +265,10 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
                 case K::Char_S:
                 case K::Char_U:
                     return S.M->FFICharTy;
+
+                case K::WChar_S:
+                case K::WChar_U:
+                    return S.M->FFIWCharTy;
 
                 case K::Short:
                 case K::UShort:
