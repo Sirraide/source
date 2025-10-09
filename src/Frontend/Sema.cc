@@ -2876,7 +2876,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     // If the type is zero-sized, there is no need to do anything since we’ll
     // drop it anyway.
     if (auto val = value.get_or_null())
-        value = BuildInitialiser(proc->return_type(), {val}, loc);
+        value = BuildInitialiser(proc->return_type(), {val}, val->location());
 
     return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
 }

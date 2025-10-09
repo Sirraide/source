@@ -455,7 +455,7 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
             stmts.push_back(s.get());
 
     braces.close();
-    return ParsedBlockExpr::Create(*this, stmts, braces.left);
+    return ParsedBlockExpr::Create(*this, stmts, braces.span());
 }
 
 // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
