@@ -48,11 +48,11 @@ auto Sema::LoadModuleFromArchive(
     EnterScope _{*this};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, p->top_level);
-    return new (*M) ImportedSourceModuleDecl(
+    return new (*tu) ImportedSourceModuleDecl(
         *curr_scope(),
         logical_name,
         linkage_name,
-        M->save(mod_path.string()),
+        tu->save(mod_path.string()),
         import_loc
     );
 }
@@ -67,12 +67,12 @@ void Sema::LoadModule(
     if (is_open) {
         Assert(is_cxx_header);
         if (auto m = ImportCXXHeaders(logical_name, linkage_names, import_loc).get_or_null())
-            M->open_modules.push_back(m);
+            tu->open_modules.push_back(m);
         return;
     }
 
     // Clang imports cannot be cached or redefined.
-    auto& logical = M->logical_imports[logical_name];
+    auto& logical = tu->logical_imports[logical_name];
     if (isa_and_present<ImportedClangModuleDecl>(logical)) {
         Error(import_loc, "Cannot redefine header import '{}'", logical_name);
         Note(logical->location(), "Previous definition was here");
@@ -85,7 +85,7 @@ void Sema::LoadModule(
     }
 
     Assert(linkage_names.size() == 1, "Source module imports should consist of a single physical module");
-    auto& link = M->linkage_imports[linkage_names.front()];
+    auto& link = tu->linkage_imports[linkage_names.front()];
     if (not link) {
         logical = link = LoadModuleFromArchive(logical_name, linkage_names.front(), import_loc).get_or_null();
         return;

@@ -122,12 +122,12 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
     if (not d->valid()) return nullptr;
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
-        case Stmt::Kind::ProcDecl: return new (*M) ProcRefExpr(cast<ProcDecl>(d), loc);
-        case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*M, d, loc);
+        case Stmt::Kind::ProcDecl: return new (*tu) ProcRefExpr(cast<ProcDecl>(d), loc);
+        case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*tu, d, loc);
 
         case Stmt::Kind::TypeDecl:
         case Stmt::Kind::TemplateTypeParamDecl:
-            return new (*M) TypeExpr(cast<TypeDecl>(d)->type, loc);
+            return new (*tu) TypeExpr(cast<TypeDecl>(d)->type, loc);
 
         case Stmt::Kind::LocalDecl:
         case Stmt::Kind::ParamDecl: {
@@ -138,7 +138,7 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
             // entirely anyway.
             if (
                 curr_proc().proc != local->parent and
-                local->type->memory_size(*M) != Size()
+                local->type->memory_size(*tu) != Size()
             ) {
                 local->captured = true;
                 local->parent->introduces_captures = true;
@@ -165,7 +165,7 @@ auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
                 }
             }
 
-            return new (*M) LocalRefExpr(
+            return new (*tu) LocalRefExpr(
                 cast<LocalDecl>(d),
                 local->category,
                 loc
@@ -198,7 +198,7 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_retu
 }
 
 auto Sema::Evaluate(Stmt* s, Location loc) -> Ptr<Expr> {
-    auto value = M->vm.eval(s);
+    auto value = tu->vm.eval(s);
     if (not value.has_value()) return nullptr;
     return MakeConstExpr(s, std::move(*value), loc);
 }
@@ -213,7 +213,7 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
 
 bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
     Assert(ty->is_integer(), "Not an integer: '{}'", ty);
-    auto bits = ty->bit_width(*M);
+    auto bits = ty->bit_width(*tu);
     if (negated) return Size::Bits(i.getSignificantBits()) <= bits;
     else return Size::Bits(i.getActiveBits()) <= bits;
 }
@@ -231,7 +231,7 @@ bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
 bool Sema::IsZeroSizedOrIncomplete(Type ty) {
     Assert(ty, "Must check for null type before calling this");
     if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) return true;
-    return ty->memory_size(*M) == Size();
+    return ty->memory_size(*tu) == Size();
 }
 
 auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult {
@@ -274,8 +274,8 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
             // lookup finds a module name, because a module name alone is useless
             // if it’s not on the lhs of `::`.
             case NotFound: {
-                auto it = M->logical_imports.find(first.str());
-                if (it == M->logical_imports.end() or not it->getValue()) return res;
+                auto it = tu->logical_imports.find(first.str());
+                if (it == tu->logical_imports.end() or not it->getValue()) return res;
                 if (isa<ImportedSourceModuleDecl>(it->second)) Todo();
 
                 // We found an imported C++ header; do a C++ lookup.
@@ -325,9 +325,9 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope
     }
 
     // If we couldn’t find it, try to find it in the open modules.
-    if (not M->open_modules.empty()) {
-        Assert(M->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
-        auto mod = M->open_modules.front();
+    if (not tu->open_modules.empty()) {
+        Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
+        auto mod = tu->open_modules.front();
         if (isa<ImportedSourceModuleDecl>(mod)) Todo();
         return LookUpCXXName(&cast<ImportedClangModuleDecl>(mod)->clang_ast, name);
     }
@@ -350,7 +350,7 @@ auto Sema::LookUpName(
 
 auto Sema::LValueToRValue(Expr* expr) -> Expr* {
     if (expr->is_rvalue()) return expr;
-    return new (*M) CastExpr(
+    return new (*tu) CastExpr(
         expr->type,
         CastExpr::LValueToRValue,
         expr,
@@ -377,7 +377,7 @@ auto Sema::MakeConstExpr(
 ) -> Expr* {
     if (isa_and_present<BoolLitExpr, StrLitExpr, IntLitExpr, TypeExpr>(evaluated_stmt))
         return cast<Expr>(evaluated_stmt);
-    return new (*M) ConstExpr(*M, std::move(val), loc, evaluated_stmt);
+    return new (*tu) ConstExpr(*tu, std::move(val), loc, evaluated_stmt);
 }
 
 auto Sema::MakeLocal(
@@ -386,7 +386,7 @@ auto Sema::MakeLocal(
     String name,
     Location loc
 ) -> LocalDecl* {
-    auto local = new (*M) LocalDecl(
+    auto local = new (*tu) LocalDecl(
         ty,
         vc,
         name,
@@ -426,7 +426,7 @@ bool Sema::MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
 
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->is_lvalue()) return expr;
-    return new (*M) MaterialiseTemporaryExpr(expr, expr->location());
+    return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
 auto Sema::MaterialiseVariable(Expr* expr) -> Expr* {
@@ -472,7 +472,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
     switch (conv.kind) {
         using K = Conversion::Kind;
         default: Unreachable();
-        case K::IntegralCast: return new (*M) CastExpr(
+        case K::IntegralCast: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::Integral,
             e,
@@ -483,7 +483,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
         case K::LValueToRValue:
             return LValueToRValue(e);
 
-        case K::MaterialisePoison: return new (*M) CastExpr(
+        case K::MaterialisePoison: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
             e,
@@ -495,7 +495,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
         case K::MaterialiseTemporary:
             return MaterialiseTemporary(e);
 
-        case K::RangeCast: return new (*M) CastExpr(
+        case K::RangeCast: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::Range,
             e,
@@ -517,7 +517,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             if (auto te = dyn_cast<TupleExpr>(e)) return te->values().front();
             auto ty = cast<TupleType>(e->type);
             auto temp = MaterialiseTemporary(e);
-            return new (*M) MemberAccessExpr(temp, ty->layout().fields().front(), loc);
+            return new (*tu) MemberAccessExpr(temp, ty->layout().fields().front(), loc);
         }
     }
 }
@@ -529,7 +529,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             Assert(exprs.size() == 1);
             auto& data = conv.data.get<Conversion::ArrayBroadcastData>();
             exprs.front() = ApplyConversionSequence(exprs, *data.seq, loc);
-            exprs.front() = new (*M) ArrayBroadcastExpr(data.type, exprs.front(), loc);
+            exprs.front() = new (*tu) ArrayBroadcastExpr(data.type, exprs.front(), loc);
             return;
         }
 
@@ -542,7 +542,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             // And add the default conversion for the remaining elements if there is one.
             if (auto c = data.broadcast_initialiser()) exprs.push_back(ApplyConversionSequence({}, *c, loc));
 
-            auto init = ArrayInitExpr::Create(*M, data.ty, exprs, loc);
+            auto init = ArrayInitExpr::Create(*tu, data.ty, exprs, loc);
             exprs.clear();
             exprs.push_back(init);
             return;
@@ -550,7 +550,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
 
         case K::DefaultInit: {
             Assert(exprs.empty());
-            exprs.push_back(new (*M) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
+            exprs.push_back(new (*tu) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
             return;
         }
 
@@ -578,7 +578,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::RecordInit: {
             auto& data = conv.data.get<Conversion::RecordInitData>();
             for (auto [e, seq] : zip(exprs, data.field_convs)) e = ApplyConversionSequence(e, seq, loc);
-            auto e = TupleExpr::Create(*M, data.ty, exprs, loc);
+            auto e = TupleExpr::Create(*tu, data.ty, exprs, loc);
             exprs.clear();
             exprs.push_back(e);
             return;
@@ -881,7 +881,7 @@ auto Sema::BuildConversionSequence(
 
         // If we ultimately found a literal, evaluate the original expression.
         if (isa_and_present<IntLitExpr>(lit)) {
-            auto val = M->vm.eval(e, false);
+            auto val = tu->vm.eval(e, false);
             return val and IntegerLiteralFitsInType(val->cast<APInt>(), ty, negated);
         }
 
@@ -1064,7 +1064,7 @@ auto Sema::InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> Pro
     );
 
     // Cache the instantiation.
-    M->template_instantiations[info.pattern].push_back(s->instantiation);
+    tu->template_instantiations[info.pattern].push_back(s->instantiation);
 
     // Translate the body and record the instantiation.
     return TranslateProc(
@@ -1110,7 +1110,7 @@ auto Sema::SubstituteTemplate(
             Type ty = DeduceType(parsed.type, i, input_types);
             if (not ty) {
                 info.data = SubstitutionInfo::DeductionFailed{
-                    M->save(name),
+                    tu->save(name),
                     i
                 };
 
@@ -1139,7 +1139,7 @@ auto Sema::SubstituteTemplate(
     // Create a scope for the procedure and save the template arguments there.
     EnterScope scope{*this, ScopeKind::Procedure};
     for (auto [name, d] : deduced)
-        AddDeclToScope(scope.get(), new (*M) TemplateTypeParamDecl(name, d.second));
+        AddDeclToScope(scope.get(), new (*tu) TemplateTypeParamDecl(name, d.second));
 
     // Now that that is done, we can convert the type properly.
     auto ty = TranslateType(proc_template->pattern->type);
@@ -1777,7 +1777,7 @@ void Sema::BoolMatchContext::note_missing(Location match_loc) {
 }
 
 Sema::IntMatchContext::IntMatchContext(Sema& s, Type ty) : MatchContext{s}, ty{ty} {
-    auto int_width = ty->bit_width(*S.M);
+    auto int_width = ty->bit_width(*S.tu);
     min = APInt::getSignedMinValue(unsigned(int_width.bits()));
     max = APInt::getSignedMaxValue(unsigned(int_width.bits()));
 }
@@ -1871,7 +1871,7 @@ auto Sema::IntMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
     // If the expression is a range, convert it to a range rather than a
     // single integer.
     if (isa<RangeType>(pattern->type)) return S.TryBuildInitialiser(
-        RangeType::Get(*S.M, ty),
+        RangeType::Get(*S.tu, ty),
         pattern
     );
 
@@ -1998,7 +1998,7 @@ bool Sema::CheckMatchExhaustive(
 
         // We only really care about constants here.
         auto e = c.cond.expr();
-        auto rv = M->vm.eval(LValueToRValue(e), false);
+        auto rv = tu->vm.eval(LValueToRValue(e), false);
         if (not rv.has_value()) {
             BuildComparison();
             continue;
@@ -2067,14 +2067,14 @@ auto Sema::BuildAssertExpr(
         m->type
     );
 
-    auto a = new (*M) AssertExpr(cond, std::move(msg), false, loc);
+    auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc);
     if (not is_compile_time) return a;
     return Evaluate(a, loc);
 }
 
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
     return BlockExpr::Create(
-        *M,
+        *tu,
         scope,
         stmts,
         loc
@@ -2089,7 +2089,7 @@ auto Sema::BuildBinaryExpr(
 ) -> Ptr<Expr> {
     using enum ValueCategory;
     auto Build = [&](Type ty, ValueCategory cat = RValue) {
-        return new (*M) BinaryExpr(ty, cat, op, lhs, rhs, loc);
+        return new (*tu) BinaryExpr(ty, cat, op, lhs, rhs, loc);
     };
 
     auto ErrorInvalid = [&] {
@@ -2180,7 +2180,7 @@ auto Sema::BuildBinaryExpr(
             // For tuples, the integer must be a compile-time constant, and
             // the result of a subscript operation is a member access.
             if (auto ty = dyn_cast<TupleType>(lhs->type)) {
-                auto res = M->vm.eval(rhs);
+                auto res = tu->vm.eval(rhs);
                 if (not res) return {};
                 auto idx = i64(res->cast<APInt>().getSExtValue());
                 auto tuple_elems = i64(ty->layout().fields().size());
@@ -2192,7 +2192,7 @@ auto Sema::BuildBinaryExpr(
                     ty
                 );
 
-                return new (*M) MemberAccessExpr(lhs, ty->layout().fields()[usz(idx)], loc);
+                return new (*tu) MemberAccessExpr(lhs, ty->layout().fields()[usz(idx)], loc);
             }
 
             // A subscripting operation yields an lvalue.
@@ -2208,7 +2208,7 @@ auto Sema::BuildBinaryExpr(
             if (ty == lhs->type) return lhs;
 
             // Casting between integer types is always allowed.
-            if (lhs->type->is_integer() and ty->is_integer()) return new (*M) CastExpr(
+            if (lhs->type->is_integer() and ty->is_integer()) return new (*tu) CastExpr(
                 ty,
                 CastExpr::Integral,
                 LValueToRValue(lhs),
@@ -2216,7 +2216,7 @@ auto Sema::BuildBinaryExpr(
             );
 
             // Casting to void does nothing.
-            if (ty == Type::VoidTy) return new (*M) CastExpr(
+            if (ty == Type::VoidTy) return new (*tu) CastExpr(
                 ty,
                 CastExpr::ExplicitDiscard,
                 lhs,
@@ -2241,7 +2241,7 @@ auto Sema::BuildBinaryExpr(
         // This is implemented as a function template.
         case Tk::StarStar: {
             if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-            if (lhs->type->bit_width(*M) < Size::Bits(2)) return ErrorExpI1();
+            if (lhs->type->bit_width(*tu) < Size::Bits(2)) return ErrorExpI1();
             return BuildCall(DeclName(Tk::StarStar));
         }
 
@@ -2252,9 +2252,9 @@ auto Sema::BuildBinaryExpr(
 
             // Check that the RHS is not the maximum representable value.
             if (op == Tk::DotDotEq) {
-                auto max = M->vm.eval(rhs, false);
+                auto max = tu->vm.eval(rhs, false);
                 if (max.has_value()) {
-                    auto bits = lhs->type->bit_width(*M);
+                    auto bits = lhs->type->bit_width(*tu);
 
                     // FIXME: Figure out SOME way to make it so BOTH 'a..=b' and 'a..<b' are ALWAYS valid.
                     if (max->cast<APInt>() == APInt::getSignedMaxValue(unsigned(bits.bits()))) {
@@ -2271,7 +2271,7 @@ auto Sema::BuildBinaryExpr(
                 }
             }
 
-            return Build(RangeType::Get(*M, lhs->type));
+            return Build(RangeType::Get(*tu, lhs->type));
         }
 
         // Arithmetic operation.
@@ -2372,8 +2372,8 @@ auto Sema::BuildBinaryExpr(
             if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
 
             // '**=' requires a separate function since it needs to return the lhs.
-            if (lhs->type->bit_width(*M) < Size::Bits(2)) return ErrorExpI1();
-            return CastExpr::Dereference(*M, TRY(BuildCall(DeclName(Tk::StarStarEq))));
+            if (lhs->type->bit_width(*tu) < Size::Bits(2)) return ErrorExpI1();
+            return CastExpr::Dereference(*tu, TRY(BuildCall(DeclName(Tk::StarStarEq))));
         }
     }
 }
@@ -2397,7 +2397,7 @@ auto Sema::BuildBuiltinCallExpr(
             if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
             for (auto& arg : actual_args) {
                 if (
-                    arg->type != M->StrLitTy and
+                    arg->type != tu->StrLitTy and
                     arg->type != Type::IntTy and
                     arg->type != Type::BoolTy
                 ) return Error( //
@@ -2407,12 +2407,12 @@ auto Sema::BuildBuiltinCallExpr(
                 );
                 arg = LValueToRValue(arg);
             }
-            return BuiltinCallExpr::Create(*M, builtin, Type::VoidTy, actual_args, call_loc);
+            return BuiltinCallExpr::Create(*tu, builtin, Type::VoidTy, actual_args, call_loc);
         }
 
         case BuiltinCallExpr::Builtin::Unreachable: {
             if (not ForbidArgs("__srcc_unreachable")) return nullptr;
-            return BuiltinCallExpr::Create(*M, builtin, Type::NoReturnTy, {}, call_loc);
+            return BuiltinCallExpr::Create(*tu, builtin, Type::NoReturnTy, {}, call_loc);
         }
     }
 
@@ -2437,7 +2437,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::IntTy;
 
             case AK::TypeName:
-                return M->StrLitTy;
+                return tu->StrLitTy;
 
             case AK::RangeStart:
             case AK::RangeEnd:
@@ -2448,12 +2448,12 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
-                return PtrType::Get(*M, cast<SliceType>(operand->type)->elem());
+                return PtrType::Get(*tu, cast<SliceType>(operand->type)->elem());
         }
         Unreachable();
     }();
 
-    return new (*M) BuiltinMemberAccessExpr{
+    return new (*tu) BuiltinMemberAccessExpr{
         type,
         Expr::RValue,
         operand,
@@ -2475,7 +2475,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
     // If the ‘callee’ is a type, then this is an initialiser call.
     else if (isa<TypeExpr>(callee_expr)) {
-        auto type = M->vm.eval(callee_expr);
+        auto type = tu->vm.eval(callee_expr);
         if (not type) return ICE(
             callee_expr->location(),
             "Failed to evaluate expression designating a type"
@@ -2586,7 +2586,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     // Finally, create the call.
     auto proc = cast<ProcType>(resolved_callee->type);
     return CallExpr::Create(
-        *M,
+        *tu,
         proc->ret(),
         Expr::RValue,
         resolved_callee,
@@ -2606,7 +2606,7 @@ auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>
     if (
         res.result == LookupResult::Reason::Ambiguous and
         isa<ProcDecl, ProcTemplateDecl>(res.decls.front())
-    ) return OverloadSetExpr::Create(*M, res.decls, loc);
+    ) return OverloadSetExpr::Create(*tu, res.decls, loc);
 
     ReportLookupFailure(res, loc);
     return {};
@@ -2625,7 +2625,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
 
 auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr> {
     auto Build = [&](Type ty, ValueCategory val) {
-        return new (*M) IfExpr(
+        return new (*tu) IfExpr(
             ty,
             val,
             cond,
@@ -2653,7 +2653,7 @@ auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) ->
     // Otherwise, the type and value category are the common type / vc.
     Expr* exprs[2] { cast<Expr>(then), cast<Expr>(else_.get()) };
     auto tvc = ComputeCommonTypeAndValueCategory(exprs);
-    return new (*M) IfExpr(
+    return new (*tu) IfExpr(
         tvc.type(),
         tvc.value_category(),
         cond,
@@ -2758,7 +2758,7 @@ auto Sema::BuildMatchExpr(
     }
 
     return MatchExpr::Create(
-        *M,
+        *tu,
         control_expr,
         tvc.type(),
         tvc.value_category(),
@@ -2775,7 +2775,7 @@ auto Sema::BuildParamDecl(
     String name,
     Location loc
 ) -> ParamDecl* {
-    auto decl = new (*M) ParamDecl(param, Expr::LValue, name, proc.proc, index, with_param, loc);
+    auto decl = new (*tu) ParamDecl(param, Expr::LValue, name, proc.proc, index, with_param, loc);
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
@@ -2805,9 +2805,9 @@ auto Sema::BuildProcDeclInitial(
     ProcDecl* parent{};
     if (pattern) parent = pattern->parent.get_or_null();
     else parent = curr_proc().proc;
-    if (parent == M->initialiser_proc) parent = {};
+    if (parent == tu->initialiser_proc) parent = {};
     auto proc = ProcDecl::Create(
-        *M,
+        *tu,
         ty,
         name,
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,
@@ -2851,7 +2851,7 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     if (proc->return_type() == Type::VoidTy) {
         Assert(isa<BlockExpr>(body));
         auto ret = BuildReturnExpr(nullptr, body->location(), true);
-        return BlockExpr::Create(*M, nullptr, {body, ret}, body->location());
+        return BlockExpr::Create(*tu, nullptr, {body, ret}, body->location());
     }
 
     // In any other case, we’re missing a return statement and have
@@ -2870,7 +2870,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
         auto proc_type = proc->proc_type();
         Type deduced = Type::VoidTy;
         if (auto val = value.get_or_null()) deduced = val->type;
-        proc->type = ProcType::AdjustRet(*M, proc_type, deduced);
+        proc->type = ProcType::AdjustRet(*tu, proc_type, deduced);
     }
 
     // Perform any necessary conversions.
@@ -2880,7 +2880,7 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> Retu
     if (auto val = value.get_or_null())
         value = BuildInitialiser(proc->return_type(), {val}, val->location());
 
-    return new (*M) ReturnExpr(value.get_or_null(), loc, implicit);
+    return new (*tu) ReturnExpr(value.get_or_null(), loc, implicit);
 }
 
 auto Sema::BuildStaticIfExpr(
@@ -2891,7 +2891,7 @@ auto Sema::BuildStaticIfExpr(
 ) -> Ptr<Stmt> {
     // Otherwise, check this now.
     if (not MakeCondition(cond, "#if")) return {};
-    auto val = M->vm.eval(cond);
+    auto val = tu->vm.eval(cond);
     if (not val) return {};
 
     // If there is no else clause, and the condition is false, return
@@ -2907,12 +2907,12 @@ auto Sema::BuildStaticIfExpr(
 }
 
 auto Sema::BuildTypeExpr(Type ty, Location loc) -> TypeExpr* {
-    return new (*M) TypeExpr(ty, loc);
+    return new (*tu) TypeExpr(ty, loc);
 }
 
 auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr> {
     auto Build = [&](Type ty, ValueCategory cat) {
-        return new (*M) UnaryExpr(ty, cat, op, operand, postfix, loc);
+        return new (*tu) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
 
     auto BuildIntOp = [&](ValueCategory vc = Expr::RValue) -> Ptr<Expr> {
@@ -2959,7 +2959,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
             // to know what an lvalue is (or why something isn’t an lvalue in
             // the case of e.g. if/match).
             if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
-            return Build(PtrType::Get(*M, operand->type), Expr::RValue);
+            return Build(PtrType::Get(*tu, operand->type), Expr::RValue);
         }
 
         // Pointer -> Lvalue.
@@ -3020,7 +3020,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
 
 auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt> {
     if (not MakeCondition(cond, "while")) return {};
-    return new (*M) WhileStmt(cond, body, loc);
+    return new (*tu) WhileStmt(cond, body, loc);
 }
 
 // ============================================================================
@@ -3034,7 +3034,7 @@ Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
 
 Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind) : S{S} {
     Assert(not S.scope_stack.empty(), "Should not be used for the global scope");
-    scope = S.M->create_scope(S.curr_scope(), kind);
+    scope = S.tu->create_scope(S.curr_scope(), kind);
     S.scope_stack.push_back(scope);
 }
 
@@ -3067,7 +3067,7 @@ auto Sema::Translate(
     Sema S{first->context()};
 
     // Create the TU.
-    S.M = TranslationUnit::Create(
+    S.tu = TranslationUnit::Create(
         first->context(),
         opts,
         first->name,
@@ -3083,34 +3083,34 @@ auto Sema::Translate(
 
     // Translate it.
     S.Translate(have_preamble, load_runtime);
-    return std::move(S.M);
+    return std::move(S.tu);
 }
 
 void Sema::Translate(bool have_preamble, bool load_runtime) {
     // Take ownership of any resources of the parsed modules.
     for (auto& p : parsed_modules) {
-        M->add_allocator(std::move(p->string_alloc));
-        M->add_integer_storage(std::move(p->integers));
+        tu->add_allocator(std::move(p->string_alloc));
+        tu->add_integer_storage(std::move(p->integers));
         for (auto& [decl, info] : p->template_deduction_infos)
             parsed_template_deduction_infos[decl] = std::move(info);
     }
 
     // Set up scope stacks.
-    M->initialiser_proc->scope = global_scope();
-    EnterProcedure _{*this, M->initialiser_proc};
+    tu->initialiser_proc->scope = global_scope();
+    EnterProcedure _{*this, tu->initialiser_proc};
 
     // Initialise FFI types.
     auto DeclareBuiltinType = [&](String name, Type type) {
-        auto decl = new (*M) TypeDecl(type, name, Location());
+        auto decl = new (*tu) TypeDecl(type, name, Location());
         AddDeclToScope(global_scope(), decl);
     };
 
-    DeclareBuiltinType("__srcc_ffi_char", M->FFICharTy);
-    DeclareBuiltinType("__srcc_ffi_wchar", M->FFIWCharTy);
-    DeclareBuiltinType("__srcc_ffi_short", M->FFIShortTy);
-    DeclareBuiltinType("__srcc_ffi_int", M->FFIIntTy);
-    DeclareBuiltinType("__srcc_ffi_long", M->FFILongTy);
-    DeclareBuiltinType("__srcc_ffi_longlong", M->FFILongLongTy);
+    DeclareBuiltinType("__srcc_ffi_char", tu->FFICharTy);
+    DeclareBuiltinType("__srcc_ffi_wchar", tu->FFIWCharTy);
+    DeclareBuiltinType("__srcc_ffi_short", tu->FFIShortTy);
+    DeclareBuiltinType("__srcc_ffi_int", tu->FFIIntTy);
+    DeclareBuiltinType("__srcc_ffi_long", tu->FFILongTy);
+    DeclareBuiltinType("__srcc_ffi_longlong", tu->FFILongLongTy);
 
     // Translate the preamble first since the runtime and other modules rely
     // on it always being available.
@@ -3145,11 +3145,11 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
 
     // Collect all statements and translate them.
     for (auto& p : modules) TranslateStmts(top_level_stmts, p->top_level);
-    M->file_scope_block = BlockExpr::Create(*M, global_scope(), top_level_stmts, Location{});
+    tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, Location{});
 
     // File scope block should never be dependent.
-    M->initialiser_proc->finalise(
-        BuildProcBody(M->initialiser_proc, M->file_scope_block),
+    tu->initialiser_proc->finalise(
+        BuildProcBody(tu->initialiser_proc, tu->file_scope_block),
         curr_proc().locals
     );
 
@@ -3231,7 +3231,7 @@ auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Type desired_type) -> Ptr
 }
 
 auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Type) -> Ptr<Stmt> {
-    return new (*M) BoolLitExpr(parsed->value, parsed->loc);
+    return new (*tu) BoolLitExpr(parsed->value, parsed->loc);
 }
 
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
@@ -3283,7 +3283,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     if (auto exp = dyn_cast<ParsedExportDecl>(d)) {
         auto decl = TranslateDeclInitial(exp->decl);
         if (decl and decl->present()) {
-            AddDeclToScope(&M->exports, decl->get());
+            AddDeclToScope(&tu->exports, decl->get());
 
             // If this declaration has linkage, adjust it now.
             if (auto object = dyn_cast<ObjectDecl>(decl->get()))
@@ -3332,7 +3332,7 @@ auto Sema::TranslateExportDecl(ParsedExportDecl*, Type) -> Decl* {
 }
 
 auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed, Type) -> Ptr<Stmt> {
-    return new (*M) EmptyStmt(parsed->loc);
+    return new (*tu) EmptyStmt(parsed->loc);
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
@@ -3424,7 +3424,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
 
     // Now that we have the variables, translate the loop body.
     auto body = TRY(TranslateStmt(parsed->body));
-    return ForStmt::Create(*M, enum_var, vars, ranges, body, parsed->loc);
+    return ForStmt::Create(*tu, enum_var, vars, ranges, body, parsed->loc);
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -3449,7 +3449,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
     } else if (IntegerLiteralFitsInType(val, Type::IntTy, false)) {
         ty = Type::IntTy;
     } else if (auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits())); bits <= IntType::MaxBits) {
-        ty = IntType::Get(*M, bits);
+        ty = IntType::Get(*tu, bits);
     } else {
         // Print and colour the type names manually here since we can’t
         // even create a type this large properly...
@@ -3459,20 +3459,20 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
             "The maximum supported integer type is {}, "
             "which is smaller than an %6(i{:i}%), which would "
             "be required to store a value of {}",
-            IntType::Get(*M, IntType::MaxBits),
+            IntType::Get(*tu, IntType::MaxBits),
             bits,
             parsed->storage.str(false) // Parsed literals are unsigned.
         );
         return nullptr;
     }
 
-    auto desired_bits = ty->bit_width(*M);
+    auto desired_bits = ty->bit_width(*tu);
     auto stored_bits = Size::Bits(val.getBitWidth());
     auto storage = desired_bits == stored_bits
         ? parsed->storage
-        : M->store_int(val.zextOrTrunc(unsigned(desired_bits.bits())));
+        : tu->store_int(val.zextOrTrunc(unsigned(desired_bits.bits())));
 
-    return new (*M) IntLitExpr(
+    return new (*tu) IntLitExpr(
         ty,
         storage,
         parsed->loc
@@ -3482,7 +3482,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
 auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
     Ptr<Stmt> body;
     if (auto b = parsed->body.get_or_null()) body = TRY(TranslateStmt(b));
-    return new (*M) LoopExpr(body, parsed->loc);
+    return new (*tu) LoopExpr(body, parsed->loc);
 }
 
 auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -3559,7 +3559,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
             );
         }
 
-        return new (*M) MemberAccessExpr(
+        return new (*tu) MemberAccessExpr(
             base,
             cast<FieldDecl>(field.decls.front()),
             parsed->loc
@@ -3611,7 +3611,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
-    return new (*M) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
+    return new (*tu) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
@@ -3629,8 +3629,8 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
     }
 
     if (not ok) return {};
-    auto tt = TupleType::Get(*M, types);
-    return TupleExpr::Create(*M, tt, exprs, parsed->loc);
+    auto tt = TupleType::Get(*tu, types);
+    return TupleExpr::Create(*tu, tt, exprs, parsed->loc);
 }
 
 auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
@@ -3736,7 +3736,7 @@ auto Sema::TranslateProcBody(
         // If we’re attempting to deduce the return type of this procedure,
         // but the body contains an error, just set it to void.
         if (ret == Type::DeducedTy) {
-            decl->type = ProcType::AdjustRet(*M, decl->proc_type(), Type::VoidTy);
+            decl->type = ProcType::AdjustRet(*tu, decl->proc_type(), Type::VoidTy);
             decl->set_invalid();
         }
         return nullptr;
@@ -3763,7 +3763,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     auto it = parsed_template_deduction_infos.find(parsed);
     auto is_template = it != parsed_template_deduction_infos.end();
     if (is_template) {
-        auto decl = ProcTemplateDecl::Create(*M, parsed, curr_proc().proc);
+        auto decl = ProcTemplateDecl::Create(*tu, parsed, curr_proc().proc);
         AddDeclToScope(curr_scope(), decl);
         return decl;
     }
@@ -3775,7 +3775,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     EnterScope scope{*this, ScopeKind::Procedure};
     auto type = TranslateProcType(parsed->type);
     auto ty = cast_if_present<ProcType>(type);
-    if (not ty) ty = ProcType::Get(*M, Type::VoidTy);
+    if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
     auto decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
     if (not type) decl->set_invalid();
     AddDeclToScope(scope.get()->parent(), decl);
@@ -3810,7 +3810,7 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
-    RecordLayout::Builder lb{*M};
+    RecordLayout::Builder lb{*tu};
     for (auto f : parsed->fields()) {
         auto ty = TranslateType(f->type);
         if (not CheckFieldType(ty, f->loc)) {
@@ -3827,16 +3827,16 @@ auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<Type
 }
 
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
-    auto sc = M->create_scope<StructScope>(curr_scope());
+    auto sc = tu->create_scope<StructScope>(curr_scope());
     auto ty = StructType::Create(
-        *M,
+        *tu,
         sc,
         parsed->name.str(),
         parsed->loc
     );
 
     if (parsed->name.str() == "__src_abort_info")
-        M->abort_info_type = ty;
+        tu->abort_info_type = ty;
 
     AddDeclToScope(curr_scope(), ty->decl());
     return ty->decl();
@@ -3844,7 +3844,7 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
 
 /// Translate a string literal.
 auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed, Type) -> Ptr<Stmt> {
-    return StrLitExpr::Create(*M, parsed->value, parsed->loc);
+    return StrLitExpr::Create(*tu, parsed->value, parsed->loc);
 }
 
 /// Translate a return expression.
@@ -3874,7 +3874,7 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
 //  Translation of Types
 // ============================================================================
 auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
-    auto size = M->vm.eval(size_expr);
+    auto size = tu->vm.eval(size_expr);
     if (not size) return Type();
     auto integer = size->dyn_cast<APInt>();
 
@@ -3900,7 +3900,7 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
         v
     );
 
-    return ArrayType::Get(*M, base.ty, v);
+    return ArrayType::Get(*tu, base.ty, v);
 }
 
 auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
@@ -3918,9 +3918,9 @@ auto Sema::TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type {
 auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
     if (parsed->bit_width > IntType::MaxBits) {
         Error(parsed->loc, "The maximum integer type is %6(i{:i}%)", IntType::MaxBits);
-        return IntType::Get(*M, IntType::MaxBits);
+        return IntType::Get(*tu, IntType::MaxBits);
     }
-    return IntType::Get(*M, parsed->bit_width);
+    return IntType::Get(*tu, parsed->bit_width);
 }
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
@@ -3979,7 +3979,7 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
 
     if (not ok) return Type();
     return ProcType::Get(
-        *M,
+        *tu,
         ret,
         params,
         parsed->attrs.native ? CallingConvention::Native : CallingConvention::Source
@@ -3989,7 +3989,7 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
 auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
     auto ty = TranslateType(stmt->elem);
     if (not CheckVariableType(ty, stmt->loc)) return Type();
-    return PtrType::Get(*M, ty);
+    return PtrType::Get(*tu, ty);
 }
 
 auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
@@ -4006,13 +4006,13 @@ auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
         return Type();
     }
 
-    return RangeType::Get(*M, ty);
+    return RangeType::Get(*tu, ty);
 }
 
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
     auto ty = TranslateType(parsed->elem);
     if (not CheckVariableType(ty, parsed->loc)) return Type();
-    return SliceType::Get(*M, ty);
+    return SliceType::Get(*tu, ty);
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
@@ -4055,7 +4055,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
                 types.push_back(ty);
             }
 
-            if (ok) return TupleType::Get(*M, types);
+            if (ok) return TupleType::Get(*tu, types);
         } break;
 
         default:

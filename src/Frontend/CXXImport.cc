@@ -138,9 +138,9 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
 
     // Create the procedure.
     auto PD = ProcDecl::Create(
-        *S.M,
+        *S.tu,
         cast<ProcType>(T.value().ptr()),
-        S.M->save(D->getNameAsString()),
+        S.tu->save(D->getNameAsString()),
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
@@ -150,10 +150,10 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     // Create param decls.
     SmallVector<LocalDecl*> Params;
     for (auto [I, P] : enumerate(D->parameters())) {
-        Params.push_back(new (*S.M) ParamDecl(
+        Params.push_back(new (*S.tu) ParamDecl(
             &PD->param_types()[I],
             Expr::LValue,
-            S.M->save(P->getName()),
+            S.tu->save(P->getName()),
             PD,
             u32(I),
             false,
@@ -187,10 +187,10 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
         if (F->hasInClassInitializer()) return std::nullopt;
         auto FTY = ImportType(F->getType());
         if (not FTY) return std::nullopt;
-        Fields.push_back(new (*S.M) FieldDecl(
+        Fields.push_back(new (*S.tu) FieldDecl(
             FTY.value(),
             Size::Bits(RL.getFieldOffset(unsigned(I))),
-            S.M->save(F->getName()),
+            S.tu->save(F->getName()),
             ImportSourceLocation(F->getLocation())
         ));
     }
@@ -211,12 +211,12 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
     }
 
     // Build the scope for the declaration.
-    auto Scope = S.M->create_scope<StructScope>(S.global_scope());
+    auto Scope = S.tu->create_scope<StructScope>(S.global_scope());
     for (auto F : Fields) S.AddDeclToScope(Scope, F);
 
     // Build the layout.
     auto rl = RecordLayout::Create(
-        *S.M,
+        *S.tu,
         Fields,
         Size::Bytes(RL.getSize().getQuantity()),
         Size::Bytes(RL.getSize().getQuantity()),
@@ -226,9 +226,9 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
 
     // Build the type.
     auto Struct = StructType::Create(
-        *S.M,
+        *S.tu,
         Scope,
-        S.M->save(Name),
+        S.tu->save(Name),
         ImportSourceLocation(RD->getLocation()),
         rl
     );
@@ -264,27 +264,27 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
                 case K::UChar:
                 case K::Char_S:
                 case K::Char_U:
-                    return S.M->FFICharTy;
+                    return S.tu->FFICharTy;
 
                 case K::WChar_S:
                 case K::WChar_U:
-                    return S.M->FFIWCharTy;
+                    return S.tu->FFIWCharTy;
 
                 case K::Short:
                 case K::UShort:
-                    return S.M->FFIShortTy;
+                    return S.tu->FFIShortTy;
 
                 case K::Int:
                 case K::UInt:
-                    return S.M->FFIIntTy;
+                    return S.tu->FFIIntTy;
 
                 case K::Long:
                 case K::ULong:
-                    return S.M->FFILongTy;
+                    return S.tu->FFILongTy;
 
                 case K::LongLong:
                 case K::ULongLong:
-                    return S.M->FFILongLongTy;
+                    return S.tu->FFILongLongTy;
             }
         }
 
@@ -293,19 +293,19 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::Pointer: {
             auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return std::nullopt;
-            return PtrType::Get(*S.M, *Elem);
+            return PtrType::Get(*S.tu, *Elem);
         }
 
         case K::BitInt: {
             auto B = cast<clang::BitIntType>(T);
-            return IntType::Get(*S.M, Size::Bits(B->getNumBits()));
+            return IntType::Get(*S.tu, Size::Bits(B->getNumBits()));
         }
 
         case K::ConstantArray: {
             auto C = cast<clang::ConstantArrayType>(T);
             auto Elem = ImportType(C->getElementType());
             if (not Elem) return std::nullopt;
-            return ArrayType::Get(*S.M, *Elem, i64(C->getSize().getZExtValue()));
+            return ArrayType::Get(*S.tu, *Elem, i64(C->getSize().getZExtValue()));
         }
 
         case K::FunctionProto: {
@@ -323,7 +323,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             }
 
             return ProcType::Get(
-                *S.M,
+                *S.tu,
                 *Ret,
                 Params,
                 CallingConvention::Native,
@@ -397,7 +397,7 @@ auto Sema::ImportCXXHeaders(
 
     clang_ast_units.push_back(std::move(AST));
     return ImportedClangModuleDecl::Create(
-        *M,
+        *tu,
         *clang_ast_units.back(),
         logical_name,
         header_names,

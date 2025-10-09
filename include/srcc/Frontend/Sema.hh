@@ -496,7 +496,7 @@ class srcc::Sema : public DiagsProducer {
     };
 
     Context& ctx;
-    TranslationUnit::Ptr M;
+    TranslationUnit::Ptr tu;
     SmallVector<ParsedModule::Ptr> parsed_modules;
     ArrayRef<std::string> search_paths;
     ArrayRef<std::string> clang_include_paths;
@@ -575,7 +575,7 @@ public:
     auto curr_scope() -> Scope* { return scope_stack.back(); }
 
     /// Get the global scope.
-    auto global_scope() -> Scope* { return M->global_scope(); }
+    auto global_scope() -> Scope* { return tu->global_scope(); }
 
 private:
     /// Add a declaration to a scope.
