@@ -112,12 +112,19 @@ static auto FormatDiagnostic(
         return out;
     }
 
-    // Replace tabs with spaces.
-    auto before = str(l->before).replace("\n", "    ");
-    auto range = str(l->range).replace("\n", "    ");
-    auto after = str(l->after).replace("\n", "    ");
+    // If the source location consists of multiple lines, only print the line that
+    // contains the range; if the range consists of multiple lines, only print the
+    // line that contains the start of the range (we want to avoid printing e.g. an
+    // entire function body since that’s not particularly conducive to anything).
+    //
+    // Also replace tabs with spaces.
+    auto before = str(l->before).take_back_until('\n').replace("\t", "    ");
+    auto range = str(l->range).take_until('\n').replace("\t", "    ");
     auto before_wd = TextWidth(text::ToUTF32(before));
     auto range_wd = TextWidth(text::ToUTF32(range));
+
+    // If the range contains a newline, do not print anything after it.
+    auto after = str(l->range).contains('\n') ? "" : str(l->after).replace("\t", "    ");
 
     // TODO: Explore this idea:
     //
@@ -172,7 +179,6 @@ static auto FormatDiagnostic(
 
         // Print the line up to the start of the location, the range in the right
         // colour, and the rest of the line.
-        // TODO: Proper underlines: \033[1;58:5:1;4:3m
         out += std::format("%b({} |%) {}", l->line, utils::Escape(before, false, true));
         if (not range.empty()) out += std::format("%b8({}%)", utils::Escape(range, false, true));
         if (not after.empty()) out += utils::Escape(after, false, true);
