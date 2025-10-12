@@ -510,6 +510,14 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             return CreateReference(proc, loc).get();
         }
 
+        case K::SliceFromArray: return new (*tu) CastExpr(
+            SliceType::Get(*tu, cast<ArrayType>(e->type)->elem()),
+            CastExpr::SliceFromArray,
+            MaterialiseTemporary(e),
+            loc,
+            true
+        );
+
         case K::StripParens: {
             auto p = cast<ParenExpr>(e);
             return p->expr;
@@ -570,6 +578,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::MaterialiseTemporary:
         case K::RangeCast:
         case K::SelectOverload:
+        case K::SliceFromArray:
         case K::StripParens:
         case K::TupleToFirstElement: {
             Assert(exprs.size() == 1);
@@ -633,11 +642,11 @@ auto Sema::ApplyConversionSequence(
 // If there are no initialisers, use option 2 if the argument list
 // is empty, and option 3 otherwise.
 auto Sema::BuildAggregateInitialiser(
-    ConversionSequence seq,
+    ConversionSequence& seq,
     RecordType* r,
     ArrayRef<Expr*> args,
     Location loc
-) -> ConversionSequenceOrDiags {
+) -> MaybeDiags {
     auto& rl = r->layout();
 
     // First case: option 1 or 2.
@@ -653,14 +662,14 @@ auto Sema::BuildAggregateInitialiser(
     std::vector<ConversionSequence> field_seqs;
     for (auto [field, arg] : zip(rl.fields(), args)) {
         auto seq = BuildConversionSequence(field->type, arg, arg->location());
-        if (not seq.result.has_value()) {
+        if (not seq.has_value()) {
             auto note = field->name.empty()
-                          ? CreateNote(field->location(), "In initialiser for field declared here")
-                          : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
-            seq.result.error().push_back(std::move(note));
-            return seq;
+                ? CreateNote(field->location(), "In initialiser for field declared here")
+                : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
+            seq.error().push_back(std::move(note));
+            return std::move(seq.error());
         }
-        field_seqs.push_back(std::move(seq.result.value()));
+        field_seqs.push_back(std::move(seq.value()));
     }
 
     // For now, the number of arguments must match the number of fields in the struct.
@@ -672,15 +681,15 @@ auto Sema::BuildAggregateInitialiser(
     );
 
     seq.add(Conversion::RecordInit(Conversion::RecordInitData{r, std::move(field_seqs)}));
-    return seq;
+    return {};
 }
 
 auto Sema::BuildArrayInitialiser(
-    ConversionSequence seq,
+    ConversionSequence& seq,
     ArrayType* a,
     ArrayRef<Expr*> args,
     Location loc
-) -> ConversionSequenceOrDiags {
+) -> MaybeDiags {
     // Error if there are more initialisers than array elements.
     if (args.size() > u64(a->dimension())) return CreateError(
         loc,
@@ -693,33 +702,50 @@ auto Sema::BuildArrayInitialiser(
     // all array elements have the same type, it suffices to build the conversion
     // sequence for it once.
     if (args.size() == 1 && a->dimension() > 1) {
-        auto conv = BuildConversionSequence(a->elem(), args, loc);
-        if (not conv) return conv;
+        auto conv = Try(BuildConversionSequence(a->elem(), args, loc));
         seq.add(Conversion::ArrayBroadcast({
             .type = a,
-            .seq = std::make_unique<ConversionSequence>(std::move(conv.result.value())),
+            .seq = std::make_unique<ConversionSequence>(std::move(conv)),
         }));
-        return seq;
+        return {};
     }
 
     // Otherwise, use any available arguments to initialise array elements.
     Conversion::ArrayInitData data{a};
     for (auto arg : args) {
-        auto conv = BuildConversionSequence(a->elem(), arg, arg->location());
-        if (not conv) return conv;
-        data.elem_convs.push_back(std::move(conv.result.value()));
+        auto conv = Try(BuildConversionSequence(a->elem(), arg, arg->location()));
+        data.elem_convs.push_back(std::move(conv));
     }
 
     // And build an extra conversion from no arguments if we have elements left.
     if (args.size() != u64(a->dimension())) {
-        auto conv = BuildConversionSequence(a->elem(), {}, loc);
-        if (not conv) return conv;
-        data.elem_convs.push_back(std::move(conv.result.value()));
+        auto conv = Try(BuildConversionSequence(a->elem(), {}, loc));
+        data.elem_convs.push_back(std::move(conv));
         data.has_broadcast_initialiser = true;
     }
 
     seq.add(Conversion::ArrayInit(std::move(data)));
-    return seq;
+    return {};
+}
+
+auto Sema::BuildSliceInitialiser(
+    ConversionSequence& seq,
+    SliceType* a,
+    ArrayRef<Expr*> args,
+    Location loc
+) -> MaybeDiags {
+    if (args.empty()) {
+        seq.add(Conversion::DefaultInit(a));
+        return {};
+    }
+
+    // Build a temporary array and convert it to a slice.
+    auto arr_ty = ArrayType::Get(*tu, a->elem(), i64(args.size()));
+    Try(BuildArrayInitialiser(seq, arr_ty, args, loc));
+
+    // And convert the array to a slice.
+    seq.add(Conversion::SliceFromArray());
+    return {};
 }
 
 auto Sema::BuildConversionSequence(
@@ -804,10 +830,21 @@ auto Sema::BuildConversionSequence(
     // There are only few (classes of) types that support initialisation
     // from more than one argument.
     if (args.size() > 1) {
-        if (auto a = dyn_cast<ArrayType>(var_type))
-            return BuildArrayInitialiser(std::move(seq), a, args, init_loc);
-        if (auto r = dyn_cast<RecordType>(var_type.ptr()))
-            return BuildAggregateInitialiser(std::move(seq), r, args, init_loc);
+        if (auto a = dyn_cast<ArrayType>(var_type)) {
+            Try(BuildArrayInitialiser(seq, a, args, init_loc));
+            return seq;
+        }
+
+        if (auto r = dyn_cast<RecordType>(var_type.ptr())) {
+            Try(BuildAggregateInitialiser(seq, r, args, init_loc));
+            return seq;
+        }
+
+        if (auto s = dyn_cast<SliceType>(var_type)) {
+            Try(BuildSliceInitialiser(seq, s, args, init_loc));
+            return seq;
+        }
+
         return CreateError(
             init_loc,
             "Cannot initialise '{}' from\f'%1(({})%)'",
@@ -891,16 +928,21 @@ auto Sema::BuildConversionSequence(
     };
 
     switch (var_type->kind()) {
-        case TypeBase::Kind::SliceType:
         case TypeBase::Kind::PtrType:
             return TypeMismatch();
 
+        case TypeBase::Kind::SliceType:
+            Try(BuildSliceInitialiser(seq, cast<SliceType>(var_type), args, init_loc));
+            return seq;
+
         case TypeBase::Kind::ArrayType:
-            return BuildArrayInitialiser(std::move(seq), cast<ArrayType>(var_type), args, init_loc);
+            Try(BuildArrayInitialiser(seq, cast<ArrayType>(var_type), args, init_loc));
+            return seq;
 
         case TypeBase::Kind::StructType:
         case TypeBase::Kind::TupleType:
-            return BuildAggregateInitialiser(std::move(seq), cast<RecordType>(var_type), args, init_loc);
+            Try(BuildAggregateInitialiser(seq, cast<RecordType>(var_type), args, init_loc));
+            return seq;
 
         case TypeBase::Kind::ProcType:
             // Type is an overload set; attempt to convert it.
@@ -1021,18 +1063,18 @@ auto Sema::BuildInitialiser(
     auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue);
 
     // The conversion succeeded.
-    if (seq_or_err.result.has_value())
-        return ApplyConversionSequence(args, seq_or_err.result.value(), loc);
+    if (seq_or_err.has_value())
+        return ApplyConversionSequence(args, seq_or_err.value(), loc);
 
     // There was an error.
-    for (auto& d : seq_or_err.result.error()) diags().report(std::move(d));
+    for (auto& d : seq_or_err.error()) diags().report(std::move(d));
     return nullptr;
 }
 
 auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
     auto seq_or_err = BuildConversionSequence(var_type, {arg}, arg->location());
-    if (not seq_or_err.result.has_value()) return nullptr;
-    return ApplyConversionSequence({arg}, seq_or_err.result.value(), arg->location());
+    if (not seq_or_err.has_value()) return nullptr;
+    return ApplyConversionSequence({arg}, seq_or_err.value(), arg->location());
 }
 
 // ============================================================================
@@ -1082,8 +1124,6 @@ auto Sema::SubstituteTemplate(
     ProcTemplateDecl* proc_template,
     ArrayRef<TypeLoc> input_types
 ) -> SubstitutionResult {
-    auto params = proc_template->pattern->type->param_types();
-
     // Perform deduction.
     //
     // We need to do this *before* caching, else e.g. 'proc f($T a, T b)' will
@@ -1128,15 +1168,9 @@ auto Sema::SubstituteTemplate(
         }
     }
 
-    // Next, collect variadic parameters.
-    u32 variadic_array_size = 0;
-    if (proc_template->has_variadic_param)
-        variadic_array_size = u32(input_types.size() - (params.size() - 1));
-
     // Now that deduction is done, check if we’ve substituted this before.
     llvm::FoldingSetNodeID id;
     for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
-    if (proc_template->has_variadic_param) id.AddInteger(variadic_array_size);
 
     // Don’t hold on to a reference to the folding set (or the insert position)
     // here as we might end up invalidating it if template instantiation occurs
@@ -1151,7 +1185,7 @@ auto Sema::SubstituteTemplate(
         AddDeclToScope(scope.get(), new (*tu) TemplateTypeParamDecl(name, d.second));
 
     // Now that that is done, we can convert the type properly.
-    auto ty = TranslateProcType(proc_template->pattern->type, variadic_array_size);
+    auto ty = TranslateProcType(proc_template->pattern->type);
 
     // Mark that we’re done substituting.
     for (auto d : scope.get()->decls())
@@ -1234,6 +1268,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::MaterialisePoison:
             case K::RangeCast:
             case K::TupleToFirstElement:
+            case K::SliceFromArray:
                 badness++;
                 break;
 
@@ -1508,13 +1543,13 @@ auto Sema::PerformOverloadResolution(
             );
 
             // If this failed, stop checking this candidate.
-            if (not seq_or_err.result.has_value()) {
-                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.result.error()), param_index};
+            if (not seq_or_err.has_value()) {
+                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.error()), param_index};
                 return false;
             }
 
             // Otherwise, store the sequence for later and keep going.
-            st->conversions.push_back(std::move(seq_or_err.result.value()));
+            st->conversions.push_back(std::move(seq_or_err.value()));
             st->badness += st->conversions.back().badness();
             return true;
         };
@@ -3995,6 +4030,11 @@ auto Sema::BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type {
     return ArrayType::Get(*tu, base.ty, size);
 }
 
+auto Sema::BuildSliceType(Type base, Location loc) -> Type {
+    if (not CheckVariableType(base, loc)) return Type();
+    return SliceType::Get(*tu, base);
+}
+
 auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
     Assert(parsed->op == Tk::LBrack);
     auto elem = TranslateType(parsed->lhs);
@@ -4032,7 +4072,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     return Type();
 }
 
-auto Sema::TranslateProcType(ParsedProcType* parsed, u32 variadic_array_size) -> Type {
+auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -4060,15 +4100,8 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, u32 variadic_array_size) ->
         if (ty and parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
             DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
-        // If this is a variadic parameter, convert it to an array.
-        if (a.variadic) {
-            ty = BuildArrayType(
-                {ty, a.type->loc},
-                variadic_array_size,
-                a.type->loc
-            );
-        }
-
+        // If this is a variadic parameter, convert it to a slice.
+        if (a.variadic) ty = BuildSliceType(ty, a.type->loc);
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty, a.variadic);
     }
@@ -4112,8 +4145,7 @@ auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
 
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
     auto ty = TranslateType(parsed->elem);
-    if (not CheckVariableType(ty, parsed->loc)) return Type();
-    return SliceType::Get(*tu, ty);
+    return BuildSliceType(ty, parsed->loc);
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {

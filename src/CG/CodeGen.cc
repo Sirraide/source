@@ -1717,6 +1717,14 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
                 CreateSICast(l, val.second(), from, to),
             };
         }
+
+        case CastExpr::SliceFromArray: {
+            auto l = C(expr->location());
+            return {
+                IsZeroSizedType(expr->arg->type) ? CreateNullPointer(l) : val.scalar(),
+                CreateInt(l, cast<ArrayType>(expr->arg->type)->dimension())
+            };
+        }
     }
 
     Unreachable();

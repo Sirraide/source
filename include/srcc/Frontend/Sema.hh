@@ -135,6 +135,7 @@ class srcc::Sema : public DiagsProducer {
             MaterialiseTemporary,
             RangeCast,
             SelectOverload,
+            SliceFromArray,
             StripParens,
             TupleToFirstElement,
             RecordInit,
@@ -170,6 +171,7 @@ class srcc::Sema : public DiagsProducer {
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
+        static auto SliceFromArray() -> Conversion { return Conversion{Kind::SliceFromArray}; }
         static auto StripParens() -> Conversion { return Conversion{Kind::StripParens}; }
         static auto TupleToFirstElement() -> Conversion { return Conversion{Kind::TupleToFirstElement}; }
 
@@ -213,19 +215,21 @@ class srcc::Sema : public DiagsProducer {
         }
     };
 
-    /// Result of building a conversion sequence.
-    struct ConversionSequenceOrDiags {
-        using Diags = SmallVector<Diagnostic, 2>;
-        std::expected<ConversionSequence, Diags> result;
-        ConversionSequenceOrDiags(ConversionSequence result) : result{std::move(result)} {}
-        ConversionSequenceOrDiags(Diags diags) : result{std::unexpected(std::move(diags))} {}
-        ConversionSequenceOrDiags(std::unexpected<Diags> diags) : result{std::move(diags)} {}
-        ConversionSequenceOrDiags(Diagnostic diag) : result{std::unexpected(Diags{})} {
-            result.error().push_back(std::move(diag));
-        }
+    using DiagsVector = SmallVector<Diagnostic, 2>;
 
-        [[nodiscard]] explicit operator bool() const { return result.has_value(); }
+    template <typename T>
+    struct ValueOrDiagsVector : std::expected<T, DiagsVector> {
+        using Base = std::expected<T, DiagsVector>;
+        using Base::Base;
+        ValueOrDiagsVector(DiagsVector d) : Base(std::unexpected(std::move(d))) {}
+        ValueOrDiagsVector(Diagnostic d) : Base(std::unexpected(DiagsVector{std::move(d)})) {}
     };
+
+    /// Either an empty result or a list of diagnostics.
+    using MaybeDiags = ValueOrDiagsVector<void>;
+
+    /// Result of building a conversion sequence.
+    using ConversionSequenceOrDiags = ValueOrDiagsVector<ConversionSequence>;
 
     /// The result of name lookup.
     struct LookupResult {
@@ -377,7 +381,7 @@ class srcc::Sema : public DiagsProducer {
 
         // We failed to initialise a parameter.
         struct ParamInitFailed {
-            ConversionSequenceOrDiags::Diags diags;
+            DiagsVector diags;
             u32 param_index;
         };
 
@@ -609,21 +613,31 @@ private:
     ///
     /// This should not be called directly; call BuildInitialiser() instead.
     auto BuildAggregateInitialiser(
-        ConversionSequence seq,
+        ConversionSequence& seq,
         RecordType* s,
         ArrayRef<Expr*> args,
         Location loc
-    ) -> ConversionSequenceOrDiags;
+    ) -> MaybeDiags;
 
     /// Build an initialiser for an array type.
     ///
     /// This should not be called directly; call BuildInitialiser() instead.
     auto BuildArrayInitialiser(
-        ConversionSequence seq,
+        ConversionSequence& seq,
         ArrayType* a,
         ArrayRef<Expr*> args,
         Location loc
-    ) -> ConversionSequenceOrDiags;
+    ) -> MaybeDiags;
+
+    /// Build an initialiser for a slice type.
+    ///
+    /// This should not be called directly; call BuildInitialiser() instead.
+    auto BuildSliceInitialiser(
+        ConversionSequence& seq,
+        SliceType* a,
+        ArrayRef<Expr*> args,
+        Location loc
+    ) -> MaybeDiags;
 
     /// Build a conversion sequence that can be applied to a list
     /// of arguments to create an expression that can initialise
@@ -887,6 +901,7 @@ private:
     auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs, ProcTemplateDecl* pattern = nullptr) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
+    auto BuildSliceType(Type base, Location loc) -> Type;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr>;
@@ -925,7 +940,7 @@ private:
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
-    auto TranslateProcType(ParsedProcType* parsed, u32 variadic_array_size = 0) -> Type;
+    auto TranslateProcType(ParsedProcType* parsed) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

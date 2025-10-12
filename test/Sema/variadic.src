@@ -5,3 +5,10 @@ proc f(int...) {}
 proc f(int, int...) {}
 proc f(int, int..., int) {} // expected-error: Only the last parameter can be variadic
 proc f(int, int..., int...) {} // expected-error: Only the last parameter can be variadic
+
+proc g (int ...x) {}
+
+g();
+g(1);
+g(1, 2);
+g(1, 2, 3);

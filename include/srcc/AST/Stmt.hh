@@ -418,6 +418,9 @@ public:
 
         /// Convert between range types.
         Range,
+
+        /// Convert an array to a slice.
+        SliceFromArray,
     };
 
     using enum CastKind;
