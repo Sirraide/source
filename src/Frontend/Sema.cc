@@ -1250,13 +1250,13 @@ bool Sema::Candidate::has_c_varargs() const {
     return cast<ProcTemplateDecl>(decl)->pattern->type->attrs.c_varargs;
 }
 
-bool Sema::Candidate::is_variadic_template() const {
-    auto t = dyn_cast<ProcTemplateDecl>(decl);
-    return t and t->has_variadic_param;
+bool Sema::Candidate::is_variadic() const {
+    if (auto t = dyn_cast<ProcTemplateDecl>(decl)) return t->has_variadic_param;
+    return cast<ProcDecl>(decl)->proc_type()->is_variadic();
 }
 
 auto Sema::Candidate::non_variadic_params() const -> u32 {
-    return u32(param_count() - is_variadic_template());
+    return u32(param_count() - is_variadic());
 }
 
 auto Sema::Candidate::param_count() const -> usz {
@@ -1345,6 +1345,36 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
 
     if (name.empty()) S.Note(loc, "In argument to parameter declared here");
     else S.Note(loc, "In argument to parameter '{}'", name);
+}
+
+/// Check if the number of call arguments ‘matches’ the number of
+/// parameters—this does not mean that they’re equal!
+template <typename Callee>
+static bool ArgumentCountMatchesParameters(usz num_args, Callee* callee) {
+    auto required_param_count = callee->param_count() - usz(callee->is_variadic());
+    if (num_args == required_param_count) return true;
+    if (num_args < required_param_count) return false;
+    return callee->has_c_varargs() or callee->is_variadic();
+}
+
+/// Convert arguments to parameter types.
+template <typename Callee, typename Callback>
+static void ConvertArgumentsForCall(
+    ArrayRef<Expr*> args,
+    Callee* c,
+    Callback ConvertArg,
+    Location call_loc
+) {
+    // Convert the argument to each non-variadic parameter.
+    for (auto [i, a] : enumerate(args.take_front(c->non_variadic_params())))
+        ConvertArg(u32(i), a, a->location());
+
+    // Convert any remaining arguments to the variadic parameter.
+    if (c->is_variadic()) ConvertArg(
+        u32(c->param_count() - 1),
+        args.drop_front(c->non_variadic_params()),
+        not args.empty() ? args.front()->location() : call_loc
+    );
 }
 
 bool Sema::CheckIntents(ProcType* ty, ArrayRef<Expr*> args) {
@@ -1521,15 +1551,9 @@ auto Sema::PerformOverloadResolution(
         // Argument count mismatch is not allowed, unless the
         // function is variadic. For variadic templates, we allow
         // the variadic parameter to be empty.
-        auto required_param_count = c.param_count() - usz(c.is_variadic_template());
-        if (args.size() != required_param_count) {
-            if (
-                args.size() < required_param_count or
-                (not c.has_c_varargs() and not c.is_variadic_template())
-            ) {
-                c.status = Candidate::ArgumentCountMismatch{};
-                return true;
-            }
+        if (not ArgumentCountMatchesParameters(args.size(), &c)) {
+            c.status = Candidate::ArgumentCountMismatch{};
+            return true;
         }
 
         // Candidate is a regular procedure.
@@ -1589,18 +1613,7 @@ auto Sema::PerformOverloadResolution(
             return true;
         };
 
-        // Convert the argument to each non-variadic parameter.
-        for (auto [i, a] : enumerate(args.take_front(c.non_variadic_params())))
-            ConvertArg(u32(i), a, a->location());
-
-        // Convert any remaining arguments to the variadic parameter.
-        if (c.is_variadic_template()) ConvertArg(
-            u32(params.size() - 1),
-            args.drop_front(c.non_variadic_params()),
-            not args.empty() ? args.front()->location() : call_loc
-        );
-
-        // No fatal error.
+        ConvertArgumentsForCall(args, &c, ConvertArg, call_loc);
         return true;
     };
 
@@ -1676,21 +1689,15 @@ auto Sema::PerformOverloadResolution(
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
-
-        // Convert non-variadic arguments.
-        for (auto [i, conv] : enumerate(conversions.drop_back(c->is_variadic_template())))
-            actual_args.emplace_back(ApplyConversionSequence(args[i], conv, args[i]->location()));
-
-        // Apply the conversion for the variadic argument pack to the remaining arguments.
-        if (c->is_variadic_template()) {
-            auto variadic_args = args.drop_front(c->non_variadic_params());
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
             actual_args.emplace_back(ApplyConversionSequence(
-                variadic_args,
-                conversions.back(),
-                not variadic_args.empty() ? variadic_args.front()->location() : call_loc
+                args,
+                conversions[param_index],
+                loc
             ));
-        }
+        };
 
+        ConvertArgumentsForCall(args, c, ConvertArg, call_loc);
         if (not CheckIntents(final_callee->proc_type(), actual_args)) return {};
         return {final_callee, std::move(actual_args)};
     }
@@ -2622,9 +2629,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
-        auto params = ty->params().size();
-        auto argn = args.size();
-        if (ty->has_c_varargs() ? params > argn : params != argn) {
+        if (not ArgumentCountMatchesParameters(args.size(), ty)) {
             auto decl = dyn_cast<ProcRefExpr>(callee_expr);
             Error(
                 loc,
@@ -2639,29 +2644,36 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
             return nullptr;
         }
 
-        // Convert each non-variadic parameter.
-        converted_args.reserve(args.size());
-        for (auto [i, p, a] : enumerate(ty->params(), args.take_front(ty->params().size()))) {
+        bool ok = true;
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
+            auto p = ty->params()[param_index];
             auto arg = BuildInitialiser(
                 p.type,
-                a,
-                a->location(),
+                args,
+                loc,
                 p.intent == Intent::Out or p.intent == Intent::Inout
             );
 
             // Point to the procedure if this is a direct call.
-            if (not arg and isa<ProcRefExpr>(callee_expr)) {
-                auto proc = cast<ProcRefExpr>(callee_expr);
-                NoteParameter(*this, proc->decl, u32(i));
-                return nullptr;
+            if (not arg) {
+                if (isa<ProcRefExpr>(callee_expr)) {
+                    auto proc = cast<ProcRefExpr>(callee_expr);
+                    NoteParameter(*this, proc->decl, u32(param_index));
+                }
+
+                ok = false;
+                return;
             }
 
             converted_args.push_back(arg.get());
-        }
+        };
 
-        // We can do this now since variadic arguments always have the 'copy'
-        // intent, which requires no checks.
-        if (not CheckIntents(ty, converted_args))
+        ConvertArgumentsForCall(args, ty, ConvertArg, loc);
+
+        // We can do this before adding the varargs arguments since we only allow
+        // passing trivially copyable types as varargs arguments, and those always
+        // have the 'copy' intent and require no intent checking.
+        if (not ok or not CheckIntents(ty, converted_args))
             return nullptr;
     }
 
@@ -3892,53 +3904,53 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         Error(parsed->loc, "Variadic function cannot be '%1(varargs%)'");
     }
 
-    // Determine if this is a template.
-    auto IsTemplate = [&] {
-        // Variadic procedures are always templates.
-        if (has_variadic_param) return true;
-
-        // If this has template parameters, it is a template.
-        auto it = parsed_template_deduction_infos.find(parsed);
-        return it != parsed_template_deduction_infos.end();
-    };
-
     // If this is a template, we can’t do much right now.
-    if (IsTemplate()) {
-        auto decl = ProcTemplateDecl::Create(
+    Decl* decl{};
+    auto it = parsed_template_deduction_infos.find(parsed);
+    if (it != parsed_template_deduction_infos.end()) {
+        decl = ProcTemplateDecl::Create(
             *tu,
             parsed,
             curr_proc().proc,
             has_variadic_param
         );
-
-        // Currently, only the last parameter is allowed to be variadic.
-        if (has_variadic_param) {
-            auto params_except_last = parsed->type->param_types().drop_back();
-            auto it = rgs::find_if(params_except_last, &ParsedParameter::variadic);
-            if (it != params_except_last.end()) {
-                decl->set_invalid();
-                Error(
-                    parsed->params()[usz(it - params_except_last.begin())]->loc,
-                    "Only the last parameter can be variadic"
-                );
-            }
-        }
-
-        AddDeclToScope(curr_scope(), decl);
-        return decl;
     }
 
-    // TODO: Check for redeclaration here. Codegen will crash horribly if
-    // there are two procedures w/ the same name.
+    // Otherwise, convert its signature now.
+    else {
+        // TODO: Check for redeclaration here. Codegen will crash horribly if
+        // there are two procedures w/ the same name.
+        EnterScope scope{*this, ScopeKind::Procedure};
+        auto type = TranslateProcType(parsed->type);
+        auto ty = cast_if_present<ProcType>(type);
+        if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
+        decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
+        if (not type) decl->set_invalid();
+    }
 
-    // Convert the type.
-    EnterScope scope{*this, ScopeKind::Procedure};
-    auto type = TranslateProcType(parsed->type);
-    auto ty = cast_if_present<ProcType>(type);
-    if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
-    auto decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
-    if (not type) decl->set_invalid();
-    AddDeclToScope(scope.get()->parent(), decl);
+    // Currently, only the last parameter is allowed to be variadic.
+    //
+    // NOTE: If we ever change that (for instance, once we support
+    // named parameters), then a number of places around overload
+    // resolution and building calls need to be updated to handle
+    // this (since they all assume that, if there is a variadic
+    // parameter, it is the last parameter).
+    //
+    // In that case, we would probably want to handle positional and
+    // named arguments separately.
+    if (has_variadic_param) {
+        auto params_except_last = parsed->type->param_types().drop_back();
+        auto it = rgs::find_if(params_except_last, &ParsedParameter::variadic);
+        if (it != params_except_last.end()) {
+            decl->set_invalid();
+            Error(
+                parsed->params()[usz(it - params_except_last.begin())]->loc,
+                "Only the last parameter can be variadic"
+            );
+        }
+    }
+
+    AddDeclToScope(curr_scope(), decl);
     return decl;
 }
 

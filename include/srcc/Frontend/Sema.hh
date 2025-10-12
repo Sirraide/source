@@ -413,7 +413,7 @@ class srcc::Sema : public DiagsProducer {
         bool has_c_varargs() const;
         bool has_valid_proc_type() const;
         bool is_template() const { return isa<ProcTemplateDecl>(decl); }
-        bool is_variadic_template() const;
+        bool is_variadic() const;
         auto non_variadic_params() const -> u32;
         bool viable() const { return status.is<Viable>(); }
     };

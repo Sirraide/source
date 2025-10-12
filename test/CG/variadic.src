@@ -42,6 +42,16 @@ proc q4 {
 // +     ret
 // + }
 // +
+// + proc _S2f1FvSiE (ptr %0, i64 %1) private fastcc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %2 = ptradd #0, 8
+// +     store %2, i64 %1, align 8
+// +     ret
+// + }
+// +
 // + proc _S2q1FvE private fastcc {
 // +     #0 = 8, align 8
 // +     #1 = 16, align 8
@@ -64,13 +74,15 @@ proc q4 {
 // +     ret
 // + }
 // +
-// + proc _S2f1FvSiE (ptr %0, i64 %1) private fastcc {
-// +     #0 = 16, align 8
+// + proc _S2f2FvI32SI32E (i32 %0, ptr %1, i64 %2) private fastcc {
+// +     #0 = 4, align 4
+// +     #1 = 16, align 8
 // +
 // + entry:
-// +     store #0, ptr %0, align 8
-// +     %2 = ptradd #0, 8
-// +     store %2, i64 %1, align 8
+// +     store #0, i32 %0, align 4
+// +     store #1, ptr %1, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 %2, align 8
 // +     ret
 // + }
 // +
@@ -93,18 +105,6 @@ proc q4 {
 // +     %2 = ptradd %1, 4
 // +     store %2, i32 3, align 4
 // +     call fastcc void _S2f2FvI32SI32E(i32 42, ptr #2, i64 3)
-// +     ret
-// + }
-// +
-// + proc _S2f2FvI32SI32E (i32 %0, ptr %1, i64 %2) private fastcc {
-// +     #0 = 4, align 4
-// +     #1 = 16, align 8
-// +
-// + entry:
-// +     store #0, i32 %0, align 4
-// +     store #1, ptr %1, align 8
-// +     %3 = ptradd #1, 8
-// +     store %3, i64 %2, align 8
 // +     ret
 // + }
 // +

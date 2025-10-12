@@ -404,7 +404,7 @@ class srcc::ProcType final : public TypeBase
     friend TrailingObjects;
 
     CallingConvention cc;
-    bool is_variadic;
+    bool is_varargs;
     const u32 num_params;
     Type return_type;
 
@@ -421,6 +421,22 @@ public:
     /// Get the calling convention of this procedure type.
     auto cconv() const -> CallingConvention { return cc; }
 
+    /// Get whether this procedure type has C varargs.
+    auto has_c_varargs() const -> bool { return is_varargs; }
+
+    /// Get whether this is a variadic procedure.
+    auto is_variadic() const -> bool {
+        return num_params != 0 and params()[num_params - 1].variadic;
+    }
+
+    /// Get all non-variadic parameters.
+    auto non_variadic_params() const -> u32 {
+        return param_count() - u32(is_variadic());
+    }
+
+    /// Get the number of parameters that this type has.
+    auto param_count() const -> u32 { return num_params; }
+
     /// Get the parameter types of this procedure type.
     auto params() const -> ArrayRef<ParamTypeData> { return getTrailingObjects(num_params); }
 
@@ -434,11 +450,8 @@ public:
     /// Get the return type of this procedure type.
     auto ret() const -> Type { return return_type; }
 
-    /// Get whether this procedure type is variadic.
-    auto has_c_varargs() const -> bool { return is_variadic; }
-
     void Profile(FoldingSetNodeID& ID) const {
-        Profile(ID, return_type, params(), cc, is_variadic);
+        Profile(ID, return_type, params(), cc, is_varargs);
     }
 
     /// Get a copy of this type, with the return type adjusted

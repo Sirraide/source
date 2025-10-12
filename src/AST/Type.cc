@@ -376,7 +376,7 @@ ProcType::ProcType(
     ArrayRef<ParamTypeData> param_types
 ) : TypeBase{Kind::ProcType},
     cc{cconv},
-    is_variadic{variadic},
+    is_varargs{variadic},
     num_params{u32(param_types.size())},
     return_type{return_type} {
     std::uninitialized_copy_n(
