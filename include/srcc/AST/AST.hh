@@ -17,6 +17,10 @@
 
 #include <base/DSA.hh>
 
+#define ALLOCATE_IN_TU(TYPE)                                                  \
+    void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead"); \
+    void* operator new(usz size, TranslationUnit& tu) { return tu.allocate<TYPE>(); }
+
 namespace srcc {
 class TranslationUnit;
 class Target;
@@ -148,11 +152,14 @@ public:
     /// Allocate data.
     void* allocate(usz size, usz align) { return allocator().Allocate(size, align); }
 
+    template <typename T>
+    void* allocate() { return allocate(sizeof(T), alignof(T)); }
+
     /// Allocate an object.
     template <typename T, typename... Args>
     auto AllocateAndConstruct(Args&&... args) -> T* {
         static_assert(std::is_trivially_destructible_v<T>, "Type must be trivially destructible");
-        return new (allocate(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
+        return new (allocate<T>()) T{std::forward<Args>(args)...};
     }
 
     /// Get the module’s allocator.

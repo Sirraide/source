@@ -337,7 +337,7 @@ auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> Pr
         new_ret,
         ty->params(),
         ty->cconv(),
-        ty->variadic()
+        ty->has_c_varargs()
     );
 }
 
@@ -428,7 +428,7 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 
     // Add attributes.
     if (cconv() == CallingConvention::Native) out += " native";
-    if (variadic()) out += " variadic";
+    if (has_c_varargs()) out += " variadic";
     if (decl) {
         if (cconv() != CallingConvention::Native and decl->mangling == Mangling::None)
             out += " nomangle";

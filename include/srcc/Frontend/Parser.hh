@@ -156,15 +156,16 @@ public:
 struct srcc::ParsedParameter {
     Intent intent;
     ParsedStmt* type;
-    ParsedParameter(Intent intent, ParsedStmt* type)
-        : intent{intent}, type{type} {}
+    bool variadic;
+    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic)
+        : intent{intent}, type{type}, variadic{variadic} {}
 };
 
 struct ParsedProcAttrs {
     bool extern_ = false;
     bool nomangle = false;
     bool native = false;
-    bool variadic = false;
+    bool c_varargs = false;
     bool builtin_operator = false;
 };
 
@@ -192,6 +193,10 @@ public:
         ParsedProcAttrs attrs,
         Location loc
     ) -> ParsedProcType*;
+
+    bool has_variadic_param() {
+        return rgs::any_of(param_types(), &ParsedParameter::variadic);
+    }
 
     auto param_types() -> ArrayRef<ParsedParameter> {
         return getTrailingObjects(num_params);

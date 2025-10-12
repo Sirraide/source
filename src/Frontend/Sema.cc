@@ -4,9 +4,11 @@
 #include <srcc/AST/Type.hh>
 #include <srcc/CG/Target/Target.hh>
 #include <srcc/ClangForward.hh>
+#include <srcc/Frontend/Parser.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
+#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/STLExtras.h>
@@ -1048,93 +1050,100 @@ auto Sema::DeduceType(
     return Type();
 }
 
-auto Sema::InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl* {
-    auto s = info.success();
-    Assert(s, "Instantiating failed substitution?");
-    if (s->instantiation) return s->instantiation;
+auto Sema::InstantiateTemplate(
+    ProcTemplateDecl* pattern,
+    TemplateSubstitution& info,
+    Location inst_loc
+) -> ProcDecl* {
+    if (info.instantiation) return info.instantiation;
 
     // Translate the declaration proper.
-    s->instantiation = BuildProcDeclInitial(
-        s->scope,
-        s->type,
-        info.pattern->name,
-        info.pattern->location(),
-        info.pattern->pattern->type->attrs,
-        info.pattern
+    info.instantiation = BuildProcDeclInitial(
+        info.scope,
+        info.type,
+        pattern->name,
+        pattern->location(),
+        pattern->pattern->type->attrs,
+        pattern
     );
 
     // Cache the instantiation.
-    tu->template_instantiations[info.pattern].push_back(s->instantiation);
+    tu->template_instantiations[pattern].push_back(info.instantiation);
 
     // Translate the body and record the instantiation.
     return TranslateProc(
-        s->instantiation,
-        info.pattern->pattern->body,
-        info.pattern->pattern->params()
+        info.instantiation,
+        pattern->pattern->body,
+        pattern->pattern->params()
     );
 }
 
 auto Sema::SubstituteTemplate(
     ProcTemplateDecl* proc_template,
     ArrayRef<TypeLoc> input_types
-) -> SubstitutionInfo& {
+) -> SubstitutionResult {
     auto params = proc_template->pattern->type->param_types();
-    Assert(input_types.size() == params.size(), "Template argument count mismatch");
 
-    // Check if this has already been substituted.
-    auto& substs = template_substitutions[proc_template];
-    auto inst = find_if(substs, [&](auto& info) {
-        return equal(info->input_types, input_types, [](Type a, TypeLoc b) {
-            return a == b.ty;
-        });
-    });
-
-    // We’ve substituted this template with these inputs before.
-    if (inst != substs.end()) return *inst->get();
-
-    // Otherwise, perform template deduction now.
+    // Perform deduction.
+    //
+    // We need to do this *before* caching, else e.g. 'proc f($T a, T b)' will
+    // be instantiated twice if called with 'f(i32, i16)' and 'f(i32, i8)', which
+    // is outright wrong.
     using Deduced = std::pair<u32, TypeLoc>;
-    HashMap<String, Deduced> deduced;
-    auto& info = *substs.emplace_back(
-        std::make_unique<SubstitutionInfo>(
-            proc_template,
-            input_types | vws::transform(&TypeLoc::ty) | rgs::to<SmallVector<Type>>()
-        )
-    );
+    TreeMap<String, Deduced> deduced;
 
     // First, handle all deduction sites.
-    auto& template_info = parsed_template_deduction_infos.at(proc_template->pattern);
-    for (const auto& [name, indices] : template_info) {
-        for (auto i : indices) {
-            auto parsed = proc_template->pattern->type->param_types()[i];
-            Type ty = DeduceType(parsed.type, i, input_types);
-            if (not ty) {
-                info.data = SubstitutionInfo::DeductionFailed{
-                    tu->save(name),
-                    i
-                };
+    //
+    // Note that we might not have any if this is a variadic function with
+    // no actual template parameters.
+    auto it = parsed_template_deduction_infos.find(proc_template->pattern);
+    if (it != parsed_template_deduction_infos.end()) {
+        for (const auto& [name, indices] : it->second) {
+            for (auto i : indices) {
+                auto parsed = proc_template->pattern->type->param_types()[i];
+                if (parsed.variadic) Todo();
+                Type ty = DeduceType(parsed.type, i, input_types);
+                if (not ty) {
+                    return SubstitutionResult::DeductionFailed{
+                        tu->save(name),
+                        i
+                    };
+                }
 
-                return info;
-            }
+                // If the type has not been deduced yet, remember it.
+                auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {ty, parsed.type->loc}});
+                if (inserted) continue;
 
-            // If the type has not been deduced yet, remember it.
-            auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {ty, parsed.type->loc}});
-            if (inserted) continue;
-
-            // Otherwise, check that the deduction result is the same.
-            if (it->second.second.ty != ty) {
-                info.data = SubstitutionInfo::DeductionAmbiguous{
-                    name,
-                    it->second.first,
-                    u32(i),
-                    it->second.second.ty,
-                    ty,
-                };
-
-                return info;
+                // Otherwise, check that the deduction result is the same.
+                if (it->second.second.ty != ty) {
+                    return SubstitutionResult::DeductionAmbiguous{
+                        name,
+                        it->second.first,
+                        u32(i),
+                        it->second.second.ty,
+                        ty,
+                    };
+                }
             }
         }
     }
+
+    // Next, collect variadic parameters.
+    u32 variadic_array_size = 0;
+    if (proc_template->has_variadic_param)
+        variadic_array_size = u32(input_types.size() - (params.size() - 1));
+
+    // Now that deduction is done, check if we’ve substituted this before.
+    llvm::FoldingSetNodeID id;
+    for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
+    if (proc_template->has_variadic_param) id.AddInteger(variadic_array_size);
+
+    // Don’t hold on to a reference to the folding set (or the insert position)
+    // here as we might end up invalidating it if template instantiation occurs
+    // during the translation of the procedure type below.
+    void* _unused{};
+    auto info = template_substitutions[proc_template].FindNodeOrInsertPos(id, _unused);
+    if (info) return info;
 
     // Create a scope for the procedure and save the template arguments there.
     EnterScope scope{*this, ScopeKind::Procedure};
@@ -1142,15 +1151,21 @@ auto Sema::SubstituteTemplate(
         AddDeclToScope(scope.get(), new (*tu) TemplateTypeParamDecl(name, d.second));
 
     // Now that that is done, we can convert the type properly.
-    auto ty = TranslateType(proc_template->pattern->type);
+    auto ty = TranslateProcType(proc_template->pattern->type, variadic_array_size);
 
     // Mark that we’re done substituting.
     for (auto d : scope.get()->decls())
         cast<TemplateTypeParamDecl>(d)->in_substitution = false;
 
     // Store the type for later if substitution succeeded.
-    if (not ty) return info;
-    info.data = SubstitutionInfo::Success{cast<ProcType>(ty), scope.get()};
+    if (not ty) return {};
+    info = new (*tu) TemplateSubstitution(
+        id.Intern(tu->allocator()),
+        cast<ProcType>(ty),
+        scope.get()
+    );
+
+    template_substitutions[proc_template].InsertNode(info);
     return info;
 }
 
@@ -1161,9 +1176,18 @@ bool Sema::Candidate::has_valid_proc_type() const {
     return status.is<Viable, ParamInitFailed>();
 }
 
-bool Sema::Candidate::is_variadic() const {
-    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->proc_type()->variadic();
-    return cast<ProcTemplateDecl>(decl)->pattern->type->attrs.variadic;
+bool Sema::Candidate::has_c_varargs() const {
+    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->proc_type()->has_c_varargs();
+    return cast<ProcTemplateDecl>(decl)->pattern->type->attrs.c_varargs;
+}
+
+bool Sema::Candidate::is_variadic_template() const {
+    auto t = dyn_cast<ProcTemplateDecl>(decl);
+    return t and t->has_variadic_param;
+}
+
+auto Sema::Candidate::non_variadic_params() const -> u32 {
+    return u32(param_count() - is_variadic_template());
 }
 
 auto Sema::Candidate::param_count() const -> usz {
@@ -1180,13 +1204,13 @@ auto Sema::Candidate::proc_type() const -> ProcType* {
     Assert(has_valid_proc_type(), "proc_type() cannot be used if template substitution failed");
     auto d = dyn_cast<ProcDecl>(decl);
     if (d) return d->proc_type();
-    return subst->success()->type;
+    return subst.success()->type;
 }
 
 auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
     auto d = dyn_cast<ProcDecl>(decl);
     if (d) return d->proc_type()->print();
-    if (subst and subst->success()) return subst->success()->type->print();
+    if (subst.success()) return subst.success()->type->print();
     return SmallUnrenderedString("(template)");
 }
 
@@ -1425,10 +1449,14 @@ auto Sema::PerformOverloadResolution(
         auto& c = candidates.emplace_back(proc);
 
         // Argument count mismatch is not allowed, unless the
-        // function is variadic.
-        auto param_count = c.param_count();
-        if (args.size() != param_count) {
-            if (args.size() < param_count or not c.is_variadic()) {
+        // function is variadic. For variadic templates, we allow
+        // the variadic parameter to be empty.
+        auto required_param_count = c.param_count() - usz(c.is_variadic_template());
+        if (args.size() != required_param_count) {
+            if (
+                args.size() < required_param_count or
+                (not c.has_c_varargs() and not c.is_variadic_template())
+            ) {
                 c.status = Candidate::ArgumentCountMismatch{};
                 return true;
             }
@@ -1437,17 +1465,16 @@ auto Sema::PerformOverloadResolution(
         // Candidate is a regular procedure.
         if (not templ) return true;
 
-        // Candidate is a template. Check that we have enough arguments
-        // to perform
+        // Candidate is a template.
         SmallVector<TypeLoc, 6> types;
-        for (auto arg : args | vws::take(param_count)) types.emplace_back(arg->type, arg->location());
-        c.subst = &SubstituteTemplate(templ, types);
+        for (auto arg : args) types.emplace_back(arg->type, arg->location());
+        c.subst = SubstituteTemplate(templ, types);
 
         // If there was a hard error, abort overload resolution entirely.
-        if (c.subst->data.is<SubstitutionInfo::Error>()) return false;
+        if (c.subst.data.is<SubstitutionResult::Error>()) return false;
 
-        // Otherwise, ee can still try and continue with overload resolution.
-        if (not c.subst->success()) c.status = Candidate::DeductionError{};
+        // Otherwise, we can still try and continue with overload resolution.
+        if (not c.subst.success()) c.status = Candidate::DeductionError{};
         return true;
     };
 
@@ -1465,33 +1492,43 @@ auto Sema::PerformOverloadResolution(
         auto ty = c.proc_type();
         auto params = ty->params();
 
-        // Check that we can initialise each parameter with its
-        // corresponding argument. Variadic arguments are checked
-        // later when the call is built.
-        for (auto [i, a] : enumerate(args.take_front(params.size()))) {
+        // Convert an argument to the corresponding parameter type.
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
             // Candidate may have become invalid in the meantime.
             auto st = c.status.get_if<Candidate::Viable>();
-            if (not st) break;
+            if (not st) return false;
 
             // Check the next parameter.
-            auto& p = params[i];
+            auto& p = params[param_index];
             auto seq_or_err = BuildConversionSequence(
                 p.type,
-                {a},
-                a->location(),
+                args,
+                loc,
                 p.intent == Intent::Out or p.intent == Intent::Inout
             );
 
             // If this failed, stop checking this candidate.
             if (not seq_or_err.result.has_value()) {
-                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.result.error()), u32(i)};
-                break;
+                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.result.error()), param_index};
+                return false;
             }
 
             // Otherwise, store the sequence for later and keep going.
             st->conversions.push_back(std::move(seq_or_err.result.value()));
             st->badness += st->conversions.back().badness();
-        }
+            return true;
+        };
+
+        // Convert the argument to each non-variadic parameter.
+        for (auto [i, a] : enumerate(args.take_front(c.non_variadic_params())))
+            ConvertArg(u32(i), a, a->location());
+
+        // Convert any remaining arguments to the variadic parameter.
+        if (c.is_variadic_template()) ConvertArg(
+            u32(params.size() - 1),
+            args.drop_front(c.non_variadic_params()),
+            not args.empty() ? args.front()->location() : call_loc
+        );
 
         // No fatal error.
         return true;
@@ -1552,8 +1589,13 @@ auto Sema::PerformOverloadResolution(
         ProcDecl* final_callee;
 
         // Instantiate it now if it is a template.
-        if (c->subst) {
-            auto inst = InstantiateTemplate(*c->subst, call_loc);
+        if (c->is_template()) {
+            auto inst = InstantiateTemplate(
+                cast<ProcTemplateDecl>(c->decl),
+                *c->subst.data.get<TemplateSubstitution*>(),
+                call_loc
+            );
+
             if (not inst or not inst->is_valid) return {};
             final_callee = inst;
         } else {
@@ -1563,8 +1605,22 @@ auto Sema::PerformOverloadResolution(
         // Now is the time to apply the argument conversions.
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
-        for (auto [i, conv] : enumerate(c->status.get<Candidate::Viable>().conversions))
+        ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
+
+        // Convert non-variadic arguments.
+        for (auto [i, conv] : enumerate(conversions.drop_back(c->is_variadic_template())))
             actual_args.emplace_back(ApplyConversionSequence(args[i], conv, args[i]->location()));
+
+        // Apply the conversion for the variadic argument pack to the remaining arguments.
+        if (c->is_variadic_template()) {
+            auto variadic_args = args.drop_front(c->non_variadic_params());
+            actual_args.emplace_back(ApplyConversionSequence(
+                variadic_args,
+                conversions.back(),
+                not variadic_args.empty() ? variadic_args.front()->location() : call_loc
+            ));
+        }
+
         if (not CheckIntents(final_callee->proc_type(), actual_args)) return {};
         return {final_callee, std::move(actual_args)};
     }
@@ -1580,11 +1636,11 @@ void Sema::ReportOverloadResolutionFailure(
     Location call_loc,
     u32 final_badness
 ) {
-    auto FormatTempSubstFailure = [&](const SubstitutionInfo& info, std::string& out, std::string_view indent) {
+    auto FormatTempSubstFailure = [&](const SubstitutionResult& info, std::string& out, std::string_view indent) {
         info.data.visit(utils::Overloaded{// clang-format off
-            [](const SubstitutionInfo::Success&) { Unreachable("Invalid template even though substitution succeeded?"); },
-            [](SubstitutionInfo::Error) { Unreachable("Should have bailed out earlier on hard error"); },
-            [&](SubstitutionInfo::DeductionFailed f) {
+            [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
+            [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+            [&](SubstitutionResult::DeductionFailed f) {
                 out += std::format(
                     "In param #{}: could not infer ${}",
                     f.param_index + 1,
@@ -1592,7 +1648,7 @@ void Sema::ReportOverloadResolutionFailure(
                 );
             },
 
-            [&](const SubstitutionInfo::DeductionAmbiguous& a) {
+            [&](const SubstitutionResult::DeductionAmbiguous& a) {
                 out += std::format(
                     "Inference mismatch for template parameter %3(${}%):\n"
                     "{}#{}: Inferred as {}\n"
@@ -1629,9 +1685,8 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::DeductionError) {
-                Assert(c.subst, "DeductionError requires a SubstitutionInfo");
                 std::string extra;
-                FormatTempSubstFailure(*c.subst, extra, "  ");
+                FormatTempSubstFailure(c.subst, extra, "  ");
                 Error(call_loc, "Template argument substitution failed");
                 Remark("\r{}", extra);
                 Note(c.decl->location(), "Declared here");
@@ -1715,9 +1770,8 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::DeductionError) {
-                Assert(c.subst, "DeductionError requires a SubstitutionInfo");
                 message += "Template argument substitution failed";
-                FormatTempSubstFailure(*c.subst, message, "        ");
+                FormatTempSubstFailure(c.subst, message, "        ");
             },
         }; // clang-format on
         c.status.visit(V);
@@ -2500,7 +2554,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         // Check arg count.
         auto params = ty->params().size();
         auto argn = args.size();
-        if (ty->variadic() ? params > argn : params != argn) {
+        if (ty->has_c_varargs() ? params > argn : params != argn) {
             auto decl = dyn_cast<ProcRefExpr>(callee_expr);
             Error(
                 loc,
@@ -2552,24 +2606,26 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
 
     // And check variadic arguments.
     auto ty = cast<ProcType>(resolved_callee->type);
-    for (auto a : args.drop_front(ty->params().size())) {
-        // Codegen is not set up to handle variadic arguments that are larger
-        // than a word, so reject these here. If you need one of those, then
-        // seriously, wtf are you doing.
-        if (
-            a->type == Type::IntTy or
-            a->type == Type::BoolTy or
-            a->type == Type::NoReturnTy or
-            (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
-            isa<PtrType>(a->type)
-        ) {
-            converted_args.push_back(LValueToRValue(a));
-        } else {
-            Error(
-                a->location(),
-                "Passing a value of type '{}' as a varargs argument is not supported",
-                a->type
-            );
+    if (ty->has_c_varargs()) {
+        for (auto a : args.drop_front(ty->params().size())) {
+            // Codegen is not set up to handle variadic arguments that are larger
+            // than a word, so reject these here. If you need one of those, then
+            // seriously, wtf are you doing.
+            if (
+                a->type == Type::IntTy or
+                a->type == Type::BoolTy or
+                a->type == Type::NoReturnTy or
+                (isa<IntType>(a->type) and cast<IntType>(a->type)->bit_width() <= Size::Bits(64)) or
+                isa<PtrType>(a->type)
+            ) {
+                converted_args.push_back(LValueToRValue(a));
+            } else {
+                Error(
+                    a->location(),
+                    "Passing a value of type '{}' as a varargs argument is not supported",
+                    a->type
+                );
+            }
         }
     }
 
@@ -3759,11 +3815,45 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
     );
 
+    // Variadic templates cannot have C varargs.
+    bool has_variadic_param = parsed->type->has_variadic_param();
+    if (has_variadic_param and attrs.c_varargs) {
+        attrs.c_varargs = false;
+        Error(parsed->loc, "Variadic function cannot be '%1(varargs%)'");
+    }
+
+    // Determine if this is a template.
+    auto IsTemplate = [&] {
+        // Variadic procedures are always templates.
+        if (has_variadic_param) return true;
+
+        // If this has template parameters, it is a template.
+        auto it = parsed_template_deduction_infos.find(parsed);
+        return it != parsed_template_deduction_infos.end();
+    };
+
     // If this is a template, we can’t do much right now.
-    auto it = parsed_template_deduction_infos.find(parsed);
-    auto is_template = it != parsed_template_deduction_infos.end();
-    if (is_template) {
-        auto decl = ProcTemplateDecl::Create(*tu, parsed, curr_proc().proc);
+    if (IsTemplate()) {
+        auto decl = ProcTemplateDecl::Create(
+            *tu,
+            parsed,
+            curr_proc().proc,
+            has_variadic_param
+        );
+
+        // Currently, only the last parameter is allowed to be variadic.
+        if (has_variadic_param) {
+            auto params_except_last = parsed->type->param_types().drop_back();
+            auto it = rgs::find_if(params_except_last, &ParsedParameter::variadic);
+            if (it != params_except_last.end()) {
+                decl->set_invalid();
+                Error(
+                    parsed->params()[usz(it - params_except_last.begin())]->loc,
+                    "Only the last parameter can be variadic"
+                );
+            }
+        }
+
         AddDeclToScope(curr_scope(), decl);
         return decl;
     }
@@ -3878,10 +3968,7 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     if (not size) return Type();
     auto integer = size->dyn_cast<APInt>();
 
-    // Check that the element type makes sense.
-    if (not CheckVariableType(base.ty, base.loc)) return Type();
-
-    // Check that the size is a positive 64-bit integer.
+    // Check that the size is a 64-bit integer.
     if (not integer) return Error(
         size_expr->location(),
         "Array size must be an integer, but was '{}'",
@@ -3894,13 +3981,18 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     );
 
     auto v = integer->getSExtValue();
-    if (v < 0) return Error(
-        size_expr->location(),
+    return BuildArrayType(base, v, {base.loc, size_expr->location()});
+}
+
+auto Sema::BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type {
+    if (not CheckVariableType(base.ty, base.loc)) return Type();
+    if (size < 0) return Error(
+        loc,
         "Array size cannot be negative (value: {})",
-        v
+        size
     );
 
-    return ArrayType::Get(*tu, base.ty, v);
+    return ArrayType::Get(*tu, base.ty, size);
 }
 
 auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
@@ -3940,7 +4032,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     return Type();
 }
 
-auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
+auto Sema::TranslateProcType(ParsedProcType* parsed, u32 variadic_array_size) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -3968,8 +4060,17 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
         if (ty and parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
             DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
+        // If this is a variadic parameter, convert it to an array.
+        if (a.variadic) {
+            ty = BuildArrayType(
+                {ty, a.type->loc},
+                variadic_array_size,
+                a.type->loc
+            );
+        }
+
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
-        params.emplace_back(a.intent, ty);
+        params.emplace_back(a.intent, ty, a.variadic);
     }
 
     auto ret = TranslateType(parsed->ret_type);

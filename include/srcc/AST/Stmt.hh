@@ -1228,11 +1228,16 @@ public:
     /// Pattern to instantiate.
     ParsedProcDecl* pattern;
 
+    /// Whether this template has any variadic arguments (*not* C
+    /// varargs, for that, see the 'c_varargs' attribute).
+    bool has_variadic_param;
+
 private:
     ProcTemplateDecl(
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
+        bool has_variadic_param,
         Location location
     );
 
@@ -1240,7 +1245,8 @@ public:
     static auto Create(
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
-        Ptr<ProcDecl> parent
+        Ptr<ProcDecl> parent,
+        bool has_variadic_param
     ) -> ProcTemplateDecl*;
 
     /// Get all instantiations of this template.

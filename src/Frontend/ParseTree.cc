@@ -549,6 +549,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                         first = false;
                         if (param.intent != Intent::Move) out += std::format("{} ", param.intent);
                         Append(param.type);
+                        if (param.variadic) out += "...";
                     }
 
                     out += ")";
@@ -557,7 +558,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 if (p->attrs.native) out += " native";
                 if (p->attrs.extern_) out += " extern";
                 if (p->attrs.nomangle) out += " nomangle";
-                if (p->attrs.variadic) out += " variadic";
+                if (p->attrs.c_varargs) out += " variadic";
 
                 out += " -> %)";
                 Append(p->ret_type);

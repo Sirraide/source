@@ -389,7 +389,13 @@ public:
 struct srcc::ParamTypeData {
     Intent intent;
     Type type;
-    ParamTypeData(Intent intent, Type type) : intent{intent}, type{type} {}
+
+    // This is only relevant in Sema when performing overload resolution
+    // and has no effect in CodeGen!
+    bool variadic;
+
+    ParamTypeData(Intent intent, Type type, bool variadic = false) :
+        intent{intent}, type{type}, variadic{variadic} {}
 };
 
 class srcc::ProcType final : public TypeBase
@@ -429,7 +435,7 @@ public:
     auto ret() const -> Type { return return_type; }
 
     /// Get whether this procedure type is variadic.
-    auto variadic() const -> bool { return is_variadic; }
+    auto has_c_varargs() const -> bool { return is_variadic; }
 
     void Profile(FoldingSetNodeID& ID) const {
         Profile(ID, return_type, params(), cc, is_variadic);

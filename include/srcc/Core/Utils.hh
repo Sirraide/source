@@ -49,6 +49,7 @@ using llvm::DenseMap;
 using llvm::FoldingSet;
 using llvm::FoldingSetNode;
 using llvm::FoldingSetNodeID;
+using llvm::FoldingSetNodeIDRef;
 using llvm::MutableArrayRef;
 using llvm::SmallString;
 using llvm::SmallVector;

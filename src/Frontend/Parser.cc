@@ -1212,10 +1212,13 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
     }
 }
 
+// <param-decl>  ::= [ <intent> ] <param-rest>
+// <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
     String name;
     Location name_loc;
+    bool variadic = false;
 
     // Parse intent.
     auto [start_loc, intent] = ParseIntent();
@@ -1252,9 +1255,10 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     else {
         type = ParseType();
         if (not type) return false;
+        variadic = Consume(Tk::Ellipsis);
     }
 
-    sig.param_types.emplace_back(intent, type.get());
+    sig.param_types.emplace_back(intent, type.get(), variadic);
 
     // If decls is not null, then we allow named parameters here; parse
     // the name if there is one and create the declaration.
@@ -1380,7 +1384,6 @@ bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
 // <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
-// <param-decl> ::= [ <intent> ] <type> [ IDENTIFIER ] | [ <intent> ] <signature>
 bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
     Assert(current_signature);
     auto& sig = *current_signature;
@@ -1404,6 +1407,12 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
             if (not ParseParameter(sig, decls)) SkipTo(Tk::Comma, Tk::RParen);
             if (not Consume(Tk::Comma)) break;
         }
+
+        if (not At(Tk::RParen)) {
+            Error("Unexpected token in procedure argument list");
+            SkipTo(Tk::RParen);
+        }
+
         parens.close();
     }
 
@@ -1422,7 +1431,7 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
         ParseAttr(sig.attrs.extern_, "extern") or
         ParseAttr(sig.attrs.native, "native") or
         ParseAttr(sig.attrs.nomangle, "nomangle") or
-        ParseAttr(sig.attrs.variadic, "variadic") or
+        ParseAttr(sig.attrs.c_varargs, "varargs") or
         ParseAttr(sig.attrs.builtin_operator, "__srcc_builtin_op__")
     );
 

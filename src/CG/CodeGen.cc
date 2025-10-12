@@ -547,7 +547,7 @@ auto CodeGen::GetOrCreateProc(
         C(linkage),
         C(ty->cconv()),
         info.func,
-        ty->variadic(),
+        ty->has_c_varargs(),
         info.no_return,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
@@ -1625,7 +1625,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
         callee.first(),
         C(proc->cconv()),
         info.func,
-        proc->variadic(),
+        proc->has_c_varargs(),
         info.args,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)

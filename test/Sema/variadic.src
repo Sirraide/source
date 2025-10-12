@@ -1,0 +1,7 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f(int...) {}
+proc f(int, int...) {}
+proc f(int, int..., int) {} // expected-error: Only the last parameter can be variadic
+proc f(int, int..., int...) {} // expected-error: Only the last parameter can be variadic

@@ -103,7 +103,8 @@
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
-<param-decl>  ::= [ <intent> ] <type> [ IDENT ] | [ <intent> ] <signature>
+<param-decl>  ::= [ <intent> ] <param-rest>
+<param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
 <intent>      ::= IN | OUT | INOUT | COPY
 
 // ============================================================================

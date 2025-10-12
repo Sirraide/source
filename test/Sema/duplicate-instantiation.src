@@ -1,0 +1,25 @@
+// R %srcc --sema --ast %s
+program test;
+
+// Check that we use the template arguments rather than the
+// call arguments to cache instantiations.
+proc f ($T a, T b) = a + b;
+
+// These should all call the same instantiation.
+f(1 as i32, 2 as i8);
+f(1 as i32, 2 as i16);
+f(1 as i32, 2 as i32);
+
+// d ptr 0x[a-fA-F0-9]+
+
+// re* CallExpr .* <9:1> i32
+// re+ ├─ProcRefExpr .* <9:1> f
+// re+ │ └─ProcDecl $inst:ptr <6:6> f proc (i32, i32) -> i32 instantiation
+
+// re* CallExpr .* <10:1> i32
+// re+ ├─ProcRefExpr .* <10:1> f
+// re+ │ └─ProcDecl $inst <6:6> f proc (i32, i32) -> i32 instantiation
+
+// re* CallExpr .* <11:1> i32
+// re+ ├─ProcRefExpr .* <11:1> f
+// re+ │ └─ProcDecl $inst <6:6> f proc (i32, i32) -> i32 instantiation

@@ -8,6 +8,7 @@
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/TinyPtrVector.h>
 
 #include <base/Macros.hh>
@@ -275,33 +276,34 @@ class srcc::Sema : public DiagsProducer {
         static auto Success(Decl* decl) { return LookupResult{decl, {}, Reason::Success}; }
     };
 
+    /// A successful template substitution.
+    struct TemplateSubstitution : public FoldingSetNode {
+        ALLOCATE_IN_TU(TemplateSubstitution);
+        FoldingSetNodeIDRef hash;
+
+        /// The substituted procedure type.
+        ProcType* type;
+
+        /// Procedure scope to use for instantiation.
+        Scope* scope;
+
+        /// The instantiated procedure, if we have already instantiated it.
+        ProcDecl* instantiation = nullptr;
+
+        TemplateSubstitution(
+            FoldingSetNodeIDRef hash,
+            ProcType* type,
+            Scope* scope
+        ) : hash{hash}, type{type}, scope{scope} {}
+
+        void Profile(FoldingSetNodeID& id) { id = hash; }
+    };
+
     /// The result of substituting a procedure type before template instantiation.
-    struct SubstitutionInfo {
-        LIBBASE_IMMOVABLE(SubstitutionInfo);
+    class SubstitutionResult {
+        LIBBASE_MOVE_ONLY(SubstitutionResult);
 
-        /// The template that was substituted.
-        ProcTemplateDecl* pattern;
-
-        /// Canonical arguments provided by the user.
-        SmallVector<Type> input_types;
-
-        /// Substitution was successful.
-        struct Success {
-            /// The substituted procedure type.
-            ProcType* type;
-
-            /// Procedure scope to use for instantiation.
-            Scope* scope;
-
-            /// The instantiated procedure, if we have already instantiated it.
-            ProcDecl* instantiation = nullptr;
-
-            Success(
-                ProcType* type,
-                Scope* scope
-            ) : type{type}, scope{scope} {}
-        };
-
+    public:
         /// Deduction failed entirely for a TDD.
         struct DeductionFailed {
             /// The parameter that we failed to deduce.
@@ -329,18 +331,24 @@ class srcc::Sema : public DiagsProducer {
         struct Error {};
 
         /// What happened.
-        Variant< // clang-format off
-            Success,
+        using DataType = Variant< // clang-format off
+            TemplateSubstitution*,
             DeductionFailed,
             DeductionAmbiguous,
             Error
-        > data = Error{}; // clang-format on
+        >;
 
-        SubstitutionInfo() = default;
-        SubstitutionInfo(ProcTemplateDecl* pattern, SmallVector<Type> input_types)
-            : pattern{pattern}, input_types{std::move(input_types)} {}
+        DataType data = Error{}; // clang-format on
 
-        auto success() -> Success* { return data.get_if<Success>(); }
+        SubstitutionResult() = default;
+
+        template <std::convertible_to<DataType> T>
+        SubstitutionResult(T&& v): data{std::forward<T>(v)} {}
+
+        auto success() const -> TemplateSubstitution* {
+            auto s = data.get_if<TemplateSubstitution*>();
+            return s ? *s : nullptr;
+        }
     };
 
     /// Overload resolution candidate.
@@ -378,7 +386,7 @@ class srcc::Sema : public DiagsProducer {
 
         // Substitution for this template if this is one. This may not
         // exist in some error cases.
-        SubstitutionInfo* subst = nullptr;
+        SubstitutionResult subst{};
 
         // Whether this candidate is still viable, or why not.
         using Status = Variant< // clang-format off
@@ -398,9 +406,11 @@ class srcc::Sema : public DiagsProducer {
         auto param_loc(usz index) const -> Location;
         auto proc_type() const -> ProcType*;
         auto type_for_diagnostic() const -> SmallUnrenderedString;
+        bool has_c_varargs() const;
         bool has_valid_proc_type() const;
         bool is_template() const { return isa<ProcTemplateDecl>(decl); }
-        bool is_variadic() const;
+        bool is_variadic_template() const;
+        auto non_variadic_params() const -> u32;
         bool viable() const { return status.is<Viable>(); }
     };
 
@@ -522,7 +532,7 @@ class srcc::Sema : public DiagsProducer {
     SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
 
     /// Cached template substitutions.
-    DenseMap<ProcTemplateDecl*, SmallVector<std::unique_ptr<SubstitutionInfo>>> template_substitutions;
+    DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
 
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
@@ -717,7 +727,11 @@ private:
     ) -> Ptr<ImportedClangModuleDecl>;
 
     /// Instantiate a procedure template.
-    auto InstantiateTemplate(SubstitutionInfo& info, Location inst_loc) -> ProcDecl*;
+    auto InstantiateTemplate(
+        ProcTemplateDecl* pattern,
+        TemplateSubstitution& info,
+        Location inst_loc
+    ) -> ProcDecl*;
 
     /// Check if an integer literal can be stored in a given type.
     bool IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated);
@@ -849,7 +863,7 @@ private:
     auto SubstituteTemplate(
         ProcTemplateDecl* proc_template,
         ArrayRef<TypeLoc> input_types
-    ) -> SubstitutionInfo&;
+    ) -> SubstitutionResult;
 
     /// Try to perform variable initialisation and return the result if
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
@@ -859,6 +873,7 @@ private:
     /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, Location loc) -> Ptr<Expr>;
     auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
+    auto BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type;
     auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<Expr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
@@ -910,7 +925,7 @@ private:
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
-    auto TranslateProcType(ParsedProcType* parsed) -> Type;
+    auto TranslateProcType(ParsedProcType* parsed, u32 variadic_array_size = 0) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

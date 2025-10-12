@@ -349,19 +349,23 @@ ProcTemplateDecl::ProcTemplateDecl(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,
     Ptr<ProcDecl> parent,
+    bool has_variadic_param,
     Location location
 ) : Decl{Kind::ProcTemplateDecl, pattern->name, location},
-    owner(&tu), parent{parent}, pattern{pattern} {}
+    owner(&tu), parent{parent}, pattern{pattern},
+    has_variadic_param{has_variadic_param} {}
 
 auto ProcTemplateDecl::Create(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,
-    Ptr<ProcDecl> parent
+    Ptr<ProcDecl> parent,
+    bool has_variadic_param
 ) -> ProcTemplateDecl* {
     return new (tu) ProcTemplateDecl{
         tu,
         pattern,
         parent,
+        has_variadic_param,
         pattern->loc,
     };
 }

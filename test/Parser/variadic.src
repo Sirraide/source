@@ -1,0 +1,19 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc f(int...) {}
+proc f(int...a) {}
+proc f(...int) {} // expected-error: Expected type
+proc f(int a...) {} // expected-error: Unexpected token in procedure argument list
+
+proc f(var...) {}
+proc f(var...a) {}
+proc f(...var) {} // expected-error: Expected type
+proc f(var a...) {} // expected-error: Unexpected token in procedure argument list
+
+proc f($T...) {}
+proc f($T...a) {}
+proc f(...$T) {} // expected-error: Expected type
+proc f($T a...) {} // expected-error: Unexpected token in procedure argument list
+
+proc f(...) {} // expected-error: Expected type
