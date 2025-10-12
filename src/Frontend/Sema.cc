@@ -1080,13 +1080,9 @@ auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
 // ============================================================================
 //  Templates.
 // ============================================================================
-auto Sema::DeduceType(
-    ParsedStmt* parsed_type,
-    u32 parsed_type_index,
-    ArrayRef<TypeLoc> input_types
-) -> Type {
+auto Sema::DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type {
     if (isa<ParsedTemplateType>(parsed_type))
-        return input_types[parsed_type_index].ty;
+        return input_type;
 
     // TODO: Support more complicated deduction.
     return Type();
@@ -1138,17 +1134,56 @@ auto Sema::SubstituteTemplate(
     // no actual template parameters.
     auto it = parsed_template_deduction_infos.find(proc_template->pattern);
     if (it != parsed_template_deduction_infos.end()) {
+        auto param_types = proc_template->pattern->type->param_types();
         for (const auto& [name, indices] : it->second) {
             for (auto i : indices) {
-                auto parsed = proc_template->pattern->type->param_types()[i];
-                if (parsed.variadic) Todo();
-                Type ty = DeduceType(parsed.type, i, input_types);
+                auto parsed = param_types[i];
+
+                // There might be no corresponding argument if we didn’t
+                // pass any variadic arguments to this. In that case, use
+                // what ever we deduced earlier, or 'void' if this is the
+                // only place where this parameter is deduced.
+                Type ty;
+                if (input_types.size() == i) {
+                    Assert(proc_template->has_variadic_param);
+                    deduced.try_emplace(name, Deduced{u32(i), {Type::VoidTy, parsed.type->loc}});
+                    continue;
+                }
+
+                // Otherwise, deduce the parameter from its corresponding argument(s).
+                ty = DeduceType(parsed.type, input_types[i].ty);
                 if (not ty) {
                     return SubstitutionResult::DeductionFailed{
                         tu->save(name),
                         i
                     };
                 }
+
+                if (parsed.variadic) {
+                    Assert(proc_template->has_variadic_param);
+
+                    // We already deduced 'ty' from the first variadic argument, so
+                    // start at the one after it, if there is one, and make sure we
+                    // get the same type for each argument.
+                    for (u32 j = u32(param_types.size()), e = u32(input_types.size()); j < e; j++) {
+                        Type next = DeduceType(parsed.type, input_types[j].ty);
+                            if (not next) {
+                            return SubstitutionResult::DeductionFailed{
+                                tu->save(name),
+                                j
+                            };
+                        }
+
+                        if (next != ty) return SubstitutionResult::DeductionAmbiguous{
+                            name,
+                            u32(i),
+                            u32(j),
+                            ty,
+                            next,
+                        };
+                    }
+                }
+
 
                 // If the type has not been deduced yet, remember it.
                 auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {ty, parsed.type->loc}});
@@ -1686,14 +1721,14 @@ void Sema::ReportOverloadResolutionFailure(
             [&](const SubstitutionResult::DeductionAmbiguous& a) {
                 out += std::format(
                     "Inference mismatch for template parameter %3(${}%):\n"
-                    "{}#{}: Inferred as {}\n"
-                    "{}#{}: Inferred as {}",
+                    "{}Argument #{}: Inferred as {}\n"
+                    "{}Argument #{}: Inferred as {}",
                     a.param,
                     indent,
-                    a.first,
+                    a.first + 1,
                     a.first_type,
                     indent,
-                    a.second,
+                    a.second + 1,
                     a.second_type
                 );
             }

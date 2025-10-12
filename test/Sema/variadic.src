@@ -12,3 +12,28 @@ g();
 g(1);
 g(1, 2);
 g(1, 2, 3);
+
+proc h ($T ...x) {} // expected-note 2: Declared here
+
+h();
+h(1);
+h(1, 2);
+h(1, 2 as i32, 3); // expected-error: Template argument substitution failed
+h(1 as i32, 2 as i32, 3); // expected-error: Template argument substitution failed
+h(1 as i32, 2 as i32, 3 as i32);
+
+proc j ($T y, $T ...x) {} // expected-note 3: Declared here
+
+j(42);
+j(42, 1);
+j(42, 1 as i32); // expected-error: Template argument substitution failed
+j(42 as i32, 1); // expected-error: Template argument substitution failed
+j(42, 1, 2 as i32, 3); // expected-error: Template argument substitution failed
+
+proc k ($T y, T... x) {}
+
+k(42 as i64);
+k(42 as i64, 1);
+k(42 as i64, 1 as i32);
+k(42 as i32, 1);
+k(42 as i64, 1, 2 as i32, 3);

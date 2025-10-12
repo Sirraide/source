@@ -324,7 +324,7 @@ class srcc::Sema : public DiagsProducer {
             /// The name of the parameter that we failed to deduce.
             String param;
 
-            /// The two parameters that caused the ambiguity.
+            /// The two arguments that caused the ambiguity.
             u32 first, second;
 
             /// The two types that we deduced each time.
@@ -711,11 +711,7 @@ private:
     void DeclareLocal(LocalDecl* d);
 
     /// Perform template deduction.
-    auto DeduceType(
-        ParsedStmt* parsed_type,
-        u32 parsed_type_index,
-        ArrayRef<TypeLoc> input_types
-    ) -> Type;
+    auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type;
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return);
