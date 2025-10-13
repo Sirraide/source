@@ -9,6 +9,7 @@
 
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/TargetParser/Host.h>
+#include <base/Utils.hh>
 
 using namespace srcc;
 
@@ -194,50 +195,52 @@ void Stmt::Printer::Print(Stmt* e) {
         return "<invalid value category>";
     };
 
-    // FIXME: Should be a visitor.
-    switch (e->kind()) {
-        case Kind::ArrayBroadcastExpr: {
-            auto a = cast<ArrayBroadcastExpr>(e);
+    e->visit(utils::Overloaded{
+        [&](auto* node) {
+            PrintBasicNode(e, enchantum::to_string(node->kind()));
+        },
+        [&](ArrayBroadcastExpr* a) {
             PrintBasicNode(e, "ArrayBroadcastExpr");
             PrintChildren(a->element);
-        } break;
+        },
 
-        case Kind::ArrayInitExpr: {
-            auto a = cast<ArrayInitExpr>(e);
+        [&](ArrayInitExpr* a) {
             PrintBasicNode(e, "ArrayInitExpr");
             PrintChildren<Expr*>(a->initialisers());
-        } break;
+        },
 
-        case Kind::AssertExpr: {
-            auto a = cast<AssertExpr>(e);
+        [&](AssertExpr* a) {
             PrintBasicNode(e, "AssertExpr");
             SmallVector<Stmt*, 2> children;
             children.push_back(a->cond);
             if (auto msg = a->message.get_or_null()) children.push_back(msg);
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::BinaryExpr: {
-            auto b = cast<BinaryExpr>(e);
-            PrintBasicNode(e, "BinaryExpr", [&] { print("%1({}%)", utils::Escape(Spelling(b->op), false, true)); });
+        [&](BinaryExpr* b) {
+            PrintBasicNode(
+                e,
+                "BinaryExpr",
+                [&] { print("%1({}%)", utils::Escape(Spelling(b->op), false, true)); }
+            );
+
             SmallVector<Stmt*, 2> children{b->lhs, b->rhs};
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::BlockExpr:
+        [&](BlockExpr* b) {
             PrintBasicNode(e, "BlockExpr");
-            PrintChildren(cast<BlockExpr>(e)->stmts());
-            break;
+            PrintChildren(b->stmts());
+        },
 
-        case Kind::BoolLitExpr:
-            PrintBasicNode(e, "BoolLitExpr", [&] { print("%1({}%)", cast<BoolLitExpr>(e)->value); });
-            break;
+        [&](BoolLitExpr* b) {
+            PrintBasicNode(e, "BoolLitExpr", [&] { print("%1({}%)", b->value); });
+        },
 
-        case Kind::BuiltinCallExpr: {
-            auto& c = *cast<BuiltinCallExpr>(e);
+        [&](BuiltinCallExpr* c) {
             PrintBasicNode(e, "BuiltinCallExpr", [&] {
                 print("%2({}%)", [&] -> std::string_view {
-                    switch (c.builtin) {
+                    switch (c->builtin) {
                         using B = BuiltinCallExpr::Builtin;
                         case B::Print: return "__srcc_print";
                         case B::Unreachable: return "__srcc_unreachable";
@@ -247,15 +250,14 @@ void Stmt::Printer::Print(Stmt* e) {
                 }());
             });
 
-            PrintChildren<Expr*>(c.args());
-        } break;
+            PrintChildren<Expr*>(c->args());
+        },
 
-        case Kind::BuiltinMemberAccessExpr: {
-            auto& m = *cast<BuiltinMemberAccessExpr>(e);
+        [&](BuiltinMemberAccessExpr* m) {
             PrintBasicNode(e, "BuiltinMemberAccessExpr", [&] {
                 using AK = BuiltinMemberAccessExpr::AccessKind;
                 auto kind = [&] -> std::string_view {
-                    switch (m.access_kind) {
+                    switch (m->access_kind) {
                         case AK::SliceData: return "data";
                         case AK::SliceSize: return "size";
                         case AK::RangeStart: return "start";
@@ -272,20 +274,18 @@ void Stmt::Printer::Print(Stmt* e) {
                 }();
                 print("%3({}%)", kind);
             });
-            PrintChildren(m.operand);
-        } break;
+            PrintChildren(m->operand);
+        },
 
-        case Kind::CallExpr: {
+        [&](CallExpr* c) {
             PrintBasicNode(e, "CallExpr");
-            auto& c = *cast<CallExpr>(e);
             SmallVector<Stmt*, 10> fields;
-            if (c.callee) fields.push_back(c.callee);
-            if (auto a = c.args(); not a.empty()) fields.append(a.begin(), a.end());
+            if (c->callee) fields.push_back(c->callee);
+            if (auto a = c->args(); not a.empty()) fields.append(a.begin(), a.end());
             PrintChildren(fields);
-        } break;
+        },
 
-        case Kind::CastExpr: {
-            auto c = cast<CastExpr>(e);
+        [&](CastExpr* c) {
             PrintBasicHeader(c, "CastExpr");
             print(" {} ", c->type->print());
             switch (c->kind) {
@@ -299,34 +299,24 @@ void Stmt::Printer::Print(Stmt* e) {
             }
             print("\n");
             PrintChildren(c->arg);
-        } break;
+        },
 
-        case Kind::ConstExpr: {
-            auto c = cast<ConstExpr>(e);
+        [&](ConstExpr* c) {
             PrintBasicNode(e, "ConstExpr", [&] { print("{}", c->value->print()); });
             if (c->stmt) PrintChildren(c->stmt.get());
-        } break;
+        },
 
-        case Kind::DefaultInitExpr: {
-            PrintBasicNode(e, "DefaultInitExpr");
-        } break;
-
-        case Kind::DeferStmt:
+        [&](DeferStmt* d) {
             PrintBasicNode(e, "DeferStmt");
-            PrintChildren(cast<DeferStmt>(e)->body);
-            break;
+            PrintChildren(d->body);
+        },
 
-        case Kind::EmptyStmt:
-            PrintBasicNode(e, "EmptyStmt");
-            break;
-
-        case Kind::EvalExpr: {
+        [&](EvalExpr* ev) {
             PrintBasicNode(e, "EvalExpr");
-            PrintChildren(cast<EvalExpr>(e)->stmt);
-        } break;
+            PrintChildren(ev->stmt);
+        },
 
-        case Kind::FieldDecl: {
-            auto f = cast<FieldDecl>(e);
+        [&](FieldDecl* f) {
             PrintBasicHeader(e, "FieldDecl");
             print(
                 " {}{}%5({}%) %1(offs%) %3({:y}%)\n",
@@ -335,10 +325,9 @@ void Stmt::Printer::Print(Stmt* e) {
                 f->name,
                 f->offset
             );
-        } break;
+        },
 
-        case Kind::ForStmt: {
-            auto f = cast<ForStmt>(e);
+        [&](ForStmt* f) {
             PrintBasicNode(e, "ForStmt");
             SmallVector<Stmt*> children;
             if (auto v = f->enum_var.get_or_null()) children.push_back(v);
@@ -346,29 +335,26 @@ void Stmt::Printer::Print(Stmt* e) {
             llvm::append_range(children, f->ranges());
             children.push_back(f->body);
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::IfExpr: {
-            auto i = cast<IfExpr>(e);
+        [&](IfExpr* i) {
             PrintBasicNode(e, "IfExpr");
             SmallVector<Stmt*, 3> children{i->cond, i->then};
             if (auto el = i->else_.get_or_null()) children.push_back(el);
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::ImportedClangModuleDecl:
+        [&](ImportedClangModuleDecl* c) {
             PrintBasicNode(e, "ImportedClangModuleDecl", [&] {
-                auto c = cast<ImportedClangModuleDecl>(e);
                 print(
                     "%3({}%) %1(as%) {}",
                     utils::Escape(utils::join(c->headers()), false, true),
                     c->name
                 );
             });
-            break;
+        },
 
-        case Kind::ImportedSourceModuleDecl: {
-            auto s = cast<ImportedSourceModuleDecl>(e);
+        [&](ImportedSourceModuleDecl* s) {
             PrintBasicNode(e, "ImportedSourceModuleDecl", [&] {
                 if (s->linkage_name != s->name) {
                     print("{} %1(as%) {}", s->linkage_name, s->name);
@@ -377,21 +363,18 @@ void Stmt::Printer::Print(Stmt* e) {
                 }
             });
             PrintChildren<Decl*>(s->exports.decls() | rgs::to<std::vector>());
-        } break;
+        },
 
-        case Kind::IntLitExpr: {
+        [&](IntLitExpr* i) {
             // These always come straight from the parser and are thus
             // always unsigned (because negative literals don’t exist;
             // unary minus is just an operator).
-            auto i = cast<IntLitExpr>(e);
             auto PrintValue = [&] { print("%5({}%)", i->storage.str(false)); };
             PrintBasicNode(e, "IntLitExpr", PrintValue);
-        } break;
+        },
 
-        case Kind::LocalDecl:
-        case Kind::ParamDecl: {
+        [&](LocalDecl* d) {
             bool is_param = e->kind() == Kind::ParamDecl;
-            auto d = cast<LocalDecl>(e);
             auto PrintNameAndType = [&] {
                 print("%{}({}%)", is_param ? '4' : '8', d->name);
                 if (is_param) print(" %1({}%)", cast<ParamDecl>(d)->intent());
@@ -401,28 +384,26 @@ void Stmt::Printer::Print(Stmt* e) {
 
             PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);
             if (auto init = d->init.get_or_null()) PrintChildren(init);
-        } break;
+        },
 
-        case Kind::LocalRefExpr: {
-            auto d = cast<LocalRefExpr>(e);
+        [&](LocalRefExpr* d) {
             bool is_param = d->decl->kind() == Kind::ParamDecl;
             auto PrintName = [&] { print("%{}({}%)", is_param ? '4' : '8', d->decl->name); };
             PrintBasicNode(e, "LocalRefExpr", PrintName);
-        } break;
+        },
 
-        case Kind::LoopExpr: {
+        [&](LoopExpr* l) {
             PrintBasicNode(e, "LoopExpr");
-            if (auto b = cast<LoopExpr>(e)->body.get_or_null()) PrintChildren(b);
-        } break;
+            if (auto b = l->body.get_or_null()) PrintChildren(b);
+        },
 
-        case Kind::MatchExpr: {
+        [&](MatchExpr* m) {
             auto PrintPattern = [&](const MatchCase::Pattern& p) {
                 if (p.is_wildcard()) print("%1(Wildcard%)\n");
                 else Print(p.expr());
             };
 
             PrintBasicNode(e, "MatchExpr");
-            auto m = cast<MatchExpr>(e);
             SmallVector<Child> children;
             if (auto c = m->control_expr().get_or_null())
                 children.emplace_back([&, c] { Print(c); });
@@ -438,30 +419,27 @@ void Stmt::Printer::Print(Stmt* e) {
                  });
             }
             PrintChildren<Child>(children);
-        } break;
+        },
 
-        case Kind::MaterialiseTemporaryExpr:
+        [&](MaterialiseTemporaryExpr* m) {
             PrintBasicNode(e, "MaterialiseTemporaryExpr");
-            PrintChildren(cast<MaterialiseTemporaryExpr>(e)->temporary);
-            break;
+            PrintChildren(m->temporary);
+        },
 
-        case Kind::MemberAccessExpr: {
-            auto m = cast<MemberAccessExpr>(e);
+        [&](MemberAccessExpr* m) {
             PrintBasicNode(e, "MemberAccessExpr");
             SmallVector<Stmt*, 2> children{m->base};
             children.push_back(m->field);
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::OverloadSetExpr: {
-            auto o = cast<OverloadSetExpr>(e);
+        [&](OverloadSetExpr* o) {
             PrintBasicNode(e, "OverloadSetExpr");
             tempset print_procedure_bodies = false;
             PrintChildren<Decl*>(o->overloads());
-        } break;
+        },
 
-        case Kind::ProcDecl: {
-            auto p = cast<ProcDecl>(e);
+        [&](ProcDecl* p) {
             PrintBasicHeader(p, "ProcDecl");
             print(" %2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
@@ -472,7 +450,7 @@ void Stmt::Printer::Print(Stmt* e) {
             if (p->has_captures) print(" has_captures");
             if (p->introduces_captures) print(" introduces_captures");
             print("\n");
-            if (not print_procedure_bodies) break;
+            if (not print_procedure_bodies) return;
 
             // Print template parameters and parameters.
             SmallVector<Stmt*> children;
@@ -485,55 +463,48 @@ void Stmt::Printer::Print(Stmt* e) {
             // And the body, if there is one.
             if (auto body = p->body().get_or_null()) children.push_back(body);
             PrintChildren(children);
-        } break;
+        },
 
-        case Kind::ProcTemplateDecl: {
-            auto p = cast<ProcTemplateDecl>(e);
+        [&](ProcTemplateDecl* p) {
             PrintBasicHeader(p, "ProcTemplateDecl");
             print(" %2({}%)\n", utils::Escape(p->name.str(), false, true));
             if (print_instantiations) PrintChildren<ProcDecl*>(p->instantiations());
-        } break;
+        },
 
-        case Kind::ParenExpr: {
-            auto p = cast<ParenExpr>(e);
+        [&](ParenExpr* p) {
             PrintBasicNode(p, "ParenExpr");
             PrintChildren(p->expr);
-        } break;
+        },
 
-        case Kind::ProcRefExpr: {
-            auto p = cast<ProcRefExpr>(e);
+        [&](ProcRefExpr* p) {
             PrintBasicHeader(p, "ProcRefExpr");
             print(" %2({}%)\n", utils::Escape(p->decl->name.str(), false, true));
 
             tempset print_procedure_bodies = false;
             PrintChildren(p->decl);
-        } break;
+        },
 
-        case Kind::ReturnExpr: {
-            auto ret = cast<ReturnExpr>(e);
+        [&](ReturnExpr* ret) {
             PrintBasicNode(e, "ReturnExpr", [&] { if (ret->implicit) print("implicit"); }, false);
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
-        } break;
+        },
 
-        case Kind::StrLitExpr: {
+        [&](StrLitExpr* s) {
             PrintBasicHeader(e, "StrLitExpr");
-            print(" %3(\"{}\"%)\n", utils::Escape(cast<StrLitExpr>(e)->value, true, true));
-        } break;
+            print(" %3(\"{}\"%)\n", utils::Escape(s->value, true, true));
+        },
 
-        case Kind::TupleExpr: {
-            auto s = cast<TupleExpr>(e);
+        [&](TupleExpr* s) {
             PrintBasicNode(e, "TupleExpr");
             PrintChildren<Expr*>(s->values());
-        } break;
+        },
 
-        case Kind::TemplateTypeParamDecl: {
-            auto t = cast<TemplateTypeParamDecl>(e);
+        [&](TemplateTypeParamDecl* t) {
             PrintBasicHeader(t, "TemplateTypeParamDecl");
             print(" %3(${}%) %1(type%) {}\n", t->name, t->arg_type());
-        } break;
+        },
 
-        case Kind::TypeDecl: {
-            auto td = cast<TypeDecl>(e);
+        [&](TypeDecl* td) {
             PrintBasicHeader(td, "TypeDecl");
             if (auto s = dyn_cast<StructType>(td->type.ptr())) {
                 print(
@@ -551,26 +522,24 @@ void Stmt::Printer::Print(Stmt* e) {
             } else {
                 print("%3({}%) = {}\n", td->name, td->type->print());
             }
-        } break;
+        },
 
-        case Kind::TypeExpr:
+        [&](TypeExpr* t) {
             PrintBasicHeader(e, "TypeExpr");
-            print(" {}\n", cast<TypeExpr>(e)->value->print());
-            break;
+            print(" {}\n", t->value->print());
+        },
 
-        case Kind::UnaryExpr: {
-            auto u = cast<UnaryExpr>(e);
+        [&](UnaryExpr* u) {
             PrintBasicNode(e, "UnaryExpr", [&] { print("%1({}%)", u->op); });
             PrintChildren(u->arg);
-        } break;
+        },
 
-        case Kind::WhileStmt: {
-            auto w = cast<WhileStmt>(e);
+        [&](WhileStmt* w) {
             PrintBasicNode(e, "WhileStmt");
             SmallVector<Stmt*, 2> children{w->cond, w->body};
             PrintChildren(children);
-        } break;
-    }
+        },
+    });
 }
 
 void Stmt::dump(bool use_colour) const {
