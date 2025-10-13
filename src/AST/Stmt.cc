@@ -48,8 +48,7 @@ BuiltinCallExpr::BuiltinCallExpr(
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
     // Determine value category.
     switch (builtin) {
-        // SRValue.
-        case Builtin::Print:
+        // RValue.
         case Builtin::Unreachable:
             break;
     }

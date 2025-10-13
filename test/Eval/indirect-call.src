@@ -1,8 +1,10 @@
 // V %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
 proc caller (proc x -> int) = x();
 proc foo = 42;
 
 // * 42
-__srcc_print(caller(foo), "\n");
+printf("%zi\n", caller(foo));

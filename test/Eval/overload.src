@@ -1,12 +1,14 @@
 // R %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
 // * 3
-__srcc_print(f(
+printf("%zi\n", f(
     a,
     a,
     a
-), "\n");
+));
 
 proc a {}
 proc a (int) {}

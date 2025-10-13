@@ -138,6 +138,7 @@ class srcc::Sema : public DiagsProducer {
             SelectOverload,
             SliceFromArray,
             StripParens,
+            StrLitToCStr,
             TupleToFirstElement,
             RecordInit,
         };
@@ -174,6 +175,7 @@ class srcc::Sema : public DiagsProducer {
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto SliceFromArray() -> Conversion { return Conversion{Kind::SliceFromArray}; }
         static auto StripParens() -> Conversion { return Conversion{Kind::StripParens}; }
+        static auto StrLitToCStr() -> Conversion { return Conversion{Kind::StrLitToCStr}; }
         static auto TupleToFirstElement() -> Conversion { return Conversion{Kind::TupleToFirstElement}; }
 
         Type type() const { return data.get<TypeAndValueCategory>().type(); }

@@ -242,7 +242,6 @@ void Stmt::Printer::Print(Stmt* e) {
                 print("%2({}%)", [&] -> std::string_view {
                     switch (c->builtin) {
                         using B = BuiltinCallExpr::Builtin;
-                        case B::Print: return "__srcc_print";
                         case B::Unreachable: return "__srcc_unreachable";
                     }
 

@@ -1,18 +1,20 @@
 // R %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
 proc x(int a, int b, bool d) {
-    if d then __srcc_print("d = true\n");
-    else __srcc_print("d = false\n");
-    __srcc_print(if d "d = true\n" else "d = false\n");
+    if d then printf("d = true\n");
+    else printf("d = false\n");
+    printf("%s", (if d "d = true\n" else "d = false\n").data);
 
     (if d then d else d) = (if a < b then false else true);
 
-    if d then __srcc_print("d = true\n");
-    else __srcc_print("d = false\n");
-    __srcc_print(if d "d = true\n" else "d = false\n");
+    if d then printf("d = true\n");
+    else printf("d = false\n");
+    printf("%s", (if d "d = true\n" else "d = false\n").data);
 
-    __srcc_print("\n");
+    printf("\n");
 }
 
 // * d = true

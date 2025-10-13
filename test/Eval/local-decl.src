@@ -1,12 +1,14 @@
 // R %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
 proc foo(int a, int b) {
     int x = a;
     int y = b;
     var z = y;
     var c = 7;
-    __srcc_print(x, " ", y, " ", x, " ", c, "\n");
+    printf("%zi %zi %zi %zi\n", x, y, x, c);
 }
 
 // * 1 2 1 7

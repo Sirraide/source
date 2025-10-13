@@ -1560,46 +1560,6 @@ auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> IRValue {
 
 auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
     switch (expr->builtin) {
-        case BuiltinCallExpr::Builtin::Print: {
-            auto printf = DeclarePrintf();
-            auto ref = create<ir::ProcRefOp>(C(expr->location()), printf);
-            for (auto a : expr->args()) {
-                auto loc = C(a->location());
-                if (a->type == tu.StrLitTy) {
-                    Assert(a->value_category == Expr::RValue);
-                    auto str_format = CreateGlobalStringPtr("%.*s");
-                    auto slice = Emit(a);
-                    auto data = slice.first();
-                    auto size = CreateSICast(loc, slice.second(), Type::IntTy, tu.FFIIntTy);
-                    create<ir::CallOp>(loc, ref, Vals{str_format, size, data});
-                }
-
-                else if (a->type == Type::IntTy) {
-                    Assert(a->value_category == Expr::RValue);
-                    auto int_format = CreateGlobalStringPtr("%" PRId64);
-                    auto val = EmitScalar(a);
-                    create<ir::CallOp>(loc, ref, Vals{int_format, val});
-                }
-
-                else if (a->type == Type::BoolTy) {
-                    Assert(a->value_category == Expr::RValue);
-                    auto bool_format = CreateGlobalStringPtr("%s");
-                    auto val = EmitScalar(a);
-                    auto str = createOrFold<arith::SelectOp>(loc, val, CreateGlobalStringPtr("true"), CreateGlobalStringPtr("false"));
-                    create<ir::CallOp>(loc, ref, Vals{bool_format, str});
-                }
-
-                else {
-                    ICE(
-                        a->location(),
-                        "Sorry, can’t print this type yet: {}",
-                        a->type
-                    );
-                }
-            }
-            return {};
-        }
-
         case BuiltinCallExpr::Builtin::Unreachable: {
             create<LLVM::UnreachableOp>(C(expr->location()));
             EnterBlock(CreateBlock());

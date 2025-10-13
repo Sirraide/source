@@ -307,7 +307,6 @@ class srcc::BuiltinCallExpr final : public Expr
 
 public:
     enum struct Builtin : u8 {
-        Print,       // __srcc_print
         Unreachable, // __srcc_unreachable
     };
 

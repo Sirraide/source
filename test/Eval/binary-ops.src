@@ -1,84 +1,90 @@
 // R %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
+proc printb(bool b) {
+    printf("%s\n", (if b then "true" else "false").data);
+}
+
 proc arith(int a, int b) {
-    __srcc_print(a, ", ", b, "\n");
-    __srcc_print(a + b, "\n");
-    __srcc_print(a +~ b, "\n");
+    printf("%zi, %zi\n", a, b);
+    printf("%zi\n", a + b);
+    printf("%zi\n", a +~ b);
 
-    __srcc_print(a - b, "\n");
-    __srcc_print(a -~ b, "\n");
+    printf("%zi\n", a - b);
+    printf("%zi\n", a -~ b);
 
-    __srcc_print(a * b, "\n");
-    __srcc_print(a *~ b, "\n");
+    printf("%zi\n", a * b);
+    printf("%zi\n", a *~ b);
 
-    __srcc_print(a / b, "\n");
-    __srcc_print(a % b, "\n");
-    __srcc_print(a :/ b, "\n");
-    __srcc_print(a :% b, "\n");
+    printf("%zi\n", a / b);
+    printf("%zi\n", a % b);
+    printf("%zi\n", a :/ b);
+    printf("%zi\n", a :% b);
 
-    __srcc_print(a >> b, "\n");
-    __srcc_print(a >>> b, "\n");
-    __srcc_print(a << b, "\n");
-    __srcc_print(a <<< b, "\n");
+    printf("%zi\n", a >> b);
+    printf("%zi\n", a >>> b);
+    printf("%zi\n", a << b);
+    printf("%zi\n", a <<< b);
 
-    __srcc_print(a & b, "\n");
-    __srcc_print(a | b, "\n");
+    printf("%zi\n", a & b);
+    printf("%zi\n", a | b);
 
-    __srcc_print(a < b, "\n");
-    __srcc_print(a <= b, "\n");
-    __srcc_print(a > b, "\n");
-    __srcc_print(a >= b, "\n");
+    printb(a < b);
+    printb(a <= b);
+    printb(a > b);
+    printb(a >= b);
 
-    __srcc_print(a <: b, "\n");
-    __srcc_print(a <=: b, "\n");
-    __srcc_print(a :> b, "\n");
-    __srcc_print(a :>= b, "\n");
+    printb(a <: b);
+    printb(a <=: b);
+    printb(a :> b);
+    printb(a :>= b);
 
-    __srcc_print(a == b, "\n");
-    __srcc_print(a != b, "\n");
+    printb(a == b);
+    printb(a != b);
 
-    __srcc_print(a ** b, "\n");
+    printf("%zi\n", a ** b);
 }
 
 proc arith_template($T a, T b) {
-    __srcc_print(a, ", ", b, "\n");
-    __srcc_print(a + b, "\n");
-    __srcc_print(a +~ b, "\n");
+    printf("%zi, %zi\n", a, b);
+    printf("%zi\n", a + b);
+    printf("%zi\n", a +~ b);
 
-    __srcc_print(a - b, "\n");
-    __srcc_print(a -~ b, "\n");
+    printf("%zi\n", a - b);
+    printf("%zi\n", a -~ b);
 
-    __srcc_print(a * b, "\n");
-    __srcc_print(a *~ b, "\n");
+    printf("%zi\n", a * b);
+    printf("%zi\n", a *~ b);
 
-    __srcc_print(a / b, "\n");
-    __srcc_print(a % b, "\n");
-    __srcc_print(a :/ b, "\n");
-    __srcc_print(a :% b, "\n");
+    printf("%zi\n", a / b);
+    printf("%zi\n", a % b);
+    printf("%zi\n", a :/ b);
+    printf("%zi\n", a :% b);
 
-    __srcc_print(a >> b, "\n");
-    __srcc_print(a >>> b, "\n");
-    __srcc_print(a << b, "\n");
-    __srcc_print(a <<< b, "\n");
+    printf("%zi\n", a >> b);
+    printf("%zi\n", a >>> b);
+    printf("%zi\n", a << b);
+    printf("%zi\n", a <<< b);
 
-    __srcc_print(a & b, "\n");
-    __srcc_print(a | b, "\n");
+    printf("%zi\n", a & b);
+    printf("%zi\n", a | b);
 
-    __srcc_print(a < b, "\n");
-    __srcc_print(a <= b, "\n");
-    __srcc_print(a > b, "\n");
-    __srcc_print(a >= b, "\n");
+    printb(a < b);
+    printb(a <= b);
+    printb(a > b);
+    printb(a >= b);
 
-    __srcc_print(a <: b, "\n");
-    __srcc_print(a <=: b, "\n");
-    __srcc_print(a :> b, "\n");
-    __srcc_print(a :>= b, "\n");
+    printb(a <: b);
+    printb(a <=: b);
+    printb(a :> b);
+    printb(a :>= b);
 
-    __srcc_print(a == b, "\n");
-    __srcc_print(a != b, "\n");
+    printb(a == b);
+    printb(a != b);
 
-    __srcc_print(a ** b, "\n");
+    printf("%zi\n", a ** b);
 }
 
 // * 20, 5

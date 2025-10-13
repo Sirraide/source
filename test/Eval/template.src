@@ -1,8 +1,9 @@
 // R %srcc --eval %s
-
 program test;
+
+import <cstdio> as *;
 
 proc foo(T, $T t) = t;
 
 // * 42
-__srcc_print(foo(1, 42), "\n");
+printf("%zi\n", foo(1, 42));

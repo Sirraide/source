@@ -1,10 +1,12 @@
 // R %srcc --eval %s
 program test;
 
-proc a () { __srcc_print("a: \n"); }
-proc b (int a) { __srcc_print("b: ", a, "\n"); }
+import <cstdio> as *;
+
+proc a () { printf("a: \n"); }
+proc b (int a) { printf("b: %zi\n", a); }
 proc c (int a, int b, int c) {
-    __srcc_print("c: ", a, " ", b, " ", c, "\n");
+    printf("c: %zi %zi %zi\n", a, b, c);
 }
 proc d (int x1, int x2, int x3) {
     c(x1, x2, x3);
@@ -13,10 +15,9 @@ proc e (
     int a, int b, int c, int d, int e,
     int f, int g, int h, int i, int j
 ) {
-    __srcc_print(
-        "e: ",
-        a, " ", b, " ", c, " ", d, " ", e, " ",
-        f, " ", g, " ", h, " ", i, " ", j, "\n"
+    printf(
+        "e: %zi %zi %zi %zi %zi %zi %zi %zi %zi %zi\n",
+        a, b, c, d, e, f, g, h, i, j
     );
 }
 

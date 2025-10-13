@@ -529,6 +529,12 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
             return p->expr;
         }
 
+        case K::StrLitToCStr: return BuildBuiltinMemberAccessExpr(
+            BuiltinMemberAccessExpr::AccessKind::SliceData,
+            e,
+            loc
+        ).get(); // Should never fail.
+
         case K::TupleToFirstElement: {
             if (auto te = dyn_cast<TupleExpr>(e)) return te->values().front();
             auto ty = cast<TupleType>(e->type);
@@ -586,6 +592,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::SelectOverload:
         case K::SliceFromArray:
         case K::StripParens:
+        case K::StrLitToCStr:
         case K::TupleToFirstElement: {
             Assert(exprs.size() == 1);
             exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
@@ -935,6 +942,12 @@ auto Sema::BuildConversionSequence(
 
     switch (var_type->kind()) {
         case TypeBase::Kind::PtrType:
+            // Allow implicitly converting string literals to C string.
+            if (isa<StrLitExpr>(a) and var_type == tu->I8PtrTy) {
+                seq.add(Conversion::StrLitToCStr());
+                return seq;
+            }
+
             return TypeMismatch();
 
         case TypeBase::Kind::SliceType:
@@ -1331,6 +1344,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::RangeCast:
             case K::TupleToFirstElement:
             case K::SliceFromArray:
+            case K::StrLitToCStr:
                 badness++;
                 break;
 
@@ -2548,26 +2562,6 @@ auto Sema::BuildBuiltinCallExpr(
     };
 
     switch (builtin) {
-        // __srcc_print takes a sequence of arguments and prints them all;
-        // the arguments must be strings or integers.
-        case BuiltinCallExpr::Builtin::Print: {
-            SmallVector<Expr*> actual_args{args};
-            if (args.empty()) return Error(call_loc, "__srcc_print takes at least one argument");
-            for (auto& arg : actual_args) {
-                if (
-                    arg->type != tu->StrLitTy and
-                    arg->type != Type::IntTy and
-                    arg->type != Type::BoolTy
-                ) return Error( //
-                    arg->location(),
-                    "__srcc_print only accepts i8[] and integers, but got {}",
-                    arg->type
-                );
-                arg = LValueToRValue(arg);
-            }
-            return BuiltinCallExpr::Create(*tu, builtin, Type::VoidTy, actual_args, call_loc);
-        }
-
         case BuiltinCallExpr::Builtin::Unreachable: {
             if (not ForbidArgs("__srcc_unreachable")) return nullptr;
             return BuiltinCallExpr::Create(*tu, builtin, Type::NoReturnTy, {}, call_loc);
@@ -3420,9 +3414,8 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
     if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
         using B = BuiltinCallExpr::Builtin;
         auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front().str())
-                      .Case("__srcc_print", B::Print)
-                      .Case("__srcc_unreachable", B::Unreachable)
-                      .Default(std::nullopt);
+            .Case("__srcc_unreachable", B::Unreachable)
+            .Default(std::nullopt);
 
         // We have a builtin!
         if (bk.has_value()) return BuildBuiltinCallExpr(*bk, args, parsed->loc);

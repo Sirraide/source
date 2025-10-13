@@ -1,7 +1,9 @@
 // R %srcc --eval %s
 program test;
 
+import <cstdio> as *;
+
 proc fact (int n) -> int = if n < 2 then 1 else n * fact(n - 1);
 
 // * 120
-__srcc_print(fact(5), "\n");
+printf("%zi\n", fact(5));

@@ -2,10 +2,12 @@
 // R[//CG] %srcc --llvm %s
 program test;
 
+import <cstdio> as *;
+
 proc a(int b) -> int = b;
 proc b -> int = 42;
 
 // The 'eval' forces constant evaluation even if we codegen this.
 //     * value: 42
 //CG re* call i32 (ptr, ...) @printf(ptr .*, i64 42)
-__srcc_print("value: ", eval a(a(a(a(a(a(b())))))), "\n");
+printf("value: %zi\n", eval a(a(a(a(a(a(b())))))));

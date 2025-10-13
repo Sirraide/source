@@ -6,5 +6,5 @@ import <cstdio> as stdio;
 stdio::puts("foo".data);
 stdio::printf("bar: %d\n".data, 12);
 
-stdio::puts("foo"); // expected-error: Cannot convert expression of type 'i8[]' to 'i8^'
+stdio::puts("foo");
 stdio::printf("baz: %d\n".data, " "); // expected-error: Passing a value of type 'i8[]' as a varargs argument is not supported
