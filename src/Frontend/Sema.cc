@@ -3987,6 +3987,16 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         }
     }
 
+    // Variadic parameters may not be 'inout' or 'out' since passing
+    // things by reference gets complicated if they’re somehow also
+    // supposed to be inside a slice or tuple.
+    for (auto p : parsed->type->param_types()) {
+        if (p.variadic and (p.intent == Intent::Inout or p.intent == Intent::Out)) {
+            Error(p.type->loc, "Variadic parameter cannot have intent '%1({}%)'", p.intent);
+            decl->set_invalid();
+        }
+    }
+
     AddDeclToScope(curr_scope(), decl);
     return decl;
 }
