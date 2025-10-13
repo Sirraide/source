@@ -1,0 +1,42 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc g() extern -> bool;
+
+// Check that we always create a scope for 'if' and friends
+// even if the body is not a block expression.
+proc f1 {
+    if g() int x1;
+    if g() then int x2;
+    while g() int x3;
+    while g() do int x4;
+    for i in 1..=10 do int x5;
+    eval int x6;
+    loop int x7;
+    match { _: int x8; };
+    match 1 { _: int x9; };
+
+    x1 = 1; // expected-error: Unknown symbol 'x1'
+    x2 = 1; // expected-error: Unknown symbol 'x2'
+    x3 = 1; // expected-error: Unknown symbol 'x3'
+    x4 = 1; // expected-error: Unknown symbol 'x4'
+    x5 = 1; // expected-error: Unknown symbol 'x5'
+    x6 = 1; // expected-error: Unknown symbol 'x6'
+    x7 = 1; // expected-error: Unknown symbol 'x7'
+    x8 = 1; // expected-error: Unknown symbol 'x8'
+    x9 = 1; // expected-error: Unknown symbol 'x9'
+}
+
+proc f2 {
+    // *static* if however does *not* create a new scope.
+    #if true {
+        int x1;
+    };
+
+    #if false {} #else {
+        int x2;
+    };
+
+    x1 = 1;
+    x2 = 2;
+}

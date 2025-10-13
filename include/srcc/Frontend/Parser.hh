@@ -296,6 +296,11 @@ class srcc::ParsedBlockExpr final : public ParsedStmt
     ParsedBlockExpr(ArrayRef<ParsedStmt*> stmts, Location location);
 
 public:
+    /// Whether this block should create a new scope; this is almost
+    /// always true, unless this is the child of e.g. a static '#if'.
+    bool should_push_scope = true;
+
+    /// Create a new block.
     static auto Create(
         Parser& parser,
         ArrayRef<ParsedStmt*> stmts,

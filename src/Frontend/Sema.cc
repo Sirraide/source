@@ -3197,11 +3197,15 @@ Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
     S.proc_stack.emplace_back(&info);
 }
 
-Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind) : S{S} {
+Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind, bool should_enter) : S{S} {
+    if (not should_enter) return;
     Assert(not S.scope_stack.empty(), "Should not be used for the global scope");
     scope = S.tu->create_scope(S.curr_scope(), kind);
     S.scope_stack.push_back(scope);
 }
+
+Sema::EnterScope::EnterScope(Sema& S, bool should_enter)
+    : EnterScope(S, ScopeKind::Block, should_enter) {}
 
 Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
     if (not scope) return;
@@ -3389,10 +3393,10 @@ auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Type desired_type) -> Ptr
 }
 
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Type desired_type) -> Ptr<Stmt> {
-    EnterScope scope{*this};
+    EnterScope _{*this, parsed->should_push_scope};
     SmallVector<Stmt*> stmts;
     TranslateStmts(stmts, parsed->stmts(), desired_type);
-    return BuildBlockExpr(scope.get(), stmts, parsed->loc);
+    return BuildBlockExpr(curr_scope(), stmts, parsed->loc);
 }
 
 auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Type) -> Ptr<Stmt> {
@@ -3509,6 +3513,7 @@ auto Sema::TranslateExpr(ParsedStmt* parsed, Type desired_type) -> Ptr<Expr> {
 }
 
 auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Type) -> Ptr<Stmt> {
+    EnterScope _{*this};
     auto arg = TRY(TranslateStmt(parsed->expr));
     return BuildEvalExpr(arg, parsed->loc);
 }
@@ -3518,6 +3523,8 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*, Type) -> Decl* {
 }
 
 auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
+    EnterScope _{*this};
+
     // The number of variables must be less than or equal to the number of ranges.
     if (parsed->vars().size() > parsed->ranges().size()) return Error(
         parsed->loc,
@@ -3549,9 +3556,6 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
             );
         }
     }
-
-    // Push a new scope for the loop variables.
-    EnterScope _{*this};
 
     // Declare the enumerator variable if there is one.
     Ptr<LocalDecl> enum_var;
@@ -3593,6 +3597,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    EnterScope _{*this, not parsed->is_static};
     auto cond = TRY(TranslateExpr(parsed->cond));
     if (parsed->is_static) return BuildStaticIfExpr(cond, parsed->then, parsed->else_, parsed->loc);
     auto then = TRY(TranslateStmt(parsed->then, desired_type));
@@ -3645,12 +3650,14 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
 }
 
 auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
+    EnterScope _{*this};
     Ptr<Stmt> body;
     if (auto b = parsed->body.get_or_null()) body = TRY(TranslateStmt(b));
     return new (*tu) LoopExpr(body, parsed->loc);
 }
 
 auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    EnterScope _{*this};
     SmallVector<MatchCase> cases;
     bool ok = true;
 
@@ -4084,6 +4091,7 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr
 }
 
 auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
+    EnterScope _{*this};
     auto cond = TRY(TranslateExpr(parsed->cond));
     auto body = TRY(TranslateStmt(parsed->body));
     return BuildWhileStmt(cond, body, parsed->loc);

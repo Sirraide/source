@@ -43,7 +43,8 @@ class srcc::Sema : public DiagsProducer {
         Scope* scope = nullptr;
 
     public:
-        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block);
+        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block, bool should_enter = true);
+        EnterScope(Sema& S, bool should_enter);
         EnterScope(Sema& S, Scope* scope);
 
         /// Pop the scope if it is still active.

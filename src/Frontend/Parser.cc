@@ -5,6 +5,8 @@
 #include <srcc/Frontend/Parser.hh>
 #include <srcc/Macros.hh>
 
+#include <llvm/Support/Casting.h>
+
 #include <memory>
 #include <utility>
 
@@ -1039,6 +1041,18 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
         );
 
         else_ = ParseIf(is_static, is_expr);
+    }
+
+
+    // The body of an '#if' should *not* create a new scope.
+    if (is_static) {
+        auto AdjustScopeFlag = [](Ptr<ParsedStmt> branch ) {
+            auto block = llvm::dyn_cast_if_present<ParsedBlockExpr>(branch.get_or_null());
+            if (block) block->should_push_scope = false;
+        };
+
+        AdjustScopeFlag(body);
+        AdjustScopeFlag(else_);
     }
 
     // Finally, build the expression.

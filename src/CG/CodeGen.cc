@@ -2285,7 +2285,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
 
     EnterProcedure _(*this, vm_entry_point, nullptr);
     if (yields_value) EmitRValue(vm_entry_point.getCallArg(0), cast<Expr>(stmt));
-    else Emit(stmt);
+    else if (not isa<Decl>(stmt)) Emit(stmt);
 
     // Make sure to return from the procedure.
     if (not HasTerminator()) create<ir::RetOp>(loc, Vals());
