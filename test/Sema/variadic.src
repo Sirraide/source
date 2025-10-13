@@ -15,6 +15,10 @@ proc f6 ($T, inout T...) {}; // expected-error: Variadic parameter cannot have i
 proc f7 (out var...) {}; // expected-error: Variadic parameter cannot have intent 'out'
 proc f7 (inout var...) {}; // expected-error: Variadic parameter cannot have intent 'inout'
 
+proc variadic_varargs1(int...) varargs {} // expected-error: Variadic function cannot be 'varargs'
+proc variadic_varargs2($T...) varargs {} // expected-error: Variadic function cannot be 'varargs'
+proc variadic_varargs3(var...) varargs {} // expected-error: Variadic function cannot be 'varargs'
+
 proc g (int ...x) {}
 
 g();
