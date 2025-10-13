@@ -4238,8 +4238,12 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_
 
     auto ret = TranslateType(parsed->ret_type);
     if (not ret) ret = Type::VoidTy;
-    else if (parsed->attrs.native and ret != Type::VoidTy and IsZeroSizedOrIncomplete(ret))
-        DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
+    else if (
+        parsed->attrs.native and
+        ret != Type::VoidTy and
+        ret != Type::NoReturnTy and
+        IsZeroSizedOrIncomplete(ret)
+    ) DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
 
     if (not ok) return Type();
     return ProcType::Get(

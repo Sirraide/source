@@ -14,3 +14,5 @@ proc b (zero x) native {} // expected-error: Passing zero-sized type 'zero' to a
 
 proc c -> zero { return zero(); }
 proc d native -> zero { return zero(); } // expected-error: Returning zero-sized type 'zero' from a 'native' procedure is not supported
+
+proc exit() extern native -> noreturn;
