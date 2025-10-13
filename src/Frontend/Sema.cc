@@ -12,6 +12,7 @@
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Casting.h>
@@ -228,6 +229,11 @@ bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
         return null_type_is_complete;
 
     return true;
+}
+
+bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
+    auto b = dyn_cast<ParsedBuiltinType>(stmt);
+    return b and b->ty == Type::DeducedTy;
 }
 
 bool Sema::IsZeroSizedOrIncomplete(Type ty) {
@@ -1132,9 +1138,9 @@ auto Sema::SubstituteTemplate(
     //
     // Note that we might not have any if this is a variadic function with
     // no actual template parameters.
+    auto param_types = proc_template->pattern->type->param_types();
     auto it = parsed_template_deduction_infos.find(proc_template->pattern);
     if (it != parsed_template_deduction_infos.end()) {
-        auto param_types = proc_template->pattern->type->param_types();
         for (const auto& [name, indices] : it->second) {
             for (auto i : indices) {
                 auto parsed = param_types[i];
@@ -1203,9 +1209,25 @@ auto Sema::SubstituteTemplate(
         }
     }
 
+    // Next, deduce any 'var' parameters.
+    SmallVector<Type> deduced_var_parameters;
+    for (auto [i, p] : enumerate(param_types)) {
+        if (not IsBuiltinVarType(p.type)) continue;
+        if (not p.variadic) deduced_var_parameters.push_back(input_types[i].ty);
+        else {
+            Assert(i == param_types.size() - 1);
+
+            // Build a tuple consisting of the remaining arguments.
+            auto ty = BuildTupleType(input_types.drop_front(i));
+            if (not ty) return SubstitutionResult::Error(); // TODO: Maybe this should not be a hard error.
+            deduced_var_parameters.push_back(ty);
+        }
+    }
+
     // Now that deduction is done, check if we’ve substituted this before.
     llvm::FoldingSetNodeID id;
     for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
+    for (auto ty : deduced_var_parameters) id.AddPointer(ty.ptr());
 
     // Don’t hold on to a reference to the folding set (or the insert position)
     // here as we might end up invalidating it if template instantiation occurs
@@ -1216,11 +1238,16 @@ auto Sema::SubstituteTemplate(
 
     // Create a scope for the procedure and save the template arguments there.
     EnterScope scope{*this, ScopeKind::Procedure};
-    for (auto [name, d] : deduced)
-        AddDeclToScope(scope.get(), new (*tu) TemplateTypeParamDecl(name, d.second));
+    for (auto [name, d] : deduced) AddDeclToScope(
+        scope.get(),
+        new (*tu) TemplateTypeParamDecl(name, d.second)
+    );
 
     // Now that that is done, we can convert the type properly.
-    auto ty = TranslateProcType(proc_template->pattern->type);
+    auto ty = TranslateProcType(
+        proc_template->pattern->type,
+        deduced_var_parameters
+    );
 
     // Mark that we’re done substituting.
     for (auto d : scope.get()->decls())
@@ -3904,10 +3931,20 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         Error(parsed->loc, "Variadic function cannot be '%1(varargs%)'");
     }
 
+    // Check if this is a template.
+    auto IsTemplate = [&] {
+        auto it = parsed_template_deduction_infos.find(parsed);
+        if (it != parsed_template_deduction_infos.end()) return true;
+
+        // A function with a 'var' parameter is also a template.
+        return rgs::any_of(parsed->type->param_types(), [&](auto& p) {
+            return IsBuiltinVarType(p.type);
+        });
+    };
+
     // If this is a template, we can’t do much right now.
     Decl* decl{};
-    auto it = parsed_template_deduction_infos.find(parsed);
-    if (it != parsed_template_deduction_infos.end()) {
+    if (IsTemplate()) {
         decl = ProcTemplateDecl::Create(
             *tu,
             parsed,
@@ -4082,6 +4119,16 @@ auto Sema::BuildSliceType(Type base, Location loc) -> Type {
     return SliceType::Get(*tu, base);
 }
 
+auto Sema::BuildTupleType(ArrayRef<TypeLoc> types) -> Type {
+    bool ok = true;
+    for (auto [ty, loc] : types)
+        if (not CheckFieldType(ty, loc))
+            ok = false;
+
+    if (not ok) return Type();
+    return TupleType::Get(*tu, llvm::to_vector(vws::transform(types, &TypeLoc::ty)));
+}
+
 auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
     Assert(parsed->op == Tk::LBrack);
     auto elem = TranslateType(parsed->lhs);
@@ -4119,7 +4166,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     return Type();
 }
 
-auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
+auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -4136,8 +4183,17 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
 
     SmallVector<ParamTypeData, 10> params;
     bool ok = true;
+    u32 var_params = 0;
     for (auto a : parsed->param_types()) {
         auto ty = TranslateType(a.type);
+
+        // If this parameter’s type is 'var', then substitute whatever we
+        // deduced for it.
+        bool is_var_param = ty == Type::DeducedTy;
+        if (is_var_param) {
+            Assert(var_params < deduced_var_parameters.size());
+            ty = deduced_var_parameters[var_params++];
+        }
 
         // Check this here, but don’t do anything about it; this is only
         // harmful if we emit LLVM IR for it, and we won’t be getting there
@@ -4148,7 +4204,11 @@ auto Sema::TranslateProcType(ParsedProcType* parsed) -> Type {
             DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
         // If this is a variadic parameter, convert it to a slice.
-        if (a.variadic) ty = BuildSliceType(ty, a.type->loc);
+        //
+        // Do *not* do this if this is a 'var...' parameter since we pass
+        // those as a tuple; this will have already been handled during
+        // substitution.
+        if (a.variadic and not is_var_param) ty = BuildSliceType(ty, a.type->loc);
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty, a.variadic);
     }
@@ -4226,16 +4286,15 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
 
         // Tuples can be treated as types.
         case K::TupleExpr: {
-            SmallVector<Type> types;
+            SmallVector<TypeLoc> types;
             auto t = cast<ParsedTupleExpr>(parsed);
             bool ok = true;
             for (auto e : t->exprs()) {
-                auto ty = TranslateType(e);
-                if (not CheckFieldType(ty, e->loc)) ok = false;
-                types.push_back(ty);
+                if (auto ty = TranslateType(e)) types.emplace_back(ty, e->loc);
+                else ok = false;
             }
 
-            if (ok) return TupleType::Get(*tu, types);
+            if (ok) return BuildTupleType(types);
         } break;
 
         default:

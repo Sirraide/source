@@ -752,6 +752,9 @@ private:
     /// Check if an operator that takes a sequence of argument types must be overloaded.
     bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
 
+    /// Check whether this parsed type is the builtin 'var' type.
+    bool IsBuiltinVarType(ParsedStmt* stmt);
+
     /// Check if a type is zero-sized or incomplete.
     bool IsZeroSizedOrIncomplete(Type ty);
 
@@ -899,6 +902,7 @@ private:
     auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, Location loc) -> Type;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
+    auto BuildTupleType(ArrayRef<TypeLoc> types) -> Type;
     auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr>;
     auto BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt>;
@@ -936,7 +940,7 @@ private:
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
-    auto TranslateProcType(ParsedProcType* parsed) -> Type;
+    auto TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters = {}) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {

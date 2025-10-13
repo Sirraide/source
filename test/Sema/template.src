@@ -15,3 +15,7 @@ add(1); // expected-error: Procedure 'add' expects 2 arguments, got 1
 add(1, true); // expected-error: Cannot convert expression of type 'bool' to 'int'
 add3(1, true); // expected-error: Template argument substitution failed
 add4(1, true);
+
+proc v(var a, var b) = a + b;
+v(1 as i64, 2 as i32);
+v(1 as i32, 2 as i64);

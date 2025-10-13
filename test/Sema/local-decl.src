@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 
 program test;
-proc foo(var x) { // expected-error: Type deduction is not allowed here
+proc foo(q x) { // expected-error: Unknown symbol 'q'
     int;
     int b; // expected-note: Candidate here
     int b = 6; // expected-note: Candidate here
