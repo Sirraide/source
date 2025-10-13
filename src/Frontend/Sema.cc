@@ -3470,6 +3470,11 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     return std::nullopt;
 }
 
+auto Sema::TranslateDeferStmt(ParsedDeferStmt* stmt, Type) -> Ptr<Stmt> {
+    auto body = TRY(TranslateStmt(stmt->body));
+    return new (*tu) DeferStmt(body, stmt->loc);
+}
+
 /// Translate the body of a declaration.
 auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     // Unwrap exports; pass along the actual parsed decl for this.

@@ -177,10 +177,18 @@ class srcc::cg::ProcData {
     LIBBASE_MOVE_ONLY(ProcData);
 
 public:
+    using Cleanup = std::move_only_function<void() const>;
+    struct CleanupScope {
+        CleanupScope* parent = nullptr;
+        SmallVector<Cleanup> cleanups;
+    };
+
     DenseMap<LocalDecl*, Value> locals;
     Value environment_for_nested_procs;
     Value abort_info_slot;
     ir::ProcOp proc;
+    CleanupScope root_cleanup_scope{};
+    CleanupScope* current_cleanup_scope = nullptr;
     ProcDecl* decl = nullptr;
 
     ProcData() = default;
@@ -286,6 +294,16 @@ public:
         ~EnterProcedure();
     };
 
+    class EnterCleanupScope {
+        SRCC_IMMOVABLE(EnterCleanupScope);
+        CodeGen& cg;
+        ProcData::CleanupScope scope;
+    public:
+
+        EnterCleanupScope(CodeGen& CG);
+        ~EnterCleanupScope();
+    };
+
     struct RecordInitHelper {
         CodeGen& CG;
         RecordType* ty;
@@ -296,6 +314,9 @@ public:
         void emit_next_field(Value v);
         void emit_next_field(IRValue v);
     };
+
+    /// Add code to be run at end of scope.
+    void AddCleanup(ProcData::Cleanup cleanup);
 
     /// Append a block to the current procedure.
     auto AppendBlock(std::unique_ptr<Block> bb) -> Block*;
@@ -346,6 +367,7 @@ public:
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
     void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
     auto CreateNullPointer(mlir::Location loc) -> Value;
+    void CreateReturn(mlir::Location loc, mlir::ValueRange values);
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
     auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
@@ -361,6 +383,7 @@ public:
 
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> IRValue;
+    auto EmitWithCleanup(Stmt* stmt) -> IRValue;
     auto EmitScalar(Stmt* stmt) -> Value;
     void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc);
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
@@ -375,6 +398,10 @@ public:
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
     auto EmitValue(Location loc, const eval::RValue& val) -> IRValue;
+
+    /// Emit all cleanups starting at the current scope up to and including 'target_scope'.
+    void EmitCleanups(const ProcData::CleanupScope& target_scope);
+    void EmitCleanups();
 
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitLocal(LocalDecl* decl);

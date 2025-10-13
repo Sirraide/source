@@ -33,6 +33,7 @@
 //  Statements
 // =================================================================================
 AST_STMT(Stmt)
+AST_STMT_LEAF(DeferStmt)
 AST_STMT_LEAF(EmptyStmt)
 AST_STMT_LEAF(ForStmt)
 AST_STMT_LEAF(WhileStmt)

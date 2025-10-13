@@ -346,6 +346,12 @@ auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value {
     );
 }
 
+void CodeGen::CreateReturn(mlir::Location loc, mlir::ValueRange values) {
+    if (HasTerminator()) return;
+    EmitCleanups(curr.root_cleanup_scope);
+    create<ir::RetOp>(loc, values);
+}
+
 auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value {
     return createOrFold<LLVM::GEPOp>(
         loc,
@@ -1028,6 +1034,54 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 } // clang-format on
 
 // ============================================================================
+//  Cleanup
+// ============================================================================
+CodeGen::EnterCleanupScope::EnterCleanupScope(CodeGen& cg) : cg{cg} {
+    scope.parent = std::exchange(cg.curr.current_cleanup_scope, &scope);
+}
+
+CodeGen::EnterCleanupScope::~EnterCleanupScope() {
+    cg.EmitCleanups(scope);
+    cg.curr.current_cleanup_scope = scope.parent;
+}
+
+void CodeGen::AddCleanup(ProcData::Cleanup cleanup) {
+    Assert(curr.current_cleanup_scope);
+    curr.current_cleanup_scope->cleanups.push_back(std::move(cleanup));
+}
+
+void CodeGen::EmitCleanups(const ProcData::CleanupScope& target_scope) {
+    auto EmitScope = [&](const ProcData::CleanupScope& scope) {
+        // Check for this first to avoid an infinite loop when we push
+        // another cleanup scope for the cleanups themselves.
+        if (scope.cleanups.empty()) return;
+
+        // Emit cleanups in reverse order.
+        for (const auto& cleanup : vws::reverse(scope.cleanups)) {
+            if (HasTerminator()) break;
+
+            // Emitting cleanups might push more cleanups...
+            EnterCleanupScope nested_cleanup{*this};
+            cleanup();
+        }
+    };
+
+    // Emit everything up to the target scope.
+    for (
+        const auto* s = curr.current_cleanup_scope;
+        s and s != &target_scope;
+        s = s->parent
+    ) EmitScope(*s);
+
+    // Emit the target scope.
+    EmitScope(target_scope);
+}
+
+void CodeGen::EmitCleanups() {
+    EmitCleanups(*curr.current_cleanup_scope);
+}
+
+// ============================================================================
 //  CG
 // ============================================================================
 void CodeGen::Emit(ArrayRef<ProcDecl*> procs) {
@@ -1047,6 +1101,11 @@ auto CodeGen::Emit(Stmt* stmt) -> IRValue {
     }
 
     Unreachable("Unknown statement kind");
+}
+
+auto CodeGen::EmitWithCleanup(Stmt* stmt) -> IRValue {
+    EnterCleanupScope _{*this};
+    return Emit(stmt);
 }
 
 auto CodeGen::EmitScalar(Stmt* stmt) -> Value {
@@ -1451,6 +1510,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr) -> IRValue {
 
 auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
     IRValue ret;
+    EnterCleanupScope _{*this};
     for (auto s : expr->stmts()) {
         // Initialise variables.
         //
@@ -1753,6 +1813,11 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
     Unreachable("Don’t know how to emit DefaultInitExpr of type '{}'", stmt->type);
 }
 
+auto CodeGen::EmitDeferStmt(DeferStmt* stmt) -> IRValue {
+    AddCleanup([this, stmt] { Emit(stmt->body); });
+    return {};
+}
+
 auto CodeGen::EmitEmptyStmt(EmptyStmt*) -> IRValue {
     return {};
 }
@@ -1827,7 +1892,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     }
 
     // Body.
-    Emit(stmt->body);
+    EmitWithCleanup(stmt->body);
 
     // Remove the loop variables again.
     if (enum_var) curr.locals.erase(enum_var);
@@ -1867,8 +1932,10 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt) -> IRValue {
     auto args = If(
         C(stmt->location()),
         EmitScalar(stmt->cond),
-        [&] { return Emit(stmt->then); },
-        stmt->else_ ? [&] { return Emit(stmt->else_.get()); } : llvm::function_ref<IRValue()>{}
+        [&] { return EmitWithCleanup(stmt->then); },
+        stmt->else_
+            ? [&] { return EmitWithCleanup(stmt->else_.get()); }
+            : llvm::function_ref<IRValue()>{}
     );
 
     if (not args) return {};
@@ -1879,8 +1946,16 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt, Value mrvalue_slot) -> IRValue {
     If(
         C(stmt->location()),
         EmitScalar(stmt->cond),
-        [&] -> IRValue { EmitRValue(mrvalue_slot, cast<Expr>(stmt->then));  return {}; },
-        [&] -> IRValue { EmitRValue(mrvalue_slot, cast<Expr>(stmt->else_.get())); return {}; }
+        [&] -> IRValue {
+            EnterCleanupScope _{*this};
+            EmitRValue(mrvalue_slot, cast<Expr>(stmt->then));
+            return {};
+        },
+        [&] -> IRValue {
+            EnterCleanupScope _{*this};
+            EmitRValue(mrvalue_slot, cast<Expr>(stmt->else_.get()));
+            return {};
+        }
     );
     return {};
 }
@@ -1898,7 +1973,7 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
-    Loop([&] { if (auto b = stmt->body.get_or_null()) Emit(b); });
+    Loop([&] { if (auto b = stmt->body.get_or_null()) EmitWithCleanup(b); });
     EnterBlock(CreateBlock());
     return {};
 }
@@ -1923,7 +1998,7 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
         auto loc = C(c.loc);
         auto EmitVal = [&](Stmt* s) {
             SmallVector<Value, 2> vals;
-            Emit(s).into(vals);
+            EmitWithCleanup(s).into(vals);
             if (not HasTerminator()) create<mlir::cf::BranchOp>(loc, join.get(), vals);
         };
 
@@ -2104,25 +2179,25 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
     // An indirect return is a store to a pointer.
     if (abi().needs_indirect_return(*this, ty)) {
         EmitRValue(curr.proc.getArgument(0), expr->value.get());
-        if (not HasTerminator()) create<ir::RetOp>(l, mlir::ValueRange());
+        CreateReturn(l, {});
         return {};
     }
 
     // Handle returns without a value.
     if (not val) {
-        create<ir::RetOp>(l, Vals{});
+        CreateReturn(l, {});
         return {};
     }
 
     // Ignore zero-sized types.
     if (IsZeroSizedType(ty)) {
         if (val) Emit(val);
-        if (not HasTerminator()) create<ir::RetOp>(l, Vals{});
+        CreateReturn(l, {});
         return {};
     }
 
     auto ret_vals = abi().lower_direct_return(*this, l, val);
-    if (not HasTerminator()) create<ir::RetOp>(l, llvm::to_vector(ret_vals | vws::transform(&abi::Arg::value)));
+    CreateReturn(l, llvm::to_vector(ret_vals | vws::transform(&abi::Arg::value)));
     return {};
 }
 
@@ -2233,7 +2308,7 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
 auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
     While(
         [&] { return EmitScalar(stmt->cond); },
-        [&] { Emit(stmt->body); }
+        [&] { EmitWithCleanup(stmt->body); }
     );
     return {};
 }

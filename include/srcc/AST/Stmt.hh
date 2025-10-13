@@ -81,6 +81,14 @@ public:
     auto visit(Visitor&& v) -> decltype(auto);
 };
 
+class srcc::DeferStmt : public Stmt {
+public:
+    Stmt* body;
+    Location loc;
+    DeferStmt(Stmt* body, Location loc) : Stmt{Kind::DeferStmt, loc}, body{body} {}
+    static bool classof(const Stmt* e) { return e->kind() == Kind::DeferStmt; }
+};
+
 class srcc::EmptyStmt : public Stmt {
 public:
     Location loc;

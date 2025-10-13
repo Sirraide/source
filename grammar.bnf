@@ -27,6 +27,7 @@
 <stmt>  ::= <expr-braces>
           | <expr-no-braces> ";"
           | <decl>
+          | <stmt-defer>
           | <stmt-while>
           | <stmt-for>
           | <stmt-if>
@@ -34,8 +35,8 @@
           | LOOP <stmt>
           | ";"
 
+<stmt-defer> ::= DEFER <stmt>
 <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
-
 <stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
 <if-stmt-body> ::= [ THEN ] <stmt>
 

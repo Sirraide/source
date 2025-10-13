@@ -1457,6 +1457,7 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
 // <stmt> ::= <expr-braces>
 //          | <expr-no-braces> ";"
 //          | <decl>
+//          | <stmt-defer>
 //          | <stmt-while>
 //          | <stmt-for>
 //          | <stmt-if>
@@ -1465,6 +1466,13 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
+        // <stmt-defer> ::= DEFER <stmt>
+        case Tk::Defer: {
+            Next();
+            auto arg = TryParseStmt();
+            return new (*this) ParsedDeferStmt{arg, loc};
+        }
+
         // EVAL <stmt>
         case Tk::Eval: {
             Next();

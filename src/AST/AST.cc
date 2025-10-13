@@ -311,6 +311,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "DefaultInitExpr");
         } break;
 
+        case Kind::DeferStmt:
+            PrintBasicNode(e, "DeferStmt");
+            PrintChildren(cast<DeferStmt>(e)->body);
+            break;
+
         case Kind::EmptyStmt:
             PrintBasicNode(e, "EmptyStmt");
             break;

@@ -359,6 +359,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%8({}%)\n", utils::join(d.names(), "::"));
         } break;
 
+        case Kind::DeferStmt: {
+            PrintHeader(s, "DeferStmt");
+            PrintChildren(cast<ParsedDeferStmt>(s)->body);
+        } break;
+
         case Kind::EmptyStmt:
             PrintHeader(s, "EmptyStmt");
             break;

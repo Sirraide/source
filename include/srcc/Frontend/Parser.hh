@@ -390,6 +390,18 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeclRefExpr; }
 };
 
+class srcc::ParsedDeferStmt final : public ParsedStmt {
+public:
+    ParsedStmt* body;
+
+    ParsedDeferStmt(
+        ParsedStmt* body,
+        Location location
+    ) : ParsedStmt{Kind::DeferStmt, location}, body{body} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeferStmt; }
+};
+
 /// A single semicolon.
 class srcc::ParsedEmptyStmt final : public ParsedStmt {
 public:
