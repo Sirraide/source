@@ -181,47 +181,6 @@ auto Context::try_get_file(fs::PathRef path) -> Result<const File&> {
 // ============================================================================
 //  File
 // ============================================================================
-auto srcc::File::TempPath(StringRef extension) -> fs::Path {
-    std::mt19937 rd(std::random_device{}());
-
-    // Get the temporary directory.
-    auto tmp_dir = std::filesystem::temp_directory_path();
-
-    // Use the pid on Linux, and another random number on Windows.
-#ifdef __linux__
-    auto pid = std::to_string(u32(getpid()));
-#else
-    auto pid = std::to_string(rd());
-#endif
-
-    // Get the current time and tid.
-    auto now = chr::system_clock::now().time_since_epoch().count();
-    auto tid = std::to_string(u32(std::hash<std::thread::id>{}(std::this_thread::get_id())));
-
-    // And some random letters too.
-    // Do NOT use `char` for this because it’s signed on some systems (including mine),
-    // which completely breaks the modulo operation below... Thanks a lot, C.
-    std::array<u8, 8> rand{};
-    rgs::generate(rand, [&] { return rd() % 26 + 'a'; });
-
-    // Create a unique file name.
-    auto tmp_name = std::format(
-        "{}.{}.{}.{}",
-        pid,
-        tid,
-        now,
-        std::string_view{reinterpret_cast<char*>(rand.data()), rand.size()}
-    );
-
-    // Append it to the temporary directory.
-    auto f = tmp_dir / tmp_name;
-    if (not extension.empty()) {
-        if (not extension.starts_with(".")) f += '.';
-        f += extension;
-    }
-    return f;
-}
-
 auto srcc::File::Write(const void* data, usz size, fs::PathRef file) -> std::expected<void, std::string> {
     auto err = llvm::writeToOutput(absolute(file).string(), [=](llvm::raw_ostream& os) {
         os.write(static_cast<const char*>(data), size);

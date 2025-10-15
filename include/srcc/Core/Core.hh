@@ -160,9 +160,6 @@ public:
     /// Get the size of the file.
     [[nodiscard]] auto size() const -> isz { return isz(buffer->getBufferSize()); }
 
-    /// Get a temporary file path.
-    [[nodiscard]] static auto TempPath(StringRef extension) -> fs::Path;
-
     /// Write to a file on disk.
     [[nodiscard]] static auto Write(
         const void* data,

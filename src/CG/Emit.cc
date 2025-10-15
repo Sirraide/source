@@ -65,7 +65,7 @@ int cg::CodeGen::write_to_file(
     StringRef program_file_name_override
 ) {
     // Create a temporary path for the object file.
-    std::string object_file_path = File::TempPath(".o");
+    std::string object_file_path = fs::TempPath(".o");
 
     // Open it for writing.
     OpenFile os{object_file_path};
