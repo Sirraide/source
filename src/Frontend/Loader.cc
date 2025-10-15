@@ -1,3 +1,5 @@
+#include <srcc/Core/Constants.hh>
+#include <srcc/Core/Utils.hh>
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
@@ -10,14 +12,14 @@ auto Sema::LoadModuleFromArchive(
     if (search_paths.empty()) return ICE(import_loc, "No module search path");
 
     // Append extension.
-    std::string desc_name = std::format("{}.mod.meta", linkage_name);
+    std::string desc_name = std::format("{}.{}", linkage_name, constants::ModuleDescriptionFileExtension);
 
     // Try to find the module in the search path.
     fs::Path mod_path, desc_path;
     for (auto& base : search_paths) {
         auto combined = fs::Path{base} / desc_name;
         if (fs::File::Exists(combined)) {
-            mod_path = fs::Path{base} / std::format("{}.mod", linkage_name);
+            mod_path = fs::Path{base} / std::format("{}.{}", linkage_name, constants::ModuleFileExtension);
             desc_path = std::move(combined);
             break;
         }
@@ -103,18 +105,20 @@ void Sema::LoadModule(
     }
 }
 
-auto TranslationUnit::serialise() -> SmallString<0> {
+auto TranslationUnit::serialise(bool use_colours) -> std::string {
     Assert(is_module, "Should never be called for programs");
-    SmallString<0> out;
-    out += std::format("__srcc_ser_module__ {};\n", name);
-    for (auto d : exports.decls()) {
+    SmallUnrenderedString out;
+    out += std::format("%1(__srcc_ser_module__ %4({}%);%)\n", name);
+
+    // Sort declarations by source location for stability.
+    SmallVector<Decl*> decls;
+    append_range(decls, exports.decls());
+    sort(decls, [](Decl* a, Decl* b) { return a->location() < b->location(); });
+    for (auto d : decls) {
         if (auto proc = dyn_cast<ProcDecl>(d)) {
             out += std::format(
-                "{};\n",
-                text::RenderColours(
-                    false,
-                    proc->proc_type()->print(proc->name, false, proc).str()
-                )
+                "{}%1(;%)\n",
+                proc->proc_type()->print(proc->name, false, proc).str()
             );
             continue;
         }
@@ -131,5 +135,6 @@ auto TranslationUnit::serialise() -> SmallString<0> {
         d->dump_color();
         Todo("Export this decl");
     }
-    return out;
+
+    return text::RenderColours(use_colours, out.str());
 }

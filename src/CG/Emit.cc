@@ -1,4 +1,5 @@
 #include <srcc/CG/CodeGen.hh>
+#include <srcc/Core/Constants.hh>
 
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
@@ -101,8 +102,8 @@ int cg::CodeGen::write_to_file(
         // Derive the file name from the module name; always use '.mod' instead
         // of e.g. '.a' because linking against a module isn’t enough to make it
         // usable: you also have to run the module initialiser.
-        auto out_name = std::format("{}.mod", tu.name.sv());
-        auto desc_name = std::format("{}.mod.meta", tu.name.sv());
+        auto out_name = std::format("{}.{}", tu.name.sv(), constants::ModuleFileExtension);
+        auto desc_name = std::format("{}.{}", tu.name.sv(), constants::ModuleDescriptionFileExtension);
 
         // We could avoid writing to a temporary file in this case (but
         // we’d have to add files anyway if we’re combining modules into

@@ -1,0 +1,26 @@
+// R %srcc --exports %s
+
+// * __srcc_ser_module__ test;
+module test;
+
+// + proc f1 (i64) -> i32;
+export proc f1 (i64) -> i32 = 42;
+
+// + proc f2 (i64) nomangle -> i32;
+export proc f2 (i64) nomangle -> i32 = 42;
+
+// + proc f3 (i64) native -> i32;
+export proc f3 (i64) native -> i32 = 42;
+
+// + proc f4 (i64) varargs -> i32;
+export proc f4 (i64) varargs -> i32 = 42;
+
+// + proc f5 (i64) native varargs -> i32;
+// + proc f6 (i64) native varargs -> i32;
+export proc f5 (i64) native varargs -> i32 = 42;
+export proc f6 (i64) varargs native -> i32 = 42;
+
+// + proc f7 (i64) varargs nomangle -> i32;
+// + proc f8 (i64) varargs nomangle -> i32;
+export proc f7 (i64) nomangle varargs -> i32 = 42;
+export proc f8 (i64) varargs nomangle -> i32 = 42;

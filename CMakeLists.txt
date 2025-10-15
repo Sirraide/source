@@ -351,6 +351,7 @@ add_custom_target(src_runtime ALL
     BYPRODUCTS
         "${CMAKE_CURRENT_BINARY_DIR}/runtime.cc.o"
         "${PROJECT_SOURCE_DIR}/modules/__src_runtime.mod"
+        "${PROJECT_SOURCE_DIR}/modules/__src_runtime.mod.src"
 
     COMMENT "Building Source runtime"
 

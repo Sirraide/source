@@ -259,6 +259,14 @@ int Driver::run_job() {
     if (ctx.diags().has_error()) return 1;
     bool finalise_ok = opts.ir_no_finalise or cg.finalise();
 
+    // Dump exports.
+    if (a == Action::DumpExports) {
+        if (not tu->is_module) return Error("--exports cannot be used with a 'program'");
+        auto desc = tu->serialise(ctx.use_colours);
+        std::print("{}", desc);
+        return 0;
+    }
+
     // Dump IR.
     if (a == Action::DumpIR) {
         auto s = cg.dump(opts.ir_verbose, opts.ir_generic);

@@ -346,14 +346,14 @@ auto ProcType::Get(
     Type return_type,
     ArrayRef<ParamTypeData> param_types,
     CallingConvention cconv,
-    bool variadic
+    bool c_varargs
 ) -> ProcType* {
     auto CreateNew = [&] {
         const auto size = totalSizeToAlloc<ParamTypeData>(param_types.size());
         auto mem = mod.allocate(size, alignof(ProcType));
         return ::new (mem) ProcType{
             cconv,
-            variadic,
+            c_varargs,
             return_type,
             param_types
         };
@@ -365,7 +365,7 @@ auto ProcType::Get(
         return_type,
         param_types,
         cconv,
-        variadic
+        c_varargs
     );
 }
 
@@ -391,10 +391,10 @@ void ProcType::Profile(
     Type return_type,
     ArrayRef<ParamTypeData> param_types,
     CallingConvention cc,
-    bool is_variadic
+    bool is_varargs
 ) {
     ID.AddInteger(+cc);
-    ID.AddBoolean(is_variadic);
+    ID.AddBoolean(is_varargs);
     ID.AddPointer(return_type.ptr());
     ID.AddInteger(param_types.size());
     for (const auto& t : param_types) {
@@ -428,7 +428,7 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
 
     // Add attributes.
     if (cconv() == CallingConvention::Native) out += " native";
-    if (has_c_varargs()) out += " variadic";
+    if (has_c_varargs()) out += " varargs";
     if (decl) {
         if (cconv() != CallingConvention::Native and decl->mangling == Mangling::None)
             out += " nomangle";

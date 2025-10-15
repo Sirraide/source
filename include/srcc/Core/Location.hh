@@ -84,6 +84,13 @@ struct srcc::Location {
     /// range is almost certainly not null-terminated.
     [[nodiscard]] auto text(const Context& ctx) const -> String;
 
+    /// Compare locations so they can be sorter.
+    [[nodiscard]] friend bool operator<(Location a, Location b) {
+        if (a.file_id != b.file_id) return a.file_id < b.file_id;
+        if (a.pos != b.pos) return a.pos < b.pos;
+        return a.len < b.len;
+    }
+
     /// Decode a source location from a 64-bit number.
     static auto Decode(Encoded loc) -> Location {
         return std::bit_cast<Location>(loc);

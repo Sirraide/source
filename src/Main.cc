@@ -38,6 +38,7 @@ using options = clopts< // clang-format off
     // General flags.
     flag<"--ast", "Dump the parse tree / AST">,
     flag<"--dump-module", "Dump the contents of a module or C++ header that we can import">,
+    flag<"--exports", "Dump the module description to stdout">,
     flag<"--lex", "Lex tokens only (but do not print them) and exit">,
     flag<"--tokens", "Print tokens and exit">,
     flag<"--parse", "Parse only and exit">,
@@ -95,15 +96,16 @@ int main(int argc, char** argv) {
     llvm::sys::Process::PreventCoreFiles();
 
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()           ? Action::Eval
-                : opts.get<"--dump-module">()    ? Action::DumpModule
-                : opts.get<"--ir">()             ? Action::DumpIR
-                : opts.get<"--lex">()            ? Action::Lex
-                : opts.get<"--llvm">()           ? Action::EmitLLVM
-                : opts.get<"--parse">()          ? Action::Parse
-                : opts.get<"--sema">()           ? Action::Sema
-                : opts.get<"--tokens">()         ? Action::DumpTokens
-                                                 : Action::Compile;
+    auto action = opts.get<"--eval">()        ? Action::Eval
+                : opts.get<"--exports">()     ? Action::DumpExports
+                : opts.get<"--dump-module">() ? Action::DumpModule
+                : opts.get<"--ir">()          ? Action::DumpIR
+                : opts.get<"--lex">()         ? Action::Lex
+                : opts.get<"--llvm">()        ? Action::EmitLLVM
+                : opts.get<"--parse">()       ? Action::Parse
+                : opts.get<"--sema">()        ? Action::Sema
+                : opts.get<"--tokens">()      ? Action::DumpTokens
+                                              : Action::Compile;
 
     // Collect module search paths.
     std::vector<std::string> module_search_paths{

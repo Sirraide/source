@@ -563,7 +563,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 if (p->attrs.native) out += " native";
                 if (p->attrs.extern_) out += " extern";
                 if (p->attrs.nomangle) out += " nomangle";
-                if (p->attrs.c_varargs) out += " variadic";
+                if (p->attrs.c_varargs) out += " varargs";
 
                 out += " -> %)";
                 Append(p->ret_type);
