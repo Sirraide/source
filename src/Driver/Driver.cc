@@ -98,6 +98,7 @@ int Driver::run_job() {
     // Create lang opts.
     LangOpts lang_opts;
     lang_opts.overflow_checking = opts.overflow_checking;
+    lang_opts.no_runtime = not opts.import_runtime;
 
     // Forward options to context.
     ctx.eval_steps = opts.eval_steps;

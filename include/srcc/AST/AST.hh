@@ -126,11 +126,11 @@ public:
     Type I32Ty;
     Type I64Ty;
     Type I128Ty;
-    Type AbortInfoTy; // TODO: Get this from the runtime.
     Type I8PtrTy;
     SliceType* StrLitTy;
     TupleType* SliceEquivalentTupleTy;
     TupleType* ClosureEquivalentTupleTy;
+    TupleType* AbortInfoEquivalentTy;
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;
@@ -140,9 +140,6 @@ public:
     FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
     FoldingSet<TupleType> tuple_types;
-
-    /// The declaration of '__src_abort_info', if it exists.
-    StructType* abort_info_type;
 
     ~TranslationUnit();
 

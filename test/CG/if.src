@@ -26,10 +26,6 @@ proc x(int a, int b, bool d) {
 // + @2 = "d = false\0A\00"
 // + @3 = "d = true\0A\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     call fastcc void _S1xFviibE(i64 1, i64 2, i1 true zeroext)
@@ -102,12 +98,6 @@ proc x(int a, int b, bool d) {
 //L + @__srcc_str.2 = private constant [3 x i8] c"%s\00", align 1
 //L + @__srcc_str.1 = private constant [11 x i8] c"d = false\0A\00", align 1
 //L + @__srcc_str.0 = private constant [10 x i8] c"d = true\0A\00", align 1
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {

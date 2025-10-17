@@ -284,7 +284,10 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
             case NotFound: {
                 auto it = tu->logical_imports.find(first.str());
                 if (it == tu->logical_imports.end() or not it->getValue()) return res;
-                if (isa<ImportedSourceModuleDecl>(it->second)) Todo();
+                if (auto s = dyn_cast<ImportedSourceModuleDecl>(it->second)) {
+                    in_scope = &s->exports;
+                    break;
+                }
 
                 // We found an imported C++ header; do a C++ lookup.
                 auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
@@ -4052,9 +4055,6 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
         parsed->loc
     );
 
-    if (parsed->name.str() == "__src_abort_info")
-        tu->abort_info_type = ty;
-
     AddDeclToScope(curr_scope(), ty->decl());
     return ty->decl();
 }
@@ -4121,6 +4121,25 @@ auto Sema::BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type {
     );
 
     return ArrayType::Get(*tu, base.ty, size);
+}
+
+auto Sema::BuildCompleteStructType(
+    String name,
+    RecordLayout* layout,
+    Location decl_loc
+) -> StructType* {
+    auto scope = tu->create_scope<StructScope>(global_scope());
+    for (auto f : layout->fields())
+        if (f->is_valid)
+            AddDeclToScope(scope, f);
+
+    return StructType::Create(
+        *tu,
+        scope,
+        name,
+        decl_loc,
+        layout
+    );
 }
 
 auto Sema::BuildSliceType(Type base, Location loc) -> Type {

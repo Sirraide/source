@@ -19,11 +19,7 @@ e = e + e;
 i164 f = 1;
 f = f + f;
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
-// + proc __src_main external fastcc {
+// * proc __src_main external fastcc {
 // +     #0 = 1, align 1
 // +     #1 = 2, align 2
 // +     #2 = 4, align 4

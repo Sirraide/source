@@ -31,10 +31,6 @@ proc x (int a, in int b) {
 // + @9 = "integer overflow\00"
 // + @10 = "+\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -322,11 +318,7 @@ proc x (int a, in int b) {
 // +     ret
 // + }
 
-//U * proc __src_assert_fail (ptr) external fastcc;
-//U +
-//U + proc __src_int_arith_error (ptr) external fastcc;
-//U +
-//U + proc __src_main external fastcc {
+//U * proc __src_main external fastcc {
 //U + entry:
 //U +     ret
 //U + }
@@ -405,12 +397,6 @@ proc x (int a, in int b) {
 //L + @__srcc_str.2 = private constant [20 x i8] c"compound-assign.src\00", align 1
 //L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {
@@ -714,6 +700,8 @@ proc x (int a, in int b) {
 //L +   ret void
 //L + }
 //L +
+//L + declare void @__src_int_arith_error(ptr)
+//L +
 //L + ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #1
 //L +
@@ -734,12 +722,6 @@ proc x (int a, in int b) {
 //UL + source_filename = "test"
 //UL + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //UL + target triple = "x86_64-unknown-linux-gnu"
-//UL +
-//UL + ; Function Attrs: nounwind
-//UL + declare fastcc void @__src_assert_fail(ptr) #0
-//UL +
-//UL + ; Function Attrs: nounwind
-//UL + declare fastcc void @__src_int_arith_error(ptr) #0
 //UL +
 //UL + ; Function Attrs: nounwind
 //UL + define fastcc void @__src_main() #0 {

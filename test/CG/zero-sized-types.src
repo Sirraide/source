@@ -27,11 +27,7 @@ proc interleaved2 (int a, void b, int c, void d) = a | c;
 interleaved1(2, void(), 3, void());
 interleaved2(2, void(), 3, void());
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
-// + proc __src_main external fastcc {
+// * proc __src_main external fastcc {
 // + entry:
 // +     %0 = call fastcc i64 _S12interleaved1FixivxivE(i64 2, i64 3)
 // +     %1 = call fastcc i64 _S12interleaved2FiivivE(i64 2, i64 3)

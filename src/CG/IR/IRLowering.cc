@@ -9,6 +9,9 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Target/LLVMIR/Export.h>
 #include <mlir/Transforms/Passes.h>
@@ -86,7 +89,6 @@ static void PropagateArgAndResultAttrs(auto func_or_call, auto op) {
 }
 
 LOWERING(AbortOp, {
-    // Just call the appropriate handler.
     String name = [&] {
         switch (a.getReason()) {
             case ir::AbortReason::ArithmeticError:
@@ -99,8 +101,23 @@ LOWERING(AbortOp, {
         Unreachable();
     }();
 
-    auto func = op->getParentOfType<mlir::ModuleOp>().lookupSymbol<LLVM::LLVMFuncOp>(name);
-    Assert(func, "Abort handler not found!");
+    // Retrieve a declaration of the appropriate handler.
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    auto func = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
+    if (not func) {
+        mlir::OpBuilder::InsertionGuard guard{r};
+        r.setInsertionPointToEnd(&module.getBodyRegion().back());
+        func = r.create<LLVM::LLVMFuncOp>(
+            r.getUnknownLoc(),
+            name,
+            LLVM::LLVMFunctionType::get(
+                LLVM::LLVMVoidType::get(getContext()),
+                {LLVM::LLVMPointerType::get(getContext())},
+                false
+            )
+        );
+    }
+
     r.create<LLVM::CallOp>(op.getLoc(), func, a.getAbortInfo());
     return r.create<LLVM::UnreachableOp>(op.getLoc());
 });

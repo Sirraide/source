@@ -10,10 +10,6 @@ proc b = eval x(-1, -2, -3);
 // * @0 = "\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 // + @1 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -38,12 +34,6 @@ proc b = eval x(-1, -2, -3);
 //L +
 //L + @__srcc_str.1 = private constant [24 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 //L + @__srcc_str.0 = private constant [24 x i8] c"\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {

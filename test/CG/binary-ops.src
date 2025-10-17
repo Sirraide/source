@@ -57,10 +57,6 @@ proc arith (in int a, in int b) {
 // + @11 = "integer overflow\00"
 // + @12 = "+\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret

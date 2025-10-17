@@ -53,9 +53,7 @@ proc q6 {
     f6(2 as i128, 1, "");
 }
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
+// * @0 = "\00"
 // +
 // + proc __src_main external fastcc {
 // + entry:
@@ -201,5 +199,179 @@ proc q6 {
 // +     store #1, ptr %1, align 8
 // +     %3 = ptradd #1, 8
 // +     store %3, i64 %2, align 8
+// +     ret
+// + }
+// +
+// + proc _S2q5FvE private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 16, align 8
+// +     #2 = 16, align 8
+// +     #3 = 24, align 8
+// +     #4 = 24, align 8
+// +
+// + entry:
+// +     call fastcc void _S2f5FvQEE()
+// +     store #0, i64 1, align 8
+// +     %0 = load i64, #0, align 8
+// +     call fastcc void _S2f5FvQiEE(i64 %0)
+// +     store #1, i64 1, align 8
+// +     %1 = ptradd #1, 8
+// +     store %1, i64 2, align 8
+// +     %2 = load i64, #1, align 8
+// +     %3 = ptradd #1, 8
+// +     %4 = load i64, %3, align 8
+// +     call fastcc void _S2f5FvQiiEE(i64 %2, i64 %4)
+// +     store #2, i64 1, align 8
+// +     %5 = ptradd #2, 8
+// +     store %5, i64 2, align 8
+// +     %6 = load i64, #2, align 8
+// +     %7 = ptradd #2, 8
+// +     %8 = load i64, %7, align 8
+// +     call fastcc void _S2f5FvQiiEE(i64 %6, i64 %8)
+// +     store #3, i64 1, align 8
+// +     %9 = ptradd #3, 8
+// +     store %9, ptr @0, align 8
+// +     %10 = ptradd %9, 8
+// +     store %10, i64 0, align 8
+// +     call fastcc void _S2f5FvQiSI8EE(ptr #3 byval i8[24])
+// +     store #4, i64 1, align 8
+// +     %11 = ptradd #4, 8
+// +     store %11, ptr @0, align 8
+// +     %12 = ptradd %11, 8
+// +     store %12, i64 0, align 8
+// +     call fastcc void _S2f5FvQiSI8EE(ptr #4 byval i8[24])
+// +     ret
+// + }
+// +
+// + proc _S2f5FvQEE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2f5FvQiEE (i64 %0) private fastcc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f5FvQiiEE (i64 %0, i64 %1) private fastcc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %2 = ptradd #0, 8
+// +     store %2, i64 %1, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f5FvQiSI8EE (ptr %0 byval i8[24]) private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2q6FvE private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 16, align 8
+// +     #2 = 16, align 8
+// +     #3 = 24, align 8
+// +     #4 = 16, align 16
+// +     #5 = 24, align 8
+// +
+// + entry:
+// +     call fastcc void _S2f6FviQEE(i64 1)
+// +     store #0, i64 1, align 8
+// +     %0 = load i64, #0, align 8
+// +     call fastcc void _S2f6FvSI8QiEE(ptr @0, i64 0, i64 %0)
+// +     store #1, i64 1, align 8
+// +     %1 = ptradd #1, 8
+// +     store %1, i64 2, align 8
+// +     %2 = load i64, #1, align 8
+// +     %3 = ptradd #1, 8
+// +     %4 = load i64, %3, align 8
+// +     call fastcc void _S2f6FvI32QiiEE(i32 4, i64 %2, i64 %4)
+// +     store #2, i64 1, align 8
+// +     %5 = ptradd #2, 8
+// +     store %5, i64 2, align 8
+// +     %6 = load i64, #2, align 8
+// +     %7 = ptradd #2, 8
+// +     %8 = load i64, %7, align 8
+// +     call fastcc void _S2f6FvI47QiiEE(i47 7 signext, i64 %6, i64 %8)
+// +     store #3, i64 1, align 8
+// +     %9 = ptradd #3, 8
+// +     store %9, ptr @0, align 8
+// +     %10 = ptradd %9, 8
+// +     store %10, i64 0, align 8
+// +     call fastcc void _S2f6FvI16QiSI8EE(i16 3, ptr #3 byval i8[24])
+// +     store #4, i128 2, align 16
+// +     %11 = load i128, #4, align 16
+// +     store #5, i64 1, align 8
+// +     %12 = ptradd #5, 8
+// +     store %12, ptr @0, align 8
+// +     %13 = ptradd %12, 8
+// +     store %13, i64 0, align 8
+// +     call fastcc void _S2f6FvI128QiSI8EE(i128 %11, ptr #5 byval i8[24])
+// +     ret
+// + }
+// +
+// + proc _S2f6FviQEE (i64 %0) private fastcc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f6FvSI8QiEE (ptr %0, i64 %1, i64 %2) private fastcc {
+// +     #0 = 16, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %3 = ptradd #0, 8
+// +     store %3, i64 %1, align 8
+// +     store #1, i64 %2, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f6FvI32QiiEE (i32 %0, i64 %1, i64 %2) private fastcc {
+// +     #0 = 4, align 4
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, i32 %0, align 4
+// +     store #1, i64 %1, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 %2, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f6FvI47QiiEE (i47 %0 signext, i64 %1, i64 %2) private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     %3 = sext i47 %0 to i64
+// +     store #0, i64 %3, align 8
+// +     store #1, i64 %1, align 8
+// +     %4 = ptradd #1, 8
+// +     store %4, i64 %2, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f6FvI16QiSI8EE (i16 %0, ptr %1 byval i8[24]) private fastcc {
+// +     #0 = 2, align 2
+// +
+// + entry:
+// +     store #0, i16 %0, align 2
+// +     ret
+// + }
+// +
+// + proc _S2f6FvI128QiSI8EE (i128 %0, ptr %1 byval i8[24]) private fastcc {
+// +     #0 = 16, align 16
+// +
+// + entry:
+// +     store #0, i128 %0, align 16
 // +     ret
 // + }

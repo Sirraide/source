@@ -14,10 +14,6 @@ proc e (i64[] a, i64[] b) = a == b;
 // + @3 = "dcef\00"
 // + @4 = "abcd\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -231,12 +227,6 @@ proc e (i64[] a, i64[] b) = a == b;
 //L + @__srcc_str.2 = private constant [2 x i8] c"a\00", align 1
 //L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
 //L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {

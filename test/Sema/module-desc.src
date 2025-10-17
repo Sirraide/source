@@ -1,5 +1,5 @@
-// R %srcc --exports %s
-// R mkdir %t && %srcc %s --mo %t && %srcc --dump-module test -M %t
+// R %srcc --exports %s --target x86_64-unknown-linux
+// R mkdir %t && %srcc %s --mo %t --target x86_64-unknown-linux && %srcc --dump-module test -M %t --target x86_64-unknown-linux
 module test;
 
 // * f1 proc (i64) -> i32
@@ -15,3 +15,13 @@ export proc f3 (i64) native -> i32 = 42;
 // * f6 proc (i64) native varargs -> i32
 export proc f5 (i64) native varargs -> i32 = 42;
 export proc f6 (i64) varargs native -> i32 = 42;
+
+// * struct s1 size 24/24 align 8
+// + i32 a offs 0
+// + i53 b offs 8
+// + i64 c offs 16
+export struct s1 {
+    i32 a;
+    i53 b;
+    i64 c;
+}

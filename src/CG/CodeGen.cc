@@ -40,15 +40,6 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
     int_ty = C(Type::IntTy);
     i128_ty = getIntegerType(128);
     mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
-
-    // Declare the abort handlers.
-    // FIXME: These should instead be declared as needed by the LLVM lowering pass.
-    if (tu.abort_info_type) {
-        auto ptr = PtrType::Get(tu, tu.abort_info_type);
-        auto ty = ProcType::Get(tu, Type::VoidTy, {ParamTypeData{Intent::In, ptr}});
-        GetOrCreateProc({}, constants::AssertFailureHandlerName, Linkage::Imported, ty, false);
-        GetOrCreateProc({}, constants::ArithmeticFailureHandlerName, Linkage::Imported, ty, false);
-    }
 }
 
 // ============================================================================
@@ -108,33 +99,16 @@ auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
 }
 
 void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2) {
-    // The runtime defines the assertion payload as follows:
-    //
-    // struct AbortInfo {
-    //    i8[] filename;
-    //    int line;
-    //    int col;
-    //    i8[] msg1;
-    //    i8[] msg2;
-    // }
-    //
-    // Make sure the type exists if we need to emit an abort.
-    if (not tu.abort_info_type) {
-        Warn(Location::Decode(loc), "No declaration of '__src_abort_info' found");
-        create<LLVM::UnreachableOp>(loc);
-        return;
-    }
-
     // Reuse the abort info slot if there is one.
     if (!curr.abort_info_slot)
-        curr.abort_info_slot = CreateAlloca(loc, tu.abort_info_type);
+        curr.abort_info_slot = CreateAlloca(loc, tu.AbortInfoEquivalentTy);
 
     // Get the file name, line, and column.
     //
     // Don’t require a valid location here as this is also called from within
     // implicitly generated code.
     auto l = Location::Decode(loc);
-    RecordInitHelper init{*this, tu.abort_info_type, curr.abort_info_slot};
+    RecordInitHelper init{*this, tu.AbortInfoEquivalentTy, curr.abort_info_slot};
     if (auto lc = l.seek_line_column(context())) {
         auto name = context().file_name(l.file_id);
         init.emit_next_field(CreateGlobalStringSlice(loc, name));

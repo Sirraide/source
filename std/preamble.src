@@ -46,14 +46,3 @@ proc == (in $T a, in T b) __srcc_builtin_op__ -> bool {
     return true;
 }
 
-/// Payload passed to various assertion handlers.
-///
-/// The name and layout of this type are hard-coded into the
-/// compiler. DO NOT MODIFY!
-struct __src_abort_info {
-    i8[] filename;
-    int line;
-    int col;
-    i8[] msg1;
-    i8[] msg2;
-}

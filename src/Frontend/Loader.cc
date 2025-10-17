@@ -9,11 +9,11 @@
 #include <base/Utils.hh>
 
 using namespace srcc;
-enum struct TypeIndex : u64;
 
 #define Read(...) Try(read<__VA_ARGS__>())
 
 namespace {
+enum struct TypeIndex : u64;
 static constexpr u32 CurrentVersion = 1;
 
 struct Header {
@@ -254,9 +254,7 @@ public:
                 auto decl_name = Read(String);
                 auto decl_loc = Read(Location);
                 auto layout = Read(RecordLayout*);
-                auto scope = S.tu->create_scope<StructScope>(S.global_scope());
-                for (auto f : layout->fields()) S.AddDeclToScope(scope, f);
-                return StructType::Create(*S.tu, scope, decl_name, decl_loc);
+                return S.BuildCompleteStructType(decl_name, layout, decl_loc);
             }
 
             case K::TupleType: {

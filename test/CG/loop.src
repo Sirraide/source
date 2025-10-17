@@ -14,11 +14,7 @@ proc h = a() + loop;
 
 var x = if 1 == 1 then 3 else loop;
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
-// + proc __src_main external fastcc {
+// * proc __src_main external fastcc {
 // +     #0 = 8, align 8
 // +
 // + entry:

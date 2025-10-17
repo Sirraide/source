@@ -23,10 +23,6 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // + @4 = "exp >= 0\00"
 // + @5 = "attempting to raise 0 to a negative power\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret

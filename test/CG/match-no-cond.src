@@ -38,11 +38,7 @@ proc f7 (int x, int y) nomangle = match {
     _: 5;
 }
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
-// + proc __src_main external fastcc {
+// * proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }
@@ -151,12 +147,6 @@ proc f7 (int x, int y) nomangle = match {
 //L + source_filename = "test"
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {

@@ -102,11 +102,7 @@ proc f10 {
     q(6);
 }
 
-// * proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
-// + proc __src_main external fastcc {
+// * proc __src_main external fastcc {
 // + entry:
 // +     ret
 // + }

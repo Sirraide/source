@@ -900,6 +900,7 @@ private:
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, Location loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
+    auto BuildCompleteStructType(String name, RecordLayout* layout, Location decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;

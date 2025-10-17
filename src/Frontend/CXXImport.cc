@@ -210,10 +210,6 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
         }
     }
 
-    // Build the scope for the declaration.
-    auto Scope = S.tu->create_scope<StructScope>(S.global_scope());
-    for (auto F : Fields) S.AddDeclToScope(Scope, F);
-
     // Build the layout.
     auto rl = RecordLayout::Create(
         *S.tu,
@@ -224,13 +220,10 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
         RecordLayout::Bits::Trivial()
     );
 
-    // Build the type.
-    auto Struct = StructType::Create(
-        *S.tu,
-        Scope,
+    auto Struct = S.BuildCompleteStructType(
         S.tu->save(Name),
-        ImportSourceLocation(RD->getLocation()),
-        rl
+        rl,
+        ImportSourceLocation(RD->getLocation())
     );
 
     S.imported_records[RD] = Struct;

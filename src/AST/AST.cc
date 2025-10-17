@@ -69,6 +69,18 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     SliceEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, Type::IntTy});
     ClosureEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, I8PtrTy});
 
+    // struct AbortInfo {
+    //     i8[] filename;
+    //     int line;
+    //     int col;
+    //     i8[] msg1;
+    //     i8[] msg2;
+    // }
+    AbortInfoEquivalentTy = TupleType::Get(
+        *this,
+        {StrLitTy, Type::IntTy, Type::IntTy, StrLitTy, StrLitTy}
+    );
+
     // If the name is empty, this is an imported module. Do not create
     // an initialiser for it as we can just synthesise a call to it, and
     // we also don’t have its name yet.

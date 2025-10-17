@@ -195,10 +195,6 @@ proc closures {
 // + @3 = "1\00"
 // + @4 = "q\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -1851,12 +1847,6 @@ proc closures {
 //L + @__srcc_str.2 = private constant [2 x i8] c"2\00", align 1
 //L + @__srcc_str.1 = private constant [2 x i8] c"1\00", align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"q\00", align 1
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {

@@ -12,10 +12,6 @@ proc foo(in int a, in int b) {
 // + @2 = "assert.src\00"
 // + @3 = "a == b\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -90,12 +86,6 @@ proc foo(in int a, in int b) {
 //L + @__srcc_str.0 = private constant [7 x i8] c"a == b\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {
 //L +   ret void
 //L + }
@@ -158,6 +148,8 @@ proc foo(in int a, in int b) {
 //L + 28:                                               ; preds = %17
 //L +   ret void
 //L + }
+//L +
+//L + declare void @__src_assert_fail(ptr)
 //L +
 //L + attributes #0 = { nounwind }
 //L +

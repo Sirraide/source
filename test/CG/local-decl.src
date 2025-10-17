@@ -14,10 +14,6 @@ proc foo(int a, int b) {
 
 // * @0 = "%zi %zi %zi %zi\0A\00"
 // +
-// + proc __src_assert_fail (ptr) external fastcc;
-// +
-// + proc __src_int_arith_error (ptr) external fastcc;
-// +
 // + proc __src_main external fastcc {
 // + entry:
 // +     ret
@@ -62,12 +58,6 @@ proc foo(int a, int b) {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + @__srcc_str.0 = private constant [17 x i8] c"%zi %zi %zi %zi\0A\00", align 1
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_assert_fail(ptr) #0
-//L +
-//L + ; Function Attrs: nounwind
-//L + declare fastcc void @__src_int_arith_error(ptr) #0
 //L +
 //L + ; Function Attrs: nounwind
 //L + define fastcc void @__src_main() #0 {
