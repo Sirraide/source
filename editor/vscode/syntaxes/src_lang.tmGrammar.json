@@ -132,6 +132,15 @@
             }
         },
         {
+            "match": "(import)\\s+([a-zA-Z_0-9]+)(?:\\s+(as)\\s+([a-zA-Z_0-9]+|\\*))?",
+            "captures": {
+                "1": { "name": "keyword.other" },
+                "2": { "name": "entity.name.module" },
+                "3": { "name": "keyword.other" },
+                "4": { "name": "entity.name.module" }
+            }
+        },
+        {
             "match": "\\b(pragma)\\b\\s+\\b(include)\\b",
             "captures": {
                 "1": { "name": "keyword.other" },
