@@ -1,0 +1,9 @@
+// V true
+module testmodule;
+// FIXME: introduce an 'I' run directive to FCHK.
+
+import <cstdio> as libc;
+
+export proc hello() {
+    libc::puts("Hello, world");
+}

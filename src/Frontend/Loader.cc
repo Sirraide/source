@@ -152,6 +152,7 @@ public:
     using Base::Base;
 
     Sema& S;
+    ImportedSourceModuleDecl* module_decl;
     llvm::SmallVector<Type> types{};
     TypeIndex next_index = TypeIndex(1);
 
@@ -165,7 +166,8 @@ public:
     /// TODO: Do we want to embed the file data in the module description?
     llvm::DenseMap<u64, std::optional<i32>> files;
 
-    ASTReader(Sema& S, ser::InputSpan buf) : Base{buf}, S{S} {
+    ASTReader(Sema& S, ImportedSourceModuleDecl* module_decl, ser::InputSpan buf)
+        : Base{buf}, S{S}, module_decl{module_decl} {
         types.push_back(Type()); // TypeIndex(0).
     }
 
@@ -187,6 +189,7 @@ public:
                 auto loc = Read(Location);
                 return ProcDecl::Create(
                     *S.tu,
+                    module_decl,
                     cast<ProcType>(type),
                     name,
                     Linkage::Imported,
@@ -325,8 +328,8 @@ public:
     }
 };
 
-auto Sema::ReadAST(const File& f) -> Result<> {
-    ASTReader r{*this, ser::InputSpan{f.data(), usz(f.size())}};
+auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<> {
+    ASTReader r{*this, module_decl, ser::InputSpan{f.data(), usz(f.size())}};
     auto hdr = Try(r.read<Header>());
     if (hdr.version != CurrentVersion) return base::Error(
         "Unsupported version number {}; recompile the module",
@@ -392,21 +395,22 @@ auto Sema::LoadModuleFromArchive(
 
     Assert(curr_scope() == global_scope());
     EnterScope _{*this};
-
-    if (auto res = ReadAST(file.value()); not res) return Error(
-        import_loc,
-        "Module '{}' is malformed: {}",
-        linkage_name,
-        res.error()
-    );
-
-    return new (*tu) ImportedSourceModuleDecl(
+    auto module_decl = new (*tu) ImportedSourceModuleDecl(
         *curr_scope(),
         logical_name,
         linkage_name,
         tu->save(mod_path.string()),
         import_loc
     );
+
+    if (auto res = ReadAST(module_decl, file.value()); not res) return Error(
+        import_loc,
+        "Module '{}' is malformed: {}",
+        linkage_name,
+        res.error()
+    );
+
+    return module_decl;
 }
 
 void Sema::LoadModule(

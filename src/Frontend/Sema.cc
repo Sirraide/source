@@ -291,7 +291,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
 
                 // We found an imported C++ header; do a C++ lookup.
                 auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
-                return LookUpCXXName(&hdr->clang_ast, names.drop_front());
+                return LookUpCXXName(hdr, names.drop_front());
             } break;
         }
     }
@@ -339,8 +339,9 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope
     if (not tu->open_modules.empty()) {
         Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
         auto mod = tu->open_modules.front();
-        if (isa<ImportedSourceModuleDecl>(mod)) Todo();
-        return LookUpCXXName(&cast<ImportedClangModuleDecl>(mod)->clang_ast, name);
+        if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
+            return LookUpUnqualifiedName(&s->exports, name, true);
+        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name);
     }
 
     return LookupResult::NotFound(name);
@@ -2970,6 +2971,7 @@ auto Sema::BuildProcDeclInitial(
     if (parent == tu->initialiser_proc) parent = {};
     auto proc = ProcDecl::Create(
         *tu,
+        nullptr,
         ty,
         name,
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,

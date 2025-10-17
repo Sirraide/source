@@ -1,5 +1,7 @@
 // R %srcc --exports %s --target x86_64-unknown-linux
-// R mkdir %t && %srcc %s --mo %t --target x86_64-unknown-linux && %srcc --dump-module test -M %t --target x86_64-unknown-linux
+// V mkdir %t
+// V %srcc %s --mo %t --target x86_64-unknown-linux
+// R %srcc --dump-module test -M %t --target x86_64-unknown-linux
 module test;
 
 // * f1 proc (i64) -> i32

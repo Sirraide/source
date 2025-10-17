@@ -2,6 +2,7 @@
 #define SRCC_FRONTEND_SEMA_HH
 
 #include <srcc/AST/AST.hh>
+#include <srcc/AST/Stmt.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Frontend/Parser.hh>
@@ -732,7 +733,7 @@ private:
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
     /// Import a declaration from a C++ AST.
-    auto ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl>;
+    auto ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl>;
 
     /// Import a C++ header.
     auto ImportCXXHeaders(
@@ -780,7 +781,7 @@ private:
     ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
-    auto LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> LookupResult;
+    auto LookUpCXXName(ImportedClangModuleDecl* clang_module, ArrayRef<DeclName> names) -> LookupResult;
 
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult;
@@ -867,7 +868,7 @@ private:
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
 
     /// Deserialise an AST.
-    auto ReadAST(const File& f) -> Result<>;
+    auto ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<>;
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);

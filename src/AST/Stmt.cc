@@ -296,19 +296,21 @@ auto ImportedClangModuleDecl::Create(
 
 ProcDecl::ProcDecl(
     TranslationUnit* owner,
+    ModuleDecl* imported_from_module,
     ProcType* type,
     DeclName name,
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
     Location location
-) : ObjectDecl{Kind::ProcDecl, owner, type, name, linkage, mangling, location},
+) : ObjectDecl{Kind::ProcDecl, owner, imported_from_module, type, name, linkage, mangling, location},
     parent{parent} {
     owner->procs.push_back(this);
 }
 
 auto ProcDecl::Create(
     TranslationUnit& tu,
+    ModuleDecl* imported_from_module,
     ProcType* type,
     DeclName name,
     Linkage linkage,
@@ -318,6 +320,7 @@ auto ProcDecl::Create(
 ) -> ProcDecl* {
     return new (tu) ProcDecl{
         &tu,
+        imported_from_module,
         type,
         name,
         linkage,

@@ -911,7 +911,6 @@ public:
 
 /// Base class for declarations that represent modules.
 class srcc::ModuleDecl : public Decl {
-public:
 protected:
     ModuleDecl(
         Kind k,
@@ -1084,6 +1083,7 @@ public:
 class srcc::ObjectDecl : public Decl {
 public:
     TranslationUnit* owner;
+    ModuleDecl* imported_from_module;
     Linkage linkage;
     Mangling mangling;
     Type type;
@@ -1092,6 +1092,7 @@ protected:
     ObjectDecl(
         Kind kind,
         TranslationUnit* owner,
+        ModuleDecl* imported_from_module,
         Type type,
         DeclName name,
         Linkage linkage,
@@ -1099,6 +1100,7 @@ protected:
         Location location
     ) : Decl{kind, name, location},
         owner{owner},
+        imported_from_module{imported_from_module},
         linkage{linkage},
         mangling{mangling},
         type{type} {}
@@ -1143,6 +1145,7 @@ public:
 private:
     ProcDecl(
         TranslationUnit* owner,
+        ModuleDecl* imported_from_module,
         ProcType* type,
         DeclName name,
         Linkage linkage,
@@ -1154,6 +1157,7 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
+        ModuleDecl* imported_from_module,
         ProcType* type,
         DeclName name,
         Linkage linkage,

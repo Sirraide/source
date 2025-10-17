@@ -795,6 +795,17 @@ struct CodeGen::Mangler {
 
     explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
         name = "_S";
+
+        if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(proc->imported_from_module)) {
+            name += "M";
+            Append(m->linkage_name);
+            name += "$";
+        } else if (CG.tu.is_module and proc->linkage == Linkage::Exported) {
+            name += "M";
+            Append(CG.tu.name);
+            name += "$";
+        }
+
         for (auto p : proc->parents_top_down()) {
             Append(p->name.str());
             name += "$";

@@ -1,0 +1,16 @@
+// V mkdir -p %t
+// V %srcc test/inputs/module.src --mo %t --target x86_64-unknown-linux
+// R %srcc %s -M %t --target x86_64-unknown-linux --ir
+program test;
+
+import testmodule;
+
+testmodule::hello();
+
+// * proc __src_main external fastcc {
+// + entry:
+// +     call fastcc void _SM10testmodule$5helloFvE()
+// +     ret
+// + }
+// +
+// + proc _SM10testmodule$5helloFvE external fastcc;

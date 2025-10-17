@@ -1,0 +1,13 @@
+// V mkdir -p %t
+// V %srcc test/inputs/module.src --mo %t
+// V %srcc %s -M %t --sema --verify
+program test;
+
+import testmodule;
+
+testmodule::hello();
+testmodule::hello(42); // expected-error: Procedure 'hello' expects 0 arguments, got 1
+testmodule::hello2(); // expected-error: Unknown symbol 'hello2'
+
+// This note is in the imported module.
+// expected-note@*: Declared here

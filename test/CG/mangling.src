@@ -1,0 +1,41 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+module testmodule;
+
+export proc a() {}
+export proc a(i8) {}
+export proc a(i16) {}
+export proc a(int) {}
+
+// * proc __src_static_init.testmodule private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _SM10testmodule$1aFvE external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _SM10testmodule$1aFvI8E (i8 %0) external fastcc {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 %0, align 1
+// +     ret
+// + }
+// +
+// + proc _SM10testmodule$1aFvI16E (i16 %0) external fastcc {
+// +     #0 = 2, align 2
+// +
+// + entry:
+// +     store #0, i16 %0, align 2
+// +     ret
+// + }
+// +
+// + proc _SM10testmodule$1aFviE (i64 %0) external fastcc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }

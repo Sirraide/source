@@ -1,3 +1,4 @@
+#include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Frontend/Sema.hh>
@@ -20,10 +21,11 @@ using namespace srcc;
 
 class Sema::Importer {
     Sema& S;
-    clang::ASTUnit& AST;
+    ImportedClangModuleDecl* clang_module;
 
 public:
-    explicit Importer(Sema& S, clang::ASTUnit& AST) : S(S), AST(AST) {}
+    explicit Importer(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
+    auto AST() -> clang::ASTContext& { return clang_module->clang_ast.getASTContext(); }
     auto ImportDecl(clang::Decl* D) -> Ptr<Decl>;
     auto ImportRecord(clang::RecordDecl* RD) -> std::optional<Type>;
     auto ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl>;
@@ -69,7 +71,7 @@ auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
 
         case K::Typedef: {
             auto td = cast<clang::TypedefDecl>(D);
-            auto clang_ty = AST.getASTContext().getTypedefType(
+            auto clang_ty = AST().getTypedefType(
                 clang::ElaboratedTypeKeyword::None,
                 std::nullopt,
                 td
@@ -127,7 +129,7 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     if (auto ID = D->getBuiltinID()) {
         // Note: Clang treats C standard library functions (e.g. 'puts') as
         // builtins as well, but those count as ‘library builtins’.
-        if (not AST.getASTContext().BuiltinInfo.isPredefinedLibFunction(ID))
+        if (not AST().BuiltinInfo.isPredefinedLibFunction(ID))
             return {};
     }
 
@@ -139,6 +141,7 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     // Create the procedure.
     auto PD = ProcDecl::Create(
         *S.tu,
+        clang_module,
         cast<ProcType>(T.value().ptr()),
         S.tu->save(D->getNameAsString()),
         Linkage::Imported,
@@ -179,7 +182,7 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
     if (not RD or not RD->isCompleteDefinition() or RD->isUnion()) return std::nullopt;
 
     // Import the fields.
-    auto& RL = AST.getASTContext().getASTRecordLayout(RD);
+    auto& RL = AST().getASTRecordLayout(RD);
     SmallVector<FieldDecl*> Fields;
     for (auto [I, F] : enumerate(RD->fields())) {
         if (F->isBitField()) return std::nullopt;
@@ -238,7 +241,7 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     if (
         auto TD = T->getAs<clang::TypedefType>();
         TD and TD->getDecl()->getName() == "size_t" and
-        T->getCanonicalTypeUnqualified() == AST.getASTContext().getSizeType()
+        T->getCanonicalTypeUnqualified() == AST().getSizeType()
     ) return Type::IntTy;
 
     // Only handle canonical types from here on.
@@ -335,16 +338,16 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
 auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> Location {
     Location loc;
     if (not sloc.isValid()) return {};
-    auto& sm = AST.getASTContext().getSourceManager();
+    auto& sm = AST().getSourceManager();
     auto& F = S.ctx.get_file(sm.getFilename(sloc).str());
     loc.pos = sm.getFileOffset(sloc);
-    loc.len = u16(clang::Lexer::MeasureTokenLength(sloc, sm, AST.getLangOpts()));
+    loc.len = u16(clang::Lexer::MeasureTokenLength(sloc, sm, AST().getLangOpts()));
     loc.file_id = u16(F.file_id());
     return loc;
 }
 
-auto Sema::ImportCXXDecl(clang::ASTUnit& ast, CXXDecl* decl) -> Ptr<Decl> {
-    Importer importer(*this, ast);
+auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl> {
+    Importer importer(*this, clang_module);
     auto d = importer.ImportDecl(decl);
     imported_decls[decl] = d;
     return d;
@@ -398,8 +401,9 @@ auto Sema::ImportCXXHeaders(
     );
 }
 
-auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> LookupResult {
+auto Sema::LookUpCXXName(ImportedClangModuleDecl* clang_module, ArrayRef<DeclName> names) -> LookupResult {
     Assert(not names.empty(), "Empty name lookup?");
+    auto ast = &clang_module->clang_ast;
     auto& actions = ast->getSema();
     auto& ast_ctx = ast->getASTContext();
     auto& pp = actions.getPreprocessor();
@@ -421,7 +425,7 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> Looku
 
     // We found exactly one name.
     if (res.isSingleResult()) {
-        auto decl = ImportCXXDecl(*ast, res.front());
+        auto decl = ImportCXXDecl(clang_module, res.front());
         if (not decl) return LookupResult::FailedToImport();
         return LookupResult::Success(decl.get());
     }
@@ -430,7 +434,7 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> Looku
     SmallVector<Decl*> converted;
     if (llvm::all_of(res, [](auto* d) { return isa<clang::FunctionDecl>(d); })) {
         for (auto d : res)
-            if (auto decl = ImportCXXDecl(*ast, d))
+            if (auto decl = ImportCXXDecl(clang_module, d))
                 converted.push_back(decl.get());
     }
 
@@ -440,7 +444,7 @@ auto Sema::LookUpCXXName(clang::ASTUnit* ast, ArrayRef<DeclName> names) -> Looku
         auto it = rgs::find_if(res, [](auto* d) { return isa<clang::TypedefDecl>(d); });
         it != res.end()
     ) {
-        auto decl = ImportCXXDecl(*ast, *it);
+        auto decl = ImportCXXDecl(clang_module, *it);
         if (decl) converted.push_back(decl.get());
     }
 

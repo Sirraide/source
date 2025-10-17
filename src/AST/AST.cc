@@ -98,6 +98,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     // cannot be overloaded, so it doesn’t need to be mangled.
     initialiser_proc = ProcDecl::Create(
         *this,
+        nullptr,
         ProcType::Get(*this, Type::VoidTy),
         is_module ? save(constants::EntryPointName(name)) : constants::ProgramEntryPoint,
         is_module ? Linkage::Internal : Linkage::Exported,
