@@ -2033,6 +2033,28 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     //
     curr.proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
+    // If this is the initialiser procedure, emit calls to the initialisers
+    // of any imported modules.
+    if (proc == tu.initialiser_proc) {
+        for (const auto& [_, m] : tu.linkage_imports) {
+            // Initialising the runtime is done by the runtime; there is no
+            // need to do this here.
+            if (m->linkage_name == constants::RuntimeModuleName)
+                continue;
+
+            auto init = GetOrCreateProc(
+                m->location(),
+                tu.save(constants::EntryPointName(m->linkage_name)),
+                Linkage::Imported,
+                ProcType::Get(tu, Type::VoidTy),
+                false
+            );
+
+            auto l = C(m->location());
+            create<ir::CallOp>(l, create<ir::ProcRefOp>(l, init));
+        }
+    }
+
     // Lower parameters.
     tu.target().abi().lower_parameters(*this, curr);
 

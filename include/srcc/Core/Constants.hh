@@ -11,6 +11,7 @@ constexpr String ModuleSectionNamePrefix = ".__src_module_description.";
 constexpr String AssertFailureHandlerName = "__src_assert_fail";
 constexpr String ArithmeticFailureHandlerName = "__src_int_arith_error";
 constexpr String VMEntryPointName = "__srcc_vm_main";
+constexpr String RuntimeModuleName = "__src_runtime";
 constexpr String ModuleFileExtension = "mod";
 constexpr String ModuleDescriptionFileExtension = "mod.d";
 constexpr std::array AbortHandlers{

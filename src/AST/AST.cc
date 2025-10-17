@@ -101,7 +101,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
         nullptr,
         ProcType::Get(*this, Type::VoidTy),
         is_module ? save(constants::EntryPointName(name)) : constants::ProgramEntryPoint,
-        is_module ? Linkage::Internal : Linkage::Exported,
+        Linkage::Exported,
         Mangling::None,
         nullptr,
         {}

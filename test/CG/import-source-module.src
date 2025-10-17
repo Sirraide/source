@@ -9,8 +9,11 @@ testmodule::hello();
 
 // * proc __src_main external fastcc {
 // + entry:
+// +     call fastcc void __src_static_init.testmodule()
 // +     call fastcc void _SM10testmodule$5helloFvE()
 // +     ret
 // + }
+// +
+// + proc __src_static_init.testmodule external fastcc;
 // +
 // + proc _SM10testmodule$5helloFvE external fastcc;

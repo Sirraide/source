@@ -2,6 +2,7 @@
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/Core/Constants.hh>
 #include <srcc/CG/Target/Target.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Frontend/Parser.hh>
@@ -3288,8 +3289,8 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
 
     // Load the runtime.
     if (load_runtime) LoadModule(
-        "__src_runtime",
-        String("__src_runtime"),
+        constants::RuntimeModuleName,
+        constants::RuntimeModuleName,
         modules.front()->program_or_module_loc,
         false,
         false

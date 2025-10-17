@@ -6,7 +6,7 @@ export proc a(i8) {}
 export proc a(i16) {}
 export proc a(int) {}
 
-// * proc __src_static_init.testmodule private fastcc {
+// * proc __src_static_init.testmodule external fastcc {
 // + entry:
 // +     ret
 // + }
