@@ -4,6 +4,8 @@
 #include <srcc/Core/Core.hh>
 #include <srcc/Core/Token.hh>
 
+#include <base/Serialisation.hh>
+
 namespace srcc {
 /// Represents the name of a declaration; this can also be an operator
 /// name. This behaves like a 'Variant<String, Tk>'.
@@ -42,7 +44,6 @@ private:
     /// Equality comparison.
     friend bool operator==(DeclName, DeclName);
 };
-
 
 template <typename T>
 using DeclNameMap = DenseMap<DeclName, T>;

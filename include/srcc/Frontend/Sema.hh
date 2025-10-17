@@ -30,6 +30,11 @@ class srcc::Sema : public DiagsProducer {
     class OverloadInitContext;
     class TentativeInitContext;
 
+public:
+    class ASTReader;
+    class ASTWriter;
+
+private:
     friend DiagsProducer;
     friend TemplateInstantiator;
     friend Importer;
@@ -557,9 +562,6 @@ class srcc::Sema : public DiagsProducer {
 
     SmallVector<DeferredNativeProcArgOrReturn> incomplete_structs_in_native_proc_type;
 
-    /// Whether we’re currently parsing imported declarations.
-    bool importing_module = false;
-
     Sema(Context& ctx);
     ~Sema();
 
@@ -863,6 +865,9 @@ private:
         ArrayRef<Expr*> args,
         Location call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
+
+    /// Deserialise an AST.
+    auto ReadAST(const File& f) -> Result<>;
 
     /// Issue an error about lookup failure.
     void ReportLookupFailure(const LookupResult& result, Location loc);

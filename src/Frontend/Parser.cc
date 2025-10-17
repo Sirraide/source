@@ -892,11 +892,9 @@ void Parser::ParseHeader() {
     if (ConsumeContextual(mod->program_or_module_loc, "__srcc_preamble__"))
         return;
 
-    bool module = parsing_imported_module =
-        ConsumeContextual(mod->program_or_module_loc, "__srcc_ser_module__");
+    bool module = ConsumeContextual(mod->program_or_module_loc, "module");
     if (
-        not parsing_imported_module and
-        not ((module = ConsumeContextual(mod->program_or_module_loc, "module"))) and
+        not module and
         not ConsumeContextual(mod->program_or_module_loc, "program")
     ) {
         Error("Expected '%1(program%)' or '%1(module%)' directive at start of file");
@@ -1065,39 +1063,60 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
     };
 }
 
-// <import> ::= IMPORT CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ] AS ( IDENT | "* ) ";"
+// <import>      ::= IMPORT <import-name> AS ( IDENT | "* ) ";"
+// <import-name> ::= IDENT | CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ]
 void Parser::ParseImport() {
     Location import_loc;
-    Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
-    if (not At(Tk::CXXHeaderName)) {
-        Error("Expected C++ header name after 'import'");
-        SkipPast(Tk::Semicolon);
-        return;
-    }
-
-    // Save name for later.
     SmallVector<String> linkage_names;
-    while (At(Tk::CXXHeaderName)) {
+    String logical_name;
+    Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
+    bool is_header = false;
+    if (At(Tk::CXXHeaderName)) {
+        is_header = true;
+        while (At(Tk::CXXHeaderName)) {
+            linkage_names.push_back(tok->text);
+            Next();
+            if (not Consume(Tk::Comma)) break;
+        }
+
+        // Header names are not valid identifiers, so they always require 'as'.
+        if (not At(Tk::As)) {
+            Error("Syntax for header imports is '%1(import%) %3(<header>%) %1(as%) name`");
+            SkipPast(Tk::Semicolon);
+            return;
+        }
+    } else if (At(Tk::Identifier)) {
+        logical_name = tok->text;
         linkage_names.push_back(tok->text);
         Next();
-        if (not Consume(Tk::Comma)) break;
-    }
-
-    // Read import name.
-    if (not Consume(Tk::As)) {
-        Error("Syntax for header imports is '%1(import%) %3(<header>%) %1(as%) name`");
+    } else {
+        Error("Expected module or header name after 'import'");
         SkipPast(Tk::Semicolon);
         return;
     }
 
-    if (not At(Tk::Identifier, Tk::Star)) {
-        Error("Expected identifier or '%1(*%)' after '%1(as%)' in import directive");
-        SkipPast(Tk::Semicolon);
-        return;
+    bool star = false;
+    if (Consume(Tk::As)) {
+        if (At(Tk::Identifier)) {
+            logical_name = tok->text;
+            Next();
+        } else if (Consume(Tk::Star)) {
+            star = true;
+        } else {
+            Error("Expected identifier or '%1(*%)' after '%1(as%)' in import directive");
+            SkipPast(Tk::Semicolon);
+            return;
+        }
     }
 
-    mod->imports.emplace_back(std::move(linkage_names), tok->text, import_loc, At(Tk::Star), true);
-    Next();
+    mod->imports.emplace_back(
+        std::move(linkage_names),
+        logical_name,
+        import_loc,
+        star,
+        is_header
+    );
+
     if (not Consume(Tk::Semicolon)) Error("Expected ';' at end of import");
 }
 
@@ -1366,7 +1385,6 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // FIXME: Move this diagnostic to Sema instead.
     if (
         not complained_about_body and
-        not parsing_imported_module and
         sig.attrs.extern_ != not bool(body)
     ) Error(
         sig.proc_loc,

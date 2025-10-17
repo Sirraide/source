@@ -17,8 +17,9 @@
 //
 <preamble>        ::= <header> { <import> }
 <header>          ::= ( "program" | "module" ) <module-name> ";"
-<import>          ::= IMPORT CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ] AS ( IDENT | "* ) ";"
+<import>          ::= IMPORT <import-name> AS ( IDENT | "* ) ";"
 <module-name>     ::= IDENT
+<import-name>     ::= IDENT | CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ]
 
 // ============================================================================
 //  Statements

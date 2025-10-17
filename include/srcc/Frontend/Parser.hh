@@ -855,7 +855,6 @@ private:
     TokenStream::iterator tok;
     Context& ctx;
     Signature* current_signature = nullptr;
-    bool parsing_imported_module = false;
     int num_parens{}, num_brackets{}, num_braces{};
 
 public:

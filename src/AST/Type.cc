@@ -522,7 +522,7 @@ RecordLayout::RecordLayout(
     Bits bits
 ) : num_fields{u32(fields.size())},
     computed_alignment{a},
-    bits{bits},
+    computed_bits{bits},
     computed_size{sz},
     computed_array_size{arr_sz} {
     std::uninitialized_copy_n(
@@ -583,4 +583,9 @@ auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
     };
 
     return GetOrCreateType(mod.tuple_types, CreateNew, elems);
+}
+
+auto TupleType::Get(TranslationUnit& mod, RecordLayout* rl) -> TupleType* {
+    auto CreateNew = [&] { return new (mod) TupleType{rl}; };
+    return GetOrCreateType(mod.tuple_types, CreateNew, rl->field_types());
 }

@@ -2,6 +2,7 @@
 #define SRCC_CORE_LOCATION_HH
 
 #include <srcc/Core/Utils.hh>
+#include <base/Serialisation.hh>
 
 namespace srcc {
 class Context;

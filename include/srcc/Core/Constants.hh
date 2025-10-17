@@ -12,7 +12,7 @@ constexpr String AssertFailureHandlerName = "__src_assert_fail";
 constexpr String ArithmeticFailureHandlerName = "__src_int_arith_error";
 constexpr String VMEntryPointName = "__srcc_vm_main";
 constexpr String ModuleFileExtension = "mod";
-constexpr String ModuleDescriptionFileExtension = "mod.src";
+constexpr String ModuleDescriptionFileExtension = "mod.d";
 constexpr std::array AbortHandlers{
     AssertFailureHandlerName,
     ArithmeticFailureHandlerName,

@@ -29,6 +29,7 @@
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/ThreadPool.h>
@@ -133,26 +134,6 @@ int Driver::run_job() {
     // Replace driver diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
 
-    // Dump a module.
-    if (a == Action::DumpModule) {
-        Todo();
-        /*llvm::BumpPtrAllocator alloc;
-        llvm::StringSaver saver{alloc};
-        auto dummy = TranslationUnit::Create(ctx, lang_opts, "__dummy__", false);
-        ModuleLoader loader{*dummy, opts.module_search_paths};
-        auto mod = loader.load(
-            "module",
-            String::Save(saver, files.front().string()),
-            Location(),
-            files.front().string().starts_with("<")
-        );
-
-        if (not mod) return 1;
-        if (auto tu = mod.value().dyn_cast<ImportedModule*>()) tu->dump();
-        else Todo();
-        return 0;*/
-    }
-
     // Run the verifier.
     const auto Verify = [&] {
         auto& engine = static_cast<VerifyDiagnosticsEngine&>(ctx.diags());
@@ -192,6 +173,37 @@ int Driver::run_job() {
     // Parse the preamble.
     ParsedModule::Ptr preamble;
     if (fs::File::Exists(opts.preamble_path)) preamble = ParseFile(opts.preamble_path, opts.verify);
+
+    // Dump a module.
+    if (a == Action::DumpModule) {
+        static constexpr String ImportName = "__srcc_dummy_import__";
+        llvm::BumpPtrAllocator alloc;
+        llvm::StringSaver saver{alloc};
+        auto import_str = std::format(
+            "program __srcc_dummy__; import {} as {};",
+            files.front().string(),
+            ImportName
+        );
+
+        auto import = llvm::MemoryBuffer::getMemBufferCopy(import_str);
+        auto mod = Parser::Parse(ctx.create_virtual_file(std::move(import)), nullptr);
+        if (not mod) return 1;
+
+        SmallVector<ParsedModule::Ptr> modules;
+        modules.push_back(std::move(mod));
+        auto tu = Sema::Translate(
+            lang_opts,
+            std::move(preamble),
+            std::move(modules),
+            opts.module_search_paths,
+            opts.clang_include_paths,
+            false
+        );
+
+        if (not tu or ctx.diags().has_error()) return 1;
+        tu->logical_imports.at(ImportName)->dump(ctx.use_colours);
+        return 0;
+    }
 
     // Parse files.
     SmallVector<ParsedModule::Ptr> parsed_modules;
@@ -262,8 +274,7 @@ int Driver::run_job() {
     // Dump exports.
     if (a == Action::DumpExports) {
         if (not tu->is_module) return Error("--exports cannot be used with a 'program'");
-        auto desc = tu->serialise(ctx.use_colours);
-        std::print("{}", desc);
+        for (auto e : tu->exports.sorted_decls()) e->dump(ctx.use_colours);
         return 0;
     }
 

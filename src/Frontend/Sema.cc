@@ -3434,13 +3434,6 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type) -> Ptr<Stmt> {
 /// Perform initial processing of a decl so it can be used by the rest
 /// of the code. This only handles order-independent decls.
 auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
-    // If we’re importing a module, adjust the linkage of this declaration.
-    auto Adjust = [&](Ptr<Decl> d) {
-        if (not d or not importing_module) return d;
-        cast<ObjectDecl>(d.get())->linkage = Linkage::Imported;
-        return d;
-    };
-
     // Unwrap exports.
     if (auto exp = dyn_cast<ParsedExportDecl>(d)) {
         auto decl = TranslateDeclInitial(exp->decl);
@@ -3458,7 +3451,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     }
 
     // Build procedure type now so we can forward-reference it.
-    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return Adjust(TranslateProcDeclInitial(proc));
+    if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
     if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
     return std::nullopt;
 }

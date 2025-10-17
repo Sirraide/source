@@ -4,6 +4,7 @@
 #include <srcc/AST/DeclName.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/Core/Location.hh>
+#include <srcc/Core/Serialisation.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseMap.h>
@@ -13,6 +14,7 @@
 #include <llvm/Support/Casting.h>
 
 #include <base/Macros.hh>
+#include <base/Serialisation.hh>
 
 namespace srcc {
 class Target;
@@ -80,6 +82,9 @@ public:
     ///
     /// This returns null if this is the global scope.
     auto parent() -> Scope* { return parent_scope; }
+
+    /// Get a list of declarations, sorted in source order.
+    [[nodiscard]] auto sorted_decls() -> SmallVector<Decl*>;
 };
 
 /// Scope that stores struct members, initialisers, etc.
@@ -147,7 +152,7 @@ public:
 
     /// Print a type to stdout.
     void dump(bool use_colour = false) const;
-    void dump_colour() const;
+    void dump_colour() const { dump(true); }
 
     /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
@@ -440,6 +445,11 @@ public:
     /// Get the parameter types of this procedure type.
     auto params() const -> ArrayRef<ParamTypeData> { return getTrailingObjects(num_params); }
 
+    /// Get the parameter types of this procedure type.
+    auto param_types() const {
+        return params() | vws::transform(&ParamTypeData::type);
+    }
+
     /// Print the proc type, optionally with a name.
     auto print(
         DeclName proc_name = {},
@@ -517,8 +527,15 @@ public:
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
         bool zero_init           : 1 = false;
+        u8 padding : 4{};
+
         static auto Trivial() -> Bits {
             return {true, true, true, true};
+        }
+
+        void serialise(ByteWriter& w) const { w << std::bit_cast<u8>(*this); }
+        static auto deserialise(ByteReader& r) -> Result<Bits> {
+            return std::bit_cast<Bits>(Try(r.read<u8>()));
         }
     };
 
@@ -527,7 +544,7 @@ private:
 
 public:
     const Align computed_alignment;
-    const Bits bits;
+    const Bits computed_bits;
     const Size computed_size;
     const Size computed_array_size;
 
@@ -582,6 +599,9 @@ public:
         return computed_array_size;
     }
 
+    /// Get the record bits.
+    auto bits() const -> Bits { return computed_bits; }
+
     /// Get the record’s fields.
     auto fields() const -> ArrayRef<FieldDecl*> {
         return getTrailingObjects(num_fields);
@@ -594,21 +614,21 @@ public:
     /// Whether this record has a default initialiser (i.e.
     /// an initialiser that takes no arguments and is *not*
     /// declared by the user).
-    bool has_default_init() const { return bits.default_initialiser; }
+    bool has_default_init() const { return bits().default_initialiser; }
 
     /// Whether this record can be initialised with an empty
     /// argument list; this need not entail using a default
     /// initialiser.
-    bool has_init_from_no_args() const { return bits.init_from_no_args; }
+    bool has_init_from_no_args() const { return bits().init_from_no_args; }
 
     /// Whether this record has a literal initialiser (i.e.
     /// an initialiser that takes a list of rvalues and emits
     /// them directly into the record’s memory).
-    bool has_literal_init() const { return bits.literal_initialiser; }
+    bool has_literal_init() const { return bits().literal_initialiser; }
 
     /// Check if this type can be zero-initialised if default
     /// initialisation is requested.
-    bool has_zero_init() const { return bits.zero_init; }
+    bool has_zero_init() const { return bits().zero_init; }
 
     /// Get the size of a single instance of this type; this does
     /// *not* include tail padding (use 'array_size()' instead for
@@ -647,6 +667,7 @@ class srcc::TupleType final : public RecordType, public FoldingSetNode {
 public:
     void Profile(FoldingSetNodeID& ID) const;
     static auto Get(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
+    static auto Get(TranslationUnit& tu, RecordLayout* layout) -> TupleType*;
     static void Profile(FoldingSetNodeID& tu, auto elem_types);
     static bool classof(const TypeBase* t) {  return t->kind() == Kind::TupleType; }
 };
@@ -723,6 +744,25 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(Ty* t, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
+    }
+};
+
+template <>
+struct llvm::DenseMapInfo<srcc::Type> {
+    static constexpr srcc::Type getEmptyKey() {
+        return reinterpret_cast<srcc::TypeBase*>(~0zu);
+    }
+
+    static constexpr srcc::Type getTombstoneKey() {
+        return reinterpret_cast<srcc::TypeBase*>(~1zu);
+    }
+
+    static unsigned getHashValue(srcc::Type v) {
+        return DenseMapInfo<void*>::getHashValue(v.ptr());
+    }
+
+    static bool isEqual(srcc::Type lhs, srcc::Type rhs) {
+        return lhs == rhs;
     }
 };
 

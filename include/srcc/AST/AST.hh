@@ -211,7 +211,7 @@ public:
     auto store_int(APInt value) -> StoredInteger;
 
     /// Serialise this module.
-    auto serialise(bool use_colours = false) -> std::string;
+    auto serialise() -> ByteBuffer;
 
     /// Get the target info.
     auto target() const -> const Target& { return *tgt; }

@@ -124,6 +124,13 @@ auto TranslationUnit::store_int(APInt value) -> StoredInteger {
     return integers.front().store_int(std::move(value));
 }
 
+auto Scope::sorted_decls() -> SmallVector<Decl*> {
+    SmallVector<Decl*> ret;
+    append_range(ret, decls());
+    sort(ret, [](Decl* a, Decl* b) { return a->location() < b->location(); });
+    return ret;
+}
+
 // ============================================================================
 //  Printer
 // ============================================================================
@@ -361,7 +368,8 @@ void Stmt::Printer::Print(Stmt* e) {
                     print("{}", s->name);
                 }
             });
-            PrintChildren<Decl*>(s->exports.decls() | rgs::to<std::vector>());
+
+            PrintChildren<Decl*>(s->exports.sorted_decls());
         },
 
         [&](IntLitExpr* i) {

@@ -118,6 +118,12 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
     return machine;
 }
 
+auto Context::create_virtual_file(std::unique_ptr<llvm::MemoryBuffer> data) -> const File& {
+    auto f = new File(*this, "<virtual>", "<virtual>", std::move(data), u16(files.size()));
+    files.emplace_back(f);
+    return *f;
+}
+
 auto Context::diags() const -> DiagnosticsEngine& {
     Assert(diags_engine, "Diagnostics engine not set!");
     return *diags_engine;
