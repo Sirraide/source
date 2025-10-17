@@ -1,7 +1,4 @@
 module __src_runtime;
-// TODO: Add a builtin module option to forbid top-level code that isn’t
-// a declaration since this needs to be called from C, which doesn’t know about
-// our module initialisers.
 
 import <cstdlib>, <cstdio> as libc;
 
@@ -77,10 +74,19 @@ export proc __src_assert_fail (in AbortInfo info) native -> noreturn {
     libc::abort();
 }
 
+/// Declare our own initialiser so we can call it.
+///
+/// Unlike other modules, the runtime is not initialised when it is
+/// imported (this is mostly an optimisation to avoid having to call
+/// its initialiser in *every* module, and also because we might not
+/// have a runtime); this means that we need to initialise ourselves.
+proc \(__src_static_init.__src_runtime) extern nomangle;
+
 /// Entry point called by the C runtime.
 export proc __src_runtime_entry(
     __srcc_ffi_int argc,
     __srcc_ffi_char^^ argv,
 ) native {
+    \(__src_static_init.__src_runtime)();
     __src_main();
 }
