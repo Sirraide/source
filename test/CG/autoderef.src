@@ -1,0 +1,42 @@
+// R %srcc --ir --target x86_64-unknown-linux -fno-overflow-checks %s
+program test;
+
+struct s { int x; }
+
+proc sink(int x) extern nomangle;
+
+s a = (1);
+var p1 = &a;
+var p2 = &p1;
+var p3 = &p2;
+sink(a.x + p1.x + p2.x + p3.x);
+
+// * proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     store #1, ptr #0, align 8
+// +     store #2, ptr #1, align 8
+// +     store #3, ptr #2, align 8
+// +     %0 = load i64, #0, align 8
+// +     %1 = load ptr, #1, align 8
+// +     %2 = load i64, %1, align 8
+// +     %3 = add i64 %0, %2
+// +     %4 = load ptr, #2, align 8
+// +     %5 = load ptr, %4, align 8
+// +     %6 = load i64, %5, align 8
+// +     %7 = add i64 %3, %6
+// +     %8 = load ptr, #3, align 8
+// +     %9 = load ptr, %8, align 8
+// +     %10 = load ptr, %9, align 8
+// +     %11 = load i64, %10, align 8
+// +     %12 = add i64 %7, %11
+// +     call fastcc void sink(i64 %12)
+// +     ret
+// + }
+// +
+// + proc sink (i64) external fastcc;

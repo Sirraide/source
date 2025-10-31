@@ -3702,6 +3702,10 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
 
+    // Unwrap pointers.
+    while (isa<PtrType>(base->type))
+        base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
+
     // Struct member access.
     if (auto s = dyn_cast<StructType>(base->type.ptr())) {
         if (not s->is_complete()) return Error(
