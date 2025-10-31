@@ -4,12 +4,8 @@ import <cstdlib>, <cstdio> as libc;
 
 /// Payload passed to various assertion handlers.
 ///
-/// The layout of this type are hard-coded into the compiler.
+/// The layout of this type is hard-coded into the compiler.
 /// DO NOT MODIFY!
-///
-/// FIXME: All the functions below that receive an 'in AbortInfo' should
-/// actually take an 'AbortInfo^' because this is always passed by pointer
-/// irrespective of ABI or target.
 export struct AbortInfo {
     i8[] filename;
     int line;
@@ -43,8 +39,8 @@ proc print_file (in AbortInfo info) {
 /// The __src_abort_info type passed to these handlers does not
 /// need to be exported by this because it’s part of the preamble,
 /// so it should always be available.
-export proc __src_int_arith_error (in AbortInfo info) native -> noreturn {
-    print_file(info);
+export proc __src_int_arith_error (AbortInfo^ info) native -> noreturn {
+    print_file(^info);
     libc::printf(
         "    %.*s while evaluating '%.*s'\n".data,
         info.msg2.size as __srcc_ffi_int,
@@ -56,8 +52,8 @@ export proc __src_int_arith_error (in AbortInfo info) native -> noreturn {
 }
 
 /// Assertion handler.
-export proc __src_assert_fail (in AbortInfo info) native -> noreturn {
-    print_file(info);
+export proc __src_assert_fail (AbortInfo^ info) native -> noreturn {
+    print_file(^info);
     libc::printf(
         "    assertion '%.*s' failed".data,
         info.msg1.size as __srcc_ffi_int,
