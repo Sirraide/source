@@ -3107,6 +3107,15 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
         }
     }
 
+    // '&' cannot be overloaded.
+    if (op == Tk::Ampersand) {
+        // FIXME: This message needs improving; we shouldn’t expect users
+        // to know what an lvalue is (or why something isn’t an lvalue in
+        // the case of e.g. if/match).
+        if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
+        return Build(PtrType::Get(*tu, operand->type), Expr::RValue);
+    }
+
     // Handle overloaded operators.
     if (IsUserDefinedOverloadedOperator(op, operand->type)) {
         auto ref = BuildDeclRefExpr(DeclName(op), loc);
@@ -3117,15 +3126,6 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
     // Handle prefix operators.
     switch (op) {
         default: Unreachable("Invalid unary operator: {}", op);
-
-        // Lvalue -> Pointer
-        case Tk::Ampersand: {
-            // FIXME: This message needs improving; we shouldn’t expect users
-            // to know what an lvalue is (or why something isn’t an lvalue in
-            // the case of e.g. if/match).
-            if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
-            return Build(PtrType::Get(*tu, operand->type), Expr::RValue);
-        }
 
         // Pointer -> Lvalue.
         case Tk::Caret: {

@@ -1,0 +1,12 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+struct S {
+    int x;
+}
+
+// Check that we treat '&' as a builtin operator despite
+// its argument being a struct type.
+S x;
+&x;
