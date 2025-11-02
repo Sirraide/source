@@ -162,19 +162,6 @@ auto srcc::StripAssignment(Tk t) -> Tk {
     }
 }
 
-auto Token::spelling(const Context& ctx) const -> String {
-    switch (type) {
-        default: return Spelling(type);                    // Always spelt the same way.
-        case Tk::StringLiteral: return location.text(ctx); // Include quotes.
-        case Tk::Identifier: return location.text(ctx);    // May be escaped.
-        case Tk::TemplateType:
-        case Tk::CXXHeaderName:
-        case Tk::Integer:
-        case Tk::IntegerType:
-            return text;
-    }
-}
-
 bool Token::operator==(const Token& b) {
     if (type != b.type) return false;
     switch (type) {

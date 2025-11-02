@@ -163,7 +163,7 @@ int Driver::run_job() {
                         lc->col + tok.location.len - 1
                     );
 
-                    std::println("{}", tok.spelling(ctx));
+                    std::println("{}", tok.location.text(ctx));
                 }
             }
         }

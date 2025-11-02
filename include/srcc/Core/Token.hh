@@ -183,9 +183,6 @@ struct srcc::Token {
         return ((type == t) or ...);
     }
 
-    /// Get the source code spelling of this token.
-    [[nodiscard]] auto spelling(const Context& ctx) const -> String;
-
     /// Compare two tokens for equality. This only checks if their
     /// types and values are equal and ignores e.g. whether they are
     /// artificial
