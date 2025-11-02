@@ -1,4 +1,3 @@
-#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <base/Text.hh>
 #include <base/TrieMap.hh>
@@ -156,18 +155,17 @@ bool Parser::IsKeyword(Tk t) {
 // ========================================================================
 //  Main lexer implementation.
 // ========================================================================
-struct Lexer : str, DiagsProducer {
+struct [[nodiscard]] Lexer : str, DiagsProducer {
     TokenStream& tokens;
     const srcc::File& f;
     Parser::CommentTokenCallback comment_token_handler;
-    u32 token_start = 0;
     bool in_pragma = false;
     const Token invalid_token;
 
     Lexer(
         TokenStream& into,
         const srcc::File& f,
-        Parser::CommentTokenCallback cb
+        Parser::CommentTokenCallback cb = nullptr
     );
 
     auto tok() -> Token& { return tokens.back(); }
@@ -176,27 +174,15 @@ struct Lexer : str, DiagsProducer {
 
     template <typename... Args>
     auto Error(std::format_string<Args...> fmt, Args&&... args) -> utils::Falsy {
-        FinishLocation();
         return Error(tok().location, fmt, LIBBASE_FWD(args)...);
     }
 
     char curr() { return front().value_or(0); }
-
     auto diags() const -> DiagnosticsEngine& { return f.context().diags(); }
 
-    void FinishLocation() {
-        tok().location.pos = token_start;
-        tok().location.len = u16(data() - f.data() - tok().location.pos);
-        tok().location.file_id = u16(f.file_id());
-    }
-
     void FinishText() {
-        tok().text = tok().location.text(f.context());
-    }
-
-    void FinishLocationAndText() {
-        FinishLocation();
-        FinishText();
+        auto ptr = tok().location.pointer();
+        tok().text = String::CreateUnsafe(ptr, usz(data() - ptr));
     }
 
     auto Prev(usz i = 1) -> const Token& {
@@ -205,10 +191,11 @@ struct Lexer : str, DiagsProducer {
         return invalid_token;
     }
 
-    auto CurrOffs() -> u32;
+    auto CurrLoc() -> SLoc;
     void HandleCommentToken();
     void HandlePragma();
     void LexCXXHeaderName();
+    void LexEntireFile();
     void LexEscapedId();
     void LexIdentifier();
     bool LexNumber();
@@ -227,7 +214,8 @@ auto Parser::ReadTokens(
 }
 
 void Parser::ReadTokens(TokenStream& s, const File& file, CommentTokenCallback cb) {
-    Lexer(s, file, std::move(cb));
+    Lexer l(s, file, std::move(cb));
+    l.LexEntireFile();
 }
 
 Lexer::Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallback cb)
@@ -239,19 +227,18 @@ Lexer::Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallbac
         f.size() <= std::numeric_limits<u32>::max(),
         "We can’t handle files this big right now"
     );
+}
 
+auto Lexer::CurrLoc() -> SLoc { return SLoc(data()); }
+void Lexer::LexEntireFile() {
     do Next();
     while (not tok().eof());
     if (not tokens.back().eof()) {
         tokens.allocate();
         tok().type = Tk::Eof;
-        tok().location.pos = CurrOffs();
-        tok().location.len = 1;
-        tok().location.file_id = u16(f.file_id());
+        tok().location = SLoc(f.end() - 1);
     }
 }
-
-auto Lexer::CurrOffs() -> u32 { return u32(data() - f.data()); }
 
 void Lexer::Next() {
     Assert(not in_pragma, "May not allocate tokens while handling pragma");
@@ -264,19 +251,18 @@ void Lexer::NextImpl() {
 
     // Skip whitespace.
     trim_front();
-    token_start = CurrOffs();
+    tok().location = CurrLoc();
 
     // Keep returning EOF if we're at EOF.
     if (empty()) {
         tok().type = Tk::Eof;
-        tok().location.pos = u32(f.size());
-        tok().location.len = 1;
-        tok().location.file_id = u16(f.file_id());
+        tok().location = SLoc(f.end() - 1);
         return;
     }
 
     // Handle special tokens first.
     switch (*front()) {
+        default: break;
         case '/':
             // Comment.
             if (consume("//")) {
@@ -324,7 +310,6 @@ void Lexer::NextImpl() {
     auto tk = match_prefix(punctuators);
     if (tk.has_value()) {
         tok().type = *tk;
-        FinishLocation();
         return;
     }
 
@@ -340,7 +325,7 @@ void Lexer::HandleCommentToken() {
     // the token stream.
     if (comment_token_handler) {
         tok().type = Tk::Comment;
-        FinishLocationAndText();
+        FinishText();
         comment_token_handler(tok());
     }
 }
@@ -394,7 +379,8 @@ void Lexer::HandlePragma() {
         tokens.pop();
 
         // Lex the entire file.
-        Lexer(tokens, new_f, comment_token_handler);
+        Lexer l(tokens, new_f, comment_token_handler);
+        l.LexEntireFile();
 
         // Drop the EOF token it produced.
         tokens.pop();
@@ -412,7 +398,7 @@ void Lexer::LexIdentifier() {
     bool dollar = consume('$');
     tok().type = dollar ? Tk::TemplateType : Tk::Identifier;
     drop_while(IsContinue);
-    FinishLocationAndText();
+    FinishText();
 
     // Inside of pragmas, treat keywords and integer types as raw identifiers.
     if (dollar or in_pragma) return;
@@ -429,10 +415,8 @@ void Lexer::LexIdentifier() {
         }
 
         // Handle "for~".
-        if (tok().type == Tk::For and consume('~')) {
+        if (tok().type == Tk::For and consume('~'))
             tok().type = Tk::ForReverse;
-            FinishLocation();
-        }
     }
 
     // Integer types.
@@ -476,7 +460,7 @@ bool Lexer::LexNumber() {
         if (starts_with(IsStart)) return DiagnoseInvalidLiteral();
 
         // We have a valid integer literal!
-        FinishLocationAndText();
+        FinishText();
         tok().type = Tk::Integer;
 
         // Note: This returns true on error!
@@ -512,7 +496,6 @@ bool Lexer::LexNumber() {
     );
 
     // If we get here, this must be a literal 0.
-    FinishLocation();
     tok().type = Tk::Integer;
     tok().integer = 0;
     return true;
@@ -528,7 +511,7 @@ void Lexer::LexString() {
     if (delim == '\'') {
         drop_until('\'');
         if (not consume(delim)) Error("Unterminated string literal");
-        FinishLocationAndText();
+        FinishText();
         tok().text = tok().text.drop().drop_back(); // Drop the quotes.
         tok().type = Tk::StringLiteral;
         return;
@@ -559,7 +542,6 @@ void Lexer::LexString() {
 
     // Done!
     if (not consume(delim)) Error("Unterminated string literal");
-    FinishLocation();
     tok().text = tokens.save(text);
 }
 
@@ -567,11 +549,11 @@ void Lexer::LexCXXHeaderName() {
     tok().type = Tk::CXXHeaderName;
     drop().drop_until('>');
     if (not consume('>')) Error("Expected '>'");
-    FinishLocationAndText();
+    FinishText();
 }
 
 void Lexer::LexEscapedId() {
-    auto backslash = Location(CurrOffs(), 1, u16(f.file_id()));
+    auto backslash = CurrLoc();
     drop(); // Yeet '\'.
     NextImpl();
     tok().artificial = true;
@@ -580,7 +562,7 @@ void Lexer::LexEscapedId() {
     if (tok().type != Tk::LParen) {
         tok().type = Tk::Identifier;
         FinishText();
-        tok().location = Location(backslash, tok().location);
+        tok().location = backslash;
         return;
     }
 
@@ -588,7 +570,18 @@ void Lexer::LexEscapedId() {
     tok().type = Tk::Identifier;
     drop_until(')');
     if (not consume(')')) Error(backslash, "EOF reached while lexing \\(...");
-    FinishLocationAndText();
+    FinishText();
     tok().text = tok().text.drop_back();
-    tok().location = Location(backslash, tok().location);
+    tok().location = backslash;
+}
+
+auto SLoc::measure_token_length(const Context& ctx) const -> std::optional<u64> {
+    auto f = file(ctx);
+    if (not f) return std::nullopt;
+    llvm::BumpPtrAllocator temp_alloc;
+    TokenStream temp{temp_alloc};
+    Lexer l{temp, *f};
+    l.drop(usz(ptr - f->data()));
+    l.Next();
+    return l.tok().eof() ? 0 : u64(l.data() - ptr);
 }

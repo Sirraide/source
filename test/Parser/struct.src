@@ -32,4 +32,4 @@ struct C {
 
 struct a { int x;
 
-// expected-error@+1: Expected '}'
+// expected-error: Expected '}'

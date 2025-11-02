@@ -119,8 +119,8 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
 }
 
 auto Context::create_virtual_file(std::unique_ptr<llvm::MemoryBuffer> data) -> const File& {
-    auto f = new File(*this, "<virtual>", "<virtual>", std::move(data), u16(files.size()));
-    files.emplace_back(f);
+    auto f = new File(*this, "<virtual>", "<virtual>", std::move(data), u16(all_files.size()));
+    all_files.emplace_back(f);
     return *f;
 }
 
@@ -129,13 +129,13 @@ auto Context::diags() const -> DiagnosticsEngine& {
     return *diags_engine;
 }
 
-auto Context::file(usz idx) const -> const File* {
-    if (idx >= files.size()) return nullptr;
-    return files[idx].get();
+auto Context::file(File::Id idx) const -> const File* {
+    if (usz(idx) >= all_files.size()) return nullptr;
+    return all_files[usz(idx)].get();
 }
 
-auto Context::file_name(i32 id) const -> String {
-    auto* f = file(usz(id));
+auto Context::file_name(File::Id id) const -> String {
+    auto* f = file(id);
     return use_short_filenames ? f->short_name() : f->name();
 }
 
@@ -171,14 +171,14 @@ auto Context::try_get_file(fs::PathRef path) -> Result<const File&> {
 
     static constexpr usz MaxFiles = std::numeric_limits<u16>::max();
     Assert(
-        files.size() < MaxFiles,
+        all_files.size() < MaxFiles,
         "Sorry, that’s too many files for us! (max is {})",
         MaxFiles
     );
 
     auto mem = Try(File::LoadFileData(can));
-    auto f = new File(*this, can, String::Save(saver, path.string()), std::move(mem), u16(files.size()));
-    files.emplace_back(f);
+    auto f = new File(*this, can, String::Save(saver, path.string()), std::move(mem), u16(all_files.size()));
+    all_files.emplace_back(f);
     files_by_path[std::move(can)] = f;
     return *f;
 }

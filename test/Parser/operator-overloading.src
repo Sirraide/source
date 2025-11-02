@@ -85,4 +85,4 @@ proc ( () {} // expected-error: To overload the call operator, write 'proc ()'
 proc [ {} // expected-error: To overload the subscript operator, write 'proc []'
 
 // Error recovery of this is ... not great because '{}' parses as a valid type.
-proc ( {} // expected-error@+1 2 (Unexpected token in procedure argument list) expected-error@+1 ((Expected ')')) expected-error@+1 (Procedures declared with 'proc' must have a name)
+proc ( {} // expected-error 2 (Unexpected token in procedure argument list) expected-error ((Expected ')')) expected-error (Procedures declared with 'proc' must have a name)

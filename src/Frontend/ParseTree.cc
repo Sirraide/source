@@ -52,7 +52,7 @@ ParsedProcType::ParsedProcType(
     ParsedStmt* ret_type,
     ArrayRef<ParsedParameter> params,
     ParsedProcAttrs attrs,
-    Location loc
+    SLoc loc
 ) : ParsedStmt{Kind::ProcType, loc},
     num_params{u32(params.size())},
     ret_type{ret_type},
@@ -69,7 +69,7 @@ auto ParsedProcType::Create(
     ParsedStmt* ret_type,
     ArrayRef<ParsedParameter> params,
     ParsedProcAttrs attrs,
-    Location loc
+    SLoc loc
 ) -> ParsedProcType* {
     const auto size = totalSizeToAlloc<ParsedParameter>(params.size());
     auto mem = parser.allocate(size, alignof(ParsedProcType));
@@ -81,7 +81,7 @@ auto ParsedProcType::Create(
 // ============================================================================
 ParsedBlockExpr::ParsedBlockExpr(
     ArrayRef<ParsedStmt*> stmts,
-    Location location
+    SLoc location
 ) : ParsedStmt{Kind::BlockExpr, location},
     num_stmts{u32(stmts.size())} {
     std::uninitialized_copy_n(stmts.begin(), stmts.size(), getTrailingObjects());
@@ -90,7 +90,7 @@ ParsedBlockExpr::ParsedBlockExpr(
 auto ParsedBlockExpr::Create(
     Parser& parser,
     ArrayRef<ParsedStmt*> stmts,
-    Location location
+    SLoc location
 ) -> ParsedBlockExpr* {
     const auto size = totalSizeToAlloc<ParsedStmt*>(stmts.size());
     auto mem = parser.allocate(size, alignof(ParsedBlockExpr));
@@ -100,7 +100,7 @@ auto ParsedBlockExpr::Create(
 ParsedCallExpr::ParsedCallExpr(
     ParsedStmt* callee,
     ArrayRef<ParsedStmt*> args,
-    Location location
+    SLoc location
 ) : ParsedStmt{Kind::CallExpr, location},
     callee{callee}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
@@ -110,14 +110,14 @@ auto ParsedCallExpr::Create(
     Parser& parser,
     ParsedStmt* callee,
     ArrayRef<ParsedStmt*> args,
-    Location location
+    SLoc location
 ) -> ParsedCallExpr* {
     const auto size = totalSizeToAlloc<ParsedStmt*>(args.size());
     auto mem = parser.allocate(size, alignof(ParsedCallExpr));
     return ::new (mem) ParsedCallExpr{callee, args, location};
 }
 
-ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<DeclName> names, Location location)
+ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<DeclName> names, SLoc location)
     : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())) {
     std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects());
 }
@@ -125,7 +125,7 @@ ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<DeclName> names, Location location
 auto ParsedDeclRefExpr::Create(
     Parser& parser,
     ArrayRef<DeclName> names,
-    Location location
+    SLoc location
 ) -> ParsedDeclRefExpr* {
     const auto size = totalSizeToAlloc<DeclName>(names.size());
     auto mem = parser.allocate(size, alignof(ParsedDeclRefExpr));
@@ -136,7 +136,7 @@ ParsedMatchExpr::ParsedMatchExpr(
     Ptr<ParsedStmt> control_expr,
     Ptr<ParsedStmt> declared_type,
     ArrayRef<ParsedMatchCase> cases,
-    Location loc
+    SLoc loc
 ) : ParsedStmt{Kind::MatchExpr, loc},
     num_cases{u32(cases.size())},
     has_control_expr{control_expr.present()},
@@ -151,7 +151,7 @@ auto ParsedMatchExpr::Create(
     Ptr<ParsedStmt> control_expr,
     Ptr<ParsedStmt> declared_type,
     ArrayRef<ParsedMatchCase> cases,
-    Location loc
+    SLoc loc
 ) -> ParsedMatchExpr* {
     const auto size = totalSizeToAlloc<ParsedStmt*, ParsedMatchCase>(
         unsigned(control_expr.present()) + unsigned(declared_type.present()),
@@ -162,7 +162,7 @@ auto ParsedMatchExpr::Create(
     return ::new (mem) ParsedMatchExpr(control_expr, declared_type, cases, loc);
 }
 
-ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, Location loc)
+ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc)
     : ParsedStmt{Kind::TupleExpr, loc}, num_exprs{u32(exprs.size())} {
     std::uninitialized_copy_n(exprs.begin(), exprs.size(), getTrailingObjects());
 }
@@ -170,7 +170,7 @@ ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, Location loc)
 auto ParsedTupleExpr::Create(
     Parser& p,
     ArrayRef<ParsedStmt*> exprs,
-    Location loc
+    SLoc loc
 ) -> ParsedTupleExpr* {
     const auto size = totalSizeToAlloc<ParsedStmt*>(exprs.size());
     auto mem = p.allocate(size, alignof(ParsedTupleExpr));
@@ -178,8 +178,8 @@ auto ParsedTupleExpr::Create(
 }
 
 ParsedForStmt::ParsedForStmt(
-    Location for_loc,
-    Location enum_loc,
+    SLoc for_loc,
+    SLoc enum_loc,
     String enum_name,
     ArrayRef<LoopVar> vars,
     ArrayRef<ParsedStmt*> ranges,
@@ -196,8 +196,8 @@ ParsedForStmt::ParsedForStmt(
 
 auto ParsedForStmt::Create(
     Parser& parser,
-    Location for_loc,
-    Location enum_loc,
+    SLoc for_loc,
+    SLoc enum_loc,
     String enum_name,
     ArrayRef<LoopVar> vars,
     ArrayRef<ParsedStmt*> ranges,
@@ -208,7 +208,7 @@ auto ParsedForStmt::Create(
     return ::new (mem) ParsedForStmt{for_loc, enum_loc, enum_name, vars, ranges, body};
 }
 
-ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, Location loc)
+ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, SLoc loc)
     : ParsedStmt{Kind::IntLitExpr, loc},
       storage{p.module().integers.store_int(std::move(value))} {}
 
@@ -220,7 +220,7 @@ ParsedProcDecl::ParsedProcDecl(
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
-    Location location
+    SLoc location
 ) : ParsedDecl{Kind::ProcDecl, name, location},
     body{body},
     type{type} {
@@ -237,7 +237,7 @@ auto ParsedProcDecl::Create(
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
-    Location location
+    SLoc location
 ) -> ParsedProcDecl* {
     const auto size = totalSizeToAlloc<ParsedVarDecl*>(param_decls.size());
     auto mem = parser.allocate(size, alignof(ParsedProcDecl));
@@ -247,7 +247,7 @@ auto ParsedProcDecl::Create(
 ParsedStructDecl::ParsedStructDecl(
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
-    Location loc
+    SLoc loc
 ) : ParsedDecl{Kind::StructDecl, name, loc}, num_fields(u32(fields.size())) {
     std::uninitialized_copy_n(
         fields.begin(),
@@ -260,7 +260,7 @@ auto ParsedStructDecl::Create(
     Parser& parser,
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
-    Location loc
+    SLoc loc
 ) -> ParsedStructDecl* {
     const auto size = totalSizeToAlloc<ParsedFieldDecl*>(fields.size());
     auto mem = parser.allocate(size, alignof(ParsedStructDecl));

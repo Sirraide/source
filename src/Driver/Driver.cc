@@ -31,7 +31,6 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/StringSaver.h>
 #include <llvm/Support/ThreadPool.h>
 
 #include <algorithm>
@@ -39,7 +38,6 @@
 #include <future>
 #include <mutex>
 #include <print>
-#include <ranges>
 #include <unordered_set>
 #include <srcc/CG/Target/Target.hh>
 
@@ -160,7 +158,7 @@ int Driver::run_job() {
                         "{}:{}-{}: ",
                         lc->line,
                         lc->col,
-                        lc->col + tok.location.len - 1
+                        u64(lc->col) + (tok.location.measure_token_length(ctx).value_or(1) ?: 1) - 1
                     );
 
                     std::println("{}", tok.location.text(ctx));
@@ -178,8 +176,6 @@ int Driver::run_job() {
     // Dump a module.
     if (a == Action::DumpModule) {
         static constexpr String ImportName = "__srcc_dummy_import__";
-        llvm::BumpPtrAllocator alloc;
-        llvm::StringSaver saver{alloc};
         auto import_str = std::format(
             "program __srcc_dummy__; import {} as {};",
             files.front().string(),

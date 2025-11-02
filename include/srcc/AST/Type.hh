@@ -338,8 +338,8 @@ struct llvm::simplify_type<const srcc::TypeAndValueCategory> {
 class srcc::TypeLoc {
 public:
     Type ty;
-    Location loc;
-    TypeLoc(Type ty, Location loc) : ty{ty}, loc{loc} {}
+    SLoc loc;
+    TypeLoc(Type ty, SLoc loc) : ty{ty}, loc{loc} {}
     TypeLoc(Expr* e);
 };
 
@@ -573,7 +573,7 @@ public:
         ///
         /// This does not perform any checking as to whether the type is even
         /// valid for a field; this must be done before calling this.
-        auto add_field(Type ty, String name = "", Location loc = {}) -> FieldDecl*;
+        auto add_field(Type ty, String name = "", SLoc loc = {}) -> FieldDecl*;
 
         /// Build the layout.
         [[nodiscard]] auto build(ArrayRef<ProcDecl*> initialisers = {}) -> RecordLayout*;
@@ -689,7 +689,7 @@ public:
         TranslationUnit& owner,
         StructScope* scope,
         String name,
-        Location decl_loc,
+        SLoc decl_loc,
         RecordLayout* layout = nullptr
     ) -> StructType*;
 

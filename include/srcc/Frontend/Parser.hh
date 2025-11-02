@@ -57,18 +57,18 @@ public:
     DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> template_deduction_infos;
 
     /// The name of this program or module.
-    Location name_loc;
+    SLoc name_loc;
     String name;
 
     /// Whether this is a program or module.
-    Location program_or_module_loc;
+    SLoc program_or_module_loc;
     bool is_module = false;
 
     /// Imported modules.
     struct Import {
         SmallVector<String> linkage_names; ///< The name of the modules on disk and for linking.
         String import_name;  ///< The name it is imported as.
-        Location loc;        ///< The location of the import
+        SLoc loc;        ///< The location of the import
         bool is_open_import; ///< Whether this uses the 'as *' syntax.
         bool is_header_import;
     };
@@ -107,10 +107,10 @@ public:
     };
 
     const Kind expr_kind;
-    Location loc;
+    SLoc loc;
 
 protected:
-    ParsedStmt(Kind kind, Location loc) : expr_kind{kind}, loc{loc} {}
+    ParsedStmt(Kind kind, SLoc loc) : expr_kind{kind}, loc{loc} {}
 
 public:
     // Only allow allocating these in the parser.
@@ -132,7 +132,7 @@ class srcc::ParsedBuiltinType final : public ParsedStmt {
 public:
     Type ty;
 
-    ParsedBuiltinType(Type ty, Location loc)
+    ParsedBuiltinType(Type ty, SLoc loc)
         : ParsedStmt{Kind::BuiltinType, loc},
           ty{ty} {}
 
@@ -145,7 +145,7 @@ class srcc::ParsedIntType final : public ParsedStmt {
 public:
     const Size bit_width;
 
-    ParsedIntType(Size bitwidth, Location loc)
+    ParsedIntType(Size bitwidth, SLoc loc)
         : ParsedStmt{Kind::IntType, loc}, bit_width{bitwidth} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntType; }
@@ -179,7 +179,7 @@ class srcc::ParsedProcType final : public ParsedStmt
         ParsedStmt* ret_type,
         ArrayRef<ParsedParameter> params,
         ParsedProcAttrs attrs,
-        Location loc
+        SLoc loc
     );
 
 public:
@@ -191,7 +191,7 @@ public:
         ParsedStmt* ret_type,
         ArrayRef<ParsedParameter> params,
         ParsedProcAttrs attrs,
-        Location loc
+        SLoc loc
     ) -> ParsedProcType*;
 
     bool has_variadic_param() {
@@ -209,7 +209,7 @@ class srcc::ParsedPtrType final : public ParsedStmt {
 public:
     ParsedStmt* elem;
 
-    ParsedPtrType(ParsedStmt* elem, Location loc)
+    ParsedPtrType(ParsedStmt* elem, SLoc loc)
         : ParsedStmt{Kind::PtrType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::PtrType; }
@@ -219,7 +219,7 @@ class srcc::ParsedRangeType final : public ParsedStmt {
 public:
     ParsedStmt* elem;
 
-    ParsedRangeType(ParsedStmt* elem, Location loc)
+    ParsedRangeType(ParsedStmt* elem, SLoc loc)
         : ParsedStmt{Kind::RangeType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::RangeType; }
@@ -229,7 +229,7 @@ class srcc::ParsedSliceType final : public ParsedStmt {
 public:
     ParsedStmt* elem;
 
-    ParsedSliceType(ParsedStmt* elem, Location loc)
+    ParsedSliceType(ParsedStmt* elem, SLoc loc)
         : ParsedStmt{Kind::SliceType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::SliceType; }
@@ -240,7 +240,7 @@ public:
     /// The parameter name, *without* the '$' sigil.
     String name;
 
-    ParsedTemplateType(String name, Location loc)
+    ParsedTemplateType(String name, SLoc loc)
         : ParsedStmt{Kind::TemplateType, loc},
           name{name} {}
 
@@ -257,16 +257,19 @@ public:
     ParsedStmt* cond;
     Ptr<ParsedStmt> message;
     bool is_compile_time;
+    SRange cond_range;
 
     ParsedAssertExpr(
         ParsedStmt* cond,
         Ptr<ParsedStmt> message,
         bool is_compile_time,
-        Location location
+        SLoc location,
+        SRange cond_range
     ) : ParsedStmt{Kind::AssertExpr, location},
         cond{cond},
         message{std::move(message)},
-        is_compile_time{is_compile_time} {}
+        is_compile_time{is_compile_time},
+        cond_range{cond_range} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::AssertExpr; }
 };
@@ -281,7 +284,7 @@ public:
         Tk op,
         ParsedStmt* lhs,
         ParsedStmt* rhs,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::BinaryExpr, location}, op{op}, lhs{lhs}, rhs{rhs} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BinaryExpr; }
@@ -293,7 +296,7 @@ class srcc::ParsedBlockExpr final : public ParsedStmt
     friend TrailingObjects;
     const u32 num_stmts;
     auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_stmts; }
-    ParsedBlockExpr(ArrayRef<ParsedStmt*> stmts, Location location);
+    ParsedBlockExpr(ArrayRef<ParsedStmt*> stmts, SLoc location);
 
 public:
     /// Whether this block should create a new scope; this is almost
@@ -304,7 +307,7 @@ public:
     static auto Create(
         Parser& parser,
         ArrayRef<ParsedStmt*> stmts,
-        Location location
+        SLoc location
     ) -> ParsedBlockExpr*;
 
     /// Get the statements stored in this block.
@@ -321,7 +324,7 @@ class srcc::ParsedBoolLitExpr final : public ParsedStmt {
 public:
     bool value;
 
-    ParsedBoolLitExpr(bool value, Location location)
+    ParsedBoolLitExpr(bool value, SLoc location)
         : ParsedStmt{Kind::BoolLitExpr, location}, value{value} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BoolLitExpr; }
@@ -345,7 +348,7 @@ private:
     ParsedCallExpr(
         ParsedStmt* callee,
         ArrayRef<ParsedStmt*> args,
-        Location location
+        SLoc location
     );
 
 public:
@@ -353,7 +356,7 @@ public:
         Parser& parser,
         ParsedStmt* callee,
         ArrayRef<ParsedStmt*> args,
-        Location location
+        SLoc location
     ) -> ParsedCallExpr*;
 
     /// Get the arguments to the call.
@@ -374,14 +377,14 @@ class srcc::ParsedDeclRefExpr final : public ParsedStmt
 
     ParsedDeclRefExpr(
         ArrayRef<DeclName> names,
-        Location location
+        SLoc location
     );
 
 public:
     static auto Create(
         Parser& parser,
         ArrayRef<DeclName> names,
-        Location location
+        SLoc location
     ) -> ParsedDeclRefExpr*;
 
     /// Get the parts of the declaration reference.
@@ -396,7 +399,7 @@ public:
 
     ParsedDeferStmt(
         ParsedStmt* body,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::DeferStmt, location}, body{body} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeferStmt; }
@@ -405,7 +408,7 @@ public:
 /// A single semicolon.
 class srcc::ParsedEmptyStmt final : public ParsedStmt {
 public:
-    ParsedEmptyStmt(Location loc) : ParsedStmt{Kind::EmptyStmt, loc} {}
+    ParsedEmptyStmt(SLoc loc) : ParsedStmt{Kind::EmptyStmt, loc} {}
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EmptyStmt; }
 };
 
@@ -416,7 +419,7 @@ public:
 
     ParsedEvalExpr(
         ParsedStmt* expr,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::EvalExpr, location}, expr{expr} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EvalExpr; }
@@ -424,23 +427,23 @@ public:
 
 /// A for loop.
 class srcc::ParsedForStmt final : public ParsedStmt,
-    TrailingObjects<ParsedForStmt, std::pair<String, Location>, ParsedStmt*> {
+    TrailingObjects<ParsedForStmt, std::pair<String, SLoc>, ParsedStmt*> {
     friend TrailingObjects;
 
     u32 num_idents;
     u32 num_ranges;
 
 public:
-    using LoopVar = std::pair<String, Location>;
+    using LoopVar = std::pair<String, SLoc>;
 
-    Location enum_loc;
+    SLoc enum_loc;
     String enum_name;
     ParsedStmt* body;
 
 private:
     ParsedForStmt(
-        Location for_loc,
-        Location enum_loc,
+        SLoc for_loc,
+        SLoc enum_loc,
         String enum_name,
         ArrayRef<LoopVar> vars,
         ArrayRef<ParsedStmt*> ranges,
@@ -453,8 +456,8 @@ private:
 public:
     static auto Create(
         Parser& parser,
-        Location for_loc,
-        Location enum_loc,
+        SLoc for_loc,
+        SLoc enum_loc,
         String enum_name,
         ArrayRef<LoopVar> vars,
         ArrayRef<ParsedStmt*> ranges,
@@ -475,7 +478,7 @@ public:
 
     ParsedStrLitExpr(
         String value,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::StrLitExpr, location}, value{value} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StrLitExpr; }
@@ -493,7 +496,7 @@ public:
         ParsedStmt* then,
         Ptr<ParsedStmt> else_,
         bool is_static,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::IfExpr, location},
         cond{cond},
         then{then},
@@ -511,7 +514,7 @@ public:
     ParsedIntLitExpr(
         Parser& p,
         APInt value,
-        Location location
+        SLoc location
     );
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntLitExpr; }
@@ -522,7 +525,7 @@ class srcc::ParsedLoopExpr final : public ParsedStmt {
 public:
     Ptr<ParsedStmt> body;
 
-    ParsedLoopExpr(Ptr<ParsedStmt> body, Location location)
+    ParsedLoopExpr(Ptr<ParsedStmt> body, SLoc location)
         : ParsedStmt{Kind::LoopExpr, location}, body{body} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::LoopExpr; }
@@ -550,7 +553,7 @@ private:
         Ptr<ParsedStmt> control_expr,
         Ptr<ParsedStmt> declared_type,
         ArrayRef<ParsedMatchCase> cases,
-        Location loc
+        SLoc loc
     );
 
 public:
@@ -559,7 +562,7 @@ public:
         Ptr<ParsedStmt> control_expr,
         Ptr<ParsedStmt> declared_type,
         ArrayRef<ParsedMatchCase> cases,
-        Location loc
+        SLoc loc
     ) -> ParsedMatchExpr*;
 
     [[nodiscard]] auto cases() const -> ArrayRef<ParsedMatchCase> {
@@ -586,7 +589,7 @@ public:
     ParsedMemberExpr(
         ParsedStmt* base,
         String member,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::MemberExpr, location}, base{base}, member{member} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::MemberExpr; }
@@ -598,7 +601,7 @@ public:
 
     ParsedParenExpr(
         ParsedStmt* inner,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::ParenExpr, location}, inner{inner} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParenExpr; }
@@ -611,7 +614,7 @@ public:
 
     ParsedReturnExpr(
         Ptr<ParsedStmt> value,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::ReturnExpr, location}, value{std::move(value)} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ReturnExpr; }
@@ -622,13 +625,13 @@ class srcc::ParsedTupleExpr final : public ParsedStmt,
     friend TrailingObjects;
     const u32 num_exprs;
 
-    ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, Location loc);
+    ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc);
 
 public:
     static auto Create(
         Parser& p,
         ArrayRef<ParsedStmt*> exprs,
-        Location loc
+        SLoc loc
     ) -> ParsedTupleExpr*;
 
     auto exprs() -> ArrayRef<ParsedStmt*> { return getTrailingObjects(num_exprs); }
@@ -646,7 +649,7 @@ public:
         Tk op,
         ParsedStmt* arg,
         bool postfix,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::UnaryExpr, location}, op{op}, arg{arg}, postfix{postfix} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::UnaryExpr; }
@@ -660,7 +663,7 @@ public:
     ParsedWhileStmt(
         ParsedStmt* cond,
         ParsedStmt* body,
-        Location location
+        SLoc location
     ) : ParsedStmt{Kind::WhileStmt, location}, cond{cond}, body{body} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::WhileStmt; }
@@ -679,7 +682,7 @@ protected:
     ParsedDecl(
         Kind kind,
         DeclName name,
-        Location location
+        SLoc location
     ) : ParsedStmt{kind, location}, name{name} {}
 
 public:
@@ -695,7 +698,7 @@ public:
 
     ParsedExportDecl(
         ParsedDecl* decl,
-        Location location
+        SLoc location
     ) : ParsedDecl{Kind::ExportDecl, String(), location}, decl{decl} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ExportDecl; }
@@ -708,7 +711,7 @@ public:
     ParsedFieldDecl(
         String name,
         ParsedStmt* type,
-        Location location
+        SLoc location
     ) : ParsedDecl{Kind::FieldDecl, name, location}, type{type} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::FieldDecl; }
@@ -724,7 +727,7 @@ public:
     ParsedVarDecl(
         String name,
         ParsedStmt* param_type,
-        Location location,
+        SLoc location,
         Intent intent = Intent::Move,
         bool is_static = false
     ) : ParsedDecl{Kind::VarDecl, name, location}, type{param_type}, intent{intent}, is_static{is_static} {}
@@ -754,7 +757,7 @@ private:
         ParsedProcType* type,
         ArrayRef<ParsedVarDecl*> param_decls,
         Ptr<ParsedStmt> body,
-        Location location
+        SLoc location
     );
 
 public:
@@ -764,7 +767,7 @@ public:
         ParsedProcType* type,
         ArrayRef<ParsedVarDecl*> param_names,
         Ptr<ParsedStmt> body,
-        Location location
+        SLoc location
     ) -> ParsedProcDecl*;
 
     auto params() -> ArrayRef<ParsedVarDecl*> {
@@ -780,14 +783,14 @@ class srcc::ParsedStructDecl final : public ParsedDecl
 
     u32 num_fields;
     auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) -> usz { return num_fields; }
-    ParsedStructDecl(String name, ArrayRef<ParsedFieldDecl*> fields, Location loc);
+    ParsedStructDecl(String name, ArrayRef<ParsedFieldDecl*> fields, SLoc loc);
 
 public:
     static auto Create(
         Parser& parser,
         String name,
         ArrayRef<ParsedFieldDecl*> fields,
-        Location loc
+        SLoc loc
     ) -> ParsedStructDecl*;
 
     auto fields() -> ArrayRef<ParsedFieldDecl*> {
@@ -819,8 +822,8 @@ private:
         TemplateParamDeductionInfo deduction_info;
         Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
         DeclName name;
-        Location proc_loc;
-        Location tok_after_proc;
+        SLoc proc_loc;
+        SLoc tok_after_proc;
         ParsedProcAttrs attrs;
 
         // Mark that a template parameter is deduced in the parameter
@@ -838,12 +841,11 @@ private:
         bool consumed_close = false;
 
     public:
-        Location left, right;
+        SLoc left, right;
 
         BracketTracker(Parser& p, Tk open, bool diagnose = true);
         ~BracketTracker();
         bool close();
-        [[nodiscard]] auto span() -> Location { return Location(left, right); }
         [[nodiscard]] auto corresponding_closing_bracket() -> Tk { return close_bracket; }
 
     private:
@@ -895,7 +897,7 @@ private:
     void ParseHeader();
     auto ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr>;
     void ParseImport();
-    auto ParseIntent() -> std::pair<Location, Intent>;
+    auto ParseIntent() -> std::pair<SLoc, Intent>;
     auto ParseMatchExpr() -> Ptr<ParsedMatchExpr>;
     void ParseOverloadableOperatorName(Signature& sig);
     bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
@@ -911,7 +913,7 @@ private:
     auto CreateType(Signature& sig) -> ParsedProcType*;
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
@@ -922,7 +924,7 @@ private:
     }
 
     template <typename... Args>
-    auto ErrorSync(Location loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
+    auto ErrorSync(SLoc loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
         Error(loc, fmt, std::forward<Args>(args)...);
         SkipTo(Tk::Semicolon);
         return {};
@@ -948,11 +950,11 @@ private:
 
     /// Consume a token if it is present.
     bool Consume(Tk tk);
-    bool Consume(Location& into, Tk tk);
+    bool Consume(SLoc& into, Tk tk);
 
     /// Consume a contextual keyword.
     bool ConsumeContextual(StringRef keyword);
-    bool ConsumeContextual(Location& into, StringRef keyword);
+    bool ConsumeContextual(SLoc& into, StringRef keyword);
 
     /// Consume a token if we’re at it, and issue an error about it otherwise.
     template <typename... Args>
@@ -976,11 +978,11 @@ private:
 
     /// Consume a token and return it (or its location). If the parser is at
     /// end of file, the token iterator is not advanced.
-    auto Next() -> Location;
+    auto Next() -> SLoc;
 
     /// Actually advance to the next token. This only exists to implement Next(),
     /// SkipTo(), and BracketTracker; do not call this from anywhere else!
-    auto NextTokenImpl() -> Location;
+    auto NextTokenImpl() -> SLoc;
 
     /// Skip up to a token.
     bool SkipTo(std::same_as<Tk> auto... tks);

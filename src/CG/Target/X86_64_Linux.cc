@@ -337,7 +337,7 @@ auto ABIImpl::LowerByValArgOrReturn(
 
     // Make sure that we explicitly handle all possible type kinds.
     else {
-        cg.ICE(Location::Decode(l), "Unsupported type in call lowering: {}", t);
+        cg.ICE(SLoc::Decode(l), "Unsupported type in call lowering: {}", t);
     }
 
     return info;

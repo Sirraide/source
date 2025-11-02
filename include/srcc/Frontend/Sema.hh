@@ -416,7 +416,7 @@ private:
 
         auto badness() const -> u32 { return status.get<Viable>().badness; }
         auto param_count() const -> usz;
-        auto param_loc(usz index) const -> Location;
+        auto param_loc(usz index) const -> SLoc;
         auto proc_type() const -> ProcType*;
         auto type_for_diagnostic() const -> SmallUnrenderedString;
         bool has_c_varargs() const;
@@ -443,27 +443,27 @@ private:
                 InvalidType, ///< We don’t know what to do w/ this (e.g. if someone passes "foo" to an integer match).
                 Subsumed,    ///< Subsumed by an earlier pattern.
             } kind{};
-            ArrayRef<Location> locations{};
+            ArrayRef<SLoc> locations{};
         };
 
         static auto Ok() -> AddResult { return {AddResult::Kind::Ok}; }
         static auto Exhaustive() -> AddResult { return {AddResult::Kind::Exhaustive}; }
         static auto InvalidType() -> AddResult { return {AddResult::Kind::InvalidType}; }
-        static auto Subsumed(ArrayRef<Location> locations) -> AddResult {
+        static auto Subsumed(ArrayRef<SLoc> locations) -> AddResult {
             return {AddResult::Kind::Subsumed, locations};
         }
     };
 
     class BoolMatchContext : public MatchContext {
-        Location true_loc;
-        Location false_loc;
+        SLoc true_loc;
+        SLoc false_loc;
 
     public:
         BoolMatchContext(Sema& s) : MatchContext{s} {}
-        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult;
         [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
         [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
-        void note_missing(Location match_loc);
+        void note_missing(SLoc match_loc);
     };
 
     class IntMatchContext : public MatchContext {
@@ -471,9 +471,9 @@ private:
         struct Range {
             APInt start;
             APInt end; // Inclusive.
-            SmallVector<Location> locations;
+            SmallVector<SLoc> locations;
 
-            Range(APInt start, APInt end, Location loc)
+            Range(APInt start, APInt end, SLoc loc)
                 : start{std::move(start)}, end{std::move(end)}, locations{loc} {
                 Assert(this->start.sle(this->end));
             }
@@ -509,10 +509,10 @@ private:
 
     public:
         IntMatchContext(Sema& s, Type ty);
-        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, Location loc) -> AddResult;
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult;
         [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
         [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
-        void note_missing(Location match_loc);
+        void note_missing(SLoc match_loc);
 
     private:
         [[nodiscard]] auto add_range(Range r) -> AddResult;
@@ -557,7 +557,7 @@ private:
     /// instead diagnose this at end of translation.
     struct DeferredNativeProcArgOrReturn {
         StructType* type;
-        Location loc;
+        SLoc loc;
         bool is_return;
     };
 
@@ -605,14 +605,14 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Apply a conversion to an expression or list of expressions.
-    void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc);
-    [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, Location loc) -> Expr*;
+    void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);
+    [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, SLoc loc) -> Expr*;
 
     /// Apply a conversion sequence to an expression.
     [[nodiscard]] auto ApplyConversionSequence(
         ArrayRef<Expr*> exprs,
         const ConversionSequence& seq,
-        Location loc
+        SLoc loc
     ) -> Expr*;
 
     /// Build an initialiser for an aggregate type.
@@ -622,7 +622,7 @@ private:
         ConversionSequence& seq,
         RecordType* s,
         ArrayRef<Expr*> args,
-        Location loc
+        SLoc loc
     ) -> MaybeDiags;
 
     /// Build an initialiser for an array type.
@@ -632,7 +632,7 @@ private:
         ConversionSequence& seq,
         ArrayType* a,
         ArrayRef<Expr*> args,
-        Location loc
+        SLoc loc
     ) -> MaybeDiags;
 
     /// Build an initialiser for a slice type.
@@ -642,7 +642,7 @@ private:
         ConversionSequence& seq,
         SliceType* a,
         ArrayRef<Expr*> args,
-        Location loc
+        SLoc loc
     ) -> MaybeDiags;
 
     /// Build a conversion sequence that can be applied to a list
@@ -672,7 +672,7 @@ private:
     auto BuildConversionSequence(
         Type var_type,
         ArrayRef<Expr*> args,
-        Location init_loc,
+        SLoc init_loc,
         bool want_lvalue = false
     ) -> ConversionSequenceOrDiags;
 
@@ -680,12 +680,12 @@ private:
     auto BuildInitialiser(
         Type var_type,
         ArrayRef<Expr*> args,
-        Location loc,
+        SLoc loc,
         bool want_lvalue = false
     ) -> Ptr<Expr>;
 
     /// Check that a type is valid for a record field.
-    [[nodiscard]] bool CheckFieldType(Type ty, Location loc);
+    [[nodiscard]] bool CheckFieldType(Type ty, SLoc loc);
 
     /// Check additional constraints on a call that need to happen after overload resolution.
     bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
@@ -694,7 +694,7 @@ private:
     template <typename MContext>
     bool CheckMatchExhaustive(
         MContext& ctx,
-        Location match_loc,
+        SLoc match_loc,
         Expr* control_expr,
         Type ty,
         MutableArrayRef<MatchCase> cases
@@ -704,14 +704,14 @@ private:
     bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
 
     /// Check that a type is valid for a variable declaration.
-    [[nodiscard]] bool CheckVariableType(Type ty, Location loc);
+    [[nodiscard]] bool CheckVariableType(Type ty, SLoc loc);
 
     /// Determine the common type and value category of a set of expressions and,
     /// if there is one, ensure they all have the same type and value category.
     auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
 
     /// Create a reference to a declaration.
-    [[nodiscard]] auto CreateReference(Decl* d, Location loc) -> Ptr<Expr>;
+    [[nodiscard]] auto CreateReference(Decl* d, SLoc loc) -> Ptr<Expr>;
 
     /// Add a variable to the current scope and procedure.
     void DeclareLocal(LocalDecl* d);
@@ -720,11 +720,11 @@ private:
     auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type;
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
-    void DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return);
+    void DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return);
 
     /// Evaluate a statement, returning an expression that caches the result on success
     /// and nullptr on failure. The returned expression need not be a ConstExpr.
-    auto Evaluate(Stmt* e, Location loc) -> Ptr<Expr>;
+    auto Evaluate(Stmt* e, SLoc loc) -> Ptr<Expr>;
 
     /// Evaluate a statement as an integer or bool value.
     auto EvaluateAsIntOrBool(Stmt* s) -> std::optional<eval::RValue>;
@@ -739,14 +739,14 @@ private:
     auto ImportCXXHeaders(
         String logical_name,
         ArrayRef<String> header_names,
-        Location import_loc
+        SLoc import_loc
     ) -> Ptr<ImportedClangModuleDecl>;
 
     /// Instantiate a procedure template.
     auto InstantiateTemplate(
         ProcTemplateDecl* pattern,
         TemplateSubstitution& info,
-        Location inst_loc
+        SLoc inst_loc
     ) -> ProcDecl*;
 
     /// Check if an integer literal can be stored in a given type.
@@ -768,7 +768,7 @@ private:
     void LoadModule(
         String logical_name,
         ArrayRef<String> linkage_names,
-        Location import_loc,
+        SLoc import_loc,
         bool is_open,
         bool is_cxx_header
     );
@@ -777,7 +777,7 @@ private:
     auto LoadModuleFromArchive(
         String logical_name,
         String linkage_name,
-        Location import_loc
+        SLoc import_loc
     ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
@@ -812,7 +812,7 @@ private:
     auto LookUpName(
         Scope* in_scope,
         ArrayRef<DeclName> names,
-        Location loc,
+        SLoc loc,
         bool complain = true
     ) -> LookupResult;
 
@@ -827,7 +827,7 @@ private:
     [[nodiscard]] auto MakeConstExpr(
         Stmt* evaluated_stmt,
         eval::RValue val,
-        Location loc
+        SLoc loc
     ) -> Expr*;
 
     /// Create a local variable and add it to the current scope and procedure.
@@ -835,7 +835,7 @@ private:
         Type ty,
         ValueCategory vc,
         String name,
-        Location loc
+        SLoc loc
     ) -> LocalDecl*;
 
     /// Ensure that an expression is an rvalue of the given type.
@@ -864,20 +864,20 @@ private:
     auto PerformOverloadResolution(
         OverloadSetExpr* overload_set,
         ArrayRef<Expr*> args,
-        Location call_loc
+        SLoc call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
 
     /// Deserialise an AST.
     auto ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<>;
 
     /// Issue an error about lookup failure.
-    void ReportLookupFailure(const LookupResult& result, Location loc);
+    void ReportLookupFailure(const LookupResult& result, SLoc loc);
 
     /// Issue an error about overload resolution failure.
     void ReportOverloadResolutionFailure(
         MutableArrayRef<Candidate> candidates,
         ArrayRef<Expr*> call_args,
-        Location call_loc,
+        SLoc call_loc,
         u32 final_badness
     );
 
@@ -893,29 +893,29 @@ private:
     auto TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr>;
 
     /// Building AST nodes.
-    auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, Location loc) -> Ptr<Expr>;
+    auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;
     auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
-    auto BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type;
-    auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, Location loc) -> Ptr<Expr>;
-    auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr*;
-    auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, Location call_loc) -> Ptr<BuiltinCallExpr>;
-    auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, Location loc) -> Ptr<BuiltinMemberAccessExpr>;
-    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr>;
-    auto BuildCompleteStructType(String name, RecordLayout* layout, Location decl_loc) -> StructType*;
-    auto BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>;
-    auto BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr>;
-    auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr>;
-    auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, Location loc) -> Ptr<Expr>;
-    auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, Location loc) -> ParamDecl*;
-    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, Location loc, ParsedProcAttrs attrs, ProcTemplateDecl* pattern = nullptr) -> ProcDecl*;
+    auto BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Type;
+    auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, SLoc loc) -> Ptr<Expr>;
+    auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
+    auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
+    auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
+    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
+    auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
+    auto BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr>;
+    auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
+    auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
+    auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
+    auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, SLoc loc) -> ParamDecl*;
+    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, SLoc loc, ParsedProcAttrs attrs, ProcTemplateDecl* pattern = nullptr) -> ProcDecl*;
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
-    auto BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr*;
-    auto BuildSliceType(Type base, Location loc) -> Type;
-    auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, Location loc) -> Ptr<Stmt>;
+    auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
+    auto BuildSliceType(Type base, SLoc loc) -> Type;
+    auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
     auto BuildTupleType(ArrayRef<TypeLoc> types) -> Type;
-    auto BuildTypeExpr(Type ty, Location loc) -> TypeExpr*;
-    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr>;
-    auto BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt>;
+    auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;
+    auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr>;
+    auto BuildWhileStmt(Expr* cond, Stmt* body, SLoc loc) -> Ptr<WhileStmt>;
 
     /// Entry point.
     void Translate(bool have_preamble, bool load_runtime);
@@ -953,7 +953,7 @@ private:
     auto TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters = {}) -> Type;
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 };

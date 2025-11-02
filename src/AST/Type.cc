@@ -466,7 +466,7 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
 // ============================================================================
 //  Record Types
 // ============================================================================
-auto RecordLayout::Builder::add_field(Type ty, String name, Location loc) -> FieldDecl* {
+auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDecl* {
     // TODO: Optimise layout if this isn’t meant for FFI.
     auto fa = ty->align(tu);
     sz = sz.align(fa);
@@ -549,7 +549,7 @@ auto StructType::Create(
     TranslationUnit& owner,
     StructScope* scope,
     String name,
-    Location decl_loc,
+    SLoc decl_loc,
     RecordLayout* layout
 ) -> StructType* {
     auto type = new (owner) StructType(owner, scope);

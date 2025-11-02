@@ -33,7 +33,7 @@ public:
     };
 
     Level level = Level::Ignored;
-    Location where;
+    SLoc where;
 
     /// Main diagnostic message.
     std::string msg;
@@ -42,19 +42,19 @@ public:
     std::string extra;
 
     /// Extra locations to print.
-    SmallVector<std::pair<std::string, Location>, 0> extra_locations;
+    SmallVector<std::pair<std::string, SLoc>, 0> extra_locations;
 
     /// Create an empty diagnostic.
     Diagnostic() = default;
 
     /// Create a diagnostic.
-    Diagnostic(Level lvl, Location where, std::string msg, std::string extra = "");
+    Diagnostic(Level lvl, SLoc where, std::string msg, std::string extra = "");
 
     /// Create a diagnostic with a format string and arguments.
     template <typename... Args>
     Diagnostic(
         Level lvl,
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) : Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)} {}
@@ -76,7 +76,7 @@ class srcc::DiagsProducer {
 public:
     template <typename... Args>
     static auto CreateError(
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> Diagnostic {
@@ -85,7 +85,7 @@ public:
 
     template <typename... Args>
     static auto CreateICE(
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> Diagnostic {
@@ -94,7 +94,7 @@ public:
 
     template <typename... Args>
     static auto CreateNote(
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> Diagnostic {
@@ -103,7 +103,7 @@ public:
 
     template <typename... Args>
     static auto CreateWarning(
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> Diagnostic {
@@ -113,7 +113,7 @@ public:
     template <typename... Args>
     auto Error(
         this auto& This,
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> utils::Falsy {
@@ -124,7 +124,7 @@ public:
     template <typename... Args>
     auto ICE(
         this auto& This,
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> utils::Falsy {
@@ -135,7 +135,7 @@ public:
     template <typename... Args>
     void Note(
         this auto& This,
-        Location loc,
+        SLoc loc,
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
@@ -145,7 +145,7 @@ public:
     template <typename... Args>
     void Warn(
         this auto& This,
-        Location loc,
+        SLoc loc,
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
@@ -179,7 +179,7 @@ public:
 
     /// Add additional location information to a diagnostic.
     template <typename... Args>
-    void add_extra_location(Location extra, std::format_string<Args...> fmt, Args&&... args) {
+    void add_extra_location(SLoc extra, std::format_string<Args...> fmt, Args&&... args) {
         add_extra_location_impl(extra, std::format(fmt, std::forward<Args>(args)...));
     }
 
@@ -194,7 +194,7 @@ public:
     template <typename... Args>
     void diag(
         Diagnostic::Level lvl,
-        Location where,
+        SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
@@ -213,7 +213,7 @@ public:
 protected:
     /// Override this to implement the actual reporting.
     virtual void report_impl(Diagnostic&& diag) = 0;
-    virtual void add_extra_location_impl(Location, std::string) {}
+    virtual void add_extra_location_impl(SLoc, std::string) {}
 };
 
 /// Diagnostics engine that outputs to a stream.
@@ -243,7 +243,7 @@ public:
     void flush() override;
 
 private:
-    void add_extra_location_impl(Location, std::string) override;
+    void add_extra_location_impl(SLoc, std::string) override;
     void report_impl(Diagnostic&&) override;
     void EmitDiagnostics();
 };
@@ -315,18 +315,18 @@ private:
 
     // For reporting errors during the verification and comment parsing steps.
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         diags_reporter->diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    void Error(Location loc, std::format_string<Args...> fmt, Args&&... args) {
+    void Error(SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
         Diag(Diagnostic::Level::Error, loc, fmt, std::forward<Args>(args)...);
     }
 
-    auto DecodeLocation(Location loc) -> Opt<DecodedLocation>;
+    auto DecodeLocation(SLoc loc) -> Opt<DecodedLocation>;
     void HandleCommentToken(const Token& tok);
-    void ParseMagicComment(str comment, Location loc);
+    void ParseMagicComment(str comment, SLoc loc);
 };
 
 #endif // SRCC_CORE_DIAGNOSTICS_HH

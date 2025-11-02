@@ -14,13 +14,19 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64;
-static constexpr u32 CurrentVersion = 1;
+constexpr u32 CurrentVersion = 1;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, types_size);
     u32 version{};
     u64 decls_size{};
     u64 types_size{};
+};
+
+struct EncodedSLoc {
+    LIBBASE_SERIALISE(EncodedSLoc, file, offs);
+    srcc::File::Id file = -1;
+    std::ptrdiff_t offs = 0;
 };
 }
 
@@ -31,9 +37,9 @@ public:
     using Base::write;
 
     const Context& ctx;
-    llvm::SmallVector<Type> types;
-    llvm::DenseMap<Type, TypeIndex> type_indices;
-    llvm::MapVector<u64, std::string> files;
+    SmallVector<Type> types;
+    DenseMap<Type, TypeIndex> type_indices;
+    llvm::MapVector<File::Id, std::string> files;
     TypeIndex next_index = TypeIndex(1);
     bool done_emitting_decls = false;
 
@@ -89,9 +95,14 @@ public:
         else *this << name.operator_name();
     }
 
-    void write(Location loc) {
-        if (loc.is_valid()) RegisterFile(loc.file_id);
-        *this << loc.encode();
+    void write(SLoc loc) {
+        EncodedSLoc e;
+        if (auto f = loc.file(ctx)) {
+            RegisterFile(*f);
+            e.offs = loc.pointer() - f->data();
+            e.file = f->file_id();
+        }
+        *this << e;
     }
 
     void write(Type ty) {
@@ -111,10 +122,8 @@ public:
     }
 
 private:
-    void RegisterFile(u16 file_id) {
-        auto entry = files.find(file_id);
-        if (entry != files.end()) return;
-        files[file_id] = absolute(ctx.file(file_id)->path()).string();
+    void RegisterFile(const File& f) {
+        files[f.file_id()] = absolute(f.path()).string();
     }
 
     auto RegisterType(Type ty) -> TypeIndex {
@@ -164,7 +173,7 @@ public:
     /// changes? The source locations would be utter bogus otherwise.
     ///
     /// TODO: Do we want to embed the file data in the module description?
-    llvm::DenseMap<u64, std::optional<i32>> files;
+    DenseMap<File::Id, std::optional<File::Id>> files;
 
     ASTReader(Sema& S, ImportedSourceModuleDecl* module_decl, ser::InputSpan buf)
         : Base{buf}, S{S}, module_decl{module_decl} {
@@ -172,7 +181,7 @@ public:
     }
 
     auto read_file_data() -> Result<> {
-        auto [index, absolute_path] = Read(std::pair<u64, std::string>);
+        auto [index, absolute_path] = Read(std::pair<File::Id, std::string>);
         if (auto f = S.context().try_get_file(absolute_path))
             files[index] = f.value()->file_id();
         return {};
@@ -186,7 +195,7 @@ public:
                 auto mangling = Read(Mangling);
                 auto type = Read(Type);
                 auto name = Read(DeclName);
-                auto loc = Read(Location);
+                auto loc = Read(SLoc);
                 return ProcDecl::Create(
                     *S.tu,
                     module_decl,
@@ -255,7 +264,7 @@ public:
 
             case K::StructType: {
                 auto decl_name = Read(String);
-                auto decl_loc = Read(Location);
+                auto decl_loc = Read(SLoc);
                 auto layout = Read(RecordLayout*);
                 return S.BuildCompleteStructType(decl_name, layout, decl_loc);
             }
@@ -284,17 +293,17 @@ public:
         auto type = Read(Type);
         auto offset = Read(Size);
         auto name = Read(String);
-        auto loc = Read(Location);
+        auto loc = Read(SLoc);
         return new (*S.tu) FieldDecl(type, offset, name, loc);
     }
 
     template <>
-    auto read<Location>() -> Result<Location> {
-        auto l = Location::Decode(Read(Location::Encoded));
-        auto it = files.find(l.file_id);
-        if (it == files.end() or not it->second.has_value()) return Location();
-        l.file_id = u16(it->second.value());
-        return l;
+    auto read<SLoc>() -> Result<SLoc> {
+        auto e = Read(EncodedSLoc);
+        auto it = files.find(e.file);
+        if (it == files.end() or not it->second.has_value()) return SLoc();
+        auto f = S.ctx.file(it->second.value());
+        return SLoc(f->data() + e.offs);
     }
 
     template <>
@@ -358,7 +367,7 @@ auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Resu
 auto Sema::LoadModuleFromArchive(
     String logical_name,
     String linkage_name,
-    Location import_loc
+    SLoc import_loc
 ) -> Ptr<ImportedSourceModuleDecl> {
     if (search_paths.empty()) return ICE(import_loc, "No module search path");
 
@@ -416,7 +425,7 @@ auto Sema::LoadModuleFromArchive(
 void Sema::LoadModule(
     String logical_name,
     ArrayRef<String> linkage_names,
-    Location import_loc,
+    SLoc import_loc,
     bool is_open,
     bool is_cxx_header
 ) {

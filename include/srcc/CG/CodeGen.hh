@@ -324,7 +324,7 @@ public:
     /// AST -> IR converters
     auto C(CallingConvention l) -> mlir::LLVM::CConv;
     auto C(Linkage l) -> mlir::LLVM::Linkage;
-    auto C(Location l) -> mlir::Location;
+    auto C(SLoc l) -> mlir::Location;
 
     /// Convert a type to an IR type; does not support aggregates.
     auto C(Type ty, ValueCategory vc = Expr::RValue) -> mlir::Type;
@@ -374,7 +374,7 @@ public:
     void CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset = {});
 
     template <typename... Args>
-    void Diag(Diagnostic::Level lvl, Location where, std::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         tu.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
@@ -385,7 +385,7 @@ public:
     auto Emit(Stmt* stmt) -> IRValue;
     auto EmitWithCleanup(Stmt* stmt) -> IRValue;
     auto EmitScalar(Stmt* stmt) -> Value;
-    void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc);
+    void EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, SLoc loc);
     void EmitArrayBroadcastExpr(ArrayBroadcastExpr* e, Value mrvalue_slot);
     void EmitArrayInitExpr(ArrayInitExpr* e, Value mrvalue_slot);
     auto EmitCallExpr(CallExpr* call, Value mrvalue_slot) -> IRValue;
@@ -397,7 +397,7 @@ public:
 
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(Location loc, const eval::RValue& val) -> IRValue;
+    auto EmitValue(SLoc loc, const eval::RValue& val) -> IRValue;
 
     /// Emit all cleanups starting at the current scope up to and including 'target_scope'.
     void EmitCleanups(const ProcData::CleanupScope& target_scope);
@@ -423,7 +423,7 @@ public:
     auto IntTy(Size wd) -> mlir::Type;
 
     /// Get the address of a local variable.
-    auto GetAddressOfLocal(LocalDecl* decl, Location loc) -> Value;
+    auto GetAddressOfLocal(LocalDecl* decl, SLoc loc) -> Value;
 
     /// Get the current procedure’s environment pointer.
     auto GetEnvPtr() -> Value;
@@ -436,7 +436,7 @@ public:
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
     auto GetOrCreateProc(
-        Location loc,
+        SLoc loc,
         String name,
         Linkage linkage,
         ProcType* ty,
@@ -450,7 +450,7 @@ public:
     /// Retrieve the static chain pointer of a procedure relative to
     /// the current procedure. This is the environment pointer that
     /// is passed to any procedures defined within that procedure.
-    auto GetStaticChainPointer(ProcDecl* proc, Location location) -> Value;
+    auto GetStaticChainPointer(ProcDecl* proc, SLoc location) -> Value;
 
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);

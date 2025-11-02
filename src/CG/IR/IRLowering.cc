@@ -330,7 +330,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     pm.addPass(std::make_unique<LoweringPass>(*this));
 
     if (pm.run(mlir_module).failed()) {
-        if (not tu.context().diags().has_error()) ICE(Location(), "Failed to lower module to LLVM IR");
+        if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
         return nullptr;
     }
 
@@ -350,7 +350,7 @@ bool CodeGen::finalise(ir::ProcOp proc) {
     if (pm.run(proc).succeeded()) return true;
     proc->dumpPretty();
     if (not tu.context().diags().has_error()) ICE(
-        Location(),
+        SLoc(),
         "Failed to finalise IR"
     );
 
@@ -371,7 +371,7 @@ bool CodeGen::finalise() {
     pm.addPass(mlir::createRemoveDeadValuesPass());
     if (pm.run(mlir_module).succeeded()) return true;
     if (not tu.context().diags().has_error()) ICE(
-        Location(),
+        SLoc(),
         "Failed to finalise IR"
     );
 

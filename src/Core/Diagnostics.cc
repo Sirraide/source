@@ -68,7 +68,7 @@ static auto TextWidth(std::u32string_view data) -> usz {
 static auto FormatDiagnostic(
     const Context& ctx,
     const Diagnostic& diag,
-    Opt<Location> previous_loc
+    Opt<SLoc> previous_loc
 ) -> std::string {
     std::string out;
 
@@ -101,7 +101,7 @@ static auto FormatDiagnostic(
         );
 
         // Even if the location is invalid, print the file name if we can.
-        if (auto f = ctx.file(diag.where.file_id)) {
+        if (auto f = diag.where.file(ctx)) {
             out += std::format(
                 "\n  in %b({}:<invalid location>%)\n\n",
                 utils::Escape(ctx.file_name(f->file_id()), false, true)
@@ -148,10 +148,10 @@ static auto FormatDiagnostic(
         not previous_loc.has_value() or
         previous_loc.value() != diag.where
     ) {
-        auto PrintLocation = [&](Location loc, LocInfoShort l) {
+        auto PrintLocation = [&](LocInfoShort l) {
             out += std::format(
                 "at %b4({}%):{}:{}\n",
-                utils::Escape(ctx.file_name(loc.file_id), false, true),
+                utils::Escape(ctx.file_name(l.file->file_id()), false, true),
                 l.line,
                 l.col
             );
@@ -159,7 +159,7 @@ static auto FormatDiagnostic(
 
         // Print main location.
         out += "  ";
-        PrintLocation(diag.where, static_cast<LocInfoShort>(*l));
+        PrintLocation(static_cast<LocInfoShort>(*l));
 
         // Print extra locations.
         for (const auto& [note, extra] : diag.extra_locations) {
@@ -172,7 +172,7 @@ static auto FormatDiagnostic(
                 out += ' ';
             }
 
-            PrintLocation(extra, *extra_lc);
+            PrintLocation(*extra_lc);
         }
 
         out += "\n";
@@ -223,7 +223,7 @@ auto Diagnostic::Render(
     // Print all diagnostics that we have queued up as a group.
     bool first_line = true;
     std::string buffer;
-    Opt<Location> previous_loc;
+    Opt<SLoc> previous_loc;
     for (auto [di, diag] : enumerate(backlog)) {
         // Render the diagnostic text.
         auto out = FormatDiagnostic(ctx, diag, previous_loc);
@@ -376,7 +376,7 @@ auto Diagnostic::Render(
 // ============================================================================
 //  Diagnostic
 // ============================================================================
-Diagnostic::Diagnostic(Level lvl, Location where, std::string msg, std::string extra)
+Diagnostic::Diagnostic(Level lvl, SLoc where, std::string msg, std::string extra)
     : level(lvl),
       where(where),
       msg(std::move(msg)),
@@ -418,7 +418,7 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     backlog.clear();
 }
 
-void StreamingDiagnosticsEngine::add_extra_location_impl(Location extra, std::string note) {
+void StreamingDiagnosticsEngine::add_extra_location_impl(SLoc extra, std::string note) {
     if (backlog.empty()) return;
     backlog.back().extra_locations.emplace_back(std::move(note), extra);
 }
@@ -485,10 +485,9 @@ VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : Diagnosti
 
 /// Decode location so we don’t have to do that every time we check a
 /// diagnostic. We can’t do anything if the source location is not valid.
-auto VerifyDiagnosticsEngine::DecodeLocation(Location loc) -> Opt<DecodedLocation> {
-    auto file = ctx.file(loc.file_id);
+auto VerifyDiagnosticsEngine::DecodeLocation(SLoc loc) -> Opt<DecodedLocation> {
     auto decoded = loc.seek_line_column(ctx);
-    if (file and decoded.has_value()) return DecodedLocation{file, decoded->line};
+    if (decoded.has_value()) return DecodedLocation{decoded->file, decoded->line};
     return std::nullopt;
 }
 
@@ -498,7 +497,7 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
     ParseMagicComment(comment, tok.location);
 }
 
-void VerifyDiagnosticsEngine::ParseMagicComment(str comment, Location loc) {
+void VerifyDiagnosticsEngine::ParseMagicComment(str comment, SLoc loc) {
     // Skip slashes and initial whitespace.
     comment.trim_front().drop_while('/').trim_front();
 

@@ -31,7 +31,7 @@ public:
     auto ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl>;
     auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
-    auto ImportSourceLocation(clang::SourceLocation sloc) -> Location;
+    auto ImportSourceLocation(clang::SourceLocation sloc) -> SLoc;
 };
 
 auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
@@ -335,15 +335,12 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     }
 }
 
-auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> Location {
-    Location loc;
+auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
     if (not sloc.isValid()) return {};
     auto& sm = AST().getSourceManager();
-    auto& F = S.ctx.get_file(sm.getFilename(sloc).str());
-    loc.pos = sm.getFileOffset(sloc);
-    loc.len = u16(clang::Lexer::MeasureTokenLength(sloc, sm, AST().getLangOpts()));
-    loc.file_id = u16(F.file_id());
-    return loc;
+    auto f = S.ctx.try_get_file(sm.getFilename(sloc).str());
+    if (not f.has_value()) return {};
+    return SLoc(f.value()->data() + sm.getFileOffset(sloc));
 }
 
 auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl> {
@@ -356,7 +353,7 @@ auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -
 auto Sema::ImportCXXHeaders(
     String logical_name,
     ArrayRef<String> header_names,
-    Location import_loc
+    SLoc import_loc
 ) -> Ptr<ImportedClangModuleDecl> {
     std::vector<std::string> args{
         "-x",

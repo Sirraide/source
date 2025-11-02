@@ -163,12 +163,7 @@ struct Stmt::Printer : PrinterBase<Stmt> {
 };
 
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
-    print(
-        "%1({}%) %4({}%)",
-        name,
-        static_cast<void*>(s),
-        s->loc.pos
-    );
+    print("%1({}%) %4({}%)", name, static_cast<void*>(s));
 
     if (printer_context_hack) {
         auto lc = s->loc.seek_line_column(*printer_context_hack);
@@ -180,7 +175,7 @@ void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     }
 
     // Fall back to printing just the position.
-    print(" %5(<{}>%)", s->loc.pos);
+    print(" %5(<{}>%)", s->loc.encode());
 }
 
 void Stmt::Printer::PrintBasicNode(

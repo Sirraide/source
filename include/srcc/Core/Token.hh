@@ -173,7 +173,7 @@ struct srcc::Token {
     APInt integer{};
 
     /// Source location of this token.
-    Location location{};
+    SLoc location{};
 
     /// Check if this is an end-of-file token.
     [[nodiscard]] auto eof() const -> bool { return type == Tk::Eof; }

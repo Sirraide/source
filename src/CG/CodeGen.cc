@@ -70,12 +70,11 @@ auto CodeGen::C(Linkage l) -> LLVM::Linkage {
     Unreachable();
 }
 
-auto CodeGen::C(Location l) -> mlir::Location {
+auto CodeGen::C(SLoc l) -> mlir::Location {
     auto lc = l.seek_line_column(tu.context());
     if (not lc) return getUnknownLoc();
-    auto f = tu.context().file_name(l.file_id);
-    auto flc = mlir::FileLineColLoc::get(&mlir, f.value(), u32(lc->line), u32(lc->col));
-    return mlir::OpaqueLoc::get(l.encode(), mlir::TypeID::get<Location>(), flc);
+    auto flc = mlir::FileLineColLoc::get(&mlir, context().file_name(lc->file->file_id()), u32(lc->line), u32(lc->col));
+    return mlir::OpaqueLoc::get(l.encode(), mlir::TypeID::get<SLoc>(), flc);
 }
 
 auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
@@ -107,11 +106,10 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue ms
     //
     // Don’t require a valid location here as this is also called from within
     // implicitly generated code.
-    auto l = Location::Decode(loc);
+    auto l = SLoc::Decode(loc);
     RecordInitHelper init{*this, tu.AbortInfoEquivalentTy, curr.abort_info_slot};
     if (auto lc = l.seek_line_column(context())) {
-        auto name = context().file_name(l.file_id);
-        init.emit_next_field(CreateGlobalStringSlice(loc, name));
+        init.emit_next_field(CreateGlobalStringSlice(loc, context().file_name(lc->file->file_id())));
         init.emit_next_field(CreateInt(loc, i64(lc->line)));
         init.emit_next_field(CreateInt(loc, i64(lc->col)));
     } else {
@@ -361,7 +359,7 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
 auto CodeGen::DeclarePrintf() -> ir::ProcOp {
     if (not printf) {
         printf = GetOrCreateProc(
-            Location(),
+            SLoc(),
             "printf",
             Linkage::Imported,
             ProcType::Get(
@@ -423,7 +421,7 @@ CodeGen::EnterProcedure::~EnterProcedure() {
     CG.curr = std::move(old);
 }
 
-auto CodeGen::GetAddressOfLocal(LocalDecl* decl, Location location) -> Value {
+auto CodeGen::GetAddressOfLocal(LocalDecl* decl, SLoc location) -> Value {
     if (IsZeroSizedType(decl->type)) return {};
 
     // First, try to find the variable in the current procedure. We
@@ -511,7 +509,7 @@ auto CodeGen::GetEnvPtr() -> Value {
 }
 
 auto CodeGen::GetOrCreateProc(
-    Location loc,
+    SLoc loc,
     String name,
     Linkage linkage,
     ProcType* ty,
@@ -548,7 +546,7 @@ auto CodeGen::GetPreferredIntType(mlir::Type ty) -> mlir::Type {
     return ty;
 }
 
-auto CodeGen::GetStaticChainPointer(ProcDecl* proc, Location location) -> Value {
+auto CodeGen::GetStaticChainPointer(ProcDecl* proc, SLoc location) -> Value {
     // Walk up the static chain until we get the procedure whose parent
     // actually contains the variable. Procedures that don’t actually
     // introduce any new captures just reuse the parent’s environment.
@@ -583,7 +581,7 @@ void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
             Unreachable();
         }();
 
-        auto loc = Location::Decode(d.getLocation());
+        auto loc = SLoc::Decode(d.getLocation());
         auto msg = d.str();
         Diag(level, loc, "{}", utils::Escape(msg, false, true));
     };
@@ -1101,7 +1099,7 @@ auto CodeGen::EmitArrayBroadcastExpr(ArrayBroadcastExpr*) -> IRValue {
     Unreachable("Should only be emitted as mrvalue");
 }
 
-void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, Location loc) {
+void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* initialiser, SLoc loc) {
     auto l = C(loc);
 
     // Check to see if we can replace this with a memset.
@@ -1199,7 +1197,8 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> IRValue {
         auto l = C(expr->location());
         if (auto m = expr->message.get_or_null()) msg = Emit(m);
         else msg = CreateEmptySlice(l);
-        auto cond_str = CreateGlobalStringSlice(C(expr->cond->location()), expr->cond->location().text(tu.context()));
+        auto text = expr->cond_range.text(tu.context());
+        auto cond_str = CreateGlobalStringSlice(C(expr->cond->location()), text);
         CreateAbort(
             l,
             ir::AbortReason::AssertionFailed,
@@ -2280,7 +2279,7 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
     return {};
 }
 
-auto CodeGen::EmitValue(Location loc, const eval::RValue& val) -> IRValue { // clang-format off
+auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang-format off
     utils::Overloaded V {
         [&](std::monostate) -> IRValue { return {}; },
         [&](Type) -> IRValue { Unreachable("Cannot emit type constant"); },

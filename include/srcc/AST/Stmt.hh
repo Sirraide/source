@@ -50,10 +50,10 @@ private:
     const Kind stmt_kind;
 
     /// Source location of this statement.
-    Location loc;
+    SLoc loc;
 
 protected:
-    explicit Stmt(Kind kind, Location loc) : stmt_kind{kind}, loc{loc} {}
+    explicit Stmt(Kind kind, SLoc loc) : stmt_kind{kind}, loc{loc} {}
 
 public:
     // Only allow allocating these in the module.
@@ -68,7 +68,7 @@ public:
     Kind kind() const { return stmt_kind; }
 
     /// Get the source location of this statement.
-    auto location() const -> Location { return loc; }
+    auto location() const -> SLoc { return loc; }
 
     /// Get the type of this if it is an expression and Void otherwise.
     auto type_or_void() const -> Type;
@@ -84,15 +84,15 @@ public:
 class srcc::DeferStmt : public Stmt {
 public:
     Stmt* body;
-    Location loc;
-    DeferStmt(Stmt* body, Location loc) : Stmt{Kind::DeferStmt, loc}, body{body} {}
+    SLoc loc;
+    DeferStmt(Stmt* body, SLoc loc) : Stmt{Kind::DeferStmt, loc}, body{body} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::DeferStmt; }
 };
 
 class srcc::EmptyStmt : public Stmt {
 public:
-    Location loc;
-    EmptyStmt(Location loc) : Stmt{Kind::EmptyStmt, loc} {}
+    SLoc loc;
+    EmptyStmt(SLoc loc) : Stmt{Kind::EmptyStmt, loc} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::EmptyStmt; }
 };
 
@@ -111,7 +111,7 @@ private:
         ArrayRef<LocalDecl*> vars,
         ArrayRef<Expr*> ranges,
         Stmt* body,
-        Location location
+        SLoc location
     );
 
     usz numTrailingObjects(OverloadToken<LocalDecl*>) const { return num_vars; }
@@ -124,7 +124,7 @@ public:
         ArrayRef<LocalDecl*> vars,
         ArrayRef<Expr*> ranges,
         Stmt* body,
-        Location location
+        SLoc location
     ) -> ForStmt*;
 
     auto ranges() const -> ArrayRef<Expr*> { return getTrailingObjects<Expr*>(num_ranges); }
@@ -141,7 +141,7 @@ public:
     WhileStmt(
         Expr* cond,
         Stmt* body,
-        Location location
+        SLoc location
     ) : Stmt{Kind::WhileStmt, location}, cond{cond}, body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
@@ -163,7 +163,7 @@ protected:
         Kind kind,
         Type type,
         ValueCategory category,
-        Location location
+        SLoc location
     ) : Stmt(kind, location), type{type}, value_category{category} {}
 
 public:
@@ -187,7 +187,7 @@ class srcc::ArrayBroadcastExpr final : public Expr {
 public:
     Expr* element;
 
-    ArrayBroadcastExpr(ArrayType* type, Expr* element, Location loc)
+    ArrayBroadcastExpr(ArrayType* type, Expr* element, SLoc loc)
         : Expr{Kind::ArrayBroadcastExpr, type, RValue, loc}, element{element} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ArrayBroadcastExpr; }
@@ -198,14 +198,14 @@ class srcc::ArrayInitExpr final : public Expr
     friend TrailingObjects;
     u32 num_inits;
 
-    ArrayInitExpr(ArrayType* type, ArrayRef<Expr*> element, Location loc);
+    ArrayInitExpr(ArrayType* type, ArrayRef<Expr*> element, SLoc loc);
 
 public:
     static auto Create(
         TranslationUnit& tu,
         ArrayType* type,
         ArrayRef<Expr*> element,
-        Location loc
+        SLoc loc
     ) -> ArrayInitExpr*;
 
     [[nodiscard]] auto broadcast_init() const -> Expr* { return initialisers().back(); }
@@ -219,16 +219,19 @@ public:
     Expr* cond;
     Ptr<Expr> message;
     bool is_static;
+    SRange cond_range;
 
     AssertExpr(
         Expr* cond,
         Ptr<Expr> message,
         bool is_static,
-        Location location
+        SLoc location,
+        SRange cond_range
     ) : Expr{Kind::AssertExpr, Type::VoidTy, RValue, location},
         cond{cond},
         message{message},
-        is_static{is_static} {}
+        is_static{is_static},
+        cond_range{cond_range} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::AssertExpr; }
 };
@@ -245,7 +248,7 @@ public:
         Tk op,
         Expr* lhs,
         Expr* rhs,
-        Location location
+        SLoc location
     ) : Expr{Kind::BinaryExpr, type, cat, location},
         op{op},
         lhs{lhs},
@@ -269,7 +272,7 @@ private:
         Scope* parent_scope,
         Type type,
         ArrayRef<Stmt*> stmts,
-        Location location
+        SLoc location
     );
 
 public:
@@ -277,7 +280,7 @@ public:
         TranslationUnit& mod,
         Scope* parent_scope,
         ArrayRef<Stmt*> stmts,
-        Location location
+        SLoc location
     ) -> BlockExpr*;
 
     /// Get the statements in this block.
@@ -295,7 +298,7 @@ public:
 
     BoolLitExpr(
         bool value,
-        Location location
+        SLoc location
     ) : Expr{Kind::BoolLitExpr, Type::BoolTy, RValue, location}, value{value} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
@@ -320,7 +323,7 @@ private:
         Builtin kind,
         Type return_type,
         ArrayRef<Expr*> args,
-        Location location
+        SLoc location
     );
 
 public:
@@ -329,7 +332,7 @@ public:
         Builtin kind,
         Type return_type,
         ArrayRef<Expr*> args,
-        Location location
+        SLoc location
     ) -> BuiltinCallExpr*;
 
     /// Get the arguments.
@@ -362,7 +365,7 @@ public:
         ValueCategory cat,
         Expr* operand,
         AccessKind kind,
-        Location location
+        SLoc location
     ) : Expr{Kind::BuiltinMemberAccessExpr, type, cat, location},
         operand{operand},
         access_kind{kind} {}
@@ -387,7 +390,7 @@ private:
         ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
-        Location location
+        SLoc location
     );
 
 public:
@@ -397,7 +400,7 @@ public:
         ValueCategory vc,
         Expr* callee,
         ArrayRef<Expr*> args,
-        Location location
+        SLoc location
     ) -> CallExpr*;
 
     [[nodiscard]] auto args() -> ArrayRef<Expr*> { return getTrailingObjects(num_args); }
@@ -440,7 +443,7 @@ public:
         Type type,
         CastKind kind,
         Expr* expr,
-        Location location,
+        SLoc location,
         bool implicit = false,
         ValueCategory value_category = RValue
     ) : Expr{Kind::CastExpr, type, value_category, location},
@@ -473,7 +476,7 @@ public:
     ConstExpr(
         TranslationUnit& tu,
         eval::RValue value,
-        Location location,
+        SLoc location,
         Ptr<Stmt> stmt = {}
     );
 
@@ -485,7 +488,7 @@ class srcc::DefaultInitExpr final : public Expr {
 public:
     DefaultInitExpr(
         Type type,
-        Location location
+        SLoc location
     ) : Expr{Kind::DefaultInitExpr, type, RValue, location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
@@ -499,7 +502,7 @@ public:
 
     EvalExpr(
         Stmt* stmt,
-        Location location
+        SLoc location
     ) : Expr{Kind::EvalExpr, stmt->type_or_void(), LValue /* dummy */, location}, stmt{stmt} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
@@ -519,7 +522,7 @@ public:
         Stmt* then,
         Ptr<Stmt> else_,
         bool is_static,
-        Location location
+        SLoc location
     ) : Expr{Kind::IfExpr, type, val, location},
         cond{cond},
         then{then},
@@ -540,7 +543,7 @@ public:
     IntLitExpr(
         Type ty,
         StoredInteger integer,
-        Location location
+        SLoc location
     ) : Expr{Kind::IntLitExpr, ty, RValue, location}, storage{integer} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
@@ -549,7 +552,7 @@ public:
 class srcc::LocalRefExpr final : public Expr {
 public:
     LocalDecl* decl;
-    LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location location);
+    LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc location);
     static bool classof(const Stmt* e) { return e->kind() == Kind::LocalRefExpr; }
 };
 
@@ -557,7 +560,7 @@ class srcc::LoopExpr final : public Expr {
 public:
     Ptr<Stmt> body;
 
-    LoopExpr(Ptr<Stmt> body, Location loc)
+    LoopExpr(Ptr<Stmt> body, SLoc loc)
         : Expr{Kind::LoopExpr, Type::NoReturnTy, RValue, loc},
           body{body} {}
 
@@ -568,7 +571,7 @@ class srcc::MaterialiseTemporaryExpr final : public Expr {
 public:
     Expr* temporary;
 
-    MaterialiseTemporaryExpr(Expr* temporary, Location location)
+    MaterialiseTemporaryExpr(Expr* temporary, SLoc location)
         : Expr(Kind::MaterialiseTemporaryExpr, temporary->type, LValue, location),
           temporary{temporary} {}
 
@@ -607,9 +610,9 @@ struct srcc::MatchCase {
 
     Pattern cond;
     Stmt* body;
-    Location loc;
+    SLoc loc;
     bool unreachable = false;
-    MatchCase(Pattern cond, Stmt* body, Location loc) : cond{cond}, body{body}, loc{loc} {}
+    MatchCase(Pattern cond, Stmt* body, SLoc loc) : cond{cond}, body{body}, loc{loc} {}
 };
 
 class srcc::MatchExpr final : public Expr,
@@ -627,7 +630,7 @@ private:
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
-        Location loc
+        SLoc loc
     );
 
 public:
@@ -637,7 +640,7 @@ public:
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
-        Location loc
+        SLoc loc
     ) -> MatchExpr*;
 
     [[nodiscard]] auto cases() -> ArrayRef<MatchCase> {
@@ -659,7 +662,7 @@ public:
     MemberAccessExpr(
         Expr* base,
         FieldDecl* field,
-        Location location
+        SLoc location
     );
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::MemberAccessExpr; }
@@ -670,13 +673,13 @@ class srcc::OverloadSetExpr final : public Expr
     const u32 num_overloads;
     auto numTrailingObjects(OverloadToken<Decl*>) -> usz { return num_overloads; }
 
-    OverloadSetExpr(ArrayRef<Decl*> overloads, Location location);
+    OverloadSetExpr(ArrayRef<Decl*> overloads, SLoc location);
 
 public:
     static auto Create(
         TranslationUnit& tu,
         ArrayRef<Decl*> overloads,
-        Location location
+        SLoc location
     ) -> OverloadSetExpr*;
 
     auto name() -> DeclName;
@@ -689,7 +692,7 @@ class srcc::ParenExpr final : public Expr {
 public:
     Expr* expr;
 
-    ParenExpr(Expr* expr, Location loc)
+    ParenExpr(Expr* expr, SLoc loc)
         : Expr{Kind::ParenExpr, expr->type, expr->value_category, loc},
           expr{expr} {}
 
@@ -700,7 +703,7 @@ class srcc::ProcRefExpr final : public Expr {
 public:
     ProcDecl* decl;
 
-    ProcRefExpr(ProcDecl* decl, Location location);
+    ProcRefExpr(ProcDecl* decl, SLoc location);
 
     auto return_type() const -> Type;
 
@@ -715,11 +718,11 @@ private:
     StrLitExpr(
         Type ty,
         String value,
-        Location location
+        SLoc location
     ) : Expr{Kind::StrLitExpr, ty, RValue, location}, value{value} {}
 
 public:
-    static auto Create(TranslationUnit& mod, String value, Location location) -> StrLitExpr*;
+    static auto Create(TranslationUnit& mod, String value, SLoc location) -> StrLitExpr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::StrLitExpr; }
 };
@@ -730,7 +733,7 @@ class srcc::TupleExpr final : public Expr
     TupleExpr(
         RecordType* ty,
         ArrayRef<Expr*> fields,
-        Location location
+        SLoc location
     );
 
 public:
@@ -738,7 +741,7 @@ public:
         TranslationUnit& tu,
         RecordType* type,
         ArrayRef<Expr*> fields,
-        Location location
+        SLoc location
     ) -> TupleExpr*;
 
     /// Whether this is the empty tuple, i.e. '()' or ‘nil’.
@@ -766,7 +769,7 @@ public:
     Type value;
     TypeExpr(
         Type type,
-        Location location
+        SLoc location
     ) : Expr{Kind::TypeExpr, Type::TypeTy, RValue, location}, value{type} {}
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeExpr; }
 };
@@ -778,7 +781,7 @@ public:
 
     ReturnExpr(
         Ptr<Expr> value,
-        Location location,
+        SLoc location,
         bool implicit = false
     ) : Expr{
             Kind::ReturnExpr,
@@ -803,7 +806,7 @@ public:
         Tk op,
         Expr* arg,
         bool postfix,
-        Location location
+        SLoc location
     ) : Expr{Kind::UnaryExpr, type, val, location},
         op{op},
         arg{arg},
@@ -824,7 +827,7 @@ protected:
     Decl(
         Kind kind,
         DeclName name,
-        Location location
+        SLoc location
     ) : Stmt{kind, location}, name{name} {}
 
 public:
@@ -855,7 +858,7 @@ public:
         Type type,
         Size offset,
         String name,
-        Location location
+        SLoc location
     ) : Decl{Kind::FieldDecl, name, location}, type{type}, offset{offset} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
@@ -873,14 +876,14 @@ protected:
         Kind k,
         Type type,
         String name,
-        Location location
+        SLoc location
     ) : Decl{k, name, location}, type{type} {}
 
 public:
     TypeDecl(
         Type type,
         String name,
-        Location location
+        SLoc location
     ) : TypeDecl{Kind::TypeDecl, type, name, location} {}
 
 public:
@@ -915,7 +918,7 @@ protected:
     ModuleDecl(
         Kind k,
         String logical_name,
-        Location loc
+        SLoc loc
     ) : Decl{k, logical_name, loc} {}
 
 public:
@@ -939,7 +942,7 @@ private:
         clang::ASTUnit& clang_ast,
         String logical_name,
         ArrayRef<String> header_names,
-        Location loc
+        SLoc loc
     );
 
 public:
@@ -948,7 +951,7 @@ public:
         clang::ASTUnit& clang_ast,
         String logical_name,
         ArrayRef<String> header_names,
-        Location loc
+        SLoc loc
     ) -> ImportedClangModuleDecl*;
 
     /// Get the headers that make up this module.
@@ -983,7 +986,7 @@ public:
         String logical_name,
         String linkage_name,
         String mod_path,
-        Location loc
+        SLoc loc
     ) : ModuleDecl{Kind::ImportedSourceModuleDecl, logical_name, loc},
         exports{exports},
         mod_path{mod_path},
@@ -1028,7 +1031,7 @@ protected:
         ValueCategory category,
         String name,
         ProcDecl* parent,
-        Location location
+        SLoc location
     ) : Decl{k, name, location},
         parent{parent},
         type{type},
@@ -1040,7 +1043,7 @@ public:
         ValueCategory category,
         String name,
         ProcDecl* parent,
-        Location location
+        SLoc location
     ) : LocalDecl{Kind::LocalDecl, type, category, name, parent, location} {}
 
     /// Set the initialiser of this declaration.
@@ -1062,7 +1065,7 @@ public:
         ProcDecl* parent,
         u32 index,
         bool with_param,
-        Location location
+        SLoc location
     ) : LocalDecl{Kind::ParamDecl, param->type, vc, name, parent, location},
         idx{index},
         with{with_param} {
@@ -1097,7 +1100,7 @@ protected:
         DeclName name,
         Linkage linkage,
         Mangling mangling,
-        Location location
+        SLoc location
     ) : Decl{kind, name, location},
         owner{owner},
         imported_from_module{imported_from_module},
@@ -1151,7 +1154,7 @@ private:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        Location location
+        SLoc location
     );
 
 public:
@@ -1163,7 +1166,7 @@ public:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        Location location
+        SLoc location
     ) -> ProcDecl*;
 
     /// Get the procedure body.
@@ -1252,7 +1255,7 @@ private:
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
         bool has_variadic_param,
-        Location location
+        SLoc location
     );
 
 public:

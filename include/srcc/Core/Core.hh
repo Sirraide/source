@@ -25,6 +25,7 @@ class Driver;
 class DiagnosticsEngine;
 class File;
 struct LangOpts;
+using FileId = i32;
 } // namespace srcc
 
 class srcc::Context {
@@ -40,7 +41,7 @@ class srcc::Context {
     llvm::Triple target_triple;
 
     /// Files loaded by the context.
-    std::vector<std::unique_ptr<File>> files;
+    std::vector<std::unique_ptr<File>> all_files;
     std::unordered_map<fs::Path, File*> files_by_path; // FIXME: use inode number instead.
 
     /// For saving strings.
@@ -73,10 +74,15 @@ public:
     [[nodiscard]] auto diags() const -> DiagnosticsEngine&;
 
     /// Get a file by index. Returns nullptr if the index is out of bounds.
-    [[nodiscard]] auto file(usz idx) const -> const File*;
+    [[nodiscard]] auto file(FileId idx) const -> const File*;
+
+    /// Get all files
+    [[nodiscard]] auto files() const {
+        return all_files | vws::transform([](auto& f) { return f.get(); });
+    }
 
     /// Get the appropriate filename for a file id.
-    [[nodiscard]] auto file_name(i32 id) const -> String;
+    [[nodiscard]] auto file_name(FileId id) const -> String;
 
     /// Get a file from disk.
     ///
@@ -118,6 +124,10 @@ struct srcc::LangOpts {
 class srcc::File {
     SRCC_IMMOVABLE(File);
 
+public:
+    using Id = FileId;
+
+private:
     /// Context handle.
     Context& ctx;
 
@@ -132,7 +142,7 @@ class srcc::File {
     std::unique_ptr<llvm::MemoryBuffer> buffer;
 
     /// The id of the file.
-    const i32 id;
+    const Id id;
 
 public:
     /// Get an iterator to the beginning of the file.
@@ -153,7 +163,7 @@ public:
     [[nodiscard]] auto end() const { return buffer->getBufferEnd(); }
 
     /// Get the id of this file.
-    [[nodiscard]] auto file_id() const { return id; }
+    [[nodiscard]] auto file_id() const -> Id { return id; }
 
     /// Get the short file name.
     [[nodiscard]] auto name() const -> String { return file_name; }

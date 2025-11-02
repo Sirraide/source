@@ -23,7 +23,7 @@ void* Stmt::operator new(usz size, TranslationUnit& mod) {
 ArrayInitExpr::ArrayInitExpr(
     ArrayType* type,
     ArrayRef<Expr*> elements,
-    Location loc
+    SLoc loc
 ) : Expr{Kind::ArrayInitExpr, type, RValue, loc}, num_inits{u32(elements.size())} {
     std::uninitialized_copy_n(elements.begin(), elements.size(), getTrailingObjects());
 }
@@ -32,7 +32,7 @@ auto ArrayInitExpr::Create(
     TranslationUnit& tu,
     ArrayType* type,
     ArrayRef<Expr*> elements,
-    Location loc
+    SLoc loc
 ) -> ArrayInitExpr* {
     const auto size = totalSizeToAlloc<Expr*>(elements.size());
     auto mem = tu.allocate(size, alignof(ArrayInitExpr));
@@ -43,7 +43,7 @@ BuiltinCallExpr::BuiltinCallExpr(
     Builtin kind,
     Type return_type,
     ArrayRef<Expr*> args,
-    Location location
+    SLoc location
 ) : Expr{Kind::BuiltinCallExpr, return_type, RValue, location}, builtin{kind}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
     // Determine value category.
@@ -59,7 +59,7 @@ auto BuiltinCallExpr::Create(
     Builtin kind,
     Type return_type,
     ArrayRef<Expr*> args,
-    Location location
+    SLoc location
 ) -> BuiltinCallExpr* {
     auto size = totalSizeToAlloc<Expr*>(args.size());
     auto mem = tu.allocate(size, alignof(BuiltinCallExpr));
@@ -71,7 +71,7 @@ CallExpr::CallExpr(
     ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
-    Location location
+    SLoc location
 ) : Expr{Kind::CallExpr, type, vc, location},
     callee{callee}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
@@ -83,7 +83,7 @@ auto CallExpr::Create(
     ValueCategory vc,
     Expr* callee,
     ArrayRef<Expr*> args,
-    Location location
+    SLoc location
 ) -> CallExpr* {
     const auto size = totalSizeToAlloc<Expr*>(args.size());
     auto mem = mod.allocate(size, alignof(CallExpr));
@@ -93,7 +93,7 @@ auto CallExpr::Create(
 ConstExpr::ConstExpr(
     TranslationUnit& tu,
     eval::RValue value,
-    Location location,
+    SLoc location,
     Ptr<Stmt> stmt
 ) : Expr{Kind::ConstExpr, value.type(), RValue, location},
     value{tu.save(std::move(value))},
@@ -103,7 +103,7 @@ BlockExpr::BlockExpr(
     Scope* parent_scope,
     Type type,
     ArrayRef<Stmt*> stmts,
-    Location location
+    SLoc location
 ) : Expr{Kind::BlockExpr, type, RValue, location},
     num_stmts{u32(stmts.size())},
     scope{parent_scope} {
@@ -116,7 +116,7 @@ auto BlockExpr::Create(
     TranslationUnit& mod,
     Scope* parent_scope,
     ArrayRef<Stmt*> stmts,
-    Location location
+    SLoc location
 ) -> BlockExpr* {
     auto last = stmts.empty() ? nullptr : dyn_cast_if_present<Expr>(stmts.back());
     auto type = last ? last->type : Type::VoidTy;
@@ -140,7 +140,7 @@ ForStmt::ForStmt(
     ArrayRef<LocalDecl*> vars,
     ArrayRef<Expr*> ranges,
     Stmt* body,
-    Location location
+    SLoc location
 ) : Stmt{Kind::ForStmt, location},
     num_vars{u32(vars.size())},
     num_ranges{u32(ranges.size())},
@@ -155,14 +155,14 @@ auto ForStmt::Create(
     ArrayRef<LocalDecl*> vars,
     ArrayRef<Expr*> ranges,
     Stmt* body,
-    Location location
+    SLoc location
 ) -> ForStmt* {
     const auto size = totalSizeToAlloc<LocalDecl*, Expr*>(vars.size(), ranges.size());
     auto mem = tu.allocate(size, alignof(ForStmt));
     return ::new (mem) ForStmt{enum_var, vars, ranges, body, location};
 }
 
-LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, Location loc)
+LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 
 MatchExpr::MatchExpr(
@@ -170,7 +170,7 @@ MatchExpr::MatchExpr(
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
-    Location loc
+    SLoc loc
 ) : Expr(Kind::MatchExpr, ty, vc, loc),
     num_cases{u32(cases.size())},
     has_control_expr(control_expr.present()) {
@@ -184,7 +184,7 @@ auto MatchExpr::Create(
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
-    Location loc
+    SLoc loc
 ) -> MatchExpr* {
     auto size = totalSizeToAlloc<Expr*, MatchCase>(control_expr.present(), cases.size());
     auto mem = tu.allocate(size, alignof(MatchExpr));
@@ -194,14 +194,14 @@ auto MatchExpr::Create(
 MemberAccessExpr::MemberAccessExpr(
     Expr* base,
     FieldDecl* field,
-    Location location
+    SLoc location
 ) : Expr{Kind::MemberAccessExpr, field->type, LValue, location},
     base{base},
     field{field} {}
 
 OverloadSetExpr::OverloadSetExpr(
     ArrayRef<Decl*> decls,
-    Location location
+    SLoc location
 ) : Expr{Kind::OverloadSetExpr, Type::UnresolvedOverloadSetTy, RValue, location},
     num_overloads{u32(decls.size())} {
     Assert(num_overloads != 0, "Empty overload set?");
@@ -211,7 +211,7 @@ OverloadSetExpr::OverloadSetExpr(
 auto OverloadSetExpr::Create(
     TranslationUnit& tu,
     ArrayRef<Decl*> decls,
-    Location location
+    SLoc location
 ) -> OverloadSetExpr* {
     auto size = totalSizeToAlloc<Decl*>(decls.size());
     auto mem = tu.allocate(size, alignof(OverloadSetExpr));
@@ -228,7 +228,7 @@ auto ParamDecl::intent() const -> Intent {
 
 ProcRefExpr::ProcRefExpr(
     ProcDecl* decl,
-    Location location
+    SLoc location
 ) : Expr(Kind::ProcRefExpr, decl->type, RValue, location),
     decl{decl} {}
 
@@ -239,7 +239,7 @@ auto ProcRefExpr::return_type() const -> Type {
 auto StrLitExpr::Create(
     TranslationUnit& mod,
     String value,
-    Location location
+    SLoc location
 ) -> StrLitExpr* {
     return new (mod) StrLitExpr{mod.StrLitTy, value, location};
 }
@@ -275,7 +275,7 @@ ImportedClangModuleDecl::ImportedClangModuleDecl(
     clang::ASTUnit& clang_ast,
     String logical_name,
     ArrayRef<String> header_names,
-    Location loc
+    SLoc loc
 ) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, loc},
     num_headers{u32(header_names.size())},
     clang_ast{clang_ast} {
@@ -287,7 +287,7 @@ auto ImportedClangModuleDecl::Create(
     clang::ASTUnit& clang_ast,
     String logical_name,
     ArrayRef<String> header_names,
-    Location loc
+    SLoc loc
 ) -> ImportedClangModuleDecl* {
     auto sz = totalSizeToAlloc<String>(header_names.size());
     auto mem = tu.allocate(sz, alignof(ImportedClangModuleDecl));
@@ -302,7 +302,7 @@ ProcDecl::ProcDecl(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
-    Location location
+    SLoc location
 ) : ObjectDecl{Kind::ProcDecl, owner, imported_from_module, type, name, linkage, mangling, location},
     parent{parent} {
     owner->procs.push_back(this);
@@ -316,7 +316,7 @@ auto ProcDecl::Create(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
-    Location location
+    SLoc location
 ) -> ProcDecl* {
     return new (tu) ProcDecl{
         &tu,
@@ -352,7 +352,7 @@ ProcTemplateDecl::ProcTemplateDecl(
     ParsedProcDecl* pattern,
     Ptr<ProcDecl> parent,
     bool has_variadic_param,
-    Location location
+    SLoc location
 ) : Decl{Kind::ProcTemplateDecl, pattern->name, location},
     owner(&tu), parent{parent}, pattern{pattern},
     has_variadic_param{has_variadic_param} {}
@@ -383,7 +383,7 @@ bool ProcTemplateDecl::is_builtin_operator_template() const {
 TupleExpr::TupleExpr(
     RecordType* ty,
     ArrayRef<Expr*> fields,
-    Location location
+    SLoc location
 ) : Expr{Kind::TupleExpr, ty, RValue, location} {
     std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
 }
@@ -392,7 +392,7 @@ auto TupleExpr::Create(
     TranslationUnit& tu,
     RecordType* type,
     ArrayRef<Expr*> fields,
-    Location location
+    SLoc location
 ) -> TupleExpr* {
     Assert(fields.size() == type->layout().fields().size(), "Argument count mismatch");
     auto size = totalSizeToAlloc<Expr*>(fields.size());

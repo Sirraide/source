@@ -56,7 +56,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     }
 }
 
-bool Sema::CheckFieldType(Type type, Location loc) {
+bool Sema::CheckFieldType(Type type, SLoc loc) {
     if (not CheckVariableType(type, loc)) return false;
 
     // TODO: Allow this and instead actually perform recursive translation and
@@ -70,7 +70,7 @@ bool Sema::CheckFieldType(Type type, Location loc) {
     return true;
 }
 
-bool Sema::CheckVariableType(Type ty, Location loc) {
+bool Sema::CheckVariableType(Type ty, SLoc loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
     if (not ty) return false;
@@ -122,7 +122,7 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
     return {t, vc};
 }
 
-auto Sema::CreateReference(Decl* d, Location loc) -> Ptr<Expr> {
+auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
     if (not d->valid()) return nullptr;
     switch (d->kind()) {
         default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
@@ -184,7 +184,7 @@ void Sema::DeclareLocal(LocalDecl* d) {
     AddDeclToScope(curr_scope(), d);
 }
 
-void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_return) {
+void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return) {
     // Delay this check if this is an incomplete struct type.
     if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) {
         incomplete_structs_in_native_proc_type.emplace_back(s, use, is_return);
@@ -201,7 +201,7 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, Location use, bool is_retu
     );
 }
 
-auto Sema::Evaluate(Stmt* s, Location loc) -> Ptr<Expr> {
+auto Sema::Evaluate(Stmt* s, SLoc loc) -> Ptr<Expr> {
     auto value = tu->vm.eval(s);
     if (not value.has_value()) return nullptr;
     return MakeConstExpr(s, std::move(*value), loc);
@@ -351,7 +351,7 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope
 auto Sema::LookUpName(
     Scope* in_scope,
     ArrayRef<DeclName> names,
-    Location loc,
+    SLoc loc,
     bool complain
 ) -> LookupResult {
     auto res = names.size() == 1
@@ -386,7 +386,7 @@ bool Sema::MakeCondition(Expr*& e, StringRef op) {
 auto Sema::MakeConstExpr(
     Stmt* evaluated_stmt,
     eval::RValue val,
-    Location loc
+    SLoc loc
 ) -> Expr* {
     if (isa_and_present<BoolLitExpr, StrLitExpr, IntLitExpr, TypeExpr>(evaluated_stmt))
         return cast<Expr>(evaluated_stmt);
@@ -397,7 +397,7 @@ auto Sema::MakeLocal(
     Type ty,
     ValueCategory vc,
     String name,
-    Location loc
+    SLoc loc
 ) -> LocalDecl* {
     auto local = new (*tu) LocalDecl(
         ty,
@@ -456,7 +456,7 @@ auto Sema::MaterialiseVariable(Expr* expr) -> Expr* {
     return CreateReference(local, expr->location()).get();
 }
 
-void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
+void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
@@ -481,7 +481,7 @@ void Sema::ReportLookupFailure(const LookupResult& result, Location loc) {
 //  Initialisation.
 // ============================================================================
 Sema::Conversion::~Conversion() = default;
-auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) -> Expr* {
+auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
     switch (conv.kind) {
         using K = Conversion::Kind;
         default: Unreachable();
@@ -549,7 +549,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, Location loc) 
     }
 }
 
-void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, Location loc) {
+void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc) {
     switch (conv.kind) {
         using K = Conversion::Kind;
         case K::ArrayBroadcast: {
@@ -620,7 +620,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
 auto Sema::ApplyConversionSequence(
     ArrayRef<Expr*> exprs,
     const ConversionSequence& seq,
-    Location loc
+    SLoc loc
 ) -> Expr* {
     SmallVector<Expr*, 4> exprs_copy{exprs};
     for (auto& c : seq.conversions) ApplyConversion(exprs_copy, c, loc);
@@ -663,7 +663,7 @@ auto Sema::BuildAggregateInitialiser(
     ConversionSequence& seq,
     RecordType* r,
     ArrayRef<Expr*> args,
-    Location loc
+    SLoc loc
 ) -> MaybeDiags {
     auto& rl = r->layout();
 
@@ -706,7 +706,7 @@ auto Sema::BuildArrayInitialiser(
     ConversionSequence& seq,
     ArrayType* a,
     ArrayRef<Expr*> args,
-    Location loc
+    SLoc loc
 ) -> MaybeDiags {
     // Error if there are more initialisers than array elements.
     if (args.size() > u64(a->dimension())) return CreateError(
@@ -750,7 +750,7 @@ auto Sema::BuildSliceInitialiser(
     ConversionSequence& seq,
     SliceType* a,
     ArrayRef<Expr*> args,
-    Location loc
+    SLoc loc
 ) -> MaybeDiags {
     if (args.empty()) {
         seq.add(Conversion::DefaultInit(a));
@@ -769,7 +769,7 @@ auto Sema::BuildSliceInitialiser(
 auto Sema::BuildConversionSequence(
     Type var_type,
     ArrayRef<Expr*> args,
-    Location init_loc,
+    SLoc init_loc,
     bool want_lvalue
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
@@ -1081,7 +1081,7 @@ auto Sema::BuildConversionSequence(
 auto Sema::BuildInitialiser(
     Type var_type,
     ArrayRef<Expr*> args,
-    Location loc,
+    SLoc loc,
     bool want_lvalue
 ) -> Ptr<Expr> {
     auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue);
@@ -1115,7 +1115,7 @@ auto Sema::DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type {
 auto Sema::InstantiateTemplate(
     ProcTemplateDecl* pattern,
     TemplateSubstitution& info,
-    Location inst_loc
+    SLoc inst_loc
 ) -> ProcDecl* {
     if (info.instantiation) return info.instantiation;
 
@@ -1309,7 +1309,7 @@ auto Sema::Candidate::param_count() const -> usz {
     return cast<ProcTemplateDecl>(decl)->pattern->params().size();
 }
 
-auto Sema::Candidate::param_loc(usz index) const -> Location {
+auto Sema::Candidate::param_loc(usz index) const -> SLoc {
     if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->params()[index]->location();
     return cast<ProcTemplateDecl>(decl)->pattern->type->param_types()[index].type->loc;
 }
@@ -1373,7 +1373,7 @@ u32 Sema::ConversionSequence::badness() {
 }
 
 static void NoteParameter(Sema& S, Decl* proc, u32 i) {
-    Location loc;
+    SLoc loc;
     String name;
 
     if (auto d = dyn_cast<ProcDecl>(proc)) {
@@ -1409,7 +1409,7 @@ static void ConvertArgumentsForCall(
     ArrayRef<Expr*> args,
     Callee* c,
     Callback ConvertArg,
-    Location call_loc
+    SLoc call_loc
 ) {
     // Convert the argument to each non-variadic parameter.
     for (auto [i, a] : enumerate(args.take_front(c->non_variadic_params())))
@@ -1557,7 +1557,7 @@ bool Sema::IsUserDefinedOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
 auto Sema::PerformOverloadResolution(
     OverloadSetExpr* overload_set,
     ArrayRef<Expr*> args,
-    Location call_loc
+    SLoc call_loc
 ) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
     // Since this may also entail template substitution etc. we always
     // treat calls as requiring overload resolution even if there is
@@ -1633,7 +1633,7 @@ auto Sema::PerformOverloadResolution(
         auto params = ty->params();
 
         // Convert an argument to the corresponding parameter type.
-        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
             // Candidate may have become invalid in the meantime.
             auto st = c.status.get_if<Candidate::Viable>();
             if (not st) return false;
@@ -1735,7 +1735,7 @@ auto Sema::PerformOverloadResolution(
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
-        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
             actual_args.emplace_back(ApplyConversionSequence(
                 args,
                 conversions[param_index],
@@ -1756,7 +1756,7 @@ auto Sema::PerformOverloadResolution(
 void Sema::ReportOverloadResolutionFailure(
     MutableArrayRef<Candidate> candidates,
     ArrayRef<Expr*> call_args,
-    Location call_loc,
+    SLoc call_loc,
     u32 final_badness
 ) {
     auto FormatTempSubstFailure = [&](const SubstitutionResult& info, std::string& out, std::string_view indent) {
@@ -1832,21 +1832,8 @@ void Sema::ReportOverloadResolutionFailure(
 
     // First, print all overloads.
     for (auto [i, c] : enumerate(candidates)) {
-        // Print the type.
         message += std::format("  %b({}.%) \v{}", i + 1, c.type_for_diagnostic());
-
-        // And include the location if it is valid.
-        auto loc = c.decl->location();
-        auto lc = loc.seek_line_column(ctx);
-        if (lc) {
-            message += std::format(
-                "\f%b(at%) {}:{}:{}",
-                ctx.file_name(loc.file_id),
-                lc->line,
-                lc->col
-            );
-        }
-
+        message += std::format("\f%b(at%) {}", c.decl->location().format(ctx, true));
         message += "\n";
     }
 
@@ -1916,7 +1903,7 @@ void Sema::ReportOverloadResolutionFailure(
 // ============================================================================
 auto Sema::BoolMatchContext::add_constant_pattern(
     const eval::RValue& pattern,
-    Location loc
+    SLoc loc
 ) -> AddResult {
     if (pattern.type() != Type::BoolTy) return InvalidType();
     bool v = pattern.cast<APInt>().getBoolValue();
@@ -1943,7 +1930,7 @@ auto Sema::BoolMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
     return pattern;
 }
 
-void Sema::BoolMatchContext::note_missing(Location match_loc) {
+void Sema::BoolMatchContext::note_missing(SLoc match_loc) {
     if (true_loc.is_valid()) {
         S.Note(match_loc, "Possible value '%1(false%)' is not handled");
     } else if (false_loc.is_valid()) {
@@ -1961,7 +1948,7 @@ Sema::IntMatchContext::IntMatchContext(Sema& s, Type ty) : MatchContext{s}, ty{t
 
 auto Sema::IntMatchContext::add_constant_pattern(
     const eval::RValue& pattern,
-    Location loc
+    SLoc loc
 ) -> AddResult {
     if (pattern.type() == ty) {
         auto& i = pattern.cast<APInt>();
@@ -2055,7 +2042,7 @@ auto Sema::IntMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
     return S.TryBuildInitialiser(ty, pattern);
 }
 
-void Sema::IntMatchContext::note_missing(Location loc) {
+void Sema::IntMatchContext::note_missing(SLoc loc) {
     std::string msg;
     auto Format = [&](const APInt& start, const APInt& end) {
         auto FormatVal = [&](const APInt& i) {
@@ -2143,7 +2130,7 @@ void Sema::MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases) {
 template <typename MContext>
 bool Sema::CheckMatchExhaustive(
     MContext& mc,
-    Location match_loc,
+    SLoc match_loc,
     Expr* control_expr,
     Type ty,
     MutableArrayRef<MatchCase> cases
@@ -2232,7 +2219,8 @@ auto Sema::BuildAssertExpr(
     Expr* cond,
     Ptr<Expr> msg,
     bool is_compile_time,
-    Location loc
+    SLoc loc,
+    SRange cond_range
 ) -> Ptr<Expr> {
     if (not MakeCondition(cond, "assert")) return {};
 
@@ -2244,12 +2232,12 @@ auto Sema::BuildAssertExpr(
         m->type
     );
 
-    auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc);
+    auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range);
     if (not is_compile_time) return a;
     return Evaluate(a, loc);
 }
 
-auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, Location loc) -> BlockExpr* {
+auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr* {
     return BlockExpr::Create(
         *tu,
         scope,
@@ -2262,7 +2250,7 @@ auto Sema::BuildBinaryExpr(
     Tk op,
     Expr* lhs,
     Expr* rhs,
-    Location loc
+    SLoc loc
 ) -> Ptr<Expr> {
     using enum ValueCategory;
     auto Build = [&](Type ty, ValueCategory cat = RValue) {
@@ -2558,7 +2546,7 @@ auto Sema::BuildBinaryExpr(
 auto Sema::BuildBuiltinCallExpr(
     BuiltinCallExpr::Builtin builtin,
     ArrayRef<Expr*> args,
-    Location call_loc
+    SLoc call_loc
 ) -> Ptr<BuiltinCallExpr> {
     auto ForbidArgs = [&](StringRef builtin_name) {
         if (args.size() == 0) return true;
@@ -2579,7 +2567,7 @@ auto Sema::BuildBuiltinCallExpr(
 auto Sema::BuildBuiltinMemberAccessExpr(
     BuiltinMemberAccessExpr::AccessKind ak,
     Expr* operand,
-    Location loc
+    SLoc loc
 ) -> Ptr<BuiltinMemberAccessExpr> {
     auto type = [&] -> Type {
         switch (ak) {
@@ -2619,7 +2607,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     };
 }
 
-auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) -> Ptr<Expr> {
+auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr> {
     // If this is an overload set, perform overload resolution.
     Expr* resolved_callee = nullptr;
     SmallVector<Expr*> converted_args;
@@ -2671,7 +2659,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
         }
 
         bool ok = true;
-        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, Location loc) {
+        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
             auto p = ty->params()[param_index];
             auto arg = BuildInitialiser(
                 p.type,
@@ -2759,7 +2747,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, Location loc) 
     );
 }
 
-auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr> {
+auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr> {
     auto res = LookUpName(curr_scope(), names, loc, false);
     if (res.successful()) return CreateReference(res.decls.front(), loc);
 
@@ -2776,7 +2764,7 @@ auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, Location loc) -> Ptr<Expr>
     return {};
 }
 
-auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
+auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
     // An eval expression returns an rvalue.
     if (auto e = dyn_cast<Expr>(arg)) {
         auto init = BuildInitialiser(arg->type_or_void(), e, loc);
@@ -2787,7 +2775,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, Location loc) -> Ptr<Expr> {
     return Evaluate(arg, loc);
 }
 
-auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, Location loc) -> Ptr<IfExpr> {
+auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr> {
     auto Build = [&](Type ty, ValueCategory val) {
         return new (*tu) IfExpr(
             ty,
@@ -2832,7 +2820,7 @@ auto Sema::BuildMatchExpr(
     Ptr<Expr> control_expr,
     Type ty,
     MutableArrayRef<MatchCase> cases,
-    Location loc
+    SLoc loc
 ) -> Ptr<Expr> {
     Expr* control = control_expr.get_or_null();
     bool exhaustive = false;
@@ -2937,7 +2925,7 @@ auto Sema::BuildParamDecl(
     u32 index,
     bool with_param,
     String name,
-    Location loc
+    SLoc loc
 ) -> ParamDecl* {
     auto decl = new (*tu) ParamDecl(param, Expr::LValue, name, proc.proc, index, with_param, loc);
     if (not param->type) decl->set_invalid();
@@ -2949,7 +2937,7 @@ auto Sema::BuildProcDeclInitial(
     Scope* proc_scope,
     ProcType* ty,
     DeclName name,
-    Location loc,
+    SLoc loc,
     ParsedProcAttrs attrs,
     ProcTemplateDecl* pattern
 ) -> ProcDecl* {
@@ -3028,7 +3016,7 @@ auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
     );
 }
 
-auto Sema::BuildReturnExpr(Ptr<Expr> value, Location loc, bool implicit) -> ReturnExpr* {
+auto Sema::BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr* {
     // Perform return type deduction.
     auto proc = curr_proc().proc;
     if (proc->return_type() == Type::DeducedTy) {
@@ -3052,7 +3040,7 @@ auto Sema::BuildStaticIfExpr(
     Expr* cond,
     ParsedStmt* then,
     Ptr<ParsedStmt> else_,
-    Location loc
+    SLoc loc
 ) -> Ptr<Stmt> {
     // Otherwise, check this now.
     if (not MakeCondition(cond, "#if")) return {};
@@ -3071,11 +3059,11 @@ auto Sema::BuildStaticIfExpr(
     return TranslateStmt(cond_val ? then : else_.get());
 }
 
-auto Sema::BuildTypeExpr(Type ty, Location loc) -> TypeExpr* {
+auto Sema::BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr* {
     return new (*tu) TypeExpr(ty, loc);
 }
 
-auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> Ptr<Expr> {
+auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr> {
     auto Build = [&](Type ty, ValueCategory cat) {
         return new (*tu) UnaryExpr(ty, cat, op, operand, postfix, loc);
     };
@@ -3183,7 +3171,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, Location loc) -> P
     }
 }
 
-auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, Location loc) -> Ptr<WhileStmt> {
+auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, SLoc loc) -> Ptr<WhileStmt> {
     if (not MakeCondition(cond, "while")) return {};
     return new (*tu) WhileStmt(cond, body, loc);
 }
@@ -3270,7 +3258,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
 
     // Initialise FFI types.
     auto DeclareBuiltinType = [&](String name, Type type) {
-        auto decl = new (*tu) TypeDecl(type, name, Location());
+        auto decl = new (*tu) TypeDecl(type, name, SLoc());
         AddDeclToScope(global_scope(), decl);
     };
 
@@ -3314,7 +3302,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
 
     // Collect all statements and translate them.
     for (auto& p : modules) TranslateStmts(top_level_stmts, p->top_level);
-    tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, Location{});
+    tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, SLoc{});
 
     // File scope block should never be dependent.
     tu->initialiser_proc->finalise(
@@ -3383,7 +3371,7 @@ auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed, Type) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
-    return BuildAssertExpr(cond, msg, parsed->is_compile_time, parsed->loc);
+    return BuildAssertExpr(cond, msg, parsed->is_compile_time, parsed->loc, parsed->cond_range);
 }
 
 auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Type desired_type) -> Ptr<Stmt> {
@@ -4116,10 +4104,10 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     );
 
     auto v = integer->getSExtValue();
-    return BuildArrayType(base, v, {base.loc, size_expr->location()});
+    return BuildArrayType(base, v, base.loc);
 }
 
-auto Sema::BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type {
+auto Sema::BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Type {
     if (not CheckVariableType(base.ty, base.loc)) return Type();
     if (size < 0) return Error(
         loc,
@@ -4133,7 +4121,7 @@ auto Sema::BuildArrayType(TypeLoc base, i64 size, Location loc) -> Type {
 auto Sema::BuildCompleteStructType(
     String name,
     RecordLayout* layout,
-    Location decl_loc
+    SLoc decl_loc
 ) -> StructType* {
     auto scope = tu->create_scope<StructScope>(global_scope());
     for (auto f : layout->fields())
@@ -4149,7 +4137,7 @@ auto Sema::BuildCompleteStructType(
     );
 }
 
-auto Sema::BuildSliceType(Type base, Location loc) -> Type {
+auto Sema::BuildSliceType(Type base, SLoc loc) -> Type {
     if (not CheckVariableType(base, loc)) return Type();
     return SliceType::Get(*tu, base);
 }

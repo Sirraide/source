@@ -139,13 +139,13 @@ public:
 
 private:
     template <typename... Args>
-    void Diag(Diagnostic::Level level, Location loc, std::format_string<Args...> fmt, Args&&... args) {
+    void Diag(Diagnostic::Level level, SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
     int Error(std::format_string<Args...> fmt, Args&&... args) {
-        Diag(Diagnostic::Level::Error, Location(), fmt, std::forward<Args>(args)...);
+        Diag(Diagnostic::Level::Error, SLoc(), fmt, std::forward<Args>(args)...);
         return 1;
     }
 

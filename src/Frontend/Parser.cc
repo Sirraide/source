@@ -267,11 +267,11 @@ bool Parser::AtStartOfExpression() {
 }
 
 bool Parser::Consume(Tk tk) {
-    Location l;
+    SLoc l;
     return Consume(l, tk);
 }
 
-bool Parser::Consume(Location& into, Tk tk) {
+bool Parser::Consume(SLoc& into, Tk tk) {
     if (At(tk)) {
         into = Next();
         return true;
@@ -280,11 +280,11 @@ bool Parser::Consume(Location& into, Tk tk) {
 }
 
 bool Parser::ConsumeContextual(StringRef keyword) {
-    Location l;
+    SLoc l;
     return ConsumeContextual(l, keyword);
 }
 
-bool Parser::ConsumeContextual(Location& into, StringRef keyword) {
+bool Parser::ConsumeContextual(SLoc& into, StringRef keyword) {
     if (At(Tk::Identifier) and tok->text == keyword) {
         into = Next();
         return true;
@@ -323,7 +323,7 @@ bool Parser::ExpectSemicolon() {
     if (tok == stream.begin()) Error("Expected ';'");
     else {
         auto prev = tok - 1;
-        Error(prev->location.after(), "Expected ';'");
+        Error(prev->location.after(ctx), "Expected ';'");
     }
     return false;
 }
@@ -349,12 +349,12 @@ auto Parser::LookAhead(usz n) -> Token& {
     return stream[n + curr];
 }
 
-auto Parser::Next() -> Location {
+auto Parser::Next() -> SLoc {
     Assert(not IsBracket(tok->type), "Should not consume brackets this way");
     return NextTokenImpl();
 }
 
-auto Parser::NextTokenImpl() -> Location {
+auto Parser::NextTokenImpl() -> SLoc {
     auto* t = &*tok;
     if (not At(Tk::Eof)) ++tok;
     return t->location;
@@ -433,16 +433,17 @@ auto Parser::Parse(
 auto Parser::ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr> {
     auto start = Next();
     auto cond = TryParseExpr();
+    SRange cond_range{cond->loc, std::prev(tok)->location};
 
     // Message is optional.
     Ptr<ParsedStmt> message;
     if (Consume(Tk::Comma)) message = ParseExpr();
-
     return new (*this) ParsedAssertExpr{
         cond,
         message,
         is_compile_time,
-        {start, message ? message.get()->loc : cond->loc},
+        start,
+        cond_range
     };
 }
 
@@ -456,7 +457,7 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
             stmts.push_back(s.get());
 
     braces.close();
-    return ParsedBlockExpr::Create(*this, stmts, braces.span());
+    return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
 // <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
@@ -471,7 +472,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
         }
 
         strings.push_back(tok->text);
-        loc = {loc, Next()};
+        Next();
     } while (Consume(Tk::ColonColon));
     return ParsedDeclRefExpr::Create(*this, strings, loc);
 }
@@ -526,9 +527,8 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 case Tk::Assert: lhs = ParseAssert(true); break;
                 case Tk::Elif:
                 case Tk::Else:
-                    return Error({hash_loc, tok->location}, "Unexpected '%1(#{}%)'", tok->type);
+                    return Error(hash_loc, "Unexpected '%1(#{}%)'", tok->type);
             }
-            if (auto l = lhs.get_or_null()) l->loc = {hash_loc, l->loc};
         } break;
 
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
@@ -545,7 +545,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::Eval: {
             auto start = Next();
             auto arg = TryParseExpr();
-            lhs = new (*this) ParsedEvalExpr{arg, {start, arg->loc}};
+            lhs = new (*this) ParsedEvalExpr{arg, start};
         } break;
 
         // <expr-loop> ::= LOOP <expr>
@@ -553,7 +553,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             auto start = Next();
             Ptr<ParsedStmt> arg;
             if (AtStartOfExpression()) arg = TryParseExpr();
-            return new (*this) ParsedLoopExpr{arg, arg ? Location{start, arg.get()->loc} : start};
+            return new (*this) ParsedLoopExpr{arg, start};
         }
 
         case Tk::If:
@@ -593,7 +593,6 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
             Ptr<ParsedStmt> value;
             if (AtStartOfExpression()) value = TryParseExpr();
-            if (value.present()) loc = {loc, value.get()->loc};
             lhs = new (*this) ParsedReturnExpr{value, loc};
         } break;
 
@@ -605,7 +604,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             // '()'.
             if (At(Tk::RParen)) {
                 parens.close();
-                lhs = ParsedTupleExpr::Create(*this, {}, parens.span());
+                lhs = ParsedTupleExpr::Create(*this, {}, parens.left);
                 break;
             }
 
@@ -614,7 +613,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             if (At(Tk::RParen)) {
                 parens.close();
                 if (not lhs) return {};
-                lhs = new (*this) ParsedParenExpr{lhs.get(), parens.span()};
+                lhs = new (*this) ParsedParenExpr{lhs.get(), parens.left};
                 break;
             }
 
@@ -632,7 +631,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 else SkipTo(Tk::Comma, Tk::RParen);
             } while (not At(Tk::RParen, Tk::Eof));
             parens.close();
-            lhs = ParsedTupleExpr::Create(*this, exprs, parens.span());
+            lhs = ParsedTupleExpr::Create(*this, exprs, parens.left);
         } break;
 
         // <type-prim> ::= BOOL | INT | VOID | VAR | NORETURN
@@ -665,7 +664,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
         // <type-range> ::= RANGE "<" <type> ">"
         case Tk::Range: {
-            Location loc = Next(), end{};
+            SLoc loc = Next(), end{};
             if (not Consume(Tk::SLt)) Error("Expected '%1(<%)' after '%1(range%)'");
             auto ty = TRY(ParseType(TemplateParamPrecedence));
             if (not Consume(end, Tk::SGt)) {
@@ -674,7 +673,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 Consume(end, Tk::SGt);
             }
 
-            lhs = new (*this) ParsedRangeType(ty, {loc, end});
+            lhs = new (*this) ParsedRangeType(ty, loc);
         } break;
 
         // TEMPLATE-TYPE
@@ -694,7 +693,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 auto op = tok->type;
                 auto start = Next();
                 auto arg = TRY(ParseExpr(PrefixPrecedence));
-                lhs = new (*this) ParsedUnaryExpr{op, arg, false, {start, arg->loc}};
+                lhs = new (*this) ParsedUnaryExpr{op, arg, false, start};
                 break;
             }
 
@@ -735,7 +734,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 }
 
                 parens.close();
-                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, {lhs.get()->loc, parens.right});
+                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, lhs.get()->loc);
                 continue;
             }
 
@@ -744,7 +743,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 BracketTracker brackets{*this, Tk::LBrack};
                 if (At(Tk::RBrack)) {
                     brackets.close();
-                    lhs = new (*this) ParsedSliceType(lhs.get(), {lhs.get()->loc, brackets.right});
+                    lhs = new (*this) ParsedSliceType(lhs.get(), lhs.get()->loc);
                     continue;
                 }
 
@@ -754,13 +753,14 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                     Tk::LBrack,
                     lhs.get(),
                     index,
-                    {lhs.get()->loc, brackets.right}
+                    lhs.get()->loc
                 };
                 continue;
             }
 
             case Tk::Caret:
-                lhs = new (*this) ParsedPtrType(lhs.get(), {lhs.get()->loc, Next()});
+                lhs = new (*this) ParsedPtrType(lhs.get(), lhs.get()->loc);
+                Next();
                 continue;
 
             // <expr-member> ::= <expr> "." IDENTIFIER
@@ -772,21 +772,21 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                     return {};
                 }
 
-                lhs = new (*this) ParsedMemberExpr(lhs.get(), tok->text, {lhs.get()->loc, tok->location});
+                lhs = new (*this) ParsedMemberExpr(lhs.get(), tok->text, lhs.get()->loc);
                 Next();
                 continue;
             }
         }
 
         auto op = tok->type;
-        auto end = Next();
+        Next();
         if (IsPostfix(op)) {
-            lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, {lhs.get()->loc, end}};
+            lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, lhs.get()->loc};
         } else {
             if (op == Tk::DotDot) Error("'%1(..%)' is not a valid operator; did you mean '%1(..=%)' or '%1(..<%)'?");
             auto rhs = ParseExpr(BinaryOrPostfixPrecedence(op));
             if (not rhs) return {};
-            lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), {lhs.get()->loc, rhs.get()->loc}};
+            lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), lhs.get()->loc};
         }
     }
 
@@ -828,7 +828,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
 
     // Parse enumerator and identifiers.
     String enum_name;
-    Location enum_loc;
+    SLoc enum_loc;
     if (Consume(Tk::Enum)) {
         if (At(Tk::Identifier)) {
             enum_name = tok->text;
@@ -853,8 +853,8 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
             if (At(Tk::Identifier)) Error("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
             else return ErrorSync("Expected '%1(in%)'");
         }
-    } else if (Location in_loc; Consume(in_loc, Tk::In)) {
-        ErrorSync(Location{for_loc, in_loc}, "'%1(for in%)' is invalid");
+    } else if (Consume(Tk::In)) {
+        ErrorSync(for_loc, "'%1(for in%)' is invalid");
         Remark("Valid syntaxes for 'for' loops include 'for y' and 'for x in y'.");
         return {};
     }
@@ -955,7 +955,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
 
     // '#then' is nonsense. Just drop the hash sign.
     if (At(Tk::Hash) and LookAhead().is(Tk::Then)) {
-        Error({tok->location, LookAhead().location}, "'%1(#then%)' is invalid; write '%1(then%)' instead");
+        Error(tok->location, "'%1(#then%)' is invalid; write '%1(then%)' instead");
         Next();
     }
 
@@ -1000,7 +1000,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
         if (At(Tk::If)) {
             correct_to_elif = true;
             Error(
-                hash ? Location{std::prev(tok)->location, tok->location} : tok->location,
+                hash ? std::prev(tok)->location : tok->location,
                 "Use '%1({0}elif%)' instead of '%1({0}else if%)'",
                 hash ? "#" : ""
             );
@@ -1010,7 +1010,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
         else if (At(Tk::Hash) and LookAhead().is(Tk::If)) {
             correct_to_elif = true;
             Error(
-                Location{std::prev(tok, hash ? 2 : 1)->location, LookAhead().location},
+                std::prev(tok, hash ? 2 : 1)->location,
                 "'%1({}else #if%)' is invalid; did you mean '%1({}elif%)'",
                 hash ? "#" : "",
                 is_static ? "#" : ""
@@ -1059,14 +1059,14 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
         body,
         else_,
         is_static,
-        {loc, else_ ? else_.get()->loc : body->loc}
+        loc,
     };
 }
 
 // <import>      ::= IMPORT <import-name> AS ( IDENT | "* ) ";"
 // <import-name> ::= IDENT | CXX-HEADER-NAME { "," CXX-HEADER-NAME } [ "," ]
 void Parser::ParseImport() {
-    Location import_loc;
+    SLoc import_loc;
     SmallVector<String> linkage_names;
     String logical_name;
     Assert(Consume(import_loc, Tk::Import), "Not at 'import'?");
@@ -1121,17 +1121,17 @@ void Parser::ParseImport() {
 }
 
 // <intent> ::= IN | OUT | INOUT | COPY
-auto Parser::ParseIntent() -> std::pair<Location, Intent> {
-    Location loc;
+auto Parser::ParseIntent() -> std::pair<SLoc, Intent> {
+    SLoc loc;
 
     // 'in' is a keyword, unlike the other intents.
     if (Consume(loc, Tk::In)) {
         // Correct 'in out' to 'inout'.
-        Location out_loc;
+        SLoc out_loc;
         if (ConsumeContextual(out_loc, "out")) {
-            Error({loc, out_loc}, "Cannot specify more than one parameter intent");
+            Error(loc, "Cannot specify more than one parameter intent");
             Remark("Did you mean to write 'inout' instead of 'in out'?");
-            return {{loc, out_loc}, Intent::Inout};
+            return {loc, Intent::Inout};
         }
 
         return {loc, Intent::In};
@@ -1175,7 +1175,7 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl> {
     auto decl = new (*this) ParsedVarDecl(
         tok->text,
         type,
-        {type->loc, tok->location}
+        type->loc
     );
 
     if (not Consume(Tk::Identifier))
@@ -1213,7 +1213,7 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
             sig.name = Tk::LParen;
             BracketTracker parens{*this, Tk::LParen, false};
             if (not parens.close()) Error(
-                parens.span(),
+                parens.left,
                 "To overload the call operator, write '%1(proc ()%)'"
             );
         }
@@ -1224,7 +1224,7 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
         sig.name = Tk::LBrack;
         BracketTracker brackets{*this, Tk::LBrack, false};
         if (not brackets.close()) Error(
-            brackets.span(),
+            brackets.left,
             "To overload the subscript operator, write '%1(proc []%)'"
         );
     }
@@ -1250,7 +1250,7 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
     String name;
-    Location name_loc;
+    SLoc name_loc;
     bool variadic = false;
 
     // Parse intent.
@@ -1296,7 +1296,6 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     // If decls is not null, then we allow named parameters here; parse
     // the name if there is one and create the declaration.
     if (decls) {
-        Location end = type.get()->loc;
         if (At(Tk::Identifier)) {
             if (not name.empty()) {
                 Error("Parameter cannot have two names");
@@ -1304,7 +1303,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             }
 
             name = tok->text;
-            end = Next();
+            Next();
         } else if (not At(Tk::Comma, Tk::RParen)) {
             if (IsKeyword(tok->type)) {
                 Error(
@@ -1319,7 +1318,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             SkipTo(Tk::Comma, Tk::RParen);
         }
 
-        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), {start_loc, end}, intent});
+        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), start_loc, intent});
     } else if (At(Tk::Identifier)) {
         Error("Named parameters are not allowed here");
         Next();
@@ -1369,8 +1368,8 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     // Parse the body.
     Ptr<ParsedStmt> body;
-    if (Location assign_loc; Consume(assign_loc, Tk::Assign)) {
-        if (At(Tk::LBrace)) Error({assign_loc, tok->location}, "'%1(= {{%)' is invalid; remove the '%1(=%)'");
+    if (SLoc assign_loc; Consume(assign_loc, Tk::Assign)) {
+        if (At(Tk::LBrace)) Error(assign_loc, "'%1(= {{%)' is invalid; remove the '%1(=%)'");
         body = ParseExpr();
         if (not isa_and_present<ParsedBlockExpr, ParsedMatchExpr>(body.get_or_null()))
             ExpectSemicolon();
@@ -1450,7 +1449,7 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
 
     // Parse attributes.
     auto ParseAttr = [&](bool& attr, StringRef value) {
-        if (Location loc; ConsumeContextual(loc, value)) {
+        if (SLoc loc; ConsumeContextual(loc, value)) {
             if (attr) Warn(loc, "Duplicate '%1({}%)' attribute", value);
             attr = true;
             return true;
@@ -1518,7 +1517,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
             // Avoid forcing Sema to deal with unwrapping nested
             // export declarations.
-            if (isa<ParsedExportDecl>(decl)) return Error({loc, decl->loc}, "'%1(export export%)' is invalid");
+            if (isa<ParsedExportDecl>(decl)) return Error(loc, "'%1(export export%)' is invalid");
             return new (*this) ParsedExportDecl{decl, loc};
         }
 
@@ -1527,7 +1526,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             if (LookAhead(1).is(Tk::If)) {
                 auto hash_loc = Next();
                 auto if_ = ParseIf(true, false);
-                if (auto i = if_.get_or_null()) i->loc = {hash_loc, i->loc};
+                if (auto i = if_.get_or_null()) i->loc = hash_loc;
                 return if_;
             }
 
@@ -1639,7 +1638,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
                 return;
             }
 
-            fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), {ty.get()->loc, tok->location}});
+            fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), ty.get()->loc});
         };
 
         ParseField();

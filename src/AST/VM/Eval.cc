@@ -359,7 +359,7 @@ class eval::Eval : DiagsProducer {
     const SRValue true_val{true};
     const SRValue false_val{false};
     std::byte* stack_top{};
-    Location entry;
+    SLoc entry;
     bool complain;
 
 public:
@@ -372,7 +372,7 @@ private:
     auto frame() -> StackFrame& { return call_stack.back(); }
 
     template <typename... Args>
-    bool Error(Location where, std::format_string<Args...> fmt, Args&&... args) {
+    bool Error(SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         if (complain) diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
         return false;
     }
@@ -421,7 +421,7 @@ auto Eval::AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> 
     auto ptr = alignment.align(stack_top);
     stack_top = ptr + sz;
     if (stack_top > vm.stack.get() + vm.max_stack_size) {
-        Error(Location::Decode(loc), "Stack overflow");
+        Error(SLoc::Decode(loc), "Stack overflow");
         Remark(
             "This may have been caused by infinite recursion. If you don’t think that "
             "that’s the case, you can increase the maximum eval stack size by passing "
@@ -537,7 +537,7 @@ bool Eval::EvalLoop() {
             std::string msg{reason_str};
             if (not info->msg1.sv().empty()) msg += std::format(": '{}'", info->msg1.sv());
             if (not info->msg2.sv().empty()) msg += std::format(": {}", info->msg2.sv());
-            return Error(Location::Decode(a.getLoc()), "{}", msg);
+            return Error(SLoc::Decode(a.getLoc()), "{}", msg);
         }
 
         if (auto a = dyn_cast<mlir::arith::ConstantOp>(i)) {
@@ -569,12 +569,12 @@ bool Eval::EvalLoop() {
 
         if (auto c = dyn_cast<ir::CallOp>(i)) {
             auto ptr = Val(c.getAddr()).cast<Pointer>();
-            if (not ptr) return Error(Location::Decode(i->getLoc()), "Attempted to call nil");
+            if (not ptr) return Error(SLoc::Decode(i->getLoc()), "Attempted to call nil");
 
             // Check that this is a valid call target.
             Assert(vm.memory->is_virtual_proc_ptr(ptr), "TODO: indirect host pointer call");
             auto callee = vm.memory->get_procedure(ptr);
-            if (not callee) return Error(Location::Decode(i->getLoc()), "Address is not callable");
+            if (not callee) return Error(SLoc::Decode(i->getLoc()), "Address is not callable");
 
             // Compile the procedure now if we haven’t done that yet.
             if (callee.empty()) {
@@ -683,7 +683,7 @@ bool Eval::EvalLoop() {
         }
 
         if (isa<mlir::LLVM::UnreachableOp>(i))
-            return Error(Location::Decode(i->getLoc()), "Unreachable code reached");
+            return Error(SLoc::Decode(i->getLoc()), "Unreachable code reached");
 
         if (auto c = dyn_cast<mlir::arith::ExtSIOp>(i)) {
             TRY(CastOp(i, c.getType(), &APInt::sext));
@@ -760,7 +760,7 @@ bool Eval::EvalLoop() {
         }
 
 
-        return ICE(Location::Decode(i->getLoc()), "Unsupported op in constant evaluation: '{}'", i->getName().getStringRef());
+        return ICE(SLoc::Decode(i->getLoc()), "Unsupported op in constant evaluation: '{}'", i->getName().getStringRef());
     }
 
     Error(entry, "Exceeded maximum compile-time evaluation steps");
@@ -770,7 +770,7 @@ bool Eval::EvalLoop() {
 
 auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
     if (not vm.supports_ffi_calls) {
-        Error(Location::Decode(call.getLoc()), "Compile-time FFI calls are not supported when cross-compiling");
+        Error(SLoc::Decode(call.getLoc()), "Compile-time FFI calls are not supported when cross-compiling");
         Remark(
             "The target triple is set to '{}', but the host triple is '{}'",
             vm.owner_tu.target().triple().str(),
@@ -891,13 +891,13 @@ auto Eval::GetHostMemoryPointer(Value v) -> void* {
 
     // This is the null pointer in some address space.
     if (p.is_null()) {
-        Error(Location::Decode(v.getLoc()), "Attempted to dereference 'nil'");
+        Error(SLoc::Decode(v.getLoc()), "Attempted to dereference 'nil'");
         return nullptr;
     }
 
     // This is a procedure pointer.
     if (vm.memory->is_virtual_proc_ptr(p)) {
-        Error(Location::Decode(v.getLoc()), "Invalid memory access");
+        Error(SLoc::Decode(v.getLoc()), "Invalid memory access");
         return nullptr;
     }
 
