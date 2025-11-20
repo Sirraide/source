@@ -60,6 +60,7 @@ target_compile_options(options INTERFACE
     -Wno-unused-function
     -Wno-unused-local-typedefs
     -Wno-ctad-maybe-unsupported
+    -Wno-c23-extensions
 
     ## NULL Errors.
     -Werror=nonnull # Passing NULL to nonnull parameter.

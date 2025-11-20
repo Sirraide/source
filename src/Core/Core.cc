@@ -118,10 +118,24 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
     return machine;
 }
 
-auto Context::create_virtual_file(std::unique_ptr<llvm::MemoryBuffer> data) -> const File& {
-    auto f = new File(*this, "<virtual>", "<virtual>", std::move(data), u16(all_files.size()));
+auto Context::create_virtual_file(
+    std::unique_ptr<llvm::MemoryBuffer> data,
+    fs::PathRef name
+) -> const File& {
+    auto f = new File(
+        *this,
+        name,
+        String::Save(saver, name.string()),
+        std::move(data),
+        u16(all_files.size())
+    );
+
     all_files.emplace_back(f);
     return *f;
+}
+
+auto Context::create_virtual_file(StringRef data, fs::PathRef name) -> const File& {
+    return create_virtual_file(llvm::MemoryBuffer::getMemBufferCopy(data), name);
 }
 
 auto Context::diags() const -> DiagnosticsEngine& {

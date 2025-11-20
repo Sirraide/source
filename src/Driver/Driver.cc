@@ -169,10 +169,6 @@ int Driver::run_job() {
         return ctx.diags().has_error();
     }
 
-    // Parse the preamble.
-    ParsedModule::Ptr preamble;
-    if (fs::File::Exists(opts.preamble_path)) preamble = ParseFile(opts.preamble_path, opts.verify);
-
     // Dump a module.
     if (a == Action::DumpModule) {
         static constexpr String ImportName = "__srcc_dummy_import__";
@@ -182,15 +178,13 @@ int Driver::run_job() {
             ImportName
         );
 
-        auto import = llvm::MemoryBuffer::getMemBufferCopy(import_str);
-        auto mod = Parser::Parse(ctx.create_virtual_file(std::move(import)), nullptr);
+        auto mod = Parser::Parse(ctx.create_virtual_file(import_str), nullptr);
         if (not mod) return 1;
 
         SmallVector<ParsedModule::Ptr> modules;
         modules.push_back(std::move(mod));
         auto tu = Sema::Translate(
             lang_opts,
-            std::move(preamble),
             std::move(modules),
             opts.module_search_paths,
             opts.clang_include_paths,
@@ -228,7 +222,6 @@ int Driver::run_job() {
     // the module that uses them anyway.
     auto tu = Sema::Translate(
         lang_opts,
-        std::move(preamble),
         std::move(parsed_modules),
         opts.module_search_paths,
         opts.clang_include_paths,

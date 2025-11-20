@@ -68,7 +68,15 @@ public:
     [[nodiscard]] auto create_target_machine() const -> std::unique_ptr<llvm::TargetMachine>;
 
     /// Create a virtual file.
-    [[nodiscard]] auto create_virtual_file(std::unique_ptr<llvm::MemoryBuffer> data) -> const File&;
+    [[nodiscard]] auto create_virtual_file(
+        std::unique_ptr<llvm::MemoryBuffer> data,
+        fs::PathRef name = "<virtual>"
+    ) -> const File&;
+
+    [[nodiscard]] auto create_virtual_file(
+        StringRef data,
+        fs::PathRef name = "<virtual>"
+    ) -> const File&;
 
     /// Get diagnostics engine.
     [[nodiscard]] auto diags() const -> DiagnosticsEngine&;

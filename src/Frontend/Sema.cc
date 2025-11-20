@@ -17,6 +17,7 @@
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/MemoryBuffer.h>
 
 #include <base/StringUtils.hh>
 
@@ -36,6 +37,12 @@ struct Err {
     Err(std::nullptr_t) : Err(false) {}
     explicit operator bool() const { return value; }
 };
+
+namespace {
+constexpr const char PreambleSource[]{
+#embed "preamble.src" suffix(, 0)
+};
+}
 
 // ============================================================================
 //  Helpers
@@ -3213,7 +3220,6 @@ Sema::~Sema() = default;
 
 auto Sema::Translate(
     const LangOpts& opts,
-    ParsedModule::Ptr preamble,
     SmallVector<ParsedModule::Ptr> modules,
     ArrayRef<std::string> module_search_paths,
     ArrayRef<std::string> clang_include_paths,
@@ -3232,25 +3238,30 @@ auto Sema::Translate(
     );
 
     // Take ownership of the modules.
-    bool have_preamble = preamble != nullptr;
-    if (have_preamble) S.parsed_modules.push_back(std::move(preamble));
     for (auto& m : modules) S.parsed_modules.push_back(std::move(m));
     S.search_paths = module_search_paths;
     S.clang_include_paths = clang_include_paths;
 
     // Translate it.
-    S.Translate(have_preamble, load_runtime);
+    S.Translate(load_runtime);
     return std::move(S.tu);
 }
 
-void Sema::Translate(bool have_preamble, bool load_runtime) {
-    // Take ownership of any resources of the parsed modules.
-    for (auto& p : parsed_modules) {
-        tu->add_allocator(std::move(p->string_alloc));
-        tu->add_integer_storage(std::move(p->integers));
-        for (auto& [decl, info] : p->template_deduction_infos)
+void Sema::Translate(bool load_runtime) {
+    auto AddParsedModule = [&](ParsedModule& p){
+        tu->add_allocator(std::move(p.string_alloc));
+        tu->add_integer_storage(std::move(p.integers));
+        for (auto& [decl, info] : p.template_deduction_infos)
             parsed_template_deduction_infos[decl] = std::move(info);
-    }
+    };
+
+    // Parse the preamble.
+    auto preamble = Parser::Parse(ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"));
+    if (ctx.diags().has_error()) return;
+
+    // Take ownership of any resources of the parsed modules.
+    for (auto& p : parsed_modules) AddParsedModule(*p);
+    AddParsedModule(*preamble);
 
     // Set up scope stacks.
     tu->initialiser_proc->scope = global_scope();
@@ -3271,21 +3282,20 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
 
     // Translate the preamble first since the runtime and other modules rely
     // on it always being available.
-    auto modules = ArrayRef(parsed_modules).drop_front(have_preamble ? 1 : 0);
     SmallVector<Stmt*> top_level_stmts;
-    if (have_preamble) TranslateStmts(top_level_stmts, parsed_modules.front()->top_level);
+    TranslateStmts(top_level_stmts, preamble->top_level);
 
     // Load the runtime.
     if (load_runtime) LoadModule(
         constants::RuntimeModuleName,
         constants::RuntimeModuleName,
-        modules.front()->program_or_module_loc,
+        parsed_modules.front()->program_or_module_loc,
         false,
         false
     );
 
     // And process other imports.
-    for (auto& m : modules) {
+    for (auto& m : parsed_modules) {
         for (auto& i : m->imports) {
             LoadModule(
                 i.import_name,
@@ -3301,7 +3311,7 @@ void Sema::Translate(bool have_preamble, bool load_runtime) {
     if (ctx.diags().has_error()) return;
 
     // Collect all statements and translate them.
-    for (auto& p : modules) TranslateStmts(top_level_stmts, p->top_level);
+    for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
     tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, SLoc{});
 
     // File scope block should never be dependent.

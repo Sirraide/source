@@ -572,7 +572,6 @@ public:
     /// @return The combined module, or `nullptr` if there was an error.
     [[nodiscard]] static auto Translate(
         const LangOpts& opts,
-        ParsedModule::Ptr preamble,
         SmallVector<ParsedModule::Ptr> modules,
         ArrayRef<std::string> module_search_paths,
         ArrayRef<std::string> clang_include_paths,
@@ -918,7 +917,7 @@ private:
     auto BuildWhileStmt(Expr* cond, Stmt* body, SLoc loc) -> Ptr<WhileStmt>;
 
     /// Entry point.
-    void Translate(bool have_preamble, bool load_runtime);
+    void Translate(bool load_runtime);
 
     /// Statements.
 #define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Ptr<Stmt>;
