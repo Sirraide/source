@@ -161,12 +161,18 @@ struct [[nodiscard]] Lexer : str, DiagsProducer {
     Parser::CommentTokenCallback comment_token_handler;
     bool in_pragma = false;
     const Token invalid_token;
+    const char* const input_end;
 
     Lexer(
         TokenStream& into,
         const srcc::File& f,
         Parser::CommentTokenCallback cb = nullptr
     );
+
+    auto data_or_end() const -> const char* {
+        if (empty()) return input_end;
+        return data();
+    }
 
     auto tok() -> Token& { return tokens.back(); }
 
@@ -182,7 +188,7 @@ struct [[nodiscard]] Lexer : str, DiagsProducer {
 
     void FinishText() {
         auto ptr = tok().location.pointer();
-        tok().text = String::CreateUnsafe(ptr, usz(data() - ptr));
+        tok().text = String::CreateUnsafe(ptr, usz(data_or_end() - ptr));
     }
 
     auto Prev(usz i = 1) -> const Token& {
@@ -222,14 +228,15 @@ Lexer::Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallbac
     : str(f.contents().sv()),
       tokens{into},
       f{f},
-      comment_token_handler{std::move(cb)} {
+      comment_token_handler{std::move(cb)},
+      input_end{end()} {
     Assert(
         f.size() <= std::numeric_limits<u32>::max(),
         "We can’t handle files this big right now"
     );
 }
 
-auto Lexer::CurrLoc() -> SLoc { return SLoc(data()); }
+auto Lexer::CurrLoc() -> SLoc { return SLoc(data_or_end()); }
 void Lexer::LexEntireFile() {
     do Next();
     while (not tok().eof());
@@ -583,5 +590,5 @@ auto SLoc::measure_token_length(const Context& ctx) const -> std::optional<u64> 
     Lexer l{temp, *f};
     l.drop(usz(ptr - f->data()));
     l.Next();
-    return l.tok().eof() ? 0 : u64(l.data() - ptr);
+    return l.tok().eof() ? 0 : u64(l.data_or_end() - ptr);
 }

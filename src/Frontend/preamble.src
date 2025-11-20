@@ -1,4 +1,4 @@
-__srcc_preamble__
+__srcc_internal__
 
 proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     // Anything to the power of 0 is 1.

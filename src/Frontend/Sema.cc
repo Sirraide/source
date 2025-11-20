@@ -3256,7 +3256,12 @@ void Sema::Translate(bool load_runtime) {
     };
 
     // Parse the preamble.
-    auto preamble = Parser::Parse(ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"));
+    auto preamble = Parser::Parse(
+        ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"),
+        /*comment_callback=*/{},
+        /*is_internal_file=*/true
+    );
+
     if (ctx.diags().has_error()) return;
 
     // Take ownership of any resources of the parsed modules.

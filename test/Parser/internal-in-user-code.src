@@ -1,0 +1,2 @@
+// V %srcc --parse --verify %s
+__srcc_internal__ // expected-error: '__srcc_internal__' is not permitted in user code

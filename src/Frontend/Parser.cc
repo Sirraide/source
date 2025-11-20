@@ -418,15 +418,22 @@ bool Parser::SkipPast(std::same_as<Tk> auto... tks) {
 // ============================================================================
 //  Parser
 // ============================================================================
+Parser::Parser(const File& file, bool internal)
+    : mod{std::make_unique<ParsedModule>(file)},
+      stream{*mod->string_alloc},
+      ctx{file.context()},
+      parsing_internal_file(internal) {}
+
 auto Parser::Parse(
     const File& file,
-    CommentTokenCallback cb
+    CommentTokenCallback cb,
+    bool is_internal_file
 ) -> std::unique_ptr<ParsedModule> {
-    Parser P{file};
-    ReadTokens(P.stream, file, std::move(cb));
-    P.tok = P.stream.begin();
-    P.ParseFile();
-    return std::move(P.mod);
+    Parser p{file, is_internal_file};
+    ReadTokens(p.stream, file, std::move(cb));
+    p.tok = p.stream.begin();
+    p.ParseFile();
+    return std::move(p.mod);
 }
 
 // <expr-assert> ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
@@ -883,14 +890,18 @@ void Parser::ParseFile() {
 }
 
 // <header> ::= ( "program" | "module" ) <module-name> ";"
-//   [ext]    | "__srcc_preamble__"
-//   [ext]    | "__srcc_ser_module__" <module-name> ";"
+//   [ext]    | "__srcc_internal__"
 // <module-name> ::= IDENTIFIER
 void Parser::ParseHeader() {
-    // Keep the preamble as a non-module to disallow e.g. 'export' since
-    // it may end up being included in a program.
-    if (ConsumeContextual(mod->program_or_module_loc, "__srcc_preamble__"))
+    // Parse internal files as non-modules to disallow e.g. 'export' since
+    // they may end up being included in a program.
+    if (ConsumeContextual(mod->program_or_module_loc, "__srcc_internal__")) {
+        if (not parsing_internal_file) Error(
+            mod->program_or_module_loc,
+            "'%1(__srcc_internal__%)' is not permitted in user code"
+        );
         return;
+    }
 
     bool module = ConsumeContextual(mod->program_or_module_loc, "module");
     if (

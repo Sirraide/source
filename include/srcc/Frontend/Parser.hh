@@ -858,12 +858,14 @@ private:
     Context& ctx;
     Signature* current_signature = nullptr;
     int num_parens{}, num_brackets{}, num_braces{};
+    const bool parsing_internal_file;
 
 public:
     /// Parse a file.
     static auto Parse(
         const File& file,
-        CommentTokenCallback comment_callback = {}
+        CommentTokenCallback comment_callback = {},
+        bool is_internal_file = false
     ) -> ParsedModule::Ptr;
 
     /// Read all tokens in a file.
@@ -882,10 +884,7 @@ public:
     auto module() -> ParsedModule& { return *mod; }
 
 private:
-    explicit Parser(const File& file)
-        : mod{std::make_unique<ParsedModule>(file)},
-          stream{*mod->string_alloc},
-          ctx{file.context()} {}
+    explicit Parser(const File& file, bool internal);
 
     /// Each of these corresponds to a production in the grammar.
     auto ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr>;
