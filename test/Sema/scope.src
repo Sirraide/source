@@ -13,8 +13,8 @@ proc f1 {
     for i in 1..=10 do int x5;
     eval int x6;
     loop int x7;
-    match { _: int x8; };
-    match 1 { _: int x9; };
+    match { _: int x8; }
+    match 1 { _: int x9; }
 
     x1 = 1; // expected-error: Unknown symbol 'x1'
     x2 = 1; // expected-error: Unknown symbol 'x2'
@@ -31,11 +31,11 @@ proc f2 {
     // *static* if however does *not* create a new scope.
     #if true {
         int x1;
-    };
+    }
 
     #if false {} #else {
         int x2;
-    };
+    }
 
     x1 = 1;
     x2 = 2;

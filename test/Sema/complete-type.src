@@ -27,7 +27,7 @@ var m = p2();
 s(); // expected-error: Cannot create instance of incomplete type 's'
 
 // Once we get here, the struct is finally complete.
-struct s {};
+struct s {}
 
 // These are all fine now.
 s q;

@@ -6,14 +6,14 @@ proc f(int, int...) {}
 proc f(int, int..., int) {} // expected-error: Only the last parameter can be variadic
 proc f(int, int..., int...) {} // expected-error: Only the last parameter can be variadic
 
-proc f1 (out int...) {}; // expected-error: Variadic parameter cannot have intent 'out'
-proc f2 (inout int...) {}; // expected-error: Variadic parameter cannot have intent 'inout'
-proc f3 (out $T...) {}; // expected-error: Variadic parameter cannot have intent 'out'
-proc f4 (inout $T...) {}; // expected-error: Variadic parameter cannot have intent 'inout'
-proc f5 ($T, out T...) {}; // expected-error: Variadic parameter cannot have intent 'out'
-proc f6 ($T, inout T...) {}; // expected-error: Variadic parameter cannot have intent 'inout'
-proc f7 (out var...) {}; // expected-error: Variadic parameter cannot have intent 'out'
-proc f7 (inout var...) {}; // expected-error: Variadic parameter cannot have intent 'inout'
+proc f1 (out int...) {} // expected-error: Variadic parameter cannot have intent 'out'
+proc f2 (inout int...) {} // expected-error: Variadic parameter cannot have intent 'inout'
+proc f3 (out $T...) {} // expected-error: Variadic parameter cannot have intent 'out'
+proc f4 (inout $T...) {} // expected-error: Variadic parameter cannot have intent 'inout'
+proc f5 ($T, out T...) {} // expected-error: Variadic parameter cannot have intent 'out'
+proc f6 ($T, inout T...) {} // expected-error: Variadic parameter cannot have intent 'inout'
+proc f7 (out var...) {} // expected-error: Variadic parameter cannot have intent 'out'
+proc f7 (inout var...) {} // expected-error: Variadic parameter cannot have intent 'inout'
 
 proc variadic_varargs1(int...) varargs {} // expected-error: Variadic function cannot be 'varargs'
 proc variadic_varargs2($T...) varargs {} // expected-error: Variadic function cannot be 'varargs'

@@ -6,8 +6,8 @@ for i in; // expected-error: Expected expression
 for i in }; // expected-error: Expected expression
 for i in i;
 for i in i do;
-for i in i {};
-for i in i do {};
+for i in i {}
+for i in i do {}
 for i in 1..=1 do i;
 for i in 3 do x;
 
@@ -20,7 +20,7 @@ for enum j, i in; // expected-error: Expected expression
 for enum 4, i in r {}; // expected-error: Expected identifier after 'for enum'
 for enum j, i in r;
 for enum j, i in r do;
-for enum j, i in r {};
+for enum j, i in r {}
 
 for enum i in; // expected-error: Expected expression
 for enum i in r;
@@ -32,13 +32,13 @@ for in x do; // expected-error: 'for in' is invalid
 
 for a b in c, d do {}; // expected-error: Expected ','
 for a, b in c d do {}; // expected-error: Expected ','
-for a, b, in c, d do {};
-for a, b in c, d, do {};
+for a, b, in c, d do {}
+for a, b in c, d, do {}
 for a, b in c, d;
-for a, b in c, d {};
-for a, b in c, d do {};
-for a, b, c in d, e, f do {};
-for enum i, a, b, c in d, e, f do {};
+for a, b in c, d {}
+for a, b in c, d do {}
+for a, b, c in d, e, f do {}
+for enum i, a, b, c in d, e, f do {}
 
 // A side-effect of our (accidental) support for trailing commas is that this is
 // prohibited, which is honestly nice because it looks stupid.
@@ -51,4 +51,4 @@ for 4 do;
 for x;
 for a b; // expected-error: Expected ',', 'in', or 'do'
 for a do b;
-for y {};
+for y {}

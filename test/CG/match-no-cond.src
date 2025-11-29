@@ -34,7 +34,7 @@ proc f7 (int x, int y) nomangle = match {
     x == 1: match {
         y == 2: 3;
         _: 4;
-    };
+    }
     _: 5;
 }
 

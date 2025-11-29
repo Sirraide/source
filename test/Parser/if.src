@@ -11,11 +11,11 @@ if true 7; elif true 7; elif true 7; else {}
 x = if true then 1 else 2;
 x = if true then 1 elif true then 2 else 3;
 x = if true {};
-if true {};
-if 1 {};
-if {} {};
+if true {}
+if 1 {}
+if {} {}
 if true then 1;
-if true then {};
+if true then {}
 if true then 1; else 2;
 
 (if true a else b) = 42;
@@ -29,9 +29,9 @@ if true then 1; else 2;
 x = #if true then 1 #else 2;
 (#if true a #else b) = 42;
 #if true {} #elif true {} #elif true 4;
-#if true {} #elif true {} #elif true {} #else {};
+#if true {} #elif true {} #elif true {} #else {}
 #if true {} #elif true {} #elif true 4;
-#if true {} #elif true {} #elif true {} #else {};
+#if true {} #elif true {} #elif true {} #else {}
 
 #if true {} elif true {} elif true 4; // expected-error 2: '#if' must be paired with '#elif'
 x = #if true then 1 else 2; // expected-error: '#if' must be paired with '#else'

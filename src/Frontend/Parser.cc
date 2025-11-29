@@ -1596,27 +1596,54 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         expression_parser: {
             auto e = TryParseExpr(SkipTo(Tk::Semicolon));
 
+            // Whether it makes sense to interpret an expression as a type.
+            //
+            // Note that we require some of the ‘weirder’ expressions to be wrapped
+            // in parentheses for them to be treated as types here.
+            auto CouldReasonablyBeAType = [](ParsedStmt* s) {
+                if (isa<
+                    ParsedBuiltinType,
+                    ParsedTemplateType,
+                    ParsedProcType,
+                    ParsedIntType,
+                    ParsedPtrType,
+                    ParsedRangeType,
+                    ParsedSliceType,
+                    ParsedParenExpr,
+                    ParsedTupleExpr,
+                    ParsedCallExpr,
+                    ParsedDeclRefExpr
+                >(s)) return true;
+
+                // Subscripts could be array types instead.
+                if (auto bin = dyn_cast<ParsedBinaryExpr>(s))
+                    return bin->op == Tk::LBrack;
+
+                // Any other expression requires parentheses to become a type.
+                return false;
+            };
+
+            // If the expression ends with a brace, then we don’t require a semicolon
+            // after it and we’re done here. Don’t just check if the previous token was
+            // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
+            if (isa<ParsedBlockExpr, ParsedMatchExpr>(e)) return e;
+
             // <decl-var>
             //
             // Types are expressions so variable declarations start with an expression.
             // TODO: Do we really need the 'type name' syntax instead of just always using
             //       'var'/'val' to declare a variable; that would simplify this part.
             //
-            // If the next token is an identifier, then this is a declaration,
-            // provided that the lhs could conceivably be a type (i.e. don’t
-            // parse 'true a' as a declaration).
-            if (At(Tk::Identifier)) return ParseVarDecl(e);
+            // If the next token is an identifier, and the expression could reaonably be a
+            // type, parse a variable declaration.
+            if (At(Tk::Identifier) and CouldReasonablyBeAType(e)) return ParseVarDecl(e);
 
             // If the expression doesn’t have braces, require a semicolon.
             //
             // Don't skip to the next semicolon if we're at 'else' or 'elif' to
             // improve error recovery in 'if' statements.
-            if (
-                not isa<ParsedBlockExpr, ParsedMatchExpr>(e) and
-                not ExpectSemicolon() and
-                not At(Tk::Else, Tk::Elif)
-            ) SkipPast(Tk::Semicolon);
-
+            if (not ExpectSemicolon() and not At(Tk::Else, Tk::Elif))
+                SkipPast(Tk::Semicolon);
             return e;
         }
     }

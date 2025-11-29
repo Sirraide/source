@@ -9,7 +9,7 @@ proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     base == 0: {
         assert exp >= 0, "attempting to raise 0 to a negative power";
         0;
-    };
+    }
 
     // Raising to a negative power.
     //
@@ -19,7 +19,7 @@ proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
         -1: if exp & 1 != 0 then -1; else 1;
         1: 1;
         _: 0;
-    };
+    }
 
     // Perform the exponentiation.
     _: {
@@ -27,11 +27,11 @@ proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
         while exp != 1 {
             v *= base;
             exp -= 1;
-        }; // FIXME: This semicolon should not be required but the parser treats '{} v' as a declaration...
+        }
 
         // We're done once 'exp' is 1.
         v;
-    };
+    }
 }
 
 proc **= (inout $T base, in $T exp) __srcc_builtin_op__ -> T^ {

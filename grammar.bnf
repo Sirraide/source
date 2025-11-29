@@ -112,7 +112,18 @@
 // ============================================================================
 //  Types
 // ============================================================================
-<type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
+<type> ::= <type-prim>
+         | TEMPLATE-TYPE
+         | <signature>
+         | <type-qualified>
+         | <type-range>
+         | <expr-decl-ref> // Named type
+         | <expr-tuple>    // Tuple type
+         | <expr-binary>   // Array type (parsed as subscript expression)
+         | <expr-call>     // Function that returns a type
+         | "(" <expr> ")"  // Any expression in parens can be treated as a type
+         | <expr>          // In type-only contexts
+
 <type-qualified> ::= <type> { <qualifier> }
 <type-range> ::= RANGE "<" <type> ">"
 <qualifier> ::= "[" "]" | "^"

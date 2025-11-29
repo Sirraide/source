@@ -1,12 +1,12 @@
 // R %srcc --ir %s
 program test;
 
-struct zero {};
+struct zero {}
 struct s {
     zero a;
     zero b;
     zero c;
-};
+}
 
 #assert void.bytes == 0;
 #assert void.bits == 0;

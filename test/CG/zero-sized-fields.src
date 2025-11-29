@@ -1,12 +1,12 @@
 // R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
-struct zero {};
+struct zero {}
 struct s {
     zero a;
     zero b;
     zero c;
-};
+}
 
 proc a() extern -> zero;
 proc b() extern -> zero;

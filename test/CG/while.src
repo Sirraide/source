@@ -24,7 +24,7 @@ proc while_infinite {
 }
 
 proc while_infinite_empty {
-    while true {};
+    while true {}
 }
 
 // * proc __src_main external fastcc {

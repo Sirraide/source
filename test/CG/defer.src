@@ -20,9 +20,9 @@ proc f2 {
         {
             defer g(2);
             defer g(1);
-        };
+        }
         g(3);
-    };
+    }
 }
 
 proc f3 (bool ret) {
@@ -42,8 +42,8 @@ proc f5 {
     while h() defer g(3);
     while h() do defer g(4);
     for i in 1..=10 do defer g(5);
-    match { _: defer g(6); };
-    match 1 { _: defer g(7); };
+    match { _: defer g(6); }
+    match 1 { _: defer g(7); }
     loop defer g(8);
 }
 
@@ -94,11 +94,11 @@ proc f10 {
                 if h() return;
                 defer g(1);
                 q(3);
-            };
+            }
             q(4);
-        };
+        }
         q(5);
-    };
+    }
     q(6);
 }
 

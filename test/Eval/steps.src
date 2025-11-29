@@ -9,7 +9,7 @@ eval {
     while i < 5 do i = i + 1;
 }
 
-eval { while true {}; } // expected-error: Exceeded maximum compile-time evaluation steps
+eval { while true {} } // expected-error: Exceeded maximum compile-time evaluation steps
 eval { // expected-error: Exceeded maximum compile-time evaluation steps
     int i;
     while i < 1001 do i = i + 1;

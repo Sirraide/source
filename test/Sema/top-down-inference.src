@@ -29,7 +29,7 @@ proc f9 (int x) -> i8 = match x {
     _: match x {
         3: 4;
         _: 5;
-    };
+    }
 }
 
 proc f10 -> range<i17> = 1..=3;
