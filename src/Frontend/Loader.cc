@@ -175,7 +175,7 @@ public:
     /// TODO: Do we want to embed the file data in the module description?
     DenseMap<File::Id, std::optional<File::Id>> files;
 
-    ASTReader(Sema& S, ImportedSourceModuleDecl* module_decl, ser::InputSpan buf)
+    ASTReader(Sema& S, ImportedSourceModuleDecl* module_decl, ByteSpan buf)
         : Base{buf}, S{S}, module_decl{module_decl} {
         types.push_back(Type()); // TypeIndex(0).
     }
@@ -338,7 +338,7 @@ public:
 };
 
 auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<> {
-    ASTReader r{*this, module_decl, ser::InputSpan{f.data(), usz(f.size())}};
+    ASTReader r{*this, module_decl, ByteSpan{f.data(), usz(f.size())}};
     auto hdr = Try(r.read<Header>());
     if (hdr.version != CurrentVersion) return base::Error(
         "Unsupported version number {}; recompile the module",
