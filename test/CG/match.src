@@ -319,7 +319,6 @@ proc f12(int i) -> int {
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
-// +     %1 = load i64, #0, align 8
 // +     ret i64 1
 // + }
 
@@ -553,7 +552,6 @@ proc f12(int i) -> int {
 //L + define private fastcc i64 @_S3f12FiiE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
-//L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +

@@ -292,7 +292,7 @@ def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
     }];
 }
 
-def LoadOp : SRCC_Op<"load"> {
+def LoadOp : SRCC_Op<"load", [Pure]> {
     let summary = "Load a value from a pointer";
     let arguments = (ins
         SRCC_Ptr:$addr,

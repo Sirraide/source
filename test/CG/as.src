@@ -206,8 +206,6 @@ proc p {
 // +
 // + proc _S1p$3p20FvE (ptr %0 nest nofree noundef readonly) private fastcc {
 // + entry:
-// +     %1 = ptradd %0, 8
-// +     %2 = load ptr, %1, align 8
 // +     ret
 // + }
 // +
@@ -228,8 +226,6 @@ proc p {
 // +
 // + proc _S1p$3p24FvE (ptr %0 nest nofree noundef readonly) private fastcc {
 // + entry:
-// +     %1 = ptradd %0, 8
-// +     %2 = load ptr, %1, align 8
 // +     ret
 // + }
 // +
