@@ -133,6 +133,7 @@ enum struct srcc::Tk : base::u8 {
     SLe,
     SGt,
     SGe,
+    Swap,
     ULt,
     ULe,
     UGt,

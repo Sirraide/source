@@ -97,6 +97,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Star: return "*";
         case Tk::StarTilde: return "*~";
         case Tk::Slash: return "/";
+        case Tk::Swap: return "><";
         case Tk::Percent: return "%";
         case Tk::Caret: return "^";
         case Tk::Ampersand: return "&";

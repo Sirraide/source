@@ -130,6 +130,7 @@ const base::TrieMap<Tk> punctuators = {
     {"==", Tk::EqEq},
     {"=>", Tk::RDblArrow},
     {">", Tk::SGt},
+    {"><", Tk::Swap},
     {">=", Tk::SGe},
     {">>", Tk::ShiftRight},
     {">>=", Tk::ShiftRightEq},

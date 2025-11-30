@@ -119,6 +119,7 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq:
+        case Tk::Swap:
             return 1;
 
         default:

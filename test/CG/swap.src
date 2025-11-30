@@ -1,0 +1,80 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc x extern -> bool;
+
+int a;
+int b;
+a >< a;
+a >< b;
+(if x() then a else b) >< (if x() then b else a);
+
+int[] sa;
+int[] sb;
+sa >< sb;
+
+// * proc __src_main external fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 16, align 8
+// +     #3 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 0, align 8
+// +     call fastcc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #0 dereferenceable 8)
+// +     call fastcc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #1 dereferenceable 8)
+// +     %0 = call fastcc zeroext i1 _S1xFbE()
+// +     %1 = select %0, ptr #0, #1
+// +     %2 = call fastcc zeroext i1 _S1xFbE()
+// +     %3 = select %2, ptr #1, #0
+// +     call fastcc void _S$11__srcc_swapFvx2ix2iE(ptr %1 dereferenceable 8, ptr %3 dereferenceable 8)
+// +     store #2, ptr nil, align 8
+// +     %4 = ptradd #2, 8
+// +     store %4, i64 0, align 8
+// +     store #3, ptr nil, align 8
+// +     %5 = ptradd #3, 8
+// +     store %5, i64 0, align 8
+// +     call fastcc void _S$11__srcc_swapFvx2Six2SiE(ptr #2 dereferenceable 16, ptr #3 dereferenceable 16)
+// +     ret
+// + }
+// +
+// + proc _S$11__srcc_swapFvx2ix2iE (ptr %0 dereferenceable 8, ptr %1 dereferenceable 8) private fastcc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     %2 = load i64, %0, align 8
+// +     store #0, i64 %2, align 8
+// +     %3 = load i64, %1, align 8
+// +     store %0, i64 %3, align 8
+// +     %4 = load i64, #0, align 8
+// +     store %1, i64 %4, align 8
+// +     ret
+// + }
+// +
+// + proc _S1xFbE external fastcc -> i1 zeroext;
+// +
+// + proc _S$11__srcc_swapFvx2Six2SiE (ptr %0 dereferenceable 16, ptr %1 dereferenceable 16) private fastcc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     %2 = load ptr, %0, align 8
+// +     %3 = ptradd %0, 8
+// +     %4 = load i64, %3, align 8
+// +     store #0, ptr %2, align 8
+// +     %5 = ptradd #0, 8
+// +     store %5, i64 %4, align 8
+// +     %6 = load ptr, %1, align 8
+// +     %7 = ptradd %1, 8
+// +     %8 = load i64, %7, align 8
+// +     store %0, ptr %6, align 8
+// +     %9 = ptradd %0, 8
+// +     store %9, i64 %8, align 8
+// +     %10 = load ptr, #0, align 8
+// +     %11 = ptradd #0, 8
+// +     %12 = load i64, %11, align 8
+// +     store %1, ptr %10, align 8
+// +     %13 = ptradd %1, 8
+// +     store %13, i64 %12, align 8
+// +     ret
+// + }

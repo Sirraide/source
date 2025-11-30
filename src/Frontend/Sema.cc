@@ -1521,6 +1521,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
             case Tk::StarStarEq:
             case Tk::StarTilde:
             case Tk::StarTildeEq:
+            case Tk::Swap:
             case Tk::UGe:
             case Tk::UGt:
             case Tk::ULe:
@@ -2320,6 +2321,22 @@ auto Sema::BuildBinaryExpr(
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
 
+    auto CheckLValue = [&](Expr* e) -> bool {
+        // Prohibit assignment to 'in' parameters.
+        if (auto ref = dyn_cast<LocalRefExpr>(e)) {
+            if (
+                auto param = dyn_cast<ParamDecl>(ref->decl);
+                param and param->intent() == Intent::In
+            ) return Error(e->location(), "Cannot assign to '%1(in%)' parameter");
+        }
+
+        // LHS must be an lvalue.
+        if (e->value_category != LValue)
+            return Error(e->location(), "Invalid target for assignment");
+
+        return true;
+    };
+
     if (IsUserDefinedOverloadedOperator(op, {lhs->type, rhs->type}))
         return BuildCall(DeclName(op));
 
@@ -2518,17 +2535,7 @@ auto Sema::BuildBinaryExpr(
                 Error(rhs->location(), "Cannot assign value of type '{}' to '{}'", rhs->type, lhs->type);
             };
 
-            // Prohibit assignment to 'in' parameters.
-            if (auto ref = dyn_cast<LocalRefExpr>(lhs)) {
-                if (
-                    auto param = dyn_cast<ParamDecl>(ref->decl);
-                    param and param->intent() == Intent::In
-                ) return Error(lhs->location(), "Cannot assign to '%1(in%)' parameter");
-            }
-
-            // LHS must be an lvalue.
-            if (lhs->value_category != LValue)
-                return Error(lhs->location(), "Invalid target for assignment");
+            if (not CheckLValue(lhs)) return nullptr;
 
             // Regular assignment.
             if (op == Tk::Assign) {
@@ -2546,6 +2553,21 @@ auto Sema::BuildBinaryExpr(
             // '**=' requires a separate function since it needs to return the lhs.
             if (lhs->type->bit_width(*tu) < Size::Bits(2)) return ErrorExpI1();
             return CastExpr::Dereference(*tu, TRY(BuildCall(DeclName(Tk::StarStarEq))));
+        }
+
+        // Swap.
+        case Tk::Swap: {
+            if (not CheckLValue(lhs) or not CheckLValue(rhs))
+                return nullptr;
+
+            if (lhs->type != rhs->type) return Error(
+                loc,
+                "Cannot swap '{}' with '{}'",
+                lhs->type,
+                rhs->type
+            );
+
+            return BuildCall(DeclName("__srcc_swap"));
         }
     }
 }
