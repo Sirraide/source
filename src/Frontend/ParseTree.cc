@@ -343,6 +343,14 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%1({}%)\n", cast<ParsedBoolLitExpr>(s)->value);
         } break;
 
+        case Kind::BreakContinueExpr: {
+            PrintHeader(s, "BreakContinueExpr", false);
+            print(
+                "%1({}%)\n",
+                cast<ParsedBreakContinueExpr>(s)->is_continue ? "continue"sv : "break"sv
+            );
+        } break;
+
         case Kind::CallExpr: {
             auto& c = *cast<ParsedCallExpr>(s);
             PrintHeader(s, "CallExpr");

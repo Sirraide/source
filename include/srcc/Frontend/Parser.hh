@@ -330,6 +330,16 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BoolLitExpr; }
 };
 
+class srcc::ParsedBreakContinueExpr final : public ParsedStmt {
+public:
+    bool is_continue;
+
+    ParsedBreakContinueExpr(bool is_continue, SLoc location)
+        : ParsedStmt{Kind::BreakContinueExpr, location}, is_continue{is_continue} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BreakContinueExpr; }
+};
+
 /// A call to a function, or anything that syntactically
 /// resembles one.
 class srcc::ParsedCallExpr final : public ParsedStmt

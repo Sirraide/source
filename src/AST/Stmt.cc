@@ -148,6 +148,7 @@ auto Expr::ignore_parens() -> Expr* {
 }
 
 ForStmt::ForStmt(
+    LoopToken token,
     Ptr<LocalDecl> enum_var,
     ArrayRef<LocalDecl*> vars,
     ArrayRef<Expr*> ranges,
@@ -156,13 +157,14 @@ ForStmt::ForStmt(
 ) : Stmt{Kind::ForStmt, location},
     num_vars{u32(vars.size())},
     num_ranges{u32(ranges.size())},
-    enum_var{enum_var}, body{body} {
+    token{token}, enum_var{enum_var}, body{body} {
     std::uninitialized_copy_n(vars.begin(), vars.size(), getTrailingObjects<LocalDecl*>());
     std::uninitialized_copy_n(ranges.begin(), ranges.size(), getTrailingObjects<Expr*>());
 }
 
 auto ForStmt::Create(
     TranslationUnit& tu,
+    LoopToken token,
     Ptr<LocalDecl> enum_var,
     ArrayRef<LocalDecl*> vars,
     ArrayRef<Expr*> ranges,
@@ -171,7 +173,7 @@ auto ForStmt::Create(
 ) -> ForStmt* {
     const auto size = totalSizeToAlloc<LocalDecl*, Expr*>(vars.size(), ranges.size());
     auto mem = tu.allocate(size, alignof(ForStmt));
-    return ::new (mem) ForStmt{enum_var, vars, ranges, body, location};
+    return ::new (mem) ForStmt{token, enum_var, vars, ranges, body, location};
 }
 
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc loc)

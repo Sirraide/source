@@ -183,7 +183,20 @@ public:
         SmallVector<Cleanup> cleanups;
     };
 
+    struct Loop {
+        ProcData::CleanupScope* cleanup;
+        mlir::Block* continue_block;
+        mlir::Block* break_block;
+        Loop(ProcData::CleanupScope* cleanup, mlir::Block* continue_block, mlir::Block* break_block)
+            : cleanup{cleanup}, continue_block{continue_block}, break_block{break_block} {
+            Assert(cleanup);
+            Assert(continue_block);
+            Assert(break_block);
+        }
+    };
+
     DenseMap<LocalDecl*, Value> locals;
+    SmallVector<Loop> loop_stack;
     Value environment_for_nested_procs;
     Value abort_info_slot;
     ir::ProcOp proc;
@@ -297,11 +310,21 @@ public:
     class EnterCleanupScope {
         SRCC_IMMOVABLE(EnterCleanupScope);
         CodeGen& cg;
-        ProcData::CleanupScope scope;
-    public:
+        ProcData::CleanupScope sc;
 
+    public:
         EnterCleanupScope(CodeGen& CG);
         ~EnterCleanupScope();
+        [[nodiscard]] auto scope() -> ProcData::CleanupScope* { return &sc; }
+    };
+
+    class EnterLoop {
+        SRCC_IMMOVABLE(EnterLoop);
+        CodeGen& cg;
+
+    public:
+        EnterLoop(CodeGen& CG, ProcData::Loop loop);
+        ~EnterLoop();
     };
 
     struct RecordInitHelper {
@@ -512,13 +535,6 @@ public:
     /// Check if a local variable has a stack slot.
     bool LocalNeedsAlloca(LocalDecl* local);
 
-    /// Create an infinite loop.
-    ///
-    /// The arguments, as well as the values returned from the callback,
-    /// are passed to the condition block of the loop. The callback may
-    /// return an empty vector if the loop is infinite or has no arguments.
-    void Loop(llvm::function_ref<void()> emit_body);
-
     /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;
 
@@ -534,12 +550,6 @@ public:
     void Unless(
         Value cond,
         llvm::function_ref<void()> emit_else
-    );
-
-    /// Create a while loop.
-    void While(
-        llvm::function_ref<Value()> emit_cond,
-        llvm::function_ref<void()> emit_body
     );
 };
 

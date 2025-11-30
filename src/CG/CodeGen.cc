@@ -92,6 +92,14 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     Unreachable("C() does not support aggregate type: '{}'", ty);
 }
 
+CodeGen::EnterLoop::EnterLoop(CodeGen& CG, ProcData::Loop l): cg{CG} {
+    cg.curr.loop_stack.push_back(l);
+}
+
+CodeGen::EnterLoop::~EnterLoop() {
+    cg.curr.loop_stack.pop_back();
+}
+
 auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
     Assert(not IsZeroSizedType(ty));
     return LLVM::LLVMArrayType::get(&mlir, getI8Type(), tu.target().preferred_size(ty).bytes());
@@ -690,12 +698,6 @@ bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
     return true;
 }
 
-void CodeGen::Loop(llvm::function_ref<void()> emit_body) {
-    auto bb_cond = EnterBlock(CreateBlock());
-    emit_body();
-    EnterBlock(bb_cond);
-}
-
 auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
     if (init->is_lvalue()) return EmitScalar(init);
     auto temp = CreateAlloca(l, init->type);
@@ -756,28 +758,6 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
 
     // Add the join block.
     EnterBlock(std::move(join));
-}
-
-void CodeGen::While(
-    llvm::function_ref<Value()> emit_cond,
-    llvm::function_ref<void()> emit_body
-) {
-    auto bb_cond = CreateBlock();
-    auto bb_body = CreateBlock();
-    auto bb_end = CreateBlock();
-    auto cond = bb_cond.get();
-
-    // Emit condition.
-    EnterBlock(std::move(bb_cond));
-    create<mlir::cf::CondBranchOp>(getUnknownLoc(), emit_cond(), bb_body.get(), bb_end.get());
-
-    // Emit body.
-    EnterBlock(std::move(bb_body));
-    emit_body();
-    create<mlir::cf::BranchOp>(getUnknownLoc(), cond);
-
-    // Continue after the loop.
-    EnterBlock(std::move(bb_end));
 }
 
 // ============================================================================
@@ -1020,12 +1000,12 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 //  Cleanup
 // ============================================================================
 CodeGen::EnterCleanupScope::EnterCleanupScope(CodeGen& cg) : cg{cg} {
-    scope.parent = std::exchange(cg.curr.current_cleanup_scope, &scope);
+    sc.parent = std::exchange(cg.curr.current_cleanup_scope, &sc);
 }
 
 CodeGen::EnterCleanupScope::~EnterCleanupScope() {
-    cg.EmitCleanups(scope);
-    cg.curr.current_cleanup_scope = scope.parent;
+    cg.EmitCleanups(sc);
+    cg.curr.current_cleanup_scope = sc.parent;
 }
 
 void CodeGen::AddCleanup(ProcData::Cleanup cleanup) {
@@ -1543,7 +1523,18 @@ auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> IRValue {
 }
 
 auto CodeGen::EmitBreakContinueExpr(BreakContinueExpr* expr) -> IRValue {
-    Todo();
+    if (HasTerminator()) return {};
+    auto& loop = curr.loop_stack[+expr->target_loop - 1]; // '0' means 'no loop'.
+    EmitCleanups(*loop.cleanup);
+    mlir::cf::BranchOp::create(
+        *this,
+        C(expr->location()),
+        expr->is_continue ? loop.continue_block : loop.break_block
+    );
+
+    // This is an expression, so ensure we have an insert point.
+    EnterBlock(CreateBlock());
+    return {};
 }
 
 auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
@@ -1863,13 +1854,19 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     }
 
     // Body.
-    EmitWithCleanup(stmt->body);
+    auto bb_inc = CreateBlock();
+    {
+        EnterCleanupScope cleanup{*this};
+        EnterLoop _{*this, {cleanup.scope(), bb_inc.get(), bb_end.get()}};
+        Emit(stmt->body);
+    }
 
     // Remove the loop variables again.
     if (enum_var) curr.locals.erase(enum_var);
     for (auto v : stmt->vars()) curr.locals.erase(v);
 
     // Emit increments for all of them.
+    EnterBlock(std::move(bb_inc));
     args.clear();
     if (enum_var) {
         args.push_back(create<arith::AddIOp>( //
@@ -1944,8 +1941,16 @@ auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
-    Loop([&] { if (auto b = stmt->body.get_or_null()) EmitWithCleanup(b); });
-    EnterBlock(CreateBlock());
+    auto bb_cond = EnterBlock(CreateBlock());
+    auto bb_exit = CreateBlock();
+    if (auto b = stmt->body.get_or_null()) {
+        EnterCleanupScope cleanup{*this};
+        EnterLoop _{*this, {cleanup.scope(), bb_cond, bb_exit.get()}};
+        Emit(b);
+    }
+
+    EnterBlock(bb_cond);
+    EnterBlock(std::move(bb_exit));
     return {};
 }
 
@@ -2299,10 +2304,28 @@ auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
-    While(
-        [&] { return EmitScalar(stmt->cond); },
-        [&] { EmitWithCleanup(stmt->body); }
-    );
+    auto bb_cond = CreateBlock();
+    auto bb_body = CreateBlock();
+    auto bb_end = CreateBlock();
+
+    // Emit condition.
+    auto cond = bb_cond.get();
+    EnterBlock(std::move(bb_cond));
+    create<mlir::cf::CondBranchOp>(getUnknownLoc(), EmitScalar(stmt->cond), bb_body.get(), bb_end.get());
+
+    // Emit body.
+    EnterBlock(std::move(bb_body));
+
+    {
+        EnterCleanupScope cleanup{*this};
+        EnterLoop _{*this, {cleanup.scope(), cond, bb_end.get()}};
+        Emit(stmt->body);
+    }
+
+    create<mlir::cf::BranchOp>(getUnknownLoc(), cond);
+
+    // Continue after the loop.
+    EnterBlock(std::move(bb_end));
     return {};
 }
 

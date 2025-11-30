@@ -20,6 +20,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <base/StringUtils.hh>
+#include <base/Utils.hh>
 
 #include <ranges>
 
@@ -3263,11 +3264,6 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
     }
 }
 
-auto Sema::BuildWhileStmt(Expr* cond, Stmt* body, SLoc loc) -> Ptr<WhileStmt> {
-    if (not MakeCondition(cond, "while")) return {};
-    return new (*tu) WhileStmt(cond, body, loc);
-}
-
 // ============================================================================
 //  Translation Driver
 // ============================================================================
@@ -3275,6 +3271,20 @@ Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
     : info{S, proc} {
     Assert(proc->scope, "Entering procedure without scope?");
     S.proc_stack.emplace_back(&info);
+}
+
+Sema::EnterLoop::EnterLoop(Sema& S) : S{S} {
+    ++S.curr_proc().loop_depth;
+    save_current_loop_has_break = std::exchange(S.curr_proc().current_loop_has_break, false);
+}
+
+Sema::EnterLoop::~EnterLoop() {
+    --S.curr_proc().loop_depth;
+    S.curr_proc().current_loop_has_break = save_current_loop_has_break;
+}
+
+auto Sema::EnterLoop::token() -> LoopToken {
+    return S.curr_proc().loop_depth;
 }
 
 Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind, bool should_enter) : S{S} {
@@ -3490,6 +3500,21 @@ auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Type) -> Ptr<Stmt> {
     return new (*tu) BoolLitExpr(parsed->value, parsed->loc);
 }
 
+auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Type) -> Ptr<Stmt> {
+    if (curr_proc().loop_depth == LoopToken(0)) return Error(
+        parsed->loc,
+        "'%1({}%)' outside loop",
+        parsed->is_continue ? "continue"sv : "break"sv
+    );
+
+    if (not parsed->is_continue) curr_proc().current_loop_has_break = true;
+    return new (*tu) BreakContinueExpr(
+        parsed->is_continue,
+        curr_proc().loop_depth,
+        parsed->loc
+    );
+}
+
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
     // Translate arguments.
     SmallVector<Expr*> args;
@@ -3603,6 +3628,7 @@ auto Sema::TranslateFieldDecl(ParsedFieldDecl*, Type) -> Decl* {
 
 auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
+    EnterLoop loop{*this};
 
     // The number of variables must be less than or equal to the number of ranges.
     if (parsed->vars().size() > parsed->ranges().size()) return Error(
@@ -3672,7 +3698,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
 
     // Now that we have the variables, translate the loop body.
     auto body = TRY(TranslateStmt(parsed->body));
-    return ForStmt::Create(*tu, enum_var, vars, ranges, body, parsed->loc);
+    return ForStmt::Create(*tu, loop.token(), enum_var, vars, ranges, body, parsed->loc);
 }
 
 auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -3730,9 +3756,15 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
 
 auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
+    EnterLoop loop{*this};
     Ptr<Stmt> body;
     if (auto b = parsed->body.get_or_null()) body = TRY(TranslateStmt(b));
-    return new (*tu) LoopExpr(body, parsed->loc);
+    return new (*tu) LoopExpr(
+        loop.token(),
+        body,
+        curr_proc().current_loop_has_break ? Type::VoidTy : Type::NoReturnTy,
+        parsed->loc
+    );
 }
 
 auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -4172,9 +4204,11 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr
 
 auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
+    EnterLoop loop{*this};
     auto cond = TRY(TranslateExpr(parsed->cond));
     auto body = TRY(TranslateStmt(parsed->body));
-    return BuildWhileStmt(cond, body, parsed->loc);
+    if (not MakeCondition(cond, "while")) return {};
+    return new (*tu) WhileStmt(loop.token(), cond, body, parsed->loc);
 }
 
 // ============================================================================

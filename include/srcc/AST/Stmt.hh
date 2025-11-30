@@ -32,6 +32,17 @@ namespace srcc {
 struct MatchCase;
 class ParsedStmt;
 class ParsedProcDecl;
+
+// Token to identify a loop.
+enum class LoopToken : u32;
+constexpr void operator--(LoopToken& t) {
+    Assert(+t != 0);
+    t = LoopToken(+t - 1);
+}
+
+constexpr void operator++(LoopToken& t) {
+    t = LoopToken(+t + 1);
+}
 } // namespace srcc
 
 // ============================================================================
@@ -107,11 +118,13 @@ class srcc::ForStmt final : public Stmt
     u32 num_vars, num_ranges;
 
 public:
+    LoopToken token;
     Ptr<LocalDecl> enum_var;
     Stmt* body;
 
 private:
     ForStmt(
+        LoopToken token,
         Ptr<LocalDecl> enum_var,
         ArrayRef<LocalDecl*> vars,
         ArrayRef<Expr*> ranges,
@@ -125,6 +138,7 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
+        LoopToken token,
         Ptr<LocalDecl> enum_var,
         ArrayRef<LocalDecl*> vars,
         ArrayRef<Expr*> ranges,
@@ -140,14 +154,16 @@ public:
 
 class srcc::WhileStmt : public Stmt {
 public:
+    LoopToken token;
     Expr* cond;
     Stmt* body;
 
     WhileStmt(
+        LoopToken token,
         Expr* cond,
         Stmt* body,
         SLoc location
-    ) : Stmt{Kind::WhileStmt, location}, cond{cond}, body{body} {}
+    ) : Stmt{Kind::WhileStmt, location}, token{token}, cond{cond}, body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
 };
@@ -307,6 +323,19 @@ public:
     ) : Expr{Kind::BoolLitExpr, Type::BoolTy, RValue, location}, value{value} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BoolLitExpr; }
+};
+
+class srcc::BreakContinueExpr final : public Expr {
+public:
+    const bool is_continue;
+    LoopToken target_loop;
+
+    BreakContinueExpr(bool is_continue, LoopToken target_loop, SLoc location)
+    : Expr{Kind::BreakContinueExpr, Type::NoReturnTy, RValue, location},
+    is_continue{is_continue},
+    target_loop{target_loop} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::BreakContinueExpr; }
 };
 
 class srcc::BuiltinCallExpr final : public Expr
@@ -570,10 +599,12 @@ public:
 
 class srcc::LoopExpr final : public Expr {
 public:
+    LoopToken token;
     Ptr<Stmt> body;
 
-    LoopExpr(Ptr<Stmt> body, SLoc loc)
-        : Expr{Kind::LoopExpr, Type::NoReturnTy, RValue, loc},
+    LoopExpr(LoopToken token, Ptr<Stmt> body, Type ty, SLoc loc)
+        : Expr{Kind::LoopExpr, ty, RValue, loc},
+          token{token},
           body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::LoopExpr; }

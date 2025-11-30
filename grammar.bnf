@@ -54,7 +54,9 @@
 <expr-no-braces> ::= <expr-assert>
                    | <expr-if>
                    | <expr-binary>
+                   | <expr-break>
                    | <expr-call>
+                   | <expr-continue>
                    | <expr-decl-ref>
                    | <expr-eval>
                    | <expr-lit>
@@ -71,7 +73,9 @@
 <expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 <expr-binary>    ::= <expr> <binary> <expr>
 <expr-block>     ::= "{" <stmts>  "}"
+<expr-break>     ::= BREAK
 <expr-call>      ::= <expr> "(" [ <call-args> ] ")"
+<expr-continue>  ::= CONTINUE
 <expr-decl-ref>  ::= IDENT [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
 <expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]

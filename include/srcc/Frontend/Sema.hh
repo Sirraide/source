@@ -82,6 +82,8 @@ private:
         SRCC_IMMOVABLE(ProcScopeInfo);
         ProcDecl* proc;
         SmallVector<LocalDecl*> locals;
+        LoopToken loop_depth = LoopToken(0);
+        bool current_loop_has_break = false;
         const EnterScope es;
 
         ProcScopeInfo(Sema& S, ProcDecl* proc)
@@ -95,6 +97,18 @@ private:
     public:
         explicit EnterProcedure(Sema& S, ProcDecl* proc);
         ~EnterProcedure() { info.es.S.proc_stack.pop_back(); }
+    };
+
+    class [[nodiscard]] EnterLoop {
+        SRCC_IMMOVABLE(EnterLoop);
+        Sema& S;
+        bool save_current_loop_has_break;
+
+    public:
+        explicit EnterLoop(Sema& S);
+        ~EnterLoop();
+
+        [[nodiscard]] auto token() -> LoopToken;
     };
 
     /// A (possibly empty) sequence of conversions applied to a type.
@@ -913,7 +927,6 @@ private:
     auto BuildTupleType(ArrayRef<TypeLoc> types) -> Type;
     auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr>;
-    auto BuildWhileStmt(Expr* cond, Stmt* body, SLoc loc) -> Ptr<WhileStmt>;
 
     /// Entry point.
     void Translate(bool load_runtime);

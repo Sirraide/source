@@ -235,7 +235,9 @@ bool Parser::AtStartOfExpression() {
         case Tk::Ampersand:
         case Tk::Assert:
         case Tk::Bool:
+        case Tk::Break:
         case Tk::Caret:
+        case Tk::Continue:
         case Tk::Eval:
         case Tk::False:
         case Tk::Hash:
@@ -491,7 +493,9 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 // <expr> ::= <expr-assert>
 //          | <expr-block>
 //          | <expr-binary>
+//          | <expr-break>
 //          | <expr-call>
+//          | <expr-continue>
 //          | <expr-decl-ref>
 //          | <expr-eval>
 //          | <expr-if>
@@ -542,6 +546,16 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         // <expr-assert> ::= ASSERT <expr> [ "," <expr> ]
         case Tk::Assert:
             lhs = ParseAssert(false);
+            break;
+
+        // <expr-break> ::= BREAK
+        case Tk::Break:
+            lhs = new (*this) ParsedBreakContinueExpr{false, Next()};
+            break;
+
+        // <expr-continue> ::= CONTINUE
+        case Tk::Continue:
+            lhs = new (*this) ParsedBreakContinueExpr{true, Next()};
             break;
 
         // <expr-block> ::= "{" { <stmt> } "}"

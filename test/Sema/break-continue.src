@@ -1,0 +1,59 @@
+// V %srcc --sema --verify %s
+program test;
+
+break; // expected-error: 'break' outside loop
+continue; // expected-error: 'continue' outside loop
+
+loop {
+    break;
+    continue;
+    loop {
+        break;
+        continue;
+    }
+}
+
+for "" {
+    break;
+    continue;
+}
+
+while true {
+    break;
+    continue;
+    while true {
+        break;
+        continue;
+        loop {
+            break;
+            continue;
+        }
+        break;
+        continue;
+    }
+    break;
+    continue;
+}
+
+proc p {
+    while true {
+        break;
+        continue;
+        proc p2 {
+            break; // expected-error: 'break' outside loop
+            continue; // expected-error: 'continue' outside loop
+            while true {
+                break;
+                continue;
+            }
+            break; // expected-error: 'break' outside loop
+            continue; // expected-error: 'continue' outside loop
+        }
+    }
+}
+
+while true {
+    int x = break;
+    int y = continue;
+    int z = if true break else 42;
+}

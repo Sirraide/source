@@ -252,6 +252,16 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "BoolLitExpr", [&] { print("%1({}%)", b->value); });
         },
 
+        [&](BreakContinueExpr* b) {
+            PrintBasicNode(e, "BreakContinueExpr", [&] {
+                print(
+                    "%1({}%) %3(#{}%)",
+                    b->is_continue ? "continue"sv : "break"sv,
+                    +b->target_loop
+                );
+            }, false);
+        },
+
         [&](BuiltinCallExpr* c) {
             PrintBasicNode(e, "BuiltinCallExpr", [&] {
                 print("%2({}%)", BuiltinCallExpr::ToString(c->builtin));
@@ -335,7 +345,7 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](ForStmt* f) {
-            PrintBasicNode(e, "ForStmt");
+            PrintBasicNode(e, "ForStmt", [&] { print("%3(#{}%)", +f->token); });
             SmallVector<Stmt*> children;
             if (auto v = f->enum_var.get_or_null()) children.push_back(v);
             llvm::append_range(children, f->vars());
@@ -401,7 +411,7 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](LoopExpr* l) {
-            PrintBasicNode(e, "LoopExpr");
+            PrintBasicNode(e, "LoopExpr", [&] { print("%3(#{}%)", +l->token); });
             if (auto b = l->body.get_or_null()) PrintChildren(b);
         },
 
@@ -543,7 +553,7 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](WhileStmt* w) {
-            PrintBasicNode(e, "WhileStmt");
+            PrintBasicNode(e, "WhileStmt", [&] { print("%3(#{}%)", +w->token); });
             SmallVector<Stmt*, 2> children{w->cond, w->body};
             PrintChildren(children);
         },
