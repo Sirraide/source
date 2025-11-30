@@ -780,8 +780,9 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
     }
 
     // Determine the return type.
-    Assert(proc.getNumResults() < 2, "FFI procedure has more than 1 result?");
-    auto ffi_ret = proc->getNumResults() ? FFIType(proc.getResultTypes()[0]) : &ffi_type_void;
+    auto ty = proc.getFunctionType();
+    Assert(ty.getNumResults() < 2, "FFI procedure has more than 1 result?");
+    auto ffi_ret = ty.getNumResults() ? FFIType(ty.getResult(0)) : &ffi_type_void;
     if (not ffi_ret) return std::nullopt;
 
     // Collect the arguments.
@@ -861,8 +862,8 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
     );
 
     // Retrieve the return value.
-    if (proc.getResultTypes().empty()) return SRValue();
-    return LoadSRValue(ret_storage.data(), proc.getResultTypes()[0]);
+    if (ty.getNumResults() == 0) return SRValue();
+    return LoadSRValue(ret_storage.data(), ty.getResult(0));
 }
 
 auto Eval::FFIType(mlir::Type ty) -> ffi_type* {
@@ -959,7 +960,7 @@ void Eval::PushFrame(
 
     // Set up the stack frame.
     Assert(args.size() == proc.getNumCallArgs());
-    Assert(ret_vals.size() == proc.getNumResults());
+    Assert(ret_vals.size() == proc.getFunctionType().getNumResults());
     StackFrame frame{proc};
     frame.stack_base = stack_top;
 

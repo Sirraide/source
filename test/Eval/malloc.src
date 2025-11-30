@@ -1,0 +1,66 @@
+// R %srcc --eval %s
+program test;
+
+import <cstdlib>, <cstdio> as libc;
+
+struct assert_msg_buf {
+    i8^ data;
+    int size;
+    int capacity;
+}
+
+proc append_int (inout assert_msg_buf into, copy int value) nomangle {
+    // 0 is a special case.
+    if value == 0 then {
+        append_str(into, '0');
+        return;
+    }
+
+    // For everything else, we need a tempoary buffer.
+    i8[int.bits] tmp;
+    int bits_used = 0;
+
+    // Remember whether this was negative.
+    bool negative = value < 0;
+    if negative then value = -value;
+
+    // Append the digits.
+    while value != 0 {
+        tmp[bits_used] = (value % 10) as i8 + '0'[0];
+        value /= 10;
+        bits_used++;
+    }
+
+    // If the value was negative, add a minus sign.
+    if negative then append_str(into, '-');
+
+    // Reverse the digits.
+    for i in 0..<bits_used/2 {
+        int j = bits_used - i - 1;
+        tmp[i] >< tmp[j];
+    }
+
+    // And append them.
+    append_str(into, (&tmp, bits_used));
+}
+
+proc append_str (inout assert_msg_buf into, i8[] str) nomangle {
+    if into.size + str.size >= into.capacity return;
+    __srcc_memcpy(__srcc_ptradd(into.data, into.size), str.data, str.size);
+    into.size += str.size;
+}
+
+// FIXME: If we *also* wrap all of the lines below in 'eval {}' in addition
+// to passing '--eval', we get a crash.
+assert_msg_buf s = (libc::malloc(10000) as! i8^, 0, 10000);
+var x = 24;
+var y = 20;
+append_str(s, "x = ");
+append_int(s, x);
+append_str(s, ", y = ");
+append_int(s, y);
+append_str(s, ", x + y = ");
+append_int(s, x + y);
+libc::printf("%.*s\n", s.size as i32, s.data);
+
+// * x = 24, y = 20, x + y = 44
