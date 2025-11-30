@@ -1,0 +1,19 @@
+// V %srcc --sema --verify %s
+program test;
+
+int a;
+int b;
+__srcc_memcpy(&a, &b, 8);
+
+i8[20] c;
+__srcc_memcpy(&c, &c, 20);
+
+__srcc_memcpy(); // expected-error: '__srcc_memcpy' takes 3 arguments, got 0
+__srcc_memcpy(1); // expected-error: '__srcc_memcpy' takes 3 arguments, got 1
+__srcc_memcpy(1, 2); // expected-error: '__srcc_memcpy' takes 3 arguments, got 2
+__srcc_memcpy(1, 2, 3, 4); // expected-error: '__srcc_memcpy' takes 3 arguments, got 4
+
+__srcc_memcpy(1, 2, 3); // expected-error: Argument #1 of '__srcc_memcpy' must be a pointer, but was int
+__srcc_memcpy(&a, 1, a); // expected-error: Argument #2 of '__srcc_memcpy' must be a pointer, but was int
+__srcc_memcpy(1, &a, a); // expected-error: Argument #1 of '__srcc_memcpy' must be a pointer, but was int
+__srcc_memcpy(&a, &a, &a); // expected-error: Cannot convert expression of type 'int^' to 'int'

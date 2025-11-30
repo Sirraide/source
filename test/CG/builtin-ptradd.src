@@ -1,0 +1,103 @@
+// R      %srcc --short-filenames --ir   --target x86_64-unknown-linux %s
+// R[//L] %srcc --short-filenames --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc p1 -> i8^ {
+    i8 a;
+    i8^ b = &a;
+    return __srcc_ptradd(b, 10);
+}
+
+proc p2 -> i8^ {
+    i8 a;
+    return __srcc_ptradd(&a, 10);
+}
+
+proc p3 (int offs) -> i8^ {
+    i8 a;
+    return __srcc_ptradd(&a, offs);
+}
+
+// * proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2p1FRI8E private fastcc -> ptr {
+// +     #0 = 1, align 1
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i8 0, align 1
+// +     store #1, ptr #0, align 8
+// +     %0 = load ptr, #1, align 8
+// +     %1 = ptradd %0, 10
+// +     ret ptr %1
+// + }
+// +
+// + proc _S2p2FRI8E private fastcc -> ptr {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 0, align 1
+// +     %0 = ptradd #0, 10
+// +     ret ptr %0
+// + }
+// +
+// + proc _S2p3FRI8iE (i64 %0) private fastcc -> ptr {
+// +     #0 = 8, align 8
+// +     #1 = 1, align 1
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i8 0, align 1
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #1, i64 %1
+// +     ret ptr %2
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc ptr @_S2p1FRI8E() #0 {
+//L +   %1 = alloca i8, i64 1, align 1
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i8 0, ptr %1, align 1
+//L +   store ptr %1, ptr %2, align 8
+//L +   %3 = load ptr, ptr %2, align 8
+//L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 10
+//L +   ret ptr %4
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc ptr @_S2p2FRI8E() #0 {
+//L +   %1 = alloca i8, i64 1, align 1
+//L +   store i8 0, ptr %1, align 1
+//L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 10
+//L +   ret ptr %2
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc ptr @_S2p3FRI8iE(i64 %0) #0 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 1, align 1
+//L +   store i64 %0, ptr %2, align 8
+//L +   store i8 0, ptr %3, align 1
+//L +   %4 = load i64, ptr %2, align 8
+//L +   %5 = getelementptr inbounds nuw i8, ptr %3, i64 %4
+//L +   ret ptr %5
+//L + }
+//L +
+//L + attributes #0 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

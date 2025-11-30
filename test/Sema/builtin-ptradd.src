@@ -1,0 +1,19 @@
+// V %srcc --sema --verify %s
+program test;
+
+i8 a;
+i8^ b = &a;
+__srcc_ptradd(b, 10);
+__srcc_ptradd(b, 10);
+__srcc_ptradd(&a, 10);
+
+__srcc_ptradd(); // expected-error: '__srcc_ptradd' takes 2 arguments, got 0
+__srcc_ptradd(1); // expected-error: '__srcc_ptradd' takes 2 arguments, got 1
+__srcc_ptradd(1, 2, 3); // expected-error: '__srcc_ptradd' takes 2 arguments, got 3
+__srcc_ptradd(1, 2); // expected-error: Argument #1 of '__srcc_ptradd' must be of type i8^, but was int
+__srcc_ptradd(1, &a); // expected-error: Argument #1 of '__srcc_ptradd' must be of type i8^, but was int
+__srcc_ptradd(&a, &a); // expected-error: Cannot convert expression of type 'i8^' to 'int'
+
+int i;
+int^ pi = &i;
+__srcc_ptradd(pi, i); // expected-error: Argument #1 of '__srcc_ptradd' must be of type i8^, but was int^

@@ -1,0 +1,86 @@
+// R      %srcc --short-filenames --ir   --target x86_64-unknown-linux %s
+// R[//L] %srcc --short-filenames --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc pa {
+    int a;
+    int b;
+    __srcc_memcpy(&a, &b, int.bytes);
+}
+
+proc pb {
+    i8[20] c1;
+    i8[20] c2;
+    __srcc_memcpy(&c1, &c2, 20);
+}
+
+// * proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2paFvE private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 0, align 8
+// +     copy #0 <- #1, 8
+// +     ret
+// + }
+// +
+// + proc _S2pbFvE private fastcc {
+// +     #0 = 20, align 1
+// +     #1 = 20, align 1
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 20
+// +     set ptr #1, i8 0, i64 20
+// +     copy #0 <- #1, 20
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux-gnu"
+//L +
+//L + ; Function Attrs: nounwind
+//L + define fastcc void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2paFvE() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store i64 0, ptr %2, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %1, ptr %2, i64 8, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private fastcc void @_S2pbFvE() #0 {
+//L +   %1 = alloca i8, i64 20, align 1
+//L +   %2 = alloca i8, i64 20, align 1
+//L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 20, i1 false)
+//L +   call void @llvm.memset.p0.i64(ptr %2, i8 0, i64 20, i1 false)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %1, ptr %2, i64 20, i1 false)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
+//L +
+//L + attributes #0 = { nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

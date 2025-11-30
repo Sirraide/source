@@ -254,14 +254,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](BuiltinCallExpr* c) {
             PrintBasicNode(e, "BuiltinCallExpr", [&] {
-                print("%2({}%)", [&] -> std::string_view {
-                    switch (c->builtin) {
-                        using B = BuiltinCallExpr::Builtin;
-                        case B::Unreachable: return "__srcc_unreachable";
-                    }
-
-                    return "<invalid>";
-                }());
+                print("%2({}%)", BuiltinCallExpr::ToString(c->builtin));
             });
 
             PrintChildren<Expr*>(c->args());

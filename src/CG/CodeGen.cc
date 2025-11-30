@@ -1542,10 +1542,37 @@ auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> IRValue {
     return CreateBool(C(stmt->location()), stmt->value);
 }
 
+auto CodeGen::EmitBreakContinueExpr(BreakContinueExpr* expr) -> IRValue {
+    Todo();
+}
+
 auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
+    auto loc = C(expr->location());
     switch (expr->builtin) {
-        case BuiltinCallExpr::Builtin::Unreachable: {
-            create<LLVM::UnreachableOp>(C(expr->location()));
+        using B = BuiltinCallExpr::Builtin;
+        case B::Memcpy: {
+            auto to = EmitScalar(expr->args()[0]);
+            auto from = EmitScalar(expr->args()[1]);
+            auto size = EmitScalar(expr->args()[2]);
+            create<LLVM::MemcpyOp>(
+                loc,
+                to,
+                from,
+                size,
+                false
+            );
+            return {};
+        }
+
+        case B::Ptradd: {
+            Assert(expr->args()[0]->type == tu.I8PtrTy);
+            auto ptr = EmitScalar(expr->args()[0]);
+            auto offset = EmitScalar(expr->args()[1]);
+            return CreatePtrAdd(loc, ptr, offset);
+        }
+
+        case B::Unreachable: {
+            create<LLVM::UnreachableOp>(loc);
             EnterBlock(CreateBlock());
             return {};
         }

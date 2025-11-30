@@ -24,6 +24,11 @@ namespace srcc {
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
+#define SRCC_ALL_BUILTINS(F)   \
+    F(Memcpy, "__srcc_memcpy") \
+    F(Ptradd, "__srcc_ptradd") \
+    F(Unreachable, "__srcc_unreachable")
+
 struct MatchCase;
 class ParsedStmt;
 class ParsedProcDecl;
@@ -310,7 +315,9 @@ class srcc::BuiltinCallExpr final : public Expr
 
 public:
     enum struct Builtin : u8 {
-        Unreachable, // __srcc_unreachable
+        #define F(enumerator, ...) enumerator,
+        SRCC_ALL_BUILTINS(F)
+        #undef F
     };
 
     const Builtin builtin;
@@ -322,6 +329,7 @@ private:
     BuiltinCallExpr(
         Builtin kind,
         Type return_type,
+        ValueCategory vc,
         ArrayRef<Expr*> args,
         SLoc location
     );
@@ -331,12 +339,16 @@ public:
         TranslationUnit& tu,
         Builtin kind,
         Type return_type,
+        ValueCategory vc,
         ArrayRef<Expr*> args,
         SLoc location
     ) -> BuiltinCallExpr*;
 
     /// Get the arguments.
     auto args() -> ArrayRef<Expr*> { return getTrailingObjects(num_args); }
+
+    [[nodiscard]] static auto ToString(Builtin b) -> String;
+    [[nodiscard]] static auto Parse(StringRef s) -> Opt<Builtin>;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinCallExpr; }
 };
@@ -1298,5 +1310,13 @@ auto srcc::Stmt::visit(Visitor&& v) -> decltype(auto) {
     }
     Unreachable();
 }
+
+template <>
+struct std::formatter<srcc::BuiltinCallExpr::Builtin> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(srcc::BuiltinCallExpr::Builtin b, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(srcc::BuiltinCallExpr::ToString(b), ctx);
+    }
+};
 
 #endif // SRCC_AST_STMT_HH

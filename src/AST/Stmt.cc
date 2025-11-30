@@ -4,6 +4,7 @@
 #include <srcc/Frontend/Parser.hh>
 
 #include <llvm/Support/Casting.h>
+#include <base/Assert.hh>
 
 #include <memory>
 
@@ -42,28 +43,39 @@ auto ArrayInitExpr::Create(
 BuiltinCallExpr::BuiltinCallExpr(
     Builtin kind,
     Type return_type,
+    ValueCategory vc,
     ArrayRef<Expr*> args,
     SLoc location
-) : Expr{Kind::BuiltinCallExpr, return_type, RValue, location}, builtin{kind}, num_args{u32(args.size())} {
+) : Expr{Kind::BuiltinCallExpr, return_type, vc, location}, builtin{kind}, num_args{u32(args.size())} {
     std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
-    // Determine value category.
-    switch (builtin) {
-        // RValue.
-        case Builtin::Unreachable:
-            break;
-    }
 }
 
 auto BuiltinCallExpr::Create(
     TranslationUnit& tu,
     Builtin kind,
     Type return_type,
+    ValueCategory vc,
     ArrayRef<Expr*> args,
     SLoc location
 ) -> BuiltinCallExpr* {
     auto size = totalSizeToAlloc<Expr*>(args.size());
     auto mem = tu.allocate(size, alignof(BuiltinCallExpr));
-    return ::new (mem) BuiltinCallExpr{kind, return_type, args, location};
+    return ::new (mem) BuiltinCallExpr{kind, return_type, vc, args, location};
+}
+
+auto BuiltinCallExpr::Parse(StringRef s) -> Opt<Builtin> {
+    #define F(enumerator, name) .Case(name, Builtin::enumerator)
+    return llvm::StringSwitch<Opt<Builtin>>(s)
+        SRCC_ALL_BUILTINS(F)
+        .Default(std::nullopt);
+    #undef F
+}
+
+auto BuiltinCallExpr::ToString(Builtin b) -> String {
+    #define F(enumerator, name) case Builtin::enumerator: return name;
+    switch (b) { SRCC_ALL_BUILTINS(F); }
+    Unreachable();
+    #undef F
 }
 
 CallExpr::CallExpr(

@@ -2577,16 +2577,70 @@ auto Sema::BuildBuiltinCallExpr(
     ArrayRef<Expr*> args,
     SLoc call_loc
 ) -> Ptr<BuiltinCallExpr> {
-    auto ForbidArgs = [&](StringRef builtin_name) {
-        if (args.size() == 0) return true;
-        Error(call_loc, "{} takes no arguments", builtin_name);
+    auto CheckNArgs = [&](usz n) {
+        if (args.size() == n) return true;
+        if (n == 0) Error(call_loc, "'%2({}%)' takes no arguments", builtin);
+        else Error(call_loc, "'%2({}%)' takes {} arguments, got {}", builtin, n, args.size());
         return false;
     };
 
+    auto CheckPointer = [&](usz n) -> bool {
+        if (isa<PtrType>(args[n]->type)) return true;
+        return Error(
+            args[n]->location(),
+            "Argument #{} of '%2({}%)' must be a pointer, but was {}",
+            n + 1,
+            builtin,
+            args[n]->type
+        );
+    };
+
+    auto CheckTypeExact = [&](Type ty, usz n) -> bool {
+        if (args[n]->type == ty) return true;
+        return Error(
+            args[n]->location(),
+            "Argument #{} of '%2({}%)' must be of type {}, but was {}",
+            n + 1,
+            builtin,
+            ty,
+            args[n]->type
+        );
+    };
+
+    auto ToInt = [&](usz n) -> Ptr<Expr> {
+        return BuildInitialiser(Type::IntTy, args[n], args[n]->location());
+    };
+
+    auto Make = [&](Type ret, ArrayRef<Expr*> args = {}, ValueCategory vc = Expr::RValue) {
+        return BuiltinCallExpr::Create(
+            *tu,
+            builtin,
+            ret,
+            vc,
+            args,
+            call_loc
+        );
+    };
+
     switch (builtin) {
-        case BuiltinCallExpr::Builtin::Unreachable: {
-            if (not ForbidArgs("__srcc_unreachable")) return nullptr;
-            return BuiltinCallExpr::Create(*tu, builtin, Type::NoReturnTy, {}, call_loc);
+        using B = BuiltinCallExpr::Builtin;
+        case B::Memcpy: {
+            if (not CheckNArgs(3)) return nullptr;
+            if (not CheckPointer(0) or not CheckPointer(1)) return nullptr;
+            auto size = TRY(ToInt(2));
+            return Make(Type::VoidTy, {LValueToRValue(args[0]), LValueToRValue(args[1]), size});
+        }
+
+        case B::Ptradd: {
+            if (not CheckNArgs(2)) return nullptr;
+            if (not CheckTypeExact(tu->I8PtrTy, 0)) return nullptr;
+            auto size = TRY(ToInt(1));
+            return Make(args[0]->type, {LValueToRValue(args[0]), size});
+        }
+
+        case B::Unreachable: {
+            if (not CheckNArgs(0)) return nullptr;
+            return Make(Type::NoReturnTy);
         }
     }
 
@@ -3443,13 +3497,8 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
 
     // Callee may be a builtin.
     if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
-        using B = BuiltinCallExpr::Builtin;
-        auto bk = llvm::StringSwitch<std::optional<B>>(dre->names().front().str())
-            .Case("__srcc_unreachable", B::Unreachable)
-            .Default(std::nullopt);
-
-        // We have a builtin!
-        if (bk.has_value()) return BuildBuiltinCallExpr(*bk, args, parsed->loc);
+        auto bk = BuiltinCallExpr::Parse(dre->names().front().str());
+        if (bk.has_value()) return BuildBuiltinCallExpr(bk.value(), args, parsed->loc);
     }
 
     // Translate callee.
