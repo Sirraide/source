@@ -102,8 +102,15 @@ LOWERING(AbortOp, {
     }();
 
     // Retrieve a declaration of the appropriate handler.
+    //
+    // Look up *any* symbol here, not just an 'LLVM::LLVMFuncOp' in case
+    // we’re compiling the file that actually defines these symbols, in
+    // which case they may not have been lowered to 'LLVMFuncOp's yet and
+    // looking up a symbol of that type would fail, which would cause us
+    // to declare the function an additional time and create a duplicate
+    // definition error.
     auto module = op->getParentOfType<mlir::ModuleOp>();
-    auto func = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
+    auto func = module.lookupSymbol(name);
     if (not func) {
         mlir::OpBuilder::InsertionGuard guard{r};
         r.setInsertionPointToEnd(&module.getBodyRegion().back());
@@ -118,7 +125,7 @@ LOWERING(AbortOp, {
         );
     }
 
-    r.create<LLVM::CallOp>(op.getLoc(), func, a.getAbortInfo());
+    r.create<LLVM::CallOp>(op.getLoc(), mlir::TypeRange(), StringRef(name), a.getAbortInfo());
     return r.create<LLVM::UnreachableOp>(op.getLoc());
 });
 
