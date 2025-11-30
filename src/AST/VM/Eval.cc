@@ -583,7 +583,10 @@ bool Eval::EvalLoop() {
                 if (not decl or not decl.get()->body()) {
                     auto res = FFICall(callee, c);
                     if (not res) return false;
-                    Temp(i->getResult(0)) = std::move(res.value());
+                    if (i->getNumResults() != 0) {
+                        Assert(i->getNumResults() == 1);
+                        Temp(i->getResult(0)) = std::move(res.value());
+                    }
                     continue;
                 }
 
