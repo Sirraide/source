@@ -333,7 +333,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::BinaryExpr: {
             auto& b = *cast<ParsedBinaryExpr>(s);
             PrintHeader(s, "BinaryExpr", false);
-            print("%1({}%)\n", b.op);
+            print("%1({}%)\n", utils::Escape(Spelling(b.op), false, true));
             SmallVector<ParsedStmt*, 2> children{b.lhs, b.rhs};
             PrintChildren(children);
         } break;

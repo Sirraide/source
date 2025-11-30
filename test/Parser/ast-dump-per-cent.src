@@ -1,0 +1,17 @@
+// R %srcc --parse --ast %s
+program test;
+
+// Check that we escape '%' signs in the AST dump.
+//
+// FIXME: The proper thing to do is for the formatting implementation
+// to not treat per cent signs in the input as formatting characters;
+// to that end, we need to render colours first and *then* format (preferably,
+// do the first at compile time, but honestly, it’s only used for diagnostics
+// and AST dumping, so doing it at runtime is fine too)
+
+1 % 2;
+
+// re* Program test
+// re+ BinaryExpr .* <12:1> %
+// re+ ├─IntLitExpr .* <12:1> 1
+// re+ └─IntLitExpr .* <12:5> 2
