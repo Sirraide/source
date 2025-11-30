@@ -557,7 +557,10 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](UnaryExpr* u) {
-            PrintBasicNode(e, "UnaryExpr", [&] { print("%1({}%)", u->op); });
+            PrintBasicNode(e, "UnaryExpr", [&] {
+                print("%1({}%)%3({}%)", u->op, u->postfix ? " postfix" : "");
+            });
+
             PrintChildren(u->arg);
         },
 
