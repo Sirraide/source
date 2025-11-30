@@ -70,12 +70,12 @@ proc mrvalue_large {
 
 // * @0 = "123\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S7srvalueFvE private fastcc {
+// + proc _S7srvalueFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 16, align 8
 // +
@@ -84,38 +84,38 @@ proc mrvalue_large {
 // +     store #1, ptr @0, align 8
 // +     %0 = ptradd #1, 8
 // +     store %0, i64 3, align 8
-// +     call fastcc void _S4p_inFvxiE(i64 1)
-// +     call fastcc void _S6p_copyFvx3iE(i64 1)
-// +     call fastcc void _S6p_moveFviE(i64 1)
+// +     call ccc void _S4p_inFvxiE(i64 1)
+// +     call ccc void _S6p_copyFvx3iE(i64 1)
+// +     call ccc void _S6p_moveFviE(i64 1)
 // +     %1 = load i64, #0, align 8
-// +     call fastcc void _S4p_inFvxiE(i64 %1)
+// +     call ccc void _S4p_inFvxiE(i64 %1)
 // +     %2 = load i64, #0, align 8
-// +     call fastcc void _S6p_copyFvx3iE(i64 %2)
+// +     call ccc void _S6p_copyFvx3iE(i64 %2)
 // +     %3 = load i64, #0, align 8
-// +     call fastcc void _S6p_moveFviE(i64 %3)
-// +     call fastcc void _S4p_inFvxSI8E(ptr @0, i64 3)
-// +     call fastcc void _S6p_copyFvx3SI8E(ptr @0, i64 3)
-// +     call fastcc void _S6p_moveFvSI8E(ptr @0, i64 3)
+// +     call ccc void _S6p_moveFviE(i64 %3)
+// +     call ccc void _S4p_inFvxSI8E(ptr @0, i64 3)
+// +     call ccc void _S6p_copyFvx3SI8E(ptr @0, i64 3)
+// +     call ccc void _S6p_moveFvSI8E(ptr @0, i64 3)
 // +     %4 = load ptr, #1, align 8
 // +     %5 = ptradd #1, 8
 // +     %6 = load i64, %5, align 8
-// +     call fastcc void _S4p_inFvxSI8E(ptr %4, i64 %6)
+// +     call ccc void _S4p_inFvxSI8E(ptr %4, i64 %6)
 // +     %7 = load ptr, #1, align 8
 // +     %8 = ptradd #1, 8
 // +     %9 = load i64, %8, align 8
-// +     call fastcc void _S6p_copyFvx3SI8E(ptr %7, i64 %9)
+// +     call ccc void _S6p_copyFvx3SI8E(ptr %7, i64 %9)
 // +     %10 = load ptr, #1, align 8
 // +     %11 = ptradd #1, 8
 // +     %12 = load i64, %11, align 8
-// +     call fastcc void _S6p_moveFvSI8E(ptr %10, i64 %12)
-// +     call fastcc void _S7p_inoutFvx2iE(ptr #0 dereferenceable 8)
-// +     call fastcc void _S5p_outFvx1iE(ptr #0 dereferenceable 8)
-// +     call fastcc void _S7p_inoutFvx2SI8E(ptr #1 dereferenceable 16)
-// +     call fastcc void _S5p_outFvx1SI8E(ptr #1 dereferenceable 16)
+// +     call ccc void _S6p_moveFvSI8E(ptr %10, i64 %12)
+// +     call ccc void _S7p_inoutFvx2iE(ptr #0 dereferenceable 8)
+// +     call ccc void _S5p_outFvx1iE(ptr #0 dereferenceable 8)
+// +     call ccc void _S7p_inoutFvx2SI8E(ptr #1 dereferenceable 16)
+// +     call ccc void _S5p_outFvx1SI8E(ptr #1 dereferenceable 16)
 // +     ret
 // + }
 // +
-// + proc _S4p_inFvxiE (i64 %0) private fastcc {
+// + proc _S4p_inFvxiE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -123,7 +123,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_copyFvx3iE (i64 %0) private fastcc {
+// + proc _S6p_copyFvx3iE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -131,7 +131,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_moveFviE (i64 %0) private fastcc {
+// + proc _S6p_moveFviE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -139,7 +139,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S4p_inFvxSI8E (ptr %0, i64 %1) private fastcc {
+// + proc _S4p_inFvxSI8E (ptr %0, i64 %1) private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -149,7 +149,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_copyFvx3SI8E (ptr %0, i64 %1) private fastcc {
+// + proc _S6p_copyFvx3SI8E (ptr %0, i64 %1) private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -159,7 +159,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_moveFvSI8E (ptr %0, i64 %1) private fastcc {
+// + proc _S6p_moveFvSI8E (ptr %0, i64 %1) private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -169,27 +169,27 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S7p_inoutFvx2iE (ptr %0 dereferenceable 8) private fastcc {
+// + proc _S7p_inoutFvx2iE (ptr %0 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1iE (ptr %0 dereferenceable 8) private fastcc {
+// + proc _S5p_outFvx1iE (ptr %0 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S7p_inoutFvx2SI8E (ptr %0 dereferenceable 16) private fastcc {
+// + proc _S7p_inoutFvx2SI8E (ptr %0 dereferenceable 16) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1SI8E (ptr %0 dereferenceable 16) private fastcc {
+// + proc _S5p_outFvx1SI8E (ptr %0 dereferenceable 16) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S13mrvalue_smallFvE private fastcc {
+// + proc _S13mrvalue_smallFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -202,28 +202,28 @@ proc mrvalue_large {
 // +     store #0, i64 1, align 8
 // +     store #1, i64 1, align 8
 // +     %0 = load i64, #1, align 8
-// +     call fastcc void _S4p_inFvxT5smallE(i64 %0)
+// +     call ccc void _S4p_inFvxT5smallE(i64 %0)
 // +     store #2, i64 1, align 8
 // +     %1 = load i64, #2, align 8
-// +     call fastcc void _S6p_copyFvx3T5smallE(i64 %1)
+// +     call ccc void _S6p_copyFvx3T5smallE(i64 %1)
 // +     store #3, i64 1, align 8
 // +     %2 = load i64, #3, align 8
-// +     call fastcc void _S6p_moveFvT5smallE(i64 %2)
+// +     call ccc void _S6p_moveFvT5smallE(i64 %2)
 // +     copy #4 <- #0, 8
 // +     %3 = load i64, #4, align 8
-// +     call fastcc void _S4p_inFvxT5smallE(i64 %3)
+// +     call ccc void _S4p_inFvxT5smallE(i64 %3)
 // +     copy #5 <- #0, 8
 // +     %4 = load i64, #5, align 8
-// +     call fastcc void _S6p_copyFvx3T5smallE(i64 %4)
+// +     call ccc void _S6p_copyFvx3T5smallE(i64 %4)
 // +     copy #6 <- #0, 8
 // +     %5 = load i64, #6, align 8
-// +     call fastcc void _S6p_moveFvT5smallE(i64 %5)
-// +     call fastcc void _S7p_inoutFvx2T5smallE(ptr #0 dereferenceable 8)
-// +     call fastcc void _S5p_outFvx1T5smallE(ptr #0 dereferenceable 8)
+// +     call ccc void _S6p_moveFvT5smallE(i64 %5)
+// +     call ccc void _S7p_inoutFvx2T5smallE(ptr #0 dereferenceable 8)
+// +     call ccc void _S5p_outFvx1T5smallE(ptr #0 dereferenceable 8)
 // +     ret
 // + }
 // +
-// + proc _S4p_inFvxT5smallE (i64 %0) private fastcc {
+// + proc _S4p_inFvxT5smallE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -231,7 +231,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_copyFvx3T5smallE (i64 %0) private fastcc {
+// + proc _S6p_copyFvx3T5smallE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -239,7 +239,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S6p_moveFvT5smallE (i64 %0) private fastcc {
+// + proc _S6p_moveFvT5smallE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -247,17 +247,17 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S7p_inoutFvx2T5smallE (ptr %0 dereferenceable 8) private fastcc {
+// + proc _S7p_inoutFvx2T5smallE (ptr %0 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1T5smallE (ptr %0 dereferenceable 8) private fastcc {
+// + proc _S5p_outFvx1T5smallE (ptr %0 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S13mrvalue_largeFvE private fastcc {
+// + proc _S13mrvalue_largeFvE private ccc {
 // +     #0 = 800, align 8
 // +     #1 = 800, align 8
 // +     #2 = 800, align 8
@@ -269,43 +269,43 @@ proc mrvalue_large {
 // + entry:
 // +     set ptr #0, i8 0, i64 800
 // +     set ptr #1, i8 0, i64 800
-// +     call fastcc void _S4p_inFvxT5largeE(ptr #1 dereferenceable 800)
+// +     call ccc void _S4p_inFvxT5largeE(ptr #1 dereferenceable 800)
 // +     set ptr #2, i8 0, i64 800
-// +     call fastcc void _S6p_copyFvx3T5largeE(ptr #2 byval i8[800])
+// +     call ccc void _S6p_copyFvx3T5largeE(ptr #2 byval i8[800])
 // +     set ptr #3, i8 0, i64 800
-// +     call fastcc void _S6p_moveFvT5largeE(ptr #3 byval i8[800])
+// +     call ccc void _S6p_moveFvT5largeE(ptr #3 byval i8[800])
 // +     copy #4 <- #0, 800
-// +     call fastcc void _S4p_inFvxT5largeE(ptr #4 dereferenceable 800)
+// +     call ccc void _S4p_inFvxT5largeE(ptr #4 dereferenceable 800)
 // +     copy #5 <- #0, 800
-// +     call fastcc void _S6p_copyFvx3T5largeE(ptr #5 byval i8[800])
+// +     call ccc void _S6p_copyFvx3T5largeE(ptr #5 byval i8[800])
 // +     copy #6 <- #0, 800
-// +     call fastcc void _S6p_moveFvT5largeE(ptr #6 byval i8[800])
-// +     call fastcc void _S7p_inoutFvx2T5largeE(ptr #0 dereferenceable 800)
-// +     call fastcc void _S5p_outFvx1T5largeE(ptr #0 dereferenceable 800)
+// +     call ccc void _S6p_moveFvT5largeE(ptr #6 byval i8[800])
+// +     call ccc void _S7p_inoutFvx2T5largeE(ptr #0 dereferenceable 800)
+// +     call ccc void _S5p_outFvx1T5largeE(ptr #0 dereferenceable 800)
 // +     ret
 // + }
 // +
-// + proc _S4p_inFvxT5largeE (ptr %0 dereferenceable 800) private fastcc {
+// + proc _S4p_inFvxT5largeE (ptr %0 dereferenceable 800) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S6p_copyFvx3T5largeE (ptr %0 byval i8[800]) private fastcc {
+// + proc _S6p_copyFvx3T5largeE (ptr %0 byval i8[800]) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S6p_moveFvT5largeE (ptr %0 byval i8[800]) private fastcc {
+// + proc _S6p_moveFvT5largeE (ptr %0 byval i8[800]) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S7p_inoutFvx2T5largeE (ptr %0 dereferenceable 800) private fastcc {
+// + proc _S7p_inoutFvx2T5largeE (ptr %0 dereferenceable 800) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1T5largeE (ptr %0 dereferenceable 800) private fastcc {
+// + proc _S5p_outFvx1T5largeE (ptr %0 dereferenceable 800) private ccc {
 // + entry:
 // +     ret
 // + }

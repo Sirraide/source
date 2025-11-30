@@ -14,7 +14,7 @@ proc h = a() + loop;
 
 var x = if 1 == 1 then 3 else loop;
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -22,35 +22,27 @@ var x = if 1 == 1 then 3 else loop;
 // +     ret
 // + }
 // +
-// + proc _S1dFvE private fastcc {
+// + proc _S1dFvE private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     %0 = call fastcc i64 _S1aFiE()
+// +     %0 = call ccc i64 _S1aFiE()
 // +     br bb1
 // + }
 // +
-// + proc _S1aFiE external fastcc -> i64;
+// + proc _S1aFiE external ccc -> i64;
 // +
-// + proc _S1eFvE private fastcc {
+// + proc _S1eFvE private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     %0 = call fastcc i64 _S1aFiE()
+// +     %0 = call ccc i64 _S1aFiE()
 // +     br bb1
 // + }
 // +
-// + proc _S1fFvE private fastcc {
-// + entry:
-// +     br bb1
-// +
-// + bb1:
-// +     br bb1
-// + }
-// +
-// + proc _S1gFvE private fastcc {
+// + proc _S1fFvE private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -58,9 +50,17 @@ var x = if 1 == 1 then 3 else loop;
 // +     br bb1
 // + }
 // +
-// + proc _S1hFiE private fastcc -> i64 {
+// + proc _S1gFvE private ccc {
 // + entry:
-// +     %0 = call fastcc i64 _S1aFiE()
+// +     br bb1
+// +
+// + bb1:
+// +     br bb1
+// + }
+// +
+// + proc _S1hFiE private ccc -> i64 {
+// + entry:
+// +     %0 = call ccc i64 _S1aFiE()
 // +     br bb1
 // +
 // + bb1:

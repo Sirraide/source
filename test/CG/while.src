@@ -27,12 +27,12 @@ proc while_infinite_empty {
     while true {}
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S12while_simpleFvE private fastcc {
+// + proc _S12while_simpleFvE private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -54,7 +54,7 @@ proc while_infinite_empty {
 // +     ret
 // + }
 // +
-// + proc _S12while_nestedFvE private fastcc {
+// + proc _S12while_nestedFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -92,7 +92,7 @@ proc while_infinite_empty {
 // +     ret
 // + }
 // +
-// + proc _S14while_infiniteFvE private fastcc {
+// + proc _S14while_infiniteFvE private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -106,7 +106,7 @@ proc while_infinite_empty {
 // +     br bb1
 // + }
 // +
-// + proc _S20while_infinite_emptyFvE private fastcc {
+// + proc _S20while_infinite_emptyFvE private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -120,12 +120,12 @@ proc while_infinite_empty {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S12while_simpleFvE() #0 {
+//L + define private void @_S12while_simpleFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -146,7 +146,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S12while_nestedFvE() #0 {
+//L + define private void @_S12while_nestedFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -183,7 +183,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S14while_infiniteFvE() #0 {
+//L + define private void @_S14while_infiniteFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -196,7 +196,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S20while_infinite_emptyFvE() #0 {
+//L + define private void @_S20while_infinite_emptyFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %1, %0

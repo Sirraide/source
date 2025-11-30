@@ -21,24 +21,24 @@ proc call {
     d();
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4callFvE private fastcc {
+// + proc _S4callFvE private ccc {
 // + entry:
-// +     call fastcc void _S1aFT4zeroE()
-// +     call fastcc void _S1bFT4zeroE()
-// +     call fastcc void _S1cFT4zeroE()
-// +     call fastcc void _S1dFT1sE()
+// +     call ccc void _S1aFT4zeroE()
+// +     call ccc void _S1bFT4zeroE()
+// +     call ccc void _S1cFT4zeroE()
+// +     call ccc void _S1dFT1sE()
 // +     ret
 // + }
 // +
-// + proc _S1aFT4zeroE external fastcc;
+// + proc _S1aFT4zeroE external ccc;
 // +
-// + proc _S1bFT4zeroE external fastcc;
+// + proc _S1bFT4zeroE external ccc;
 // +
-// + proc _S1cFT4zeroE external fastcc;
+// + proc _S1cFT4zeroE external ccc;
 // +
-// + proc _S1dFT1sE external fastcc;
+// + proc _S1dFT1sE external ccc;

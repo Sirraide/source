@@ -57,12 +57,12 @@ proc arith (in int a, in int b) {
 // + @11 = "integer overflow\00"
 // + @12 = "+\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (i64 %0) private fastcc {
+// + proc _S4sinkFvxiE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -70,7 +70,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxbE (i1 %0 zeroext) private fastcc {
+// + proc _S4sinkFvxbE (i1 %0 zeroext) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -79,7 +79,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S13arith_checkedFvxixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S13arith_checkedFvxixiE (i64 %0, i64 %1) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 64, align 8
@@ -111,7 +111,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":8:10) arithmetic(ptr #2)
 // +
 // + bb2:
-// +     call fastcc void _S4sinkFvxiE(i64 %4:0)
+// +     call ccc void _S4sinkFvxiE(i64 %4:0)
 // +     %12 = load i64, #0, align 8
 // +     %13 = load i64, #1, align 8
 // +     %14 = ssub ov i64 %12, %13
@@ -136,7 +136,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":9:10) arithmetic(ptr #2)
 // +
 // + bb4:
-// +     call fastcc void _S4sinkFvxiE(i64 %14:0)
+// +     call ccc void _S4sinkFvxiE(i64 %14:0)
 // +     %22 = load i64, #0, align 8
 // +     %23 = load i64, #1, align 8
 // +     %24 = smul ov i64 %22, %23
@@ -161,7 +161,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":10:10) arithmetic(ptr #2)
 // +
 // + bb6:
-// +     call fastcc void _S4sinkFvxiE(i64 %24:0)
+// +     call ccc void _S4sinkFvxiE(i64 %24:0)
 // +     %32 = load i64, #0, align 8
 // +     %33 = load i64, #1, align 8
 // +     %34 = icmp eq i64 %33, 0
@@ -211,7 +211,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb10:
 // +     %52 = sdiv i64 %32, %33
-// +     call fastcc void _S4sinkFvxiE(i64 %52)
+// +     call ccc void _S4sinkFvxiE(i64 %52)
 // +     %53 = load i64, #0, align 8
 // +     %54 = load i64, #1, align 8
 // +     %55 = icmp eq i64 %54, 0
@@ -261,7 +261,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb14:
 // +     %73 = srem i64 %53, %54
-// +     call fastcc void _S4sinkFvxiE(i64 %73)
+// +     call ccc void _S4sinkFvxiE(i64 %73)
 // +     %74 = load i64, #0, align 8
 // +     %75 = load i64, #1, align 8
 // +     %76 = icmp eq i64 %75, 0
@@ -287,7 +287,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb16:
 // +     %84 = udiv i64 %74, %75
-// +     call fastcc void _S4sinkFvxiE(i64 %84)
+// +     call ccc void _S4sinkFvxiE(i64 %84)
 // +     %85 = load i64, #0, align 8
 // +     %86 = load i64, #1, align 8
 // +     %87 = icmp eq i64 %86, 0
@@ -313,7 +313,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb18:
 // +     %95 = urem i64 %85, %86
-// +     call fastcc void _S4sinkFvxiE(i64 %95)
+// +     call ccc void _S4sinkFvxiE(i64 %95)
 // +     %96 = load i64, #0, align 8
 // +     %97 = load i64, #1, align 8
 // +     %98 = icmp uge i64 %97, 64
@@ -363,7 +363,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #2)
 // +
 // + bb22:
-// +     call fastcc void _S4sinkFvxiE(i64 %106)
+// +     call ccc void _S4sinkFvxiE(i64 %106)
 // +     %117 = load i64, #0, align 8
 // +     %118 = load i64, #1, align 8
 // +     %119 = icmp uge i64 %118, 64
@@ -389,11 +389,11 @@ proc arith (in int a, in int b) {
 // +
 // + bb24:
 // +     %127 = shl i64 %117, %118
-// +     call fastcc void _S4sinkFvxiE(i64 %127)
+// +     call ccc void _S4sinkFvxiE(i64 %127)
 // +     ret
 // + }
 // +
-// + proc _S5arithFvxixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S5arithFvxixiE (i64 %0, i64 %1) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -403,70 +403,70 @@ proc arith (in int a, in int b) {
 // +     %2 = load i64, #0, align 8
 // +     %3 = load i64, #1, align 8
 // +     %4 = add i64 %2, %3
-// +     call fastcc void _S4sinkFvxiE(i64 %4)
+// +     call ccc void _S4sinkFvxiE(i64 %4)
 // +     %5 = load i64, #0, align 8
 // +     %6 = load i64, #1, align 8
 // +     %7 = sub i64 %5, %6
-// +     call fastcc void _S4sinkFvxiE(i64 %7)
+// +     call ccc void _S4sinkFvxiE(i64 %7)
 // +     %8 = load i64, #0, align 8
 // +     %9 = load i64, #1, align 8
 // +     %10 = mul i64 %8, %9
-// +     call fastcc void _S4sinkFvxiE(i64 %10)
+// +     call ccc void _S4sinkFvxiE(i64 %10)
 // +     %11 = load i64, #0, align 8
 // +     %12 = load i64, #1, align 8
 // +     %13 = ashr i64 %11, %12
-// +     call fastcc void _S4sinkFvxiE(i64 %13)
+// +     call ccc void _S4sinkFvxiE(i64 %13)
 // +     %14 = load i64, #0, align 8
 // +     %15 = load i64, #1, align 8
 // +     %16 = lshr i64 %14, %15
-// +     call fastcc void _S4sinkFvxiE(i64 %16)
+// +     call ccc void _S4sinkFvxiE(i64 %16)
 // +     %17 = load i64, #0, align 8
 // +     %18 = load i64, #1, align 8
 // +     %19 = and i64 %17, %18
-// +     call fastcc void _S4sinkFvxiE(i64 %19)
+// +     call ccc void _S4sinkFvxiE(i64 %19)
 // +     %20 = load i64, #0, align 8
 // +     %21 = load i64, #1, align 8
 // +     %22 = or i64 %20, %21
-// +     call fastcc void _S4sinkFvxiE(i64 %22)
+// +     call ccc void _S4sinkFvxiE(i64 %22)
 // +     %23 = load i64, #0, align 8
 // +     %24 = load i64, #1, align 8
 // +     %25 = icmp slt i64 %23, %24
-// +     call fastcc void _S4sinkFvxbE(i1 %25 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %25 zeroext)
 // +     %26 = load i64, #0, align 8
 // +     %27 = load i64, #1, align 8
 // +     %28 = icmp sle i64 %26, %27
-// +     call fastcc void _S4sinkFvxbE(i1 %28 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %28 zeroext)
 // +     %29 = load i64, #0, align 8
 // +     %30 = load i64, #1, align 8
 // +     %31 = icmp sgt i64 %29, %30
-// +     call fastcc void _S4sinkFvxbE(i1 %31 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %31 zeroext)
 // +     %32 = load i64, #0, align 8
 // +     %33 = load i64, #1, align 8
 // +     %34 = icmp sge i64 %32, %33
-// +     call fastcc void _S4sinkFvxbE(i1 %34 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %34 zeroext)
 // +     %35 = load i64, #0, align 8
 // +     %36 = load i64, #1, align 8
 // +     %37 = icmp ult i64 %35, %36
-// +     call fastcc void _S4sinkFvxbE(i1 %37 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %37 zeroext)
 // +     %38 = load i64, #0, align 8
 // +     %39 = load i64, #1, align 8
 // +     %40 = icmp ule i64 %38, %39
-// +     call fastcc void _S4sinkFvxbE(i1 %40 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %40 zeroext)
 // +     %41 = load i64, #0, align 8
 // +     %42 = load i64, #1, align 8
 // +     %43 = icmp ugt i64 %41, %42
-// +     call fastcc void _S4sinkFvxbE(i1 %43 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %43 zeroext)
 // +     %44 = load i64, #0, align 8
 // +     %45 = load i64, #1, align 8
 // +     %46 = icmp uge i64 %44, %45
-// +     call fastcc void _S4sinkFvxbE(i1 %46 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %46 zeroext)
 // +     %47 = load i64, #0, align 8
 // +     %48 = load i64, #1, align 8
 // +     %49 = icmp eq i64 %47, %48
-// +     call fastcc void _S4sinkFvxbE(i1 %49 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %49 zeroext)
 // +     %50 = load i64, #0, align 8
 // +     %51 = load i64, #1, align 8
 // +     %52 = icmp ne i64 %50, %51
-// +     call fastcc void _S4sinkFvxbE(i1 %52 zeroext)
+// +     call ccc void _S4sinkFvxbE(i1 %52 zeroext)
 // +     ret
 // + }

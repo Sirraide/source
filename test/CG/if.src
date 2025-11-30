@@ -26,14 +26,14 @@ proc x(int a, int b, bool d) {
 // + @2 = "d = false\0A\00"
 // + @3 = "d = true\0A\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
-// +     call fastcc void _S1xFviibE(i64 1, i64 2, i1 true zeroext)
-// +     call fastcc void _S1xFviibE(i64 2, i64 1, i1 false zeroext)
+// +     call ccc void _S1xFviibE(i64 1, i64 2, i1 true zeroext)
+// +     call ccc void _S1xFviibE(i64 2, i64 1, i1 false zeroext)
 // +     ret
 // + }
 // +
-// + proc _S1xFviibE (i64 %0, i64 %1, i1 %2 zeroext) private fastcc {
+// + proc _S1xFviibE (i64 %0, i64 %1, i1 %2 zeroext) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 1, align 1
@@ -99,14 +99,14 @@ proc x(int a, int b, bool d) {
 //L + @__srcc_str.0 = private constant [10 x i8] c"d = true\0A\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
-//L +   call fastcc void @_S1xFviibE(i64 1, i64 2, i1 zeroext true)
-//L +   call fastcc void @_S1xFviibE(i64 2, i64 1, i1 zeroext false)
+//L + define void @__src_main() #0 {
+//L +   call void @_S1xFviibE(i64 1, i64 2, i1 zeroext true)
+//L +   call void @_S1xFviibE(i64 2, i64 1, i1 zeroext false)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1xFviibE(i64 %0, i64 %1, i1 zeroext %2) #0 {
+//L + define private void @_S1xFviibE(i64 %0, i64 %1, i1 zeroext %2) #0 {
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 8, align 8
 //L +   %6 = alloca i8, i64 1, align 1

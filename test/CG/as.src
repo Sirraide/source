@@ -48,12 +48,12 @@ proc p {
 
 // * @0 = "\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1pFvE private fastcc {
+// + proc _S1pFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 1, align 1
 // +     #2 = 8, align 8
@@ -67,19 +67,19 @@ proc p {
 // +     ret
 // + }
 // +
-// + proc _S1p$2p1FiE (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + proc _S1p$2p1FiE (ptr %0 nest nofree noundef readonly) private ccc -> i64 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$2p2FSI8E private fastcc -> (i64, i64) {
+// + proc _S1p$2p2FSI8E private ccc -> (i64, i64) {
 // + entry:
 // +     ret ptr @0, i64 0
 // + }
 // +
-// + proc _S1p$2p3FqiE private fastcc -> (i64, i64) {
+// + proc _S1p$2p3FqiE private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -92,7 +92,7 @@ proc p {
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S1p$2p4FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + proc _S1p$2p4FRiE (ptr %0 nest nofree noundef readonly) private ccc -> ptr {
 // + entry:
 // +     %1 = ptradd %0, 8
 // +     %2 = load ptr, %1, align 8
@@ -100,19 +100,19 @@ proc p {
 // +     ret ptr %3
 // + }
 // +
-// + proc _S1p$2p5FiE (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + proc _S1p$2p5FiE (ptr %0 nest nofree noundef readonly) private ccc -> i64 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$2p6FSI8E private fastcc -> (i64, i64) {
+// + proc _S1p$2p6FSI8E private ccc -> (i64, i64) {
 // + entry:
 // +     ret ptr @0, i64 0
 // + }
 // +
-// + proc _S1p$2p7FqiE private fastcc -> (i64, i64) {
+// + proc _S1p$2p7FqiE private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -125,7 +125,7 @@ proc p {
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S1p$2p8FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + proc _S1p$2p8FRiE (ptr %0 nest nofree noundef readonly) private ccc -> ptr {
 // + entry:
 // +     %1 = ptradd %0, 8
 // +     %2 = load ptr, %1, align 8
@@ -133,7 +133,7 @@ proc p {
 // +     ret ptr %3
 // + }
 // +
-// + proc _S1p$2p9FI32E (ptr %0 nest nofree noundef readonly) private fastcc -> i32 {
+// + proc _S1p$2p9FI32E (ptr %0 nest nofree noundef readonly) private ccc -> i32 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
@@ -141,14 +141,14 @@ proc p {
 // +     ret i32 %3
 // + }
 // +
-// + proc _S1p$3p10FI64E (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + proc _S1p$3p10FI64E (ptr %0 nest nofree noundef readonly) private ccc -> i64 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$3p11FI8E (ptr %0 nest nofree noundef readonly) private fastcc -> i8 {
+// + proc _S1p$3p11FI8E (ptr %0 nest nofree noundef readonly) private ccc -> i8 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
@@ -156,12 +156,12 @@ proc p {
 // +     ret i8 %3
 // + }
 // +
-// + proc _S1p$3p12FI8E private fastcc -> i8 {
+// + proc _S1p$3p12FI8E private ccc -> i8 {
 // + entry:
 // +     ret i8 -1
 // + }
 // +
-// + proc _S1p$3p13FI32E (ptr %0 nest nofree noundef readonly) private fastcc -> i32 {
+// + proc _S1p$3p13FI32E (ptr %0 nest nofree noundef readonly) private ccc -> i32 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
@@ -169,14 +169,14 @@ proc p {
 // +     ret i32 %3
 // + }
 // +
-// + proc _S1p$3p14FI64E (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + proc _S1p$3p14FI64E (ptr %0 nest nofree noundef readonly) private ccc -> i64 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$3p15FI8E (ptr %0 nest nofree noundef readonly) private fastcc -> i8 {
+// + proc _S1p$3p15FI8E (ptr %0 nest nofree noundef readonly) private ccc -> i8 {
 // + entry:
 // +     %1 = load ptr, %0, align 8
 // +     %2 = load i64, %1, align 8
@@ -184,52 +184,52 @@ proc p {
 // +     ret i8 %3
 // + }
 // +
-// + proc _S1p$3p16FI8E private fastcc -> i8 {
+// + proc _S1p$3p16FI8E private ccc -> i8 {
 // + entry:
 // +     ret i8 -1
 // + }
 // +
-// + proc _S1p$3p17FvE private fastcc {
+// + proc _S1p$3p17FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p18FvE private fastcc {
+// + proc _S1p$3p18FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p19FvE private fastcc {
+// + proc _S1p$3p19FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p20FvE (ptr %0 nest nofree noundef readonly) private fastcc {
+// + proc _S1p$3p20FvE (ptr %0 nest nofree noundef readonly) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p21FvE private fastcc {
+// + proc _S1p$3p21FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p22FvE private fastcc {
+// + proc _S1p$3p22FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p23FvE private fastcc {
+// + proc _S1p$3p23FvE private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p24FvE (ptr %0 nest nofree noundef readonly) private fastcc {
+// + proc _S1p$3p24FvE (ptr %0 nest nofree noundef readonly) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1p$3p25FRI8E (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + proc _S1p$3p25FRI8E (ptr %0 nest nofree noundef readonly) private ccc -> ptr {
 // + entry:
 // +     %1 = ptradd %0, 8
 // +     %2 = load ptr, %1, align 8
@@ -237,7 +237,7 @@ proc p {
 // +     ret ptr %3
 // + }
 // +
-// + proc _S1p$3p26FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + proc _S1p$3p26FRiE (ptr %0 nest nofree noundef readonly) private ccc -> ptr {
 // + entry:
 // +     %1 = ptradd %0, 16
 // +     %2 = load ptr, %1, align 8
@@ -245,7 +245,7 @@ proc p {
 // +     ret ptr %3
 // + }
 // +
-// + proc _S1p$3p27FA3iE (ptr %0 sret i8[24]) private fastcc {
+// + proc _S1p$3p27FA3iE (ptr %0 sret i8[24]) private ccc {
 // + entry:
 // +     store %0, i64 1, align 8
 // +     %1 = ptradd %0, 8
@@ -255,7 +255,7 @@ proc p {
 // +     ret
 // + }
 // +
-// + proc _S1p$3p28FA2iE private fastcc -> (i64, i64) {
+// + proc _S1p$3p28FA2iE private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:

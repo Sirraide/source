@@ -10,11 +10,11 @@ export proc f1 (i64) -> i32 = 42;
 // * f2 proc (i64) -> i32
 export proc f2 (i64) nomangle -> i32 = 42;
 
-// * f3 proc (i64) native -> i32
+// * f3 proc (i64) -> i32
 export proc f3 (i64) native -> i32 = 42;
 
-// * f5 proc (i64) native varargs -> i32
-// * f6 proc (i64) native varargs -> i32
+// * f5 proc (i64) varargs -> i32
+// * f6 proc (i64) varargs -> i32
 export proc f5 (i64) native varargs -> i32 = 42;
 export proc f6 (i64) varargs native -> i32 = 42;
 

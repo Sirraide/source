@@ -53,7 +53,6 @@ auto CodeGen::AppendBlock(std::unique_ptr<Block> bb) -> Block* {
 
 auto CodeGen::C(CallingConvention l) -> LLVM::CConv {
     switch (l) {
-        case CallingConvention::Source: return LLVM::CConv::Fast;
         case CallingConvention::Native: return LLVM::CConv::C;
     }
     Unreachable();

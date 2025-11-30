@@ -427,7 +427,6 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
     }
 
     // Add attributes.
-    if (cconv() == CallingConvention::Native) out += " native";
     if (has_c_varargs()) out += " varargs";
     if (decl) {
         if (cconv() != CallingConvention::Native and decl->mangling == Mangling::None)

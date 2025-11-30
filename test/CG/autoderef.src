@@ -11,7 +11,7 @@ var p2 = &p1;
 var p3 = &p2;
 sink(a.x + p1.x + p2.x + p3.x);
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -35,8 +35,8 @@ sink(a.x + p1.x + p2.x + p3.x);
 // +     %10 = load ptr, %9, align 8
 // +     %11 = load i64, %10, align 8
 // +     %12 = add i64 %7, %11
-// +     call fastcc void sink(i64 %12)
+// +     call ccc void sink(i64 %12)
 // +     ret
 // + }
 // +
-// + proc sink (i64) external fastcc;
+// + proc sink (i64) external ccc;

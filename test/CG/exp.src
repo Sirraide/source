@@ -23,12 +23,12 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // + @4 = "exp >= 0\00"
 // + @5 = "attempting to raise 0 to a negative power\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (i64 %0) private fastcc {
+// + proc _S4sinkFvxiE (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -36,7 +36,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxI8E (i8 %0) private fastcc {
+// + proc _S4sinkFvxI8E (i8 %0) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -49,7 +49,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     i64 %1,
 // +     i8 %2,
 // +     i8 %3,
-// + ) private fastcc {
+// + ) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 1, align 1
@@ -62,24 +62,24 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store #3, i8 %3, align 1
 // +     %4 = load i64, #0, align 8
 // +     %5 = load i64, #1, align 8
-// +     %6 = call fastcc i64 _S$2**Fixix3iE(i64 %4, i64 %5)
-// +     call fastcc void _S4sinkFvxiE(i64 %6)
+// +     %6 = call ccc i64 _S$2**Fixix3iE(i64 %4, i64 %5)
+// +     call ccc void _S4sinkFvxiE(i64 %6)
 // +     %7 = load i64, #0, align 8
 // +     %8 = load i64, #1, align 8
-// +     %9 = call fastcc i64 _S$2**Fixix3iE(i64 %7, i64 %8)
-// +     call fastcc void _S4sinkFvxiE(i64 %9)
+// +     %9 = call ccc i64 _S$2**Fixix3iE(i64 %7, i64 %8)
+// +     call ccc void _S4sinkFvxiE(i64 %9)
 // +     %10 = load i8, #2, align 1
 // +     %11 = load i8, #3, align 1
-// +     %12 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %10, i8 %11)
-// +     call fastcc void _S4sinkFvxI8E(i8 %12)
+// +     %12 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %10, i8 %11)
+// +     call ccc void _S4sinkFvxI8E(i8 %12)
 // +     %13 = load i8, #2, align 1
 // +     %14 = load i8, #3, align 1
-// +     %15 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %13, i8 %14)
-// +     call fastcc void _S4sinkFvxI8E(i8 %15)
+// +     %15 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %13, i8 %14)
+// +     call ccc void _S4sinkFvxI8E(i8 %15)
 // +     ret
 // + }
 // +
-// + proc _S$2**Fixix3iE (i64 %0, i64 %1) private fastcc -> i64 {
+// + proc _S$2**Fixix3iE (i64 %0, i64 %1) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -211,7 +211,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret i64 %47
 // + }
 // +
-// + proc _S$2**FI8xI8x3I8E (i8 %0, i8 %1) private fastcc -> i8 {
+// + proc _S$2**FI8xI8x3I8E (i8 %0, i8 %1) private ccc -> i8 {
 // +     #0 = 1, align 1
 // +     #1 = 1, align 1
 // +     #2 = 1, align 1
@@ -348,7 +348,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     i64 %1,
 // +     i8 %2,
 // +     i8 %3,
-// + ) private fastcc {
+// + ) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 1, align 1
@@ -360,32 +360,32 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store #2, i8 %2, align 1
 // +     store #3, i8 %3, align 1
 // +     %4 = load i64, #1, align 8
-// +     %5 = call fastcc ptr _S$3**=FRix2ixiE(ptr #0 dereferenceable 8, i64 %4)
+// +     %5 = call ccc ptr _S$3**=FRix2ixiE(ptr #0 dereferenceable 8, i64 %4)
 // +     %6 = load i8, #3, align 1
-// +     %7 = call fastcc ptr _S$3**=FRI8x2I8xI8E(ptr #2 dereferenceable 1, i8 %6)
+// +     %7 = call ccc ptr _S$3**=FRI8x2I8xI8E(ptr #2 dereferenceable 1, i8 %6)
 // +     ret
 // + }
 // +
-// + proc _S$3**=FRix2ixiE (ptr %0 dereferenceable 8, i64 %1) private fastcc -> ptr {
+// + proc _S$3**=FRix2ixiE (ptr %0 dereferenceable 8, i64 %1) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 %1, align 8
 // +     %2 = load i64, %0, align 8
 // +     %3 = load i64, #0, align 8
-// +     %4 = call fastcc i64 _S$2**Fixix3iE(i64 %2, i64 %3)
+// +     %4 = call ccc i64 _S$2**Fixix3iE(i64 %2, i64 %3)
 // +     store %0, i64 %4, align 8
 // +     ret ptr %0
 // + }
 // +
-// + proc _S$3**=FRI8x2I8xI8E (ptr %0 dereferenceable 1, i8 %1) private fastcc -> ptr {
+// + proc _S$3**=FRI8x2I8xI8E (ptr %0 dereferenceable 1, i8 %1) private ccc -> ptr {
 // +     #0 = 1, align 1
 // +
 // + entry:
 // +     store #0, i8 %1, align 1
 // +     %2 = load i8, %0, align 1
 // +     %3 = load i8, #0, align 1
-// +     %4 = call fastcc i8 _S$2**FI8xI8x3I8E(i8 %2, i8 %3)
+// +     %4 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %2, i8 %3)
 // +     store %0, i8 %4, align 1
 // +     ret ptr %0
 // + }

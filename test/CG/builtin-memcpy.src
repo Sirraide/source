@@ -14,12 +14,12 @@ proc pb {
     __srcc_memcpy(&c1, &c2, 20);
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S2paFvE private fastcc {
+// + proc _S2paFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -30,7 +30,7 @@ proc pb {
 // +     ret
 // + }
 // +
-// + proc _S2pbFvE private fastcc {
+// + proc _S2pbFvE private ccc {
 // +     #0 = 20, align 1
 // +     #1 = 20, align 1
 // +
@@ -47,12 +47,12 @@ proc pb {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S2paFvE() #0 {
+//L + define private void @_S2paFvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -62,7 +62,7 @@ proc pb {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S2pbFvE() #0 {
+//L + define private void @_S2pbFvE() #0 {
 //L +   %1 = alloca i8, i64 20, align 1
 //L +   %2 = alloca i8, i64 20, align 1
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 20, i1 false)

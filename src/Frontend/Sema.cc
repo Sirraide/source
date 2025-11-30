@@ -4459,7 +4459,7 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_
         *tu,
         ret,
         params,
-        parsed->attrs.native ? CallingConvention::Native : CallingConvention::Source,
+        CallingConvention::Native,
         parsed->attrs.c_varargs
     );
 }

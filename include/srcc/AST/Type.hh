@@ -472,7 +472,7 @@ public:
         TranslationUnit& mod,
         Type return_type,
         ArrayRef<ParamTypeData> param_types = {},
-        CallingConvention cconv = CallingConvention::Source,
+        CallingConvention cconv = CallingConvention::Native,
         bool variadic = false
     ) -> ProcType*;
 

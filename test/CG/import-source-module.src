@@ -7,13 +7,14 @@ import testmodule;
 
 testmodule::hello();
 
-// * proc __src_main external fastcc {
+// * Running module initialiser...
+// + proc __src_main external ccc {
 // + entry:
-// +     call fastcc void __src_static_init.testmodule()
-// +     call fastcc void _SM10testmodule$5helloFvE()
+// +     call ccc void __src_static_init.testmodule()
+// +     call ccc void _SM10testmodule$5helloFvE()
 // +     ret
 // + }
 // +
-// + proc __src_static_init.testmodule external fastcc;
+// + proc __src_static_init.testmodule external ccc;
 // +
-// + proc _SM10testmodule$5helloFvE external fastcc;
+// + proc _SM10testmodule$5helloFvE external ccc;

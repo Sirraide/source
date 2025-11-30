@@ -31,12 +31,12 @@ proc x (int a, in int b) {
 // + @9 = "integer overflow\00"
 // + @10 = "+\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1xFvixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S1xFvixiE (i64 %0, i64 %1) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 64, align 8
@@ -318,12 +318,12 @@ proc x (int a, in int b) {
 // +     ret
 // + }
 
-//U * proc __src_main external fastcc {
+//U * proc __src_main external ccc {
 //U + entry:
 //U +     ret
 //U + }
 //U +
-//U + proc _S1xFvixiE (i64 %0, i64 %1) private fastcc {
+//U + proc _S1xFvixiE (i64 %0, i64 %1) private ccc {
 //U +     #0 = 8, align 8
 //U +     #1 = 8, align 8
 //U +
@@ -399,12 +399,12 @@ proc x (int a, in int b) {
 //L + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1xFvixiE(i64 %0, i64 %1) #0 {
+//L + define private void @_S1xFvixiE(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 64, align 8
@@ -724,12 +724,12 @@ proc x (int a, in int b) {
 //UL + target triple = "x86_64-unknown-linux-gnu"
 //UL +
 //UL + ; Function Attrs: nounwind
-//UL + define fastcc void @__src_main() #0 {
+//UL + define void @__src_main() #0 {
 //UL +   ret void
 //UL + }
 //UL +
 //UL + ; Function Attrs: nounwind
-//UL + define private fastcc void @_S1xFvixiE(i64 %0, i64 %1) #0 {
+//UL + define private void @_S1xFvixiE(i64 %0, i64 %1) #0 {
 //UL +   %3 = alloca i8, i64 8, align 8
 //UL +   %4 = alloca i8, i64 8, align 8
 //UL +   store i64 %0, ptr %3, align 8

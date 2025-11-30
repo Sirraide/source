@@ -9,14 +9,14 @@ proc foo = 42;
 caller1(foo);
 caller2(foo);
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
-// +     %0 = call fastcc i64 _S7caller1FiFiEE(_S3fooFiE, ptr nil)
-// +     %1 = call fastcc i64 _S7caller2FixFiEE(_S3fooFiE, ptr nil)
+// +     %0 = call ccc i64 _S7caller1FiFiEE(_S3fooFiE, ptr nil)
+// +     %1 = call ccc i64 _S7caller2FixFiEE(_S3fooFiE, ptr nil)
 // +     ret
 // + }
 // +
-// + proc _S7caller1FiFiEE (ptr %0, ptr %1) private fastcc -> i64 {
+// + proc _S7caller1FiFiEE (ptr %0, ptr %1) private ccc -> i64 {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -26,16 +26,16 @@ caller2(foo);
 // +     %3 = load ptr, #0, align 8
 // +     %4 = ptradd #0, 8
 // +     %5 = load ptr, %4, align 8
-// +     %6 = call fastcc i64 %3(ptr %5 nest nofree noundef readonly)
+// +     %6 = call ccc i64 %3(ptr %5 nest nofree noundef readonly)
 // +     ret i64 %6
 // + }
 // +
-// + proc _S3fooFiE private fastcc -> i64 {
+// + proc _S3fooFiE private ccc -> i64 {
 // + entry:
 // +     ret i64 42
 // + }
 // +
-// + proc _S7caller2FixFiEE (ptr %0, ptr %1) private fastcc -> i64 {
+// + proc _S7caller2FixFiEE (ptr %0, ptr %1) private ccc -> i64 {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -45,7 +45,7 @@ caller2(foo);
 // +     %3 = load ptr, #0, align 8
 // +     %4 = ptradd #0, 8
 // +     %5 = load ptr, %4, align 8
-// +     %6 = call fastcc i64 %3(ptr %5 nest nofree noundef readonly)
+// +     %6 = call ccc i64 %3(ptr %5 nest nofree noundef readonly)
 // +     ret i64 %6
 // + }
 
@@ -55,14 +55,14 @@ caller2(foo);
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
-//L +   %1 = call fastcc i64 @_S7caller1FiFiEE(ptr @_S3fooFiE, ptr null)
-//L +   %2 = call fastcc i64 @_S7caller2FixFiEE(ptr @_S3fooFiE, ptr null)
+//L + define void @__src_main() #0 {
+//L +   %1 = call i64 @_S7caller1FiFiEE(ptr @_S3fooFiE, ptr null)
+//L +   %2 = call i64 @_S7caller2FixFiEE(ptr @_S3fooFiE, ptr null)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @_S7caller1FiFiEE(ptr %0, ptr %1) #0 {
+//L + define private i64 @_S7caller1FiFiEE(ptr %0, ptr %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -70,17 +70,17 @@ caller2(foo);
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
 //L +   %7 = load ptr, ptr %6, align 8
-//L +   %8 = call fastcc i64 %5(ptr nest nofree noundef readonly %7)
+//L +   %8 = call i64 %5(ptr nest nofree noundef readonly %7)
 //L +   ret i64 %8
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @_S3fooFiE() #0 {
+//L + define private i64 @_S3fooFiE() #0 {
 //L +   ret i64 42
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @_S7caller2FixFiEE(ptr %0, ptr %1) #0 {
+//L + define private i64 @_S7caller2FixFiEE(ptr %0, ptr %1) #0 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -88,7 +88,7 @@ caller2(foo);
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 8
 //L +   %7 = load ptr, ptr %6, align 8
-//L +   %8 = call fastcc i64 %5(ptr nest nofree noundef readonly %7)
+//L +   %8 = call i64 %5(ptr nest nofree noundef readonly %7)
 //L +   ret i64 %8
 //L + }
 //L +

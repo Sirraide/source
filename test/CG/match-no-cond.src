@@ -38,12 +38,12 @@ proc f7 (int x, int y) nomangle = match {
     _: 5;
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc f1 (i64 %0) private fastcc {
+// + proc f1 (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -51,7 +51,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret
 // + }
 // +
-// + proc f2 (i64 %0) private fastcc -> i64 {
+// + proc f2 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -59,7 +59,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 1
 // + }
 // +
-// + proc f3 (i64 %0) private fastcc -> i64 {
+// + proc f3 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -70,7 +70,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %3
 // + }
 // +
-// + proc f4 (i64 %0) private fastcc -> i64 {
+// + proc f4 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -88,7 +88,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %5
 // + }
 // +
-// + proc f5 (i64 %0) private fastcc -> i64 {
+// + proc f5 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -98,16 +98,16 @@ proc f7 (int x, int y) nomangle = match {
 // +     br %2 to bb2(2) else bb1
 // +
 // + bb1:
-// +     call fastcc void exit()
+// +     call ccc void exit()
 // +     unreachable
 // +
 // + bb2(i64 %3):
 // +     ret i64 %3
 // + }
 // +
-// + proc exit noreturn external fastcc;
+// + proc exit noreturn external ccc;
 // +
-// + proc f6 (i64 %0) private fastcc -> i64 {
+// + proc f6 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -123,7 +123,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %3
 // + }
 // +
-// + proc f7 (i64 %0, i64 %1) private fastcc -> i64 {
+// + proc f7 (i64 %0, i64 %1) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -149,26 +149,26 @@ proc f7 (int x, int y) nomangle = match {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @f1(i64 %0) #0 {
+//L + define private void @f1(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f2(i64 %0) #0 {
+//L + define private i64 @f2(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f3(i64 %0) #0 {
+//L + define private i64 @f3(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -178,7 +178,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f4(i64 %0) #0 {
+//L + define private i64 @f4(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -200,7 +200,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f5(i64 %0) #0 {
+//L + define private i64 @f5(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -208,7 +208,7 @@ proc f7 (int x, int y) nomangle = match {
 //L +   br i1 %4, label %6, label %5
 //L +
 //L + 5:                                                ; preds = %1
-//L +   call fastcc void @exit()
+//L +   call void @exit()
 //L +   unreachable
 //L +
 //L + 6:                                                ; preds = %1
@@ -217,10 +217,10 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @exit() #0
+//L + declare void @exit() #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f6(i64 %0) #0 {
+//L + define private i64 @f6(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -236,7 +236,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc i64 @f7(i64 %0, i64 %1) #0 {
+//L + define private i64 @f7(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %3, align 8

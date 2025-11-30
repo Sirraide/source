@@ -12,7 +12,7 @@ b = &^b;
 b = ^&b;
 a = &(if true then i else i);
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8

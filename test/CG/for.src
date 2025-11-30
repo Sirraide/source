@@ -64,12 +64,12 @@ proc l {
     for i in a1 do foo(i);
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1aFvE private fastcc {
+// + proc _S1aFvE private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -85,7 +85,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1bFvE private fastcc {
+// + proc _S1bFvE private ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -99,7 +99,7 @@ proc l {
 // +     br %3 to bb2 else bb3
 // +
 // + bb2:
-// +     call fastcc void _S3fooFvxI16E(i16 %2)
+// +     call ccc void _S3fooFvxI16E(i16 %2)
 // +     %4 = add i16 %2, 1
 // +     br bb1(%4)
 // +
@@ -107,9 +107,9 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxI16E (i16) external fastcc;
+// + proc _S3fooFvxI16E (i16) external ccc;
 // +
-// + proc _S1cFvE private fastcc {
+// + proc _S1cFvE private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -122,7 +122,7 @@ proc l {
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call fastcc void _S3fooFvxiE(i64 %2)
+// +     call ccc void _S3fooFvxiE(i64 %2)
 // +     %4 = add i64 %2, 1
 // +     br bb2(%4)
 // +
@@ -134,9 +134,9 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxiE (i64) external fastcc;
+// + proc _S3fooFvxiE (i64) external ccc;
 // +
-// + proc _S1dFvE private fastcc {
+// + proc _S1dFvE private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -152,7 +152,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1eFvE private fastcc {
+// + proc _S1eFvE private ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -166,7 +166,7 @@ proc l {
 // +     br %4 to bb2 else bb3
 // +
 // + bb2:
-// +     call fastcc void _S3fooFvxI16xiE(i16 %3, i64 %2)
+// +     call ccc void _S3fooFvxI16xiE(i16 %3, i64 %2)
 // +     %5 = add i64 %2, 1
 // +     %6 = add i16 %3, 1
 // +     br bb1(%5, %6)
@@ -175,9 +175,9 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxI16xiE (i16, i64) external fastcc;
+// + proc _S3fooFvxI16xiE (i16, i64) external ccc;
 // +
-// + proc _S1fFvE private fastcc {
+// + proc _S1fFvE private ccc {
 // + entry:
 // +     br bb1(0, 1)
 // +
@@ -190,7 +190,7 @@ proc l {
 // +     br %5 to bb3 else bb4
 // +
 // + bb3:
-// +     call fastcc void _S3fooFvxixixixiE(
+// +     call ccc void _S3fooFvxixixixiE(
 // +         i64 %0,
 // +         i64 %3,
 // +         i64 %1,
@@ -213,9 +213,9 @@ proc l {
 // +     i64,
 // +     i64,
 // +     i64,
-// + ) external fastcc;
+// + ) external ccc;
 // +
-// + proc _S1gFvE private fastcc {
+// + proc _S1gFvE private ccc {
 // + entry:
 // +     br bb1(1, 11)
 // +
@@ -228,7 +228,7 @@ proc l {
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call fastcc void _S3fooFvxixiE(i64 %0, i64 %1)
+// +     call ccc void _S3fooFvxixiE(i64 %0, i64 %1)
 // +     %4 = add i64 %0, 1
 // +     %5 = add i64 %1, 1
 // +     br bb1(%4, %5)
@@ -237,9 +237,9 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixiE (i64, i64) external fastcc;
+// + proc _S3fooFvxixiE (i64, i64) external ccc;
 // +
-// + proc _S1hFvE private fastcc {
+// + proc _S1hFvE private ccc {
 // + entry:
 // +     br bb1(0, 1, 11)
 // +
@@ -252,7 +252,7 @@ proc l {
 // +     br %4 to bb3 else bb4
 // +
 // + bb3:
-// +     call fastcc void _S3fooFvxixixiE(i64 %0, i64 %1, i64 %2)
+// +     call ccc void _S3fooFvxixixiE(i64 %0, i64 %1, i64 %2)
 // +     %5 = add i64 %0, 1
 // +     %6 = add i64 %1, 1
 // +     %7 = add i64 %2, 1
@@ -262,9 +262,9 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixixiE (i64, i64, i64) external fastcc;
+// + proc _S3fooFvxixixiE (i64, i64, i64) external ccc;
 // +
-// + proc _S1iFvE private fastcc {
+// + proc _S1iFvE private ccc {
 // + entry:
 // +     br bb1(0, 2)
 // +
@@ -273,7 +273,7 @@ proc l {
 // +     br %2 to bb2 else bb3
 // +
 // + bb2:
-// +     call fastcc void _S3fooFvxiE(i64 %0)
+// +     call ccc void _S3fooFvxiE(i64 %0)
 // +     %3 = add i64 %0, 1
 // +     %4 = add i64 %1, 1
 // +     br bb1(%3, %4)
@@ -282,7 +282,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1jFvE private fastcc {
+// + proc _S1jFvE private ccc {
 // + entry:
 // +     br bb1(0, 2, 3, 4, 5)
 // +
@@ -303,7 +303,7 @@ proc l {
 // +     br %8 to bb5 else bb6
 // +
 // + bb5:
-// +     call fastcc void _S3fooFvxixiE(i64 %0, i64 %1)
+// +     call ccc void _S3fooFvxixiE(i64 %0, i64 %1)
 // +     %9 = add i64 %0, 1
 // +     %10 = add i64 %1, 1
 // +     %11 = add i64 %2, 1
@@ -315,7 +315,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1kFvE private fastcc {
+// + proc _S1kFvE private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -324,7 +324,7 @@ proc l {
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
-// +     call fastcc void _S3fooFvxiE(i64 42)
+// +     call ccc void _S3fooFvxiE(i64 42)
 // +     %2 = add i64 %0, 1
 // +     br bb1(%2)
 // +
@@ -332,7 +332,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1lFvE private fastcc {
+// + proc _S1lFvE private ccc {
 // +     #0 = 40, align 8
 // +
 // + entry:
@@ -354,7 +354,7 @@ proc l {
 // +
 // + bb2:
 // +     %7 = load i64, %5, align 8
-// +     call fastcc void _S3fooFvxiE(i64 %7)
+// +     call ccc void _S3fooFvxiE(i64 %7)
 // +     %8 = ptradd %5, 8
 // +     br bb1(%8)
 // +
@@ -368,12 +368,12 @@ proc l {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1aFvE() #0 {
+//L + define private void @_S1aFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -390,7 +390,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1bFvE() #0 {
+//L + define private void @_S1bFvE() #0 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -403,7 +403,7 @@ proc l {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %4
-//L +   call fastcc void @_S3fooFvxI16E(i16 %5)
+//L +   call void @_S3fooFvxI16E(i16 %5)
 //L +   %8 = add i16 %5, 1
 //L +   br label %4
 //L +
@@ -412,10 +412,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxI16E(i16) #0
+//L + declare void @_S3fooFvxI16E(i16) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1cFvE() #0 {
+//L + define private void @_S1cFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %9, %0
@@ -429,7 +429,7 @@ proc l {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %4
-//L +   call fastcc void @_S3fooFvxiE(i64 %5)
+//L +   call void @_S3fooFvxiE(i64 %5)
 //L +   %8 = add i64 %5, 1
 //L +   br label %4
 //L +
@@ -442,10 +442,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxiE(i64) #0
+//L + declare void @_S3fooFvxiE(i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1dFvE() #0 {
+//L + define private void @_S1dFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -462,7 +462,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1eFvE() #0 {
+//L + define private void @_S1eFvE() #0 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -476,7 +476,7 @@ proc l {
 //L +   br i1 %7, label %8, label %11
 //L +
 //L + 8:                                                ; preds = %4
-//L +   call fastcc void @_S3fooFvxI16xiE(i16 %6, i64 %5)
+//L +   call void @_S3fooFvxI16xiE(i16 %6, i64 %5)
 //L +   %9 = add i64 %5, 1
 //L +   %10 = add i16 %6, 1
 //L +   br label %4
@@ -486,10 +486,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxI16xiE(i16, i64) #0
+//L + declare void @_S3fooFvxI16xiE(i16, i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1fFvE() #0 {
+//L + define private void @_S1fFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %12, %0
@@ -505,7 +505,7 @@ proc l {
 //L +   br i1 %8, label %9, label %12
 //L +
 //L + 9:                                                ; preds = %5
-//L +   call fastcc void @_S3fooFvxixixixiE(i64 %2, i64 %6, i64 %3, i64 %7)
+//L +   call void @_S3fooFvxixixixiE(i64 %2, i64 %6, i64 %3, i64 %7)
 //L +   %10 = add i64 %6, 1
 //L +   %11 = add i64 %7, 1
 //L +   br label %5
@@ -520,10 +520,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxixixixiE(i64, i64, i64, i64) #0
+//L + declare void @_S3fooFvxixixixiE(i64, i64, i64, i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1gFvE() #0 {
+//L + define private void @_S1gFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %7, %0
@@ -537,7 +537,7 @@ proc l {
 //L +   br i1 %6, label %7, label %10
 //L +
 //L + 7:                                                ; preds = %5
-//L +   call fastcc void @_S3fooFvxixiE(i64 %2, i64 %3)
+//L +   call void @_S3fooFvxixiE(i64 %2, i64 %3)
 //L +   %8 = add i64 %2, 1
 //L +   %9 = add i64 %3, 1
 //L +   br label %1
@@ -547,10 +547,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxixiE(i64, i64) #0
+//L + declare void @_S3fooFvxixiE(i64, i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1hFvE() #0 {
+//L + define private void @_S1hFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %8, %0
@@ -565,7 +565,7 @@ proc l {
 //L +   br i1 %7, label %8, label %12
 //L +
 //L + 8:                                                ; preds = %6
-//L +   call fastcc void @_S3fooFvxixixiE(i64 %2, i64 %3, i64 %4)
+//L +   call void @_S3fooFvxixixiE(i64 %2, i64 %3, i64 %4)
 //L +   %9 = add i64 %2, 1
 //L +   %10 = add i64 %3, 1
 //L +   %11 = add i64 %4, 1
@@ -576,10 +576,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare fastcc void @_S3fooFvxixixiE(i64, i64, i64) #0
+//L + declare void @_S3fooFvxixixiE(i64, i64, i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1iFvE() #0 {
+//L + define private void @_S1iFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %5, %0
@@ -589,7 +589,7 @@ proc l {
 //L +   br i1 %4, label %5, label %8
 //L +
 //L + 5:                                                ; preds = %1
-//L +   call fastcc void @_S3fooFvxiE(i64 %2)
+//L +   call void @_S3fooFvxiE(i64 %2)
 //L +   %6 = add i64 %2, 1
 //L +   %7 = add i64 %3, 1
 //L +   br label %1
@@ -599,7 +599,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1jFvE() #0 {
+//L + define private void @_S1jFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %14, %0
@@ -624,7 +624,7 @@ proc l {
 //L +   br i1 %13, label %14, label %20
 //L +
 //L + 14:                                               ; preds = %12
-//L +   call fastcc void @_S3fooFvxixiE(i64 %2, i64 %3)
+//L +   call void @_S3fooFvxixiE(i64 %2, i64 %3)
 //L +   %15 = add i64 %2, 1
 //L +   %16 = add i64 %3, 1
 //L +   %17 = add i64 %4, 1
@@ -637,7 +637,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1kFvE() #0 {
+//L + define private void @_S1kFvE() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -646,7 +646,7 @@ proc l {
 //L +   br i1 %3, label %4, label %6
 //L +
 //L + 4:                                                ; preds = %1
-//L +   call fastcc void @_S3fooFvxiE(i64 42)
+//L +   call void @_S3fooFvxiE(i64 42)
 //L +   %5 = add i64 %2, 1
 //L +   br label %1
 //L +
@@ -655,7 +655,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S1lFvE() #0 {
+//L + define private void @_S1lFvE() #0 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -676,7 +676,7 @@ proc l {
 //L +
 //L + 10:                                               ; preds = %7
 //L +   %11 = load i64, ptr %8, align 8
-//L +   call fastcc void @_S3fooFvxiE(i64 %11)
+//L +   call void @_S3fooFvxiE(i64 %11)
 //L +   %12 = getelementptr inbounds nuw i8, ptr %8, i32 8
 //L +   br label %7
 //L +

@@ -12,12 +12,12 @@ proc foo(in int a, in int b) {
 // + @2 = "assert.src\00"
 // + @3 = "a == b\00"
 // +
-// + proc __src_main external fastcc {
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixiE (i64 %0, i64 %1) private fastcc {
+// + proc _S3fooFvxixiE (i64 %0, i64 %1) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 64, align 8
@@ -86,12 +86,12 @@ proc foo(in int a, in int b) {
 //L + @__srcc_str.0 = private constant [7 x i8] c"a == b\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc void @_S3fooFvxixiE(i64 %0, i64 %1) #0 {
+//L + define private void @_S3fooFvxixiE(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 64, align 8

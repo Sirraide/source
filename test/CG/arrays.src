@@ -32,12 +32,12 @@ proc c {
     var x4 = i16[200](61, 75, 230, 40, 25);
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1aFvE private fastcc {
+// + proc _S1aFvE private ccc {
 // +     #0 = 32, align 8
 // +     #1 = 56, align 8
 // +     #2 = 1600, align 8
@@ -94,7 +94,7 @@ proc c {
 // +     ret
 // + }
 // +
-// + proc _S1bFvE private fastcc {
+// + proc _S1bFvE private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -154,7 +154,7 @@ proc c {
 // +     ret
 // + }
 // +
-// + proc _S1cFvE private fastcc {
+// + proc _S1cFvE private ccc {
 // +     #0 = 80, align 8
 // +     #1 = 400, align 2
 // +

@@ -18,12 +18,12 @@ proc p3 (int offs) -> i8^ {
     return __srcc_ptradd(&a, offs);
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S2p1FRI8E private fastcc -> ptr {
+// + proc _S2p1FRI8E private ccc -> ptr {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +
@@ -35,7 +35,7 @@ proc p3 (int offs) -> i8^ {
 // +     ret ptr %1
 // + }
 // +
-// + proc _S2p2FRI8E private fastcc -> ptr {
+// + proc _S2p2FRI8E private ccc -> ptr {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -44,7 +44,7 @@ proc p3 (int offs) -> i8^ {
 // +     ret ptr %0
 // + }
 // +
-// + proc _S2p3FRI8iE (i64 %0) private fastcc -> ptr {
+// + proc _S2p3FRI8iE (i64 %0) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +     #1 = 1, align 1
 // +
@@ -62,12 +62,12 @@ proc p3 (int offs) -> i8^ {
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
 //L + ; Function Attrs: nounwind
-//L + define fastcc void @__src_main() #0 {
+//L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc ptr @_S2p1FRI8E() #0 {
+//L + define private ptr @_S2p1FRI8E() #0 {
 //L +   %1 = alloca i8, i64 1, align 1
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i8 0, ptr %1, align 1
@@ -78,7 +78,7 @@ proc p3 (int offs) -> i8^ {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc ptr @_S2p2FRI8E() #0 {
+//L + define private ptr @_S2p2FRI8E() #0 {
 //L +   %1 = alloca i8, i64 1, align 1
 //L +   store i8 0, ptr %1, align 1
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 10
@@ -86,7 +86,7 @@ proc p3 (int offs) -> i8^ {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private fastcc ptr @_S2p3FRI8iE(i64 %0) #0 {
+//L + define private ptr @_S2p3FRI8iE(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   store i64 %0, ptr %2, align 8

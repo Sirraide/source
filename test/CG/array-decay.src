@@ -10,7 +10,7 @@ int^ b2 = &a2;
 x(&a);
 x(&a2);
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // +     #0 = 32, align 8
 // +     #1 = 128, align 8
 // +     #2 = 8, align 8
@@ -21,9 +21,9 @@ x(&a2);
 // +     set ptr #1, i8 0, i64 128
 // +     store #2, ptr #0, align 8
 // +     store #3, ptr #1, align 8
-// +     call fastcc void _S1xFvRiE(ptr #0)
-// +     call fastcc void _S1xFvRiE(ptr #1)
+// +     call ccc void _S1xFvRiE(ptr #0)
+// +     call ccc void _S1xFvRiE(ptr #1)
 // +     ret
 // + }
 // +
-// + proc _S1xFvRiE (ptr) external fastcc;
+// + proc _S1xFvRiE (ptr) external ccc;

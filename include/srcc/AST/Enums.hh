@@ -106,8 +106,16 @@ enum class srcc::Mangling : base::u8 {
 
 /// Calling convention of a function.
 enum class srcc::CallingConvention : base::u8 {
-    Source, ///< Default calling convention.
-    Native, ///< Native calling convention for C and C++ interop.
+    /// Native calling convention for C and C++ interop.
+    ///
+    /// Currently, this is also the default calling convention for
+    /// simplicity. We could use fastcc, but there are some issues
+    /// w/ that; in particular, Clang doesn’t support it, so we can’t
+    /// call functions in modules from C++ properly if we use that
+    /// calling convention, and it also means that users would have
+    /// to care about the calling convention when writing function
+    /// types if we had two different ones that were in common use.
+    Native,
 };
 
 enum class srcc::ValueCategory : base::u8 {

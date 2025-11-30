@@ -23,12 +23,12 @@ proc p4 -> i8[] {
     return (&j, 1);
 }
 
-// * proc __src_main external fastcc {
+// * proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S2p1FSiE private fastcc -> (i64, i64) {
+// + proc _S2p1FSiE private ccc -> (i64, i64) {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -40,7 +40,7 @@ proc p4 -> i8[] {
 // +     ret ptr %0, i64 %1
 // + }
 // +
-// + proc _S2p2FSiE private fastcc -> (i64, i64) {
+// + proc _S2p2FSiE private ccc -> (i64, i64) {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -49,7 +49,7 @@ proc p4 -> i8[] {
 // +     ret ptr #0, i64 %0
 // + }
 // +
-// + proc _S2p3FSI8E private fastcc -> (i64, i64) {
+// + proc _S2p3FSI8E private ccc -> (i64, i64) {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +
@@ -60,7 +60,7 @@ proc p4 -> i8[] {
 // +     ret ptr %0, i64 1
 // + }
 // +
-// + proc _S2p4FSI8E private fastcc -> (i64, i64) {
+// + proc _S2p4FSI8E private ccc -> (i64, i64) {
 // +     #0 = 1, align 1
 // +
 // + entry:

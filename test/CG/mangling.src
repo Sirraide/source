@@ -6,17 +6,17 @@ export proc a(i8) {}
 export proc a(i16) {}
 export proc a(int) {}
 
-// * proc __src_static_init.testmodule external fastcc {
+// * proc __src_static_init.testmodule external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvE external fastcc {
+// + proc _SM10testmodule$1aFvE external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvI8E (i8 %0) external fastcc {
+// + proc _SM10testmodule$1aFvI8E (i8 %0) external ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -24,7 +24,7 @@ export proc a(int) {}
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvI16E (i16 %0) external fastcc {
+// + proc _SM10testmodule$1aFvI16E (i16 %0) external ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -32,7 +32,7 @@ export proc a(int) {}
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFviE (i64 %0) external fastcc {
+// + proc _SM10testmodule$1aFviE (i64 %0) external ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
