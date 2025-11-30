@@ -4,6 +4,7 @@ module testmodule;
 
 import <cstdio> as libc;
 
+libc::puts("Running module initialiser...");
 export proc hello() {
     libc::puts("Hello, world");
 }

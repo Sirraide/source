@@ -96,13 +96,50 @@ int cg::CodeGen::write_to_file(
 #endif
     }();
 
-    // If we’re compiling a module, create a static archive.
-    // TODO: And a shared library.
+    auto RunLinker = [&](std::string out_name, bool shared) {
+        SmallVector<std::string> args_storage;
+        SmallVector<StringRef> args_ref;
+
+        // Collect args.
+        args_storage.push_back(SOURCE_CLANG_EXE);
+        args_storage.push_back(object_file_path);
+        args_storage.push_back("-o");
+        args_storage.push_back(std::move(out_name));
+        if (not linker.empty()) args_storage.push_back(std::format("-fuse-ld={}", linker));
+
+        for (auto& arg : args_storage) args_ref.push_back(arg);
+        for (auto& obj : additional_objects) args_ref.push_back(obj);
+        for (auto& obj : lib_paths) {
+            args_ref.push_back("-L");
+            args_ref.push_back(obj);
+        }
+
+        for (auto& obj : link_libs) {
+            args_ref.push_back("-l");
+            args_ref.push_back(obj);
+        }
+
+        if (not shared)
+            for (auto& [_, import] : tu.linkage_imports)
+                if (auto src_mod = dyn_cast<ImportedSourceModuleDecl>(import))
+                    args_ref.push_back(src_mod->mod_path);
+
+        if (shared) args_ref.push_back("-shared");
+        int code = llvm::sys::ExecuteAndWait(SOURCE_CLANG_EXE, args_ref);
+        if (code != 0) std::println(
+            "Linker invocation: {}",
+            utils::join(utils::quote_escaped(args_ref), " ")
+        );
+        return code;
+    };
+
+    // If we’re compiling a module, create a static archive and a shared library.
     if (tu.is_module) {
         // Derive the file name from the module name; always use '.mod' instead
         // of e.g. '.a' because linking against a module isn’t enough to make it
         // usable: you also have to run the module initialiser.
         auto out_name = std::format("{}.{}", tu.name.sv(), constants::ModuleFileExtension);
+        auto shared_out_name = std::format("{}.{}", tu.name.sv(), constants::SharedModuleFileExtension);
         auto desc_name = std::format("{}.{}", tu.name.sv(), constants::ModuleDescriptionFileExtension);
 
         // We could avoid writing to a temporary file in this case (but
@@ -139,7 +176,9 @@ int cg::CodeGen::write_to_file(
         auto desc = tu.serialise();
         auto res = File::Write(desc.data(), desc.size(), tu.context().module_path() / desc_name);
         if (not res) Fatal("Failed to write module description: {}", res.error());
-        return 0;
+
+        // Emit the shared object.
+        return RunLinker(tu.context().module_path() / shared_out_name, true);
     }
 
     // Determine the file name; For programs, we allow overriding this with a
@@ -148,40 +187,10 @@ int cg::CodeGen::write_to_file(
     if (not program_file_name_override.empty()) out_name = program_file_name_override;
     else if (machine.getTargetTriple().isOSWindows()) out_name += ".exe";
 
-    // Collect args.
-    SmallVector<std::string> clang_link_args;
-    clang_link_args.push_back(SOURCE_CLANG_EXE);
-    clang_link_args.push_back(object_file_path);
-    clang_link_args.push_back("-o");
-    clang_link_args.push_back(std::move(out_name));
-    if (not linker.empty()) clang_link_args.push_back(std::format("-fuse-ld={}", linker));
-
-    SmallVector<StringRef> args_ref;
-    for (auto& arg : clang_link_args) args_ref.push_back(arg);
-    for (auto& obj : additional_objects) args_ref.push_back(obj);
-    for (auto& obj : lib_paths) {
-        args_ref.push_back("-L");
-        args_ref.push_back(obj);
-    }
-
-    for (auto& obj : link_libs) {
-        args_ref.push_back("-l");
-        args_ref.push_back(obj);
-    }
-
-    for (auto& [_, import] : tu.linkage_imports)
-        if (auto src_mod = dyn_cast<ImportedSourceModuleDecl>(import))
-            args_ref.push_back(src_mod->mod_path);
-
     // We could run the linker without waiting for it, but that defeats
     // the purpose of making the number of jobs configurable, so block
     // until it’s done.
-    int code = llvm::sys::ExecuteAndWait(SOURCE_CLANG_EXE, args_ref);
-    if (code != 0) std::println(
-        "Linker invocation: {}",
-        utils::join(utils::quote_escaped(args_ref), " ")
-    );
-    return code;
+    return RunLinker(out_name, false);
 }
 
 

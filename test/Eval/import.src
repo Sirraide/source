@@ -1,0 +1,11 @@
+// V mkdir -p %t
+// V %srcc test/inputs/module.src --mo %t --target x86_64-unknown-linux
+// R %srcc --eval %s -M %t
+program test;
+
+import testmodule;
+
+testmodule::hello();
+
+// * Running module initialiser...
+// + Hello, world

@@ -5,6 +5,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <llvm/Support/Compression.h>
+#include <llvm/Support/DynamicLibrary.h>
 #include <base/Serialisation.hh>
 #include <base/Utils.hh>
 
@@ -375,12 +376,13 @@ auto Sema::LoadModuleFromArchive(
     std::string desc_name = std::format("{}.{}", linkage_name, constants::ModuleDescriptionFileExtension);
 
     // Try to find the module in the search path.
-    fs::Path mod_path, desc_path;
+    fs::Path mod_path, desc_path, shared_path;
     for (auto& base : search_paths) {
         auto combined = fs::Path{base} / desc_name;
         if (fs::File::Exists(combined)) {
             mod_path = fs::Path{base} / std::format("{}.{}", linkage_name, constants::ModuleFileExtension);
             desc_path = std::move(combined);
+            shared_path = fs::Path{base} / std::format("{}.{}", linkage_name, constants::SharedModuleFileExtension);
             break;
         }
     }
@@ -418,6 +420,20 @@ auto Sema::LoadModuleFromArchive(
         linkage_name,
         res.error()
     );
+
+    // Also attempt to load the shared object so we can perform compile-time
+    // evaluation of any functions defined in the module.
+    if (fs::File::Exists(shared_path)) {
+        std::string err_msg;
+        if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(shared_path.string().c_str(), &err_msg)){
+            Warn(import_loc, "Could not load shared object for compile-time evaluation");
+            Remark("Compile-time evaluation will not be able to access functions in '{}'", linkage_name);
+        }
+
+        auto init = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(constants::EntryPointName(linkage_name));
+        if (not init) Warn(import_loc, "Could not find module initialiser for module '{}'", linkage_name);
+        else std::invoke(reinterpret_cast<void(*)()>(init));
+    }
 
     return module_decl;
 }
