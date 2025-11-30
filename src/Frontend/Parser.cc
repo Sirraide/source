@@ -263,6 +263,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::TemplateType:
         case Tk::Tilde:
         case Tk::True:
+        case Tk::Type:
         case Tk::Var:
         case Tk::Void:
             return true;
@@ -656,10 +657,11 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParsedTupleExpr::Create(*this, exprs, parens.left);
         } break;
 
-        // <type-prim> ::= BOOL | INT | VOID | VAR | NORETURN
+        // <type-prim> ::= BOOL | INT | TYPE | VOID | VAR | NORETURN
         case Tk::Bool: lhs = BuiltinType(Type::BoolTy); break;
         case Tk::Int: lhs = BuiltinType(Type::IntTy); break;
         case Tk::NoReturn: lhs = BuiltinType(Type::NoReturnTy); break;
+        case Tk::Type: lhs = BuiltinType(Type::TypeTy); break;
         case Tk::Void: lhs = BuiltinType(Type::VoidTy); break;
         case Tk::Var: lhs = BuiltinType(Type::DeducedTy); break;
 

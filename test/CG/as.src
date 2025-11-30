@@ -1,0 +1,273 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc p {
+    int i;
+    i8 j;
+    int^ pa = &i;
+    i8^ pb = &j;
+
+    // No-op.
+    proc p1 = i as int;
+    proc p2 = "" as i8[];
+    proc p3 = (1..=2) as range<int>;
+    proc p4 = pa as int^;
+    proc p5 = i as! int;
+    proc p6 = "" as! i8[];
+    proc p7 = (1..=2) as! range<int>;
+    proc p8 = pa as! int^;
+
+    // Integer cast.
+    proc p9 = i as i32;
+    proc p10 = i as i64;
+    proc p11 = i as i8;
+    proc p12 = i64.max as i8;
+    proc p13 = i as! i32; // expected-warning: Cast from 'int' to 'i32' should use 'as'
+    proc p14 = i as! i64; // expected-warning: Cast from 'int' to 'i64' should use 'as'
+    proc p15 = i as! i8; // expected-warning: Cast from 'int' to 'i8' should use 'as'
+    proc p16 = i64.max as! i8; // expected-warning: Cast from 'i64' to 'i8' should use 'as'
+
+    // Void cast.
+    proc p17 = 1 as void;
+    proc p18 = "" as void;
+    proc p19 = (1..=2) as void;
+    proc p20 = pa as void;
+    proc p21 = 1 as! void; // expected-warning: Cast from 'int' to 'void' should use 'as'
+    proc p22 = "" as! void; // expected-warning: Cast from 'i8[]' to 'void' should use 'as'
+    proc p23 = (1..=2) as! void; // expected-warning: Cast from 'range<int>' to 'void' should use 'as'
+    proc p24 = pa as! void; // expected-warning: Cast from 'int^' to 'void' should use 'as'
+
+    // Pointer cast.
+    proc p25 = pa as! i8^;
+    proc p26 = pb as! int^;
+
+    // Initialiser call.
+    proc p27 = (1, 2, 3) as int[3];
+    proc p28 = (1, 2) as int[2];
+}
+
+// * @0 = "\00"
+// +
+// + proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1pFvE private fastcc {
+// +     #0 = 8, align 8
+// +     #1 = 1, align 1
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i8 0, align 1
+// +     store #2, ptr #0, align 8
+// +     store #3, ptr #1, align 8
+// +     ret
+// + }
+// +
+// + proc _S1p$2p1FiE (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S1p$2p2FSI8E private fastcc -> (i64, i64) {
+// + entry:
+// +     ret ptr @0, i64 0
+// + }
+// +
+// + proc _S1p$2p3FqiE private fastcc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 3, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
+// + }
+// +
+// + proc _S1p$2p4FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load ptr, %1, align 8
+// +     %3 = load ptr, %2, align 8
+// +     ret ptr %3
+// + }
+// +
+// + proc _S1p$2p5FiE (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S1p$2p6FSI8E private fastcc -> (i64, i64) {
+// + entry:
+// +     ret ptr @0, i64 0
+// + }
+// +
+// + proc _S1p$2p7FqiE private fastcc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 3, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
+// + }
+// +
+// + proc _S1p$2p8FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load ptr, %1, align 8
+// +     %3 = load ptr, %2, align 8
+// +     ret ptr %3
+// + }
+// +
+// + proc _S1p$2p9FI32E (ptr %0 nest nofree noundef readonly) private fastcc -> i32 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     %3 = trunc i64 %2 to i32
+// +     ret i32 %3
+// + }
+// +
+// + proc _S1p$3p10FI64E (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S1p$3p11FI8E (ptr %0 nest nofree noundef readonly) private fastcc -> i8 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     %3 = trunc i64 %2 to i8
+// +     ret i8 %3
+// + }
+// +
+// + proc _S1p$3p12FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -1
+// + }
+// +
+// + proc _S1p$3p13FI32E (ptr %0 nest nofree noundef readonly) private fastcc -> i32 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     %3 = trunc i64 %2 to i32
+// +     ret i32 %3
+// + }
+// +
+// + proc _S1p$3p14FI64E (ptr %0 nest nofree noundef readonly) private fastcc -> i64 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S1p$3p15FI8E (ptr %0 nest nofree noundef readonly) private fastcc -> i8 {
+// + entry:
+// +     %1 = load ptr, %0, align 8
+// +     %2 = load i64, %1, align 8
+// +     %3 = trunc i64 %2 to i8
+// +     ret i8 %3
+// + }
+// +
+// + proc _S1p$3p16FI8E private fastcc -> i8 {
+// + entry:
+// +     ret i8 -1
+// + }
+// +
+// + proc _S1p$3p17FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p18FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p19FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p20FvE (ptr %0 nest nofree noundef readonly) private fastcc {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load ptr, %1, align 8
+// +     ret
+// + }
+// +
+// + proc _S1p$3p21FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p22FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p23FvE private fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1p$3p24FvE (ptr %0 nest nofree noundef readonly) private fastcc {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load ptr, %1, align 8
+// +     ret
+// + }
+// +
+// + proc _S1p$3p25FRI8E (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load ptr, %1, align 8
+// +     %3 = load ptr, %2, align 8
+// +     ret ptr %3
+// + }
+// +
+// + proc _S1p$3p26FRiE (ptr %0 nest nofree noundef readonly) private fastcc -> ptr {
+// + entry:
+// +     %1 = ptradd %0, 16
+// +     %2 = load ptr, %1, align 8
+// +     %3 = load ptr, %2, align 8
+// +     ret ptr %3
+// + }
+// +
+// + proc _S1p$3p27FA3iE (ptr %0 sret i8[24]) private fastcc {
+// + entry:
+// +     store %0, i64 1, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, i64 2, align 8
+// +     %2 = ptradd %1, 8
+// +     store %2, i64 3, align 8
+// +     ret
+// + }
+// +
+// + proc _S1p$3p28FA2iE private fastcc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 2, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
+// + }

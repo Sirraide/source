@@ -2427,32 +2427,54 @@ auto Sema::BuildBinaryExpr(
             return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
         }
 
-        case Tk::As: {
+        case Tk::As:
+        case Tk::AsBang: {
             auto ty_expr = dyn_cast<TypeExpr>(rhs);
             if (not ty_expr) return Error(rhs->location(), "Expected type");
-            auto ty = ty_expr->value;
+            auto from = lhs->type;
+            auto to = ty_expr->value;
+            auto Make = [&](CastExpr::CastKind k) {
+                return new (*tu) CastExpr(to, k, lhs, loc);
+            };
+
+            auto HardCast = [&]{
+                if (op == Tk::AsBang) return;
+                Error(loc, "Cast from '{}' to '{}' requires '%1(as!%)'", from, to);
+            };
+
+            auto SoftCast = [&]{
+                if (op == Tk::As) return;
+                if (curr_proc().proc->instantiated_from != nullptr) return;
+                Warn(loc, "Cast from '{}' to '{}' should use '%1(as%)'", from, to);
+            };
 
             // This is a no-op if the types are the same.
-            if (ty == lhs->type) return lhs;
+            if (to == from) return lhs;
 
             // Casting between integer types is always allowed.
-            if (lhs->type->is_integer() and ty->is_integer()) return new (*tu) CastExpr(
-                ty,
-                CastExpr::Integral,
-                LValueToRValue(lhs),
-                loc
-            );
+            if (from->is_integer() and to->is_integer()) {
+                SoftCast();
+                lhs = LValueToRValue(lhs);
+                return Make(CastExpr::Integral);
+            }
 
             // Casting to void does nothing.
-            if (ty == Type::VoidTy) return new (*tu) CastExpr(
-                ty,
-                CastExpr::ExplicitDiscard,
-                lhs,
-                loc
-            );
+            if (to == Type::VoidTy) {
+                SoftCast();
+                return Make(CastExpr::ExplicitDiscard);
+            }
+
+            // Casting between pointers is allowed with 'as!'.
+            if (isa<PtrType>(from) and isa<PtrType>(to)) {
+                HardCast();
+                lhs = LValueToRValue(lhs);
+                return Make(CastExpr::Pointer);
+            }
 
             // For everything else, just try to build an initialiser.
-            return BuildInitialiser(ty, lhs, loc);
+            auto init = BuildInitialiser(to, lhs, loc);
+            if (init) SoftCast();
+            return init;
         }
 
         case Tk::In: {

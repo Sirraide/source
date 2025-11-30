@@ -1,0 +1,57 @@
+// V %srcc --sema --verify %s
+program test
+
+int i;
+i8 j;
+int^ pa = &i;
+i8^ pb = &j;
+
+// No-op.
+i as int;
+"" as i8[];
+(1..=2) as range<int>;
+pa as int^;
+i as! int;
+"" as! i8[];
+(1..=2) as! range<int>;
+pa as! int^;
+
+// Integer cast.
+i as i32;
+i as i64;
+i as i8;
+i64.max as i8;
+i as! i32; // expected-warning: Cast from 'int' to 'i32' should use 'as'
+i as! i64; // expected-warning: Cast from 'int' to 'i64' should use 'as'
+i as! i8; // expected-warning: Cast from 'int' to 'i8' should use 'as'
+i64.max as! i8; // expected-warning: Cast from 'i64' to 'i8' should use 'as'
+
+// Void cast.
+1 as void;
+"" as void;
+(1..=2) as void;
+pa as void;
+1 as! void; // expected-warning: Cast from 'int' to 'void' should use 'as'
+"" as! void; // expected-warning: Cast from 'i8[]' to 'void' should use 'as'
+(1..=2) as! void; // expected-warning: Cast from 'range<int>' to 'void' should use 'as'
+pa as! void; // expected-warning: Cast from 'int^' to 'void' should use 'as'
+
+// Pointer cast.
+pa as i8^; // expected-error: Cast from 'int^' to 'i8^' requires 'as!'
+pb as int^; // expected-error: Cast from 'i8^' to 'int^' requires 'as!'
+pa as! i8^;
+pb as! int^;
+
+// Initialiser call.
+(1, 2, 3) as int[3];
+(1, 2) as int[2];
+(1, 2, 3) as! int[3]; // expected-warning: Cast from '(int, int, int)' to 'int[3]' should use 'as'
+(1, 2) as! int[2]; // expected-warning: Cast from '(int, int)' to 'int[2]' should use 'as'
+
+// Invalid cast.
+(1, 2) as int; // expected-error: Cannot initialise 'int' from '(int, int)'
+1 as type; // expected-error: Cannot convert expression of type 'int' to 'type'
+int as int; // expected-error: Cannot convert expression of type 'type' to 'int'
+(1, 2) as! int; // expected-error: Cannot initialise 'int' from '(int, int)'
+1 as! type; // expected-error: Cannot convert expression of type 'int' to 'type'
+int as! int; // expected-error: Cannot convert expression of type 'type' to 'int'
