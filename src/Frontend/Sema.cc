@@ -1385,6 +1385,15 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
 
     if (auto d = dyn_cast<ProcDecl>(proc)) {
         if (d->is_imported()) return; // FIXME: Report this location somehow.
+
+        // FIXME: Parameters are only created when we translate the body, but
+        // we need their source locations earlier than that if we are diagnosing
+        // a call to a procedure before translating its body. Either build the
+        // parameters earlier or store the locations elsewhere; for now, we just
+        // don’t emit this diagnostic if the parameters haven’t been created yet.
+        if (i >= d->params().size()) return;
+
+        // Get the parameter name and location.
         auto p = d->params()[i];
         loc = p->location();
         name = p->name.str();

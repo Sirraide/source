@@ -1,0 +1,14 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Check that we don’t crash when trying to point to a parameter
+// before a procedure’s ParamDecls are created. Eventually, we should
+// find a way to actually just emit the note.
+
+// 'In argument to parameter' note is *not* emitted for this call.
+callee(""); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+
+proc callee (int a) {} // expected-note: In argument to parameter 'a'
+
+// It is for this call.
+callee(""); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
