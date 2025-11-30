@@ -78,6 +78,9 @@ public:
         /// The action to perform.
         Action action;
 
+        /// Language options.
+        LangOpts lang_opts;
+
         /// How many steps the constant evaluator can run for before
         /// we give up.
         u64 eval_steps;
@@ -99,12 +102,6 @@ public:
 
         /// Whether to use colours in the output.
         bool colours : 1;
-
-        /// Whether to perform overflow checking.
-        bool overflow_checking : 1;
-
-        /// Whether to implicitly import the runtime module.
-        bool import_runtime : 1;
 
         /// Whether to use short filenames (e.g. 'foo.src' instead of
         /// 'path/to/foo.src').

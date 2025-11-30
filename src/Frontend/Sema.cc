@@ -3298,8 +3298,7 @@ auto Sema::Translate(
     const LangOpts& opts,
     SmallVector<ParsedModule::Ptr> modules,
     ArrayRef<std::string> module_search_paths,
-    ArrayRef<std::string> clang_include_paths,
-    bool load_runtime
+    ArrayRef<std::string> clang_include_paths
 ) -> TranslationUnit::Ptr {
     Assert(not modules.empty(), "No modules to analyse!");
     auto& first = modules.front();
@@ -3319,7 +3318,7 @@ auto Sema::Translate(
     S.clang_include_paths = clang_include_paths;
 
     // Translate it.
-    S.Translate(load_runtime);
+    S.Translate(not opts.no_runtime);
     return std::move(S.tu);
 }
 

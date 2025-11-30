@@ -93,11 +93,6 @@ int Driver::run_job() {
         if (opts.ir_verbose) return Error("--ir-verbose requires --ir");
     }
 
-    // Create lang opts.
-    LangOpts lang_opts;
-    lang_opts.overflow_checking = opts.overflow_checking;
-    lang_opts.no_runtime = not opts.import_runtime;
-
     // Forward options to context.
     ctx.eval_steps = opts.eval_steps;
     ctx.use_short_filenames = opts.short_filenames;
@@ -184,11 +179,10 @@ int Driver::run_job() {
         SmallVector<ParsedModule::Ptr> modules;
         modules.push_back(std::move(mod));
         auto tu = Sema::Translate(
-            lang_opts,
+            opts.lang_opts,
             std::move(modules),
             opts.module_search_paths,
-            opts.clang_include_paths,
-            false
+            opts.clang_include_paths
         );
 
         if (not tu or ctx.diags().has_error()) return 1;
@@ -221,11 +215,10 @@ int Driver::run_job() {
     // headers probably would be...).~~ Irrelevant. We need to import them into
     // the module that uses them anyway.
     auto tu = Sema::Translate(
-        lang_opts,
+        opts.lang_opts,
         std::move(parsed_modules),
         opts.module_search_paths,
-        opts.clang_include_paths,
-        opts.import_runtime
+        opts.clang_include_paths
     );
 
     if (a == Action::Sema) {

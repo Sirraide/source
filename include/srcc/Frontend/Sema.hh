@@ -574,8 +574,7 @@ public:
         const LangOpts& opts,
         SmallVector<ParsedModule::Ptr> modules,
         ArrayRef<std::string> module_search_paths,
-        ArrayRef<std::string> clang_include_paths,
-        bool load_runtime
+        ArrayRef<std::string> clang_include_paths
     ) -> TranslationUnit::Ptr;
 
     /// Get the context.
