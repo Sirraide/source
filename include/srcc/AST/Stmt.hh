@@ -756,6 +756,17 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
 };
 
+class srcc::SliceConstructExpr final : public Expr {
+public:
+    Expr* ptr;
+    Expr* size;
+
+    SliceConstructExpr(SliceType* slice, Expr* ptr, Expr* size, SLoc loc)
+        : Expr{Kind::SliceConstructExpr, slice, RValue, loc}, ptr{ptr}, size{size} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::SliceConstructExpr; }
+};
+
 class srcc::StrLitExpr final : public Expr {
 public:
     String value;

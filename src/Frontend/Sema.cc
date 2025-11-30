@@ -630,6 +630,16 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             exprs.push_back(e);
             return;
         }
+
+        case K::SliceFromPtrAndSize: {
+            auto& data = conv.data.get<Conversion::SliceFromPtrAndSizeData>();
+            exprs[0] = ApplyConversionSequence(exprs[0], *data.ptr, loc);
+            exprs[1] = ApplyConversionSequence(exprs[1], *data.size, loc);
+            auto e = new (*tu) SliceConstructExpr(data.slice, exprs[0], exprs[1], loc);
+            exprs.clear();
+            exprs.push_back(e);
+            return;
+        }
     }
 
     Unreachable("Invalid conversion");
@@ -766,17 +776,31 @@ auto Sema::BuildArrayInitialiser(
 
 auto Sema::BuildSliceInitialiser(
     ConversionSequence& seq,
-    SliceType* a,
+    SliceType* s,
     ArrayRef<Expr*> args,
     SLoc loc
 ) -> MaybeDiags {
     if (args.empty()) {
-        seq.add(Conversion::DefaultInit(a));
+        seq.add(Conversion::DefaultInit(s));
         return {};
     }
 
+    // If we have 2 arguments, try initialisation from pointer + size.
+    if (args.size() == 2) {
+        auto ptr_seq = BuildConversionSequence(PtrType::Get(*tu, s->elem()), args[0], loc);
+        auto size_seq = BuildConversionSequence(Type::IntTy, args[1], loc);
+        if (ptr_seq and size_seq) {
+            Conversion::SliceFromPtrAndSizeData data;
+            data.slice = s;
+            data.ptr = std::make_unique<ConversionSequence>(std::move(ptr_seq.value()));
+            data.size = std::make_unique<ConversionSequence>(std::move(size_seq.value()));
+            seq.add(Conversion::SliceFromPtrAndSize(std::move(data)));
+            return {};
+        }
+    }
+
     // Build a temporary array and convert it to a slice.
-    auto arr_ty = ArrayType::Get(*tu, a->elem(), i64(args.size()));
+    auto arr_ty = ArrayType::Get(*tu, s->elem(), i64(args.size()));
     Try(BuildArrayInitialiser(seq, arr_ty, args, loc));
 
     // And convert the array to a slice.
@@ -1403,6 +1427,12 @@ u32 Sema::ConversionSequence::badness() {
             case K::RecordInit: {
                 auto& data = conv.data.get<Conversion::RecordInitData>();
                 for (auto& seq : data.field_convs) badness += seq.badness();
+            } break;
+
+            case K::SliceFromPtrAndSize: {
+                auto& data = conv.data.get<Conversion::SliceFromPtrAndSizeData>();
+                badness += data.ptr->badness();
+                badness += data.size->badness();
             } break;
         }
     }

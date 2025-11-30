@@ -508,6 +508,14 @@ void Stmt::Printer::Print(Stmt* e) {
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
         },
 
+        [&](SliceConstructExpr* s) {
+            PrintBasicNode(e, "SliceConstructExpr");
+            SmallVector<Stmt*, 4> children;
+            children.push_back(s->ptr);
+            children.push_back(s->size);
+            PrintChildren(children);
+        },
+
         [&](StrLitExpr* s) {
             PrintBasicHeader(e, "StrLitExpr");
             print(" %3(\"{}\"%)\n", utils::Escape(s->value, true, true));

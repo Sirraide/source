@@ -1,0 +1,17 @@
+// V %srcc --sema --verify %s
+program test;
+
+int i;
+i8 j;
+int^ pi = &i;
+i8^ pj = &j;
+
+int[] s1 = (pi, i);
+int[] s2 = (&i, i);
+i8[] s3 = (pj, 1);
+i8[] s4 = (&j, 1);
+
+int[] s5 = (pi, pi); // expected-error: Cannot convert expression of type 'int^' to 'int'
+int[] s6 = (&i, &j); // expected-error: Cannot convert expression of type 'int^' to 'int'
+i8[] s7 = (pj, &i); // expected-error: Cannot convert expression of type 'i8^' to 'i8'
+i8[] s8 = (&j, pi); // expected-error: Cannot convert expression of type 'i8^' to 'i8'

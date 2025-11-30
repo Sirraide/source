@@ -1,0 +1,69 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc p1 -> int[] {
+    int i;
+    int^ pi = &i;
+    return (pi, i);
+}
+
+proc p2 -> int[] {
+    int i;
+    return (&i, i);
+}
+
+proc p3 -> i8[] {
+    i8 j;
+    i8^ pj = &j;
+    return (pj, 1);
+}
+
+proc p4 -> i8[] {
+    i8 j;
+    return (&j, 1);
+}
+
+// * proc __src_main external fastcc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2p1FSiE private fastcc -> (i64, i64) {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, ptr #0, align 8
+// +     %0 = load ptr, #1, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret ptr %0, i64 %1
+// + }
+// +
+// + proc _S2p2FSiE private fastcc -> (i64, i64) {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     %0 = load i64, #0, align 8
+// +     ret ptr #0, i64 %0
+// + }
+// +
+// + proc _S2p3FSI8E private fastcc -> (i64, i64) {
+// +     #0 = 1, align 1
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i8 0, align 1
+// +     store #1, ptr #0, align 8
+// +     %0 = load ptr, #1, align 8
+// +     ret ptr %0, i64 1
+// + }
+// +
+// + proc _S2p4FSI8E private fastcc -> (i64, i64) {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     store #0, i8 0, align 1
+// +     ret ptr #0, i64 1
+// + }

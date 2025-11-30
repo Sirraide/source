@@ -145,6 +145,12 @@ private:
             std::unique_ptr<ConversionSequence> seq;
         };
 
+        struct SliceFromPtrAndSizeData {
+            SliceType* slice;
+            std::unique_ptr<ConversionSequence> ptr;
+            std::unique_ptr<ConversionSequence> size;
+        };
+
         enum struct Kind : u8 {
             ArrayBroadcast,
             ArrayInit,
@@ -158,6 +164,7 @@ private:
             RangeCast,
             SelectOverload,
             SliceFromArray,
+            SliceFromPtrAndSize,
             StripParens,
             StrLitToCStr,
             TupleToFirstElement,
@@ -170,6 +177,7 @@ private:
             RecordInitData,
             ArrayInitData,
             ArrayBroadcastData,
+            SliceFromPtrAndSizeData,
             u32
         > data; // clang-format on
 
@@ -180,6 +188,7 @@ private:
         Conversion(RecordInitData conversions) : kind{Kind::RecordInit}, data{std::move(conversions)} {}
         Conversion(ArrayInitData data) : kind{Kind::ArrayInit}, data{std::move(data)} {}
         Conversion(ArrayBroadcastData data) : kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
+        Conversion(SliceFromPtrAndSizeData data) : kind{Kind::SliceFromPtrAndSize}, data{std::move(data)} {}
 
     public:
         ~Conversion();
@@ -196,6 +205,7 @@ private:
         static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto SliceFromArray() -> Conversion { return Conversion{Kind::SliceFromArray}; }
+        static auto SliceFromPtrAndSize(SliceFromPtrAndSizeData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto StripParens() -> Conversion { return Conversion{Kind::StripParens}; }
         static auto StrLitToCStr() -> Conversion { return Conversion{Kind::StrLitToCStr}; }
         static auto TupleToFirstElement() -> Conversion { return Conversion{Kind::TupleToFirstElement}; }

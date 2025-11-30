@@ -2202,6 +2202,10 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
     return {};
 }
 
+auto CodeGen::EmitSliceConstructExpr(SliceConstructExpr* expr) -> IRValue {
+    return {EmitScalar(expr->ptr), EmitScalar(expr->size)};
+}
+
 auto CodeGen::EmitStrLitExpr(StrLitExpr* expr) -> IRValue {
     return CreateGlobalStringSlice(C(expr->location()), expr->value);
 }
