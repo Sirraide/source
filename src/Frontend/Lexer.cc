@@ -579,7 +579,9 @@ void Lexer::LexEscapedId() {
     drop_until(')');
     if (not consume(')')) Error(backslash, "EOF reached while lexing \\(...");
     FinishText();
-    tok().text = tok().text.drop_back();
+
+    // Drop the '()' from the name.
+    tok().text = tok().text.drop().drop_back();
     tok().location = backslash;
 }
 
