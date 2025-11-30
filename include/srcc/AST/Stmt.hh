@@ -461,6 +461,9 @@ public:
         /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
+        /// Cast a pointer to a pointer.
+        Pointer,
+
         /// Convert an lvalue to an rvalue.
         LValueToRValue,
 

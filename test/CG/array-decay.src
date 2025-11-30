@@ -1,0 +1,29 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc x(int^) extern;
+
+int[4] a;
+int[4][4] a2;
+int^ b = &a;
+int^ b2 = &a2;
+x(&a);
+x(&a2);
+
+// * proc __src_main external fastcc {
+// +     #0 = 32, align 8
+// +     #1 = 128, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 32
+// +     set ptr #1, i8 0, i64 128
+// +     store #2, ptr #0, align 8
+// +     store #3, ptr #1, align 8
+// +     call fastcc void _S1xFvRiE(ptr #0)
+// +     call fastcc void _S1xFvRiE(ptr #1)
+// +     ret
+// + }
+// +
+// + proc _S1xFvRiE (ptr) external fastcc;

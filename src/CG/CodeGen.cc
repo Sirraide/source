@@ -1706,6 +1706,9 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
     auto val = Emit(expr->arg);
     switch (expr->kind) {
+        case CastExpr::Pointer:
+            return val; // This is a no-op in the IR since there is only a single pointer type.
+
         case CastExpr::Deref:
             return val; // This is a no-op like prefix '^'.
 

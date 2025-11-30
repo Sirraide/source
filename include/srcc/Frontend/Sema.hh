@@ -148,6 +148,7 @@ private:
         enum struct Kind : u8 {
             ArrayBroadcast,
             ArrayInit,
+            ArrayDecay,
             ExpandTuple,
             DefaultInit,
             IntegralCast,
@@ -184,6 +185,7 @@ private:
         ~Conversion();
         static auto ArrayBroadcast(ArrayBroadcastData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
+        static auto ArrayDecay(Type ty) -> Conversion { return Conversion{Kind::ArrayDecay, ty}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto ExpandTuple() -> Conversion { return Conversion{Kind::ExpandTuple}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }

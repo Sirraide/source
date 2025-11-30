@@ -311,6 +311,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::LValueToRValue: print("lvalue->rvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
+                case CastExpr::Pointer: print("pointer"); break;
                 case CastExpr::Range: print("range->range"); break;
                 case CastExpr::SliceFromArray: print("array->slice"); break;
             }

@@ -493,6 +493,15 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
     switch (conv.kind) {
         using K = Conversion::Kind;
         default: Unreachable();
+
+        case K::ArrayDecay: return new (*tu) CastExpr(
+            conv.type(),
+            CastExpr::Pointer,
+            e,
+            loc,
+            true
+        );
+
         case K::IntegralCast: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::Integral,
@@ -597,6 +606,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             return;
         }
 
+        case K::ArrayDecay:
         case K::IntegralCast:
         case K::LValueToRValue:
         case K::MaterialisePoison:
@@ -954,14 +964,32 @@ auto Sema::BuildConversionSequence(
     };
 
     switch (var_type->kind()) {
-        case TypeBase::Kind::PtrType:
+        case TypeBase::Kind::PtrType: {
             // Allow implicitly converting string literals to C string.
             if (isa<StrLitExpr>(a) and var_type == tu->I8PtrTy) {
                 seq.add(Conversion::StrLitToCStr());
                 return seq;
             }
 
+            // Allow implicitly converting a pointer to a (multidimensional)
+            // array to a pointer to the pointee type.
+            //
+            // TODO: Investigate what happens if the array has dimension 0.
+            auto var_pointee = cast<PtrType>(var_type)->elem();
+            auto arg_ptr = dyn_cast<PtrType>(a->type);
+            if (arg_ptr) {
+                auto pointee = arg_ptr->elem();
+                while (isa<ArrayType>(pointee)) {
+                    pointee = cast<ArrayType>(pointee)->elem();
+                    if (pointee == var_pointee) {
+                        seq.add(Conversion::ArrayDecay(var_type));
+                        return seq;
+                    }
+                }
+            }
+
             return TypeMismatch();
+        }
 
         case TypeBase::Kind::SliceType:
             Try(BuildSliceInitialiser(seq, cast<SliceType>(var_type), args, init_loc));
@@ -1352,6 +1380,7 @@ u32 Sema::ConversionSequence::badness() {
                 break;
 
             // These are actual type conversions.
+            case K::ArrayDecay:
             case K::IntegralCast:
             case K::MaterialisePoison:
             case K::RangeCast:
