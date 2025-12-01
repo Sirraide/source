@@ -74,17 +74,17 @@ auto Context::create_target_machine() const -> std::unique_ptr<llvm::TargetMachi
     );
 
     // Get feature flags.
-    std::string features;
+    SmallString<128> features;
     if (opt_level == 4) {
         StringMap<bool> feature_map = llvm::sys::getHostCPUFeatures();
         for (auto& [feature, enabled] : feature_map)
             if (enabled)
-                features += std::format("+{},", feature.str());
+                Format(features, "+{},", feature.str());
     }
 
     // User-specified features are applied last.
     // for (auto& [feature, enabled] : target_features)
-    //    features += std::format("{}{},", enabled ? '+' : '-', feature.str());
+    //    Format(features, "{}{},", enabled ? '+' : '-', feature.str());
     // if (not features.empty()) features.pop_back();
 
     // Get CPU.

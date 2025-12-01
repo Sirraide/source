@@ -294,6 +294,11 @@ template <typename ...Args>
 void Format(SmallVectorImpl<char>& buffer, std::format_string<Args...> fmt, Args&& ...args) {
     std::format_to(std::back_inserter(buffer), fmt, LIBBASE_FWD(args)...);
 }
+
+template <typename ...Args>
+void Format(std::string& buffer, std::format_string<Args...> fmt, Args&& ...args) {
+    std::format_to(std::back_inserter(buffer), fmt, LIBBASE_FWD(args)...);
+}
 } // namespace srcc
 
 // Rarely used helpers go here.

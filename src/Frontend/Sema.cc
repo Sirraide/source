@@ -1869,12 +1869,13 @@ void Sema::ReportOverloadResolutionFailure(
     SLoc call_loc,
     u32 final_badness
 ) {
-    auto FormatTempSubstFailure = [&](const SubstitutionResult& info, std::string& out, std::string_view indent) {
+    auto FormatTempSubstFailure = [&](const SubstitutionResult& info, SmallString<256>& out, std::string_view indent) {
         info.data.visit(utils::Overloaded{// clang-format off
             [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
             [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
             [&](SubstitutionResult::DeductionFailed f) {
-                out += std::format(
+                Format(
+                    out,
                     "In param #{}: could not infer ${}",
                     f.param_index + 1,
                     f.param
@@ -1882,7 +1883,8 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](const SubstitutionResult::DeductionAmbiguous& a) {
-                out += std::format(
+                Format(
+                    out,
                     "Inference mismatch for template parameter %3(${}%):\n"
                     "{}Argument #{}: Inferred as {}\n"
                     "{}Argument #{}: Inferred as {}",
@@ -1918,7 +1920,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::DeductionError) {
-                std::string extra;
+                SmallString<256> extra;
                 FormatTempSubstFailure(c.subst, extra, "  ");
                 Error(call_loc, "Template argument substitution failed");
                 Remark("\r{}", extra);
@@ -1935,19 +1937,20 @@ void Sema::ReportOverloadResolutionFailure(
     }
 
     // Otherwise, we need to print all overloads, and why they failed.
-    std::string message = std::format("%b(Candidates:%)\n");
+    SmallString<256> message;
+    message = "%b(Candidates:%)\n"sv;
 
     // Compute the width of the number field.
     u32 width = u32(std::to_string(candidates.size()).size());
 
     // First, print all overloads.
     for (auto [i, c] : enumerate(candidates)) {
-        message += std::format("  %b({}.%) \v{}", i + 1, c.type_for_diagnostic());
-        message += std::format("\f%b(at%) {}", c.decl->location().format(ctx, true));
+        Format(message, "  %b({}.%) \v{}", i + 1, c.type_for_diagnostic());
+        Format(message, "\f%b(at%) {}", c.decl->location().format(ctx, true));
         message += "\n";
     }
 
-    message += std::format("\n\r%b(Failure Reason:%)");
+    Format(message, "\n\r%b(Failure Reason:%)");
 
     // Collect ambiguous candidates.
     SmallVector<u32> ambiguous_indices;
@@ -1958,7 +1961,7 @@ void Sema::ReportOverloadResolutionFailure(
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
-        message += std::format("\n  %b({:>{}}.%) ", i + 1, width);
+        Format(message, "\n  %b({:>{}}.%) ", i + 1, width);
         auto V = utils::Overloaded{
             // clang-format off
             [&] (const Candidate::Viable& v) {
@@ -1969,14 +1972,13 @@ void Sema::ReportOverloadResolutionFailure(
                 // If the badness is equal to the final badness, then
                 // this candidate was ambiguous. Otherwise, another
                 // candidate was simply better.
-                message += v.badness == final_badness
-                    ? std::format("Ambiguous (with {})", utils::join(ambiguous, ", ", "#{}"))
-                    : std::format("Another candidate was a better match", v.badness);
+                if (v.badness == final_badness) Format(message, "Ambiguous (with {})", utils::join(ambiguous, ", ", "#{}"));
+                else Format(message, "Another candidate was a better match", v.badness);
             },
 
             [&](Candidate::ArgumentCountMismatch) {
                 auto params = c.param_count();
-                message += std::format(
+                Format(message,
                     "Expected {} arg{}, got {}",
                     params,
                     params == 1 ? "" : "s",
@@ -1985,7 +1987,7 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::ParamInitFailed& i) {
-                message += std::format("In argument to parameter #{}:\n", i.param_index);
+                Format(message, "In argument to parameter #{}:\n", i.param_index);
                 message += utils::Indent(Diagnostic::Render(ctx, i.diags, diags().cols() - 5, false), 2);
             },
 
@@ -2004,7 +2006,7 @@ void Sema::ReportOverloadResolutionFailure(
         Diagnostic::Level::Error,
         call_loc,
         std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().decl->name),
-        std::move(message),
+        message.str().str(),
     });
 }
 
@@ -2153,18 +2155,19 @@ auto Sema::IntMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
 }
 
 void Sema::IntMatchContext::note_missing(SLoc loc) {
-    std::string msg;
-    auto Format = [&](const APInt& start, const APInt& end) {
+    SmallString<128> msg;
+    auto Fmt = [&](const APInt& start, const APInt& end) {
         auto FormatVal = [&](const APInt& i) {
-            if (i == min) return std::format("{}%1(.%)%5(min%)", ty);
-            if (i == max) return std::format("{}%1(.%)%5(max%)", ty);
-            return std::format("%5({}%)", i);
+            if (i == min) return Format("{}%1(.%)%5(min%)", ty);
+            if (i == max) return Format("{}%1(.%)%5(max%)", ty);
+            return Format("%5({}%)", i);
         };
 
         if (start == end) {
-            msg += std::format("\n    {},", FormatVal(start));
+            Format(msg, "\n    {},", FormatVal(start));
         } else {
-            msg += std::format(
+            Format(
+                msg,
                 "\n    {}%1(..=%){},",
                 FormatVal(start),
                 FormatVal(end)
@@ -2175,7 +2178,7 @@ void Sema::IntMatchContext::note_missing(SLoc loc) {
 #if 0
     // For debugging the merge algorithm.
     for (auto& r : ranges) {
-        msg += std::format("\n    {}, {}", r.start, r.end);
+        Format(msg, "\n    {}, {}", r.start, r.end);
     }
 
     S.Note(loc, "DEBUG. VALUE RANGES ARE\n%r({}%)", msg);
@@ -2185,7 +2188,7 @@ void Sema::IntMatchContext::note_missing(SLoc loc) {
     // It’s easiest to handle this case separately.
     auto sz = ranges.size();
     if (sz == 0) {
-        Format(min, max);
+        Fmt(min, max);
     } else {
         // Compute the first unsatisfied value.
         //
@@ -2203,7 +2206,7 @@ void Sema::IntMatchContext::note_missing(SLoc loc) {
         // them.
         APInt one{min.getBitWidth(), 1};
         for (auto& r : ArrayRef(ranges).drop_front(first_is_min ? 1 : 0)) {
-            Format(first_unsatisfied, r.start.ssub_sat(one));
+            Fmt(first_unsatisfied, r.start.ssub_sat(one));
             first_unsatisfied = r.end.sadd_sat(one);
         }
 
@@ -2214,7 +2217,7 @@ void Sema::IntMatchContext::note_missing(SLoc loc) {
         if (
             first_unsatisfied != max or
             (sz != 0 and ranges.back().end == max - 1)
-        ) Format(first_unsatisfied, max);
+        ) Fmt(first_unsatisfied, max);
     }
 
 
@@ -2361,7 +2364,7 @@ auto Sema::BuildAssertExpr(
             *tu,
             nullptr,
             ProcType::Get(*tu, Type::VoidTy, {{Intent::Inout, assert_buffer_type, false}}),
-            tu->save(std::format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
+            tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
             Linkage::Internal,
             Mangling::None,
             curr_proc().proc,
@@ -2931,7 +2934,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
             Error(
                 loc,
                 "Procedure{} expects {} argument{}, got {}",
-                decl and not decl->decl->name.empty() ? std::format(" '{}'", decl->decl->name) : "",
+                decl and not decl->decl->name.empty() ? Format(" '{}'", decl->decl->name) : SmallString<64>(),
                 ty->params().size(),
                 ty->params().size() == 1 ? "" : "s",
                 args.size()

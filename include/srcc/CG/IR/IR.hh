@@ -34,7 +34,7 @@ using mlir::Operation;
 using mlir::Value;
 
 namespace ir {
-auto FormatType(mlir::Type ty) -> std::string;
+auto FormatType(mlir::Type ty) -> SmallString<128>;
 }
 }
 
@@ -54,7 +54,7 @@ struct libassert::stringifier<Ty> {
 template <>
 struct libassert::stringifier<mlir::Type> {
     auto stringify(mlir::Type ty) -> std::string {
-        return base::text::RenderColours(false, srcc::cg::ir::FormatType(ty));
+        return base::text::RenderColours(false, srcc::cg::ir::FormatType(ty).str());
     }
 };
 

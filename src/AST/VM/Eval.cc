@@ -59,7 +59,7 @@ auto RValue::print() const -> SmallUnrenderedString {
         },
         [&](const APInt& value) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
-            else out += std::format("%5({}%)", toString(value, 10, true));
+            else Format(out, "%5({}%)", toString(value, 10, true));
         }
     }; // clang-format on
     visit(V);
@@ -95,8 +95,8 @@ public:
     [[nodiscard]] auto offset(usz bytes) const { return Pointer(value + bytes); }
 
     /// Get a string representation of this pointer.
-    [[nodiscard]] auto str() const -> std::string {
-        return std::format("{}", reinterpret_cast<void*>(value));
+    [[nodiscard]] auto str() const -> SmallString<64> {
+        return Format("{}", reinterpret_cast<void*>(value));
     }
 
     /// Get the raw value suitable for storing to memory.
@@ -181,10 +181,10 @@ auto SRValue::print() const -> SmallUnrenderedString {
     utils::Overloaded V{
         // clang-format off
         [&](std::monostate) {},
-        [&](ir::ProcOp proc) { out += std::format("%2({}%)", proc.getName()); },
+        [&](ir::ProcOp proc) { Format(out, "%2({}%)", proc.getName()); },
         [&](Type ty) { out += ty->print(); },
-        [&](const APInt& value) { out += std::format("%5({}%)", toString(value, 10, true)); },
-        [&](Pointer ptr) { out += std::format("%4({}%)", ptr.str()); }
+        [&](const APInt& value) { Format(out, "%5({}%)", toString(value, 10, true)); },
+        [&](Pointer ptr) { Format(out, "%4({}%)", ptr.str()); }
     }; // clang-format on
 
     visit(V);
@@ -562,9 +562,9 @@ bool Eval::EvalLoop() {
                 Unreachable();
             }();
 
-            std::string msg{reason_str};
-            if (not info->msg1.sv().empty()) msg += std::format(": '{}'", info->msg1.sv());
-            if (not info->msg2.sv().empty()) msg += std::format(": {}", info->msg2.sv());
+            SmallString<256> msg{reason_str};
+            if (not info->msg1.sv().empty()) Format(msg, ": '{}'", info->msg1.sv());
+            if (not info->msg2.sv().empty()) Format(msg, ": {}", info->msg2.sv());
             Error(SLoc::Decode(a.getLoc()), "{}", msg);
 
             // Attempt to run the stringifier if there is one.

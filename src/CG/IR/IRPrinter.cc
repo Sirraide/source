@@ -50,16 +50,16 @@ struct CodeGen::Printer {
     }
 };
 
-auto ir::FormatType(mlir::Type ty) -> std::string {
-    std::string tmp;
+auto ir::FormatType(mlir::Type ty) -> SmallString<128> {
+    SmallString<128> tmp;
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
     } else if (auto ui = dyn_cast<mlir::IntegerType>(ty); ui and ui.isUnsignedInteger(1)) {
         tmp += "%6(bool%)";
     } else if (auto a = dyn_cast<mlir::LLVM::LLVMArrayType>(ty)) {
-        tmp += std::format("{}%1([%5({}%)]%)", FormatType(a.getElementType()), a.getNumElements());
+        Format(tmp, "{}%1([%5({}%)]%)", FormatType(a.getElementType()), a.getNumElements());
     } else {
-        llvm::raw_string_ostream os{tmp};
+        llvm::raw_svector_ostream os{tmp};
         tmp += "%6(";
         ty.print(os);
         tmp += "%)";
@@ -143,7 +143,7 @@ void CodeGen::Printer::print_result_attrs(ProcAndCallOpInterface proc_or_call, u
 void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
     using mlir::LLVM::LLVMDialect;
     if (attr.getName() == LLVMDialect::getByValAttrName()) {
-        out += std::format(" %1(byval%) {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+        Format(out, " %1(byval%) {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getZExtAttrName()) {
         out += " %1(zeroext%)";
     } else if (attr.getName() == LLVMDialect::getSExtAttrName()) {
@@ -157,22 +157,22 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
     } else if (attr.getName() == LLVMDialect::getReadonlyAttrName()) {
         out += " %1(readonly%)";
     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
-        out += std::format(" %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
+        Format(out, " %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
-        out += std::format(" %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
+        Format(out, " %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
     } else {
-        out += std::format(" <DON'T KNOW HOW TO PRINT '{}'>", attr.getName().strref());
+        Format(out, " <DON'T KNOW HOW TO PRINT '{}'>", attr.getName().strref());
     }
 }
 
 void CodeGen::Printer::print_op(Operation* op) {
     out += "    %1(";
-    if (op->getNumResults()) out += std::format("%8(%%{}%) = ", Id(inst_ids, op));
+    if (op->getNumResults()) Format(out, "%8(%%{}%) = ", Id(inst_ids, op));
     defer { out += "%)\n"; };
 
     auto Target = [&](Block* dest, mlir::OperandRange args) -> SmallUnrenderedString {
         SmallUnrenderedString tmp;
-        tmp += std::format("%3(bb{}%)", Id(block_ids, dest));
+        Format(tmp, "%3(bb{}%)", Id(block_ids, dest));
         if (not args.empty()) {
             tmp += "(";
             tmp += ops(args, false);
@@ -182,7 +182,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     };
 
     auto PrintArithOp = [&](StringRef mnemonic) {
-        out += std::format(
+        Format(out,
             "{} {}, {}",
             mnemonic,
             val(op->getOperand(0)),
@@ -191,7 +191,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     };
 
     if (auto s = dyn_cast<StoreOp>(op)) {
-        out += std::format(
+        Format(out,
             "store {}, {}, align %5({}%)",
             val(s.getAddr(), false),
             val(s.getValue()),
@@ -208,15 +208,15 @@ void CodeGen::Printer::print_op(Operation* op) {
             FormatType(gep.getElemType())
         );
 
-        out += std::format("ptradd {}, ", val(gep.getBase(), false));
+        Format(out, "ptradd {}, ", val(gep.getBase(), false));
         auto idx = gep.getIndices()[0];
-        if (auto i = dyn_cast<mlir::IntegerAttr>(idx)) out += std::format("%5({}%)", i.getValue());
+        if (auto i = dyn_cast<mlir::IntegerAttr>(idx)) Format(out, "%5({}%)", i.getValue());
         else out += val(cast<Value>(idx));
         return;
     }
 
     if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(op)) {
-        out += std::format(
+        Format(out,
             "cmp {} {}, {}",
             stringifyICmpPredicate(cmp.getPredicate()),
             val(cmp.getLhs()),
@@ -226,7 +226,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto cmp = dyn_cast<mlir::arith::CmpIOp>(op)) {
-        out += std::format(
+        Format(out,
             "icmp {} {}, {}",
             stringifyCmpIPredicate(cmp.getPredicate()),
             val(cmp.getLhs()),
@@ -236,7 +236,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto br = dyn_cast<mlir::cf::CondBranchOp>(op)) {
-        out += std::format(
+        Format(out,
             "br {} to {} else {}",
             val(br.getCondition(), false),
             Target(br.getTrueDest(), br.getTrueDestOperands()),
@@ -246,12 +246,12 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto br = dyn_cast<mlir::cf::BranchOp>(op)) {
-        out += std::format("br {}", Target(br.getDest(), br.getDestOperands()));
+        Format(out, "br {}", Target(br.getDest(), br.getDestOperands()));
         return;
     }
 
     if (auto l = dyn_cast<LoadOp>(op)) {
-        out += std::format(
+        Format(out,
             "load {}, {}, align %5({}%)",
             FormatType(l->getResultTypes().front()),
             val(l.getAddr(), false),
@@ -272,7 +272,7 @@ void CodeGen::Printer::print_op(Operation* op) {
             out += " ";
             out += FormatType(c.getResultTypes().front());
         } else {
-            out += std::format(
+            Format(out,
                 " %1(({})%)",
                 utils::join(
                     SmallVector<mlir::Type>{c.getResultTypes()},
@@ -290,7 +290,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto r = dyn_cast<RetOp>(op)) {
-        out += std::format("ret {}", ops(r.getVals()));
+        Format(out, "ret {}", ops(r.getVals()));
         return;
     }
 
@@ -298,7 +298,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         llvm::raw_svector_ostream os(out);
         out += "abort at %5(";
         a.getLoc()->print(os, true);
-        out += std::format(
+        Format(out,
             "%) %2({}%)({})",
             stringifyAbortReason(a.getReason()),
             ops(a.getAbortInfo())
@@ -307,7 +307,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(op)) {
-        out += std::format(
+        Format(out,
             "copy{} {} <- {}, {}",
             m.getIsVolatile() ? " volatile" : "",
             val(m.getDst(), false),
@@ -319,22 +319,22 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
         auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
-        out += std::format("addressof %3(@{}%)", global_ids.at(g));
+        Format(out, "addressof %3(@{}%)", global_ids.at(g));
         return;
     }
 
     if (auto c = dyn_cast<mlir::arith::ConstantIntOp>(op)) {
-        out += std::format("{} %5({}%)", FormatType(c.getType()), c.value());
+        Format(out, "{} %5({}%)", FormatType(c.getType()), c.value());
         return;
     }
 
     if (auto p = dyn_cast<ProcRefOp>(op)) {
-        out += std::format("procref %2({}%)", p.proc().getName());
+        Format(out, "procref %2({}%)", p.proc().getName());
         return;
     }
 
     if (auto slot = dyn_cast<FrameSlotOp>(op)) {
-        out += std::format(
+        Format(out,
             "alloca %5({}%)%1(, align%) %5({}%)",
             slot.getBytes().getValue(),
             slot.getAlignment().getValue()
@@ -343,7 +343,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto s = dyn_cast<mlir::arith::SelectOp>(op)) {
-        out += std::format(
+        Format(out,
             "select {}, {}, {}",
             val(s.getCondition(), false),
             val(s.getTrueValue()),
@@ -353,22 +353,22 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto ext = dyn_cast<mlir::arith::ExtUIOp>(op)) {
-        out += std::format("zext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        Format(out, "zext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
         return;
     }
 
     if (auto ext = dyn_cast<mlir::arith::ExtSIOp>(op)) {
-        out += std::format("sext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        Format(out, "sext {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
         return;
     }
 
     if (auto ext = dyn_cast<mlir::arith::TruncIOp>(op)) {
-        out += std::format("trunc {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
+        Format(out, "trunc {} to {}", val(ext.getIn()), FormatType(ext.getOut().getType()));
         return;
     }
 
     if (auto m = dyn_cast<mlir::LLVM::MemsetOp>(op)) {
-        out += std::format("set {}, {}, {}", val(m.getDst()), val(m.getVal()), val(m.getLen()));
+        Format(out, "set {}, {}, {}", val(m.getDst()), val(m.getVal()), val(m.getLen()));
         return;
     }
 
@@ -383,7 +383,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (isa<mlir::LLVM::PoisonOp>(op)) {
-        out += std::format("{} poison", FormatType(op->getResult(0).getType()));
+        Format(out, "{} poison", FormatType(op->getResult(0).getType()));
         return;
     }
 
@@ -431,7 +431,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     }
 
     // Print name.
-    out += std::format("%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
+    Format(out, "%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
 
     // Print args.
     print_arg_list(proc, proc.isDeclaration(), proc.getNumCallArgs() > 3);
@@ -439,8 +439,8 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
     if (proc.getNoreturn()) out += " %1(noreturn%)";
-    out += std::format(" %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
-    out += std::format(" %1({}%)", stringifyCConv(proc.getCc()));
+    Format(out, " %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
+    Format(out, " %1({}%)", stringifyCConv(proc.getCc()));
 
     // Print return types.
     if (proc.getNumResults()) {
@@ -449,7 +449,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
             out += FormatType(proc.getResultTypes().front());
             print_result_attrs(proc, 0);
         } else {
-            out += std::format(
+            Format(out,
                 "%1(({})%)",
                 utils::join(
                     SmallVector<mlir::Type>{proc.getResultTypes()},
@@ -478,7 +478,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
             auto slot = dyn_cast<FrameSlotOp>(&f);
             if (not slot) continue;
             auto id = frame_ids[&f] = frame++;
-            out += std::format(
+            Format(out,
                 "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
                 id,
                 slot.getBytes().getValue(),
@@ -494,10 +494,10 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
         if (i == 0) {
             out += "%3(entry%)%1(:%)\n";
         } else {
-            out += std::format("\n%3(bb{}%)%1(", i);
+            Format(out, "\n%3(bb{}%)%1(", i);
             if (b.getNumArguments()) {
-                out += std::format("({})", utils::join_as(b.getArguments(), [&](mlir::BlockArgument arg) {
-                    return std::format("{} %3(%%{}%)", FormatType(arg.getType()), arg_ids.at(arg));
+                Format(out, "({})", utils::join_as(b.getArguments(), [&](mlir::BlockArgument arg) {
+                    return Format("{} %3(%%{}%)", FormatType(arg.getType()), arg_ids.at(arg));
                 }));
             }
             out += ":%)\n";
@@ -519,7 +519,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
         Assert(g.getConstant(), "TODO: Print non-constant globals");
         auto i = global++;
         global_ids[g] = i64(i);
-        out += std::format("%3(@{}%)", i);
+        Format(out, "%3(@{}%)", i);
 
         if (auto init = g.getValueOrNull()) {
             out += " %1(=%) ";
@@ -528,11 +528,11 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             SmallString<128> tmp;
             llvm::raw_svector_ostream os{tmp};
             init.print(os, true);
-            out += std::format("%3({}%)", str{tmp.str()}.replace('%', "%%"));
+            Format(out, "%3({}%)", str{tmp.str()}.replace('%', "%%"));
         }
 
         if (g.getAlignment().value_or(1) != 1)
-            out += std::format("%1(, align%) %5({}%)", g.getAlignment().value_or(1));
+            Format(out, "%1(, align%) %5({}%)", g.getAlignment().value_or(1));
 
         out += '\n';
         return;
@@ -543,13 +543,13 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
         return;
     }
 
-    out += std::format("TODO: PRINT TOP LEVEL '{}'\n", op->getName().getStringRef());
+    Format(out, "TODO: PRINT TOP LEVEL '{}'\n", op->getName().getStringRef());
 }
 
 auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString {
     SmallUnrenderedString tmp;
     if (not v) {
-        tmp += std::format("%1b(<<< NULL >>>%)");
+        Format(tmp, "%1b(<<< NULL >>>%)");
         return tmp;
     }
 
@@ -559,7 +559,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
     }
 
     if (auto b = dyn_cast<mlir::BlockArgument>(v)) {
-        tmp += std::format("%3(%%{}%)", arg_ids.at(b));
+        Format(tmp, "%3(%%{}%)", arg_ids.at(b));
         return tmp;
     }
 
@@ -567,27 +567,27 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
         auto op = res.getOwner();
 
         if (not IsInlineOp(op)) {
-            tmp += std::format("%8(%%{}", inst_ids.at(op));
-            if (op->getNumResults() > 1) tmp += std::format(":{}", res.getResultNumber());
+            Format(tmp, "%8(%%{}", inst_ids.at(op));
+            if (op->getNumResults() > 1) Format(tmp, ":{}", res.getResultNumber());
             tmp += "%)";
             return tmp;
         }
 
         if (auto c = dyn_cast<mlir::arith::ConstantIntOp>(op)) {
-            if (c.getType().isInteger(1)) tmp += std::format("%5({}%)", c.value() != 0);
-            else tmp += std::format("%5({}%)", c.value());
+            if (c.getType().isInteger(1)) Format(tmp, "%5({}%)", c.value() != 0);
+            else Format(tmp, "%5({}%)", c.value());
             return tmp;
         }
 
         if (auto p = dyn_cast<ProcRefOp>(op)) {
             tmp.clear(); // Never print the type of a proc ref.
-            tmp += std::format("%2({}%)", utils::Escape(p.proc().getName(), false, true));
+            Format(tmp, "%2({}%)", utils::Escape(p.proc().getName(), false, true));
             return tmp;
         }
 
         if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
             auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
-            tmp += std::format("%3(@{}%)", global_ids.at(g));
+            Format(tmp, "%3(@{}%)", global_ids.at(g));
             return tmp;
         }
 
@@ -597,7 +597,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
         }
 
         if (isa<FrameSlotOp>(op)) {
-            tmp += std::format("%4(#{}%)", Id(frame_ids, op));
+            Format(tmp, "%4(#{}%)", Id(frame_ids, op));
             return tmp;
         }
 

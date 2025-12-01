@@ -69,8 +69,8 @@ static auto FormatDiagnostic(
     const Context& ctx,
     const Diagnostic& diag,
     Opt<SLoc> previous_loc
-) -> std::string {
-    std::string out;
+) -> SmallString<512> {
+    SmallString<512> out;
 
     // Print any extra data that should come after the source line.
     auto PrintExtraData = [&] {
@@ -84,7 +84,7 @@ static auto FormatDiagnostic(
         // Make sure the extra data is at the start of a line so that \r
         // is handled properly.
         // TODO: Just turn \r into \n mid-line.
-        out += std::format("\n{}\n", diag.extra);
+        Format(out, "\n{}\n", diag.extra);
     };
 
     // If the location is invalid, either because the specified file does not
@@ -93,7 +93,7 @@ static auto FormatDiagnostic(
     auto l = diag.where.seek(ctx);
     if (not l.has_value()) {
         // Print the message.
-        out += std::format(
+        Format(out,
             "%b(%{}({}:%) {}%)",
             Colour(diag.level),
             Name(diag.level),
@@ -102,7 +102,7 @@ static auto FormatDiagnostic(
 
         // Even if the location is invalid, print the file name if we can.
         if (auto f = diag.where.file(ctx)) {
-            out += std::format(
+            Format(out,
                 "\n  in %b({}:<invalid location>%)\n\n",
                 utils::Escape(ctx.file_name(f->file_id()), false, true)
             );
@@ -134,7 +134,7 @@ static auto FormatDiagnostic(
     //
 
     // Print the diagnostic name and message.
-    out += std::format(
+    Format(out,
         "%b(%{}({}:%) {}%)\n",
         Colour(diag.level),
         Name(diag.level),
@@ -149,7 +149,7 @@ static auto FormatDiagnostic(
         previous_loc.value() != diag.where
     ) {
         auto PrintLocation = [&](LocInfoShort l) {
-            out += std::format(
+            Format(out,
                 "at %b4({}%):{}:{}\n",
                 utils::Escape(ctx.file_name(l.file->file_id()), false, true),
                 l.line,
@@ -179,8 +179,8 @@ static auto FormatDiagnostic(
 
         // Print the line up to the start of the location, the range in the right
         // colour, and the rest of the line.
-        out += std::format("%b({} |%) {}", l->line, utils::Escape(before, false, true));
-        if (not range.empty()) out += std::format("%b8({}%)", utils::Escape(range, false, true));
+        Format(out, "%b({} |%) {}", l->line, utils::Escape(before, false, true));
+        if (not range.empty()) Format(out, "%b8({}%)", utils::Escape(range, false, true));
         if (not after.empty()) out += utils::Escape(after, false, true);
         out += "\n";
 
@@ -193,7 +193,7 @@ static auto FormatDiagnostic(
         for (usz i = 0, end = digits + before_wd + " | "sv.size(); i < end; i++) out += ' ';
 
         // Finally, underline the range. The range may be empty, so underline at least 1 character.
-        out += std::format(
+        Format(out,
             "%{}b({}%)",
             Colour(diag.level),
             std::string(std::max<usz>(range_wd, 1), '~')
@@ -227,10 +227,10 @@ auto Diagnostic::Render(
     for (auto [di, diag] : enumerate(backlog)) {
         // Render the diagnostic text.
         auto out = FormatDiagnostic(ctx, diag, previous_loc);
-        if (render_colours) out = text::RenderColours(use_colours, out);
+        if (render_colours) out = text::RenderColours(use_colours, out.str().str());
 
         // Then, indent everything properly.
-        auto lines = str{out}.split("\n");
+        auto lines = str{out.str()}.split("\n");
         auto count = rgs::distance(lines);
         for (auto [i, line] : lines | vws::enumerate) {
             auto EmitLeading = [&](bool last_line_segment, bool segment_empty = false) {
@@ -446,19 +446,19 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
 
             stream << text::RenderColours(
                 ctx.use_colours,
-                std::format(
+                Format(
                     "\n%b(%{}(Error:%) Too many errors emitted (> {}). Not showing any more errors.%)\n",
                     Colour(Diagnostic::Level::Error),
                     printed - 1
-                )
+                ).str()
             );
 
             stream << text::RenderColours(
                 ctx.use_colours,
-                std::format(
+                Format(
                     "%b(%{}(Note:%) Use '--error-limit <limit>' to show more errors.%)\n",
                     Colour(Diagnostic::Level::Note)
-                )
+                ).str()
             );
         }
 
@@ -687,8 +687,8 @@ bool VerifyDiagnosticsEngine::verify() {
         ok = false;
         print(stderr, "%b(Unexpected diagnostics:%)\n");
         for (const auto& seen : seen_diags) {
-            std::string loc;
-            if (seen.loc) loc = std::format("{}:{}", seen.loc->file->path(), seen.loc->line);
+            SmallString<64> loc;
+            if (seen.loc) loc = Format("{}:{}", seen.loc->file->path(), seen.loc->line);
             else loc = "<invalid>";
             print(
                 stderr,

@@ -546,7 +546,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 break;
 
             case Kind::IntType:
-                out += std::format("%6(i{:i}%)", cast<ParsedIntType>(type)->bit_width);
+                Format(out, "%6(i{:i}%)", cast<ParsedIntType>(type)->bit_width);
                 break;
 
             case Kind::ProcType: {
@@ -560,7 +560,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                     for (auto param : p->param_types()) {
                         if (not first) out += ", ";
                         first = false;
-                        if (param.intent != Intent::Move) out += std::format("{} ", param.intent);
+                        if (param.intent != Intent::Move) Format(out, "{} ", param.intent);
                         Append(param.type);
                         if (param.variadic) out += "...";
                     }
@@ -598,12 +598,12 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
 
             case Kind::TemplateType: {
                 auto t = cast<ParsedTemplateType>(type);
-                out += std::format("%3(${}%)", t->name);
+                Format(out, "%3(${}%)", t->name);
             } break;
 
             case Kind::DeclRefExpr: {
                 auto d = cast<ParsedDeclRefExpr>(type);
-                out += std::format("%8({}%)", utils::join(d->names(), "::"));
+                Format(out, "%8({}%)", utils::join(d->names(), "::"));
             } break;
 
             case Kind::BinaryExpr: {

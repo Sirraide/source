@@ -235,7 +235,7 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
             LLVM::LLVMArrayType::get(getI8Type(), data.size() + null_terminated),
             true,
             LLVM::Linkage::Private,
-            std::format("__srcc_str.{}", strings++),
+            Format("__srcc_str.{}", strings++),
             getStringAttr(llvm::Twine(StringRef(data)) + (null_terminated ? "\0"sv : "")),
             align.value().bytes()
         );
@@ -783,7 +783,7 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
 // work (keep a pretty name in the IR and generate some random nonsense for LLVM IR).
 struct CodeGen::Mangler {
     CodeGen& CG;
-    std::string name;
+    SmallString<256> name;
 
     explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
         name = "_S";
@@ -814,7 +814,7 @@ struct CodeGen::Mangler {
 void CodeGen::Mangler::Append(StringRef s) {
     Assert(not s.empty());
     if (not llvm::isAlpha(s.front())) name += "$";
-    name += std::format("{}{}", s.size(), s);
+    Format(name, "{}{}", s.size(), s);
 }
 
 // INVARIANT: No mangling code starts with a number (this means
@@ -832,9 +832,9 @@ void CodeGen::Mangler::Append(Type ty) {
         }
 
         void operator()(SliceType* sl) { ElemTy("S", sl); }
-        void operator()(ArrayType* arr) { ElemTy(std::format("A{}", arr->dimension()), arr); }
+        void operator()(ArrayType* arr) { ElemTy(Format("A{}", arr->dimension()), arr); }
         void operator()(PtrType* ref) { ElemTy("R", ref); }
-        void operator()(IntType* i) { M.name += std::format("I{}", i->bit_width().bits()); }
+        void operator()(IntType* i) { Format(M.name, "I{}", i->bit_width().bits()); }
         void operator()(BuiltinType* b) {
             switch (b->builtin_kind()) {
                 case BuiltinKind::Deduced:
@@ -875,7 +875,7 @@ void CodeGen::Mangler::Append(Type ty) {
 
         void operator()(StructType* ty) {
             if (ty->name().empty()) Todo();
-            M.name += std::format("T{}{}", ty->name().size(), ty->name());
+            Format(M.name, "T{}{}", ty->name().size(), ty->name());
         }
 
         void operator()(TupleType* ty) {
@@ -896,7 +896,7 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
     if (it != mangled_names.end()) return it->second;
 
     // Compute it.
-    auto name = [&] -> std::string {
+    auto name = [&] -> SmallString<256> {
         switch (proc->mangling) {
             case Mangling::None: Unreachable();
             case Mangling::Source: return std::move(Mangler(*this, proc).name);

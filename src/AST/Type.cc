@@ -425,7 +425,7 @@ auto ProcType::print(
 
     // Add name.
     if (not proc_name.empty())
-        out += std::format(" %2({}%)", proc_name);
+        Format(out, " %2({}%)", proc_name);
 
     // Add params.
     const auto& ps = params();
@@ -435,7 +435,7 @@ auto ProcType::print(
         for (const auto& [i, p] : enumerate(ps)) {
             if (first) first = false;
             else out += ", ";
-            if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
+            if (p.intent != Intent::Move) Format(out, "{} ", p.intent);
             out += p.type->print();
         }
         out += ")";
@@ -450,7 +450,7 @@ auto ProcType::print(
 
     // Add return type.
     if (not ret()->is_void())
-        out += std::format(" -> {}", ret()->print());
+        Format(out, " -> {}", ret()->print());
 
     out += "%)";
     return out;
