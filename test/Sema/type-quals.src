@@ -3,5 +3,5 @@ program test;
 
 import <cstdio> as libc;
 
-// * proc^^[3]^[][10] (int^[3][]) -> int[]^[7]
+// * (proc (int^[3][]) -> int[]^[7])^^[3]^[][10]
 libc::puts(((proc (int^[3][]) -> int[]^[1+2*3])^^[3]^[][4+6]).name.data);

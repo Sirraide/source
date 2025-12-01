@@ -284,10 +284,15 @@ auto StripColours(const SmallUnrenderedString& s) -> std::string;
 
 /// Format to a small string.
 template <typename StringType = SmallString<64>, typename ...Args>
-auto Format(std::format_string<Args...> fmt, Args&& ...args) -> StringType {
+[[nodiscard]] auto Format(std::format_string<Args...> fmt, Args&& ...args) -> StringType {
     StringType str;
     std::format_to(std::back_inserter(str), fmt, LIBBASE_FWD(args)...);
     return str;
+}
+
+template <typename ...Args>
+void Format(SmallVectorImpl<char>& buffer, std::format_string<Args...> fmt, Args&& ...args) {
+    std::format_to(std::back_inserter(buffer), fmt, LIBBASE_FWD(args)...);
 }
 } // namespace srcc
 

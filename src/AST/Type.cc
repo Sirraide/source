@@ -188,44 +188,20 @@ bool TypeBase::move_is_copy() const {
 
 auto TypeBase::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
-
-    // If this is a qualified type, collect all the qualifiers and print
-    // them after the inner type; we do this so we can print qualifiers
-    // after the 'proc' keyword if this is a procedure type.
-    if (isa<PtrType, SliceType, ArrayType>(this)) {
-        // Collect qualifiers.
-        SmallVector<SmallString<64>, 4> qual_stack;
-        Type ty{this};
-        do {
-            ty->visit(utils::Overloaded{
-                [](auto*) { Unreachable(); },
-                [&](SliceType* s) { qual_stack.emplace_back("[]"); },
-                [&](PtrType* s) { qual_stack.emplace_back("^"); },
-                [&](ArrayType* arr) { qual_stack.push_back(Format("[%5({}%)]", arr->dimension())); },
-            });
-            ty = cast<SingleElementTypeBase>(ty)->elem();
-        } while (isa<PtrType, SliceType, ArrayType>(ty));
-
-        // Print the portion of the type before the qualifiers.
-        auto proc = dyn_cast<ProcType>(ty);
-        if (proc) out = "%1(proc%)";
-        else out = ty->print();
-
-        // Print the qualifiers.
-        out += "%1(";
-        for (const auto& qual : reverse(qual_stack)) out += qual;
-        out += "%)";
-
-        // Print the rest of the type.
-        if (proc) out += proc->print(String(), nullptr, false);
-        return out;
-    }
+    auto MaybeParenthesise = [](Type ty) {
+        if (not isa<ProcType>(ty)) return ty->print();
+        SmallUnrenderedString s;
+        s += "%1((";
+        s += ty->print();
+        s += ")%)";
+        return s;
+    };
 
     switch (kind()) {
-        case Kind::ArrayType:
-        case Kind::PtrType:
-        case Kind::SliceType:
-            Unreachable("Handled above");
+        case Kind::ArrayType: {
+            auto* arr = cast<ArrayType>(this);
+            Format(out, "{}%1([%5({}%)]%)", MaybeParenthesise(arr->elem()), arr->dimension());
+        } break;
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
@@ -241,7 +217,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
 
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
-            out += std::format("%6(i{:i}%)", int_ty->bit_width());
+            Format(out, "%6(i{:i}%)", int_ty->bit_width());
         } break;
 
         case Kind::ProcType: {
@@ -249,19 +225,29 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += proc->print(String());
         } break;
 
+        case Kind::PtrType: {
+            auto* ref = cast<PtrType>(this);
+            Format(out, "{}%1(^%)", MaybeParenthesise(ref->elem()));
+        } break;
+
         case Kind::RangeType: {
             auto* range = cast<RangeType>(this);
-            out += std::format("%6(range%)%1(<%){}%1(>%)", range->elem()->print());
+            Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print());
+        } break;
+
+        case Kind::SliceType: {
+            auto* slice = cast<SliceType>(this);
+            Format(out, "{}%1([]%)", MaybeParenthesise(slice->elem()));
         } break;
 
         case Kind::StructType: {
             auto* s = cast<StructType>(this);
-            out += std::format("%6({}%)", s->name());
+            Format(out, "%6({}%)", s->name());
         } break;
 
         case Kind::TupleType: {
             auto* s = cast<TupleType>(this);
-            out += std::format("%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d){
+            Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d){
                 return d->type->print();
             }));
         } break;
