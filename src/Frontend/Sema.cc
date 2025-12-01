@@ -4048,7 +4048,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     static constexpr auto AlreadyDiagnosed = AK(255);
     auto kind = [&] -> Opt<AK> {
         using Switch = llvm::StringSwitch<Opt<AK>>;
-        if (auto te = dyn_cast<TypeExpr>(base)) {
+        if (auto te = dyn_cast<TypeExpr>(base->ignore_parens())) {
             auto is_int = te->value->is_integer();
             return Switch(parsed->member)
                 .Case("align", AK::TypeAlign)

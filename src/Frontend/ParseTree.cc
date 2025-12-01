@@ -614,8 +614,16 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                     break;
                 }
 
-                [[fallthrough]];
+                out += "<invalid type>";
+                break;
             }
+
+            case Kind::ParenExpr: {
+                auto p = cast<ParsedParenExpr>(type);
+                out += "%1((";
+                Append(p->inner);
+                out += ")%)";
+            } break;
 
             default:
                 out += "<invalid type>";

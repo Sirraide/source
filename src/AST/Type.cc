@@ -3,12 +3,14 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/CG/Target/Target.hh>
+#include <srcc/Core/Utils.hh>
 
 #include <clang/Basic/TargetInfo.h>
 
 #include <llvm/ADT/FoldingSet.h>
 
 #include <base/StringUtils.hh>
+#include <base/Utils.hh>
 
 #include <memory>
 #include <print>
@@ -186,11 +188,44 @@ bool TypeBase::move_is_copy() const {
 
 auto TypeBase::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
+
+    // If this is a qualified type, collect all the qualifiers and print
+    // them after the inner type; we do this so we can print qualifiers
+    // after the 'proc' keyword if this is a procedure type.
+    if (isa<PtrType, SliceType, ArrayType>(this)) {
+        // Collect qualifiers.
+        SmallVector<SmallString<64>, 4> qual_stack;
+        Type ty{this};
+        do {
+            ty->visit(utils::Overloaded{
+                [](auto*) { Unreachable(); },
+                [&](SliceType* s) { qual_stack.emplace_back("[]"); },
+                [&](PtrType* s) { qual_stack.emplace_back("^"); },
+                [&](ArrayType* arr) { qual_stack.push_back(Format("[%5({}%)]", arr->dimension())); },
+            });
+            ty = cast<SingleElementTypeBase>(ty)->elem();
+        } while (isa<PtrType, SliceType, ArrayType>(ty));
+
+        // Print the portion of the type before the qualifiers.
+        auto proc = dyn_cast<ProcType>(ty);
+        if (proc) out = "%1(proc%)";
+        else out = ty->print();
+
+        // Print the qualifiers.
+        out += "%1(";
+        for (const auto& qual : reverse(qual_stack)) out += qual;
+        out += "%)";
+
+        // Print the rest of the type.
+        if (proc) out += proc->print(String(), nullptr, false);
+        return out;
+    }
+
     switch (kind()) {
-        case Kind::ArrayType: {
-            auto* arr = cast<ArrayType>(this);
-            out += std::format("{}%1([%5({}%)]%)", arr->elem()->print(), arr->dimension());
-        } break;
+        case Kind::ArrayType:
+        case Kind::PtrType:
+        case Kind::SliceType:
+            Unreachable("Handled above");
 
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
@@ -214,19 +249,9 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             out += proc->print(String());
         } break;
 
-        case Kind::PtrType: {
-            auto* ref = cast<PtrType>(this);
-            out += std::format("{}%1(^%)", ref->elem()->print());
-        } break;
-
         case Kind::RangeType: {
             auto* range = cast<RangeType>(this);
             out += std::format("%6(range%)%1(<%){}%1(>%)", range->elem()->print());
-        } break;
-
-        case Kind::SliceType: {
-            auto* slice = cast<SliceType>(this);
-            out += std::format("{}%1([]%)", slice->elem()->print());
         } break;
 
         case Kind::StructType: {
@@ -403,9 +428,14 @@ void ProcType::Profile(
     }
 }
 
-auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) const -> SmallUnrenderedString {
+auto ProcType::print(
+    DeclName proc_name,
+    ProcDecl* decl,
+    bool include_proc_keyword
+) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
-    out += "%1(proc";
+    out += "%1(";
+    if (include_proc_keyword) out += "proc";
 
     // Add name.
     if (not proc_name.empty())
@@ -421,7 +451,6 @@ auto ProcType::print(DeclName proc_name, bool number_params, ProcDecl* decl) con
             else out += ", ";
             if (p.intent != Intent::Move) out += std::format("{} ", p.intent);
             out += p.type->print();
-            if (number_params) out += std::format(" %4(%%{}%)", i);
         }
         out += ")";
     }

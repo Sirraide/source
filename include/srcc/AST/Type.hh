@@ -251,7 +251,9 @@ class srcc::Type {
 
 public:
     explicit constexpr Type() = default;
+    constexpr Type(std::nullptr_t) {}
     constexpr Type(TypeBase* t) : pointer{t} {}
+    constexpr Type(const TypeBase* t) : pointer{const_cast<TypeBase*>(t)} {}
 
     /// Get the type pointer.
     [[nodiscard]] auto ptr() const -> TypeBase* { return pointer; }
@@ -453,8 +455,8 @@ public:
     /// Print the proc type, optionally with a name.
     auto print(
         DeclName proc_name = {},
-        bool number_params = false,
-        ProcDecl* decl = nullptr
+        ProcDecl* decl = nullptr,
+        bool include_proc_keyword = true
     ) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.

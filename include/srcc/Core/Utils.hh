@@ -281,6 +281,14 @@ using SmallUnrenderedString = SmallString<128>;
 
 // Strip colours from an unrendered string.
 auto StripColours(const SmallUnrenderedString& s) -> std::string;
+
+/// Format to a small string.
+template <typename StringType = SmallString<64>, typename ...Args>
+auto Format(std::format_string<Args...> fmt, Args&& ...args) -> StringType {
+    StringType str;
+    std::format_to(std::back_inserter(str), fmt, LIBBASE_FWD(args)...);
+    return str;
+}
 } // namespace srcc
 
 // Rarely used helpers go here.

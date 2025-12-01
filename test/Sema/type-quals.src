@@ -1,0 +1,7 @@
+// R %srcc --eval %s
+program test;
+
+import <cstdio> as libc;
+
+// * proc^^[3]^[][10] (int^[3][]) -> int[]^[7]
+libc::puts(((proc (int^[3][]) -> int[]^[1+2*3])^^[3]^[][4+6]).name.data);

@@ -1601,24 +1601,25 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         return CreateLoad(l, addr, f->type, f->offset);
     };
 
+    auto Ty = [&] { return cast<TypeExpr>(expr->operand->ignore_parens()); };
     switch (expr->access_kind) {
         using AK = BuiltinMemberAccessExpr::AccessKind;
         case AK::SliceData: return GetField(0);
         case AK::SliceSize: return GetField(1);
         case AK::RangeStart: return GetField(0);
         case AK::RangeEnd: return GetField(1);
-        case AK::TypeAlign: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->align(tu).value().bytes()));
-        case AK::TypeArraySize: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->array_size(tu).bytes()));
-        case AK::TypeBits: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->bit_width(tu).bits()));
-        case AK::TypeBytes: return CreateInt(l, i64(cast<TypeExpr>(expr->operand)->value->memory_size(tu).bytes()));
-        case AK::TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(cast<TypeExpr>(expr->operand)->value->print())));
+        case AK::TypeAlign: return CreateInt(l, i64(Ty()->value->align(tu).value().bytes()));
+        case AK::TypeArraySize: return CreateInt(l, i64(Ty()->value->array_size(tu).bytes()));
+        case AK::TypeBits: return CreateInt(l, i64(Ty()->value->bit_width(tu).bits()));
+        case AK::TypeBytes: return CreateInt(l, i64(Ty()->value->memory_size(tu).bytes()));
+        case AK::TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(Ty()->value->print())));
         case AK::TypeMaxVal: {
-            auto ty = cast<TypeExpr>(expr->operand)->value;
+            auto ty = Ty()->value;
             return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
         }
 
         case AK::TypeMinVal: {
-            auto ty = cast<TypeExpr>(expr->operand)->value;
+            auto ty = Ty()->value;
             return CreateInt(l, APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
         }
     }
