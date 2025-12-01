@@ -75,10 +75,11 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     //     int col;
     //     i8[] msg1;
     //     i8[] msg2;
+    //     proc stringifier (inout __src_assert_msg_buf);
     // }
     AbortInfoEquivalentTy = TupleType::Get(
         *this,
-        {StrLitTy, Type::IntTy, Type::IntTy, StrLitTy, StrLitTy}
+        {StrLitTy, Type::IntTy, Type::IntTy, StrLitTy, StrLitTy, ClosureEquivalentTupleTy}
     );
 
     // If the name is empty, this is an imported module. Do not create
@@ -229,6 +230,7 @@ void Stmt::Printer::Print(Stmt* e) {
             SmallVector<Stmt*, 2> children;
             children.push_back(a->cond);
             if (auto msg = a->message.get_or_null()) children.push_back(msg);
+            if (auto str = a->stringifier.get_or_null()) children.push_back(str);
             PrintChildren(children);
         },
 

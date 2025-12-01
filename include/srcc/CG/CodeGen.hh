@@ -357,7 +357,7 @@ public:
 
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
-    void CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2);
+    void CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2, IRValue stringifier);
 
     void CreateArithFailure(
         Value failure_cond,
@@ -389,6 +389,7 @@ public:
     auto CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset = {}) -> IRValue;
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
     void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
+    auto CreateNullClosure(mlir::Location loc) -> IRValue;
     auto CreateNullPointer(mlir::Location loc) -> Value;
     void CreateReturn(mlir::Location loc, mlir::ValueRange values);
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
@@ -426,6 +427,9 @@ public:
     void EmitCleanups(const ProcData::CleanupScope& target_scope);
     void EmitCleanups();
 
+    /// Emit a closure.
+    auto EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue;
+
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitLocal(LocalDecl* decl);
 
@@ -446,7 +450,7 @@ public:
     auto IntTy(Size wd) -> mlir::Type;
 
     /// Get the address of a local variable.
-    auto GetAddressOfLocal(LocalDecl* decl, SLoc loc) -> Value;
+    auto GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value;
 
     /// Get the current procedure’s environment pointer.
     auto GetEnvPtr() -> Value;
@@ -473,7 +477,7 @@ public:
     /// Retrieve the static chain pointer of a procedure relative to
     /// the current procedure. This is the environment pointer that
     /// is passed to any procedures defined within that procedure.
-    auto GetStaticChainPointer(ProcDecl* proc, SLoc location) -> Value;
+    auto GetStaticChainPointer(ProcDecl* proc, mlir::Location location) -> Value;
 
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);

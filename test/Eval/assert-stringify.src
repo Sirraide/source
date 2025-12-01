@@ -1,0 +1,4 @@
+// R %srcc --sema --verify -fstringify-asserts %s
+program test;
+
+#assert false; // expected-error (Assertion failed: 'false') expected-note (Expression evaluated to 'false')

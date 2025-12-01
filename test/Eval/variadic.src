@@ -1,0 +1,13 @@
+// V %srcc --eval %s
+program test;
+
+proc p1 (int... ints) -> int {
+    int x;
+    for i in ints do x += i;
+    return x;
+}
+
+assert p1() == 0;
+assert p1(1) == 1;
+assert p1(1, 2) == 3;
+assert p1(1, 2, 3, 4) == 10;

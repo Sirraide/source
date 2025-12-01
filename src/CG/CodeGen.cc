@@ -104,7 +104,13 @@ auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
     return LLVM::LLVMArrayType::get(&mlir, getI8Type(), tu.target().preferred_size(ty).bytes());
 }
 
-void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2) {
+void CodeGen::CreateAbort(
+    mlir::Location loc,
+    ir::AbortReason reason,
+    IRValue msg1,
+    IRValue msg2,
+    IRValue stringifier
+) {
     // Reuse the abort info slot if there is one.
     if (!curr.abort_info_slot)
         curr.abort_info_slot = CreateAlloca(loc, tu.AbortInfoEquivalentTy);
@@ -128,6 +134,7 @@ void CodeGen::CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue ms
     // Add the message parts.
     init.emit_next_field(msg1);
     init.emit_next_field(msg2);
+    init.emit_next_field(stringifier);
     create<ir::AbortOp>(loc, reason, curr.abort_info_slot);
 }
 
@@ -159,7 +166,8 @@ void CodeGen::CreateArithFailure(Value failure_cond, Tk op, mlir::Location loc, 
             loc,
             ir::AbortReason::ArithmeticError,
             op_token,
-            operation
+            operation,
+            CreateNullClosure(loc)
         );
     });
 }
@@ -200,6 +208,8 @@ void CodeGen::CreateBuiltinAggregateStore(
     IRValue aggregate
 ) {
     auto eqv = GetEquivalentRecordTypeForAggregate(ty);
+    Assert(eqv, "Could not get equivalent record layout for type '{}'", ty);
+    Assert(eqv->layout().fields().size() == 2);
     auto f1 = eqv->layout().fields()[0];
     auto f2 = eqv->layout().fields()[1];
     CreateStore(loc, addr, aggregate.first(), f1->type->align(tu), f1->offset);
@@ -307,6 +317,11 @@ void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
         CreateInt(loc, i64(ty->memory_size(tu).bytes())),
         false
     );
+}
+
+auto CodeGen::CreateNullClosure(mlir::Location loc) -> IRValue {
+    auto null = CreateNullPointer(loc);
+    return {null, null};
 }
 
 auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
@@ -428,7 +443,7 @@ CodeGen::EnterProcedure::~EnterProcedure() {
     CG.curr = std::move(old);
 }
 
-auto CodeGen::GetAddressOfLocal(LocalDecl* decl, SLoc location) -> Value {
+auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
     if (IsZeroSizedType(decl->type)) return {};
 
     // First, try to find the variable in the current procedure. We
@@ -443,14 +458,14 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, SLoc location) -> Value {
     // we’re performing constant evaluation in the middle of a nested
     // procedure.
     if (decl->captured and curr.decl and decl->parent != curr.decl) {
-        auto env = GetStaticChainPointer(decl->parent, location);
+        auto env = GetStaticChainPointer(decl->parent, loc);
         auto vars = decl->parent->captured_vars();
         auto it = rgs::find(vars, decl);
         Assert(it != vars.end());
         auto extra_ptr = decl->parent->has_captures; // See EmitProcRefExpr().
         auto idx = u32(rgs::distance(vars.begin(), it)) + extra_ptr;
         auto ptr = CreateLoad(
-            C(location),
+            loc,
             env,
             ptr_ty,
             tu.target().ptr_align(),
@@ -464,12 +479,12 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, SLoc location) -> Value {
     // This can fail, but only if we’re performing constant evaluation,
     // e.g. if the user writes `int x; eval x;`.
     Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
-    auto loc = C(location);
     CreateAbort(
         loc,
         ir::AbortReason::InvalidLocalRef,
         CreateGlobalStringSlice(loc, decl->name.str()),
-        CreateEmptySlice(loc)
+        CreateEmptySlice(loc),
+        CreateNullClosure(loc)
     );
 
     EnterBlock(CreateBlock());
@@ -483,6 +498,7 @@ auto CodeGen::GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType* {
     if (isa<ProcType>(ty)) return tu.ClosureEquivalentTupleTy;
     if (isa<SliceType>(ty)) return tu.SliceEquivalentTupleTy;
     if (auto r = dyn_cast<RangeType>(ty)) return r->equivalent_tuple_type();
+    if (auto r = dyn_cast<RecordType>(ty)) return r;
     return nullptr;
 }
 
@@ -553,12 +569,11 @@ auto CodeGen::GetPreferredIntType(mlir::Type ty) -> mlir::Type {
     return ty;
 }
 
-auto CodeGen::GetStaticChainPointer(ProcDecl* proc, SLoc location) -> Value {
+auto CodeGen::GetStaticChainPointer(ProcDecl* proc, mlir::Location loc) -> Value {
     // Walk up the static chain until we get the procedure whose parent
     // actually contains the variable. Procedures that don’t actually
     // introduce any new captures just reuse the parent’s environment.
     auto env = GetEnvPtr();
-    auto loc = C(location);
 
     // Start at our parent; we don’t want to insert an extra load if
     // the current procedure introduces captures since we already have
@@ -1178,11 +1193,15 @@ auto CodeGen::EmitAssertExpr(AssertExpr* expr) -> IRValue {
         else msg = CreateEmptySlice(l);
         auto text = expr->cond_range.text(tu.context());
         auto cond_str = CreateGlobalStringSlice(C(expr->cond->location()), text);
+        auto stringifier = expr->stringifier.present()
+            ? EmitClosure(expr->stringifier.get(), l)
+            : CreateNullClosure(l);
         CreateAbort(
             l,
             ir::AbortReason::AssertionFailed,
             cond_str,
-            msg
+            msg,
+            stringifier
         );
     });
 
@@ -1576,6 +1595,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
     auto GetField = [&] (unsigned i) -> IRValue {
         if (expr->operand->is_rvalue()) return Emit(expr->operand)[i];
         auto r = GetEquivalentRecordTypeForAggregate(expr->operand->type);
+        Assert(r, "Could not get equivalent record layout for type '{}'", expr->operand->type);
         auto f = r->layout().fields()[i];
         auto addr = EmitScalar(expr->operand);
         return CreateLoad(l, addr, f->type, f->offset);
@@ -1934,12 +1954,76 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> IRValue {
     return CreateInt(C(expr->location()), expr->storage.value(), expr->type);
 }
 
+auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
+    auto op = DeclareProcedure(decl);
+    auto ref = create<ir::ProcRefOp>(loc, op);
+    if (not decl->has_captures) return {ref, CreateNullPointer(loc)};
+    Assert(decl->parent.present(), "Procedure without a parent should not have captures");
+
+    // This procedure is directly nested within the current procedure; build
+    // the environment for it.
+    if (decl->parent.get() == curr.decl) {
+        Assert(curr.decl);
+
+        // Check if we’ve already cached the computation of the environment.
+        if (curr.environment_for_nested_procs) return {ref, curr.environment_for_nested_procs};
+
+        // If this procedure introduces new captures, we need to build
+        // a new environment.
+        if (curr.decl->introduces_captures) {
+            // If, additionally, the environment already contained captures before
+            // that, store a pointer to that environment in the new one.
+            auto captures = curr.decl->captured_vars();
+            auto extra_ptr = curr.decl->has_captures;
+            auto size = tu.target().ptr_size();
+            auto align = tu.target().ptr_align();
+            curr.environment_for_nested_procs = CreateAlloca(
+                loc,
+                size * (u64(rgs::distance(captures)) + extra_ptr),
+                align
+            );
+
+            if (extra_ptr) CreateStore(loc, curr.environment_for_nested_procs, GetEnvPtr(), align);
+            for (auto [i, c] : enumerate(captures)) CreateStore(
+                loc,
+                curr.environment_for_nested_procs,
+                GetAddressOfLocal(c, loc),
+                align,
+                size * (i + extra_ptr)
+            );
+        }
+
+        // Otherwise, reuse our own environment.
+        else { curr.environment_for_nested_procs = GetEnvPtr(); }
+        return {ref, curr.environment_for_nested_procs};
+    }
+
+    // Otherwise, we’re calling a sibling procedure, e.g.
+    //
+    //   proc f() {
+    //       proc g = ...;
+    //       proc h = g();
+    //   }
+    //
+    // For this, we need to retrieve the environment pointer of the nearest
+    // common ancestor of the current procedure and the one we’re calling;
+    // the callee must be a direct child of that ancestor (else it would not
+    // be in scope and we couldn’t call it in the first place); thus, the
+    // ancestor’s environment pointer is also the environment pointer for
+    // the callee. Walk the static chain to extract it.
+    llvm::SmallPtrSet<ProcDecl*, 16> our_ancestors;
+    for (auto p : curr.decl->parents()) our_ancestors.insert(p);
+    auto ancestor = our_ancestors.find(decl->parent.get());
+    Assert(ancestor != our_ancestors.end(), "No common ancestor!");
+    return {ref, GetStaticChainPointer(*ancestor, loc)};
+}
+
 void CodeGen::EmitLocal(LocalDecl* decl) {
     if (LocalNeedsAlloca(decl)) curr.locals[decl] = CreateAlloca(C(decl->location()), decl->type);
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
-    return GetAddressOfLocal(expr->decl, expr->location());
+    return GetAddressOfLocal(expr->decl, C(expr->location()));
 }
 
 auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
@@ -2107,67 +2191,7 @@ auto CodeGen::EmitParenExpr(ParenExpr* e) -> IRValue {
 
 auto CodeGen::EmitProcRefExpr(ProcRefExpr* expr) -> IRValue {
     auto l = C(expr->location());
-    auto op = DeclareProcedure(expr->decl);
-    auto ref = create<ir::ProcRefOp>(l, op);
-    if (not expr->decl->has_captures) return {ref, CreateNullPointer(l)};
-    Assert(expr->decl->parent.present(), "Procedure without a parent should not have captures");
-
-    // This procedure is directly nested within the current procedure; build
-    // the environment for it.
-    if (expr->decl->parent.get() == curr.decl) {
-        Assert(curr.decl);
-
-        // Check if we’ve already cached the computation of the environment.
-        if (curr.environment_for_nested_procs) return {ref, curr.environment_for_nested_procs};
-
-        // If this procedure introduces new captures, we need to build
-        // a new environment.
-        if (curr.decl->introduces_captures) {
-            // If, additionally, the environment already contained captures before
-            // that, store a pointer to that environment in the new one.
-            auto captures = curr.decl->captured_vars();
-            auto extra_ptr = curr.decl->has_captures;
-            auto size = tu.target().ptr_size();
-            auto align = tu.target().ptr_align();
-            curr.environment_for_nested_procs = CreateAlloca(
-                l,
-                size * (u64(rgs::distance(captures)) + extra_ptr),
-                align
-            );
-
-            if (extra_ptr) CreateStore(l, curr.environment_for_nested_procs, GetEnvPtr(), align);
-            for (auto [i, c] : enumerate(captures)) CreateStore(
-                l,
-                curr.environment_for_nested_procs,
-                GetAddressOfLocal(c, expr->location()),
-                align,
-                size * (i + extra_ptr)
-            );
-        }
-
-        // Otherwise, reuse our own environment.
-        else { curr.environment_for_nested_procs = GetEnvPtr(); }
-        return {ref, curr.environment_for_nested_procs};
-    }
-
-    // Otherwise, we’re calling a sibling procedure, e.g.
-    //
-    //   proc f() {
-    //       proc g = ...;
-    //       proc h = g();
-    //   }
-    //
-    // For this, we need to retrieve the environment pointer of the nearest
-    // common ancestor of the current procedure and the one we’re calling;
-    // the callee must be a direct child of that ancestor (else it would not
-    // be in scope and we couldn’t call it in the first place); thus, the
-    // ancestor’s environment pointer is also the environment pointer for
-    // the callee. Walk the static chain to extract it.
-    llvm::SmallPtrSet<ProcDecl*, 16> our_ancestors;
-    for (auto p : curr.decl->parents()) our_ancestors.insert(p);
-    auto ancestor = our_ancestors.find(expr->decl->parent.get());
-    Assert(ancestor != our_ancestors.end(), "No common ancestor!");
-    return {ref, GetStaticChainPointer(*ancestor, expr->location())};
+    return EmitClosure(expr->decl, l);
 }
 
 auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {

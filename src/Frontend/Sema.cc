@@ -489,6 +489,39 @@ void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
 //  Initialisation.
 // ============================================================================
 Sema::Conversion::~Conversion() = default;
+void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init, bool init_valid) {
+    // Deduce the type from the initialiser, if need be.
+    if (decl->type == Type::DeducedTy) {
+        if (init) decl->type = init.get()->type;
+        else {
+            Error(decl->location(), "Type inference requires an initialiser");
+            decl->type = Type::VoidTy;
+            decl->set_invalid();
+            return;
+        }
+    }
+
+    // Now that the type has been deduced (if necessary), we can check
+    // if we can even create a variable of this type.
+    if (not CheckVariableType(decl->type, decl->location())) {
+        decl->set_invalid();
+        return;
+    }
+
+    // Then, perform initialisation.
+    //
+    // If this fails, the initialiser is simply discarded; we can
+    // still continue analysing this though as most of sema doesn’t
+    // care about variable initialisers.
+    //
+    // Skip this if there was an error in the initialiser.
+    if (init_valid) decl->set_init(BuildInitialiser(
+        decl->type,
+        init ? init.get() : ArrayRef<Expr*>{},
+        init ? init.get()->location() : decl->location()
+    ));
+}
+
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
     switch (conv.kind) {
         using K = Conversion::Kind;
@@ -2309,7 +2342,83 @@ auto Sema::BuildAssertExpr(
         m->type
     );
 
-    auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range);
+    Ptr<ProcDecl> stringifier;
+    if (tu->lang_opts().stringify_asserts) {
+        // Get a procedure from the runtime.
+        auto GetRuntimeSymbol = [&](String name) {
+            return BuildDeclRefExpr(
+                {DeclName("__src_runtime"), DeclName(name)},
+                loc
+            ).get();
+        };
+
+        // Create the procedure manually; we want to set the parent to the containing
+        // procedure, even if it is the initialiser procedure, because we need to be
+        // able to capture its local variables.
+        auto assert_buffer_type = cast<TypeExpr>(GetRuntimeSymbol("__src_assert_msg_buf"))->value;
+        auto scope = tu->create_scope(curr_scope(), ScopeKind::Procedure);
+        auto proc = ProcDecl::Create(
+            *tu,
+            nullptr,
+            ProcType::Get(*tu, Type::VoidTy, {{Intent::Inout, assert_buffer_type, false}}),
+            tu->save(std::format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
+            Linkage::Internal,
+            Mangling::None,
+            curr_proc().proc,
+            loc
+        );
+
+        // Enter it.
+        proc->scope = scope;
+        EnterProcedure _{*this, proc};
+
+        // Declare the parameter.
+        auto param = BuildParamDecl(
+            curr_proc(),
+            &proc->param_types().front(),
+            u32(0),
+            false,
+            "",
+            loc
+        );
+
+        // Enter a block expression scope.
+        EnterScope _{*this};
+        SmallVector<Stmt*> stmts;
+
+        // Append a string to the buffer.
+        auto AppendStr = [&](String s){
+            auto str = StrLitExpr::Create(*tu, s, loc);
+            auto append_str = GetRuntimeSymbol("__src_assert_append_str");
+            auto call = BuildCallExpr(append_str, {CreateReference(param, loc).get(), str}, loc);
+            stmts.push_back(call.get());
+        };
+
+        // Keep track of whether we actually managed to stringify anything.
+        // bool trivial = true;
+
+        // Attempt to decompose the expression.
+        cond->visit(utils::Overloaded{
+            [&](auto*) { AppendStr("???"); },
+            [&](BoolLitExpr* ile) {
+                // trivial = false;
+                if (ile->value) AppendStr("true");
+                else AppendStr("false");
+            }
+        });
+
+        // Wrap everything into a block.
+        // if (not trivial) {
+        auto block = BuildBlockExpr(curr_scope(), stmts, loc);
+        auto body = BuildProcBody(proc, block);
+        proc->finalise(body, curr_proc().locals);
+        stringifier = proc;
+        // } else {
+        //      // Somehow mark that this shouldn’t be emitted.
+        // }
+    }
+
+    auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range, stringifier);
     if (not is_compile_time) return a;
     return Evaluate(a, loc);
 }
@@ -4029,33 +4138,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
             return decl->set_invalid();
     }
 
-    // Deduce the type from the initialiser, if need be.
-    if (decl->type == Type::DeducedTy) {
-        if (init) decl->type = init.get()->type;
-        else {
-            Error(decl->location(), "Type inference requires an initialiser");
-            decl->type = Type::VoidTy;
-            return decl->set_invalid();
-        }
-    }
-
-    // Now that the type has been deduced (if necessary), we can check
-    // if we can even create a variable of this type.
-    if (not CheckVariableType(decl->type, decl->location()))
-        return decl->set_invalid();
-
-    // Then, perform initialisation.
-    //
-    // If this fails, the initialiser is simply discarded; we can
-    // still continue analysing this though as most of sema doesn’t
-    // care about variable initialisers.
-    //
-    // Skip this if there was an error in the initialiser.
-    if (init_valid) decl->set_init(BuildInitialiser(
-        decl->type,
-        init ? init.get() : ArrayRef<Expr*>{},
-        init ? init.get()->location() : decl->location()
-    ));
+    AddInitialiserToDecl(decl, init, init_valid);
     return decl;
 }
 

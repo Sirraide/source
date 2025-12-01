@@ -14,6 +14,7 @@
 #include <llvm/TargetParser/Host.h>
 
 #include <base/Formatters.hh>
+#include <base/Macros.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 
@@ -334,6 +335,9 @@ class eval::Eval : DiagsProducer {
     struct StackFrame {
         using RetVals = SmallVector<SRValue*, 2>;
 
+        /// Location of the call.
+        mlir::Location call_loc;
+
         /// Procedure to which this frame belongs.
         ir::ProcOp proc{};
 
@@ -351,6 +355,9 @@ class eval::Eval : DiagsProducer {
 
         /// Return value slots.
         RetVals ret_vals{};
+
+        /// Whether to abort constant evaluation after exiting this frame.
+        bool is_assert_stringifier_frame = false;
     };
 
     VM& vm;
@@ -397,6 +404,7 @@ private:
     void BranchTo(Block* block, mlir::ValueRange args);
     void BranchTo(Block* block, MutableArrayRef<SRValue> args);
     void PushFrame(
+        mlir::Location call_loc,
         ir::ProcOp proc,
         MutableArrayRef<SRValue> args,
         StackFrame::RetVals ret_vals
@@ -505,11 +513,25 @@ bool Eval::EvalLoop() {
         return true;
     };
 
+    static constexpr isz BufSize = 10000;
+    struct AssertMessageBuffer {
+        LIBBASE_IMMOVABLE(AssertMessageBuffer);
+        char* data = new char[BufSize];
+        isz size = 0;
+        isz capacity = BufSize;
+        AssertMessageBuffer() = default;
+        ~AssertMessageBuffer() { delete[] data; }
+    };
+
+    std::optional<AssertMessageBuffer> assert_buffer;
     const u64 max_steps = vm.owner().context().eval_steps ?: std::numeric_limits<u64>::max();
     for (u64 steps = 0; steps < max_steps; steps++) {
         auto i = &*frame().ip++;
         if (auto a = dyn_cast<ir::AbortOp>(i)) {
             if (not complain) return false;
+
+            // FIXME: We should not be relying on the native struct layout to be compatible
+            // with what Source uses.
             struct AbortInfo {
                 struct Slice {
                     const char* data;
@@ -517,11 +539,17 @@ bool Eval::EvalLoop() {
                     auto sv() const -> std::string_view { return {data, usz(size)}; }
                 };
 
+                struct Closure {
+                    Pointer ptr;
+                    Pointer env;
+                };
+
                 Slice filename;
                 isz line;
                 isz col;
                 Slice msg1;
                 Slice msg2;
+                Closure closure;
             };
 
             auto info = vm.memory->get_host_pointer<AbortInfo>(Val(a.getAbortInfo()).cast<Pointer>());
@@ -537,7 +565,33 @@ bool Eval::EvalLoop() {
             std::string msg{reason_str};
             if (not info->msg1.sv().empty()) msg += std::format(": '{}'", info->msg1.sv());
             if (not info->msg2.sv().empty()) msg += std::format(": {}", info->msg2.sv());
-            return Error(SLoc::Decode(a.getLoc()), "{}", msg);
+            Error(SLoc::Decode(a.getLoc()), "{}", msg);
+
+            // Attempt to run the stringifier if there is one.
+            if (info->closure.ptr.is_null()) return false;
+
+            // Give up immediately if we’re asserting recursively.
+            if (assert_buffer.has_value()) {
+                Warn(SLoc::Decode(a.getLoc()), "Assert stringifier failed constant evaluation");
+                return false;
+            }
+
+            // Compile the procedure now if we haven’t done that yet.
+            auto callee = vm.memory->get_procedure(info->closure.ptr);
+            Assert(callee, "Address is not callable");
+            if (callee.empty()) {
+                auto decl = cg.lookup(callee);
+                Assert(decl);
+                cg.emit(decl.get());
+                Assert(cg.finalise(callee));
+            }
+
+            SmallVector<SRValue> args;
+            args.emplace_back(vm.memory->make_host_pointer(uptr(&assert_buffer.emplace())));
+            args.emplace_back(info->closure.env);
+            PushFrame(a.getLoc(), callee, args, {});
+            call_stack.back().is_assert_stringifier_frame = true;
+            continue;
         }
 
         if (auto a = dyn_cast<mlir::arith::ConstantOp>(i)) {
@@ -602,7 +656,7 @@ bool Eval::EvalLoop() {
             // Enter the stack frame.
             SmallVector<SRValue, 6> args;
             for (auto a : c.getArgs()) args.push_back(Val(a));
-            PushFrame(callee, args, std::move(ret_vals));
+            PushFrame(c.getLoc(), callee, args, std::move(ret_vals));
             continue;
         }
 
@@ -653,6 +707,16 @@ bool Eval::EvalLoop() {
         }
 
         if (auto r = dyn_cast<ir::RetOp>(i)) {
+            // If we just finished stringifying an assert message, print it now.
+            if (call_stack.back().is_assert_stringifier_frame) {
+                Note(
+                    SLoc::Decode(call_stack.back().call_loc),
+                    "Expression evaluated to '{}'",
+                    std::string_view{assert_buffer->data, usz(assert_buffer->size)}
+                );
+                return false;
+            }
+
             // Save the return values in the return slots.
             Assert(r.getVals().size() == frame().ret_vals.size());
             for (auto [v, slot] : zip(r.getVals(), frame().ret_vals)) *slot = Val(v);
@@ -943,6 +1007,7 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
 }
 
 void Eval::PushFrame(
+    mlir::Location call_loc,
     ir::ProcOp proc,
     MutableArrayRef<SRValue> args,
     StackFrame::RetVals ret_vals
@@ -964,7 +1029,7 @@ void Eval::PushFrame(
     // Set up the stack frame.
     Assert(args.size() == proc.getNumCallArgs());
     Assert(ret_vals.size() == proc.getFunctionType().getNumResults());
-    StackFrame frame{proc};
+    StackFrame frame{call_loc, proc};
     frame.stack_base = stack_top;
 
     // Allocate temporaries for instructions and block arguments.
@@ -1047,7 +1112,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     }
 
     // Set up a stack frame for it.
-    PushFrame(proc, args, {});
+    PushFrame(proc->getLoc(), proc, args, {});
 
     // Otherwise, just run the procedure and convert the results to an rvalue.
     TRY(EvalLoop());

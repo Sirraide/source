@@ -126,6 +126,9 @@ struct srcc::LangOpts {
     /// We’re compiling without a runtime; usually, this means
     /// that we’re actually compiling the runtime.
     bool no_runtime: 1 = false;
+
+    /// Enable generation of code that stringifies assert messages.
+    bool stringify_asserts : 1 = true;
 };
 
 /// A file in the context.

@@ -549,6 +549,7 @@ private:
     SmallVector<ParsedModule::Ptr> parsed_modules;
     ArrayRef<std::string> search_paths;
     ArrayRef<std::string> clang_include_paths;
+    usz assert_stringifiers = 0;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
@@ -627,6 +628,9 @@ private:
     /// This correctly handles redeclarations and declarations
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
+
+    /// Add an initialiser to a variable declaration.
+    void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init, bool init_valid);
 
     /// Apply a conversion to an expression or list of expressions.
     void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);

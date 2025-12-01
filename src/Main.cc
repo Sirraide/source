@@ -56,6 +56,7 @@ using options = clopts< // clang-format off
     // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
     // something in that vein.
     flag<"-fno-overflow-checks">,
+    flag<"-fstringify-asserts">,
 
     help<>
 >; // clang-format on
@@ -149,6 +150,7 @@ int main(int argc, char** argv) {
         .lang_opts = {
             .overflow_checking = not opts.get<"-fno-overflow-checks">(),
             .no_runtime = opts.get<"--noruntime">(),
+            .stringify_asserts = opts.get<"-fstringify-asserts">(),
         },
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get<"--error-limit">(20)),

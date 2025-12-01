@@ -241,18 +241,21 @@ public:
     Ptr<Expr> message;
     bool is_static;
     SRange cond_range;
+    Ptr<ProcDecl> stringifier;
 
     AssertExpr(
         Expr* cond,
         Ptr<Expr> message,
         bool is_static,
         SLoc location,
-        SRange cond_range
+        SRange cond_range,
+        Ptr<ProcDecl> stringifier
     ) : Expr{Kind::AssertExpr, Type::VoidTy, RValue, location},
         cond{cond},
         message{message},
         is_static{is_static},
-        cond_range{cond_range} {}
+        cond_range{cond_range},
+        stringifier{stringifier} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::AssertExpr; }
 };
