@@ -485,6 +485,9 @@ public:
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
+    /// Mark an optional as engaged or disengaged after initialisation.
+    void HandleOptionalInitialised(mlir::Value addr, Expr* init);
+
     /// Check whether the current insertion point has a terminator.
     bool HasTerminator();
 

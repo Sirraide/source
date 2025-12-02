@@ -942,6 +942,10 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     Assert(not IsZeroSizedType(init->type), "Should have been checked before calling this");
     Assert(init->is_rvalue(), "Expected an rvalue");
     Assert(addr, "Emitting rvalue without address?");
+    defer { HandleOptionalInitialised(addr, init); };
+
+    // Ignore parentheses.
+    init = init->ignore_parens();
 
     // Check if this is an srvalue.
     if (GetEvalMode(init->type) == EvalMode::Scalar) {
@@ -1004,9 +1008,6 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // If expressions can be mrvalues if either branch is an mrvalue.
         [&](IfExpr* e) { EmitIfExpr(e, addr); },
 
-        // Parenthesised expressions may wrap an rvalue.
-        [&](ParenExpr* e) { EmitRValue(addr, e->expr); },
-
         // Structs literals are emitted field by field.
         [&](TupleExpr* e) {
             auto s = e->record_type();
@@ -1022,6 +1023,25 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         }
     });
 } // clang-format on
+
+void CodeGen::HandleOptionalInitialised(Value addr, Expr* init) {
+    auto opt = dyn_cast<OptionalType>(init->type);
+    if (not opt) return;
+    Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
+    Assert(not isa<ParenExpr>(init), "Should have ignored parens");
+
+    // If we assigned a value of the underlying type, engage the optional.
+    if (auto cast = dyn_cast<CastExpr>(init); cast and cast->kind == CastExpr::OptionalWrap) {
+        Assert(opt->has_transparent_layout(), "TODO: Set engaged flag");
+        ir::EngageOp::create(*this, C(init->location()), addr);
+        return;
+    }
+
+    // TODO: If we copied an optional, copy its state.
+
+    // Any other form of assignment disengages the optional.
+    ir::DisengageOp::create(*this, C(init->location()), addr);
+}
 
 // ============================================================================
 //  Cleanup
@@ -1254,20 +1274,6 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
 
             auto addr = EmitScalar(expr->lhs);
             EmitRValue(addr, expr->rhs);
-
-            // TODO: This also needs to be done in other places where we write
-            // a value to the optional (e.g. initialisation, exchange operator...).
-            if (auto opt = dyn_cast<OptionalType>(expr->lhs->type)) {
-                auto cast = dyn_cast<CastExpr>(expr->rhs);
-                if (cast and cast->kind == CastExpr::OptionalWrap) {
-                    Assert(opt->has_transparent_layout(), "TODO: Set engaged flag");
-                    ir::EngageOp::create(*this, C(expr->location()), addr);
-                } else if (isa<DefaultInitExpr>(expr->rhs)) {
-                    Assert(opt->has_transparent_layout(), "TODO: Unset engaged flag");
-                    ir::DisengageOp::create(*this, C(expr->location()), addr);
-                }
-            }
-
             return addr;
         }
 

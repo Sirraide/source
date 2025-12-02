@@ -83,3 +83,18 @@ proc p9 (bool b) {
 proc p10 (int^? opt) {
     ^opt = 42; // expected-error: Optional might be nil when accessed here
 }
+
+proc p11 {
+    int i;
+    int^? pi = &i;
+    ^pi = 42;
+}
+
+proc p12 {
+    int i;
+    int^? p1 = &i;
+    int^? p2 = p1;
+
+    // FIXME: We should copy 'p1'’s engaged state to 'p2'.
+    ^p2 = 42; // expected-error: Optional might be nil when accessed here
+}
