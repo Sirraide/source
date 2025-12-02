@@ -135,6 +135,7 @@ public:
     /// Type caches.
     FoldingSet<ArrayType> array_types;
     FoldingSet<IntType> int_types;
+    FoldingSet<OptionalType> optional_types;
     FoldingSet<PtrType> ptr_types;
     FoldingSet<ProcType> proc_types;
     FoldingSet<RangeType> range_types;

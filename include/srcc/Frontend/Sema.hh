@@ -161,6 +161,7 @@ private:
             LValueToRValue,
             MaterialisePoison,
             MaterialiseTemporary,
+            OptionalWrap,
             RangeCast,
             SelectOverload,
             SliceFromArray,
@@ -200,6 +201,7 @@ private:
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
+        static auto OptionalWrap(Type ty) -> Conversion { return Conversion{Kind::OptionalWrap, ty}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
@@ -976,6 +978,7 @@ private:
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
+    auto TranslateOptionalType(ParsedOptionalType* stmt) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
     auto TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters = {}) -> Type;
 

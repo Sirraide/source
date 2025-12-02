@@ -87,7 +87,13 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     // Pointer types.
     if (isa<PtrType>(ty)) return ptr_ty;
 
-    // For aggregates, call ConvertAggregateToLLVMArray() instead.
+    // Transparent optionals.
+    if (auto opt = dyn_cast<OptionalType>(ty)) {
+        Assert(opt->has_transparent_layout(), "C() does not support non-transparent optionals");
+        return C(opt->elem(), vc);
+    }
+
+    // For aggregates, call ConvertToByteArrayType() instead.
     Unreachable("C() does not support aggregate type: '{}'", ty);
 }
 
@@ -511,6 +517,12 @@ auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
         case TypeBase::Kind::SliceType:
             return EvalMode::Scalar;
 
+        case TypeBase::Kind::OptionalType: {
+            auto opt = cast<OptionalType>(ty);
+            if (opt->has_transparent_layout()) return GetEvalMode(opt->elem());
+            return EvalMode::Memory; // This is an aggregate.
+        }
+
         // TODO: Ranges are weird in that both eval modes make sense: memory
         // for calls and scalar for casts and for how they’re created; maybe
         // this warrants a separate eval mode (like Clang’s complex eval mode)?
@@ -833,6 +845,7 @@ void CodeGen::Mangler::Append(Type ty) {
 
         void operator()(SliceType* sl) { ElemTy("S", sl); }
         void operator()(ArrayType* arr) { ElemTy(Format("A{}", arr->dimension()), arr); }
+        void operator()(OptionalType* opt) { ElemTy("O", opt); }
         void operator()(PtrType* ref) { ElemTy("R", ref); }
         void operator()(IntType* i) { Format(M.name, "I{}", i->bit_width().bits()); }
         void operator()(BuiltinType* b) {
@@ -1753,6 +1766,12 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
             return op.getRes();
         }
 
+        case CastExpr::OptionalWrap: {
+            auto opt = cast<OptionalType>(expr->type);
+            if (not opt->has_transparent_layout()) Todo();
+            return val; // Transparent wrapping is a no-op.
+        }
+
         case CastExpr::Range: {
             auto l = C(expr->location());
             auto to = cast<RangeType>(expr->type)->elem();
@@ -1779,10 +1798,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
     return EmitValue(constant->location(), *constant->value);
 }
 
-auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
-    auto ty = stmt->type;
-    auto l = C(stmt->location());
-
+auto CodeGen::EmitDefaultInit(Type ty, mlir::Location l) -> IRValue {
     if (IsZeroSizedType(ty)) return {};
     Assert(GetEvalMode(ty) == EvalMode::Scalar, "Emitting non-srvalue on its own?");
 
@@ -1795,7 +1811,18 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
         return {CreateInt(l, 0, e), CreateInt(l, 0, e)};
     }
 
-    Unreachable("Don’t know how to emit DefaultInitExpr of type '{}'", stmt->type);
+    if (auto opt = dyn_cast<OptionalType>(ty)) {
+        Assert(opt->has_transparent_layout());
+        return EmitDefaultInit(opt->elem(), l);
+    }
+
+    Unreachable("Don’t know how to emit DefaultInitExpr of type '{}'", ty);
+}
+
+auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
+    auto ty = stmt->type;
+    auto l = C(stmt->location());
+    return EmitDefaultInit(ty, l);
 }
 
 auto CodeGen::EmitDeferStmt(DeferStmt* stmt) -> IRValue {

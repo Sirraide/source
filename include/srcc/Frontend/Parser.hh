@@ -151,6 +151,16 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntType; }
 };
 
+class srcc::ParsedOptionalType final : public ParsedStmt {
+public:
+    ParsedStmt* elem;
+
+    ParsedOptionalType(ParsedStmt* elem, SLoc loc)
+        : ParsedStmt{Kind::OptionalType, loc}, elem{elem} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::OptionalType; }
+};
+
 /// This only holds type information. The parameter name is stored
 /// in the corresponding declaration instead.
 struct srcc::ParsedParameter {

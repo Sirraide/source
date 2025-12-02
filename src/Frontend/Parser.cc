@@ -38,7 +38,8 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::LBrack:
         case Tk::PlusPlus:
         case Tk::MinusMinus:
-        case Tk::Caret: // This is a type operator only.
+        case Tk::Caret:    // This is a type operator only.
+        case Tk::Question: // This is a type operator only.
             return 5'000;
 
         case Tk::LParen:
@@ -515,7 +516,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 // <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
 // <type-qualified> ::= <type> { <qualifier> }
 // <type-range> ::= RANGE "<" <type> ">"
-// <qualifier> ::= "[" "]" | "^"
+// <qualifier> ::= "[" "]" | "^" | "?"
 // <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
 auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
     auto BuiltinType = [&](Type ty) {
@@ -784,6 +785,11 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
             case Tk::Caret:
                 lhs = new (*this) ParsedPtrType(lhs.get(), lhs.get()->loc);
+                Next();
+                continue;
+
+            case Tk::Question:
+                lhs = new (*this) ParsedOptionalType(lhs.get(), lhs.get()->loc);
                 Next();
                 continue;
 
@@ -1620,16 +1626,17 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             auto CouldReasonablyBeAType = [](ParsedStmt* s) {
                 if (isa<
                     ParsedBuiltinType,
-                    ParsedTemplateType,
-                    ParsedProcType,
+                    ParsedCallExpr,
+                    ParsedDeclRefExpr,
                     ParsedIntType,
+                    ParsedOptionalType,
+                    ParsedParenExpr,
+                    ParsedProcType,
                     ParsedPtrType,
                     ParsedRangeType,
                     ParsedSliceType,
-                    ParsedParenExpr,
-                    ParsedTupleExpr,
-                    ParsedCallExpr,
-                    ParsedDeclRefExpr
+                    ParsedTemplateType,
+                    ParsedTupleExpr
                 >(s)) return true;
 
                 // Subscripts could be array types instead.

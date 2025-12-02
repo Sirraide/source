@@ -304,6 +304,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
         case Kind::BuiltinType:
         case Kind::IntType:
+        case Kind::OptionalType:
         case Kind::ProcType:
         case Kind::PtrType:
         case Kind::RangeType:
@@ -548,6 +549,12 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
             case Kind::IntType:
                 Format(out, "%6(i{:i}%)", cast<ParsedIntType>(type)->bit_width);
                 break;
+
+            case Kind::OptionalType: {
+                auto p = cast<ParsedOptionalType>(type);
+                Append(p->elem);
+                out += "%1(?%)";
+            } break;
 
             case Kind::ProcType: {
                 auto p = cast<ParsedProcType>(type);

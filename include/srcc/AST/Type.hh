@@ -163,6 +163,9 @@ public:
     /// Check if this is 'int', 'bool', or a sized integer.
     [[nodiscard]] bool is_integer_or_bool() const;
 
+    /// Check whether this is the empty tuple '()' aka 'nil'.
+    [[nodiscard]] bool is_nil() const;
+
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
@@ -379,6 +382,38 @@ public:
     static auto Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, i64 size);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
+};
+
+class srcc::OptionalType final : public SingleElementTypeBase
+    , public FoldingSetNode {
+    llvm::PointerIntPair<const RecordLayout*, 1> layout_and_field_index = {};
+    explicit OptionalType(Type elem, const RecordLayout* rl = nullptr, u32 field_index = 0)
+        : SingleElementTypeBase{Kind::OptionalType, elem} {}
+
+public:
+    /// Whether this optional type has the same memory representation as
+    /// its underlying types (this is the case e.g. for optional pointers).
+    [[nodiscard]] bool has_transparent_layout() const {
+        return layout_and_field_index.getPointer() == nullptr;
+    }
+
+    /// Get the record layout for this optional type.
+    ///
+    /// Optional types whose memory representation is essentially that of a
+    /// 'bool' + the actual type are treated like record types with two fields.
+    [[nodiscard]] auto get_equivalent_record_layout() const -> const RecordLayout* {
+        Assert(not has_transparent_layout());
+        return layout_and_field_index.getPointer();
+    }
+
+    /// If this optional type has record layout, the offset of the byte that
+    /// stores whether this is engaged.
+    [[nodiscard]] auto get_engaged_offset() const -> Size;
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
+    static auto Get(TranslationUnit& mod, Type elem) -> OptionalType*;
+    static void Profile(FoldingSetNodeID& ID, Type elem);
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::OptionalType; }
 };
 
 class srcc::PtrType final : public SingleElementTypeBase

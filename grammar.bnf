@@ -130,7 +130,7 @@
 
 <type-qualified> ::= <type> { <qualifier> }
 <type-range> ::= RANGE "<" <type> ">"
-<qualifier> ::= "[" "]" | "^"
+<qualifier> ::= "[" "]" | "^" | "?"
 <type-prim> ::= BOOL | INT | TYPE | VOID | VAR | INTEGER_TYPE
 
 // ============================================================================

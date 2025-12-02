@@ -251,6 +251,10 @@ public:
                 return ProcType::Get(*S.tu, ret, params, cconv, c_varargs);
             }
 
+            case K::OptionalType: {
+                return OptionalType::Get(*S.tu, Read(Type));
+            }
+
             case K::PtrType: {
                 return PtrType::Get(*S.tu, Read(Type));
             }

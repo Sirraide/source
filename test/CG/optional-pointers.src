@@ -1,0 +1,19 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+int i;
+int^? pi;
+pi = ();
+pi = &i;
+
+// * proc __src_main external ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, ptr nil, align 8
+// +     store #1, ptr nil, align 8
+// +     store #1, ptr #0, align 8
+// +     ret
+// + }

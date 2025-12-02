@@ -430,6 +430,9 @@ public:
     /// Emit a closure.
     auto EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue;
 
+    /// Emit the default initialiser for a type.
+    auto EmitDefaultInit(Type ty, mlir::Location loc) -> IRValue;
+
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitLocal(LocalDecl* decl);
 

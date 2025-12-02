@@ -464,6 +464,9 @@ public:
         /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
+        /// Wrap a value in an optional.
+        OptionalWrap,
+
         /// Cast a pointer to a pointer.
         Pointer,
 

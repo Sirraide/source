@@ -99,6 +99,10 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->layout().align();
         },
+        [&](const OptionalType* ty) {
+            if (ty->has_transparent_layout()) return ty->elem()->align(t);
+            return ty->get_equivalent_record_layout()->align();
+        },
     });
 } // clang-format on
 
@@ -140,6 +144,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
             Unreachable();
         },
         [&](const IntType*) { return true; },
+        [&](const OptionalType* ty) { return true; },
         [&](const ProcType*) { return false; },
         [&](const PtrType*) { return false; },
         [&](const RangeType*) { return true; },
@@ -165,6 +170,11 @@ void TypeBase::dump(bool use_colour) const {
 }
 
 bool TypeBase::is_aggregate() const {
+    if (auto opt = dyn_cast<OptionalType>(this)) {
+        if (not opt->has_transparent_layout()) return true;
+        return opt->elem()->is_aggregate();
+    }
+
     return isa<RecordType, ArrayType, SliceType, RangeType, ProcType>(this);
 }
 
@@ -174,6 +184,11 @@ bool TypeBase::is_integer() const {
 
 bool TypeBase::is_integer_or_bool() const {
     return is_integer() or this == Type::BoolTy;
+}
+
+bool TypeBase::is_nil() const {
+    auto tup = dyn_cast<TupleType>(this);
+    return tup and tup->layout().fields().empty();
 }
 
 bool TypeBase::is_void() const {
@@ -218,6 +233,11 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         case Kind::IntType: {
             auto* int_ty = cast<IntType>(this);
             Format(out, "%6(i{:i}%)", int_ty->bit_width());
+        } break;
+
+        case Kind::OptionalType: {
+            auto* ref = cast<OptionalType>(this);
+            Format(out, "{}%1(?%)", MaybeParenthesise(ref->elem()));
         } break;
 
         case Kind::ProcType: {
@@ -291,6 +311,12 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             return elem->array_size(t) + elem->memory_size(t);
         }
 
+        case Kind::OptionalType: {
+            auto opt = cast<OptionalType>(this);
+            if (opt->has_transparent_layout()) return opt->elem()->size_impl(t);
+            return opt->get_equivalent_record_layout()->size();
+        }
+
         case Kind::StructType:
         case Kind::TupleType: {
             auto s = cast<RecordType>(this);
@@ -331,6 +357,27 @@ auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
 
 void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
     ID.AddInteger(bits.bits());
+}
+
+auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {
+    auto CreateNew = [&] {
+        if (isa<PtrType, ProcType>(elem)) return new (mod) OptionalType{elem};
+        RecordLayout::Builder b{mod};
+        b.add_field(elem);
+        b.add_field(Type::BoolTy);
+        return new (mod) OptionalType{elem, b.build(), 1};
+    };
+
+    return GetOrCreateType(mod.optional_types, CreateNew, elem);
+}
+
+void OptionalType::Profile(FoldingSetNodeID& ID, Type elem) {
+    ID.AddPointer(elem.ptr());
+}
+
+auto OptionalType::get_engaged_offset() const -> Size {
+    Assert(not has_transparent_layout());
+    return layout_and_field_index.getPointer()->fields()[layout_and_field_index.getInt()]->offset;
 }
 
 auto PtrType::Get(TranslationUnit& mod, Type elem) -> PtrType* {

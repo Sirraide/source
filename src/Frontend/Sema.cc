@@ -558,6 +558,14 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         case K::MaterialiseTemporary:
             return MaterialiseTemporary(e);
 
+        case K::OptionalWrap: return new (*tu) CastExpr(
+            conv.type(),
+            CastExpr::OptionalWrap,
+            e,
+            loc,
+            true
+        );
+
         case K::RangeCast: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::Range,
@@ -644,6 +652,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
+        case K::OptionalWrap:
         case K::RangeCast:
         case K::SelectOverload:
         case K::SliceFromArray:
@@ -1048,6 +1057,17 @@ auto Sema::BuildConversionSequence(
             return TypeMismatch();
         }
 
+        case TypeBase::Kind::OptionalType: {
+            // An optional can be constructed from either 'nil' or its element type. The
+            // former is just default initialisation (since 'nil' is really '()' which is
+            // just ‘no arguments’); the latter needs to be handled here.
+            auto nested_seq = BuildConversionSequence(cast<OptionalType>(var_type)->elem(), args, init_loc);
+            if (not nested_seq.has_value()) return TypeMismatch();
+            for (auto& c : nested_seq->conversions) seq.add(std::move(c));
+            seq.add(Conversion::OptionalWrap(var_type));
+            return seq;
+        }
+
         case TypeBase::Kind::SliceType:
             Try(BuildSliceInitialiser(seq, cast<SliceType>(var_type), args, init_loc));
             return seq;
@@ -1440,6 +1460,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::ArrayDecay:
             case K::IntegralCast:
             case K::MaterialisePoison:
+            case K::OptionalWrap:
             case K::RangeCast:
             case K::TupleToFirstElement:
             case K::SliceFromArray:
@@ -4484,6 +4505,13 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
     return Type();
 }
 
+auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Type {
+    auto elem = TranslateType(parsed->elem);
+    if (not CheckVariableType(elem, parsed->loc)) return Type();
+    if (elem->is_nil()) return Error(parsed->loc, "Element type of optional cannot be '%1(()%)'");
+    return OptionalType::Get(*tu, elem);
+}
+
 auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters) -> Type {
     // Sanity check.
     //
@@ -4593,6 +4621,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::BuiltinType: t = TranslateBuiltinType(cast<ParsedBuiltinType>(parsed)); break;
         case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
         case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
+        case K::OptionalType: t = TranslateOptionalType(cast<ParsedOptionalType>(parsed)); break;
         case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
         case K::PtrType: t = TranslatePtrType(cast<ParsedPtrType>(parsed)); break;
         case K::RangeType: t = TranslateRangeType(cast<ParsedRangeType>(parsed)); break;
