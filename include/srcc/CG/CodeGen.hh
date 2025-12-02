@@ -436,6 +436,9 @@ public:
     /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
     void EmitLocal(LocalDecl* decl);
 
+    /// Emit an lvalue to rvalue conversion.
+    auto EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value>;
+
     /// Create a temporary value to hold an mrvalue. Returns the address of
     /// the temporary.
     auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
@@ -486,7 +489,7 @@ public:
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
     /// Mark an optional as engaged or disengaged after initialisation.
-    void HandleOptionalInitialised(mlir::Value addr, Expr* init);
+    void HandleOptionalInitialised(mlir::Value addr, Expr* init, mlir::Value init_addr);
 
     /// Check whether the current insertion point has a terminator.
     bool HasTerminator();

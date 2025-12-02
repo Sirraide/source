@@ -3,6 +3,7 @@
 #include <srcc/Core/Constants.hh>
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/Debug.h>
@@ -26,6 +27,8 @@
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Target/LLVMIR/Export.h>
 #include <mlir/Transforms/Passes.h>
+
+#define TCase(type, name, ...) .Case<type>([&](auto&& name) { return __VA_ARGS__; })
 
 using namespace srcc;
 using namespace srcc::cg;
@@ -196,6 +199,7 @@ LOWERING(CallOp, {
 
 ERASE_OP(DisengageOp);
 ERASE_OP(EngageOp);
+ERASE_OP(EngageCopyOp);
 
 LOWERING(FrameSlotOp, {
     return r.create<LLVM::AllocaOp>(
@@ -440,11 +444,11 @@ struct OptionalAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Opt
         auto changed = after->join(before);
 
         // Record engage/disengage.
-        if (auto engage = dyn_cast<ir::EngageOp>(op)) {
-            changed |= after->set(engage.getOptional(), EngagedState::Engaged);
-        } else if (auto disengage = dyn_cast<ir::DisengageOp>(op)) {
-            changed |= after->set(disengage.getOptional(), EngagedState::Disengaged);
-        }
+        changed |= llvm::TypeSwitch<Operation*, ChangeResult>(op)
+            TCase(ir::DisengageOp, op, after->set(op.getOptional(), EngagedState::Disengaged))
+            TCase(ir::EngageOp, op, after->set(op.getOptional(), EngagedState::Engaged))
+            TCase(ir::EngageCopyOp, op, after->set(op.getOptional(), after->get(op.getCopyFrom())))
+            .Default(NoChange);
 
         // Propagate to the next operation.
         propagateIfChanged(after, changed);
@@ -474,6 +478,7 @@ void LoweringPass::runOnOperation() {
         AbortOpLowering,
         DisengageOpLowering,
         EngageOpLowering,
+        EngageCopyOpLowering,
         CallOpLowering,
         FrameSlotOpLowering,
         LoadOpLowering,

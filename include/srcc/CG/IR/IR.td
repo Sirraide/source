@@ -268,6 +268,11 @@ def EngageOp : SRCC_Op<"engage"> {
     let arguments = (ins SRCC_Ptr:$optional);
 }
 
+def EngageCopyOp : SRCC_Op<"engage.copy"> {
+    let summary = "Engage/disengage an optional depending on the state of another optional";
+    let arguments = (ins SRCC_Ptr:$optional, SRCC_Ptr:$copy_from);
+}
+
 def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
     let summary = "Allocate stack memory";
     let arguments = (ins

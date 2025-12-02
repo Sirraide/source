@@ -28,6 +28,13 @@ proc d {
     int^? p3 = if true then &i else &j;
 }
 
+proc e {
+    int i;
+    int^? p1 = &i;
+    int^? p2 = p1;
+    ^p2 = 42;
+}
+
 // * proc __src_main external ccc {
 // + entry:
 // +     ret
@@ -105,9 +112,27 @@ proc d {
 // +     engage #2
 // +     %0 = load ptr, #2, align 8
 // +     store #3, ptr %0, align 8
-// +     disengage #3
+// +     engage #3 <- #2
 // +     store #4, ptr #0, align 8
 // +     engage #4
+// +     ret
+// + }
+// +
+// + proc _S1eFvE private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, ptr #0, align 8
+// +     engage #1
+// +     %0 = load ptr, #1, align 8
+// +     store #2, ptr %0, align 8
+// +     engage #2 <- #1
+// +     unwrap #2
+// +     %1 = load ptr, #2, align 8
+// +     store %1, i64 42, align 8
 // +     ret
 // + }
 
@@ -182,6 +207,20 @@ proc d {
 //L +   %6 = load ptr, ptr %3, align 8
 //L +   store ptr %6, ptr %4, align 8
 //L +   store ptr %1, ptr %5, align 8
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private void @_S1eFvE() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store ptr %1, ptr %2, align 8
+//L +   %4 = load ptr, ptr %2, align 8
+//L +   store ptr %4, ptr %3, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   store i64 42, ptr %5, align 8
 //L +   ret void
 //L + }
 //L +

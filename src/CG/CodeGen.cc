@@ -713,6 +713,11 @@ auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<v
     return EnterBlock(std::move(join));
 }
 
+static bool IsLValueToRValueConversion(Expr* e) {
+    auto cast = dyn_cast<CastExpr>(e);
+    return cast and cast->kind == CastExpr::LValueToRValue;
+}
+
 bool CodeGen::IsZeroSizedType(Type ty) {
     return ty->memory_size(tu) == Size();
 }
@@ -938,22 +943,48 @@ void CodeGen::RecordInitHelper::emit_next_field(IRValue v) {
     CG.CreateBuiltinAggregateStore(v.loc(), ptr, field->type, v);
 }
 
+auto CodeGen::EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value> {
+    Assert(expr->kind == CastExpr::LValueToRValue);
+    Assert(expr->arg->value_category == Expr::LValue);
+    auto addr = Emit(expr->arg);
+    if (IsZeroSizedType(expr->type)) return {};
+    return {CreateLoad(C(expr->location()), addr.scalar(), expr->type), addr.scalar()};
+}
+
 void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     Assert(not IsZeroSizedType(init->type), "Should have been checked before calling this");
     Assert(init->is_rvalue(), "Expected an rvalue");
     Assert(addr, "Emitting rvalue without address?");
-    defer { HandleOptionalInitialised(addr, init); };
+
+    // If this initialises an optional, engage or disengage it; we also pass along
+    // the address of the source object if this copies from an existing optional.
+    Value init_addr;
+    defer { HandleOptionalInitialised(addr, init, init_addr); };
 
     // Ignore parentheses.
     init = init->ignore_parens();
 
     // Check if this is an srvalue.
     if (GetEvalMode(init->type) == EvalMode::Scalar) {
-        if (init->type->is_aggregate()) {
-            CreateBuiltinAggregateStore(C(init->location()), addr, init->type, Emit(init));
+        IRValue init_val;
+
+        // Emit the initialiser.
+        //
+        // We have special handling for lvalue-to-rvalue conversion on optionals here so
+        // we can extract the address we’re loading from.
+        if (isa<OptionalType>(init->type) and IsLValueToRValueConversion(init)) {
+            std::tie(init_val, init_addr) = EmitLValueToRValueConversion(cast<CastExpr>(init));
         } else {
-            CreateStore(C(init->location()), addr, EmitScalar(init), init->type->align(tu));
+            init_val = Emit(init);
         }
+
+        // Store the initialiser.
+        if (init->type->is_aggregate()) {
+            CreateBuiltinAggregateStore(C(init->location()), addr, init->type, init_val);
+        } else {
+            CreateStore(C(init->location()), addr, init_val.scalar(), init->type->align(tu));
+        }
+
         return;
     }
 
@@ -977,7 +1008,8 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         [&](CastExpr *e) {
             Assert(e->kind == CastExpr::CastKind::LValueToRValue);
             auto loc = C(e->location());
-            CreateMemCpy(loc, addr, EmitScalar(e->arg), e->type);
+            init_addr = EmitScalar(e->arg);
+            CreateMemCpy(loc, addr, init_addr, e->type);
         },
 
         // If the initialiser is a constant expression, create a global constant for it.
@@ -1024,20 +1056,26 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     });
 } // clang-format on
 
-void CodeGen::HandleOptionalInitialised(Value addr, Expr* init) {
+void CodeGen::HandleOptionalInitialised(Value addr, Expr* init, Value init_addr) {
     auto opt = dyn_cast<OptionalType>(init->type);
     if (not opt) return;
     Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
     Assert(not isa<ParenExpr>(init), "Should have ignored parens");
 
     // If we assigned a value of the underlying type, engage the optional.
-    if (auto cast = dyn_cast<CastExpr>(init); cast and cast->kind == CastExpr::OptionalWrap) {
-        Assert(opt->has_transparent_layout(), "TODO: Set engaged flag");
-        ir::EngageOp::create(*this, C(init->location()), addr);
-        return;
-    }
+    auto cast = dyn_cast<CastExpr>(init);
+    if (cast) {
+        if (cast->kind == CastExpr::OptionalWrap) {
+            ir::EngageOp::create(*this, C(init->location()), addr);
+            return;
+        }
 
-    // TODO: If we copied an optional, copy its state.
+        if (cast->kind == CastExpr::LValueToRValue) {
+            Assert(init_addr);
+            ir::EngageCopyOp::create(*this, C(init->location()), addr, init_addr);
+            return;
+        }
+    }
 
     // Any other form of assignment disengages the optional.
     ir::DisengageOp::create(*this, C(init->location()), addr);
@@ -1757,6 +1795,9 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
 }
 
 auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
+    if (expr->kind == CastExpr::LValueToRValue)
+        return EmitLValueToRValueConversion(expr).first;
+
     auto val = Emit(expr->arg);
     switch (expr->kind) {
         case CastExpr::Pointer:
@@ -1771,11 +1812,8 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
         case CastExpr::Integral:
             return CreateSICast(C(expr->location()), val.scalar(), expr->arg->type, expr->type);
 
-        case CastExpr::LValueToRValue: {
-            Assert(expr->arg->value_category == Expr::LValue);
-            if (IsZeroSizedType(expr->type)) return {};
-            return CreateLoad(C(expr->location()), val.scalar(), expr->type);
-        }
+        case CastExpr::LValueToRValue:
+            Unreachable("Handled above");
 
         case CastExpr::MaterialisePoisonValue: {
             auto op = create<LLVM::PoisonOp>(

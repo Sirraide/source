@@ -392,6 +392,11 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto e = dyn_cast<ir::EngageCopyOp>(op)) {
+        Format(out, "engage {} <- {}", val(e.getOptional(), false), val(e.getCopyFrom(), false));
+        return;
+    }
+
     if (auto e = dyn_cast<ir::DisengageOp>(op)) {
         Format(out, "disengage {}", val(e.getOptional(), false));
         return;

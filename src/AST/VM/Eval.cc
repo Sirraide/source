@@ -664,7 +664,7 @@ bool Eval::EvalLoop() {
 
         // These are only used by lifetime analysis and don’t have any
         // runtime semantics.
-        if (isa<ir::DisengageOp, ir::EngageOp, ir::UnwrapOp>(i))
+        if (isa<ir::DisengageOp, ir::EngageOp, ir::EngageCopyOp, ir::UnwrapOp>(i))
             continue;
 
         if (auto l = dyn_cast<ir::LoadOp>(i)) {
