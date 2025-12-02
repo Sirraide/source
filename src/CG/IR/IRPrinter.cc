@@ -387,6 +387,21 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto e = dyn_cast<ir::EngageOp>(op)) {
+        Format(out, "engage {}", val(e.getOptional(), false));
+        return;
+    }
+
+    if (auto e = dyn_cast<ir::DisengageOp>(op)) {
+        Format(out, "disengage {}", val(e.getOptional(), false));
+        return;
+    }
+
+    if (auto e = dyn_cast<ir::UnwrapOp>(op)) {
+        Format(out, "unwrap {}", val(e.getOptional(), false));
+        return;
+    }
+
     if (isa<mlir::arith::AddIOp>(op)) return PrintArithOp("add");
     if (isa<mlir::arith::AndIOp>(op)) return PrintArithOp("and");
     if (isa<mlir::arith::DivSIOp>(op)) return PrintArithOp("sdiv");

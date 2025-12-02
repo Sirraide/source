@@ -312,6 +312,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::ExplicitDiscard: print("discard"); break;
                 case CastExpr::LValueToRValue: print("lvalue->rvalue"); break;
                 case CastExpr::Integral: print("int->int"); break;
+                case CastExpr::OptionalUnwrap: print("unwrap"); break;
                 case CastExpr::OptionalWrap: print("value->optional"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
                 case CastExpr::Pointer: print("pointer"); break;

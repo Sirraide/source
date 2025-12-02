@@ -3424,12 +3424,27 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
 
         // Pointer -> Lvalue.
         case Tk::Caret: {
+            // Check that this is an (optional) pointer.
             auto ptr = dyn_cast<PtrType>(operand->type);
-            if (not ptr) return Error(
-                loc,
-                "Cannot dereference value of non-pointer type '{}'",
-                operand->type
-            );
+            if (not ptr) {
+                auto opt = dyn_cast<OptionalType>(operand->type);
+                if (opt) ptr = dyn_cast<PtrType>(opt->elem());
+                if (not ptr) return Error(
+                    loc,
+                    "Cannot dereference value of non-pointer type '{}'",
+                    operand->type
+                );
+
+                // If it is an optional, unwrap it.
+                operand = new (*tu) CastExpr(
+                    ptr,
+                    CastExpr::OptionalUnwrap,
+                    operand,
+                    loc,
+                    true,
+                    Expr::LValue
+                );
+            }
 
             operand = LValueToRValue(operand);
             return Build(ptr->elem(), Expr::LValue);

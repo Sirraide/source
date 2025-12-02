@@ -1254,6 +1254,20 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
 
             auto addr = EmitScalar(expr->lhs);
             EmitRValue(addr, expr->rhs);
+
+            // TODO: This also needs to be done in other places where we write
+            // a value to the optional (e.g. initialisation, exchange operator...).
+            if (auto opt = dyn_cast<OptionalType>(expr->lhs->type)) {
+                auto cast = dyn_cast<CastExpr>(expr->rhs);
+                if (cast and cast->kind == CastExpr::OptionalWrap) {
+                    Assert(opt->has_transparent_layout(), "TODO: Set engaged flag");
+                    ir::EngageOp::create(*this, C(expr->location()), addr);
+                } else if (isa<DefaultInitExpr>(expr->rhs)) {
+                    Assert(opt->has_transparent_layout(), "TODO: Unset engaged flag");
+                    ir::DisengageOp::create(*this, C(expr->location()), addr);
+                }
+            }
+
             return addr;
         }
 
@@ -1764,6 +1778,14 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
             );
 
             return op.getRes();
+        }
+
+        case CastExpr::OptionalUnwrap: {
+            Assert(expr->is_lvalue());
+            auto opt = cast<OptionalType>(expr->arg->type);
+            if (not opt->has_transparent_layout()) Todo();
+            ir::UnwrapOp::create(*this, C(expr->location()), val.scalar());
+            return val; // Transparent unwrapping is a no-op.
         }
 
         case CastExpr::OptionalWrap: {

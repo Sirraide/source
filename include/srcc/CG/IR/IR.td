@@ -258,6 +258,16 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
     }];
 }
 
+def DisengageOp : SRCC_Op<"disengage"> {
+    let summary = "Disengage an optional";
+    let arguments = (ins SRCC_Ptr:$optional);
+}
+
+def EngageOp : SRCC_Op<"engage"> {
+    let summary = "Engage an optional";
+    let arguments = (ins SRCC_Ptr:$optional);
+}
+
 def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
     let summary = "Allocate stack memory";
     let arguments = (ins
@@ -395,4 +405,9 @@ def StoreOp : SRCC_Op<"store"> {
             );
         }]>
     ];
+}
+
+def UnwrapOp : SRCC_Op<"unwrap"> {
+    let summary = "Unwrap an optional";
+    let arguments = (ins SRCC_Ptr:$optional);
 }

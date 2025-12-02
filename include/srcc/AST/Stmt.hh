@@ -464,6 +464,9 @@ public:
         /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
+        /// Given an lvalue optional, yield an lvalue to the value.
+        OptionalUnwrap,
+
         /// Wrap a value in an optional.
         OptionalWrap,
 

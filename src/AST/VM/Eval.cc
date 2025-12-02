@@ -583,7 +583,9 @@ bool Eval::EvalLoop() {
                 auto decl = cg.lookup(callee);
                 Assert(decl);
                 cg.emit(decl.get());
-                Assert(cg.finalise(callee));
+
+                // TODO: This can fail if one of our lifetime analyses reports an error.
+                if (not cg.finalise(callee)) Todo("Handle finalisation failure in evaluator");
             }
 
             SmallVector<SRValue> args;
@@ -659,6 +661,11 @@ bool Eval::EvalLoop() {
             PushFrame(c.getLoc(), callee, args, std::move(ret_vals));
             continue;
         }
+
+        // These are only used by lifetime analysis and don’t have any
+        // runtime semantics.
+        if (isa<ir::DisengageOp, ir::EngageOp, ir::UnwrapOp>(i))
+            continue;
 
         if (auto l = dyn_cast<ir::LoadOp>(i)) {
             auto ptr = GetHostMemoryPointer(l.getAddr());

@@ -1,6 +1,7 @@
 #ifndef SRCC_DRIVER_HH
 #define SRCC_DRIVER_HH
 
+#include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Utils.hh>
 #include <srcc/Frontend/Parser.hh>
 #include <srcc/Macros.hh>
@@ -125,6 +126,9 @@ public:
 
     /// Add a file to the list of files to compile.
     void add_file(std::string_view file_path);
+
+    /// Get the diagnostics engine.
+    auto diags() const -> DiagnosticsEngine& {  return ctx.diags(); }
 
     /// Run compile jobs.
     ///

@@ -1,0 +1,24 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc p1 -> int {
+    int i;
+    int^? pi;
+    pi = &i;
+    ^pi = 42;
+    return i;
+}
+
+#assert p1() == 42;
+
+proc p2 -> int {
+    int i;
+    int^? pi;
+    ^pi = 42; // expected-error 2: Optional might be nil when accessed here
+    return i;
+}
+
+// I candidly have no idea why this *doesn’t* crash given that we
+// have a Todo() in the evaluator if finalisation fails...
+#assert p2() == 42;
+#assert p2() == 42;

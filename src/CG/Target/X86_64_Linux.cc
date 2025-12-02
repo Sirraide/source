@@ -1,4 +1,5 @@
 #include <srcc/AST/Stmt.hh>
+#include <srcc/AST/Type.hh>
 #include <srcc/CG/CodeGen.hh>
 #include <srcc/CG/Target/Target.hh>
 
@@ -221,6 +222,12 @@ auto ABIImpl::LowerByValArgOrReturn(
         }
     };
 
+    // Optionals.
+    if (auto opt = dyn_cast<OptionalType>(t)) {
+        Assert(opt->has_transparent_layout(), "TODO");
+        t = opt->elem();
+    }
+
     // Small aggregates are passed in registers.
     if (t->is_aggregate()) {
         auto LoadWord = [&](Value addr, Size wd) -> Value {
@@ -353,9 +360,16 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
     Assert(not cg.IsZeroSizedType(vals.type()));
     auto sz = vals.type()->bit_width(tu);
     auto ReuseStackAddress = [&] { return vals.next(); };
+    auto t = vals.type();
+
+    // Optionals.
+    if (auto opt = dyn_cast<OptionalType>(t)) {
+        Assert(opt->has_transparent_layout(), "TODO");
+        t = opt->elem();
+    }
 
     // Small aggregates are passed in registers.
-    if (vals.type()->is_aggregate()) {
+    if (t->is_aggregate()) {
         auto StoreWord = [&](Value addr, Value v) {
             auto a = v.getType() == cg.get_ptr_ty()
                 ? tu.target().ptr_align()
@@ -384,7 +398,7 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
         return ReuseStackAddress();
     }
 
-    if (vals.type()->is_integer_or_bool()) {
+    if (t->is_integer_or_bool()) {
         // i65-i127 are passed in two registers.
         if (sz > Word and sz < Word * 2) {
             if (lowering.allocate(2)) {
@@ -394,14 +408,14 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
                     vals.location(),
                     vals.addr(),
                     first,
-                    vals.type()->align(tu)
+                    t->align(tu)
                 );
 
                 cg.CreateStore(
                     vals.location(),
                     vals.addr(),
                     second,
-                    vals.type()->align(tu),
+                    t->align(tu),
                     Word
                 );
 
@@ -418,7 +432,7 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
                 vals.location(),
                 vals.addr(),
                 vals.next(),
-                vals.type()->align(tu)
+                t->align(tu)
             );
 
             return vals.addr();
@@ -433,7 +447,7 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
         vals.location(),
         vals.addr(),
         vals.next(),
-        vals.type()->align(tu)
+        t->align(tu)
     );
 
     return vals.addr();
@@ -443,6 +457,9 @@ bool ABIImpl::can_use_return_value_directly(
     CodeGen& cg,
     Type ty
 ) const {
+    if (auto opt = dyn_cast<OptionalType>(ty); opt and opt->has_transparent_layout())
+        return can_use_return_value_directly(cg, opt->elem());
+
     if (isa<PtrType, SliceType, ProcType>(ty)) return true;
     if (ty == Type::BoolTy) return true;
     if (ty->is_integer()) {
@@ -508,6 +525,11 @@ auto ABIImpl::lower_procedure_signature(
     };
 
     auto ret = proc->ret();
+    if (auto opt = dyn_cast<OptionalType>(ret)) {
+        Assert(opt->has_transparent_layout(), "TODO");
+        ret = opt->elem();
+    }
+
     auto sz = ret->bit_width(cg.translation_unit());
     if (cg.IsZeroSizedType(ret)) {
         if (ret == Type::NoReturnTy) info.no_return = true;

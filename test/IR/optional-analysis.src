@@ -1,0 +1,85 @@
+// V %srcc --ir --verify %s
+program test;
+
+proc g(int) extern;
+
+proc p1 (bool b) {
+    int^? pi;
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+    if b {
+        ^pi = 42; // expected-error: Optional might be nil when accessed here
+    } else {
+        ^pi = 42; // expected-error: Optional might be nil when accessed here
+    }
+}
+
+proc p2 {
+    int i;
+    int^? pi;
+    pi = &i;
+    ^pi = 42;
+}
+
+proc p3 (bool b) {
+    int i;
+    int^? pi;
+    if b then pi = &i;
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+}
+
+proc p4 (bool b) {
+    int i;
+    int j;
+    int^? pi;
+    if b then pi = &i;
+    else pi = &j;
+    ^pi = 42;
+}
+
+proc p5 (bool b) {
+    int i;
+    int^? pi;
+    if b then pi = &i;
+    else return;
+    ^pi = 42;
+}
+
+proc p6 (bool b) {
+    int i;
+    int^? pi;
+    pi = &i;
+    for x in 1..<10 if b and x == 5 then pi = ();
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+}
+
+proc p7 {
+    int i;
+    int^? pi;
+    pi = &i;
+    if 1 == 2 then pi = (); // Folded at compile-time and thus recognised as unreachable.
+    ^pi = 42;
+}
+
+proc p8 {
+    int i;
+    int^? pi;
+    pi = &i;
+    {{ g({ pi = (); i; }); }};
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+}
+
+proc p9 (bool b) {
+    int i;
+    int^? pi;
+    if b then pi = &i;
+    if not b then pi = &i;
+
+    // We’re not quite clever enough for this, but that’s fine (it’d be rather
+    // hard to figure out that this is valid).
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
+}
+
+proc p10 (int^? opt) {
+    ^opt = 42; // expected-error: Optional might be nil when accessed here
+}
