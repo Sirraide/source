@@ -6,3 +6,9 @@ program test;
 
 #assert int != int; // expected-error: Assertion failed: 'int != int'
 #assert int == int^; // expected-error: Assertion failed: 'int == int^'
+
+eval {
+    type a = int;
+    type b = int;
+    assert a == b;
+}

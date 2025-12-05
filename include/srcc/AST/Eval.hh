@@ -149,8 +149,9 @@ public:
     ///
     /// \param stmt Statement to evaluate.
     /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
+    /// \param dump_ir Print the IR used for evaluation, if any.
     /// \return The value of the statement, if it can be evaluated.
-    [[nodiscard]] auto eval(Stmt* stmt, bool complain = true) -> std::optional<RValue>;
+    [[nodiscard]] auto eval(Stmt* stmt, bool complain = true, bool dump_ir = false) -> std::optional<RValue>;
 
     /// Initialise the VM.
     void init(const Target& tgt);

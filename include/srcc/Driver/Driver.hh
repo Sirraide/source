@@ -33,6 +33,9 @@ enum struct srcc::Action : srcc::u8 {
     /// block.
     Eval,
 
+    /// As 'Eval', but also dump the resulting IR.
+    EvalDumpIR,
+
     /// Lex tokens only and exit.
     Lex,
 

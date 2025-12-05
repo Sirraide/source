@@ -31,7 +31,7 @@ auto SRCCDialect::materializeConstant(
 }
 
 mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, srcc::Type storage) {
-    return ir::TypeAttr::get(ctx, ir::TypeType(), storage);
+    return ir::TypeAttr::get(ctx, ir::TypeType::get(ctx), storage);
 }
 
 mlir::LogicalResult ir::convertFromAttribute(
@@ -96,14 +96,14 @@ auto SSubOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& re
 }
 
 auto TypeConstantOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
-    return ir::TypeAttr::get(getContext(), ir::TypeType(), adaptor.getValue());
+    return ir::TypeAttr::get(getContext(), ir::TypeType::get(getContext()), adaptor.getValue());
 }
 
 auto TypeEqOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
     mlir::OpBuilder b{getContext()};
     if (getLhs() == getRhs()) return b.getBoolAttr(true);
-    auto lhs = dyn_cast<ir::TypeAttr>(adaptor.getLhs());
-    auto rhs = dyn_cast<ir::TypeAttr>(adaptor.getRhs());
+    auto lhs = dyn_cast_if_present<ir::TypeAttr>(adaptor.getLhs());
+    auto rhs = dyn_cast_if_present<ir::TypeAttr>(adaptor.getRhs());
     if (not lhs or not rhs) return nullptr;
     return b.getBoolAttr(lhs.getValue() == rhs.getValue());
 }

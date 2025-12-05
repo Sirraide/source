@@ -44,6 +44,7 @@ using options = clopts< // clang-format off
     flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
+    flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
     flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
@@ -96,16 +97,17 @@ int main(int argc, char** argv) {
     llvm::sys::Process::PreventCoreFiles();
 
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()        ? Action::Eval
-                : opts.get<"--exports">()     ? Action::DumpExports
-                : opts.get<"--dump-module">() ? Action::DumpModule
-                : opts.get<"--ir">()          ? Action::DumpIR
-                : opts.get<"--lex">()         ? Action::Lex
-                : opts.get<"--llvm">()        ? Action::EmitLLVM
-                : opts.get<"--parse">()       ? Action::Parse
-                : opts.get<"--sema">()        ? Action::Sema
-                : opts.get<"--tokens">()      ? Action::DumpTokens
-                                              : Action::Compile;
+    auto action = opts.get<"--eval">()         ? Action::Eval
+                : opts.get<"--eval-dump-ir">() ? Action::EvalDumpIR
+                : opts.get<"--exports">()      ? Action::DumpExports
+                : opts.get<"--dump-module">()  ? Action::DumpModule
+                : opts.get<"--ir">()           ? Action::DumpIR
+                : opts.get<"--lex">()          ? Action::Lex
+                : opts.get<"--llvm">()         ? Action::EmitLLVM
+                : opts.get<"--parse">()        ? Action::Parse
+                : opts.get<"--sema">()         ? Action::Sema
+                : opts.get<"--tokens">()       ? Action::DumpTokens
+                                               : Action::Compile;
 
     // Collect module search paths.
     std::vector<std::string> module_search_paths{

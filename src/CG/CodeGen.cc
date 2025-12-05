@@ -83,7 +83,7 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     // Integer types.
     if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
     if (ty == Type::IntTy) return IntTy(tu.target().int_size());
-    if (ty == Type::TypeTy) return ir::TypeType();
+    if (ty == Type::TypeTy) return getType<ir::TypeType>();
     if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
 
     // Pointer types.

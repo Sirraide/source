@@ -84,7 +84,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
                 case BuiltinKind::Int: return t.int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
-                case BuiltinKind::Type: return Align::Of<Type>(); // This is a compile-time only type.
+                case BuiltinKind::Type: return Align::Of<TypeBase*>(); // This is a compile-time only type.
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
                 case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
             }
@@ -290,7 +290,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
                 case BuiltinKind::Int: return t.int_size();
-                case BuiltinKind::Type: return Size::Of<Type>();
+                case BuiltinKind::Type: return Size::Of<TypeBase*>();
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_size();
 
                 case BuiltinKind::NoReturn:

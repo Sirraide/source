@@ -329,6 +329,7 @@ auto Encode(Value v) -> Temporary { return Temporary(u64(v.getAsOpaquePointer())
 //  Evaluator
 // ============================================================================
 class eval::Eval : DiagsProducer {
+public:
     friend DiagsProducer;
 
     /// A procedure on the stack.
@@ -369,7 +370,6 @@ class eval::Eval : DiagsProducer {
     SLoc entry;
     bool complain;
 
-public:
     Eval(VM& vm, bool complain);
 
     [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
@@ -1021,6 +1021,12 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
         return LoadInt(mem, Size::Bits(i.getWidth()));
     if (isa<mlir::LLVM::LLVMPointerType>(ty))
         return LoadPointer(mem);
+    if (isa<ir::TypeType>(ty)) {
+        TypeBase* ptr{};
+        std::memcpy(&ptr, mem, sizeof(TypeBase*));
+        return SRValue(Type(ptr));
+    }
+
     Unreachable("Cannot load value of type '{}'", ty);
 }
 
@@ -1089,7 +1095,7 @@ void Eval::StoreSRValue(void* ptr, const SRValue& val) {
         },
         [&](Type t) {
             TypeBase* p = t.ptr();
-            std::memcpy(ptr, &p, vm.owner().target().ptr_size().bytes());
+            std::memcpy(ptr, &p, sizeof(TypeBase*));
         }
     });
 }
@@ -1184,7 +1190,8 @@ auto VM::allocate_memory_value(Type ty) -> MemoryValue {
 
 auto VM::eval(
     Stmt* stmt,
-    bool complain
+    bool complain,
+    bool dump_ir
 ) -> std::optional<RValue> { // clang-format off
     using OptVal = std::optional<RValue>;
     Assert(initialised);
@@ -1200,7 +1207,10 @@ auto VM::eval(
         });
 
         // If we got a value, just return it.
-        if (val.has_value()) return val;
+        if (val.has_value()) {
+            if (dump_ir) std::println("(No IR emitted for this code)");
+            return val;
+        }
     }
 
     // Otherwise, we need to do this the complicated way. Evaluate the statement.
@@ -1210,7 +1220,12 @@ auto VM::eval(
     Assert(not evaluating, "We somehow triggered a nested evaluation?");
     tempset evaluating = true;
     Eval e{*this, complain};
-    return e.eval(stmt);
+    auto res = e.eval(stmt);
+    if (dump_ir) std::println("{}", text::RenderColours(
+        owner_tu.context().use_colours,
+        e.cg.dump().str())
+    );
+    return res;
 } // clang-format on
 
 void VM::init(const Target& tgt) {

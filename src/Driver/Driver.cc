@@ -231,10 +231,10 @@ int Driver::run_job() {
     }
 
     // Run the constant evaluator.
-    if (a == Action::Eval) {
+    if (a == Action::Eval or a == Action::EvalDumpIR) {
         // TODO: Static initialisation.
         if (ctx.diags().has_error()) return 1;
-        auto res = tu->vm.eval(tu->file_scope_block);
+        auto res = tu->vm.eval(tu->file_scope_block, true, a == Action::EvalDumpIR);
         return res.has_value() ? 0 : 1;
     }
 
