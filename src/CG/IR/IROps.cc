@@ -16,11 +16,11 @@ auto SRCCDialect::materializeConstant(
     mlir::Location loc
 ) -> Operation* {
     if (auto i = dyn_cast<mlir::IntegerAttr>(value); i and type.isInteger())
-        return builder.create<mlir::arith::ConstantOp>(loc, type, i);
+        return mlir::arith::ConstantOp::create(builder, loc, type, i);
 
     if (auto b = dyn_cast<mlir::BoolAttr>(value)) {
         Assert(type.isInteger());
-        return builder.create<mlir::arith::ConstantOp>(loc, type, b);
+        return mlir::arith::ConstantOp::create(builder, loc, type, b);
     }
 
     SmallString<128> s;

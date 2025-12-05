@@ -94,15 +94,16 @@ auto CheckReplacement(Value v) -> std::optional<Value> {
 
 template <typename Intrin>
 auto LowerOverflowOp(auto op, auto& a, mlir::ConversionPatternRewriter& r) -> SmallVector<Value, 2> {
-    auto intrin = r.create<Intrin>(
+    auto intrin = Intrin::create(
+        r,
         op.getLoc(),
         LLVM::LLVMStructType::getLiteral(r.getContext(), {a.getLhs().getType(), r.getI1Type()}),
         a.getLhs(),
         a.getRhs()
     );
 
-    auto val = r.create<LLVM::ExtractValueOp>(op.getLoc(), intrin, 0);
-    auto overflow = r.create<LLVM::ExtractValueOp>(op.getLoc(), intrin, 1);
+    auto val = LLVM::ExtractValueOp::create(r, op.getLoc(), intrin, 0);
+    auto overflow = LLVM::ExtractValueOp::create(r, op.getLoc(), intrin, 1);
     return SmallVector<Value, 2>{val, overflow};
 }
 
@@ -138,7 +139,8 @@ LOWERING(AbortOp, {
     if (not func) {
         mlir::OpBuilder::InsertionGuard guard{r};
         r.setInsertionPointToEnd(&module.getBodyRegion().back());
-        func = r.create<LLVM::LLVMFuncOp>(
+        func = LLVM::LLVMFuncOp::create(
+            r,
             r.getUnknownLoc(),
             name,
             LLVM::LLVMFunctionType::get(
@@ -149,8 +151,8 @@ LOWERING(AbortOp, {
         );
     }
 
-    r.create<LLVM::CallOp>(op.getLoc(), mlir::TypeRange(), StringRef(name), a.getAbortInfo());
-    return r.create<LLVM::UnreachableOp>(op.getLoc());
+    LLVM::CallOp::create(r, op.getLoc(), mlir::TypeRange(), StringRef(name), a.getAbortInfo());
+    return LLVM::UnreachableOp::create(r, op.getLoc());
 });
 
 LOWERING(CallOp, {
@@ -180,7 +182,7 @@ LOWERING(CallOp, {
         a.getVariadic()
     );
 
-    auto call = r.create<LLVM::CallOp>(op.getLoc(), fty, args);
+    auto call = LLVM::CallOp::create(r, op.getLoc(), fty, args);
     call.setCConv(op.getCc());
 
     // Preserve argument and return value. attributes.
@@ -190,7 +192,7 @@ LOWERING(CallOp, {
     if (op.getNumResults() > 1) {
         SmallVector<mlir::Value> results;
         for (i64 i = 0; i < i64(op.getNumResults()); i++)
-            results.push_back(r.create<LLVM::ExtractValueOp>(op.getLoc(), call.getResult(), i));
+            results.push_back(LLVM::ExtractValueOp::create(r, op.getLoc(), call.getResult(), i));
         return results;
     }
 
@@ -202,17 +204,19 @@ ERASE_OP(EngageOp);
 ERASE_OP(EngageCopyOp);
 
 LOWERING(FrameSlotOp, {
-    return r.create<LLVM::AllocaOp>(
+    return LLVM::AllocaOp::create(
+        r,
         op->getLoc(),
         LLVM::LLVMPointerType::get(r.getContext()),
         r.getI8Type(),
-        r.create<LLVM::ConstantOp>(op->getLoc(), a.getBytesAttr()),
+        LLVM::ConstantOp::create(r, op->getLoc(), a.getBytesAttr()),
         unsigned(a.getAlignment().getInt())
     );
 });
 
 LOWERING(LoadOp, {
-    return r.create<LLVM::LoadOp>(
+    return LLVM::LoadOp::create(
+        r,
         op.getLoc(),
         getTypeConverter()->convertType(op.getResult().getType()),
         a.getAddr(),
@@ -221,7 +225,8 @@ LOWERING(LoadOp, {
 });
 
 LOWERING(NilOp, {
-    return r.create<LLVM::ZeroOp>(
+    return LLVM::ZeroOp::create(
+        r,
         op.getLoc(),
         getTypeConverter()->convertType(op.getResult().getType())
     );
@@ -256,7 +261,8 @@ LOWERING(ProcOp, {
         op.getVariadic()
     );
 
-    auto func = r.create<LLVM::LLVMFuncOp>(
+    auto func = LLVM::LLVMFuncOp::create(
+        r,
         op.getLoc(),
         op.getName(),
         llvm_fty,
@@ -278,7 +284,8 @@ LOWERING(ProcOp, {
 });
 
 LOWERING(ProcRefOp, {
-    return r.create<LLVM::AddressOfOp>(
+    return LLVM::AddressOfOp::create(
+        r,
         op.getLoc(),
         LLVM::LLVMPointerType::get(r.getContext()),
         a.getProcName()
@@ -291,7 +298,8 @@ LOWERING(RetOp, {
     if (a.getVals().size() == 1) {
         res = a.getVals().front();
     } else if (a.getVals().size() > 1) {
-        res = r.create<LLVM::UndefOp>(
+        res = LLVM::UndefOp::create(
+            r,
             op.getLoc(),
             LLVM::LLVMStructType::getLiteral(
                 getContext(),
@@ -300,23 +308,24 @@ LOWERING(RetOp, {
         );
 
         for (auto [i, v] : llvm::enumerate(a.getVals())) {
-            res = r.create<LLVM::InsertValueOp>(
+            res = LLVM::InsertValueOp::create(r,
                 op.getLoc(),
                 res,
                 v,
-                i
+                i64(i)
             );
         }
     }
 
-    return r.create<LLVM::ReturnOp>(op.getLoc(), res);
+    return LLVM::ReturnOp::create(r, op.getLoc(), res);
 });
 
 LOWERING(SAddOvOp, { return LowerOverflowOp<LLVM::SAddWithOverflowOp>(op, a, r); });
 LOWERING(SMulOvOp, { return LowerOverflowOp<LLVM::SMulWithOverflowOp>(op, a, r); });
 LOWERING(SSubOvOp, { return LowerOverflowOp<LLVM::SSubWithOverflowOp>(op, a, r); });
 LOWERING(StoreOp, {
-    return r.create<LLVM::StoreOp>(
+    return LLVM::StoreOp::create(
+        r,
         op->getLoc(),
         a.getValue(),
         a.getAddr(),

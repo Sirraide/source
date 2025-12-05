@@ -141,7 +141,7 @@ void CodeGen::CreateAbort(
     init.emit_next_field(msg1);
     init.emit_next_field(msg2);
     init.emit_next_field(stringifier);
-    create<ir::AbortOp>(loc, reason, curr.abort_info_slot);
+    ir::AbortOp::create(*this, loc, reason, curr.abort_info_slot);
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
@@ -161,7 +161,7 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     while (it != end and isa<ir::FrameSlotOp>(*it)) ++it;
     if (it == end) setInsertionPointToEnd(&curr.proc.front());
     else setInsertionPoint(&*it);
-    return create<ir::FrameSlotOp>(loc, sz, a);
+    return ir::FrameSlotOp::create(*this, loc, sz, a);
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, mlir::Location loc, String name) {
@@ -200,7 +200,8 @@ auto CodeGen::CreateBlock(ArrayRef<Ty> args) -> std::unique_ptr<Block> {
 }
 
 auto CodeGen::CreateBool(mlir::Location loc, bool b) -> Value {
-    return create<arith::ConstantOp>(
+    return arith::ConstantOp::create(
+        *this,
         loc,
         getI1Type(),
         mlir::IntegerAttr::get(getI1Type(), b)
@@ -236,7 +237,8 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
         // TODO: Introduce our own Op for this and mark it as 'Pure'.
         InsertionGuard _{*this};
         setInsertionPointToStart(&mlir_module.getBodyRegion().front());
-        i = create<LLVM::GlobalOp>(
+        i = LLVM::GlobalOp::create(
+            *this,
             getUnknownLoc(),
             LLVM::LLVMArrayType::get(getI8Type(), data.size() + null_terminated),
             true,
@@ -246,7 +248,7 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
             align.value().bytes()
         );
     }
-    return create<LLVM::AddressOfOp>(getUnknownLoc(), i);
+    return LLVM::AddressOfOp::create(*this, getUnknownLoc(), i);
 }
 
 auto CodeGen::CreateGlobalStringSlice(mlir::Location loc, String data) -> IRValue {
@@ -261,7 +263,7 @@ auto CodeGen::CreateICmp(mlir::Location loc, arith::CmpIPredicate pred, Value lh
 }
 
 auto CodeGen::CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value {
-    return create<arith::ConstantOp>(loc, getIntegerAttr(C(ty), value));
+    return arith::ConstantOp::create(*this, loc, getIntegerAttr(C(ty), value));
 }
 
 auto CodeGen::CreateInt(mlir::Location loc, i64 value, Type ty) -> Value {
@@ -269,7 +271,7 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Type ty) -> Value {
 }
 
 auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
-    return create<arith::ConstantOp>(loc, getIntegerAttr(ty, value));
+    return arith::ConstantOp::create(*this, loc, getIntegerAttr(ty, value));
 }
 
 auto CodeGen::CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset) -> IRValue {
@@ -298,12 +300,25 @@ auto CodeGen::CreateLoad(
     if (type.isInteger()) {
         auto pref_ty = GetPreferredIntType(type);
         if (type != pref_ty) {
-            auto pref_val = create<ir::LoadOp>(loc, pref_ty, CreatePtrAdd(loc, addr, offset), align);
-            return create<arith::TruncIOp>(loc, type, pref_val);
+            auto pref_val = ir::LoadOp::create(
+                *this,
+                loc,
+                pref_ty,
+                CreatePtrAdd(loc, addr, offset),
+                align
+            );
+
+            return arith::TruncIOp::create(*this, loc, type, pref_val);
         }
     }
 
-    return create<ir::LoadOp>(loc, type, CreatePtrAdd(loc, addr, offset), align);
+    return ir::LoadOp::create(
+        *this,
+        loc,
+        type,
+        CreatePtrAdd(loc, addr, offset),
+        align
+    );
 }
 
 void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
@@ -316,7 +331,8 @@ void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
     }
 
     // For everything else, emit a memcpy.
-    create<LLVM::MemcpyOp>(
+    LLVM::MemcpyOp::create(
+        *this,
         loc,
         to,
         from,
@@ -331,7 +347,7 @@ auto CodeGen::CreateNullClosure(mlir::Location loc) -> IRValue {
 }
 
 auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
-    return create<ir::NilOp>(loc, ptr_ty);
+    return ir::NilOp::create(*this, loc, ptr_ty);
 }
 
 auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value {
@@ -349,7 +365,7 @@ auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value {
 void CodeGen::CreateReturn(mlir::Location loc, mlir::ValueRange values) {
     if (HasTerminator()) return;
     EmitCleanups(curr.root_cleanup_scope);
-    create<ir::RetOp>(loc, values);
+    ir::RetOp::create(*this, loc, values);
 }
 
 auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value {
@@ -381,7 +397,7 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
         if (val.getType() != pref_ty) val = createOrFold<arith::ExtSIOp>(loc, pref_ty, val);
     }
 
-    create<ir::StoreOp>(loc, CreatePtrAdd(loc, addr, offset), val, align);
+    ir::StoreOp::create(*this, loc, CreatePtrAdd(loc, addr, offset), val, align);
 }
 
 auto CodeGen::DeclarePrintf() -> ir::ProcOp {
@@ -432,7 +448,7 @@ auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
         ib and
         not HasTerminator() and
         isa_and_present<ir::ProcOp>(ib->getParentOp())
-    ) create<mlir::cf::BranchOp>(getUnknownLoc(), bb, args);
+    ) mlir::cf::BranchOp::create(*this, getUnknownLoc(), bb, args);
 
     // Finally, position the builder at the end of the block.
     setInsertionPointToEnd(bb);
@@ -554,7 +570,8 @@ auto CodeGen::GetOrCreateProc(
     InsertionGuard _{*this};
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
     auto info = abi().lower_proc_type(*this, ty, needs_environment);
-    auto ir_proc = create<ir::ProcOp>(
+    auto ir_proc = ir::ProcOp::create(
+        *this,
         C(loc),
         name,
         C(linkage),
@@ -631,7 +648,8 @@ bool CodeGen::HasTerminator() {
 }
 
 void CodeGen::FillWithZeroes(mlir::Location loc, Value addr, Size bytes) {
-    create<LLVM::MemsetOp>(
+    LLVM::MemsetOp::create(
+        *this,
         loc,
         addr,
         CreateInt(loc, 0, tu.I8Ty),
@@ -658,7 +676,7 @@ auto CodeGen::If(
     auto bb_then = CreateBlock();
     auto bb_else = CreateBlock();
     auto bb_join = CreateBlock();
-    create<mlir::cf::CondBranchOp>(loc, cond, bb_then.get(), bb_else.get());
+    mlir::cf::CondBranchOp::create(*this, loc, cond, bb_then.get(), bb_else.get());
 
     // Emit the then block.
     EnterBlock(std::move(bb_then));
@@ -666,7 +684,8 @@ auto CodeGen::If(
 
     // Branch to the join block.
     then_val.each([&](Value v){ bb_join->addArgument(v.getType(), loc); });
-    if (not HasTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) mlir::cf::BranchOp::create(
+        *this,
         loc,
         bb_join.get(),
         then_val ? Vals(then_val) : Vals()
@@ -675,7 +694,8 @@ auto CodeGen::If(
     // And emit the else block.
     EnterBlock(std::move(bb_else));
     auto else_val = emit_else();
-    if (not HasTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) mlir::cf::BranchOp::create(
+        *this,
         loc,
         bb_join.get(),
         else_val ? Vals(else_val) : Vals()
@@ -692,7 +712,8 @@ auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<v
     // Create the blocks and branch to the body.
     auto body = CreateBlock(types);
     auto join = CreateBlock();
-    create<mlir::cf::CondBranchOp>(
+    mlir::cf::CondBranchOp::create(
+        *this,
         loc,
         cond,
         body.get(),
@@ -704,7 +725,8 @@ auto CodeGen::If(mlir::Location loc, Value cond, Vals args, llvm::function_ref<v
     // Emit the body and close the block.
     EnterBlock(std::move(body));
     emit_then();
-    if (not HasTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) mlir::cf::BranchOp::create(
+        *this,
         loc,
         join.get()
     );
@@ -772,7 +794,8 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
     // Create the blocks and branch to the body.
     auto else_ = CreateBlock();
     auto join = CreateBlock();
-    create<mlir::cf::CondBranchOp>(
+    mlir::cf::CondBranchOp::create(
+        *this,
         getUnknownLoc(),
         cond,
         join.get(),
@@ -782,7 +805,8 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
     // Emit the body and close the block.
     EnterBlock(std::move(else_));
     emit_else();
-    if (not HasTerminator()) create<mlir::cf::BranchOp>(
+    if (not HasTerminator()) mlir::cf::BranchOp::create(
+        *this,
         getUnknownLoc(),
         join.get()
     );
@@ -1186,11 +1210,12 @@ void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* i
         dimension,
         C(loc)
     );
-    create<mlir::cf::CondBranchOp>(l, eq, bb_end.get(), bb_body.get());
+    mlir::cf::CondBranchOp::create(*this, l, eq, bb_end.get(), bb_body.get());
 
     // Initialisation.
     EnterBlock(std::move(bb_body));
-    auto mul = create<arith::MulIOp>(
+    auto mul = arith::MulIOp::create(
+        *this,
         l,
         bb_cond->getArgument(0),
         CreateInt(l, i64(elem_ty->array_size(tu).bytes())),
@@ -1201,8 +1226,8 @@ void CodeGen::EmitArrayBroadcast(Type elem_ty, Value addr, u64 elements, Expr* i
     EmitRValue(ptr, initialiser);
 
     // Increment.
-    auto incr = create<arith::AddIOp>(l, bb_cond->getArgument(0), CreateInt(l, 1));
-    create<mlir::cf::BranchOp>(l, bb_cond, incr.getResult());
+    auto incr = arith::AddIOp::create(*this, l, bb_cond->getArgument(0), CreateInt(l, 1));
+    mlir::cf::BranchOp::create(*this, l, bb_cond, incr.getResult());
 
     // Join.
     EnterBlock(std::move(bb_end));
@@ -1408,7 +1433,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
             auto rhs = Emit(expr->rhs);
             auto start_cmp = CreateICmp(loc, arith::CmpIPredicate::sge, lhs, rhs.first());
             auto end_cmp = CreateICmp(loc, arith::CmpIPredicate::sle, lhs, rhs.second());
-            return create<arith::AndIOp>(loc, start_cmp, end_cmp).getResult();
+            return arith::AndIOp::create(*this, loc, start_cmp, end_cmp).getResult();
         }
 
         // Anything else.
@@ -1634,7 +1659,8 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
             auto to = EmitScalar(expr->args()[0]);
             auto from = EmitScalar(expr->args()[1]);
             auto size = EmitScalar(expr->args()[2]);
-            create<LLVM::MemcpyOp>(
+            LLVM::MemcpyOp::create(
+                *this,
                 loc,
                 to,
                 from,
@@ -1652,7 +1678,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
         }
 
         case B::Unreachable: {
-            create<LLVM::UnreachableOp>(loc);
+            LLVM::UnreachableOp::create(*this, loc);
             EnterBlock(CreateBlock());
             return {};
         }
@@ -1732,7 +1758,8 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     );
 
     // Build the call.
-    auto op = create<ir::CallOp>(
+    auto op = ir::CallOp::create(
+        *this,
         l,
         info.result_types,
         callee.first(),
@@ -1748,7 +1775,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     // take care to handle that here; omitting this would still work, but doing so
     // allows us to throw away a lot of dead code.
     if (ret == Type::NoReturnTy) {
-        create<LLVM::UnreachableOp>(C(expr->location()));
+        LLVM::UnreachableOp::create(*this, C(expr->location()));
         EnterBlock(CreateBlock());
     }
 
@@ -1816,7 +1843,8 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
             Unreachable("Handled above");
 
         case CastExpr::MaterialisePoisonValue: {
-            auto op = create<LLVM::PoisonOp>(
+            auto op = LLVM::PoisonOp::create(
+                *this,
                 C(expr->location()),
                 C(expr->type, expr->value_category)
             );
@@ -1963,9 +1991,9 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
         auto bb_cont = CreateBlock();
         auto ne =
             isa<LLVM::LLVMPointerType>(a.getType())
-                ? create<LLVM::ICmpOp>(floc, LLVM::ICmpPredicate::ne, a, e)
+                ? LLVM::ICmpOp::create(*this, floc, LLVM::ICmpPredicate::ne, a, e)
                 : CreateICmp(floc, arith::CmpIPredicate::ne, a, e);
-        create<mlir::cf::CondBranchOp>(floc, ne, bb_cont.get(), bb_end.get());
+        mlir::cf::CondBranchOp::create(*this, floc, ne, bb_cont.get(), bb_end.get());
         EnterBlock(std::move(bb_cont));
     }
 
@@ -1985,7 +2013,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     EnterBlock(std::move(bb_inc));
     args.clear();
     if (enum_var) {
-        args.push_back(create<arith::AddIOp>( //
+        args.push_back(arith::AddIOp::create(*this,  //
             floc,
             bb_cond->getArgument(0),
             CreateInt(floc, 1, enum_var->type)
@@ -1994,7 +2022,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
 
     for (auto [expr, a] : zip(stmt->ranges(), block_args)) {
         if (isa<RangeType>(expr->type)) {
-            args.push_back(create<arith::AddIOp>(floc, a, CreateInt(floc, 1, a.getType())));
+            args.push_back(arith::AddIOp::create(*this, floc, a, CreateInt(floc, 1, a.getType())));
         } else if (isa<ArrayType, SliceType>(expr->type)) {
             args.push_back(CreatePtrAdd(
                 floc,
@@ -2007,7 +2035,7 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     }
 
     // Continue.
-    create<mlir::cf::BranchOp>(floc, bb_cond, args);
+    mlir::cf::BranchOp::create(*this, floc, bb_cond, args);
     EnterBlock(std::move(bb_end));
     return {};
 }
@@ -2050,7 +2078,7 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> IRValue {
 
 auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
     auto op = DeclareProcedure(decl);
-    auto ref = create<ir::ProcRefOp>(loc, op);
+    auto ref = ir::ProcRefOp::create(*this, loc, op);
     if (not decl->has_captures) return {ref, CreateNullPointer(loc)};
     Assert(decl->parent.present(), "Procedure without a parent should not have captures");
 
@@ -2155,7 +2183,7 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
         auto EmitVal = [&](Stmt* s) {
             SmallVector<Value, 2> vals;
             EmitWithCleanup(s).into(vals);
-            if (not HasTerminator()) create<mlir::cf::BranchOp>(loc, join.get(), vals);
+            if (not HasTerminator()) mlir::cf::BranchOp::create(*this, loc, join.get(), vals);
         };
 
         if (c.cond.is_wildcard()) {
@@ -2167,7 +2195,7 @@ auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
         If(loc, Emit(c.cond.expr()).scalar(), [&] { EmitVal(c.body); });
     }
 
-    if (not has_wildcard) create<LLVM::UnreachableOp>(C(expr->location()));
+    if (not has_wildcard) LLVM::UnreachableOp::create(*this, C(expr->location()));
     setInsertionPointToEnd(join.get());
     return AppendBlock(std::move(join))->getArguments();
 }
@@ -2262,7 +2290,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             );
 
             auto l = C(m->location());
-            create<ir::CallOp>(l, create<ir::ProcRefOp>(l, init));
+            ir::CallOp::create(*this, l, ir::ProcRefOp::create(*this, l, init));
         }
     }
 
@@ -2435,7 +2463,7 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
     // Emit condition.
     auto cond = bb_cond.get();
     EnterBlock(std::move(bb_cond));
-    create<mlir::cf::CondBranchOp>(getUnknownLoc(), EmitScalar(stmt->cond), bb_body.get(), bb_end.get());
+    mlir::cf::CondBranchOp::create(*this, getUnknownLoc(), EmitScalar(stmt->cond), bb_body.get(), bb_end.get());
 
     // Emit body.
     EnterBlock(std::move(bb_body));
@@ -2446,7 +2474,7 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
         Emit(stmt->body);
     }
 
-    create<mlir::cf::BranchOp>(getUnknownLoc(), cond);
+    mlir::cf::BranchOp::create(*this, getUnknownLoc(), cond);
 
     // Continue after the loop.
     EnterBlock(std::move(bb_end));
@@ -2486,7 +2514,8 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
     auto info = abi().lower_proc_type(*this, ProcType::Get(tu, Type::VoidTy, args), false);
     auto loc = C(stmt->location());
-    vm_entry_point = create<ir::ProcOp>(
+    vm_entry_point = ir::ProcOp::create(
+        *this,
         loc,
         constants::VMEntryPointName,
         C(Linkage::Internal),
@@ -2503,7 +2532,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     else if (not isa<Decl>(stmt)) Emit(stmt);
 
     // Make sure to return from the procedure.
-    if (not HasTerminator()) create<ir::RetOp>(loc, Vals());
+    if (not HasTerminator()) ir::RetOp::create(*this, loc, Vals());
 
     // Run canonicalisation etc.
     if (not finalise(vm_entry_point)) return nullptr;
