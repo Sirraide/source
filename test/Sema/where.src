@@ -1,0 +1,11 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc p ($T i) -> T where T == int { // expected-note: 'where' clause evaluated to 'false'
+    return i;
+}
+
+p(4);
+p(4 as i16); // expected-error: Constraints not satisfied
+
+// TODO: Disallow 'proc f() -> bool where f() {}'

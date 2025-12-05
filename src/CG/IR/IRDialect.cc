@@ -18,7 +18,7 @@
 #include <srcc/CG/IR/IRInterfaces.cc.inc>
 
 #define GET_ATTRDEF_CLASSES
-#include <srcc/CG/IR/IREnumAttrs.cc.inc>
+#include <srcc/CG/IR/IRAttrs.cc.inc>
 
 #define GET_TYPEDEF_CLASSES
 #include <srcc/CG/IR/IRTypes.cc.inc>
@@ -31,7 +31,7 @@
 void srcc::cg::ir::SRCCDialect::initialize() {
     addAttributes<
 #       define GET_ATTRDEF_LIST
-#       include <srcc/CG/IR/IREnumAttrs.cc.inc>
+#       include <srcc/CG/IR/IRAttrs.cc.inc>
     >();
 
     addTypes<

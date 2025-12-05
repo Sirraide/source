@@ -675,10 +675,9 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         // <signature>
         case Tk::Proc: {
             Signature sig;
-            if (not ParseSignature(sig, nullptr)) return nullptr;
+            if (not ParseSignature(sig, nullptr, false)) return nullptr;
 
-            // A procedure name is not allowed here. If you want
-            // to allow a name, call ParseSignature instead.
+            // A procedure name is not allowed here.
             if (not sig.name.empty()) Error(
                 sig.tok_after_proc,
                 "A name is not allowed in a procedure type"
@@ -1301,7 +1300,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     // a name in this position.
     if (At(Tk::Proc)) {
         Signature inner;
-        if (not ParseSignature(inner, nullptr)) return false;
+        if (not ParseSignature(inner, nullptr, false)) return false;
         if (inner.name.is_operator_name()) {
             Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name);
         } else {
@@ -1373,7 +1372,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Parse signature.
     SmallVector<ParsedVarDecl*, 10> param_decls;
     Signature sig;
-    if (not ParseSignature(sig, &param_decls)) return nullptr;
+    if (not ParseSignature(sig, &param_decls, true)) return nullptr;
 
     // The 'proc' syntax requires a name.
     if (sig.name.empty()) {
@@ -1432,6 +1431,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         CreateType(sig),
         param_decls,
         body,
+        sig.where,
         sig.name.empty() ? sig.proc_loc : sig.tok_after_proc
     );
 
@@ -1441,15 +1441,20 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     return proc;
 }
 
-bool Parser::ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
+bool Parser::ParseSignature(
+    Signature& sig,
+    SmallVectorImpl<ParsedVarDecl*>* decls,
+    bool allow_constraint
+) {
     tempset current_signature = &sig;
-    return ParseSignatureImpl(decls);
+    return ParseSignatureImpl(decls, allow_constraint);
 }
 
-// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
+// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
-bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
+// <proc-where> ::= WHERE <expr>
+bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint) {
     Assert(current_signature);
     auto& sig = *current_signature;
 
@@ -1502,6 +1507,16 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls) {
 
     // Parse return type.
     if (Consume(Tk::RArrow)) sig.ret = ParseType(ReturnTypePrecedence);
+
+    // Parse constraint.
+    if (SLoc where_loc; Consume(where_loc, Tk::Where)) {
+        sig.where = ParseExpr();
+        if (not allow_constraint) Error(
+            where_loc,
+            "Constraints are only allowed in procedure declarations"
+        );
+    }
+
     return true;
 }
 

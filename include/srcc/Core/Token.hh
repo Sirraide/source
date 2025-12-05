@@ -83,6 +83,7 @@ enum struct srcc::Tk : base::u8 {
     Var,
     Variant,
     Void,
+    Where,
     While,
     With,
     Xor,

@@ -331,6 +331,9 @@ private:
         /// The instantiated procedure, if we have already instantiated it.
         ProcDecl* instantiation = nullptr;
 
+        /// Whether the constraint for this substitution is satisfied.
+        bool constraint_satisfied = true;
+
         TemplateSubstitution(
             FoldingSetNodeIDRef hash,
             ProcType* type,
@@ -368,6 +371,9 @@ private:
             Type first_type, second_type;
         };
 
+        /// The constraint on the template was not satisfied.
+        struct ConstraintNotSatisfied {};
+
         /// There was a hard error which has already been reported.
         struct Error {};
 
@@ -376,6 +382,7 @@ private:
             TemplateSubstitution*,
             DeductionFailed,
             DeductionAmbiguous,
+            ConstraintNotSatisfied,
             Error
         >;
 
@@ -755,9 +762,6 @@ private:
     /// Evaluate a statement, returning an expression that caches the result on success
     /// and nullptr on failure. The returned expression need not be a ConstExpr.
     auto Evaluate(Stmt* e, SLoc loc) -> Ptr<Expr>;
-
-    /// Evaluate a statement as an integer or bool value.
-    auto EvaluateAsIntOrBool(Stmt* s) -> std::optional<eval::RValue>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;

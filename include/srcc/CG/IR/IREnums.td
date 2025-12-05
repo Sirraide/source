@@ -16,6 +16,4 @@ def SRCC_AbortReason_Enum : I32Enum<"AbortReason", "Abort reason",
     let cppNamespace = "::srcc::cg::ir";
 }
 
-def SRCC_AbortReasonAttr : EnumAttr<SRCC_Dialect, SRCC_AbortReason_Enum, "AbortReason">;
-
 #endif

@@ -45,13 +45,32 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 // ============================================================================
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Bool : TypeAlias<I1, "bool">;
+def SRCC_Type : SRCC_Type<"Type", "type"> {
+    let summary = "Type of a type constant or value";
+    let description = "A compile-time type value";
+    let genMnemonicAlias = 1;
+}
 
-def SRCC_Type : AnyTypeOf<[
+def SRCC_AnyType : AnyTypeOf<[
     Builtin_Integer,
     FunctionType,
     SRCC_Ptr,
     SRCC_Bool,
+    SRCC_Type,
 ]>;
+
+// ============================================================================
+//  Attributes
+// ============================================================================
+def SRCC_TypeAttr : SRCC_Attr<"Type", "type"> {
+    let summary = "Type of a type constant or value";
+    let description = "A compile-time type value";
+    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::Type":$value);
+    let hasCustomAssemblyFormat = 1;
+    let genMnemonicAlias = 1;
+}
+
+def SRCC_AbortReasonAttr : EnumAttr<SRCC_Dialect, SRCC_AbortReason_Enum, "AbortReason">;
 
 // ============================================================================
 //  Operations
@@ -198,12 +217,12 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
         CConv:$cc,
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
-        Variadic<SRCC_Type>:$args,
+        Variadic<SRCC_AnyType>:$args,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$result_attrs
     );
 
-    let results = (outs Variadic<SRCC_Type>:$res);
+    let results = (outs Variadic<SRCC_AnyType>:$res);
     let builders = [
         OpBuilder<(ins
             "ProcRefOp":$ref,
@@ -314,7 +333,7 @@ def LoadOp : SRCC_Op<"load", [Pure]> {
         Builtin_IntegerAttr:$alignment
     );
 
-    let results = (outs SRCC_Type:$res);
+    let results = (outs SRCC_AnyType:$res);
     let builders = [
         OpBuilder<(ins
             "::mlir::Type":$type,
@@ -334,13 +353,13 @@ def LoadOp : SRCC_Op<"load", [Pure]> {
 
 def NilOp : SRCC_Op<"nil", [Pure]> {
     let summary = "Create the nil value of a type";
-    let results = (outs SRCC_Type:$res);
+    let results = (outs SRCC_AnyType:$res);
 }
 
 def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
     let summary = "Reference a procedure";
     let arguments = (ins SymbolNameAttr:$proc_name);
-    let results = (outs SRCC_Type:$res);
+    let results = (outs SRCC_AnyType:$res);
     let builders = [
         OpBuilder<(ins
             "ProcOp":$proc
@@ -363,7 +382,7 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
 
 def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {
     let summary = "Return from a procedure";
-    let arguments = (ins Variadic<SRCC_Type>:$vals);
+    let arguments = (ins Variadic<SRCC_AnyType>:$vals);
 }
 
 def SAddOvOp : SRCC_Op<"sadd.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> {
@@ -391,7 +410,7 @@ def StoreOp : SRCC_Op<"store"> {
     let summary = "Store a value to a pointer";
     let arguments = (ins
         SRCC_Ptr:$addr,
-        SRCC_Type:$value,
+        SRCC_AnyType:$value,
         Builtin_IntegerAttr:$alignment
     );
 
@@ -410,6 +429,20 @@ def StoreOp : SRCC_Op<"store"> {
             );
         }]>
     ];
+}
+
+def TypeConstantOp : SRCC_Op<"type", [ConstantLike, Pure]> {
+    let summary = "A type constant";
+    let arguments = (ins Property<"::srcc::Type">:$value);
+    let results = (outs SRCC_Type);
+    let hasFolder = 1;
+}
+
+def TypeEqOp : SRCC_Op<"type.eq", [Pure]> {
+    let summary = "Check if two types are equal";
+    let arguments = (ins SRCC_Type:$lhs, SRCC_Type:$rhs);
+    let results = (outs SRCC_Bool);
+    let hasFolder = 1;
 }
 
 def UnwrapOp : SRCC_Op<"unwrap"> {

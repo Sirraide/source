@@ -220,10 +220,12 @@ ParsedProcDecl::ParsedProcDecl(
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
+    Ptr<ParsedStmt> where,
     SLoc location
 ) : ParsedDecl{Kind::ProcDecl, name, location},
     body{body},
-    type{type} {
+    type{type},
+    where{where} {
     std::uninitialized_copy_n(
         param_decls.begin(),
         param_decls.size(),
@@ -237,11 +239,12 @@ auto ParsedProcDecl::Create(
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
+    Ptr<ParsedStmt> where,
     SLoc location
 ) -> ParsedProcDecl* {
     const auto size = totalSizeToAlloc<ParsedVarDecl*>(param_decls.size());
     auto mem = parser.allocate(size, alignof(ParsedProcDecl));
-    return ::new (mem) ParsedProcDecl{name, type, param_decls, body, location};
+    return ::new (mem) ParsedProcDecl{name, type, param_decls, body, where, location};
 }
 
 ParsedStructDecl::ParsedStructDecl(
@@ -483,6 +486,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             // No need to print the param decls here.
             SmallVector<ParsedStmt*, 10> children;
             if (auto b = p.body.get_or_null()) children.push_back(b);
+            if (auto where = p.where.get_or_null()) children.push_back(where);
             PrintChildren(children);
         } break;
 

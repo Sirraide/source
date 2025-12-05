@@ -44,6 +44,7 @@ struct CodeGen::Printer {
             FrameSlotOp,
             NilOp,
             ProcRefOp,
+            TypeConstantOp,
             mlir::LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
         >(op); // clang-format on
@@ -54,6 +55,8 @@ auto ir::FormatType(mlir::Type ty) -> SmallString<128> {
     SmallString<128> tmp;
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
+    } else if (isa<ir::TypeType>(ty)) {
+        tmp += "%6(type%)";
     } else if (auto ui = dyn_cast<mlir::IntegerType>(ty); ui and ui.isUnsignedInteger(1)) {
         tmp += "%6(bool%)";
     } else if (auto a = dyn_cast<mlir::LLVM::LLVMArrayType>(ty)) {
@@ -382,6 +385,16 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto ty = dyn_cast<TypeConstantOp>(op)) {
+        Format(out, "type {}", ty.getValue());
+        return;
+    }
+
+    if (auto eq = dyn_cast<TypeEqOp>(op)) {
+        Format(out, "type.eq {}, {}", val(eq.getLhs(), false), val(eq.getRhs(), false));
+        return;
+    }
+
     if (isa<mlir::LLVM::PoisonOp>(op)) {
         Format(out, "{} poison", FormatType(op->getResult(0).getType()));
         return;
@@ -613,6 +626,11 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (isa<NilOp>(op)) {
             tmp += "nil";
+            return tmp;
+        }
+
+        if (auto ty = dyn_cast<TypeConstantOp>(op)) {
+            Format(tmp, "{}", ty.getValue());
             return tmp;
         }
 

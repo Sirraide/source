@@ -1,3 +1,4 @@
+#include <mlir/Support/LLVM.h>
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
 
@@ -29,6 +30,40 @@ auto SRCCDialect::materializeConstant(
     Unreachable("Don’t know how to materialise this attribute: {}", s);
 }
 
+mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, srcc::Type storage) {
+    return ir::TypeAttr::get(ctx, ir::TypeType(), storage);
+}
+
+mlir::LogicalResult ir::convertFromAttribute(
+    srcc::Type& storage,
+    mlir::Attribute attr,
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError
+) {
+    if (not isa<ir::TypeAttr>(attr)) {
+        emitError() << "expected type attr";
+        return mlir::failure();
+    }
+
+    storage = cast<ir::TypeAttr>(attr).getValue();
+    return mlir::success();
+}
+
+mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader &reader, srcc::Type& storage) {
+    Todo();
+}
+
+void ir::writeToMlirBytecode(mlir::DialectBytecodeWriter &reader, srcc::Type storage) {
+    Todo();
+}
+
+::mlir::Attribute ir::TypeAttr::parse(::mlir::AsmParser &odsParser, ::mlir::Type odsType) {
+    Todo();
+}
+
+void ir::TypeAttr::print(::mlir::AsmPrinter &odsPrinter) const {
+    odsPrinter << getValue()->print();
+}
+
 // ============================================================================
 //  Folders
 // ============================================================================
@@ -58,4 +93,17 @@ auto SMulOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& re
 
 auto SSubOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& results) -> llvm::LogicalResult {
     return FoldOv(adaptor.getLhs(), adaptor.getRhs(), results, &APInt::ssub_ov);
+}
+
+auto TypeConstantOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
+    return ir::TypeAttr::get(getContext(), ir::TypeType(), adaptor.getValue());
+}
+
+auto TypeEqOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
+    mlir::OpBuilder b{getContext()};
+    if (getLhs() == getRhs()) return b.getBoolAttr(true);
+    auto lhs = dyn_cast<ir::TypeAttr>(adaptor.getLhs());
+    auto rhs = dyn_cast<ir::TypeAttr>(adaptor.getRhs());
+    if (not lhs or not rhs) return nullptr;
+    return b.getBoolAttr(lhs.getValue() == rhs.getValue());
 }

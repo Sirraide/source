@@ -1,0 +1,8 @@
+// V %srcc --sema --verify %s
+program test;
+
+#assert int == int;
+#assert int != int^;
+
+#assert int != int; // expected-error: Assertion failed: 'int != int'
+#assert int == int^; // expected-error: Assertion failed: 'int == int^'

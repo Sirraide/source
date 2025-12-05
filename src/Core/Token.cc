@@ -67,6 +67,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Var: return "var";
         case Tk::Variant: return "variant";
         case Tk::Void: return "void";
+        case Tk::Where: return "where";
         case Tk::While: return "while";
         case Tk::With: return "with";
         case Tk::Xor: return "xor";

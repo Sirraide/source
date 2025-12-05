@@ -105,9 +105,10 @@
 <decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ] ";"
 <decl-proc>   ::= <signature> <proc-body>
 <decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
-<signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ]
+<signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
+<proc-where>  ::= WHERE <expr>
 <proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
 <param-decl>  ::= [ <intent> ] <param-rest>
 <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>

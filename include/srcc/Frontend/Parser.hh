@@ -770,6 +770,9 @@ public:
     /// The type of the procedure.
     ParsedProcType* type;
 
+    /// The constraint clause, if any.
+    Ptr<ParsedStmt> where;
+
 private:
     auto numTrailingObjects(OverloadToken<ParsedVarDecl*>) -> usz { return type->param_types().size(); }
     ParsedProcDecl(
@@ -777,6 +780,7 @@ private:
         ParsedProcType* type,
         ArrayRef<ParsedVarDecl*> param_decls,
         Ptr<ParsedStmt> body,
+        Ptr<ParsedStmt> where,
         SLoc location
     );
 
@@ -787,6 +791,7 @@ public:
         ParsedProcType* type,
         ArrayRef<ParsedVarDecl*> param_names,
         Ptr<ParsedStmt> body,
+        Ptr<ParsedStmt> where,
         SLoc location
     ) -> ParsedProcDecl*;
 
@@ -841,6 +846,7 @@ private:
         SmallVector<ParsedParameter, 10> param_types;
         TemplateParamDeductionInfo deduction_info;
         Ptr<ParsedStmt> ret; // Unset if no return type is parsed.
+        Ptr<ParsedStmt> where;
         DeclName name;
         SLoc proc_loc;
         SLoc tok_after_proc;
@@ -922,8 +928,8 @@ private:
     bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
     void ParsePreamble();
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
-    bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
-    bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls);
+    bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
+    bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType(int precedence = -1) { return ParseExpr(precedence, true); }

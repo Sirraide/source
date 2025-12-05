@@ -7,6 +7,8 @@ mlir_tablegen(IRTypes.hh.inc -gen-typedef-decls -typedefs-dialect=srcc)
 mlir_tablegen(IRTypes.cc.inc -gen-typedef-defs -typedefs-dialect=srcc)
 mlir_tablegen(IRDialect.hh.inc -gen-dialect-decls -dialect=srcc)
 mlir_tablegen(IRDialect.cc.inc -gen-dialect-defs -dialect=srcc)
+mlir_tablegen(IRAttrs.hh.inc -gen-attrdef-decls -attrdefs-dialect=srcc)
+mlir_tablegen(IRAttrs.cc.inc -gen-attrdef-defs -attrdefs-dialect=srcc)
 
 add_public_tablegen_target(MLIRSourceIncGen)
 add_dependencies(mlir-headers MLIRSourceIncGen)
@@ -18,8 +20,6 @@ set(LLVM_TARGET_DEFINITIONS "IREnums.td")
 
 mlir_tablegen(IREnums.hh.inc -gen-enum-decls)
 mlir_tablegen(IREnums.cc.inc -gen-enum-defs)
-mlir_tablegen(IREnumAttrs.hh.inc -gen-attrdef-decls -attrdefs-dialect=srcc)
-mlir_tablegen(IREnumAttrs.cc.inc -gen-attrdef-defs -attrdefs-dialect=srcc)
 
 set(LLVM_TARGET_DEFINITIONS "IRInterfaces.td")
 mlir_tablegen(IRInterfaces.hh.inc -gen-op-interface-decls -dialect=srcc)

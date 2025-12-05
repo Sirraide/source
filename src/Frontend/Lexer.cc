@@ -74,6 +74,7 @@ const llvm::StringMap<Tk> keywords = {
     {"var", Tk::Var},
     {"variant", Tk::Variant},
     {"void", Tk::Void},
+    {"where", Tk::Where},
     {"while", Tk::While},
     {"with", Tk::With},
     {"xor", Tk::Xor},

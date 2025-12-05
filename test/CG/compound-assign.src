@@ -782,17 +782,17 @@ proc x (int a, in int b) {
 //L +
 //L + declare void @__src_int_arith_error(ptr)
 //L +
-//L + ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+//L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #1
 //L +
-//L + ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+//L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64) #1
 //L +
-//L + ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+//L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64) #1
 //L +
 //L + attributes #0 = { nounwind }
-//L + attributes #1 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
+//L + attributes #1 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

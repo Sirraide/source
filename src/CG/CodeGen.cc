@@ -1,6 +1,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/CG/ABI.hh>
 #include <srcc/CG/CodeGen.hh>
+#include <srcc/CG/IR/IR.hh>
 #include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Constants.hh>
 #include <srcc/Macros.hh>
@@ -82,6 +83,7 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     // Integer types.
     if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
     if (ty == Type::IntTy) return IntTy(tu.target().int_size());
+    if (ty == Type::TypeTy) return ir::TypeType();
     if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
 
     // Pointer types.
@@ -1486,8 +1488,18 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
         case Tk::SGt: return CreateICmp(loc, arith::CmpIPredicate::sgt, lhs, rhs);
         case Tk::SLe: return CreateICmp(loc, arith::CmpIPredicate::sle, lhs, rhs);
         case Tk::SGe: return CreateICmp(loc, arith::CmpIPredicate::sge, lhs, rhs);
-        case Tk::EqEq: return CreateICmp(loc, arith::CmpIPredicate::eq, lhs, rhs);
-        case Tk::Neq: return CreateICmp(loc, arith::CmpIPredicate::ne, lhs, rhs);
+
+        case Tk::EqEq:
+            if (type == Type::TypeTy) return ir::TypeEqOp::create(*this, loc, lhs, rhs);
+            return CreateICmp(loc, arith::CmpIPredicate::eq, lhs, rhs);
+
+        case Tk::Neq:
+            if (type == Type::TypeTy) {
+                auto eq = ir::TypeEqOp::create(*this, loc, lhs, rhs);
+                return createOrFold<arith::XOrIOp>(loc, eq, CreateBool(loc, true));
+            }
+
+            return CreateICmp(loc, arith::CmpIPredicate::ne, lhs, rhs);
 
         // Arithmetic operators that wrap or can’t overflow.
         case Tk::PlusTilde: return createOrFold<arith::AddIOp>(loc, lhs, rhs);
@@ -2364,9 +2376,17 @@ auto CodeGen::EmitTupleExpr(TupleExpr* e) -> IRValue {
     Unreachable("Emitting tuple without memory location?");
 }
 
-auto CodeGen::EmitTypeExpr(TypeExpr*) -> IRValue {
-    Unreachable("Can’t emit type expr");
-    return {};
+auto CodeGen::EmitTypeConstant(Type ty, SLoc loc) -> Value {
+    Assert(
+        !!lang_opts.constant_eval,
+        "Cannot emit types as values outside of constant evaluation"
+    );
+
+    return ir::TypeConstantOp::create(*this, C(loc), ty);
+}
+
+auto CodeGen::EmitTypeExpr(TypeExpr* e) -> IRValue {
+    return EmitTypeConstant(e->value, e->location());
 }
 
 auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
@@ -2484,7 +2504,7 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
 auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang-format off
     utils::Overloaded V {
         [&](std::monostate) -> IRValue { return {}; },
-        [&](Type) -> IRValue { Unreachable("Cannot emit type constant"); },
+        [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
         [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
         [&](eval::MemoryValue) -> IRValue { return {}; }, // This only happens if the value is unused.
         [&](const eval::Range& r) -> IRValue {

@@ -697,6 +697,17 @@ bool Eval::EvalLoop() {
             continue;
         }
 
+        if (auto ty = dyn_cast<ir::TypeConstantOp>(i)) {
+            Temp(i->getResult(0)) = SRValue(ty.getValue());
+            continue;
+        }
+
+        if (auto te = dyn_cast<ir::TypeEqOp>(i)) {
+            bool equal = Val(te.getLhs()).cast<Type>() == Val(te.getRhs()).cast<Type>();
+            Temp(i->getResult(0)) = SRValue(equal);
+            continue;
+        }
+
         if (auto gep = dyn_cast<mlir::LLVM::GEPOp>(i)) {
             auto idx = gep.getIndices()[0];
             uptr offs;

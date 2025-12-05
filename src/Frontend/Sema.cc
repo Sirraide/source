@@ -1,5 +1,6 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Enums.hh>
+#include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/Core/Constants.hh>
@@ -26,10 +27,10 @@
 
 using namespace srcc;
 
-#define TRY(expression) ({              \
-    auto _res = expression;             \
-    if (_res.invalid()) return nullptr; \
-    _res.get();                         \
+#define TRY(expression) ({                     \
+    auto _res = expression;                    \
+    if (_res.invalid()) return utils::Falsy(); \
+    _res.get();                                \
 })
 
 struct Err {
@@ -1393,6 +1394,17 @@ auto Sema::SubstituteTemplate(
     );
 
     template_substitutions[proc_template].InsertNode(info);
+
+    // Check the constraint.
+    if (auto where = proc_template->pattern->where.get_or_null()) {
+        auto constraint = TRY(TranslateExpr(where));
+        if (not MakeCondition(constraint, "where")) return {};
+        auto value = tu->vm.eval(constraint);
+        if (not value.has_value()) return {};
+        if (not value->cast<APInt>().getBoolValue())
+            return SubstitutionResult::ConstraintNotSatisfied();
+    }
+
     return info;
 }
 
@@ -1894,6 +1906,10 @@ void Sema::ReportOverloadResolutionFailure(
         info.data.visit(utils::Overloaded{// clang-format off
             [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
             [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+            [&](SubstitutionResult::ConstraintNotSatisfied) {
+                out += "'%1(where%)' clause evaluated to '%1(false%)'";
+            },
+
             [&](SubstitutionResult::DeductionFailed f) {
                 Format(
                     out,
@@ -1943,9 +1959,14 @@ void Sema::ReportOverloadResolutionFailure(
             [&](Candidate::DeductionError) {
                 SmallString<256> extra;
                 FormatTempSubstFailure(c.subst, extra, "  ");
-                Error(call_loc, "Template argument substitution failed");
-                Remark("\r{}", extra);
-                Note(c.decl->location(), "Declared here");
+                if (c.subst.data.is<SubstitutionResult::ConstraintNotSatisfied>()) {
+                    Error(call_loc, "Constraints not satisfied");
+                    Note(cast<ProcTemplateDecl>(c.decl)->pattern->where.get()->loc, "{}", extra);
+                } else {
+                    Error(call_loc, "Template argument substitution failed");
+                    Remark("\r{}", extra);
+                    Note(c.decl->location(), "Declared here");
+                }
             },
 
             [&](Candidate::ParamInitFailed& p) {
@@ -2013,7 +2034,9 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::DeductionError) {
-                message += "Template argument substitution failed";
+                message += c.subst.data.is<SubstitutionResult::ConstraintNotSatisfied>()
+                    ? "Constraints not satisfied"sv
+                    : "Template argument substitution failed"sv;
                 FormatTempSubstFailure(c.subst, message, "        ");
             },
         }; // clang-format on
@@ -4280,6 +4303,8 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 
     // Otherwise, convert its signature now.
     else {
+        Assert(parsed->where.invalid(), "TODO: Constraint on non-template");
+
         // TODO: Check for redeclaration here. Codegen will crash horribly if
         // there are two procedures w/ the same name.
         EnterScope scope{*this, ScopeKind::Procedure};
@@ -4573,6 +4598,11 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty, a.variadic);
     }
+
+    // FIXME: The return type (and possibly attributes and the 'where' clause) may
+    // reference the names of parameters, e.g. 'proc ($T a, $U b) -> typeof(a + b)'
+    // should be valid; this necessitates creating the parameter declarations before
+    // translating the return type.
 
     auto ret = TranslateType(parsed->ret_type);
     if (not ret) ret = Type::VoidTy;

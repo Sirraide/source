@@ -4,6 +4,7 @@
 // Include order matters here.
 // clang-format off
 #include <srcc/Core/Core.hh>
+#include <srcc/AST/Type.hh>
 
 #include <mlir/IR/Dialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -16,7 +17,7 @@
 #include <srcc/CG/IR/IRInterfaces.hh.inc>
 
 #define GET_ATTRDEF_CLASSES
-#include <srcc/CG/IR/IREnumAttrs.hh.inc>
+#include <srcc/CG/IR/IRAttrs.hh.inc>
 
 #define GET_TYPEDEF_CLASSES
 #include <srcc/CG/IR/IRTypes.hh.inc>
@@ -35,6 +36,15 @@ using mlir::Value;
 
 namespace ir {
 auto FormatType(mlir::Type ty) -> SmallString<128>;
+
+mlir::LogicalResult readFromMlirBytecode(mlir::DialectBytecodeReader &reader, srcc::Type& storage);
+void writeToMlirBytecode(mlir::DialectBytecodeWriter &reader, srcc::Type storage);
+mlir::Attribute convertToAttribute(mlir::MLIRContext* ctx, srcc::Type storage);
+mlir::LogicalResult convertFromAttribute(
+    srcc::Type& storage,
+    mlir::Attribute attr,
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError
+);
 }
 }
 

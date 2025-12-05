@@ -9,6 +9,7 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/FoldingSet.h>
+#include <llvm/ADT/Hashing.h>
 #include <llvm/ADT/TinyPtrVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/Casting.h>
@@ -253,7 +254,7 @@ class srcc::Type {
     TypeBase* pointer = nullptr;
 
 public:
-    explicit constexpr Type() = default;
+    constexpr Type() = default;
     constexpr Type(std::nullptr_t) {}
     constexpr Type(TypeBase* t) : pointer{t} {}
     constexpr Type(const TypeBase* t) : pointer{const_cast<TypeBase*>(t)} {}
@@ -285,6 +286,12 @@ private:
         return os << text::RenderColours(false, ty->print().str());
     }
 };
+
+namespace srcc {
+inline auto hash_value(Type ty) -> llvm::hash_code {
+    return llvm::hash_value(ty.ptr());
+}
+}
 
 template <>
 struct llvm::PointerLikeTypeTraits<srcc::Type> {
