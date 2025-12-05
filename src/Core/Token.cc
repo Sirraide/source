@@ -59,6 +59,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Struct: return "struct";
         case Tk::Then: return "then";
         case Tk::True: return "true";
+        case Tk::Tree: return "tree";
         case Tk::Try: return "try";
         case Tk::Type: return "type";
         case Tk::Typeof: return "typeof";
@@ -79,6 +80,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::ColonSlash: return ":/";
         case Tk::ColonPercent: return ":%";
         case Tk::Comma: return ",";
+        case Tk::Dollar: return "$";
         case Tk::LParen: return "(";
         case Tk::RParen: return ")";
         case Tk::LBrack: return "[";

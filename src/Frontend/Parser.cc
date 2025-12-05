@@ -239,6 +239,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Break:
         case Tk::Caret:
         case Tk::Continue:
+        case Tk::Dollar:
         case Tk::Eval:
         case Tk::False:
         case Tk::Hash:
@@ -263,6 +264,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::StringLiteral:
         case Tk::TemplateType:
         case Tk::Tilde:
+        case Tk::Tree:
         case Tk::True:
         case Tk::Type:
         case Tk::Var:
@@ -507,6 +509,8 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-member>
 //          | <expr-paren>
 //          | <expr-prefix>
+//          | <expr-quote>
+//          | <expr-unquote>
 //          | <expr-return>
 //          | <expr-subscript>
 //          | <expr-tuple>
@@ -536,12 +540,34 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::Hash: {
             auto hash_loc = Next();
             switch (tok->type) {
-                default: return Error("'%1(#%)' should be followed by one of: '%1(if%)', '%1(assert%)'");
                 case Tk::If: lhs = ParseIf(true, true); break;
                 case Tk::Assert: lhs = ParseAssert(true); break;
                 case Tk::Elif:
                 case Tk::Else:
                     return Error(hash_loc, "Unexpected '%1(#{}%)'", tok->type);
+
+                default: {
+                    // <expr-inject> ::= "#" INJECT "(" <expr> ")"
+                    if (ConsumeContextual("inject")) {
+                        BracketTracker parens{*this, Tk::LParen};
+                        auto arg = ParseExpr();
+                        parens.close();
+                        if (not arg) return {};
+                        lhs = new (*this) ParsedInjectExpr{arg.get(), parens.left};
+                        break;
+                    }
+
+                    // <expr-quote> ::= "#" QUOTE <expr-block>
+                    if (SLoc loc; ConsumeContextual(loc, "quote")) {
+                        SmallVector<ParsedUnquoteExpr*> unquotes;
+                        tempset current_unquotes = &unquotes;
+                        auto arg = TRY(ParseBlock());
+                        lhs = ParsedQuoteExpr::Create(*this, arg, unquotes, loc);
+                        break;
+                    }
+
+                    return Error("Expected macro name or keyword after '%1(#%)'");
+                }
             }
         } break;
 
@@ -564,6 +590,28 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::LBrace:
             lhs = ParseBlock();
             break;
+
+        // <expr-unquote> ::= "$" "(" <expr> ")"
+        case Tk::Dollar: {
+            Next();
+            BracketTracker parens{*this, Tk::LParen};
+
+            // Parse the argument.
+            Ptr<ParsedStmt> arg;
+            {
+                // Disable unquoting within an unquote (unless nested in another #quote).
+                tempset current_unquotes = nullptr;
+                arg = ParseExpr();
+                parens.close();
+                if (not arg) return {};
+            }
+
+            // Create the unquote, and add it to the parent #quote.
+            auto unquote = new (*this) ParsedUnquoteExpr{arg.get(), parens.left};
+            lhs = unquote;
+            if (current_unquotes) current_unquotes->push_back(unquote);
+            else Error(lhs.get()->loc, "'%1($()%)' outside of '%1(#quote%)'");
+        } break;
 
         // <expr-eval> ::= EVAL <expr>
         case Tk::Eval: {
@@ -658,10 +706,11 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParsedTupleExpr::Create(*this, exprs, parens.left);
         } break;
 
-        // <type-prim> ::= BOOL | INT | TYPE | VOID | VAR | NORETURN
+        // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | NORETURN
         case Tk::Bool: lhs = BuiltinType(Type::BoolTy); break;
         case Tk::Int: lhs = BuiltinType(Type::IntTy); break;
         case Tk::NoReturn: lhs = BuiltinType(Type::NoReturnTy); break;
+        case Tk::Tree: lhs = BuiltinType(Type::TreeTy); break;
         case Tk::Type: lhs = BuiltinType(Type::TypeTy); break;
         case Tk::Void: lhs = BuiltinType(Type::VoidTy); break;
         case Tk::Var: lhs = BuiltinType(Type::DeducedTy); break;
@@ -1644,6 +1693,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                     ParsedCallExpr,
                     ParsedDeclRefExpr,
                     ParsedIntType,
+                    ParsedInjectExpr,
                     ParsedOptionalType,
                     ParsedParenExpr,
                     ParsedProcType,
@@ -1651,7 +1701,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                     ParsedRangeType,
                     ParsedSliceType,
                     ParsedTemplateType,
-                    ParsedTupleExpr
+                    ParsedTupleExpr,
+                    ParsedUnquoteExpr
                 >(s)) return true;
 
                 // Subscripts could be array types instead.
@@ -1665,7 +1716,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // If the expression ends with a brace, then we don’t require a semicolon
             // after it and we’re done here. Don’t just check if the previous token was
             // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
-            if (isa<ParsedBlockExpr, ParsedMatchExpr>(e)) return e;
+            if (isa<ParsedBlockExpr, ParsedMatchExpr, ParsedQuoteExpr>(e)) return e;
 
             // <decl-var>
             //

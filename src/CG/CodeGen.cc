@@ -83,6 +83,7 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     // Integer types.
     if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
     if (ty == Type::IntTy) return IntTy(tu.target().int_size());
+    if (ty == Type::TreeTy) return getType<ir::TreeType>();
     if (ty == Type::TypeTy) return getType<ir::TypeType>();
     if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
 
@@ -882,9 +883,10 @@ void CodeGen::Mangler::Append(Type ty) {
         void operator()(BuiltinType* b) {
             switch (b->builtin_kind()) {
                 case BuiltinKind::Deduced:
-                case BuiltinKind::Type:
                 case BuiltinKind::UnresolvedOverloadSet:
-                    Unreachable("Can’t mangle this: {}", Type{b});
+                Unreachable("Can’t mangle this: {}", Type{b});
+                case BuiltinKind::Tree: M.name += "tr"; return;
+                case BuiltinKind::Type: M.name += "ty"; return;
                 case BuiltinKind::Void: M.name += "v"; return;
                 case BuiltinKind::NoReturn: M.name += "z"; return;
                 case BuiltinKind::Bool: M.name += "b"; return;
@@ -2152,6 +2154,30 @@ auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
     return {ref, GetStaticChainPointer(*ancestor, loc)};
 }
 
+auto CodeGen::EmitQuoteExpr(QuoteExpr* expr) -> IRValue {
+    Assert(
+        !!lang_opts.constant_eval,
+        "Cannot emit parse tree nodes as values outside of constant evaluation"
+    );
+
+    // Emit each unquote.
+    SmallVector<Value> trees;
+    for (auto u : expr->unquotes()) {
+        EnterCleanupScope cleanup{*this};
+        trees.push_back(EmitScalar(u));
+    }
+
+    auto quote = ir::QuoteOp::create(
+        *this,
+        C(expr->location()),
+        ir::TreeType::get(getContext()),
+        expr,
+        trees
+    );
+
+    return {quote};
+}
+
 void CodeGen::EmitLocal(LocalDecl* decl) {
     if (LocalNeedsAlloca(decl)) curr.locals[decl] = CreateAlloca(C(decl->location()), decl->type);
 }
@@ -2376,6 +2402,15 @@ auto CodeGen::EmitTupleExpr(TupleExpr* e) -> IRValue {
     Unreachable("Emitting tuple without memory location?");
 }
 
+auto CodeGen::EmitTreeConstant(TreeValue* tree, SLoc loc) -> Value {
+    Assert(
+        !!lang_opts.constant_eval,
+        "Cannot emit parse tree nodes as values outside of constant evaluation"
+    );
+
+    return ir::TreeConstantOp::create(*this, C(loc), tree);
+}
+
 auto CodeGen::EmitTypeConstant(Type ty, SLoc loc) -> Value {
     Assert(
         !!lang_opts.constant_eval,
@@ -2505,6 +2540,7 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
     utils::Overloaded V {
         [&](std::monostate) -> IRValue { return {}; },
         [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
+        [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
         [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
         [&](eval::MemoryValue) -> IRValue { return {}; }, // This only happens if the value is unused.
         [&](const eval::Range& r) -> IRValue {

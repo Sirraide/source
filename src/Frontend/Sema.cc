@@ -20,6 +20,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/MemoryBuffer.h>
 
+#include <base/Assert.hh>
 #include <base/StringUtils.hh>
 #include <base/Utils.hh>
 
@@ -222,6 +223,14 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
         case Stmt::Kind::BlockExpr: return cast<BlockExpr>(d)->scope;
         case Stmt::Kind::ProcDecl: return cast<ProcDecl>(d)->scope;
     }
+}
+
+auto Sema::InjectTree(TreeValue* tree) -> Ptr<Stmt> {
+    defer { unquote_stack.pop_back(); };
+    auto& unquote_substitutions = unquote_stack.emplace_back();
+    for (auto [unquote, subst] : zip(tree->pattern()->quoted->unquotes(), tree->unquotes()))
+        unquote_substitutions[unquote] = subst;
+    return TranslateStmt(tree->pattern()->quoted->quoted);
 }
 
 bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
@@ -1180,6 +1189,7 @@ auto Sema::BuildConversionSequence(
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
                 case BuiltinKind::NoReturn:
+                case BuiltinKind::Tree:
                 case BuiltinKind::Type:
                 case BuiltinKind::UnresolvedOverloadSet:
                     return TypeMismatch();
@@ -3962,6 +3972,21 @@ auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt>
     return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
+auto Sema::TranslateInjectExpr(ParsedInjectExpr* parsed, Type) -> Ptr<Stmt> {
+    auto injected = TRY(TranslateExpr(parsed->injected));
+    if (not MakeRValue(Type::TreeTy, injected, [&]{
+        Error(
+            injected->location(),
+            "Cannot inject value of type '{}'",
+            injected->type
+        );
+    })) return {};
+
+    auto tree = tu->vm.eval(injected);
+    if (not tree) return {};
+    return InjectTree(tree->cast<TreeValue*>());
+}
+
 auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     // Determine the type of this.
     //
@@ -4151,6 +4176,26 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     return new (*tu) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
+}
+
+auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Type) -> Ptr<Stmt> {
+    // Translate all unquotes.
+    SmallVector<Expr*> unquotes;
+    for (auto u : parsed->unquotes()) {
+        EnterScope _{*this}; // Prevent anything from leaking out of the unquote.
+        auto tree = TRY(TranslateExpr(u->arg));
+        if (not MakeRValue(Type::TreeTy, tree, [&]{
+            Error(
+                tree->location(),
+                "Cannot inject value of type '{}'",
+                tree->type
+            );
+        })) return {};
+
+        unquotes.push_back(tree);
+    }
+
+    return QuoteExpr::Create(*tu, parsed, unquotes, parsed->loc);
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
@@ -4430,6 +4475,15 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
+auto Sema::TranslateUnquoteExpr(ParsedUnquoteExpr* parsed, Type) -> Ptr<Stmt> {
+    for (const auto& unquote_substs : reverse(unquote_stack)) {
+        auto it = unquote_substs.find(parsed);
+        if (it != unquote_substs.end()) return InjectTree(it->second);
+    }
+
+    Unreachable("Unquote not found in stack?");
+}
+
 auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
     EnterLoop loop{*this};
@@ -4693,6 +4747,16 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
 
             if (ok) return BuildTupleType(types);
         } break;
+
+        // Injections may yield a type.
+        case K::InjectExpr: {
+            auto injected = TranslateInjectExpr(cast<ParsedInjectExpr>(parsed), Type());
+            if (not injected) return fallback;
+            if (injected.get()->type_or_void() != Type::TypeTy) goto default_;
+            auto ty = tu->vm.eval(injected.get());
+            if (ty.has_value()) return ty->cast<Type>();
+            goto default_;
+        }
 
         default:
         default_:

@@ -176,6 +176,26 @@ auto ForStmt::Create(
     return ::new (mem) ForStmt{token, enum_var, vars, ranges, body, location};
 }
 
+QuoteExpr::QuoteExpr(
+    ParsedQuoteExpr* quoted,
+    ArrayRef<Expr*> unquotes,
+    SLoc location
+) : Expr{Kind::QuoteExpr, Type::TreeTy, RValue, location},
+    quoted{quoted}, num_unquotes{u32(unquotes.size())} {
+    std::uninitialized_copy_n(unquotes.begin(), unquotes.size(), getTrailingObjects());
+}
+
+auto QuoteExpr::Create(
+    TranslationUnit& tu,
+    ParsedQuoteExpr* quoted,
+    ArrayRef<Expr*> unquotes,
+    SLoc location
+) -> QuoteExpr* {
+    const auto size = totalSizeToAlloc<Expr*>(unquotes.size());
+    auto mem = tu.allocate(size, alignof(QuoteExpr));
+    return ::new (mem) QuoteExpr(quoted, unquotes, location);
+}
+
 LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 

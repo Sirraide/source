@@ -5,6 +5,7 @@
 // clang-format off
 #include <srcc/Core/Core.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/AST/Stmt.hh>
 
 #include <mlir/IR/Dialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -37,14 +38,21 @@ using mlir::Value;
 namespace ir {
 auto FormatType(mlir::Type ty) -> SmallString<128>;
 
-mlir::LogicalResult readFromMlirBytecode(mlir::DialectBytecodeReader &reader, srcc::Type& storage);
-void writeToMlirBytecode(mlir::DialectBytecodeWriter &reader, srcc::Type storage);
-mlir::Attribute convertToAttribute(mlir::MLIRContext* ctx, srcc::Type storage);
-mlir::LogicalResult convertFromAttribute(
-    srcc::Type& storage,
-    mlir::Attribute attr,
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError
-);
+#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE)                                              \
+    mlir::LogicalResult readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage); \
+    void writeToMlirBytecode(mlir::DialectBytecodeWriter& reader, TYPE storage);                  \
+    mlir::Attribute convertToAttribute(mlir::MLIRContext* ctx, TYPE storage);                     \
+    mlir::LogicalResult convertFromAttribute(                                                     \
+        TYPE& storage,                                                                            \
+        mlir::Attribute attr,                                                                     \
+        llvm::function_ref<mlir::InFlightDiagnostic()> emitError                                  \
+    );
+
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::TreeValue*);
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Stmt*);
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Type);
+
+#undef COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE
 }
 }
 

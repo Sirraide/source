@@ -324,7 +324,7 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](ConstExpr* c) {
-            PrintBasicNode(e, "ConstExpr", [&] { print("{}", c->value->print()); });
+            PrintBasicNode(e, "ConstExpr", [&] { print("{}", c->value->print(printer_context_hack)); });
             if (c->stmt) PrintChildren(c->stmt.get());
         },
 
@@ -387,6 +387,16 @@ void Stmt::Printer::Print(Stmt* e) {
 
             PrintChildren<Decl*>(s->exports.sorted_decls());
         },
+
+        [&](QuoteExpr* q) {
+            PrintBasicNode(q, "QuoteExpr");
+            SmallVector<Stmt*> children;
+            // FIXME: Support printing parse tree nodes in the AST.
+            // children.push_back(q->quoted);
+            append_range(children, q->unquotes());
+            PrintChildren(children);
+        },
+
 
         [&](IntLitExpr* i) {
             // These always come straight from the parser and are thus

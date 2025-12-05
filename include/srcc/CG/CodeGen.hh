@@ -446,7 +446,8 @@ public:
     /// Emit an mrvalue into a memory location.
     void EmitRValue(Value addr, Expr* init);
 
-    /// Emit a type.
+    /// Emit a compile-time value.
+    auto EmitTreeConstant(TreeValue* tree, SLoc loc) -> Value;
     auto EmitTypeConstant(Type, SLoc loc) -> Value;
 
     auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;

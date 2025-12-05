@@ -232,6 +232,7 @@ public:
                     case BuiltinKind::UnresolvedOverloadSet: return Type::UnresolvedOverloadSetTy;
                     case BuiltinKind::Int: return Type::IntTy;
                     case BuiltinKind::NoReturn: return Type::NoReturnTy;
+                    case BuiltinKind::Tree: return Type::TreeTy;
                     case BuiltinKind::Type: return Type::TypeTy;
                     case BuiltinKind::Void: return Type::VoidTy;
                 }

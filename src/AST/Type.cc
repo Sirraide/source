@@ -23,6 +23,7 @@ struct srcc::BuiltinTypes {
     static constexpr BuiltinType BoolTyImpl{BuiltinKind::Bool};
     static constexpr BuiltinType IntTyImpl{BuiltinKind::Int};
     static constexpr BuiltinType DeducedTyImpl{BuiltinKind::Deduced};
+    static constexpr BuiltinType TreeTyImpl{BuiltinKind::Tree};
     static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
     static constexpr BuiltinType UnresolvedOverloadSetTyImpl{BuiltinKind::UnresolvedOverloadSet};
 };
@@ -32,6 +33,7 @@ constexpr Type Type::NoReturnTy{const_cast<BuiltinType*>(&BuiltinTypes::NoReturn
 constexpr Type Type::BoolTy{const_cast<BuiltinType*>(&BuiltinTypes::BoolTyImpl)};
 constexpr Type Type::IntTy{const_cast<BuiltinType*>(&BuiltinTypes::IntTyImpl)};
 constexpr Type Type::DeducedTy{const_cast<BuiltinType*>(&BuiltinTypes::DeducedTyImpl)};
+constexpr Type Type::TreeTy{const_cast<BuiltinType*>(&BuiltinTypes::TreeTyImpl)};
 constexpr Type Type::TypeTy{const_cast<BuiltinType*>(&BuiltinTypes::TypeTyImpl)};
 constexpr Type Type::UnresolvedOverloadSetTy{const_cast<BuiltinType*>(&BuiltinTypes::UnresolvedOverloadSetTyImpl)};
 
@@ -84,6 +86,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
                 case BuiltinKind::Int: return t.int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
+                case BuiltinKind::Tree: return Align::Of<TreeValue*>(); // This is a compile-time only type.
                 case BuiltinKind::Type: return Align::Of<TypeBase*>(); // This is a compile-time only type.
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
                 case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
@@ -135,6 +138,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
 
                 case BuiltinKind::UnresolvedOverloadSet:
                 case BuiltinKind::NoReturn:
+                case BuiltinKind::Tree:
                 case BuiltinKind::Type:
                     return false;
 
@@ -225,6 +229,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; break;
                 case BuiltinKind::Int: out += "%6(int%)"; break;
                 case BuiltinKind::NoReturn: out += "%6(noreturn%)"; break;
+                case BuiltinKind::Tree: out += "%6(tree%)"; break;
                 case BuiltinKind::Type: out += "%6(type%)"; break;
                 case BuiltinKind::Void: out += "%6(void%)"; break;
             }
@@ -290,6 +295,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
                 case BuiltinKind::Int: return t.int_size();
+                case BuiltinKind::Tree: return Size::Of<TreeValue*>();
                 case BuiltinKind::Type: return Size::Of<TypeBase*>();
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_size();
 

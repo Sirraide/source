@@ -84,6 +84,7 @@ enum class srcc::BuiltinKind : base::u8 {
     Bool,
     Int,
     Deduced,
+    Tree,
     Type,
     UnresolvedOverloadSet,
 };

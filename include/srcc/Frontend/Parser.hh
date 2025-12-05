@@ -123,6 +123,7 @@ public:
     void dump(bool use_colour = false) const;
     void dump_color() const { dump(true); }
     auto dump_as_type() -> SmallUnrenderedString;
+    auto dump_as_value(const Context* ctx = nullptr) -> SmallUnrenderedString;
 };
 
 // ============================================================================
@@ -526,6 +527,18 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IfExpr; }
 };
 
+class srcc::ParsedInjectExpr final : public ParsedStmt {
+public:
+    ParsedStmt* injected;
+
+    ParsedInjectExpr(
+        ParsedStmt* injected,
+        SLoc location
+    ) : ParsedStmt{Kind::InjectExpr, location}, injected{injected} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::InjectExpr; }
+};
+
 /// An integer literal.
 class srcc::ParsedIntLitExpr final : public ParsedStmt {
 public:
@@ -627,6 +640,36 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParenExpr; }
 };
 
+class srcc::ParsedQuoteExpr final : public ParsedStmt
+    , TrailingObjects<ParsedQuoteExpr, ParsedUnquoteExpr*> {
+    friend TrailingObjects;
+
+public:
+    ParsedBlockExpr* quoted;
+    const u32 num_unquotes;
+
+private:
+    ParsedQuoteExpr(
+        ParsedBlockExpr* quoted,
+        ArrayRef<ParsedUnquoteExpr*> unquotes,
+        SLoc location
+    );
+
+public:
+    static auto Create(
+        Parser& p,
+        ParsedBlockExpr* quoted,
+        ArrayRef<ParsedUnquoteExpr*> unquotes,
+        SLoc location
+    ) -> ParsedQuoteExpr*;
+
+    [[nodiscard]] auto unquotes() const -> ArrayRef<ParsedUnquoteExpr*> {
+        return getTrailingObjects(num_unquotes);
+    }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::QuoteExpr; }
+};
+
 /// A return from a function.
 class srcc::ParsedReturnExpr final : public ParsedStmt {
 public:
@@ -673,6 +716,18 @@ public:
     ) : ParsedStmt{Kind::UnaryExpr, location}, op{op}, arg{arg}, postfix{postfix} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::UnaryExpr; }
+};
+
+class srcc::ParsedUnquoteExpr final : public ParsedStmt {
+public:
+    ParsedStmt* arg;
+
+    ParsedUnquoteExpr(
+        ParsedStmt* arg,
+        SLoc location
+    ) : ParsedStmt{Kind::UnquoteExpr, location}, arg{arg} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::UnquoteExpr; }
 };
 
 class srcc::ParsedWhileStmt final : public ParsedStmt {
@@ -883,6 +938,7 @@ private:
     TokenStream::iterator tok;
     Context& ctx;
     Signature* current_signature = nullptr;
+    SmallVectorImpl<ParsedUnquoteExpr*>* current_unquotes = nullptr;
     int num_parens{}, num_brackets{}, num_braces{};
     const bool parsing_internal_file;
 

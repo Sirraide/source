@@ -5,6 +5,7 @@
 #include <srcc/CG/IR/MLIRFormatters.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
+#include <srcc/Frontend/Parser.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseSet.h>
@@ -19,6 +20,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 
 #include <ffi.h>
+#include <memory>
 #include <optional>
 #include <print>
 #include <ranges>
@@ -45,12 +47,31 @@ static auto LoadRangeFromMemory(
     return {start.trunc(bits), end.trunc(bits)};
 }
 
-auto RValue::print() const -> SmallUnrenderedString {
+TreeValue::TreeValue(QuoteExpr* pattern, ArrayRef<TreeValue*> unquotes) : q{pattern} {
+    Assert(unquotes.size() == pattern->unquotes().size());
+    std::uninitialized_copy_n(unquotes.begin(), unquotes.size(), getTrailingObjects());
+}
+
+auto TreeValue::dump(const Context* ctx) const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    Format(out, "%6({}%)@", enchantum::to_string(q->quoted->kind()));
+    auto lc = ctx ? q->location().seek_line_column(*ctx) : std::nullopt;
+    if (lc) Format(out, "%5(<{}:{}>%)", lc->line, lc->col);
+    else Format(out, "%5(<{}>%)", q->location().encode());
+    return out;
+}
+
+auto TreeValue::unquotes() const -> ArrayRef<TreeValue*> {
+    return getTrailingObjects(q->unquotes().size());
+}
+
+auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
         // clang-format off
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
+        [&](TreeValue* tree) { out += tree->dump(ctx); },
         [&](MemoryValue) { out += "<aggregate value>"; },
         [&](this auto& self, const Range& r) {
             self(r.start);
@@ -111,12 +132,13 @@ public:
 ///
 /// This is essentially a value that can be stored in a VM ‘virtual register’.
 class SRValue {
-    Variant<APInt, Type, Pointer, std::monostate> value{std::monostate{}};
+    Variant<APInt, Type, TreeValue*, Pointer, std::monostate> value{std::monostate{}};
 
 public:
     SRValue() = default;
     explicit SRValue(std::same_as<bool> auto b) : value{APInt{1, u64(b)}} {}
     explicit SRValue(Type ty) : value{ty} {}
+    explicit SRValue(TreeValue* tree) : value{tree} {}
     explicit SRValue(Pointer p) : value{p} {}
     explicit SRValue(APInt val) : value(std::move(val)) {}
     explicit SRValue(std::same_as<i64> auto val) : value{APInt{64, u64(val)}} {}
@@ -151,7 +173,7 @@ public:
     [[nodiscard]] auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
 
     /// Print the value to a string.
-    [[nodiscard]] auto print() const -> SmallUnrenderedString;
+    [[nodiscard]] auto print(const Context* ctx = nullptr) const -> SmallUnrenderedString;
 
     /// Run a visitor over this value.
     template <typename Self, typename Visitor>
@@ -176,12 +198,13 @@ LIBBASE_DEBUG(__attribute__((used))) void SRValue::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
-auto SRValue::print() const -> SmallUnrenderedString {
+auto SRValue::print(const Context* ctx) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
         // clang-format off
         [&](std::monostate) {},
         [&](ir::ProcOp proc) { Format(out, "%2({}%)", proc.getName()); },
+        [&](TreeValue* tree) { out += tree->dump(ctx); },
         [&](Type ty) { out += ty->print(); },
         [&](const APInt& value) { Format(out, "%5({}%)", toString(value, 10, true)); },
         [&](Pointer ptr) { Format(out, "%4({}%)", ptr.str()); }
@@ -697,6 +720,19 @@ bool Eval::EvalLoop() {
             continue;
         }
 
+        if (auto tree = dyn_cast<ir::QuoteOp>(i)) {
+            SmallVector<TreeValue*> unquotes;
+            auto quote = cast<QuoteExpr>(tree.getTree());
+            for (auto u : tree.getUnquotes()) unquotes.push_back(Val(u).cast<TreeValue*>());
+            Temp(i->getResult(0)) = SRValue(vm.allocate_tree_value(quote, unquotes));
+            continue;
+        }
+
+        if (auto tree = dyn_cast<ir::TreeConstantOp>(i)) {
+            Temp(i->getResult(0)) = SRValue(tree.getTree());
+            continue;
+        }
+
         if (auto ty = dyn_cast<ir::TypeConstantOp>(i)) {
             Temp(i->getResult(0)) = SRValue(ty.getValue());
             continue;
@@ -1021,6 +1057,11 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
         return LoadInt(mem, Size::Bits(i.getWidth()));
     if (isa<mlir::LLVM::LLVMPointerType>(ty))
         return LoadPointer(mem);
+    if (isa<ir::TreeType>(ty)) {
+        TreeValue* ptr{};
+        std::memcpy(&ptr, mem, sizeof(TreeValue*));
+        return SRValue(ptr);
+    }
     if (isa<ir::TypeType>(ty)) {
         TypeBase* ptr{};
         std::memcpy(&ptr, mem, sizeof(TypeBase*));
@@ -1096,6 +1137,9 @@ void Eval::StoreSRValue(void* ptr, const SRValue& val) {
         [&](Type t) {
             TypeBase* p = t.ptr();
             std::memcpy(ptr, &p, sizeof(TypeBase*));
+        },
+        [&](TreeValue* t) {
+            std::memcpy(ptr, &t, sizeof(TreeValue*));
         }
     });
 }
@@ -1160,10 +1204,15 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         ty
     );
 
-    if (ty == Type::TypeTy) {
-        ICE(s->location(), "TODO: Load value of type 'type'");
-        return std::nullopt;
-    }
+    if (ty == Type::TreeTy) return LoadSRValue(
+        mem,
+        ir::TreeType::get(proc->getContext())
+    ).cast<TreeValue*>();
+
+    if (ty == Type::TypeTy) return LoadSRValue(
+        mem,
+        ir::TypeType::get(proc->getContext())
+    ).cast<Type>();
 
     // Otherwise, allocate memory for it and store it there.
     Assert((isa<SliceType, ProcType, RecordType, ArrayType>(ty)));
@@ -1188,6 +1237,12 @@ auto VM::allocate_memory_value(Type ty) -> MemoryValue {
     return MemoryValue(mem, sz);
 }
 
+auto VM::allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue* {
+    auto size = TreeValue::totalSizeToAlloc<TreeValue*>(unquotes.size());
+    auto mem = owner().allocate(size, alignof(TreeValue));
+    return ::new (mem) TreeValue(quote, unquotes);
+}
+
 auto VM::eval(
     Stmt* stmt,
     bool complain,
@@ -1202,6 +1257,7 @@ auto VM::eval(
             [](auto*) -> OptVal { return std::nullopt; },
             [](IntLitExpr* i) -> OptVal { return RValue{i->storage.value(), i->type}; },
             [](BoolLitExpr* b) -> OptVal { return RValue(b->value); },
+            [](TreeValue* t) -> OptVal { return RValue{t}; },
             [](TypeExpr* t) -> OptVal { return RValue{t->value}; },
             [](ConstExpr* t) -> OptVal { return *t->value; },
         });

@@ -19,6 +19,7 @@ class ProcDecl;
 class StrLitExpr;
 class TranslationUnit;
 class Target;
+class QuoteExpr;
 } // namespace srcc
 
 namespace mlir {
@@ -60,9 +61,24 @@ struct Range {
     APInt end;
 };
 
+/// Evaluated '#quote' with all unquotes substituted.
+class TreeValue final : llvm::TrailingObjects<TreeValue, TreeValue*> {
+    friend VM;
+    friend TrailingObjects;
+
+    QuoteExpr* const q;
+
+    TreeValue(QuoteExpr* pattern, ArrayRef<TreeValue*> unquotes);
+
+public:
+    [[nodiscard]] auto dump(const Context* ctx = nullptr) const -> SmallUnrenderedString;
+    [[nodiscard]] auto pattern() const -> QuoteExpr* { return q; }
+    [[nodiscard]] auto unquotes() const -> ArrayRef<TreeValue*>;
+};
+
 /// Evaluated rvalue.
 class RValue {
-    Variant<APInt, Range, Type, MemoryValue, std::monostate> value;
+    Variant<APInt, Range, Type, TreeValue*, MemoryValue, std::monostate> value;
     Type ty{Type::VoidTy};
 
 public:
@@ -70,6 +86,7 @@ public:
     RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     RValue(bool val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
+    RValue(TreeValue* tree) : value(tree), ty(Type::TreeTy) {}
     RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
 
@@ -91,7 +108,7 @@ public:
     auto isa() const -> bool { return std::holds_alternative<Ty>(value); }
 
     /// Print the value to a string.
-    auto print() const -> SmallUnrenderedString;
+    auto print(const Context* ctx = nullptr) const -> SmallUnrenderedString;
 
     /// Get the type of this value.
     [[nodiscard]] auto type() const -> Type { return ty; }
@@ -142,6 +159,9 @@ public:
     /// Allocate an mrvalue.
     [[nodiscard]] auto allocate_memory_value(Type ty) -> MemoryValue;
 
+    /// Allocate a tree.
+    [[nodiscard]] auto allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue*;
+
     /// Attempt to evaluate a statement.
     ///
     /// Callers must check dependence before this is called; attempting
@@ -161,6 +181,8 @@ public:
 };
 } // namespace srcc::eval
 
-
+namespace srcc {
+using eval::TreeValue;
+}
 
 #endif // SRCC_AST_EVAL_HH

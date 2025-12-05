@@ -45,6 +45,13 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 // ============================================================================
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Bool : TypeAlias<I1, "bool">;
+
+def SRCC_Tree : SRCC_Type<"Tree", "tree"> {
+    let summary = "Type of a parse tree node";
+    let description = "A compile-time parse tree";
+    let genMnemonicAlias = 1;
+}
+
 def SRCC_Type : SRCC_Type<"Type", "type"> {
     let summary = "Type of a type constant or value";
     let description = "A compile-time type value";
@@ -56,12 +63,29 @@ def SRCC_AnyType : AnyTypeOf<[
     FunctionType,
     SRCC_Ptr,
     SRCC_Bool,
+    SRCC_Tree,
     SRCC_Type,
 ]>;
 
 // ============================================================================
 //  Attributes
 // ============================================================================
+def SRCC_StmtAttr : SRCC_Attr<"Stmt", "stmt"> {
+    let summary = "A statement";
+    let description = "A statement";
+    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::Stmt*":$value);
+    let hasCustomAssemblyFormat = 1;
+    let genMnemonicAlias = 1;
+}
+
+def SRCC_TreeAttr : SRCC_Attr<"Tree", "tree"> {
+    let summary = "Type of a type constant or value";
+    let description = "A compile-time type value";
+    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::TreeValue*":$value);
+    let hasCustomAssemblyFormat = 1;
+    let genMnemonicAlias = 1;
+}
+
 def SRCC_TypeAttr : SRCC_Attr<"Type", "type"> {
     let summary = "Type of a type constant or value";
     let description = "A compile-time type value";
@@ -380,6 +404,12 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
     }];
 }
 
+def QuoteOp : SRCC_Op<"quote", [Pure]> {
+    let summary = "A parse tree";
+    let arguments = (ins Property<"Stmt*">:$tree, Variadic<SRCC_Tree>:$unquotes);
+    let results = (outs SRCC_Tree);
+}
+
 def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {
     let summary = "Return from a procedure";
     let arguments = (ins Variadic<SRCC_AnyType>:$vals);
@@ -429,6 +459,12 @@ def StoreOp : SRCC_Op<"store"> {
             );
         }]>
     ];
+}
+
+def TreeConstantOp : SRCC_Op<"tree", [Pure]> {
+    let summary = "A parse tree";
+    let arguments = (ins Property<"TreeValue*">:$tree);
+    let results = (outs SRCC_Tree);
 }
 
 def TypeConstantOp : SRCC_Op<"type", [ConstantLike, Pure]> {

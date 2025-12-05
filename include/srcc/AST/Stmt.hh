@@ -32,6 +32,7 @@ namespace srcc {
 struct MatchCase;
 class ParsedStmt;
 class ParsedProcDecl;
+class ParsedQuoteExpr;
 
 // Token to identify a loop.
 enum class LoopToken : u32;
@@ -587,6 +588,36 @@ public:
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IfExpr; }
+};
+
+class srcc::QuoteExpr final : public Expr
+    , TrailingObjects<QuoteExpr, Expr*> {
+    friend TrailingObjects;
+
+public:
+    ParsedQuoteExpr* quoted;
+    const u32 num_unquotes;
+
+private:
+    QuoteExpr(
+        ParsedQuoteExpr* quoted,
+        ArrayRef<Expr*> unquotes,
+        SLoc location
+    );
+
+public:
+    static auto Create(
+        TranslationUnit& tu,
+        ParsedQuoteExpr* quoted,
+        ArrayRef<Expr*> unquotes,
+        SLoc location
+    ) -> QuoteExpr*;
+
+    [[nodiscard]] auto unquotes() const -> ArrayRef<Expr*> {
+        return getTrailingObjects(num_unquotes);
+    }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::QuoteExpr; }
 };
 
 class srcc::IntLitExpr final : public Expr {

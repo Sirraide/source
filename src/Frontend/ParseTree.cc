@@ -162,6 +162,25 @@ auto ParsedMatchExpr::Create(
     return ::new (mem) ParsedMatchExpr(control_expr, declared_type, cases, loc);
 }
 
+ParsedQuoteExpr::ParsedQuoteExpr(
+    ParsedBlockExpr* quoted,
+    ArrayRef<ParsedUnquoteExpr*> unquotes,
+    SLoc location
+) : ParsedStmt{Kind::QuoteExpr, location}, quoted{quoted}, num_unquotes{u32(unquotes.size())} {
+    std::uninitialized_copy_n(unquotes.begin(), unquotes.size(), getTrailingObjects());
+}
+
+auto ParsedQuoteExpr::Create(
+    Parser& p,
+    ParsedBlockExpr* quoted,
+    ArrayRef<ParsedUnquoteExpr*> unquotes,
+    SLoc location
+) -> ParsedQuoteExpr* {
+    const auto size = totalSizeToAlloc<ParsedUnquoteExpr*>(unquotes.size());
+    auto mem = p.allocate(size, alignof(ParsedQuoteExpr));
+    return ::new (mem) ParsedQuoteExpr(quoted, unquotes, location);
+}
+
 ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc)
     : ParsedStmt{Kind::TupleExpr, loc}, num_exprs{u32(exprs.size())} {
     std::uninitialized_copy_n(exprs.begin(), exprs.size(), getTrailingObjects());
@@ -427,6 +446,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(children);
         } break;
 
+        case Kind::InjectExpr: {
+            PrintHeader(s, "InjectExpr");
+            PrintChildren(cast<ParsedInjectExpr>(s)->injected);
+        } break;
+
         case Kind::IntLitExpr: {
             PrintHeader(s, "IntLitExpr", false);
             auto val = cast<ParsedIntLitExpr>(s)->storage.str(false);
@@ -466,6 +490,20 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             if (p.is_static) print("static ");
             print("{}\n", p.type->dump_as_type());
             if (p.init) PrintChildren(p.init.get());
+        } break;
+
+        case Kind::QuoteExpr: {
+            auto q = cast<ParsedQuoteExpr>(s);
+            PrintHeader(s, "QuoteExpr");
+            SmallVector<ParsedStmt*> children;
+            children.push_back(q->quoted);
+            append_range(children, q->unquotes());
+            PrintChildren(children);
+        } break;
+
+        case Kind::UnquoteExpr: {
+            PrintHeader(s, "UnquoteExpr");
+            PrintChildren(cast<ParsedUnquoteExpr>(s)->arg);
         } break;
 
         case Kind::ParenExpr: {

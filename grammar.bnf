@@ -50,7 +50,7 @@
 //  Expressions
 // ============================================================================
 <expr>           ::= <expr-braces> | <expr-no-braces>
-<expr-braces>    ::= <expr-block> | <expr-match>
+<expr-braces>    ::= <expr-block> | <expr-match> | <expr-quote>
 <expr-no-braces> ::= <expr-assert>
                    | <expr-if>
                    | <expr-binary>
@@ -59,11 +59,13 @@
                    | <expr-continue>
                    | <expr-decl-ref>
                    | <expr-eval>
+                   | <expr-inject>
                    | <expr-lit>
                    | <expr-loop>
                    | <expr-member>
                    | <expr-paren>
                    | <expr-prefix>
+                   | <expr-unquote>
                    | <expr-return>
                    | <expr-subscript>
                    | <expr-tuple>
@@ -78,6 +80,7 @@
 <expr-continue>  ::= CONTINUE
 <expr-decl-ref>  ::= IDENT [ "::" <expr-decl-ref> ]
 <expr-eval>      ::= EVAL <expr>
+<expr-inject>    ::= "#" INJECT "(" <expr> ")"
 <expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
 <expr-loop>      ::= LOOP [ <expr> ]
@@ -85,6 +88,8 @@
 <expr-member>    ::= <expr> "." IDENT
 <expr-paren>     ::= "(" <expr> ")"
 <expr-prefix>    ::= <prefix> <expr>
+<expr-quote>     ::= "#" QUOTE <expr-block>
+<expr-unquote>   ::= "$" "(" <expr> ")"
 <expr-return>    ::= RETURN [ <expr> ]
 <expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
 <expr-tuple>     ::= "(" <expr> { "," <expr> } [ "," ] ")"
@@ -132,7 +137,7 @@
 <type-qualified> ::= <type> { <qualifier> }
 <type-range> ::= RANGE "<" <type> ">"
 <qualifier> ::= "[" "]" | "^" | "?"
-<type-prim> ::= BOOL | INT | TYPE | VOID | VAR | INTEGER_TYPE
+<type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | INTEGER_TYPE
 
 // ============================================================================
 //  Pragmas

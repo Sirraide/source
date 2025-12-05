@@ -583,6 +583,9 @@ private:
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
 
+    /// Map from unquotes to their substitutions.
+    SmallVector<DenseMap<ParsedUnquoteExpr*, TreeValue*>> unquote_stack;
+
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
@@ -775,6 +778,9 @@ private:
         ArrayRef<String> header_names,
         SLoc import_loc
     ) -> Ptr<ImportedClangModuleDecl>;
+
+    /// Inject a parse tree into the program.
+    auto InjectTree(TreeValue* tree) -> Ptr<Stmt>;
 
     /// Instantiate a procedure template.
     auto InstantiateTemplate(

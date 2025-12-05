@@ -337,8 +337,8 @@ auto ABIImpl::LowerByValArgOrReturn(
         }
     }
 
-    // Pointers are just passed through.
-    else if (isa<PtrType>(t)) {
+    // Pointers are just passed through, and so are compile-time values.
+    else if (isa<PtrType>(t) or t == Type::TreeTy or t == Type::TypeTy) {
         PassThrough();
     }
 
@@ -461,7 +461,7 @@ bool ABIImpl::can_use_return_value_directly(
         return can_use_return_value_directly(cg, opt->elem());
 
     if (isa<PtrType, SliceType, ProcType>(ty)) return true;
-    if (ty == Type::BoolTy) return true;
+    if (ty == Type::BoolTy or ty == Type::TreeTy or ty == Type::TypeTy) return true;
     if (ty->is_integer()) {
         auto sz = ty->bit_width(cg.translation_unit());
         return sz <= Size::Bits(64) or sz == Size::Bits(128);

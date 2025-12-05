@@ -65,6 +65,7 @@ const llvm::StringMap<Tk> keywords = {
     {"static", Tk::Static},
     {"struct", Tk::Struct},
     {"then", Tk::Then},
+    {"tree", Tk::Tree},
     {"true", Tk::True},
     {"try", Tk::Try},
     {"type", Tk::Type},
@@ -205,7 +206,7 @@ struct [[nodiscard]] Lexer : str, DiagsProducer {
     void LexCXXHeaderName();
     void LexEntireFile();
     void LexEscapedId();
-    void LexIdentifier();
+    void LexIdentifier(bool doller);
     bool LexNumber();
     void LexString();
     void Next();
@@ -299,7 +300,13 @@ void Lexer::NextImpl() {
             return;
 
         case '$':
-            LexIdentifier();
+            drop();
+            if (not starts_with(IsContinue)) {
+                tok().type = Tk::Dollar;
+                return;
+            }
+
+            LexIdentifier(true);
             return;
 
         case '"':
@@ -322,7 +329,7 @@ void Lexer::NextImpl() {
         return;
     }
 
-    if (IsStart(*front())) return LexIdentifier();
+    if (IsStart(*front())) return LexIdentifier(false);
     Error("Unexpected <U+{:X}> character in program", *front());
 }
 
@@ -403,8 +410,7 @@ void Lexer::HandlePragma() {
     );
 }
 
-void Lexer::LexIdentifier() {
-    bool dollar = consume('$');
+void Lexer::LexIdentifier(bool dollar) {
     tok().type = dollar ? Tk::TemplateType : Tk::Identifier;
     drop_while(IsContinue);
     FinishText();

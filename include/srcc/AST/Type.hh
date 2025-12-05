@@ -277,6 +277,7 @@ public:
     static const Type BoolTy;
     static const Type IntTy;
     static const Type DeducedTy;
+    static const Type TreeTy;
     static const Type TypeTy;
     static const Type UnresolvedOverloadSetTy;
 

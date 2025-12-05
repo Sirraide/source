@@ -170,6 +170,10 @@
         },
         {
             "name": "keyword.other",
+            "match": "#(quote|inject)\\b"
+        },
+        {
+            "name": "keyword.other",
             "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|not|or|proc|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
         },
         {
@@ -178,7 +182,7 @@
         },
         {
             "name": "entity.name.type",
-            "match": "\\b(i\\d+|int|type|range|void|noreturn|bool|__srcc_ffi_char|__srcc_ffi_char16|__srcc_ffi_char32|__srcc_ffi_int|__srcc_ffi_long|__srcc_ffi_longdouble|__srcc_ffi_longlong|__srcc_ffi_short|__srcc_ffi_size_t|__srcc_ffi_wchar)\\b"
+            "match": "\\b(i\\d+|int|type|tree|range|void|noreturn|bool|__srcc_ffi_char|__srcc_ffi_char16|__srcc_ffi_char32|__srcc_ffi_int|__srcc_ffi_long|__srcc_ffi_longdouble|__srcc_ffi_longlong|__srcc_ffi_short|__srcc_ffi_size_t|__srcc_ffi_wchar)\\b"
         },
         {
             "match": "(\\.)(\\b([a-zA-Z_0-9]+)\\b)",
@@ -196,7 +200,7 @@
         },
         {
             "name": "keyword.other",
-            "match": "[;,\\.=:|?!\\\\/*\\-+&\\^(){}\\[\\]<>%~#]+"
+            "match": "[;,\\.=:|?!\\\\/*\\-+&\\^(){}\\[\\]<>%~#\\$]"
         },
         {
             "name": "stmt.call",

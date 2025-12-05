@@ -44,6 +44,7 @@ struct CodeGen::Printer {
             FrameSlotOp,
             NilOp,
             ProcRefOp,
+            TreeConstantOp,
             TypeConstantOp,
             mlir::LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
@@ -55,6 +56,8 @@ auto ir::FormatType(mlir::Type ty) -> SmallString<128> {
     SmallString<128> tmp;
     if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
+    } else if (isa<ir::TreeType>(ty)) {
+        tmp += "%6(tree%)";
     } else if (isa<ir::TypeType>(ty)) {
         tmp += "%6(type%)";
     } else if (auto ui = dyn_cast<mlir::IntegerType>(ty); ui and ui.isUnsignedInteger(1)) {
@@ -385,6 +388,16 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto tree = dyn_cast<TreeConstantOp>(op)) {
+        out += Format("tree {}", val(tree, false));
+        return;
+    }
+
+    if (auto tree = dyn_cast<QuoteOp>(op)) {
+        out += Format("tree %5({}%), {}", static_cast<void*>(tree.getTree()), ops(tree.getUnquotes(), false));
+        return;
+    }
+
     if (auto ty = dyn_cast<TypeConstantOp>(op)) {
         Format(out, "type {}", ty.getValue());
         return;
@@ -626,6 +639,11 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (isa<NilOp>(op)) {
             tmp += "nil";
+            return tmp;
+        }
+
+        if (auto ty = dyn_cast<TreeConstantOp>(op)) {
+            tmp += ty.getTree()->dump(&cg.context());
             return tmp;
         }
 

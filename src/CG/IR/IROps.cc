@@ -30,39 +30,48 @@ auto SRCCDialect::materializeConstant(
     Unreachable("Don’t know how to materialise this attribute: {}", s);
 }
 
-mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, srcc::Type storage) {
-    return ir::TypeAttr::get(ctx, ir::TypeType::get(ctx), storage);
-}
-
-mlir::LogicalResult ir::convertFromAttribute(
-    srcc::Type& storage,
-    mlir::Attribute attr,
-    llvm::function_ref<mlir::InFlightDiagnostic()> emitError
-) {
-    if (not isa<ir::TypeAttr>(attr)) {
-        emitError() << "expected type attr";
-        return mlir::failure();
+#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE, ATTR, MLIRTYPE)                                   \
+    mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, TYPE storage) {                     \
+        return ir::ATTR::get(ctx, MLIRTYPE, storage);                                                  \
+    }                                                                                                  \
+                                                                                                       \
+    mlir::LogicalResult ir::convertFromAttribute(                                                      \
+        TYPE& storage,                                                                                 \
+        mlir::Attribute attr,                                                                          \
+        llvm::function_ref<mlir::InFlightDiagnostic()> emitError                                       \
+    ) {                                                                                                \
+        if (not isa<ATTR>(attr)) {                                                                     \
+            emitError() << "invalid value for " #TYPE "; expected " #ATTR;                             \
+            return mlir::failure();                                                                    \
+        }                                                                                              \
+                                                                                                       \
+        storage = cast<ATTR>(attr).getValue();                                                         \
+        return mlir::success();                                                                        \
+    }                                                                                                  \
+                                                                                                       \
+    mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage) { \
+        Todo();                                                                                        \
+    }                                                                                                  \
+                                                                                                       \
+    void ir::writeToMlirBytecode(mlir::DialectBytecodeWriter& reader, TYPE storage) {                  \
+        Todo();                                                                                        \
     }
 
-    storage = cast<ir::TypeAttr>(attr).getValue();
-    return mlir::success();
-}
+#define COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(ATTR, DEBUG_STR)                            \
+    ::mlir::Attribute ir::ATTR::parse(::mlir::AsmParser& odsParser, ::mlir::Type odsType) { \
+        Todo();                                                                             \
+    }                                                                                       \
+                                                                                            \
+    void ir::ATTR::print(::mlir::AsmPrinter& odsPrinter) const {                            \
+        odsPrinter << DEBUG_STR;                                                            \
+    }
 
-mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader &reader, srcc::Type& storage) {
-    Todo();
-}
-
-void ir::writeToMlirBytecode(mlir::DialectBytecodeWriter &reader, srcc::Type storage) {
-    Todo();
-}
-
-::mlir::Attribute ir::TypeAttr::parse(::mlir::AsmParser &odsParser, ::mlir::Type odsType) {
-    Todo();
-}
-
-void ir::TypeAttr::print(::mlir::AsmPrinter &odsPrinter) const {
-    odsPrinter << getValue()->print();
-}
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TreeValue*, TreeAttr, ir::TreeType::get(ctx))
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Stmt*, StmtAttr, ir::TreeType::get(ctx))
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Type, TypeAttr, ir::TypeType::get(ctx))
+COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(TreeAttr, "<tree>")
+COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(TypeAttr, "<type>")
+COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(StmtAttr, "<stmt>")
 
 // ============================================================================
 //  Folders
