@@ -163,7 +163,7 @@ auto ParsedMatchExpr::Create(
 }
 
 ParsedQuoteExpr::ParsedQuoteExpr(
-    ParsedBlockExpr* quoted,
+    ParsedStmt* quoted,
     ArrayRef<ParsedUnquoteExpr*> unquotes,
     SLoc location
 ) : ParsedStmt{Kind::QuoteExpr, location}, quoted{quoted}, num_unquotes{u32(unquotes.size())} {
@@ -172,7 +172,7 @@ ParsedQuoteExpr::ParsedQuoteExpr(
 
 auto ParsedQuoteExpr::Create(
     Parser& p,
-    ParsedBlockExpr* quoted,
+    ParsedStmt* quoted,
     ArrayRef<ParsedUnquoteExpr*> unquotes,
     SLoc location
 ) -> ParsedQuoteExpr* {

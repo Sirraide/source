@@ -645,12 +645,12 @@ class srcc::ParsedQuoteExpr final : public ParsedStmt
     friend TrailingObjects;
 
 public:
-    ParsedBlockExpr* quoted;
+    ParsedStmt* quoted;
     const u32 num_unquotes;
 
 private:
     ParsedQuoteExpr(
-        ParsedBlockExpr* quoted,
+        ParsedStmt* quoted,
         ArrayRef<ParsedUnquoteExpr*> unquotes,
         SLoc location
     );
@@ -658,7 +658,7 @@ private:
 public:
     static auto Create(
         Parser& p,
-        ParsedBlockExpr* quoted,
+        ParsedStmt* quoted,
         ArrayRef<ParsedUnquoteExpr*> unquotes,
         SLoc location
     ) -> ParsedQuoteExpr*;
@@ -983,6 +983,7 @@ private:
     void ParseOverloadableOperatorName(Signature& sig);
     bool ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
     void ParsePreamble();
+    auto ParseProcBody() -> Ptr<ParsedStmt>;
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);

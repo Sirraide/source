@@ -2,9 +2,9 @@
 program test;
 
 proc good -> int {
-    #inject(#quote { int; }) x = #inject(#quote { 22; });
-    #inject(#quote { i64; }) y = #inject(#quote { 20 as i64; });
-    return #inject(#quote { x; }) + #inject(#quote { y; }) as int;
+    #inject(quote { int; }) x = #inject(quote { 22; });
+    #inject(quote { i64; }) y = #inject(quote { 20 as i64; });
+    return #inject(quote { x; }) + #inject(quote { y; }) as int;
 }
 
 #assert good() == 42;
@@ -15,7 +15,7 @@ proc bad {
     #inject(""); // expected-error: Cannot inject value of type 'i8[]'
 }
 
-proc add (tree a) = #quote {
+proc add (tree a) = quote {
     x + $(a) * 2 + y;
 };
 
@@ -23,7 +23,28 @@ proc do_add -> int {
     int arg = 15;
     int x = 5;
     int y = 5;
-    return 1 + #inject(add(#quote { arg; })) + 1;
+    return 1 + #add(arg) + 1;
 }
 
 #assert do_add() == 42;
+
+proc return_if (tree cond, tree value) = quote {
+    if $(cond) then return $(value);
+}
+
+proc call (bool b) -> int {
+    #return_if(b, 42);
+    return 7;
+}
+
+#assert call(true) == 42;
+#assert call(false) == 7;
+
+proc when (tree cond, tree then_, tree else_) = quote(if $(cond) then $(then_) else $(else_));
+proc eq(int a, int b) = #when(a == b, 3, 4);
+proc not_reached() -> int = __srcc_unreachable();
+
+#assert eq(1, 1) == 3;
+#assert eq(1, 2345245) == 4;
+#assert #when(1 == 1, 5, not_reached()) == 5;
+#assert #when(1 == 2, not_reached(), 6) == 6;

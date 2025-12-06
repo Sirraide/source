@@ -187,6 +187,22 @@ constexpr bool IsPrefix(Tk t) {
     }
 }
 
+// Check whether an expression requires a semicolon after it when
+// used in a statement context.
+static bool RequireSemicolonAfterExpr(ParsedStmt* e) {
+    // If the expression ends with a brace, then we don’t require a semicolon
+    // after it and we’re done here. Don’t just check if the previous token was
+    // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
+    if (isa<ParsedBlockExpr, ParsedMatchExpr>(e)) return false;
+
+    // For '#quote's, require a semicolon after '#quote()' but not '#quote{}'
+    if (auto quote = dyn_cast<ParsedQuoteExpr>(e))
+        return not isa<ParsedBlockExpr>(quote->quoted);
+
+    // Any other expression requires a semicolon.
+    return true;
+}
+
 Parser::BracketTracker::BracketTracker(Parser& p, Tk open, bool diagnose)
     : p{p}, diagnose{diagnose}, open_bracket{open} {
     switch (open) {
@@ -258,6 +274,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Plus:
         case Tk::PlusPlus:
         case Tk::Proc:
+        case Tk::Quote:
         case Tk::Range:
         case Tk::RBrace:
         case Tk::Return:
@@ -527,6 +544,13 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         return new (*this) ParsedBuiltinType(ty, Next());
     };
 
+    auto ParseParenthesisedExpr = [&] -> Ptr<ParsedStmt> {
+        BracketTracker parens{*this, Tk::LParen};
+        auto arg = ParseExpr();
+        parens.close();
+        return arg;
+    };
+
     Ptr<ParsedStmt> lhs;
     bool at_start = AtStartOfExpression(); // See below.
     auto start_tok = tok->type;
@@ -548,26 +572,35 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
                 default: {
                     // <expr-inject> ::= "#" INJECT "(" <expr> ")"
-                    if (ConsumeContextual("inject")) {
-                        BracketTracker parens{*this, Tk::LParen};
-                        auto arg = ParseExpr();
-                        parens.close();
-                        if (not arg) return {};
-                        lhs = new (*this) ParsedInjectExpr{arg.get(), parens.left};
+                    if (SLoc loc; ConsumeContextual(loc, "inject")) {
+                        auto arg = TRY(ParseParenthesisedExpr());
+                        lhs = new (*this) ParsedInjectExpr{arg, loc};
                         break;
                     }
 
-                    // <expr-quote> ::= "#" QUOTE <expr-block>
-                    if (SLoc loc; ConsumeContextual(loc, "quote")) {
+                    // <expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <call-args> ] ")"
+                    if (not At(Tk::Identifier)) return Error("Expected macro name or keyword after '%1(#%)'");
+                    auto ident = TRY(ParseDeclRefExpr());
+
+                    // Parse arguments as '#quote'd.
+                    BracketTracker parens{*this, Tk::LParen};
+                    SmallVector<ParsedStmt*> args;
+                    while (not At(Tk::RParen, Tk::Eof)) {
                         SmallVector<ParsedUnquoteExpr*> unquotes;
                         tempset current_unquotes = &unquotes;
-                        auto arg = TRY(ParseBlock());
-                        lhs = ParsedQuoteExpr::Create(*this, arg, unquotes, loc);
-                        break;
+                        if (auto arg = ParseExpr().get_or_null()) {
+                            args.push_back(ParsedQuoteExpr::Create(*this, arg, unquotes, arg->loc));
+                            if (not Consume(Tk::Comma)) break;
+                        } else {
+                            break;
+                        }
                     }
 
-                    return Error("Expected macro name or keyword after '%1(#%)'");
-                }
+                    // Create the call and wrap it with an '#inject'.
+                    parens.close();
+                    lhs = ParsedCallExpr::Create(*this, ident, args, ident->loc);
+                    lhs = new (*this) ParsedInjectExpr(lhs.get(), hash_loc);
+                } break;
             }
         } break;
 
@@ -639,6 +672,14 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::Match:
             lhs = ParseMatchExpr();
             break;
+
+        case Tk::Quote: {
+            auto loc = Next();
+            SmallVector<ParsedUnquoteExpr*> unquotes;
+            tempset current_unquotes = &unquotes;
+            auto arg = TRY(At(Tk::LBrace) ? ParseBlock() : ParseParenthesisedExpr());
+            lhs = ParsedQuoteExpr::Create(*this, arg, unquotes, loc);
+        } break;
 
         // STRING-LITERAL
         case Tk::StringLiteral:
@@ -1416,7 +1457,7 @@ void Parser::ParsePreamble() {
 }
 
 // <decl-proc> ::= <signature> <proc-body>
-// <proc-body> ::= <expr-block> | "=" <expr> ";" | ";"
+// <proc-body> ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
 auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Parse signature.
     SmallVector<ParsedVarDecl*, 10> param_decls;
@@ -1453,16 +1494,14 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (SLoc assign_loc; Consume(assign_loc, Tk::Assign)) {
         if (At(Tk::LBrace)) Error(assign_loc, "'%1(= {{%)' is invalid; remove the '%1(=%)'");
         body = ParseExpr();
-        if (not isa_and_present<ParsedBlockExpr, ParsedMatchExpr>(body.get_or_null()))
-            ExpectSemicolon();
+        if (body and RequireSemicolonAfterExpr(body.get())) ExpectSemicolon();
     } else if (Consume(Tk::Semicolon)) {
         // Nothing.
     } else if (At(Tk::LBrace)) {
         body = ParseBlock();
     }
 
-    // Procedures not declared 'extern' must have a body (and vice versa); allow it
-    // if we’re parsing a module description though.
+    // Procedures not declared 'extern' must have a body (and vice versa).
     // FIXME: Move this diagnostic to Sema instead.
     if (
         not complained_about_body and
@@ -1713,11 +1752,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                 return false;
             };
 
-            // If the expression ends with a brace, then we don’t require a semicolon
-            // after it and we’re done here. Don’t just check if the previous token was
-            // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
-            if (isa<ParsedBlockExpr, ParsedMatchExpr, ParsedQuoteExpr>(e)) return e;
-
             // <decl-var>
             //
             // Types are expressions so variable declarations start with an expression.
@@ -1732,8 +1766,11 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             //
             // Don't skip to the next semicolon if we're at 'else' or 'elif' to
             // improve error recovery in 'if' statements.
-            if (not ExpectSemicolon() and not At(Tk::Else, Tk::Elif))
-                SkipPast(Tk::Semicolon);
+            if (
+                RequireSemicolonAfterExpr(e) and
+                not ExpectSemicolon() and
+                not At(Tk::Else, Tk::Elif)
+            ) SkipPast(Tk::Semicolon);
             return e;
         }
     }

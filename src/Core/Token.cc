@@ -53,6 +53,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Or: return "or";
         case Tk::Pragma: return "pragma";
         case Tk::Proc: return "proc";
+        case Tk::Quote: return "quote";
         case Tk::Range: return "range";
         case Tk::Return: return "return";
         case Tk::Static: return "static";

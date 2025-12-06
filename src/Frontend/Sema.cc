@@ -3825,7 +3825,6 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
         return decl;
     }
 
-    // Build procedure type now so we can forward-reference it.
     if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
     if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
     return std::nullopt;

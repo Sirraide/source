@@ -155,11 +155,23 @@
             }
         },
         {
-            "match": "\\b(proc)\\b\\s+([a-zA-Z_][a-zA-Z_0-9]*)",
+            "name": "keyword.other",
+            "match": "#(inject|assert|if|else|elif|for|match)\\b"
+        },
+        {
+            "name": "keyword.other",
+            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|not|or|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
+        },
+        {
+            "match": "\\b(proc)\\s+([a-zA-Z_][a-zA-Z_0-9]*)?",
             "captures": {
                 "1": { "name": "keyword.other" },
                 "2": { "name": "entity.name.function" }
             }
+        },
+        {
+            "name": "keyword.other",
+            "match": "\\bproc\\b"
         },
         {
             "match": "\\b(struct)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
@@ -169,12 +181,57 @@
             }
         },
         {
-            "name": "keyword.other",
-            "match": "#(quote|inject)\\b"
+            "name": "stmt.macro",
+            "begin": "(#[a-zA-Z_0-9]+|\\$)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": { "name": "entity.name.macro" },
+                "2": { "name": "entity.name.macro" }
+            },
+            "endCaptures": {
+                "0": { "name": "entity.name.macro" }
+            },
+            "patterns": [{ "include": "$self" }]
         },
         {
-            "name": "keyword.other",
-            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|not|or|proc|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
+            "name": "stmt.macro",
+            "begin": "(quote)\\s*(\\{)",
+            "end": "\\}",
+            "beginCaptures": {
+                "1": { "name": "entity.name.macro" },
+                "2": { "name": "entity.name.macro" }
+            },
+            "endCaptures": {
+                "0": { "name": "entity.name.macro" }
+            },
+            "patterns": [{ "include": "$self" }]
+        },
+        {
+            "name": "stmt.macro",
+            "begin": "(quote)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": { "name": "entity.name.macro" },
+                "2": { "name": "entity.name.macro" }
+            },
+            "endCaptures": {
+                "0": { "name": "entity.name.macro" }
+            },
+            "patterns": [{ "include": "$self" }]
+        },
+        {
+            "begin": "\\(",
+            "end": "\\)",
+            "beginCaptures": { "0": { "name": "keyword.other" } },
+            "endCaptures": { "0": { "name": "keyword.other" } },
+            "patterns": [{ "include": "$self" }]
+        },
+        {
+            "begin": "\\{",
+            "end": "\\}",
+            "beginCaptures": { "0": { "name": "keyword.other" } },
+            "endCaptures": { "0": { "name": "keyword.other" } },
+            "patterns": [{ "include": "$self" }]
         },
         {
             "name": "entity.name.type",

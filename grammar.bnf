@@ -49,6 +49,7 @@
 // ============================================================================
 //  Expressions
 // ============================================================================
+// Note: <expr-quote> may or may not have braces.
 <expr>           ::= <expr-braces> | <expr-no-braces>
 <expr-braces>    ::= <expr-block> | <expr-match> | <expr-quote>
 <expr-no-braces> ::= <expr-assert>
@@ -62,9 +63,11 @@
                    | <expr-inject>
                    | <expr-lit>
                    | <expr-loop>
+                   | <expr-macro-call>
                    | <expr-member>
                    | <expr-paren>
                    | <expr-prefix>
+                   | <expr-quote>
                    | <expr-unquote>
                    | <expr-return>
                    | <expr-subscript>
@@ -72,28 +75,29 @@
                    | <expr-postfix>
                    | <type>
 
-<expr-assert>    ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
-<expr-binary>    ::= <expr> <binary> <expr>
-<expr-block>     ::= "{" <stmts>  "}"
-<expr-break>     ::= BREAK
-<expr-call>      ::= <expr> "(" [ <call-args> ] ")"
-<expr-continue>  ::= CONTINUE
-<expr-decl-ref>  ::= IDENT [ "::" <expr-decl-ref> ]
-<expr-eval>      ::= EVAL <expr>
-<expr-inject>    ::= "#" INJECT "(" <expr> ")"
-<expr-if>        ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
-<expr-lit>       ::= STRING-LITERAL | INTEGER | TRUE | FALSE
-<expr-loop>      ::= LOOP [ <expr> ]
-<expr-match>     ::= MATCH [ <expr> ] [ "->" <type> ] "{" <match-case> [ ";" ] "}"
-<expr-member>    ::= <expr> "." IDENT
-<expr-paren>     ::= "(" <expr> ")"
-<expr-prefix>    ::= <prefix> <expr>
-<expr-quote>     ::= "#" QUOTE <expr-block>
-<expr-unquote>   ::= "$" "(" <expr> ")"
-<expr-return>    ::= RETURN [ <expr> ]
-<expr-subscript> ::= <expr> "[" <expr> "]" // Only one argument for now.
-<expr-tuple>     ::= "(" <expr> { "," <expr> } [ "," ] ")"
-<expr-postfix>   ::= <expr> ( "++" | "--" )
+<expr-assert>     ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
+<expr-binary>     ::= <expr> <binary> <expr>
+<expr-block>      ::= "{" <stmts>  "}"
+<expr-break>      ::= BREAK
+<expr-call>       ::= <expr> "(" [ <call-args> ] ")"
+<expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <call-args> ] ")"
+<expr-continue>   ::= CONTINUE
+<expr-decl-ref>   ::= IDENT [ "::" <expr-decl-ref> ]
+<expr-eval>       ::= EVAL <expr>
+<expr-inject>     ::= "#" INJECT "(" <expr> ")"
+<expr-if>         ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
+<expr-lit>        ::= STRING-LITERAL | INTEGER | TRUE | FALSE
+<expr-loop>       ::= LOOP [ <expr> ]
+<expr-match>      ::= MATCH [ <expr> ] [ "->" <type> ] "{" <match-case> [ ";" ] "}"
+<expr-member>     ::= <expr> "." IDENT
+<expr-paren>      ::= "(" <expr> ")"
+<expr-prefix>     ::= <prefix> <expr>
+<expr-quote>      ::= QUOTE ( <expr-block> | <expr-paren> )
+<expr-unquote>    ::= "$" "(" <expr> ")"
+<expr-return>     ::= RETURN [ <expr> ]
+<expr-subscript>  ::= <expr> "[" <expr> "]" // Only one argument for now.
+<expr-tuple>      ::= "(" <expr> { "," <expr> } [ "," ] ")"
+<expr-postfix>    ::= <expr> ( "++" | "--" )
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <prefix> ::= "-" | "+" | NOT | "~" | "&" | "^"
@@ -114,7 +118,7 @@
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-where>  ::= WHERE <expr>
-<proc-body>   ::= <expr-block> | "=" <expr> ";" | ";"
+<proc-body>   ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
 <param-decl>  ::= [ <intent> ] <param-rest>
 <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
 <intent>      ::= IN | OUT | INOUT | COPY
