@@ -32,13 +32,15 @@
           | <stmt-while>
           | <stmt-for>
           | <stmt-if>
+          | <stmt-with>
           | EVAL <stmt>
           | LOOP <stmt>
           | ";"
 
-<stmt-defer> ::= DEFER <stmt>
-<stmt-while> ::= WHILE <expr> [ DO ] <stmt>
-<stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
+<stmt-defer>   ::= DEFER <stmt>
+<stmt-while>   ::= WHILE <expr> [ DO ] <stmt>
+<stmt-if>      ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
+<stmt-with>    ::= WITH <expr> [ DO ] <stmt>
 <if-stmt-body> ::= [ THEN ] <stmt>
 
 // Note: The support for trailing commas here was accidental, but I don’t really have a problem w/ it.

@@ -142,6 +142,65 @@ auto BlockExpr::return_expr() -> Expr* {
     return cast<Expr>(stmts().back());
 }
 
+auto BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(Type ty) -> ArrayRef<BuiltinMember> {
+    using enum AccessKind;
+    using List = std::initializer_list<BuiltinMember>;
+    static_assert(+$$Count == 11, "Handle new members below");
+    if (ty == Type::TypeTy) {
+        static constexpr List Members {
+            {"align", TypeAlign},
+            {"arrsize", TypeArraySize},
+            {"bits", TypeBits},
+            {"bytes", TypeBytes},
+            {"name", TypeName},
+            {"size", TypeSize},
+            {"min", TypeMinVal},
+            {"max", TypeMaxVal},
+        };
+
+        return Members;
+    }
+
+    if (isa<SliceType>(ty)) {
+        static constexpr List Members {
+            {"data", SliceData},
+            {"size", SliceSize},
+        };
+
+        return Members;
+    }
+
+    if (isa<RangeType>(ty)) {
+        static constexpr List Members {
+            {"start", RangeStart},
+            {"end", RangeEnd},
+        };
+
+        return Members;
+    }
+
+    return {};
+}
+
+auto BuiltinMemberAccessExpr::ToMemberName(AccessKind k) -> String {
+    using enum AccessKind;
+    switch (k) {
+        case SliceData: return "data";
+        case SliceSize: return "size";
+        case RangeStart: return "start";
+        case RangeEnd: return "end";
+        case TypeAlign: return "align";
+        case TypeArraySize: return "arrsize";
+        case TypeBits: return "bits";
+        case TypeBytes: return "bytes";
+        case TypeSize: return "size";
+        case TypeName: return "name";
+        case TypeMaxVal: return "max";
+        case TypeMinVal: return "min";
+    }
+    Unreachable();
+}
+
 auto Expr::ignore_parens() -> Expr* {
     if (auto p = dyn_cast<ParenExpr>(this)) return p->expr->ignore_parens();
     return this;
@@ -200,29 +259,29 @@ LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 
 MatchExpr::MatchExpr(
-    Ptr<Expr> control_expr,
+    Ptr<LocalDecl> control_var,
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
     SLoc loc
 ) : Expr(Kind::MatchExpr, ty, vc, loc),
     num_cases{u32(cases.size())},
-    has_control_expr(control_expr.present()) {
-    if (auto c = control_expr.get_or_null()) *getTrailingObjects<Expr*>() = c;
+    has_control_var(control_var.present()) {
+    if (auto c = control_var.get_or_null()) *getTrailingObjects<LocalDecl*>() = c;
     std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects<MatchCase>());
 }
 
 auto MatchExpr::Create(
     TranslationUnit& tu,
-    Ptr<Expr> control_expr,
+    Ptr<LocalDecl> control_var,
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
     SLoc loc
 ) -> MatchExpr* {
-    auto size = totalSizeToAlloc<Expr*, MatchCase>(control_expr.present(), cases.size());
+    auto size = totalSizeToAlloc<LocalDecl*, MatchCase>(control_var.present(), cases.size());
     auto mem = tu.allocate(size, alignof(MatchExpr));
-    return ::new (mem) MatchExpr{control_expr, ty, vc, cases, loc};
+    return ::new (mem) MatchExpr{control_var, ty, vc, cases, loc};
 }
 
 MemberAccessExpr::MemberAccessExpr(
@@ -285,6 +344,7 @@ auto Stmt::type_or_void() const -> Type {
 
 auto Stmt::value_category_or_rvalue() const -> ValueCategory {
     if (auto e = dyn_cast<Expr>(this)) return e->value_category;
+    if (auto ld = dyn_cast<LocalDecl>(this)) return ld->category;
     return Expr::RValue;
 }
 

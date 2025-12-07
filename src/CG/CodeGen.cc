@@ -1605,18 +1605,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
     EnterCleanupScope _{*this};
     for (auto s : expr->stmts()) {
         // Initialise variables.
-        //
-        // The variable may not exist yet if e.g. we started evaluating a block
-        // in the middle of a function at compile-time.
-        if (auto var = dyn_cast<LocalDecl>(s)) {
-            Assert(var->init, "Sema should always create an initialiser for local vars");
-            if (IsZeroSizedType(var->type)) {
-                Emit(var->init.get());
-            } else {
-                if (not curr.locals.contains(var)) EmitLocal(var);
-                EmitRValue(curr.locals.at(var), var->init.get());
-            }
-        }
+        if (auto var = dyn_cast<LocalDecl>(s)) EmitLocal(var);
 
         // Emitting any other declarations is a no-op. So is emitting constant
         // expressions that are unused.
@@ -1712,7 +1701,15 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         return CreateLoad(l, addr, f->type, f->offset);
     };
 
-    auto Ty = [&] { return cast<TypeExpr>(expr->operand->ignore_parens()); };
+    auto Ty = [&] {
+        // FIXME: This doesn’t handle compile-time type variables properly; we should
+        // instead emit all of the properties that operate on types as a 'TypePropertyOp'
+        // or sth like that and then just constant fold it if we do happen to pass it a
+        // type constant.
+        Assert(isa<TypeExpr>(expr->operand->ignore_parens()), "TODO");
+        return cast<TypeExpr>(expr->operand->ignore_parens());
+    };
+
     switch (expr->access_kind) {
         using AK = BuiltinMemberAccessExpr::AccessKind;
         case AK::SliceData: return GetField(0);
@@ -1722,8 +1719,15 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         case AK::TypeAlign: return CreateInt(l, i64(Ty()->value->align(tu).value().bytes()));
         case AK::TypeArraySize: return CreateInt(l, i64(Ty()->value->array_size(tu).bytes()));
         case AK::TypeBits: return CreateInt(l, i64(Ty()->value->bit_width(tu).bits()));
-        case AK::TypeBytes: return CreateInt(l, i64(Ty()->value->memory_size(tu).bytes()));
         case AK::TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(Ty()->value->print())));
+
+        case AK::TypeBytes:
+        case AK::TypeSize:
+            return CreateInt(l, i64(Ty()->value->memory_size(tu).bytes()));
+
+        // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
+        // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
+        // emit an error about this at evaluation time.
         case AK::TypeMaxVal: {
             auto ty = Ty()->value;
             return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
@@ -2178,8 +2182,21 @@ auto CodeGen::EmitQuoteExpr(QuoteExpr* expr) -> IRValue {
     return {quote};
 }
 
-void CodeGen::EmitLocal(LocalDecl* decl) {
+void CodeGen::EmitAllocaForLocal(LocalDecl* decl) {
     if (LocalNeedsAlloca(decl)) curr.locals[decl] = CreateAlloca(C(decl->location()), decl->type);
+}
+
+void CodeGen::EmitLocal(LocalDecl* var) {
+    Assert(var->init, "Sema should always create an initialiser for local vars");
+    if (IsZeroSizedType(var->type)) {
+        Emit(var->init.get());
+        return;
+    }
+
+    // The variable may not exist yet if e.g. we started evaluating a block
+    // in the middle of a function at compile-time.
+    if (not curr.locals.contains(var)) EmitAllocaForLocal(var);
+    EmitRValue(curr.locals.at(var), var->init.get());
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
@@ -2201,11 +2218,16 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
 }
 
 auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
-    // If there are no cases at all, this does nothing.
-    if (expr->cases().empty()) return {};
+    // If there are no cases at all, just emit the variable.
+    if (expr->cases().empty()) {
+        if (auto var = expr->control_var().get_or_null()) EmitWithCleanup(var);
+        return {};
+    }
 
     // Otherwise, at least one case must be reachable.
+    EnterCleanupScope _{*this};
     Assert(llvm::any_of(expr->cases(), [](auto& c) { return not c.unreachable; }));
+    if (auto var = expr->control_var().get_or_null()) EmitLocal(var);
     auto join = CreateBlock();
     if (not IsZeroSizedType(expr->type)) {
         join->addArgument(
@@ -2338,7 +2360,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Declare other local variables.
     for (auto l : proc->locals) {
         if (IsZeroSizedType(l->type) or isa<ParamDecl>(l)) continue;
-        EmitLocal(l);
+        EmitAllocaForLocal(l);
     }
 
     // Emit the body.
@@ -2533,6 +2555,13 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
 
     // Continue after the loop.
     EnterBlock(std::move(bb_end));
+    return {};
+}
+
+auto CodeGen::EmitWithStmt(WithStmt* stmt) -> IRValue {
+    EnterCleanupScope _{*this};
+    if (auto var = stmt->temporary_var.get_or_null()) EmitLocal(var);
+    Emit(stmt->body);
     return {};
 }
 

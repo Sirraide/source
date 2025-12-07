@@ -169,6 +169,20 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
 };
 
+class srcc::WithStmt : public Stmt {
+public:
+    Ptr<LocalDecl> temporary_var;
+    Stmt* body;
+
+    WithStmt(
+        Ptr<LocalDecl> temporary_var,
+        Stmt* body,
+        SLoc location
+    ) : Stmt{Kind::WithStmt, location}, temporary_var{temporary_var}, body{body} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::WithStmt; }
+};
+
 // ============================================================================
 //  Expressions
 // ============================================================================
@@ -397,9 +411,16 @@ public:
         TypeArraySize,
         TypeBits,
         TypeBytes,
+        TypeSize, // Same semantics as 'TypeBytes'
         TypeName,
         TypeMaxVal,
         TypeMinVal,
+        $$Count = TypeMinVal
+    };
+
+    struct BuiltinMember {
+        String name;
+        AccessKind kind;
     };
 
     Expr* operand;
@@ -415,6 +436,8 @@ public:
         operand{operand},
         access_kind{kind} {}
 
+    static auto GetAllBuiltinMembersOf(Type ty) -> ArrayRef<BuiltinMember>;
+    static auto ToMemberName(AccessKind k) -> String;
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinMemberAccessExpr; }
 };
 
@@ -702,17 +725,17 @@ struct srcc::MatchCase {
 };
 
 class srcc::MatchExpr final : public Expr,
-    TrailingObjects<MatchExpr, Expr*, MatchCase> {
+    TrailingObjects<MatchExpr, LocalDecl*, MatchCase> {
     friend TrailingObjects;
     const u32 num_cases : 31;
-    const u32 has_control_expr : 1;
+    const u32 has_control_var : 1;
 
-    auto numTrailingObjects(OverloadToken<Expr*>) const -> usz { return has_control_expr; }
+    auto numTrailingObjects(OverloadToken<LocalDecl*>) const -> usz { return has_control_var; }
     auto numTrailingObjects(OverloadToken<MatchCase>) const -> usz { return num_cases; }
 
 private:
     MatchExpr(
-        Ptr<Expr> control_expr,
+        Ptr<LocalDecl> control_var,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
@@ -722,7 +745,7 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
-        Ptr<Expr> control_expr,
+        Ptr<LocalDecl> control_var,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
@@ -733,8 +756,8 @@ public:
         return getTrailingObjects<MatchCase>(num_cases);
     }
 
-    [[nodiscard]] auto control_expr() -> Ptr<Expr> {
-        return has_control_expr ? *getTrailingObjects<Expr*>() : nullptr;
+    [[nodiscard]] auto control_var() -> Ptr<LocalDecl> {
+        return has_control_var ? *getTrailingObjects<LocalDecl*>() : nullptr;
     }
 
     static auto classof(const Stmt* s) { return s->kind() == Kind::MatchExpr; }
@@ -944,6 +967,10 @@ public:
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::FieldDecl;
     }
+
+    /// Visit this declaration.
+    template <typename Visitor>
+    auto visit(Visitor&& v) -> decltype(auto);
 };
 
 class srcc::FieldDecl final : public Decl {
@@ -1372,6 +1399,37 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcTemplateDecl; }
 };
 
+class srcc::WithFieldRefDecl final : public Decl {
+public:
+    LocalDecl* base;
+    FieldDecl* referenced_field;
+
+    WithFieldRefDecl(LocalDecl* base, FieldDecl* referenced_field, SLoc location)
+        : Decl{Kind::WithFieldRefDecl, referenced_field->name, location},
+          base{base},
+          referenced_field{referenced_field} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::WithFieldRefDecl; }
+};
+
+class srcc::WithBuiltinFieldRefDecl final : public Decl {
+public:
+    LocalDecl* base;
+    BuiltinMemberAccessExpr::AccessKind referenced_field;
+
+    WithBuiltinFieldRefDecl(
+        LocalDecl* base,
+        BuiltinMemberAccessExpr::AccessKind referenced_field,
+        SLoc location
+    ) : Decl{
+        Kind::WithBuiltinFieldRefDecl,
+        BuiltinMemberAccessExpr::ToMemberName(referenced_field),
+        location,
+    }, base{base}, referenced_field{referenced_field} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::WithBuiltinFieldRefDecl; }
+};
+
 // This can only be defined here because it needs to know how big 'Decl' is.
 inline auto srcc::Scope::decls() {
     return decls_by_name                                                                           //
@@ -1385,7 +1443,7 @@ inline auto srcc::RecordLayout::field_types() const {
     return fields() | vws::transform([](FieldDecl* fd) -> Type { return fd->type; });
 }
 
-/// Visit this statement.
+/// Visit a statement.
 template <typename Visitor>
 auto srcc::Stmt::visit(Visitor&& v) -> decltype(auto) {
     switch (kind()) {
@@ -1394,6 +1452,17 @@ auto srcc::Stmt::visit(Visitor&& v) -> decltype(auto) {
 #include "srcc/AST.inc"
     }
     Unreachable();
+}
+
+/// Visit a declaration.
+template <typename Visitor>
+auto srcc::Decl::visit(Visitor&& v) -> decltype(auto) {
+    switch (kind()) {
+#define AST_DECL_LEAF(node) \
+    case Kind::node: return std::invoke(std::forward<Visitor>(v), static_cast<node*>(this));
+#include "srcc/AST.inc"
+    default: Unreachable("Not a declaration: {}", enchantum::to_string(kind()));
+    }
 }
 
 template <>

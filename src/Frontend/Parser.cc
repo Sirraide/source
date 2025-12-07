@@ -1615,6 +1615,7 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
 //          | <stmt-while>
 //          | <stmt-for>
 //          | <stmt-if>
+//          | <stmt-with>
 //          | EVAL <stmt>
 //          | LOOP <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
@@ -1709,6 +1710,15 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             Consume(Tk::Do);
             auto body = TryParseStmt(SkipTo(Tk::Semicolon));
             return new (*this) ParsedWhileStmt{cond, body, loc};
+        }
+
+        // <stmt-with> ::= WITH <expr> [ DO ] <stmt>
+        case Tk::With: {
+            Next();
+            auto expr = TryParseExpr(SkipTo(Tk::Semicolon));
+            Consume(Tk::Do);
+            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+            return new (*this) ParsedWithStmt{expr, body, loc};
         }
 
         // <decl-proc>

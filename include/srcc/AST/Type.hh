@@ -69,7 +69,8 @@ public:
     /// Declarations in this scope.
     DeclNameMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
 
-    virtual ~Scope(); // Defaulted out-of-line.
+    /// Defaulted out-of-line.
+    virtual ~Scope();
 
     /// Get a flat list of all declarations in this scope.
     auto decls();

@@ -743,6 +743,21 @@ public:
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::WhileStmt; }
 };
+
+class srcc::ParsedWithStmt final : public ParsedStmt {
+public:
+    ParsedStmt* expr;
+    ParsedStmt* body;
+
+    ParsedWithStmt(
+        ParsedStmt* expr,
+        ParsedStmt* body,
+        SLoc location
+    ) : ParsedStmt{Kind::WithStmt, location}, expr{expr}, body{body} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::WithStmt; }
+};
+
 // ============================================================================
 //  Declarations
 // ============================================================================

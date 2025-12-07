@@ -1,5 +1,6 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Printer.hh>
+#include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Constants.hh>
@@ -274,24 +275,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](BuiltinMemberAccessExpr* m) {
             PrintBasicNode(e, "BuiltinMemberAccessExpr", [&] {
-                using AK = BuiltinMemberAccessExpr::AccessKind;
-                auto kind = [&] -> std::string_view {
-                    switch (m->access_kind) {
-                        case AK::SliceData: return "data";
-                        case AK::SliceSize: return "size";
-                        case AK::RangeStart: return "start";
-                        case AK::RangeEnd: return "end";
-                        case AK::TypeAlign: return "align";
-                        case AK::TypeArraySize: return "arrsize";
-                        case AK::TypeBits: return "bits";
-                        case AK::TypeBytes: return "bytes";
-                        case AK::TypeName: return "name";
-                        case AK::TypeMaxVal: return "max";
-                        case AK::TypeMinVal: return "min";
-                    }
-                    return "<invalid>";
-                }();
-                print("%3({}%)", kind);
+                print("%3({}%)", enchantum::to_string(m->access_kind));
             });
             PrintChildren(m->operand);
         },
@@ -421,7 +405,14 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](LocalRefExpr* d) {
             bool is_param = d->decl->kind() == Kind::ParamDecl;
-            auto PrintName = [&] { print("%{}({}%)", is_param ? '4' : '8', d->decl->name); };
+            auto PrintName = [&] {
+                print(
+                    "%{}({}%)",
+                    is_param ? '4' : '8',
+                    d->decl->name.empty() ? "<anonymous>" : d->decl->name.str()
+                );
+            };
+
             PrintBasicNode(e, "LocalRefExpr", PrintName);
         },
 
@@ -438,7 +429,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
             PrintBasicNode(e, "MatchExpr");
             SmallVector<Child> children;
-            if (auto c = m->control_expr().get_or_null())
+            if (auto c = m->control_var().get_or_null())
                 children.emplace_back([&, c] { Print(c); });
             for (auto& c : m->cases()) {
                 children.emplace_back([&] {
@@ -581,6 +572,14 @@ void Stmt::Printer::Print(Stmt* e) {
         [&](WhileStmt* w) {
             PrintBasicNode(e, "WhileStmt", [&] { print("%3(#{}%)", +w->token); });
             SmallVector<Stmt*, 2> children{w->cond, w->body};
+            PrintChildren(children);
+        },
+
+        [&](WithStmt* w) {
+            PrintBasicNode(e, "WithStmt");
+            SmallVector<Stmt*, 2> children;
+            if (auto var = w->temporary_var.get_or_null()) children.push_back(var);
+            children.push_back(w->body);
             PrintChildren(children);
         },
     });

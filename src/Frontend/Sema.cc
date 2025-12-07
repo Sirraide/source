@@ -58,11 +58,56 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // are usually allowed, but we forbid redeclaring e.g. (template)
     // parameters.
     auto& ds = scope->decls_by_name[d->name];
-    if (not ds.empty() and isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
-        Error(d->location(), "Redeclaration of '{}'", d->name);
-        Note(ds.front()->location(), "Previous declaration was here");
-    } else {
-        ds.push_back(d);
+    if (not ds.empty()) {
+        if (isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
+            Error(d->location(), "Redeclaration of '{}'", d->name);
+            Note(ds.front()->location(), "Previous declaration was here");
+            return;
+        }
+
+        if (isa<WithFieldRefDecl, WithBuiltinFieldRefDecl>(d)) {
+            Warn(d->location(), "Implicit field decl '{}' shadows existing declaration", d->name);
+            Note(ds.front()->location(), "Previous declaration was here");
+        }
+    }
+
+    ds.push_back(d);
+}
+
+void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
+    Assert(object->value_category_or_rvalue() == Expr::LValue);
+    Assert(object->type);
+
+    // The type must be complete.
+    if (not IsCompleteType(object->type)) {
+        Error(
+            with,
+            "Argument to '%1(with%)' must not be an incomplete type (was '{}')",
+            object->type
+        );
+
+        return;
+    }
+
+    // Declare the object’s members in the current scope, if there are any.
+    if (auto s = dyn_cast<StructType>(object->type)) {
+        for (auto f : s->layout().fields()) {
+            auto d = new (*tu) WithFieldRefDecl{object, f, with};
+            AddDeclToScope(scope, d);
+        }
+    }
+
+    // Also do the same for types with builtin members.
+    else if (auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(object->type); not members.empty()) {
+        for (const auto& [_, member] : members) {
+            auto d = new (*tu) WithBuiltinFieldRefDecl(object, member, with);
+            AddDeclToScope(scope, d);
+        }
+    }
+
+    // Warn on non-struct types with no members if we’re not in a template.
+    else if (not curr_proc().proc->instantiated_from) {
+        Warn(with, "'%1(with%)' has no effect as type '{}' has no members", object->type);
     }
 }
 
@@ -134,19 +179,13 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
 
 auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
     if (not d->valid()) return nullptr;
-    switch (d->kind()) {
-        default: return ICE(d->location(), "Cannot build a reference to this declaration yet");
-        case Stmt::Kind::ProcDecl: return new (*tu) ProcRefExpr(cast<ProcDecl>(d), loc);
-        case Stmt::Kind::ProcTemplateDecl: return OverloadSetExpr::Create(*tu, d, loc);
-
-        case Stmt::Kind::TypeDecl:
-        case Stmt::Kind::TemplateTypeParamDecl:
-            return new (*tu) TypeExpr(cast<TypeDecl>(d)->type, loc);
-
-        case Stmt::Kind::LocalDecl:
-        case Stmt::Kind::ParamDecl: {
-            auto local = cast<LocalDecl>(d);
-
+    return d->visit(utils::Overloaded{
+        [&](FieldDecl*) -> Ptr<Expr> { Unreachable(); },
+        [&](ModuleDecl*) -> Ptr<Expr> { Unreachable(); },
+        [&](ProcDecl* proc) -> Ptr<Expr> { return new (*tu) ProcRefExpr(proc, loc); },
+        [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
+        [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
+        [&](LocalDecl* local) -> Ptr<Expr> {
             // Check if this variable is declared in a parent procedure and captured it
             // if so; do *not* capture zero-sized variables however since they’ll be deleted
             // entirely anyway.
@@ -184,8 +223,22 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                 local->category,
                 loc
             );
-        }
-    }
+        },
+        [&](WithFieldRefDecl* with) -> Ptr<Expr> {
+            return new (*tu) MemberAccessExpr(
+                CreateReference(with->base, loc).get(),
+                with->referenced_field,
+                loc
+            );
+        },
+        [&](WithBuiltinFieldRefDecl* with) -> Ptr<Expr> {
+            return BuildBuiltinMemberAccessExpr(
+                with->referenced_field,
+                CreateReference(with->base, loc).get(),
+                loc
+            );
+        },
+    });
 }
 
 void Sema::DeclareLocal(LocalDecl* d) {
@@ -460,8 +513,8 @@ auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
-auto Sema::MaterialiseVariable(Expr* expr) -> Expr* {
-    if (isa<LocalRefExpr>(expr)) return expr;
+auto Sema::MaterialiseVariable(Expr* expr) -> LocalDecl* {
+    if (auto ld = dyn_cast<LocalRefExpr>(expr)) return ld->decl;
     auto init = BuildInitialiser(expr->type, expr, expr->location()).get(); // Should never fail.
     auto local = MakeLocal(
         expr->type,
@@ -471,7 +524,7 @@ auto Sema::MaterialiseVariable(Expr* expr) -> Expr* {
     );
 
     local->set_init(init);
-    return CreateReference(local, expr->location()).get();
+    return local;
 }
 
 void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
@@ -2916,6 +2969,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case AK::TypeArraySize:
             case AK::TypeBits:
             case AK::TypeBytes:
+            case AK::TypeSize:
                 return Type::IntTy;
 
             case AK::SliceSize:
@@ -3162,10 +3216,15 @@ auto Sema::BuildMatchExpr(
     MutableArrayRef<MatchCase> cases,
     SLoc loc
 ) -> Ptr<Expr> {
-    Expr* control = control_expr.get_or_null();
+    Ptr<LocalDecl> control_var;
     bool exhaustive = false;
-    if (control) {
-        control = MaterialiseVariable(control);
+    if (auto control = control_expr.get_or_null()) {
+        auto var = MaterialiseVariable(control);
+        if (not isa<LocalRefExpr>(control)) {
+            control = CreateReference(var, loc).get();
+            control_var = var;
+        }
+
         auto ty = control->type;
         if (ty->is_integer()) {
             IntMatchContext mc{*this, ty};
@@ -3251,7 +3310,7 @@ auto Sema::BuildMatchExpr(
 
     return MatchExpr::Create(
         *tu,
-        control_expr,
+        control_var,
         tvc.type(),
         tvc.value_category(),
         cases,
@@ -3570,6 +3629,11 @@ Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
     );
 
     S.scope_stack.push_back(scope);
+}
+
+Sema::EnterScope::~EnterScope() {
+    if (not scope) return;
+    S.scope_stack.pop_back();
 }
 
 Sema::Sema(Context& ctx) : ctx(ctx) {}
@@ -4130,47 +4194,22 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     }
 
     // Member access on builtin types.
-    using AK = BuiltinMemberAccessExpr::AccessKind;
-    static constexpr auto AlreadyDiagnosed = AK(255);
-    auto kind = [&] -> Opt<AK> {
-        using Switch = llvm::StringSwitch<Opt<AK>>;
-        if (auto te = dyn_cast<TypeExpr>(base->ignore_parens())) {
-            auto is_int = te->value->is_integer();
-            return Switch(parsed->member)
-                .Case("align", AK::TypeAlign)
-                .Case("arrsize", AK::TypeArraySize)
-                .Case("bits", AK::TypeBits)
-                .Case("bytes", AK::TypeBytes)
-                .Case("name", AK::TypeName)
-                .Case("size", AK::TypeBytes)
-                .Case("min", is_int ? Opt<AK>(AK::TypeMinVal) : std::nullopt)
-                .Case("max", is_int ? Opt<AK>(AK::TypeMaxVal) : std::nullopt)
-                .Default(std::nullopt);
-        }
+    auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(base->type);
+    if (members.empty()) return Error(
+        parsed->loc,
+        "Cannot perform member access on type '{}'",
+        base->type
+    );
 
-        if (isa<SliceType>(base->type)) return Switch(parsed->member)
-            .Case("data", AK::SliceData)
-            .Case("size", AK::SliceSize)
-            .Default(std::nullopt);
-
-        if (isa<RangeType>(base->type)) return Switch(parsed->member)
-            .Case("start", AK::RangeStart)
-            .Case("end", AK::RangeEnd)
-            .Default(std::nullopt);
-
-        Error(parsed->loc, "Cannot perform member access on type '{}'", base->type);
-        return AlreadyDiagnosed;
-    }();
-
-    if (kind == AlreadyDiagnosed) return {};
-    if (kind == std::nullopt) return Error(
+    auto it = rgs::find(members, parsed->member, &BuiltinMemberAccessExpr::BuiltinMember::name);
+    if (it == members.end()) return Error(
         parsed->loc,
         "'{}' has no member named '{}'",
         base->type,
         parsed->member
     );
 
-    return BuildBuiltinMemberAccessExpr(kind.value(), base, parsed->loc);
+    return BuildBuiltinMemberAccessExpr(it->kind, base, parsed->loc);
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -4490,6 +4529,15 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     auto body = TRY(TranslateStmt(parsed->body));
     if (not MakeCondition(cond, "while")) return {};
     return new (*tu) WhileStmt(loop.token(), cond, body, parsed->loc);
+}
+
+auto Sema::TranslateWithStmt(ParsedWithStmt* parsed, Type) -> Ptr<Stmt> {
+    EnterScope _{*this};
+    auto expr = TRY(TranslateExpr(parsed->expr));
+    auto var = MaterialiseVariable(expr);
+    AddEntryToWithStack(curr_scope(), var, parsed->loc);
+    auto body = TRY(TranslateStmt(parsed->body));
+    return new (*tu) WithStmt(var, body, parsed->loc);
 }
 
 // ============================================================================

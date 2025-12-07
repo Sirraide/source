@@ -37,6 +37,7 @@ AST_STMT_LEAF(DeferStmt)
 AST_STMT_LEAF(EmptyStmt)
 AST_STMT_LEAF(ForStmt)
 AST_STMT_LEAF(WhileStmt)
+AST_STMT_LEAF(WithStmt)
 
 // =================================================================================
 //  Expressions
@@ -82,6 +83,8 @@ AST_DECL_LEAF(FieldDecl)
 AST_DECL_LEAF(ProcTemplateDecl)
 AST_DECL_LEAF(TemplateTypeParamDecl)
 AST_DECL_LEAF(TypeDecl)
+AST_DECL_LEAF(WithFieldRefDecl)
+AST_DECL_LEAF(WithBuiltinFieldRefDecl)
 
 AST_STMT(ModuleDecl)
 AST_DECL_LEAF(ImportedClangModuleDecl)

@@ -433,7 +433,10 @@ public:
     /// Emit the default initialiser for a type.
     auto EmitDefaultInit(Type ty, mlir::Location loc) -> IRValue;
 
-    /// Emit any (lvalue, srvalue, mrvalue) initialiser into a memory location.
+    /// Allocate stack space for a local variable, if need be.
+    void EmitAllocaForLocal(LocalDecl* decl);
+
+    /// Emit the initialiser of a local variable, allocating stack space if needed.
     void EmitLocal(LocalDecl* decl);
 
     /// Emit an lvalue to rvalue conversion.

@@ -568,6 +568,13 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             SmallVector<ParsedStmt*, 2> children{w.cond, w.body};
             PrintChildren(children);
         } break;
+
+        case Kind::WithStmt: {
+            auto& w = *cast<ParsedWithStmt>(s);
+            PrintHeader(s, "WithStmt");
+            SmallVector<ParsedStmt*, 2> children{w.expr, w.body};
+            PrintChildren(children);
+        } break;
     }
 }
 

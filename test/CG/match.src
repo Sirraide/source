@@ -102,6 +102,7 @@ proc f12(int i) -> int {
 // +     #1 = 1, align 1
 // +
 // + entry:
+// +     store #1, i8 -1, align 1
 // +     %0 = load i8, #1, align 1
 // +     %1 = trunc i8 %0 to i1
 // +     br %1 to bb3(1) else bb1
@@ -125,6 +126,7 @@ proc f12(int i) -> int {
 // +     #1 = 1, align 1
 // +
 // + entry:
+// +     store #1, i8 0, align 1
 // +     %0 = load i8, #1, align 1
 // +     %1 = trunc i8 %0 to i1
 // +     br %1 to bb3(3) else bb1
@@ -148,6 +150,7 @@ proc f12(int i) -> int {
 // +     #1 = 1, align 1
 // +
 // + entry:
+// +     store #1, i8 -1, align 1
 // +     %0 = load i8, #1, align 1
 // +     %1 = trunc i8 %0 to i1
 // +     br %1 to bb3(1) else bb1
@@ -209,6 +212,7 @@ proc f12(int i) -> int {
 // + entry:
 // +     store #0, i64 0, align 8
 // +     store #1, i64 0, align 8
+// +     store #3, i8 -1, align 1
 // +     %0 = load i8, #3, align 1
 // +     %1 = trunc i8 %0 to i1
 // +     br %1 to bb3(#0) else bb1
@@ -231,16 +235,20 @@ proc f12(int i) -> int {
 // +
 // + proc _S2f6FvE private ccc {
 // +     #0 = 8, align 8
+// +     #1 = 1, align 1
 // +
 // + entry:
+// +     store #1, i8 -1, align 1
 // +     store #0, i64 5, align 8
 // +     ret
 // + }
 // +
 // + proc _S2f7FvE private ccc {
 // +     #0 = 8, align 8
+// +     #1 = 1, align 1
 // +
 // + entry:
+// +     store #1, i8 -1, align 1
 // +     store #0, i64 5, align 8
 // +     ret
 // + }
@@ -336,6 +344,7 @@ proc f12(int i) -> int {
 //L + define private void @_S2f1FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
+//L +   store i8 -1, ptr %2, align 1
 //L +   %3 = load i8, ptr %2, align 1
 //L +   %4 = trunc i8 %3 to i1
 //L +   br i1 %4, label %10, label %5
@@ -359,6 +368,7 @@ proc f12(int i) -> int {
 //L + define private void @_S2f2FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
+//L +   store i8 0, ptr %2, align 1
 //L +   %3 = load i8, ptr %2, align 1
 //L +   %4 = trunc i8 %3 to i1
 //L +   br i1 %4, label %10, label %5
@@ -382,6 +392,7 @@ proc f12(int i) -> int {
 //L + define private void @_S2f3FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
+//L +   store i8 -1, ptr %2, align 1
 //L +   %3 = load i8, ptr %2, align 1
 //L +   %4 = trunc i8 %3 to i1
 //L +   br i1 %4, label %10, label %5
@@ -443,6 +454,7 @@ proc f12(int i) -> int {
 //L +   %4 = alloca i8, i64 1, align 1
 //L +   store i64 0, ptr %1, align 8
 //L +   store i64 0, ptr %2, align 8
+//L +   store i8 -1, ptr %4, align 1
 //L +   %5 = load i8, ptr %4, align 1
 //L +   %6 = trunc i8 %5 to i1
 //L +   br i1 %6, label %12, label %7
@@ -467,6 +479,8 @@ proc f12(int i) -> int {
 //L + ; Function Attrs: nounwind
 //L + define private void @_S2f6FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 1, align 1
+//L +   store i8 -1, ptr %2, align 1
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }
@@ -474,6 +488,8 @@ proc f12(int i) -> int {
 //L + ; Function Attrs: nounwind
 //L + define private void @_S2f7FvE() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 1, align 1
+//L +   store i8 -1, ptr %2, align 1
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }

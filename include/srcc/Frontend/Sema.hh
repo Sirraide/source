@@ -52,11 +52,7 @@ private:
         EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block, bool should_enter = true);
         EnterScope(Sema& S, bool should_enter);
         EnterScope(Sema& S, Scope* scope);
-
-        /// Pop the scope if it is still active.
-        ~EnterScope() {
-            if (scope) S.scope_stack.pop_back();
-        }
+        ~EnterScope();
 
         /// Not copyable since copying scopes is nonsense.
         EnterScope(const EnterScope&) = delete;
@@ -641,6 +637,9 @@ private:
     /// with an empty name.
     void AddDeclToScope(Scope* scope, Decl* d);
 
+    /// Add an object to the with stack.
+    void AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with);
+
     /// Add an initialiser to a variable declaration.
     void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init, bool init_valid);
 
@@ -892,7 +891,7 @@ private:
     /// Materialise a temporary value and create a variable to store it;
     /// returns a reference to the variable. If 'expr' already is a variable,
     /// no new variable is created.
-    [[nodiscard]] auto MaterialiseVariable(Expr* expr) -> Expr*;
+    [[nodiscard]] auto MaterialiseVariable(Expr* expr) -> LocalDecl*;
 
     /// Mark that a number of match cases are unreachable.
     ///
