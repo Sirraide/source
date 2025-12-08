@@ -12,6 +12,7 @@
 #include <base/Assert.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/IR/Location.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 
@@ -973,6 +974,54 @@ void CodeGen::RecordInitHelper::emit_next_field(IRValue v) {
     CG.CreateBuiltinAggregateStore(v.loc(), ptr, field->type, v);
 }
 
+void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RValue& rv) {
+    auto EmitRecord = [&](const eval::Record& record, const RecordLayout& rl) {
+        for (auto [value, field] : zip(record.fields, rl.fields())) {
+            auto ptr = CreatePtrAdd(loc, addr, field->offset);
+            EmitEvaluatedRValue(loc, ptr, *value);
+        }
+    };
+
+    if (auto* mrv = rv.dyn_cast<eval::RawByteBuffer>()) {
+        auto c = CreateGlobalStringPtr(
+            rv.type()->align(tu),
+            String::CreateUnsafe(
+                static_cast<const char*>(mrv->data()),
+                mrv->size().bytes()
+            ),
+            false
+        );
+
+        CreateMemCpy(loc, addr, c, rv.type());
+        return;
+    }
+
+    if (auto record = rv.dyn_cast<eval::Record>()) {
+        if (auto rtype = dyn_cast<RecordType>(rv.type())) {
+            Assert(rtype->is_complete());
+            EmitRecord(*record, rtype->layout());
+            return;
+        }
+
+        if (auto opt = dyn_cast<OptionalType>(rv.type())) {
+            Assert(
+                not opt->has_transparent_layout(),
+                "Should not have created a record for this!"
+            );
+
+            EmitRecord(*record, *opt->get_equivalent_record_layout());
+            ir::EngageOp::create(*this, loc, CreatePtrAdd(loc, addr, opt->get_engaged_offset()));
+            return;
+        }
+
+        Todo("Array init");
+    }
+
+    Assert(GetEvalMode(rv.type()) == EvalMode::Scalar);
+    auto init_val = EmitValue(loc, rv);
+    EmitScalarRValueImpl(loc, rv.type(), addr, init_val);
+};
+
 auto CodeGen::EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value> {
     Assert(expr->kind == CastExpr::LValueToRValue);
     Assert(expr->arg->value_category == Expr::LValue);
@@ -981,15 +1030,15 @@ auto CodeGen::EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue,
     return {CreateLoad(C(expr->location()), addr.scalar(), expr->type), addr.scalar()};
 }
 
+void CodeGen::EmitScalarRValueImpl(mlir::Location loc, Type type, Value addr, IRValue init_val) {
+    if (type->is_aggregate()) CreateBuiltinAggregateStore(loc, addr, type, init_val);
+    else CreateStore(loc, addr, init_val.scalar(), type->align(tu));
+}
+
 void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     Assert(not IsZeroSizedType(init->type), "Should have been checked before calling this");
     Assert(init->is_rvalue(), "Expected an rvalue");
     Assert(addr, "Emitting rvalue without address?");
-
-    // If this initialises an optional, engage or disengage it; we also pass along
-    // the address of the source object if this copies from an existing optional.
-    Value init_addr;
-    defer { HandleOptionalInitialised(addr, init, init_addr); };
 
     // Ignore parentheses.
     init = init->ignore_parens();
@@ -997,24 +1046,22 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     // Check if this is an srvalue.
     if (GetEvalMode(init->type) == EvalMode::Scalar) {
         IRValue init_val;
+        Value init_from_addr;
+        defer { HandleOptionalInitialised(addr, init, init_from_addr); };
 
         // Emit the initialiser.
         //
         // We have special handling for lvalue-to-rvalue conversion on optionals here so
         // we can extract the address we’re loading from.
         if (isa<OptionalType>(init->type) and IsLValueToRValueConversion(init)) {
-            std::tie(init_val, init_addr) = EmitLValueToRValueConversion(cast<CastExpr>(init));
+            auto l2r = EmitLValueToRValueConversion(cast<CastExpr>(init));
+            init_val = l2r.first;
+            init_from_addr = l2r.second;
         } else {
             init_val = Emit(init);
         }
 
-        // Store the initialiser.
-        if (init->type->is_aggregate()) {
-            CreateBuiltinAggregateStore(C(init->location()), addr, init->type, init_val);
-        } else {
-            CreateStore(C(init->location()), addr, init_val.scalar(), init->type->align(tu));
-        }
-
+        EmitScalarRValueImpl(C(init->location()), init->type, addr, init_val);
         return;
     }
 
@@ -1034,12 +1081,33 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         [&](CallExpr* e) { EmitCallExpr(e, addr); },
 
         // The initialiser might be an lvalue-to-rvalue conversion; this is used to
-        // pass trivially-copyable structs by value.
+        // pass trivially-copyable structs by value. Wrapping an optional is also
+        // handled here.
         [&](CastExpr *e) {
-            Assert(e->kind == CastExpr::CastKind::LValueToRValue);
             auto loc = C(e->location());
-            init_addr = EmitScalar(e->arg);
-            CreateMemCpy(loc, addr, init_addr, e->type);
+            if (e->kind == CastExpr::CastKind::LValueToRValue) {
+                auto init_addr = EmitScalar(e->arg);
+                CreateMemCpy(loc, addr, init_addr, e->type);
+                HandleOptionalInitialised(addr, init, init_addr);
+                return;
+            }
+
+            // Emit the value into the address and then set the engaged flag.
+            Assert(e->kind == CastExpr::CastKind::OptionalWrap);
+            auto o = cast<OptionalType>(init->type);
+            EmitRValue(addr, e->arg);
+
+            // If there is a separate engaged flag, set it.
+            if (not o->has_transparent_layout()) CreateStore(
+                loc,
+                addr,
+                CreateBool(loc, true),
+                Type::BoolTy->align(tu),
+                o->get_engaged_offset()
+            );
+
+            // And mark the optional as engaged.
+            ir::EngageOp::create(*this, C(init->location()), addr);
         },
 
         // If the initialiser is a constant expression, create a global constant for it.
@@ -1051,17 +1119,8 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         //
         // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
         [&](ConstExpr* e) {
-            Todo(); // See EmitValue()
-
-            //auto mrv = e->value->cast<eval::MemoryValue>();
-            //auto c = CreateGlobalStringPtr(
-            //    init->type->align(tu),
-            //    String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()),
-            //    false
-            //);
-            //
-            //auto loc = C(init->location());
-            //CreateMemCpy(loc, addr, c, init->type);
+            auto loc = C(init->location());
+            EmitEvaluatedRValue(loc, addr, *e->value);
         },
 
         // Default initialiser here is a memset to 0.
@@ -1088,7 +1147,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     });
 } // clang-format on
 
-void CodeGen::HandleOptionalInitialised(Value addr, Expr* init, Value init_addr) {
+void CodeGen::HandleOptionalInitialised(Value addr, Expr* init, Value init_from_addr) {
     auto opt = dyn_cast<OptionalType>(init->type);
     if (not opt) return;
     Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
@@ -1103,8 +1162,8 @@ void CodeGen::HandleOptionalInitialised(Value addr, Expr* init, Value init_addr)
         }
 
         if (cast->kind == CastExpr::LValueToRValue) {
-            Assert(init_addr);
-            ir::EngageCopyOp::create(*this, C(init->location()), addr, init_addr);
+            Assert(init_from_addr);
+            ir::EngageCopyOp::create(*this, C(init->location()), addr, init_from_addr);
             return;
         }
     }
@@ -1969,7 +2028,7 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
-    return EmitValue(constant->location(), *constant->value);
+    return EmitValue(C(constant->location()), *constant->value);
 }
 
 auto CodeGen::EmitDefaultInit(Type ty, mlir::Location l) -> IRValue {
@@ -2486,26 +2545,26 @@ auto CodeGen::EmitTupleExpr(TupleExpr* e) -> IRValue {
     Unreachable("Emitting tuple without memory location?");
 }
 
-auto CodeGen::EmitTreeConstant(TreeValue* tree, SLoc loc) -> Value {
+auto CodeGen::EmitTreeConstant(TreeValue* tree, mlir::Location loc) -> Value {
     Assert(
         !!lang_opts.constant_eval,
         "Cannot emit parse tree nodes as values outside of constant evaluation"
     );
 
-    return ir::TreeConstantOp::create(*this, C(loc), tree);
+    return ir::TreeConstantOp::create(*this, loc, tree);
 }
 
-auto CodeGen::EmitTypeConstant(Type ty, SLoc loc) -> Value {
+auto CodeGen::EmitTypeConstant(Type ty, mlir::Location loc) -> Value {
     Assert(
         !!lang_opts.constant_eval,
         "Cannot emit types as values outside of constant evaluation"
     );
 
-    return ir::TypeConstantOp::create(*this, C(loc), ty);
+    return ir::TypeConstantOp::create(*this, loc, ty);
 }
 
 auto CodeGen::EmitTypeExpr(TypeExpr* e) -> IRValue {
-    return EmitTypeConstant(e->value, e->location());
+    return EmitTypeConstant(e->value, C(e->location()));
 }
 
 auto CodeGen::EmitUnaryExpr(UnaryExpr* expr) -> IRValue {
@@ -2627,13 +2686,14 @@ auto CodeGen::EmitWithStmt(WithStmt* stmt) -> IRValue {
     return {};
 }
 
-auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang-format off
+auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue { // clang-format off
+    auto GetSLoc = [&] { return SLoc::Decode(loc); };
     utils::Overloaded V {
         [&](std::monostate) -> IRValue { return {}; },
         [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
         [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
-        [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
-        [&](eval::MemoryValue v) -> IRValue {
+        [&](const APInt& value) -> IRValue { return CreateInt(loc, value, val.type()); },
+        [&](eval::RawByteBuffer v) -> IRValue {
             // We need to figure out what to do w/ constant values that contain pointers;
             // what we should do is turn RValue into a data structure more similar to Clang’s
             // APValue (except perhaps with primitive fields merged into byte buffers) such
@@ -2651,12 +2711,11 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
         },
         [&](const eval::Range& r) -> IRValue {
             auto el = cast<RangeType>(val.type())->elem();
-            auto l = C(loc);
-            return {CreateInt(l, r.start, el), CreateInt(l, r.end, el)};
+            return {CreateInt(loc, r.start, el), CreateInt(loc, r.end, el)};
         },
         [&](this auto& self, const eval::Slice& s) -> IRValue {
             auto ptr = self(s.pointer).scalar();
-            auto size = CreateInt(C(loc), s.size, Type::IntTy);
+            auto size = CreateInt(loc, s.size, Type::IntTy);
             return {ptr, size};
         },
         [&](this auto& self, const eval::Closure& c) -> IRValue {
@@ -2670,56 +2729,62 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
             // Otherwise, this must be a procedure that is known to the compiler (e.g.
             // some random callback returned by a library is not allowed here).
             if (not c.proc.is_procedure()) {
-                Error(loc, "Compile-time evaluation resulted in an invalid closure");
-                return CreateNullClosure(C(loc));
+                Error(GetSLoc(), "Compile-time evaluation resulted in an invalid closure");
+                return CreateNullClosure(loc);
             }
 
             if (c.proc.proc()->is_compile_time_only) {
-                Error(loc, "Compile-time only procedure cannot be referenced at runtime");
+                Error(GetSLoc(), "Compile-time only procedure cannot be referenced at runtime");
                 Note(c.proc.proc()->location(), "Procedure declared here");
-                return CreateNullClosure(C(loc));
+                return CreateNullClosure(loc);
             }
 
             if (not c.env.is_null()) {
-                ICE(loc, "TODO: Emitting an evaluated closure with a non-null environment");
-                return CreateNullClosure(C(loc));
+                ICE(GetSLoc(), "TODO: Emitting an evaluated closure with a non-null environment");
+                return CreateNullClosure(loc);
             }
 
-            return EmitClosure(c.proc.proc(), C(loc));
+            return EmitClosure(c.proc.proc(), loc);
         },
         [&](eval::EvaluatedPointer p) -> IRValue {
             auto Poison = [&] {
                 return LLVM::PoisonOp::create(
                     *this,
-                    C(loc),
+                    loc,
                     ptr_ty
                 )->getResult(0);
             };
 
             switch (p.kind()) {
-                case eval::EvaluatedPointer::Null: return CreateNullPointer(C(loc));
+                case eval::EvaluatedPointer::Null: return CreateNullPointer(loc);
                 case eval::EvaluatedPointer::Procedure: {
                     if (lang_opts.constant_eval) {
-                        auto l = C(loc);
                         auto op = DeclareProcedure(p.proc());
-                        return IRValue(ir::ProcRefOp::create(*this, l, op));
+                        return IRValue(ir::ProcRefOp::create(*this, loc, op));
                     }
 
-                    ICE(loc, "Cannot emit procedure pointer outside of closure");
+                    ICE(GetSLoc(), "Cannot emit procedure pointer outside of closure");
                     return Poison();
                 }
                 case eval::EvaluatedPointer::InvalidStack: {
-                    Error(loc, "Cannot emit pointer to compile-time stack memory");
+                    Error(GetSLoc(), "Cannot emit pointer to compile-time stack memory");
                     return Poison();
                 }
                 case eval::EvaluatedPointer::Unknown: {
-                    Error(loc, "Cannot emit unknown pointer");
+                    Error(GetSLoc(), "Cannot emit unknown pointer");
                     return Poison();
                 }
             }
 
             Unreachable();
         },
+        [&](eval::Record) -> IRValue {
+            // TODO: Actually determine whether we can get here; I don’t think it’s
+            // possible since we should create temporaries for aggregates and then
+            // manually handle Records there (and I don’t think a non-record can
+            // contain a record?).
+            Unreachable();
+        }
     }; // clang-format on
     return val.visit(V);
 }

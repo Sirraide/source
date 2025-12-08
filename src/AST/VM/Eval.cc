@@ -17,6 +17,7 @@
 #include <base/Colours.hh>
 #include <base/Formatters.hh>
 #include <base/Macros.hh>
+#include <base/StringUtils.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 
@@ -76,7 +77,10 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
         [&](TreeValue* tree) { out += tree->dump(ctx); },
-        [&](MemoryValue) { out += "<aggregate value>"; },
+        [&](const RawByteBuffer& b) {
+            if (b.is_string()) out += utils::Escape(b.str(), true, true);
+            out += "<aggregate value>";
+        },
         [&](EvaluatedPointer p) {
             switch (p.kind()) {
                 case EvaluatedPointer::Null: out += "%1(nil%)"; return;
@@ -92,7 +96,7 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             out += "%1(..<%)";
             self(r.end);
         },
-        [&](this auto& self, const eval::Slice& s) {
+        [&](this auto& self, const Slice& s) {
             out += "%1((%)";
             self(s.pointer);
             Format(out, "%1(, %){}%1()%)", s.size);
@@ -101,7 +105,7 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
             else Format(out, "%5({}%)", toString(value, 10, true));
         },
-        [&](this auto& self, const eval::Closure& c) {
+        [&](this auto& self, const Closure& c) {
             if (c.env.is_null()) {
                 self(c.proc);
                 return;
@@ -113,6 +117,17 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             self(c.env);
             out += ">";
         },
+        [&](this auto& self, const Record& r) {
+            if (not llvm::isa<TupleType>(type())) out += type()->print();
+            out += "%1((%)";
+            bool first = true;
+            for (auto* f : r.fields) {
+                if (first) first = false;
+                else out += "%1(, %)";
+                out += f->print(ctx);
+            }
+            out += "%1()%)";
+        }
     }; // clang-format on
     visit(V);
     return out;
@@ -485,7 +500,6 @@ private:
     [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
     [[nodiscard]] auto LoadType(const void* mem) -> Type;
     [[nodiscard]] auto LoadTree(const void* mem) -> TreeValue*;
-    [[nodiscard]] auto PersistPointer(const void* mem, SLoc loc) -> EvaluatedPointer;
     [[nodiscard]] auto Persist(const void* mem, SLoc loc, Type ty) -> RValue;
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
@@ -1203,7 +1217,31 @@ auto Eval::LoadType(const void* mem) -> Type {
 }
 
 auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
-    if (isa<PtrType>(ty)) return RValue(PersistPointer(mem, loc), ty);
+    auto PersistPointer = [&](const void* mem) -> EvaluatedPointer {
+        auto ptr = LoadPointer(mem).cast<Pointer>();
+        if (ptr.is_null()) return EvaluatedPointer();
+
+        // Pointers to local variables can’t be persisted since we have no
+        // way of knowing whether the variable was deallocated (and potentially
+        // overwritten by a different stack frame) after the pointer was created.
+        if (vm.memory->is_stack_pointer(ptr))
+            return EvaluatedPointer::GetInvalidStack();
+
+        ICE(loc, "Persisting this kind of pointer is not supported yet");
+        return EvaluatedPointer::GetUnknown();
+    };
+
+    auto PersistRecord = [&](const void* mem, const RecordLayout& rl) -> Record {
+        SmallVector<RValue*> values;
+        values.reserve(rl.fields().size());
+        for (auto f : rl.fields()) {
+            auto ptr = mem + f->offset;
+            values.push_back(vm.owner().save(Persist(ptr, loc, f->type)));
+        }
+        return Record{ArrayRef(values).copy(vm.owner().allocator())};
+    };
+
+    if (isa<PtrType>(ty)) return RValue(PersistPointer(mem), ty);
     if (ty->is_integer_or_bool()) return RValue(
         LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
         ty
@@ -1215,9 +1253,9 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
     );
 
     if (isa<SliceType>(ty)) {
-        auto pointer = PersistPointer(mem, loc);
+        auto pointer = PersistPointer(mem);
         auto size_offs = vm.owner_tu.SliceEquivalentTupleTy->layout().fields()[1]->offset;
-        auto size = LoadInt(static_cast<const char*>(mem) + size_offs, Type::IntTy->bit_width(vm.owner())).cast<APInt>();
+        auto size = LoadInt(mem + size_offs, Type::IntTy->bit_width(vm.owner())).cast<APInt>();
         return RValue(Slice{pointer, std::move(size)}, ty);
     }
 
@@ -1234,32 +1272,34 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         }();
 
         auto env_offs = vm.owner_tu.ClosureEquivalentTupleTy->layout().fields()[1]->offset;
-        auto env_ptr = PersistPointer(static_cast<const char*>(mem) + env_offs, loc);
+        auto env_ptr = PersistPointer(mem + env_offs);
         return RValue(Closure{proc_ptr, env_ptr}, ty);
     }
 
-    if (ty == Type::TreeTy) return LoadTree(mem);
-    if (ty == Type::TypeTy) return LoadType(mem);
+    if (ty == Type::TreeTy) return RValue(LoadTree(mem));
+    if (ty == Type::TypeTy) return RValue(LoadType(mem));
 
-    // Otherwise, allocate memory for it and store it there.
-    Assert((isa<ProcType, RecordType, ArrayType>(ty)));
-    auto mrv = vm.allocate_memory_value(ty);
-    std::memcpy(mrv.data(), mem, mrv.size().bytes());
-    return RValue(mrv, ty);
-}
+    // If this type does not contain pointers, just persist the entire
+    // thing as a byte buffer.
+    if (not ty->is_or_contains_pointer()) {
+        Assert((isa<RecordType, ArrayType, OptionalType>(ty)));
+        auto mrv = vm.allocate_memory_value(ty);
+        std::memcpy(mrv.data(), mem, mrv.size().bytes());
+        return RValue(mrv, ty);
+    }
 
-auto Eval::PersistPointer(const void* mem, SLoc loc) -> EvaluatedPointer {
-    auto ptr = LoadPointer(mem).cast<Pointer>();
-    if (ptr.is_null()) return EvaluatedPointer();
+    // Otherwise, persist each field individually.
+    if (auto r = dyn_cast<RecordType>(ty)) {
+        Assert(r->is_complete());
+        return RValue(PersistRecord(mem, r->layout()), r);
+    }
 
-    // Pointers to local variables can’t be persisted since we have no
-    // way of knowing whether the variable was deallocated (and potentially
-    // overwritten by a different stack frame) after the pointer was created.
-    if (vm.memory->is_stack_pointer(ptr))
-        return EvaluatedPointer::GetInvalidStack();
+    if (auto o = dyn_cast<OptionalType>(ty)) {
+        if (o->has_transparent_layout()) return Persist(mem, loc, o->elem());
+        return RValue(PersistRecord(mem, *o->get_equivalent_record_layout()), o);
+    }
 
-    ICE(loc, "Persisting this kind of pointer is not supported yet");
-    return EvaluatedPointer::GetUnknown();
+    Todo();
 }
 
 void Eval::PushFrame(
@@ -1389,12 +1429,12 @@ VM::VM(TranslationUnit& owner_tu)
     : owner_tu{owner_tu},
       memory(std::make_unique<VirtualMemoryMap>()) {}
 
-auto VM::allocate_memory_value(Type ty) -> MemoryValue {
+auto VM::allocate_memory_value(Type ty) -> RawByteBuffer {
     auto sz = ty->memory_size(owner());
     auto align = ty->align(owner());
     auto mem = owner().allocate(sz.bytes(), align.value().bytes());
     std::memset(mem, 0, sz.bytes());
-    return MemoryValue(mem, sz);
+    return RawByteBuffer(mem, sz, ty == owner().StrLitTy);
 }
 
 auto VM::allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue* {

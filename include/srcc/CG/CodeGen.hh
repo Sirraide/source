@@ -421,7 +421,7 @@ public:
 
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
-    auto EmitValue(SLoc loc, const eval::RValue& val) -> IRValue;
+    auto EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue;
 
     /// Emit all cleanups starting at the current scope up to and including 'target_scope'.
     void EmitCleanups(const ProcData::CleanupScope& target_scope);
@@ -448,10 +448,12 @@ public:
 
     /// Emit an mrvalue into a memory location.
     void EmitRValue(Value addr, Expr* init);
+    void EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RValue& rv);
+    void EmitScalarRValueImpl(mlir::Location loc, Type type, Value addr, IRValue init_val);
 
     /// Emit a compile-time value.
-    auto EmitTreeConstant(TreeValue* tree, SLoc loc) -> Value;
-    auto EmitTypeConstant(Type, SLoc loc) -> Value;
+    auto EmitTreeConstant(TreeValue* tree, mlir::Location loc) -> Value;
+    auto EmitTypeConstant(Type, mlir::Location loc) -> Value;
 
     auto EnterBlock(std::unique_ptr<Block> bb, mlir::ValueRange args = {}) -> Block*;
     auto EnterBlock(Block* bb, mlir::ValueRange args = {}) -> Block*;
@@ -496,7 +498,7 @@ public:
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
     /// Mark an optional as engaged or disengaged after initialisation.
-    void HandleOptionalInitialised(mlir::Value addr, Expr* init, mlir::Value init_addr);
+    void HandleOptionalInitialised(mlir::Value addr, Expr* init, mlir::Value init_from_addr);
 
     /// Check whether the current insertion point has a terminator.
     bool HasTerminator();

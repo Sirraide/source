@@ -10,6 +10,7 @@
 #include <llvm/ADT/PointerIntPair.h>
 #include <llvm/ADT/PointerUnion.h>
 #include <base/Assert.hh>
+#include <base/Macros.hh>
 
 #include <memory>
 #include <optional>
@@ -38,23 +39,40 @@ class RValue;
 ///
 /// This is non-owning. The actual data is allocated permanently
 /// in the TranslationUnit allocator.
-class MemoryValue {
+///
+/// This is only used for aggregate types (structs, arrays, tuples)
+/// that do not contain pointers and whose memory representation can
+/// just be emitted as an array of bytes (rather than requiring us to
+/// emit references to other objects).
+class RawByteBuffer {
     friend VM;
 
     void* storage;
     Size sz;
+    bool is_str;
 
-    MemoryValue(void* data, Size sz)
-        : storage(std::move(data)), sz(sz) {}
+    RawByteBuffer(void* data, Size sz, bool is_str)
+        : storage(std::move(data)), sz(sz), is_str(is_str) {}
 
 public:
     /// Access the data pointer.
     [[nodiscard]] auto data() -> void* { return storage; }
     [[nodiscard]] auto data() const -> const void* { return storage; }
 
+    /// Whether this is a string; this only affects how this is printed.
+    [[nodiscard]] bool is_string() const { return is_str; }
+
     /// Get the size of this allocation.
     [[nodiscard]] auto size() const -> Size { return sz; }
-    [[nodiscard]] auto operator<=>(const MemoryValue& other) const = default;
+
+    /// Get this as a string.
+    [[nodiscard]] auto str() const -> String {
+        // These buffers are allocated in the TU, so turning them into a string is fine.
+        return String::CreateUnsafe(static_cast<char*>(storage), usz(sz.bits()));
+    }
+
+    /// Compare two buffers.
+    [[nodiscard]] auto operator<=>(const RawByteBuffer& other) const = default;
 };
 
 /// Evaluated range.
@@ -150,6 +168,11 @@ struct Closure {
     EvaluatedPointer env;
 };
 
+/// A struct/tuple value.
+struct Record {
+    ArrayRef<RValue*> fields;
+};
+
 /// Evaluated '#quote' with all unquotes substituted.
 class TreeValue final : llvm::TrailingObjects<TreeValue, TreeValue*> {
     friend VM;
@@ -174,23 +197,25 @@ class RValue {
         Closure,
         Type,
         TreeValue*,
-        MemoryValue,
+        RawByteBuffer,
+        Record,
         EvaluatedPointer,
         std::monostate
     > value;
     Type ty{Type::VoidTy};
 
 public:
-    RValue() = default;
-    RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
-    RValue(bool val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
-    RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
-    RValue(TreeValue* tree) : value(tree), ty(Type::TreeTy) {}
-    RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
-    RValue(Slice s, Type ty) : value(std::move(s)), ty(ty) {}
-    RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
-    RValue(EvaluatedPointer p, Type ty) : value(p), ty(ty) {}
-    RValue(Closure c, Type ty) : value(std::move(c)), ty(ty) {}
+    explicit RValue() = default;
+    explicit RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
+    explicit RValue(std::same_as<bool> auto val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
+    explicit RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
+    explicit RValue(TreeValue* tree) : value(tree), ty(Type::TreeTy) {}
+    explicit RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
+    explicit RValue(Slice s, Type ty) : value(std::move(s)), ty(ty) {}
+    explicit RValue(RawByteBuffer val, Type ty) : value(val), ty(ty) {}
+    explicit RValue(EvaluatedPointer p, Type ty) : value(p), ty(ty) {}
+    explicit RValue(Closure c, Type ty) : value(std::move(c)), ty(ty) {}
+    explicit RValue(Record r, Type ty) : value(std::move(r)), ty(ty) {}
 
     /// cast<>() the contained value.
     template <typename Ty>
@@ -255,7 +280,7 @@ public:
     ~VM();
 
     /// Allocate an mrvalue.
-    [[nodiscard]] auto allocate_memory_value(Type ty) -> MemoryValue;
+    [[nodiscard]] auto allocate_memory_value(Type ty) -> RawByteBuffer;
 
     /// Allocate a tree.
     [[nodiscard]] auto allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue*;

@@ -190,6 +190,43 @@ bool TypeBase::is_integer_or_bool() const {
     return is_integer() or this == Type::BoolTy;
 }
 
+bool TypeBase::is_or_contains_pointer() const {
+    return visit(utils::Overloaded{
+        [&](const IntType*) { return false; },
+        [&](const ProcType*) { return false; },
+        [&](const PtrType*) { return true; },
+        [&](const RangeType*) { return false; },
+        [&](const SliceType*) { return true; },
+        [&](const ArrayType* ty) { return ty->elem()->is_or_contains_pointer(); },
+        [&](const RecordType* ty) {
+            Assert(ty->is_complete(), "Querying property of incomplete type");
+            return ty->layout().bits().contains_pointer;
+        },
+        [&](const OptionalType* ty) {
+            if (ty->has_transparent_layout()) return ty->elem()->is_or_contains_pointer();
+            return ty->get_equivalent_record_layout()->bits().contains_pointer;
+        },
+        [&](const BuiltinType* ty) {
+            switch (ty->builtin_kind()) {
+                case BuiltinKind::Bool:
+                case BuiltinKind::Int:
+                case BuiltinKind::Void:
+                case BuiltinKind::NoReturn:
+                return false;
+
+                case BuiltinKind::Tree:
+                case BuiltinKind::Type:
+                case BuiltinKind::UnresolvedOverloadSet:
+                return true;
+
+                case BuiltinKind::Deduced:
+                    Unreachable("Querying property of deduced type");
+            }
+            Unreachable();
+        },
+    });
+}
+
 bool TypeBase::is_nil() const {
     auto tup = dyn_cast<TupleType>(this);
     return tup and tup->layout().fields().empty();
@@ -577,6 +614,11 @@ auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLay
         // We always provide a literal initialiser in this case.
         bits.literal_initialiser = true;
     }
+
+    // Determine if this contains pointers.
+    bits.contains_pointer = any_of(decls, [](auto *fd) {
+        return fd->type->is_or_contains_pointer();
+    });
 
     return RecordLayout::Create(tu, decls, sz, sz.align(a), a, bits);
 }

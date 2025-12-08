@@ -213,6 +213,11 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
         }
     }
 
+    // Determine if this contains a pointer.
+    bool contains_pointer = any_of(Fields, [&](auto *fd) {
+        return fd->type->is_or_contains_pointer();
+    });
+
     // Build the layout.
     auto rl = RecordLayout::Create(
         *S.tu,
@@ -220,7 +225,7 @@ auto Sema::Importer::ImportRecord(clang::RecordDecl* RD) -> std::optional<Type> 
         Size::Bytes(RL.getSize().getQuantity()),
         Size::Bytes(RL.getSize().getQuantity()),
         Align(RL.getAlignment().getQuantity()),
-        RecordLayout::Bits::Trivial()
+        RecordLayout::Bits::Trivial(contains_pointer)
     );
 
     auto Struct = S.BuildCompleteStructType(

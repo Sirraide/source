@@ -94,3 +94,15 @@ proc p6 {
     var q1 = eval t1(42);
     var q2 = t1(42);
 }
+
+struct s {
+    int x;
+    int^? y;
+}
+
+proc p7 {
+    var x = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        s(i, &i);
+    };
+}

@@ -39,7 +39,73 @@ proc p6 {
     var q2 = t1(42);
 }
 
-// * proc __src_main external ccc {
+struct s {
+    int x;
+    int^? y;
+}
+
+struct s2 {
+    s a;
+    s? b;
+}
+
+struct s3 {
+    int x;
+    int y;
+}
+
+struct s4 {
+    s3 a;
+    s3? b;
+}
+
+struct s5 {
+    s3 a;
+    s b;
+}
+
+proc r1 {
+    var x = eval s(42, ());
+};
+
+proc r2 {
+    var x = eval s2(s(1, ()), s(2, ()));
+}
+
+proc r3 = eval {
+    var a = eval s(20, ());
+    var b = eval s(22, ());
+    a.x + b.x;
+};
+
+#assert r3() == 42;
+
+proc r4 {
+    var x1 = eval s3(1, 2);
+    var x2 = eval s4(s3(3, 4), ());
+    var x3 = eval s4(s3(5, 6), s3(7, 8));
+    var x4 = eval i8?();
+    var x5 = eval i8?(9);
+}
+
+proc r5 {
+    var x1 = eval s5(s3(1, 2), s(3, ()));
+}
+
+proc r6 {
+    var y = eval {
+        int i;
+        s(i, ());
+    };
+}
+
+// * @0 = "\09\FF"
+// + @1 = "\00\00"
+// + @2 = "\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00\07\00\00\00\00\00\00\00\08\00\00\00\00\00\00\00\FF", align 8
+// + @3 = "\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", align 8
+// + @4 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00", align 8
+// +
+// + proc __src_main external ccc {
 // + entry:
 // +     ret
 // + }
@@ -109,4 +175,75 @@ proc p6 {
 // +     store #0, i64 %0, align 8
 // +     %1 = load i64, #0, align 8
 // +     ret i64 %1
+// + }
+// +
+// + proc _S2r1FvE private ccc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, ptr nil, align 8
+// +     ret
+// + }
+// +
+// + proc _S2r2FvE private ccc {
+// +     #0 = 33, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, ptr nil, align 8
+// +     %1 = ptradd #0, 16
+// +     store %1, i64 2, align 8
+// +     %2 = ptradd %1, 8
+// +     store %2, ptr nil, align 8
+// +     %3 = ptradd %1, 16
+// +     store %3, i8 -1, align 1
+// +     %4 = ptradd %1, 16
+// +     engage %4
+// +     ret
+// + }
+// +
+// + proc _S2r3FiE private ccc -> i64 {
+// + entry:
+// +     ret i64 42
+// + }
+// +
+// + proc _S2r4FvE private ccc {
+// +     #0 = 16, align 8
+// +     #1 = 33, align 8
+// +     #2 = 33, align 8
+// +     #3 = 2, align 1
+// +     #4 = 2, align 1
+// +
+// + entry:
+// +     copy #0 <- @4, 16
+// +     copy #1 <- @3, 33
+// +     copy #2 <- @2, 33
+// +     copy #3 <- @1, 2
+// +     copy #4 <- @0, 2
+// +     ret
+// + }
+// +
+// + proc _S2r5FvE private ccc {
+// +     #0 = 32, align 8
+// +
+// + entry:
+// +     copy #0 <- @4, 16
+// +     %0 = ptradd #0, 16
+// +     store %0, i64 3, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, ptr nil, align 8
+// +     ret
+// + }
+// +
+// + proc _S2r6FvE private ccc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, ptr nil, align 8
+// +     ret
 // + }

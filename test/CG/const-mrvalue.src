@@ -4,12 +4,8 @@ program test;
 
 struct x { int a; int b; int c; }
 
-// This is here to make compilation fail faster than the code below would;
-// uncomment it once it’s actually expected to work again.
-xfail
-
-//proc a = eval x(1, 2, 3);
-//proc b = eval x(-1, -2, -3);
+proc a = eval x(1, 2, 3);
+proc b = eval x(-1, -2, -3);
 
 // * @0 = "\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 // + @1 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8

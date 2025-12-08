@@ -168,6 +168,11 @@ public:
     /// Check whether this is the empty tuple '()' aka 'nil'.
     [[nodiscard]] bool is_nil() const;
 
+    /// Check whether the memory representation for this type is or
+    /// contains a pointer at any level (this is especially also true
+    /// for e.g. slices and closures).
+    [[nodiscard]] bool is_or_contains_pointer() const;
+
     /// Check if this type is the builtin 'void' type.
     [[nodiscard]] bool is_void() const;
 
@@ -397,7 +402,8 @@ class srcc::OptionalType final : public SingleElementTypeBase
     , public FoldingSetNode {
     llvm::PointerIntPair<const RecordLayout*, 1> layout_and_field_index = {};
     explicit OptionalType(Type elem, const RecordLayout* rl = nullptr, u32 field_index = 0)
-        : SingleElementTypeBase{Kind::OptionalType, elem} {}
+        : SingleElementTypeBase{Kind::OptionalType, elem},
+          layout_and_field_index{rl, field_index} {}
 
 public:
     /// Whether this optional type has the same memory representation as
@@ -573,10 +579,11 @@ public:
         bool init_from_no_args   : 1 = false;
         bool literal_initialiser : 1 = false;
         bool zero_init           : 1 = false;
-        u8 padding : 4{};
+        bool contains_pointer    : 1 = false;
+        u8 padding : 3{};
 
-        static auto Trivial() -> Bits {
-            return {true, true, true, true};
+        static auto Trivial(bool contains_pointer) -> Bits {
+            return {true, true, true, true, contains_pointer};
         }
 
         void serialise(ByteWriter& w) const { w << std::bit_cast<u8>(*this); }
