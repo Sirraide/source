@@ -8,6 +8,8 @@
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/PointerIntPair.h>
+#include <llvm/ADT/PointerUnion.h>
+#include <base/Assert.hh>
 
 #include <memory>
 #include <optional>
@@ -61,10 +63,91 @@ struct Range {
     APInt end;
 };
 
+/// A pointer that is the result of constant evaluation.
+class EvaluatedPointer {
+public:
+    enum class Kind : u8 {
+        /// The null pointer.
+        Null,
+
+        /// A pointer to stack memory in the evaluator; such pointers cannot be
+        /// emitted (as they are only valid within a single evaluation) and any
+        /// attempt to do so should error.
+        InvalidStack,
+
+        /// A pointer to a procedure declared in this TU or imported from a module.
+        Procedure,
+
+        /// We don’t know where this pointer came from or what it points to.
+        Unknown,
+    };
+
+    using enum Kind;
+
+private:
+    llvm::PointerIntPair<ProcDecl*, 2> kind_and_pointer;
+    EvaluatedPointer(ProcDecl* proc, Kind k) : kind_and_pointer(proc, +k) {}
+
+public:
+    /// Create a null pointer.
+    EvaluatedPointer() : EvaluatedPointer(nullptr, Null) {}
+
+    /// Create a procedure pointer.
+    EvaluatedPointer(ProcDecl* proc) : EvaluatedPointer(proc, Procedure) {}
+
+    /// Create an invalid stack pointer.
+    [[nodiscard]] static auto GetInvalidStack() -> EvaluatedPointer {
+        return {nullptr, InvalidStack};
+    }
+
+    /// Get an unknown pointer.
+    [[nodiscard]] static auto GetUnknown() -> EvaluatedPointer {
+        return {nullptr, Unknown};
+    }
+
+    /// Get the procedure pointer if this is one.
+    [[nodiscard]] auto proc() const -> ProcDecl* {
+        Assert(is_procedure());
+        return kind_and_pointer.getPointer();
+    }
+
+    /// Check if this is an invalid pointer. Notably, the null pointer
+    /// is *valid* since we can emit it (unlike e.g. an invalid stack
+    /// pointer).
+    [[nodiscard]] bool is_invalid() const {
+        switch (kind()) {
+            case InvalidStack:
+            case Unknown:
+                return true;
+
+            case Null:
+            case Procedure:
+                return false;
+        }
+
+        Unreachable();
+    }
+
+    /// Check if this is the null pointer.
+    [[nodiscard]] bool is_null() const { return kind() == Null; }
+
+    /// Check if this is a procedure pointer.
+    [[nodiscard]] bool is_procedure() const { return kind() == Procedure; }
+
+    /// Get the pointer kind.
+    [[nodiscard]] auto kind() const -> Kind { return Kind(kind_and_pointer.getInt()); }
+};
+
 /// Evaluated slice.
 struct Slice {
-    RValue* pointer;
+    EvaluatedPointer pointer;
     APInt size;
+};
+
+/// Evaluated closure.
+struct Closure {
+    EvaluatedPointer proc;
+    EvaluatedPointer env;
 };
 
 /// Evaluated '#quote' with all unquotes substituted.
@@ -82,21 +165,17 @@ public:
     [[nodiscard]] auto unquotes() const -> ArrayRef<TreeValue*>;
 };
 
-/// Tag used to indicate a pointer to stack memory in the evaluator; such
-/// pointers cannot be emitted (as they are only valid within a single
-/// evaluation) and any attempt to do so should error.
-struct InvalidStackPointer {};
-
 /// Evaluated rvalue.
 class RValue {
     Variant<
         APInt,
         Range,
         Slice,
+        Closure,
         Type,
         TreeValue*,
         MemoryValue,
-        InvalidStackPointer,
+        EvaluatedPointer,
         std::monostate
     > value;
     Type ty{Type::VoidTy};
@@ -110,7 +189,8 @@ public:
     RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
     RValue(Slice s, Type ty) : value(std::move(s)), ty(ty) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
-    RValue(InvalidStackPointer sp, Type ty) : value(sp), ty(ty) {}
+    RValue(EvaluatedPointer p, Type ty) : value(p), ty(ty) {}
+    RValue(Closure c, Type ty) : value(std::move(c)), ty(ty) {}
 
     /// cast<>() the contained value.
     template <typename Ty>

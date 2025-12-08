@@ -1,0 +1,96 @@
+// V %srcc --cg --verify %s
+program test;
+
+proc f -> int {
+    int^y = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    };
+
+    ^(eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    }) = 42;
+
+    return ^eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    };
+}
+
+proc g {
+    // This is ok since the value is discarded and thus not emitted.
+    eval {
+        int q = 42;
+        &q;
+    }
+}
+
+proc h -> int[] {
+    int[] s1 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int[](&i, 1);
+    };
+
+    int[] s2 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int^ j = &i;
+        int[](j, 1);
+    };
+
+    // Ok since the value is unused.
+    eval {
+        int i;
+        int[](&i, 1);
+    };
+
+    return eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int[](&i, 1);
+    };
+}
+
+proc x {}
+proc foobar = true;
+
+proc p1 {
+    var s2 = eval x;
+    s2();
+}
+
+proc p2 {
+    (eval x)();
+}
+
+proc p3 {
+    (eval if foobar() then p1 else p2)();
+    (eval if foobar() then p2 else p1)();
+}
+
+proc p4 {
+    var p = eval { // expected-error: Compile-time only procedure cannot be referenced at runtime
+        proc foo {} // expected-note: Procedure declared here
+        foo;
+    };
+}
+
+proc p5 {
+    var q1 = eval {
+        proc bar {}
+        (eval if foobar() then p1 else bar);
+    };
+
+    var q2 = eval { // expected-error: Compile-time only procedure cannot be referenced at runtime
+        proc baz {} // expected-note: Procedure declared here
+        (eval if foobar() then baz else p1);
+    };
+}
+
+// Ensure that even if a procedure is first *instantiated* during
+// constant evaluation, we don’t treat it as compile-time only if
+// it is *declared* outside an eval.
+proc p6 {
+    proc t1 ($T t) = t;
+    var q1 = eval t1(42);
+    var q2 = t1(42);
+}

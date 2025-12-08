@@ -3373,6 +3373,8 @@ auto Sema::BuildProcDeclInitial(
 
     // Remember what template we were instantiated from.
     proc->instantiated_from = pattern;
+    if (pattern and pattern->is_compile_time_only)
+        proc->is_compile_time_only = true;
 
     // If this is an overloaded operator, check its arity and other properties.
     if (
@@ -3953,7 +3955,13 @@ auto Sema::TranslateExpr(ParsedStmt* parsed, Type desired_type) -> Ptr<Expr> {
 
 auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
-    auto arg = TRY(TranslateStmt(parsed->expr));
+    Stmt* arg{};
+
+    {
+        tempset inside_eval = true;
+        arg = TRY(TranslateStmt(parsed->expr));
+    }
+
     return BuildEvalExpr(arg, parsed->loc);
 }
 
@@ -4401,7 +4409,21 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         auto type = TranslateProcType(parsed->type);
         auto ty = cast_if_present<ProcType>(type);
         if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
-        decl = BuildProcDeclInitial(scope.get(), ty, parsed->name, parsed->loc, parsed->type->attrs);
+        auto proc = BuildProcDeclInitial(
+            scope.get(),
+            ty,
+            parsed->name,
+            parsed->loc,
+            parsed->type->attrs
+        );
+
+        // Determine whether this is a compile-time only procedure.
+        // TODO: Check if the signature contains a compile-time only type (e.g. 'tree')/
+        // TODO: When translating composite types, compute whether they’re compile-time only.
+        proc->is_compile_time_only = inside_eval;
+
+        // Mark the decl as invalid if there was a problem with the type.
+        decl = proc;
         if (not type) decl->set_invalid();
     }
 

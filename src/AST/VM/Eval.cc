@@ -24,7 +24,6 @@
 #include <memory>
 #include <optional>
 #include <print>
-#include <ranges>
 #include <srcc/CG/Target/Target.hh>
 
 using namespace srcc;
@@ -75,22 +74,45 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     utils::Overloaded V{
         // clang-format off
         [&](std::monostate) {},
-        [&](InvalidStackPointer) { out += "<vm stack pointer>"; },
         [&](Type ty) { out += ty->print(); },
         [&](TreeValue* tree) { out += tree->dump(ctx); },
         [&](MemoryValue) { out += "<aggregate value>"; },
+        [&](EvaluatedPointer p) {
+            switch (p.kind()) {
+                case EvaluatedPointer::Null: out += "%1(nil%)"; return;
+                case EvaluatedPointer::Procedure: Format(out, "%2({}%)", p.proc()->name); return;
+                case EvaluatedPointer::InvalidStack: out += "<vm stack pointer>"; return;
+                case EvaluatedPointer::Unknown: out += "<unknown pointer>"; return;
+            }
+
+            Unreachable();
+        },
         [&](this auto& self, const Range& r) {
             self(r.start);
             out += "%1(..<%)";
             self(r.end);
         },
-        [&](const eval::Slice& s) {
-            Format(out, "%1((%){}%1(, %){}%1()%)", s.pointer->print(ctx), s.size);
+        [&](this auto& self, const eval::Slice& s) {
+            out += "%1((%)";
+            self(s.pointer);
+            Format(out, "%1(, %){}%1()%)", s.size);
         },
         [&](const APInt& value) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
             else Format(out, "%5({}%)", toString(value, 10, true));
-        }
+        },
+        [&](this auto& self, const eval::Closure& c) {
+            if (c.env.is_null()) {
+                self(c.proc);
+                return;
+            }
+
+            out += "<closure";
+            self(c.proc);
+            out += ", env: ";
+            self(c.env);
+            out += ">";
+        },
     }; // clang-format on
     visit(V);
     return out;
@@ -463,7 +485,7 @@ private:
     [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
     [[nodiscard]] auto LoadType(const void* mem) -> Type;
     [[nodiscard]] auto LoadTree(const void* mem) -> TreeValue*;
-    [[nodiscard]] auto PersistPointer(SLoc loc, Pointer ptr, Type ty) -> RValue;
+    [[nodiscard]] auto PersistPointer(const void* mem, SLoc loc) -> EvaluatedPointer;
     [[nodiscard]] auto Persist(const void* mem, SLoc loc, Type ty) -> RValue;
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
@@ -1181,11 +1203,7 @@ auto Eval::LoadType(const void* mem) -> Type {
 }
 
 auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
-    if (isa<PtrType>(ty)) {
-        auto ptr = LoadPointer(mem).cast<Pointer>();
-        return PersistPointer(loc, ptr, ty);
-    }
-
+    if (isa<PtrType>(ty)) return RValue(PersistPointer(mem, loc), ty);
     if (ty->is_integer_or_bool()) return RValue(
         LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
         ty
@@ -1196,12 +1214,28 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         ty
     );
 
-    if (auto slice = dyn_cast<SliceType>(ty)) {
-        auto ptr = PtrType::Get(vm.owner(), slice->elem());
-        auto pointer = PersistPointer(loc, LoadPointer(mem).cast<Pointer>(), ptr);
+    if (isa<SliceType>(ty)) {
+        auto pointer = PersistPointer(mem, loc);
         auto size_offs = vm.owner_tu.SliceEquivalentTupleTy->layout().fields()[1]->offset;
         auto size = LoadInt(static_cast<const char*>(mem) + size_offs, Type::IntTy->bit_width(vm.owner())).cast<APInt>();
-        return RValue(Slice{vm.owner().save(std::move(pointer)), std::move(size)}, ty);
+        return RValue(Slice{pointer, std::move(size)}, ty);
+    }
+
+    if (isa<ProcType>(ty)) {
+        // Handle procedure pointers here rather than in PersistPointer() since they
+        // should really only occur inside closures.
+        auto proc_ptr = [&] -> EvaluatedPointer {
+            auto p = LoadPointer(mem).cast<Pointer>();
+            if (not vm.memory->is_virtual_proc_ptr(p)) return EvaluatedPointer::GetUnknown();
+            auto op = vm.memory->get_procedure(p);
+            auto proc = cg.lookup(op);
+            if (not proc) return EvaluatedPointer::GetUnknown();
+            return proc.get();
+        }();
+
+        auto env_offs = vm.owner_tu.ClosureEquivalentTupleTy->layout().fields()[1]->offset;
+        auto env_ptr = PersistPointer(static_cast<const char*>(mem) + env_offs, loc);
+        return RValue(Closure{proc_ptr, env_ptr}, ty);
     }
 
     if (ty == Type::TreeTy) return LoadTree(mem);
@@ -1214,17 +1248,18 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
     return RValue(mrv, ty);
 }
 
-auto Eval::PersistPointer(SLoc loc, Pointer ptr, Type ty) -> RValue {
+auto Eval::PersistPointer(const void* mem, SLoc loc) -> EvaluatedPointer {
+    auto ptr = LoadPointer(mem).cast<Pointer>();
+    if (ptr.is_null()) return EvaluatedPointer();
+
     // Pointers to local variables can’t be persisted since we have no
     // way of knowing whether the variable was deallocated (and potentially
     // overwritten by a different stack frame) after the pointer was created.
-    if (vm.memory->is_stack_pointer(ptr)) return RValue(
-        InvalidStackPointer{},
-        ty
-    );
+    if (vm.memory->is_stack_pointer(ptr))
+        return EvaluatedPointer::GetInvalidStack();
 
     ICE(loc, "Persisting this kind of pointer is not supported yet");
-    return RValue(InvalidStackPointer{}, ty);
+    return EvaluatedPointer::GetUnknown();
 }
 
 void Eval::PushFrame(

@@ -1269,6 +1269,9 @@ public:
     /// captured by any nested procedures.
     bool introduces_captures = false;
 
+    /// Whether this procedure cannot be called at runtime.
+    bool is_compile_time_only = false;
+
 private:
     ProcDecl(
         TranslationUnit* owner,
@@ -1372,6 +1375,9 @@ public:
     /// Whether this template has any variadic arguments (*not* C
     /// varargs, for that, see the 'c_varargs' attribute).
     bool has_variadic_param;
+
+    /// Whether this procedure cannot be called at runtime.
+    bool is_compile_time_only = false;
 
 private:
     ProcTemplateDecl(

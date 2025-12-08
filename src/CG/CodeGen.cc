@@ -9,6 +9,7 @@
 
 #include <clang/Basic/TargetInfo.h>
 
+#include <base/Assert.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Pass/PassManager.h>
@@ -2653,14 +2654,71 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
             auto l = C(loc);
             return {CreateInt(l, r.start, el), CreateInt(l, r.end, el)};
         },
-        [&](const eval::Slice& s) -> IRValue {
-            auto ptr = EmitValue(loc, *s.pointer).scalar();
+        [&](this auto& self, const eval::Slice& s) -> IRValue {
+            auto ptr = self(s.pointer).scalar();
             auto size = CreateInt(C(loc), s.size, Type::IntTy);
             return {ptr, size};
         },
-        [&](eval::InvalidStackPointer) -> IRValue {
-            Error(loc, "Cannot emit pointer to compile-time stack memory");
-            return LLVM::PoisonOp::create(*this, C(loc), ptr_ty)->getResult(0);
+        [&](this auto& self, const eval::Closure& c) -> IRValue {
+            // During constant evaluation, just emit this irrespective of what it is.
+            if (lang_opts.constant_eval) {
+                auto ptr = self(c.proc).scalar();
+                auto env = self(c.env).scalar();
+                return {ptr, env};
+            }
+
+            // Otherwise, this must be a procedure that is known to the compiler (e.g.
+            // some random callback returned by a library is not allowed here).
+            if (not c.proc.is_procedure()) {
+                Error(loc, "Compile-time evaluation resulted in an invalid closure");
+                return CreateNullClosure(C(loc));
+            }
+
+            if (c.proc.proc()->is_compile_time_only) {
+                Error(loc, "Compile-time only procedure cannot be referenced at runtime");
+                Note(c.proc.proc()->location(), "Procedure declared here");
+                return CreateNullClosure(C(loc));
+            }
+
+            if (not c.env.is_null()) {
+                ICE(loc, "TODO: Emitting an evaluated closure with a non-null environment");
+                return CreateNullClosure(C(loc));
+            }
+
+            return EmitClosure(c.proc.proc(), C(loc));
+        },
+        [&](eval::EvaluatedPointer p) -> IRValue {
+            auto Poison = [&] {
+                return LLVM::PoisonOp::create(
+                    *this,
+                    C(loc),
+                    ptr_ty
+                )->getResult(0);
+            };
+
+            switch (p.kind()) {
+                case eval::EvaluatedPointer::Null: return CreateNullPointer(C(loc));
+                case eval::EvaluatedPointer::Procedure: {
+                    if (lang_opts.constant_eval) {
+                        auto l = C(loc);
+                        auto op = DeclareProcedure(p.proc());
+                        return IRValue(ir::ProcRefOp::create(*this, l, op));
+                    }
+
+                    ICE(loc, "Cannot emit procedure pointer outside of closure");
+                    return Poison();
+                }
+                case eval::EvaluatedPointer::InvalidStack: {
+                    Error(loc, "Cannot emit pointer to compile-time stack memory");
+                    return Poison();
+                }
+                case eval::EvaluatedPointer::Unknown: {
+                    Error(loc, "Cannot emit unknown pointer");
+                    return Poison();
+                }
+            }
+
+            Unreachable();
         },
     }; // clang-format on
     return val.visit(V);

@@ -585,6 +585,9 @@ private:
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
+    /// Whether were are inside of an eval.
+    bool inside_eval = false;
+
     /// We disallow passing zero-sized structs to native procedures (or returning
     /// them from them), because C doesn’t really have zero-sized types; however,
     /// we might see a declaration of such a procedure before the type in question

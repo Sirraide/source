@@ -1,51 +1,112 @@
-// V %srcc --cg --verify %s
+// R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
-proc f -> int {
-    int^y = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
-        &q;
-    };
-
-    ^(eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
-        &q;
-    }) = 42;
-
-    return ^eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
-        &q;
-    };
-}
-
 proc g {
-    // This is ok since the value is discarded and thus not emitted.
     eval {
         int q = 42;
         &q;
     }
 }
 
-proc h -> int[] {
-    int[] s1 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
-        int[](&i, 1);
-    };
-
-    int[] s2 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
-        int^ j = &i;
-        int[](j, 1);
-    };
-
+proc h {
     // Ok since the value is unused.
     eval {
         int i;
         int[](&i, 1);
     };
-
-    return eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
-        int[](&i, 1);
-    };
 }
+
+proc x {}
+proc foobar = true;
+
+proc p1 {
+    var s2 = eval x;
+    s2();
+}
+
+proc p2 {
+    (eval x)();
+}
+
+proc p3 {
+    (eval if foobar() then p1 else p2)();
+    (eval if foobar() then p2 else p1)();
+}
+
+proc p6 {
+    proc t1 ($T t) = t;
+    var q1 = eval t1(42);
+    var q2 = t1(42);
+}
+
+// * proc __src_main external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1gFvE private ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1hFvE private ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1xFvE private ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S6foobarFbE private ccc -> i1 zeroext {
+// + entry:
+// +     ret i1 true
+// + }
+// +
+// + proc _S2p1FvE private ccc {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, _S1xFvE, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, ptr nil, align 8
+// +     %1 = load ptr, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load ptr, %2, align 8
+// +     call ccc void %1(ptr %3 nest nofree noundef readonly)
+// +     ret
+// + }
+// +
+// + proc _S2p2FvE private ccc {
+// + entry:
+// +     call ccc void _S1xFvE()
+// +     ret
+// + }
+// +
+// + proc _S2p3FvE private ccc {
+// + entry:
+// +     call ccc void _S2p1FvE()
+// +     call ccc void _S2p2FvE()
+// +     ret
+// + }
+// +
+// + proc _S2p6FvE private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     %0 = call ccc i64 _S2p6$2t1FiiE(i64 42)
+// +     store #1, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc _S2p6$2t1FiiE (i64 %0) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
