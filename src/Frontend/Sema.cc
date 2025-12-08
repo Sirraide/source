@@ -552,7 +552,7 @@ void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
 //  Initialisation.
 // ============================================================================
 Sema::Conversion::~Conversion() = default;
-void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init, bool init_valid) {
+void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init) {
     // Deduce the type from the initialiser, if need be.
     if (decl->type == Type::DeducedTy) {
         if (init) decl->type = init.get()->type;
@@ -572,17 +572,17 @@ void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init, bool init_valid
     }
 
     // Then, perform initialisation.
-    //
-    // If this fails, the initialiser is simply discarded; we can
-    // still continue analysing this though as most of sema doesn’t
-    // care about variable initialisers.
-    //
-    // Skip this if there was an error in the initialiser.
-    if (init_valid) decl->set_init(BuildInitialiser(
+    init = BuildInitialiser(
         decl->type,
         init ? init.get() : ArrayRef<Expr*>{},
         init ? init.get()->location() : decl->location()
-    ));
+    );
+
+    // If this fails, make sure to mark the decl as invalid so that
+    // e.g. an 'eval' doesn’t try to evaluate a decl with an invalid
+    // initialiser.
+    if (init.invalid()) decl->set_invalid();
+    decl->set_init(init);
 }
 
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
@@ -3711,7 +3711,10 @@ void Sema::Translate(bool load_runtime) {
     // Translate the preamble first since the runtime and other modules rely
     // on it always being available.
     SmallVector<Stmt*> top_level_stmts;
-    TranslateStmts(top_level_stmts, preamble->top_level);
+    if (not TranslateStmts(top_level_stmts, preamble->top_level)) {
+        ICE(tu->initialiser_proc->location(), "Failed to translate preamble");
+        return;
+    }
 
     // Load the runtime.
     if (load_runtime) LoadModule(
@@ -3759,7 +3762,7 @@ void Sema::Translate(bool load_runtime) {
     Assert(scope_stack.size() == 1);
 }
 
-void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type) {
+bool Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type) {
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
@@ -3786,7 +3789,7 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
     }
 
     // Stop if there was a problem.
-    if (not ok) return;
+    if (not ok) return false;
 
     // Having collected out-of-order symbols, now translate all statements for real.
     for (auto p : parsed) {
@@ -3794,12 +3797,16 @@ void Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
         if (auto d = dyn_cast<ParsedDecl>(p)) {
             auto decl = TranslateEntireDecl(translated_decls[p], d);
             if (decl.present()) stmts.push_back(decl.get());
+            if (decl.invalid() or not decl.get()->is_valid) ok = false;
             continue;
         }
 
         auto stmt = TranslateStmt(p, p == parsed.back() ? desired_type : Type());
         if (stmt.present()) stmts.push_back(stmt.get());
+        else ok = false;
     }
+
+    return ok;
 }
 
 // ============================================================================
@@ -3821,7 +3828,7 @@ auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Type desired_type) -> Ptr
 auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Type desired_type) -> Ptr<Stmt> {
     EnterScope _{*this, parsed->should_push_scope};
     SmallVector<Stmt*> stmts;
-    TranslateStmts(stmts, parsed->stmts(), desired_type);
+    if (not TranslateStmts(stmts, parsed->stmts(), desired_type)) return {};
     return BuildBlockExpr(curr_scope(), stmts, parsed->loc);
 }
 
@@ -4275,18 +4282,15 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
 
     // Translate the initialiser.
     Ptr<Expr> init;
-    bool init_valid = true;
     if (auto val = parsed->init.get_or_null()) {
         init = TranslateExpr(val, decl->type != Type::DeducedTy ? decl->type : Type());
-        init_valid = init.present();
-
-        // If the initialiser is invalid, we can get bogus errors
-        // if the variable type is deduced, so give up in that case.
-        if (not init and decl->type == Type::DeducedTy)
-            return decl->set_invalid();
+        if (init.invalid()) return decl->set_invalid();
     }
 
-    AddInitialiserToDecl(decl, init, init_valid);
+    // And attempt to add an initialiser irrespective of whether we
+    // parsed one; this will check if default initialisation is valid
+    // if need be.
+    AddInitialiserToDecl(decl, init);
     return decl;
 }
 

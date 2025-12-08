@@ -641,7 +641,7 @@ private:
     void AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with);
 
     /// Add an initialiser to a variable declaration.
-    void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init, bool init_valid);
+    void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init);
 
     /// Apply a conversion to an expression or list of expressions.
     void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);
@@ -974,7 +974,7 @@ private:
     auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Stmt>;
-    auto TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type = Type()) -> void;
+    bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type = Type());
     auto TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
     auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 
