@@ -1,3 +1,4 @@
+#include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/CG/ABI.hh>
 #include <srcc/CG/CodeGen.hh>
@@ -2651,6 +2652,10 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
             auto el = cast<RangeType>(val.type())->elem();
             auto l = C(loc);
             return {CreateInt(l, r.start, el), CreateInt(l, r.end, el)};
+        },
+        [&](eval::InvalidStackPointer) -> IRValue {
+            Error(loc, "Cannot emit pointer to compile-time stack memory");
+            return LLVM::PoisonOp::create(*this, C(loc), ptr_ty)->getResult(0);
         },
     }; // clang-format on
     return val.visit(V);

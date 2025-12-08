@@ -45,11 +45,12 @@ using options = clopts< // clang-format off
     flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
-    flag<"--ir", "Run codegen and emit IR. See also --llvm.">,
+    flag<"--cg", "Run codegen but do not emit anything. See also --ir, --llvm.">,
+    flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
     flag<"--ir-verbose", "Always print the type of a value">,
-    flag<"--llvm", "Run codegen and emit LLVM IR. See also --ir.">,
+    flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
     flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
 
@@ -97,8 +98,9 @@ int main(int argc, char** argv) {
     llvm::sys::Process::PreventCoreFiles();
 
     // Figure out what we want to do.
-    auto action = opts.get<"--eval">()         ? Action::Eval
+    auto action = opts.get<"--cg">()           ? Action::CodeGen
                 : opts.get<"--eval-dump-ir">() ? Action::EvalDumpIR
+                : opts.get<"--eval">()         ? Action::Eval
                 : opts.get<"--exports">()      ? Action::DumpExports
                 : opts.get<"--dump-module">()  ? Action::DumpModule
                 : opts.get<"--ir">()           ? Action::DumpIR

@@ -76,9 +76,22 @@ public:
     [[nodiscard]] auto unquotes() const -> ArrayRef<TreeValue*>;
 };
 
+/// Tag used to indicate a pointer to stack memory in the evaluator; such
+/// pointers cannot be emitted (as they are only valid within a single
+/// evaluation) and any attempt to do so should error.
+struct InvalidStackPointer {};
+
 /// Evaluated rvalue.
 class RValue {
-    Variant<APInt, Range, Type, TreeValue*, MemoryValue, std::monostate> value;
+    Variant<
+        APInt,
+        Range,
+        Type,
+        TreeValue*,
+        MemoryValue,
+        InvalidStackPointer,
+        std::monostate
+    > value;
     Type ty{Type::VoidTy};
 
 public:
@@ -89,6 +102,7 @@ public:
     RValue(TreeValue* tree) : value(tree), ty(Type::TreeTy) {}
     RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
+    RValue(InvalidStackPointer sp, Type ty) : value(sp), ty(ty) {}
 
     /// cast<>() the contained value.
     template <typename Ty>
@@ -96,6 +110,9 @@ public:
 
     template <typename Ty>
     auto cast() const -> const Ty& { return std::get<Ty>(value); }
+
+    /// Dump this value to stderr.
+    void dump() const;
 
     /// dyn_cast<>() the contained value.
     template <typename Ty>
@@ -144,13 +161,6 @@ class VM {
 
     /// Virtual memory manager.
     std::unique_ptr<VirtualMemoryMap> memory;
-
-    /// Size of the stack.
-    const Size max_stack_size = Size::Bytes(10 * 1024 * 1024);
-
-    /// Stack memory for the evaluator.
-    // TODO: Make this value configurable (via --feval-stack-size or sth.).
-    std::unique_ptr<std::byte[]> stack = std::make_unique<std::byte[]>(max_stack_size.bytes());
 
 public:
     explicit VM(TranslationUnit& owner_tu);

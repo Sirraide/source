@@ -1,0 +1,27 @@
+// V %srcc --cg --verify %s
+program test;
+
+proc f -> int {
+    int^y = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    };
+
+    ^(eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    }) = 42;
+
+    return ^eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int q = 42;
+        &q;
+    };
+}
+
+proc g {
+    // This is ok since the value is discarded and thus not emitted.
+    eval {
+        int q = 42;
+        &q;
+    }
+}

@@ -76,12 +76,13 @@ int Driver::run_job() {
     // Verifier can only run in sema/parse/lex mode.
     if (
         opts.verify and
+        a != Action::CodeGen and
         a != Action::Parse and
         a != Action::Sema and
         a != Action::Lex and
         a != Action::DumpTokens and
         a != Action::DumpIR
-    ) return Error("--verify requires one of: --lex, --parse, --sema, --ir, --tokens");
+    ) return Error("--verify requires one of: --cg, --lex, --parse, --sema, --ir, --tokens");
 
     // AST dump requires parse/sema mode.
     if (opts.print_ast and a != Action::Parse and a != Action::Sema)
@@ -255,14 +256,17 @@ int Driver::run_job() {
     // Run codegen.
     cg::CodeGen cg{*tu, tu->lang_opts()};
     cg.emit_as_needed(tu->procs);
+    if (opts.action == Action::CodeGen) {
+        if (opts.verify) return Verify();
+        return ctx.diags().has_error();
+    }
 
-    // Verify before finalising if --ir-no-finalise is passed, and abort if
-    // pre-finalisation codegen failed.
-    if (opts.verify and opts.ir_no_finalise) return Verify();
+    // Don’t run the finaliser if codegen failed.
     if (ctx.diags().has_error()) {
         if (opts.verify) {
-            ICE(SLoc(), "Could not run verifier on finalised IR due to codegen error");
-            Note(SLoc(), "Pass --ir-no-finalise if you want to test unfinalised IR");
+            ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
+            ICE(SLoc(), "Could not run --verify on finalised IR due to codegen error");
+            Note(SLoc(), "Pass --cg if you want to test unfinalised IR");
         }
         return 1;
     }

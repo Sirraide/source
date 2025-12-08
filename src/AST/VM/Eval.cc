@@ -14,6 +14,7 @@
 #include <llvm/Support/Allocator.h>
 #include <llvm/TargetParser/Host.h>
 
+#include <base/Colours.hh>
 #include <base/Formatters.hh>
 #include <base/Macros.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -65,11 +66,16 @@ auto TreeValue::unquotes() const -> ArrayRef<TreeValue*> {
     return getTrailingObjects(q->unquotes().size());
 }
 
+void RValue::dump() const {
+    std::println("{}", text::RenderColours(false, print().str()));
+}
+
 auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
         // clang-format off
         [&](std::monostate) {},
+        [&](InvalidStackPointer) { out += "<vm stack pointer>"; },
         [&](Type ty) { out += ty->print(); },
         [&](TreeValue* tree) { out += tree->dump(ctx); },
         [&](MemoryValue) { out += "<aggregate value>"; },
@@ -109,11 +115,16 @@ class Pointer {
 public:
     Pointer() = default;
 
+    /// Align this pointer.
+    [[nodiscard]] auto align(Align a) const -> Pointer {
+        return Pointer(uptr(Size::Bytes(value).align(a).bytes()));
+    }
+
     /// Check if this is the null pointer.
     [[nodiscard]] bool is_null() const { return value == 0; }
 
     /// Offset this pointer.
-    [[nodiscard]] auto offset(usz bytes) const { return Pointer(value + bytes); }
+    [[nodiscard]] auto offset(Size sz) const { return Pointer(value + sz.bytes()); }
 
     /// Get a string representation of this pointer.
     [[nodiscard]] auto str() const -> SmallString<64> {
@@ -253,6 +264,13 @@ class eval::VirtualMemoryMap {
     SmallVector<ir::ProcOp> procedures;
     DenseMap<ir::ProcOp, Pointer> lookup;
 
+    /// Size of the stack.
+    static constexpr Size max_stack_size = Size::Bytes(10 * 1024 * 1024);
+
+    /// Stack memory for the evaluator.
+    // TODO: Make this value configurable (via --feval-stack-size or sth.).
+    std::unique_ptr<std::byte[]> stack = std::make_unique<std::byte[]>(max_stack_size.bytes());
+
 public:
     VirtualMemoryMap() = default;
 
@@ -263,8 +281,14 @@ public:
     template <typename T = void>
     [[nodiscard]] auto get_host_pointer(Pointer p) -> T*;
 
+    /// Get the start of stack memory.
+    [[nodiscard]] auto get_stack_bottom() -> Pointer;
+
     /// Check if a pointer is a host memory pointer.
     [[nodiscard]] bool is_host_pointer(Pointer p);
+
+    /// Check if this is a pointer to stack memory.
+    [[nodiscard]] bool is_stack_pointer(Pointer p);
 
     /// Check if a pointer is a virtual procedure pointer.
     [[nodiscard]] bool is_virtual_proc_ptr(Pointer p);
@@ -275,6 +299,9 @@ public:
     /// Add a procedure to the table if it isn't already registered and return a VM
     /// pointer to it.
     [[nodiscard]] auto make_proc_ptr(ir::ProcOp proc) -> Pointer;
+
+    /// Get the maximum stack size.
+    [[nodiscard]] auto stack_size() -> Size { return max_stack_size; }
 
 private:
     bool IsVirtualProcPtr(uptr p);
@@ -311,8 +338,18 @@ auto VirtualMemoryMap::get_procedure(Pointer p) -> ir::ProcOp {
     return UnwrapVirtualPointer(p);
 }
 
+auto VirtualMemoryMap::get_stack_bottom() -> Pointer {
+    return Pointer(uptr(stack.get()));
+}
+
 bool VirtualMemoryMap::is_host_pointer(Pointer p) {
     return not is_virtual_proc_ptr(p);
+}
+
+bool VirtualMemoryMap::is_stack_pointer(Pointer p) {
+    uptr start = uptr(stack.get());
+    uptr end = start + max_stack_size.bytes();
+    return p.value >= start and p.value < end;
 }
 
 bool VirtualMemoryMap::is_virtual_proc_ptr(Pointer p) {
@@ -375,7 +412,7 @@ public:
         StableVector<SRValue> materialised_values{};
 
         /// Stack size at the start of this procedure.
-        std::byte* stack_base{};
+        Pointer stack_base{};
 
         /// Return value slots.
         RetVals ret_vals{};
@@ -389,7 +426,7 @@ public:
     SmallVector<StackFrame, 4> call_stack;
     const SRValue true_val{true};
     const SRValue false_val{false};
-    std::byte* stack_top{};
+    Pointer stack_top{};
     SLoc entry;
     bool complain;
 
@@ -439,7 +476,7 @@ private:
 Eval::Eval(VM& vm, bool complain)
     : vm{vm},
       cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
-      stack_top{vm.stack.get()},
+      stack_top{vm.memory->get_stack_bottom()},
       complain{complain} {}
 
 auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
@@ -449,19 +486,17 @@ auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
 }
 
 auto Eval::AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> std::optional<Pointer> {
-    auto ptr = alignment.align(stack_top);
-    stack_top = ptr + sz;
-    if (stack_top > vm.stack.get() + vm.max_stack_size) {
-        Error(SLoc::Decode(loc), "Stack overflow");
-        Remark(
-            "This may have been caused by infinite recursion. If you don’t think that "
-            "that’s the case, you can increase the maximum eval stack size by passing "
-            "--feval-stack-size (current value: {:y})",
-            vm.max_stack_size
-        );
-        return std::nullopt;
-    }
-    return vm.memory->make_host_pointer(uptr(ptr));
+    auto ptr = stack_top.align(alignment);
+    stack_top = ptr.offset(sz);
+    if (vm.memory->is_stack_pointer(stack_top)) return ptr;
+    Error(SLoc::Decode(loc), "Stack overflow");
+    Remark(
+        "This may have been caused by infinite recursion. If you don’t think that "
+        "that’s the case, you can increase the maximum eval stack size by passing "
+        "--feval-stack-size (current value: {:y})",
+        vm.memory->stack_size()
+    );
+    return std::nullopt;
 }
 
 
@@ -811,7 +846,7 @@ bool Eval::EvalLoop() {
             uptr offs;
             if (auto lit = dyn_cast<mlir::IntegerAttr>(idx)) offs = lit.getValue().getZExtValue();
             else offs = Val(cast<Value>(idx)).cast<APInt>().getZExtValue();
-            Temp(gep) = SRValue(Val(gep.getBase()).cast<Pointer>().offset(offs));
+            Temp(gep) = SRValue(Val(gep.getBase()).cast<Pointer>().offset(Size::Bytes(offs)));
             continue;
         }
 
@@ -1252,6 +1287,15 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // If the return value is a primitive, return it directly.
     if (isa<PtrType>(ty)) {
+        // Pointers to local variables can’t be persisted since we have no
+        // way of knowing whether the variable was deallocated (and potentially
+        // overwritten by a different stack frame) after the pointer was created.
+        auto ptr = LoadPointer(mem).cast<Pointer>();
+        if (vm.memory->is_stack_pointer(ptr)) return RValue(
+            InvalidStackPointer{},
+            ty
+        );
+
         ICE(s->location(), "Top-level evaluations that return a pointer are not supported yet");
         return std::nullopt;
     }
