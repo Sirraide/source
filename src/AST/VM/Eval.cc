@@ -744,6 +744,68 @@ bool Eval::EvalLoop() {
             continue;
         }
 
+        if (auto prop = dyn_cast<ir::TypePropertyOp>(i)) {
+            auto ty = Val(prop.getTypeArgument()).cast<Type>();
+            auto InvalidQuery = [&] {
+                return Error(
+                    SLoc::Decode(i->getLoc()),
+                    "Type '{}' has no member '%5({}%)'",
+                    ty,
+                    prop.getProperty()
+                );
+            };
+
+            switch (prop.getProperty()) {
+                using enum BuiltinMemberAccessExpr::AccessKind;
+                case TypeAlign:
+                    Temp(i->getResult(0)) = SRValue(i64(ty->align(vm.owner()).value().bytes()));
+                    continue;
+
+                case TypeArraySize:
+                    Temp(i->getResult(0)) = SRValue(i64(ty->array_size(vm.owner()).bytes()));
+                    continue;
+
+                case TypeBits:
+                    Temp(i->getResult(0)) = SRValue(i64(ty->bit_width(vm.owner()).bits()));
+                    continue;
+
+                case TypeName: {
+                    auto s = vm.owner().save(StripColours(ty->print()));
+                    Temp(i->getResult(0)) = SRValue(vm.memory->make_host_pointer(uptr(s.data())));
+                    Temp(i->getResult(1)) = SRValue(i64(s.size()));
+                    continue;
+                }
+
+                case TypeBytes:
+                case TypeSize:
+                    Temp(i->getResult(0)) = SRValue(i64(ty->memory_size(vm.owner()).bytes()));
+                    continue;
+
+                // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
+                // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
+                // emit an error about this at evaluation time.
+                case TypeMaxVal: {
+                    if (not ty->is_integer()) return InvalidQuery();
+                    Temp(i->getResult(0)) = SRValue(APInt::getSignedMaxValue(u32(ty->bit_width(vm.owner()).bits())));
+                    continue;
+                }
+
+                case TypeMinVal: {
+                    if (not ty->is_integer()) return InvalidQuery();
+                    Temp(i->getResult(0)) = SRValue(APInt::getSignedMinValue(u32(ty->bit_width(vm.owner()).bits())));
+                    continue;
+                }
+
+                case SliceData:
+                case SliceSize:
+                case RangeStart:
+                case RangeEnd:
+                    Unreachable("Not a type property: {}", prop.getProperty());
+            }
+
+            Unreachable();
+        }
+
         if (auto gep = dyn_cast<mlir::LLVM::GEPOp>(i)) {
             auto idx = gep.getIndices()[0];
             uptr offs;

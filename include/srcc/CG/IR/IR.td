@@ -95,6 +95,13 @@ def SRCC_TypeAttr : SRCC_Attr<"Type", "type"> {
 }
 
 def SRCC_AbortReasonAttr : EnumAttr<SRCC_Dialect, SRCC_AbortReason_Enum, "AbortReason">;
+def SRCC_BuiltinMemberAccessKindAttr : SRCC_Attr<"BuiltinMemberAccessKind", "access_kind"> {
+    let summary = "Type of a type constant or value";
+    let description = "A compile-time type value";
+    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::BuiltinMemberAccessExpr::AccessKind":$value);
+    let hasCustomAssemblyFormat = 1;
+    let genMnemonicAlias = 1;
+}
 
 // ============================================================================
 //  Operations
@@ -479,6 +486,13 @@ def TypeEqOp : SRCC_Op<"type.eq", [Pure]> {
     let arguments = (ins SRCC_Type:$lhs, SRCC_Type:$rhs);
     let results = (outs SRCC_Bool);
     let hasFolder = 1;
+}
+
+def TypePropertyOp : SRCC_Op<"type.prop", [Pure]> {
+    let summary = "Query a compile-time known property of a type";
+    let arguments = (ins SRCC_Type:$type_argument, Property<"::srcc::BuiltinMemberAccessExpr::AccessKind">:$property);
+    let results = (outs Variadic<SRCC_AnyType>);
+    let hasFolder = 0; // We perform the folding in codegen.
 }
 
 def UnwrapOp : SRCC_Op<"unwrap"> {

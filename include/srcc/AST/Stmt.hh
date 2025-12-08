@@ -1473,4 +1473,12 @@ struct std::formatter<srcc::BuiltinCallExpr::Builtin> : std::formatter<std::stri
     }
 };
 
+template <>
+struct std::formatter<srcc::BuiltinMemberAccessExpr::AccessKind> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(srcc::BuiltinMemberAccessExpr::AccessKind b, FormatContext& ctx) const {
+        return std::formatter<std::string_view>::format(srcc::BuiltinMemberAccessExpr::ToMemberName(b), ctx);
+    }
+};
+
 #endif // SRCC_AST_STMT_HH

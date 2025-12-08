@@ -30,6 +30,9 @@
 
 // clang-format on
 
+#define SRCC_ENUMS_EXPOSED_TO_MLIR(X) \
+    X(srcc::BuiltinMemberAccessExpr::AccessKind, BuiltinMemberAccessKindAttr)
+
 namespace srcc::cg {
 using mlir::Block;
 using mlir::Operation;
@@ -38,7 +41,7 @@ using mlir::Value;
 namespace ir {
 auto FormatType(mlir::Type ty) -> SmallString<128>;
 
-#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE)                                              \
+#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE, ...)                                         \
     mlir::LogicalResult readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage); \
     void writeToMlirBytecode(mlir::DialectBytecodeWriter& reader, TYPE storage);                  \
     mlir::Attribute convertToAttribute(mlir::MLIRContext* ctx, TYPE storage);                     \
@@ -51,6 +54,7 @@ auto FormatType(mlir::Type ty) -> SmallString<128>;
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::TreeValue*);
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Stmt*);
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Type);
+SRCC_ENUMS_EXPOSED_TO_MLIR(COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE);
 
 #undef COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE
 }

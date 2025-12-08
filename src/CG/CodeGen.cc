@@ -1049,15 +1049,17 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         //
         // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
         [&](ConstExpr* e) {
-            auto mrv = e->value->cast<eval::MemoryValue>();
-            auto c = CreateGlobalStringPtr(
-                init->type->align(tu),
-                String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()),
-                false
-            );
+            Todo(); // See EmitValue()
 
-            auto loc = C(init->location());
-            CreateMemCpy(loc, addr, c, init->type);
+            //auto mrv = e->value->cast<eval::MemoryValue>();
+            //auto c = CreateGlobalStringPtr(
+            //    init->type->align(tu),
+            //    String::CreateUnsafe(static_cast<char*>(mrv.data()), mrv.size().bytes()),
+            //    false
+            //);
+            //
+            //auto loc = C(init->location());
+            //CreateMemCpy(loc, addr, c, init->type);
         },
 
         // Default initialiser here is a memset to 0.
@@ -1691,53 +1693,111 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRValue {
-    auto l = C(expr->location());
+    using enum BuiltinMemberAccessExpr::AccessKind;
+
+    // Handle type properties.
+    if (expr->operand->type == Type::TypeTy) {
+        // If we don’t yet know what type we are dealing with,
+        // emit code to evaluate this later.
+        auto type_expr = dyn_cast<TypeExpr>(expr->operand->ignore_parens());
+        if (not type_expr)  {
+            static_assert(+$$Count == 11);
+            SmallVector<mlir::Type> result_types;
+
+            // Currently, the only property that returns something other than an
+            // 'int' is 'size', which returns a slice.
+            if (expr->access_kind == TypeName) {
+                result_types.push_back(ptr_ty);
+                result_types.push_back(int_ty);
+            } else {
+                result_types.push_back(int_ty);
+            }
+
+            auto type = EmitScalar(expr->operand);
+            auto op = ir::TypePropertyOp::create(
+                *this,
+                C(expr->location()),
+                result_types,
+                type,
+                expr->access_kind
+            );
+
+            return op->getResults();
+        }
+
+        // Otherwise, constant-fold the property.
+        auto l = C(expr->location());
+        auto ty = type_expr->value;
+        auto InvalidQuery = [&] (mlir::Type result) -> IRValue {
+            Error(
+                expr->location(),
+                "Type '{}' has no member '%5({}%)'",
+                ty,
+                expr->access_kind
+            );
+
+            return LLVM::PoisonOp::create(*this, l, result)->getResult(0);
+        };
+
+        switch (expr->access_kind) {
+            case TypeAlign: return CreateInt(l, i64(ty->align(tu).value().bytes()));
+            case TypeArraySize: return CreateInt(l, i64(ty->array_size(tu).bytes()));
+            case TypeBits: return CreateInt(l, i64(ty->bit_width(tu).bits()));
+            case TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(ty->print())));
+
+            case TypeBytes:
+            case TypeSize:
+                return CreateInt(l, i64(ty->memory_size(tu).bytes()));
+
+            // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
+            // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
+            // emit an error about this at evaluation time.
+            case TypeMaxVal: {
+                if (not ty->is_integer()) return InvalidQuery(int_ty);
+                return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
+            }
+
+            case TypeMinVal: {
+                if (not ty->is_integer()) return InvalidQuery(int_ty);
+                return CreateInt(l, APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
+            }
+
+            case SliceData:
+            case SliceSize:
+            case RangeStart:
+            case RangeEnd:
+                Unreachable("Not a type property");
+        }
+
+        Unreachable();
+    }
+
     auto GetField = [&] (unsigned i) -> IRValue {
         if (expr->operand->is_rvalue()) return Emit(expr->operand)[i];
         auto r = GetEquivalentRecordTypeForAggregate(expr->operand->type);
         Assert(r, "Could not get equivalent record layout for type '{}'", expr->operand->type);
         auto f = r->layout().fields()[i];
         auto addr = EmitScalar(expr->operand);
-        return CreateLoad(l, addr, f->type, f->offset);
-    };
-
-    auto Ty = [&] {
-        // FIXME: This doesn’t handle compile-time type variables properly; we should
-        // instead emit all of the properties that operate on types as a 'TypePropertyOp'
-        // or sth like that and then just constant fold it if we do happen to pass it a
-        // type constant.
-        Assert(isa<TypeExpr>(expr->operand->ignore_parens()), "TODO");
-        return cast<TypeExpr>(expr->operand->ignore_parens());
+        return CreateLoad(C(expr->location()), addr, f->type, f->offset);
     };
 
     switch (expr->access_kind) {
-        using AK = BuiltinMemberAccessExpr::AccessKind;
-        case AK::SliceData: return GetField(0);
-        case AK::SliceSize: return GetField(1);
-        case AK::RangeStart: return GetField(0);
-        case AK::RangeEnd: return GetField(1);
-        case AK::TypeAlign: return CreateInt(l, i64(Ty()->value->align(tu).value().bytes()));
-        case AK::TypeArraySize: return CreateInt(l, i64(Ty()->value->array_size(tu).bytes()));
-        case AK::TypeBits: return CreateInt(l, i64(Ty()->value->bit_width(tu).bits()));
-        case AK::TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(Ty()->value->print())));
+        case TypeAlign:
+        case TypeArraySize:
+        case TypeBits:
+        case TypeBytes:
+        case TypeSize:
+        case TypeName:
+        case TypeMaxVal:
+        case TypeMinVal:
+            Unreachable("Type properties are handled above");
 
-        case AK::TypeBytes:
-        case AK::TypeSize:
-            return CreateInt(l, i64(Ty()->value->memory_size(tu).bytes()));
-
-        // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
-        // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
-        // emit an error about this at evaluation time.
-        case AK::TypeMaxVal: {
-            auto ty = Ty()->value;
-            return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
-        }
-
-        case AK::TypeMinVal: {
-            auto ty = Ty()->value;
-            return CreateInt(l, APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
-        }
+        case SliceData: return GetField(0);
+        case SliceSize: return GetField(1);
+        case RangeStart: return GetField(0);
+        case RangeEnd: return GetField(1);
     }
+
     Unreachable();
 }
 
@@ -2571,7 +2631,22 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
         [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
         [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
         [&](const APInt& value) -> IRValue { return CreateInt(C(loc), value, val.type()); },
-        [&](eval::MemoryValue) -> IRValue { return {}; }, // This only happens if the value is unused.
+        [&](eval::MemoryValue v) -> IRValue {
+            // We need to figure out what to do w/ constant values that contain pointers;
+            // what we should do is turn RValue into a data structure more similar to Clang’s
+            // APValue (except perhaps with primitive fields merged into byte buffers) such
+            // that we can build a representation that tells us what each pointer is (e.g. string,
+            // function, imported function, another value, unknown (e.g. returned by a
+            // compile-time call to 'malloc'), etc.).
+            //
+            // What we need for this is some operation that takes a pointer value and figures out
+            // what it is supposed to be; we need this for integer<->pointer conversion and also
+            // for functions like 'memchr' which return pointers that point into compile-time known
+            // ranges; essentially, we need a map of all pointers that keeps track of all memory
+            // locations known to the evaluator, except that we don’t use it to disallow stores/loads
+            // to unknown addresses, but rather just to figure out how to persist values.
+            Todo();
+        },
         [&](const eval::Range& r) -> IRValue {
             auto el = cast<RangeType>(val.type())->elem();
             auto l = C(loc);

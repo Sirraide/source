@@ -1,3 +1,4 @@
+#include <srcc/AST/Stmt.hh>
 #include <mlir/Support/LLVM.h>
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
@@ -30,7 +31,7 @@ auto SRCCDialect::materializeConstant(
     Unreachable("Don’t know how to materialise this attribute: {}", s);
 }
 
-#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE, ATTR, MLIRTYPE)                                   \
+#define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE, ATTR, MLIRTYPE, DEBUG_STR)                        \
     mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, TYPE storage) {                     \
         return ir::ATTR::get(ctx, MLIRTYPE, storage);                                                  \
     }                                                                                                  \
@@ -55,23 +56,67 @@ auto SRCCDialect::materializeConstant(
                                                                                                        \
     void ir::writeToMlirBytecode(mlir::DialectBytecodeWriter& reader, TYPE storage) {                  \
         Todo();                                                                                        \
+    }                                                                                                  \
+                                                                                                       \
+    ::mlir::Attribute ir::ATTR::parse(::mlir::AsmParser& odsParser, mlir::Type odsType) {              \
+        Todo();                                                                                        \
+    }                                                                                                  \
+                                                                                                       \
+    void ir::ATTR::print(::mlir::AsmPrinter& odsPrinter) const {                                       \
+        odsPrinter << DEBUG_STR;                                                                       \
     }
 
-#define COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(ATTR, DEBUG_STR)                            \
-    ::mlir::Attribute ir::ATTR::parse(::mlir::AsmParser& odsParser, ::mlir::Type odsType) { \
-        Todo();                                                                             \
-    }                                                                                       \
-                                                                                            \
-    void ir::ATTR::print(::mlir::AsmPrinter& odsPrinter) const {                            \
-        odsPrinter << DEBUG_STR;                                                            \
+#define EXPOSE_ENUM_PROPERTY(TYPE, ATTR)                                                                 \
+    mlir::Attribute ir::convertToAttribute(mlir::MLIRContext* ctx, TYPE storage) {                       \
+        return ir::ATTR::get(ctx, mlir::IntegerType::get(ctx, 64), storage);                             \
+    }                                                                                                    \
+                                                                                                         \
+    mlir::LogicalResult ir::convertFromAttribute(                                                        \
+        TYPE& storage,                                                                                   \
+        mlir::Attribute attr,                                                                            \
+        llvm::function_ref<mlir::InFlightDiagnostic()> emitError                                         \
+    ) {                                                                                                  \
+        if (not isa<mlir::IntegerAttr>(attr)) {                                                          \
+            emitError() << "invalid value for " #TYPE "; expected IntegerAttr";                          \
+            return mlir::failure();                                                                      \
+        }                                                                                                \
+                                                                                                         \
+        auto value = cast<mlir::IntegerAttr>(attr).getInt();                                             \
+        if (value > +TYPE::$$Count) {                                                                    \
+            emitError() << "invalid value for " #TYPE ": " << value;                                     \
+            return mlir::failure();                                                                      \
+        }                                                                                                \
+                                                                                                         \
+        storage = TYPE(value);                                                                           \
+        return mlir::success();                                                                          \
+    }                                                                                                    \
+                                                                                                         \
+    mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage) {   \
+        u64 value;                                                                                       \
+        if (failed(reader.readVarInt(value))) return mlir::failure();                                    \
+        if (value > +TYPE::$$Count) {                                                                    \
+            return mlir::failure();                                                                      \
+        }                                                                                                \
+        storage = TYPE(value);                                                                           \
+        return mlir::success();                                                                          \
+    }                                                                                                    \
+                                                                                                         \
+    void ir::writeToMlirBytecode(mlir::DialectBytecodeWriter& writer, TYPE storage) {                    \
+        writer.writeVarInt(u64(storage));                                                                \
+    }                                                                                                    \
+                                                                                                         \
+    ::mlir::Attribute ir::ATTR::parse(::mlir::AsmParser& odsParser, mlir::Type odsType) {                \
+        Todo();                                                                                          \
+    }                                                                                                    \
+                                                                                                         \
+    void ir::ATTR::print(::mlir::AsmPrinter& odsPrinter) const {                                         \
+        odsPrinter << enchantum::to_string(getValue());                                                  \
     }
 
-COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TreeValue*, TreeAttr, ir::TreeType::get(ctx))
-COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Stmt*, StmtAttr, ir::TreeType::get(ctx))
-COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Type, TypeAttr, ir::TypeType::get(ctx))
-COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(TreeAttr, "<tree>")
-COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(TypeAttr, "<type>")
-COMPILE_TIME_ONLY_ATTRIBUTE_BOILERPLATE(StmtAttr, "<stmt>")
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TreeValue*, TreeAttr, ir::TreeType::get(ctx), "<tree>")
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Stmt*, StmtAttr, ir::TreeType::get(ctx), "<type>")
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Type, TypeAttr, ir::TypeType::get(ctx), "<stmt>")
+SRCC_ENUMS_EXPOSED_TO_MLIR(EXPOSE_ENUM_PROPERTY)
 
 // ============================================================================
 //  Folders

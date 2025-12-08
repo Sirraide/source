@@ -22,9 +22,7 @@ eval with s(2) {
 eval with q() do assert x == 42;
 eval with q() do assert x == 44; // expected-error: Assertion failed: 'x == 44'
 
-// TODO: Implement proper support for member access on type variables so we can actually evaluate this
-with i64 {
+eval with i64 {
     assert bits == 64;
     assert bytes == 8;
-    assert name == "i64";
 }

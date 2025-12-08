@@ -1,4 +1,5 @@
 #include <srcc/AST/AST.hh>
+#include <srcc/AST/Stmt.hh>
 #include <srcc/CG/CodeGen.hh>
 #include <srcc/CG/IR/IR.hh>
 #include <srcc/Core/Constants.hh>
@@ -405,6 +406,11 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto eq = dyn_cast<TypeEqOp>(op)) {
         Format(out, "type.eq {}, {}", val(eq.getLhs(), false), val(eq.getRhs(), false));
+        return;
+    }
+
+    if (auto prop = dyn_cast<TypePropertyOp>(op)) {
+        Format(out, "type.prop %5({}%), {}", prop.getProperty(), val(prop.getTypeArgument(), false));
         return;
     }
 

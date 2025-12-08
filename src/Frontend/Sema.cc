@@ -2970,12 +2970,14 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case AK::TypeBits:
             case AK::TypeBytes:
             case AK::TypeSize:
+                operand = LValueToRValue(operand);
                 return Type::IntTy;
 
             case AK::SliceSize:
                 return Type::IntTy;
 
             case AK::TypeName:
+                operand = LValueToRValue(operand);
                 return tu->StrLitTy;
 
             case AK::RangeStart:
@@ -2984,6 +2986,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
             case AK::TypeMaxVal:
             case AK::TypeMinVal:
+                operand = LValueToRValue(operand);
                 return cast<TypeExpr>(operand)->value;
 
             case AK::SliceData:
