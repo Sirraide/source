@@ -25,3 +25,27 @@ proc g {
         &q;
     }
 }
+
+proc h -> int[] {
+    int[] s1 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int[](&i, 1);
+    };
+
+    int[] s2 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int^ j = &i;
+        int[](j, 1);
+    };
+
+    // Ok since the value is unused.
+    eval {
+        int i;
+        int[](&i, 1);
+    };
+
+    return eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        int i;
+        int[](&i, 1);
+    };
+}

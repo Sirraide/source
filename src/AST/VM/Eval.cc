@@ -84,6 +84,9 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             out += "%1(..<%)";
             self(r.end);
         },
+        [&](const eval::Slice& s) {
+            Format(out, "%1((%){}%1(, %){}%1()%)", s.pointer->print(ctx), s.size);
+        },
         [&](const APInt& value) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
             else Format(out, "%5({}%)", toString(value, 10, true));
@@ -458,6 +461,10 @@ private:
     [[nodiscard]] auto LoadSRValue(const void* mem, mlir::Type ty) -> SRValue;
     [[nodiscard]] auto LoadInt(const void* mem, Size width) -> SRValue;
     [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
+    [[nodiscard]] auto LoadType(const void* mem) -> Type;
+    [[nodiscard]] auto LoadTree(const void* mem) -> TreeValue*;
+    [[nodiscard]] auto PersistPointer(SLoc loc, Pointer ptr, Type ty) -> RValue;
+    [[nodiscard]] auto Persist(const void* mem, SLoc loc, Type ty) -> RValue;
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
 
@@ -1154,18 +1161,70 @@ auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
         return LoadInt(mem, Size::Bits(i.getWidth()));
     if (isa<mlir::LLVM::LLVMPointerType>(ty))
         return LoadPointer(mem);
-    if (isa<ir::TreeType>(ty)) {
-        TreeValue* ptr{};
-        std::memcpy(&ptr, mem, sizeof(TreeValue*));
-        return SRValue(ptr);
-    }
-    if (isa<ir::TypeType>(ty)) {
-        TypeBase* ptr{};
-        std::memcpy(&ptr, mem, sizeof(TypeBase*));
-        return SRValue(Type(ptr));
-    }
+    if (isa<ir::TreeType>(ty)) return SRValue(LoadTree(mem));
+    if (isa<ir::TypeType>(ty)) return SRValue(LoadType(mem));
 
     Unreachable("Cannot load value of type '{}'", ty);
+}
+
+auto Eval::LoadTree(const void* mem) -> TreeValue* {
+    TreeValue* ptr{};
+    std::memcpy(&ptr, mem, sizeof(TreeValue*));
+    return ptr;
+}
+
+
+auto Eval::LoadType(const void* mem) -> Type {
+    TypeBase* ptr{};
+    std::memcpy(&ptr, mem, sizeof(TypeBase*));
+    return Type(ptr);
+}
+
+auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
+    if (isa<PtrType>(ty)) {
+        auto ptr = LoadPointer(mem).cast<Pointer>();
+        return PersistPointer(loc, ptr, ty);
+    }
+
+    if (ty->is_integer_or_bool()) return RValue(
+        LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
+        ty
+    );
+
+    if (auto r = dyn_cast<RangeType>(ty)) return RValue(
+        LoadRangeFromMemory(mem, vm.owner(), r),
+        ty
+    );
+
+    if (auto slice = dyn_cast<SliceType>(ty)) {
+        auto ptr = PtrType::Get(vm.owner(), slice->elem());
+        auto pointer = PersistPointer(loc, LoadPointer(mem).cast<Pointer>(), ptr);
+        auto size_offs = vm.owner_tu.SliceEquivalentTupleTy->layout().fields()[1]->offset;
+        auto size = LoadInt(static_cast<const char*>(mem) + size_offs, Type::IntTy->bit_width(vm.owner())).cast<APInt>();
+        return RValue(Slice{vm.owner().save(std::move(pointer)), std::move(size)}, ty);
+    }
+
+    if (ty == Type::TreeTy) return LoadTree(mem);
+    if (ty == Type::TypeTy) return LoadType(mem);
+
+    // Otherwise, allocate memory for it and store it there.
+    Assert((isa<ProcType, RecordType, ArrayType>(ty)));
+    auto mrv = vm.allocate_memory_value(ty);
+    std::memcpy(mrv.data(), mem, mrv.size().bytes());
+    return RValue(mrv, ty);
+}
+
+auto Eval::PersistPointer(SLoc loc, Pointer ptr, Type ty) -> RValue {
+    // Pointers to local variables can’t be persisted since we have no
+    // way of knowing whether the variable was deallocated (and potentially
+    // overwritten by a different stack frame) after the pointer was created.
+    if (vm.memory->is_stack_pointer(ptr)) return RValue(
+        InvalidStackPointer{},
+        ty
+    );
+
+    ICE(loc, "Persisting this kind of pointer is not supported yet");
+    return RValue(InvalidStackPointer{}, ty);
 }
 
 void Eval::PushFrame(
@@ -1284,47 +1343,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     if (not yields_value) return RValue();
     Assert(ret);
     auto mem = reinterpret_cast<const void*>(ret.raw_value());
-
-    // If the return value is a primitive, return it directly.
-    if (isa<PtrType>(ty)) {
-        // Pointers to local variables can’t be persisted since we have no
-        // way of knowing whether the variable was deallocated (and potentially
-        // overwritten by a different stack frame) after the pointer was created.
-        auto ptr = LoadPointer(mem).cast<Pointer>();
-        if (vm.memory->is_stack_pointer(ptr)) return RValue(
-            InvalidStackPointer{},
-            ty
-        );
-
-        ICE(s->location(), "Top-level evaluations that return a pointer are not supported yet");
-        return std::nullopt;
-    }
-
-    if (ty->is_integer_or_bool()) return RValue(
-        LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
-        ty
-    );
-
-    if (auto r = dyn_cast<RangeType>(ty)) return RValue(
-        LoadRangeFromMemory(mem, vm.owner(), r),
-        ty
-    );
-
-    if (ty == Type::TreeTy) return LoadSRValue(
-        mem,
-        ir::TreeType::get(proc->getContext())
-    ).cast<TreeValue*>();
-
-    if (ty == Type::TypeTy) return LoadSRValue(
-        mem,
-        ir::TypeType::get(proc->getContext())
-    ).cast<Type>();
-
-    // Otherwise, allocate memory for it and store it there.
-    Assert((isa<SliceType, ProcType, RecordType, ArrayType>(ty)));
-    auto mrv = vm.allocate_memory_value(ty);
-    std::memcpy(mrv.data(), mem, mrv.size().bytes());
-    return RValue(mrv, ty);
+    return Persist(mem, s->location(), ty);
 }
 
 // ============================================================================

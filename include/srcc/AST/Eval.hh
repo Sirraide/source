@@ -61,6 +61,12 @@ struct Range {
     APInt end;
 };
 
+/// Evaluated slice.
+struct Slice {
+    RValue* pointer;
+    APInt size;
+};
+
 /// Evaluated '#quote' with all unquotes substituted.
 class TreeValue final : llvm::TrailingObjects<TreeValue, TreeValue*> {
     friend VM;
@@ -86,6 +92,7 @@ class RValue {
     Variant<
         APInt,
         Range,
+        Slice,
         Type,
         TreeValue*,
         MemoryValue,
@@ -101,6 +108,7 @@ public:
     RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
     RValue(TreeValue* tree) : value(tree), ty(Type::TreeTy) {}
     RValue(Range r, Type ty) : value(std::move(r)), ty(ty) {}
+    RValue(Slice s, Type ty) : value(std::move(s)), ty(ty) {}
     RValue(MemoryValue val, Type ty) : value(val), ty(ty) {}
     RValue(InvalidStackPointer sp, Type ty) : value(sp), ty(ty) {}
 

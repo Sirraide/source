@@ -2653,6 +2653,11 @@ auto CodeGen::EmitValue(SLoc loc, const eval::RValue& val) -> IRValue { // clang
             auto l = C(loc);
             return {CreateInt(l, r.start, el), CreateInt(l, r.end, el)};
         },
+        [&](const eval::Slice& s) -> IRValue {
+            auto ptr = EmitValue(loc, *s.pointer).scalar();
+            auto size = CreateInt(C(loc), s.size, Type::IntTy);
+            return {ptr, size};
+        },
         [&](eval::InvalidStackPointer) -> IRValue {
             Error(loc, "Cannot emit pointer to compile-time stack memory");
             return LLVM::PoisonOp::create(*this, C(loc), ptr_ty)->getResult(0);
