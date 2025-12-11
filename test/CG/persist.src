@@ -110,6 +110,14 @@ proc str {
     string s2 = eval string("quux");
 }
 
+
+proc str1 {
+    var x1 = eval __srcc_ptradd("1234".data, 0);
+    var x2 = eval __srcc_ptradd("1234".data, 1);
+    var x3 = eval __srcc_ptradd("1234".data, 3);
+    var x4 = eval __srcc_ptradd("1234".data, 4);
+}
+
 // * @0 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00", align 8
 // + @1 = "\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", align 8
 // + @2 = "\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00\07\00\00\00\00\00\00\00\08\00\00\00\00\00\00\00\FF", align 8
@@ -119,6 +127,7 @@ proc str {
 // + @6 = "bar\00"
 // + @7 = "baz\00"
 // + @8 = "quux\00"
+// + @9 = "1234\00"
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -282,5 +291,22 @@ proc str {
 // +     store #3, ptr @8, align 8
 // +     %3 = ptradd #3, 8
 // +     store %3, i64 4, align 8
+// +     ret
+// + }
+// +
+// + proc _S4str1FvE private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr @9, align 8
+// +     %0 = ptradd @9, 1
+// +     store #1, ptr %0, align 8
+// +     %1 = ptradd @9, 3
+// +     store #2, ptr %1, align 8
+// +     %2 = ptradd @9, 4
+// +     store #3, ptr %2, align 8
 // +     ret
 // + }

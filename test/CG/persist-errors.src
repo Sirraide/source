@@ -106,3 +106,8 @@ proc p7 {
         s(i, &i);
     };
 }
+
+proc str {
+    var x5 = eval __srcc_ptradd("1234".data, 5); // expected-error: Cannot emit unknown pointer
+    var x6 = eval __srcc_ptradd("1234".data, 10); // expected-error: Cannot emit unknown pointer
+}

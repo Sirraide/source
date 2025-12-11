@@ -23,7 +23,6 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 
 #include <ffi.h>
-#include <flat_set>
 #include <memory>
 #include <optional>
 #include <print>
@@ -314,7 +313,7 @@ class eval::VirtualMemoryMap {
     std::unique_ptr<std::byte[]> stack = std::make_unique<std::byte[]>(max_stack_size.bytes());
 
     /// Known strings.
-    std::flat_set<String> string_constants;
+    SmallVector<String> string_constants;
 
 public:
     VirtualMemoryMap(VM& vm) : vm{vm} {}
@@ -435,7 +434,7 @@ auto VirtualMemoryMap::make_proc_ptr(ir::ProcOp proc) -> Pointer {
 }
 
 auto VirtualMemoryMap::make_string_ptr(String s) -> Pointer {
-    string_constants.insert(s);
+    string_constants.push_back(s);
     return make_host_pointer(uptr(s.data()));
 }
 
@@ -1264,7 +1263,6 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
             return EvaluatedPointer(*s, offs);
         }
 
-        ICE(loc, "Persisting this kind of pointer is not supported yet");
         return EvaluatedPointer::GetUnknown();
     };
 
