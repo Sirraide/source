@@ -111,6 +111,19 @@ CodeGen::EnterLoop::~EnterLoop() {
     cg.curr.loop_stack.pop_back();
 }
 
+template <typename Op>
+void CodeGen::SetInsertPointToStartButSkipOpsOfType(Block* bb) {
+    // Do this stupid garbage because allowing a separate region in a function for
+    // frame slots is apparently too much to ask because MLIR complains about both
+    // uses not being dominated by the frame slots and about a FunctionOpInterface
+    // having more than one region.
+    auto it = bb->begin();
+    auto end = bb->end();
+    while (it != end and isa<Op>(*it)) ++it;
+    if (it == end) setInsertionPointToEnd(bb);
+    else setInsertionPoint(&*it);
+}
+
 auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
     Assert(not IsZeroSizedType(ty));
     return LLVM::LLVMArrayType::get(&mlir, getI8Type(), tu.target().preferred_size(ty).bytes());
@@ -157,16 +170,7 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     InsertionGuard _{*this};
-
-    // Do this stupid garbage because allowing a separate region in a function for
-    // frame slots is apparently too much to ask because MLIR complains about both
-    // uses not being dominated by the frame slots and about a FunctionOpInterface
-    // having more than one region.
-    auto it = curr.proc.front().begin();
-    auto end = curr.proc.front().end();
-    while (it != end and isa<ir::FrameSlotOp>(*it)) ++it;
-    if (it == end) setInsertionPointToEnd(&curr.proc.front());
-    else setInsertionPoint(&*it);
+    SetInsertPointToStartButSkipOpsOfType<ir::FrameSlotOp>(&curr.proc.front());
     return ir::FrameSlotOp::create(*this, loc, sz, a);
 }
 
@@ -242,7 +246,7 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
     if (not i) {
         // TODO: Introduce our own Op for this and mark it as 'Pure'.
         InsertionGuard _{*this};
-        setInsertionPointToStart(&mlir_module.getBodyRegion().front());
+        SetInsertPointToStartButSkipOpsOfType<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
         i = LLVM::GlobalOp::create(
             *this,
             getUnknownLoc(),
@@ -2694,20 +2698,9 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
         [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
         [&](const APInt& value) -> IRValue { return CreateInt(loc, value, val.type()); },
         [&](eval::RawByteBuffer v) -> IRValue {
-            // We need to figure out what to do w/ constant values that contain pointers;
-            // what we should do is turn RValue into a data structure more similar to Clang’s
-            // APValue (except perhaps with primitive fields merged into byte buffers) such
-            // that we can build a representation that tells us what each pointer is (e.g. string,
-            // function, imported function, another value, unknown (e.g. returned by a
-            // compile-time call to 'malloc'), etc.).
-            //
-            // What we need for this is some operation that takes a pointer value and figures out
-            // what it is supposed to be; we need this for integer<->pointer conversion and also
-            // for functions like 'memchr' which return pointers that point into compile-time known
-            // ranges; essentially, we need a map of all pointers that keeps track of all memory
-            // locations known to the evaluator, except that we don’t use it to disallow stores/loads
-            // to unknown addresses, but rather just to figure out how to persist values.
-            Todo();
+            // We should probably never get here as these should always be evaluated
+            // into a memory location and are handled by EmitRValue().
+            Unreachable();
         },
         [&](const eval::Range& r) -> IRValue {
             auto el = cast<RangeType>(val.type())->elem();
@@ -2733,9 +2726,10 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                 return CreateNullClosure(loc);
             }
 
-            if (c.proc.proc()->is_compile_time_only) {
+            auto proc = c.proc.base().get<ProcDecl*>();
+            if (proc->is_compile_time_only) {
                 Error(GetSLoc(), "Compile-time only procedure cannot be referenced at runtime");
-                Note(c.proc.proc()->location(), "Procedure declared here");
+                Note(proc->location(), "Procedure declared here");
                 return CreateNullClosure(loc);
             }
 
@@ -2744,10 +2738,10 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                 return CreateNullClosure(loc);
             }
 
-            return EmitClosure(c.proc.proc(), loc);
+            return EmitClosure(proc, loc);
         },
         [&](eval::EvaluatedPointer p) -> IRValue {
-            auto Poison = [&] {
+            auto Poison = [&] -> Value {
                 return LLVM::PoisonOp::create(
                     *this,
                     loc,
@@ -2755,28 +2749,29 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                 )->getResult(0);
             };
 
-            switch (p.kind()) {
-                case eval::EvaluatedPointer::Null: return CreateNullPointer(loc);
-                case eval::EvaluatedPointer::Procedure: {
+            auto base = p.base().visit(utils::Overloaded{
+                [&](String s) -> Value { return CreateGlobalStringPtr(Align(1), s, false); },
+                [&](std::nullptr_t) -> Value { return CreateNullPointer(loc); },
+                [&](ProcDecl* proc) -> Value {
                     if (lang_opts.constant_eval) {
-                        auto op = DeclareProcedure(p.proc());
-                        return IRValue(ir::ProcRefOp::create(*this, loc, op));
-                    }
+                        auto op = DeclareProcedure(proc);
+                        return ir::ProcRefOp::create(*this, loc, op);
+                    };
 
                     ICE(GetSLoc(), "Cannot emit procedure pointer outside of closure");
                     return Poison();
-                }
-                case eval::EvaluatedPointer::InvalidStack: {
+                },
+                [&](eval::InvalidStackPointer) {
                     Error(GetSLoc(), "Cannot emit pointer to compile-time stack memory");
                     return Poison();
-                }
-                case eval::EvaluatedPointer::Unknown: {
+                },
+                [&](eval::UnknownPointer) {
                     Error(GetSLoc(), "Cannot emit unknown pointer");
                     return Poison();
                 }
-            }
+            });
 
-            Unreachable();
+            return CreatePtrAdd(loc, base, p.offset());
         },
         [&](eval::Record) -> IRValue {
             // TODO: Actually determine whether we can get here; I don’t think it’s

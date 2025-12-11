@@ -43,19 +43,19 @@ proc arith (in int a, in int b) {
     sink(a != b);
 }
 
-// * @0 = "<<<\00"
-// + @1 = "shift amount exceeds bit width\00"
-// + @2 = "<<\00"
-// + @3 = ":%\00"
-// + @4 = ":/\00"
-// + @5 = "%\00"
+// * @0 = "+\00"
+// + @1 = "integer overflow\00"
+// + @2 = "binary-ops.src\00"
+// + @3 = "-\00"
+// + @4 = "*\00"
+// + @5 = "/\00"
 // + @6 = "division by zero\00"
-// + @7 = "/\00"
-// + @8 = "*\00"
-// + @9 = "-\00"
-// + @10 = "binary-ops.src\00"
-// + @11 = "integer overflow\00"
-// + @12 = "+\00"
+// + @7 = "%\00"
+// + @8 = ":/\00"
+// + @9 = ":%\00"
+// + @10 = "<<\00"
+// + @11 = "shift amount exceeds bit width\00"
+// + @12 = "<<<\00"
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -93,7 +93,7 @@ proc arith (in int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %5 = ptradd #2, 8
 // +     store %5, i64 14, align 8
 // +     %6 = ptradd #2, 16
@@ -101,11 +101,11 @@ proc arith (in int a, in int b) {
 // +     %7 = ptradd #2, 24
 // +     store %7, i64 10, align 8
 // +     %8 = ptradd #2, 32
-// +     store %8, ptr @12, align 8
+// +     store %8, ptr @0, align 8
 // +     %9 = ptradd %8, 8
 // +     store %9, i64 1, align 8
 // +     %10 = ptradd #2, 48
-// +     store %10, ptr @11, align 8
+// +     store %10, ptr @1, align 8
 // +     %11 = ptradd %10, 8
 // +     store %11, i64 16, align 8
 // +     %12 = ptradd #2, 64
@@ -122,7 +122,7 @@ proc arith (in int a, in int b) {
 // +     br %16:1 to bb3 else bb4
 // +
 // + bb3:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %17 = ptradd #2, 8
 // +     store %17, i64 14, align 8
 // +     %18 = ptradd #2, 16
@@ -130,11 +130,11 @@ proc arith (in int a, in int b) {
 // +     %19 = ptradd #2, 24
 // +     store %19, i64 10, align 8
 // +     %20 = ptradd #2, 32
-// +     store %20, ptr @9, align 8
+// +     store %20, ptr @3, align 8
 // +     %21 = ptradd %20, 8
 // +     store %21, i64 1, align 8
 // +     %22 = ptradd #2, 48
-// +     store %22, ptr @11, align 8
+// +     store %22, ptr @1, align 8
 // +     %23 = ptradd %22, 8
 // +     store %23, i64 16, align 8
 // +     %24 = ptradd #2, 64
@@ -151,7 +151,7 @@ proc arith (in int a, in int b) {
 // +     br %28:1 to bb5 else bb6
 // +
 // + bb5:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %29 = ptradd #2, 8
 // +     store %29, i64 14, align 8
 // +     %30 = ptradd #2, 16
@@ -159,11 +159,11 @@ proc arith (in int a, in int b) {
 // +     %31 = ptradd #2, 24
 // +     store %31, i64 10, align 8
 // +     %32 = ptradd #2, 32
-// +     store %32, ptr @8, align 8
+// +     store %32, ptr @4, align 8
 // +     %33 = ptradd %32, 8
 // +     store %33, i64 1, align 8
 // +     %34 = ptradd #2, 48
-// +     store %34, ptr @11, align 8
+// +     store %34, ptr @1, align 8
 // +     %35 = ptradd %34, 8
 // +     store %35, i64 16, align 8
 // +     %36 = ptradd #2, 64
@@ -180,7 +180,7 @@ proc arith (in int a, in int b) {
 // +     br %40 to bb7 else bb8
 // +
 // + bb7:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %41 = ptradd #2, 8
 // +     store %41, i64 14, align 8
 // +     %42 = ptradd #2, 16
@@ -188,7 +188,7 @@ proc arith (in int a, in int b) {
 // +     %43 = ptradd #2, 24
 // +     store %43, i64 10, align 8
 // +     %44 = ptradd #2, 32
-// +     store %44, ptr @7, align 8
+// +     store %44, ptr @5, align 8
 // +     %45 = ptradd %44, 8
 // +     store %45, i64 1, align 8
 // +     %46 = ptradd #2, 48
@@ -208,7 +208,7 @@ proc arith (in int a, in int b) {
 // +     br %52 to bb9 else bb10
 // +
 // + bb9:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %53 = ptradd #2, 8
 // +     store %53, i64 14, align 8
 // +     %54 = ptradd #2, 16
@@ -216,11 +216,11 @@ proc arith (in int a, in int b) {
 // +     %55 = ptradd #2, 24
 // +     store %55, i64 10, align 8
 // +     %56 = ptradd #2, 32
-// +     store %56, ptr @7, align 8
+// +     store %56, ptr @5, align 8
 // +     %57 = ptradd %56, 8
 // +     store %57, i64 1, align 8
 // +     %58 = ptradd #2, 48
-// +     store %58, ptr @11, align 8
+// +     store %58, ptr @1, align 8
 // +     %59 = ptradd %58, 8
 // +     store %59, i64 16, align 8
 // +     %60 = ptradd #2, 64
@@ -238,7 +238,7 @@ proc arith (in int a, in int b) {
 // +     br %65 to bb11 else bb12
 // +
 // + bb11:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %66 = ptradd #2, 8
 // +     store %66, i64 14, align 8
 // +     %67 = ptradd #2, 16
@@ -246,7 +246,7 @@ proc arith (in int a, in int b) {
 // +     %68 = ptradd #2, 24
 // +     store %68, i64 10, align 8
 // +     %69 = ptradd #2, 32
-// +     store %69, ptr @5, align 8
+// +     store %69, ptr @7, align 8
 // +     %70 = ptradd %69, 8
 // +     store %70, i64 1, align 8
 // +     %71 = ptradd #2, 48
@@ -266,7 +266,7 @@ proc arith (in int a, in int b) {
 // +     br %77 to bb13 else bb14
 // +
 // + bb13:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %78 = ptradd #2, 8
 // +     store %78, i64 14, align 8
 // +     %79 = ptradd #2, 16
@@ -274,11 +274,11 @@ proc arith (in int a, in int b) {
 // +     %80 = ptradd #2, 24
 // +     store %80, i64 10, align 8
 // +     %81 = ptradd #2, 32
-// +     store %81, ptr @5, align 8
+// +     store %81, ptr @7, align 8
 // +     %82 = ptradd %81, 8
 // +     store %82, i64 1, align 8
 // +     %83 = ptradd #2, 48
-// +     store %83, ptr @11, align 8
+// +     store %83, ptr @1, align 8
 // +     %84 = ptradd %83, 8
 // +     store %84, i64 16, align 8
 // +     %85 = ptradd #2, 64
@@ -296,7 +296,7 @@ proc arith (in int a, in int b) {
 // +     br %90 to bb15 else bb16
 // +
 // + bb15:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %91 = ptradd #2, 8
 // +     store %91, i64 14, align 8
 // +     %92 = ptradd #2, 16
@@ -304,7 +304,7 @@ proc arith (in int a, in int b) {
 // +     %93 = ptradd #2, 24
 // +     store %93, i64 10, align 8
 // +     %94 = ptradd #2, 32
-// +     store %94, ptr @4, align 8
+// +     store %94, ptr @8, align 8
 // +     %95 = ptradd %94, 8
 // +     store %95, i64 2, align 8
 // +     %96 = ptradd #2, 48
@@ -326,7 +326,7 @@ proc arith (in int a, in int b) {
 // +     br %103 to bb17 else bb18
 // +
 // + bb17:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %104 = ptradd #2, 8
 // +     store %104, i64 14, align 8
 // +     %105 = ptradd #2, 16
@@ -334,7 +334,7 @@ proc arith (in int a, in int b) {
 // +     %106 = ptradd #2, 24
 // +     store %106, i64 10, align 8
 // +     %107 = ptradd #2, 32
-// +     store %107, ptr @3, align 8
+// +     store %107, ptr @9, align 8
 // +     %108 = ptradd %107, 8
 // +     store %108, i64 2, align 8
 // +     %109 = ptradd #2, 48
@@ -356,7 +356,7 @@ proc arith (in int a, in int b) {
 // +     br %116 to bb19 else bb20
 // +
 // + bb19:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %117 = ptradd #2, 8
 // +     store %117, i64 14, align 8
 // +     %118 = ptradd #2, 16
@@ -364,11 +364,11 @@ proc arith (in int a, in int b) {
 // +     %119 = ptradd #2, 24
 // +     store %119, i64 10, align 8
 // +     %120 = ptradd #2, 32
-// +     store %120, ptr @2, align 8
+// +     store %120, ptr @10, align 8
 // +     %121 = ptradd %120, 8
 // +     store %121, i64 2, align 8
 // +     %122 = ptradd #2, 48
-// +     store %122, ptr @1, align 8
+// +     store %122, ptr @11, align 8
 // +     %123 = ptradd %122, 8
 // +     store %123, i64 30, align 8
 // +     %124 = ptradd #2, 64
@@ -385,7 +385,7 @@ proc arith (in int a, in int b) {
 // +     br %129 to bb21 else bb22
 // +
 // + bb21:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %130 = ptradd #2, 8
 // +     store %130, i64 14, align 8
 // +     %131 = ptradd #2, 16
@@ -393,11 +393,11 @@ proc arith (in int a, in int b) {
 // +     %132 = ptradd #2, 24
 // +     store %132, i64 10, align 8
 // +     %133 = ptradd #2, 32
-// +     store %133, ptr @2, align 8
+// +     store %133, ptr @10, align 8
 // +     %134 = ptradd %133, 8
 // +     store %134, i64 2, align 8
 // +     %135 = ptradd #2, 48
-// +     store %135, ptr @11, align 8
+// +     store %135, ptr @1, align 8
 // +     %136 = ptradd %135, 8
 // +     store %136, i64 16, align 8
 // +     %137 = ptradd #2, 64
@@ -414,7 +414,7 @@ proc arith (in int a, in int b) {
 // +     br %141 to bb23 else bb24
 // +
 // + bb23:
-// +     store #2, ptr @10, align 8
+// +     store #2, ptr @2, align 8
 // +     %142 = ptradd #2, 8
 // +     store %142, i64 14, align 8
 // +     %143 = ptradd #2, 16
@@ -422,11 +422,11 @@ proc arith (in int a, in int b) {
 // +     %144 = ptradd #2, 24
 // +     store %144, i64 10, align 8
 // +     %145 = ptradd #2, 32
-// +     store %145, ptr @0, align 8
+// +     store %145, ptr @12, align 8
 // +     %146 = ptradd %145, 8
 // +     store %146, i64 3, align 8
 // +     %147 = ptradd #2, 48
-// +     store %147, ptr @1, align 8
+// +     store %147, ptr @11, align 8
 // +     %148 = ptradd %147, 8
 // +     store %148, i64 30, align 8
 // +     %149 = ptradd #2, 64

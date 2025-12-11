@@ -568,6 +568,11 @@ public:
     /// always passes by value.
     bool PassByReference(Type ty, Intent i);
 
+    /// Set the insert point to the start of a block, but skip over all
+    /// operations of a certain type.
+    template <typename Op>
+    void SetInsertPointToStartButSkipOpsOfType(Block* bb);
+
     /// Opposite of If().
     void Unless(
         Value cond,

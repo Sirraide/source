@@ -7,8 +7,8 @@ struct x { int a; int b; int c; }
 proc a = eval x(1, 2, 3);
 proc b = eval x(-1, -2, -3);
 
-// * @0 = "\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
-// + @1 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
+// * @0 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
+// + @1 = "\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -17,13 +17,13 @@ proc b = eval x(-1, -2, -3);
 // +
 // + proc _S1aFT1xE (ptr %0 sret i8[24]) private ccc {
 // + entry:
-// +     copy %0 <- @1, 24
+// +     copy %0 <- @0, 24
 // +     ret
 // + }
 // +
 // + proc _S1bFT1xE (ptr %0 sret i8[24]) private ccc {
 // + entry:
-// +     copy %0 <- @0, 24
+// +     copy %0 <- @1, 24
 // +     ret
 // + }
 
@@ -32,8 +32,8 @@ proc b = eval x(-1, -2, -3);
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + @__srcc_str.1 = private constant [24 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 //L + @__srcc_str.0 = private constant [24 x i8] c"\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
+//L + @__srcc_str.1 = private constant [24 x i8] c"\FF\FF\FF\FF\FF\FF\FF\FF\FE\FF\FF\FF\FF\FF\FF\FF\FD\FF\FF\FF\FF\FF\FF\FF", align 8
 //L +
 //L + ; Function Attrs: nounwind
 //L + define void @__src_main() #0 {

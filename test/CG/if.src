@@ -21,10 +21,10 @@ proc x(int a, int b, bool d) {
     printf("\n");
 }
 
-// * @0 = "\0A\00"
-// + @1 = "%s\00"
-// + @2 = "d = false\0A\00"
-// + @3 = "d = true\0A\00"
+// * @0 = "d = true\0A\00"
+// + @1 = "d = false\0A\00"
+// + @2 = "%s\00"
+// + @3 = "\0A\00"
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -48,18 +48,18 @@ proc x(int a, int b, bool d) {
 // +     br %5 to bb1 else bb2
 // +
 // + bb1:
-// +     %6 = call variadic ccc i32 printf(ptr @3)
+// +     %6 = call variadic ccc i32 printf(ptr @0)
 // +     br bb3
 // +
 // + bb2:
-// +     %7 = call variadic ccc i32 printf(ptr @2)
+// +     %7 = call variadic ccc i32 printf(ptr @1)
 // +     br bb3
 // +
 // + bb3:
 // +     %8 = load i8, #2, align 1
 // +     %9 = trunc i8 %8 to i1
-// +     %10 = select %9, ptr @3, @2
-// +     %11 = call variadic ccc i32 printf(ptr @1, ptr %10)
+// +     %10 = select %9, ptr @0, @1
+// +     %11 = call variadic ccc i32 printf(ptr @2, ptr %10)
 // +     %12 = load i64, #0, align 8
 // +     %13 = load i64, #1, align 8
 // +     %14 = icmp sge i64 %12, %13
@@ -70,19 +70,19 @@ proc x(int a, int b, bool d) {
 // +     br %17 to bb4 else bb5
 // +
 // + bb4:
-// +     %18 = call variadic ccc i32 printf(ptr @3)
+// +     %18 = call variadic ccc i32 printf(ptr @0)
 // +     br bb6
 // +
 // + bb5:
-// +     %19 = call variadic ccc i32 printf(ptr @2)
+// +     %19 = call variadic ccc i32 printf(ptr @1)
 // +     br bb6
 // +
 // + bb6:
 // +     %20 = load i8, #2, align 1
 // +     %21 = trunc i8 %20 to i1
-// +     %22 = select %21, ptr @3, @2
-// +     %23 = call variadic ccc i32 printf(ptr @1, ptr %22)
-// +     %24 = call variadic ccc i32 printf(ptr @0)
+// +     %22 = select %21, ptr @0, @1
+// +     %23 = call variadic ccc i32 printf(ptr @2, ptr %22)
+// +     %24 = call variadic ccc i32 printf(ptr @3)
 // +     ret
 // + }
 // +
@@ -93,10 +93,10 @@ proc x(int a, int b, bool d) {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + @__srcc_str.3 = private constant [2 x i8] c"\0A\00", align 1
-//L + @__srcc_str.2 = private constant [3 x i8] c"%s\00", align 1
-//L + @__srcc_str.1 = private constant [11 x i8] c"d = false\0A\00", align 1
 //L + @__srcc_str.0 = private constant [10 x i8] c"d = true\0A\00", align 1
+//L + @__srcc_str.1 = private constant [11 x i8] c"d = false\0A\00", align 1
+//L + @__srcc_str.2 = private constant [3 x i8] c"%s\00", align 1
+//L + @__srcc_str.3 = private constant [2 x i8] c"\0A\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define void @__src_main() #0 {

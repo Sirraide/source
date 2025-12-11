@@ -8,11 +8,11 @@ proc c = "a" == "a";
 proc d = "" == "";
 proc e (i64[] a, i64[] b) = a == b;
 
-// * @0 = "\00"
-// + @1 = "bc\00"
+// * @0 = "abcd\00"
+// + @1 = "dcef\00"
 // + @2 = "a\00"
-// + @3 = "dcef\00"
-// + @4 = "abcd\00"
+// + @3 = "bc\00"
+// + @4 = "\00"
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -22,9 +22,9 @@ proc e (i64[] a, i64[] b) = a == b;
 // + proc _S1aFbE private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @4,
+// +         ptr @0,
 // +         i64 4,
-// +         ptr @3,
+// +         ptr @1,
 // +         i64 4)
 // +     ret i1 %0
 // + }
@@ -97,7 +97,7 @@ proc e (i64[] a, i64[] b) = a == b;
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
 // +         ptr @2,
 // +         i64 1,
-// +         ptr @1,
+// +         ptr @3,
 // +         i64 2)
 // +     ret i1 %0
 // + }
@@ -115,9 +115,9 @@ proc e (i64[] a, i64[] b) = a == b;
 // + proc _S1dFbE private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @0,
+// +         ptr @4,
 // +         i64 0,
-// +         ptr @0,
+// +         ptr @4,
 // +         i64 0)
 // +     ret i1 %0
 // + }
@@ -222,11 +222,11 @@ proc e (i64[] a, i64[] b) = a == b;
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + @__srcc_str.4 = private constant [1 x i8] zeroinitializer, align 1
-//L + @__srcc_str.3 = private constant [3 x i8] c"bc\00", align 1
-//L + @__srcc_str.2 = private constant [2 x i8] c"a\00", align 1
-//L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
 //L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
+//L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
+//L + @__srcc_str.2 = private constant [2 x i8] c"a\00", align 1
+//L + @__srcc_str.3 = private constant [3 x i8] c"bc\00", align 1
+//L + @__srcc_str.4 = private constant [1 x i8] zeroinitializer, align 1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define void @__src_main() #0 {

@@ -19,17 +19,17 @@ proc x (int a, in int b) {
     a >>>= b;
 }
 
-// * @0 = "<<<\00"
-// + @1 = "shift amount exceeds bit width\00"
-// + @2 = "<<\00"
-// + @3 = "%\00"
-// + @4 = "division by zero\00"
+// * @0 = "+\00"
+// + @1 = "integer overflow\00"
+// + @2 = "compound-assign.src\00"
+// + @3 = "-\00"
+// + @4 = "*\00"
 // + @5 = "/\00"
-// + @6 = "*\00"
-// + @7 = "-\00"
-// + @8 = "compound-assign.src\00"
-// + @9 = "integer overflow\00"
-// + @10 = "+\00"
+// + @6 = "division by zero\00"
+// + @7 = "%\00"
+// + @8 = "<<\00"
+// + @9 = "shift amount exceeds bit width\00"
+// + @10 = "<<<\00"
 // +
 // + proc __src_main external ccc {
 // + entry:
@@ -50,7 +50,7 @@ proc x (int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %5 = ptradd #2, 8
 // +     store %5, i64 19, align 8
 // +     %6 = ptradd #2, 16
@@ -58,11 +58,11 @@ proc x (int a, in int b) {
 // +     %7 = ptradd #2, 24
 // +     store %7, i64 5, align 8
 // +     %8 = ptradd #2, 32
-// +     store %8, ptr @10, align 8
+// +     store %8, ptr @0, align 8
 // +     %9 = ptradd %8, 8
 // +     store %9, i64 1, align 8
 // +     %10 = ptradd #2, 48
-// +     store %10, ptr @9, align 8
+// +     store %10, ptr @1, align 8
 // +     %11 = ptradd %10, 8
 // +     store %11, i64 16, align 8
 // +     %12 = ptradd #2, 64
@@ -83,7 +83,7 @@ proc x (int a, in int b) {
 // +     br %19:1 to bb3 else bb4
 // +
 // + bb3:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %20 = ptradd #2, 8
 // +     store %20, i64 19, align 8
 // +     %21 = ptradd #2, 16
@@ -91,11 +91,11 @@ proc x (int a, in int b) {
 // +     %22 = ptradd #2, 24
 // +     store %22, i64 5, align 8
 // +     %23 = ptradd #2, 32
-// +     store %23, ptr @7, align 8
+// +     store %23, ptr @3, align 8
 // +     %24 = ptradd %23, 8
 // +     store %24, i64 1, align 8
 // +     %25 = ptradd #2, 48
-// +     store %25, ptr @9, align 8
+// +     store %25, ptr @1, align 8
 // +     %26 = ptradd %25, 8
 // +     store %26, i64 16, align 8
 // +     %27 = ptradd #2, 64
@@ -116,7 +116,7 @@ proc x (int a, in int b) {
 // +     br %34:1 to bb5 else bb6
 // +
 // + bb5:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %35 = ptradd #2, 8
 // +     store %35, i64 19, align 8
 // +     %36 = ptradd #2, 16
@@ -124,11 +124,11 @@ proc x (int a, in int b) {
 // +     %37 = ptradd #2, 24
 // +     store %37, i64 5, align 8
 // +     %38 = ptradd #2, 32
-// +     store %38, ptr @6, align 8
+// +     store %38, ptr @4, align 8
 // +     %39 = ptradd %38, 8
 // +     store %39, i64 1, align 8
 // +     %40 = ptradd #2, 48
-// +     store %40, ptr @9, align 8
+// +     store %40, ptr @1, align 8
 // +     %41 = ptradd %40, 8
 // +     store %41, i64 16, align 8
 // +     %42 = ptradd #2, 64
@@ -149,7 +149,7 @@ proc x (int a, in int b) {
 // +     br %49 to bb7 else bb8
 // +
 // + bb7:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %50 = ptradd #2, 8
 // +     store %50, i64 19, align 8
 // +     %51 = ptradd #2, 16
@@ -161,7 +161,7 @@ proc x (int a, in int b) {
 // +     %54 = ptradd %53, 8
 // +     store %54, i64 1, align 8
 // +     %55 = ptradd #2, 48
-// +     store %55, ptr @4, align 8
+// +     store %55, ptr @6, align 8
 // +     %56 = ptradd %55, 8
 // +     store %56, i64 16, align 8
 // +     %57 = ptradd #2, 64
@@ -177,7 +177,7 @@ proc x (int a, in int b) {
 // +     br %61 to bb9 else bb10
 // +
 // + bb9:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %62 = ptradd #2, 8
 // +     store %62, i64 19, align 8
 // +     %63 = ptradd #2, 16
@@ -189,7 +189,7 @@ proc x (int a, in int b) {
 // +     %66 = ptradd %65, 8
 // +     store %66, i64 1, align 8
 // +     %67 = ptradd #2, 48
-// +     store %67, ptr @9, align 8
+// +     store %67, ptr @1, align 8
 // +     %68 = ptradd %67, 8
 // +     store %68, i64 16, align 8
 // +     %69 = ptradd #2, 64
@@ -207,7 +207,7 @@ proc x (int a, in int b) {
 // +     br %74 to bb11 else bb12
 // +
 // + bb11:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %75 = ptradd #2, 8
 // +     store %75, i64 19, align 8
 // +     %76 = ptradd #2, 16
@@ -215,11 +215,11 @@ proc x (int a, in int b) {
 // +     %77 = ptradd #2, 24
 // +     store %77, i64 5, align 8
 // +     %78 = ptradd #2, 32
-// +     store %78, ptr @3, align 8
+// +     store %78, ptr @7, align 8
 // +     %79 = ptradd %78, 8
 // +     store %79, i64 1, align 8
 // +     %80 = ptradd #2, 48
-// +     store %80, ptr @4, align 8
+// +     store %80, ptr @6, align 8
 // +     %81 = ptradd %80, 8
 // +     store %81, i64 16, align 8
 // +     %82 = ptradd #2, 64
@@ -235,7 +235,7 @@ proc x (int a, in int b) {
 // +     br %86 to bb13 else bb14
 // +
 // + bb13:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %87 = ptradd #2, 8
 // +     store %87, i64 19, align 8
 // +     %88 = ptradd #2, 16
@@ -243,11 +243,11 @@ proc x (int a, in int b) {
 // +     %89 = ptradd #2, 24
 // +     store %89, i64 5, align 8
 // +     %90 = ptradd #2, 32
-// +     store %90, ptr @3, align 8
+// +     store %90, ptr @7, align 8
 // +     %91 = ptradd %90, 8
 // +     store %91, i64 1, align 8
 // +     %92 = ptradd #2, 48
-// +     store %92, ptr @9, align 8
+// +     store %92, ptr @1, align 8
 // +     %93 = ptradd %92, 8
 // +     store %93, i64 16, align 8
 // +     %94 = ptradd #2, 64
@@ -265,7 +265,7 @@ proc x (int a, in int b) {
 // +     br %99 to bb15 else bb16
 // +
 // + bb15:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %100 = ptradd #2, 8
 // +     store %100, i64 19, align 8
 // +     %101 = ptradd #2, 16
@@ -273,11 +273,11 @@ proc x (int a, in int b) {
 // +     %102 = ptradd #2, 24
 // +     store %102, i64 5, align 8
 // +     %103 = ptradd #2, 32
-// +     store %103, ptr @2, align 8
+// +     store %103, ptr @8, align 8
 // +     %104 = ptradd %103, 8
 // +     store %104, i64 2, align 8
 // +     %105 = ptradd #2, 48
-// +     store %105, ptr @1, align 8
+// +     store %105, ptr @9, align 8
 // +     %106 = ptradd %105, 8
 // +     store %106, i64 30, align 8
 // +     %107 = ptradd #2, 64
@@ -294,7 +294,7 @@ proc x (int a, in int b) {
 // +     br %112 to bb17 else bb18
 // +
 // + bb17:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %113 = ptradd #2, 8
 // +     store %113, i64 19, align 8
 // +     %114 = ptradd #2, 16
@@ -302,11 +302,11 @@ proc x (int a, in int b) {
 // +     %115 = ptradd #2, 24
 // +     store %115, i64 5, align 8
 // +     %116 = ptradd #2, 32
-// +     store %116, ptr @2, align 8
+// +     store %116, ptr @8, align 8
 // +     %117 = ptradd %116, 8
 // +     store %117, i64 2, align 8
 // +     %118 = ptradd #2, 48
-// +     store %118, ptr @9, align 8
+// +     store %118, ptr @1, align 8
 // +     %119 = ptradd %118, 8
 // +     store %119, i64 16, align 8
 // +     %120 = ptradd #2, 64
@@ -327,7 +327,7 @@ proc x (int a, in int b) {
 // +     br %127 to bb19 else bb20
 // +
 // + bb19:
-// +     store #2, ptr @8, align 8
+// +     store #2, ptr @2, align 8
 // +     %128 = ptradd #2, 8
 // +     store %128, i64 19, align 8
 // +     %129 = ptradd #2, 16
@@ -335,11 +335,11 @@ proc x (int a, in int b) {
 // +     %130 = ptradd #2, 24
 // +     store %130, i64 5, align 8
 // +     %131 = ptradd #2, 32
-// +     store %131, ptr @0, align 8
+// +     store %131, ptr @10, align 8
 // +     %132 = ptradd %131, 8
 // +     store %132, i64 3, align 8
 // +     %133 = ptradd #2, 48
-// +     store %133, ptr @1, align 8
+// +     store %133, ptr @9, align 8
 // +     %134 = ptradd %133, 8
 // +     store %134, i64 30, align 8
 // +     %135 = ptradd #2, 64
@@ -426,17 +426,17 @@ proc x (int a, in int b) {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux-gnu"
 //L +
-//L + @__srcc_str.10 = private constant [4 x i8] c"<<<\00", align 1
-//L + @__srcc_str.9 = private constant [31 x i8] c"shift amount exceeds bit width\00", align 1
-//L + @__srcc_str.8 = private constant [3 x i8] c"<<\00", align 1
-//L + @__srcc_str.7 = private constant [2 x i8] c"%\00", align 1
-//L + @__srcc_str.6 = private constant [17 x i8] c"division by zero\00", align 1
-//L + @__srcc_str.5 = private constant [2 x i8] c"/\00", align 1
-//L + @__srcc_str.4 = private constant [2 x i8] c"*\00", align 1
-//L + @__srcc_str.3 = private constant [2 x i8] c"-\00", align 1
-//L + @__srcc_str.2 = private constant [20 x i8] c"compound-assign.src\00", align 1
-//L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
+//L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
+//L + @__srcc_str.2 = private constant [20 x i8] c"compound-assign.src\00", align 1
+//L + @__srcc_str.3 = private constant [2 x i8] c"-\00", align 1
+//L + @__srcc_str.4 = private constant [2 x i8] c"*\00", align 1
+//L + @__srcc_str.5 = private constant [2 x i8] c"/\00", align 1
+//L + @__srcc_str.6 = private constant [17 x i8] c"division by zero\00", align 1
+//L + @__srcc_str.7 = private constant [2 x i8] c"%\00", align 1
+//L + @__srcc_str.8 = private constant [3 x i8] c"<<\00", align 1
+//L + @__srcc_str.9 = private constant [31 x i8] c"shift amount exceeds bit width\00", align 1
+//L + @__srcc_str.10 = private constant [4 x i8] c"<<<\00", align 1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define void @__src_main() #0 {

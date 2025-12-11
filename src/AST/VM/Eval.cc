@@ -20,8 +20,10 @@
 #include <base/StringUtils.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 
 #include <ffi.h>
+#include <flat_set>
 #include <memory>
 #include <optional>
 #include <print>
@@ -81,15 +83,14 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             if (b.is_string()) out += utils::Escape(b.str(), true, true);
             out += "<aggregate value>";
         },
-        [&](EvaluatedPointer p) {
-            switch (p.kind()) {
-                case EvaluatedPointer::Null: out += "%1(nil%)"; return;
-                case EvaluatedPointer::Procedure: Format(out, "%2({}%)", p.proc()->name); return;
-                case EvaluatedPointer::InvalidStack: out += "<vm stack pointer>"; return;
-                case EvaluatedPointer::Unknown: out += "<unknown pointer>"; return;
-            }
-
-            Unreachable();
+        [&](this auto& self, EvaluatedPointer p) {
+            p.base().visit(utils::Overloaded{
+                [&](String s) { Format(out, "%3(\"{}\"%)", utils::Escape(s, true, true)); },
+                [&](std::nullptr_t) { out += "%1(nil%)"; },
+                [&](ProcDecl* proc) { Format(out, "%2({}%)", proc->name); },
+                [&](InvalidStackPointer) { out += "<vm stack pointer>"; },
+                [&](UnknownPointer) { out += "<unknown pointer>"; },
+            });
         },
         [&](this auto& self, const Range& r) {
             self(r.start);
@@ -97,9 +98,9 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             self(r.end);
         },
         [&](this auto& self, const Slice& s) {
-            out += "%1((%)";
+            out += "%1(slice(%)";
             self(s.pointer);
-            Format(out, "%1(, %){}%1()%)", s.size);
+            Format(out, "%1(, %)%5({}%)%1()%)", s.size);
         },
         [&](const APInt& value) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
@@ -127,7 +128,7 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
                 out += f->print(ctx);
             }
             out += "%1()%)";
-        }
+        },
     }; // clang-format on
     visit(V);
     return out;
@@ -300,6 +301,7 @@ bool SRValue::operator==(const SRValue& other) const {
 /// The zero value is used to represent the null pointer for both address spaces.
 class eval::VirtualMemoryMap {
     static constexpr usz MapSize = 1 << 20;
+    [[maybe_unused]] VM& vm;
     std::unique_ptr<std::byte[]> address_range = std::make_unique<std::byte[]>(MapSize);
     SmallVector<ir::ProcOp> procedures;
     DenseMap<ir::ProcOp, Pointer> lookup;
@@ -311,11 +313,17 @@ class eval::VirtualMemoryMap {
     // TODO: Make this value configurable (via --feval-stack-size or sth.).
     std::unique_ptr<std::byte[]> stack = std::make_unique<std::byte[]>(max_stack_size.bytes());
 
+    /// Known strings.
+    std::flat_set<String> string_constants;
+
 public:
-    VirtualMemoryMap() = default;
+    VirtualMemoryMap(VM& vm) : vm{vm} {}
 
     /// Map a pointer to the procedure it references.
     [[nodiscard]] auto get_procedure(Pointer p) -> ir::ProcOp;
+
+    /// Check if this is a pointer to a compile-time constant.
+    [[nodiscard]] auto get_known_string_pointer(Pointer p) -> std::optional<String>;
 
     /// Map a pointer to a pointer to host memory.
     template <typename T = void>
@@ -332,6 +340,9 @@ public:
 
     /// Check if a pointer is a virtual procedure pointer.
     [[nodiscard]] bool is_virtual_proc_ptr(Pointer p);
+
+    /// Create a pointer to a global variable.
+    [[nodiscard]] auto make_string_ptr(String c) -> Pointer;
 
     /// Create a pointer to host memory.
     [[nodiscard]] auto make_host_pointer(uptr v) -> Pointer;
@@ -366,6 +377,16 @@ auto VirtualMemoryMap::UnwrapVirtualPointer(Pointer ptr) -> ir::ProcOp {
     auto idx = usz(ptr.value - uptr(address_range.get()) - 1);
     if (idx >= procedures.size()) return {};
     return procedures[idx];
+}
+
+auto VirtualMemoryMap::get_known_string_pointer(Pointer p) -> std::optional<String> {
+    if (not is_host_pointer(p)) return {};
+    for (auto s : string_constants) {
+        auto start = uptr(s.data());
+        auto end = start + uptr(s.size());
+        if (p.value >= start and p.value < end) return s;
+    }
+    return {};
 }
 
 template <typename T>
@@ -411,6 +432,11 @@ auto VirtualMemoryMap::make_proc_ptr(ir::ProcOp proc) -> Pointer {
     auto& lookup_val = lookup[proc];
     if (not lookup_val) lookup_val = MakeVirtualPointer(proc);
     return Pointer(lookup_val);
+}
+
+auto VirtualMemoryMap::make_string_ptr(String s) -> Pointer {
+    string_constants.insert(s);
+    return make_host_pointer(uptr(s.data()));
 }
 
 // ============================================================================
@@ -719,8 +745,13 @@ bool Eval::EvalLoop() {
             auto g = cast<mlir::LLVM::GlobalOp>(i->getParentOfType<mlir::ModuleOp>().lookupSymbol(a.getGlobalName()));
             Assert(g, "Invalid reference to global");
             Assert(g.getConstant(), "TODO: Global variables in the constant evaluator");
+
+            // Copy the data out because the global might get DCE’d.
+            //
+            // FIXME: Finally introduce that damn ir::GlobalConstantOp so we don’t
+            // need rely on data owned by the MLIR context anymore.
             auto v = cast<mlir::StringAttr>(g.getValue().value());
-            Temp(a) = SRValue(vm.memory->make_host_pointer(uptr(v.data())));
+            Temp(a) = SRValue(vm.memory->make_string_ptr(vm.owner().save(v.strref())));
             continue;
         }
 
@@ -1227,6 +1258,12 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         if (vm.memory->is_stack_pointer(ptr))
             return EvaluatedPointer::GetInvalidStack();
 
+        // Strings can just be passed through.
+        if (auto s = vm.memory->get_known_string_pointer(ptr)) {
+            auto offs = Size::Bytes(ptr.raw_value() - uptr(s->data()));
+            return EvaluatedPointer(*s, offs);
+        }
+
         ICE(loc, "Persisting this kind of pointer is not supported yet");
         return EvaluatedPointer::GetUnknown();
     };
@@ -1427,7 +1464,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 VM::~VM() = default;
 VM::VM(TranslationUnit& owner_tu)
     : owner_tu{owner_tu},
-      memory(std::make_unique<VirtualMemoryMap>()) {}
+      memory(std::make_unique<VirtualMemoryMap>(*this)) {}
 
 auto VM::allocate_memory_value(Type ty) -> RawByteBuffer {
     auto sz = ty->memory_size(owner());

@@ -308,7 +308,11 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](ConstExpr* c) {
-            PrintBasicNode(e, "ConstExpr", [&] { print("{}", c->value->print(printer_context_hack)); });
+            auto PrintExtra = [this, c] {
+                print("{} %1(:%) {}", c->value->print(printer_context_hack), c->type);
+            };
+
+            PrintBasicNode(e, "ConstExpr", PrintExtra, false);
             if (c->stmt) PrintChildren(c->stmt.get());
         },
 

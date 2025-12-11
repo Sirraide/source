@@ -29,6 +29,10 @@ namespace mlir {
 class Operation;
 }
 
+namespace mlir::LLVM {
+class GlobalOp;
+}
+
 namespace srcc::eval {
 class Eval;
 class VM;
@@ -46,12 +50,13 @@ class RValue;
 /// emit references to other objects).
 class RawByteBuffer {
     friend VM;
+    friend Eval;
 
     void* storage;
     Size sz;
     bool is_str;
 
-    RawByteBuffer(void* data, Size sz, bool is_str)
+    RawByteBuffer(void* data, Size sz, bool is_str = false)
         : storage(std::move(data)), sz(sz), is_str(is_str) {}
 
 public:
@@ -81,79 +86,77 @@ struct Range {
     APInt end;
 };
 
+struct InvalidStackPointer{};
+struct UnknownPointer{};
+
+/// An object a pointer is based on.
+using PointerBase = Variant<
+    /// The null pointer.
+    std::nullptr_t,
+
+    /// A pointer to stack memory in the evaluator; such pointers cannot be
+    /// emitted (as they are only valid within a single evaluation) and any
+    /// attempt to do so should error.
+    InvalidStackPointer,
+
+    /// We don’t know where this pointer came from or what it points to.
+    UnknownPointer,
+
+    /// A pointer to a procedure declared in this TU or imported from a module.
+    ProcDecl*,
+
+    /// A pointer into a string.
+    String
+>;
+
 /// A pointer that is the result of constant evaluation.
 class EvaluatedPointer {
-public:
-    enum class Kind : u8 {
-        /// The null pointer.
-        Null,
-
-        /// A pointer to stack memory in the evaluator; such pointers cannot be
-        /// emitted (as they are only valid within a single evaluation) and any
-        /// attempt to do so should error.
-        InvalidStack,
-
-        /// A pointer to a procedure declared in this TU or imported from a module.
-        Procedure,
-
-        /// We don’t know where this pointer came from or what it points to.
-        Unknown,
-    };
-
-    using enum Kind;
-
 private:
-    llvm::PointerIntPair<ProcDecl*, 2> kind_and_pointer;
-    EvaluatedPointer(ProcDecl* proc, Kind k) : kind_and_pointer(proc, +k) {}
+    PointerBase base_object;
+    Size offs;
 
 public:
     /// Create a null pointer.
-    EvaluatedPointer() : EvaluatedPointer(nullptr, Null) {}
+    EvaluatedPointer() : base_object(nullptr) {}
 
     /// Create a procedure pointer.
-    EvaluatedPointer(ProcDecl* proc) : EvaluatedPointer(proc, Procedure) {}
+    EvaluatedPointer(ProcDecl* proc) : base_object(proc) {}
+
+    /// Create a pointer to a global variable.
+    EvaluatedPointer(String s, Size offset) : base_object(s), offs(offset) {}
 
     /// Create an invalid stack pointer.
     [[nodiscard]] static auto GetInvalidStack() -> EvaluatedPointer {
-        return {nullptr, InvalidStack};
+        EvaluatedPointer p;
+        p.base_object = InvalidStackPointer{};
+        return p;
     }
 
     /// Get an unknown pointer.
     [[nodiscard]] static auto GetUnknown() -> EvaluatedPointer {
-        return {nullptr, Unknown};
+        EvaluatedPointer p;
+        p.base_object = UnknownPointer{};
+        return p;
     }
 
-    /// Get the procedure pointer if this is one.
-    [[nodiscard]] auto proc() const -> ProcDecl* {
-        Assert(is_procedure());
-        return kind_and_pointer.getPointer();
-    }
+    /// Get the object this pointer is based on.
+    [[nodiscard]] auto base() const -> const PointerBase& { return base_object; }
 
     /// Check if this is an invalid pointer. Notably, the null pointer
     /// is *valid* since we can emit it (unlike e.g. an invalid stack
     /// pointer).
     [[nodiscard]] bool is_invalid() const {
-        switch (kind()) {
-            case InvalidStack:
-            case Unknown:
-                return true;
-
-            case Null:
-            case Procedure:
-                return false;
-        }
-
-        Unreachable();
+        return base_object.is<InvalidStackPointer, UnknownPointer>();
     }
 
     /// Check if this is the null pointer.
-    [[nodiscard]] bool is_null() const { return kind() == Null; }
+    [[nodiscard]] bool is_null() const { return base_object.is<std::nullptr_t>(); }
 
     /// Check if this is a procedure pointer.
-    [[nodiscard]] bool is_procedure() const { return kind() == Procedure; }
+    [[nodiscard]] bool is_procedure() const { return base_object.is<ProcDecl*>(); }
 
-    /// Get the pointer kind.
-    [[nodiscard]] auto kind() const -> Kind { return Kind(kind_and_pointer.getInt()); }
+    /// Get the offset added to this pointer; only valid for global constants.
+    [[nodiscard]] auto offset() const -> Size { return offs; }
 };
 
 /// Evaluated slice.
