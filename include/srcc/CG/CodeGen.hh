@@ -267,7 +267,7 @@ public:
     [[nodiscard]] bool finalise();
 
     /// Finalise a single procedure.
-    [[nodiscard]] bool finalise(ir::ProcOp proc);
+    [[nodiscard]] bool finalise_for_constant_evaluation(ir::ProcOp proc);
 
     /// Get the MLIR pointer type.
     [[nodiscard]] auto get_ptr_ty() -> mlir::Type { return ptr_ty; }

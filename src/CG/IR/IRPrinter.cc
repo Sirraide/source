@@ -19,6 +19,7 @@ struct CodeGen::Printer {
     DenseMap<Block*, i64> block_ids;
     DenseMap<Operation*, i64> inst_ids;
     DenseMap<Operation*, i64> frame_ids;
+    SmallString<64> indent;
     i64 global = 0;
     ProcOp curr_proc{};
     bool verbose;
@@ -106,7 +107,9 @@ void CodeGen::Printer::print(mlir::ModuleOp module) {
 
 void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap) {
     bool is_proc = isa<ProcOp>(proc_or_call);
-    auto indent = is_proc ? "    "sv : "        "sv;
+    auto save_indent = indent.size();
+    defer { indent.truncate(save_indent); };
+    indent += "    "sv;
     if (proc_or_call.getNumCallArgs()) {
         if (is_proc) out += ' ';
         if (wrap) out += "%1((%)\n";
@@ -173,7 +176,8 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
 }
 
 void CodeGen::Printer::print_op(Operation* op) {
-    out += "    %1(";
+    out += indent;
+    out += "%1(";
     if (op->getNumResults()) Format(out, "%8(%%{}%) = ", Id(inst_ids, op));
     defer { out += "%)\n"; };
 
@@ -310,6 +314,17 @@ void CodeGen::Printer::print_op(Operation* op) {
             stringifyAbortReason(a.getReason()),
             ops(a.getAbortInfo())
         );
+
+        if (not verbose) return;
+        out += " {\n";
+        indent += "    ";
+        for (auto& o : a.getBody().front()) {
+            if (IsInlineOp(&o)) continue;
+            print_op(&o);
+        }
+        indent.truncate(indent.size() - 4);
+        out += indent;
+        out += "}";
         return;
     }
 
@@ -471,15 +486,23 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
         arg_ids.clear();
         block_ids.clear();
         inst_ids.clear();
-        for (auto [id, b] : enumerate(proc.getBlocks())) {
-            block_ids[&b] = i64(id);
-            for (auto arg : b.getArguments())
-                arg_ids[arg] = temp++;
-            for (auto& i : b) {
-                if (IsInlineOp(&i)) continue;
-                if (i.getNumResults()) inst_ids[&i] = temp++;
+        auto ProcessRegion = [&](this auto& self, mlir::Region& r) -> void {
+            for (auto [id, b] : enumerate(r.getBlocks())) {
+                block_ids[&b] = i64(id);
+                for (auto arg : b.getArguments()) {
+                    if (isa<ir::AbortOp>(b.getParentOp())) continue;
+                    arg_ids[arg] = temp++;
+                }
+                for (auto& i : b) {
+                    if (IsInlineOp(&i)) continue;
+                    if (i.getNumResults()) inst_ids[&i] = temp++;
+                    if (auto init = dyn_cast<ir::AbortOp>(i))
+                        self(init.getBody());
+                }
             }
-        }
+        };
+
+        ProcessRegion(proc.getBody());
     }
 
     // Print name.
@@ -520,6 +543,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     }
 
     // Print the procedure body.
+    tempset indent = "    ";
     out += " %1({%)\n";
 
     // Print frame allocations.
@@ -611,6 +635,12 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
     }
 
     if (auto b = dyn_cast<mlir::BlockArgument>(v)) {
+        // Special handling for the argument of an init op.
+        if (isa<AbortOp>(b.getOwner()->getParentOp())) {
+            tmp += "%3(#%)";
+            return tmp;
+        }
+
         Format(tmp, "%3(%%{}%)", arg_ids.at(b));
         return tmp;
     }

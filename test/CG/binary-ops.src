@@ -93,25 +93,6 @@ proc arith (in int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     store #2, ptr @2, align 8
-// +     %5 = ptradd #2, 8
-// +     store %5, i64 14, align 8
-// +     %6 = ptradd #2, 16
-// +     store %6, i64 8, align 8
-// +     %7 = ptradd #2, 24
-// +     store %7, i64 10, align 8
-// +     %8 = ptradd #2, 32
-// +     store %8, ptr @0, align 8
-// +     %9 = ptradd %8, 8
-// +     store %9, i64 1, align 8
-// +     %10 = ptradd #2, 48
-// +     store %10, ptr @1, align 8
-// +     %11 = ptradd %10, 8
-// +     store %11, i64 16, align 8
-// +     %12 = ptradd #2, 64
-// +     store %12, ptr nil, align 8
-// +     %13 = ptradd %12, 8
-// +     store %13, ptr nil, align 8
 // +     abort at loc("binary-ops.src":8:10) arithmetic(ptr #2)
 // +
 // + bb2:
@@ -122,25 +103,6 @@ proc arith (in int a, in int b) {
 // +     br %16:1 to bb3 else bb4
 // +
 // + bb3:
-// +     store #2, ptr @2, align 8
-// +     %17 = ptradd #2, 8
-// +     store %17, i64 14, align 8
-// +     %18 = ptradd #2, 16
-// +     store %18, i64 9, align 8
-// +     %19 = ptradd #2, 24
-// +     store %19, i64 10, align 8
-// +     %20 = ptradd #2, 32
-// +     store %20, ptr @3, align 8
-// +     %21 = ptradd %20, 8
-// +     store %21, i64 1, align 8
-// +     %22 = ptradd #2, 48
-// +     store %22, ptr @1, align 8
-// +     %23 = ptradd %22, 8
-// +     store %23, i64 16, align 8
-// +     %24 = ptradd #2, 64
-// +     store %24, ptr nil, align 8
-// +     %25 = ptradd %24, 8
-// +     store %25, ptr nil, align 8
 // +     abort at loc("binary-ops.src":9:10) arithmetic(ptr #2)
 // +
 // + bb4:
@@ -151,25 +113,6 @@ proc arith (in int a, in int b) {
 // +     br %28:1 to bb5 else bb6
 // +
 // + bb5:
-// +     store #2, ptr @2, align 8
-// +     %29 = ptradd #2, 8
-// +     store %29, i64 14, align 8
-// +     %30 = ptradd #2, 16
-// +     store %30, i64 10, align 8
-// +     %31 = ptradd #2, 24
-// +     store %31, i64 10, align 8
-// +     %32 = ptradd #2, 32
-// +     store %32, ptr @4, align 8
-// +     %33 = ptradd %32, 8
-// +     store %33, i64 1, align 8
-// +     %34 = ptradd #2, 48
-// +     store %34, ptr @1, align 8
-// +     %35 = ptradd %34, 8
-// +     store %35, i64 16, align 8
-// +     %36 = ptradd #2, 64
-// +     store %36, ptr nil, align 8
-// +     %37 = ptradd %36, 8
-// +     store %37, ptr nil, align 8
 // +     abort at loc("binary-ops.src":10:10) arithmetic(ptr #2)
 // +
 // + bb6:
@@ -180,25 +123,6 @@ proc arith (in int a, in int b) {
 // +     br %40 to bb7 else bb8
 // +
 // + bb7:
-// +     store #2, ptr @2, align 8
-// +     %41 = ptradd #2, 8
-// +     store %41, i64 14, align 8
-// +     %42 = ptradd #2, 16
-// +     store %42, i64 12, align 8
-// +     %43 = ptradd #2, 24
-// +     store %43, i64 10, align 8
-// +     %44 = ptradd #2, 32
-// +     store %44, ptr @5, align 8
-// +     %45 = ptradd %44, 8
-// +     store %45, i64 1, align 8
-// +     %46 = ptradd #2, 48
-// +     store %46, ptr @6, align 8
-// +     %47 = ptradd %46, 8
-// +     store %47, i64 16, align 8
-// +     %48 = ptradd #2, 64
-// +     store %48, ptr nil, align 8
-// +     %49 = ptradd %48, 8
-// +     store %49, ptr nil, align 8
 // +     abort at loc("binary-ops.src":12:10) arithmetic(ptr #2)
 // +
 // + bb8:
@@ -208,25 +132,6 @@ proc arith (in int a, in int b) {
 // +     br %52 to bb9 else bb10
 // +
 // + bb9:
-// +     store #2, ptr @2, align 8
-// +     %53 = ptradd #2, 8
-// +     store %53, i64 14, align 8
-// +     %54 = ptradd #2, 16
-// +     store %54, i64 12, align 8
-// +     %55 = ptradd #2, 24
-// +     store %55, i64 10, align 8
-// +     %56 = ptradd #2, 32
-// +     store %56, ptr @5, align 8
-// +     %57 = ptradd %56, 8
-// +     store %57, i64 1, align 8
-// +     %58 = ptradd #2, 48
-// +     store %58, ptr @1, align 8
-// +     %59 = ptradd %58, 8
-// +     store %59, i64 16, align 8
-// +     %60 = ptradd #2, 64
-// +     store %60, ptr nil, align 8
-// +     %61 = ptradd %60, 8
-// +     store %61, ptr nil, align 8
 // +     abort at loc("binary-ops.src":12:10) arithmetic(ptr #2)
 // +
 // + bb10:
@@ -238,25 +143,6 @@ proc arith (in int a, in int b) {
 // +     br %65 to bb11 else bb12
 // +
 // + bb11:
-// +     store #2, ptr @2, align 8
-// +     %66 = ptradd #2, 8
-// +     store %66, i64 14, align 8
-// +     %67 = ptradd #2, 16
-// +     store %67, i64 13, align 8
-// +     %68 = ptradd #2, 24
-// +     store %68, i64 10, align 8
-// +     %69 = ptradd #2, 32
-// +     store %69, ptr @7, align 8
-// +     %70 = ptradd %69, 8
-// +     store %70, i64 1, align 8
-// +     %71 = ptradd #2, 48
-// +     store %71, ptr @6, align 8
-// +     %72 = ptradd %71, 8
-// +     store %72, i64 16, align 8
-// +     %73 = ptradd #2, 64
-// +     store %73, ptr nil, align 8
-// +     %74 = ptradd %73, 8
-// +     store %74, ptr nil, align 8
 // +     abort at loc("binary-ops.src":13:10) arithmetic(ptr #2)
 // +
 // + bb12:
@@ -266,25 +152,6 @@ proc arith (in int a, in int b) {
 // +     br %77 to bb13 else bb14
 // +
 // + bb13:
-// +     store #2, ptr @2, align 8
-// +     %78 = ptradd #2, 8
-// +     store %78, i64 14, align 8
-// +     %79 = ptradd #2, 16
-// +     store %79, i64 13, align 8
-// +     %80 = ptradd #2, 24
-// +     store %80, i64 10, align 8
-// +     %81 = ptradd #2, 32
-// +     store %81, ptr @7, align 8
-// +     %82 = ptradd %81, 8
-// +     store %82, i64 1, align 8
-// +     %83 = ptradd #2, 48
-// +     store %83, ptr @1, align 8
-// +     %84 = ptradd %83, 8
-// +     store %84, i64 16, align 8
-// +     %85 = ptradd #2, 64
-// +     store %85, ptr nil, align 8
-// +     %86 = ptradd %85, 8
-// +     store %86, ptr nil, align 8
 // +     abort at loc("binary-ops.src":13:10) arithmetic(ptr #2)
 // +
 // + bb14:
@@ -296,25 +163,6 @@ proc arith (in int a, in int b) {
 // +     br %90 to bb15 else bb16
 // +
 // + bb15:
-// +     store #2, ptr @2, align 8
-// +     %91 = ptradd #2, 8
-// +     store %91, i64 14, align 8
-// +     %92 = ptradd #2, 16
-// +     store %92, i64 14, align 8
-// +     %93 = ptradd #2, 24
-// +     store %93, i64 10, align 8
-// +     %94 = ptradd #2, 32
-// +     store %94, ptr @8, align 8
-// +     %95 = ptradd %94, 8
-// +     store %95, i64 2, align 8
-// +     %96 = ptradd #2, 48
-// +     store %96, ptr @6, align 8
-// +     %97 = ptradd %96, 8
-// +     store %97, i64 16, align 8
-// +     %98 = ptradd #2, 64
-// +     store %98, ptr nil, align 8
-// +     %99 = ptradd %98, 8
-// +     store %99, ptr nil, align 8
 // +     abort at loc("binary-ops.src":14:10) arithmetic(ptr #2)
 // +
 // + bb16:
@@ -326,25 +174,6 @@ proc arith (in int a, in int b) {
 // +     br %103 to bb17 else bb18
 // +
 // + bb17:
-// +     store #2, ptr @2, align 8
-// +     %104 = ptradd #2, 8
-// +     store %104, i64 14, align 8
-// +     %105 = ptradd #2, 16
-// +     store %105, i64 15, align 8
-// +     %106 = ptradd #2, 24
-// +     store %106, i64 10, align 8
-// +     %107 = ptradd #2, 32
-// +     store %107, ptr @9, align 8
-// +     %108 = ptradd %107, 8
-// +     store %108, i64 2, align 8
-// +     %109 = ptradd #2, 48
-// +     store %109, ptr @6, align 8
-// +     %110 = ptradd %109, 8
-// +     store %110, i64 16, align 8
-// +     %111 = ptradd #2, 64
-// +     store %111, ptr nil, align 8
-// +     %112 = ptradd %111, 8
-// +     store %112, ptr nil, align 8
 // +     abort at loc("binary-ops.src":15:10) arithmetic(ptr #2)
 // +
 // + bb18:
@@ -356,25 +185,6 @@ proc arith (in int a, in int b) {
 // +     br %116 to bb19 else bb20
 // +
 // + bb19:
-// +     store #2, ptr @2, align 8
-// +     %117 = ptradd #2, 8
-// +     store %117, i64 14, align 8
-// +     %118 = ptradd #2, 16
-// +     store %118, i64 17, align 8
-// +     %119 = ptradd #2, 24
-// +     store %119, i64 10, align 8
-// +     %120 = ptradd #2, 32
-// +     store %120, ptr @10, align 8
-// +     %121 = ptradd %120, 8
-// +     store %121, i64 2, align 8
-// +     %122 = ptradd #2, 48
-// +     store %122, ptr @11, align 8
-// +     %123 = ptradd %122, 8
-// +     store %123, i64 30, align 8
-// +     %124 = ptradd #2, 64
-// +     store %124, ptr nil, align 8
-// +     %125 = ptradd %124, 8
-// +     store %125, ptr nil, align 8
 // +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #2)
 // +
 // + bb20:
@@ -385,25 +195,6 @@ proc arith (in int a, in int b) {
 // +     br %129 to bb21 else bb22
 // +
 // + bb21:
-// +     store #2, ptr @2, align 8
-// +     %130 = ptradd #2, 8
-// +     store %130, i64 14, align 8
-// +     %131 = ptradd #2, 16
-// +     store %131, i64 17, align 8
-// +     %132 = ptradd #2, 24
-// +     store %132, i64 10, align 8
-// +     %133 = ptradd #2, 32
-// +     store %133, ptr @10, align 8
-// +     %134 = ptradd %133, 8
-// +     store %134, i64 2, align 8
-// +     %135 = ptradd #2, 48
-// +     store %135, ptr @1, align 8
-// +     %136 = ptradd %135, 8
-// +     store %136, i64 16, align 8
-// +     %137 = ptradd #2, 64
-// +     store %137, ptr nil, align 8
-// +     %138 = ptradd %137, 8
-// +     store %138, ptr nil, align 8
 // +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #2)
 // +
 // + bb22:
@@ -414,25 +205,6 @@ proc arith (in int a, in int b) {
 // +     br %141 to bb23 else bb24
 // +
 // + bb23:
-// +     store #2, ptr @2, align 8
-// +     %142 = ptradd #2, 8
-// +     store %142, i64 14, align 8
-// +     %143 = ptradd #2, 16
-// +     store %143, i64 18, align 8
-// +     %144 = ptradd #2, 24
-// +     store %144, i64 10, align 8
-// +     %145 = ptradd #2, 32
-// +     store %145, ptr @12, align 8
-// +     %146 = ptradd %145, 8
-// +     store %146, i64 3, align 8
-// +     %147 = ptradd #2, 48
-// +     store %147, ptr @11, align 8
-// +     %148 = ptradd %147, 8
-// +     store %148, i64 30, align 8
-// +     %149 = ptradd #2, 64
-// +     store %149, ptr nil, align 8
-// +     %150 = ptradd %149, 8
-// +     store %150, ptr nil, align 8
 // +     abort at loc("binary-ops.src":18:10) arithmetic(ptr #2)
 // +
 // + bb24:

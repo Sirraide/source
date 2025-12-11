@@ -711,7 +711,8 @@ bool Eval::EvalLoop() {
                 cg.emit(decl.get());
 
                 // TODO: This can fail if one of our lifetime analyses reports an error.
-                if (not cg.finalise(callee)) Todo("Handle finalisation failure in evaluator");
+                if (not cg.finalise_for_constant_evaluation(callee))
+                    Todo("Handle finalisation failure in evaluator");
             }
 
             SmallVector<SRValue> args;
@@ -779,7 +780,7 @@ bool Eval::EvalLoop() {
 
                 // This is a procedure that hasn’t been compiled yet.
                 cg.emit(decl.get());
-                if (not cg.finalise(callee)) return false;
+                if (not cg.finalise_for_constant_evaluation(callee)) return false;
             }
 
             // Get the return value slots *before* pushing a new frame.

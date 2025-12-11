@@ -233,8 +233,9 @@ def ProcOp : SRCC_Op<"proc", [
     }];
 }
 
-def AbortOp : SRCC_Op<"abort", [Terminator]> {
+def AbortOp : SRCC_Op<"abort", [Terminator, NoTerminator]> {
     let summary = "Report a fatal error and abort the program";
+    let regions = (region AnyRegion:$body);
     let arguments = (ins
         SRCC_AbortReasonAttr:$reason,
         SRCC_Ptr:$abort_info

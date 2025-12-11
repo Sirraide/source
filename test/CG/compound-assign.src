@@ -50,25 +50,6 @@ proc x (int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     store #2, ptr @2, align 8
-// +     %5 = ptradd #2, 8
-// +     store %5, i64 19, align 8
-// +     %6 = ptradd #2, 16
-// +     store %6, i64 8, align 8
-// +     %7 = ptradd #2, 24
-// +     store %7, i64 5, align 8
-// +     %8 = ptradd #2, 32
-// +     store %8, ptr @0, align 8
-// +     %9 = ptradd %8, 8
-// +     store %9, i64 1, align 8
-// +     %10 = ptradd #2, 48
-// +     store %10, ptr @1, align 8
-// +     %11 = ptradd %10, 8
-// +     store %11, i64 16, align 8
-// +     %12 = ptradd #2, 64
-// +     store %12, ptr nil, align 8
-// +     %13 = ptradd %12, 8
-// +     store %13, ptr nil, align 8
 // +     abort at loc("compound-assign.src":8:5) arithmetic(ptr #2)
 // +
 // + bb2:
@@ -83,25 +64,6 @@ proc x (int a, in int b) {
 // +     br %19:1 to bb3 else bb4
 // +
 // + bb3:
-// +     store #2, ptr @2, align 8
-// +     %20 = ptradd #2, 8
-// +     store %20, i64 19, align 8
-// +     %21 = ptradd #2, 16
-// +     store %21, i64 10, align 8
-// +     %22 = ptradd #2, 24
-// +     store %22, i64 5, align 8
-// +     %23 = ptradd #2, 32
-// +     store %23, ptr @3, align 8
-// +     %24 = ptradd %23, 8
-// +     store %24, i64 1, align 8
-// +     %25 = ptradd #2, 48
-// +     store %25, ptr @1, align 8
-// +     %26 = ptradd %25, 8
-// +     store %26, i64 16, align 8
-// +     %27 = ptradd #2, 64
-// +     store %27, ptr nil, align 8
-// +     %28 = ptradd %27, 8
-// +     store %28, ptr nil, align 8
 // +     abort at loc("compound-assign.src":10:5) arithmetic(ptr #2)
 // +
 // + bb4:
@@ -116,25 +78,6 @@ proc x (int a, in int b) {
 // +     br %34:1 to bb5 else bb6
 // +
 // + bb5:
-// +     store #2, ptr @2, align 8
-// +     %35 = ptradd #2, 8
-// +     store %35, i64 19, align 8
-// +     %36 = ptradd #2, 16
-// +     store %36, i64 12, align 8
-// +     %37 = ptradd #2, 24
-// +     store %37, i64 5, align 8
-// +     %38 = ptradd #2, 32
-// +     store %38, ptr @4, align 8
-// +     %39 = ptradd %38, 8
-// +     store %39, i64 1, align 8
-// +     %40 = ptradd #2, 48
-// +     store %40, ptr @1, align 8
-// +     %41 = ptradd %40, 8
-// +     store %41, i64 16, align 8
-// +     %42 = ptradd #2, 64
-// +     store %42, ptr nil, align 8
-// +     %43 = ptradd %42, 8
-// +     store %43, ptr nil, align 8
 // +     abort at loc("compound-assign.src":12:5) arithmetic(ptr #2)
 // +
 // + bb6:
@@ -149,25 +92,6 @@ proc x (int a, in int b) {
 // +     br %49 to bb7 else bb8
 // +
 // + bb7:
-// +     store #2, ptr @2, align 8
-// +     %50 = ptradd #2, 8
-// +     store %50, i64 19, align 8
-// +     %51 = ptradd #2, 16
-// +     store %51, i64 14, align 8
-// +     %52 = ptradd #2, 24
-// +     store %52, i64 5, align 8
-// +     %53 = ptradd #2, 32
-// +     store %53, ptr @5, align 8
-// +     %54 = ptradd %53, 8
-// +     store %54, i64 1, align 8
-// +     %55 = ptradd #2, 48
-// +     store %55, ptr @6, align 8
-// +     %56 = ptradd %55, 8
-// +     store %56, i64 16, align 8
-// +     %57 = ptradd #2, 64
-// +     store %57, ptr nil, align 8
-// +     %58 = ptradd %57, 8
-// +     store %58, ptr nil, align 8
 // +     abort at loc("compound-assign.src":14:5) arithmetic(ptr #2)
 // +
 // + bb8:
@@ -177,25 +101,6 @@ proc x (int a, in int b) {
 // +     br %61 to bb9 else bb10
 // +
 // + bb9:
-// +     store #2, ptr @2, align 8
-// +     %62 = ptradd #2, 8
-// +     store %62, i64 19, align 8
-// +     %63 = ptradd #2, 16
-// +     store %63, i64 14, align 8
-// +     %64 = ptradd #2, 24
-// +     store %64, i64 5, align 8
-// +     %65 = ptradd #2, 32
-// +     store %65, ptr @5, align 8
-// +     %66 = ptradd %65, 8
-// +     store %66, i64 1, align 8
-// +     %67 = ptradd #2, 48
-// +     store %67, ptr @1, align 8
-// +     %68 = ptradd %67, 8
-// +     store %68, i64 16, align 8
-// +     %69 = ptradd #2, 64
-// +     store %69, ptr nil, align 8
-// +     %70 = ptradd %69, 8
-// +     store %70, ptr nil, align 8
 // +     abort at loc("compound-assign.src":14:5) arithmetic(ptr #2)
 // +
 // + bb10:
@@ -207,25 +112,6 @@ proc x (int a, in int b) {
 // +     br %74 to bb11 else bb12
 // +
 // + bb11:
-// +     store #2, ptr @2, align 8
-// +     %75 = ptradd #2, 8
-// +     store %75, i64 19, align 8
-// +     %76 = ptradd #2, 16
-// +     store %76, i64 15, align 8
-// +     %77 = ptradd #2, 24
-// +     store %77, i64 5, align 8
-// +     %78 = ptradd #2, 32
-// +     store %78, ptr @7, align 8
-// +     %79 = ptradd %78, 8
-// +     store %79, i64 1, align 8
-// +     %80 = ptradd #2, 48
-// +     store %80, ptr @6, align 8
-// +     %81 = ptradd %80, 8
-// +     store %81, i64 16, align 8
-// +     %82 = ptradd #2, 64
-// +     store %82, ptr nil, align 8
-// +     %83 = ptradd %82, 8
-// +     store %83, ptr nil, align 8
 // +     abort at loc("compound-assign.src":15:5) arithmetic(ptr #2)
 // +
 // + bb12:
@@ -235,25 +121,6 @@ proc x (int a, in int b) {
 // +     br %86 to bb13 else bb14
 // +
 // + bb13:
-// +     store #2, ptr @2, align 8
-// +     %87 = ptradd #2, 8
-// +     store %87, i64 19, align 8
-// +     %88 = ptradd #2, 16
-// +     store %88, i64 15, align 8
-// +     %89 = ptradd #2, 24
-// +     store %89, i64 5, align 8
-// +     %90 = ptradd #2, 32
-// +     store %90, ptr @7, align 8
-// +     %91 = ptradd %90, 8
-// +     store %91, i64 1, align 8
-// +     %92 = ptradd #2, 48
-// +     store %92, ptr @1, align 8
-// +     %93 = ptradd %92, 8
-// +     store %93, i64 16, align 8
-// +     %94 = ptradd #2, 64
-// +     store %94, ptr nil, align 8
-// +     %95 = ptradd %94, 8
-// +     store %95, ptr nil, align 8
 // +     abort at loc("compound-assign.src":15:5) arithmetic(ptr #2)
 // +
 // + bb14:
@@ -265,25 +132,6 @@ proc x (int a, in int b) {
 // +     br %99 to bb15 else bb16
 // +
 // + bb15:
-// +     store #2, ptr @2, align 8
-// +     %100 = ptradd #2, 8
-// +     store %100, i64 19, align 8
-// +     %101 = ptradd #2, 16
-// +     store %101, i64 16, align 8
-// +     %102 = ptradd #2, 24
-// +     store %102, i64 5, align 8
-// +     %103 = ptradd #2, 32
-// +     store %103, ptr @8, align 8
-// +     %104 = ptradd %103, 8
-// +     store %104, i64 2, align 8
-// +     %105 = ptradd #2, 48
-// +     store %105, ptr @9, align 8
-// +     %106 = ptradd %105, 8
-// +     store %106, i64 30, align 8
-// +     %107 = ptradd #2, 64
-// +     store %107, ptr nil, align 8
-// +     %108 = ptradd %107, 8
-// +     store %108, ptr nil, align 8
 // +     abort at loc("compound-assign.src":16:5) arithmetic(ptr #2)
 // +
 // + bb16:
@@ -294,25 +142,6 @@ proc x (int a, in int b) {
 // +     br %112 to bb17 else bb18
 // +
 // + bb17:
-// +     store #2, ptr @2, align 8
-// +     %113 = ptradd #2, 8
-// +     store %113, i64 19, align 8
-// +     %114 = ptradd #2, 16
-// +     store %114, i64 16, align 8
-// +     %115 = ptradd #2, 24
-// +     store %115, i64 5, align 8
-// +     %116 = ptradd #2, 32
-// +     store %116, ptr @8, align 8
-// +     %117 = ptradd %116, 8
-// +     store %117, i64 2, align 8
-// +     %118 = ptradd #2, 48
-// +     store %118, ptr @1, align 8
-// +     %119 = ptradd %118, 8
-// +     store %119, i64 16, align 8
-// +     %120 = ptradd #2, 64
-// +     store %120, ptr nil, align 8
-// +     %121 = ptradd %120, 8
-// +     store %121, ptr nil, align 8
 // +     abort at loc("compound-assign.src":16:5) arithmetic(ptr #2)
 // +
 // + bb18:
@@ -327,25 +156,6 @@ proc x (int a, in int b) {
 // +     br %127 to bb19 else bb20
 // +
 // + bb19:
-// +     store #2, ptr @2, align 8
-// +     %128 = ptradd #2, 8
-// +     store %128, i64 19, align 8
-// +     %129 = ptradd #2, 16
-// +     store %129, i64 18, align 8
-// +     %130 = ptradd #2, 24
-// +     store %130, i64 5, align 8
-// +     %131 = ptradd #2, 32
-// +     store %131, ptr @10, align 8
-// +     %132 = ptradd %131, 8
-// +     store %132, i64 3, align 8
-// +     %133 = ptradd #2, 48
-// +     store %133, ptr @9, align 8
-// +     %134 = ptradd %133, 8
-// +     store %134, i64 30, align 8
-// +     %135 = ptradd #2, 64
-// +     store %135, ptr nil, align 8
-// +     %136 = ptradd %135, 8
-// +     store %136, ptr nil, align 8
 // +     abort at loc("compound-assign.src":18:5) arithmetic(ptr #2)
 // +
 // + bb20:

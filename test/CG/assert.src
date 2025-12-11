@@ -1,5 +1,5 @@
-// R      %srcc --short-filenames --ir   --target x86_64-unknown-linux %s
-// R[//L] %srcc --short-filenames --llvm --target x86_64-unknown-linux %s
+// R      %srcc --short-filenames --ir   --ir-verbose --target x86_64-unknown-linux %s
+// R[//L] %srcc --short-filenames --llvm              --target x86_64-unknown-linux %s
 program test;
 
 proc foo(in int a, in int b) {
@@ -18,66 +18,81 @@ proc foo(in int a, in int b) {
 // + }
 // +
 // + proc _S3fooFvxixiE (i64 %0, i64 %1) private ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
-// +     #2 = 80, align 8
-// +
 // + entry:
-// +     store #0, i64 %0, align 8
-// +     store #1, i64 %1, align 8
-// +     %2 = load i64, #0, align 8
-// +     %3 = load i64, #1, align 8
-// +     %4 = icmp eq i64 %2, %3
-// +     br %4 to bb2 else bb1
+// +     %2 = i64 7
+// +     %3 = addressof @3
+// +     %4 = i64 27
+// +     %5 = addressof @2
+// +     %6 = i64 42
+// +     %7 = i64 5
+// +     %8 = i64 10
+// +     %9 = addressof @1
+// +     %10 = i64 6
+// +     %11 = addressof @0
+// +     %12 = i64 0
+// +     %13 = alloca 8, align 8
+// +     %14 = alloca 8, align 8
+// +     %15 = alloca 80, align 8
+// +     store ptr %13, i64 %0, align 8
+// +     store ptr %14, i64 %1, align 8
+// +     %16 = load i64, ptr %13, align 8
+// +     %17 = load i64, ptr %14, align 8
+// +     %18 = icmp eq i64 %16, i64 %17
+// +     br i1 %18 to bb2 else bb1
 // +
 // + bb1:
-// +     store #2, ptr @1, align 8
-// +     %5 = ptradd #2, 8
-// +     store %5, i64 10, align 8
-// +     %6 = ptradd #2, 16
-// +     store %6, i64 6, align 8
-// +     %7 = ptradd #2, 24
-// +     store %7, i64 5, align 8
-// +     %8 = ptradd #2, 32
-// +     store %8, ptr @0, align 8
-// +     %9 = ptradd %8, 8
-// +     store %9, i64 6, align 8
-// +     %10 = ptradd #2, 48
-// +     store %10, ptr nil, align 8
-// +     %11 = ptradd %10, 8
-// +     store %11, i64 0, align 8
-// +     %12 = ptradd #2, 64
-// +     store %12, ptr nil, align 8
-// +     %13 = ptradd %12, 8
-// +     store %13, ptr nil, align 8
-// +     abort at loc("assert.src":6:5) assert(ptr #2)
+// +     %19 = nil
+// +     %20 = nil
+// +     abort at loc("assert.src":6:5) assert(ptr %15) {
+// +         store ptr #, ptr %9, align 8
+// +         %21 = ptradd ptr #, 8
+// +         store ptr %21, i64 %8, align 8
+// +         %22 = ptradd ptr #, 16
+// +         store ptr %22, i64 %10, align 8
+// +         %23 = ptradd ptr #, 24
+// +         store ptr %23, i64 %7, align 8
+// +         %24 = ptradd ptr #, 32
+// +         store ptr %24, ptr %11, align 8
+// +         %25 = ptradd ptr %24, 8
+// +         store ptr %25, i64 %10, align 8
+// +         %26 = ptradd ptr #, 48
+// +         store ptr %26, ptr %19, align 8
+// +         %27 = ptradd ptr %26, 8
+// +         store ptr %27, i64 %12, align 8
+// +         %28 = ptradd ptr #, 64
+// +         store ptr %28, ptr %20, align 8
+// +         %29 = ptradd ptr %28, 8
+// +         store ptr %29, ptr %20, align 8
+// +     }
 // +
 // + bb2:
-// +     %14 = load i64, #0, align 8
-// +     %15 = icmp sgt i64 %14, 42
-// +     br %15 to bb4 else bb3
+// +     %30 = load i64, ptr %13, align 8
+// +     %31 = icmp sgt i64 %30, i64 %6
+// +     br i1 %31 to bb4 else bb3
 // +
 // + bb3:
-// +     store #2, ptr @1, align 8
-// +     %16 = ptradd #2, 8
-// +     store %16, i64 10, align 8
-// +     %17 = ptradd #2, 16
-// +     store %17, i64 7, align 8
-// +     %18 = ptradd #2, 24
-// +     store %18, i64 5, align 8
-// +     %19 = ptradd #2, 32
-// +     store %19, ptr @3, align 8
-// +     %20 = ptradd %19, 8
-// +     store %20, i64 6, align 8
-// +     %21 = ptradd #2, 48
-// +     store %21, ptr @2, align 8
-// +     %22 = ptradd %21, 8
-// +     store %22, i64 27, align 8
-// +     %23 = ptradd #2, 64
-// +     store %23, ptr nil, align 8
-// +     %24 = ptradd %23, 8
-// +     store %24, ptr nil, align 8
-// +     abort at loc("assert.src":7:5) assert(ptr #2)
+// +     %32 = nil
+// +     abort at loc("assert.src":7:5) assert(ptr %15) {
+// +         store ptr #, ptr %9, align 8
+// +         %33 = ptradd ptr #, 8
+// +         store ptr %33, i64 %8, align 8
+// +         %34 = ptradd ptr #, 16
+// +         store ptr %34, i64 %2, align 8
+// +         %35 = ptradd ptr #, 24
+// +         store ptr %35, i64 %7, align 8
+// +         %36 = ptradd ptr #, 32
+// +         store ptr %36, ptr %3, align 8
+// +         %37 = ptradd ptr %36, 8
+// +         store ptr %37, i64 %10, align 8
+// +         %38 = ptradd ptr #, 48
+// +         store ptr %38, ptr %5, align 8
+// +         %39 = ptradd ptr %38, 8
+// +         store ptr %39, i64 %4, align 8
+// +         %40 = ptradd ptr #, 64
+// +         store ptr %40, ptr %32, align 8
+// +         %41 = ptradd ptr %40, 8
+// +         store ptr %41, ptr %32, align 8
+// +     }
 // +
 // + bb4:
 // +     ret

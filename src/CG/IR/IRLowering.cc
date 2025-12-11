@@ -23,9 +23,11 @@
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Target/LLVMIR/Export.h>
+#include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/Passes.h>
 
 #define TCase(type, name, ...) .Case<type>([&](auto&& name) { return __VA_ARGS__; })
@@ -151,6 +153,7 @@ LOWERING(AbortOp, {
         );
     }
 
+    Assert(op.getBody().empty(), "AbortInfoInliningPass must be run before LLVM lowering");
     LLVM::CallOp::create(r, op.getLoc(), mlir::TypeRange(), StringRef(name), a.getAbortInfo());
     return LLVM::UnreachableOp::create(r, op.getLoc());
 });
@@ -470,6 +473,24 @@ struct OptionalAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Opt
         propagateIfChanged(lattice, changed);
     }
 };
+
+struct AbortInfoInliningPass final : mlir::PassWrapper<AbortInfoInliningPass, mlir::Pass> {
+    CodeGen& cg;
+    AbortInfoInliningPass(CodeGen& cg) : cg(cg) {}
+    bool canScheduleOn(mlir::RegisteredOperationName op) const override {
+        auto name = op.getStringRef();
+        return name == mlir::ModuleOp::getOperationName() or name == ir::ProcOp::getOperationName();
+    }
+
+    void runOnOperation() override {
+        mlir::OpBuilder b{&getContext()};
+        mlir::IRRewriter r{b};
+        getOperation()->walk([&](ir::AbortOp op) {
+            if (op.getBody().empty()) return;
+            r.inlineBlockBefore(&op.getBody().front(), op, op.getAbortInfo());
+        });
+    }
+};
 } // namespace srcc::cg::lowering
 
 using namespace srcc::cg::lowering;
@@ -505,8 +526,13 @@ void LoweringPass::runOnOperation() {
     target.addLegalDialect<LLVM::LLVMDialect>();
     target.addLegalOp<ModuleOp>();
 
+    // Disallow rollback because we don’t need it and disallowing it
+    // is much more efficient.
+    mlir::ConversionConfig config;
+    config.allowPatternRollback = false;
+
     auto module = getOperation();
-    if (failed(applyFullConversion(module, target, std::move(patterns))))
+    if (failed(applyFullConversion(module, target, std::move(patterns), config)))
         return signalPassFailure();
 }
 
@@ -567,6 +593,7 @@ void OptionalUnwrapCheckPass::CheckProcedure(ir::ProcOp proc) {
 auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::Module> {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
+    pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
     pm.addPass(std::make_unique<LoweringPass>(*this));
 
     if (pm.run(mlir_module).failed()) {
@@ -580,11 +607,12 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     return m;
 }
 
-bool CodeGen::finalise(ir::ProcOp proc) {
+bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
+    pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
     // For some reason this pass sometimes produces null values...
     // This is possibly LLVM bug 153906.
     //pm.addPass(mlir::createRemoveDeadValuesPass());

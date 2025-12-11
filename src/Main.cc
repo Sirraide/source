@@ -49,7 +49,7 @@ using options = clopts< // clang-format off
     flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
-    flag<"--ir-verbose", "Always print the type of a value">,
+    flag<"--ir-verbose", "Always print the type of a value and other details">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
     flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,

@@ -144,8 +144,13 @@ void CodeGen::CreateAbort(
     //
     // Don’t require a valid location here as this is also called from within
     // implicitly generated code.
+    auto op = ir::AbortOp::create(*this, loc, reason, curr.abort_info_slot);
+    InsertionGuard _{*this};
+    setInsertionPointToStart(&op.getBody().emplaceBlock());
+    op.getBody().addArgument(ptr_ty, loc);
+
     auto l = SLoc::Decode(loc);
-    RecordInitHelper init{*this, tu.AbortInfoEquivalentTy, curr.abort_info_slot};
+    RecordInitHelper init{*this, tu.AbortInfoEquivalentTy, op.getBody().getArgument(0)};
     if (auto lc = l.seek_line_column(context())) {
         init.emit_next_field(CreateGlobalStringSlice(loc, context().file_name(lc->file->file_id())));
         init.emit_next_field(CreateInt(loc, i64(lc->line)));
@@ -160,7 +165,6 @@ void CodeGen::CreateAbort(
     init.emit_next_field(msg1);
     init.emit_next_field(msg2);
     init.emit_next_field(stringifier);
-    ir::AbortOp::create(*this, loc, reason, curr.abort_info_slot);
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
@@ -2823,7 +2827,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     if (not HasTerminator()) ir::RetOp::create(*this, loc, Vals());
 
     // Run canonicalisation etc.
-    if (not finalise(vm_entry_point)) return nullptr;
+    if (not finalise_for_constant_evaluation(vm_entry_point)) return nullptr;
     return vm_entry_point;
 }
 
