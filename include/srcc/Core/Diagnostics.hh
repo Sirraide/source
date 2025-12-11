@@ -8,6 +8,9 @@
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <base/Macros.hh>
+#include <cpptrace/basic.hpp>
+#include <source_location>
 
 namespace srcc {
 class Diagnostic;
@@ -43,6 +46,15 @@ public:
 
     /// Extra locations to print.
     SmallVector<std::pair<std::string, SLoc>, 0> extra_locations;
+
+    /// Stack trace, if any.
+    ///
+    /// FIXME: This is stupid; this shouldn’t be a shared pointer, but we
+    /// have `std::expected<T, SmallVector<Diagnostic>>` somewhere, which
+    /// requires this class to be copy-constructible. That in and of itself
+    /// is stupid as we shouldn’t be copying diagnostics; refactor this and
+    /// change how we allocate diagnostics.
+    std::shared_ptr<cpptrace::stacktrace> trace;
 
     /// Create an empty diagnostic.
     Diagnostic() = default;

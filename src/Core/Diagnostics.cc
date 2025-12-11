@@ -3,10 +3,15 @@
 
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/Support/Process.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <base/Str.hh>
+#include <cpptrace/basic.hpp>
+#include <cpptrace/formatting.hpp>
+#include <sstream>
 
 using namespace srcc;
+using cpptrace::stacktrace;
 
 // ============================================================================
 //  Diagnostic Formatting
@@ -74,7 +79,8 @@ static auto FormatDiagnostic(
 
     // Print any extra data that should come after the source line.
     auto PrintExtraData = [&] {
-        if (diag.extra.empty()) return;
+        if (diag.extra.empty() and diag.trace == nullptr) return;
+        out += '\n';
 
         // Adding a newline at the end here forces an extra empty line to
         // be emitted when we print the diagnostic; that looks better if
@@ -84,7 +90,22 @@ static auto FormatDiagnostic(
         // Make sure the extra data is at the start of a line so that \r
         // is handled properly.
         // TODO: Just turn \r into \n mid-line.
-        Format(out, "\n{}\n", diag.extra);
+        if (not diag.extra.empty()) Format(out, "{}\n", diag.extra);
+
+        // Print the stack trace if we have one.
+        if (diag.trace) {
+            using cpptrace::formatter;
+            formatter fmt;
+            std::ostringstream os;
+            fmt.addresses(formatter::address_mode::none);
+            fmt.colors(ctx.use_colours ? formatter::color_mode::always : formatter::color_mode::none);
+            fmt.columns(true);
+            fmt.paths(formatter::path_mode::full);
+            fmt.symbols(formatter::symbol_mode::pruned);
+            fmt.print(os, *diag.trace);
+            out += '\n';
+            out += os.str();
+        }
     };
 
     // If the location is invalid, either because the specified file does not
@@ -389,6 +410,12 @@ void DiagnosticsEngine::report(Diagnostic&& diag) {
     if (diag.level == Diagnostic::Level::Ignored) return;
     if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
         error_flag.store(true, std::memory_order_relaxed);
+
+    // Save the current stack trace if this is an ICE. Skip 2 frames for
+    // report() + ICE().
+    if (diag.level == Diagnostic::Level::ICE)
+        diag.trace = std::make_shared<stacktrace>(stacktrace::current(2));
+
     report_impl(std::move(diag));
 }
 
