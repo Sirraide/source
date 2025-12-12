@@ -16,6 +16,7 @@
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
+#include <base/Assert.hh>
 
 using namespace srcc;
 
@@ -64,7 +65,8 @@ auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
             // TODO
             break;
 
-        case K::Record:{
+        case K::Record:
+        case K::CXXRecord: {
             auto ty = ImportRecord(cast<clang::RecordDecl>(D));
             if (ty) return cast<StructType>(ty.value())->decl();
         } break;
@@ -403,7 +405,20 @@ auto Sema::ImportCXXHeaders(
     );
 }
 
-auto Sema::LookUpCXXName(ImportedClangModuleDecl* clang_module, ArrayRef<DeclName> names) -> LookupResult {
+namespace {
+enum class Kind {
+    Nothing,
+    Unsupported,
+    Function,
+    Type,
+};
+}
+
+auto Sema::LookUpCXXName(
+    ImportedClangModuleDecl* clang_module,
+    ArrayRef<DeclName> names,
+    LookupHint hint
+) -> LookupResult {
     Assert(not names.empty(), "Empty name lookup?");
     auto ast = &clang_module->clang_ast;
     auto& actions = ast->getSema();
@@ -423,36 +438,61 @@ auto Sema::LookUpCXXName(ImportedClangModuleDecl* clang_module, ArrayRef<DeclNam
     // Look up the last segment in the scope.
     // TODO: Support operators.
     auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back().str())));
-    if (res.empty()) return LookupResult::NotFound(names.back());
 
-    // We found exactly one name.
-    if (res.isSingleResult()) {
-        auto decl = ImportCXXDecl(clang_module, res.front());
-        if (not decl) return LookupResult::FailedToImport();
-        return LookupResult::Success(decl.get());
+    // Figure out what we found.
+    auto kind = Kind::Nothing;
+    auto Merge = [&](Kind k) {
+        using enum Kind;
+        Assert(k != Nothing, "'Nothing' should only be used as an initial state");
+        Assert(kind != Unsupported, "Should not process any more decls after reaching 'Unsupported'");
+        Assert(k != Unsupported, "Should just early return instead of merging 'Unsupported'");
+        if (k == kind) {} // Do nothing. They’re the same anyway.
+        else if (kind == Nothing) kind = k;
+        else if (k == Unsupported) kind = Unsupported;
+        else if (kind == Type and hint == LookupHint::Type) {} // Prefer types if types were requested.
+        else if (kind == Function or k == Function) kind = Function;
+        else {
+            Assert(k == Type and kind == Type);
+            kind = Type;
+        }
+    };
+
+    for (auto d : res) {
+        if (d->isInvalidDecl()) continue;
+        if (isa<clang::FunctionDecl>(d)) Merge(Kind::Function);
+        else if (isa<clang::TypedefDecl, clang::RecordDecl>(d)) Merge(Kind::Type);
+        else Merge(Kind::Unsupported);
+        if (kind == Kind::Unsupported) break;
     }
 
-    // If we found function declarations, import them all.
+    // And import the declarations we care about.
     SmallVector<Decl*> converted;
-    if (llvm::all_of(res, [](auto* d) { return isa<clang::FunctionDecl>(d); })) {
-        for (auto d : res)
-            if (auto decl = ImportCXXDecl(clang_module, d))
-                converted.push_back(decl.get());
+    auto ImportFiltered = [&](auto filter) {
+        for (auto d : res) {
+            if (d->isInvalidDecl() or not std::invoke(filter, d)) continue;
+            auto decl = ImportCXXDecl(clang_module, d);
+            if (not decl) return LookupResult::FailedToImport(names.back());
+            if (not is_contained(converted, decl.get())) converted.push_back(decl.get());
+        }
+
+        if (converted.empty()) return LookupResult::NotFound(names.back());
+        if (converted.size() == 1) return LookupResult::Success(converted.front());
+        return LookupResult::Ambiguous(names.back(), converted);
+    };
+
+    switch (kind) {
+        case Kind::Nothing:
+            return LookupResult::NotFound(names.back());
+
+        case Kind::Unsupported:
+            return LookupResult::FailedToImport(names.back());
+
+        case Kind::Function:
+            return ImportFiltered([](auto* d){ return isa<clang::FunctionDecl>(d); });
+
+        case Kind::Type:
+            return ImportFiltered([](auto* d){ return isa<clang::TypedefDecl, clang::RecordDecl>(d); });
     }
 
-    // 'typedef struct X {} X' is a common pattern in C; in the Clang
-    // AST, we end up with both a RecordDecl and TypedefDecl for this.
-    else if (
-        auto it = rgs::find_if(res, [](auto* d) { return isa<clang::TypedefDecl>(d); });
-        it != res.end()
-    ) {
-        auto decl = ImportCXXDecl(clang_module, *it);
-        if (decl) converted.push_back(decl.get());
-    }
-
-    // We might end up with only one—or even none—if we couldn’t import
-    // one of them.
-    if (converted.empty()) return LookupResult::FailedToImport();
-    if (converted.size() == 1) return LookupResult::Success(converted.front());
-    return LookupResult::Ambiguous(names.back(), converted);
+    Unreachable();
 }

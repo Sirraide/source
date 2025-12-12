@@ -307,7 +307,7 @@ private:
         [[nodiscard]] explicit operator bool() const { return successful(); }
 
         static auto Ambiguous(DeclName name, ArrayRef<Decl*> decls) { return LookupResult{decls, name, Reason::Ambiguous}; }
-        static auto FailedToImport() { return LookupResult{{}, {}, Reason::FailedToImport}; }
+        static auto FailedToImport(DeclName name) { return LookupResult{{}, name, Reason::FailedToImport}; }
         static auto NonScopeInPath(DeclName name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
         static auto NotFound(DeclName name) { return LookupResult{name}; }
         static auto Success(Decl* decl) { return LookupResult{decl, {}, Reason::Success}; }
@@ -547,6 +547,21 @@ private:
 
     private:
         [[nodiscard]] auto add_range(Range r) -> AddResult;
+    };
+
+    /// Hint as to what lookup is trying to find.
+    ///
+    /// Note that no guarantee is made that successful lookup actually
+    /// found the thing we want to find. E.g. if 'Type' is passed, a
+    /// ‘successful’ lookup may still have found a function.
+    ///
+    /// This is mainly intended as a disambiguation hint for scopes and
+    /// C++ names as there may be declarations of types and functions with
+    /// the same name in C++ code (e.g. 'stat').
+    enum struct LookupHint {
+        Any,   ///< Any kind of name.
+        Scope, ///< Something that can be the LHS of '::'.
+        Type,  ///< We’re looking for a type.
     };
 
     Context& ctx;
@@ -823,15 +838,24 @@ private:
     ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
-    auto LookUpCXXName(ImportedClangModuleDecl* clang_module, ArrayRef<DeclName> names) -> LookupResult;
+    auto LookUpCXXName(
+        ImportedClangModuleDecl* clang_module,
+        ArrayRef<DeclName> names,
+        LookupHint hint
+    ) -> LookupResult;
 
     /// Use LookUpName() instead.
-    auto LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult;
+    auto LookUpQualifiedName(
+        Scope* in_scope,
+        ArrayRef<DeclName> names,
+        LookupHint hint
+    ) -> LookupResult;
 
     /// Perform unqualified name lookup.
     auto LookUpUnqualifiedName(
         Scope* in_scope,
         DeclName name,
+        LookupHint hint,
         bool this_scope_only
     ) -> LookupResult;
 
@@ -850,11 +874,13 @@ private:
     /// \param in_scope The scope to start searching in.
     /// \param names The path to look up.
     /// \param loc The location of the lookup.
+    /// \param hint Hint as to what we’re looking for.
     /// \param complain Emit a diagnostic if lookup fails.
     auto LookUpName(
         Scope* in_scope,
         ArrayRef<DeclName> names,
         SLoc loc,
+        LookupHint hint = LookupHint::Any,
         bool complain = true
     ) -> LookupResult;
 

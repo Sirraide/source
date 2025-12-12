@@ -1,0 +1,17 @@
+// V %srcc --sema --verify -I test/inputs %s
+program test;
+
+import <c-tag-type-shadowing.h> as c;
+
+// Check that we have some very basic support for the case of
+// a C++ header containing a function and type with the same
+// name.
+c::foo f1 = (1, 2);
+c::foo(&f1);
+
+c::foo f2 = ("foobar"); // expected-error: Cannot convert expression of type 'i8[]' to 'i32'
+c::foo("foobar"); // expected-error: Cannot convert expression of type 'i8[]' to 'foo^'
+
+// This note is in the imported header.
+// expected-note@*: In initialiser for field 'a'
+

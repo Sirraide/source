@@ -314,7 +314,11 @@ bool Sema::IsZeroSizedOrIncomplete(Type ty) {
     return ty->memory_size(*tu) == Size();
 }
 
-auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> LookupResult {
+auto Sema::LookUpQualifiedName(
+    Scope* in_scope,
+    ArrayRef<DeclName> names,
+    LookupHint hint
+) -> LookupResult {
     Assert(names.size() > 1, "Should not be unqualified lookup");
 
     // The first segment is looked up using unqualified lookup, but don’t
@@ -324,7 +328,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
     auto first = names.front();
     if (first.empty()) in_scope = global_scope();
     else {
-        auto res = LookUpUnqualifiedName(in_scope, first, false);
+        auto res = LookUpUnqualifiedName(in_scope, first, LookupHint::Scope, false);
         switch (res.result) {
             using enum LookupResult::Reason;
             case Success: {
@@ -363,7 +367,7 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
 
                 // We found an imported C++ header; do a C++ lookup.
                 auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
-                return LookUpCXXName(hdr, names.drop_front());
+                return LookUpCXXName(hdr, names.drop_front(), hint);
             } break;
         }
     }
@@ -387,10 +391,15 @@ auto Sema::LookUpQualifiedName(Scope* in_scope, ArrayRef<DeclName> names) -> Loo
     }
 
     // Finally, look up the name in the last scope.
-    return LookUpUnqualifiedName(in_scope, names.back(), true);
+    return LookUpUnqualifiedName(in_scope, names.back(), hint, true);
 }
 
-auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope_only) -> LookupResult {
+auto Sema::LookUpUnqualifiedName(
+    Scope* in_scope,
+    DeclName name,
+    LookupHint hint,
+    bool this_scope_only
+) -> LookupResult {
     if (name.empty()) return LookupResult(name);
     while (in_scope) {
         // Look up the name in the this scope.
@@ -412,8 +421,8 @@ auto Sema::LookUpUnqualifiedName(Scope* in_scope, DeclName name, bool this_scope
         Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
         auto mod = tu->open_modules.front();
         if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
-            return LookUpUnqualifiedName(&s->exports, name, true);
-        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name);
+            return LookUpUnqualifiedName(&s->exports, name, hint, true);
+        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name, hint);
     }
 
     return LookupResult::NotFound(name);
@@ -423,11 +432,12 @@ auto Sema::LookUpName(
     Scope* in_scope,
     ArrayRef<DeclName> names,
     SLoc loc,
+    LookupHint hint,
     bool complain
 ) -> LookupResult {
     auto res = names.size() == 1
-                 ? LookUpUnqualifiedName(in_scope, names[0], false)
-                 : LookUpQualifiedName(in_scope, names);
+                 ? LookUpUnqualifiedName(in_scope, names[0], hint, false)
+                 : LookUpQualifiedName(in_scope, names, hint);
     if (not res.successful() and complain) ReportLookupFailure(res, loc);
     return res;
 }
@@ -531,7 +541,7 @@ void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
-        case FailedToImport: break; // Already diagnosed.
+        case FailedToImport: Error(loc, "Could not import symbol '{}' from Clang", result.name); break;
         case NotFound: Error(loc, "Unknown symbol '{}'", result.name); break;
         case Ambiguous: {
             Error(loc, "Ambiguous symbol '{}'", result.name);
@@ -3145,7 +3155,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
 }
 
 auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr> {
-    auto res = LookUpName(curr_scope(), names, loc, false);
+    auto res = LookUpName(curr_scope(), names, loc, LookupHint::Any, false);
     if (res.successful()) return CreateReference(res.decls.front(), loc);
 
     // Overload sets are ok here.
@@ -4187,7 +4197,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
         );
 
         base = MaterialiseTemporary(base);
-        auto field = LookUpUnqualifiedName(s->scope(), parsed->member, true);
+        auto field = LookUpUnqualifiedName(s->scope(), parsed->member, LookupHint::Any, true);
         switch (field.result) {
             using enum LookupResult::Reason;
             case Success: break;
@@ -4659,7 +4669,7 @@ auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
 }
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
-    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc);
+    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc, LookupHint::Type);
     if (not res) return Type();
 
     // Template type.
@@ -4782,7 +4792,7 @@ auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
-    auto res = LookUpUnqualifiedName(curr_scope(), parsed->name, true);
+    auto res = LookUpUnqualifiedName(curr_scope(), parsed->name, LookupHint::Type, true);
     if (not res) Error(parsed->loc, "Deduced template type cannot occur here");
     auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
     if (not ty->in_substitution) Error(parsed->loc, "Deduced template type cannot occur here");
