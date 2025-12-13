@@ -1,0 +1,9 @@
+// V %srcc --sema --verify -I test/inputs %s
+// expected-no-diagnostics
+program test;
+
+import <macros.h> as macros;
+
+#assert macros::NESTED == 42;
+#assert macros::FOOBAR == 84;
+#assert macros::SIX == 6;

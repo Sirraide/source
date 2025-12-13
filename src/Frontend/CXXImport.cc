@@ -1,3 +1,4 @@
+#include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/ClangForward.hh>
@@ -5,15 +6,22 @@
 #include <srcc/Macros.hh>
 
 #include <clang/AST/Decl.h>
+#include <clang/AST/DeclarationName.h>
 #include <clang/AST/RecordLayout.h>
 #include <clang/Basic/FileManager.h>
+#include <clang/Basic/TokenKinds.h>
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/Lex/MacroArgs.h>
+#include <clang/Lex/PPCallbacks.h>
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
 #include <clang/Tooling/Tooling.h>
+#include <clang/Parse/Parser.h>
 
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/MemoryBufferRef.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
 #include <base/Assert.hh>
@@ -33,6 +41,7 @@ public:
     auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
     auto ImportSourceLocation(clang::SourceLocation sloc) -> SLoc;
+    auto ImportValue(const clang::APValue& val, clang::QualType Ty) -> std::optional<eval::RValue>;
 };
 
 auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
@@ -350,6 +359,36 @@ auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
     return SLoc(f.value()->data() + sm.getFileOffset(sloc));
 }
 
+auto Sema::Importer::ImportValue(
+    const clang::APValue& val,
+    clang::QualType ty
+) -> std::optional<eval::RValue> {
+    switch (val.getKind()) {
+        case clang::APValue::Int: {
+            auto int_ty = ImportType(ty);
+            if (not int_ty or not int_ty.value()->is_integer_or_bool()) return std::nullopt;
+            return eval::RValue(val.getInt(), *int_ty);
+        }
+
+        case clang::APValue::None:
+        case clang::APValue::Indeterminate:
+        case clang::APValue::Float:
+        case clang::APValue::FixedPoint:
+        case clang::APValue::ComplexInt:
+        case clang::APValue::ComplexFloat:
+        case clang::APValue::LValue:
+        case clang::APValue::Vector:
+        case clang::APValue::Array:
+        case clang::APValue::Struct:
+        case clang::APValue::Union:
+        case clang::APValue::MemberPointer:
+        case clang::APValue::AddrLabelDiff:
+            return std::nullopt;
+    }
+
+    Unreachable();
+}
+
 auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl> {
     Importer importer(*this, clang_module);
     auto d = importer.ImportDecl(decl);
@@ -357,11 +396,7 @@ auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -
     return d;
 }
 
-auto Sema::ImportCXXHeaders(
-    String logical_name,
-    ArrayRef<String> header_names,
-    SLoc import_loc
-) -> Ptr<ImportedClangModuleDecl> {
+auto Sema::ParseCXX(StringRef code) -> std::unique_ptr<clang::ASTUnit> {
     std::vector<std::string> args{
         "-x",
         "c++",
@@ -383,13 +418,20 @@ auto Sema::ImportCXXHeaders(
         args.push_back(p);
     }
 
-    auto AST = clang::tooling::buildASTFromCodeWithArgs(
-        utils::join(header_names, "", "#include {}\n"),
+    return clang::tooling::buildASTFromCodeWithArgs(
+        code,
         args,
         "__srcc.imports.cc",
         SOURCE_CLANG_EXE
     );
+}
 
+auto Sema::ImportCXXHeaders(
+    String logical_name,
+    ArrayRef<String> header_names,
+    SLoc import_loc
+) -> Ptr<ImportedClangModuleDecl> {
+    auto AST = ParseCXX(utils::join(header_names, "", "#include {}\n"));
     if (not AST) {
         Error(import_loc, "Header import failed");
         return {};
@@ -414,16 +456,15 @@ enum class Kind {
 };
 }
 
-auto Sema::LookUpCXXName(
+auto Sema::LookUpCXXNameImpl(
     ImportedClangModuleDecl* clang_module,
     ArrayRef<DeclName> names,
     LookupHint hint
 ) -> LookupResult {
-    Assert(not names.empty(), "Empty name lookup?");
     auto ast = &clang_module->clang_ast;
-    auto& actions = ast->getSema();
+    auto& clang_sema = ast->getSema();
     auto& ast_ctx = ast->getASTContext();
-    auto& pp = actions.getPreprocessor();
+    auto& pp = clang_sema.getPreprocessor();
 
     // Look up all scopes in the path.
     clang::DeclContext* ctx = ast_ctx.getTranslationUnitDecl();
@@ -495,4 +536,137 @@ auto Sema::LookUpCXXName(
     }
 
     Unreachable();
+}
+
+auto Sema::LookUpCXXName(
+    ImportedClangModuleDecl* clang_module,
+    ArrayRef<DeclName> names,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not names.empty(), "Empty name lookup?");
+    auto DoNameLookup = [&] {
+        return LookUpCXXNameImpl(clang_module, names, hint);
+    };
+
+    // If this is anything other than a single identifier, it can’t be a macro.
+    if (names.size() != 1 or not names.front().is_str())
+        return DoNameLookup();
+
+    auto ast = &clang_module->clang_ast;
+    auto& clang_sema = ast->getSema();
+    auto& pp = clang_sema.getPreprocessor();
+    auto id = pp.getIdentifierInfo(names.front().str());
+    auto *mi = pp.getMacroInfo(id);
+    if (not mi) return DoNameLookup();
+
+    // Refuse to import ‘builtin’ macros (i.e. __LINE__, __COUNTER__, and friends)
+    // as well as function-like macros.
+    if (mi->isBuiltinMacro() or mi->isFunctionLike())
+        return LookupResult::FailedToImport(names.back());
+
+    // If we have attempted to find this before, do not do so again.
+    if (auto it = imported_macros.find(mi); it != imported_macros.end()) {
+        if (it->second.present()) return LookupResult::Success(it->second.get());
+        return LookupResult::FailedToImport(names.back());
+    }
+
+    // Cache that we attempted to import this.
+    imported_macros[mi] = nullptr;
+
+    // Enter the macro definition as a new file.
+    auto& sm = clang_sema.getSourceManager();
+    auto clang_sloc = sm.getLocForStartOfFile(sm.getMainFileID());
+    auto fid = sm.createFileID(
+        llvm::MemoryBuffer::getMemBuffer(
+            std::string(names.front().str()), // Null-terminate this.
+            "<macro expansion>",
+            true
+        )
+    );
+
+    if (pp.EnterSourceFile(fid, nullptr, clang_sloc))
+        return LookupResult::FailedToImport(names.back());
+
+    // Ask the preprocessor to expand the macro.
+    std::vector<clang::Token> toks;
+
+    // Manual implementation of LexTokensUntilEOF that also keeps the
+    // EOF token, because 'StringifyArgument' expects an EOF-terminated
+    // token list, because of course it does.
+    for (;;) {
+        auto& tok = toks.emplace_back();
+        pp.Lex(tok);
+        if (tok.is(clang::tok::eof)) break;
+        if (tok.is(clang::tok::unknown)) return LookupResult::FailedToImport(names.back());
+    }
+
+    // Macro expanded to nothing.
+    if (toks.empty()) return LookupResult::FailedToImport(names.back());
+
+    // If it is a single identifier, just look up that name.
+    if (
+        toks.size() == 2 and
+        toks.front().is(clang::tok::identifier)
+    ) return LookUpCXXNameImpl(
+        clang_module,
+        DeclName(tu->save(toks.front().getIdentifierInfo()->getName())),
+        hint
+    );
+
+    // Otherwise, we need to parse this thing.
+    //
+    // For now, we attempt to parse and evaluate it as a constant expression in
+    // a new TU; this *does* mean that we can reference any symbols declared in
+    // the actual imported TU, but this should be fine for most macros that aren’t
+    // just a single identifier.
+    auto expansion = clang::MacroArgs::StringifyArgument(
+        toks.data(),
+        pp,
+        false,
+        clang_sloc,
+        clang_sloc
+    );
+
+    // Wrap the expansion in a function; take care to strip the quotes around the string literal.
+    auto code = Format(
+        "static constexpr decltype(auto) __srcc_expanded_macro = [] {{ return {}; }} ();",
+        StringRef(expansion.getLiteralData(), expansion.getLength()).drop_front().drop_back()
+    );
+
+    auto clang_tu = ParseCXX(code);
+    if (not clang_tu or clang_tu->getSema().hasUncompilableErrorOccurred())
+        return LookupResult::FailedToImport(names.back());
+
+    // Take care to retrieve the II in the preprocessor of the new TU.
+    clang::DeclarationName expanded_name{clang_tu->getPreprocessor().getIdentifierInfo("__srcc_expanded_macro")};
+    auto res = clang_tu->getASTContext().getTranslationUnitDecl()->lookup(expanded_name);
+    if (not res.isSingleResult() or res.front()->isInvalidDecl())
+        return LookupResult::FailedToImport(names.back());
+
+    auto var = cast<clang::VarDecl>(res.front());
+    if (not var->getEvaluatedValue())
+        return LookupResult::FailedToImport(names.back());
+
+    // The importer requires a module, so fabricate one for this.
+    auto fake_module = ImportedClangModuleDecl::Create(
+        *tu,
+        *clang_tu,
+        "__srcc_macro_expansion__",
+        {},
+        SLoc()
+    );
+
+    eval::RValue val;
+    {
+        Importer i{*this, fake_module};
+        auto v = i.ImportValue(*var->getEvaluatedValue(), var->getType());
+        if (not v.has_value()) return LookupResult::FailedToImport(names.back());
+        val = std::move(*v);
+    }
+
+    Importer i{*this, clang_module};
+    auto ce = MakeConstExpr(nullptr, std::move(val), i.ImportSourceLocation(mi->getDefinitionLoc()));
+    auto vd = new (*tu) ValueDecl("", ce, ce->location());
+    imported_macros[mi] = vd;
+    return LookupResult::Success(vd);
 }

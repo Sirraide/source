@@ -612,6 +612,10 @@ private:
     /// already failed to import before).
     DenseMap<clang::RecordDecl*, std::optional<Type>> imported_records;
 
+    /// C++ macros that have already been imported (or that
+    /// already failed to import before).
+    DenseMap<clang::MacroInfo*, Ptr<Decl>> imported_macros;
+
     /// C++ TUs that we own.
     SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
 
@@ -874,6 +878,12 @@ private:
         LookupHint hint
     ) -> LookupResult;
 
+    auto LookUpCXXNameImpl(
+        ImportedClangModuleDecl* clang_module,
+        ArrayRef<DeclName> names,
+        LookupHint hint
+    ) -> LookupResult;
+
     /// Use LookUpName() instead.
     auto LookUpQualifiedName(
         Scope* in_scope,
@@ -957,6 +967,9 @@ private:
     /// \param it The last case that can still be matched.
     /// \param cases The *entire* list of match cases.
     void MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases);
+
+    /// Parse C++ code into a new TU.
+    auto ParseCXX(StringRef code) -> std::unique_ptr<clang::ASTUnit>;
 
     /// Resolve an overload set.
     auto PerformOverloadResolution(

@@ -85,6 +85,7 @@ AST_DECL_LEAF(FieldDecl)
 AST_DECL_LEAF(ProcTemplateDecl)
 AST_DECL_LEAF(TemplateTypeParamDecl)
 AST_DECL_LEAF(TypeDecl)
+AST_DECL_LEAF(ValueDecl)
 AST_DECL_LEAF(WithFieldRefDecl)
 AST_DECL_LEAF(WithBuiltinFieldRefDecl)
 

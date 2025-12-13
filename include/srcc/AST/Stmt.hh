@@ -1046,6 +1046,16 @@ public:
     }
 };
 
+class srcc::ValueDecl final : public Decl {
+public:
+    Expr* value;
+
+    ValueDecl(String name, Expr* value, SLoc location)
+        : Decl{Kind::ValueDecl, name, location}, value{value} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::ValueDecl; }
+};
+
 class srcc::TemplateTypeParamDecl final : public TypeDecl {
 public:
     // Whether we’re currently substituting the type of the declaration that this

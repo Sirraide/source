@@ -252,6 +252,9 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                 loc
             );
         },
+        [&](ValueDecl* vd) -> Ptr<Expr> {
+            return vd->value;
+        },
         [&](WithFieldRefDecl* with) -> Ptr<Expr> {
             return new (*tu) MemberAccessExpr(
                 CreateReference(with->base, loc).get(),
@@ -497,7 +500,7 @@ auto Sema::MakeConstExpr(
     eval::RValue val,
     SLoc loc
 ) -> Expr* {
-    if (isa_and_present<BoolLitExpr, StrLitExpr, IntLitExpr, TypeExpr>(evaluated_stmt))
+    if (isa_and_present<BoolLitExpr, StrLitExpr, IntLitExpr, NilExpr, TypeExpr>(evaluated_stmt))
         return cast<Expr>(evaluated_stmt);
     return new (*tu) ConstExpr(*tu, std::move(val), loc, evaluated_stmt);
 }

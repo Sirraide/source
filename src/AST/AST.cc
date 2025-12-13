@@ -588,6 +588,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(u->arg);
         },
 
+        [&](ValueDecl* d) {
+            PrintBasicNode(e, "ValueDecl");
+            PrintChildren(d->value);
+        },
+
         [&](WhileStmt* w) {
             PrintBasicNode(e, "WhileStmt", [&] { print("%3(#{}%)", +w->token); });
             SmallVector<Stmt*, 2> children{w->cond, w->body};
