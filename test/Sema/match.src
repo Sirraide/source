@@ -194,3 +194,45 @@ int lvalue;
 (match -> int { true: lvalue; false: lvalue; }) = 3; // expected-error: A 'match' with a fixed result type must have a wildcard arm
 (match { true: lvalue; _: lvalue; }) = 3;
 (match -> int { true: lvalue; _: lvalue; }) = 3;
+
+int? opt;
+
+int y = match opt {
+    nil: 5;
+    42: 7;
+    _: opt;
+};
+
+int y = match opt {
+    nil: 5; // expected-note: Because it is subsumed by this preceding pattern
+    nil: 6; // expected-warning: Pattern will never be matched
+    _: opt;
+};
+
+// This has no 'nil' case, so the type of 'y' should be 'int?'
+var y = match opt {
+    _: opt;
+};
+
+// TODO: Actually implement typeof()
+// #assert typeof(y) == int?;
+
+// expected-error@+3: 'match' is not exhaustive
+// expected-note@+2: 'nil' value not handled
+// expected-note@+1: Possible value ranges not handled: int.min..=41, 43..=int.max
+match opt {
+    42: 7;
+};
+
+// expected-error@+2: 'match' is not exhaustive
+// expected-note@+1: Possible value ranges not handled: int.min..=int.max
+match opt {
+    nil: 7;
+};
+
+// expected-error@+3: 'match' is not exhaustive
+// expected-note@+2: 'nil' value not handled
+// expected-note@+1: Possible value ranges not handled: int.min..=0, 6..=int.max
+match opt {
+    1..=5: 7;
+};

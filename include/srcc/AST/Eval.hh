@@ -191,6 +191,10 @@ public:
     [[nodiscard]] auto unquotes() const -> ArrayRef<TreeValue*>;
 };
 
+struct Nil {
+
+};
+
 /// Evaluated rvalue.
 class RValue {
     Variant<
@@ -203,6 +207,7 @@ class RValue {
         RawByteBuffer,
         Record,
         EvaluatedPointer,
+        Nil,
         std::monostate
     > value;
     Type ty{Type::VoidTy};
@@ -219,6 +224,7 @@ public:
     explicit RValue(EvaluatedPointer p, Type ty) : value(p), ty(ty) {}
     explicit RValue(Closure c, Type ty) : value(std::move(c)), ty(ty) {}
     explicit RValue(Record r, Type ty) : value(std::move(r)), ty(ty) {}
+    explicit RValue(Nil n) : value(n), ty(Type::NilTy) {}
 
     /// cast<>() the contained value.
     template <typename Ty>

@@ -165,9 +165,6 @@ public:
     /// Check if this is 'int', 'bool', or a sized integer.
     [[nodiscard]] bool is_integer_or_bool() const;
 
-    /// Check whether this is the empty tuple '()' aka 'nil'.
-    [[nodiscard]] bool is_nil() const;
-
     /// Check whether the memory representation for this type is or
     /// contains a pointer at any level (this is especially also true
     /// for e.g. slices and closures).
@@ -286,6 +283,7 @@ public:
     static const Type TreeTy;
     static const Type TypeTy;
     static const Type UnresolvedOverloadSetTy;
+    static const Type NilTy;
 
 private:
     /// For libassert.
@@ -419,6 +417,13 @@ public:
     [[nodiscard]] auto get_equivalent_record_layout() const -> const RecordLayout* {
         Assert(not has_transparent_layout());
         return layout_and_field_index.getPointer();
+    }
+
+    /// If this optional type has record layout, the index of the field that
+    /// stores whether this is engaged.
+    [[nodiscard]] auto get_engaged_field_index() const -> u32 {
+        Assert(not has_transparent_layout());
+        return layout_and_field_index.getInt();
     }
 
     /// If this optional type has record layout, the offset of the byte that

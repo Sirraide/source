@@ -491,6 +491,11 @@ public:
         /// Cast an rvalue integer to an rvalue integer.
         Integral,
 
+        /// ‘Cast’ 'nil' to an optional type; this basically just
+        /// evaluates and discards the argument and disengages the
+        /// optional.
+        NilToOptional,
+
         /// Given an lvalue optional, yield an lvalue to the value.
         OptionalUnwrap,
 
@@ -780,14 +785,22 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::MemberAccessExpr; }
 };
 
+class srcc::NilExpr final : public Expr {
+public:
+    NilExpr(SLoc location) : Expr{Kind::NilExpr, Type::NilTy, RValue, location} {}
+    static bool classof(const Stmt* e) { return e->kind() == Kind::NilExpr; }
+};
+
 class srcc::OptionalNilTestExpr final : public Expr {
 public:
     Expr* optional;
+    Expr* nil;
     bool is_equal; ///< Whether this is '== nil' or '!= nil'.
 
-    OptionalNilTestExpr(Expr* optional, bool is_equal, SLoc location)
+    OptionalNilTestExpr(Expr* optional, Expr* nil, bool is_equal, SLoc location)
         : Expr{Kind::OptionalNilTestExpr, Type::BoolTy, RValue, location},
           optional{optional},
+          nil{nil},
           is_equal{is_equal} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::OptionalNilTestExpr; }

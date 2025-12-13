@@ -32,3 +32,13 @@ proc p3 -> int {
 }
 
 #assert p3() == 42;
+
+proc p4 (int? x) = match x {
+    nil: 5;
+    42: 7;
+    _: x;
+};
+
+#assert p4(nil) == 5;
+#assert p4(42) == 7;
+#assert p4(9) == 9;

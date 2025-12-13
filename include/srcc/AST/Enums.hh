@@ -87,6 +87,7 @@ enum class srcc::BuiltinKind : base::u8 {
     Tree,
     Type,
     UnresolvedOverloadSet,
+    Nil,
 };
 
 /// Linkage of a global entity.

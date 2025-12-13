@@ -82,6 +82,7 @@ auto CodeGen::C(SLoc l) -> mlir::Location {
 
 auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     if (vc == Expr::LValue) return ptr_ty;
+    Assert(not IsZeroSizedType(ty));
 
     // Integer types.
     if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
@@ -903,6 +904,7 @@ void CodeGen::Mangler::Append(Type ty) {
                 case BuiltinKind::NoReturn: M.name += "z"; return;
                 case BuiltinKind::Bool: M.name += "b"; return;
                 case BuiltinKind::Int: M.name += "i"; return;
+                case BuiltinKind::Nil: M.name += "n"; return;
             }
             Unreachable();
         }
@@ -1098,6 +1100,21 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
                 auto init_addr = EmitScalar(e->arg);
                 CreateMemCpy(loc, addr, init_addr, e->type);
                 HandleOptionalInitialised(addr, init, init_addr);
+                return;
+            }
+
+            if (e->kind == CastExpr::CastKind::NilToOptional) {
+                auto opt = cast<OptionalType>(init->type);
+                Emit(e->arg); // Just discard this value.
+                CreateStore(
+                    loc,
+                    addr,
+                    CreateBool(loc, false),
+                    Type::BoolTy->align(tu),
+                    opt->get_engaged_offset()
+                );
+
+                ir::DisengageOp::create(*this, C(init->location()), addr);
                 return;
             }
 
@@ -2002,6 +2019,9 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
             return op.getRes();
         }
 
+        case CastExpr::NilToOptional:
+            return EmitDefaultInit(expr->type, C(expr->location()));
+
         case CastExpr::OptionalUnwrap: {
             Assert(expr->is_lvalue());
             ir::UnwrapOp::create(*this, C(expr->location()), val.scalar());
@@ -2409,8 +2429,13 @@ auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> IRValue {
     return CreatePtrAdd(C(expr->location()), base, expr->field->offset);
 }
 
+auto CodeGen::EmitNilExpr(NilExpr*) -> IRValue {
+    return {}; // This is a zero-sized type.
+}
+
 auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
     auto optional = Emit(e->optional);
+    Emit(e->nil); // Discarded.
     auto ty = cast<OptionalType>(e->optional->type);
     auto l = C(e->location());
     Value flag;
@@ -2737,6 +2762,7 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
     auto GetSLoc = [&] { return SLoc::Decode(loc); };
     utils::Overloaded V {
         [&](std::monostate) -> IRValue { return {}; },
+        [&](eval::Nil) -> IRValue { return {}; },
         [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
         [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
         [&](const APInt& value) -> IRValue { return CreateInt(loc, value, val.type()); },

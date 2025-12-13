@@ -139,7 +139,7 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
     Assert(not exprs.empty());
     auto t = exprs.front()->type;
     auto vc = exprs.front()->value_category;
-    for (auto e : exprs.drop_front()) {
+    for (auto [i, e] : enumerate(exprs.drop_front())) {
         // If either type is 'noreturn', the common type is the type of the other
         // branch (unless both are noreturn, in which case the type is just 'noreturn').
         if (e->type == Type::NoReturnTy) continue;
@@ -156,6 +156,34 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
             vc == Expr::LValue and
             e->value_category == Expr::LValue
         ) continue;
+
+
+        // If either type is an optional, and the other is that optional’s
+        // element type, unwrap the optional. The result is an lvalue of the
+        // element type if both are lvalues, and an rvalue of the element type
+        // otherwise.
+        //
+        // If 'vc' is LValue, we want to set it to LValue, which is a no-op;
+        // the same applies if 'vc' is RValue, so just don’t do anything here.
+        //
+        // First case: the new element is an optional; unwrap it.
+        if (auto o = dyn_cast<OptionalType>(e->type); o and o->elem() == t) {
+            e = UnwrapOptional(e, e->location());
+            continue;
+        }
+
+        // Second case: all elements before this one were optionals; unwrap them.
+        if (auto o = dyn_cast<OptionalType>(t); o and o->elem() == e->type) {
+            t = e->type;
+
+            // If the new element is an rvalue, force all other elements to be
+            // rvalues as well.
+            if (e->is_rvalue()) vc = Expr::RValue;
+
+            // Offset the index by '1' since we dropped the first element above.
+            for (auto& expr: exprs.take_front(i + 1)) expr = UnwrapOptional(expr, expr->location());
+            continue;
+        }
 
         // Finally, if there is a common type, the result is an rvalue of
         // that type. If there isn’t, then we don’t convert lvalues to rvalues
@@ -596,29 +624,23 @@ void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init) {
 }
 
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
+    auto Cast = [&](CastExpr::CastKind kind) {
+        return new (*tu) CastExpr(
+            conv.type(),
+            kind,
+            e,
+            loc,
+            true
+        );
+    };
+
     switch (conv.kind) {
         using K = Conversion::Kind;
         default: Unreachable();
 
-        case K::ArrayDecay: return new (*tu) CastExpr(
-            conv.type(),
-            CastExpr::Pointer,
-            e,
-            loc,
-            true
-        );
-
-        case K::IntegralCast: return new (*tu) CastExpr(
-            conv.type(),
-            CastExpr::Integral,
-            e,
-            loc,
-            true
-        );
-
-        case K::LValueToRValue:
-            return LValueToRValue(e);
-
+        case K::ArrayDecay: return Cast(CastExpr::Pointer);
+        case K::IntegralCast: return Cast(CastExpr::Integral);
+        case K::LValueToRValue: return LValueToRValue(e);
         case K::MaterialisePoison: return new (*tu) CastExpr(
             conv.type(),
             CastExpr::MaterialisePoisonValue,
@@ -628,24 +650,11 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
             conv.value_category()
         );
 
-        case K::MaterialiseTemporary:
-            return MaterialiseTemporary(e);
-
-        case K::OptionalWrap: return new (*tu) CastExpr(
-            conv.type(),
-            CastExpr::OptionalWrap,
-            e,
-            loc,
-            true
-        );
-
-        case K::RangeCast: return new (*tu) CastExpr(
-            conv.type(),
-            CastExpr::Range,
-            e,
-            loc,
-            true
-        );
+        case K::MaterialiseTemporary: return MaterialiseTemporary(e);
+        case K::NilToOptional: return Cast(CastExpr::NilToOptional);
+        case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
+        case K::OptionalUnwrap: return UnwrapOptional(e, loc);
+        case K::RangeCast: return Cast(CastExpr::Range);
 
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
@@ -725,6 +734,8 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
+        case K::NilToOptional:
+        case K::OptionalUnwrap:
         case K::OptionalWrap:
         case K::RangeCast:
         case K::SelectOverload:
@@ -1068,6 +1079,13 @@ auto Sema::BuildConversionSequence(
         tc.rollback();
     }
 
+    // Allow unwrapping optionals here.
+    if (auto opt = dyn_cast<OptionalType>(a->type); opt and opt->elem() == var_type) {
+        seq.add(Conversion::OptionalUnwrap(var_type));
+        if (not want_lvalue) seq.add(Conversion::LValueToRValue());
+        return seq;
+    }
+
     // At this point, we need to perform a type conversion.
     auto TypeMismatch = [&] {
         return CreateError(
@@ -1131,9 +1149,11 @@ auto Sema::BuildConversionSequence(
         }
 
         case TypeBase::Kind::OptionalType: {
-            // An optional can be constructed from either 'nil' or its element type. The
-            // former is just default initialisation (since 'nil' is really '()' which is
-            // just ‘no arguments’); the latter needs to be handled here.
+            if (a->type == Type::NilTy) {
+                seq.add(Conversion::NilToOptional(var_type));
+                return seq;
+            }
+
             auto nested_seq = BuildConversionSequence(cast<OptionalType>(var_type)->elem(), args, init_loc);
             if (not nested_seq.has_value()) return TypeMismatch();
             for (auto& c : nested_seq->conversions) seq.add(std::move(c));
@@ -1255,6 +1275,7 @@ auto Sema::BuildConversionSequence(
                 case BuiltinKind::Tree:
                 case BuiltinKind::Type:
                 case BuiltinKind::UnresolvedOverloadSet:
+                case BuiltinKind::Nil:
                     return TypeMismatch();
             }
 
@@ -1286,6 +1307,17 @@ auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {
     auto seq_or_err = BuildConversionSequence(var_type, {arg}, arg->location());
     if (not seq_or_err.has_value()) return nullptr;
     return ApplyConversionSequence({arg}, seq_or_err.value(), arg->location());
+}
+
+auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
+    return new (*tu) CastExpr(
+        cast<OptionalType>(expr->type)->elem(),
+        CastExpr::OptionalUnwrap,
+        MaterialiseTemporary(expr),
+        loc,
+        true,
+        Expr::LValue
+    );
 }
 
 // ============================================================================
@@ -1545,11 +1577,13 @@ u32 Sema::ConversionSequence::badness() {
             case K::ArrayDecay:
             case K::IntegralCast:
             case K::MaterialisePoison:
+            case K::NilToOptional:
+            case K::OptionalUnwrap:
             case K::OptionalWrap:
             case K::RangeCast:
-            case K::TupleToFirstElement:
             case K::SliceFromArray:
             case K::StrLitToCStr:
+            case K::TupleToFirstElement:
                 badness++;
                 break;
 
@@ -2155,10 +2189,6 @@ auto Sema::BoolMatchContext::build_comparison(
     );
 }
 
-auto Sema::BoolMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
-    return pattern;
-}
-
 void Sema::BoolMatchContext::note_missing(SLoc match_loc) {
     if (true_loc.is_valid()) {
         S.Note(match_loc, "Possible value '%1(false%)' is not handled");
@@ -2342,6 +2372,49 @@ void Sema::IntMatchContext::note_missing(SLoc loc) {
     S.Note(loc, "Possible value ranges not handled:\n%r({}%)", msg);
 }
 
+Sema::OptionalMatchContext::OptionalMatchContext(
+    Sema& s,
+    OptionalType* optional,
+    std::unique_ptr<MatchContext> inner
+) : MatchContext{s}, optional{optional}, inner{std::move(inner)} {}
+
+auto Sema::OptionalMatchContext::add_constant_pattern(
+    const eval::RValue& pattern,
+    SLoc loc
+) -> AddResult {
+    if (pattern.type() == Type::NilTy) {
+        if (nil_loc.is_valid()) return Subsumed(nil_loc);
+        nil_loc = loc;
+        return Exhaustive(inner_exhaustive);
+    }
+
+    auto res = inner->add_constant_pattern(pattern, loc);
+    if (res.kind != AddResult::Kind::Exhaustive) return res;
+    inner_exhaustive = true;
+    return Exhaustive(nil_loc.is_valid());
+}
+
+auto Sema::OptionalMatchContext::build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr> {
+    if (pattern_expr->type == Type::NilTy) return new (*S.tu) OptionalNilTestExpr(
+        control_expr,
+        pattern_expr,
+        true,
+        pattern_expr->location()
+    );
+
+    control_expr = S.UnwrapOptional(control_expr, pattern_expr->location());
+    return inner->build_comparison(control_expr, pattern_expr);
+}
+
+void Sema::OptionalMatchContext::note_missing(SLoc match_loc) {
+    if (not nil_loc.is_valid()) S.Note(match_loc, "'nil' value not handled");
+    if (not inner_exhaustive) inner->note_missing(match_loc);
+}
+
+auto Sema::OptionalMatchContext::preprocess(Expr* pattern) -> Ptr<Expr> {
+    return inner->preprocess(pattern);
+}
+
 void Sema::MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases) {
     Assert(it != cases.end());
     if (std::next(it) != cases.end()) {
@@ -2353,13 +2426,39 @@ void Sema::MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases) {
 }
 
 // TODO:
-//   - integer patterns
-//   - wildcard pattern
 //   - named wildcard pattern (`match x { var y: }`)
-
-template <typename MContext>
 bool Sema::CheckMatchExhaustive(
-    MContext& mc,
+    SLoc loc,
+    Expr* control,
+    Type type,
+    MutableArrayRef<MatchCase> cases
+) {
+    // FIXME: Try to avoid heap-allocating these if possible.
+    auto AllocateMatchContext = [&] (this auto& self, Type ty) -> std::unique_ptr<MatchContext> {
+        if (ty->is_integer()) {
+            return std::make_unique<IntMatchContext>(*this, ty);
+        } else if (ty == Type::BoolTy) {
+            return std::make_unique<BoolMatchContext>(*this);
+        } else if (auto o = dyn_cast<OptionalType>(ty)) {
+            auto inner = self(o->elem());
+            if (not inner) return nullptr;
+            return std::make_unique<OptionalMatchContext>(*this, o, std::move(inner));
+        } else {
+            return Error(
+                control->location(),
+                "Matching a value of type '{}' is not supported",
+                control->type
+            );
+        }
+    };
+
+    auto mc = AllocateMatchContext(type);
+    if (not mc) return false;
+    return CheckMatchExhaustiveImpl(*mc, loc, control, type, cases);
+}
+
+bool Sema::CheckMatchExhaustiveImpl(
+    MatchContext& mc,
     SLoc match_loc,
     Expr* control_expr,
     Type ty,
@@ -2819,19 +2918,14 @@ auto Sema::BuildBinaryExpr(
         // Equality comparison. This is supported for more types.
         case Tk::EqEq:
         case Tk::Neq: {
-            auto IsNilLiteral = [](Expr* e) {
-                auto tuple = dyn_cast<TupleExpr>(e->ignore_parens());
-                return tuple and tuple->is_nil();
-            };
-
             // Comparing an optional against 'nil' requires special handling.
             if (
                 auto o = dyn_cast<OptionalType>(lhs->type);
-                o and IsNilLiteral(rhs)
+                o and rhs->type == Type::NilTy
             ) {
                 if (o->has_transparent_layout()) lhs = LValueToRValue(lhs);
                 else lhs = MaterialiseTemporary(lhs);
-                return new (*tu) OptionalNilTestExpr(lhs, op == Tk::EqEq, loc);
+                return new (*tu) OptionalNilTestExpr(lhs, rhs, op == Tk::EqEq, loc);
             }
 
             // Otherwise, require a common type here.
@@ -3258,19 +3352,7 @@ auto Sema::BuildMatchExpr(
         }
 
         auto ty = control->type;
-        if (ty->is_integer()) {
-            IntMatchContext mc{*this, ty};
-            exhaustive = CheckMatchExhaustive(mc, loc, control, ty, cases);
-        } else if (ty == Type::BoolTy) {
-            BoolMatchContext mc{*this};
-            exhaustive = CheckMatchExhaustive(mc, loc, control, ty, cases);
-        } else {
-            return Error(
-                control->location(),
-                "Matching a value of type '{}' is not supported",
-                control->type
-            );
-        }
+        exhaustive = CheckMatchExhaustive(loc, control, ty, cases);
     } else {
         for (auto& c : cases) {
             if (c.cond.is_wildcard()) continue;
@@ -3562,14 +3644,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
                 );
 
                 // If it is an optional, unwrap it.
-                operand = new (*tu) CastExpr(
-                    ptr,
-                    CastExpr::OptionalUnwrap,
-                    operand,
-                    loc,
-                    true,
-                    Expr::LValue
-                );
+                operand = UnwrapOptional(operand, loc);
             }
 
             operand = LValueToRValue(operand);
@@ -4207,16 +4282,8 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     for (;;) {
         if (isa<PtrType>(base->type)) {
             base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
-        } else if (auto opt = dyn_cast<OptionalType>(base->type)) {
-            base = MaterialiseTemporary(base);
-            base = new (*tu) CastExpr(
-                opt->elem(),
-                CastExpr::OptionalUnwrap,
-                base,
-                base->location(),
-                true,
-                Expr::LValue
-            );
+        } else if (isa<OptionalType>(base->type)) {
+            base = UnwrapOptional(base, parsed->loc);
         } else {
             break;
         }
@@ -4275,11 +4342,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Type desired_type) -> Ptr<Stmt> {
-    // FIXME: 'nil' should be its own type that can convert to an optional
-    // or pointer similarly to 'std::nullptr_t'. Also, 'nil' needs to be both
-    // a value and a type.
-    auto tt = TupleType::Get(*tu, ArrayRef<Type>{});
-    return TupleExpr::Create(*tu, tt, {}, parsed->loc);
+    return new (*tu) NilExpr(parsed->loc);
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -4730,7 +4793,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
 auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Type {
     auto elem = TranslateType(parsed->elem);
     if (not CheckVariableType(elem, parsed->loc)) return Type();
-    if (elem->is_nil()) return Error(parsed->loc, "Element type of optional cannot be '%1(()%)'");
+    if (elem == Type::NilTy) return Error(parsed->loc, "Element type of optional cannot be '%1(()%)'");
     return OptionalType::Get(*tu, elem);
 }
 
@@ -4855,6 +4918,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
         case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
         case K::ParenExpr: t = TranslateType(cast<ParsedParenExpr>(parsed)->inner); break;
+        case K::NilExpr: t = Type::NilTy; break;
 
         // Array types are parsed as subscript expressions.
         case K::BinaryExpr: {

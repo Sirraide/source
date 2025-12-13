@@ -149,23 +149,25 @@ private:
 
         enum struct Kind : u8 {
             ArrayBroadcast,
-            ArrayInit,
             ArrayDecay,
-            ExpandTuple,
+            ArrayInit,
             DefaultInit,
+            ExpandTuple,
             IntegralCast,
             LValueToRValue,
             MaterialisePoison,
             MaterialiseTemporary,
+            NilToOptional,
+            OptionalUnwrap,
             OptionalWrap,
             RangeCast,
+            RecordInit,
             SelectOverload,
             SliceFromArray,
             SliceFromPtrAndSize,
             StripParens,
             StrLitToCStr,
             TupleToFirstElement,
-            RecordInit,
         };
 
         Kind kind;
@@ -190,13 +192,15 @@ private:
     public:
         ~Conversion();
         static auto ArrayBroadcast(ArrayBroadcastData data) -> Conversion { return Conversion{std::move(data)}; }
-        static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto ArrayDecay(Type ty) -> Conversion { return Conversion{Kind::ArrayDecay, ty}; }
+        static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto ExpandTuple() -> Conversion { return Conversion{Kind::ExpandTuple}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
+        static auto NilToOptional(Type ty) -> Conversion { return Conversion{Kind::NilToOptional, ty}; }
+        static auto OptionalUnwrap(Type ty) -> Conversion { return Conversion{Kind::OptionalUnwrap, ty}; }
         static auto OptionalWrap(Type ty) -> Conversion { return Conversion{Kind::OptionalWrap, ty}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
@@ -467,6 +471,8 @@ private:
         MatchContext(Sema& s) : S{s} {}
 
     public:
+        virtual ~MatchContext() = default;
+
         struct AddResult {
             enum struct Kind {
                 Ok,
@@ -477,8 +483,13 @@ private:
             ArrayRef<SLoc> locations{};
         };
 
+        [[nodiscard]] virtual auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult = 0;
+        [[nodiscard]] virtual auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr> = 0;
+        [[nodiscard]] virtual auto preprocess(Expr* pattern) -> Ptr<Expr> { return pattern; }
+        virtual void note_missing(SLoc match_loc) = 0;
+
         static auto Ok() -> AddResult { return {AddResult::Kind::Ok}; }
-        static auto Exhaustive() -> AddResult { return {AddResult::Kind::Exhaustive}; }
+        static auto Exhaustive(bool exhaustive = true) -> AddResult { return {exhaustive ? AddResult::Kind::Exhaustive : AddResult::Kind::Ok}; }
         static auto InvalidType() -> AddResult { return {AddResult::Kind::InvalidType}; }
         static auto Subsumed(ArrayRef<SLoc> locations) -> AddResult {
             return {AddResult::Kind::Subsumed, locations};
@@ -491,10 +502,9 @@ private:
 
     public:
         BoolMatchContext(Sema& s) : MatchContext{s} {}
-        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult;
-        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
-        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
-        void note_missing(SLoc match_loc);
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult override;
+        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr> override;
+        void note_missing(SLoc match_loc) override;
     };
 
     class IntMatchContext : public MatchContext {
@@ -540,13 +550,27 @@ private:
 
     public:
         IntMatchContext(Sema& s, Type ty);
-        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult;
-        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr>;
-        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr>;
-        void note_missing(SLoc match_loc);
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult override;
+        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr> override;
+        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr> override;
+        void note_missing(SLoc match_loc) override;
 
     private:
         [[nodiscard]] auto add_range(Range r) -> AddResult;
+    };
+
+    class OptionalMatchContext : public MatchContext {
+        [[maybe_unused]] OptionalType* optional;
+        SLoc nil_loc;
+        std::unique_ptr<MatchContext> inner;
+        bool inner_exhaustive = false;
+
+    public:
+        OptionalMatchContext(Sema& s, OptionalType* optional, std::unique_ptr<MatchContext> inner);
+        [[nodiscard]] auto add_constant_pattern(const eval::RValue& pattern, SLoc loc) -> AddResult override;
+        [[nodiscard]] auto build_comparison(Expr* control_expr, Expr* pattern_expr) -> Ptr<Expr> override;
+        [[nodiscard]] auto preprocess(Expr* pattern) -> Ptr<Expr> override;
+        void note_missing(SLoc match_loc) override;
     };
 
     /// Hint as to what lookup is trying to find.
@@ -748,9 +772,15 @@ private:
     bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
 
     /// Check that a collection of patterns is exhaustive, and return 'true' if so.
-    template <typename MContext>
     bool CheckMatchExhaustive(
-        MContext& ctx,
+        SLoc match_loc,
+        Expr* control_expr,
+        Type ty,
+        MutableArrayRef<MatchCase> cases
+    );
+
+    bool CheckMatchExhaustiveImpl(
+        MatchContext& ctx,
         SLoc match_loc,
         Expr* control_expr,
         Type ty,
@@ -959,6 +989,9 @@ private:
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
     /// either way.
     auto TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr>;
+
+    /// Unwrap an optional value.
+    auto UnwrapOptional(Expr* opt, SLoc loc) -> Expr*;
 
     /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;

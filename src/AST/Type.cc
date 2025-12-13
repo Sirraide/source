@@ -26,6 +26,7 @@ struct srcc::BuiltinTypes {
     static constexpr BuiltinType TreeTyImpl{BuiltinKind::Tree};
     static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
     static constexpr BuiltinType UnresolvedOverloadSetTyImpl{BuiltinKind::UnresolvedOverloadSet};
+    static constexpr BuiltinType NilTyImpl{BuiltinKind::Nil};
 };
 
 constexpr Type Type::VoidTy{const_cast<BuiltinType*>(&BuiltinTypes::VoidTyImpl)};
@@ -36,6 +37,7 @@ constexpr Type Type::DeducedTy{const_cast<BuiltinType*>(&BuiltinTypes::DeducedTy
 constexpr Type Type::TreeTy{const_cast<BuiltinType*>(&BuiltinTypes::TreeTyImpl)};
 constexpr Type Type::TypeTy{const_cast<BuiltinType*>(&BuiltinTypes::TypeTyImpl)};
 constexpr Type Type::UnresolvedOverloadSetTy{const_cast<BuiltinType*>(&BuiltinTypes::UnresolvedOverloadSetTyImpl)};
+constexpr Type Type::NilTy{const_cast<BuiltinType*>(&BuiltinTypes::NilTyImpl)};
 
 // ============================================================================
 //  Helpers
@@ -86,6 +88,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
                 case BuiltinKind::Int: return t.int_align();
                 case BuiltinKind::NoReturn: return Align{1};
                 case BuiltinKind::Void: return Align{1};
+                case BuiltinKind::Nil: return Align{1};
                 case BuiltinKind::Tree: return Align::Of<TreeValue*>(); // This is a compile-time only type.
                 case BuiltinKind::Type: return Align::Of<TypeBase*>(); // This is a compile-time only type.
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
@@ -134,6 +137,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
                 case BuiltinKind::Bool:
                 case BuiltinKind::Int:
                 case BuiltinKind::Void:
+                case BuiltinKind::Nil:
                     return true;
 
                 case BuiltinKind::UnresolvedOverloadSet:
@@ -212,6 +216,7 @@ bool TypeBase::is_or_contains_pointer() const {
                 case BuiltinKind::Int:
                 case BuiltinKind::Void:
                 case BuiltinKind::NoReturn:
+                case BuiltinKind::Nil:
                 return false;
 
                 case BuiltinKind::Tree:
@@ -225,11 +230,6 @@ bool TypeBase::is_or_contains_pointer() const {
             Unreachable();
         },
     });
-}
-
-bool TypeBase::is_nil() const {
-    auto tup = dyn_cast<TupleType>(this);
-    return tup and tup->layout().fields().empty();
 }
 
 bool TypeBase::is_void() const {
@@ -269,6 +269,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 case BuiltinKind::Tree: out += "%6(tree%)"; break;
                 case BuiltinKind::Type: out += "%6(type%)"; break;
                 case BuiltinKind::Void: out += "%6(void%)"; break;
+                case BuiltinKind::Nil: out += "%6(nil%)"; break;
             }
         } break;
 
@@ -338,6 +339,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
 
                 case BuiltinKind::NoReturn:
                 case BuiltinKind::Void:
+                case BuiltinKind::Nil:
                     return Size();
 
                 case BuiltinKind::Deduced:

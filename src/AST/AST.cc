@@ -299,6 +299,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::OptionalUnwrap: print("unwrap"); break;
                 case CastExpr::OptionalWrap: print("value->optional"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
+                case CastExpr::NilToOptional: print("nil->optional"); break;
                 case CastExpr::Pointer: print("pointer"); break;
                 case CastExpr::Range: print("range->range"); break;
                 case CastExpr::SliceFromArray: print("array->slice"); break;
@@ -461,12 +462,19 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(children);
         },
 
+        [&](NilExpr* m) {
+            PrintBasicNode(e, "NilExpr");
+        },
+
         [&](OptionalNilTestExpr* o) {
             PrintBasicNode(e, "OptionalNilTestExpr", [this, o]{
                 print("%1({}%)", o->is_equal ? "=="sv : "!="sv);
             });
 
-            PrintChildren(o->optional);
+            SmallVector<Stmt*> children;
+            children.push_back(o->optional);
+            children.push_back(o->nil);
+            PrintChildren(children);
         },
         [&](OverloadSetExpr* o) {
             PrintBasicNode(e, "OverloadSetExpr");

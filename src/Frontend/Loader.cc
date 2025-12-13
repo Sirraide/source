@@ -235,6 +235,7 @@ public:
                     case BuiltinKind::Tree: return Type::TreeTy;
                     case BuiltinKind::Type: return Type::TypeTy;
                     case BuiltinKind::Void: return Type::VoidTy;
+                    case BuiltinKind::Nil: return Type::NilTy;
                 }
 
                 Unreachable("Invalid builtin type");

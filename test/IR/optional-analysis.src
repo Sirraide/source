@@ -191,3 +191,28 @@ proc p15 {
     x.x = 1;
     x.y = 2;
 }
+
+proc p16 (int? x) {
+    int y = match x {
+        5: // expected-error: Optional might be nil when accessed here
+            x; // expected-error: Optional might be nil when accessed here
+        6: // expected-error: Optional might be nil when accessed here
+            x; // expected-error: Optional might be nil when accessed here
+        7..=8: // expected-error: Optional might be nil when accessed here
+            x; // expected-error: Optional might be nil when accessed here
+        nil: 42;
+        9: x;
+        _: x;
+    };
+}
+
+proc p17 (int? x) {
+    int y = match x {
+        nil: 42;
+        _ : x;
+    };
+
+    int q = x; // expected-error: Optional might be nil when accessed here
+    assert x != nil;
+    int q2 = x;
+}

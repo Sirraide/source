@@ -222,11 +222,10 @@ auto ABIImpl::LowerByValArgOrReturn(
         }
     };
 
-    // Optionals.
-    if (auto opt = dyn_cast<OptionalType>(t)) {
-        Assert(opt->has_transparent_layout(), "TODO");
+    // Transparent optionals behave like their underlying type; non-transparent
+    // optionals are aggregates and are handled below.
+    if (auto opt = dyn_cast<OptionalType>(t); opt and opt->has_transparent_layout())
         t = opt->elem();
-    }
 
     // Small aggregates are passed in registers.
     if (t->is_aggregate()) {
@@ -362,11 +361,10 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
     auto ReuseStackAddress = [&] { return vals.next(); };
     auto t = vals.type();
 
-    // Optionals.
-    if (auto opt = dyn_cast<OptionalType>(t)) {
-        Assert(opt->has_transparent_layout(), "TODO");
+    // Transparent optionals behave like their underlying type; non-transparent
+    // optionals are aggregates and are handled below.
+    if (auto opt = dyn_cast<OptionalType>(t); opt and opt->has_transparent_layout())
         t = opt->elem();
-    }
 
     // Small aggregates are passed in registers.
     if (t->is_aggregate()) {

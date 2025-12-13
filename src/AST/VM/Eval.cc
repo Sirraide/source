@@ -2,6 +2,7 @@
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/CG/CodeGen.hh>
+#include <srcc/CG/IR/IR.hh>
 #include <srcc/CG/IR/MLIRFormatters.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
@@ -78,6 +79,7 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
         [&](std::monostate) {},
         [&](Type ty) { out += ty->print(); },
         [&](TreeValue* tree) { out += tree->dump(ctx); },
+        [&](Nil) { out += "%1(nil%)"; },
         [&](const RawByteBuffer& b) {
             if (b.is_string()) out += utils::Escape(b.str(), true, true);
             out += "<aggregate value>";
@@ -796,8 +798,22 @@ bool Eval::EvalLoop() {
 
         // These are only used by lifetime analysis and don’t have any
         // runtime semantics.
-        if (isa<ir::DisengageOp, ir::EngageOp, ir::EngageCopyOp, ir::UnwrapOp>(i))
+        if (isa<
+            ir::EngageOp,
+            ir::EngageCopyOp,
+            ir::DisengageOp,
+            ir::UnwrapOp
+        >(i)) continue;
+
+        if (auto e = dyn_cast<ir::DisengagedIfOp>(i)) {
+            Temp(e) = Val(e.getCond());
             continue;
+        }
+
+        if (auto e = dyn_cast<ir::EngagedIfOp>(i)) {
+            Temp(e) = Val(e.getCond());
+            continue;
+        }
 
         if (auto l = dyn_cast<ir::LoadOp>(i)) {
             auto ptr = GetHostMemoryPointer(l.getAddr());
@@ -1451,7 +1467,11 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // Otherwise, just run the procedure and convert the results to an rvalue.
     TRY(EvalLoop());
-    if (not yields_value) return RValue();
+    if (not yields_value) {
+        if (s->type_or_void() == Type::NilTy) return RValue(Nil{});
+        return RValue();
+    }
+
     Assert(ret);
     auto mem = reinterpret_cast<const void*>(ret.raw_value());
     return Persist(mem, s->location(), ty);
