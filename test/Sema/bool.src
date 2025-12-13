@@ -8,7 +8,7 @@ sink(true);
 sink(false);
 sink(true or false);
 sink(0); // expected-error: Cannot convert expression of type 'int' to 'bool'
-sink(true or 0); // expected-error: Right operand of 'or' must be of type 'bool', but was 'int'
-sink(0 or false); // expected-error: Left operand of 'or' must be of type 'bool', but was 'int'
-sink(true and 0); // expected-error: Right operand of 'and' must be of type 'bool', but was 'int'
-sink(0 and false); // expected-error: Left operand of 'and' must be of type 'bool', but was 'int'
+sink(true or 0); // expected-error: Condition of 'or' must be of type 'bool', but was 'int'
+sink(0 or false); // expected-error: Condition of 'or' must be of type 'bool', but was 'int'
+sink(true and 0); // expected-error: Condition of 'and' must be of type 'bool', but was 'int'
+sink(0 and false); // expected-error: Condition of 'and' must be of type 'bool', but was 'int'

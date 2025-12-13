@@ -679,6 +679,7 @@ auto CodeGen::IntTy(Size wd) -> mlir::Type {
 auto CodeGen::If(
     mlir::Location loc,
     Value cond,
+    bool has_result,
     llvm::function_ref<IRValue()> emit_then,
     llvm::function_ref<IRValue()> emit_else
 ) -> Block* {
@@ -697,12 +698,12 @@ auto CodeGen::If(
     auto then_val = emit_then();
 
     // Branch to the join block.
-    then_val.each([&](Value v){ bb_join->addArgument(v.getType(), loc); });
+    if (has_result) then_val.each([&](Value v){ bb_join->addArgument(v.getType(), loc); });
     if (not HasTerminator()) mlir::cf::BranchOp::create(
         *this,
         loc,
         bb_join.get(),
-        then_val ? Vals(then_val) : Vals()
+        has_result ? Vals(then_val) : Vals()
     );
 
     // And emit the else block.
@@ -712,7 +713,7 @@ auto CodeGen::If(
         *this,
         loc,
         bb_join.get(),
-        else_val ? Vals(else_val) : Vals()
+        has_result ? Vals(else_val) : Vals()
     );
 
     // Finally, return the join block.
@@ -1387,6 +1388,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
             return If(
                 l,
                 EmitScalar(expr->lhs),
+                true,
                 [&] { return EmitScalar(expr->rhs); },
                 [&] { return CreateBool(l, false); }
             )->getArgument(0);
@@ -1397,6 +1399,7 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
             return If(
                 l,
                 EmitScalar(expr->lhs),
+                true,
                 [&] { return CreateBool(l, true); },
                 [&] { return EmitScalar(expr->rhs); }
             )->getArgument(0);
@@ -2191,6 +2194,7 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt) -> IRValue {
     auto args = If(
         C(stmt->location()),
         EmitScalar(stmt->cond),
+        not IsZeroSizedType(stmt->type),
         [&] { return EmitWithCleanup(stmt->then); },
         stmt->else_
             ? [&] { return EmitWithCleanup(stmt->else_.get()); }
@@ -2205,6 +2209,7 @@ auto CodeGen::EmitIfExpr(IfExpr* stmt, Value mrvalue_slot) -> IRValue {
     If(
         C(stmt->location()),
         EmitScalar(stmt->cond),
+        false,
         [&] -> IRValue {
             EnterCleanupScope _{*this};
             EmitRValue(mrvalue_slot, cast<Expr>(stmt->then));

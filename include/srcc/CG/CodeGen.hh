@@ -546,6 +546,7 @@ public:
     auto If(
         mlir::Location loc,
         Value cond,
+        bool has_result,
         llvm::function_ref<IRValue()> emit_then,
         llvm::function_ref<IRValue()> emit_else
     ) -> Block*;
