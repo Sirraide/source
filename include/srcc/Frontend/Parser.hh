@@ -628,6 +628,12 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::MemberExpr; }
 };
 
+class srcc::ParsedNilExpr final : public ParsedStmt {
+public:
+    ParsedNilExpr(SLoc location) : ParsedStmt{Kind::NilExpr, location} {}
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::NilExpr; }
+};
+
 class srcc::ParsedParenExpr final : public ParsedStmt {
 public:
     ParsedStmt* inner;

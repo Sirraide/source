@@ -160,7 +160,7 @@
         },
         {
             "name": "keyword.other",
-            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|not|or|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
+            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|is|loop|match|nil|not|or|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
         },
         {
             "match": "\\b(proc)\\s+([a-zA-Z_][a-zA-Z_0-9]*)?",

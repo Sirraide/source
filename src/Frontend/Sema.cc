@@ -2488,6 +2488,9 @@ auto Sema::BuildAssertExpr(
             loc
         );
 
+        // Set the parent, else captures will break horribly.
+        proc->parent = curr_proc().proc;
+
         // Enter it.
         proc->scope = scope;
         EnterProcedure _{*this, proc};
@@ -2816,6 +2819,22 @@ auto Sema::BuildBinaryExpr(
         // Equality comparison. This is supported for more types.
         case Tk::EqEq:
         case Tk::Neq: {
+            auto IsNilLiteral = [](Expr* e) {
+                auto tuple = dyn_cast<TupleExpr>(e->ignore_parens());
+                return tuple and tuple->is_nil();
+            };
+
+            // Comparing an optional against 'nil' requires special handling.
+            if (
+                auto o = dyn_cast<OptionalType>(lhs->type);
+                o and IsNilLiteral(rhs)
+            ) {
+                if (o->has_transparent_layout()) lhs = LValueToRValue(lhs);
+                else lhs = MaterialiseTemporary(lhs);
+                return new (*tu) OptionalNilTestExpr(lhs, op == Tk::EqEq, loc);
+            }
+
+            // Otherwise, require a common type here.
             if (not ConvertToCommonType()) return nullptr;
 
             // For slices, call an overloaded operator.
@@ -2831,8 +2850,8 @@ auto Sema::BuildBinaryExpr(
         case Tk::And:
         case Tk::Or:
         case Tk::Xor: {
-            if (not MakeRValue(Type::BoolTy, lhs, "Left operand", Spelling(op))) return {};
-            if (not MakeRValue(Type::BoolTy, rhs, "Right operand", Spelling(op))) return {};
+            if (not MakeCondition(lhs, Spelling(op))) return {};
+            if (not MakeCondition(rhs, Spelling(op))) return {};
             return Build(Type::BoolTy);
         }
 
@@ -4184,9 +4203,24 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
 
-    // Unwrap pointers.
-    while (isa<PtrType>(base->type))
-        base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
+    // Unwrap pointers and optionals.
+    for (;;) {
+        if (isa<PtrType>(base->type)) {
+            base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
+        } else if (auto opt = dyn_cast<OptionalType>(base->type)) {
+            base = MaterialiseTemporary(base);
+            base = new (*tu) CastExpr(
+                opt->elem(),
+                CastExpr::OptionalUnwrap,
+                base,
+                base->location(),
+                true,
+                Expr::LValue
+            );
+        } else {
+            break;
+        }
+    }
 
     // Struct member access.
     if (auto s = dyn_cast<StructType>(base->type.ptr())) {
@@ -4238,6 +4272,14 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     );
 
     return BuildBuiltinMemberAccessExpr(it->kind, base, parsed->loc);
+}
+
+auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    // FIXME: 'nil' should be its own type that can convert to an optional
+    // or pointer similarly to 'std::nullptr_t'. Also, 'nil' needs to be both
+    // a value and a type.
+    auto tt = TupleType::Get(*tu, ArrayRef<Type>{});
+    return TupleExpr::Create(*tu, tt, {}, parsed->loc);
 }
 
 auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {

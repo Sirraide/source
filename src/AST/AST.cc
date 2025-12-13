@@ -461,6 +461,13 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(children);
         },
 
+        [&](OptionalNilTestExpr* o) {
+            PrintBasicNode(e, "OptionalNilTestExpr", [this, o]{
+                print("%1({}%)", o->is_equal ? "=="sv : "!="sv);
+            });
+
+            PrintChildren(o->optional);
+        },
         [&](OverloadSetExpr* o) {
             PrintBasicNode(e, "OverloadSetExpr");
             tempset print_procedure_bodies = false;

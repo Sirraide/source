@@ -23,9 +23,6 @@ class ProcData;
 enum class EvalMode : u8;
 
 namespace detail {
-template <typename Elem, typename Range>
-class ValueOrTypePair;
-
 class CodeGenBase {
 protected:
     mlir::MLIRContext mlir;
@@ -39,39 +36,52 @@ enum class CmpIPredicate : uint64_t;
 }
 }
 
-template <typename Elem, typename Range>
-class srcc::cg::detail::ValueOrTypePair {
-protected:
-    Elem vals[2]{};
+/// This is either a single SSA value or a pair of SSA values; the
+/// latter is used for slices, ranges, and closures.
+class srcc::cg::IRValue {
+    Value vals[2]{};
 
 public:
-    ValueOrTypePair() = default;
-    ValueOrTypePair(std::nullptr_t) = delete("Use '{}' instead to create an empty SRValue or RType");
-    ValueOrTypePair(Elem first_val) : vals{first_val, nullptr} {}
-    ValueOrTypePair(Elem first_val, Elem second_val) : vals{first_val, second_val} {
+    IRValue() = default;
+    IRValue(std::nullptr_t) = delete("Use '{}' instead to create an empty SRValue or RType");
+    IRValue(Value first_val) : vals{first_val, nullptr} {}
+    IRValue(Value first_val, Value second_val) : vals{first_val, second_val} {
         Assert(vals[0] and vals[1]);
     }
 
-    template <utils::ConvertibleRange<Elem> T>
-    ValueOrTypePair(T r) {
+    template <utils::ConvertibleRange<Value> T>
+    IRValue(T r) {
         Assert(r.size() <= 2);
         if (r.size() >= 1) vals[0] = r[0];
         if (r.size() >= 2) vals[1] = r[1];
     }
 
-    ValueOrTypePair(Range r) {
+    IRValue(mlir::ValueRange r) {
         Assert(r.size() <= 2);
         if (r.size() >= 1) vals[0] = r[0];
         if (r.size() >= 2) vals[1] = r[1];
+    }
+
+    template <std::derived_from<mlir::OpState> Op>
+    requires (Op::template hasTrait<mlir::OpTrait::OneResult>())
+    IRValue(Op op) {
+        vals[0] = op->getResult(0);
+    }
+
+    template <std::derived_from<mlir::OpState> Op>
+    requires (Op::template hasTrait<::mlir::OpTrait::NResults<2>::Impl>())
+    IRValue(Op op) {
+        vals[0] = op->getResult(0);
+        vals[1] = op->getResult(1);
     }
 
     /// Allow treating this as a range.
-    [[nodiscard]] auto begin() const { return operator Range().begin(); }
-    [[nodiscard]] auto end() const { return operator Range().end(); }
+    [[nodiscard]] auto begin() const { return operator mlir::ValueRange().begin(); }
+    [[nodiscard]] auto end() const { return operator mlir::ValueRange().end(); }
 
     /// Run a function on each element of this range.
     auto each(auto cb) {
-        using Res = std::invoke_result_t<decltype(cb), Elem>;
+        using Res = std::invoke_result_t<decltype(cb), Value>;
         if constexpr (std::is_same_v<Res, void>) {
             if (vals[0]) std::invoke(cb, vals[0]);
             if (vals[1]) std::invoke(cb, vals[1]);
@@ -84,20 +94,20 @@ public:
     }
 
     /// Add an additional value.
-    auto extend(Elem e) {
+    auto extend(Value e) {
         if (vals[0] == nullptr) vals[0] = e;
         else if (vals[1] == nullptr) vals[1] = e;
         else Unreachable();
     }
 
     /// Get the first value of an aggregate.
-    [[nodiscard]] auto first() const -> Elem {
+    [[nodiscard]] auto first() const -> Value {
         Assert(is_aggregate());
         return vals[0];
     }
 
     /// Copy the types into a vector.
-    void into(SmallVectorImpl<Elem>& container) const {
+    void into(SmallVectorImpl<Value>& container) const {
         if (vals[0]) container.push_back(vals[0]);
         if (vals[1]) container.push_back(vals[1]);
     }
@@ -114,32 +124,32 @@ public:
     }
 
     /// Get the second value of an aggregate.
-    [[nodiscard]] auto second() const -> Elem {
+    [[nodiscard]] auto second() const -> Value {
         Assert(is_aggregate());
         return vals[1];
     }
 
     /// Get this as a single scalar value.
-    [[nodiscard]] auto scalar() const -> Elem {
+    [[nodiscard]] auto scalar() const -> Value {
         Assert(is_scalar());
         return vals[0];
     }
 
     /// Get the first value if this is an aggregate or scalar.
-    [[nodiscard]] auto scalar_or_first() const -> Elem {
+    [[nodiscard]] auto scalar_or_first() const -> Value {
         Assert(not is_null());
         return vals[0];
     }
 
     /// Get the n-th element.
-    [[nodiscard]] auto operator[](unsigned i) const -> Elem {
+    [[nodiscard]] auto operator[](unsigned i) const -> Value {
         Assert(is_aggregate());
         Assert(i <= 2);
         return vals[i];
     }
 
     /// Convert this to a range of types.
-    operator Range() const {
+    operator mlir::ValueRange() const {
         if (is_null()) return {};
         if (is_scalar()) return ArrayRef{vals, 1};
         return ArrayRef{vals, 2};
@@ -147,13 +157,6 @@ public:
 
     /// Check if this is empty.
     explicit operator bool() const { return not is_null(); }
-};
-
-/// This is either a single SSA value or a pair of SSA values; the
-/// latter is used for slices, ranges, and closures.
-class srcc::cg::IRValue : public detail::ValueOrTypePair<Value, mlir::ValueRange> {
-public:
-    using ValueOrTypePair::ValueOrTypePair;
 
     /// Get a location describing this value.
     [[nodiscard]] auto loc() const -> mlir::Location {

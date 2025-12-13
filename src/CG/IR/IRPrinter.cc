@@ -444,8 +444,18 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto e = dyn_cast<ir::EngagedIfOp>(op)) {
+        Format(out, "engage {} if {}", val(e.getOptional(), false), val(e.getCond(), false));
+        return;
+    }
+
     if (auto e = dyn_cast<ir::DisengageOp>(op)) {
         Format(out, "disengage {}", val(e.getOptional(), false));
+        return;
+    }
+
+    if (auto e = dyn_cast<ir::DisengagedIfOp>(op)) {
+        Format(out, "disengage {} if {}", val(e.getOptional(), false), val(e.getCond(), false));
         return;
     }
 

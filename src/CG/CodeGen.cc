@@ -2004,10 +2004,8 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 
         case CastExpr::OptionalUnwrap: {
             Assert(expr->is_lvalue());
-            auto opt = cast<OptionalType>(expr->arg->type);
-            if (not opt->has_transparent_layout()) Todo();
             ir::UnwrapOp::create(*this, C(expr->location()), val.scalar());
-            return val; // Transparent unwrapping is a no-op.
+            return val; // This just yields an lvalue to the underlying object.
         }
 
         case CastExpr::OptionalWrap: {
@@ -2409,6 +2407,42 @@ auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> IRValue {
     auto base = EmitScalar(expr->base);
     if (IsZeroSizedType(expr->type)) return base;
     return CreatePtrAdd(C(expr->location()), base, expr->field->offset);
+}
+
+auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
+    auto optional = Emit(e->optional);
+    auto ty = cast<OptionalType>(e->optional->type);
+    auto l = C(e->location());
+    Value flag;
+    if (ty->has_transparent_layout()) {
+        if (isa<PtrType>(ty->elem())) {
+            Assert(e->optional->is_rvalue());
+            flag = LLVM::ICmpOp::create(
+                *this,
+                l,
+                e->is_equal ? LLVM::ICmpPredicate::eq : LLVM::ICmpPredicate::ne,
+                optional.scalar(),
+                CreateNullPointer(l)
+            );
+        } else {
+            Unreachable("Unsupported optional type w/ transparent layout: {}", ty);
+        }
+    } else {
+        Assert(e->optional->is_lvalue());
+        flag = CreateLoad(l, optional.scalar(), Type::BoolTy, ty->get_engaged_offset()).scalar();
+
+        // A value of 'true' corresponds to '!= nil', so if the operator is '==',
+        // we need to flip the value.
+        if (e->is_equal) flag = arith::XOrIOp::create(
+            *this,
+            l,
+            flag,
+            CreateBool(l, true)
+        );
+    }
+
+    if (e->is_equal) return ir::DisengagedIfOp::create(*this, l, optional.scalar(), flag);
+    return ir::EngagedIfOp::create(*this, l, optional.scalar(), flag);
 }
 
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> IRValue {

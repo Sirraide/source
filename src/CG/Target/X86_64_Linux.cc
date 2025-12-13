@@ -525,10 +525,8 @@ auto ABIImpl::lower_procedure_signature(
     };
 
     auto ret = proc->ret();
-    if (auto opt = dyn_cast<OptionalType>(ret)) {
-        Assert(opt->has_transparent_layout(), "TODO");
+    if (auto opt = dyn_cast<OptionalType>(ret); opt and opt->has_transparent_layout())
         ret = opt->elem();
-    }
 
     auto sz = ret->bit_width(cg.translation_unit());
     if (cg.IsZeroSizedType(ret)) {

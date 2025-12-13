@@ -476,6 +476,9 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::CallExpr; }
 };
 
+/// This is a catch-all node for any sort of operation that takes
+/// a single argument and performs some sort of type conversion on
+/// it.
 class srcc::CastExpr final : public Expr {
 public:
     enum class CastKind : u8 {
@@ -776,6 +779,20 @@ public:
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::MemberAccessExpr; }
 };
+
+class srcc::OptionalNilTestExpr final : public Expr {
+public:
+    Expr* optional;
+    bool is_equal; ///< Whether this is '== nil' or '!= nil'.
+
+    OptionalNilTestExpr(Expr* optional, bool is_equal, SLoc location)
+        : Expr{Kind::OptionalNilTestExpr, Type::BoolTy, RValue, location},
+          optional{optional},
+          is_equal{is_equal} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::OptionalNilTestExpr; }
+};
+
 class srcc::OverloadSetExpr final : public Expr
     , TrailingObjects<OverloadSetExpr, Decl*> {
     friend TrailingObjects;

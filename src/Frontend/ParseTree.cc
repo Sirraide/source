@@ -482,6 +482,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(m.base);
         } break;
 
+
+        case Kind::NilExpr:
+            PrintHeader(s, "NilExpr");
+            break;
+
         case Kind::VarDecl: {
             auto& p = *cast<ParsedVarDecl>(s);
             PrintHeader(s, "VarDecl", false);

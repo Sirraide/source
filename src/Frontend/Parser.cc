@@ -267,6 +267,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Match:
         case Tk::Minus:
         case Tk::MinusMinus:
+        case Tk::Nil:
         case Tk::NoReturn:
         case Tk::Not:
         case Tk::LBrace:
@@ -671,6 +672,10 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
         case Tk::Match:
             lhs = ParseMatchExpr();
+            break;
+
+        case Tk::Nil:
+            lhs = new (*this) ParsedNilExpr(Next());
             break;
 
         case Tk::Quote: {

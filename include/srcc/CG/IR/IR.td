@@ -314,6 +314,12 @@ def DisengageOp : SRCC_Op<"disengage"> {
     let arguments = (ins SRCC_Ptr:$optional);
 }
 
+def DisengagedIfOp : SRCC_Op<"disengaged.if", [Pure]> {
+    let summary = "Mark that an optional is disengaged if a condition is true";
+    let arguments = (ins SRCC_Ptr:$optional, SRCC_Bool:$cond);
+    let results = (outs SRCC_Bool);
+}
+
 def EngageOp : SRCC_Op<"engage"> {
     let summary = "Engage an optional";
     let arguments = (ins SRCC_Ptr:$optional);
@@ -322,6 +328,11 @@ def EngageOp : SRCC_Op<"engage"> {
 def EngageCopyOp : SRCC_Op<"engage.copy"> {
     let summary = "Engage/disengage an optional depending on the state of another optional";
     let arguments = (ins SRCC_Ptr:$optional, SRCC_Ptr:$copy_from);
+}
+
+def EngagedIfOp : SRCC_Op<"engaged.if", [Pure]> {
+    let arguments = (ins SRCC_Ptr:$optional, SRCC_Bool:$cond);
+    let results = (outs SRCC_Bool);
 }
 
 def FrameSlotOp : SRCC_Op<"slot", [Pure]> {

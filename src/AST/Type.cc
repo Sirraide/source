@@ -695,6 +695,7 @@ auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
 }
 
 auto TupleType::Get(TranslationUnit& mod, RecordLayout* rl) -> TupleType* {
+    Assert(rl);
     auto CreateNew = [&] { return new (mod) TupleType{rl}; };
     return GetOrCreateType(mod.tuple_types, CreateNew, rl->field_types());
 }

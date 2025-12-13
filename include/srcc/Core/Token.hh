@@ -64,6 +64,7 @@ enum struct srcc::Tk : base::u8 {
     Is,
     Loop,
     Match,
+    Nil,
     NoReturn,
     Not,
     Or,

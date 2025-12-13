@@ -19,6 +19,7 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
@@ -202,9 +203,14 @@ LOWERING(CallOp, {
     return op.getNumResults() == 0 ? SmallVector<mlir::Value>() : SmallVector{call.getResult()};
 });
 
+// These are no-ops and only relevant for the optional lifetime analysis pass.
 ERASE_OP(DisengageOp);
 ERASE_OP(EngageOp);
 ERASE_OP(EngageCopyOp);
+
+// These are effectively metadata that simply pass through the condition.
+LOWERING(DisengagedIfOp, { return a.getCond(); });
+LOWERING(EngagedIfOp, { return a.getCond(); });
 
 LOWERING(FrameSlotOp, {
     return LLVM::AllocaOp::create(
@@ -336,6 +342,7 @@ LOWERING(StoreOp, {
     );
 });
 
+// These is a no-op and only relevant for the optional lifetime analysis pass.
 ERASE_OP(UnwrapOp);
 
 struct OptionalUnwrapCheckPass final : mlir::PassWrapper<OptionalUnwrapCheckPass, mlir::Pass> {
@@ -491,6 +498,26 @@ struct AbortInfoInliningPass final : mlir::PassWrapper<AbortInfoInliningPass, ml
         });
     }
 };
+
+/// Pass that iterates over conditional branches and tries to obtain information
+/// from them as to whether certain optionals are engaged in the then or disengaged
+/// in the then or else branch.
+struct InferOptionalEngagementFromConditionPass final : mlir::PassWrapper<InferOptionalEngagementFromConditionPass, mlir::Pass> {
+    CodeGen& cg;
+    InferOptionalEngagementFromConditionPass(CodeGen& cg) : cg(cg) {}
+    bool canScheduleOn(mlir::RegisteredOperationName op) const override {
+        auto name = op.getStringRef();
+        return name == mlir::ModuleOp::getOperationName() or name == ir::ProcOp::getOperationName();
+    }
+
+    void runOnOperation() override {
+        mlir::OpBuilder b{&getContext()};
+        mlir::IRRewriter r{b};
+        getOperation()->walk([&](mlir::cf::CondBranchOp op) { InferFromBranch(r, op); });
+    }
+
+    void InferFromBranch(mlir::IRRewriter& r, mlir::cf::CondBranchOp op);
+};
 } // namespace srcc::cg::lowering
 
 using namespace srcc::cg::lowering;
@@ -507,8 +534,10 @@ void LoweringPass::runOnOperation() {
     patterns.add< // clang-format off
         AbortOpLowering,
         DisengageOpLowering,
+        DisengagedIfOpLowering,
         EngageOpLowering,
         EngageCopyOpLowering,
+        EngagedIfOpLowering,
         CallOpLowering,
         FrameSlotOpLowering,
         LoadOpLowering,
@@ -590,6 +619,62 @@ void OptionalUnwrapCheckPass::CheckProcedure(ir::ProcOp proc) {
     }
 }
 
+void InferOptionalEngagementFromConditionPass::InferFromBranch(mlir::IRRewriter& r, mlir::cf::CondBranchOp op) {
+    auto EngageOptional = [&](bool in_then_block, Value optional) {
+        auto bb = in_then_block ? op.getTrueDest() : op.getFalseDest();
+
+        // Note that we have to be careful where we place the 'engage' op: if 'bb'
+        // has multiple predecessors, it would be very wrong to simply insert it
+        // at the start of the block since the optional is only engaged if we’re
+        // branching to that block if this particular condition is true or false.
+        //
+        // To that end, insert a new block between the condition block and the
+        // destination, if need be, and place the engage op there instead; we can
+        // skip this step if there is only a single predecessor.
+        if (not bb->getSinglePredecessor()) {
+            // There is an special case here: if we have 'br %x, bbX, bbX', i.e. if
+            // the then/else blocks are the same block, then it is literally impossible
+            // for any code to make use of an 'engage' flag that we might set in either
+            // edge of the block, so just don’t emit anything to begin with.
+            if (bb->getUniquePredecessor()) return;
+
+            // Otherwise, create a new block, effectively inserting the 'engage' flag into
+            // this particular edge between the condition and the destination block.
+            auto new_bb = new mlir::Block;
+            for (auto a : bb->getArguments()) new_bb->addArgument(a.getType(), a.getLoc());
+            r.setInsertionPointToStart(new_bb);
+            mlir::cf::BranchOp::create(r, op->getLoc(), new_bb, bb->getArguments());
+            op.setSuccessor(new_bb, in_then_block ? 0 : 1);
+            new_bb->insertBefore(bb);
+            bb = new_bb;
+        }
+
+        // Emit the 'engage' op; we don't insert a 'disengage' op in the other block because
+        // it would be a bit pointless: if the optional is already disengaged, then adding
+        // another disengage does nothing; if it is engaged, then the branch where we would
+        // be inserting the disengage is dead code (because we’re branching on whether it is
+        // engaged in the first place).
+        r.setInsertionPointToStart(bb);
+        ir::EngageOp::create(r, op.getCondition().getLoc(), optional);
+    };
+
+    auto val = dyn_cast<mlir::OpResult>(op.getCondition());
+    if (not val) return;
+
+    // TODO: Support things like 'if a == nil or b == nil' (in the else branch,
+    // both 'a' and 'b' should be engaged); can we use 'clang::dataflow::CNFFormula'
+    // for that?
+    if (auto engaged = dyn_cast<ir::EngagedIfOp>(val.getOwner())) {
+        EngageOptional(true, engaged.getOptional());
+        return;
+    }
+
+    if (auto disengaged = dyn_cast<ir::DisengagedIfOp>(val.getOwner())) {
+        EngageOptional(false, disengaged.getOptional());
+        return;
+    }
+}
+
 auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::Module> {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
@@ -611,6 +696,7 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(std::make_unique<InferOptionalEngagementFromConditionPass>(*this));
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
     pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
     // For some reason this pass sometimes produces null values...
@@ -631,6 +717,7 @@ bool CodeGen::finalise() {
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createRemoveDeadValuesPass());
+    pm.addPass(std::make_unique<InferOptionalEngagementFromConditionPass>(*this));
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
     if (pm.run(mlir_module).succeeded()) return true;
     if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to finalise IR");

@@ -67,6 +67,7 @@
                    | <expr-loop>
                    | <expr-macro-call>
                    | <expr-member>
+                   | <expr-nil>
                    | <expr-paren>
                    | <expr-prefix>
                    | <expr-quote>
@@ -92,6 +93,7 @@
 <expr-loop>       ::= LOOP [ <expr> ]
 <expr-match>      ::= MATCH [ <expr> ] [ "->" <type> ] "{" <match-case> [ ";" ] "}"
 <expr-member>     ::= <expr> "." IDENT
+<expr-nil>        ::= NIL
 <expr-paren>      ::= "(" <expr> ")"
 <expr-prefix>     ::= <prefix> <expr>
 <expr-quote>      ::= QUOTE ( <expr-block> | <expr-paren> )
