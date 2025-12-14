@@ -6,15 +6,16 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Linker/Linker.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 
 #include <enchantum/enchantum.hpp>
-#include <mlir/Analysis/DataFlowFramework.h>
 #include <mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h>
 #include <mlir/Analysis/DataFlow/DeadCodeAnalysis.h>
 #include <mlir/Analysis/DataFlow/DenseAnalysis.h>
+#include <mlir/Analysis/DataFlowFramework.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
@@ -689,6 +690,19 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     auto m = mlir::translateModuleToLLVMIR(mlir_module, tu.llvm_context, tu.name);
     m->setTargetTriple(machine.getTargetTriple());
     m->setDataLayout(machine.createDataLayout());
+
+    if (not tu.link_llvm_modules.empty()) {
+        Assert(not tu.emitted_llvm, "Cannot emit module twice as it contains other LLVM modules");
+        tu.emitted_llvm = true;
+        llvm::Linker link{*m};
+        for (auto& l : tu.link_llvm_modules) {
+            if (link.linkInModule(std::move(l))) {
+                if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
+                return nullptr;
+            }
+        }
+    }
+
     return m;
 }
 

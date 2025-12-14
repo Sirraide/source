@@ -64,9 +64,6 @@ public:
     /// Create a new context with default options.
     explicit Context();
 
-    /// Create a machine for this target.
-    [[nodiscard]] auto create_target_machine() const -> std::unique_ptr<llvm::TargetMachine>;
-
     /// Create a virtual file.
     [[nodiscard]] auto create_virtual_file(
         std::unique_ptr<llvm::MemoryBuffer> data,

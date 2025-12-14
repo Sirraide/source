@@ -258,7 +258,7 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
             LLVM::LLVMArrayType::get(getI8Type(), data.size() + null_terminated),
             true,
             LLVM::Linkage::Private,
-            Format("__srcc_str.{}", strings++),
+            Format("{}{}", constants::CodeGenStringConstantNamePrefix, strings++),
             getStringAttr(llvm::Twine(StringRef(data)) + (null_terminated ? "\0"sv : "")),
             align.value().bytes()
         );
@@ -966,6 +966,11 @@ auto CodeGen::MangledName(ProcDecl* proc) -> String {
     }();
 
     return mangled_names[proc] = tu.save(name);
+}
+
+auto CodeGen::MangledName(GlobalDecl* g) -> String {
+    if (g->mangling == Mangling::None) return g->name.str();
+    Todo();
 }
 
 // ============================================================================
@@ -2206,6 +2211,25 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     mlir::cf::BranchOp::create(*this, floc, bb_cond, args);
     EnterBlock(std::move(bb_end));
     return {};
+}
+
+auto CodeGen::EmitGlobalRefExpr(GlobalRefExpr* expr) -> IRValue {
+    auto& g = global_vars[expr->decl];
+    if (not g) {
+        InsertionGuard _{*this};
+        SetInsertPointToStartButSkipOpsOfType<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
+        g = LLVM::GlobalOp::create(
+            *this,
+            C(expr->decl->location()),
+            ConvertToByteArrayType(expr->decl->type),
+            false,
+            LLVM::Linkage::External,
+            MangledName(expr->decl),
+            mlir::Attribute(),
+            expr->decl->type->align(tu).value().bytes()
+        );
+    }
+    return LLVM::AddressOfOp::create(*this, C(expr->location()), g);
 }
 
 auto CodeGen::EmitIfExpr(IfExpr* stmt) -> IRValue {

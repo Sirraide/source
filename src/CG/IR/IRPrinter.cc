@@ -6,6 +6,7 @@
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 
 using namespace srcc;
 using namespace srcc::cg;
@@ -14,7 +15,7 @@ using namespace srcc::cg::ir;
 struct CodeGen::Printer {
     CodeGen& cg;
     SmallUnrenderedString out;
-    DenseMap<Operation*, i64> global_ids;
+    DenseMap<Operation*, SmallString<64>> global_names;
     DenseMap<mlir::BlockArgument, i64> arg_ids;
     DenseMap<Block*, i64> block_ids;
     DenseMap<Operation*, i64> inst_ids;
@@ -341,7 +342,7 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
         auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
-        Format(out, "addressof %3(@{}%)", global_ids.at(g));
+        Format(out, "addressof %3(@{}%)", global_names.at(g));
         return;
     }
 
@@ -602,25 +603,47 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
 
 void CodeGen::Printer::print_top_level_op(Operation* op) {
     if (auto g = dyn_cast<mlir::LLVM::GlobalOp>(op)) {
-        Assert(g.getConstant(), "TODO: Print non-constant globals");
-        auto i = global++;
-        global_ids[g] = i64(i);
-        Format(out, "%3(@{}%)", i);
+        // This is a string constant.
+        if (g.getSymName().starts_with(constants::CodeGenStringConstantNamePrefix)) {
+            Assert(g.getConstant(), "Strings should always be constants");
 
-        if (auto init = g.getValueOrNull()) {
-            out += " %1(=%) ";
+            auto i = global++;
+            global_names[g] = Format("{}", i64(i));
+            Format(out, "%3(@{}%)", i);
 
-            // A bit of a hack but it works.
-            SmallString<128> tmp;
-            llvm::raw_svector_ostream os{tmp};
-            init.print(os, true);
-            Format(out, "%3({}%)", str{tmp.str()}.replace('%', "%%"));
+            if (auto init = g.getValueOrNull()) {
+                out += " %1(=%) ";
+
+                // A bit of a hack but it works.
+                SmallString<128> tmp;
+                llvm::raw_svector_ostream os{tmp};
+                init.print(os, true);
+                Format(out, "%3({}%)", str{tmp.str()}.replace('%', "%%"));
+            }
+
+            if (g.getAlignment().value_or(1) != 1)
+                Format(out, "%1(, align%) %5({}%)", g.getAlignment().value_or(1));
+
+            out += '\n';
+            return;
         }
 
-        if (g.getAlignment().value_or(1) != 1)
-            Format(out, "%1(, align%) %5({}%)", g.getAlignment().value_or(1));
+        global_names[g] = g.getSymName();
 
-        out += '\n';
+        // This is an external global variable.
+        Assert(
+            g.getLinkage() == mlir::LLVM::Linkage::External,
+            "TODO: Print non-external globals"
+        );
+
+        Format(
+            out,
+            "%3(@{}%) %1(= external %5({}%), align %({}%)%)\n",
+            g.getSymName(),
+            cast<mlir::LLVM::LLVMArrayType>(g.getType()).getNumElements(),
+            g.getAlignment().value_or(1)
+        );
+
         return;
     }
 
@@ -679,7 +702,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
             auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
-            Format(tmp, "%3(@{}%)", global_ids.at(g));
+            Format(tmp, "%3(@{}%)", global_names.at(g));
             return tmp;
         }
 

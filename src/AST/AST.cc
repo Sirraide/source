@@ -9,7 +9,9 @@
 #include <clang/Frontend/CompilerInstance.h>
 
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/IR/Module.h>
 #include <llvm/TargetParser/Host.h>
+
 #include <base/Utils.hh>
 
 using namespace srcc;
@@ -348,6 +350,21 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(children);
         },
 
+        [&](GlobalDecl* g) {
+            PrintBasicNode(e, "GlobalDecl");
+        },
+
+        [&](GlobalRefExpr* d) {
+            auto PrintName = [&] {
+                print(
+                    "%8({}%)",
+                    d->decl->name.empty() ? "<anonymous>" : d->decl->name.str()
+                );
+            };
+
+            PrintBasicNode(e, "GlobalRefExpr", PrintName);
+        },
+
         [&](IfExpr* i) {
             PrintBasicNode(e, "IfExpr");
             SmallVector<Stmt*, 3> children{i->cond, i->then};
@@ -385,7 +402,6 @@ void Stmt::Printer::Print(Stmt* e) {
             append_range(children, q->unquotes());
             PrintChildren(children);
         },
-
 
         [&](IntLitExpr* i) {
             // These always come straight from the parser and are thus

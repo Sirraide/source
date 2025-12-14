@@ -235,6 +235,9 @@ auto ForStmt::Create(
     return ::new (mem) ForStmt{token, enum_var, vars, ranges, body, location};
 }
 
+GlobalRefExpr::GlobalRefExpr(GlobalDecl* decl, SLoc location)
+    : Expr{Kind::GlobalRefExpr, decl->type, LValue, location}, decl{decl} {}
+
 QuoteExpr::QuoteExpr(
     ParsedQuoteExpr* quoted,
     ArrayRef<Expr*> unquotes,
@@ -363,6 +366,27 @@ bool srcc::operator==(DeclName a, DeclName b) {
     if (a.is_str() != b.is_str()) return false;
     if (a.is_operator_name()) return a.operator_name() == b.operator_name();
     return a.str() == b.str();
+}
+
+GlobalDecl::GlobalDecl(
+    TranslationUnit* owner,
+    ModuleDecl* imported_from_module,
+    Type type,
+    DeclName name,
+    Linkage linkage,
+    Mangling mangling,
+    SLoc location
+): ObjectDecl(
+    Kind::GlobalDecl,
+    owner,
+    imported_from_module,
+    type,
+    name,
+    linkage,
+    mangling,
+    location
+) {
+    owner->global_vars.push_back(this);
 }
 
 ImportedClangModuleDecl::ImportedClangModuleDecl(

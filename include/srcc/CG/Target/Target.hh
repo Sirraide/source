@@ -53,6 +53,11 @@ public:
     [[nodiscard]] auto closure_align() const -> Align { return ptr_align(); }
     [[nodiscard]] auto closure_size() const -> Size { return 2 * ptr_size(); }
 
+    /// Create a machine for this target.
+    [[nodiscard]] auto create_machine(
+        int opt_level
+    ) const -> std::unique_ptr<llvm::TargetMachine>;
+
     /// Get the alignment of the builtin 'int' type.
     [[nodiscard]] auto int_align() const -> Align { return ptr_align(); }
 

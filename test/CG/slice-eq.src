@@ -220,7 +220,7 @@ proc e (i64[] a, i64[] b) = a == b;
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
-//L + target triple = "x86_64-unknown-linux-gnu"
+//L + target triple = "x86_64-unknown-linux"
 //L +
 //L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
 //L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1

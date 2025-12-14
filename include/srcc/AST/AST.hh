@@ -100,6 +100,9 @@ public:
     /// All procedures in the module.
     SmallVector<ProcDecl*> procs;
 
+    /// All global variables in the module.
+    SmallVector<GlobalDecl*> global_vars;
+
     /// Declarations exported from this module.
     Scope exports{nullptr};
 
@@ -111,6 +114,9 @@ public:
 
     /// LLVM context for this module.
     llvm::LLVMContext llvm_context;
+
+    /// LLVM modules to link into this TU.
+    SmallVector<std::unique_ptr<llvm::Module>> link_llvm_modules;
 
     /// FFI Types.
     Type FFICharTy;
@@ -141,6 +147,11 @@ public:
     FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
     FoldingSet<TupleType> tuple_types;
+
+    /// Whether we’ve already emitted LLVM IR for this TU; we can do
+    /// so only once due to the presence of additional LLVM modules that
+    /// need to be merged, a process which consumes the modules.
+    bool emitted_llvm = false;
 
     ~TranslationUnit();
 

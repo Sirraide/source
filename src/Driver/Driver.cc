@@ -1,23 +1,5 @@
-// ============================================================================
-//                                   DRIVER
-//
-// This file implements the Source compiler driver. The driver is the main
-// entry point for the compiler and is responsible for creating the compiler
-// context, dispatching work amongst threads and managing the compilation
-// process.
-//
-// Some invariants:
-//
-//   - All public members of 'Driver' are thread-safe and must lock the
-//     driver mutex upon entry, unless they only access 'impl->ctx' or
-//     atomic variables.
-//
-//   - Members of 'Driver' MUST NOT be called by other members.
-//
-//   - No member of 'Driver::Impl' may lock the driver mutex.
-//
-// ============================================================================
 #include <srcc/CG/CodeGen.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Core.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Utils.hh>
@@ -33,13 +15,9 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/ThreadPool.h>
 
-#include <algorithm>
 #include <filesystem>
-#include <future>
-#include <mutex>
 #include <print>
 #include <unordered_set>
-#include <srcc/CG/Target/Target.hh>
 
 namespace srcc {
 class ParsedModule;
@@ -245,7 +223,7 @@ int Driver::run_job() {
     );
 
     // Create a machine for this target.
-    auto machine = ctx.create_target_machine();
+    auto machine = tu->target().create_machine(opts.opt_level);
 
     // Don’t try and codegen if there was an error.
     if (ctx.diags().has_error()) {

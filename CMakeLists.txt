@@ -212,6 +212,7 @@ target_link_libraries(options INTERFACE
 
     clang
     clangBasic
+    clangCodeGen
     clangFrontend
     clangSema
     clangTooling

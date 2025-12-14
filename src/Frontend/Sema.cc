@@ -213,6 +213,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         [&](ProcDecl* proc) -> Ptr<Expr> { return new (*tu) ProcRefExpr(proc, loc); },
         [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
         [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
+        [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
         [&](LocalDecl* local) -> Ptr<Expr> {
             // Check if this variable is declared in a parent procedure and captured it
             // if so; do *not* capture zero-sized variables however since they’ll be deleted
@@ -247,7 +248,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
             }
 
             return new (*tu) LocalRefExpr(
-                cast<LocalDecl>(d),
+                local,
                 local->category,
                 loc
             );

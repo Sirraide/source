@@ -15,6 +15,7 @@ constexpr String RuntimeModuleName = "__src_runtime";
 constexpr String ModuleFileExtension = "mod";
 constexpr String SharedModuleFileExtension = "mod.eval";
 constexpr String ModuleDescriptionFileExtension = "mod.d";
+constexpr String CodeGenStringConstantNamePrefix = "__srcc_str.";
 constexpr std::array AbortHandlers{
     AssertFailureHandlerName,
     ArithmeticFailureHandlerName,

@@ -594,6 +594,7 @@ private:
     ArrayRef<std::string> search_paths;
     ArrayRef<std::string> clang_include_paths;
     usz assert_stringifiers = 0;
+    usz generated_cxx_macro_decls = 0;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;

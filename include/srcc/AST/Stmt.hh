@@ -593,6 +593,15 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
 };
 
+class srcc::GlobalRefExpr final : public Expr {
+public:
+    GlobalDecl* decl;
+
+    GlobalRefExpr(GlobalDecl* decl, SLoc location);
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::GlobalRefExpr; }
+};
+
 class srcc::IfExpr final : public Expr {
 public:
     Expr* cond;
@@ -1214,7 +1223,7 @@ public:
     void set_init(Ptr<Expr> expr) { init = expr; }
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::LocalDecl and e->kind() <= Kind::ParamDecl;
+        return e->kind() == Kind::LocalDecl or e->kind() == Kind::ParamDecl;
     }
 };
 
@@ -1246,6 +1255,7 @@ public:
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ParamDecl; }
 };
+
 /// Declaration with linkage.
 class srcc::ObjectDecl : public Decl {
 public:
@@ -1277,7 +1287,23 @@ public:
         return linkage == Linkage::Imported or linkage == Linkage::Reexported;
     }
 
-    static bool classof(const Stmt* e) { return e->kind() >= Kind::LocalDecl; }
+    static bool classof(const Stmt* e) { return e->kind() >= Kind::GlobalDecl; }
+};
+
+/// Global variable declaration.
+class srcc::GlobalDecl final : public ObjectDecl {
+public:
+    GlobalDecl(
+        TranslationUnit* owner,
+        ModuleDecl* imported_from_module,
+        Type type,
+        DeclName name,
+        Linkage linkage,
+        Mangling mangling,
+        SLoc location
+    );
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::GlobalDecl; }
 };
 
 /// Procedure declaration.

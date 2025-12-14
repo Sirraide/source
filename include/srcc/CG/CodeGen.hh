@@ -227,6 +227,7 @@ class srcc::cg::CodeGen : public DiagsProducer
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ProcDecl*, String> mangled_names;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
+    DenseMap<GlobalDecl*, mlir::LLVM::GlobalOp> global_vars;
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;
     LangOpts lang_opts;
@@ -563,6 +564,9 @@ public:
 
     /// Get the mangled name of a procedure.
     auto MangledName(ProcDecl* proc) -> String;
+
+    /// Get the mangled name of a global variable.
+    auto MangledName(GlobalDecl* proc) -> String;
 
     /// Determine whether this parameter type is passed by reference under
     /// the given intent.

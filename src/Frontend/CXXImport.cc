@@ -1,30 +1,37 @@
+#include <srcc/AST/Enums.hh>
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
 #include <clang/AST/Decl.h>
+#include <clang/AST/DeclGroup.h>
 #include <clang/AST/DeclarationName.h>
 #include <clang/AST/RecordLayout.h>
+#include <clang/Basic/CodeGenOptions.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Basic/TokenKinds.h>
+#include <clang/CodeGen/ModuleBuilder.h>
 #include <clang/Frontend/ASTUnit.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/Lex/HeaderSearchOptions.h>
 #include <clang/Lex/MacroArgs.h>
 #include <clang/Lex/PPCallbacks.h>
+#include <clang/Parse/Parser.h>
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
 #include <clang/Tooling/Tooling.h>
-#include <clang/Parse/Parser.h>
 
+#include <base/Assert.hh>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/MemoryBufferRef.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/TargetParser/Host.h>
-#include <base/Assert.hh>
 
 using namespace srcc;
 
@@ -403,14 +410,14 @@ auto Sema::ParseCXX(StringRef code) -> std::unique_ptr<clang::ASTUnit> {
         "-Xclang",
         "-triple",
         "-Xclang",
-        llvm::sys::getDefaultTargetTriple(),
+        tu->target().triple().getTriple(),
         "-std=c++2c",
         "-Wall",
         "-Wextra",
         "-Werror=return-type",
         "-Wno-unused",
         "-fcolor-diagnostics",
-        "-fsyntax-only"
+        "-fsyntax-only",
     };
 
     for (const auto& p : clang_include_paths) {
@@ -489,7 +496,6 @@ auto Sema::LookUpCXXNameImpl(
         Assert(k != Unsupported, "Should just early return instead of merging 'Unsupported'");
         if (k == kind) {} // Do nothing. They’re the same anyway.
         else if (kind == Nothing) kind = k;
-        else if (k == Unsupported) kind = Unsupported;
         else if (kind == Type and hint == LookupHint::Type) {} // Prefer types if types were requested.
         else if (kind == Function or k == Function) kind = Function;
         else {
@@ -502,8 +508,10 @@ auto Sema::LookUpCXXNameImpl(
         if (d->isInvalidDecl()) continue;
         if (isa<clang::FunctionDecl>(d)) Merge(Kind::Function);
         else if (isa<clang::TypedefDecl, clang::RecordDecl>(d)) Merge(Kind::Type);
-        else Merge(Kind::Unsupported);
-        if (kind == Kind::Unsupported) break;
+        else {
+            kind = Kind::Unsupported;
+            break;
+        }
     }
 
     // And import the declarations we care about.
@@ -616,9 +624,13 @@ auto Sema::LookUpCXXName(
     // Otherwise, we need to parse this thing.
     //
     // For now, we attempt to parse and evaluate it as a constant expression in
-    // a new TU; this *does* mean that we can reference any symbols declared in
+    // a new TU; this *does* mean that we can’t reference any symbols declared in
     // the actual imported TU, but this should be fine for most macros that aren’t
     // just a single identifier.
+    //
+    // FIXME: Can we convert the old TU into a PCH or sth like it and then
+    // import it when we parse the new TU? That way, we don’t have to modify the
+    // old TU, but we should still have access to everything in it.
     auto expansion = clang::MacroArgs::StringifyArgument(
         toks.data(),
         pp,
@@ -628,8 +640,10 @@ auto Sema::LookUpCXXName(
     );
 
     // Wrap the expansion in a function; take care to strip the quotes around the string literal.
+    auto name = Format("__srcc_expanded_macro_{}", generated_cxx_macro_decls);
     auto code = Format(
-        "static constexpr decltype(auto) __srcc_expanded_macro = [] {{ return {}; }} ();",
+        "extern \"C\" decltype(auto) {} = [] {{ return {}; }} ();",
+        name,
         StringRef(expansion.getLiteralData(), expansion.getLength()).drop_front().drop_back()
     );
 
@@ -638,14 +652,21 @@ auto Sema::LookUpCXXName(
         return LookupResult::FailedToImport(names.back());
 
     // Take care to retrieve the II in the preprocessor of the new TU.
-    clang::DeclarationName expanded_name{clang_tu->getPreprocessor().getIdentifierInfo("__srcc_expanded_macro")};
+    clang::DeclarationName expanded_name{clang_tu->getPreprocessor().getIdentifierInfo(name)};
     auto res = clang_tu->getASTContext().getTranslationUnitDecl()->lookup(expanded_name);
     if (not res.isSingleResult() or res.front()->isInvalidDecl())
         return LookupResult::FailedToImport(names.back());
 
+    clang::APValue init_val;
+    SmallVector<clang::PartialDiagnosticAt> diags;
     auto var = cast<clang::VarDecl>(res.front());
-    if (not var->getEvaluatedValue())
-        return LookupResult::FailedToImport(names.back());
+
+    // Import the source location of the macro.
+    SLoc macro_loc;
+    {
+        Importer i{*this, clang_module};
+        macro_loc = i.ImportSourceLocation(mi->getDefinitionLoc());
+    }
 
     // The importer requires a module, so fabricate one for this.
     auto fake_module = ImportedClangModuleDecl::Create(
@@ -656,6 +677,57 @@ auto Sema::LookUpCXXName(
         SLoc()
     );
 
+    // If we can’t evaluate this as a constant, instead emit it into an LLVM
+    // module and reference it as a global declaration.
+    if (
+        not var->getInit()->EvaluateAsInitializer(
+            init_val,
+            clang_tu->getASTContext(),
+            var,
+            diags,
+            false
+        ) or not diags.empty()
+    )  {
+        // Import the variable’s type.
+        Importer i{*this, fake_module};
+        auto ty = i.ImportType(var->getType());
+        if (not ty.has_value()) return LookupResult::FailedToImport(names.back());
+
+        // Emit it.
+        defer { generated_cxx_macro_decls++; };
+        std::unique_ptr<clang::CodeGenerator> cg{clang::CreateLLVMCodeGen(
+            clang_tu->getDiagnostics(),
+            fake_module->name.str(),
+            clang_tu->getVirtualFileSystemPtr(),
+            clang_tu->getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
+            clang_tu->getPreprocessor().getPreprocessorOpts(),
+            clang_tu->getCodeGenOpts(),
+            tu->llvm_context
+        )};
+
+        // I need to fix this API at some point, because the fact that you have to
+        // *remember* to call Initialize() is... not great.
+        cg->Initialize(clang_tu->getASTContext());
+        cg->HandleTopLevelDecl(clang::DeclGroupRef(var));
+        cg->HandleTranslationUnit(clang_tu->getASTContext());
+        if (not cg->GetModule()) return LookupResult::FailedToImport(names.back());
+        tu->link_llvm_modules.emplace_back(cg->ReleaseModule());
+
+        // Create a declaration for the variable.
+        auto g = new (*tu) GlobalDecl(
+            tu.get(),
+            nullptr,
+            *ty,
+            tu->save(name),
+            Linkage::Imported,
+            Mangling::None,
+            macro_loc
+        );
+
+        imported_macros[mi] = g;
+        return LookupResult::Success(g);
+    }
+
     eval::RValue val;
     {
         Importer i{*this, fake_module};
@@ -664,8 +736,7 @@ auto Sema::LookUpCXXName(
         val = std::move(*v);
     }
 
-    Importer i{*this, clang_module};
-    auto ce = MakeConstExpr(nullptr, std::move(val), i.ImportSourceLocation(mi->getDefinitionLoc()));
+    auto ce = MakeConstExpr(nullptr, std::move(val), macro_loc);
     auto vd = new (*tu) ValueDecl("", ce, ce->location());
     imported_macros[mi] = vd;
     return LookupResult::Success(vd);
