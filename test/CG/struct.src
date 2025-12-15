@@ -27,7 +27,7 @@ proc g {
 // +     ret
 // + }
 // +
-// + proc _S1fFvE private ccc {
+// + proc _S1fFvE.1 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 32, align 8
 // +
@@ -45,7 +45,7 @@ proc g {
 // +     ret
 // + }
 // +
-// + proc _S1gFvE private ccc {
+// + proc _S1gFvE.2 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 32, align 8
 // +
@@ -66,7 +66,7 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1fFvE() #0 {
+//L + define private void @_S1fFvE.1() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -83,7 +83,7 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1gFvE() #0 {
+//L + define private void @_S1gFvE.2() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 16, i1 false)

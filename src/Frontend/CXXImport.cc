@@ -165,6 +165,7 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
         Linkage::Imported,
         D->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
+        ManglingNumber::None,
         ImportSourceLocation(D->getNameInfo().getBeginLoc())
     );
 

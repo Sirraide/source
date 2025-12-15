@@ -26,19 +26,19 @@ proc call {
 // +     ret
 // + }
 // +
-// + proc _S4callFvE private ccc {
+// + proc _S4callFvE.1 private ccc {
 // + entry:
-// +     call ccc void _S1aFT4zeroE()
-// +     call ccc void _S1bFT4zeroE()
-// +     call ccc void _S1cFT4zeroE()
-// +     call ccc void _S1dFT1sE()
+// +     call ccc void a()
+// +     call ccc void b()
+// +     call ccc void c()
+// +     call ccc void d()
 // +     ret
 // + }
 // +
-// + proc _S1aFT4zeroE external ccc;
+// + proc a external ccc;
 // +
-// + proc _S1bFT4zeroE external ccc;
+// + proc b external ccc;
 // +
-// + proc _S1cFT4zeroE external ccc;
+// + proc c external ccc;
 // +
-// + proc _S1dFT1sE external ccc;
+// + proc d external ccc;

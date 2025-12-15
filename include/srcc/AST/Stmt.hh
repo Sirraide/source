@@ -44,6 +44,14 @@ constexpr void operator--(LoopToken& t) {
 constexpr void operator++(LoopToken& t) {
     t = LoopToken(+t + 1);
 }
+
+// Mangling number of a procedure.
+enum class ManglingNumber : u32 { None = 0 };
+constexpr ManglingNumber operator++(ManglingNumber& t, int) {
+    auto val = t;
+    t = ManglingNumber(+t + 1);
+    return val;
+}
 } // namespace srcc
 
 // ============================================================================
@@ -1329,6 +1337,9 @@ public:
     /// The template this was instantiated from.
     ProcTemplateDecl* instantiated_from = nullptr;
 
+    /// Mangling number of this procedure.
+    ManglingNumber mangling_number = ManglingNumber::None;
+
     /// Whether this procedure (or any of its nested procedures) contain
     /// variable accesses that refer to variables declared in a parent
     /// procedure.
@@ -1350,6 +1361,7 @@ private:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
+        ManglingNumber mnum,
         SLoc location
     );
 
@@ -1362,6 +1374,7 @@ public:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
+        ManglingNumber mnum,
         SLoc location
     ) -> ProcDecl*;
 
@@ -1448,11 +1461,15 @@ public:
     /// Whether this procedure cannot be called at runtime.
     bool is_compile_time_only = false;
 
+    /// Mangling number of this procedure template.
+    ManglingNumber mangling_number = ManglingNumber::None;
+
 private:
     ProcTemplateDecl(
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
+        ManglingNumber mnum,
         bool has_variadic_param,
         SLoc location
     );
@@ -1462,6 +1479,7 @@ public:
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
+        ManglingNumber mnum,
         bool has_variadic_param
     ) -> ProcTemplateDecl*;
 

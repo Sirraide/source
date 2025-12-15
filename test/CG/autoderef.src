@@ -3,7 +3,7 @@ program test;
 
 struct s { int x; }
 
-proc sink(int x) extern nomangle;
+proc sink(int x) extern;
 
 s a = (1);
 var p1 = &a;

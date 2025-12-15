@@ -11,12 +11,12 @@ export proc a(int) {}
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvE external ccc {
+// + proc _SM10testmodule$1aFvE.1 external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvI8E (i8 %0) external ccc {
+// + proc _SM10testmodule$1aFvI8E.2 (i8 %0) external ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -24,7 +24,7 @@ export proc a(int) {}
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFvI16E (i16 %0) external ccc {
+// + proc _SM10testmodule$1aFvI16E.3 (i16 %0) external ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -32,7 +32,7 @@ export proc a(int) {}
 // +     ret
 // + }
 // +
-// + proc _SM10testmodule$1aFviE (i64 %0) external ccc {
+// + proc _SM10testmodule$1aFviE.4 (i64 %0) external ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:

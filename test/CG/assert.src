@@ -17,7 +17,7 @@ proc foo(in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixiE (i64 %0, i64 %1) private ccc {
+// + proc _S3fooFvxixiE.1 (i64 %0, i64 %1) private ccc {
 // + entry:
 // +     %2 = i64 7
 // +     %3 = addressof @3
@@ -114,7 +114,7 @@ proc foo(in int a, in int b) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S3fooFvxixiE(i64 %0, i64 %1) #0 {
+//L + define private void @_S3fooFvxixiE.1(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8

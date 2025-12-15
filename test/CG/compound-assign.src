@@ -36,7 +36,7 @@ proc x (int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S1xFvixiE (i64 %0, i64 %1) private ccc {
+// + proc _S1xFvixiE.1 (i64 %0, i64 %1) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 80, align 8
@@ -173,7 +173,7 @@ proc x (int a, in int b) {
 //U +     ret
 //U + }
 //U +
-//U + proc _S1xFvixiE (i64 %0, i64 %1) private ccc {
+//U + proc _S1xFvixiE.1 (i64 %0, i64 %1) private ccc {
 //U +     #0 = 8, align 8
 //U +     #1 = 8, align 8
 //U +
@@ -254,7 +254,7 @@ proc x (int a, in int b) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1xFvixiE(i64 %0, i64 %1) #0 {
+//L + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #0 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8
@@ -619,7 +619,7 @@ proc x (int a, in int b) {
 //UL + }
 //UL +
 //UL + ; Function Attrs: nounwind
-//UL + define private void @_S1xFvixiE(i64 %0, i64 %1) #0 {
+//UL + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #0 {
 //UL +   %3 = alloca i8, i64 8, align 8
 //UL +   %4 = alloca i8, i64 8, align 8
 //UL +   store i64 %0, ptr %3, align 8

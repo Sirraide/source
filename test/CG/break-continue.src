@@ -130,17 +130,17 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p1FvE private ccc {
+// + proc _S2p1FvE.1 private ccc {
 // + entry:
-// +     call ccc void _S1hFvE()
+// +     call ccc void h()
 // +     ret
 // + }
 // +
-// + proc _S1hFvE external ccc;
+// + proc h external ccc;
 // +
-// + proc _S1gFvE external ccc;
+// + proc g external ccc;
 // +
-// + proc _S2p2FvE private ccc {
+// + proc _S2p2FvE.2 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -148,7 +148,7 @@ proc p13 {
 // +     br bb1
 // + }
 // +
-// + proc _S2p3FvE private ccc {
+// + proc _S2p3FvE.3 private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -164,19 +164,19 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p4FvE private ccc {
+// + proc _S2p4FvE.4 private ccc {
 // + entry:
-// +     call ccc void _S1hFvE()
+// +     call ccc void h()
 // +     ret
 // + }
 // +
-// + proc _S2p5FvE private ccc {
+// + proc _S2p5FvE.5 private ccc {
 // + entry:
-// +     call ccc void _S1hFvE()
+// +     call ccc void h()
 // +     ret
 // + }
 // +
-// + proc _S2p6FvE private ccc {
+// + proc _S2p6FvE.6 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -184,7 +184,7 @@ proc p13 {
 // +     br bb1
 // + }
 // +
-// + proc _S2p7FvE private ccc {
+// + proc _S2p7FvE.7 private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -205,7 +205,7 @@ proc p13 {
 // +     br %5 to bb6 else bb5
 // +
 // + bb5:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb6
 // +
 // + bb6:
@@ -217,7 +217,7 @@ proc p13 {
 // +     br %7 to bb9 else bb8
 // +
 // + bb8:
-// +     call ccc void _S1hFvE()
+// +     call ccc void h()
 // +     br bb9
 // +
 // + bb9:
@@ -228,105 +228,105 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p8FvE private ccc {
+// + proc _S2p8FvE.8 private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %0 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     ret
 // +
 // + bb3:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     br bb1
 // + }
 // +
-// + proc _S1fFviE (i64) external ccc;
+// + proc f (i64) external ccc;
 // +
-// + proc _S1bFbE external ccc -> i1 zeroext;
+// + proc b external ccc -> i1 zeroext;
 // +
-// + proc _S2p9FvE private ccc {
+// + proc _S2p9FvE.9 private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %0 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb1
 // +
 // + bb3:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     br bb1
 // + }
 // +
-// + proc _S3p10FvE private ccc {
+// + proc _S3p10FvE.10 private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     %0 = call ccc zeroext i1 _S1bFbE()
+// +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %1 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %1 = call ccc zeroext i1 b()
 // +     br %1 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     br bb1
 // +
 // + bb5:
 // +     ret
 // + }
 // +
-// + proc _S3p11FvE private ccc {
+// + proc _S3p11FvE.11 private ccc {
 // + entry:
 // +     br bb1
 // +
 // + bb1:
-// +     %0 = call ccc zeroext i1 _S1bFbE()
+// +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %1 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %1 = call ccc zeroext i1 b()
 // +     br %1 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb1
 // +
 // + bb4:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     br bb1
 // +
 // + bb5:
 // +     ret
 // + }
 // +
-// + proc _S3p12FvE private ccc {
+// + proc _S3p12FvE.12 private ccc {
 // + entry:
 // +     %0 = ptradd @0, 3
 // +     br bb1(@0)
@@ -336,18 +336,18 @@ proc p13 {
 // +     br %2 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %3 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %3 = call ccc zeroext i1 b()
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     %4 = ptradd %1, 1
 // +     br bb1(%4)
 // +
@@ -355,7 +355,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S3p13FvE private ccc {
+// + proc _S3p13FvE.13 private ccc {
 // + entry:
 // +     %0 = ptradd @0, 3
 // +     br bb1(@0)
@@ -365,18 +365,18 @@ proc p13 {
 // +     br %2 to bb2 else bb6
 // +
 // + bb2:
-// +     call ccc void _S1fFviE(i64 1)
-// +     %3 = call ccc zeroext i1 _S1bFbE()
+// +     call ccc void f(i64 1)
+// +     %3 = call ccc zeroext i1 b()
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void _S1gFvE()
+// +     call ccc void g()
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void _S1fFviE(i64 2)
-// +     call ccc void _S1hFvE()
-// +     call ccc void _S1gFvE()
+// +     call ccc void f(i64 2)
+// +     call ccc void h()
+// +     call ccc void g()
 // +     br bb5
 // +
 // + bb5:

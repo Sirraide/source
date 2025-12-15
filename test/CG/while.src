@@ -32,7 +32,7 @@ proc while_infinite_empty {
 // +     ret
 // + }
 // +
-// + proc _S12while_simpleFvE private ccc {
+// + proc _S12while_simpleFvE.1 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -54,7 +54,7 @@ proc while_infinite_empty {
 // +     ret
 // + }
 // +
-// + proc _S12while_nestedFvE private ccc {
+// + proc _S12while_nestedFvE.2 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -92,7 +92,7 @@ proc while_infinite_empty {
 // +     ret
 // + }
 // +
-// + proc _S14while_infiniteFvE private ccc {
+// + proc _S14while_infiniteFvE.3 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -106,7 +106,7 @@ proc while_infinite_empty {
 // +     br bb1
 // + }
 // +
-// + proc _S20while_infinite_emptyFvE private ccc {
+// + proc _S20while_infinite_emptyFvE.4 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -125,7 +125,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S12while_simpleFvE() #0 {
+//L + define private void @_S12while_simpleFvE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -146,7 +146,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S12while_nestedFvE() #0 {
+//L + define private void @_S12while_nestedFvE.2() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -183,7 +183,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S14while_infiniteFvE() #0 {
+//L + define private void @_S14while_infiniteFvE.3() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -196,7 +196,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S20while_infinite_emptyFvE() #0 {
+//L + define private void @_S20while_infinite_emptyFvE.4() #0 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %1, %0

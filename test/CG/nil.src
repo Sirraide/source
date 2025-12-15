@@ -26,7 +26,7 @@ proc p2 {
 // +     ret
 // + }
 // +
-// + proc _S1xFniE (i64 %0) private ccc {
+// + proc _S1xFniE.1 (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -34,7 +34,7 @@ proc p2 {
 // +     ret
 // + }
 // +
-// + proc _S2p1FvE private ccc {
+// + proc _S2p1FvE.2 private ccc {
 // +     #0 = 2, align 1
 // +     #1 = 17, align 8
 // +     #2 = 2, align 1
@@ -58,7 +58,7 @@ proc p2 {
 // +     ret
 // + }
 // +
-// + proc _S2p2FvE private ccc {
+// + proc _S2p2FvE.3 private ccc {
 // +     #0 = 2, align 1
 // +     #1 = 17, align 8
 // +     #2 = 2, align 1
@@ -67,23 +67,23 @@ proc p2 {
 // +     #5 = 8, align 8
 // +
 // + entry:
-// +     call ccc void _S1xFniE(i64 1)
+// +     call ccc void _S1xFniE.1(i64 1)
 // +     %0 = ptradd #0, 1
 // +     store %0, i8 0, align 1
 // +     disengage #0
-// +     call ccc void _S1xFniE(i64 2)
+// +     call ccc void _S1xFniE.1(i64 2)
 // +     %1 = ptradd #1, 16
 // +     store %1, i8 0, align 1
 // +     disengage #1
-// +     call ccc void _S1xFniE(i64 3)
+// +     call ccc void _S1xFniE.1(i64 3)
 // +     %2 = ptradd #2, 1
 // +     store %2, i8 0, align 1
 // +     disengage #2
-// +     call ccc void _S1xFniE(i64 4)
+// +     call ccc void _S1xFniE.1(i64 4)
 // +     store #3, ptr nil, align 8
-// +     call ccc void _S1xFniE(i64 5)
+// +     call ccc void _S1xFniE.1(i64 5)
 // +     store #4, ptr nil, align 8
-// +     call ccc void _S1xFniE(i64 6)
+// +     call ccc void _S1xFniE.1(i64 6)
 // +     store #5, ptr nil, align 8
 // +     ret
 // + }

@@ -19,7 +19,7 @@ proc b -> bool {
 // +     ret
 // + }
 // +
-// + proc _S1aFbE private ccc -> i1 zeroext {
+// + proc _S1aFbE.1 private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -32,7 +32,7 @@ proc b -> bool {
 // +     ret i1 %2
 // + }
 // +
-// + proc _S1bFbE private ccc -> i1 zeroext {
+// + proc _S1bFbE.2 private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -56,7 +56,7 @@ proc b -> bool {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @_S1aFbE() #0 {
+//L + define private zeroext i1 @_S1aFbE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr null, ptr %1, align 8
@@ -68,7 +68,7 @@ proc b -> bool {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @_S1bFbE() #0 {
+//L + define private zeroext i1 @_S1bFbE.2() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr null, ptr %1, align 8

@@ -134,31 +134,31 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S1gFvE private ccc {
+// + proc _S1gFvE.1 private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1hFvE private ccc {
+// + proc _S1hFvE.2 private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1xFvE private ccc {
+// + proc _S1xFvE.3 private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S6foobarFbE private ccc -> i1 zeroext {
+// + proc _S6foobarFbE.4 private ccc -> i1 zeroext {
 // + entry:
 // +     ret i1 true
 // + }
 // +
-// + proc _S2p1FvE private ccc {
+// + proc _S2p1FvE.5 private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
-// +     store #0, _S1xFvE, align 8
+// +     store #0, _S1xFvE.3, align 8
 // +     %0 = ptradd #0, 8
 // +     store %0, ptr nil, align 8
 // +     %1 = load ptr, #0, align 8
@@ -168,31 +168,31 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S2p2FvE private ccc {
+// + proc _S2p2FvE.6 private ccc {
 // + entry:
-// +     call ccc void _S1xFvE()
+// +     call ccc void _S1xFvE.3()
 // +     ret
 // + }
 // +
-// + proc _S2p3FvE private ccc {
+// + proc _S2p3FvE.7 private ccc {
 // + entry:
-// +     call ccc void _S2p1FvE()
-// +     call ccc void _S2p2FvE()
+// +     call ccc void _S2p1FvE.5()
+// +     call ccc void _S2p2FvE.6()
 // +     ret
 // + }
 // +
-// + proc _S2p6FvE private ccc {
+// + proc _S2p6FvE.8 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     %0 = call ccc i64 _S2p6$2t1FiiE(i64 42)
+// +     %0 = call ccc i64 _S2p6$2t1FiiE.17(i64 42)
 // +     store #1, i64 %0, align 8
 // +     ret
 // + }
 // +
-// + proc _S2p6$2t1FiiE (i64 %0) private ccc -> i64 {
+// + proc _S2p6$2t1FiiE.17 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -201,7 +201,7 @@ proc str1 {
 // +     ret i64 %1
 // + }
 // +
-// + proc _S2r1FvE private ccc {
+// + proc _S2r1FvE.9 private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -211,7 +211,7 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S2r2FvE private ccc {
+// + proc _S2r2FvE.10 private ccc {
 // +     #0 = 33, align 8
 // +
 // + entry:
@@ -229,12 +229,12 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S2r3FiE private ccc -> i64 {
+// + proc _S2r3FiE.11 private ccc -> i64 {
 // + entry:
 // +     ret i64 42
 // + }
 // +
-// + proc _S2r4FvE private ccc {
+// + proc _S2r4FvE.12 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 33, align 8
 // +     #2 = 33, align 8
@@ -250,7 +250,7 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S2r5FvE private ccc {
+// + proc _S2r5FvE.13 private ccc {
 // +     #0 = 32, align 8
 // +
 // + entry:
@@ -262,7 +262,7 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S2r6FvE private ccc {
+// + proc _S2r6FvE.14 private ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -272,7 +272,7 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S3strFvE private ccc {
+// + proc _S3strFvE.15 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -294,7 +294,7 @@ proc str1 {
 // +     ret
 // + }
 // +
-// + proc _S4str1FvE private ccc {
+// + proc _S4str1FvE.16 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8

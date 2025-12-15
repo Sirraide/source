@@ -590,6 +590,21 @@ void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
     }
 }
 
+bool Sema::RequiresManglingNumber(const ParsedProcAttrs& attrs) {
+    // Obviously don’t allocate a mangling number if the thing isn’t even
+    // mangled to begin with.
+    if (attrs.nomangle) return false;
+
+    // Do not allocate a mangling number to builtin operators as there should
+    // never be any conflicting declarations of those since they’re under our
+    // control, and this avoids invalidating the IR of every CG test after updating
+    // the preamble.
+    if (attrs.builtin_operator) return false;
+
+    // There is also an attribute to disable the mangling number.
+    return not attrs.no_mangling_number;
+}
+
 // ============================================================================
 //  Initialisation.
 // ============================================================================
@@ -2602,6 +2617,7 @@ auto Sema::BuildAssertExpr(
             Linkage::Internal,
             Mangling::None,
             curr_proc().proc,
+            ManglingNumber::None,
             loc
         );
 
@@ -3489,14 +3505,39 @@ auto Sema::BuildProcDeclInitial(
     if (pattern) parent = pattern->parent.get_or_null();
     else parent = curr_proc().proc;
     if (parent == tu->initialiser_proc) parent = {};
+
+    // Determine its mangling number.
+    //
+    // This number is appended to the mangled name of a procedure and is
+    // used to avoid mangled name collisions. Consider:
+    //
+    //     {
+    //         proc a {}
+    //     }
+    //     {
+    //         proc a {}
+    //     }
+    //
+    // This is not ill-formed since the procedures are in different scopes,
+    // and thus, no possible overload set is ever going to contain both of
+    // them. Here, we need to make sure that they end up with different names
+    // in the IR.
+    ManglingNumber mnum = [&]{
+        if (pattern) return pattern->mangling_number;
+        if (RequiresManglingNumber(attrs)) return next_proc_mangling_number++;
+        return ManglingNumber::None;
+    }();
+
+    // Actually create the procedure.
     auto proc = ProcDecl::Create(
         *tu,
         nullptr,
         ty,
         name,
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,
-        attrs.nomangle or attrs.native ? Mangling::None : Mangling::Source,
+        attrs.nomangle ? Mangling::None : Mangling::Source,
         parent,
+        mnum,
         loc
     );
 
@@ -4497,11 +4538,27 @@ auto Sema::TranslateProcDecl(ParsedProcDecl*, Type) -> Decl* {
 /// to it to be translated, but without touching its body, if there is one.
 auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // Diagnose invalid combinations of attributes.
-    auto attrs = parsed->type->attrs;
-    if (attrs.native and attrs.nomangle) Error(
-        parsed->loc,
-        "'%1(native%)' procedures should not be declared '%1(nomangle%)'"
-    );
+    auto& attrs = parsed->type->attrs;
+
+    // 'extern' implies 'nomangle'.
+    if (attrs.extern_) {
+        if (attrs.nomangle) Error(
+            parsed->loc,
+            "'%1(extern%)' already implies '%1(nomangle%)'"
+        );
+
+        attrs.nomangle = true;
+    }
+
+    // So does 'native'.
+    else if (attrs.native) {
+        if (attrs.nomangle) Error(
+            parsed->loc,
+            "'%1(native%)' already implies '%1(nomangle%)'"
+        );
+
+        attrs.nomangle = true;
+    }
 
     // Variadic templates cannot have C varargs.
     bool has_variadic_param = parsed->type->has_variadic_param();
@@ -4528,6 +4585,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
             *tu,
             parsed,
             curr_proc().proc,
+            RequiresManglingNumber(attrs) ? next_proc_mangling_number++ : ManglingNumber::None,
             has_variadic_param
         );
     }

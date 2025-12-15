@@ -30,7 +30,7 @@ proc p1 {
 // +     ret
 // + }
 // +
-// + proc _S2p1FvE private ccc {
+// + proc _S2p1FvE.1 private ccc {
 // +     #0 = 17, align 8
 // +     #1 = 80, align 8
 // +
@@ -102,7 +102,7 @@ proc p1 {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2p1FvE() #0 {
+//L + define private void @_S2p1FvE.1() #0 {
 //L +   %1 = alloca i8, i64 17, align 8
 //L +   %2 = alloca i8, i64 80, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 17, i1 false)

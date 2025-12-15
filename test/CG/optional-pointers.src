@@ -40,7 +40,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1aFvE private ccc {
+// + proc _S1aFvE.1 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -55,7 +55,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1bFvbE (i1 %0 zeroext) private ccc {
+// + proc _S1bFvbE.2 (i1 %0 zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -89,7 +89,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1cFORiORiE (ptr %0) private ccc -> ptr {
+// + proc _S1cFORiORiE.3 (ptr %0) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -98,7 +98,7 @@ proc e {
 // +     ret ptr %1
 // + }
 // +
-// + proc _S1dFvE private ccc {
+// + proc _S1dFvE.4 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -118,7 +118,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1eFvE private ccc {
+// + proc _S1eFvE.5 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -147,7 +147,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1aFvE() #0 {
+//L + define private void @_S1aFvE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -158,7 +158,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1bFvbE(i1 zeroext %0) #0 {
+//L + define private void @_S1bFvbE.2(i1 zeroext %0) #0 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -187,7 +187,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S1cFORiORiE(ptr %0) #0 {
+//L + define private ptr @_S1cFORiORiE.3(ptr %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %2, align 8
 //L +   %3 = load ptr, ptr %2, align 8
@@ -195,7 +195,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1dFvE() #0 {
+//L + define private void @_S1dFvE.4() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -211,7 +211,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1eFvE() #0 {
+//L + define private void @_S1eFvE.5() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8

@@ -11,10 +11,10 @@ testmodule::hello();
 // + proc __src_main external ccc {
 // + entry:
 // +     call ccc void __src_static_init.testmodule()
-// +     call ccc void _SM10testmodule$5helloFvE()
+// +     call ccc void _SM10testmodule$5helloFvE.1()
 // +     ret
 // + }
 // +
 // + proc __src_static_init.testmodule external ccc;
 // +
-// + proc _SM10testmodule$5helloFvE external ccc;
+// + proc _SM10testmodule$5helloFvE.1 external ccc;

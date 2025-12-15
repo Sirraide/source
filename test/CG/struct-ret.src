@@ -28,7 +28,7 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1bFT1xE private ccc -> i64 {
+// + proc _S1bFT1xE.1 private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -37,7 +37,7 @@ proc f {
 // +     ret i64 %0
 // + }
 // +
-// + proc _S1cFT1xiE (i64 %0) private ccc -> i64 {
+// + proc _S1cFT1xiE.2 (i64 %0) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -49,7 +49,7 @@ proc f {
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1dFT1xE private ccc -> i64 {
+// + proc _S1dFT1xE.3 private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -60,24 +60,24 @@ proc f {
 // +     ret i64 %0
 // + }
 // +
-// + proc _S1eFT1xE private ccc -> i64 {
+// + proc _S1eFT1xE.4 private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
 // + entry:
-// +     %0 = call ccc i64 _S1dFT1xE()
+// +     %0 = call ccc i64 _S1dFT1xE.3()
 // +     store #0, i64 %0, align 8
-// +     %1 = call ccc i64 _S1dFT1xE()
+// +     %1 = call ccc i64 _S1dFT1xE.3()
 // +     store #1, i64 %1, align 8
 // +     %2 = load i64, #1, align 8
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1fFvE private ccc {
+// + proc _S1fFvE.5 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
-// +     %0 = call ccc i64 _S1dFT1xE()
+// +     %0 = call ccc i64 _S1dFT1xE.3()
 // +     store #0, i64 %0, align 8
 // +     ret
 // + }
@@ -93,7 +93,7 @@ proc f {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1bFT1xE() #0 {
+//L + define private i64 @_S1bFT1xE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 1, ptr %1, align 8
 //L +   %2 = load i64, ptr %1, align 8
@@ -101,7 +101,7 @@ proc f {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1cFT1xiE(i64 %0) #0 {
+//L + define private i64 @_S1cFT1xiE.2(i64 %0) #0 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
@@ -112,7 +112,7 @@ proc f {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1dFT1xE() #0 {
+//L + define private i64 @_S1dFT1xE.3() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -122,21 +122,21 @@ proc f {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1eFT1xE() #0 {
+//L + define private i64 @_S1eFT1xE.4() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
-//L +   %3 = call i64 @_S1dFT1xE()
+//L +   %3 = call i64 @_S1dFT1xE.3()
 //L +   store i64 %3, ptr %1, align 8
-//L +   %4 = call i64 @_S1dFT1xE()
+//L +   %4 = call i64 @_S1dFT1xE.3()
 //L +   store i64 %4, ptr %2, align 8
 //L +   %5 = load i64, ptr %2, align 8
 //L +   ret i64 %5
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1fFvE() #0 {
+//L + define private void @_S1fFvE.5() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
-//L +   %2 = call i64 @_S1dFT1xE()
+//L +   %2 = call i64 @_S1dFT1xE.3()
 //L +   store i64 %2, ptr %1, align 8
 //L +   ret void
 //L + }

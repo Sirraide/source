@@ -19,39 +19,39 @@ proc a5 { sink_lv(exit()); }
 // +     ret
 // + }
 // +
-// + proc _S2a1FvE private ccc {
+// + proc _S2a1FvE.1 private ccc {
 // + entry:
-// +     call ccc void _S4exitFzE()
+// +     call ccc void exit()
 // +     unreachable
 // + }
 // +
-// + proc _S4exitFzE noreturn external ccc;
+// + proc exit noreturn external ccc;
 // +
-// + proc _S2a2FvE private ccc {
-// + entry:
-// +     unreachable
-// + }
-// +
-// + proc _S2a3FvE private ccc {
+// + proc _S2a2FvE.2 private ccc {
 // + entry:
 // +     unreachable
 // + }
 // +
-// + proc _S2a4FvE private ccc {
+// + proc _S2a3FvE.3 private ccc {
 // + entry:
-// +     call ccc void _S4exitFzE()
 // +     unreachable
 // + }
 // +
-// + proc _S4sinkFviE (i64) external ccc;
-// +
-// + proc _S2a5FvE private ccc {
+// + proc _S2a4FvE.4 private ccc {
 // + entry:
-// +     call ccc void _S4exitFzE()
+// +     call ccc void exit()
 // +     unreachable
 // + }
 // +
-// + proc _S7sink_lvFvx2iE (ptr dereferenceable 8) external ccc;
+// + proc sink (i64) external ccc;
+// +
+// + proc _S2a5FvE.5 private ccc {
+// + entry:
+// +     call ccc void exit()
+// +     unreachable
+// + }
+// +
+// + proc sink_lv (ptr dereferenceable 8) external ccc;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -64,41 +64,41 @@ proc a5 { sink_lv(exit()); }
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a1FvE() #0 {
-//L +   call void @_S4exitFzE()
+//L + define private void @_S2a1FvE.1() #0 {
+//L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @_S4exitFzE() #0
+//L + declare void @exit() #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a2FvE() #0 {
+//L + define private void @_S2a2FvE.2() #0 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a3FvE() #0 {
+//L + define private void @_S2a3FvE.3() #0 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a4FvE() #0 {
-//L +   call void @_S4exitFzE()
+//L + define private void @_S2a4FvE.4() #0 {
+//L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @_S4sinkFviE(i64) #0
+//L + declare void @sink(i64) #0
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a5FvE() #0 {
-//L +   call void @_S4exitFzE()
+//L + define private void @_S2a5FvE.5() #0 {
+//L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @_S7sink_lvFvx2iE(ptr dereferenceable(8)) #0
+//L + declare void @sink_lv(ptr dereferenceable(8)) #0
 //L +
 //L + attributes #0 = { nounwind }
 //L +

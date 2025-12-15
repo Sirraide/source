@@ -28,7 +28,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE (i64 %0) private ccc {
+// + proc _S4sinkFvxiE.1 (i64 %0) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -36,7 +36,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxI8E (i8 %0) private ccc {
+// + proc _S4sinkFvxI8E.2 (i8 %0) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -44,7 +44,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret
 // + }
 // +
-// + proc _S3expFvxixixI8xI8E (
+// + proc _S3expFvxixixI8xI8E.3 (
 // +     i64 %0,
 // +     i64 %1,
 // +     i8 %2,
@@ -63,19 +63,19 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     %4 = load i64, #0, align 8
 // +     %5 = load i64, #1, align 8
 // +     %6 = call ccc i64 _S$2**Fixix3iE(i64 %4, i64 %5)
-// +     call ccc void _S4sinkFvxiE(i64 %6)
+// +     call ccc void _S4sinkFvxiE.1(i64 %6)
 // +     %7 = load i64, #0, align 8
 // +     %8 = load i64, #1, align 8
 // +     %9 = call ccc i64 _S$2**Fixix3iE(i64 %7, i64 %8)
-// +     call ccc void _S4sinkFvxiE(i64 %9)
+// +     call ccc void _S4sinkFvxiE.1(i64 %9)
 // +     %10 = load i8, #2, align 1
 // +     %11 = load i8, #3, align 1
 // +     %12 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %10, i8 %11)
-// +     call ccc void _S4sinkFvxI8E(i8 %12)
+// +     call ccc void _S4sinkFvxI8E.2(i8 %12)
 // +     %13 = load i8, #2, align 1
 // +     %14 = load i8, #3, align 1
 // +     %15 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %13, i8 %14)
-// +     call ccc void _S4sinkFvxI8E(i8 %15)
+// +     call ccc void _S4sinkFvxI8E.2(i8 %15)
 // +     ret
 // + }
 // +
@@ -253,7 +253,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret i8 %53
 // + }
 // +
-// + proc _S7exp_assFvx3ixix3I8xI8E (
+// + proc _S7exp_assFvx3ixix3I8xI8E.4 (
 // +     i64 %0,
 // +     i64 %1,
 // +     i8 %2,

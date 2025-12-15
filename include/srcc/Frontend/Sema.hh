@@ -631,6 +631,9 @@ private:
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
+    /// Next mangling number to use for procedures.
+    ManglingNumber next_proc_mangling_number = ManglingNumber(1);
+
     /// Whether were are inside of an eval.
     bool inside_eval = false;
 
@@ -994,6 +997,9 @@ private:
         SLoc call_loc,
         u32 final_badness
     );
+
+    /// Whether a procedure requires a mangling number.
+    bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
 
     /// Substitute types in a procedure template.
     auto SubstituteTemplate(

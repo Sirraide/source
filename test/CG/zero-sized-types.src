@@ -29,12 +29,12 @@ interleaved2(2, void(), 3, void());
 
 // * proc __src_main external ccc {
 // + entry:
-// +     %0 = call ccc i64 _S12interleaved1FixivxivE(i64 2, i64 3)
-// +     %1 = call ccc i64 _S12interleaved2FiivivE(i64 2, i64 3)
+// +     %0 = call ccc i64 _S12interleaved1FixivxivE.8(i64 2, i64 3)
+// +     %1 = call ccc i64 _S12interleaved2FiivivE.9(i64 2, i64 3)
 // +     ret
 // + }
 // +
-// + proc _S12interleaved1FixivxivE (i64 %0, i64 %1) private ccc -> i64 {
+// + proc _S12interleaved1FixivxivE.8 (i64 %0, i64 %1) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -47,7 +47,7 @@ interleaved2(2, void(), 3, void());
 // +     ret i64 %4
 // + }
 // +
-// + proc _S12interleaved2FiivivE (i64 %0, i64 %1) private ccc -> i64 {
+// + proc _S12interleaved2FiivivE.9 (i64 %0, i64 %1) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -60,45 +60,45 @@ interleaved2(2, void(), 3, void());
 // +     ret i64 %4
 // + }
 // +
-// + proc _S1aFvvvE private ccc {
+// + proc _S1aFvvvE.1 private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1bFvE private ccc {
+// + proc _S1bFvE.2 private ccc {
 // + entry:
-// +     call ccc void _S1aFvvvE()
+// +     call ccc void _S1aFvvvE.1()
 // +     ret
 // + }
 // +
-// + proc _S1cFvE private ccc {
-// + entry:
-// +     ret
-// + }
-// +
-// + proc _S1hFvE private ccc {
+// + proc _S1cFvE.3 private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1iFvE private ccc {
+// + proc _S1hFvE.4 private ccc {
 // + entry:
-// +     call ccc void _S1hFvE()
 // +     ret
 // + }
 // +
-// + proc _S1jFvE private ccc {
+// + proc _S1iFvE.5 private ccc {
 // + entry:
-// +     call ccc void _S1hFvE()
+// +     call ccc void _S1hFvE.4()
 // +     ret
 // + }
 // +
-// + proc _S5callsFvE private ccc {
+// + proc _S1jFvE.6 private ccc {
 // + entry:
-// +     call ccc void _S1bFvE()
-// +     call ccc void _S1cFvE()
-// +     call ccc void _S1iFvE()
-// +     call ccc void _S1jFvE()
-// +     call ccc void _S1aFvvvE()
+// +     call ccc void _S1hFvE.4()
+// +     ret
+// + }
+// +
+// + proc _S5callsFvE.7 private ccc {
+// + entry:
+// +     call ccc void _S1bFvE.2()
+// +     call ccc void _S1cFvE.3()
+// +     call ccc void _S1iFvE.5()
+// +     call ccc void _S1jFvE.6()
+// +     call ccc void _S1aFvvvE.1()
 // +     ret
 // + }

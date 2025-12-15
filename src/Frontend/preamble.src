@@ -47,7 +47,7 @@ proc == (in $T a, in T b) __srcc_builtin_op__ -> bool {
 }
 
 // TODO: Make this 'inline'.
-proc __srcc_swap (inout $T a, inout $T b) {
+proc __srcc_swap (inout $T a, inout $T b) __srcc_no_mnum__ {
     T tmp = a;
     a = b;
     b = tmp;

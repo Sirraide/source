@@ -196,6 +196,7 @@ public:
                 auto mangling = Read(Mangling);
                 auto type = Read(Type);
                 auto name = Read(DeclName);
+                auto mnum = Read(ManglingNumber);
                 auto loc = Read(SLoc);
                 return ProcDecl::Create(
                     *S.tu,
@@ -205,6 +206,7 @@ public:
                     Linkage::Imported,
                     mangling,
                     nullptr,
+                    mnum,
                     loc
                 );
             }
@@ -504,7 +506,8 @@ auto TranslationUnit::serialise() -> ByteBuffer {
         if (auto proc = dyn_cast<ProcDecl>(d)) {
             Assert(not proc->parent, "Exporting local procedure?");
             w << K::ProcDecl << proc->mangling
-              << proc->type << proc->name << proc->location();
+              << proc->type << proc->name << proc->mangling_number
+              << proc->location();
             continue;
         }
 

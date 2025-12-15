@@ -24,9 +24,9 @@ sa >< sb;
 // +     store #1, i64 0, align 8
 // +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #0 dereferenceable 8)
 // +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #1 dereferenceable 8)
-// +     %0 = call ccc zeroext i1 _S1xFbE()
+// +     %0 = call ccc zeroext i1 x()
 // +     %1 = select %0, ptr #0, #1
-// +     %2 = call ccc zeroext i1 _S1xFbE()
+// +     %2 = call ccc zeroext i1 x()
 // +     %3 = select %2, ptr #1, #0
 // +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr %1 dereferenceable 8, ptr %3 dereferenceable 8)
 // +     store #2, ptr nil, align 8
@@ -52,7 +52,7 @@ sa >< sb;
 // +     ret
 // + }
 // +
-// + proc _S1xFbE external ccc -> i1 zeroext;
+// + proc x external ccc -> i1 zeroext;
 // +
 // + proc _S$11__srcc_swapFvx2Six2SiE (ptr %0 dereferenceable 16, ptr %1 dereferenceable 16) private ccc {
 // +     #0 = 16, align 8

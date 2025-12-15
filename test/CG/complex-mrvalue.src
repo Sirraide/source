@@ -32,7 +32,7 @@ proc d (in bool x) {
 // +     ret
 // + }
 // +
-// + proc _S1aFT1sE private ccc -> i64 {
+// + proc _S1aFT1sE.1 private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -43,7 +43,7 @@ proc d (in bool x) {
 // +     ret i64 %0
 // + }
 // +
-// + proc _S1bFT1sxbE (i1 %0 zeroext) private ccc -> i64 {
+// + proc _S1bFT1sxbE.2 (i1 %0 zeroext) private ccc -> i64 {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -81,7 +81,7 @@ proc d (in bool x) {
 // +     ret i64 %6
 // + }
 // +
-// + proc _S1cFT1sxbE (i1 %0 zeroext) private ccc -> i64 {
+// + proc _S1cFT1sxbE.3 (i1 %0 zeroext) private ccc -> i64 {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -98,7 +98,7 @@ proc d (in bool x) {
 // +     br bb3
 // +
 // + bb2:
-// +     %4 = call ccc i64 _S1aFT1sE()
+// +     %4 = call ccc i64 _S1aFT1sE.1()
 // +     store #1, i64 %4, align 8
 // +     br bb3
 // +
@@ -112,7 +112,7 @@ proc d (in bool x) {
 // +     br bb6
 // +
 // + bb5:
-// +     %7 = call ccc i64 _S1aFT1sE()
+// +     %7 = call ccc i64 _S1aFT1sE.1()
 // +     store #2, i64 %7, align 8
 // +     br bb6
 // +
@@ -121,7 +121,7 @@ proc d (in bool x) {
 // +     ret i64 %8
 // + }
 // +
-// + proc _S1dFvxbE (i1 %0 zeroext) private ccc {
+// + proc _S1dFvxbE.4 (i1 %0 zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -178,7 +178,7 @@ proc d (in bool x) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1aFT1sE() #0 {
+//L + define private i64 @_S1aFT1sE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -188,7 +188,7 @@ proc d (in bool x) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1bFT1sxbE(i1 zeroext %0) #0 {
+//L + define private i64 @_S1bFT1sxbE.2(i1 zeroext %0) #0 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -225,7 +225,7 @@ proc d (in bool x) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S1cFT1sxbE(i1 zeroext %0) #0 {
+//L + define private i64 @_S1cFT1sxbE.3(i1 zeroext %0) #0 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -240,7 +240,7 @@ proc d (in bool x) {
 //L +   br label %11
 //L +
 //L + 9:                                                ; preds = %1
-//L +   %10 = call i64 @_S1aFT1sE()
+//L +   %10 = call i64 @_S1aFT1sE.1()
 //L +   store i64 %10, ptr %3, align 8
 //L +   br label %11
 //L +
@@ -254,7 +254,7 @@ proc d (in bool x) {
 //L +   br label %17
 //L +
 //L + 15:                                               ; preds = %11
-//L +   %16 = call i64 @_S1aFT1sE()
+//L +   %16 = call i64 @_S1aFT1sE.1()
 //L +   store i64 %16, ptr %4, align 8
 //L +   br label %17
 //L +
@@ -264,7 +264,7 @@ proc d (in bool x) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1dFvxbE(i1 zeroext %0) #0 {
+//L + define private void @_S1dFvxbE.4(i1 zeroext %0) #0 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8

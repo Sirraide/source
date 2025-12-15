@@ -27,7 +27,7 @@ proc f (bool b) {
 // +     ret
 // + }
 // +
-// + proc _S1fFvbE (i1 %0 zeroext) private ccc {
+// + proc _S1fFvbE.1 (i1 %0 zeroext) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -38,11 +38,11 @@ proc f (bool b) {
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     call ccc void _S1xFviE(i64 1)
+// +     call ccc void x(i64 1)
 // +     br bb3
 // +
 // + bb2:
-// +     call ccc void _S1xFviE(i64 2)
+// +     call ccc void x(i64 2)
 // +     br bb3
 // +
 // + bb3:
@@ -51,15 +51,15 @@ proc f (bool b) {
 // +     br %5 to bb4 else bb5
 // +
 // + bb4:
-// +     call ccc void _S1xFviE(i64 3)
+// +     call ccc void x(i64 3)
 // +     br bb6
 // +
 // + bb5:
-// +     call ccc void _S1xFviE(i64 4)
+// +     call ccc void x(i64 4)
 // +     br bb6
 // +
 // + bb6:
 // +     ret
 // + }
 // +
-// + proc _S1xFviE (i64) external ccc;
+// + proc x (i64) external ccc;

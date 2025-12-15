@@ -108,6 +108,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
         Linkage::Exported,
         Mangling::None,
         nullptr,
+        ManglingNumber::None,
         {}
     );
 }
@@ -509,6 +510,7 @@ void Stmt::Printer::Print(Stmt* e) {
             if (p->linkage == Linkage::Imported or p->linkage == Linkage::Reexported) print(" imported");
             if (p->has_captures) print(" has_captures");
             if (p->introduces_captures) print(" introduces_captures");
+            if (+p->mangling_number) print(" %3(#{}%)", +p->mangling_number);
             print("\n");
             if (not print_procedure_bodies) return;
 
@@ -527,7 +529,9 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](ProcTemplateDecl* p) {
             PrintBasicHeader(p, "ProcTemplateDecl");
-            print(" %2({}%)\n", utils::Escape(p->name.str(), false, true));
+            print(" %2({}%)", utils::Escape(p->name.str(), false, true));
+            if (+p->mangling_number) print(" %3(#{}%)", +p->mangling_number);
+            print("\n");
             if (print_instantiations) PrintChildren<ProcDecl*>(p->instantiations());
         },
 

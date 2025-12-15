@@ -16,22 +16,22 @@ proc d = macros::NOT_CONSTEXPR;
 // +     ret
 // + }
 // +
-// + proc _S1aFI32E private ccc -> i32 {
+// + proc _S1aFI32E.1 private ccc -> i32 {
 // + entry:
 // +     ret i32 42
 // + }
 // +
-// + proc _S1bFI32E private ccc -> i32 {
+// + proc _S1bFI32E.2 private ccc -> i32 {
 // + entry:
 // +     ret i32 84
 // + }
 // +
-// + proc _S1cFI32E private ccc -> i32 {
+// + proc _S1cFI32E.3 private ccc -> i32 {
 // + entry:
 // +     ret i32 6
 // + }
 // +
-// + proc _S1dFRvE private ccc -> ptr {
+// + proc _S1dFRvE.4 private ccc -> ptr {
 // + entry:
 // +     %0 = load ptr, @__srcc_expanded_macro_0, align 8
 // +     ret ptr %0
@@ -50,22 +50,22 @@ proc d = macros::NOT_CONSTEXPR;
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1aFI32E() #0 {
+//L + define private i32 @_S1aFI32E.1() #0 {
 //L +   ret i32 42
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1bFI32E() #0 {
+//L + define private i32 @_S1bFI32E.2() #0 {
 //L +   ret i32 84
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1cFI32E() #0 {
+//L + define private i32 @_S1cFI32E.3() #0 {
 //L +   ret i32 6
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S1dFRvE() #0 {
+//L + define private ptr @_S1dFRvE.4() #0 {
 //L +   %1 = load ptr, ptr @__srcc_expanded_macro_0, align 8
 //L +   ret ptr %1
 //L + }

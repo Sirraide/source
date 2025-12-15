@@ -862,6 +862,9 @@ struct CodeGen::Mangler {
 
         Append(proc->name.str());
         Append(proc->type);
+
+        if (proc->mangling_number != ManglingNumber::None)
+            Format(name, ".{}", +proc->mangling_number);
     }
 
     void Append(StringRef s);

@@ -37,7 +37,7 @@ proc c {
 // +     ret
 // + }
 // +
-// + proc _S1aFvE private ccc {
+// + proc _S1aFvE.1 private ccc {
 // +     #0 = 32, align 8
 // +     #1 = 56, align 8
 // +     #2 = 1600, align 8
@@ -94,7 +94,7 @@ proc c {
 // +     ret
 // + }
 // +
-// + proc _S1bFvE private ccc {
+// + proc _S1bFvE.2 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -154,7 +154,7 @@ proc c {
 // +     ret
 // + }
 // +
-// + proc _S1cFvE private ccc {
+// + proc _S1cFvE.3 private ccc {
 // +     #0 = 80, align 8
 // +     #1 = 400, align 2
 // +

@@ -21,9 +21,9 @@ x(&a2);
 // +     set ptr #1, i8 0, i64 128
 // +     store #2, ptr #0, align 8
 // +     store #3, ptr #1, align 8
-// +     call ccc void _S1xFvRiE(ptr #0)
-// +     call ccc void _S1xFvRiE(ptr #1)
+// +     call ccc void x(ptr #0)
+// +     call ccc void x(ptr #1)
 // +     ret
 // + }
 // +
-// + proc _S1xFvRiE (ptr) external ccc;
+// + proc x (ptr) external ccc;

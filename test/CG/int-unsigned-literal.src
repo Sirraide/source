@@ -15,37 +15,37 @@ proc f7 -> i16 = 65534;
 // +     ret
 // + }
 // +
-// + proc _S2f1FI8E private ccc -> i8 {
+// + proc _S2f1FI8E.1 private ccc -> i8 {
 // + entry:
 // +     ret i8 -128
 // + }
 // +
-// + proc _S2f2FI8E private ccc -> i8 {
+// + proc _S2f2FI8E.2 private ccc -> i8 {
 // + entry:
 // +     ret i8 -128
 // + }
 // +
-// + proc _S2f3FI8E private ccc -> i8 {
+// + proc _S2f3FI8E.3 private ccc -> i8 {
 // + entry:
 // +     ret i8 -1
 // + }
 // +
-// + proc _S2f4FI8E private ccc -> i8 {
+// + proc _S2f4FI8E.4 private ccc -> i8 {
 // + entry:
 // +     ret i8 -2
 // + }
 // +
-// + proc _S2f5FI16E private ccc -> i16 {
+// + proc _S2f5FI16E.5 private ccc -> i16 {
 // + entry:
 // +     ret i16 -32768
 // + }
 // +
-// + proc _S2f6FI16E private ccc -> i16 {
+// + proc _S2f6FI16E.6 private ccc -> i16 {
 // + entry:
 // +     ret i16 -1
 // + }
 // +
-// + proc _S2f7FI16E private ccc -> i16 {
+// + proc _S2f7FI16E.7 private ccc -> i16 {
 // + entry:
 // +     ret i16 -2
 // + }
@@ -61,37 +61,37 @@ proc f7 -> i16 = 65534;
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f1FI8E() #0 {
+//L + define private i8 @_S2f1FI8E.1() #0 {
 //L +   ret i8 -128
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f2FI8E() #0 {
+//L + define private i8 @_S2f2FI8E.2() #0 {
 //L +   ret i8 -128
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f3FI8E() #0 {
+//L + define private i8 @_S2f3FI8E.3() #0 {
 //L +   ret i8 -1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f4FI8E() #0 {
+//L + define private i8 @_S2f4FI8E.4() #0 {
 //L +   ret i8 -2
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f5FI16E() #0 {
+//L + define private i16 @_S2f5FI16E.5() #0 {
 //L +   ret i16 -32768
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f6FI16E() #0 {
+//L + define private i16 @_S2f6FI16E.6() #0 {
 //L +   ret i16 -1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f7FI16E() #0 {
+//L + define private i16 @_S2f7FI16E.7() #0 {
 //L +   ret i16 -2
 //L + }
 //L +

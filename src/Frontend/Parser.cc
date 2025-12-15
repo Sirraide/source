@@ -1595,7 +1595,8 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
         ParseAttr(sig.attrs.native, "native") or
         ParseAttr(sig.attrs.nomangle, "nomangle") or
         ParseAttr(sig.attrs.c_varargs, "varargs") or
-        ParseAttr(sig.attrs.builtin_operator, "__srcc_builtin_op__")
+        ParseAttr(sig.attrs.builtin_operator, "__srcc_builtin_op__") or
+        ParseAttr(sig.attrs.no_mangling_number, "__srcc_no_mnum__")
     );
 
     // Parse return type.

@@ -420,9 +420,10 @@ ProcDecl::ProcDecl(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
+    ManglingNumber mnum,
     SLoc location
 ) : ObjectDecl{Kind::ProcDecl, owner, imported_from_module, type, name, linkage, mangling, location},
-    parent{parent} {
+    parent{parent}, mangling_number{mnum} {
     owner->procs.push_back(this);
 }
 
@@ -434,6 +435,7 @@ auto ProcDecl::Create(
     Linkage linkage,
     Mangling mangling,
     Ptr<ProcDecl> parent,
+    ManglingNumber mnum,
     SLoc location
 ) -> ProcDecl* {
     return new (tu) ProcDecl{
@@ -444,6 +446,7 @@ auto ProcDecl::Create(
         linkage,
         mangling,
         parent,
+        mnum,
         location,
     };
 }
@@ -469,22 +472,25 @@ ProcTemplateDecl::ProcTemplateDecl(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,
     Ptr<ProcDecl> parent,
+    ManglingNumber mnum,
     bool has_variadic_param,
     SLoc location
 ) : Decl{Kind::ProcTemplateDecl, pattern->name, location},
     owner(&tu), parent{parent}, pattern{pattern},
-    has_variadic_param{has_variadic_param} {}
+    has_variadic_param{has_variadic_param}, mangling_number{mnum} {}
 
 auto ProcTemplateDecl::Create(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,
     Ptr<ProcDecl> parent,
+    ManglingNumber mnum,
     bool has_variadic_param
 ) -> ProcTemplateDecl* {
     return new (tu) ProcTemplateDecl{
         tu,
         pattern,
         parent,
+        mnum,
         has_variadic_param,
         pattern->loc,
     };
