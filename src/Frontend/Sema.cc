@@ -656,6 +656,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
 
         case K::MaterialiseTemporary: return MaterialiseTemporary(e);
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
+        case K::NilToPointer: return Cast(CastExpr::NilToPointer);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
         case K::RangeCast: return Cast(CastExpr::Range);
@@ -739,6 +740,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
         case K::NilToOptional:
+        case K::NilToPointer:
         case K::OptionalUnwrap:
         case K::OptionalWrap:
         case K::RangeCast:
@@ -915,8 +917,13 @@ auto Sema::BuildSliceInitialiser(
         return {};
     }
 
-    // If we have 2 arguments, try initialisation from pointer + size.
-    if (args.size() == 2) {
+    // If we have 2 arguments, and the first is a pointer and the second is
+    // an integer, try initialisation from pointer + size.
+    //
+    // FIXME: This conversion should probably be 'unsafe' and a function (or hard cast!),
+    // especially since it may sometimes be unclear whether we want to do this or construct
+    // a slice with two elements...
+    if (args.size() == 2 and isa<PtrType>(args[0]->type) and args[1]->type->is_integer()) {
         auto ptr_seq = BuildConversionSequence(PtrType::Get(*tu, s->elem()), args[0], loc);
         auto size_seq = BuildConversionSequence(Type::IntTy, args[1], loc);
         if (ptr_seq and size_seq) {
@@ -1126,6 +1133,12 @@ auto Sema::BuildConversionSequence(
 
     switch (var_type->kind()) {
         case TypeBase::Kind::PtrType: {
+            // 'nil' converts to any pointer type.
+            if (a->type == Type::NilTy) {
+                seq.add(Conversion::NilToPointer(var_type));
+                return seq;
+            }
+
             // Allow implicitly converting string literals to C string.
             if (isa<StrLitExpr>(a) and var_type == tu->I8PtrTy) {
                 seq.add(Conversion::StrLitToCStr());
@@ -1582,6 +1595,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::IntegralCast:
             case K::MaterialisePoison:
             case K::NilToOptional:
+            case K::NilToPointer:
             case K::OptionalUnwrap:
             case K::OptionalWrap:
             case K::RangeCast:
@@ -4797,7 +4811,7 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
 auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Type {
     auto elem = TranslateType(parsed->elem);
     if (not CheckVariableType(elem, parsed->loc)) return Type();
-    if (elem == Type::NilTy) return Error(parsed->loc, "Element type of optional cannot be '%1(()%)'");
+    if (elem == Type::NilTy) return Error(parsed->loc, "Element type of optional cannot be '%1(nil%)'");
     return OptionalType::Get(*tu, elem);
 }
 

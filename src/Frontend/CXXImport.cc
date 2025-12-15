@@ -609,7 +609,7 @@ auto Sema::LookUpCXXName(
     }
 
     // Macro expanded to nothing.
-    if (toks.empty()) return LookupResult::FailedToImport(names.back());
+    if (toks.size() == 1) return LookupResult::FailedToImport(names.back());
 
     // If it is a single identifier, just look up that name.
     if (
@@ -647,13 +647,13 @@ auto Sema::LookUpCXXName(
         StringRef(expansion.getLiteralData(), expansion.getLength()).drop_front().drop_back()
     );
 
-    auto clang_tu = ParseCXX(code);
-    if (not clang_tu or clang_tu->getSema().hasUncompilableErrorOccurred())
+    auto macro_tu = ParseCXX(code);
+    if (not macro_tu or macro_tu->getSema().hasUncompilableErrorOccurred())
         return LookupResult::FailedToImport(names.back());
 
     // Take care to retrieve the II in the preprocessor of the new TU.
-    clang::DeclarationName expanded_name{clang_tu->getPreprocessor().getIdentifierInfo(name)};
-    auto res = clang_tu->getASTContext().getTranslationUnitDecl()->lookup(expanded_name);
+    clang::DeclarationName expanded_name{macro_tu->getPreprocessor().getIdentifierInfo(name)};
+    auto res = macro_tu->getASTContext().getTranslationUnitDecl()->lookup(expanded_name);
     if (not res.isSingleResult() or res.front()->isInvalidDecl())
         return LookupResult::FailedToImport(names.back());
 
@@ -671,7 +671,7 @@ auto Sema::LookUpCXXName(
     // The importer requires a module, so fabricate one for this.
     auto fake_module = ImportedClangModuleDecl::Create(
         *tu,
-        *clang_tu,
+        *macro_tu,
         "__srcc_macro_expansion__",
         {},
         SLoc()
@@ -682,7 +682,7 @@ auto Sema::LookUpCXXName(
     if (
         not var->getInit()->EvaluateAsInitializer(
             init_val,
-            clang_tu->getASTContext(),
+            macro_tu->getASTContext(),
             var,
             diags,
             false
@@ -696,20 +696,20 @@ auto Sema::LookUpCXXName(
         // Emit it.
         defer { generated_cxx_macro_decls++; };
         std::unique_ptr<clang::CodeGenerator> cg{clang::CreateLLVMCodeGen(
-            clang_tu->getDiagnostics(),
+            macro_tu->getDiagnostics(),
             fake_module->name.str(),
-            clang_tu->getVirtualFileSystemPtr(),
-            clang_tu->getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
-            clang_tu->getPreprocessor().getPreprocessorOpts(),
-            clang_tu->getCodeGenOpts(),
+            macro_tu->getVirtualFileSystemPtr(),
+            macro_tu->getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
+            macro_tu->getPreprocessor().getPreprocessorOpts(),
+            macro_tu->getCodeGenOpts(),
             tu->llvm_context
         )};
 
         // I need to fix this API at some point, because the fact that you have to
         // *remember* to call Initialize() is... not great.
-        cg->Initialize(clang_tu->getASTContext());
+        cg->Initialize(macro_tu->getASTContext());
         cg->HandleTopLevelDecl(clang::DeclGroupRef(var));
-        cg->HandleTranslationUnit(clang_tu->getASTContext());
+        cg->HandleTranslationUnit(macro_tu->getASTContext());
         if (not cg->GetModule()) return LookupResult::FailedToImport(names.back());
         tu->link_llvm_modules.emplace_back(cg->ReleaseModule());
 
@@ -728,6 +728,8 @@ auto Sema::LookUpCXXName(
         return LookupResult::Success(g);
     }
 
+    // Ok, we managed to constant-evaluate the initialiser; convert
+    // it to an RValue.
     eval::RValue val;
     {
         Importer i{*this, fake_module};

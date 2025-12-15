@@ -1028,13 +1028,17 @@ bool Eval::EvalLoop() {
             Unreachable();
         }
 
-        // We currently only emit a 'ne' for 'for' loops involving arrays.
         // FIXME: Introduce our own CMP instruction that supports both integers and pointers.
         if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(i)) {
-            Assert(cmp.getPredicate() == mlir::LLVM::ICmpPredicate::ne);
-            auto lhs = Val(cmp.getLhs());
-            auto rhs = Val(cmp.getRhs());
-            Temp(cmp) = SRValue(lhs.cast<Pointer>() != rhs.cast<Pointer>());
+            Assert(
+                cmp.getPredicate() == mlir::LLVM::ICmpPredicate::ne or
+                cmp.getPredicate() == mlir::LLVM::ICmpPredicate::eq
+            );
+            auto lhs = Val(cmp.getLhs()).cast<Pointer>();
+            auto rhs = Val(cmp.getRhs()).cast<Pointer>();
+            auto eq = cmp.getPredicate() == mlir::LLVM::ICmpPredicate::eq;
+            if (eq) Temp(cmp) = SRValue(lhs == rhs);
+            else Temp(cmp) = SRValue(lhs != rhs);
             continue;
         }
 

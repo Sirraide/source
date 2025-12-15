@@ -1,0 +1,43 @@
+// V %srcc --sema --verify %s
+program test;
+
+
+
+proc a -> i8^ = nil;
+proc b -> i8^ = nil;
+
+#assert a() == b();
+#assert a() != b(); // expected-error: Assertion failed: 'a() != b()'
+
+eval {
+    int a;
+    int b;
+    assert &a == &a;
+    assert &b == &b;
+    assert &a != &b;
+    assert &b != &a;
+}
+
+eval {
+    int a;
+    int b;
+    assert &a == &b; // expected-error: Assertion failed: '&a == &b'
+}
+
+eval {
+    int a;
+    int b;
+    assert &a != &a; // expected-error: Assertion failed: '&a != &a'
+}
+
+eval {
+    int a;
+    int b;
+    assert &a != nil;
+    assert &b != nil;
+}
+
+eval {
+    int a;
+    assert &a == nil; // expected-error: Assertion failed: '&a == nil'
+}

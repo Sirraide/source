@@ -1,0 +1,89 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc x (int) = nil;
+
+proc p1 {
+    i8? a = nil;
+    i8[]? a = nil;
+    bool? a = nil;
+    int^ a = nil;
+    void^ a = nil;
+    i8[]^^^^ a = nil;
+}
+
+proc p2 {
+    i8? a = x(1);
+    i8[]? a = x(2);
+    bool? a = x(3);
+    int^ a = x(4);
+    void^ a = x(5);
+    i8[]^^^^ a = x(6);
+}
+
+// * proc __src_main external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1xFniE (i64 %0) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc _S2p1FvE private ccc {
+// +     #0 = 2, align 1
+// +     #1 = 17, align 8
+// +     #2 = 2, align 1
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +     #5 = 8, align 8
+// +
+// + entry:
+// +     %0 = ptradd #0, 1
+// +     store %0, i8 0, align 1
+// +     disengage #0
+// +     %1 = ptradd #1, 16
+// +     store %1, i8 0, align 1
+// +     disengage #1
+// +     %2 = ptradd #2, 1
+// +     store %2, i8 0, align 1
+// +     disengage #2
+// +     store #3, ptr nil, align 8
+// +     store #4, ptr nil, align 8
+// +     store #5, ptr nil, align 8
+// +     ret
+// + }
+// +
+// + proc _S2p2FvE private ccc {
+// +     #0 = 2, align 1
+// +     #1 = 17, align 8
+// +     #2 = 2, align 1
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +     #5 = 8, align 8
+// +
+// + entry:
+// +     call ccc void _S1xFniE(i64 1)
+// +     %0 = ptradd #0, 1
+// +     store %0, i8 0, align 1
+// +     disengage #0
+// +     call ccc void _S1xFniE(i64 2)
+// +     %1 = ptradd #1, 16
+// +     store %1, i8 0, align 1
+// +     disengage #1
+// +     call ccc void _S1xFniE(i64 3)
+// +     %2 = ptradd #2, 1
+// +     store %2, i8 0, align 1
+// +     disengage #2
+// +     call ccc void _S1xFniE(i64 4)
+// +     store #3, ptr nil, align 8
+// +     call ccc void _S1xFniE(i64 5)
+// +     store #4, ptr nil, align 8
+// +     call ccc void _S1xFniE(i64 6)
+// +     store #5, ptr nil, align 8
+// +     ret
+// + }

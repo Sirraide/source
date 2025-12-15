@@ -496,6 +496,9 @@ public:
         /// optional.
         NilToOptional,
 
+        /// As 'NilToOptional', but produces a null pointer instead.
+        NilToPointer,
+
         /// Given an lvalue optional, yield an lvalue to the value.
         OptionalUnwrap,
 

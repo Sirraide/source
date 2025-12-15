@@ -1589,6 +1589,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
 
         case Tk::EqEq:
             if (type == Type::TypeTy) return ir::TypeEqOp::create(*this, loc, lhs, rhs);
+            if (isa<PtrType>(type)) return createOrFold<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, lhs, rhs);
             return CreateICmp(loc, arith::CmpIPredicate::eq, lhs, rhs);
 
         case Tk::Neq:
@@ -1597,6 +1598,7 @@ auto CodeGen::EmitArithmeticOrComparisonOperator(Tk op, Type type, Value lhs, Va
                 return createOrFold<arith::XOrIOp>(loc, eq, CreateBool(loc, true));
             }
 
+            if (isa<PtrType>(type)) return createOrFold<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, lhs, rhs);
             return CreateICmp(loc, arith::CmpIPredicate::ne, lhs, rhs);
 
         // Arithmetic operators that wrap or can’t overflow.
@@ -2026,6 +2028,10 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 
         case CastExpr::NilToOptional:
             return EmitDefaultInit(expr->type, C(expr->location()));
+
+        case CastExpr::NilToPointer:
+            Assert(isa<PtrType>(expr->type));
+            return CreateNullPointer(C(expr->location()));
 
         case CastExpr::OptionalUnwrap: {
             Assert(expr->is_lvalue());

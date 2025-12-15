@@ -1,0 +1,86 @@
+// R      %srcc --ir   --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc a -> bool {
+    int^ x = nil;
+    int^ y = nil;
+    return x == y;
+}
+
+proc b -> bool {
+    int^ x = nil;
+    int^ y = nil;
+    return x != y;
+}
+
+// * proc __src_main external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1aFbE private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr nil, align 8
+// +     store #1, ptr nil, align 8
+// +     %0 = load ptr, #0, align 8
+// +     %1 = load ptr, #1, align 8
+// +     %2 = cmp eq ptr %0, %1
+// +     ret i1 %2
+// + }
+// +
+// + proc _S1bFbE private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr nil, align 8
+// +     store #1, ptr nil, align 8
+// +     %0 = load ptr, #0, align 8
+// +     %1 = load ptr, #1, align 8
+// +     %2 = cmp ne ptr %0, %1
+// +     ret i1 %2
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + ; Function Attrs: nounwind
+//L + define void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1aFbE() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store ptr null, ptr %1, align 8
+//L +   store ptr null, ptr %2, align 8
+//L +   %3 = load ptr, ptr %1, align 8
+//L +   %4 = load ptr, ptr %2, align 8
+//L +   %5 = icmp eq ptr %3, %4
+//L +   ret i1 %5
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1bFbE() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store ptr null, ptr %1, align 8
+//L +   store ptr null, ptr %2, align 8
+//L +   %3 = load ptr, ptr %1, align 8
+//L +   %4 = load ptr, ptr %2, align 8
+//L +   %5 = icmp ne ptr %3, %4
+//L +   ret i1 %5
+//L + }
+//L +
+//L + attributes #0 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

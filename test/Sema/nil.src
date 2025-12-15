@@ -1,0 +1,22 @@
+// V %srcc --sema --verify %s
+program test;
+
+int^ x = nil;
+void^ x = nil;
+i8[]^^^^ x = nil;
+
+int? x = nil;
+void? x = nil;
+i8[]? x = nil;
+
+nil? x; // expected-error: Element type of optional cannot be 'nil'
+nil? x = nil; // expected-error: Element type of optional cannot be 'nil'
+
+int x = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
+i8[] x = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
+void x = nil; // expected-error: Cannot convert expression of type 'nil' to 'void'
+bool x = nil; // expected-error: Cannot convert expression of type 'nil' to 'bool'
+i8 x = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
+int[4] x = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
+type x = nil; // expected-error: Cannot convert expression of type 'nil' to 'type'
+tree x = nil; // expected-error: Cannot convert expression of type 'nil' to 'tree'
