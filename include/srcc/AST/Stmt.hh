@@ -507,7 +507,9 @@ public:
         /// optional.
         NilToOptional,
 
-        /// As 'NilToOptional', but produces a null pointer instead.
+        // FIXME: I’m not sure how tired I was when I added this abomination
+        // of a ‘feature’, but it was never supposed to be a thing because
+        // POINTERS ARE NOT NULLABLE!!! THAT’S WHAT OPTIONAL POINTERS ARE FOR!!!
         NilToPointer,
 
         /// Given an lvalue optional, yield an lvalue to the value.
