@@ -6,7 +6,9 @@
 #include <llvm/MC/MCContext.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Object/ArchiveWriter.h>
+#include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Support/CodeGen.h>
 #include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/Program.h>
 #include <llvm/Support/raw_ostream.h>
@@ -46,12 +48,23 @@ void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm:
     PTO.MergeFunctions = +machine.getOptLevel() >= 2;
     llvm::PassBuilder PB(&machine, PTO);
 
+    auto opt_level = [&]{
+        switch (machine.getOptLevel()) {
+            case llvm::CodeGenOptLevel::None: return llvm::OptimizationLevel::O0;
+            case llvm::CodeGenOptLevel::Less: return llvm::OptimizationLevel::O1;
+            case llvm::CodeGenOptLevel::Default: return llvm::OptimizationLevel::O2;
+            case llvm::CodeGenOptLevel::Aggressive: return llvm::OptimizationLevel::O3;
+        }
+        Unreachable();
+    }();
+
     PB.registerModuleAnalyses(MAM);
     PB.registerCGSCCAnalyses(CGAM);
     PB.registerFunctionAnalyses(FAM);
     PB.registerLoopAnalyses(LAM);
     PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
     MPM.addPass(llvm::VerifierPass());
+    MPM.addPass(PB.buildPerModuleDefaultPipeline(opt_level));
     MPM.run(m, MAM);
 }
 

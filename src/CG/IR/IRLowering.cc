@@ -284,6 +284,9 @@ LOWERING(ProcOp, {
     // We don’t support exception handling.
     func.setNoUnwind(true);
 
+    // Propagate 'inline'.
+    func.setAlwaysInline(op.getAlwaysInline());
+
     // Preserve argument and return value attributes.
     PropagateArgAndResultAttrs(func, op);
 
@@ -724,7 +727,6 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
 
     return false;
 }
-
 
 bool CodeGen::finalise() {
     mlir::PassManager pm{&mlir};

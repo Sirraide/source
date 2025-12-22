@@ -276,7 +276,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret
 // + }
 // +
-// + proc _S$3**=FRix2ixiE (ptr %0 dereferenceable 8, i64 %1) private ccc -> ptr {
+// + proc _S$3**=FRix2ixiE (ptr %0 dereferenceable 8, i64 %1) inline private ccc -> ptr {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -288,7 +288,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret ptr %0
 // + }
 // +
-// + proc _S$3**=FRI8x2I8xI8E (ptr %0 dereferenceable 1, i8 %1) private ccc -> ptr {
+// + proc _S$3**=FRI8x2I8xI8E (ptr %0 dereferenceable 1, i8 %1) inline private ccc -> ptr {
 // +     #0 = 1, align 1
 // +
 // + entry:

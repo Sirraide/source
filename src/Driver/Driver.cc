@@ -276,8 +276,11 @@ int Driver::run_job() {
     auto ir_module = cg.emit_llvm(*machine);
     if (ctx.diags().has_error()) return 1;
 
-    // Run the optimiser before potentially dumping the module.
-    if (opts.opt_level) cg.optimise(*machine, *tu, *ir_module);
+    // Always run the optimiser before potentially dumping the module.
+    //
+    // We do this even at -O0 since there are some mandatory passes (e.g.
+    // to process 'inline' functions).
+    cg.optimise(*machine, *tu, *ir_module);
 
     // Emit LLVM IR.
     if (a == Action::EmitLLVM) {
