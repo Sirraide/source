@@ -1944,6 +1944,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
         C(proc->cconv()),
         info.func,
         proc->has_c_varargs(),
+        expr->is_inline,
         info.args,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)

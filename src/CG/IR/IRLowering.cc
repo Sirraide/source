@@ -112,6 +112,7 @@ auto LowerOverflowOp(auto op, auto& a, mlir::ConversionPatternRewriter& r) -> Sm
 }
 
 static void PropagateArgAndResultAttrs(auto func_or_call, auto op) {
+    func_or_call.setAlwaysInline(op.getAlwaysInline());
     func_or_call.setArgAttrsAttr(op.getArgAttrsAttr());
     if (auto attrs = op.getCallResultAttrs(0))
         func_or_call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
@@ -283,9 +284,6 @@ LOWERING(ProcOp, {
 
     // We don’t support exception handling.
     func.setNoUnwind(true);
-
-    // Propagate 'inline'.
-    func.setAlwaysInline(op.getAlwaysInline());
 
     // Preserve argument and return value attributes.
     PropagateArgAndResultAttrs(func, op);

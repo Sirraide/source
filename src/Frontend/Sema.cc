@@ -3688,6 +3688,19 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
             return Build(ptr->elem(), Expr::LValue);
         }
 
+        // Procedure call inlining.
+        case Tk::Inline: {
+            if (auto call = dyn_cast<CallExpr>(operand->ignore_parens())) {
+                call->is_inline = true;
+            } else if (isa<BuiltinCallExpr>(operand->ignore_parens())) {
+                Error(operand->location(), "Call to builtin procedure cannot be '%1(inline%)'");
+            } else {
+                Error(operand->location(), "Argument of '%1(inline%)' must be a procedure call");
+            }
+
+            return operand;
+        }
+
         // Boolean negation.
         case Tk::Not: {
             if (not MakeRValue(Type::BoolTy, operand, "Operand", "not")) return {};

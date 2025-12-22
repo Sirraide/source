@@ -457,6 +457,7 @@ class srcc::CallExpr final : public Expr
 
 public:
     Expr* callee;
+    bool is_inline = false;
 
 private:
     const u32 num_args;

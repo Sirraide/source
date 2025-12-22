@@ -252,6 +252,7 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
         CConv:$cc,
         TypeAttrOf<FunctionType>:$proc_type,
         UnitAttr:$variadic,
+        UnitAttr:$always_inline,
         Variadic<SRCC_AnyType>:$args,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$result_attrs
@@ -273,6 +274,7 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
                 proc.getCc(),
                 proc.getFunctionType(),
                 proc.getVariadic(),
+                false,
                 args,
                 {},
                 {}

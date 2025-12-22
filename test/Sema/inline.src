@@ -1,0 +1,10 @@
+// V %srcc --sema --verify %s
+program test;
+
+
+proc a = 42;
+int x = inline a();
+inline 3; // expected-error: Argument of 'inline' must be a procedure call
+inline int(); // expected-error: Argument of 'inline' must be a procedure call
+inline ""; // expected-error: Argument of 'inline' must be a procedure call
+inline __srcc_unreachable(); // expected-error: Call to builtin procedure cannot be 'inline'

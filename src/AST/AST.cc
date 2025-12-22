@@ -290,7 +290,10 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](CallExpr* c) {
-            PrintBasicNode(e, "CallExpr");
+            PrintBasicNode(e, "CallExpr", [&] {
+                if (c->is_inline) print("inline");
+            });
+
             SmallVector<Stmt*, 10> fields;
             if (c->callee) fields.push_back(c->callee);
             if (auto a = c->args(); not a.empty()) fields.append(a.begin(), a.end());

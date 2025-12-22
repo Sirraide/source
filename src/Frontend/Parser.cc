@@ -174,12 +174,13 @@ constexpr bool IsPrefix(Tk t) {
     switch (t) {
         case Tk::Ampersand:
         case Tk::Caret:
+        case Tk::Inline:
         case Tk::Minus:
-        case Tk::Plus:
-        case Tk::Not:
-        case Tk::Tilde:
         case Tk::MinusMinus:
+        case Tk::Not:
+        case Tk::Plus:
         case Tk::PlusPlus:
+        case Tk::Tilde:
             return true;
 
         default:
@@ -261,6 +262,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Hash:
         case Tk::Identifier:
         case Tk::If:
+        case Tk::Inline:
         case Tk::Int:
         case Tk::IntegerType:
         case Tk::Integer:

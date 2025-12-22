@@ -104,7 +104,7 @@
 <expr-postfix>    ::= <expr> ( "++" | "--" )
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
-<prefix> ::= "-" | "+" | NOT | "~" | "&" | "^"
+<prefix> ::= "-" | "+" | NOT | "~" | "&" | "^" | INLINE
 <if-expr-body> ::= [ THEN ] <expr>
 <binary> ::= // TODO: list all binary operators here.
 
