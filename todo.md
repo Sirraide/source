@@ -1,7 +1,3 @@
-FIXME: Yeet nil -> pointer conversion. I’m not sure how tired I was when I added this
-abomination of a ‘feature’, but it was never supposed to be a thing because POINTERS ARE
-NOT NULLABLE!!! THAT’S WHAT OPTIONAL POINTERS ARE FOR!!!
-
 - Require `({})` for block expressions; they’re rare, so it shouldn’t be
   an issue (and it resolves the `match {` and `{} a` weirdness.
 - Heterogeneous Ranges

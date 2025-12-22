@@ -3,14 +3,16 @@
 program test;
 
 proc a -> bool {
-    int^ x = nil;
-    int^ y = nil;
+    int q;
+    int^ x = &q;
+    int^ y = &q;
     return x == y;
 }
 
 proc b -> bool {
-    int^ x = nil;
-    int^ y = nil;
+    int q;
+    int^ x = &q;
+    int^ y = &q;
     return x != y;
 }
 
@@ -22,12 +24,14 @@ proc b -> bool {
 // + proc _S1aFbE.1 private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
+// +     #2 = 8, align 8
 // +
 // + entry:
-// +     store #0, ptr nil, align 8
-// +     store #1, ptr nil, align 8
-// +     %0 = load ptr, #0, align 8
-// +     %1 = load ptr, #1, align 8
+// +     store #0, i64 0, align 8
+// +     store #1, ptr #0, align 8
+// +     store #2, ptr #0, align 8
+// +     %0 = load ptr, #1, align 8
+// +     %1 = load ptr, #2, align 8
 // +     %2 = cmp eq ptr %0, %1
 // +     ret i1 %2
 // + }
@@ -35,12 +39,14 @@ proc b -> bool {
 // + proc _S1bFbE.2 private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
+// +     #2 = 8, align 8
 // +
 // + entry:
-// +     store #0, ptr nil, align 8
-// +     store #1, ptr nil, align 8
-// +     %0 = load ptr, #0, align 8
-// +     %1 = load ptr, #1, align 8
+// +     store #0, i64 0, align 8
+// +     store #1, ptr #0, align 8
+// +     store #2, ptr #0, align 8
+// +     %0 = load ptr, #1, align 8
+// +     %1 = load ptr, #2, align 8
 // +     %2 = cmp ne ptr %0, %1
 // +     ret i1 %2
 // + }
@@ -59,24 +65,28 @@ proc b -> bool {
 //L + define private zeroext i1 @_S1aFbE.1() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
-//L +   store ptr null, ptr %1, align 8
-//L +   store ptr null, ptr %2, align 8
-//L +   %3 = load ptr, ptr %1, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store ptr %1, ptr %2, align 8
+//L +   store ptr %1, ptr %3, align 8
 //L +   %4 = load ptr, ptr %2, align 8
-//L +   %5 = icmp eq ptr %3, %4
-//L +   ret i1 %5
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp eq ptr %4, %5
+//L +   ret i1 %6
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private zeroext i1 @_S1bFbE.2() #0 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
-//L +   store ptr null, ptr %1, align 8
-//L +   store ptr null, ptr %2, align 8
-//L +   %3 = load ptr, ptr %1, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store ptr %1, ptr %2, align 8
+//L +   store ptr %1, ptr %3, align 8
 //L +   %4 = load ptr, ptr %2, align 8
-//L +   %5 = icmp ne ptr %3, %4
-//L +   ret i1 %5
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp ne ptr %4, %5
+//L +   ret i1 %6
 //L + }
 //L +
 //L + attributes #0 = { nounwind }

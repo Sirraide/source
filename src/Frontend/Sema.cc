@@ -671,7 +671,6 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
 
         case K::MaterialiseTemporary: return MaterialiseTemporary(e);
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
-        case K::NilToPointer: return Cast(CastExpr::NilToPointer);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
         case K::RangeCast: return Cast(CastExpr::Range);
@@ -755,7 +754,6 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
         case K::NilToOptional:
-        case K::NilToPointer:
         case K::OptionalUnwrap:
         case K::OptionalWrap:
         case K::RangeCast:
@@ -1147,13 +1145,9 @@ auto Sema::BuildConversionSequence(
     };
 
     switch (var_type->kind()) {
+        // Note: 'nil' does NOT convert to pointer types since pointers
+        // are not nullable! That’s what optional pointers are for.
         case TypeBase::Kind::PtrType: {
-            // 'nil' converts to any pointer type.
-            if (a->type == Type::NilTy) {
-                seq.add(Conversion::NilToPointer(var_type));
-                return seq;
-            }
-
             // Allow implicitly converting string literals to C string.
             if (isa<StrLitExpr>(a) and var_type == tu->I8PtrTy) {
                 seq.add(Conversion::StrLitToCStr());
@@ -1611,7 +1605,6 @@ u32 Sema::ConversionSequence::badness() {
             case K::IntegralCast:
             case K::MaterialisePoison:
             case K::NilToOptional:
-            case K::NilToPointer:
             case K::OptionalUnwrap:
             case K::OptionalWrap:
             case K::RangeCast:

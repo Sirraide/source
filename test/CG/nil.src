@@ -7,18 +7,18 @@ proc p1 {
     i8? a = nil;
     i8[]? a = nil;
     bool? a = nil;
-    int^ a = nil;
-    void^ a = nil;
-    i8[]^^^^ a = nil;
+    int^? a = nil;
+    void^? a = nil;
+    i8[]^^^^? a = nil;
 }
 
 proc p2 {
     i8? a = x(1);
     i8[]? a = x(2);
     bool? a = x(3);
-    int^ a = x(4);
-    void^ a = x(5);
-    i8[]^^^^ a = x(6);
+    int^? a = x(4);
+    void^? a = x(5);
+    i8[]^^^^? a = x(6);
 }
 
 // * proc __src_main external ccc {
@@ -53,8 +53,11 @@ proc p2 {
 // +     store %2, i8 0, align 1
 // +     disengage #2
 // +     store #3, ptr nil, align 8
+// +     disengage #3
 // +     store #4, ptr nil, align 8
+// +     disengage #4
 // +     store #5, ptr nil, align 8
+// +     disengage #5
 // +     ret
 // + }
 // +
@@ -81,9 +84,12 @@ proc p2 {
 // +     disengage #2
 // +     call ccc void _S1xFniE.1(i64 4)
 // +     store #3, ptr nil, align 8
+// +     disengage #3
 // +     call ccc void _S1xFniE.1(i64 5)
 // +     store #4, ptr nil, align 8
+// +     disengage #4
 // +     call ccc void _S1xFniE.1(i64 6)
 // +     store #5, ptr nil, align 8
+// +     disengage #5
 // +     ret
 // + }

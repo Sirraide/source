@@ -158,7 +158,6 @@ private:
             MaterialisePoison,
             MaterialiseTemporary,
             NilToOptional,
-            NilToPointer,
             OptionalUnwrap,
             OptionalWrap,
             RangeCast,
@@ -201,7 +200,6 @@ private:
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
         static auto NilToOptional(Type ty) -> Conversion { return Conversion{Kind::NilToOptional, ty}; }
-        static auto NilToPointer(Type ty) -> Conversion { return Conversion{Kind::NilToPointer, ty}; }
         static auto OptionalUnwrap(Type ty) -> Conversion { return Conversion{Kind::OptionalUnwrap, ty}; }
         static auto OptionalWrap(Type ty) -> Conversion { return Conversion{Kind::OptionalWrap, ty}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }

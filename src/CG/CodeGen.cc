@@ -2034,10 +2034,6 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
         case CastExpr::NilToOptional:
             return EmitDefaultInit(expr->type, C(expr->location()));
 
-        case CastExpr::NilToPointer:
-            Assert(isa<PtrType>(expr->type));
-            return CreateNullPointer(C(expr->location()));
-
         case CastExpr::OptionalUnwrap: {
             Assert(expr->is_lvalue());
             ir::UnwrapOp::create(*this, C(expr->location()), val.scalar());
