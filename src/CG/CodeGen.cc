@@ -594,6 +594,7 @@ auto CodeGen::GetOrCreateProc(
         info.func,
         ty->has_c_varargs(),
         info.no_return,
+        false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
@@ -863,8 +864,8 @@ struct CodeGen::Mangler {
         Append(proc->name.str());
         Append(proc->type);
 
-        if (proc->mangling_number != ManglingNumber::None)
-            Format(name, ".{}", +proc->mangling_number);
+        if (proc->props.mangling_number != ManglingNumber::None)
+            Format(name, ".{}", +proc->props.mangling_number);
     }
 
     void Append(StringRef s);
@@ -2517,6 +2518,9 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Create the entry block.
     EnterProcedure _(*this, procedure_op, proc);
 
+    // Propagate 'inline'.
+    procedure_op.setAlwaysInline(proc->props.always_inline);
+
     // If there is a name collision between procedures, then we will emit
     // both into a single IR function; this is very much not good, so give
     // up if that happens.
@@ -2829,7 +2833,7 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
             }
 
             auto proc = c.proc.base().get<ProcDecl*>();
-            if (proc->is_compile_time_only) {
+            if (proc->props.is_compile_time_only) {
                 Error(GetSLoc(), "Compile-time only procedure cannot be referenced at runtime");
                 Note(proc->location(), "Procedure declared here");
                 return CreateNullClosure(loc);
@@ -2911,6 +2915,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         C(Linkage::Internal),
         C(CallingConvention::Native),
         info.func,
+        false,
         false,
         false,
         mlir::ArrayAttr::get(&mlir, info.arg_attrs),

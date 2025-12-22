@@ -1,3 +1,10 @@
+## Define members of builtin types in the preamble, e.g.
+```
+proc bool::flip (inout this) __srcc_builtin_member__ {
+    this = not this;
+}
+```
+
 ## Intent
 A parameter can only have at most one of these intents:
   - (none)  = Move: if trivially movable and cheap to copy, pass by value and copy, otherwise

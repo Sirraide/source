@@ -1590,13 +1590,24 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
         return false;
     };
 
+    auto ParseKwAttr = [&](bool& attr, Tk tok) {
+        if (SLoc loc; Consume(loc, tok)) {
+            if (attr) Warn(loc, "Duplicate '%1({}%)' attribute", tok);
+            attr = true;
+            return true;
+        }
+
+        return false;
+    };
+
     while (
         ParseAttr(sig.attrs.extern_, "extern") or
         ParseAttr(sig.attrs.native, "native") or
         ParseAttr(sig.attrs.nomangle, "nomangle") or
         ParseAttr(sig.attrs.c_varargs, "varargs") or
         ParseAttr(sig.attrs.builtin_operator, "__srcc_builtin_op__") or
-        ParseAttr(sig.attrs.no_mangling_number, "__srcc_no_mnum__")
+        ParseAttr(sig.attrs.no_mangling_number, "__srcc_no_mnum__") or
+        ParseKwAttr(sig.attrs.inline_, Tk::Inline)
     );
 
     // Parse return type.

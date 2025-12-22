@@ -525,6 +525,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";
     if (proc.getNoreturn()) out += " %1(noreturn%)";
+    if (proc.getAlwaysInline()) out += " %1(inline%)";
     Format(out, " %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     Format(out, " %1({}%)", stringifyCConv(proc.getCc()));
 

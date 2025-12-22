@@ -120,6 +120,7 @@ def ProcOp : SRCC_Op<"proc", [
         TypeAttrOf<FunctionType>:$function_type,
         UnitAttr:$variadic,
         UnitAttr:$noreturn,
+        UnitAttr:$always_inline,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
     );
@@ -133,6 +134,7 @@ def ProcOp : SRCC_Op<"proc", [
             "::mlir::FunctionType":$type,
             "bool":$variadic,
             "bool":$noreturn,
+            "bool":$always_inline,
             "::mlir::ArrayAttr":$arg_attrs,
             "::mlir::ArrayAttr":$res_attrs,
             CArg<"ArrayRef<mlir::NamedAttribute>", "{}">:$func_attrs
@@ -144,6 +146,7 @@ def ProcOp : SRCC_Op<"proc", [
             $_state.addAttribute(getResAttrsAttrName($_state.name), res_attrs);
             if (variadic) $_state.addAttribute(getVariadicAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
             if (noreturn) $_state.addAttribute(getNoreturnAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
+            if (always_inline) $_state.addAttribute(getAlwaysInlineAttrName($_state.name), ::mlir::UnitAttr::get($_state.getContext()));
         }]>
     ];
 

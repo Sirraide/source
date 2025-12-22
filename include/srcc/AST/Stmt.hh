@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/TrailingObjects.h>
+#include <base/Serialisation.hh>
 
 #include <functional>
 #include <ranges>
@@ -30,6 +31,7 @@ namespace srcc {
     F(Unreachable, "__srcc_unreachable")
 
 struct MatchCase;
+struct InheritedProcedureProperties;
 class ParsedStmt;
 class ParsedProcDecl;
 class ParsedQuoteExpr;
@@ -1317,6 +1319,26 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::GlobalDecl; }
 };
 
+/// Properties of a procedure that are inherited from the template
+/// if the procedure is an instantiation.
+struct srcc::InheritedProcedureProperties {
+    LIBBASE_SERIALISE(
+        InheritedProcedureProperties,
+        mangling_number,
+        is_compile_time_only,
+        always_inline
+    );
+
+    /// Mangling number of this procedure.
+    ManglingNumber mangling_number = ManglingNumber::None;
+
+    /// Whether this procedure cannot be called at runtime.
+    bool is_compile_time_only = false;
+
+    /// Whether this procedure should always be inlined if possible.
+    bool always_inline = false;
+};
+
 /// Procedure declaration.
 class srcc::ProcDecl final : public ObjectDecl {
     /// Not set if this is e.g. external.
@@ -1337,8 +1359,8 @@ public:
     /// The template this was instantiated from.
     ProcTemplateDecl* instantiated_from = nullptr;
 
-    /// Mangling number of this procedure.
-    ManglingNumber mangling_number = ManglingNumber::None;
+    /// Properties of this procedure.
+    InheritedProcedureProperties props;
 
     /// Whether this procedure (or any of its nested procedures) contain
     /// variable accesses that refer to variables declared in a parent
@@ -1349,9 +1371,6 @@ public:
     /// captured by any nested procedures.
     bool introduces_captures = false;
 
-    /// Whether this procedure cannot be called at runtime.
-    bool is_compile_time_only = false;
-
 private:
     ProcDecl(
         TranslationUnit* owner,
@@ -1361,7 +1380,7 @@ private:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        ManglingNumber mnum,
+        InheritedProcedureProperties props,
         SLoc location
     );
 
@@ -1374,7 +1393,7 @@ public:
         Linkage linkage,
         Mangling mangling,
         Ptr<ProcDecl> parent,
-        ManglingNumber mnum,
+        InheritedProcedureProperties props,
         SLoc location
     ) -> ProcDecl*;
 
@@ -1458,18 +1477,15 @@ public:
     /// varargs, for that, see the 'c_varargs' attribute).
     bool has_variadic_param;
 
-    /// Whether this procedure cannot be called at runtime.
-    bool is_compile_time_only = false;
-
-    /// Mangling number of this procedure template.
-    ManglingNumber mangling_number = ManglingNumber::None;
+    /// Properties that are passed down to instantiations.
+    InheritedProcedureProperties props;
 
 private:
     ProcTemplateDecl(
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
-        ManglingNumber mnum,
+        InheritedProcedureProperties props,
         bool has_variadic_param,
         SLoc location
     );
@@ -1479,7 +1495,7 @@ public:
         TranslationUnit& tu,
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
-        ManglingNumber mnum,
+        InheritedProcedureProperties props,
         bool has_variadic_param
     ) -> ProcTemplateDecl*;
 

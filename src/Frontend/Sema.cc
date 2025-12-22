@@ -1377,6 +1377,7 @@ auto Sema::InstantiateTemplate(
         pattern->name,
         pattern->location(),
         pattern->pattern->type->attrs,
+        pattern->props,
         pattern
     );
 
@@ -2617,7 +2618,7 @@ auto Sema::BuildAssertExpr(
             Linkage::Internal,
             Mangling::None,
             curr_proc().proc,
-            ManglingNumber::None,
+            InheritedProcedureProperties(),
             loc
         );
 
@@ -3486,6 +3487,7 @@ auto Sema::BuildProcDeclInitial(
     DeclName name,
     SLoc loc,
     ParsedProcAttrs attrs,
+    InheritedProcedureProperties props,
     ProcTemplateDecl* pattern
 ) -> ProcDecl* {
     // Get the parent procedure, which determines whether this is a nested
@@ -3506,28 +3508,6 @@ auto Sema::BuildProcDeclInitial(
     else parent = curr_proc().proc;
     if (parent == tu->initialiser_proc) parent = {};
 
-    // Determine its mangling number.
-    //
-    // This number is appended to the mangled name of a procedure and is
-    // used to avoid mangled name collisions. Consider:
-    //
-    //     {
-    //         proc a {}
-    //     }
-    //     {
-    //         proc a {}
-    //     }
-    //
-    // This is not ill-formed since the procedures are in different scopes,
-    // and thus, no possible overload set is ever going to contain both of
-    // them. Here, we need to make sure that they end up with different names
-    // in the IR.
-    ManglingNumber mnum = [&]{
-        if (pattern) return pattern->mangling_number;
-        if (RequiresManglingNumber(attrs)) return next_proc_mangling_number++;
-        return ManglingNumber::None;
-    }();
-
     // Actually create the procedure.
     auto proc = ProcDecl::Create(
         *tu,
@@ -3537,14 +3517,12 @@ auto Sema::BuildProcDeclInitial(
         attrs.extern_ ? Linkage::Imported : Linkage::Internal,
         attrs.nomangle ? Mangling::None : Mangling::Source,
         parent,
-        mnum,
+        props,
         loc
     );
 
     // Remember what template we were instantiated from.
     proc->instantiated_from = pattern;
-    if (pattern and pattern->is_compile_time_only)
-        proc->is_compile_time_only = true;
 
     // If this is an overloaded operator, check its arity and other properties.
     if (
@@ -4540,14 +4518,20 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // Diagnose invalid combinations of attributes.
     auto& attrs = parsed->type->attrs;
 
-    // 'extern' implies 'nomangle'.
+    // 'extern' implies 'nomangle' and disallows 'inline'.
     if (attrs.extern_) {
         if (attrs.nomangle) Error(
             parsed->loc,
             "'%1(extern%)' already implies '%1(nomangle%)'"
         );
 
+        if (attrs.inline_) Error(
+            parsed->loc,
+            "'%1(extern%)' procedure cannot be '%1(inline%)'"
+        );
+
         attrs.nomangle = true;
+        attrs.inline_ = false;
     }
 
     // So does 'native'.
@@ -4578,6 +4562,34 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         });
     };
 
+    // Determine inherited properties.
+    InheritedProcedureProperties props;
+    props.always_inline = attrs.inline_;
+
+    // Determine its mangling number.
+    //
+    // This number is appended to the mangled name of a procedure and is
+    // used to avoid mangled name collisions. Consider:
+    //
+    //     {
+    //         proc a {}
+    //     }
+    //     {
+    //         proc a {}
+    //     }
+    //
+    // This is not ill-formed since the procedures are in different scopes,
+    // and thus, no possible overload set is ever going to contain both of
+    // them. Here, we need to make sure that they end up with different names
+    // in the IR.
+    props.mangling_number = RequiresManglingNumber(attrs)
+        ? next_proc_mangling_number++
+        : ManglingNumber::None;
+
+    // TODO: Check if the signature contains a compile-time only type (e.g. 'tree')/
+    // TODO: When translating composite types, compute whether they’re compile-time only.
+    props.is_compile_time_only = inside_eval;
+
     // If this is a template, we can’t do much right now.
     Decl* decl{};
     if (IsTemplate()) {
@@ -4585,7 +4597,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
             *tu,
             parsed,
             curr_proc().proc,
-            RequiresManglingNumber(attrs) ? next_proc_mangling_number++ : ManglingNumber::None,
+            props,
             has_variadic_param
         );
     }
@@ -4600,21 +4612,16 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         auto type = TranslateProcType(parsed->type);
         auto ty = cast_if_present<ProcType>(type);
         if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
-        auto proc = BuildProcDeclInitial(
+        decl = BuildProcDeclInitial(
             scope.get(),
             ty,
             parsed->name,
             parsed->loc,
-            parsed->type->attrs
+            parsed->type->attrs,
+            props
         );
 
-        // Determine whether this is a compile-time only procedure.
-        // TODO: Check if the signature contains a compile-time only type (e.g. 'tree')/
-        // TODO: When translating composite types, compute whether they’re compile-time only.
-        proc->is_compile_time_only = inside_eval;
-
         // Mark the decl as invalid if there was a problem with the type.
-        decl = proc;
         if (not type) decl->set_invalid();
     }
 

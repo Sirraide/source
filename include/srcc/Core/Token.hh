@@ -59,6 +59,7 @@ enum struct srcc::Tk : base::u8 {
     Import,
     In,
     Init,
+    Inline,
     Int,
     IntegerType,
     Is,

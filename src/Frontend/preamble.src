@@ -34,7 +34,7 @@ proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     }
 }
 
-proc **= (inout $T base, in $T exp) __srcc_builtin_op__ -> T^ {
+proc **= (inout $T base, in $T exp) inline __srcc_builtin_op__ -> T^ {
     base = base ** exp;
     return &base;
 }
@@ -46,8 +46,7 @@ proc == (in $T a, in T b) __srcc_builtin_op__ -> bool {
     return true;
 }
 
-// TODO: Make this 'inline'.
-proc __srcc_swap (inout $T a, inout $T b) __srcc_no_mnum__ {
+proc __srcc_swap (inout $T a, inout $T b) inline __srcc_no_mnum__ {
     T tmp = a;
     a = b;
     b = tmp;

@@ -1030,7 +1030,16 @@ private:
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, SLoc loc) -> ParamDecl*;
-    auto BuildProcDeclInitial(Scope* proc_scope, ProcType* ty, DeclName name, SLoc loc, ParsedProcAttrs attrs, ProcTemplateDecl* pattern = nullptr) -> ProcDecl*;
+    auto BuildProcDeclInitial(
+        Scope* proc_scope,
+        ProcType* ty,
+        DeclName name,
+        SLoc loc,
+        ParsedProcAttrs attrs,
+        InheritedProcedureProperties props,
+        ProcTemplateDecl* pattern = nullptr
+    ) -> ProcDecl*;
+
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, SLoc loc) -> Type;

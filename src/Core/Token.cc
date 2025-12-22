@@ -43,6 +43,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::If: return "if";
         case Tk::In: return "in";
         case Tk::Init: return "init";
+        case Tk::Inline: return "inline";
         case Tk::Int: return "int";
         case Tk::Import: return "import";
         case Tk::Is: return "is";
