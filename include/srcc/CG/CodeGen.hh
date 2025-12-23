@@ -347,6 +347,9 @@ public:
     /// Add code to be run at end of scope.
     void AddCleanup(ProcData::Cleanup cleanup);
 
+    /// Implemented in IRTransforms.cc
+    void AddRequiredTransformPasses(mlir::PassManager& pm);
+
     /// Append a block to the current procedure.
     auto AppendBlock(std::unique_ptr<Block> bb) -> Block*;
 

@@ -16,6 +16,16 @@ int x = eval called_at_compile_time();
 // +     store #0, i64 42, align 8
 // +     ret
 // + }
+// +
+// + proc _S12never_calledFiE.1 private ccc -> i64 {
+// + entry:
+// +     ret i64 42
+// + }
+// +
+// + proc _S22called_at_compile_timeFiE.2 private ccc -> i64 {
+// + entry:
+// +     ret i64 42
+// + }
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
