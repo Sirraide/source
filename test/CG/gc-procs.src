@@ -1,0 +1,36 @@
+// R      %srcc --ir   --target x86_64-unknown-linux -fgc-procs %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -fgc-procs %s
+program test;
+
+// Test that we elminate procedures that are never referenced (or only
+// referenced at compile-time). '-fgc-procs' is disabled by default if
+// '--ir' or '--llvm' is passed, so we need to enable it explicitly.
+proc never_called = 42;
+proc called_at_compile_time = 42;
+int x = eval called_at_compile_time();
+
+// * proc __src_main external ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + ; Function Attrs: nounwind
+//L + define void @__src_main() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   store i64 42, ptr %1, align 8
+//L +   ret void
+//L + }
+//L +
+//L + attributes #0 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

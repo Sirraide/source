@@ -58,8 +58,9 @@ using options = clopts< // clang-format off
     // Features.
     // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
     // something in that vein.
-    flag<"-fno-overflow-checks">,
-    flag<"-fstringify-asserts">,
+    flag<"-fno-overflow-checks", "Disable overflow checking">,
+    flag<"-fstringify-asserts", "Stringify assert conditions if possible">,
+    flag<"-fgc-procs", "Strip procedures that are never called">,
 
     help<>
 >; // clang-format on
@@ -128,6 +129,10 @@ int main(int argc, char** argv) {
         triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
     }
 
+    // GC procedures by default unless --ir or --llvm is passed.
+    bool gc_procs = action != Action::DumpIR and action != Action::EmitLLVM;
+    if (opts.get<"-fgc-procs">()) gc_procs = true;
+
     // TODO:
     //  - Move lang opts to be TU-specific in case the TU wants
     //    to alter them using e.g. pragmas.
@@ -156,6 +161,7 @@ int main(int argc, char** argv) {
             .overflow_checking = not opts.get<"-fno-overflow-checks">(),
             .no_runtime = opts.get<"--noruntime">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
+            .gc_procs = gc_procs,
         },
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get<"--error-limit">(20)),

@@ -350,6 +350,36 @@ struct OptionalUnwrapCheckPass final : mlir::PassWrapper<OptionalUnwrapCheckPass
     void CheckProcedure(ir::ProcOp proc);
 };
 
+struct ProcedureDCEPass final : mlir::PassWrapper<OptionalUnwrapCheckPass, mlir::Pass> {
+    bool canScheduleOn(mlir::RegisteredOperationName op) const override {
+        auto name = op.getStringRef();
+        return name == mlir::ModuleOp::getOperationName();
+    }
+
+    void runOnOperation() override  {
+        auto op = getOperation();
+        llvm::DenseSet<ir::ProcOp> procs;
+        llvm::StringSet referenced;
+        op->walk([&](mlir::Operation* op) {
+            if (auto proc = dyn_cast<ir::ProcOp>(op)) {
+                procs.insert(proc);
+                return;
+            }
+
+            if (auto proc_ref = dyn_cast<ir::ProcRefOp>(op)) {
+                referenced.insert(proc_ref.getProcName());
+                return;
+            }
+        });
+
+        for (auto p : procs) {
+            if (p.getLinkage().getLinkage() != LLVM::Linkage::Private) continue;
+            if (referenced.contains(p.getSymName())) continue;
+            p->erase();
+        }
+    }
+};
+
 enum struct EngagedState {
     // Optional is not engaged.
     Disengaged,
@@ -804,6 +834,7 @@ bool CodeGen::finalise(bool verify) {
     pm.addPass(std::make_unique<TrivialCriticalEdgeInliningPass>(*this));
     pm.addPass(mlir::createCanonicalizerPass()); // Clean up branches we generated.
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
+    if (lang_opts.gc_procs) pm.addPass(std::make_unique<ProcedureDCEPass>());
     if (pm.run(mlir_module).succeeded()) return true;
     if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to finalise IR");
     return false;
