@@ -45,6 +45,11 @@ proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_slice {
     return true;
 }
 
+proc == (in $T a, in T b) inline __srcc_builtin_op__ -> bool where T.is_array {
+    // Just delegate to the slice implementation.
+    return T.elem[](a) == T.elem[](b);
+}
+
 proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_optional {
     if a == nil or b == nil return a == nil and b == nil;
     return a as T.elem == b as T.elem;

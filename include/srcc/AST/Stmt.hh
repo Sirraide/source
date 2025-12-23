@@ -420,6 +420,7 @@ public:
     M(TypeMaxVal, "max")             \
     M(TypeMinVal, "min")             \
     M(TypeElem, "elem")              \
+    M(TypeIsArray, "is_array")       \
     M(TypeIsOptional, "is_optional") \
     M(TypeIsSlice, "is_slice")
 

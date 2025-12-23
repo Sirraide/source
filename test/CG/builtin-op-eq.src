@@ -1,0 +1,821 @@
+// R      %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+program test;
+
+proc a = "abcd" == "dcef";
+proc b = "a" == "bc";
+proc c = "a" == "a";
+proc d = "" == "";
+proc e (i64[] a, i64[] b) = a == b;
+
+proc p1 -> bool {
+    int a;
+    int b;
+    int^? x = &a;
+    int^? y = &b;
+    return x == y;
+}
+
+proc p2 (i8^? x, i8^? y) -> bool {
+    return x == y;
+}
+
+proc p3 (in int[4] x, in int[4] y) -> bool {
+    return x == y;
+}
+
+// * @0 = "abcd\00"
+// + @1 = "dcef\00"
+// + @2 = "a\00"
+// + @3 = "bc\00"
+// + @4 = "\00"
+// +
+// + proc __src_main external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1aFbE.1 private ccc -> i1 zeroext {
+// + entry:
+// +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
+// +         ptr @0,
+// +         i64 4,
+// +         ptr @1,
+// +         i64 4)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S$2==FbxSI8xSI8E (
+// +     ptr %0,
+// +     i64 %1,
+// +     ptr %2,
+// +     i64 %3,
+// + ) private ccc -> i1 zeroext {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %1, align 8
+// +     store #1, ptr %2, align 8
+// +     %5 = ptradd #1, 8
+// +     store %5, i64 %3, align 8
+// +     %6 = ptradd #0, 8
+// +     %7 = load i64, %6, align 8
+// +     %8 = ptradd #1, 8
+// +     %9 = load i64, %8, align 8
+// +     %10 = icmp ne i64 %7, %9
+// +     br %10 to bb1 else bb2
+// +
+// + bb1:
+// +     ret i1 false
+// +
+// + bb2:
+// +     %11 = load ptr, #0, align 8
+// +     %12 = ptradd #0, 8
+// +     %13 = load i64, %12, align 8
+// +     %14 = load ptr, #1, align 8
+// +     %15 = ptradd #1, 8
+// +     %16 = load i64, %15, align 8
+// +     %17 = ptradd %11, i64 %13
+// +     %18 = ptradd %14, i64 %16
+// +     br bb3(%11, %14)
+// +
+// + bb3(ptr %19, ptr %20):
+// +     %21 = cmp ne ptr %19, %17
+// +     br %21 to bb4 else bb8
+// +
+// + bb4:
+// +     %22 = cmp ne ptr %20, %18
+// +     br %22 to bb5 else bb8
+// +
+// + bb5:
+// +     %23 = load i8, %19, align 1
+// +     %24 = load i8, %20, align 1
+// +     %25 = icmp ne i8 %23, %24
+// +     br %25 to bb6 else bb7
+// +
+// + bb6:
+// +     ret i1 false
+// +
+// + bb7:
+// +     %26 = ptradd %19, 1
+// +     %27 = ptradd %20, 1
+// +     br bb3(%26, %27)
+// +
+// + bb8:
+// +     ret i1 true
+// + }
+// +
+// + proc _S1bFbE.2 private ccc -> i1 zeroext {
+// + entry:
+// +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
+// +         ptr @2,
+// +         i64 1,
+// +         ptr @3,
+// +         i64 2)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1cFbE.3 private ccc -> i1 zeroext {
+// + entry:
+// +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
+// +         ptr @2,
+// +         i64 1,
+// +         ptr @2,
+// +         i64 1)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1dFbE.4 private ccc -> i1 zeroext {
+// + entry:
+// +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
+// +         ptr @4,
+// +         i64 0,
+// +         ptr @4,
+// +         i64 0)
+// +     ret i1 %0
+// + }
+// +
+// + proc _S1eFbSI64SI64E.5 (
+// +     ptr %0,
+// +     i64 %1,
+// +     ptr %2,
+// +     i64 %3,
+// + ) private ccc -> i1 zeroext {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %1, align 8
+// +     store #1, ptr %2, align 8
+// +     %5 = ptradd #1, 8
+// +     store %5, i64 %3, align 8
+// +     %6 = load ptr, #0, align 8
+// +     %7 = ptradd #0, 8
+// +     %8 = load i64, %7, align 8
+// +     %9 = load ptr, #1, align 8
+// +     %10 = ptradd #1, 8
+// +     %11 = load i64, %10, align 8
+// +     %12 = call ccc zeroext i1 _S$2==FbxSI64xSI64E(
+// +         ptr %6,
+// +         i64 %8,
+// +         ptr %9,
+// +         i64 %11)
+// +     ret i1 %12
+// + }
+// +
+// + proc _S$2==FbxSI64xSI64E (
+// +     ptr %0,
+// +     i64 %1,
+// +     ptr %2,
+// +     i64 %3,
+// + ) private ccc -> i1 zeroext {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %1, align 8
+// +     store #1, ptr %2, align 8
+// +     %5 = ptradd #1, 8
+// +     store %5, i64 %3, align 8
+// +     %6 = ptradd #0, 8
+// +     %7 = load i64, %6, align 8
+// +     %8 = ptradd #1, 8
+// +     %9 = load i64, %8, align 8
+// +     %10 = icmp ne i64 %7, %9
+// +     br %10 to bb1 else bb2
+// +
+// + bb1:
+// +     ret i1 false
+// +
+// + bb2:
+// +     %11 = load ptr, #0, align 8
+// +     %12 = ptradd #0, 8
+// +     %13 = load i64, %12, align 8
+// +     %14 = load ptr, #1, align 8
+// +     %15 = ptradd #1, 8
+// +     %16 = load i64, %15, align 8
+// +     %17 = mul i64 %13, 8
+// +     %18 = ptradd %11, i64 %17
+// +     %19 = mul i64 %16, 8
+// +     %20 = ptradd %14, i64 %19
+// +     br bb3(%11, %14)
+// +
+// + bb3(ptr %21, ptr %22):
+// +     %23 = cmp ne ptr %21, %18
+// +     br %23 to bb4 else bb8
+// +
+// + bb4:
+// +     %24 = cmp ne ptr %22, %20
+// +     br %24 to bb5 else bb8
+// +
+// + bb5:
+// +     %25 = load i64, %21, align 8
+// +     %26 = load i64, %22, align 8
+// +     %27 = icmp ne i64 %25, %26
+// +     br %27 to bb6 else bb7
+// +
+// + bb6:
+// +     ret i1 false
+// +
+// + bb7:
+// +     %28 = ptradd %21, 8
+// +     %29 = ptradd %22, 8
+// +     br bb3(%28, %29)
+// +
+// + bb8:
+// +     ret i1 true
+// + }
+// +
+// + proc _S2p1FbE.6 private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 0, align 8
+// +     store #2, ptr #0, align 8
+// +     engage #2
+// +     store #3, ptr #1, align 8
+// +     engage #3
+// +     %0 = load ptr, #2, align 8
+// +     %1 = load ptr, #3, align 8
+// +     %2 = call ccc zeroext i1 _S$2==FbxORixORiE(ptr %0, ptr %1)
+// +     ret i1 %2
+// + }
+// +
+// + proc _S$2==FbxORixORiE (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp eq ptr %2, nil
+// +     br %3 to bb3 else bb1
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp eq ptr %4, nil
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     %8 = cmp eq ptr %6, %7
+// +     ret i1 %8
+// +
+// + bb3:
+// +     %9 = load ptr, #0, align 8
+// +     %10 = cmp eq ptr %9, nil
+// +     br %10 to bb5 else bb4
+// +
+// + bb4:
+// +     engage #0
+// +     br bb7(false)
+// +
+// + bb5:
+// +     %11 = load ptr, #1, align 8
+// +     %12 = cmp eq ptr %11, nil
+// +     br %12 to bb7(true) else bb6
+// +
+// + bb6:
+// +     engage #1
+// +     br bb7(false)
+// +
+// + bb7(i1 %13):
+// +     ret i1 %13
+// + }
+// +
+// + proc _S2p2FbORI8ORI8E.7 (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = load ptr, #1, align 8
+// +     %4 = call ccc zeroext i1 _S$2==FbxORI8xORI8E(ptr %2, ptr %3)
+// +     ret i1 %4
+// + }
+// +
+// + proc _S$2==FbxORI8xORI8E (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp eq ptr %2, nil
+// +     br %3 to bb3 else bb1
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp eq ptr %4, nil
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     %8 = cmp eq ptr %6, %7
+// +     ret i1 %8
+// +
+// + bb3:
+// +     %9 = load ptr, #0, align 8
+// +     %10 = cmp eq ptr %9, nil
+// +     br %10 to bb5 else bb4
+// +
+// + bb4:
+// +     engage #0
+// +     br bb7(false)
+// +
+// + bb5:
+// +     %11 = load ptr, #1, align 8
+// +     %12 = cmp eq ptr %11, nil
+// +     br %12 to bb7(true) else bb6
+// +
+// + bb6:
+// +     engage #1
+// +     br bb7(false)
+// +
+// + bb7(i1 %13):
+// +     ret i1 %13
+// + }
+// +
+// + proc _S2p3FbxA4ixA4iE.8 (ptr %0 dereferenceable 32, ptr %1 dereferenceable 32) private ccc -> i1 zeroext {
+// +     #0 = 32, align 8
+// +     #1 = 32, align 8
+// +
+// + entry:
+// +     copy #0 <- %0, 32
+// +     copy #1 <- %1, 32
+// +     %2 = call ccc zeroext i1 _S$2==FbxA4ixA4iE(ptr #0 dereferenceable 32, ptr #1 dereferenceable 32)
+// +     ret i1 %2
+// + }
+// +
+// + proc _S$2==FbxA4ixA4iE (ptr %0 dereferenceable 32, ptr %1 dereferenceable 32) inline private ccc -> i1 zeroext {
+// + entry:
+// +     %2 = call ccc zeroext i1 _S$2==FbxSixSiE(
+// +         ptr %0,
+// +         i64 4,
+// +         ptr %1,
+// +         i64 4)
+// +     ret i1 %2
+// + }
+// +
+// + proc _S$2==FbxSixSiE (
+// +     ptr %0,
+// +     i64 %1,
+// +     ptr %2,
+// +     i64 %3,
+// + ) private ccc -> i1 zeroext {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %1, align 8
+// +     store #1, ptr %2, align 8
+// +     %5 = ptradd #1, 8
+// +     store %5, i64 %3, align 8
+// +     %6 = ptradd #0, 8
+// +     %7 = load i64, %6, align 8
+// +     %8 = ptradd #1, 8
+// +     %9 = load i64, %8, align 8
+// +     %10 = icmp ne i64 %7, %9
+// +     br %10 to bb1 else bb2
+// +
+// + bb1:
+// +     ret i1 false
+// +
+// + bb2:
+// +     %11 = load ptr, #0, align 8
+// +     %12 = ptradd #0, 8
+// +     %13 = load i64, %12, align 8
+// +     %14 = load ptr, #1, align 8
+// +     %15 = ptradd #1, 8
+// +     %16 = load i64, %15, align 8
+// +     %17 = mul i64 %13, 8
+// +     %18 = ptradd %11, i64 %17
+// +     %19 = mul i64 %16, 8
+// +     %20 = ptradd %14, i64 %19
+// +     br bb3(%11, %14)
+// +
+// + bb3(ptr %21, ptr %22):
+// +     %23 = cmp ne ptr %21, %18
+// +     br %23 to bb4 else bb8
+// +
+// + bb4:
+// +     %24 = cmp ne ptr %22, %20
+// +     br %24 to bb5 else bb8
+// +
+// + bb5:
+// +     %25 = load i64, %21, align 8
+// +     %26 = load i64, %22, align 8
+// +     %27 = icmp ne i64 %25, %26
+// +     br %27 to bb6 else bb7
+// +
+// + bb6:
+// +     ret i1 false
+// +
+// + bb7:
+// +     %28 = ptradd %21, 8
+// +     %29 = ptradd %22, 8
+// +     br bb3(%28, %29)
+// +
+// + bb8:
+// +     ret i1 true
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + @__srcc_str.0 = private constant [5 x i8] c"abcd\00", align 1
+//L + @__srcc_str.1 = private constant [5 x i8] c"dcef\00", align 1
+//L + @__srcc_str.2 = private constant [2 x i8] c"a\00", align 1
+//L + @__srcc_str.3 = private constant [3 x i8] c"bc\00", align 1
+//L + @__srcc_str.4 = private constant [1 x i8] zeroinitializer, align 1
+//L +
+//L + ; Function Attrs: nounwind
+//L + define void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1aFbE.1() #0 {
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.0, i64 4, ptr @__srcc_str.1, i64 4)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
+//L +   %5 = alloca i8, i64 16, align 8
+//L +   %6 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %5, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 %1, ptr %7, align 8
+//L +   store ptr %2, ptr %6, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   store i64 %3, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %10 = load i64, ptr %9, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %12 = load i64, ptr %11, align 8
+//L +   %13 = icmp ne i64 %10, %12
+//L +   br i1 %13, label %14, label %15
+//L +
+//L + 14:                                               ; preds = %4
+//L +   ret i1 false
+//L +
+//L + 15:                                               ; preds = %4
+//L +   %16 = load ptr, ptr %5, align 8
+//L +   %17 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %18 = load i64, ptr %17, align 8
+//L +   %19 = load ptr, ptr %6, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %21 = load i64, ptr %20, align 8
+//L +   %22 = getelementptr inbounds nuw i8, ptr %16, i64 %18
+//L +   %23 = getelementptr inbounds nuw i8, ptr %19, i64 %21
+//L +   br label %24
+//L +
+//L + 24:                                               ; preds = %35, %15
+//L +   %25 = phi ptr [ %36, %35 ], [ %16, %15 ]
+//L +   %26 = phi ptr [ %37, %35 ], [ %19, %15 ]
+//L +   %27 = icmp ne ptr %25, %22
+//L +   br i1 %27, label %28, label %38
+//L +
+//L + 28:                                               ; preds = %24
+//L +   %29 = icmp ne ptr %26, %23
+//L +   br i1 %29, label %30, label %38
+//L +
+//L + 30:                                               ; preds = %28
+//L +   %31 = load i8, ptr %25, align 1
+//L +   %32 = load i8, ptr %26, align 1
+//L +   %33 = icmp ne i8 %31, %32
+//L +   br i1 %33, label %34, label %35
+//L +
+//L + 34:                                               ; preds = %30
+//L +   ret i1 false
+//L +
+//L + 35:                                               ; preds = %30
+//L +   %36 = getelementptr inbounds nuw i8, ptr %25, i32 1
+//L +   %37 = getelementptr inbounds nuw i8, ptr %26, i32 1
+//L +   br label %24
+//L +
+//L + 38:                                               ; preds = %28, %24
+//L +   ret i1 true
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1bFbE.2() #0 {
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.3, i64 2)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1cFbE.3() #0 {
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.2, i64 1)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1dFbE.4() #0 {
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.4, i64 0, ptr @__srcc_str.4, i64 0)
+//L +   ret i1 %1
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S1eFbSI64SI64E.5(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
+//L +   %5 = alloca i8, i64 16, align 8
+//L +   %6 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %5, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 %1, ptr %7, align 8
+//L +   store ptr %2, ptr %6, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   store i64 %3, ptr %8, align 8
+//L +   %9 = load ptr, ptr %5, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %11 = load i64, ptr %10, align 8
+//L +   %12 = load ptr, ptr %6, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %14 = load i64, ptr %13, align 8
+//L +   %15 = call zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %9, i64 %11, ptr %12, i64 %14)
+//L +   ret i1 %15
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
+//L +   %5 = alloca i8, i64 16, align 8
+//L +   %6 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %5, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 %1, ptr %7, align 8
+//L +   store ptr %2, ptr %6, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   store i64 %3, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %10 = load i64, ptr %9, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %12 = load i64, ptr %11, align 8
+//L +   %13 = icmp ne i64 %10, %12
+//L +   br i1 %13, label %14, label %15
+//L +
+//L + 14:                                               ; preds = %4
+//L +   ret i1 false
+//L +
+//L + 15:                                               ; preds = %4
+//L +   %16 = load ptr, ptr %5, align 8
+//L +   %17 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %18 = load i64, ptr %17, align 8
+//L +   %19 = load ptr, ptr %6, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %21 = load i64, ptr %20, align 8
+//L +   %22 = mul i64 %18, 8
+//L +   %23 = getelementptr inbounds nuw i8, ptr %16, i64 %22
+//L +   %24 = mul i64 %21, 8
+//L +   %25 = getelementptr inbounds nuw i8, ptr %19, i64 %24
+//L +   br label %26
+//L +
+//L + 26:                                               ; preds = %37, %15
+//L +   %27 = phi ptr [ %38, %37 ], [ %16, %15 ]
+//L +   %28 = phi ptr [ %39, %37 ], [ %19, %15 ]
+//L +   %29 = icmp ne ptr %27, %23
+//L +   br i1 %29, label %30, label %40
+//L +
+//L + 30:                                               ; preds = %26
+//L +   %31 = icmp ne ptr %28, %25
+//L +   br i1 %31, label %32, label %40
+//L +
+//L + 32:                                               ; preds = %30
+//L +   %33 = load i64, ptr %27, align 8
+//L +   %34 = load i64, ptr %28, align 8
+//L +   %35 = icmp ne i64 %33, %34
+//L +   br i1 %35, label %36, label %37
+//L +
+//L + 36:                                               ; preds = %32
+//L +   ret i1 false
+//L +
+//L + 37:                                               ; preds = %32
+//L +   %38 = getelementptr inbounds nuw i8, ptr %27, i32 8
+//L +   %39 = getelementptr inbounds nuw i8, ptr %28, i32 8
+//L +   br label %26
+//L +
+//L + 40:                                               ; preds = %30, %26
+//L +   ret i1 true
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S2p1FbE.6() #0 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store i64 0, ptr %1, align 8
+//L +   store i64 0, ptr %2, align 8
+//L +   store ptr %1, ptr %3, align 8
+//L +   store ptr %2, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = load ptr, ptr %4, align 8
+//L +   %7 = call zeroext i1 @"_S$2==FbxORixORiE"(ptr %5, ptr %6)
+//L +   ret i1 %7
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @"_S$2==FbxORixORiE"(ptr %0, ptr %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp eq ptr %5, null
+//L +   br i1 %6, label %14, label %7
+//L +
+//L + 7:                                                ; preds = %2
+//L +   %8 = load ptr, ptr %4, align 8
+//L +   %9 = icmp eq ptr %8, null
+//L +   br i1 %9, label %14, label %10
+//L +
+//L + 10:                                               ; preds = %7
+//L +   %11 = load ptr, ptr %3, align 8
+//L +   %12 = load ptr, ptr %4, align 8
+//L +   %13 = icmp eq ptr %11, %12
+//L +   ret i1 %13
+//L +
+//L + 14:                                               ; preds = %7, %2
+//L +   %15 = load ptr, ptr %3, align 8
+//L +   %16 = icmp eq ptr %15, null
+//L +   br i1 %16, label %18, label %17
+//L +
+//L + 17:                                               ; preds = %14
+//L +   br label %22
+//L +
+//L + 18:                                               ; preds = %14
+//L +   %19 = load ptr, ptr %4, align 8
+//L +   %20 = icmp eq ptr %19, null
+//L +   br i1 %20, label %22, label %21
+//L +
+//L + 21:                                               ; preds = %18
+//L +   br label %22
+//L +
+//L + 22:                                               ; preds = %21, %18, %17
+//L +   %23 = phi i1 [ false, %17 ], [ false, %21 ], [ true, %18 ]
+//L +   ret i1 %23
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S2p2FbORI8ORI8E.7(ptr %0, ptr %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = load ptr, ptr %4, align 8
+//L +   %7 = call zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr %5, ptr %6)
+//L +   ret i1 %7
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr %0, ptr %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp eq ptr %5, null
+//L +   br i1 %6, label %14, label %7
+//L +
+//L + 7:                                                ; preds = %2
+//L +   %8 = load ptr, ptr %4, align 8
+//L +   %9 = icmp eq ptr %8, null
+//L +   br i1 %9, label %14, label %10
+//L +
+//L + 10:                                               ; preds = %7
+//L +   %11 = load ptr, ptr %3, align 8
+//L +   %12 = load ptr, ptr %4, align 8
+//L +   %13 = icmp eq ptr %11, %12
+//L +   ret i1 %13
+//L +
+//L + 14:                                               ; preds = %7, %2
+//L +   %15 = load ptr, ptr %3, align 8
+//L +   %16 = icmp eq ptr %15, null
+//L +   br i1 %16, label %18, label %17
+//L +
+//L + 17:                                               ; preds = %14
+//L +   br label %22
+//L +
+//L + 18:                                               ; preds = %14
+//L +   %19 = load ptr, ptr %4, align 8
+//L +   %20 = icmp eq ptr %19, null
+//L +   br i1 %20, label %22, label %21
+//L +
+//L + 21:                                               ; preds = %18
+//L +   br label %22
+//L +
+//L + 22:                                               ; preds = %21, %18, %17
+//L +   %23 = phi i1 [ false, %17 ], [ false, %21 ], [ true, %18 ]
+//L +   ret i1 %23
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @_S2p3FbxA4ixA4iE.8(ptr dereferenceable(32) %0, ptr dereferenceable(32) %1) #0 {
+//L +   %3 = alloca i8, i64 32, align 8
+//L +   %4 = alloca i8, i64 32, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %3, ptr %0, i64 32, i1 false)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %1, i64 32, i1 false)
+//L +   %5 = call zeroext i1 @"_S$2==FbxSixSiE"(ptr dereferenceable(32) %3, i64 4, ptr dereferenceable(32) %4, i64 4)
+//L +   ret i1 %5
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private zeroext i1 @"_S$2==FbxSixSiE"(ptr %0, i64 %1, ptr %2, i64 %3) #0 {
+//L +   %5 = alloca i8, i64 16, align 8
+//L +   %6 = alloca i8, i64 16, align 8
+//L +   store ptr %0, ptr %5, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   store i64 %1, ptr %7, align 8
+//L +   store ptr %2, ptr %6, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   store i64 %3, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %10 = load i64, ptr %9, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %12 = load i64, ptr %11, align 8
+//L +   %13 = icmp ne i64 %10, %12
+//L +   br i1 %13, label %14, label %15
+//L +
+//L + 14:                                               ; preds = %4
+//L +   ret i1 false
+//L +
+//L + 15:                                               ; preds = %4
+//L +   %16 = load ptr, ptr %5, align 8
+//L +   %17 = getelementptr inbounds nuw i8, ptr %5, i32 8
+//L +   %18 = load i64, ptr %17, align 8
+//L +   %19 = load ptr, ptr %6, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %6, i32 8
+//L +   %21 = load i64, ptr %20, align 8
+//L +   %22 = mul i64 %18, 8
+//L +   %23 = getelementptr inbounds nuw i8, ptr %16, i64 %22
+//L +   %24 = mul i64 %21, 8
+//L +   %25 = getelementptr inbounds nuw i8, ptr %19, i64 %24
+//L +   br label %26
+//L +
+//L + 26:                                               ; preds = %37, %15
+//L +   %27 = phi ptr [ %38, %37 ], [ %16, %15 ]
+//L +   %28 = phi ptr [ %39, %37 ], [ %19, %15 ]
+//L +   %29 = icmp ne ptr %27, %23
+//L +   br i1 %29, label %30, label %40
+//L +
+//L + 30:                                               ; preds = %26
+//L +   %31 = icmp ne ptr %28, %25
+//L +   br i1 %31, label %32, label %40
+//L +
+//L + 32:                                               ; preds = %30
+//L +   %33 = load i64, ptr %27, align 8
+//L +   %34 = load i64, ptr %28, align 8
+//L +   %35 = icmp ne i64 %33, %34
+//L +   br i1 %35, label %36, label %37
+//L +
+//L + 36:                                               ; preds = %32
+//L +   ret i1 false
+//L +
+//L + 37:                                               ; preds = %32
+//L +   %38 = getelementptr inbounds nuw i8, ptr %27, i32 8
+//L +   %39 = getelementptr inbounds nuw i8, ptr %28, i32 8
+//L +   br label %26
+//L +
+//L + 40:                                               ; preds = %30, %26
+//L +   ret i1 true
+//L + }
+//L +
+//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
+//L +
+//L + attributes #0 = { nounwind }
+//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

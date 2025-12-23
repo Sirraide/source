@@ -1566,6 +1566,7 @@ auto BuiltinMemberAccessExpr::Evaluate(
         case TypeBits: return Integer(ty->bit_width(tu).bits());
         case TypeBytes: return Integer(ty->memory_size(tu).bytes());
         case TypeSize: return Integer(ty->memory_size(tu).bytes());
+        case TypeIsArray: return eval::RValue(isa<ArrayType>(ty));
         case TypeIsOptional: return eval::RValue(isa<OptionalType>(ty));
         case TypeIsSlice: return eval::RValue(isa<SliceType>(ty));
 

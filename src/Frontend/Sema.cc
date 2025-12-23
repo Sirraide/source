@@ -930,6 +930,15 @@ auto Sema::BuildSliceInitialiser(
         return {};
     }
 
+    // Arrays are implicitly convertible to slices.
+    if (
+        auto arr = dyn_cast<ArrayType>(args.front()->type);
+        args.size() == 1 and arr and arr->elem() == s->elem()
+    ) {
+       seq.add(Conversion::SliceFromArray());
+       return {};
+    }
+
     // If we have 2 arguments, and the first is a pointer and the second is
     // an integer, try initialisation from pointer + size.
     //
@@ -2916,7 +2925,7 @@ auto Sema::BuildBinaryExpr(
             if (not ConvertToCommonType()) return nullptr;
 
             // For slices and optionals, call an overloaded operator.
-            if (isa<SliceType, OptionalType>(lhs->type)) {
+            if (isa<ArrayType, OptionalType, SliceType>(lhs->type)) {
                 auto call = BuildCall(DeclName(Tk::EqEq));
                 return op == Tk::Neq ? BuildUnaryExpr(Tk::Not, call.get(), false, loc) : call;
             }
@@ -3083,6 +3092,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case TypeElem:
                 return Type::TypeTy;
 
+            case TypeIsArray:
             case TypeIsOptional:
             case TypeIsSlice:
                 return Type::BoolTy;
@@ -5065,10 +5075,17 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
             goto default_;
         }
 
+        // If we don’t know what this is, try to evaluate it as a type.
         default:
-        default_:
+        default_: {
+            auto e = TranslateExpr(parsed, Type::TypeTy);
+            if (not e) break;
+            auto val = tu->vm.eval(e.get());
+            if (not val) break;
+            if (val->isa<Type>()) return val->cast<Type>();
             Error(parsed->loc, "Expected type");
             break;
+        }
     }
 
     if (not t) t = fallback;
