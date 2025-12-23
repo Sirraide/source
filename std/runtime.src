@@ -125,11 +125,17 @@ export proc __src_assert_append_str (inout __src_assert_msg_buf into, i8[] str) 
     into.size += str.size;
 }
 
-export proc __src_assert_alloc_buffer nomangle = __src_assert_msg_buf(
-    libc::malloc(10000) as! i8^,
-    0,
-    10000
-);
+export proc __src_assert_alloc_buffer nomangle -> __src_assert_msg_buf {
+    var mem = libc::malloc(10000);
+
+    // Can’t use 'assert' here since this is used to implement 'assert'...
+    if mem == nil {
+        libc::printf("__src_assert_alloc_buffer: fatal error: malloc() failed");
+        libc::abort();
+    }
+
+    return (mem as! i8^, 0, 10000);
+}
 
 /// Declare our own initialiser so we can call it.
 ///
