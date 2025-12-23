@@ -22,6 +22,20 @@ proc p1 {
     x.y = 2;
 }
 
+proc p2(in int^? a, in int^? b) {
+    if a != nil and b != nil {
+        ^a = 3;
+        ^b = 3;
+    } else {}
+}
+
+proc p3(in int^? a, in int^? b) {
+    if a == nil or b == nil {} else {
+        ^a = 3;
+        ^b = 3;
+    }
+}
+
 // * @0 = "x != nil\00"
 // + @1 = "optional-infer-engaged.src\00"
 // +
@@ -39,52 +53,111 @@ proc p1 {
 // +     %0 = ptradd #0, 16
 // +     %1 = load i8, %0, align 1
 // +     %2 = trunc i8 %1 to i1
-// +     %3 = engage #0 if %2
-// +     br %3 to bb1 else bb2
+// +     br %2 to bb1 else bb2
 // +
 // + bb1:
 // +     engage #0
 // +     unwrap #0
 // +     store #0, i64 1, align 8
 // +     unwrap #0
-// +     %4 = ptradd #0, 8
-// +     store %4, i64 2, align 8
+// +     %3 = ptradd #0, 8
+// +     store %3, i64 2, align 8
 // +     br bb2
 // +
 // + bb2:
-// +     %5 = ptradd #0, 16
-// +     %6 = load i8, %5, align 1
-// +     %7 = trunc i8 %6 to i1
-// +     %8 = xor i1 %7, true
-// +     %9 = disengage #0 if %8
-// +     br %9 to bb4 else bb3
+// +     %4 = ptradd #0, 16
+// +     %5 = load i8, %4, align 1
+// +     %6 = trunc i8 %5 to i1
+// +     %7 = xor i1 %6, true
+// +     br %7 to bb4 else bb3
 // +
 // + bb3:
 // +     engage #0
 // +     unwrap #0
 // +     store #0, i64 1, align 8
 // +     unwrap #0
-// +     %10 = ptradd #0, 8
-// +     store %10, i64 2, align 8
+// +     %8 = ptradd #0, 8
+// +     store %8, i64 2, align 8
 // +     br bb4
 // +
 // + bb4:
-// +     %11 = ptradd #0, 16
-// +     %12 = load i8, %11, align 1
-// +     %13 = trunc i8 %12 to i1
-// +     %14 = engage #0 if %13
-// +     br %14 to bb6 else bb5
+// +     %9 = ptradd #0, 16
+// +     %10 = load i8, %9, align 1
+// +     %11 = trunc i8 %10 to i1
+// +     br %11 to bb5 else bb6
 // +
 // + bb5:
-// +     abort at loc("optional-infer-engaged.src":20:5) assert(ptr #1)
-// +
-// + bb6:
 // +     engage #0
 // +     unwrap #0
 // +     store #0, i64 1, align 8
 // +     unwrap #0
-// +     %24 = ptradd #0, 8
-// +     store %24, i64 2, align 8
+// +     %12 = ptradd #0, 8
+// +     store %12, i64 2, align 8
+// +     ret
+// +
+// + bb6:
+// +     abort at loc("optional-infer-engaged.src":20:5) assert(ptr #1)
+// + }
+// +
+// + proc _S2p2FvxORixORiE.2 (ptr %0, ptr %1) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp ne ptr %2, nil
+// +     br %3 to bb1 else bb3
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp ne ptr %4, nil
+// +     br %5 to bb2 else bb3
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     store %6, i64 3, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     store %7, i64 3, align 8
+// +     br bb3
+// +
+// + bb3:
+// +     ret
+// + }
+// +
+// + proc _S2p3FvxORixORiE.3 (ptr %0, ptr %1) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp eq ptr %2, nil
+// +     br %3 to bb3 else bb1
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp eq ptr %4, nil
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     store %6, i64 3, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     store %7, i64 3, align 8
+// +     br bb3
+// +
+// + bb3:
 // +     ret
 // + }
 
@@ -134,35 +207,87 @@ proc p1 {
 //L +   %16 = getelementptr inbounds nuw i8, ptr %1, i32 16
 //L +   %17 = load i8, ptr %16, align 1
 //L +   %18 = trunc i8 %17 to i1
-//L +   br i1 %18, label %29, label %19
+//L +   br i1 %18, label %19, label %21
 //L +
 //L + 19:                                               ; preds = %15
+//L +   store i64 1, ptr %1, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 2, ptr %20, align 8
+//L +   ret void
+//L +
+//L + 21:                                               ; preds = %15
 //L +   store ptr @__srcc_str.1, ptr %2, align 8
-//L +   %20 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 26, ptr %20, align 8
-//L +   %21 = getelementptr inbounds nuw i8, ptr %2, i32 16
-//L +   store i64 20, ptr %21, align 8
-//L +   %22 = getelementptr inbounds nuw i8, ptr %2, i32 24
-//L +   store i64 5, ptr %22, align 8
-//L +   %23 = getelementptr inbounds nuw i8, ptr %2, i32 32
-//L +   store ptr @__srcc_str.0, ptr %23, align 8
-//L +   %24 = getelementptr inbounds nuw i8, ptr %23, i32 8
-//L +   store i64 8, ptr %24, align 8
-//L +   %25 = getelementptr inbounds nuw i8, ptr %2, i32 48
-//L +   store ptr null, ptr %25, align 8
+//L +   %22 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i64 26, ptr %22, align 8
+//L +   %23 = getelementptr inbounds nuw i8, ptr %2, i32 16
+//L +   store i64 20, ptr %23, align 8
+//L +   %24 = getelementptr inbounds nuw i8, ptr %2, i32 24
+//L +   store i64 5, ptr %24, align 8
+//L +   %25 = getelementptr inbounds nuw i8, ptr %2, i32 32
+//L +   store ptr @__srcc_str.0, ptr %25, align 8
 //L +   %26 = getelementptr inbounds nuw i8, ptr %25, i32 8
-//L +   store i64 0, ptr %26, align 8
-//L +   %27 = getelementptr inbounds nuw i8, ptr %2, i32 64
+//L +   store i64 8, ptr %26, align 8
+//L +   %27 = getelementptr inbounds nuw i8, ptr %2, i32 48
 //L +   store ptr null, ptr %27, align 8
 //L +   %28 = getelementptr inbounds nuw i8, ptr %27, i32 8
-//L +   store ptr null, ptr %28, align 8
+//L +   store i64 0, ptr %28, align 8
+//L +   %29 = getelementptr inbounds nuw i8, ptr %2, i32 64
+//L +   store ptr null, ptr %29, align 8
+//L +   %30 = getelementptr inbounds nuw i8, ptr %29, i32 8
+//L +   store ptr null, ptr %30, align 8
 //L +   call void @__src_assert_fail(ptr %2)
 //L +   unreachable
+//L + }
 //L +
-//L + 29:                                               ; preds = %15
-//L +   store i64 1, ptr %1, align 8
-//L +   %30 = getelementptr inbounds nuw i8, ptr %1, i32 8
-//L +   store i64 2, ptr %30, align 8
+//L + ; Function Attrs: nounwind
+//L + define private void @_S2p2FvxORixORiE.2(ptr %0, ptr %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp ne ptr %5, null
+//L +   br i1 %6, label %7, label %13
+//L +
+//L + 7:                                                ; preds = %2
+//L +   %8 = load ptr, ptr %4, align 8
+//L +   %9 = icmp ne ptr %8, null
+//L +   br i1 %9, label %10, label %13
+//L +
+//L + 10:                                               ; preds = %7
+//L +   %11 = load ptr, ptr %3, align 8
+//L +   store i64 3, ptr %11, align 8
+//L +   %12 = load ptr, ptr %4, align 8
+//L +   store i64 3, ptr %12, align 8
+//L +   br label %13
+//L +
+//L + 13:                                               ; preds = %10, %7, %2
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private void @_S2p3FvxORixORiE.3(ptr %0, ptr %1) #0 {
+//L +   %3 = alloca i8, i64 8, align 8
+//L +   %4 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %3, align 8
+//L +   store ptr %1, ptr %4, align 8
+//L +   %5 = load ptr, ptr %3, align 8
+//L +   %6 = icmp eq ptr %5, null
+//L +   br i1 %6, label %13, label %7
+//L +
+//L + 7:                                                ; preds = %2
+//L +   %8 = load ptr, ptr %4, align 8
+//L +   %9 = icmp eq ptr %8, null
+//L +   br i1 %9, label %13, label %10
+//L +
+//L + 10:                                               ; preds = %7
+//L +   %11 = load ptr, ptr %3, align 8
+//L +   store i64 3, ptr %11, align 8
+//L +   %12 = load ptr, ptr %4, align 8
+//L +   store i64 3, ptr %12, align 8
+//L +   br label %13
+//L +
+//L + 13:                                               ; preds = %10, %7, %2
 //L +   ret void
 //L + }
 //L +

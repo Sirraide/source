@@ -52,7 +52,9 @@ proc append_str (inout assert_msg_buf into, i8[] str) nomangle {
 
 // FIXME: If we *also* wrap all of the lines below in 'eval {}' in addition
 // to passing '--eval', we get a crash.
-assert_msg_buf s = (libc::malloc(10000) as! i8^, 0, 10000);
+var mem = libc::malloc(10000);
+assert mem != nil, "malloc() failed";
+assert_msg_buf s = (mem as! i8^, 0, 10000);
 var x = 24;
 var y = 20;
 append_str(s, "x = ");

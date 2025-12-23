@@ -31,7 +31,7 @@ proc d = macros::NOT_CONSTEXPR;
 // +     ret i32 6
 // + }
 // +
-// + proc _S1dFRvE.4 private ccc -> ptr {
+// + proc _S1dFORvE.4 private ccc -> ptr {
 // + entry:
 // +     %0 = load ptr, @__srcc_expanded_macro_0, align 8
 // +     ret ptr %0
@@ -65,7 +65,7 @@ proc d = macros::NOT_CONSTEXPR;
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S1dFRvE.4() #0 {
+//L + define private ptr @_S1dFORvE.4() #0 {
 //L +   %1 = load ptr, ptr @__srcc_expanded_macro_0, align 8
 //L +   ret ptr %1
 //L + }

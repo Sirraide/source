@@ -235,6 +235,8 @@ class srcc::cg::CodeGen : public DiagsProducer
     mlir::Type int_ty;
     mlir::Type i128_ty;
     mlir::Type bool_ty;
+    mlir::Type type_ty;
+    mlir::Type tree_ty;
     usz strings = 0;
 
 public:
@@ -268,7 +270,7 @@ public:
     [[nodiscard]] auto emit_llvm(llvm::TargetMachine& target) -> std::unique_ptr<llvm::Module>;
 
     /// Finalise IR.
-    [[nodiscard]] bool finalise();
+    [[nodiscard]] bool finalise(bool verify);
 
     /// Finalise a single procedure.
     [[nodiscard]] bool finalise_for_constant_evaluation(ir::ProcOp proc);
@@ -355,6 +357,9 @@ public:
 
     /// Convert a type to an IR type; does not support aggregates.
     auto C(Type ty, ValueCategory vc = Expr::RValue) -> mlir::Type;
+
+    /// Attempt to lower a type to an MLIR type.
+    auto TryConvertToMLIRType(Type ty) -> std::optional<mlir::Type>;
 
     /// Convert a type to an array of bytes whose dimension is the type size.
     auto ConvertToByteArrayType(Type ty) -> mlir::Type;
@@ -579,7 +584,7 @@ public:
     /// Set the insert point to the start of a block, but skip over all
     /// operations of a certain type.
     template <typename Op>
-    void SetInsertPointToStartButSkipOpsOfType(Block* bb);
+    void SetInsertPointAfterLastOpOfTypeIn(Block* bb);
 
     /// Opposite of If().
     void Unless(

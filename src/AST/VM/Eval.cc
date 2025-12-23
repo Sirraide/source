@@ -32,6 +32,7 @@
 using namespace srcc;
 using namespace srcc::eval;
 namespace ir = cg::ir;
+namespace LLVM = mlir::LLVM;
 using mlir::Block;
 using mlir::Value;
 
@@ -516,6 +517,10 @@ private:
         if (complain) diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
 
+    void Report(Diagnostic&& diag) {
+        if (complain) diags().report(std::move(diag));
+    }
+
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
     [[nodiscard]] auto AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> std::optional<Pointer>;
     [[nodiscard]] bool EvalLoop();
@@ -743,8 +748,8 @@ bool Eval::EvalLoop() {
         }
 
         // This is currently only used for string data.
-        if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(i)) {
-            auto g = cast<mlir::LLVM::GlobalOp>(i->getParentOfType<mlir::ModuleOp>().lookupSymbol(a.getGlobalName()));
+        if (auto a = dyn_cast<LLVM::AddressOfOp>(i)) {
+            auto g = cast<LLVM::GlobalOp>(i->getParentOfType<mlir::ModuleOp>().lookupSymbol(a.getGlobalName()));
             Assert(g, "Invalid reference to global");
             Assert(g.getConstant(), "TODO: Global variables in the constant evaluator");
 
@@ -805,16 +810,6 @@ bool Eval::EvalLoop() {
             ir::UnwrapOp
         >(i)) continue;
 
-        if (auto e = dyn_cast<ir::DisengagedIfOp>(i)) {
-            Temp(e) = Val(e.getCond());
-            continue;
-        }
-
-        if (auto e = dyn_cast<ir::EngagedIfOp>(i)) {
-            Temp(e) = Val(e.getCond());
-            continue;
-        }
-
         if (auto l = dyn_cast<ir::LoadOp>(i)) {
             auto ptr = GetHostMemoryPointer(l.getAddr());
             if (not ptr) return false;
@@ -822,7 +817,7 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(i)) {
+        if (auto m = dyn_cast<LLVM::MemcpyOp>(i)) {
             auto dest = GetHostMemoryPointer(m.getDst());
             auto src = GetHostMemoryPointer(m.getSrc());
             if (not dest or not src) return false;
@@ -831,7 +826,7 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto m = dyn_cast<mlir::LLVM::MemsetOp>(i)) {
+        if (auto m = dyn_cast<LLVM::MemsetOp>(i)) {
             auto dest = GetHostMemoryPointer(m.getDst());
             if (not dest) return false;
             auto val = Val(m.getVal()).cast<APInt>().getZExtValue();
@@ -870,68 +865,35 @@ bool Eval::EvalLoop() {
         }
 
         if (auto prop = dyn_cast<ir::TypePropertyOp>(i)) {
-            auto ty = Val(prop.getTypeArgument()).cast<Type>();
-            auto InvalidQuery = [&] {
-                return Error(
-                    SLoc::Decode(i->getLoc()),
-                    "Type '{}' has no member '%5({}%)'",
-                    ty,
-                    prop.getProperty()
-                );
-            };
+            auto res = BuiltinMemberAccessExpr::Evaluate(
+                vm.owner(),
+                SLoc::Decode(i->getLoc()),
+                Val(prop.getTypeArgument()).cast<Type>(),
+                prop.getProperty()
+            );
 
-            switch (prop.getProperty()) {
-                using enum BuiltinMemberAccessExpr::AccessKind;
-                case TypeAlign:
-                    Temp(i->getResult(0)) = SRValue(i64(ty->align(vm.owner()).value().bytes()));
-                    continue;
-
-                case TypeArraySize:
-                    Temp(i->getResult(0)) = SRValue(i64(ty->array_size(vm.owner()).bytes()));
-                    continue;
-
-                case TypeBits:
-                    Temp(i->getResult(0)) = SRValue(i64(ty->bit_width(vm.owner()).bits()));
-                    continue;
-
-                case TypeName: {
-                    auto s = vm.owner().save(StripColours(ty->print()));
-                    Temp(i->getResult(0)) = SRValue(vm.memory->make_host_pointer(uptr(s.data())));
-                    Temp(i->getResult(1)) = SRValue(i64(s.size()));
-                    continue;
-                }
-
-                case TypeBytes:
-                case TypeSize:
-                    Temp(i->getResult(0)) = SRValue(i64(ty->memory_size(vm.owner()).bytes()));
-                    continue;
-
-                // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
-                // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
-                // emit an error about this at evaluation time.
-                case TypeMaxVal: {
-                    if (not ty->is_integer()) return InvalidQuery();
-                    Temp(i->getResult(0)) = SRValue(APInt::getSignedMaxValue(u32(ty->bit_width(vm.owner()).bits())));
-                    continue;
-                }
-
-                case TypeMinVal: {
-                    if (not ty->is_integer()) return InvalidQuery();
-                    Temp(i->getResult(0)) = SRValue(APInt::getSignedMinValue(u32(ty->bit_width(vm.owner()).bits())));
-                    continue;
-                }
-
-                case SliceData:
-                case SliceSize:
-                case RangeStart:
-                case RangeEnd:
-                    Unreachable("Not a type property: {}", prop.getProperty());
+            if (not res.has_value()) {
+                Report(std::move(res.error()));
+                return false;
             }
 
-            Unreachable();
+            res.value().visit(utils::Overloaded{
+                [&](auto&&) { Unreachable("Unsupported type property result: {}", res.value().print(&vm.owner().context())); },
+                [&](Type ty) { Temp(i->getResult(0)) = SRValue(ty); },
+                [&](APInt val) { Temp(i->getResult(0)) = SRValue(std::move(val)); },
+                [&](Slice s) {
+                    auto str = s.pointer.base().get<String>();
+                    Assert(s.pointer.offset() == Size());
+                    Assert(s.size.getZExtValue() == str.size());
+                    Temp(i->getResult(0)) = SRValue(vm.memory->make_host_pointer(uptr(str.data())));
+                    Temp(i->getResult(1)) = SRValue(i64(str.size()));
+                }
+            });
+
+            continue;
         }
 
-        if (auto gep = dyn_cast<mlir::LLVM::GEPOp>(i)) {
+        if (auto gep = dyn_cast<LLVM::GEPOp>(i)) {
             auto idx = gep.getIndices()[0];
             uptr offs;
             if (auto lit = dyn_cast<mlir::IntegerAttr>(idx)) offs = lit.getValue().getZExtValue();
@@ -940,8 +902,22 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto s = dyn_cast<ir::FrameSlotOp>(i)) {
-            auto ptr = AllocateStackMemory(s.getLoc(), s.size(), s.align());
+        if (auto s = dyn_cast<LLVM::AllocaOp>(i)) {
+            // For the mem2reg pass to work properly, we need to allow types
+            // other than 'i8' here, so figure out how many bytes that is.
+            auto sz = Val(s.getArraySize()).cast<APInt>();
+            auto el = s.getElemType();
+            if (not el.isInteger(8)) {
+                auto dl = mlir::DataLayout::closest(i);
+                sz *= ir::GetTypeSize(dl, el).bytes();
+            }
+
+            auto ptr = AllocateStackMemory(
+                s.getLoc(),
+                Size::Bytes(sz.getZExtValue()),
+                Align(s.getAlignment().value_or(1))
+            );
+
             if (not ptr) return false;
             frame().temporaries[Encode(s)] = SRValue(ptr.value());
             continue;
@@ -990,7 +966,7 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (isa<mlir::LLVM::UnreachableOp>(i))
+        if (isa<LLVM::UnreachableOp>(i))
             return Error(SLoc::Decode(i->getLoc()), "Unreachable code reached");
 
         if (auto c = dyn_cast<mlir::arith::ExtSIOp>(i)) {
@@ -1029,14 +1005,14 @@ bool Eval::EvalLoop() {
         }
 
         // FIXME: Introduce our own CMP instruction that supports both integers and pointers.
-        if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(i)) {
+        if (auto cmp = dyn_cast<LLVM::ICmpOp>(i)) {
             Assert(
-                cmp.getPredicate() == mlir::LLVM::ICmpPredicate::ne or
-                cmp.getPredicate() == mlir::LLVM::ICmpPredicate::eq
+                cmp.getPredicate() == LLVM::ICmpPredicate::ne or
+                cmp.getPredicate() == LLVM::ICmpPredicate::eq
             );
             auto lhs = Val(cmp.getLhs()).cast<Pointer>();
             auto rhs = Val(cmp.getRhs()).cast<Pointer>();
-            auto eq = cmp.getPredicate() == mlir::LLVM::ICmpPredicate::eq;
+            auto eq = cmp.getPredicate() == LLVM::ICmpPredicate::eq;
             if (eq) Temp(cmp) = SRValue(lhs == rhs);
             else Temp(cmp) = SRValue(lhs != rhs);
             continue;
@@ -1192,7 +1168,7 @@ auto Eval::FFIType(mlir::Type ty) -> ffi_type* {
         }
     }
 
-    if (isa<mlir::LLVM::LLVMPointerType>(ty))
+    if (isa<LLVM::LLVMPointerType>(ty))
         return &ffi_type_pointer;
 
     ICE(entry, "Unsupported type in FFI call: 'i{}'", ty);
@@ -1246,7 +1222,7 @@ auto Eval::LoadPointer(const void* mem) -> SRValue {
 auto Eval::LoadSRValue(const void* mem, mlir::Type ty) -> SRValue {
     if (auto i = dyn_cast<mlir::IntegerType>(ty))
         return LoadInt(mem, Size::Bits(i.getWidth()));
-    if (isa<mlir::LLVM::LLVMPointerType>(ty))
+    if (isa<LLVM::LLVMPointerType>(ty))
         return LoadPointer(mem);
     if (isa<ir::TreeType>(ty)) return SRValue(LoadTree(mem));
     if (isa<ir::TypeType>(ty)) return SRValue(LoadType(mem));
@@ -1482,7 +1458,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 }
 
 // ============================================================================
-//  VM API
+//  API
 // ============================================================================
 VM::~VM() = default;
 VM::VM(TranslationUnit& owner_tu)
@@ -1560,4 +1536,63 @@ void VM::init(const Target& tgt) {
         tgt.int_size(Size::Bits(1)) <= Size::Of<uptr>(),
         "What kind of unholy abomination is this target???"
     );
+}
+
+auto BuiltinMemberAccessExpr::Evaluate(
+    TranslationUnit& tu,
+    SLoc loc,
+    Type ty,
+    AccessKind k
+) -> std::expected<eval::RValue, Diagnostic> {
+    auto Integer = [&](u64 value) {
+        auto wd = tu.target().int_size();
+        return eval::RValue(APInt(unsigned(wd.bits()), value), Type::IntTy);
+    };
+
+    auto InvalidQuery = [&] {
+        auto d = Diagnostic(
+            Diagnostic::Level::Error,
+            loc,
+            std::format("Type '{}' has no member '%5({}%)'", ty, k)
+        );
+
+        return std::unexpected(std::move(d));
+    };
+
+    switch (k) {
+        using enum BuiltinMemberAccessExpr::AccessKind;
+        case TypeAlign: return Integer(ty->align(tu).value().bytes());
+        case TypeArraySize: return Integer(ty->array_size(tu).bytes());
+        case TypeBits: return Integer(ty->bit_width(tu).bits());
+        case TypeBytes: return Integer(ty->memory_size(tu).bytes());
+        case TypeSize: return Integer(ty->memory_size(tu).bytes());
+        case TypeIsOptional: return eval::RValue(isa<OptionalType>(ty));
+        case TypeIsSlice: return eval::RValue(isa<SliceType>(ty));
+
+        case TypeMaxVal:
+            if (not ty->is_integer()) return InvalidQuery();
+            return eval::RValue(APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
+
+        case TypeMinVal:
+            if (not ty->is_integer()) return InvalidQuery();
+            return eval::RValue(APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
+
+        case TypeElem:
+            if (auto s = dyn_cast<SingleElementTypeBase>(ty)) return eval::RValue(s->elem());
+            return InvalidQuery();
+
+        case TypeName: {
+            auto s = tu.save(StripColours(ty->print()));
+            auto ptr = EvaluatedPointer(s, Size());
+            auto size = APInt(unsigned(tu.target().int_size().bits()), s.size());
+            return eval::RValue(Slice(ptr, size), tu.StrLitTy);
+        }
+
+#       define M(enumerator, name) case enumerator:
+            SRCC_BUILTIN_NON_TYPE_MEMBERS(M)
+                Unreachable("Not a type property: {}", k);
+#       undef M
+    }
+
+    Unreachable();
 }

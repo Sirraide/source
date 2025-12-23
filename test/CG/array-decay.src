@@ -9,6 +9,8 @@ int^ b = &a;
 int^ b2 = &a2;
 x(&a);
 x(&a2);
+x(b);
+x(b2);
 
 // * proc __src_main external ccc {
 // +     #0 = 32, align 8
@@ -23,6 +25,10 @@ x(&a2);
 // +     store #3, ptr #1, align 8
 // +     call ccc void x(ptr #0)
 // +     call ccc void x(ptr #1)
+// +     %0 = load ptr, #2, align 8
+// +     call ccc void x(ptr %0)
+// +     %1 = load ptr, #3, align 8
+// +     call ccc void x(ptr %1)
 // +     ret
 // + }
 // +

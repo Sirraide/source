@@ -40,6 +40,7 @@ using mlir::Value;
 
 namespace ir {
 auto FormatType(mlir::Type ty) -> SmallString<128>;
+auto GetTypeSize(const mlir::DataLayout& dl, mlir::Type ty) -> Size;
 
 #define COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TYPE, ...)                                         \
     mlir::LogicalResult readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage); \

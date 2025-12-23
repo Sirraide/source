@@ -184,9 +184,7 @@ proc p15 {
     x.y = 2;
 
     // This assert doesn’t actually affect lifetime analysis since we emit the
-    // 'engage' into the block that calls the assert handler (see the comment
-    // in 'InferOptionalEngagementFromConditionPass::InferFromBranch()' as to
-    // why this is the case).
+    // 'engage' into the block that calls the assert handler.
     assert x == nil;
     x.x = 1;
     x.y = 2;
@@ -215,4 +213,24 @@ proc p17 (int? x) {
     int q = x; // expected-error: Optional might be nil when accessed here
     assert x != nil;
     int q2 = x;
+}
+
+proc p18(in int^? a, in int^? b) {
+    if a != nil and b != nil {
+        ^a = 3;
+        ^b = 3;
+    } else {
+        ^a = 3; // expected-error: Optional might be nil when accessed here
+        ^b = 3; // expected-error: Optional might be nil when accessed here
+    }
+}
+
+proc p19(in int^? a, in int^? b) {
+    if a == nil or b == nil {
+        ^a = 3; // expected-error: Optional might be nil when accessed here
+        ^b = 3; // expected-error: Optional might be nil when accessed here
+    } else {
+        ^a = 3;
+        ^b = 3;
+    }
 }

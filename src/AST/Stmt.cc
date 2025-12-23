@@ -143,60 +143,48 @@ auto BlockExpr::return_expr() -> Expr* {
 }
 
 auto BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(Type ty) -> ArrayRef<BuiltinMember> {
+#   define M(enumerator, name) {name, enumerator},
     using enum AccessKind;
     using List = std::initializer_list<BuiltinMember>;
-    static_assert(+$$Count == 11, "Handle new members below");
-    if (ty == Type::TypeTy) {
-        static constexpr List Members {
-            {"align", TypeAlign},
-            {"arrsize", TypeArraySize},
-            {"bits", TypeBits},
-            {"bytes", TypeBytes},
-            {"name", TypeName},
-            {"size", TypeSize},
-            {"min", TypeMinVal},
-            {"max", TypeMaxVal},
-        };
 
+    if (ty == Type::TypeTy) {
+        static constexpr List Members { SRCC_BUILTIN_TYPE_MEMBERS(M) };
         return Members;
     }
 
     if (isa<SliceType>(ty)) {
-        static constexpr List Members {
-            {"data", SliceData},
-            {"size", SliceSize},
-        };
-
+        static constexpr List Members { SRCC_BUILTIN_SLICE_MEMBERS(M) };
         return Members;
     }
 
     if (isa<RangeType>(ty)) {
-        static constexpr List Members {
-            {"start", RangeStart},
-            {"end", RangeEnd},
-        };
-
+        static constexpr List Members { SRCC_BUILTIN_RANGE_MEMBERS(M) };
         return Members;
     }
 
     return {};
+#   undef M
+}
+
+bool BuiltinMemberAccessExpr::IsTypeProperty(AccessKind k) {
+    switch (k) {
+#       define M(enumerator, name) case AccessKind::enumerator:
+            SRCC_BUILTIN_TYPE_MEMBERS(M)
+                return true;
+
+            SRCC_BUILTIN_NON_TYPE_MEMBERS(M)
+                return false;
+#       undef M
+    }
+    Unreachable();
 }
 
 auto BuiltinMemberAccessExpr::ToMemberName(AccessKind k) -> String {
-    using enum AccessKind;
     switch (k) {
-        case SliceData: return "data";
-        case SliceSize: return "size";
-        case RangeStart: return "start";
-        case RangeEnd: return "end";
-        case TypeAlign: return "align";
-        case TypeArraySize: return "arrsize";
-        case TypeBits: return "bits";
-        case TypeBytes: return "bytes";
-        case TypeSize: return "size";
-        case TypeName: return "name";
-        case TypeMaxVal: return "max";
-        case TypeMinVal: return "min";
+#       define M(enumerator, name) case AccessKind::enumerator: return name;
+        SRCC_BUILTIN_TYPE_MEMBERS(M)
+        SRCC_BUILTIN_NON_TYPE_MEMBERS(M)
+#       undef M
     }
     Unreachable();
 }

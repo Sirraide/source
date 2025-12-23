@@ -10,7 +10,7 @@ c::foo f1 = (1, 2);
 c::foo(&f1);
 
 c::foo f2 = ("foobar"); // expected-error: Cannot convert expression of type 'i8[]' to 'i32'
-c::foo("foobar"); // expected-error: Cannot convert expression of type 'i8[]' to 'foo^'
+c::foo("foobar"); // expected-error: Cannot convert expression of type 'i8[]' to 'foo^?'
 
 // This note is in the imported header.
 // expected-note@*: In initialiser for field 'a'

@@ -6,11 +6,31 @@
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 
 using namespace srcc;
 using namespace srcc::cg;
 using namespace srcc::cg::ir;
+namespace LLVM = mlir::LLVM;
+
+/// If this is a fixed-sized alloca, return the element count.
+static auto GetConstantAllocaElemCount(LLVM::AllocaOp op) -> std::optional<u64> {
+    // If the array size is not a constant, then this is a dynamic alloca.
+    auto op_res = dyn_cast<mlir::OpResult>(op.getArraySize());
+    if (not op_res) return std::nullopt;
+    auto constant = dyn_cast<mlir::arith::ConstantOp>(op_res.getOwner());
+    if (not constant) return std::nullopt;
+
+    // Otherwise, retrieve the count.
+    auto size = cast<mlir::IntegerAttr>(constant.getValue());
+    return size.getValue().getZExtValue();
+}
+
+/// Check if this is a constant-size alloca.
+static auto IsConstantAlloca(LLVM::AllocaOp op) {
+    return GetConstantAllocaElemCount(op).has_value();
+}
 
 struct CodeGen::Printer {
     CodeGen& cg;
@@ -43,13 +63,14 @@ struct CodeGen::Printer {
     }
 
     auto IsInlineOp(Operation* op) {
-        return not verbose and isa< // clang-format off
-            FrameSlotOp,
+        if (verbose) return false;
+        if (auto a = dyn_cast<LLVM::AllocaOp>(op)) return IsConstantAlloca(a);
+        return isa< // clang-format off
             NilOp,
             ProcRefOp,
             TreeConstantOp,
             TypeConstantOp,
-            mlir::LLVM::AddressOfOp,
+            LLVM::AddressOfOp,
             mlir::arith::ConstantIntOp
         >(op); // clang-format on
     }
@@ -57,7 +78,7 @@ struct CodeGen::Printer {
 
 auto ir::FormatType(mlir::Type ty) -> SmallString<128> {
     SmallString<128> tmp;
-    if (isa<mlir::LLVM::LLVMPointerType>(ty)) {
+    if (isa<LLVM::LLVMPointerType>(ty)) {
         tmp += "%6(ptr%)";
     } else if (isa<ir::TreeType>(ty)) {
         tmp += "%6(tree%)";
@@ -65,7 +86,7 @@ auto ir::FormatType(mlir::Type ty) -> SmallString<128> {
         tmp += "%6(type%)";
     } else if (auto ui = dyn_cast<mlir::IntegerType>(ty); ui and ui.isUnsignedInteger(1)) {
         tmp += "%6(bool%)";
-    } else if (auto a = dyn_cast<mlir::LLVM::LLVMArrayType>(ty)) {
+    } else if (auto a = dyn_cast<LLVM::LLVMArrayType>(ty)) {
         Format(tmp, "{}%1([%5({}%)]%)", FormatType(a.getElementType()), a.getNumElements());
     } else {
         llvm::raw_svector_ostream os{tmp};
@@ -152,7 +173,7 @@ void CodeGen::Printer::print_result_attrs(ProcAndCallOpInterface proc_or_call, u
 }
 
 void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
-    using mlir::LLVM::LLVMDialect;
+    using LLVM::LLVMDialect;
     if (attr.getName() == LLVMDialect::getByValAttrName()) {
         Format(out, " %1(byval%) {}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getZExtAttrName()) {
@@ -202,7 +223,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         );
     };
 
-    if (auto s = dyn_cast<StoreOp>(op)) {
+    if (auto s = dyn_cast<ir::StoreOp>(op)) {
         Format(out,
             "store {}, {}, align %5({}%)",
             val(s.getAddr(), false),
@@ -212,7 +233,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto gep = dyn_cast<mlir::LLVM::GEPOp>(op)) {
+    if (auto gep = dyn_cast<LLVM::GEPOp>(op)) {
         Assert(gep.getIndices().size() == 1);
         Assert(
             gep.getElemType().isSignlessInteger(8),
@@ -227,7 +248,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto cmp = dyn_cast<mlir::LLVM::ICmpOp>(op)) {
+    if (auto cmp = dyn_cast<LLVM::ICmpOp>(op)) {
         Format(out,
             "cmp {} {}, {}",
             stringifyICmpPredicate(cmp.getPredicate()),
@@ -262,7 +283,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto l = dyn_cast<LoadOp>(op)) {
+    if (auto l = dyn_cast<ir::LoadOp>(op)) {
         Format(out,
             "load {}, {}, align %5({}%)",
             FormatType(l->getResultTypes().front()),
@@ -329,7 +350,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(op)) {
+    if (auto m = dyn_cast<LLVM::MemcpyOp>(op)) {
         Format(out,
             "copy{} {} <- {}, {}",
             m.getIsVolatile() ? " volatile" : "",
@@ -340,8 +361,8 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
-        auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
+    if (auto a = dyn_cast<LLVM::AddressOfOp>(op)) {
+        auto g = cg.mlir_module.lookupSymbol<LLVM::GlobalOp>(a.getGlobalNameAttr());
         Format(out, "addressof %3(@{}%)", global_names.at(g));
         return;
     }
@@ -356,13 +377,32 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto slot = dyn_cast<FrameSlotOp>(op)) {
-        Format(out,
-            "alloca %5({}%)%1(, align%) %5({}%)",
-            slot.getBytes().getValue(),
-            slot.getAlignment().getValue()
+    if (auto slot = dyn_cast<LLVM::AllocaOp>(op)) {
+        auto sz = GetConstantAllocaElemCount(slot);
+        if (slot.getElemType().isInteger(8)) {
+            if (sz.has_value()) return Format(
+                out,
+                "alloca %5({}%), align %5({}%)",
+                *sz,
+                slot.getAlignment().value_or(1)
+            );
+
+            return Format(
+                out,
+                "alloca {} x {}, align %5({}%)",
+                FormatType(slot.getElemType()),
+                val(slot.getArraySize(), false),
+                slot.getAlignment().value_or(1)
+            );
+        }
+
+        Assert(sz == 1, "Typed alloca should have array size 1");
+        return Format(
+            out,
+            "alloca {}, align %5({}%)",
+            FormatType(slot.getElemType()),
+            slot.getAlignment().value_or(1)
         );
-        return;
     }
 
     if (auto s = dyn_cast<mlir::arith::SelectOp>(op)) {
@@ -390,12 +430,12 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto m = dyn_cast<mlir::LLVM::MemsetOp>(op)) {
+    if (auto m = dyn_cast<LLVM::MemsetOp>(op)) {
         Format(out, "set {}, {}, {}", val(m.getDst()), val(m.getVal()), val(m.getLen()));
         return;
     }
 
-    if (isa<mlir::LLVM::UnreachableOp>(op)) {
+    if (isa<LLVM::UnreachableOp>(op)) {
         out += "unreachable";
         return;
     }
@@ -430,7 +470,7 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (isa<mlir::LLVM::PoisonOp>(op)) {
+    if (isa<LLVM::PoisonOp>(op)) {
         Format(out, "{} poison", FormatType(op->getResult(0).getType()));
         return;
     }
@@ -445,18 +485,8 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto e = dyn_cast<ir::EngagedIfOp>(op)) {
-        Format(out, "engage {} if {}", val(e.getOptional(), false), val(e.getCond(), false));
-        return;
-    }
-
     if (auto e = dyn_cast<ir::DisengageOp>(op)) {
         Format(out, "disengage {}", val(e.getOptional(), false));
-        return;
-    }
-
-    if (auto e = dyn_cast<ir::DisengagedIfOp>(op)) {
-        Format(out, "disengage {} if {}", val(e.getOptional(), false), val(e.getCond(), false));
         return;
     }
 
@@ -562,16 +592,30 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     if (not verbose) {
         i64 frame = 0;
         for (auto& f : proc.front()) {
-            // Transformations may reorder these for some reason.
-            auto slot = dyn_cast<FrameSlotOp>(&f);
+            auto slot = dyn_cast<LLVM::AllocaOp>(&f);
             if (not slot) continue;
+            auto sz = GetConstantAllocaElemCount(slot);
+            if (not sz) continue;
             auto id = frame_ids[&f] = frame++;
-            Format(out,
-                "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
-                id,
-                slot.getBytes().getValue(),
-                slot.getAlignment().getValue()
-            );
+
+            if (slot.getElemType().isInteger(8)) {
+                Format(
+                    out,
+                    "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
+                    id,
+                    *sz,
+                    slot.getAlignment().value_or(1)
+                );
+            } else {
+                Assert(sz == 1, "Typed allocas should have array size 1");
+                Format(
+                    out,
+                    "    %4(#{}%) %1(=%) {}%1(, align%) %5({}%)\n",
+                    id,
+                    FormatType(slot.getElemType()),
+                    slot.getAlignment().value_or(1)
+                );
+            }
         }
 
         if (frame) out += "\n";
@@ -603,7 +647,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
 }
 
 void CodeGen::Printer::print_top_level_op(Operation* op) {
-    if (auto g = dyn_cast<mlir::LLVM::GlobalOp>(op)) {
+    if (auto g = dyn_cast<LLVM::GlobalOp>(op)) {
         // This is a string constant.
         if (g.getSymName().starts_with(constants::CodeGenStringConstantNamePrefix)) {
             Assert(g.getConstant(), "Strings should always be constants");
@@ -633,7 +677,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
 
         // This is an external global variable.
         Assert(
-            g.getLinkage() == mlir::LLVM::Linkage::External,
+            g.getLinkage() == LLVM::Linkage::External,
             "TODO: Print non-external globals"
         );
 
@@ -641,7 +685,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             out,
             "%3(@{}%) %1(= external %5({}%), align %({}%)%)\n",
             g.getSymName(),
-            cast<mlir::LLVM::LLVMArrayType>(g.getType()).getNumElements(),
+            cast<LLVM::LLVMArrayType>(g.getType()).getNumElements(),
             g.getAlignment().value_or(1)
         );
 
@@ -701,8 +745,8 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
             return tmp;
         }
 
-        if (auto a = dyn_cast<mlir::LLVM::AddressOfOp>(op)) {
-            auto g = cg.mlir_module.lookupSymbol<mlir::LLVM::GlobalOp>(a.getGlobalNameAttr());
+        if (auto a = dyn_cast<LLVM::AddressOfOp>(op)) {
+            auto g = cg.mlir_module.lookupSymbol<LLVM::GlobalOp>(a.getGlobalNameAttr());
             Format(tmp, "%3(@{}%)", global_names.at(g));
             return tmp;
         }
@@ -722,7 +766,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
             return tmp;
         }
 
-        if (isa<FrameSlotOp>(op)) {
+        if (isa<LLVM::AllocaOp>(op)) {
             Format(tmp, "%4(#{}%)", Id(frame_ids, op));
             return tmp;
         }

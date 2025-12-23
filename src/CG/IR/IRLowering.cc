@@ -3,10 +3,12 @@
 #include <srcc/Core/Constants.hh>
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Linker/Linker.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
@@ -20,12 +22,16 @@
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/ConversionTarget.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Target/LLVMIR/Export.h>
@@ -210,21 +216,6 @@ ERASE_OP(DisengageOp);
 ERASE_OP(EngageOp);
 ERASE_OP(EngageCopyOp);
 
-// These are effectively metadata that simply pass through the condition.
-LOWERING(DisengagedIfOp, { return a.getCond(); });
-LOWERING(EngagedIfOp, { return a.getCond(); });
-
-LOWERING(FrameSlotOp, {
-    return LLVM::AllocaOp::create(
-        r,
-        op->getLoc(),
-        LLVM::LLVMPointerType::get(r.getContext()),
-        r.getI8Type(),
-        LLVM::ConstantOp::create(r, op->getLoc(), a.getBytesAttr()),
-        unsigned(a.getAlignment().getInt())
-    );
-});
-
 LOWERING(LoadOp, {
     return LLVM::LoadOp::create(
         r,
@@ -371,7 +362,7 @@ enum struct EngagedState {
 };
 
 
-#define DEBUG_OPTIONAL_ANALYSIS(...)
+#define DEBUG_OPTIONAL_ANALYSIS(...) // __VA_ARGS__
 
 class OptionalLatticePoint final : public mlir::dataflow::AbstractDenseLattice {
     llvm::SmallDenseMap<Value, EngagedState> state;
@@ -423,7 +414,7 @@ public:
     // Dump this lattice point.
     void print(llvm::raw_ostream& os) const override {
         for (auto [value, s] : state)
-            os << "\n    +" << value << ": " << enchantum::to_string(s);
+            os << "\n    + " << value << ": " << enchantum::to_string(s);
     }
 
     // Reset this lattice.
@@ -501,24 +492,32 @@ struct AbortInfoInliningPass final : mlir::PassWrapper<AbortInfoInliningPass, ml
     }
 };
 
-/// Pass that iterates over conditional branches and tries to obtain information
-/// from them as to whether certain optionals are engaged in the then or disengaged
-/// in the then or else branch.
-struct InferOptionalEngagementFromConditionPass final : mlir::PassWrapper<InferOptionalEngagementFromConditionPass, mlir::Pass> {
+#define DEBUG_CRITICAL_EDGE_INLINING(...)
+
+/// Pass that simplifies trivial critical edges (i.e. blocks that contain
+/// only a conditional branch on a block argument) to facilitate dataflow
+/// anlaysis.
+struct TrivialCriticalEdgeInliningPass final : mlir::PassWrapper<TrivialCriticalEdgeInliningPass, mlir::Pass> {
     CodeGen& cg;
-    InferOptionalEngagementFromConditionPass(CodeGen& cg) : cg(cg) {}
+    TrivialCriticalEdgeInliningPass(CodeGen& cg) : cg(cg) {}
     bool canScheduleOn(mlir::RegisteredOperationName op) const override {
         auto name = op.getStringRef();
         return name == mlir::ModuleOp::getOperationName() or name == ir::ProcOp::getOperationName();
     }
 
     void runOnOperation() override {
+        DEBUG_CRITICAL_EDGE_INLINING(
+            llvm::dbgs() << "================== IR ======================\n";
+            getOperation()->dump();
+            llvm::dbgs() << "================== IR ======================\n";
+        )
+
         mlir::OpBuilder b{&getContext()};
         mlir::IRRewriter r{b};
-        getOperation()->walk([&](mlir::cf::CondBranchOp op) { InferFromBranch(r, op); });
+        getOperation()->walk([&](mlir::Block* bb) { MaybeInline(r, bb); });
     }
 
-    void InferFromBranch(mlir::IRRewriter& r, mlir::cf::CondBranchOp op);
+    void MaybeInline(mlir::IRRewriter& r, mlir::Block* bb);
 };
 } // namespace srcc::cg::lowering
 
@@ -536,12 +535,9 @@ void LoweringPass::runOnOperation() {
     patterns.add< // clang-format off
         AbortOpLowering,
         DisengageOpLowering,
-        DisengagedIfOpLowering,
         EngageOpLowering,
         EngageCopyOpLowering,
-        EngagedIfOpLowering,
         CallOpLowering,
-        FrameSlotOpLowering,
         LoadOpLowering,
         NilOpLowering,
         ProcOpLowering,
@@ -610,6 +606,7 @@ void OptionalUnwrapCheckPass::CheckProcedure(ir::ProcOp proc) {
     for (auto unwrap : unwraps) {
         auto point = solver.getProgramPointAfter(unwrap);
         auto state = solver.lookupState<OptionalLatticePoint>(point);
+        if (not state) continue; // Not sure why this can happen but give up.
         DEBUG_OPTIONAL_ANALYSIS(
             std::println("State is: {}", enchantum::to_string(state->get(unwrap.getOptional())));
         )
@@ -621,60 +618,126 @@ void OptionalUnwrapCheckPass::CheckProcedure(ir::ProcOp proc) {
     }
 }
 
-void InferOptionalEngagementFromConditionPass::InferFromBranch(mlir::IRRewriter& r, mlir::cf::CondBranchOp op) {
-    auto EngageOptional = [&](bool in_then_block, Value optional) {
-        auto bb = in_then_block ? op.getTrueDest() : op.getFalseDest();
+void TrivialCriticalEdgeInliningPass::MaybeInline(mlir::IRRewriter& r, mlir::Block* bb) {
+    if (not bb->mightHaveTerminator()) return;
+    auto branch = dyn_cast_if_present<mlir::cf::CondBranchOp>(bb->getTerminator());
+    if (
+        not branch or
+        bb->getNumArguments() != 1 or
+        bb->empty() or
+        &bb->front() != branch or
+        branch.getCondition() != bb->getArgument(0)
+    ) return;
 
-        // Note that we have to be careful where we place the 'engage' op: if 'bb'
-        // has multiple predecessors, it would be very wrong to simply insert it
-        // at the start of the block since the optional is only engaged if we’re
-        // branching to that block if this particular condition is true or false.
-        //
-        // To that end, insert a new block between the condition block and the
-        // destination, if need be, and place the engage op there instead; we can
-        // skip this step if there is only a single predecessor.
-        if (not bb->getSinglePredecessor()) {
-            // There is an special case here: if we have 'br %x, bbX, bbX', i.e. if
-            // the then/else blocks are the same block, then it is literally impossible
-            // for any code to make use of an 'engage' flag that we might set in either
-            // edge of the block, so just don’t emit anything to begin with.
-            if (bb->getUniquePredecessor()) return;
+    DEBUG_CRITICAL_EDGE_INLINING (
+        llvm::dbgs() << "========================================\n";
+        llvm::dbgs() << "Processing:\n";
+        bb->print(llvm::dbgs());
+        for (auto pred : bb->getPredecessors()) {
+            llvm::dbgs() << "\n  -> ";
+            pred->printAsOperand(llvm::dbgs());
+        }
+        llvm::dbgs() << "\n----------------------------------------\n";
+    )
 
-            // Otherwise, create a new block, effectively inserting the 'engage' flag into
-            // this particular edge between the condition and the destination block.
-            auto new_bb = new mlir::Block;
-            for (auto a : bb->getArguments()) new_bb->addArgument(a.getType(), a.getLoc());
-            r.setInsertionPointToStart(new_bb);
-            mlir::cf::BranchOp::create(r, op->getLoc(), new_bb, bb->getArguments());
-            op.setSuccessor(new_bb, in_then_block ? 0 : 1);
-            new_bb->insertBefore(bb);
-            bb = new_bb;
+    // This is a block of the form
+    //
+    //   bb(i1 %x):
+    //       br %x to bbX else bbY
+    //
+    // Inline the branch into the parents of this block and delete it.
+    auto bb_arg = bb->getArgument(0);
+    for (auto pred : llvm::make_early_inc_range(bb->getPredecessors())) {
+        DEBUG_CRITICAL_EDGE_INLINING (
+            llvm::dbgs() << "Predecessor:\n";
+            pred->print(llvm::dbgs());
+            llvm::dbgs() << "----------------------------------------\n";
+        )
+
+        auto term = pred->getTerminator();
+        if (auto pred_br = dyn_cast<mlir::cf::BranchOp>(term)) {
+            mlir::IRMapping m;
+            m.map(bb_arg, pred_br.getDestOperands().front());
+            r.setInsertionPointToEnd(pred);
+            auto clone = branch->clone(m);
+
+            DEBUG_CRITICAL_EDGE_INLINING (
+                llvm::dbgs() << "  * Replacing: ";
+                term->print(llvm::dbgs());
+                llvm::dbgs() << "\n  * With: ";
+                clone->print(llvm::dbgs());
+            )
+
+            r.insert(clone);
+            r.eraseOp(term);
+
+            DEBUG_CRITICAL_EDGE_INLINING (
+                llvm::dbgs() << "----------------------------------------\n";
+                llvm::dbgs() << "After Replacement:\n";
+                pred->print(llvm::dbgs());
+                llvm::dbgs() << "----------------------------------------\n";
+            )
+            continue;
         }
 
-        // Emit the 'engage' op; we don't insert a 'disengage' op in the other block because
-        // it would be a bit pointless: if the optional is already disengaged, then adding
-        // another disengage does nothing; if it is engaged, then the branch where we would
-        // be inserting the disengage is dead code (because we’re branching on whether it is
-        // engaged in the first place).
-        r.setInsertionPointToStart(bb);
-        ir::EngageOp::create(r, op.getCondition().getLoc(), optional);
-    };
+        DEBUG_CRITICAL_EDGE_INLINING (
+            std::println(stderr, "REPLACED COND BR");
+            llvm::dbgs() << "----------------------------------------\n";
+        )
 
-    auto val = dyn_cast<mlir::OpResult>(op.getCondition());
-    if (not val) return;
+        // This is a conditional branch. Note that we can only inline this if
+        // the block argument is a constant 'true' or 'false' (because then we
+        // can just discard one of the branches), e.g. if we have
+        //
+        //   bb1:
+        //       %y = ...
+        //       br %y to bb5(%a) else bb2(true)
+        //
+        //   bb2(i1 %x):
+        //       br %x to bb3(%b) else bb4(%c)
+        //
+        // we fold this to
+        //
+        //   bb1:
+        //       %y = ...
+        //       br %y to bb5(%a) else bb3(%b)
+        //
+        auto pred_br = cast<mlir::cf::CondBranchOp>(term);
+        auto TryReplaceBranchDest = [&](unsigned branch_to_replace) {
+            if (pred_br->getSuccessor(branch_to_replace) != bb) return;
+            auto pred_args = branch_to_replace == 0
+                ? pred_br.getTrueDestOperandsMutable()
+                : pred_br.getFalseDestOperandsMutable();
 
-    // TODO: Support things like 'if a == nil or b == nil' (in the else branch,
-    // both 'a' and 'b' should be engaged); can we use 'clang::dataflow::CNFFormula'
-    // for that?
-    if (auto engaged = dyn_cast<ir::EngagedIfOp>(val.getOwner())) {
-        EngageOptional(true, engaged.getOptional());
-        return;
+            // Take care to map the block argument to whatever we passed to it
+            // if it appears in the arguments of the branch, and also check that
+            // it is indeed a constant.
+            Assert(pred_args.size() == 1);
+            auto block_arg = pred_args[0].get();
+            auto cond_op_res = dyn_cast<mlir::OpResult>(block_arg);
+            if (not cond_op_res) return;
+            auto constant = dyn_cast<mlir::arith::ConstantIntOp>(cond_op_res.getOwner());
+            if (not constant) return;
+
+            // Determine what branch we’re replacing this with.
+            bool is_true = cast<mlir::IntegerAttr>(constant.getValue()).getValue().getBoolValue();
+            auto branch_to_take = is_true ? 0u : 1u;
+            auto replacement_args = is_true ? branch.getTrueDestOperands() : branch.getFalseDestOperands();
+
+            // Replace the successor.
+            pred_br.setSuccessor(branch.getSuccessor(branch_to_take), branch_to_replace);
+            pred_args.clear();
+            for (auto arg : replacement_args) {
+                if (arg == bb_arg) pred_args.append(block_arg);
+                else pred_args.append(arg);
+            }
+        };
+
+        TryReplaceBranchDest(0);
+        TryReplaceBranchDest(1);
     }
 
-    if (auto disengaged = dyn_cast<ir::DisengagedIfOp>(val.getOwner())) {
-        EngageOptional(false, disengaged.getOptional());
-        return;
-    }
+    if (bb->getPredecessors().empty()) r.eraseBlock(bb);
 }
 
 auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::Module> {
@@ -689,6 +752,11 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     }
 
     auto m = mlir::translateModuleToLLVMIR(mlir_module, tu.llvm_context, tu.name);
+    if (not m) {
+        if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
+        return nullptr;
+    }
+
     m->setTargetTriple(machine.getTargetTriple());
     m->setDataLayout(machine.createDataLayout());
 
@@ -711,7 +779,8 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
-    pm.addPass(std::make_unique<InferOptionalEngagementFromConditionPass>(*this));
+    // pm.addPass(mlir::createMem2Reg());
+    pm.addPass(std::make_unique<TrivialCriticalEdgeInliningPass>(*this));
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
     pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
     // For some reason this pass sometimes produces null values...
@@ -726,12 +795,14 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
     return false;
 }
 
-bool CodeGen::finalise() {
+bool CodeGen::finalise(bool verify) {
     mlir::PassManager pm{&mlir};
-    pm.enableVerifier(true);
+    pm.enableVerifier(verify);
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createRemoveDeadValuesPass());
-    pm.addPass(std::make_unique<InferOptionalEngagementFromConditionPass>(*this));
+    // pm.addPass(mlir::createMem2Reg());
+    pm.addPass(std::make_unique<TrivialCriticalEdgeInliningPass>(*this));
+    pm.addPass(mlir::createCanonicalizerPass()); // Clean up branches we generated.
     pm.addPass(std::make_unique<OptionalUnwrapCheckPass>(*this));
     if (pm.run(mlir_module).succeeded()) return true;
     if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to finalise IR");

@@ -388,11 +388,22 @@ private:
 
         DataType data = Error{}; // clang-format on
 
+        /// Create an invalid substitution.
         SubstitutionResult() = default;
+        SubstitutionResult(std::nullptr_t) {};
 
-        template <std::convertible_to<DataType> T>
-        SubstitutionResult(T&& v): data{std::forward<T>(v)} {}
+        /// Create a successful substitution.
+        SubstitutionResult(TemplateSubstitution* subst) : data{subst} {
+            Assert(subst);
+            Assert(subst->constraint_satisfied);
+        }
 
+        /// Create an invalid substitution.
+        SubstitutionResult(DeductionFailed failed) : data{failed} {}
+        SubstitutionResult(DeductionAmbiguous ambiguous) : data{ambiguous} {}
+        SubstitutionResult(ConstraintNotSatisfied not_satisfied) : data{not_satisfied} {}
+
+        /// Check if this was successful and return the substitution if so.
         auto success() const -> TemplateSubstitution* {
             auto s = data.get_if<TemplateSubstitution*>();
             return s ? *s : nullptr;
@@ -1025,6 +1036,7 @@ private:
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
+    auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, SLoc loc) -> ParamDecl*;

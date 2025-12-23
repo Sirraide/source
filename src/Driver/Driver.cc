@@ -250,7 +250,7 @@ int Driver::run_job() {
     }
 
     // Run finalisation.
-    bool finalise_ok = opts.ir_no_finalise or cg.finalise();
+    bool finalise_ok = opts.ir_no_finalise or cg.finalise(not opts.ir_no_verify);
     if (opts.verify) return Verify();
     if (ctx.diags().has_error()) return 1;
 

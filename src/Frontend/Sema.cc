@@ -1483,7 +1483,7 @@ auto Sema::SubstituteTemplate(
 
             // Build a tuple consisting of the remaining arguments.
             auto ty = BuildTupleType(input_types.drop_front(i));
-            if (not ty) return SubstitutionResult::Error(); // TODO: Maybe this should not be a hard error.
+            if (not ty) return {}; // TODO: Maybe this should not be a hard error.
             deduced_var_parameters.push_back(ty);
         }
     }
@@ -1516,16 +1516,7 @@ auto Sema::SubstituteTemplate(
     // Mark that we’re done substituting.
     for (auto d : scope.get()->decls())
         cast<TemplateTypeParamDecl>(d)->in_substitution = false;
-
-    // Store the type for later if substitution succeeded.
     if (not ty) return {};
-    info = new (*tu) TemplateSubstitution(
-        id.Intern(tu->allocator()),
-        cast<ProcType>(ty),
-        scope.get()
-    );
-
-    template_substitutions[proc_template].InsertNode(info);
 
     // Check the constraint.
     if (auto where = proc_template->pattern->where.get_or_null()) {
@@ -1537,6 +1528,14 @@ auto Sema::SubstituteTemplate(
             return SubstitutionResult::ConstraintNotSatisfied();
     }
 
+    // Store the type for later if substitution succeeded.
+    info = new (*tu) TemplateSubstitution(
+        id.Intern(tu->allocator()),
+        cast<ProcType>(ty),
+        scope.get()
+    );
+
+    template_substitutions[proc_template].InsertNode(info);
     return info;
 }
 
@@ -2818,52 +2817,10 @@ auto Sema::BuildBinaryExpr(
 
         case Tk::As:
         case Tk::AsBang: {
-            auto ty_expr = dyn_cast<TypeExpr>(rhs);
-            if (not ty_expr) return Error(rhs->location(), "Expected type");
-            auto from = lhs->type;
-            auto to = ty_expr->value;
-            auto Make = [&](CastExpr::CastKind k) {
-                return new (*tu) CastExpr(to, k, lhs, loc);
-            };
-
-            auto HardCast = [&]{
-                if (op == Tk::AsBang) return;
-                Error(loc, "Cast from '{}' to '{}' requires '%1(as!%)'", from, to);
-            };
-
-            auto SoftCast = [&]{
-                if (op == Tk::As) return;
-                if (curr_proc().proc->instantiated_from != nullptr) return;
-                Warn(loc, "Cast from '{}' to '{}' should use '%1(as%)'", from, to);
-            };
-
-            // This is a no-op if the types are the same.
-            if (to == from) return lhs;
-
-            // Casting between integer types is always allowed.
-            if (from->is_integer() and to->is_integer()) {
-                SoftCast();
-                lhs = LValueToRValue(lhs);
-                return Make(CastExpr::Integral);
-            }
-
-            // Casting to void does nothing.
-            if (to == Type::VoidTy) {
-                SoftCast();
-                return Make(CastExpr::ExplicitDiscard);
-            }
-
-            // Casting between pointers is allowed with 'as!'.
-            if (isa<PtrType>(from) and isa<PtrType>(to)) {
-                HardCast();
-                lhs = LValueToRValue(lhs);
-                return Make(CastExpr::Pointer);
-            }
-
-            // For everything else, just try to build an initialiser.
-            auto init = BuildInitialiser(to, lhs, loc);
-            if (init) SoftCast();
-            return init;
+            auto type = tu->vm.eval(rhs);
+            if (not type) return {};
+            if (not type->isa<Type>()) return Error(rhs->location(), "Expected type");
+            return BuildExplicitCast(type->cast<Type>(), lhs, loc, op == Tk::AsBang);
         }
 
         case Tk::In: {
@@ -2951,16 +2908,15 @@ auto Sema::BuildBinaryExpr(
                 auto o = dyn_cast<OptionalType>(lhs->type);
                 o and rhs->type == Type::NilTy
             ) {
-                if (o->has_transparent_layout()) lhs = LValueToRValue(lhs);
-                else lhs = MaterialiseTemporary(lhs);
+                lhs = MaterialiseTemporary(lhs);
                 return new (*tu) OptionalNilTestExpr(lhs, rhs, op == Tk::EqEq, loc);
             }
 
             // Otherwise, require a common type here.
             if (not ConvertToCommonType()) return nullptr;
 
-            // For slices, call an overloaded operator.
-            if (isa<SliceType>(lhs->type)) {
+            // For slices and optionals, call an overloaded operator.
+            if (isa<SliceType/*, OptionalType*/>(lhs->type)) {
                 auto call = BuildCall(DeclName(Tk::EqEq));
                 return op == Tk::Neq ? BuildUnaryExpr(Tk::Not, call.get(), false, loc) : call;
             }
@@ -3114,37 +3070,47 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     SLoc loc
 ) -> Ptr<BuiltinMemberAccessExpr> {
     auto type = [&] -> Type {
+        using enum BuiltinMemberAccessExpr::AccessKind;
         switch (ak) {
-            using AK = BuiltinMemberAccessExpr::AccessKind;
-            case AK::TypeAlign:
-            case AK::TypeArraySize:
-            case AK::TypeBits:
-            case AK::TypeBytes:
-            case AK::TypeSize:
-                operand = LValueToRValue(operand);
+            // Type Properties.
+            case TypeAlign:
+            case TypeArraySize:
+            case TypeBits:
+            case TypeBytes:
+            case TypeSize:
                 return Type::IntTy;
 
-            case AK::SliceSize:
-                return Type::IntTy;
+            case TypeElem:
+                return Type::TypeTy;
 
-            case AK::TypeName:
-                operand = LValueToRValue(operand);
+            case TypeIsOptional:
+            case TypeIsSlice:
+                return Type::BoolTy;
+
+            case TypeName:
                 return tu->StrLitTy;
 
-            case AK::RangeStart:
-            case AK::RangeEnd:
-                return cast<RangeType>(operand->type)->elem();
-
-            case AK::TypeMaxVal:
-            case AK::TypeMinVal:
-                operand = LValueToRValue(operand);
+            case TypeMaxVal:
+            case TypeMinVal:
                 return cast<TypeExpr>(operand)->value;
 
-            case AK::SliceData:
+            // Slice Properties.
+            case SliceSize:
+                return Type::IntTy;
+
+            case SliceData:
                 return PtrType::Get(*tu, cast<SliceType>(operand->type)->elem());
+
+            // Range Properties.
+            case RangeStart:
+            case RangeEnd:
+                return cast<RangeType>(operand->type)->elem();
         }
         Unreachable();
     }();
+
+    if (BuiltinMemberAccessExpr::IsTypeProperty(ak))
+        operand = LValueToRValue(operand);
 
     return new (*tu) BuiltinMemberAccessExpr{
         type,
@@ -3321,6 +3287,60 @@ auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
     }
 
     return Evaluate(arg, loc);
+}
+
+auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr> {
+    auto from = arg->type;
+    auto Make = [&](CastExpr::CastKind k) {
+        return new (*tu) CastExpr(to, k, arg, loc);
+    };
+
+    auto HardCast = [&]{
+        if (is_hard_cast) return;
+        Error(loc, "Cast from '{}' to '{}' requires '%1(as!%)'", from, to);
+    };
+
+    auto SoftCast = [&]{
+        if (not is_hard_cast) return;
+        if (curr_proc().proc->instantiated_from != nullptr) return;
+        Warn(loc, "Cast from '{}' to '{}' should use '%1(as%)'", from, to);
+    };
+
+    // This is a no-op if the types are the same.
+    if (to == from) return arg;
+
+    // Casting between integer types is always allowed.
+    if (from->is_integer() and to->is_integer()) {
+        SoftCast();
+        arg = LValueToRValue(arg);
+        return Make(CastExpr::Integral);
+    }
+
+    // Casting to void does nothing.
+    if (to == Type::VoidTy) {
+        SoftCast();
+        return Make(CastExpr::ExplicitDiscard);
+    }
+
+    // Casting between pointers is allowed with 'as!'.
+    if (isa<PtrType>(from) and isa<PtrType>(to)) {
+        HardCast();
+        arg = LValueToRValue(arg);
+        return Make(CastExpr::Pointer);
+    }
+
+    // If the source type is an optional, and the target type isn’t, unwrap it.
+    if (isa<OptionalType>(from) and not isa<OptionalType>(to)) return BuildExplicitCast(
+        to,
+        UnwrapOptional(arg, loc),
+        loc,
+        is_hard_cast
+    );
+
+    // For everything else, just try to build an initialiser.
+    auto init = BuildInitialiser(to, arg, loc);
+    if (init) SoftCast();
+    return init;
 }
 
 auto Sema::BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr> {

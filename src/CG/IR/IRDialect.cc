@@ -1,3 +1,4 @@
+#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wconversion"
 
@@ -10,6 +11,7 @@
 #include <mlir/IR/BuiltinDialect.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 
@@ -51,6 +53,7 @@ void srcc::cg::ir::SRCCDialect::InitialiseContext(mlir::MLIRContext& ctx) {
     ctx.printOpOnDiagnostic(true);
     ctx.loadDialect<
         mlir::BuiltinDialect,
+        mlir::DLTIDialect,
         mlir::arith::ArithDialect,
         mlir::cf::ControlFlowDialect,
         mlir::LLVM::LLVMDialect,

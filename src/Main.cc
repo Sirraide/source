@@ -49,6 +49,7 @@ using options = clopts< // clang-format off
     flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
+    flag<"--ir-no-verify", "Don’t verify the IR">,
     flag<"--ir-verbose", "Always print the type of a value and other details">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
@@ -165,6 +166,7 @@ int main(int argc, char** argv) {
         .short_filenames = opts.get<"--short-filenames">(),
         .ir_generic = opts.get<"--ir-generic">(),
         .ir_no_finalise = opts.get<"--ir-no-finalise">(),
+        .ir_no_verify = opts.get<"--ir-no-verify">(),
         .ir_verbose = opts.get<"--ir-verbose">(),
     }}; // clang-format on
 

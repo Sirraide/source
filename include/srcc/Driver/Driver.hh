@@ -117,6 +117,7 @@ public:
         /// IR dumping flags.
         bool ir_generic : 1 = false;
         bool ir_no_finalise : 1 = false;
+        bool ir_no_verify : 1 = false;
         bool ir_verbose : 1 = false;
     };
 

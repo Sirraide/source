@@ -8,12 +8,16 @@
 #include <srcc/Macros.hh>
 
 #include <clang/Basic/TargetInfo.h>
+#include <llvm/IR/DataLayout.h>
 
 #include <base/Assert.hh>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
+#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/IR/Location.h>
+#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Target/LLVMIR/Import.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <memory>
@@ -43,7 +47,40 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
     bool_ty = getI1Type();
     int_ty = C(Type::IntTy);
     i128_ty = getIntegerType(128);
+    type_ty = getType<ir::TypeType>();
+    tree_ty = getType<ir::TreeType>();
     mlir_module = mlir::ModuleOp::create(C(tu.initialiser_proc->location()), tu.name.value());
+
+    // Convert Clang’s data layout.
+    auto layout = llvm::DataLayout::parse(tu.target().clang().getDataLayoutString());
+    Assert(layout, "Failed to parse data layout set by Clang?");
+    auto base_layout = mlir::translateDataLayout(layout.get(), getContext());
+    SmallVector<mlir::DataLayoutEntryInterface> entries{base_layout.getEntries()};
+
+    // Add our own types.
+    //
+    // These are compile-time only types, so only add them if we’re performing
+    // constant evaluation, else the LLVM lowering code will complain that it
+    // doesn’t know what to do with them.
+    if (lang_opts.constant_eval) {
+        entries.push_back(
+            mlir::DataLayoutEntryAttr::get(
+                type_ty,
+                getIntegerAttr(int_ty, i64(Type::TypeTy->memory_size(tu).bytes()))
+            )
+        );
+
+        entries.push_back(
+            mlir::DataLayoutEntryAttr::get(
+                tree_ty,
+                getIntegerAttr(int_ty, i64(Type::TreeTy->memory_size(tu).bytes()))
+            )
+        );
+    }
+
+    // And finally set the layout.
+    auto merged = mlir::DataLayoutSpecAttr::get(getContext(), entries);
+    mlir_module->setAttr(mlir::DLTIDialect::kDataLayoutAttrName, merged);
 }
 
 // ============================================================================
@@ -82,26 +119,7 @@ auto CodeGen::C(SLoc l) -> mlir::Location {
 
 auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     if (vc == Expr::LValue) return ptr_ty;
-    Assert(not IsZeroSizedType(ty));
-
-    // Integer types.
-    if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
-    if (ty == Type::IntTy) return IntTy(tu.target().int_size());
-    if (ty == Type::TreeTy) return getType<ir::TreeType>();
-    if (ty == Type::TypeTy) return getType<ir::TypeType>();
-    if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
-
-    // Pointer types.
-    if (isa<PtrType>(ty)) return ptr_ty;
-
-    // Transparent optionals.
-    if (auto opt = dyn_cast<OptionalType>(ty)) {
-        Assert(opt->has_transparent_layout(), "C() does not support non-transparent optionals");
-        return C(opt->elem(), vc);
-    }
-
-    // For aggregates, call ConvertToByteArrayType() instead.
-    Unreachable("C() does not support aggregate type: '{}'", ty);
+    return TryConvertToMLIRType(ty).value();
 }
 
 CodeGen::EnterLoop::EnterLoop(CodeGen& CG, ProcData::Loop l): cg{CG} {
@@ -112,17 +130,14 @@ CodeGen::EnterLoop::~EnterLoop() {
     cg.curr.loop_stack.pop_back();
 }
 
+// Find the last operation of type 'Op' in the block and set the insert point after it.
 template <typename Op>
-void CodeGen::SetInsertPointToStartButSkipOpsOfType(Block* bb) {
-    // Do this stupid garbage because allowing a separate region in a function for
-    // frame slots is apparently too much to ask because MLIR complains about both
-    // uses not being dominated by the frame slots and about a FunctionOpInterface
-    // having more than one region.
-    auto it = bb->begin();
-    auto end = bb->end();
-    while (it != end and isa<Op>(*it)) ++it;
-    if (it == end) setInsertionPointToEnd(bb);
-    else setInsertionPoint(&*it);
+void CodeGen::SetInsertPointAfterLastOpOfTypeIn(Block* bb) {
+    auto it = bb->rbegin();
+    auto end = bb->rend();
+    while (it != end and not isa<Op>(*it)) ++it;
+    if (it == end) setInsertionPointToStart(bb);
+    else setInsertionPointAfter(&*it);
 }
 
 auto CodeGen::ConvertToByteArrayType(Type ty) -> mlir::Type {
@@ -170,13 +185,49 @@ void CodeGen::CreateAbort(
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
     Assert(not IsZeroSizedType(ty));
-    return CreateAlloca(loc, tu.target().preferred_size(ty), tu.target().preferred_align(ty));
+
+    // // Try to use the type directly if possible; MLIR’s Mem2Reg pass
+    // // requires the types of loads and stores to be the same as the
+    // // allocated type.
+    // if (auto mlir_ty = TryConvertToMLIRType(ty)) {
+    //     // Adjust weird integers.
+    //     if (mlir_ty->isInteger()) mlir_ty = GetPreferredIntType(*mlir_ty);
+
+    //     // If the MLIR type is big enough, use it.
+    //     mlir::DataLayout dl{mlir_module};
+    //     if (ir::GetTypeSize(dl, *mlir_ty) >= ty->memory_size(tu)) {
+    //         InsertionGuard _{*this};
+    //         SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr.proc.front());
+    //         return LLVM::AllocaOp::create(
+    //             *this,
+    //             loc,
+    //             ptr_ty,
+    //             *mlir_ty,
+    //             CreateInt(loc, i64(1)),
+    //             unsigned(tu.target().preferred_align(ty).value().bytes())
+    //         );
+    //     }
+    // }
+
+    // Just allocate a blob of bytes.
+    return CreateAlloca(
+        loc,
+        tu.target().preferred_size(ty),
+        tu.target().preferred_align(ty)
+    );
 }
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     InsertionGuard _{*this};
-    SetInsertPointToStartButSkipOpsOfType<ir::FrameSlotOp>(&curr.proc.front());
-    return ir::FrameSlotOp::create(*this, loc, sz, a);
+    SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr.proc.front());
+    return LLVM::AllocaOp::create(
+        *this,
+        loc,
+        ptr_ty,
+        getI8Type(),
+        CreateInt(loc, i64(sz.bytes())),
+        unsigned(a.value().bytes())
+    );
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, mlir::Location loc, String name) {
@@ -251,7 +302,7 @@ auto CodeGen::CreateGlobalStringPtr(Align align, String data, bool null_terminat
     if (not i) {
         // TODO: Introduce our own Op for this and mark it as 'Pure'.
         InsertionGuard _{*this};
-        SetInsertPointToStartButSkipOpsOfType<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
+        SetInsertPointAfterLastOpOfTypeIn<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
         i = LLVM::GlobalOp::create(
             *this,
             getUnknownLoc(),
@@ -412,7 +463,13 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
         if (val.getType() != pref_ty) val = createOrFold<arith::ExtSIOp>(loc, pref_ty, val);
     }
 
-    ir::StoreOp::create(*this, loc, CreatePtrAdd(loc, addr, offset), val, align);
+    ir::StoreOp::create(
+        *this,
+        loc,
+        CreatePtrAdd(loc, addr, offset),
+        val,
+        align
+    );
 }
 
 auto CodeGen::DeclarePrintf() -> ir::ProcOp {
@@ -805,6 +862,27 @@ bool CodeGen::PassByReference(Type ty, Intent i) {
     // pointer or whether they are passed in registers is up to the
     // target ABI and handled in a separate lowering pass.
     return false;
+}
+
+auto CodeGen::TryConvertToMLIRType(Type ty) -> std::optional<mlir::Type> {
+    Assert(not IsZeroSizedType(ty));
+
+    // Integer types.
+    if (ty == Type::BoolTy) return IntTy(Size::Bits(1));
+    if (ty == Type::IntTy) return IntTy(tu.target().int_size());
+    if (ty == Type::TreeTy) return tree_ty;
+    if (ty == Type::TypeTy) return type_ty;
+    if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
+
+    // Pointer types.
+    if (isa<PtrType>(ty)) return ptr_ty;
+
+    // Transparent optionals.
+    if (auto opt = dyn_cast<OptionalType>(ty); opt and opt->has_transparent_layout())
+        return TryConvertToMLIRType(opt->elem());
+
+    // Structs, arrays, non-transparent optionals etc. are not supported.
+    return std::nullopt;
 }
 
 void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
@@ -1801,15 +1879,16 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         // emit code to evaluate this later.
         auto type_expr = dyn_cast<TypeExpr>(expr->operand->ignore_parens());
         if (not type_expr)  {
-            static_assert(+$$Count == 11);
             SmallVector<mlir::Type> result_types;
-
-            // Currently, the only property that returns something other than an
-            // 'int' is 'size', which returns a slice.
-            if (expr->access_kind == TypeName) {
+            if (expr->type == tu.StrLitTy) {
                 result_types.push_back(ptr_ty);
                 result_types.push_back(int_ty);
+            } else if (expr->type == Type::BoolTy) {
+                result_types.push_back(bool_ty);
+            } else if (expr->type == Type::TypeTy) {
+                result_types.push_back(type_ty);
             } else {
+                Assert(expr->type == Type::IntTy);
                 result_types.push_back(int_ty);
             }
 
@@ -1827,49 +1906,16 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
 
         // Otherwise, constant-fold the property.
         auto l = C(expr->location());
-        auto ty = type_expr->value;
-        auto InvalidQuery = [&] (mlir::Type result) -> IRValue {
-            Error(
-                expr->location(),
-                "Type '{}' has no member '%5({}%)'",
-                ty,
-                expr->access_kind
-            );
+        auto res = BuiltinMemberAccessExpr::Evaluate(
+            tu,
+            expr->location(),
+            type_expr->value,
+            expr->access_kind
+        );
 
-            return LLVM::PoisonOp::create(*this, l, result)->getResult(0);
-        };
-
-        switch (expr->access_kind) {
-            case TypeAlign: return CreateInt(l, i64(ty->align(tu).value().bytes()));
-            case TypeArraySize: return CreateInt(l, i64(ty->array_size(tu).bytes()));
-            case TypeBits: return CreateInt(l, i64(ty->bit_width(tu).bits()));
-            case TypeName: return CreateGlobalStringSlice(l, tu.save(StripColours(ty->print())));
-
-            case TypeBytes:
-            case TypeSize:
-                return CreateInt(l, i64(ty->memory_size(tu).bytes()));
-
-            // TODO: Trying to query 'min' or 'max' of a non-integer type should be an error in the
-            // Evaluator; fortunately, 'type' values can only exist at compile time, so we can just
-            // emit an error about this at evaluation time.
-            case TypeMaxVal: {
-                if (not ty->is_integer()) return InvalidQuery(int_ty);
-                return CreateInt(l, APInt::getSignedMaxValue(u32(ty->bit_width(tu).bits())), ty);
-            }
-
-            case TypeMinVal: {
-                if (not ty->is_integer()) return InvalidQuery(int_ty);
-                return CreateInt(l, APInt::getSignedMinValue(u32(ty->bit_width(tu).bits())), ty);
-            }
-
-            case SliceData:
-            case SliceSize:
-            case RangeStart:
-            case RangeEnd:
-                Unreachable("Not a type property");
-        }
-
-        Unreachable();
+        if (res.has_value()) return EmitValue(l, res.value());
+        diags().report(std::move(res.error()));
+        return LLVM::PoisonOp::create(*this, l, int_ty)->getResult(0);
     }
 
     auto GetField = [&] (unsigned i) -> IRValue {
@@ -1882,15 +1928,10 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
     };
 
     switch (expr->access_kind) {
-        case TypeAlign:
-        case TypeArraySize:
-        case TypeBits:
-        case TypeBytes:
-        case TypeSize:
-        case TypeName:
-        case TypeMaxVal:
-        case TypeMinVal:
-            Unreachable("Type properties are handled above");
+#       define M(enumerator, name) case enumerator:
+            SRCC_BUILTIN_TYPE_MEMBERS(M)
+                Unreachable("Type properties are handled above");
+#       undef M
 
         case SliceData: return GetField(0);
         case SliceSize: return GetField(1);
@@ -2224,7 +2265,7 @@ auto CodeGen::EmitGlobalRefExpr(GlobalRefExpr* expr) -> IRValue {
     auto& g = global_vars[expr->decl];
     if (not g) {
         InsertionGuard _{*this};
-        SetInsertPointToStartButSkipOpsOfType<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
+        SetInsertPointAfterLastOpOfTypeIn<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
         g = LLVM::GlobalOp::create(
             *this,
             C(expr->decl->location()),
@@ -2357,7 +2398,7 @@ auto CodeGen::EmitQuoteExpr(QuoteExpr* expr) -> IRValue {
     auto quote = ir::QuoteOp::create(
         *this,
         C(expr->location()),
-        ir::TreeType::get(getContext()),
+        tree_ty,
         expr,
         trees
     );
@@ -2465,6 +2506,7 @@ auto CodeGen::EmitNilExpr(NilExpr*) -> IRValue {
 }
 
 auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
+    Assert(e->optional->is_lvalue());
     auto optional = Emit(e->optional);
     Emit(e->nil); // Discarded.
     auto ty = cast<OptionalType>(e->optional->type);
@@ -2472,19 +2514,17 @@ auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
     Value flag;
     if (ty->has_transparent_layout()) {
         if (isa<PtrType>(ty->elem())) {
-            Assert(e->optional->is_rvalue());
             flag = LLVM::ICmpOp::create(
                 *this,
                 l,
                 e->is_equal ? LLVM::ICmpPredicate::eq : LLVM::ICmpPredicate::ne,
-                optional.scalar(),
+                CreateLoad(l, optional.scalar(), ptr_ty, tu.target().ptr_align()),
                 CreateNullPointer(l)
             );
         } else {
             Unreachable("Unsupported optional type w/ transparent layout: {}", ty);
         }
     } else {
-        Assert(e->optional->is_lvalue());
         flag = CreateLoad(l, optional.scalar(), Type::BoolTy, ty->get_engaged_offset()).scalar();
 
         // A value of 'true' corresponds to '!= nil', so if the operator is '==',
@@ -2497,8 +2537,15 @@ auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
         );
     }
 
-    if (e->is_equal) return ir::DisengagedIfOp::create(*this, l, optional.scalar(), flag);
-    return ir::EngagedIfOp::create(*this, l, optional.scalar(), flag);
+    auto b = If(l, flag, true, [&]{
+        if (not e->is_equal) ir::EngageOp::create(*this, l, optional.scalar());
+        return CreateBool(l, true);
+    }, [&]{
+        if (e->is_equal) ir::EngageOp::create(*this, l, optional.scalar());
+        return CreateBool(l, false);
+    });
+
+    return b->getArgument(0);
 }
 
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> IRValue {

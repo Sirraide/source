@@ -46,13 +46,13 @@ class SRCC_Type<string name, string type_mnemonic, list<Trait> traits = []> :
 def SRCC_Ptr : TypeAlias<LLVMPointerType, "ptr">;
 def SRCC_Bool : TypeAlias<I1, "bool">;
 
-def SRCC_Tree : SRCC_Type<"Tree", "tree"> {
+def SRCC_Tree : SRCC_Type<"Tree", "tree", [DeclareTypeInterfaceMethods<DataLayoutTypeInterface>]> {
     let summary = "Type of a parse tree node";
     let description = "A compile-time parse tree";
     let genMnemonicAlias = 1;
 }
 
-def SRCC_Type : SRCC_Type<"Type", "type"> {
+def SRCC_Type : SRCC_Type<"Type", "type", [DeclareTypeInterfaceMethods<DataLayoutTypeInterface>]> {
     let summary = "Type of a type constant or value";
     let description = "A compile-time type value";
     let genMnemonicAlias = 1;
@@ -319,12 +319,6 @@ def DisengageOp : SRCC_Op<"disengage"> {
     let arguments = (ins SRCC_Ptr:$optional);
 }
 
-def DisengagedIfOp : SRCC_Op<"disengaged.if", [Pure]> {
-    let summary = "Mark that an optional is disengaged if a condition is true";
-    let arguments = (ins SRCC_Ptr:$optional, SRCC_Bool:$cond);
-    let results = (outs SRCC_Bool);
-}
-
 def EngageOp : SRCC_Op<"engage"> {
     let summary = "Engage an optional";
     let arguments = (ins SRCC_Ptr:$optional);
@@ -335,45 +329,7 @@ def EngageCopyOp : SRCC_Op<"engage.copy"> {
     let arguments = (ins SRCC_Ptr:$optional, SRCC_Ptr:$copy_from);
 }
 
-def EngagedIfOp : SRCC_Op<"engaged.if", [Pure]> {
-    let arguments = (ins SRCC_Ptr:$optional, SRCC_Bool:$cond);
-    let results = (outs SRCC_Bool);
-}
-
-def FrameSlotOp : SRCC_Op<"slot", [Pure]> {
-    let summary = "Allocate stack memory";
-    let arguments = (ins
-        Builtin_IntegerAttr:$bytes,
-        Builtin_IntegerAttr:$alignment
-    );
-
-    let results = (outs SRCC_Ptr:$res);
-    let builders = [
-        OpBuilder<(ins
-            "Size":$size,
-            "Align":$alignment
-        ), [{
-            build(
-                $_builder,
-                $_state,
-                mlir::LLVM::LLVMPointerType::get($_builder.getContext()),
-                $_builder.getI64IntegerAttr(size.bytes()),
-                $_builder.getI64IntegerAttr(i64(alignment.value().bytes()))
-            );
-        }]>
-    ];
-
-    let extraClassDeclaration = [{
-        base::Align align() {
-            return base::Align(u64(getAlignment().getInt()));
-        }
-
-        base::Size size() {
-            return base::Size::Bytes(getBytes().getInt());
-        }
-    }];
-}
-
+// We can’t just use LLVM::LoadOp since it doesn’t support custom types.
 def LoadOp : SRCC_Op<"load", [Pure]> {
     let summary = "Load a value from a pointer";
     let arguments = (ins
@@ -460,6 +416,7 @@ def SSubOvOp : SRCC_Op<"ssub.ov", [Pure, AllTypesMatch<["lhs", "rhs", "res"]>]> 
     let hasFolder = 1;
 }
 
+// We can’t just use LLVM::StoreOp since it doesn’t support custom types.
 def StoreOp : SRCC_Op<"store"> {
     let summary = "Store a value to a pointer";
     let arguments = (ins

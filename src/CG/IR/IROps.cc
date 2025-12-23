@@ -82,11 +82,6 @@ auto SRCCDialect::materializeConstant(
         }                                                                                                \
                                                                                                          \
         auto value = cast<mlir::IntegerAttr>(attr).getInt();                                             \
-        if (value > +TYPE::$$Count) {                                                                    \
-            emitError() << "invalid value for " #TYPE ": " << value;                                     \
-            return mlir::failure();                                                                      \
-        }                                                                                                \
-                                                                                                         \
         storage = TYPE(value);                                                                           \
         return mlir::success();                                                                          \
     }                                                                                                    \
@@ -94,9 +89,6 @@ auto SRCCDialect::materializeConstant(
     mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage) {   \
         u64 value;                                                                                       \
         if (failed(reader.readVarInt(value))) return mlir::failure();                                    \
-        if (value > +TYPE::$$Count) {                                                                    \
-            return mlir::failure();                                                                      \
-        }                                                                                                \
         storage = TYPE(value);                                                                           \
         return mlir::success();                                                                          \
     }                                                                                                    \
@@ -160,4 +152,47 @@ auto TypeEqOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
     auto rhs = dyn_cast_if_present<ir::TypeAttr>(adaptor.getRhs());
     if (not lhs or not rhs) return nullptr;
     return b.getBoolAttr(lhs.getValue() == rhs.getValue());
+}
+
+// ============================================================================
+//  Type size queries.
+// ============================================================================
+auto ir::GetTypeSize(const mlir::DataLayout& dl, mlir::Type ty) -> Size {
+    return Size::Bits(dl.getTypeSizeInBits(ty).getFixedValue());
+}
+
+auto TypeType::getTypeSizeInBits(
+    const mlir::DataLayout &,
+    mlir::DataLayoutEntryListRef
+) const -> llvm::TypeSize {
+    // This is a compile-time type whose size is the
+    // native pointer width.
+    return llvm::TypeSize::getFixed(sizeof(const srcc::TypeBase*));
+}
+
+auto TypeType::getABIAlignment(
+    const ::mlir::DataLayout &,
+    mlir::DataLayoutEntryListRef
+) const -> u64 {
+    // This is a compile-time type whose alignment is the
+    // native pointer alignment.
+    return alignof(const srcc::TypeBase*);
+}
+
+auto TreeType::getTypeSizeInBits(
+    const mlir::DataLayout &,
+    mlir::DataLayoutEntryListRef
+) const -> llvm::TypeSize {
+    // This is a compile-time type whose size is the
+    // native pointer width.
+    return llvm::TypeSize::getFixed(sizeof(TreeValue*));
+}
+
+auto TreeType::getABIAlignment(
+    const ::mlir::DataLayout &,
+    mlir::DataLayoutEntryListRef
+) const -> u64 {
+    // This is a compile-time type whose alignment is the
+    // native pointer alignment.
+    return alignof(TreeValue*);
 }

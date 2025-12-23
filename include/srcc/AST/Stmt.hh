@@ -410,22 +410,39 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinCallExpr; }
 };
 
+#define SRCC_BUILTIN_TYPE_MEMBERS(M) \
+    M(TypeAlign, "align")            \
+    M(TypeArraySize, "arrsize")      \
+    M(TypeBits, "bits")              \
+    M(TypeBytes, "bytes")            \
+    M(TypeSize, "size")              \
+    M(TypeName, "name")              \
+    M(TypeMaxVal, "max")             \
+    M(TypeMinVal, "min")             \
+    M(TypeElem, "elem")              \
+    M(TypeIsOptional, "is_optional") \
+    M(TypeIsSlice, "is_slice")
+
+#define SRCC_BUILTIN_SLICE_MEMBERS(M) \
+    M(SliceData, "data")              \
+    M(SliceSize, "size")
+
+#define SRCC_BUILTIN_RANGE_MEMBERS(M) \
+    M(RangeStart, "start")            \
+    M(RangeEnd, "end")
+
+#define SRCC_BUILTIN_NON_TYPE_MEMBERS(M) \
+    SRCC_BUILTIN_SLICE_MEMBERS(M) \
+    SRCC_BUILTIN_RANGE_MEMBERS(M)
+
+
 class srcc::BuiltinMemberAccessExpr final : public Expr {
 public:
     enum struct AccessKind : u8 {
-        SliceData,
-        SliceSize,
-        RangeStart,
-        RangeEnd,
-        TypeAlign,
-        TypeArraySize,
-        TypeBits,
-        TypeBytes,
-        TypeSize, // Same semantics as 'TypeBytes'
-        TypeName,
-        TypeMaxVal,
-        TypeMinVal,
-        $$Count = TypeMinVal
+#       define M(enumerator, name) enumerator,
+        SRCC_BUILTIN_TYPE_MEMBERS(M)
+        SRCC_BUILTIN_NON_TYPE_MEMBERS(M)
+#       undef M
     };
 
     struct BuiltinMember {
@@ -446,7 +463,21 @@ public:
         operand{operand},
         access_kind{kind} {}
 
+    /// Evaluate a property. Implemented in Eval.cc
+    static auto Evaluate(
+        TranslationUnit& tu,
+        SLoc loc,
+        Type ty,
+        AccessKind k
+    ) -> std::expected<eval::RValue, Diagnostic>;
+
+    /// Get all members of this type.
     static auto GetAllBuiltinMembersOf(Type ty) -> ArrayRef<BuiltinMember>;
+
+    /// Check if this is a type property.
+    static bool IsTypeProperty(AccessKind k);
+
+    /// Convert an access kind to a string representation.
     static auto ToMemberName(AccessKind k) -> String;
     static bool classof(const Stmt* e) { return e->kind() == Kind::BuiltinMemberAccessExpr; }
 };
@@ -513,7 +544,7 @@ public:
         /// Wrap a value in an optional.
         OptionalWrap,
 
-        /// Cast a pointer to a pointer.
+        /// Cast a pointer to a pointer (or an optional pointer to an optional pointer).
         Pointer,
 
         /// Convert an lvalue to an rvalue.
