@@ -1,5 +1,8 @@
 __srcc_internal__
 
+// ============================================================================
+//  Builtin Exponentiation Operator(s)
+// ============================================================================
 proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     // Anything to the power of 0 is 1.
     exp == 0: 1;
@@ -39,6 +42,9 @@ proc **= (inout $T base, in $T exp) inline __srcc_builtin_op__ -> T^ {
     return &base;
 }
 
+// ============================================================================
+//  Builtin Equality Operators
+// ============================================================================
 proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_slice {
     if a.size != b.size return false;
     for v1, v2 in a, b if v1 != v2 return false;
@@ -55,6 +61,20 @@ proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_optional {
     return a as T.elem == b as T.elem;
 }
 
+// ============================================================================
+//  Builtin Array Arithmetic Operators
+// ============================================================================
+// TODO: Add the remaining arithmetic operators.
+// TODO: Use macros to define these.
+proc + (in $T a, in T b) __srcc_builtin_op__ -> T where T.is_array {
+    T res;
+    for enum i, v1, v2 in a, b do res[i] = v1 + v2;
+    return res;
+}
+
+// ============================================================================
+//  Swap Implementation
+// ============================================================================
 proc __srcc_swap (inout $T a, inout $T b) inline __srcc_no_mnum__ {
     T tmp = a;
     a = b;

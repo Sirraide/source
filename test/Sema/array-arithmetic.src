@@ -1,0 +1,9 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+#assert {
+    int[5] a = (1, 2, 3, 4, 5);
+    int[5] b = (6, 7, 8, 9, 10);
+    a + b;
+} == int[5](7, 9, 11, 13, 15);

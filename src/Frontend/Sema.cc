@@ -2746,15 +2746,17 @@ auto Sema::BuildBinaryExpr(
         return true;
     };
 
-    auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<BinaryExpr> {
-        if (not CheckIntegral() or not ConvertToCommonType()) return nullptr;
-        return Build(comparison ? Type::BoolTy : lhs->type);
-    };
-
     auto BuildCall = [&](DeclName fun) -> Ptr<Expr> {
         auto ref = BuildDeclRefExpr(fun, loc);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
+    };
+
+    auto BuildArithmeticOrComparisonOperator = [&](bool comparison) -> Ptr<Expr> {
+        if (not ConvertToCommonType()) return nullptr;
+        if (isa<ArrayType>(lhs->type)) return BuildCall(DeclName(op));
+        if (not CheckIntegral()) return nullptr;
+        return Build(comparison ? Type::BoolTy : lhs->type);
     };
 
     auto CheckLValue = [&](Expr* e) -> bool {
