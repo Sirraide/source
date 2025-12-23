@@ -1,0 +1,147 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc p1 -> bool {
+    int a;
+    int b;
+    int^? x = &a;
+    int^? y = &b;
+    return x == y;
+}
+
+proc p2 (i8^? x, i8^? y) -> bool {
+    return x == y;
+}
+
+// * proc __src_main external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S2p1FbE.1 private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 0, align 8
+// +     store #2, ptr #0, align 8
+// +     engage #2
+// +     store #3, ptr #1, align 8
+// +     engage #3
+// +     %0 = load ptr, #2, align 8
+// +     %1 = load ptr, #3, align 8
+// +     %2 = call ccc zeroext i1 _S$2==FbxORixORiE(ptr %0, ptr %1)
+// +     ret i1 %2
+// + }
+// +
+// + proc _S$2==FbxORixORiE (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp eq ptr %2, nil
+// +     br %3 to bb3 else bb1
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp eq ptr %4, nil
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     %8 = cmp eq ptr %6, %7
+// +     ret i1 %8
+// +
+// + bb3:
+// +     %9 = load ptr, #0, align 8
+// +     %10 = cmp eq ptr %9, nil
+// +     br %10 to bb5 else bb4
+// +
+// + bb4:
+// +     engage #0
+// +     br bb7(false)
+// +
+// + bb5:
+// +     %11 = load ptr, #1, align 8
+// +     %12 = cmp eq ptr %11, nil
+// +     br %12 to bb7(true) else bb6
+// +
+// + bb6:
+// +     engage #1
+// +     br bb7(false)
+// +
+// + bb7(i1 %13):
+// +     ret i1 %13
+// + }
+// +
+// + proc _S2p2FbORI8ORI8E.2 (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = load ptr, #1, align 8
+// +     %4 = call ccc zeroext i1 _S$2==FbxORI8xORI8E(ptr %2, ptr %3)
+// +     ret i1 %4
+// + }
+// +
+// + proc _S$2==FbxORI8xORI8E (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #0, align 8
+// +     %3 = cmp eq ptr %2, nil
+// +     br %3 to bb3 else bb1
+// +
+// + bb1:
+// +     engage #0
+// +     %4 = load ptr, #1, align 8
+// +     %5 = cmp eq ptr %4, nil
+// +     br %5 to bb3 else bb2
+// +
+// + bb2:
+// +     engage #1
+// +     unwrap #0
+// +     %6 = load ptr, #0, align 8
+// +     unwrap #1
+// +     %7 = load ptr, #1, align 8
+// +     %8 = cmp eq ptr %6, %7
+// +     ret i1 %8
+// +
+// + bb3:
+// +     %9 = load ptr, #0, align 8
+// +     %10 = cmp eq ptr %9, nil
+// +     br %10 to bb5 else bb4
+// +
+// + bb4:
+// +     engage #0
+// +     br bb7(false)
+// +
+// + bb5:
+// +     %11 = load ptr, #1, align 8
+// +     %12 = cmp eq ptr %11, nil
+// +     br %12 to bb7(true) else bb6
+// +
+// + bb6:
+// +     engage #1
+// +     br bb7(false)
+// +
+// + bb7(i1 %13):
+// +     ret i1 %13
+// + }

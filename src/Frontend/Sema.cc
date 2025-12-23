@@ -2916,7 +2916,7 @@ auto Sema::BuildBinaryExpr(
             if (not ConvertToCommonType()) return nullptr;
 
             // For slices and optionals, call an overloaded operator.
-            if (isa<SliceType/*, OptionalType*/>(lhs->type)) {
+            if (isa<SliceType, OptionalType>(lhs->type)) {
                 auto call = BuildCall(DeclName(Tk::EqEq));
                 return op == Tk::Neq ? BuildUnaryExpr(Tk::Not, call.get(), false, loc) : call;
             }
@@ -4568,6 +4568,12 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         );
 
         attrs.nomangle = true;
+    }
+
+    // '__srcc_builtin_op__' is obviously only allowed on operators.
+    if (attrs.builtin_operator and not parsed->name.is_operator_name()) {
+        attrs.builtin_operator = false;
+        Error(parsed->loc, "invalid use of '%1(__srcc_builtin_op__%)'");
     }
 
     // Variadic templates cannot have C varargs.

@@ -119,7 +119,9 @@ auto CodeGen::C(SLoc l) -> mlir::Location {
 
 auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
     if (vc == Expr::LValue) return ptr_ty;
-    return TryConvertToMLIRType(ty).value();
+    auto conv = TryConvertToMLIRType(ty);
+    Assert(conv.has_value(), "Unsupported type in C(): '{}'", ty);
+    return conv.value();
 }
 
 CodeGen::EnterLoop::EnterLoop(CodeGen& CG, ProcData::Loop l): cg{CG} {

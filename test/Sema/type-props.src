@@ -1,0 +1,42 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+#assert i8[].is_slice;
+#assert i8[][].is_slice;
+#assert int[][].is_slice;
+#assert void[][].is_slice;
+#assert not i8.is_slice;
+#assert not int.is_slice;
+#assert not void.is_slice;
+#assert not i8[3].is_slice;
+
+#assert i8[]?.is_optional;
+#assert int?.is_optional;
+#assert bool?.is_optional;
+#assert void?.is_optional;
+#assert not i8.is_optional;
+#assert not int.is_optional;
+#assert not void.is_optional;
+#assert not i8[3].is_optional;
+
+proc is_slice (type ty) = ty.is_slice;
+proc is_optional (type ty) = ty.is_optional;
+
+#assert is_slice(i8[]);
+#assert is_slice(i8[][]);
+#assert is_slice(int[][]);
+#assert is_slice(void[][]);
+#assert not is_slice(i8);
+#assert not is_slice(int);
+#assert not is_slice(void);
+#assert not is_slice(i8[3]);
+
+#assert is_optional(i8[]?);
+#assert is_optional(int?);
+#assert is_optional(bool?);
+#assert is_optional(void?);
+#assert not is_optional(i8);
+#assert not is_optional(int);
+#assert not is_optional(void);
+#assert not is_optional(i8[3]);

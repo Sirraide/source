@@ -4,6 +4,9 @@ program test;
 proc + (int, int) = 3; // expected-error: At least one argument of overloaded operator must be a struct type
 proc - (int, int) __srcc_builtin_op__ = 3;
 
+// Normal functions can’t have this attribute.
+proc q (int, int) __srcc_builtin_op__ = 3; // expected-error: invalid use of '__srcc_builtin_op__'
+
 struct s { int x; }
 
 var x = s(1);

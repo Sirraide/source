@@ -39,11 +39,15 @@ proc **= (inout $T base, in $T exp) inline __srcc_builtin_op__ -> T^ {
     return &base;
 }
 
-// FIXME: Should be '$T[]'
-proc == (in $T a, in T b) __srcc_builtin_op__ -> bool {
+proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_slice {
     if a.size != b.size return false;
     for v1, v2 in a, b if v1 != v2 return false;
     return true;
+}
+
+proc == (in $T a, in T b) __srcc_builtin_op__ -> bool where T.is_optional {
+    if a == nil or b == nil return a == nil and b == nil;
+    return a as T.elem == b as T.elem;
 }
 
 proc __srcc_swap (inout $T a, inout $T b) inline __srcc_no_mnum__ {
