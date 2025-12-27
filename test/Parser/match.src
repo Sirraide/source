@@ -32,13 +32,8 @@ match 1 -> {} {}
 match -> int {}
 
 match 1 { 1:
-    1 // expected-error: Expected ';'
+    1
 }
-
-// FIXME: Error recovery here is pretty bad: the above skips to the ';' here and
-// then interprets the following '}' as matching the '{' of the match expression
-// on line 12.
-;}
 
 match 1 {
     1

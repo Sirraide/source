@@ -2,9 +2,9 @@
 program test;
 
 proc good -> int {
-    #inject(quote { int; }) x = #inject(quote { 22; });
-    #inject(quote { i64; }) y = #inject(quote { 20 as i64; });
-    return #inject(quote { x; }) + #inject(quote { y; }) as int;
+    #inject(quote { int }) x = #inject(quote { 22 });
+    #inject(quote { i64 }) y = #inject(quote { 20 as i64 });
+    return #inject(quote { x }) + #inject(quote { y }) as int;
 }
 
 #assert good() == 42;

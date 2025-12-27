@@ -62,21 +62,47 @@ using options = clopts< // clang-format off
     flag<"-fstringify-asserts", "Stringify assert conditions if possible">,
     flag<"-fgc-procs", "Strip procedures that are never called">,
 
+    // Internal flags.
+    // TODO: Add support for hidden options to libclopts and hide these.
+    flag<"-Xnopreamble", "Disable the preamble">,
+
     help<>
 >; // clang-format on
 }
 
+// Disable leak detection for now because MLIR seems to ‘leak’ a
+// small amount of memory (probably some persistent data structures
+// that are allocated once and never freed by design).
+extern "C" [[gnu::used]] const char* __asan_default_options() { return "detect_leaks=0"; }
+
 #ifdef __linux__
 std::atomic_bool colours_enabled;
 void InitSignalHandlers() {
-    signal(SIGSEGV, [](int) {
+    std::signal(SIGSEGV, [](int) {
         auto msg = colours_enabled.load(std::memory_order_relaxed)
                      ? "\033[1;35mInternal Compiler Error: \033[m\033[1mSegmentation fault\033[m"sv
                      : "Internal Compiler Error: Segmentation fault";
 
         llvm::errs() << msg << "\n";
         llvm::sys::PrintStackTrace(llvm::errs());
-        _Exit(1);
+        std::_Exit(1);
+    });
+
+    std::signal(SIGABRT, [](int) {
+        auto msg = colours_enabled.load(std::memory_order_relaxed)
+                     ? "\033[1;35mInternal Compiler Error: \033[m\033[1mAborted\033[m"sv
+                     : "Internal Compiler Error: Aborted";
+
+        llvm::errs() << msg << "\n";
+        llvm::sys::PrintStackTrace(llvm::errs());
+        std::_Exit(1);
+    });
+
+    // Libassert will already print the stack trace, no need to do that again
+    // on an assertion failure.
+    libassert::set_failure_handler([](const libassert::assertion_info& info){
+        std::signal(SIGABRT, SIG_DFL);
+        libassert::default_failure_handler(info);
     });
 }
 #endif
@@ -160,6 +186,7 @@ int main(int argc, char** argv) {
         .lang_opts = {
             .overflow_checking = not opts.get<"-fno-overflow-checks">(),
             .no_runtime = opts.get<"--noruntime">(),
+            .no_preamble = opts.get<"-Xnopreamble">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
             .gc_procs = gc_procs,
         },

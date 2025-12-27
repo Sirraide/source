@@ -51,17 +51,17 @@ private:
 
     /// Allocators that store strings used by this module.
     ///
-    /// These result from the fact that we parse files in parallel; once we’re
-    /// done w/ that, files that are part of a single module get merged into a
-    /// module, which is then processed all at once. At that point, we don’t need
-    /// separate allocators anymore, so we just use the first of these here, but
-    /// we need to hold on to all of them as they store the strings that we use
-    /// while compiling the module.
+    /// These are stored here because the parse tree (as well as all of
+    /// Sema) is deallocated before codegen proper, and string data needed
+    /// during codegen is stored in these allocators.
     SmallVector<std::unique_ptr<llvm::BumpPtrAllocator>> allocs;
     llvm::BumpPtrAllocator alloc;
 
     /// Same thing, but for integers.
     SmallVector<IntegerStorage> integers;
+
+    /// And for tokens.
+    std::vector<std::unique_ptr<TokenStream>> quoted_tokens;
 
     /// Not unique because we’ll mostly just be creating unique symbols from now on.
     llvm::StringSaver saver{alloc};
@@ -186,6 +186,11 @@ public:
     /// Add an integer storage unit.
     void add_integer_storage(IntegerStorage&& storage) {
         integers.push_back(std::move(storage));
+    }
+
+    /// Add tokens.
+    void add_quoted_tokens(std::vector<std::unique_ptr<TokenStream>> tokens) {
+        rgs::move(tokens, std::back_inserter(quoted_tokens));
     }
 
     /// Create a new scope.

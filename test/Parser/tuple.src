@@ -10,5 +10,5 @@ program test;
 (1 2); // expected-error: Expected ',' in tuple
 (1,,2); // expected-error: Unexpected ','
 (1,,2,,); // expected-error 2: Unexpected ','
-(1, 2; // expected-error (Expected ',' in tuple) expected-error (Expected expression) expected-error (Expected ';')
+(1, 2; // expected-error (Expected ',' in tuple) expected-error (Expected expression)
 // expected-error: Expected ')'

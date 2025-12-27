@@ -33,19 +33,13 @@ using TemplateParamDeductionInfo = HashMap<String, llvm::SmallDenseSet<u32>>;
 class srcc::ParsedModule {
     SRCC_IMMOVABLE(ParsedModule);
     friend Parser;
-    const File& file;
-
-    /// Allocator used for allocating the parse tree.
-    ///
-    /// While strings need to stick around for longer, this can be deleted
-    /// once we’re done building the AST.
-    llvm::BumpPtrAllocator alloc;
+    Context& ctx;
 
 public:
     using Ptr = std::unique_ptr<ParsedModule>;
 
-    /// Allocator used for allocating strings.
-    std::unique_ptr<llvm::BumpPtrAllocator> string_alloc = std::make_unique<llvm::BumpPtrAllocator>();
+    /// Allocator used for allocating strings and the parse tree.
+    std::unique_ptr<llvm::BumpPtrAllocator> alloc = std::make_unique<llvm::BumpPtrAllocator>();
 
     /// Allocator used for integer literals.
     IntegerStorage integers;
@@ -55,6 +49,9 @@ public:
 
     /// Template deduction information for each template.
     DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> template_deduction_infos;
+
+    /// Token streams that are referenced by '#quote's.
+    std::vector<std::unique_ptr<TokenStream>> quoted_tokens;
 
     /// The name of this program or module.
     SLoc name_loc;
@@ -74,14 +71,14 @@ public:
     };
     SmallVector<Import> imports;
 
-    /// Create a new parse context for a file.
-    explicit ParsedModule(const File& file) : file(file) {}
+    /// Create a new parse context.
+    explicit ParsedModule(Context& ctx) : ctx(ctx) {}
 
     /// Get the module’s allocator.
-    auto allocator() -> llvm::BumpPtrAllocator& { return alloc; }
+    auto allocator() -> llvm::BumpPtrAllocator& { return *alloc; }
 
     /// Get the owning context.
-    Context& context() const { return file.context(); }
+    Context& context() const { return ctx; }
 
     /// Dump the contents of the module.
     void dump() const;
@@ -124,6 +121,10 @@ public:
     void dump_color() const { dump(true); }
     auto dump_as_type() -> SmallUnrenderedString;
     auto dump_as_value(const Context* ctx = nullptr) -> SmallUnrenderedString;
+
+    /// Visit this node.
+    template <typename Visitor>
+    auto visit(Visitor&& v) -> decltype(auto);
 };
 
 // ============================================================================
@@ -651,25 +652,33 @@ public:
 class srcc::ParsedQuoteExpr final : public ParsedStmt
     , TrailingObjects<ParsedQuoteExpr, ParsedUnquoteExpr*> {
     friend TrailingObjects;
+    TokenStream* token_stream = nullptr;
 
 public:
-    ParsedStmt* quoted;
     const u32 num_unquotes;
+    bool brace_delimited;
 
 private:
     ParsedQuoteExpr(
-        ParsedStmt* quoted,
+        TokenStream* tokens,
         ArrayRef<ParsedUnquoteExpr*> unquotes,
+        bool brace_delimited,
         SLoc location
     );
 
 public:
     static auto Create(
         Parser& p,
-        ParsedStmt* quoted,
+        TokenStream* tokens,
         ArrayRef<ParsedUnquoteExpr*> unquotes,
+        bool brace_delimited,
         SLoc location
     ) -> ParsedQuoteExpr*;
+
+    [[nodiscard]] auto tokens() const -> TokenStream::Range {
+        if (token_stream == nullptr) return {};
+        return TokenStream::Range{token_stream->begin(), token_stream->end()};
+    }
 
     [[nodiscard]] auto unquotes() const -> ArrayRef<ParsedUnquoteExpr*> {
         return getTrailingObjects(num_unquotes);
@@ -903,6 +912,15 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StructDecl; }
 };
 
+template <typename Visitor>
+auto srcc::ParsedStmt::visit(Visitor&& v) -> decltype(auto) {
+    switch (kind()) {
+#       define PARSE_TREE_LEAF_NODE(node) case Kind::node: return std::invoke(v, cast<Parsed##node>(this));
+#       include "srcc/ParseTree.inc"
+    }
+    Unreachable();
+}
+
 // ============================================================================
 //  Parser
 // ============================================================================
@@ -956,12 +974,11 @@ private:
         void decrement();
     };
 
-    ParsedModule::Ptr mod;
-    TokenStream stream;
-    TokenStream::iterator tok;
+    ParsedModule* mod;
+    const TokenStream& stream;
+    TokenStream::Iterator tok;
     Context& ctx;
     Signature* current_signature = nullptr;
-    SmallVectorImpl<ParsedUnquoteExpr*>* current_unquotes = nullptr;
     int num_parens{}, num_brackets{}, num_braces{};
     const bool parsing_internal_file;
 
@@ -972,6 +989,9 @@ public:
         CommentTokenCallback comment_callback = {},
         bool is_internal_file = false
     ) -> ParsedModule::Ptr;
+
+    /// Parse a TU fragment.
+    static auto ParseFragment(Context& ctx, const TokenStream& toks) -> ParsedModule::Ptr;
 
     /// Read all tokens in a file.
     static auto ReadTokens(
@@ -989,7 +1009,11 @@ public:
     auto module() -> ParsedModule& { return *mod; }
 
 private:
-    explicit Parser(const File& file, bool internal);
+    explicit Parser(
+        ParsedModule* mod,
+        const TokenStream& tokens,
+        bool internal
+    );
 
     /// Each of these corresponds to a production in the grammar.
     auto ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr>;
@@ -999,7 +1023,7 @@ private:
     auto ParseForStmt() -> Ptr<ParsedStmt>;
     void ParseFile();
     void ParseHeader();
-    auto ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr>;
+    auto ParseIf(bool is_static) -> Ptr<ParsedIfExpr>;
     void ParseImport();
     auto ParseIntent() -> std::pair<SLoc, Intent>;
     auto ParseMatchExpr() -> Ptr<ParsedMatchExpr>;
@@ -1008,8 +1032,10 @@ private:
     void ParsePreamble();
     auto ParseProcBody() -> Ptr<ParsedStmt>;
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
+    auto ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt>;
     bool ParseSignature(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
+    void ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at = Tk::Eof);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseType(int precedence = -1) { return ParseExpr(precedence, true); }
@@ -1028,20 +1054,6 @@ private:
         return Error(tok->location, fmt, std::forward<Args>(args)...);
     }
 
-    template <typename... Args>
-    auto ErrorSync(SLoc loc, std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
-        Error(loc, fmt, std::forward<Args>(args)...);
-        SkipTo(Tk::Semicolon);
-        return {};
-    }
-
-    template <typename... Args>
-    auto ErrorSync(std::format_string<Args...> fmt, Args&&... args) -> std::nullptr_t {
-        Error(tok->location, fmt, std::forward<Args>(args)...);
-        SkipTo(Tk::Semicolon);
-        return {};
-    }
-
     /// Consume a token or issue an error.
     bool ConsumeOrError(Tk tk);
 
@@ -1050,8 +1062,9 @@ private:
         return tok->is(tks...);
     }
 
-    /// Check if we’re at the start of an expression.
+    /// Check if we’re at the start of an expression/statement.
     bool AtStartOfExpression();
+    bool AtStartOfStatement();
 
     /// Consume a token if it is present.
     bool Consume(Tk tk);
@@ -1072,14 +1085,11 @@ private:
     /// Consume a semicolon and issue an error on the previous line if it is missing.
     bool ExpectSemicolon();
 
-    /// Check if a token is one of (), [], {}.
-    bool IsBracket(Tk t);
-
     /// Check if a token is a keyword (implemented in the lexer).
     bool IsKeyword(Tk t);
 
     /// Get a lookahead token; returns EOF if looking past the end.
-    auto LookAhead(usz n = 1) -> Token&;
+    auto LookAhead(usz n = 1) -> const Token&;
 
     /// Consume a token and return it (or its location). If the parser is at
     /// end of file, the token iterator is not advanced.

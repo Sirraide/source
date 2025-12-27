@@ -28,6 +28,7 @@ enum struct srcc::Tk : base::u8 {
     Integer,
     StringLiteral,
     Comment,
+    Unquote, /// Marker for an unquote that needs to be inserted here.
 
     /// Keywords.
     Alias,
@@ -182,6 +183,13 @@ struct srcc::Token {
     /// Source location of this token.
     SLoc location{};
 
+    /// Create an EOF token.
+    [[nodiscard]] static auto Eof() -> Token {
+        Token t;
+        t.type = Tk::Eof;
+        return t;
+    }
+
     /// Check if this is an end-of-file token.
     [[nodiscard]] auto eof() const -> bool { return type == Tk::Eof; }
 
@@ -198,12 +206,16 @@ struct srcc::Token {
 
 /// This stores and allocates tokens.
 class srcc::TokenStream {
-    std::deque<Token> tokens;
+public:
+    using Buffer = std::deque<Token>;
+    using Iterator = Buffer::const_iterator;
+    using Range = rgs::subrange<Iterator>;
+
+private:
+    Buffer tokens;
     llvm::UniqueStringSaver saver;
 
 public:
-    using iterator = decltype(tokens)::iterator;
-
     /// Construct a token stream.
     explicit TokenStream(llvm::BumpPtrAllocator& alloc) : saver(alloc) {}
 
@@ -214,12 +226,28 @@ public:
 
     /// Get the last token.
     [[nodiscard]] auto back() -> Token& { return tokens.back(); }
+    [[nodiscard]] auto back() const -> const Token& { return tokens.back(); }
 
     /// Get an iterator to the beginning of the token stream.
     [[nodiscard]] auto begin() { return tokens.begin(); }
+    [[nodiscard]] auto begin() const { return tokens.begin(); }
 
     /// Get an iterator to the end of the token stream.
     [[nodiscard]] auto end() { return tokens.end(); }
+    [[nodiscard]] auto end() const { return tokens.end(); }
+
+    /// Signal that we’re done lexing. This terminates the stream
+    /// with an EOF token.
+    void finish(SLoc loc) {
+        if (tokens.empty() or not back().eof()) {
+            auto& t = tokens.emplace_back();
+            t.type = Tk::Eof;
+            t.location = loc;
+        }
+    }
+
+    /// Add a token to the stream.
+    void push(Token t) { tokens.push_back(std::move(t)); }
 
     /// Remove the last token from the stream.
     void pop() { tokens.pop_back(); }
@@ -234,6 +262,11 @@ public:
 
     /// Access a token by index.
     auto operator[](usz idx) -> Token& {
+        Assert(idx < tokens.size(), "Token index out of bounds");
+        return tokens[idx];
+    }
+
+    auto operator[](usz idx) const -> const Token& {
         Assert(idx < tokens.size(), "Token index out of bounds");
         return tokens[idx];
     }

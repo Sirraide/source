@@ -12,10 +12,10 @@
 
 using namespace srcc;
 
-#define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } _x.get(); })
-#define TryParseExpr(...) TRY(ParseExpr() __VA_OPT__(, ) __VA_ARGS__)
-#define TryParseStmt(...) TRY(ParseStmt() __VA_OPT__(, ) __VA_ARGS__)
-#define TryParseType(...) TRY(ParseType() __VA_OPT__(, ) __VA_ARGS__)
+#define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } *_x; })
+#define TryParseExpr() TRY(ParseExpr())
+#define TryParseStmt() TRY(ParseStmt())
+#define TryParseType() TRY(ParseType())
 
 // ============================================================================
 //  Parser Helpers
@@ -188,21 +188,37 @@ constexpr bool IsPrefix(Tk t) {
     }
 }
 
-// Check whether an expression requires a semicolon after it when
-// used in a statement context.
-static bool RequireSemicolonAfterExpr(ParsedStmt* e) {
-    // If the expression ends with a brace, then we don’t require a semicolon
-    // after it and we’re done here. Don’t just check if the previous token was
-    // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
-    if (isa<ParsedBlockExpr, ParsedMatchExpr>(e)) return false;
-
-    // For '#quote's, require a semicolon after '#quote()' but not '#quote{}'
-    if (auto quote = dyn_cast<ParsedQuoteExpr>(e))
-        return not isa<ParsedBlockExpr>(quote->quoted);
-
-    // Any other expression requires a semicolon.
-    return true;
-}
+//// Check whether an expression requires a semicolon after it when
+//// used in a statement context.
+//static bool RequireSemicolonAfterExpr(ParsedStmt* e) { // clang-format off
+//    return e->visit(utils::Overloaded{
+//        // If the expression ends with a brace, then we don’t require a semicolon
+//        // after it and we’re done here. Don’t just check if the previous token was
+//        // '}', since for e.g. 'return { ... }', we *do* want to require a semicolon.
+//
+//
+//        // Any other expression requires a semicolon.
+//        [](auto*) { return true; }
+//
+//    });
+//    if (isa<ParsedBlockExpr, ParsedMatchExpr>(e)) return false;
+//
+//    // For '#quote's, require a semicolon after '#quote()' but not '#quote{}'
+//    if (auto quote = dyn_cast<ParsedQuoteExpr>(e))
+//        return not quote->brace_delimited;
+//
+//    // If the expression has a 'body', check that.
+//    if (auto proc = dyn_cast<ParsedProcDecl>(e))
+//        return not proc->body or RequireSemicolonAfterExpr(proc->body.get());
+//    if (auto loop = dyn_cast<ParsedLoopExpr>(e))
+//        return not loop->body or RequireSemicolonAfterExpr(loop->body.get());
+//    if (auto eval = dyn_cast<ParsedEvalExpr>(e))
+//        return RequireSemicolonAfterExpr(eval->expr);
+//    if (auto var = dyn_cast<ParsedVarDecl>(e))
+//        return not var->init or RequireSemicolonAfterExpr(var->init.get());
+//
+//    return true;
+//} // clang-format on
 
 Parser::BracketTracker::BracketTracker(Parser& p, Tk open, bool diagnose)
     : p{p}, diagnose{diagnose}, open_bracket{open} {
@@ -293,6 +309,21 @@ bool Parser::AtStartOfExpression() {
     }
 }
 
+/// Check that this token can start a statement.
+bool Parser::AtStartOfStatement() {
+    switch (tok->type) {
+        default: return AtStartOfExpression();
+        case Tk::Defer:
+        case Tk::Export:
+        case Tk::For:
+        case Tk::Static:
+        case Tk::Struct:
+        case Tk::While:
+        case Tk::With:
+            return true;
+    }
+}
+
 bool Parser::Consume(Tk tk) {
     SLoc l;
     return Consume(l, tk);
@@ -355,7 +386,28 @@ bool Parser::ExpectSemicolon() {
     return false;
 }
 
-bool Parser::IsBracket(Tk t) {
+static auto GetCorrespondingClosingBracket(Tk t) -> Tk {
+    switch (t) {
+        case Tk::LParen: return Tk::RParen;
+        case Tk::LBrace: return Tk::RBrace;
+        case Tk::LBrack: return Tk::RBrack;
+        default: Unreachable();
+    }
+}
+
+static bool IsOpenBracket(Tk t) {
+    switch (t) {
+        case Tk::LParen:
+        case Tk::LBrace:
+        case Tk::LBrack:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+static bool IsBracket(Tk t) {
     switch (t) {
         case Tk::LParen:
         case Tk::RParen:
@@ -370,7 +422,7 @@ bool Parser::IsBracket(Tk t) {
     }
 }
 
-auto Parser::LookAhead(usz n) -> Token& {
+auto Parser::LookAhead(usz n) -> const Token& {
     usz curr = usz(tok - stream.begin());
     if (n + curr >= stream.size()) return stream.back();
     return stream[n + curr];
@@ -445,22 +497,37 @@ bool Parser::SkipPast(std::same_as<Tk> auto... tks) {
 // ============================================================================
 //  Parser
 // ============================================================================
-Parser::Parser(const File& file, bool internal)
-    : mod{std::make_unique<ParsedModule>(file)},
-      stream{*mod->string_alloc},
-      ctx{file.context()},
-      parsing_internal_file(internal) {}
+Parser::Parser(ParsedModule* mod, const TokenStream& tokens, bool internal)
+    : mod{mod},
+      stream{tokens},
+      ctx{mod->context()},
+      parsing_internal_file(internal) {
+    Assert(stream.size() != 0, "Cannot parse empty token stream");
+    Assert(stream.back().eof(), "Token stream must end with EOF token");
+    tok = stream.begin();
+}
 
 auto Parser::Parse(
     const File& file,
     CommentTokenCallback cb,
     bool is_internal_file
-) -> std::unique_ptr<ParsedModule> {
-    Parser p{file, is_internal_file};
-    ReadTokens(p.stream, file, std::move(cb));
-    p.tok = p.stream.begin();
+) -> ParsedModule::Ptr {
+    // Create a module and lex it.
+    auto mod = std::make_unique<ParsedModule>(file.context());
+    TokenStream stream{mod->allocator()};
+    ReadTokens(stream, file, std::move(cb));
+
+    // Create the parser and parse the file.
+    Parser p{mod.get(), stream, is_internal_file};
     p.ParseFile();
-    return std::move(p.mod);
+    return mod;
+}
+
+auto Parser::ParseFragment(Context& ctx, const TokenStream& toks) -> ParsedModule::Ptr {
+    auto mod = std::make_unique<ParsedModule>(ctx);
+    Parser p{mod.get(), toks, false};
+    p.ParseStmts(mod->top_level);
+    return mod;
 }
 
 // <expr-assert> ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
@@ -483,13 +550,8 @@ auto Parser::ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr> {
 
 auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     BracketTracker braces{*this, Tk::LBrace};
-
-    // Parse statements.
     SmallVector<ParsedStmt*> stmts;
-    while (not At(Tk::Eof, Tk::RBrace))
-        if (auto s = ParseStmt())
-            stmts.push_back(s.get());
-
+    ParseStmts(stmts, Tk::RBrace);
     braces.close();
     return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
@@ -530,7 +592,6 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-paren>
 //          | <expr-prefix>
 //          | <expr-quote>
-//          | <expr-unquote>
 //          | <expr-return>
 //          | <expr-subscript>
 //          | <expr-tuple>
@@ -563,11 +624,14 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::Then:
             return Error("Unexpected '%1({}%)'", tok->type);
 
+        case Tk::Dollar:
+            return Error(lhs.get()->loc, "'%1($()%)' outside of '%1(#quote%)'");
+
         // Compile-time expressions.
         case Tk::Hash: {
             auto hash_loc = Next();
             switch (tok->type) {
-                case Tk::If: lhs = ParseIf(true, true); break;
+                case Tk::If: lhs = ParseIf(true); break;
                 case Tk::Assert: lhs = ParseAssert(true); break;
                 case Tk::Elif:
                 case Tk::Else:
@@ -589,10 +653,8 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                     BracketTracker parens{*this, Tk::LParen};
                     SmallVector<ParsedStmt*> args;
                     while (not At(Tk::RParen, Tk::Eof)) {
-                        SmallVector<ParsedUnquoteExpr*> unquotes;
-                        tempset current_unquotes = &unquotes;
-                        if (auto arg = ParseExpr().get_or_null()) {
-                            args.push_back(ParsedQuoteExpr::Create(*this, arg, unquotes, arg->loc));
+                        if (auto arg = ParseQuotedTokenSeq(tok->location, true).get_or_null()) {
+                            args.push_back(arg);
                             if (not Consume(Tk::Comma)) break;
                         } else {
                             break;
@@ -627,45 +689,23 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParseBlock();
             break;
 
-        // <expr-unquote> ::= "$" "(" <expr> ")"
-        case Tk::Dollar: {
-            Next();
-            BracketTracker parens{*this, Tk::LParen};
-
-            // Parse the argument.
-            Ptr<ParsedStmt> arg;
-            {
-                // Disable unquoting within an unquote (unless nested in another #quote).
-                tempset current_unquotes = nullptr;
-                arg = ParseExpr();
-                parens.close();
-                if (not arg) return {};
-            }
-
-            // Create the unquote, and add it to the parent #quote.
-            auto unquote = new (*this) ParsedUnquoteExpr{arg.get(), parens.left};
-            lhs = unquote;
-            if (current_unquotes) current_unquotes->push_back(unquote);
-            else Error(lhs.get()->loc, "'%1($()%)' outside of '%1(#quote%)'");
-        } break;
-
-        // <expr-eval> ::= EVAL <expr>
+        // <expr-eval> ::= EVAL <sub-stmt>
         case Tk::Eval: {
             auto start = Next();
-            auto arg = TryParseExpr();
+            auto arg = TryParseStmt();
             lhs = new (*this) ParsedEvalExpr{arg, start};
         } break;
 
-        // <expr-loop> ::= LOOP <expr>
+        // <expr-loop> ::= LOOP [ <sub-stmt> ]
         case Tk::Loop: {
             auto start = Next();
             Ptr<ParsedStmt> arg;
-            if (AtStartOfExpression()) arg = TryParseExpr();
+            if (AtStartOfStatement()) arg = TryParseStmt();
             return new (*this) ParsedLoopExpr{arg, start};
         }
 
         case Tk::If:
-            lhs = ParseIf(false, true);
+            lhs = ParseIf(false);
             break;
 
         case Tk::Identifier:
@@ -680,13 +720,9 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedNilExpr(Next());
             break;
 
-        case Tk::Quote: {
-            auto loc = Next();
-            SmallVector<ParsedUnquoteExpr*> unquotes;
-            tempset current_unquotes = &unquotes;
-            auto arg = TRY(At(Tk::LBrace) ? ParseBlock() : ParseParenthesisedExpr());
-            lhs = ParsedQuoteExpr::Create(*this, arg, unquotes, loc);
-        } break;
+        case Tk::Quote:
+            lhs = TRY(ParseQuotedTokenSeq(Next(), false));
+            break;
 
         // STRING-LITERAL
         case Tk::StringLiteral:
@@ -943,7 +979,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
                     }
 
                     // Only issue this error message once if we’re not sure what we want here.
-                    ErrorSync("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
+                    Error("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
                     return false;
                 }
                 break;
@@ -977,17 +1013,17 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
             // to parse the rest of this is going to yield anything but more
             // errors.
             if (At(Tk::Identifier)) Error("Expected '%1(,%)', '%1(in%)', or '%1(do%)'");
-            else return ErrorSync("Expected '%1(in%)'");
+            else return Error("Expected '%1(in%)'");
         }
     } else if (Consume(Tk::In)) {
-        ErrorSync(for_loc, "'%1(for in%)' is invalid");
+        Error(for_loc, "'%1(for in%)' is invalid");
         Remark("Valid syntaxes for 'for' loops include 'for y' and 'for x in y'.");
         return {};
     }
 
     // Ranges.
     do {
-        ranges.push_back(TryParseExpr(SkipTo(Tk::Semicolon)));
+        ranges.push_back(TryParseExpr());
         if (not Consume(Tk::Comma)) {
             if (At(Tk::Identifier)) Error("Expected ','");
             else break;
@@ -1003,9 +1039,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
 // <file> ::= <preamble> { <stmt> }
 void Parser::ParseFile() {
     ParsePreamble();
-    while (not At(Tk::Eof))
-        if (auto s = ParseStmt())
-            mod->top_level.push_back(s.get());
+    ParseStmts(mod->top_level);
 }
 
 // <header> ::= ( "program" | "module" ) <module-name> ";"
@@ -1044,29 +1078,18 @@ void Parser::ParseHeader() {
     Consume(Tk::Semicolon);
 }
 
-// The expression and statement forms of 'if' are nearly identical, except that the
-// body of the former is an expression and that of the latter a statement; this is a
-// bit of a hacky way to accomplish
-//
-//     1. not requiring braces,
-//     2. requiring statements to end with a semicolon in a consistent manner,
-//     3. avoiding the grammar requiring two semicolons in a row, e.g.
-//        'var x = if a then b else c;;'.
-//
-// <stmt-if> ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
 // <expr-if> ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
-auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
+auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // Yeet 'if'.
     auto loc = Next();
 
     // Condition.
-    auto cond = TryParseExpr(SkipTo(Tk::Semicolon));
+    auto cond = TryParseExpr();
 
-    // <if-stmt-body> ::= [ THEN ] <stmt>
-    // <if-expr-body> ::= [ THEN ] <expr>
+    // <if-expr-body> ::= [ THEN ] <sub-stmt>
     auto ParseBody = [&] -> Ptr<ParsedStmt> {
         Consume(Tk::Then);
-        return is_expr ? ParseExpr() : ParseStmt();
+        return ParseStmt();
     };
 
     // Check for unnecessary parens around the condition, which is
@@ -1092,18 +1115,13 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
     // Parse the if body.
     auto body = TRY(ParseBody());
 
-    // Disallow semicolons before '(#|)(else|if)'. They’re not supposed to be
-    // there in an expression context, and they’re likely extraneous in a statement
-    // context.
+    // Permit extra semicolons before '(#|)(else|if)'.
     if ( // clang-format off
         At(Tk::Semicolon) and (
             LookAhead().is(Tk::Else, Tk::Elif) or
             (LookAhead().is(Tk::Hash) and LookAhead(2).is(Tk::Else, Tk::Elif))
         )
-    ) { // clang-format on
-        Error("Unexpected ';'");
-        Next();
-    }
+    ) Next(); // clang-format on
 
     // '#if' must be paired with '#else'/'#elif'
     bool hash = At(Tk::Hash);
@@ -1158,7 +1176,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
 
         // After recovering from whatever nonsense the user potentially gave us,
         // actually parse the else clause.
-        else_ = correct_to_elif ? ParseIf(is_static, is_expr) : ParseBody();
+        else_ = correct_to_elif ? ParseIf(is_static) : ParseBody();
     }
 
     // For elif, just check for a missing hash.
@@ -1168,7 +1186,7 @@ auto Parser::ParseIf(bool is_static, bool is_expr) -> Ptr<ParsedIfExpr> {
             "'%1(#if%)' must be paired with '%1(#elif%)'"
         );
 
-        else_ = ParseIf(is_static, is_expr);
+        else_ = ParseIf(is_static);
     }
 
 
@@ -1320,7 +1338,6 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl> {
         SkipTo(Tk::Semicolon);
     }
 
-    ExpectSemicolon();
     return decl;
 }
 
@@ -1501,8 +1518,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (SLoc assign_loc; Consume(assign_loc, Tk::Assign)) {
         if (At(Tk::LBrace)) Error(assign_loc, "'%1(= {{%)' is invalid; remove the '%1(=%)'");
         body = ParseExpr();
-        if (body and RequireSemicolonAfterExpr(body.get())) ExpectSemicolon();
-    } else if (Consume(Tk::Semicolon)) {
+    } else if (At(Tk::Semicolon)) {
         // Nothing.
     } else if (At(Tk::LBrace)) {
         body = ParseBlock();
@@ -1534,6 +1550,92 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         mod->template_deduction_infos[proc] = std::move(sig.deduction_info);
 
     return proc;
+}
+
+auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt> {
+    // If this is a macro argument, we might have no tokens at all here.
+    if (in_macro_call and At(Tk::Comma, Tk::RParen))
+        return ParsedQuoteExpr::Create(*this, nullptr, {}, false, quote_loc);
+
+    // Consume the open bracket.
+    SmallVector<Tk> brackets;
+    bool brace_delimited = false;
+    if (not in_macro_call) {
+        Assert(IsOpenBracket(tok->type));
+        brackets.push_back(tok->type);
+        brace_delimited = tok->type == Tk::LBrace;
+        NextTokenImpl();
+
+        // This might also be empty.
+        if (Consume(GetCorrespondingClosingBracket(brackets.front())))
+            return ParsedQuoteExpr::Create(*this, nullptr, {}, false, quote_loc);
+    }
+
+    // Remember the first token that is part of the quote. We know it is
+    // not an open bracket, so skip it.
+    SmallVector<ParsedUnquoteExpr*> unquotes;
+    auto tokens = mod->quoted_tokens.emplace_back(std::make_unique<TokenStream>(mod->allocator())).get();
+    auto AddToken = [&] {
+        tokens->push(*tok);
+        NextTokenImpl();
+    };
+
+    // Collect the tokens.
+    auto KeepSkipping = [&] {
+        if (At(Tk::Eof)) return false;
+
+        // Parse a ‘balanced’ token sequence. We don’t actually require this to
+        // be fully balanced; rather, we just ignore unbalanced closing delimiters,
+        // so keep going until the bracket stack is empty.
+        if (not brackets.empty()) return true;
+
+        // Stop if we’re not in a macro argument.
+        if (not in_macro_call) return false;
+
+        // Inside a macro argument, we also keep going after a balanced sequence
+        // until we encounter a comma ot closing parenthesis.
+        return not At(Tk::Comma, Tk::RParen);
+    };
+
+    while (KeepSkipping()) {
+        if (IsOpenBracket(tok->type)) {
+            brackets.push_back(tok->type);
+            AddToken();
+        } else if (not brackets.empty() and At(GetCorrespondingClosingBracket(brackets.front()))) {
+            brackets.pop_back();
+
+            // Don’t add the top-level delimiter to the collected tokens.
+            if (not brackets.empty() or in_macro_call) AddToken();
+            else NextTokenImpl();
+        } else if (SLoc dollar; Consume(dollar, Tk::Dollar)) {
+            BracketTracker parens{*this, Tk::LParen};
+            auto arg = ParseExpr();
+            parens.close();
+            if (arg) unquotes.push_back(new (*this) ParsedUnquoteExpr{arg.get(), parens.left});
+
+            // Add a marker token so we can replace it with the expansion of
+            // the unquote later on.
+            Token t;
+            t.artificial = true;
+            t.type = Tk::Unquote;
+            t.location = dollar;
+            tokens->push(std::move(t));
+        } else {
+            AddToken();
+        }
+    }
+
+    // Check that we have a delimiter; do not skip it if we’re in
+    // a macro argument (because the caller should handle the comma
+    // or closing parenthesis).
+    if (At(Tk::Eof)) Error(quote_loc, "Token sequence delimited by end of file");
+    return ParsedQuoteExpr::Create(
+        *this,
+        tokens,
+        unquotes,
+        brace_delimited,
+        quote_loc
+    );
 }
 
 bool Parser::ParseSignature(
@@ -1627,16 +1729,18 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
     return true;
 }
 
+// For the '<expr-no-braces> ";"' case, the caller has to check for
+// a potentially missing semicolon.
+//
 // <stmt> ::= <expr-braces>
 //          | <expr-no-braces> ";"
 //          | <decl>
 //          | <stmt-defer>
 //          | <stmt-while>
 //          | <stmt-for>
-//          | <stmt-if>
 //          | <stmt-with>
-//          | EVAL <stmt>
-//          | LOOP <stmt>
+//
+// <sub-stmt> ::= <expr> | <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
     auto loc = tok->location;
     switch (tok->type) {
@@ -1645,13 +1749,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             Next();
             auto arg = TryParseStmt();
             return new (*this) ParsedDeferStmt{arg, loc};
-        }
-
-        // EVAL <stmt>
-        case Tk::Eval: {
-            Next();
-            auto arg = TryParseStmt();
-            return new (*this) ParsedEvalExpr{arg, loc};
         }
 
         // EXPORT <decl>
@@ -1678,29 +1775,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedExportDecl{decl, loc};
         }
 
-        // <stmt-if>
-        case Tk::Hash: {
-            if (LookAhead(1).is(Tk::If)) {
-                auto hash_loc = Next();
-                auto if_ = ParseIf(true, false);
-                if (auto i = if_.get_or_null()) i->loc = hash_loc;
-                return if_;
-            }
-
-            // Fall through to expression parser.
-            goto expression_parser;
-        }
-
-        // <stmt-if>
-        case Tk::If: return ParseIf(false, false);
-
-        // LOOP <stmt>
-        case Tk::Loop: {
-            Next();
-            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
-            return new (*this) ParsedLoopExpr{body, loc};
-        }
-
         // <stmt-for>
         case Tk::For: return ParseForStmt();
 
@@ -1712,7 +1786,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                 Next();
             }
 
-            auto ty = TryParseExpr(SkipTo(Tk::Semicolon));
+            auto ty = TryParseExpr();
             auto var = ParseVarDecl(ty);
             if (not var) return {};
             var.get()->is_static = true;
@@ -1725,18 +1799,18 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         // <stmt-while> ::= WHILE <expr> [ DO ] <stmt>
         case Tk::While: {
             Next();
-            auto cond = TryParseExpr(SkipTo(Tk::Semicolon));
+            auto cond = TryParseExpr();
             Consume(Tk::Do);
-            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+            auto body = TryParseStmt();
             return new (*this) ParsedWhileStmt{cond, body, loc};
         }
 
         // <stmt-with> ::= WITH <expr> [ DO ] <stmt>
         case Tk::With: {
             Next();
-            auto expr = TryParseExpr(SkipTo(Tk::Semicolon));
+            auto expr = TryParseExpr();
             Consume(Tk::Do);
-            auto body = TryParseStmt(SkipTo(Tk::Semicolon));
+            auto body = TryParseStmt();
             return new (*this) ParsedWithStmt{expr, body, loc};
         }
 
@@ -1747,9 +1821,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         case Tk::Semicolon: return new (*this) ParsedEmptyStmt{Next()};
 
         // <expr-braces> | <expr-no-braces> | <decl-var>
-        default:
-        expression_parser: {
-            auto e = TryParseExpr(SkipTo(Tk::Semicolon));
+        default: {
+            auto e = TryParseExpr();
 
             // Whether it makes sense to interpret an expression as a type.
             //
@@ -1790,18 +1863,38 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // If the next token is an identifier, and the expression could reaonably be a
             // type, parse a variable declaration.
             if (At(Tk::Identifier) and CouldReasonablyBeAType(e)) return ParseVarDecl(e);
-
-            // If the expression doesn’t have braces, require a semicolon.
-            //
-            // Don't skip to the next semicolon if we're at 'else' or 'elif' to
-            // improve error recovery in 'if' statements.
-            if (
-                RequireSemicolonAfterExpr(e) and
-                not ExpectSemicolon() and
-                not At(Tk::Else, Tk::Elif)
-            ) SkipPast(Tk::Semicolon);
             return e;
         }
+    }
+}
+
+// Parse a semicolon-separated list of statements.
+//
+// <stmts> ::= { <stmt> } [ <expr> ]
+void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at) {
+    while (not At(Tk::Eof, stop_at)) {
+        auto s = ParseStmt();
+        if (not s) {
+            SkipPast(Tk::Semicolon);
+            continue;
+        }
+
+        into.push_back(s.get());
+
+        // If the expression doesn’t have braces, require a semicolon, except
+        // that the last expression in the list doesn’t need one. Additionally,
+        // don’t require a semicolon after a semicolon since that’s just silly.
+        //
+        // Note that we *allow* a semicolon after the last expression and just
+        // discard it; in particular, it is *not* treated as an empty statement.
+        Assert(tok != stream.begin());
+        if (
+            not std::prev(tok)->is(Tk::Semicolon) and
+            not Consume(Tk::Semicolon) and
+            not std::prev(tok)->is(Tk::RBrace) and
+            not At(stop_at) and
+            not ExpectSemicolon()
+        ) SkipPast(Tk::Semicolon);
     }
 }
 

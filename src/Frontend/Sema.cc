@@ -310,12 +310,37 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     }
 }
 
-auto Sema::InjectTree(TreeValue* tree) -> Ptr<Stmt> {
-    defer { unquote_stack.pop_back(); };
-    auto& unquote_substitutions = unquote_stack.emplace_back();
-    for (auto [unquote, subst] : zip(tree->pattern()->quoted->unquotes(), tree->unquotes()))
-        unquote_substitutions[unquote] = subst;
-    return TranslateStmt(tree->pattern()->quoted->quoted);
+auto Sema::InjectTree(TreeValue* top_level_tree) -> Ptr<Stmt> {
+    TokenStream tokens{tu->allocator()};
+    auto CollectTokens = [&](this auto& self, TreeValue* tree) -> void {
+        u32 unquote_idx = 0;
+        for (const auto& t : tree->pattern()->quoted->tokens()) {
+            if (t.is(Tk::Unquote)) self(tree->unquotes()[unquote_idx++]);
+            else tokens.push(t);
+        }
+    };
+
+    // Collect the tokens and parse them.
+    //
+    // Make sure to terminate the token stream as the parser gets very
+    // angry if the token stream doesn’t end with an end-of-file token.
+    CollectTokens(top_level_tree);
+    tokens.finish(top_level_tree->pattern()->location());
+    auto fragment = AddParsedModule(Parser::ParseFragment(ctx, tokens));
+    if (not fragment) return nullptr;
+
+    // Translate the parse tree.
+    SmallVector<Stmt*> stmts;
+    if (not TranslateStmts(stmts, fragment->top_level)) return nullptr;
+
+    // TODO: Allow injecting multiple things in some contexts.
+    if (stmts.size() != 1) return ICE(
+        top_level_tree->pattern()->location(),
+        "Can’t inject fragment consisting of {} statements yet",
+        stmts.size()
+    );
+
+    return stmts.front();
 }
 
 bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
@@ -3823,6 +3848,23 @@ Sema::EnterScope::~EnterScope() {
 Sema::Sema(Context& ctx) : ctx(ctx) {}
 Sema::~Sema() = default;
 
+auto Sema::AddParsedModule(ParsedModule::Ptr p, bool translate) -> ParsedModule* {
+    if (p == nullptr) return nullptr;
+
+    tu->add_allocator(std::move(p->alloc));
+    tu->add_integer_storage(std::move(p->integers));
+    tu->add_quoted_tokens(std::move(p->quoted_tokens));
+    for (auto& [decl, info] : p->template_deduction_infos)
+        parsed_template_deduction_infos[decl] = std::move(info);
+
+    if (translate) {
+        Assert(not started_translating, "Cannot enqueue module during translation");
+        return modules_to_translate.emplace_back(std::move(p)).get();
+    }
+
+    return extra_modules.emplace_back(std::move(p)).get();
+}
+
 auto Sema::Translate(
     const LangOpts& opts,
     SmallVector<ParsedModule::Ptr> modules,
@@ -3842,7 +3884,7 @@ auto Sema::Translate(
     );
 
     // Take ownership of the modules.
-    for (auto& m : modules) S.parsed_modules.push_back(std::move(m));
+    for (auto& m : modules) S.AddParsedModule(std::move(m), true);
     S.search_paths = module_search_paths;
     S.clang_include_paths = clang_include_paths;
 
@@ -3852,25 +3894,10 @@ auto Sema::Translate(
 }
 
 void Sema::Translate(bool load_runtime) {
-    auto AddParsedModule = [&](ParsedModule& p){
-        tu->add_allocator(std::move(p.string_alloc));
-        tu->add_integer_storage(std::move(p.integers));
-        for (auto& [decl, info] : p.template_deduction_infos)
-            parsed_template_deduction_infos[decl] = std::move(info);
-    };
-
-    // Parse the preamble.
-    auto preamble = Parser::Parse(
-        ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"),
-        /*comment_callback=*/{},
-        /*is_internal_file=*/true
-    );
-
     if (ctx.diags().has_error()) return;
-
-    // Take ownership of any resources of the parsed modules.
-    for (auto& p : parsed_modules) AddParsedModule(*p);
-    AddParsedModule(*preamble);
+    Assert(not modules_to_translate.empty(), "Need at least 1 module");
+    Assert(not started_translating, "Translate() called twice?");
+    started_translating = true;
 
     // Set up scope stacks.
     tu->initialiser_proc->scope = global_scope();
@@ -3892,22 +3919,33 @@ void Sema::Translate(bool load_runtime) {
     // Translate the preamble first since the runtime and other modules rely
     // on it always being available.
     SmallVector<Stmt*> top_level_stmts;
-    if (not TranslateStmts(top_level_stmts, preamble->top_level)) {
-        ICE(tu->initialiser_proc->location(), "Failed to translate preamble");
-        return;
+    if (not tu->lang_opts().no_preamble) {
+        auto preamble = AddParsedModule(
+            Parser::Parse(
+                ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"),
+                /*comment_callback=*/{},
+                /*is_internal_file=*/true
+            )
+        );
+
+        if (not preamble or ctx.diags().has_error()) return;
+        if (not TranslateStmts(top_level_stmts, preamble->top_level)) {
+            ICE(tu->initialiser_proc->location(), "Failed to translate preamble");
+            return;
+        }
     }
 
     // Load the runtime.
     if (load_runtime) LoadModule(
         constants::RuntimeModuleName,
         constants::RuntimeModuleName,
-        parsed_modules.front()->program_or_module_loc,
+        modules_to_translate.front()->program_or_module_loc,
         false,
         false
     );
 
     // And process other imports.
-    for (auto& m : parsed_modules) {
+    for (auto& m : modules_to_translate) {
         for (auto& i : m->imports) {
             LoadModule(
                 i.import_name,
@@ -3923,7 +3961,7 @@ void Sema::Translate(bool load_runtime) {
     if (ctx.diags().has_error()) return;
 
     // Collect all statements and translate them.
-    for (auto& p : parsed_modules) TranslateStmts(top_level_stmts, p->top_level);
+    for (auto& p : modules_to_translate) TranslateStmts(top_level_stmts, p->top_level);
     tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, SLoc{});
 
     // File scope block should never be dependent.
@@ -4784,13 +4822,8 @@ auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
-auto Sema::TranslateUnquoteExpr(ParsedUnquoteExpr* parsed, Type) -> Ptr<Stmt> {
-    for (const auto& unquote_substs : reverse(unquote_stack)) {
-        auto it = unquote_substs.find(parsed);
-        if (it != unquote_substs.end()) return InjectTree(it->second);
-    }
-
-    Unreachable("Unquote not found in stack?");
+auto Sema::TranslateUnquoteExpr(ParsedUnquoteExpr*, Type) -> Ptr<Stmt> {
+    Unreachable("Never translated as an expression");
 }
 
 auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
@@ -5025,9 +5058,9 @@ auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
     auto res = LookUpUnqualifiedName(curr_scope(), parsed->name, LookupHint::Type, true);
-    if (not res) Error(parsed->loc, "Deduced template type cannot occur here");
+    if (not res) return Error(parsed->loc, "Deduced template type cannot occur here");
     auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
-    if (not ty->in_substitution) Error(parsed->loc, "Deduced template type cannot occur here");
+    if (not ty->in_substitution) return Error(parsed->loc, "Deduced template type cannot occur here");
     return ty->arg_type();
 }
 

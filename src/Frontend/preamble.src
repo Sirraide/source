@@ -19,7 +19,7 @@ proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     // For any number that isn't -1 or 1, this results in a fraction in
     // the interval (-1, 1), which for integers is just 0.
     exp < 0: match base {
-        -1: if exp & 1 != 0 then -1; else 1;
+        -1: if exp & 1 != 0 then -1 else 1;
         1: 1;
         _: 0;
     }

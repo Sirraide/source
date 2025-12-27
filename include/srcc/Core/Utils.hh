@@ -102,6 +102,7 @@ public:
         return dyn_cast<Derived>(value);
     }
 
+    auto operator*() const -> Ty* { return get(); }
     auto get() const -> Ty* {
         Assert(value, "Value must be present!");
         return value;

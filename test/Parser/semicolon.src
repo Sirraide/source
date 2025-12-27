@@ -4,7 +4,7 @@ program test;
 
 {
     int y // expected-error: Expected ';'
-    int z // expected-error: Expected ';'
+    int z
 }
 
 {
@@ -14,6 +14,5 @@ program test;
     int x
 
     int
-    // expected-error@+1: Expected ';'
     y
 }

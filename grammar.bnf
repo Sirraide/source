@@ -24,22 +24,20 @@
 // ============================================================================
 //  Statements
 // ============================================================================
-<stmts> ::= { <stmt> }
+// This is a very convoluted way of specifying ‘a semicolon-separated sequence
+// of <stmt>s, except that no semicolons are required after '}'.
+<stmts> ::= { <stmt> } [ <expr> ]
 <stmt>  ::= <expr-braces>
           | <expr-no-braces> ";"
           | <decl>
           | <stmt-defer>
           | <stmt-while>
           | <stmt-for>
-          | <stmt-if>
           | <stmt-with>
-          | EVAL <stmt>
-          | LOOP <stmt>
           | ";"
 
 <stmt-defer>   ::= DEFER <stmt>
 <stmt-while>   ::= WHILE <expr> [ DO ] <stmt>
-<stmt-if>      ::= [ "#" ] IF <expr> <if-stmt-body> { [ "#" ] ELIF <expr> <if-stmt-body> } [ [ "#" ] ELSE <if-stmt-body> ]
 <stmt-with>    ::= WITH <expr> [ DO ] <stmt>
 <if-stmt-body> ::= [ THEN ] <stmt>
 
@@ -71,7 +69,6 @@
                    | <expr-paren>
                    | <expr-prefix>
                    | <expr-quote>
-                   | <expr-unquote>
                    | <expr-return>
                    | <expr-subscript>
                    | <expr-tuple>
@@ -83,29 +80,32 @@
 <expr-block>      ::= "{" <stmts>  "}"
 <expr-break>      ::= BREAK
 <expr-call>       ::= <expr> "(" [ <call-args> ] ")"
-<expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <call-args> ] ")"
+<expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <macro-args> ] ")"
 <expr-continue>   ::= CONTINUE
 <expr-decl-ref>   ::= IDENT [ "::" <expr-decl-ref> ]
-<expr-eval>       ::= EVAL <expr>
+<expr-eval>       ::= EVAL ( <sub-stmt> )
 <expr-inject>     ::= "#" INJECT "(" <expr> ")"
 <expr-if>         ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
 <expr-lit>        ::= STRING-LITERAL | INTEGER | TRUE | FALSE
-<expr-loop>       ::= LOOP [ <expr> ]
+<expr-loop>       ::= LOOP [ <sub-stmt> ]
 <expr-match>      ::= MATCH [ <expr> ] [ "->" <type> ] "{" <match-case> [ ";" ] "}"
 <expr-member>     ::= <expr> "." IDENT
 <expr-nil>        ::= NIL
 <expr-paren>      ::= "(" <expr> ")"
 <expr-prefix>     ::= <prefix> <expr>
-<expr-quote>      ::= QUOTE ( <expr-block> | <expr-paren> )
-<expr-unquote>    ::= "$" "(" <expr> ")"
+<expr-quote>      ::= QUOTE ( "{" macro-body "}" | "(" macro-body ")" )
 <expr-return>     ::= RETURN [ <expr> ]
 <expr-subscript>  ::= <expr> "[" <expr> "]" // Only one argument for now.
 <expr-tuple>      ::= "(" <expr> { "," <expr> } [ "," ] ")"
 <expr-postfix>    ::= <expr> ( "++" | "--" )
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
+<macro-args> ::= macro-body { "," macro-body } [ "," ]
+<macro-body> ::= { <tokens> | <unquote> }
+<sub-stmt> ::= <expr> | <stmt> // Essentially '<stmt>', but handling the semicolon is left to the caller.
 <prefix> ::= "-" | "+" | NOT | "~" | "&" | "^" | INLINE
-<if-expr-body> ::= [ THEN ] <expr>
+<if-expr-body> ::= [ THEN ] ( <sub-stmt> )
+<unquote> ::= "$" "(" <expr> ")"
 <binary> ::= // TODO: list all binary operators here.
 
 <match-case> ::= <pattern> ":" <stmt>
@@ -115,7 +115,7 @@
 //  Declarations
 // ============================================================================
 <decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | EXPORT <decl>
-<decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ] ";"
+<decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ]
 <decl-proc>   ::= <signature> <proc-body>
 <decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
 <signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]

@@ -1079,8 +1079,8 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
 
     // Collect the argument types.
     SmallVector<ffi_type*> arg_types;
-    for (auto a : call->getOperandTypes()) {
-        auto arg_ty = FFIType(a);
+    for (u32 i = 0; i < call.getNumCallArgs(); i++) {
+        auto arg_ty = FFIType(call.getCallArgType(i));
         if (not arg_ty) return std::nullopt;
         arg_types.push_back(arg_ty);
     }

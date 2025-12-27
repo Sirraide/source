@@ -593,10 +593,9 @@ auto Sema::LookUpCXXName(
     auto& sm = clang_sema.getSourceManager();
     auto clang_sloc = sm.getLocForStartOfFile(sm.getMainFileID());
     auto fid = sm.createFileID(
-        llvm::MemoryBuffer::getMemBuffer(
-            std::string(names.front().str()), // Null-terminate this.
-            "<macro expansion>",
-            true
+        llvm::MemoryBuffer::getMemBufferCopy(
+            names.front().str(),
+            "<macro expansion>"
         )
     );
 

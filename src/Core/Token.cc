@@ -14,6 +14,7 @@ auto srcc::Spelling(Tk t) -> String {
         case Tk::Integer: return "<integer>";
         case Tk::IntegerType: return "<integer type>";
         case Tk::Comment: return "<comment>";
+        case Tk::Unquote: return "<unquote>";
 
         case Tk::Alias: return "alias";
         case Tk::And: return "and";

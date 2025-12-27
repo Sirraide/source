@@ -246,11 +246,7 @@ auto Lexer::CurrLoc() -> SLoc { return SLoc(data_or_end()); }
 void Lexer::LexEntireFile() {
     do Next();
     while (not tok().eof());
-    if (not tokens.back().eof()) {
-        tokens.allocate();
-        tok().type = Tk::Eof;
-        tok().location = SLoc(f.end() - 1);
-    }
+    tokens.finish(SLoc(f.end() - 1));
 }
 
 void Lexer::Next() {

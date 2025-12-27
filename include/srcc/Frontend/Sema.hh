@@ -310,11 +310,18 @@ private:
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
         [[nodiscard]] explicit operator bool() const { return successful(); }
 
-        static auto Ambiguous(DeclName name, ArrayRef<Decl*> decls) { return LookupResult{decls, name, Reason::Ambiguous}; }
+        static auto Ambiguous(DeclName name, ArrayRef<Decl*> decls) {
+            Assert(not decls.empty());
+            return LookupResult{decls, name, Reason::Ambiguous};
+        }
+
         static auto FailedToImport(DeclName name) { return LookupResult{{}, name, Reason::FailedToImport}; }
         static auto NonScopeInPath(DeclName name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
         static auto NotFound(DeclName name) { return LookupResult{name}; }
-        static auto Success(Decl* decl) { return LookupResult{decl, {}, Reason::Success}; }
+        static auto Success(Decl* decl) {
+            Assert(decl);
+            return LookupResult{decl, {}, Reason::Success};
+        }
     };
 
     /// A successful template substitution.
@@ -601,11 +608,17 @@ private:
 
     Context& ctx;
     TranslationUnit::Ptr tu;
-    SmallVector<ParsedModule::Ptr> parsed_modules;
     ArrayRef<std::string> search_paths;
     ArrayRef<std::string> clang_include_paths;
     usz assert_stringifiers = 0;
     usz generated_cxx_macro_decls = 0;
+
+    /// Modules that need to be translated.
+    SmallVector<ParsedModule::Ptr> modules_to_translate;
+
+    /// Additional modules that were generated during translation (e.g. for
+    /// the preamble or '#inject'ions).
+    SmallVector<ParsedModule::Ptr> extra_modules;
 
     /// Stack of active procedures.
     SmallVector<ProcScopeInfo*> proc_stack;
@@ -634,9 +647,6 @@ private:
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
 
-    /// Map from unquotes to their substitutions.
-    SmallVector<DenseMap<ParsedUnquoteExpr*, TreeValue*>> unquote_stack;
-
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
@@ -645,6 +655,9 @@ private:
 
     /// Whether were are inside of an eval.
     bool inside_eval = false;
+
+    /// Whether translation has started.
+    bool started_translating = false;
 
     /// We disallow passing zero-sized structs to native procedures (or returning
     /// them from them), because C doesn’t really have zero-sized types; however,
@@ -703,6 +716,11 @@ private:
 
     /// Add an initialiser to a variable declaration.
     void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init);
+
+    /// Called after a parsed module is added. Returns the same module
+    /// for convenience. If 'translate' is true, the module’s contents
+    /// will be appended to the end of the TU.
+    auto AddParsedModule(ParsedModule::Ptr p, bool translate = false) -> ParsedModule*;
 
     /// Apply a conversion to an expression or list of expressions.
     void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);

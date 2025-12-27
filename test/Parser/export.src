@@ -5,7 +5,7 @@ export int; // expected-error: Only declarations can be exported
 export proc = 1; // expected-error (Operator '=' cannot be overloaded) expected-error (Expected procedure body)
 export export int x; // expected-error: 'export export' is invalid
 export 4; // expected-error: Only declarations can be exported
-export {} // expected-error: Only declarations can be exported
+export {}; // expected-error: Only declarations can be exported
 export { int x; } // expected-error: Only declarations can be exported
 export var x = 4;
 export proc n (int x) -> int { return x; }

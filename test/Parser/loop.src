@@ -3,6 +3,7 @@ program test;
 
 loop;
 loop 4;
+loop 4 // expected-error: Expected ';'
 loop {}
 loop f();
-loop f() // expected-error: Expected ';'
+loop f()

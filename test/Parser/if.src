@@ -8,6 +8,7 @@ if true then {}
 if true {} elif true {} elif true 4;
 if true {} elif true {} elif true {} else {}
 if true 7; elif true 7; elif true 7; else {}
+if true 7 elif true 7 elif true 7 else {}
 x = if true then 1 else 2;
 x = if true then 1 elif true then 2 else 3;
 x = if true {};
@@ -25,6 +26,7 @@ if true then 1; else 2;
 #if true then {}
 #if true {} #elif true {} #elif true 4;
 #if true {} #elif true {} #elif true {} #else {}
+#if true 7 #elif true 7 #elif true 7 #else {}
 #if true 7; #elif true 7; #elif true 7; #else {}
 x = #if true then 1 #else 2;
 (#if true a #else b) = 42;
@@ -40,6 +42,7 @@ x = #if true then 1 else 2; // expected-error: '#if' must be paired with '#else'
 if true {} #elif true {} elif true 4; // expected-error: 'if' must be paired with 'elif', not '#elif'
 #if true {} elif true {} elif true {} else {} // expected-error 2 ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
 #if true 7; elif true 7; elif true 7; else {} // expected-error 2 ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
+#if true 7 elif true 7 elif true 7 else {} // expected-error 2 ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
 #if true {} elif true {} #elif true {} else {}; // expected-error ('#if' must be paired with '#elif') expected-error ('#if' must be paired with '#else')
 
 if true {} elif true {} #elif true {} else {}; // expected-error: 'if' must be paired with 'elif', not '#elif'
@@ -51,34 +54,33 @@ if true {} else if {} {}; // expected-error: Use 'elif' instead of 'else if'
 if 4 {} else #if 4 {} else {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 if 4 {} elif 4 {} else #if 4 {}; // expected-error: 'else #if' is invalid; did you mean 'elif'
 
-// Error recovery on missing semicolon.
-if true 7 // expected-error: Expected ';'
-elif true 7 // expected-error: Expected ';'
-elif true 7 // expected-error: Expected ';'
+if true 7
+elif true 7
+elif true 7
 else {};
 
 if true 7;
-elif true 7 // expected-error: Expected ';'
-elif true 7 // expected-error: Expected ';'
+elif true 7
+elif true 7
 else {};
 
 if true 7;
 elif true 7;
-elif true 7 // expected-error: Expected ';'
+elif true 7
 else {};
 
-if true then 1 else 2; // expected-error: Expected ';'
+if true then 1 else 2;
 if true {}
-    ; elif true {} // expected-error: Unexpected ';'
-    ; elif true {} // expected-error: Unexpected ';'
-    ; else {};     // expected-error: Unexpected ';'
+    ; elif true {}
+    ; elif true {}
+    ; else {};
 if true 7; elif true 7; elif true 7; else {};
 
 #if true then 1; #else 2;
 #if true {}
-    ; #elif true {} // expected-error: Unexpected ';'
-    ; #elif true {} // expected-error: Unexpected ';'
-    ; #else {};     // expected-error: Unexpected ';'
+    ; #elif true {}
+    ; #elif true {}
+    ; #else {};
 #if true 7; #elif true 7; #elif true 7; #else {};
 
 x = if true {};

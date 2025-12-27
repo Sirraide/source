@@ -7,9 +7,7 @@
 
 #include <llvm/ADT/SmallString.h>
 
-#include <algorithm>
 #include <memory>
-#include <print>
 #include <utility>
 
 using namespace srcc;
@@ -163,22 +161,27 @@ auto ParsedMatchExpr::Create(
 }
 
 ParsedQuoteExpr::ParsedQuoteExpr(
-    ParsedStmt* quoted,
+    TokenStream* tokens,
     ArrayRef<ParsedUnquoteExpr*> unquotes,
+    bool brace_delimited,
     SLoc location
-) : ParsedStmt{Kind::QuoteExpr, location}, quoted{quoted}, num_unquotes{u32(unquotes.size())} {
+) : ParsedStmt{Kind::QuoteExpr, location},
+    token_stream{tokens},
+    num_unquotes{u32(unquotes.size())},
+    brace_delimited{brace_delimited} {
     std::uninitialized_copy_n(unquotes.begin(), unquotes.size(), getTrailingObjects());
 }
 
 auto ParsedQuoteExpr::Create(
     Parser& p,
-    ParsedStmt* quoted,
+    TokenStream* tokens,
     ArrayRef<ParsedUnquoteExpr*> unquotes,
+    bool brace_delimited,
     SLoc location
 ) -> ParsedQuoteExpr* {
     const auto size = totalSizeToAlloc<ParsedUnquoteExpr*>(unquotes.size());
     auto mem = p.allocate(size, alignof(ParsedQuoteExpr));
-    return ::new (mem) ParsedQuoteExpr(quoted, unquotes, location);
+    return ::new (mem) ParsedQuoteExpr(tokens, unquotes, brace_delimited, location);
 }
 
 ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc)
@@ -500,10 +503,16 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::QuoteExpr: {
             auto q = cast<ParsedQuoteExpr>(s);
             PrintHeader(s, "QuoteExpr");
-            SmallVector<ParsedStmt*> children;
-            children.push_back(q->quoted);
-            append_range(children, q->unquotes());
-            PrintChildren(children);
+            SmallVector<Child> children;
+            u32 unquote_idx = 0;
+            for (const auto &t : q->tokens()) {
+                if (t.is(Tk::Unquote)) children.emplace_back([this, expr = q->unquotes()[unquote_idx++]] { Print(expr); });
+                else children.emplace_back([this, &t] {
+                    if (module) print("%1(Token%) {}\n", t.location.text(module->context()));
+                    else print("%1(Token%) {}\n", Spelling(t.type));
+                });
+            }
+            PrintChildren<Child>(children);
         } break;
 
         case Kind::UnquoteExpr: {
