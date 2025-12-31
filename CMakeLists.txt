@@ -311,6 +311,7 @@ file(GLOB _driver_sources src/*.cc)
 
 ## Add the executable.
 add_clang_executable(srcc ${_driver_sources})
+add_dependencies(srcc mlir-headers)
 
 ## Link everything together.
 target_link_libraries(srcc PRIVATE options srcc-core)
