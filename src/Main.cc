@@ -7,7 +7,6 @@
 #include <llvm/TargetParser/Host.h>
 
 #include <base/Clopts.hh>
-#include <thread>
 
 #ifdef __linux__
 #    include <csignal>
@@ -127,9 +126,10 @@ int main(int argc, char** argv) {
 
     // Enable colours.
     auto colour_opt = opts.get<"--colour">("auto");
-    bool use_colour = colour_opt == "never"  ? false
-                    : colour_opt == "always" ? true
-                                             : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
+    bool use_colour =
+          colour_opt == "never"  ? false
+        : colour_opt == "always" ? true
+        :                          libassert::isatty(STDERR_FILENO) and libassert::isatty(STDOUT_FILENO);
 
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
 
