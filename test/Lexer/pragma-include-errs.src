@@ -1,4 +1,4 @@
-// V %srcc --short-filenames --tokens --verify %s
+// V %srcc -fshort-filenames --tokens --verify %s
 
 pragma foo // expected-error: Unknown pragma 'foo'
 pragma include 4 // expected-error: Expected string literal after 'pragma include'

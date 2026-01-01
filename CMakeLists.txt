@@ -348,7 +348,7 @@ add_custom_target(src_runtime ALL
         "${PROJECT_SOURCE_DIR}/std/runtime.src"
         --mo "${PROJECT_SOURCE_DIR}/modules"
         "--link-object=${CMAKE_CURRENT_BINARY_DIR}/runtime.cc.o"
-        --noruntime
+        -fruntime=false
 
     DEPENDS srcc
     BYPRODUCTS

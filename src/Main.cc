@@ -55,15 +55,12 @@ using options = clopts< // clang-format off
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
     flag<"--ir-no-verify", "Don’t verify the IR">,
     flag<"--ir-verbose", "Always print the type of a value and other details">,
-    flag<"--noruntime", "Do not automatically import the runtime module">,
-    flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
 
     // Features.
-    // TODO: Consider: short_option<"-f, "Enable or disable a feature", values<"overflow-checks">> or
-    // something in that vein.
-    flag<"-fno-overflow-checks", "Disable overflow checking">,
+    flag<"-foverflow-checks", "Disable overflow checking", {.default_value = true}>,
     flag<"-fstringify-asserts", "Stringify assert conditions if possible">,
-    flag<"-fgc-procs", "Strip procedures that are never called">,
+    flag<"-fshort-filenames", "Use the filename only instead of the full path in diagnostics">,
+    flag<"-fruntime", "Automatically import the runtime module", {.default_value = true}>,
 
     // Internal flags.
     flag<"-Xpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
@@ -191,10 +188,6 @@ int main(int argc, char** argv) {
         triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
     }
 
-    // GC procedures by default unless --ir or --llvm is passed.
-    bool gc_procs = action != Action::DumpIR and action != Action::EmitLLVM;
-    if (opts.get<"-fgc-procs">()) gc_procs = true;
-
     // TODO:
     //  - Move lang opts to be TU-specific in case the TU wants
     //    to alter them using e.g. pragmas.
@@ -220,11 +213,10 @@ int main(int argc, char** argv) {
         .link_objects = opts.get<"--link-object">(),
         .action = action,
         .lang_opts = {
-            .overflow_checking = not opts.get<"-fno-overflow-checks">(),
-            .no_runtime = opts.get<"--noruntime">(),
+            .overflow_checking = opts.get<"-foverflow-checks">(),
+            .no_runtime = not opts.get<"-fruntime">(),
             .no_preamble = not opts.get<"-Xpreamble">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
-            .gc_procs = gc_procs,
         },
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get<"--error-limit">(20)),
@@ -232,7 +224,7 @@ int main(int argc, char** argv) {
         .print_ast = opts.get<"--ast">(),
         .verify = opts.get<"--verify">(),
         .colours = use_colour,
-        .short_filenames = opts.get<"--short-filenames">(),
+        .short_filenames = opts.get<"-fshort-filenames">(),
         .ir_generic = opts.get<"--ir-generic">(),
         .ir_no_finalise = opts.get<"--ir-no-finalise">(),
         .ir_no_verify = opts.get<"--ir-no-verify">(),

@@ -1,45 +1,28 @@
-// R      %srcc --ir   --target x86_64-unknown-linux -fgc-procs %s
-// R[//L] %srcc --llvm --target x86_64-unknown-linux -fgc-procs %s
-program test;
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -O1 %s
+module test;
 
-// Test that we elminate procedures that are never referenced (or only
-// referenced at compile-time). '-fgc-procs' is disabled by default if
-// '--ir' or '--llvm' is passed, so we need to enable it explicitly.
+// We used to have a pass that deletes procedures that are never called,
+// but LLVM does that anyway if optimisations are enabled.
 proc never_called = 42;
 proc called_at_compile_time = 42;
-int x = eval called_at_compile_time();
-
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +
-// + entry:
-// +     store #0, i64 42, align 8
-// +     ret
-// + }
-// +
-// + proc _S12never_calledFiE.1 private ccc -> i64 {
-// + entry:
-// +     ret i64 42
-// + }
-// +
-// + proc _S22called_at_compile_timeFiE.2 private ccc -> i64 {
-// + entry:
-// +     ret i64 42
-// + }
+export proc x = eval called_at_compile_time();
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
-//L + define void @__src_main() #0 {
-//L +   %1 = alloca i8, i64 8, align 8
-//L +   store i64 42, ptr %1, align 8
+//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none)
+//L + define void @__src_static_init.test() local_unnamed_addr #0 {
 //L +   ret void
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none)
+//L + define noundef i64 @"_SM4test$1xFiE.3"() local_unnamed_addr #0 {
+//L +   ret i64 42
+//L + }
+//L +
+//L + attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memory(none) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

@@ -344,37 +344,6 @@ struct AbortInfoInliningPass final : mlir::PassWrapper<AbortInfoInliningPass, ml
         });
     }
 };
-
-/// Pass that eliminates procedures that are never used.
-struct ProcedureDCEPass final : mlir::PassWrapper<ProcedureDCEPass, mlir::Pass> {
-    bool canScheduleOn(mlir::RegisteredOperationName op) const override {
-        auto name = op.getStringRef();
-        return name == mlir::ModuleOp::getOperationName();
-    }
-
-    void runOnOperation() override  {
-        auto op = getOperation();
-        llvm::DenseSet<ir::ProcOp> procs;
-        llvm::StringSet referenced;
-        op->walk([&](mlir::Operation* op) {
-            if (auto proc = dyn_cast<ir::ProcOp>(op)) {
-                procs.insert(proc);
-                return;
-            }
-
-            if (auto proc_ref = dyn_cast<ir::ProcRefOp>(op)) {
-                referenced.insert(proc_ref.getProcName());
-                return;
-            }
-        });
-
-        for (auto p : procs) {
-            if (p.getLinkage().getLinkage() != LLVM::Linkage::Private) continue;
-            if (referenced.contains(p.getSymName())) continue;
-            p->erase();
-        }
-    }
-};
 } // namespace srcc::cg::lowering
 
 using namespace srcc::cg::lowering;
@@ -422,7 +391,6 @@ void LoweringPass::runOnOperation() {
 auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::Module> {
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
-    if (lang_opts.gc_procs) pm.addPass(std::make_unique<ProcedureDCEPass>());
     pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
     pm.addPass(std::make_unique<LoweringPass>(*this));
 

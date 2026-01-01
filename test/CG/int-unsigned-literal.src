@@ -1,5 +1,5 @@
-// R      %srcc --ir --target x86_64-unknown-linux -fno-overflow-checks %s
-// R[//L] %srcc --llvm --target x86_64-unknown-linux -fno-overflow-checks %s
+// R      %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -foverflow-checks=false %s
 program test;
 
 proc f1 -> i8 = -128;

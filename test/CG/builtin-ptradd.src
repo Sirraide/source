@@ -1,5 +1,5 @@
-// R      %srcc --short-filenames --ir   --target x86_64-unknown-linux %s
-// R[//L] %srcc --short-filenames --llvm --target x86_64-unknown-linux %s
+// R      %srcc -fshort-filenames --ir   --target x86_64-unknown-linux %s
+// R[//L] %srcc -fshort-filenames --llvm --target x86_64-unknown-linux %s
 program test;
 
 proc p1 -> i8^ {

@@ -1,7 +1,7 @@
-// R       %srcc --ir --short-filenames --target x86_64-unknown-linux %s
-// R[//U]  %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
-// R[//L]  %srcc --llvm --short-filenames --target x86_64-unknown-linux %s
-// R[//UL] %srcc --llvm -fno-overflow-checks --target x86_64-unknown-linux %s
+// R       %srcc --ir -fshort-filenames --target x86_64-unknown-linux %s
+// R[//U]  %srcc --ir -foverflow-checks=false --target x86_64-unknown-linux %s
+// R[//L]  %srcc --llvm -fshort-filenames --target x86_64-unknown-linux %s
+// R[//UL] %srcc --llvm -foverflow-checks=false --target x86_64-unknown-linux %s
 program test;
 
 proc x (int a, in int b) {

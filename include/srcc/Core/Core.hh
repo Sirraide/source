@@ -129,9 +129,6 @@ struct srcc::LangOpts {
 
     /// Enable generation of code that stringifies assert messages.
     bool stringify_asserts : 1 = true;
-
-    /// Remove procedures that are never referenced (and not exported).
-    bool gc_procs : 1 = true;
 };
 
 /// A file in the context.

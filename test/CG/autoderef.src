@@ -1,4 +1,4 @@
-// R %srcc --ir --target x86_64-unknown-linux -fno-overflow-checks %s
+// R %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
 program test;
 
 struct s { int x; }

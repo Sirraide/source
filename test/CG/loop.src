@@ -1,4 +1,4 @@
-// R %srcc --ir -fno-overflow-checks --target x86_64-unknown-linux %s
+// R %srcc --ir -foverflow-checks=false --target x86_64-unknown-linux %s
 program test;
 
 proc a extern -> int;
