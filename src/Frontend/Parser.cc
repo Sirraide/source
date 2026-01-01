@@ -1567,8 +1567,10 @@ auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<Pars
         NextTokenImpl();
 
         // This might also be empty.
-        if (Consume(GetCorrespondingClosingBracket(brackets.front())))
+        if (At(GetCorrespondingClosingBracket(brackets.front()))) {
+            NextTokenImpl();
             return ParsedQuoteExpr::Create(*this, nullptr, {}, false, quote_loc);
+        }
     }
 
     // Remember the first token that is part of the quote. We know it is
@@ -1601,7 +1603,7 @@ auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<Pars
         if (IsOpenBracket(tok->type)) {
             brackets.push_back(tok->type);
             AddToken();
-        } else if (not brackets.empty() and At(GetCorrespondingClosingBracket(brackets.front()))) {
+        } else if (not brackets.empty() and At(GetCorrespondingClosingBracket(brackets.back()))) {
             brackets.pop_back();
 
             // Don’t add the top-level delimiter to the collected tokens.
@@ -1628,7 +1630,7 @@ auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<Pars
     // Check that we have a delimiter; do not skip it if we’re in
     // a macro argument (because the caller should handle the comma
     // or closing parenthesis).
-    if (At(Tk::Eof)) Error(quote_loc, "Token sequence delimited by end of file");
+    if (not brackets.empty()) Error(quote_loc, "Token sequence delimited by end of file");
     return ParsedQuoteExpr::Create(
         *this,
         tokens,

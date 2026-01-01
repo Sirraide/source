@@ -1,0 +1,9 @@
+// V %srcc --parse --verify %s
+// expected-no-diagnostics
+program test;
+
+proc x = quote {}
+proc y = quote { () }
+proc y = quote { [] }
+proc y = quote { {} }
+proc y = quote { {([{}])} }

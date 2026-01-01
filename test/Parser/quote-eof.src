@@ -1,0 +1,9 @@
+// V %srcc --parse --verify %s
+// expected-no-diagnostics
+program test;
+
+// Check that we don’t mistake a #quote followed by an EOF token as
+// being delimited by EOF.
+proc y = quote {
+    Q
+}

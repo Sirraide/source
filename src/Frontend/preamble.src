@@ -1,5 +1,8 @@
 __srcc_internal__
 
+// TODO: Move all of these into a '__srcc_builtin' module once we support
+// exporting templates from
+
 // ============================================================================
 //  Builtin Exponentiation Operator(s)
 // ============================================================================
