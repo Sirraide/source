@@ -6,7 +6,7 @@
 #include <llvm/Support/Signals.h>
 #include <llvm/TargetParser/Host.h>
 
-#include <clopts.hh>
+#include <base/Clopts.hh>
 #include <thread>
 
 #ifdef __linux__
@@ -14,9 +14,7 @@
 #endif
 
 using namespace srcc;
-
-namespace detail {
-using namespace command_line_options;
+using namespace base::cmd;
 using options = clopts< // clang-format off
     positional<"file", "The file to compile">,
 
@@ -28,30 +26,36 @@ using options = clopts< // clang-format off
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
     option<"--target", "Target triple to compile for">,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
-    multiple<experimental::short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
-    multiple<experimental::short_option<"-I", "Add a directory to the C/C++ header search path">>,
-    multiple<experimental::short_option<"-L", "Add a directory to the library search path">>,
-    multiple<experimental::short_option<"-l", "Link against a library">>,
-    experimental::short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
+    multiple<short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
+    multiple<short_option<"-I", "Add a directory to the C/C++ header search path">>,
+    multiple<short_option<"-L", "Add a directory to the library search path">>,
+    multiple<short_option<"-l", "Link against a library">>,
+    short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
+
+    // Flags that determine what action to take.
+    flag<"--cg", "Run codegen but do not emit anything. See also --ir, --llvm.">,
+    flag<"--eval", "Run the entire input through the constant evaluator">,
+    flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
+    flag<"--exports", "Dump the module description to stdout">,
+    flag<"--dump-module", "Dump the contents of a module or C++ header that we can import">,
+    flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
+    flag<"--lex", "Lex tokens only (but do not print them) and exit">,
+    flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
+    flag<"--parse", "Parse only and exit">,
+    flag<"--sema", "Run sema only and exit">,
+    flag<"--tokens", "Print tokens and exit">,
+    mutually_exclusive<
+        "--cg", "--eval", "--eval-dump-ir", "--exports", "--dump-module",
+        "--ir", "--lex", "--llvm", "--parse", "--sema", "--tokens"
+    >,
 
     // General flags.
     flag<"--ast", "Dump the parse tree / AST">,
-    flag<"--dump-module", "Dump the contents of a module or C++ header that we can import">,
-    flag<"--exports", "Dump the module description to stdout">,
-    flag<"--lex", "Lex tokens only (but do not print them) and exit">,
-    flag<"--tokens", "Print tokens and exit">,
-    flag<"--parse", "Parse only and exit">,
-    flag<"--sema", "Run sema only and exit">,
     flag<"--verify", "Run in verify-diagnostics mode">,
-    flag<"--eval", "Run the entire input through the constant evaluator">,
-    flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
-    flag<"--cg", "Run codegen but do not emit anything. See also --ir, --llvm.">,
-    flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
     flag<"--ir-no-verify", "Don’t verify the IR">,
     flag<"--ir-verbose", "Always print the type of a value and other details">,
-    flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
     flag<"--noruntime", "Do not automatically import the runtime module">,
     flag<"--short-filenames", "Use the filename only instead of the full path in diagnostics">,
 
@@ -63,12 +67,10 @@ using options = clopts< // clang-format off
     flag<"-fgc-procs", "Strip procedures that are never called">,
 
     // Internal flags.
-    // TODO: Add support for hidden options to libclopts and hide these.
-    flag<"-Xnopreamble", "Disable the preamble">,
+    flag<"-Xpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
 
     help<>
 >; // clang-format on
-}
 
 // Disable leak detection for now because MLIR seems to ‘leak’ a
 // small amount of memory (probably some persistent data structures
@@ -80,8 +82,8 @@ std::atomic_bool colours_enabled;
 void InitSignalHandlers() {
     std::signal(SIGSEGV, [](int) {
         auto msg = colours_enabled.load(std::memory_order_relaxed)
-                     ? "\033[1;35mInternal Compiler Error: \033[m\033[1mSegmentation fault\033[m"sv
-                     : "Internal Compiler Error: Segmentation fault";
+            ? "\033[1;35mInternal Compiler Error: \033[m\033[1mSegmentation fault\033[m"sv
+            : "Internal Compiler Error: Segmentation fault";
 
         llvm::errs() << msg << "\n";
         llvm::sys::PrintStackTrace(llvm::errs());
@@ -90,8 +92,8 @@ void InitSignalHandlers() {
 
     std::signal(SIGABRT, [](int) {
         auto msg = colours_enabled.load(std::memory_order_relaxed)
-                     ? "\033[1;35mInternal Compiler Error: \033[m\033[1mAborted\033[m"sv
-                     : "Internal Compiler Error: Aborted";
+            ? "\033[1;35mInternal Compiler Error: \033[m\033[1mAborted\033[m"sv
+            : "Internal Compiler Error: Aborted";
 
         llvm::errs() << msg << "\n";
         llvm::sys::PrintStackTrace(llvm::errs());
@@ -101,15 +103,47 @@ void InitSignalHandlers() {
     // Libassert will already print the stack trace, no need to do that again
     // on an assertion failure.
     libassert::set_failure_handler([](const libassert::assertion_info& info){
-        std::signal(SIGABRT, SIG_DFL);
-        libassert::default_failure_handler(info);
+        auto ice = colours_enabled.load(std::memory_order_relaxed)
+            ? "\033[1;35mInternal Compiler Error\033[m"sv
+            : "Internal Compiler Error";
+
+        // Print this first since formatting the stack trace can take a while.
+        std::print(stderr, "{}: (generating stacktrace...)", ice);
+
+        // Get the trace.
+        auto message = info.to_string(
+            libassert::terminal_width(STDERR_FILENO),
+            colours_enabled.load(std::memory_order_relaxed)
+                ? libassert::get_color_scheme()
+                : libassert::color_scheme::blank
+        );
+
+        std::print(stderr, "\r{}: {}", ice, message);
+        std::_Exit(1);
     });
 }
 #endif
 
+static auto ParseArgs(int argc, char** argv) -> options::optvals_type {
+    Context ctx;
+    auto diags = StreamingDiagnosticsEngine::Create(ctx);
+    auto opts = options::parse(argc, argv, [&](std::string msg) {
+        diags->report(Diagnostic(Diagnostic::Level::Error, SLoc(), msg));
+        return false;
+    });
+
+    if (diags->has_error()) {
+        diags->flush();
+        std::exit(1);
+    }
+
+    return opts;
+}
+
 int main(int argc, char** argv) {
     llvm::sys::DisableSystemDialogsOnCrash();
-    auto opts = ::detail::options::parse(argc, argv);
+    libassert::enable_virtual_terminal_processing_if_needed();
+    auto opts = ParseArgs(argc, argv);
 
     // Enable colours.
     auto colour_opt = opts.get<"--colour">("auto");
@@ -186,7 +220,7 @@ int main(int argc, char** argv) {
         .lang_opts = {
             .overflow_checking = not opts.get<"-fno-overflow-checks">(),
             .no_runtime = opts.get<"--noruntime">(),
-            .no_preamble = opts.get<"-Xnopreamble">(),
+            .no_preamble = not opts.get<"-Xpreamble">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
             .gc_procs = gc_procs,
         },
