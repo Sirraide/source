@@ -77,9 +77,11 @@ using options = clopts< // clang-format off
 // that are allocated once and never freed by design).
 extern "C" [[gnu::used]] const char* __asan_default_options() { return "detect_leaks=0"; }
 
+// Global colour flag used in signal handlers etc.
+static std::atomic_bool colours_enabled;
+
 #ifdef __linux__
-std::atomic_bool colours_enabled;
-void InitSignalHandlers() {
+static void InitSignalHandlers() {
     std::signal(SIGSEGV, [](int) {
         auto msg = colours_enabled.load(std::memory_order_relaxed)
             ? "\033[1;35mInternal Compiler Error: \033[m\033[1mSegmentation fault\033[m"sv
@@ -97,28 +99,6 @@ void InitSignalHandlers() {
 
         llvm::errs() << msg << "\n";
         llvm::sys::PrintStackTrace(llvm::errs());
-        std::_Exit(1);
-    });
-
-    // Libassert will already print the stack trace, no need to do that again
-    // on an assertion failure.
-    libassert::set_failure_handler([](const libassert::assertion_info& info){
-        auto ice = colours_enabled.load(std::memory_order_relaxed)
-            ? "\033[1;35mInternal Compiler Error\033[m"sv
-            : "Internal Compiler Error";
-
-        // Print this first since formatting the stack trace can take a while.
-        std::print(stderr, "{}: (generating stacktrace...)", ice);
-
-        // Get the trace.
-        auto message = info.to_string(
-            libassert::terminal_width(STDERR_FILENO),
-            colours_enabled.load(std::memory_order_relaxed)
-                ? libassert::get_color_scheme()
-                : libassert::color_scheme::blank
-        );
-
-        std::print(stderr, "\r{}: {}", ice, message);
         std::_Exit(1);
     });
 }
@@ -151,10 +131,32 @@ int main(int argc, char** argv) {
                     : colour_opt == "always" ? true
                                              : isatty(fileno(stderr)) && isatty(fileno(stdout)); // FIXME: Cross-platform
 
-#ifdef __linux__
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
+
+#ifdef __linux__
     InitSignalHandlers();
 #endif
+
+    // Set assert handler.
+    libassert::set_failure_handler([](const libassert::assertion_info& info){
+        auto ice = colours_enabled.load(std::memory_order_relaxed)
+            ? "\033[1;35mInternal Compiler Error\033[m"sv
+            : "Internal Compiler Error";
+
+        // Print this first since formatting the stack trace can take a while.
+        std::print(stderr, "{}: (generating stacktrace...)", ice);
+
+        // Get the trace.
+        auto message = info.to_string(
+            libassert::terminal_width(STDERR_FILENO),
+            colours_enabled.load(std::memory_order_relaxed)
+                ? libassert::get_color_scheme()
+                : libassert::color_scheme::blank
+        );
+
+        std::print(stderr, "\r{}: {}", ice, message);
+        std::_Exit(1);
+    });
 
     // Disable this because they take too long and it’s fucking annoying.
     llvm::sys::Process::PreventCoreFiles();
