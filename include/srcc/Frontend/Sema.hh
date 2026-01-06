@@ -606,6 +606,14 @@ private:
         Type,  ///< We’re looking for a type.
     };
 
+    /// Context that indicates where an injection is being performed; depending
+    /// on it, we maye allow injecting multiple statements or different kinds
+    /// of statements.
+    using InjectionContext = llvm::PointerUnion<
+        Stmt**,                 // Inject exactly 1 statement.
+        SmallVectorImpl<Stmt*>* // Inject any number of statements.
+    >;
+
     Context& ctx;
     TranslationUnit::Ptr tu;
     ArrayRef<std::string> search_paths;
@@ -864,7 +872,7 @@ private:
     ) -> Ptr<ImportedClangModuleDecl>;
 
     /// Inject a parse tree into the program.
-    auto InjectTree(TreeValue* tree) -> Ptr<Stmt>;
+    bool InjectTree(Expr* injected, Type desired_type, InjectionContext ctx);
 
     /// Instantiate a procedure template.
     auto InstantiateTemplate(

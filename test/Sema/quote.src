@@ -48,3 +48,11 @@ proc not_reached() -> int = __srcc_unreachable();
 #assert eq(1, 2345245) == 4;
 #assert #when(1 == 1, 5, not_reached()) == 5;
 #assert #when(1 == 2, not_reached(), 6) == 6;
+
+var i = #inject(quote { // expected-error: An '#inject' in this context must result in exactly 1 statement; got 2
+    int x;
+    int y;
+});
+
+var i = #inject(quote {}); // expected-error: An '#inject' in this context must result in exactly 1 statement; got 0
+var i = #inject(quote { 42; });

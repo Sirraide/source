@@ -310,7 +310,21 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     }
 }
 
-auto Sema::InjectTree(TreeValue* top_level_tree) -> Ptr<Stmt> {
+bool Sema::InjectTree(Expr* injected, Type desired_type, InjectionContext context) {
+    if (not MakeRValue(Type::TreeTy, injected, [&]{
+        Error(
+            injected->location(),
+            "Cannot inject value of type '{}'",
+            injected->type
+        );
+    })) return {};
+
+    // Evaluate the injection.
+    auto res = tu->vm.eval(injected);
+    if (not res) return {};
+    auto top_level_tree = res->cast<TreeValue*>();
+
+    // Collect the tokens and parse them.
     TokenStream tokens{tu->allocator()};
     auto CollectTokens = [&](this auto& self, TreeValue* tree) -> void {
         u32 unquote_idx = 0;
@@ -320,27 +334,31 @@ auto Sema::InjectTree(TreeValue* top_level_tree) -> Ptr<Stmt> {
         }
     };
 
-    // Collect the tokens and parse them.
-    //
+    CollectTokens(top_level_tree);
+
     // Make sure to terminate the token stream as the parser gets very
     // angry if the token stream doesn’t end with an end-of-file token.
-    CollectTokens(top_level_tree);
     tokens.finish(top_level_tree->pattern()->location());
     auto fragment = AddParsedModule(Parser::ParseFragment(ctx, tokens));
-    if (not fragment) return nullptr;
+    if (not fragment) return false;
 
     // Translate the parse tree.
     SmallVector<Stmt*> stmts;
-    if (not TranslateStmts(stmts, fragment->top_level)) return nullptr;
+    if (not TranslateStmts(stmts, fragment->top_level, desired_type)) return false;
+    if (auto multiple = dyn_cast<SmallVectorImpl<Stmt*>*>(context)) {
+        multiple->append(stmts);
+        return true;
+    }
 
-    // TODO: Allow injecting multiple things in some contexts.
-    if (stmts.size() != 1) return ICE(
+    auto single = cast<Stmt**>(context);
+    if (stmts.size() != 1) return Error(
         top_level_tree->pattern()->location(),
-        "Can’t inject fragment consisting of {} statements yet",
+        "An '#inject' in this context must result in exactly 1 statement; got {}",
         stmts.size()
     );
 
-    return stmts.front();
+    *single = stmts.front();
+    return true;
 }
 
 bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
@@ -4020,6 +4038,14 @@ bool Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
             continue;
         }
 
+        // Injections here may inject multiple statements.
+        if (auto inject = dyn_cast<ParsedInjectExpr>(p)) {
+            auto injected = TranslateExpr(inject->injected);
+            if (auto i = injected.get_or_null()) ok &= InjectTree(i, desired_type, &stmts);
+            else ok = false;
+            continue;
+        }
+
         auto stmt = TranslateStmt(p, p == parsed.back() ? desired_type : Type());
         if (stmt.present()) stmts.push_back(stmt.get());
         else ok = false;
@@ -4270,19 +4296,11 @@ auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt>
     return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
-auto Sema::TranslateInjectExpr(ParsedInjectExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateInjectExpr(ParsedInjectExpr* parsed, Type ty) -> Ptr<Stmt> {
     auto injected = TRY(TranslateExpr(parsed->injected));
-    if (not MakeRValue(Type::TreeTy, injected, [&]{
-        Error(
-            injected->location(),
-            "Cannot inject value of type '{}'",
-            injected->type
-        );
-    })) return {};
-
-    auto tree = tu->vm.eval(injected);
-    if (not tree) return {};
-    return InjectTree(tree->cast<TreeValue*>());
+    Stmt* ptr{};
+    if (not InjectTree(injected, ty, &ptr)) return {};
+    return ptr;
 }
 
 auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> Ptr<Stmt> {
