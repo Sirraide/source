@@ -135,6 +135,7 @@
          | <signature>
          | <type-qualified>
          | <type-range>
+         | <type-typeof>
          | <expr-decl-ref> // Named type
          | <expr-tuple>    // Tuple type
          | <expr-binary>   // Array type (parsed as subscript expression)
@@ -144,6 +145,7 @@
 
 <type-qualified> ::= <type> { <qualifier> }
 <type-range> ::= RANGE "<" <type> ">"
+<type-typeof> ::= TYPEOF "(" <expr> ")"
 <qualifier> ::= "[" "]" | "^" | "?"
 <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | INTEGER_TYPE
 

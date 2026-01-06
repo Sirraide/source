@@ -303,6 +303,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Tree:
         case Tk::True:
         case Tk::Type:
+        case Tk::Typeof:
         case Tk::Var:
         case Tk::Void:
             return true;
@@ -598,8 +599,20 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-postfix>
 //          | <type>
 //
-// <type> ::= <type-prim> | TEMPLATE-TYPE | <expr-decl-ref> | <signature> | <type-qualified> | <type-range>
+// <type> ::= <type-prim>
+//          | TEMPLATE-TYPE
+//          | <signature>
+//          | <type-qualified>
+//          | <type-range>
+//          | <type-typeof>
+//          | <expr-decl-ref> // Named type
+//          | <expr-tuple>    // Tuple type
+//          | <expr-binary>   // Array type (parsed as subscript expression)
+//          | <expr-call>     // Function that returns a type
+//          | "(" <expr> ")"  // Any expression in parens can be treated as a type
+//          | <expr>          // In type-only contexts
 // <type-qualified> ::= <type> { <qualifier> }
+// <type-typeof> ::= TYPEOF "(" <expr> ")"
 // <type-range> ::= RANGE "<" <type> ">"
 // <qualifier> ::= "[" "]" | "^" | "?"
 // <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
@@ -742,6 +755,15 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedBoolLitExpr{tok->type == Tk::True, tok->location};
             Next();
             break;
+
+        // <type-typeof> ::= TYPEOF "(" <expr> ")"
+        case Tk::Typeof: {
+            auto loc = Next();
+            BracketTracker parens{*this, Tk::LParen};
+            auto arg = TryParseExpr();
+            parens.close();
+            lhs = new (*this) ParsedTypeofType(arg, loc);
+        } break;
 
         // <expr-return>   ::= RETURN [ <expr> ]
         case Tk::Return: {
@@ -1832,18 +1854,11 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // in parentheses for them to be treated as types here.
             auto CouldReasonablyBeAType = [](ParsedStmt* s) {
                 if (isa<
-                    ParsedBuiltinType,
+                    ParsedType,
                     ParsedCallExpr,
                     ParsedDeclRefExpr,
-                    ParsedIntType,
                     ParsedInjectExpr,
-                    ParsedOptionalType,
                     ParsedParenExpr,
-                    ParsedProcType,
-                    ParsedPtrType,
-                    ParsedRangeType,
-                    ParsedSliceType,
-                    ParsedTemplateType,
                     ParsedTupleExpr,
                     ParsedUnquoteExpr
                 >(s)) return true;

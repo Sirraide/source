@@ -51,7 +51,7 @@ ParsedProcType::ParsedProcType(
     ArrayRef<ParsedParameter> params,
     ParsedProcAttrs attrs,
     SLoc loc
-) : ParsedStmt{Kind::ProcType, loc},
+) : ParsedType{Kind::ProcType, loc},
     num_params{u32(params.size())},
     ret_type{ret_type},
     attrs{attrs} {
@@ -327,14 +327,8 @@ void ParsedStmt::Printer::PrintHeader(ParsedStmt* s, StringRef name, bool full) 
 
 void ParsedStmt::Printer::Print(ParsedStmt* s) {
     switch (s->kind()) {
-        case Kind::BuiltinType:
-        case Kind::IntType:
-        case Kind::OptionalType:
-        case Kind::ProcType:
-        case Kind::PtrType:
-        case Kind::RangeType:
-        case Kind::SliceType:
-        case Kind::TemplateType:
+#       define PARSE_TREE_LEAF_TYPE(n) case Kind::n:
+#       include "srcc/ParseTree.inc"
             print("%1(Type%) {}\n", s->dump_as_type());
             break;
 
@@ -669,6 +663,10 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
             case Kind::TemplateType: {
                 auto t = cast<ParsedTemplateType>(type);
                 Format(out, "%3(${}%)", t->name);
+            } break;
+
+            case Kind::TypeofType: {
+                Format(out, "%1(typeof(%)<expr>%1()%)");
             } break;
 
             case Kind::DeclRefExpr: {

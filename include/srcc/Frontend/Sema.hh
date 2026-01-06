@@ -1116,6 +1116,7 @@ private:
     auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
     auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
     auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
+    auto TranslateTypeofType(ParsedTypeofType* parsed) -> Type;
     auto TranslateOptionalType(ParsedOptionalType* stmt) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
     auto TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters = {}) -> Type;

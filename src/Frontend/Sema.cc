@@ -5082,19 +5082,17 @@ auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
     return ty->arg_type();
 }
 
+auto Sema::TranslateTypeofType(ParsedTypeofType* parsed) -> Type {
+    return TRY(TranslateExpr(parsed->arg))->type;
+}
+
 auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
     Type t;
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
-        case K::BuiltinType: t = TranslateBuiltinType(cast<ParsedBuiltinType>(parsed)); break;
+#       define PARSE_TREE_LEAF_TYPE(n) case K::n: t = Translate##n(cast<Parsed##n>(parsed)); break;
+#       include "srcc/ParseTree.inc"
         case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
-        case K::IntType: t = TranslateIntType(cast<ParsedIntType>(parsed)); break;
-        case K::OptionalType: t = TranslateOptionalType(cast<ParsedOptionalType>(parsed)); break;
-        case K::ProcType: t = TranslateProcType(cast<ParsedProcType>(parsed)); break;
-        case K::PtrType: t = TranslatePtrType(cast<ParsedPtrType>(parsed)); break;
-        case K::RangeType: t = TranslateRangeType(cast<ParsedRangeType>(parsed)); break;
-        case K::SliceType: t = TranslateSliceType(cast<ParsedSliceType>(parsed)); break;
-        case K::TemplateType: t = TranslateTemplateType(cast<ParsedTemplateType>(parsed)); break;
         case K::ParenExpr: t = TranslateType(cast<ParsedParenExpr>(parsed)->inner); break;
         case K::NilExpr: t = Type::NilTy; break;
 

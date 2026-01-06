@@ -130,12 +130,22 @@ public:
 // ============================================================================
 //  Types
 // ============================================================================
-class srcc::ParsedBuiltinType final : public ParsedStmt {
+class srcc::ParsedType : public ParsedStmt {
+protected:
+    ParsedType(Kind k, SLoc loc): ParsedStmt(k, loc) {}
+
+public:
+    static bool classof(const ParsedStmt* e) {
+        return e->kind() >= Kind::Type$Start and e->kind() <= Kind::Type$End;
+    }
+};
+
+class srcc::ParsedBuiltinType final : public ParsedType {
 public:
     Type ty;
 
     ParsedBuiltinType(Type ty, SLoc loc)
-        : ParsedStmt{Kind::BuiltinType, loc},
+        : ParsedType{Kind::BuiltinType, loc},
           ty{ty} {}
 
     static bool classof(const ParsedStmt* e) {
@@ -143,22 +153,22 @@ public:
     }
 };
 
-class srcc::ParsedIntType final : public ParsedStmt {
+class srcc::ParsedIntType final : public ParsedType {
 public:
     const Size bit_width;
 
     ParsedIntType(Size bitwidth, SLoc loc)
-        : ParsedStmt{Kind::IntType, loc}, bit_width{bitwidth} {}
+        : ParsedType{Kind::IntType, loc}, bit_width{bitwidth} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::IntType; }
 };
 
-class srcc::ParsedOptionalType final : public ParsedStmt {
+class srcc::ParsedOptionalType final : public ParsedType {
 public:
     ParsedStmt* elem;
 
     ParsedOptionalType(ParsedStmt* elem, SLoc loc)
-        : ParsedStmt{Kind::OptionalType, loc}, elem{elem} {}
+        : ParsedType{Kind::OptionalType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::OptionalType; }
 };
@@ -183,7 +193,7 @@ struct ParsedProcAttrs {
     bool inline_ = false;
 };
 
-class srcc::ParsedProcType final : public ParsedStmt
+class srcc::ParsedProcType final : public ParsedType
     , llvm::TrailingObjects<ParsedProcType, ParsedParameter> {
     friend TrailingObjects;
     const u32 num_params;
@@ -219,48 +229,58 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ProcType; }
 };
 
-class srcc::ParsedPtrType final : public ParsedStmt {
+class srcc::ParsedPtrType final : public ParsedType {
 public:
     ParsedStmt* elem;
 
     ParsedPtrType(ParsedStmt* elem, SLoc loc)
-        : ParsedStmt{Kind::PtrType, loc}, elem{elem} {}
+        : ParsedType{Kind::PtrType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::PtrType; }
 };
 
-class srcc::ParsedRangeType final : public ParsedStmt {
+class srcc::ParsedRangeType final : public ParsedType {
 public:
     ParsedStmt* elem;
 
     ParsedRangeType(ParsedStmt* elem, SLoc loc)
-        : ParsedStmt{Kind::RangeType, loc}, elem{elem} {}
+        : ParsedType{Kind::RangeType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::RangeType; }
 };
 
-class srcc::ParsedSliceType final : public ParsedStmt {
+class srcc::ParsedSliceType final : public ParsedType {
 public:
     ParsedStmt* elem;
 
     ParsedSliceType(ParsedStmt* elem, SLoc loc)
-        : ParsedStmt{Kind::SliceType, loc}, elem{elem} {}
+        : ParsedType{Kind::SliceType, loc}, elem{elem} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::SliceType; }
 };
 
-class srcc::ParsedTemplateType final : public ParsedStmt {
+class srcc::ParsedTemplateType final : public ParsedType {
 public:
     /// The parameter name, *without* the '$' sigil.
     String name;
 
     ParsedTemplateType(String name, SLoc loc)
-        : ParsedStmt{Kind::TemplateType, loc},
+        : ParsedType{Kind::TemplateType, loc},
           name{name} {}
 
     static bool classof(const ParsedStmt* e) {
         return e->kind() == Kind::TemplateType;
     }
+};
+
+class srcc::ParsedTypeofType final : public ParsedType {
+public:
+    ParsedStmt* arg;
+
+    ParsedTypeofType(ParsedStmt* arg, SLoc loc)
+        : ParsedType{Kind::TypeofType, loc}, arg{arg} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::TypeofType; }
 };
 
 // ============================================================================

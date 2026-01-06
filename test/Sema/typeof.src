@@ -1,0 +1,23 @@
+// R %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+eval {
+    type t1 = typeof(0);
+    assert t1 == int;
+}
+
+eval {
+    type t1 = typeof("0");
+    assert t1 == i8[];
+}
+
+#assert typeof(type) == type;
+#assert typeof(int) == type;
+#assert typeof(typeof(int)) == type;
+#assert typeof(typeof(0)) == type;
+#assert typeof(typeof(0)()) == int;
+#assert typeof(1) == typeof(2);
+#assert typeof(1 as i8) == i8;
+#assert typeof(void()) == void;
+#assert typeof(__srcc_unreachable()) == noreturn;

@@ -1,6 +1,6 @@
 - Require `({})` for block expressions; they’re rare, so it shouldn’t be
   an issue (and it resolves the `match {` and `{} a` weirdness.
-- Heterogeneous Ranges
+- Heterogeneous Ranges; alternative: make ranges always inclusive and represent the empty range by setting end to a value *less than* begin.
 - Named Parameters
 - Make use of `PromoteMemOpInterface` and friends.
 - Refactor: Try using the 'ptr' dialect and replace our store/load/ptradd ops.
