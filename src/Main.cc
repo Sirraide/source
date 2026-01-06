@@ -62,6 +62,10 @@ using options = clopts< // clang-format off
     flag<"-fshort-filenames", "Use the filename only instead of the full path in diagnostics">,
     flag<"-fruntime", "Automatically import the runtime module", {.default_value = true}>,
 
+    // Some people might try and do '-fno-...'; we don’t support that, but
+    // issue a more helpful error.
+    multiple<short_option<"-fno-", "<dummy>", std::string, {.hidden = true}>>,
+
     // Internal flags.
     flag<"-Xpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
 
@@ -100,18 +104,16 @@ static void InitSignalHandlers() {
 }
 #endif
 
-static auto ParseArgs(int argc, char** argv) -> options::optvals_type {
-    Context ctx;
-    auto diags = StreamingDiagnosticsEngine::Create(ctx);
+static auto ParseArgs(int argc, char** argv) -> Result<options::optvals_type> {
+    Result<> err;
     auto opts = options::parse(argc, argv, [&](std::string msg) {
-        diags->report(Diagnostic(Diagnostic::Level::Error, SLoc(), msg));
+        err = Error("{}", msg);
         return false;
     });
 
-    if (diags->has_error()) {
-        diags->flush();
-        std::exit(1);
-    }
+    Try(err);
+    if (auto fno = opts.get<"-fno-">(); not fno.empty())
+        return Error("Options of the form '-fno-XY' are not supported; use '-fXY=false' instead");
 
     return opts;
 }
@@ -119,14 +121,24 @@ static auto ParseArgs(int argc, char** argv) -> options::optvals_type {
 int main(int argc, char** argv) {
     llvm::sys::DisableSystemDialogsOnCrash();
     libassert::enable_virtual_terminal_processing_if_needed();
-    auto opts = ParseArgs(argc, argv);
+    bool is_terminal = libassert::isatty(STDERR_FILENO) and libassert::isatty(STDOUT_FILENO);
+    auto res = ParseArgs(argc, argv);
+    if (not res) {
+        Context ctx;
+        auto diags = StreamingDiagnosticsEngine::Create(ctx);
+        ctx.use_colours = is_terminal;
+        diags->report(Diagnostic(Diagnostic::Level::Error, SLoc(), std::move(res.error())));
+        diags->flush();
+        return 1;
+    }
 
     // Enable colours.
+    auto& opts = res.value();
     auto colour_opt = opts.get<"--colour">("auto");
     bool use_colour =
           colour_opt == "never"  ? false
         : colour_opt == "always" ? true
-        :                          libassert::isatty(STDERR_FILENO) and libassert::isatty(STDOUT_FILENO);
+        :                          is_terminal;
 
     if (use_colour) colours_enabled.store(true, std::memory_order_relaxed);
 
