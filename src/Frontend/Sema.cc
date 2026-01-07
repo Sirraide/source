@@ -4859,7 +4859,14 @@ auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
     auto var = MaterialiseVariable(expr);
     AddEntryToWithStack(curr_scope(), var, parsed->loc);
     auto body = TRY(TranslateStmt(parsed->body));
-    return new (*tu) WithExpr(var, body, parsed->loc);
+
+    // Only store the variable if it is a temporary as we may otherwise
+    // try to emit an existing variable again.
+    return new (*tu) WithExpr(
+        isa<LocalRefExpr>(expr) ? nullptr : var,
+        body,
+        parsed->loc
+    );
 }
 
 // ============================================================================

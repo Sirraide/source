@@ -26,3 +26,11 @@ eval with i64 {
     assert bits == 64;
     assert bytes == 8;
 }
+
+struct s2 {
+    int x;
+    int y;
+}
+
+proc f(in s2 a) = with a { x + y }
+#assert f(s2(1, 2)) == 3;

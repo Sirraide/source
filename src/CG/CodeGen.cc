@@ -2413,6 +2413,7 @@ void CodeGen::EmitAllocaForLocal(LocalDecl* decl) {
 }
 
 void CodeGen::EmitLocal(LocalDecl* var) {
+    Assert(not isa<ParamDecl>(var), "Parameters are handled elsewhere");
     Assert(var->init, "Sema should always create an initialiser for local vars");
     if (IsZeroSizedType(var->type)) {
         Emit(var->init.get());
