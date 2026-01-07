@@ -33,12 +33,10 @@
           | <stmt-defer>
           | <stmt-while>
           | <stmt-for>
-          | <stmt-with>
           | ";"
 
 <stmt-defer>   ::= DEFER <stmt>
 <stmt-while>   ::= WHILE <expr> [ DO ] <stmt>
-<stmt-with>    ::= WITH <expr> [ DO ] <stmt>
 <if-stmt-body> ::= [ THEN ] <stmt>
 
 // Note: The support for trailing commas here was accidental, but I don’t really have a problem w/ it.
@@ -73,6 +71,7 @@
                    | <expr-subscript>
                    | <expr-tuple>
                    | <expr-postfix>
+                   | <expr-with>
                    | <type>
 
 <expr-assert>     ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
@@ -98,6 +97,7 @@
 <expr-subscript>  ::= <expr> "[" <expr> "]" // Only one argument for now.
 <expr-tuple>      ::= "(" <expr> { "," <expr> } [ "," ] ")"
 <expr-postfix>    ::= <expr> ( "++" | "--" )
+<stmt-with>       ::= WITH <expr> [ DO ] <sub-stmt>
 
 <call-args> ::= <expr> { "," <expr> } [ "," ]
 <macro-args> ::= macro-body { "," macro-body } [ "," ]

@@ -577,9 +577,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren(children);
         } break;
 
-        case Kind::WithStmt: {
-            auto& w = *cast<ParsedWithStmt>(s);
-            PrintHeader(s, "WithStmt");
+        case Kind::WithExpr: {
+            auto& w = *cast<ParsedWithExpr>(s);
+            PrintHeader(s, "WithExpr");
             SmallVector<ParsedStmt*, 2> children{w.expr, w.body};
             PrintChildren(children);
         } break;

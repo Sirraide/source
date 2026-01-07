@@ -37,7 +37,6 @@ AST_STMT_LEAF(DeferStmt)
 AST_STMT_LEAF(EmptyStmt)
 AST_STMT_LEAF(ForStmt)
 AST_STMT_LEAF(WhileStmt)
-AST_STMT_LEAF(WithStmt)
 
 // =================================================================================
 //  Expressions
@@ -77,6 +76,7 @@ AST_STMT_LEAF(StrLitExpr)
 AST_STMT_LEAF(TupleExpr)
 AST_STMT_LEAF(TypeExpr)
 AST_STMT_LEAF(UnaryExpr)
+AST_STMT_LEAF(WithExpr)
 
 // =================================================================================
 //  Declarations

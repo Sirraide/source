@@ -628,8 +628,8 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(children);
         },
 
-        [&](WithStmt* w) {
-            PrintBasicNode(e, "WithStmt");
+        [&](WithExpr* w) {
+            PrintBasicNode(e, "WithExpr");
             SmallVector<Stmt*, 2> children;
             if (auto var = w->temporary_var.get_or_null()) children.push_back(var);
             children.push_back(w->body);

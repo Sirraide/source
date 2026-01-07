@@ -179,20 +179,6 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::WhileStmt; }
 };
 
-class srcc::WithStmt : public Stmt {
-public:
-    Ptr<LocalDecl> temporary_var;
-    Stmt* body;
-
-    WithStmt(
-        Ptr<LocalDecl> temporary_var,
-        Stmt* body,
-        SLoc location
-    ) : Stmt{Kind::WithStmt, location}, temporary_var{temporary_var}, body{body} {}
-
-    static bool classof(const Stmt* e) { return e->kind() == Kind::WithStmt; }
-};
-
 // ============================================================================
 //  Expressions
 // ============================================================================
@@ -225,7 +211,7 @@ public:
     [[nodiscard]] bool is_rvalue() const { return value_category == RValue; }
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::UnaryExpr;
+        return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::WithExpr;
     }
 };
 
@@ -1015,6 +1001,22 @@ public:
         postfix{postfix} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::UnaryExpr; }
+};
+
+class srcc::WithExpr : public Expr {
+public:
+    Ptr<LocalDecl> temporary_var;
+    Stmt* body;
+
+    WithExpr(
+        Ptr<LocalDecl> temporary_var,
+        Stmt* body,
+        SLoc location
+    ) : Expr{Kind::WithExpr, body->type_or_void(), body->value_category_or_rvalue(), location},
+        temporary_var{temporary_var},
+        body{body} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::WithExpr; }
 };
 
 // ============================================================================

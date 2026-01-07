@@ -2834,11 +2834,10 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
     return {};
 }
 
-auto CodeGen::EmitWithStmt(WithStmt* stmt) -> IRValue {
+auto CodeGen::EmitWithExpr(WithExpr* expr) -> IRValue {
     EnterCleanupScope _{*this};
-    if (auto var = stmt->temporary_var.get_or_null()) EmitLocal(var);
-    Emit(stmt->body);
-    return {};
+    if (auto var = expr->temporary_var.get_or_null()) EmitLocal(var);
+    return Emit(expr->body);
 }
 
 auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue { // clang-format off

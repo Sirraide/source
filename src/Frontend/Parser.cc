@@ -306,6 +306,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Typeof:
         case Tk::Var:
         case Tk::Void:
+        case Tk::With:
             return true;
     }
 }
@@ -597,6 +598,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-subscript>
 //          | <expr-tuple>
 //          | <expr-postfix>
+//          | <expr-with>
 //          | <type>
 //
 // <type> ::= <type-prim>
@@ -865,6 +867,15 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             Next();
             lhs = ty;
         } break;
+
+        // <expr-with> ::= WITH <expr> [ DO ] <sub-stmt>
+        case Tk::With: {
+            auto loc = Next();
+            auto expr = TryParseExpr();
+            Consume(Tk::Do);
+            auto body = TryParseStmt();
+            return new (*this) ParsedWithExpr{expr, body, loc};
+        }
 
         // <expr-prefix> ::= <prefix> <expr>
         default: {
@@ -1762,7 +1773,6 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
 //          | <stmt-defer>
 //          | <stmt-while>
 //          | <stmt-for>
-//          | <stmt-with>
 //
 // <sub-stmt> ::= <expr> | <stmt>
 auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
@@ -1827,15 +1837,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             Consume(Tk::Do);
             auto body = TryParseStmt();
             return new (*this) ParsedWhileStmt{cond, body, loc};
-        }
-
-        // <stmt-with> ::= WITH <expr> [ DO ] <stmt>
-        case Tk::With: {
-            Next();
-            auto expr = TryParseExpr();
-            Consume(Tk::Do);
-            auto body = TryParseStmt();
-            return new (*this) ParsedWithStmt{expr, body, loc};
         }
 
         // <decl-proc>

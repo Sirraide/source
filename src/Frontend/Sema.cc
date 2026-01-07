@@ -4853,13 +4853,13 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     return new (*tu) WhileStmt(loop.token(), cond, body, parsed->loc);
 }
 
-auto Sema::TranslateWithStmt(ParsedWithStmt* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
     auto expr = TRY(TranslateExpr(parsed->expr));
     auto var = MaterialiseVariable(expr);
     AddEntryToWithStack(curr_scope(), var, parsed->loc);
     auto body = TRY(TranslateStmt(parsed->body));
-    return new (*tu) WithStmt(var, body, parsed->loc);
+    return new (*tu) WithExpr(var, body, parsed->loc);
 }
 
 // ============================================================================
