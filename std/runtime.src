@@ -2,6 +2,16 @@ module __src_runtime;
 
 import <cstdlib>, <cstdio> as libc;
 
+/// Helpers to format assertion messages.
+///
+/// The layout and name of this type are hard-coded into the compiler.
+/// DO NOT MODIFY!
+export struct __src_assert_msg_buf {
+    i8^ data;
+    int size;
+    int capacity;
+}
+
 /// Payload passed to various assertion handlers.
 ///
 /// The layout of this type is hard-coded into the compiler.
@@ -72,16 +82,6 @@ export proc __src_assert_fail (AbortInfo^ info) native -> noreturn {
 
     libc::putchar("\n"[0]);
     libc::abort();
-}
-
-/// Helpers to format assertion messages.
-///
-/// The layout and name of this type are hard-coded into the compiler.
-/// DO NOT MODIFY!
-export struct __src_assert_msg_buf {
-    i8^ data;
-    int size;
-    int capacity;
 }
 
 export proc __src_assert_append_int (inout __src_assert_msg_buf into, copy int value) nomangle {
