@@ -1050,6 +1050,9 @@ private:
     /// Unwrap an optional value.
     auto UnwrapOptional(Expr* opt, SLoc loc) -> Expr*;
 
+    /// Unwrap (multi-level) pointers and optionals.
+    auto UnwrapPointersAndOptionals(Expr* e) -> Ptr<Expr>;
+
     /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;
     auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
@@ -1065,6 +1068,7 @@ private:
     auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
+    auto BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr>;
     auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, SLoc loc) -> ParamDecl*;
     auto BuildProcDeclInitial(
         Scope* proc_scope,

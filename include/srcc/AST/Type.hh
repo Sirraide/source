@@ -194,10 +194,13 @@ public:
     }*/
 
     /// Strip array types from this type.
-    [[nodiscard]] auto strip_arrays() -> Type;
+    [[nodiscard]] auto strip_arrays() const -> Type;
+
+    /// Strip pointers and optional types.
+    [[nodiscard]] auto strip_pointers_and_optionals() const -> Type;
 
     /// Whether this type is trivially copyable.
-    [[nodiscard]] bool trivially_copyable() { return true; }
+    [[nodiscard]] bool trivially_copyable() const { return true; }
 
     /// Visit this type.
     template <typename Visitor>

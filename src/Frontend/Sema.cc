@@ -80,18 +80,19 @@ void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
     Assert(object->type);
 
     // The type must be complete.
-    if (not IsCompleteType(object->type)) {
+    Type ty = object->type->strip_pointers_and_optionals();
+    if (not IsCompleteType(ty)) {
         Error(
             with,
             "Argument to '%1(with%)' must not be an incomplete type (was '{}')",
-            object->type
+            ty
         );
 
         return;
     }
 
     // Declare the object’s members in the current scope, if there are any.
-    if (auto s = dyn_cast<StructType>(object->type)) {
+    if (auto s = dyn_cast<StructType>(ty)) {
         for (auto f : s->layout().fields()) {
             auto d = new (*tu) WithFieldRefDecl{object, f, with};
             AddDeclToScope(scope, d);
@@ -99,7 +100,7 @@ void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
     }
 
     // Also do the same for types with builtin members.
-    else if (auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(object->type); not members.empty()) {
+    else if (auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(ty); not members.empty()) {
         for (const auto& [_, member] : members) {
             auto d = new (*tu) WithBuiltinFieldRefDecl(object, member, with);
             AddDeclToScope(scope, d);
@@ -108,7 +109,7 @@ void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
 
     // Warn on non-struct types with no members if we’re not in a template.
     else if (not curr_proc().proc->instantiated_from) {
-        Warn(with, "'%1(with%)' has no effect as type '{}' has no members", object->type);
+        Warn(with, "'%1(with%)' has no effect as type '{}' has no members", ty);
     }
 }
 
@@ -258,7 +259,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
             return vd->value;
         },
         [&](WithFieldRefDecl* with) -> Ptr<Expr> {
-            return new (*tu) MemberAccessExpr(
+            return BuildMemberAccessExpr(
                 CreateReference(with->base, loc).get(),
                 with->referenced_field,
                 loc
@@ -1397,6 +1398,18 @@ auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
         true,
         Expr::LValue
     );
+}
+
+auto Sema::UnwrapPointersAndOptionals(Expr* base) -> Ptr<Expr> {
+    for (;;) {
+        if (isa<PtrType>(base->type)) {
+            base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
+        } else if (isa<OptionalType>(base->type)) {
+            base = UnwrapOptional(base, base->location());
+        } else {
+            return base;
+        }
+    }
 }
 
 // ============================================================================
@@ -3180,6 +3193,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     }();
 
     if (not type) return {};
+    operand = TRY(UnwrapPointersAndOptionals(operand));
     if (BuiltinMemberAccessExpr::IsTypeProperty(ak))
         operand = LValueToRValue(operand);
 
@@ -3549,6 +3563,12 @@ auto Sema::BuildMatchExpr(
         cases,
         loc
     );
+}
+
+auto Sema::BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr> {
+    base = TRY(UnwrapPointersAndOptionals(base));
+    base = MaterialiseTemporary(base);
+    return new (*tu) MemberAccessExpr(base, field, loc);
 }
 
 auto Sema::BuildParamDecl(
@@ -4424,27 +4444,16 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr
 
 auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
     auto base = TRY(TranslateExpr(parsed->base));
-
-    // Unwrap pointers and optionals.
-    for (;;) {
-        if (isa<PtrType>(base->type)) {
-            base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
-        } else if (isa<OptionalType>(base->type)) {
-            base = UnwrapOptional(base, parsed->loc);
-        } else {
-            break;
-        }
-    }
+    auto ty = base->type->strip_pointers_and_optionals();
 
     // Struct member access.
-    if (auto s = dyn_cast<StructType>(base->type.ptr())) {
+    if (auto s = dyn_cast<StructType>(ty)) {
         if (not s->is_complete()) return Error(
             parsed->loc,
             "Member access on incomplete type '{}'",
-            base->type
+            ty
         );
 
-        base = MaterialiseTemporary(base);
         auto field = LookUpUnqualifiedName(s->scope(), parsed->member, LookupHint::Any, true);
         switch (field.result) {
             using enum LookupResult::Reason;
@@ -4457,31 +4466,27 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
             case NotFound: return Error(
                 parsed->loc,
                 "Struct '{}' has no member named '{}'",
-                base->type,
+                ty,
                 parsed->member
             );
         }
 
-        return new (*tu) MemberAccessExpr(
-            base,
-            cast<FieldDecl>(field.decls.front()),
-            parsed->loc
-        );
+        return BuildMemberAccessExpr(base, cast<FieldDecl>(field.decls.front()), parsed->loc);
     }
 
     // Member access on builtin types.
-    auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(base->type);
+    auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(ty);
     if (members.empty()) return Error(
         parsed->loc,
         "Cannot perform member access on type '{}'",
-        base->type
+        ty
     );
 
     auto it = rgs::find(members, parsed->member, &BuiltinMemberAccessExpr::BuiltinMember::name);
     if (it == members.end()) return Error(
         parsed->loc,
         "'{}' has no member named '{}'",
-        base->type,
+        ty,
         parsed->member
     );
 

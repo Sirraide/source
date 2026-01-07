@@ -377,9 +377,15 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
     Unreachable("Invalid type kind");
 }
 
-auto TypeBase::strip_arrays() -> Type {
+auto TypeBase::strip_arrays() const -> Type {
     if (auto a = dyn_cast<ArrayType>(this)) return a->elem()->strip_arrays();
     return this;
+}
+
+auto TypeBase::strip_pointers_and_optionals() const -> Type {
+    Type ty = this;
+    while (isa<PtrType, OptionalType>(ty)) ty = cast<SingleElementTypeBase>(ty)->elem();
+    return ty;
 }
 
 // ============================================================================

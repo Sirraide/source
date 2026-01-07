@@ -42,3 +42,20 @@ proc f3(with int x) = x; // expected-warning: 'with' has no effect as type 'int'
 proc f4(with void x) = x; // expected-warning: 'with' has no effect as type 'void' has no members
 proc f5(with type t) = bytes;
 #assert f5(i8) == 1;
+
+proc f6 (with s2^) = x - y;
+eval {
+    s2 x = (4, 3);
+    assert f6(&x) == 1;
+}
+
+proc f7 {
+    proc a (with s2?) {}
+    proc b (with s2?) = x - y;
+}
+
+eval {
+    s2 x = (3, 4);
+    s2^ y = &x;
+    assert with y { x + y } == 7;
+}
