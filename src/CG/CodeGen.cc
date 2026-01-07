@@ -1877,10 +1877,11 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
 
     // Handle type properties.
     if (expr->operand->type == Type::TypeTy) {
-        // If we don’t yet know what type we are dealing with,
-        // emit code to evaluate this later.
+        // If we don’t yet know what type we are dealing with, emit code to
+        // evaluate this later. If we have an incomplete type, we also can’t
+        // handle this here since we don’t have access to Sema.
         auto type_expr = dyn_cast<TypeExpr>(expr->operand->ignore_parens());
-        if (not type_expr)  {
+        if (not type_expr or not type_expr->value->is_complete())  {
             SmallVector<mlir::Type> result_types;
             if (expr->type == tu.StrLitTy) {
                 result_types.push_back(ptr_ty);

@@ -5,18 +5,6 @@
 - Make use of `PromoteMemOpInterface` and friends.
 - Refactor: Try using the 'ptr' dialect and replace our store/load/ptradd ops.
 
-- Translate function/struct bodies in dependency order. This solves a number of issues, e.g.
-```
-s x = (4); // Error because 's' is not complete here.
-
-struct s {
-   int x;
-}
-
-// ICE because 's' is not complete when we translate the declaration.
-proc f (with s?) {}
-```
-
 - Initial design for optional access checking as an MLIR pass: we need 5 IR operations. These operate on pointers:
 
 0. We first need to figure out what pointers any one pointer is based on, e.g.

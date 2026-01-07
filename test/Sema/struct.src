@@ -12,7 +12,7 @@ struct S {
 
 S a;
 S b;
-S2 c; // expected-error: Cannot create instance of incomplete type 'S2'
+S2 c;
 
 struct S2 {
     S a;
@@ -37,12 +37,12 @@ struct ZeroSized {
     void b;
 }
 
-struct Recursive {
-    Recursive r; // expected-error: Cannot declare field of incomplete type 'Recursive'
+struct Recursive { // expected-error: Definition of struct type 'Recursive' depends on itself
+    Recursive r;
 }
 
-struct MutuallyRecursive1 {
-    MutuallyRecursive2 r; // expected-error: Cannot declare field of incomplete type 'MutuallyRecursive2'
+struct MutuallyRecursive1 { // expected-error: Definition of struct type 'MutuallyRecursive1' depends on itself
+    MutuallyRecursive2 r;
 }
 
 struct MutuallyRecursive2 {

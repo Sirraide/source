@@ -186,6 +186,11 @@ bool TypeBase::is_aggregate() const {
     return isa<RecordType, ArrayType, SliceType, RangeType, ProcType>(this);
 }
 
+bool TypeBase::is_complete() const {
+    auto s = dyn_cast<RecordType>(this);
+    return not s or s->is_complete();
+}
+
 bool TypeBase::is_integer() const {
     return this == Type::IntTy or isa<IntType>(this);
 }

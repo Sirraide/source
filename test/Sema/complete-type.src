@@ -1,11 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-// FIXME: This should be allowed.
-s a; // expected-error: Cannot create instance of incomplete type 's'
+s a;
 
-// FIXME: So should this.
-struct t { s a; } // expected-error: Cannot declare field of incomplete type 's'
+struct t { s a; }
 
 // FIXME: This should work because we should add the procedure to the scope
 // and only come back to parse the type later once we’ve picked up 's'.
@@ -14,17 +12,12 @@ proc p1 (s a) {} // expected-error: Unknown symbol 's'
 // FIXME: Likewise
 proc p2 -> s {} // expected-error: Unknown symbol 's'
 
-// FIXME: This is fine because this is never called before the struct is completed.
-proc q1 { s x; } // expected-error: Cannot create instance of incomplete type 's'
-
-// FIXME: This should be fine too because 's' does not depend on this procedure.
-proc q2 = s(); // expected-error: Cannot create instance of incomplete type 's'
+proc q1 { s x; }
+proc q2 = s();
 
 p1(42);
 var m = p2();
-
-// FIXME: This should be fine
-s(); // expected-error: Cannot create instance of incomplete type 's'
+s();
 
 // Once we get here, the struct is finally complete.
 struct s {}

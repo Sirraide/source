@@ -7,6 +7,7 @@
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
 #include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/DenseSet.h>
@@ -490,6 +491,7 @@ public:
     };
 
     VM& vm;
+    Sema* sema;
     cg::CodeGen cg;
     SmallVector<StackFrame, 4> call_stack;
     const SRValue true_val{true};
@@ -498,7 +500,7 @@ public:
     SLoc entry;
     bool complain;
 
-    Eval(VM& vm, bool complain);
+    Eval(VM& vm, Sema* sema, bool complain);
 
     [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
 
@@ -548,8 +550,9 @@ private:
     void StoreSRValue(void* mem, const SRValue& val);
 };
 
-Eval::Eval(VM& vm, bool complain)
+Eval::Eval(VM& vm, Sema* sema, bool complain)
     : vm{vm},
+      sema{sema},
       cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
       stack_top{vm.memory->get_stack_bottom()},
       complain{complain} {}
@@ -865,10 +868,18 @@ bool Eval::EvalLoop() {
         }
 
         if (auto prop = dyn_cast<ir::TypePropertyOp>(i)) {
+            auto loc = SLoc::Decode(i->getLoc());
+            auto ty = Val(prop.getTypeArgument()).cast<Type>();
+            if (not sema or not sema->RequireCompleteType(ty)) return Error(
+                loc,
+                "Querying property of incomplete type '{}'",
+                ty
+            );
+
             auto res = BuiltinMemberAccessExpr::Evaluate(
                 vm.owner(),
-                SLoc::Decode(i->getLoc()),
-                Val(prop.getTypeArgument()).cast<Type>(),
+                loc,
+                ty,
                 prop.getProperty()
             );
 
@@ -1480,6 +1491,7 @@ auto VM::allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) ->
 }
 
 auto VM::eval(
+    Sema* sema,
     Stmt* stmt,
     bool complain,
     bool dump_ir
@@ -1511,7 +1523,7 @@ auto VM::eval(
     // performs a template instantiation that contains an 'eval' statement.
     Assert(not evaluating, "We somehow triggered a nested evaluation?");
     tempset evaluating = true;
-    Eval e{*this, complain};
+    Eval e{*this, sema, complain};
     auto res = e.eval(stmt);
     if (dump_ir) std::println("{}", text::RenderColours(
         owner_tu.context().use_colours,

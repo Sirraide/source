@@ -81,7 +81,7 @@ proc f1 {
 
 (var,) x; // expected-error: Type deduction is not allowed here
 (noreturn,) x; // expected-error: 'noreturn' is not allowed here
-(incomplete,) x; // expected-error: Cannot declare field of incomplete type 'incomplete'
+(incomplete,) x;
 
 struct incomplete {
 

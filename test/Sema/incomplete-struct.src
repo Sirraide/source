@@ -1,0 +1,24 @@
+// V %srcc --sema --verify --target x86_64-unknown-linux %s
+program test;
+
+s1 x;
+s1? y;
+#assert s1.bytes == 16;
+#assert s1[4].bytes == 64;
+struct s1 {
+    int x;
+    int y;
+}
+
+struct s2 { s2 x; } // expected-error: Definition of struct type 's2' depends on itself
+struct s3 { s4 x; } // expected-error: Definition of struct type 's3' depends on itself
+struct s4 { s3 x; }
+struct s5 { s5? x; } // expected-error: Definition of struct type 's5' depends on itself
+struct s6 { s6[5] x; } // expected-error: Definition of struct type 's6' depends on itself
+struct s7 { int[s7.bytes] x; } // expected-error (Definition of struct type 's7' depends on itself) expected-error (Querying property of incomplete type 's7')
+
+struct s {
+   int x;
+}
+
+proc f (with s?) {}

@@ -81,15 +81,7 @@ void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
 
     // The type must be complete.
     Type ty = object->type->strip_pointers_and_optionals();
-    if (not IsCompleteType(ty)) {
-        Error(
-            with,
-            "Argument to '%1(with%)' must not be an incomplete type (was '{}')",
-            ty
-        );
-
-        return;
-    }
+    if (not RequireCompleteType(ty)) return;
 
     // Declare the object’s members in the current scope, if there are any.
     if (auto s = dyn_cast<StructType>(ty)) {
@@ -115,15 +107,7 @@ void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
 
 bool Sema::CheckFieldType(Type type, SLoc loc) {
     if (not CheckVariableType(type, loc)) return false;
-
-    // TODO: Allow this and instead actually perform recursive translation and
-    // cycle checking.
-    if (not IsCompleteType(type)) return Error(
-        loc,
-        "Cannot declare field of incomplete type '{}'",
-        type
-    );
-
+    if (not RequireCompleteType(type)) return false;
     return true;
 }
 
@@ -134,7 +118,7 @@ bool Sema::CheckVariableType(Type ty, SLoc loc) {
     if (ty == Type::DeducedTy) return Error(loc, "Type deduction is not allowed here");
     if (ty == Type::NoReturnTy) return Error(loc, "'{}' is not allowed here", Type::NoReturnTy);
     if (ty == Type::UnresolvedOverloadSetTy) return Error(loc, "Unresolved overload set in parameter declaration");
-    return true;
+    return RequireCompleteType(ty);
 }
 
 auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory {
@@ -275,6 +259,49 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
     });
 }
 
+bool Sema::CompleteDefinition(StructType* s) {
+    if (s->is_complete()) return true;
+
+    // Avoid cycles.
+    if (is_contained(struct_translation_stack, s)) {
+        Error(
+            s->decl()->location(),
+            "Definition of struct type '{}' depends on itself",
+            s
+        );
+
+        Remark("Reference cycle: {} -> {}", utils::join(struct_translation_stack, " -> "), s);
+        return false;
+    }
+
+    // Mark that we’ve started translating this.
+    struct_translation_stack.push_back(s);
+    defer { struct_translation_stack.pop_back(); };
+
+    // Get the field declarations.
+    auto it = pending_struct_definitions.find(s);
+    Assert(it != pending_struct_definitions.end(), "Completing struct that we didn’t parse?");
+    auto parsed = it->second;
+    pending_struct_definitions.erase(it);
+
+    // Translate the fields and build the layout.
+    EnterScope _{*this, s->scope()};
+    RecordLayout::Builder lb{*tu};
+    for (auto f : parsed->fields()) {
+        auto ty = TranslateType(f->type);
+        if (not CheckFieldType(ty, f->loc)) {
+            // If the field’s type is invalid, we can’t query any of its
+            // properties, so just insert a dummy field and continue.
+            lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
+        } else {
+            AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
+        }
+    }
+
+    s->finalise(lb.build());
+    return true;
+}
+
 void Sema::DeclareLocal(LocalDecl* d) {
     Assert(d->parent == curr_proc().proc, "Must EnterProcedure before adding a local variable");
     curr_proc().locals.push_back(d);
@@ -298,8 +325,12 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return) 
     );
 }
 
-auto Sema::Evaluate(Stmt* s, SLoc loc) -> Ptr<Expr> {
-    auto value = tu->vm.eval(s);
+auto Sema::Evaluate(Stmt* e, bool complain) -> std::optional<eval::RValue> {
+    return tu->vm.eval(this, e, complain);
+}
+
+auto Sema::EvaluateIntoExpr(Stmt* s, SLoc loc) -> Ptr<Expr> {
+    auto value = Evaluate(s);
     if (not value.has_value()) return nullptr;
     return MakeConstExpr(s, std::move(*value), loc);
 }
@@ -322,7 +353,7 @@ bool Sema::InjectTree(Expr* injected, Type desired_type, InjectionContext contex
     })) return {};
 
     // Evaluate the injection.
-    auto res = tu->vm.eval(injected);
+    auto res = Evaluate(injected);
     if (not res) return {};
     auto top_level_tree = res->cast<TreeValue*>();
 
@@ -370,14 +401,15 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
     else return Size::Bits(i.getActiveBits()) <= bits;
 }
 
-bool Sema::IsCompleteType(Type ty, bool null_type_is_complete) {
-    if (auto s = dyn_cast_if_present<StructType>(ty.ptr()))
-        return s->is_complete();
+bool Sema::RequireCompleteType(Type ty) {
+    Assert(ty, "Null type passed to RequireCompleteType()");
+    if (ty->is_complete()) return true;
+    if (auto s = dyn_cast_if_present<StructType>(ty.ptr())) {
+        if (not s->is_complete()) CompleteDefinition(s);
+        return s->is_complete(); // Check this again since it might have failed.
+    }
 
-    if (not ty)
-        return null_type_is_complete;
-
-    return true;
+    Unreachable("Unexpected incomplete type: {}", ty);
 }
 
 bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
@@ -1020,8 +1052,12 @@ auto Sema::BuildConversionSequence(
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
 
-    // The type we’re initialising must be complete.
-    if (not IsCompleteType(var_type)) return CreateError(
+    // Note: 'RequireCompleteType()' may issue diagnostics, but this is a bit unavoidable;
+    // generally, we should almost never encounter incomplete types that we fail to complete,
+    // so this usually shouldn’t cause any problems even if we’re building conversion sequences
+    // tentatively.
+    Assert(var_type, "Null type is not supported here");
+    if (not RequireCompleteType(var_type)) return CreateError(
         init_loc,
         "Cannot create instance of incomplete type '{}'",
         var_type
@@ -1191,7 +1227,7 @@ auto Sema::BuildConversionSequence(
 
         // If we ultimately found a literal, evaluate the original expression.
         if (isa_and_present<IntLitExpr>(lit)) {
-            auto val = tu->vm.eval(e, false);
+            auto val = Evaluate(e, false);
             return val and IntegerLiteralFitsInType(val->cast<APInt>(), ty, negated);
         }
 
@@ -1588,7 +1624,7 @@ auto Sema::SubstituteTemplate(
     if (auto where = proc_template->pattern->where.get_or_null()) {
         auto constraint = TRY(TranslateExpr(where));
         if (not MakeCondition(constraint, "where")) return {};
-        auto value = tu->vm.eval(constraint);
+        auto value = Evaluate(constraint);
         if (not value.has_value()) return {};
         if (not value->cast<APInt>().getBoolValue())
             return SubstitutionResult::ConstraintNotSatisfied();
@@ -2583,7 +2619,7 @@ bool Sema::CheckMatchExhaustiveImpl(
 
         // We only really care about constants here.
         auto e = c.cond.expr();
-        auto rv = tu->vm.eval(LValueToRValue(e), false);
+        auto rv = Evaluate(LValueToRValue(e), false);
         if (not rv.has_value()) {
             BuildComparison();
             continue;
@@ -2735,7 +2771,7 @@ auto Sema::BuildAssertExpr(
 
     auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range, stringifier);
     if (not is_compile_time) return a;
-    return Evaluate(a, loc);
+    return EvaluateIntoExpr(a, loc);
 }
 
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr* {
@@ -2864,7 +2900,7 @@ auto Sema::BuildBinaryExpr(
             // For tuples, the integer must be a compile-time constant, and
             // the result of a subscript operation is a member access.
             if (auto ty = dyn_cast<TupleType>(lhs->type)) {
-                auto res = tu->vm.eval(rhs);
+                auto res = Evaluate(rhs);
                 if (not res) return {};
                 auto idx = i64(res->cast<APInt>().getSExtValue());
                 auto tuple_elems = i64(ty->layout().fields().size());
@@ -2885,7 +2921,7 @@ auto Sema::BuildBinaryExpr(
 
         case Tk::As:
         case Tk::AsBang: {
-            auto type = tu->vm.eval(rhs);
+            auto type = Evaluate(rhs);
             if (not type) return {};
             if (not type->isa<Type>()) return Error(rhs->location(), "Expected type");
             return BuildExplicitCast(type->cast<Type>(), lhs, loc, op == Tk::AsBang);
@@ -2916,7 +2952,7 @@ auto Sema::BuildBinaryExpr(
 
             // Check that the RHS is not the maximum representable value.
             if (op == Tk::DotDotEq) {
-                auto max = tu->vm.eval(rhs, false);
+                auto max = Evaluate(rhs, false);
                 if (max.has_value()) {
                     auto bits = lhs->type->bit_width(*tu);
 
@@ -3219,7 +3255,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
 
     // If the ‘callee’ is a type, then this is an initialiser call.
     else if (isa<TypeExpr>(callee_expr)) {
-        auto type = tu->vm.eval(callee_expr);
+        auto type = Evaluate(callee_expr);
         if (not type) return ICE(
             callee_expr->location(),
             "Failed to evaluate expression designating a type"
@@ -3371,7 +3407,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
         arg = init.get();
     }
 
-    return Evaluate(arg, loc);
+    return EvaluateIntoExpr(arg, loc);
 }
 
 auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr> {
@@ -3700,7 +3736,7 @@ auto Sema::BuildStaticIfExpr(
 ) -> Ptr<Stmt> {
     // Otherwise, check this now.
     if (not MakeCondition(cond, "#if")) return {};
-    auto val = tu->vm.eval(cond);
+    auto val = Evaluate(cond);
     if (not val) return {};
 
     // If there is no else clause, and the condition is false, return
@@ -4205,9 +4241,10 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     }
 
     // Complete struct declarations.
-    if (auto s = dyn_cast<ParsedStructDecl>(parsed)) {
+    if (isa<ParsedStructDecl>(parsed)) {
         if (not d) return nullptr;
-        return TranslateStruct(cast<TypeDecl>(d), s);
+        CompleteDefinition(cast<StructType>(cast<TypeDecl>(d)->type));
+        return d;
     }
 
     // No special handling for anything else.
@@ -4811,28 +4848,6 @@ auto Sema::TranslateStructDecl(ParsedStructDecl*, Type) -> Decl* {
     Unreachable("Should not be translated normally");
 }
 
-auto Sema::TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
-    auto s = cast<StructType>(decl->type);
-    Assert(not s->is_complete(), "Type is already complete?");
-
-    // Translate the fields and build the layout.
-    EnterScope _{*this, s->scope()};
-    RecordLayout::Builder lb{*tu};
-    for (auto f : parsed->fields()) {
-        auto ty = TranslateType(f->type);
-        if (not CheckFieldType(ty, f->loc)) {
-            // If the field’s type is invalid, we can’t query any of its
-            // properties, so just insert a dummy field and continue.
-            lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
-        } else {
-            AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
-        }
-    }
-
-    s->finalise(lb.build());
-    return decl;
-}
-
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
     auto sc = tu->create_scope<StructScope>(curr_scope());
     auto ty = StructType::Create(
@@ -4843,6 +4858,7 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
     );
 
     AddDeclToScope(curr_scope(), ty->decl());
+    pending_struct_definitions[ty] = parsed;
     return ty->decl();
 }
 
@@ -4901,7 +4917,7 @@ auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
 //  Translation of Types
 // ============================================================================
 auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
-    auto size = tu->vm.eval(size_expr);
+    auto size = Evaluate(size_expr);
     if (not size) return Type();
     auto integer = size->dyn_cast<APInt>();
 
@@ -5156,7 +5172,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
             auto injected = TranslateInjectExpr(cast<ParsedInjectExpr>(parsed), Type());
             if (not injected) return fallback;
             if (injected.get()->type_or_void() != Type::TypeTy) goto default_;
-            auto ty = tu->vm.eval(injected.get());
+            auto ty = Evaluate(injected.get());
             if (ty.has_value()) return ty->cast<Type>();
             goto default_;
         }
@@ -5166,7 +5182,7 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         default_: {
             auto e = TranslateExpr(parsed, Type::TypeTy);
             if (not e) break;
-            auto val = tu->vm.eval(e.get());
+            auto val = Evaluate(e.get());
             if (not val) break;
             if (val->isa<Type>()) return val->cast<Type>();
             Error(parsed->loc, "Expected type");

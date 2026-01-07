@@ -18,6 +18,7 @@
 
 namespace srcc {
 class Stmt;
+class Sema;
 class ProcDecl;
 class StrLitExpr;
 class TranslationUnit;
@@ -299,11 +300,17 @@ public:
     /// Callers must check dependence before this is called; attempting
     /// to evaluate a dependent statement will assert.
     ///
+    /// \param sema Sema instance; may be null.
     /// \param stmt Statement to evaluate.
     /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
     /// \param dump_ir Print the IR used for evaluation, if any.
     /// \return The value of the statement, if it can be evaluated.
-    [[nodiscard]] auto eval(Stmt* stmt, bool complain = true, bool dump_ir = false) -> std::optional<RValue>;
+    [[nodiscard]] auto eval(
+        Sema* sema,
+        Stmt* stmt,
+        bool complain = true,
+        bool dump_ir = false
+    ) -> std::optional<RValue>;
 
     /// Initialise the VM.
     void init(const Target& tgt);

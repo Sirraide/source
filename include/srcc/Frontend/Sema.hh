@@ -37,6 +37,7 @@ public:
 
 private:
     friend DiagsProducer;
+    friend eval::Eval;
     friend TemplateInstantiator;
     friend Importer;
 
@@ -680,6 +681,12 @@ private:
 
     SmallVector<DeferredNativeProcArgOrReturn> incomplete_structs_in_native_proc_type;
 
+    /// Struct declarations that are yet to be completed.
+    DenseMap<StructType*, ParsedStructDecl*> pending_struct_definitions;
+
+    /// Stack of struct definitions we’re currently completing; this is used to report cycles.
+    SmallVector<StructType*> struct_translation_stack;
+
     Sema(Context& ctx);
     ~Sema();
 
@@ -838,6 +845,9 @@ private:
     /// Check that a type is valid for a variable declaration.
     [[nodiscard]] bool CheckVariableType(Type ty, SLoc loc);
 
+    /// Attempt to complete a struct type.
+    bool CompleteDefinition(StructType* ty);
+
     /// Determine the common type and value category of a set of expressions and,
     /// if there is one, ensure they all have the same type and value category.
     auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
@@ -854,9 +864,12 @@ private:
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return);
 
+    /// Evaluate a statement.
+    auto Evaluate(Stmt* e, bool complain = true) -> std::optional<eval::RValue>;
+
     /// Evaluate a statement, returning an expression that caches the result on success
     /// and nullptr on failure. The returned expression need not be a ConstExpr.
-    auto Evaluate(Stmt* e, SLoc loc) -> Ptr<Expr>;
+    auto EvaluateIntoExpr(Stmt* e, SLoc loc) -> Ptr<Expr>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
@@ -885,7 +898,7 @@ private:
     bool IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated);
 
     /// Check that we have a complete type.
-    [[nodiscard]] bool IsCompleteType(Type ty, bool null_type_is_complete = true);
+    [[nodiscard]] bool RequireCompleteType(Type ty);
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
     bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
@@ -1108,7 +1121,6 @@ private:
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Stmt>;
     bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type = Type());
-    auto TranslateStruct(TypeDecl* decl, ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
     auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 
     /// Types.

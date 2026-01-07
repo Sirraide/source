@@ -159,6 +159,9 @@ public:
     /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
 
+    /// Check if this is a complete type.
+    [[nodiscard]] bool is_complete() const;
+
     /// Check if this is 'int' or a sized integer.
     [[nodiscard]] bool is_integer() const;
 
