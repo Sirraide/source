@@ -850,14 +850,16 @@ public:
     Ptr<ParsedStmt> init;
     Intent intent; // Only used for parameters.
     bool is_static;
+    SLoc with_loc; // Only used for parameters.
 
     ParsedVarDecl(
         String name,
         ParsedStmt* param_type,
         SLoc location,
         Intent intent = Intent::Move,
-        bool is_static = false
-    ) : ParsedDecl{Kind::VarDecl, name, location}, type{param_type}, intent{intent}, is_static{is_static} {}
+        bool is_static = false,
+        SLoc with = {}
+    ) : ParsedDecl{Kind::VarDecl, name, location}, type{param_type}, intent{intent}, is_static{is_static}, with_loc{with} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::VarDecl; }
 };

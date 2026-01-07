@@ -1,0 +1,9 @@
+// V %srcc --parse --verify %s
+program test;
+
+struct s {
+    int x;
+    int y;
+}
+
+proc f6(in with s) {} // expected-error: 'with' must precede the parameter intent

@@ -490,6 +490,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
             if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
             if (p.is_static) print("static ");
+            if (p.with_loc.is_valid()) print("with ");
             print("{}\n", p.type->dump_as_type());
             if (p.init) PrintChildren(p.init.get());
         } break;
@@ -621,7 +622,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                     bool first = true;
                     out += " (";
 
-                    for (auto param : p->param_types()) {
+                    for (const auto& param : p->param_types()) {
                         if (not first) out += ", ";
                         first = false;
                         if (param.intent != Intent::Move) Format(out, "{} ", param.intent);

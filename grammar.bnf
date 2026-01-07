@@ -123,7 +123,7 @@
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-where>  ::= WHERE <expr>
 <proc-body>   ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
-<param-decl>  ::= [ <intent> ] <param-rest>
+<param-decl>  ::= [ WITH ] [ <intent> ] <param-rest>
 <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
 <intent>      ::= IN | OUT | INOUT | COPY
 

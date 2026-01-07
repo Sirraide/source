@@ -34,3 +34,11 @@ struct s2 {
 
 proc f(in s2 a) = with a { x + y }
 #assert f(s2(1, 2)) == 3;
+
+proc f2(with in s2) = x + y;
+#assert f2(s2(1, 2)) == 3;
+
+proc f3(with int x) = x; // expected-warning: 'with' has no effect as type 'int' has no members
+proc f4(with void x) = x; // expected-warning: 'with' has no effect as type 'void' has no members
+proc f5(with type t) = bytes;
+#assert f5(i8) == 1;

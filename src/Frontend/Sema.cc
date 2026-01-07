@@ -75,6 +75,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
 }
 
 void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
+    if (not object->is_valid) return;
     Assert(object->value_category_or_rvalue() == Expr::LValue);
     Assert(object->type);
 
@@ -3145,9 +3146,23 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case TypeName:
                 return tu->StrLitTy;
 
+            // The values of these are type-dependent, e.g. 'i8.max' yields a value of
+            // type 'i8'; this means we can’t really construct such an expression if the
+            // actual type is not known (e.g. because it is a parameter of type 'type').
+            //
+            // FIXME: Parameters and variables of type 'type' should be compile-time only
+            // and thus known at compile-time; in particular, parameters of type 'type' should
+            // implicitly become template parameters.
             case TypeMaxVal:
-            case TypeMinVal:
-                return cast<TypeExpr>(operand)->value;
+            case TypeMinVal:{
+                auto te = dyn_cast<TypeExpr>(operand);
+                if (not te) return ICE(
+                    loc,
+                    "Querying property '{}' is currently only supported for literal types",
+                    ak
+                );
+                return te->value;
+            }
 
             // Slice Properties.
             case SliceSize:
@@ -3164,6 +3179,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
         Unreachable();
     }();
 
+    if (not type) return {};
     if (BuiltinMemberAccessExpr::IsTypeProperty(ak))
         operand = LValueToRValue(operand);
 
@@ -4521,6 +4537,7 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
 
 auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     if (parsed->is_static) Todo();
+    Assert(not parsed->with_loc.is_valid(), "'with' should currently only be parsed on param decls");
     auto decl = MakeLocal(
         TranslateType(parsed->type),
         Expr::LValue,
@@ -4576,13 +4593,19 @@ auto Sema::TranslateProcBody(
     auto ty = decl->proc_type();
     for (auto [i, pair] : enumerate(zip(ty->params(), decls))) {
         auto [param_info, parsed_decl] = pair;
-        BuildParamDecl(
+        auto param = BuildParamDecl(
             curr_proc(),
             &param_info,
             u32(i),
             false,
             parsed_decl->name.str(),
             parsed_decl->loc
+        );
+
+        if (parsed_decl->with_loc.is_valid()) AddEntryToWithStack(
+            curr_scope(),
+            param,
+            parsed_decl->with_loc
         );
     }
 

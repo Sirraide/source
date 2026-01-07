@@ -1425,13 +1425,15 @@ void Parser::ParseOverloadableOperatorName(Signature& sig) {
     }
 }
 
-// <param-decl>  ::= [ <intent> ] <param-rest>
+// <param-decl>  ::= [ WITH ] [ <intent> ] <param-rest>
 // <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
     String name;
     SLoc name_loc;
+    SLoc with_loc;
     bool variadic = false;
+    Consume(with_loc, Tk::With);
 
     // Parse intent.
     auto [start_loc, intent] = ParseIntent();
@@ -1441,6 +1443,12 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
         Error(loc, "Cannot specify more than one parameter intent");
         return false;
+    }
+
+    // If we have an intent and the user specified 'with' here, diagnose it.
+    if (intent != Intent::Move and At(Tk::With)) {
+        Error("'%1(with%)' must precede the parameter intent");
+        with_loc = Next();
     }
 
     // Special handling for signatures, which may have
@@ -1498,10 +1506,19 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             SkipTo(Tk::Comma, Tk::RParen);
         }
 
-        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), start_loc, intent});
-    } else if (At(Tk::Identifier)) {
-        Error("Named parameters are not allowed here");
-        Next();
+        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), start_loc, intent, false, with_loc});
+    } else {
+        if (At(Tk::Identifier)) {
+            Error("Named parameters are not allowed here");
+            Next();
+        }
+
+        if (with_loc.is_valid()) {
+            Error(
+                with_loc,
+                "'%1(with%)' in a parameter list is only allowed in procedure declarations"
+            );
+        }
     }
 
     return true;
