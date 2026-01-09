@@ -1,0 +1,31 @@
+// V %srcc --sema --verify -I test/inputs %s
+// expected-no-diagnostics
+program test;
+
+import <cxx-enum.hh> as cxx;
+
+#assert cxx::ScopedEnumI32::A as int == 0;
+#assert cxx::ScopedEnumI32::B as int == 5;
+#assert cxx::ScopedEnumI32::C as int == 42;
+#assert cxx::ScopedEnumI32::D as int == 43;
+#assert cxx::ScopedEnumI32.elem == i32;
+
+#assert cxx::UnscopedEnumI32::U_A as int == 0;
+#assert cxx::UnscopedEnumI32::U_B as int == 6;
+#assert cxx::UnscopedEnumI32::U_C as int == 6;
+#assert cxx::UnscopedEnumI32::U_D as int == 7;
+#assert cxx::U_A as int == 0;
+#assert cxx::U_B as int == 6;
+#assert cxx::U_C as int == 6;
+#assert cxx::U_D as int == 7;
+#assert cxx::UnscopedEnumI32.elem == i32;
+
+#assert cxx::ScopedEnumI16::A as int == 1;
+#assert cxx::ScopedEnumI16::B as int == 2;
+#assert cxx::ScopedEnumI16::C as int == 100;
+#assert cxx::ScopedEnumI16.elem == i16;
+
+#assert cxx::ScopedEnumI128::A as i128 == i128(1267650600228229401496703205376);
+#assert cxx::ScopedEnumI128::B as i128 == i128(1267650600228229401496703205377);
+#assert cxx::ScopedEnumI128::C as i128 == i128(1267650600228229401496703205378);
+#assert cxx::ScopedEnumI128.elem == i128;
