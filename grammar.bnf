@@ -114,10 +114,11 @@
 // ============================================================================
 //  Declarations
 // ============================================================================
-<decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | EXPORT <decl>
+<decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | <decl-enum> | EXPORT <decl>
 <decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ]
 <decl-proc>   ::= <signature> <proc-body>
 <decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
+<decl-enum>   ::= ENUM IDENT "{" [ IDENT { "," IDENT } [ "," ] ] "}"
 <signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }

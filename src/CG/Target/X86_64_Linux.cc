@@ -281,7 +281,7 @@ auto ABIImpl::LowerByValArgOrReturn(
     }
 
     // For integers, it depends on the bit width.
-    else if (t->is_integer_or_bool()) {
+    else if (t->is_integer_or_bool() or isa<EnumType>(t)) {
         // i65-i127 are passed in two registers.
         if (sz > Word and sz < Word * 2) {
             if (ctx.allocate(2)) {
@@ -396,7 +396,7 @@ auto ABIImpl::WriteByValParamOrReturnToMemory(
         return ReuseStackAddress();
     }
 
-    if (t->is_integer_or_bool()) {
+    if (t->is_integer_or_bool() or isa<EnumType>(t)) {
         // i65-i127 are passed in two registers.
         if (sz > Word and sz < Word * 2) {
             if (lowering.allocate(2)) {

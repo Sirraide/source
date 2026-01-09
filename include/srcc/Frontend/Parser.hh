@@ -20,6 +20,7 @@ struct ParsedMatchCase;
 struct LexedTokenStream;
 struct ImportedModule;
 struct ParsedParameter;
+struct ParsedEnumerator;
 
 /// The list of parameter indices, for each template parameter,
 /// in which that template parameter is deduced.
@@ -816,6 +817,39 @@ public:
     static bool classof(const ParsedStmt* e) {
         return e->kind() >= Kind::Decl$Start and e->kind() <= Kind::Decl$End;
     }
+};
+
+struct srcc::ParsedEnumerator {
+    DeclName name;
+    SLoc loc;
+    ParsedEnumerator(DeclName name, SLoc loc) : name{name}, loc{loc} {}
+};
+
+/// An exported declaration.
+class srcc::ParsedEnumDecl final : public ParsedDecl,
+    llvm::TrailingObjects<ParsedEnumDecl, ParsedEnumerator> {
+    friend TrailingObjects;
+    const u32 num_enumerators;
+
+    ParsedEnumDecl(
+        DeclName name,
+        ArrayRef<ParsedEnumerator> enumerators,
+        SLoc location
+    );
+
+public:
+    static auto Create(
+        Parser& p,
+        DeclName name,
+        ArrayRef<ParsedEnumerator> enumerators,
+        SLoc location
+    ) -> ParsedEnumDecl*;
+
+    auto enumerators() -> ArrayRef<ParsedEnumerator> {
+        return getTrailingObjects(num_enumerators);
+    }
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::EnumDecl; }
 };
 
 /// An exported declaration.

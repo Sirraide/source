@@ -200,6 +200,11 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
         [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
         [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
+        [&](EnumeratorDecl* e) -> Ptr<Expr> {
+            // TODO: Compute the enumeration values here if they haven’t been computed yet.
+            Assert(e->value.has_value(), "TODO");
+            return MakeConstExpr(e, eval::RValue(e->value->value(), e->parent), loc);
+        },
         [&](LocalDecl* local) -> Ptr<Expr> {
             // Check if this variable is declared in a parent procedure and captured it
             // if so; do *not* capture zero-sized variables however since they’ll be deleted
@@ -336,11 +341,14 @@ auto Sema::EvaluateIntoExpr(Stmt* s, SLoc loc) -> Ptr<Expr> {
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
-    switch (d->kind()) {
-        default: return {};
-        case Stmt::Kind::BlockExpr: return cast<BlockExpr>(d)->scope;
-        case Stmt::Kind::ProcDecl: return cast<ProcDecl>(d)->scope;
-    }
+    return d->visit(utils::Overloaded{
+        [](auto*) -> Scope* { return nullptr; },
+        [](ProcDecl* p) { return p->scope; },
+        [](TypeDecl* td) {
+            auto e = dyn_cast<EnumType>(td->type);
+            return e ? e->scope() : nullptr;
+        },
+    });
 }
 
 bool Sema::InjectTree(Expr* injected, Type desired_type, InjectionContext context) {
@@ -1235,6 +1243,9 @@ auto Sema::BuildConversionSequence(
     };
 
     switch (var_type->kind()) {
+        case TypeBase::Kind::EnumType:
+            return TypeMismatch();
+
         // Note: 'nil' does NOT convert to pointer types since pointers
         // are not nullable! That’s what optional pointers are for.
         case TypeBase::Kind::PtrType: {
@@ -3382,7 +3393,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
     );
 }
 
-auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr> {
+auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc, Type desired_type) -> Ptr<Expr> {
     auto res = LookUpName(curr_scope(), names, loc, LookupHint::Any, false);
     if (res.successful()) return CreateReference(res.decls.front(), loc);
 
@@ -3394,6 +3405,19 @@ auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc) -> Ptr<Expr> {
         res.result == LookupResult::Reason::Ambiguous and
         isa<ProcDecl, ProcTemplateDecl>(res.decls.front())
     ) return OverloadSetExpr::Create(*tu, res.decls, loc);
+
+    // If we failed to find anything, and the desired type is an enum type, try to
+    // see if this is one of its enumerators.
+    if (
+        names.size() == 1 and
+        desired_type and
+        isa<EnumType>(desired_type) and
+        res.result == LookupResult::Reason::NotFound
+    ) {
+        auto e = dyn_cast<EnumType>(desired_type);
+        auto res = LookUpUnqualifiedName(e->scope(), names.front(), LookupHint::Any, true);
+        if (res.successful()) return CreateReference(res.decls.front(), loc);
+    }
 
     ReportLookupFailure(res, loc);
     return {};
@@ -3430,8 +3454,8 @@ auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) ->
     // This is a no-op if the types are the same.
     if (to == from) return arg;
 
-    // Casting between integer types is always allowed.
-    if (from->is_integer() and to->is_integer()) {
+    // Casting from integer/enum types to integers is always allowed.
+    if ((from->is_integer() or isa<EnumType>(from)) and to->is_integer()) {
         SoftCast();
         arg = LValueToRValue(arg);
         return Make(CastExpr::Integral);
@@ -3448,6 +3472,13 @@ auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) ->
         HardCast();
         arg = LValueToRValue(arg);
         return Make(CastExpr::Pointer);
+    }
+
+    // So is casting from integers/enums to enums.
+    if ((from->is_integer_or_bool() or isa<EnumType>(from)) and isa<EnumType>(to)) {
+        HardCast();
+        arg = LValueToRValue(arg);
+        return Make(CastExpr::Integral);
     }
 
     // If the source type is an optional, and the target type isn’t, unwrap it.
@@ -4193,8 +4224,8 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
-auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type) -> Ptr<Stmt> {
-    return BuildDeclRefExpr(parsed->names(), parsed->loc);
+auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+    return BuildDeclRefExpr(parsed->names(), parsed->loc, desired_type);
 }
 
 /// Perform initial processing of a decl so it can be used by the rest
@@ -4218,6 +4249,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
 
     if (auto proc = dyn_cast<ParsedProcDecl>(d)) return TranslateProcDeclInitial(proc);
     if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
+    if (auto e = dyn_cast<ParsedEnumDecl>(d)) return TranslateEnumDeclInitial(e);
     return std::nullopt;
 }
 
@@ -4247,10 +4279,56 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
         return d;
     }
 
+    // Complete enum definitions.
+    if (auto e = dyn_cast<ParsedEnumDecl>(parsed)) {
+        if (not d) return nullptr;
+        TranslateEnumerators(cast<EnumType>(cast<TypeDecl>(d)->type), e);
+        return d;
+    }
+
     // No special handling for anything else.
     auto res = TranslateStmt(parsed);
     if (res.invalid()) return nullptr;
     return cast<Decl>(res.get());
+}
+
+auto Sema::TranslateEnumDecl(ParsedEnumDecl* e, Type) -> Decl* {
+    Unreachable("Should not be translated in TranslateStmt()");
+}
+
+auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
+    Type underlying_type = Type::IntTy;
+
+    // Create and declare the enum type.
+    auto enum_type = new (*tu) EnumType(
+        *tu,
+        tu->create_scope(curr_scope()),
+        e->name,
+        underlying_type,
+        e->loc
+    );
+
+    AddDeclToScope(curr_scope(), enum_type->decl());
+
+    // Declare the enumerators, but don’t compute their values yet.
+    EnterScope scope{*this, enum_type->scope()};
+    for (auto enumerator : e->enumerators()) {
+        auto decl = new (*tu) EnumeratorDecl(
+            enum_type,
+            enumerator.name,
+            enumerator.loc
+        );
+
+        AddDeclToScope(scope.get(), decl);
+    }
+
+    return enum_type->decl();
+}
+
+void Sema::TranslateEnumerators(EnumType* e, ParsedEnumDecl* parsed) {
+    APInt next_value{unsigned(e->bit_width(*tu).bits()), 0};
+    for (auto enumerator : e->enumerators())
+        enumerator->value = tu->store_int(next_value++);
 }
 
 auto Sema::TranslateExportDecl(ParsedExportDecl*, Type) -> Decl* {

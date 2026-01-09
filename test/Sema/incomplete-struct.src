@@ -22,3 +22,15 @@ struct s {
 }
 
 proc f (with s?) {}
+
+// FIXME: This should work and not raise any errors.
+//
+// Because parameter types must be complete, we attempt to complete
+// the definition of 'foo' before translating the declaration of 'bar' when
+// we encounter the parameter declaration 'foo x' while translating 'a'; this
+// causes us to complain about 'bar' not being in scope. What we should do instead
+// is defer requiring a complete type in function parameters until we translate the
+// entire declaration.
+struct foo { bar e;  } // expected-error: Unknown symbol 'bar'
+proc a(foo x) {}
+struct bar { int x; }

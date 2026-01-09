@@ -29,6 +29,8 @@ struct EncodedSLoc {
     srcc::File::Id file = -1;
     std::ptrdiff_t offs = 0;
 };
+
+using EncodedEnumeratorDecl = std::tuple<DeclName, APInt, SLoc>;
 }
 
 class Sema::ASTWriter : public base::ser::Writer<std::endian::native> {
@@ -56,6 +58,10 @@ public:
             },
             [&](const BuiltinType* ty) {
                 *this << K::BuiltinType << ty->builtin_kind();
+            },
+            [&](const EnumType* ty) {
+                *this << K::EnumType << ty->elem() << ty->name() << ty->decl()->location()
+                      << llvm::to_vector(ty->enumerators());
             },
             [&](const IntType* ty) {
                 *this << K::IntType << ty->bit_width();
@@ -96,6 +102,11 @@ public:
         else *this << name.operator_name();
     }
 
+    void write(const APInt& val) {
+        *this << u32(val.getBitWidth()) << u32(val.getNumWords());
+        for (unsigned w = 0; w < val.getNumWords(); w++) *this << u64(val.getRawData()[w]);
+    }
+
     void write(SLoc loc) {
         EncodedSLoc e;
         if (auto f = loc.file(ctx)) {
@@ -116,6 +127,10 @@ public:
 
     void write(FieldDecl* f) {
         *this << f->type << f->offset << f->name.str() << f->location();
+    }
+
+    void write(EnumeratorDecl* e) {
+        *this << EncodedEnumeratorDecl(e->name, e->value->value(), e->location());
     }
 
     void write(const RecordLayout& l) {
@@ -247,6 +262,27 @@ public:
                 return IntType::Get(*S.tu, Read(Size));
             }
 
+            case K::EnumType: {
+                auto underlying_type = Read(Type);
+                auto name = Read(DeclName);
+                auto loc = Read(SLoc);
+
+                // The parent of this scope is irrelevant since we won’t actually do any checking
+                // or lookup *from* it.
+                auto scope = S.tu->create_scope(S.tu->global_scope());
+                auto enum_ty = new (*S.tu) EnumType(*S.tu, scope, name, underlying_type, loc);
+
+                // Add enumerators.
+                auto enums = Read(SmallVector<EncodedEnumeratorDecl>);
+                for (auto& [name, value, l] : enums) {
+                    auto decl = new (*S.tu) EnumeratorDecl(enum_ty, name, l);
+                    decl->value = S.tu->store_int(std::move(value));
+                    scope->decls_by_name[name.str()].push_back(decl);
+                }
+
+                return enum_ty;
+            }
+
             case K::ProcType: {
                 bool c_varargs = Read(bool);
                 auto cconv = Read(CallingConvention);
@@ -289,6 +325,16 @@ public:
 
     template <typename T>
     auto read() -> Result<T> { return Base::read<T>(); }
+
+
+    template <>
+    auto read<APInt>() -> Result<APInt> {
+        auto width = Read(u32);
+        auto num_words = Read(u32);
+        SmallVector<u64> words;
+        for (u32 i = 0; i < num_words; i++) words.push_back(Read(u64));
+        return APInt(width, words);
+    }
 
     template <>
     auto read<DeclName>() -> Result<DeclName> {

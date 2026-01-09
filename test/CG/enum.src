@@ -1,0 +1,27 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+enum x { a, b }
+
+x y;
+x y2 = b;
+proc p (x v) = v;
+
+// * proc __src_main external ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     store #1, i64 1, align 8
+// +     ret
+// + }
+// +
+// + proc _S1pFT1xT1xE.1 (i64 %0) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }

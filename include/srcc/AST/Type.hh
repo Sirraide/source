@@ -30,6 +30,7 @@ class FieldDecl;
 class ProcTemplateDecl;
 class TypeDecl;
 class ProcDecl;
+class EnumeratorDecl;
 class RecordLayout;
 struct BuiltinTypes;
 
@@ -402,6 +403,28 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
 };
 
+class srcc::EnumType final : public SingleElementTypeBase {
+    TypeDecl* type_decl{};
+    Scope* enum_scope{};
+
+public:
+    EnumType(TranslationUnit& tu, Scope* scope, DeclName name, Type underlying_type, SLoc loc);
+
+    /// Get the declaration of this enum.
+    auto decl() const -> TypeDecl* { return type_decl; }
+
+    /// Get all enumerators.
+    auto enumerators() const;
+
+    /// Get the name of this type.
+    auto name() const -> DeclName;
+
+    /// Get the scope of this enum.
+    auto scope() const -> Scope* { return enum_scope; }
+
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::EnumType; }
+};
+
 class srcc::OptionalType final : public SingleElementTypeBase
     , public FoldingSetNode {
     llvm::PointerIntPair<const RecordLayout*, 1> layout_and_field_index = {};
@@ -738,7 +761,7 @@ public:
 
 class srcc::StructType final : public RecordType {
 private:
-    TranslationUnit& owning_tu;
+    TranslationUnit& owning_tu; // FIXME: Move this into TypeDecl.
     TypeDecl* type_decl = nullptr;
     StructScope* struct_scope;
 

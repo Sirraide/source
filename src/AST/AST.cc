@@ -339,6 +339,11 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(ev->stmt);
         },
 
+        [&](EnumeratorDecl* e) {
+            PrintBasicHeader(e, "EnumeratorDecl");
+            print(" %4({}%) %1(=%) %5({}%)\n", e->name, e->value.has_value() ? e->value->str(true) : "(unknown value)");
+        },
+
         [&](FieldDecl* f) {
             PrintBasicHeader(e, "FieldDecl");
             print(
@@ -599,9 +604,16 @@ void Stmt::Printer::Print(Stmt* e) {
                 children.append(s->layout().fields().begin(), s->layout().fields().end());
                 children.append(s->scope()->inits.begin(), s->scope()->inits.end());
                 PrintChildren(children);
-            } else {
-                print("%3({}%) = {}\n", td->name, td->type->print());
+                return;
             }
+
+            if (auto e = dyn_cast<EnumType>(td->type)) {
+                print(" %1(enum %3({}%) : {}%)\n", e->name(), e->elem());
+                PrintChildren<Decl*>(llvm::to_vector(e->scope()->sorted_decls()));
+                return;
+            }
+
+            print(" %3({}%) %1(=%) {}\n", td->name, td->type->print());
         },
 
         [&](TypeExpr* t) {

@@ -391,7 +391,7 @@ auto CodeGen::CreateLoad(
 
 void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
     // For integer types and pointers, emit a load-store pair.
-    if (ty->is_integer_or_bool() or isa<PtrType>(ty)) {
+    if (ty->is_integer_or_bool() or isa<EnumType>(ty) or isa<PtrType>(ty)) {
         auto a = ty->align(tu);
         auto v = CreateLoad(loc, from, C(ty), a);
         CreateStore(loc, to, v, a);
@@ -601,6 +601,7 @@ auto CodeGen::GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType* {
 auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
     switch (ty->kind()) {
         case TypeBase::Kind::BuiltinType:
+        case TypeBase::Kind::EnumType:
         case TypeBase::Kind::IntType:
         case TypeBase::Kind::ProcType:
         case TypeBase::Kind::PtrType:
@@ -874,7 +875,7 @@ auto CodeGen::TryConvertToMLIRType(Type ty) -> std::optional<mlir::Type> {
     if (ty == Type::IntTy) return IntTy(tu.target().int_size());
     if (ty == Type::TreeTy) return tree_ty;
     if (ty == Type::TypeTy) return type_ty;
-    if (auto i = dyn_cast<IntType>(ty)) return IntTy(i->bit_width());
+    if (isa<EnumType, IntType>(ty)) return IntTy(ty->bit_width(tu));
 
     // Pointer types.
     if (isa<PtrType>(ty)) return ptr_ty;
@@ -1015,6 +1016,11 @@ void CodeGen::Mangler::Append(Type ty) {
         void operator()(RangeType* r) {
             M.name += "q";
             r->elem()->visit(*this);
+        }
+
+        void operator()(EnumType* ty) {
+            if (ty->name().empty()) Todo();
+            Format(M.name, "T{}{}", ty->name().str().size(), ty->name());
         }
 
         void operator()(StructType* ty) {
@@ -2120,7 +2126,7 @@ auto CodeGen::EmitDefaultInit(Type ty, mlir::Location l) -> IRValue {
     if (IsZeroSizedType(ty)) return {};
     Assert(GetEvalMode(ty) == EvalMode::Scalar, "Emitting non-srvalue on its own?");
 
-    if (ty->is_integer_or_bool()) return CreateInt(l, 0, C(ty));
+    if (ty->is_integer_or_bool() or isa<EnumType>(ty)) return CreateInt(l, 0, C(ty));
     if (isa<PtrType>(ty)) return CreateNullPointer(l);
     if (isa<SliceType>(ty)) return CreateEmptySlice(l);
     if (isa<ProcType>(ty)) return {CreateNullPointer(l), CreateNullPointer(l)};

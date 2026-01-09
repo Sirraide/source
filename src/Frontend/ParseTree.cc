@@ -237,6 +237,25 @@ ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, SLoc loc)
 // ============================================================================
 //  Declarations
 // ============================================================================
+ParsedEnumDecl::ParsedEnumDecl(
+    DeclName name,
+    ArrayRef<ParsedEnumerator> enumerators,
+    SLoc location
+) : ParsedDecl{Kind::EnumDecl, name, location}, num_enumerators{u32(enumerators.size())} {
+    llvm::uninitialized_copy(enumerators, getTrailingObjects());
+}
+
+auto ParsedEnumDecl::Create(
+    Parser& p,
+    DeclName name,
+    ArrayRef<ParsedEnumerator> enumerators,
+    SLoc location
+) -> ParsedEnumDecl* {
+    auto size = totalSizeToAlloc<ParsedEnumerator>(enumerators.size());
+    auto mem = p.allocate(size, alignof(ParsedEnumDecl));
+    return ::new (mem) ParsedEnumDecl(name, enumerators, location);
+}
+
 ParsedProcDecl::ParsedProcDecl(
     DeclName name,
     ParsedProcType* type,
@@ -395,6 +414,17 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::EmptyStmt:
             PrintHeader(s, "EmptyStmt");
             break;
+
+        case Kind::EnumDecl: {
+            auto e = cast<ParsedEnumDecl>(s);
+            PrintHeader(s, "EnumDecl");
+            SmallVector<Child> children;
+            for (auto& enumerator : e->enumerators()) children.emplace_back([&]{
+                // FIXME: Print location.
+                print("%1(Enumerator%) %4({}%)\n", enumerator.name);
+            });
+            PrintChildren<Child>(children);
+        } break;
 
         case Kind::EvalExpr: {
             auto& v = *cast<ParsedEvalExpr>(s);

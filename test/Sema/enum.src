@@ -1,0 +1,30 @@
+// V %srcc --sema --verify %s
+program test;
+
+enum x {
+    a,
+    b,
+    c,
+}
+
+x y = a;
+var y = a; // expected-error: Unknown symbol 'a'
+
+x y = x::d; // expected-error: Unknown symbol 'd'
+x y = d; // expected-error: Unknown symbol 'd'
+
+#assert x::a as int == 0;
+#assert x::b as int == 1;
+#assert x::c as int == 2;
+#assert x::c as int == 3; // expected-error: Assertion failed: 'x::c as int == 3'
+
+enum x2 {
+    a,
+    b,
+    c,
+}
+
+x y = x::a;
+x2 y = x2::a;
+x2 y = x::a; // expected-error: Cannot convert expression of type 'x' to 'x2'
+x y = x2::a; // expected-error: Cannot convert expression of type 'x2' to 'x'

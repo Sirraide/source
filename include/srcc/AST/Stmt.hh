@@ -517,7 +517,7 @@ public:
         /// This is a cast to void.
         ExplicitDiscard,
 
-        /// Cast an rvalue integer to an rvalue integer.
+        /// Cast an rvalue integer/bool/enum to an rvalue integer/bool/enum.
         Integral,
 
         /// ‘Cast’ 'nil' to an optional type; this basically just
@@ -1049,12 +1049,26 @@ public:
     [[nodiscard]] bool valid() const { return is_valid; }
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::FieldDecl;
+        return e->kind() >= Kind::EnumeratorDecl;
     }
 
     /// Visit this declaration.
     template <typename Visitor>
     auto visit(Visitor&& v) -> decltype(auto);
+};
+
+class srcc::EnumeratorDecl final : public Decl {
+public:
+    EnumType* parent;
+    std::optional<StoredInteger> value;
+
+    EnumeratorDecl(
+        EnumType* parent,
+        DeclName name,
+        SLoc location
+    ) : Decl{Kind::EnumeratorDecl, name, location}, parent{parent} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::EnumeratorDecl; }
 };
 
 class srcc::FieldDecl final : public Decl {
@@ -1083,14 +1097,14 @@ protected:
     TypeDecl(
         Kind k,
         Type type,
-        String name,
+        DeclName name,
         SLoc location
     ) : Decl{k, name, location}, type{type} {}
 
 public:
     TypeDecl(
         Type type,
-        String name,
+        DeclName name,
         SLoc location
     ) : TypeDecl{Kind::TypeDecl, type, name, location} {}
 
@@ -1576,6 +1590,12 @@ inline auto srcc::Scope::decls() {
     return decls_by_name                                                                           //
          | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; }) //
          | vws::join;
+}
+
+// And this in turn depends on Scope::decls().
+inline auto srcc::EnumType::enumerators() const {
+    return scope()->sorted_decls()
+        | vws::transform([](Decl* d) -> EnumeratorDecl* { return cast<EnumeratorDecl>(d);}) ;
 }
 
 // This requires the definition of 'FieldDecl', so put it here.

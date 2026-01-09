@@ -96,6 +96,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
             }
             Unreachable();
         },
+        [&](const EnumType* ty) { return ty->elem()->align(t); },
         [&](const IntType* ty) { return t.int_align(ty); },
         [&](const ProcType*) { return t.closure_align(); },
         [&](const PtrType*) { return t.ptr_align(); },
@@ -151,6 +152,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
             }
             Unreachable();
         },
+        [&](const EnumType*) { return true; },
         [&](const IntType*) { return true; },
         [&](const OptionalType* ty) { return true; },
         [&](const ProcType*) { return false; },
@@ -201,6 +203,7 @@ bool TypeBase::is_integer_or_bool() const {
 
 bool TypeBase::is_or_contains_pointer() const {
     return visit(utils::Overloaded{
+        [&](const EnumType*) { return false; },
         [&](const IntType*) { return false; },
         [&](const ProcType*) { return false; },
         [&](const PtrType*) { return true; },
@@ -258,6 +261,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         return s;
     };
 
+    // FIXME: Use a visitor.
     switch (kind()) {
         case Kind::ArrayType: {
             auto* arr = cast<ArrayType>(this);
@@ -276,6 +280,11 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 case BuiltinKind::Void: out += "%6(void%)"; break;
                 case BuiltinKind::Nil: out += "%6(nil%)"; break;
             }
+        } break;
+
+        case Kind::EnumType: {
+            auto* e = cast<EnumType>(this);
+            Format(out, "%6({}%)", e->decl()->name);
         } break;
 
         case Kind::IntType: {
@@ -333,6 +342,7 @@ auto TypeBase::memory_size(const Target& t) const -> Size {
 }
 
 auto TypeBase::size_impl(const Target& t) const -> Size {
+    // FIXME: Use a visitor.
     switch (type_kind) {
         case Kind::BuiltinType: {
             switch (cast<BuiltinType>(this)->builtin_kind()) {
@@ -352,6 +362,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             }
         }
 
+        case Kind::EnumType: return cast<EnumType>(this)->elem()->size_impl(t);
         case Kind::IntType: return t.int_size(cast<IntType>(this));
         case Kind::PtrType: return t.ptr_size();
         case Kind::ProcType: return t.closure_size();
@@ -405,6 +416,18 @@ void ArrayType::Profile(FoldingSetNodeID& ID, Type elem, i64 size) {
     ID.AddPointer(elem.ptr());
     ID.AddInteger(size);
 }
+
+EnumType::EnumType(
+    TranslationUnit& tu,
+    Scope* scope,
+    DeclName name,
+    Type underlying_type,
+    SLoc loc
+) : SingleElementTypeBase{Kind::EnumType, underlying_type}, enum_scope{scope} {
+    type_decl = new (tu) TypeDecl(this, name, loc);
+}
+
+auto EnumType::name() const -> DeclName { return decl()->name; }
 
 auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
     auto CreateNew = [&] { return new (mod) IntType{bits}; };
