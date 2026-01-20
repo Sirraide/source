@@ -118,7 +118,7 @@
 <decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ]
 <decl-proc>   ::= <signature> <proc-body>
 <decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
-<decl-enum>   ::= ENUM IDENT "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
+<decl-enum>   ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
 <signature>   ::= PROC [ IDENT ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }

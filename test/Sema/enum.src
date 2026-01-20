@@ -73,3 +73,15 @@ int[E4::a as int] yy;
 
 enum E5 { a = E6::a as int } // expected-error: Definition of type 'E5' depends on itself
 enum E6 { a = E5::a as int }
+
+enum E7 : i8 {
+    a = 100,
+}
+
+#assert E7.elem == i8;
+
+enum E8 : void {} // expected-error: Underyling type of enum must be an integer type, was 'void'
+enum E9 : type {} // expected-error: Underyling type of enum must be an integer type, was 'type'
+enum E10 : bool {}
+
+#assert E10.elem == bool;

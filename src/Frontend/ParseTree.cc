@@ -240,8 +240,11 @@ ParsedIntLitExpr::ParsedIntLitExpr(Parser& p, APInt value, SLoc loc)
 ParsedEnumDecl::ParsedEnumDecl(
     DeclName name,
     ArrayRef<ParsedEnumerator> enumerators,
+    Ptr<ParsedStmt> underlying_type,
     SLoc location
-) : ParsedDecl{Kind::EnumDecl, name, location}, num_enumerators{u32(enumerators.size())} {
+) : ParsedDecl{Kind::EnumDecl, name, location},
+    num_enumerators{u32(enumerators.size())},
+    underlying_type{underlying_type} {
     llvm::uninitialized_copy(enumerators, getTrailingObjects());
 }
 
@@ -249,11 +252,12 @@ auto ParsedEnumDecl::Create(
     Parser& p,
     DeclName name,
     ArrayRef<ParsedEnumerator> enumerators,
+    Ptr<ParsedStmt> underlying_type,
     SLoc location
 ) -> ParsedEnumDecl* {
     auto size = totalSizeToAlloc<ParsedEnumerator>(enumerators.size());
     auto mem = p.allocate(size, alignof(ParsedEnumDecl));
-    return ::new (mem) ParsedEnumDecl(name, enumerators, location);
+    return ::new (mem) ParsedEnumDecl(name, enumerators, underlying_type, location);
 }
 
 ParsedProcDecl::ParsedProcDecl(
@@ -417,7 +421,8 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
         case Kind::EnumDecl: {
             auto e = cast<ParsedEnumDecl>(s);
-            PrintHeader(s, "EnumDecl");
+            PrintHeader(s, "EnumDecl", not e->underlying_type);
+            if (e->underlying_type.present()) print("{}\n", e->underlying_type.get()->dump_as_type());
             SmallVector<Child> children;
             for (auto& enumerator : e->enumerators()) children.emplace_back([&]{
                 // FIXME: Print location.

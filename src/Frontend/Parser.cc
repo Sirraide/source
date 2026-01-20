@@ -1802,7 +1802,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedDeferStmt{arg, loc};
         }
 
-        // <decl-enum>  ::= ENUM IDENT "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
+        // <decl-enum>  ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
         // <enumerator> ::= IDENT [ "=" <expr> ]
         case Tk::Enum: {
             Next();
@@ -1810,6 +1810,13 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             // Parse name.
             DeclName name = tok->text;
             if (not Consume(Tk::Identifier)) Error("Expected identifier after '%1(enum%)'");
+
+            // Parse underlying type.
+            Ptr<ParsedStmt> underlying_type;
+            if (Consume(Tk::Colon)) {
+                underlying_type = ParseExpr();
+                if (not underlying_type) SkipTo(Tk::LBrace);
+            }
 
             // Parse enumerators.
             SmallVector<ParsedEnumerator> enumerators;
@@ -1830,7 +1837,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                 if (not Consume(Tk::Comma)) break;
             }
             braces.close();
-            return ParsedEnumDecl::Create(*this, name, enumerators, loc);
+            return ParsedEnumDecl::Create(*this, name, enumerators, underlying_type, loc);
         }
 
         // EXPORT <decl>

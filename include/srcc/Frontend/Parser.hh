@@ -836,14 +836,18 @@ class srcc::ParsedEnumDecl final : public ParsedDecl,
     ParsedEnumDecl(
         DeclName name,
         ArrayRef<ParsedEnumerator> enumerators,
+        Ptr<ParsedStmt> underlying_type,
         SLoc location
     );
 
 public:
+    Ptr<ParsedStmt> underlying_type;
+
     static auto Create(
         Parser& p,
         DeclName name,
         ArrayRef<ParsedEnumerator> enumerators,
+        Ptr<ParsedStmt> underlying_type,
         SLoc location
     ) -> ParsedEnumDecl*;
 

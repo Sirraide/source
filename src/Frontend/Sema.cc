@@ -4311,6 +4311,13 @@ auto Sema::TranslateEnumDecl(ParsedEnumDecl* e, Type) -> Decl* {
 
 auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
     Type underlying_type = Type::IntTy;
+    if (auto parsed_ty = e->underlying_type.get_or_null()) {
+        auto ty = TranslateType(parsed_ty);
+        if (ty) {
+            if (ty->is_integer_or_bool()) underlying_type = ty;
+            else Error(e->loc, "Underyling type of enum must be an integer type, was '{}'", ty);
+        }
+    }
 
     // Create and declare the enum type.
     auto enum_type = new (*tu) EnumType(
