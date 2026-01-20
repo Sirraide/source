@@ -821,8 +821,10 @@ public:
 
 struct srcc::ParsedEnumerator {
     DeclName name;
+    Ptr<ParsedStmt> value;
     SLoc loc;
-    ParsedEnumerator(DeclName name, SLoc loc) : name{name}, loc{loc} {}
+    ParsedEnumerator(DeclName name, Ptr<ParsedStmt> value, SLoc loc)
+        : name{name}, value{value}, loc{loc} {}
 };
 
 /// An exported declaration.

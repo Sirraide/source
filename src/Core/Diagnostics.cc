@@ -251,9 +251,9 @@ auto Diagnostic::Render(
         if (render_colours) out = text::RenderColours(use_colours, out.str().str());
 
         // Then, indent everything properly.
-        auto lines = str{out.str()}.split("\n");
-        auto count = rgs::distance(lines);
-        for (auto [i, line] : lines | vws::enumerate) {
+        auto Lines = [&] { return str{out.str()}.split("\n"); };
+        auto count = rgs::distance(Lines());
+        for (auto [i, line] : vws::enumerate(Lines())) {
             auto EmitLeading = [&](bool last_line_segment, bool segment_empty = false) {
                 StringRef leading;
                 if (

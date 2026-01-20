@@ -28,3 +28,48 @@ x y = x::a;
 x2 y = x2::a;
 x2 y = x::a; // expected-error: Cannot convert expression of type 'x' to 'x2'
 x y = x2::a; // expected-error: Cannot convert expression of type 'x2' to 'x'
+
+enum E {
+    a = 42,
+    b,
+    c = 63,
+    d = c,
+    e,
+}
+
+#assert E::a as int == 42;
+#assert E::b as int == 43;
+#assert E::c as int == 63;
+#assert E::d as int == 63;
+#assert E::e as int == 64;
+
+enum E2 { // expected-error: Definition of type 'E2' depends on itself
+    a = b,
+    b,
+}
+
+#assert E3::a as int == 42;
+#assert E3::b as int == 43;
+#assert E3::c as int == 44;
+
+enum E3 {
+    a = 42,
+    b,
+    c,
+}
+
+#assert E3::a as int == 42;
+#assert E3::b as int == 43;
+#assert E3::c as int == 44;
+
+int[E4::a as int] xx;
+
+enum E4 { // expected-error: Definition of type 'E4' depends on itself
+    a = b,
+    b,
+}
+
+int[E4::a as int] yy;
+
+enum E5 { a = E6::a as int } // expected-error: Definition of type 'E5' depends on itself
+enum E6 { a = E5::a as int }

@@ -117,6 +117,7 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* D) -> Ptr<Decl> {
                 S.imported_decls[enumerator->getCanonicalDecl()] = decl;
             }
 
+            enum_ty->finalise();
             return enum_ty->decl();
         } break;
 

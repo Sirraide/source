@@ -406,6 +406,7 @@ public:
 class srcc::EnumType final : public SingleElementTypeBase {
     TypeDecl* type_decl{};
     Scope* enum_scope{};
+    bool complete = false;
 
 public:
     EnumType(TranslationUnit& tu, Scope* scope, DeclName name, Type underlying_type, SLoc loc);
@@ -415,6 +416,12 @@ public:
 
     /// Get all enumerators.
     auto enumerators() const;
+
+    /// Mark an enum type as complete.
+    void finalise() { complete = true; }
+
+    /// Whether all enumerators have been assigned a value.
+    bool is_complete() const { return complete; }
 
     /// Get the name of this type.
     auto name() const -> DeclName;

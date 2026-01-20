@@ -341,7 +341,11 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](EnumeratorDecl* e) {
             PrintBasicHeader(e, "EnumeratorDecl");
-            print(" %4({}%) %1(=%) %5({}%)\n", e->name, e->value.has_value() ? e->value->str(true) : "(unknown value)");
+            print(
+                " %4({}%) %1(=%) %5({}%)\n",
+                e->name,
+                e->value.has_value() ? e->value->str(true) : "(unknown value)"
+            );
         },
 
         [&](FieldDecl* f) {

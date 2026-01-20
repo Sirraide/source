@@ -201,9 +201,18 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
         [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
         [&](EnumeratorDecl* e) -> Ptr<Expr> {
-            // TODO: Compute the enumeration values here if they haven’t been computed yet.
-            Assert(e->value.has_value(), "TODO");
-            return MakeConstExpr(e, eval::RValue(e->value->value(), e->parent), loc);
+            // Do NOT check if the entire enum is complete here as enumerators are allowed to
+            // depend on preceding enumerators!
+            if (not e->value.has_value()) TranslateEnumerators(e->parent);
+
+            // Within the definition of an enum, the type of its enumerators is the underlying
+            // type of the enum rather than the enum type.
+            Type ty = is_contained(type_translation_stack, e->parent) ? e->parent->elem() : e->parent;
+            return MakeConstExpr(
+                e,
+                eval::RValue(e->value->value(), ty),
+                loc
+            );
         },
         [&](LocalDecl* local) -> Ptr<Expr> {
             // Check if this variable is declared in a parent procedure and captured it
@@ -266,22 +275,8 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
 
 bool Sema::CompleteDefinition(StructType* s) {
     if (s->is_complete()) return true;
-
-    // Avoid cycles.
-    if (is_contained(struct_translation_stack, s)) {
-        Error(
-            s->decl()->location(),
-            "Definition of struct type '{}' depends on itself",
-            s
-        );
-
-        Remark("Reference cycle: {} -> {}", utils::join(struct_translation_stack, " -> "), s);
-        return false;
-    }
-
-    // Mark that we’ve started translating this.
-    struct_translation_stack.push_back(s);
-    defer { struct_translation_stack.pop_back(); };
+    auto raii = TypeTranslationRAII::Enter(*this, s, s->decl()->location());
+    if (not raii) return false;
 
     // Get the field declarations.
     auto it = pending_struct_definitions.find(s);
@@ -3966,6 +3961,23 @@ Sema::EnterScope::~EnterScope() {
     S.scope_stack.pop_back();
 }
 
+auto Sema::TypeTranslationRAII::Enter(Sema& S, Type ty, SLoc loc) -> std::optional<TypeTranslationRAII> {
+    // Avoid cycles.
+    if (is_contained(S.type_translation_stack, ty)) {
+        S.Error(loc, "Definition of type '{}' depends on itself", ty);
+        S.Remark("Reference cycle: {} -> {}", utils::join(S.type_translation_stack, " -> "), ty);
+        return std::nullopt;
+    }
+
+    // Mark that we’ve started translating this.
+    S.type_translation_stack.push_back(ty);
+    return TypeTranslationRAII{S};
+}
+
+Sema::TypeTranslationRAII::~TypeTranslationRAII() {
+    if (engaged) S.type_translation_stack.pop_back();
+}
+
 Sema::Sema(Context& ctx) : ctx(ctx) {}
 Sema::~Sema() = default;
 
@@ -4280,9 +4292,10 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     }
 
     // Complete enum definitions.
-    if (auto e = dyn_cast<ParsedEnumDecl>(parsed)) {
+    if (isa<ParsedEnumDecl>(parsed)) {
         if (not d) return nullptr;
-        TranslateEnumerators(cast<EnumType>(cast<TypeDecl>(d)->type), e);
+        auto ty = cast<EnumType>(cast<TypeDecl>(d)->type);
+        if (not ty->is_complete()) TranslateEnumerators(ty);
         return d;
     }
 
@@ -4308,6 +4321,7 @@ auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
         e->loc
     );
 
+    pending_enum_definitions[enum_type] = e;
     AddDeclToScope(curr_scope(), enum_type->decl());
 
     // Declare the enumerators, but don’t compute their values yet.
@@ -4325,10 +4339,54 @@ auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
     return enum_type->decl();
 }
 
-void Sema::TranslateEnumerators(EnumType* e, ParsedEnumDecl* parsed) {
+void Sema::TranslateEnumerators(EnumType* e) {
+    // Mark that we’re translating this enum. Fill in dummy values if we have
+    // a reference cycle.
+    auto raii = TypeTranslationRAII::Enter(*this, e, e->decl()->location());
+    if (not raii) {
+        auto zero = tu->store_int(APInt{unsigned(e->bit_width(*tu).bits()), 0});
+        for (auto enumerator : e->enumerators())
+            if (not enumerator->value)
+                enumerator->value = zero;
+
+        e->finalise();
+        return;
+    }
+
+    // Enter the scope of the enum so we can find the other enumerators.
+    EnterScope _{*this, e->scope()};
+
+    // Get the enumerators.
+    auto it = pending_enum_definitions.find(e);
+    Assert(it != pending_enum_definitions.end(), "Completing enum that we didn’t parse?");
+    auto parsed = it->second;
+    pending_enum_definitions.erase(it);
+
+    // Translate the enumerators.
     APInt next_value{unsigned(e->bit_width(*tu).bits()), 0};
-    for (auto enumerator : e->enumerators())
+    for (auto [enumerator, p] : zip(e->enumerators(), parsed->enumerators())) {
+        auto MakeInit = [&] -> bool {
+            // Try constructing a value of the underlying type.
+            if (not p.value.present()) return false;
+            auto v = TRY(TranslateExpr(p.value.get()));
+            v = TRY(BuildInitialiser(e->elem(), v, v->location()));
+
+            // Evaluate it; if this succeeds, this is the enumerator value; make sure
+            // to also compute the next value.
+            auto eval = Evaluate(v);
+            if (not eval) return false;
+            enumerator->value = tu->store_int(eval->cast<APInt>());
+            next_value = eval->cast<APInt>() + 1;
+            return true;
+        };
+
+        // FIXME: Check for overflow.
+        if (MakeInit()) continue;
         enumerator->value = tu->store_int(next_value++);
+    }
+
+    e->finalise();
+    return;
 }
 
 auto Sema::TranslateExportDecl(ParsedExportDecl*, Type) -> Decl* {

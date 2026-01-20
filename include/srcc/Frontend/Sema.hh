@@ -43,6 +43,8 @@ private:
 
     /// RAII Object to push and pop a scope.
     class [[nodiscard]] EnterScope {
+        LIBBASE_NO_COPY(EnterScope);
+
     public:
         Sema& S;
 
@@ -54,10 +56,6 @@ private:
         EnterScope(Sema& S, bool should_enter);
         EnterScope(Sema& S, Scope* scope);
         ~EnterScope();
-
-        /// Not copyable since copying scopes is nonsense.
-        EnterScope(const EnterScope&) = delete;
-        const EnterScope& operator=(const EnterScope&) = delete;
 
         /// However, we may want to pass these to functions in some cases
         /// to open a new scope or indicate that they do so.
@@ -592,6 +590,22 @@ private:
         void note_missing(SLoc match_loc) override;
     };
 
+    class TypeTranslationRAII {
+        LIBBASE_NO_COPY(TypeTranslationRAII);
+        Sema& S;
+        bool engaged = true;
+        TypeTranslationRAII(Sema& S) : S{S} {}
+
+    public:
+        TypeTranslationRAII(TypeTranslationRAII&& other)
+            : S{other.S}, engaged{std::exchange(other.engaged, false)} {}
+        TypeTranslationRAII& operator=(TypeTranslationRAII&& other)  = delete("Not move-assignable");
+        ~TypeTranslationRAII();
+
+        /// Returns std::nullopt if there is an error that prevents us from translating the type.
+        static auto Enter(Sema& S, Type ty, SLoc loc) -> std::optional<TypeTranslationRAII>;
+    };
+
     /// Hint as to what lookup is trying to find.
     ///
     /// Note that no guarantee is made that successful lookup actually
@@ -684,8 +698,13 @@ private:
     /// Struct declarations that are yet to be completed.
     DenseMap<StructType*, ParsedStructDecl*> pending_struct_definitions;
 
-    /// Stack of struct definitions we’re currently completing; this is used to report cycles.
-    SmallVector<StructType*> struct_translation_stack;
+    /// Enum declarations that are yet to be completed.
+    DenseMap<EnumType*, ParsedEnumDecl*> pending_enum_definitions;
+
+    /// Stack of type definitions we’re currently completing; this is used e.g. to report
+    /// cycles and to check if an enumerator should be of the enum’s type or the underlying
+    /// type when we build a reference to it.
+    SmallVector<Type> type_translation_stack;
 
     Sema(Context& ctx);
     ~Sema();
@@ -1116,7 +1135,7 @@ private:
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateEnumDeclInitial(ParsedEnumDecl* parsed) -> Ptr<TypeDecl>;
-    void TranslateEnumerators(EnumType* e, ParsedEnumDecl* parsed);
+    void TranslateEnumerators(EnumType* e);
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
     auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;

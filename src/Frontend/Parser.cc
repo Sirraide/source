@@ -1802,7 +1802,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             return new (*this) ParsedDeferStmt{arg, loc};
         }
 
-        // <decl-enum> ::= ENUM IDENT "{" [ IDENT { "," IDENT } [ "," ] ] "}"
+        // <decl-enum>  ::= ENUM IDENT "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
+        // <enumerator> ::= IDENT [ "=" <expr> ]
         case Tk::Enum: {
             Next();
 
@@ -1814,8 +1815,18 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             SmallVector<ParsedEnumerator> enumerators;
             BracketTracker braces{*this, Tk::LBrace};
             while (not At(Tk::RBrace, Tk::Eof)) {
-                enumerators.emplace_back(tok->text, tok->location);
-                if (not Consume(Tk::Identifier)) Error("Expected identifier after '%1(enum%)'");
+                // Enumerator name.
+                auto name = tok->text;
+                if (not Consume(Tk::Identifier)) {
+                    Error("Expected enumerator name");
+                    SkipTo(Tk::Comma, Tk::RBrace);
+                    if (not Consume(Tk::Comma)) break;
+                }
+
+                // Enumerator value.
+                Ptr<ParsedStmt> value;
+                if (Consume(Tk::Assign)) value = ParseExpr();
+                enumerators.emplace_back(name, value, tok->location);
                 if (not Consume(Tk::Comma)) break;
             }
             braces.close();

@@ -37,11 +37,11 @@ struct ZeroSized {
     void b;
 }
 
-struct Recursive { // expected-error: Definition of struct type 'Recursive' depends on itself
+struct Recursive { // expected-error: Definition of type 'Recursive' depends on itself
     Recursive r;
 }
 
-struct MutuallyRecursive1 { // expected-error: Definition of struct type 'MutuallyRecursive1' depends on itself
+struct MutuallyRecursive1 { // expected-error: Definition of type 'MutuallyRecursive1' depends on itself
     MutuallyRecursive2 r;
 }
 

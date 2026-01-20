@@ -422,6 +422,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             for (auto& enumerator : e->enumerators()) children.emplace_back([&]{
                 // FIXME: Print location.
                 print("%1(Enumerator%) %4({}%)\n", enumerator.name);
+                if (enumerator.value) PrintChildren(enumerator.value.get());
             });
             PrintChildren<Child>(children);
         } break;
