@@ -115,19 +115,20 @@ auto ParsedCallExpr::Create(
     return ::new (mem) ParsedCallExpr{callee, args, location};
 }
 
-ParsedDeclRefExpr::ParsedDeclRefExpr(ArrayRef<DeclName> names, SLoc location)
-    : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())) {
+ParsedDeclRefExpr::ParsedDeclRefExpr(InitialDREScope scope, ArrayRef<DeclName> names, SLoc location)
+    : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())), scope(scope) {
     std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects());
 }
 
 auto ParsedDeclRefExpr::Create(
     Parser& parser,
+    InitialDREScope scope,
     ArrayRef<DeclName> names,
     SLoc location
 ) -> ParsedDeclRefExpr* {
     const auto size = totalSizeToAlloc<DeclName>(names.size());
     auto mem = parser.allocate(size, alignof(ParsedDeclRefExpr));
-    return ::new (mem) ParsedDeclRefExpr{names, location};
+    return ::new (mem) ParsedDeclRefExpr{scope, names, location};
 }
 
 ParsedMatchExpr::ParsedMatchExpr(
@@ -407,6 +408,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(s);
             PrintHeader(s, "DeclRefExpr", false);
+            switch (d.scope) {
+                using enum InitialDREScope;
+                case None: break;
+                case Global: print("::");
+            }
             print("%8({}%)\n", utils::join(d.names(), "::"));
         } break;
 

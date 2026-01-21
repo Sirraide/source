@@ -431,7 +431,7 @@ auto Sema::LookUpQualifiedName(
     ArrayRef<DeclName> names,
     LookupHint hint
 ) -> LookupResult {
-    Assert(names.size() > 1, "Should not be unqualified lookup");
+    Assert(names.size() > 1, "Should not be qualified lookup");
 
     // The first segment is looked up using unqualified lookup, but don’t
     // complain immediately if we can’t find it because we also need to
@@ -2700,6 +2700,7 @@ auto Sema::BuildAssertExpr(
         // Get a procedure from the runtime.
         auto GetRuntimeSymbol = [&](String name) {
             return BuildDeclRefExpr(
+                InitialDREScope::None,
                 {DeclName("__src_runtime"), DeclName(name)},
                 loc
             ).get();
@@ -2846,7 +2847,7 @@ auto Sema::BuildBinaryExpr(
     };
 
     auto BuildCall = [&](DeclName fun) -> Ptr<Expr> {
-        auto ref = BuildDeclRefExpr(fun, loc);
+        auto ref = BuildDeclRefExpr(InitialDREScope::None, fun, loc);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
@@ -3388,8 +3389,21 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
     );
 }
 
-auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc, Type desired_type) -> Ptr<Expr> {
-    auto res = LookUpName(curr_scope(), names, loc, LookupHint::Any, false);
+auto Sema::BuildDeclRefExpr(
+    InitialDREScope initial_scope,
+    ArrayRef<DeclName> names,
+    SLoc loc,
+    Type desired_type
+) -> Ptr<Expr> {
+    Scope* scope = nullptr;
+    switch (initial_scope) {
+        case InitialDREScope::None: scope = curr_scope(); break;
+        case InitialDREScope::Global: scope = global_scope(); break;
+    }
+
+    // This does perform unqualified lookup for e.g. '::a', but that’s fine
+    // since the global scope has no parents anyway.
+    auto res = LookUpName(scope, names, loc, LookupHint::Any, false);
     if (res.successful()) return CreateReference(res.decls.front(), loc);
 
     // Overload sets are ok here.
@@ -3404,6 +3418,7 @@ auto Sema::BuildDeclRefExpr(ArrayRef<DeclName> names, SLoc loc, Type desired_typ
     // If we failed to find anything, and the desired type is an enum type, try to
     // see if this is one of its enumerators.
     if (
+        initial_scope == InitialDREScope::None and
         names.size() == 1 and
         desired_type and
         isa<EnumType>(desired_type) and
@@ -3824,7 +3839,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
 
     // Handle overloaded operators.
     if (IsUserDefinedOverloadedOperator(op, operand->type)) {
-        auto ref = BuildDeclRefExpr(DeclName(op), loc);
+        auto ref = BuildDeclRefExpr(InitialDREScope::None, DeclName(op), loc);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), operand, loc);
     }
@@ -4237,7 +4252,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
 
 /// Translate a parsed name to a reference to the declaration it references.
 auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) -> Ptr<Stmt> {
-    return BuildDeclRefExpr(parsed->names(), parsed->loc, desired_type);
+    return BuildDeclRefExpr(parsed->scope, parsed->names(), parsed->loc, desired_type);
 }
 
 /// Perform initial processing of a decl so it can be used by the rest

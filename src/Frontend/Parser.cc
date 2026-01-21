@@ -271,6 +271,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Bool:
         case Tk::Break:
         case Tk::Caret:
+        case Tk::ColonColon:
         case Tk::Continue:
         case Tk::Dollar:
         case Tk::Eval:
@@ -558,10 +559,14 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
-// <expr-decl-ref> ::= IDENTIFIER [ "::" <expr-decl-ref> ]
+// <expr-decl-ref> ::= [ "::" ] IDENTIFIER [ "::" <expr-decl-ref> ]
 auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
-    auto loc = tok->location;
     SmallVector<DeclName> strings;
+    auto scope = InitialDREScope::None;
+    auto loc = tok->location;
+    if (Consume(Tk::ColonColon))
+        scope = InitialDREScope::Global;
+
     do {
         if (not At(Tk::Identifier)) {
             Error("Expected identifier after '::'");
@@ -572,7 +577,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
         strings.push_back(tok->text);
         Next();
     } while (Consume(Tk::ColonColon));
-    return ParsedDeclRefExpr::Create(*this, strings, loc);
+    return ParsedDeclRefExpr::Create(*this, scope, strings, loc);
 }
 
 // This parses expressions and also some declarations (e.g.
@@ -724,6 +729,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             break;
 
         case Tk::Identifier:
+        case Tk::ColonColon:
             lhs = ParseDeclRefExpr();
             break;
 

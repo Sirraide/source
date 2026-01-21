@@ -81,7 +81,7 @@
 <expr-call>       ::= <expr> "(" [ <call-args> ] ")"
 <expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <macro-args> ] ")"
 <expr-continue>   ::= CONTINUE
-<expr-decl-ref>   ::= IDENT [ "::" <expr-decl-ref> ]
+<expr-decl-ref>   ::= [ "::" ] IDENT [ "::" <expr-decl-ref> ]
 <expr-eval>       ::= EVAL ( <sub-stmt> )
 <expr-inject>     ::= "#" INJECT "(" <expr> ")"
 <expr-if>         ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]

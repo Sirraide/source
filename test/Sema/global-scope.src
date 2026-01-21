@@ -1,0 +1,12 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f = 20;
+eval {
+    proc f = 22;
+    assert f() + f() == 44;
+    assert ::f() + f() == 42;
+    assert f() + ::f() == 42;
+    assert ::f() + ::f() == 40;
+    assert ::f() + ::f() == 41; // expected-error: Assertion failed: '::f() + ::f() == 41'
+}

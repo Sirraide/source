@@ -412,22 +412,37 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CallExpr; }
 };
 
+namespace srcc {
+/// The scope marker present before the first name.
+enum struct InitialDREScope : u8 {
+    None,   ///< No initial scope, e.g. 'a::b'.
+    Global, ///< Global scope, e.g. '::a::b'.
+};
+}
+
 /// A reference to a declaration.
 class srcc::ParsedDeclRefExpr final : public ParsedStmt
     , TrailingObjects<ParsedDeclRefExpr, DeclName> {
     friend TrailingObjects;
 
+public:
+
+private:
     u32 num_parts;
     auto numTrailingObjects(OverloadToken<DeclName>) -> usz { return num_parts; }
 
     ParsedDeclRefExpr(
+        InitialDREScope scope,
         ArrayRef<DeclName> names,
         SLoc location
     );
 
 public:
+    InitialDREScope scope;
+
     static auto Create(
         Parser& parser,
+        InitialDREScope scope,
         ArrayRef<DeclName> names,
         SLoc location
     ) -> ParsedDeclRefExpr*;
