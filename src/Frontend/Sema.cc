@@ -4370,7 +4370,9 @@ void Sema::TranslateEnumerators(EnumType* e) {
     pending_enum_definitions.erase(it);
 
     // Translate the enumerators.
-    APInt next_value{unsigned(e->bit_width(*tu).bits()), 0};
+    std::optional<APInt> prev_value;
+    const APInt one{unsigned(e->bit_width(*tu).bits()), 1};
+    bool overflow = false;
     for (auto [enumerator, p] : zip(e->enumerators(), parsed->enumerators())) {
         auto MakeInit = [&] -> bool {
             // Try constructing a value of the underlying type.
@@ -4382,14 +4384,44 @@ void Sema::TranslateEnumerators(EnumType* e) {
             // to also compute the next value.
             auto eval = Evaluate(v);
             if (not eval) return false;
+            overflow = false;
             enumerator->value = tu->store_int(eval->cast<APInt>());
-            next_value = eval->cast<APInt>() + 1;
+            prev_value = std::move(eval->cast<APInt>());
             return true;
         };
 
-        // FIXME: Check for overflow.
+        // If the user specified an iniitaliser, try using it.
         if (MakeInit()) continue;
-        enumerator->value = tu->store_int(next_value++);
+
+        // Otherwise, increment the previous value.
+        if (not prev_value) {
+            prev_value = APInt{unsigned(e->bit_width(*tu).bits()), 0};
+            enumerator->value = tu->store_int(*prev_value);
+            continue;
+        }
+
+        // Don’t complain about overflow more than once; keep incrementing anyway because
+        // we might have changed the previous value due to an explicit initialiser.
+        if (overflow) {
+            enumerator->value = tu->store_int(*prev_value);
+            continue;
+        }
+
+        // Ok, if we get here, it makes sense to try and increment the previous value.
+        auto next = prev_value->uadd_ov(one, overflow);
+        if (overflow) {
+            Error(
+                enumerator->location(),
+                "Value '%5({}%)' of enumerator does not fit in underlying type '{}'",
+                prev_value->zext(prev_value->getBitWidth() + 2) + 1,
+                e->elem()
+            );
+
+            enumerator->value = tu->store_int(*prev_value);
+        } else {
+            enumerator->value = tu->store_int(next);
+            prev_value = std::move(next);
+        }
     }
 
     e->finalise();

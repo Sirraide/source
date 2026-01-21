@@ -1822,6 +1822,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
             SmallVector<ParsedEnumerator> enumerators;
             BracketTracker braces{*this, Tk::LBrace};
             while (not At(Tk::RBrace, Tk::Eof)) {
+                auto loc = tok->location;
+
                 // Enumerator name.
                 auto name = tok->text;
                 if (not Consume(Tk::Identifier)) {
@@ -1833,7 +1835,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                 // Enumerator value.
                 Ptr<ParsedStmt> value;
                 if (Consume(Tk::Assign)) value = ParseExpr();
-                enumerators.emplace_back(name, value, tok->location);
+                enumerators.emplace_back(name, value, loc);
                 if (not Consume(Tk::Comma)) break;
             }
             braces.close();

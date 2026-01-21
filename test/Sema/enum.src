@@ -85,3 +85,19 @@ enum E9 : type {} // expected-error: Underyling type of enum must be an integer 
 enum E10 : bool {}
 
 #assert E10.elem == bool;
+
+enum E11 : i8 {
+    a = 255,
+    b, // expected-error: Value '256' of enumerator does not fit in underlying type 'i8'
+    c,
+    d,
+    e = 255,
+    f, // expected-error: Value '256' of enumerator does not fit in underlying type 'i8'
+}
+
+enum E12 : i16 {
+    a = 65535,
+    b, // expected-error: Value '65536' of enumerator does not fit in underlying type 'i16'
+    c,
+    d,
+}
