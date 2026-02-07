@@ -972,6 +972,14 @@ public:
         Type type,
         SLoc location
     ) : Expr{Kind::TypeExpr, Type::TypeTy, RValue, location}, value{type} {}
+
+    // The type of this is always 'type', so if you did '->type', you
+    // probably meant to do '->value'.
+    auto type() const -> Type = delete(
+        "The '->type' of a TypeExpr is always 'type'; use "
+        "'->value' or 'Type::TypeTy' instead"
+    );
+
     static bool classof(const Stmt* e) { return e->kind() == Kind::TypeExpr; }
 };
 
