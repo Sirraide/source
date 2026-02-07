@@ -55,12 +55,12 @@ write `try x.foo.bar` instead of `try (try x.foo).bar`. If you don’t want this
 behaviour, you can still write `x.foo?.bar`, i.e. we also allow postfix `?` as
 a synonym, though it only applies to one expression.
 
-Allow `in` as an overloadable operator and use it to check if e.g. a vector contains a value or 
+Allow `in` as an overloadable operator and use it to check if e.g. a vector contains a value or
 a string a character or substring (e.g. `if "foo" in s { ... }`).
 
 ## Bits
 Add a `bit` data type. It differs from `i1` in that it is packed, i.e. a `bit[32]` is 4 bytes,
-whereas an `i1[32]` is 32 bytes. 
+whereas an `i1[32]` is 32 bytes.
 
 Bit struct members are also packed by default, e.g. the size of this struct:
 ```c#
@@ -75,7 +75,7 @@ is 1 byte.
 Taking the address of a `bit`, much like taking the address of a packed struct member, is not
 supported. The `align` attribute (see below) can be used to change that.
 
-Note that taking the address of a `bit` *variable* (whether local or static) is allowed since we 
+Note that taking the address of a `bit` *variable* (whether local or static) is allowed since we
 can always allocate those in such a way that they are aligned properly. It is very unlikely that
 someone will ever allocate so many `bit`s in a single *stack frame* that they’d benefit from
 packing, and if they do, they can just use a `bit` array instead.
@@ -117,12 +117,12 @@ Whether the field *happens* to be aligned properly even if its alignment is set 
 the natural alignment is irrelevant since the compiler may reorder fields.
 
 ## Optionals
-If possible, option types (`?`) should use the padding bits of the value type to store whether the 
+If possible, option types (`?`) should use the padding bits of the value type to store whether the
 object is there or not.
 
 ## Pragma export
-`pragma export` to automatically export all following declarations in the current scope, and 
-`pragma internal` to turn it off again. Also consider an `internal` keyword to turn off exporting 
+`pragma export` to automatically export all following declarations in the current scope, and
+`pragma internal` to turn it off again. Also consider an `internal` keyword to turn off exporting
 for a specific declaration.
 
 ## For loops
@@ -142,10 +142,10 @@ For functions w/ no arguments only. ALWAYS do this if the function is not
 expressly preceded by `&`.
 
 ## `()`
-This is our equivalent of `{}`, `null`, or `nil`. No, I don’t actually like LISP. 
+This is our equivalent of `{}`, `null`, or `nil`. No, I don’t actually like LISP.
 
 ## Trivially relocatable
-A type is trivially relocatable, iff none of its fields store the `this` pointer, and none 
+A type is trivially relocatable, iff none of its fields store the `this` pointer, and none
 of its fields’ initialisers take the `this` pointer, except by `nocapture`.
 
 ## Scoped pointers
@@ -171,7 +171,7 @@ iterating downwards if the size is negative.
 `dynamic` makes this and its variant clauses equivalent to
 a ‘class hierarchy’, except that it cannot be extended at
 runtime. By adding variant clauses and no void variant clause,
-a dynamic variant is implicitly 
+a dynamic variant is implicitly
 
 The variant storage can be in a different location for individual
 variants, for instance, if there is enough space for the variant
@@ -264,13 +264,13 @@ to (the type name is ‘overloaded’, in a sense). This has two consequences.
    you have to call the initialiser explicitly.
    ```c#
    S? s = S(4);
-   var s = S(4); // For longer type names. 
+   var s = S(4); // For longer type names.
    ```
 
 2. We need some way to *actually* initialise the fields (since `S(4)` would just call)
    the initialiser again. For this `S::(4)` can be used. This might be a bit ugly, but
    you’re not supposed to use it outside of initialisers anyway.
- 
+
    To prevent accidentally running into an infinite loop in the initialiser, we disallow
    the `S()` syntax there and require writing either `S::()` or `init()` to call another
    initialiser (that is, only for the type that the initialiser belongs to; some other type,
@@ -340,7 +340,7 @@ invalid pattern is one that is not *valid*:
 - If `T` is a struct type, any bit pattern resulting from an invocation of a constructor
   of `T` followed by any number of member function calls that are passed valid arguments
   and the setting of any public members, in any order or repeated combination of the two,
-  to any valid bit patterns is valid. 
+  to any valid bit patterns is valid.
 
 (idea: choose an invalid pattern as the nil value if possible)
 
@@ -392,7 +392,7 @@ Also allow setting a type for the getter, e.g.
 // Note: ‘String’ and ‘StringView’ are strawman syntax.
 struct S {
     String x: get -> StringView = x; set = value;
-} 
+}
 ```
 
 Shorthand default syntax borrowed from C#:
@@ -411,8 +411,8 @@ discouraged.
 A property has a backing field iff the properties name is referenced by
 the getter or setter (in which case it refers to the backing field instead).
 
-To perform a recursive call to a setter or getter, call unqualified `set()` 
-or `get()` from within a setter. 
+To perform a recursive call to a setter or getter, call unqualified `set()`
+or `get()` from within a setter.
 
 ## FFI
 For C compatibility, add an implicit conversion from string literals to 'i8^'.
@@ -484,12 +484,12 @@ Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for
 
 ## Operators
 - `and` and `or` should not associate.
-- 
+-
 
 ## Variadic templates.
 A homogeneous pack can be declared with the syntax `<type> "..." [ IDENT ]`, where
 `<type>` can also be a (possibly deduced) template parameter. A heterogeneous pack
-is declared using `var` as the `<type>`. When instantiated, a homogeneous pack is 
+is declared using `var` as the `<type>`. When instantiated, a homogeneous pack is
 passed as an array, and a heterogeneous pack as a tuple, e.g.
 ```
 struct s { int x; }
@@ -522,9 +522,14 @@ proc sum (var ...vs) -> int {
 }
 ```
 
+# Immutable types
+Use `<type> val` as the syntax, e.g. `i8 val`, `int val`; this makes more sense than e.g. `val int`
+(‘int value’ vs ‘value int’), and also doesn’t run into the problem that it’s not obvious what
+`val int^` would be.
+
 # Failed Ideas
 ## Renaming copy to var
-(This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this 
+(This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this
 is probably an error. Allowing this would just be too weird...)
 
 - Rename the 'copy' intent to 'var', e.g. 'proc foo (var int s) {}'; this feels more natural
