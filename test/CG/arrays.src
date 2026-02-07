@@ -32,7 +32,7 @@ proc c {
     var x4 = i16[200](61, 75, 230, 40, 25);
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

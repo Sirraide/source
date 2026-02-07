@@ -11,26 +11,26 @@ var p2 = &p1;
 var p3 = &p2;
 sink(a.x + p1.x + p2.x + p3.x);
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
-// +     #2 = 8, align 8
-// +     #3 = 8, align 8
+// * @_S1a.1 = private 8, align 8
+// + @_S2p1.2 = private 8, align 8
+// + @_S2p2.3 = private 8, align 8
+// + @_S2p3.4 = private 8, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 1, align 8
-// +     store #1, ptr #0, align 8
-// +     store #2, ptr #1, align 8
-// +     store #3, ptr #2, align 8
-// +     %0 = load i64, #0, align 8
-// +     %1 = load ptr, #1, align 8
+// +     store @_S1a.1, i64 1, align 8
+// +     store @_S2p1.2, ptr @_S1a.1, align 8
+// +     store @_S2p2.3, ptr @_S2p1.2, align 8
+// +     store @_S2p3.4, ptr @_S2p2.3, align 8
+// +     %0 = load i64, @_S1a.1, align 8
+// +     %1 = load ptr, @_S2p1.2, align 8
 // +     %2 = load i64, %1, align 8
 // +     %3 = add i64 %0, %2
-// +     %4 = load ptr, #2, align 8
+// +     %4 = load ptr, @_S2p2.3, align 8
 // +     %5 = load ptr, %4, align 8
 // +     %6 = load i64, %5, align 8
 // +     %7 = add i64 %3, %6
-// +     %8 = load ptr, #3, align 8
+// +     %8 = load ptr, @_S2p3.4, align 8
 // +     %9 = load ptr, %8, align 8
 // +     %10 = load ptr, %9, align 8
 // +     %11 = load i64, %10, align 8

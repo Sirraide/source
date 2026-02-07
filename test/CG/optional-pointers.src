@@ -35,7 +35,7 @@ proc e {
     ^p2 = 42;
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -141,13 +141,13 @@ proc e {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1aFvE.1() #0 {
+//L + define private void @_S1aFvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -158,7 +158,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1bFvbE.2(i1 zeroext %0) #0 {
+//L + define private void @_S1bFvbE.2(i1 zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -187,7 +187,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S1cFORiORiE.3(ptr %0) #0 {
+//L + define private ptr @_S1cFORiORiE.3(ptr %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %2, align 8
 //L +   %3 = load ptr, ptr %2, align 8
@@ -195,7 +195,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1dFvE.4() #0 {
+//L + define private void @_S1dFvE.4() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -211,7 +211,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1eFvE.5() #0 {
+//L + define private void @_S1eFvE.5() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -224,7 +224,8 @@ proc e {
 //L +   ret void
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

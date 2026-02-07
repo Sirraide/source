@@ -370,7 +370,11 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](GlobalDecl* g) {
-            PrintBasicNode(e, "GlobalDecl");
+            PrintBasicHeader(e, "GlobalDecl");
+            print(" %2({}%) {}", utils::Escape(g->name.str(), false, true), g->type->print());
+            if (g->mangling_number != ManglingNumber::None) print(" %3(#{}%)", +g->mangling_number);
+            print("\n");
+            if (auto i = g->init.get_or_null()) PrintChildren(i);
         },
 
         [&](GlobalRefExpr* d) {
@@ -469,7 +473,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
             PrintBasicNode(e, "MatchExpr");
             SmallVector<Child> children;
-            if (auto c = m->control_var().get_or_null())
+            if (auto c = m->control_expr().get_or_null())
                 children.emplace_back([&, c] { Print(c); });
             for (auto& c : m->cases()) {
                 children.emplace_back([&] {
@@ -570,6 +574,11 @@ void Stmt::Printer::Print(Stmt* e) {
             if (auto expr = ret->value.get_or_null()) PrintChildren(expr);
         },
 
+        [&](SaveExpr* p) {
+            PrintBasicNode(p, "SaveExpr");
+            PrintChildren(p->expr);
+        },
+
         [&](SliceConstructExpr* s) {
             PrintBasicNode(e, "SliceConstructExpr");
             SmallVector<Stmt*, 4> children;
@@ -647,7 +656,7 @@ void Stmt::Printer::Print(Stmt* e) {
         [&](WithExpr* w) {
             PrintBasicNode(e, "WithExpr");
             SmallVector<Stmt*, 2> children;
-            if (auto var = w->temporary_var.get_or_null()) children.push_back(var);
+            children.push_back(w->object);
             children.push_back(w->body);
             PrintChildren(children);
         },

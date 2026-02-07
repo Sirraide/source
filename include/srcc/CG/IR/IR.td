@@ -121,6 +121,7 @@ def ProcOp : SRCC_Op<"proc", [
         UnitAttr:$variadic,
         UnitAttr:$noreturn,
         UnitAttr:$always_inline,
+        UnitAttr:$norecurse,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
         OptionalAttr<DictArrayAttr>:$res_attrs
     );

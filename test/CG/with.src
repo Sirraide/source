@@ -22,25 +22,26 @@ with q() {
     sink(x);
 }
 
-// * proc __src_main external ccc {
+// * @_S1a.1 = private 8, align 8
+// +
+// + proc __src_main norecurse external ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
-// +     #2 = 8, align 8
 // +
 // + entry:
-// +     store #0, i64 1, align 8
-// +     store #0, i64 4, align 8
-// +     %0 = load i64, #0, align 8
+// +     store @_S1a.1, i64 1, align 8
+// +     store @_S1a.1, i64 4, align 8
+// +     %0 = load i64, @_S1a.1, align 8
 // +     call ccc void sink(i64 %0)
-// +     store #1, i64 2, align 8
-// +     %1 = load i64, #1, align 8
+// +     store #0, i64 2, align 8
+// +     %1 = load i64, #0, align 8
 // +     call ccc void sink(i64 %1)
-// +     store #1, i64 3, align 8
-// +     %2 = load i64, #1, align 8
+// +     store #0, i64 3, align 8
+// +     %2 = load i64, #0, align 8
 // +     call ccc void sink(i64 %2)
 // +     %3 = call ccc i64 _S1qFT1sE.1()
-// +     store #2, i64 %3, align 8
-// +     %4 = load i64, #2, align 8
+// +     store #1, i64 %3, align 8
+// +     %4 = load i64, #1, align 8
 // +     call ccc void sink(i64 %4)
 // +     ret
 // + }

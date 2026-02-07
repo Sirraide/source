@@ -7,13 +7,13 @@ x y;
 x y2 = b;
 proc p (x v) = v;
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
+// * @_S1y.1 = private 8, align 8
+// + @_S2y2.2 = private 8, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 0, align 8
-// +     store #1, i64 1, align 8
+// +     store @_S1y.1, i64 0, align 8
+// +     store @_S2y2.2, i64 1, align 8
 // +     ret
 // + }
 // +

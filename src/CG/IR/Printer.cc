@@ -556,6 +556,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     if (proc.getVariadic()) out += " %1(variadic%)";
     if (proc.getNoreturn()) out += " %1(noreturn%)";
     if (proc.getAlwaysInline()) out += " %1(inline%)";
+    if (proc.getNorecurse()) out += " %1(norecurse%)";
     Format(out, " %1({}%)", stringifyLinkage(proc.getLinkage().getLinkage()));
     Format(out, " %1({}%)", stringifyCConv(proc.getCc()));
 
@@ -675,16 +676,11 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
 
         global_names[g] = g.getSymName();
 
-        // This is an external global variable.
-        Assert(
-            g.getLinkage() == LLVM::Linkage::External,
-            "TODO: Print non-external globals"
-        );
-
         Format(
             out,
-            "%3(@{}%) %1(= external %5({}%), align %({}%)%)\n",
+            "%3(@{}%) %1(= {} %5({}%), align %({}%)%)\n",
             g.getSymName(),
+            stringifyLinkage(g.getLinkage()),
             cast<LLVM::LLVMArrayType>(g.getType()).getNumElements(),
             g.getAlignment().value_or(1)
         );

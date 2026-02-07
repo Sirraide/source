@@ -250,29 +250,29 @@ LocalRefExpr::LocalRefExpr(LocalDecl* decl, ValueCategory vc, SLoc loc)
     : Expr(Kind::LocalRefExpr, decl->type, vc, loc), decl{decl} {}
 
 MatchExpr::MatchExpr(
-    Ptr<LocalDecl> control_var,
+    Ptr<Expr> control_expr,
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
     SLoc loc
 ) : Expr(Kind::MatchExpr, ty, vc, loc),
     num_cases{u32(cases.size())},
-    has_control_var(control_var.present()) {
-    if (auto c = control_var.get_or_null()) *getTrailingObjects<LocalDecl*>() = c;
+    has_control_expr(control_expr.present()) {
+    if (auto c = control_expr.get_or_null()) *getTrailingObjects<Expr*>() = c;
     std::uninitialized_copy_n(cases.begin(), cases.size(), getTrailingObjects<MatchCase>());
 }
 
 auto MatchExpr::Create(
     TranslationUnit& tu,
-    Ptr<LocalDecl> control_var,
+    Ptr<Expr> control_expr,
     Type ty,
     ValueCategory vc,
     ArrayRef<MatchCase> cases,
     SLoc loc
 ) -> MatchExpr* {
-    auto size = totalSizeToAlloc<LocalDecl*, MatchCase>(control_var.present(), cases.size());
+    auto size = totalSizeToAlloc<Expr*, MatchCase>(control_expr.present(), cases.size());
     auto mem = tu.allocate(size, alignof(MatchExpr));
-    return ::new (mem) MatchExpr{control_var, ty, vc, cases, loc};
+    return ::new (mem) MatchExpr{control_expr, ty, vc, cases, loc};
 }
 
 MemberAccessExpr::MemberAccessExpr(

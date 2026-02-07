@@ -12,27 +12,27 @@ b = &^b;
 b = ^&b;
 a = &(if true then i else i);
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
-// +     #2 = 8, align 8
+// * @_S1i.1 = private 8, align 8
+// + @_S1a.2 = private 8, align 8
+// + @_S1b.3 = private 8, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 0, align 8
-// +     store #1, ptr #0, align 8
-// +     store #2, ptr #1, align 8
-// +     %0 = load ptr, #2, align 8
+// +     store @_S1i.1, i64 0, align 8
+// +     store @_S1a.2, ptr @_S1i.1, align 8
+// +     store @_S1b.3, ptr @_S1a.2, align 8
+// +     %0 = load ptr, @_S1b.3, align 8
 // +     %1 = load ptr, %0, align 8
-// +     store #1, ptr %1, align 8
-// +     %2 = load ptr, #1, align 8
+// +     store @_S1a.2, ptr %1, align 8
+// +     %2 = load ptr, @_S1a.2, align 8
 // +     store %2, i64 4, align 8
-// +     %3 = load ptr, #2, align 8
+// +     %3 = load ptr, @_S1b.3, align 8
 // +     %4 = load ptr, %3, align 8
 // +     store %4, i64 5, align 8
-// +     %5 = load ptr, #2, align 8
-// +     store #2, ptr %5, align 8
-// +     %6 = load ptr, #2, align 8
-// +     store #2, ptr %6, align 8
-// +     store #1, ptr #0, align 8
+// +     %5 = load ptr, @_S1b.3, align 8
+// +     store @_S1b.3, ptr %5, align 8
+// +     %6 = load ptr, @_S1b.3, align 8
+// +     store @_S1b.3, ptr %6, align 8
+// +     store @_S1a.2, ptr @_S1i.1, align 8
 // +     ret
 // + }

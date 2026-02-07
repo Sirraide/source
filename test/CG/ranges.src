@@ -32,24 +32,25 @@ proc f3 {
 range<i13> x;
 var y = c();
 
-// * proc __src_main external ccc {
-// +     #0 = 4, align 2
-// +     #1 = 16, align 8
-// +     #2 = 16, align 8
+// * @_S1x.1 = private 4, align 2
+// + @_S1y.2 = private 16, align 8
+// +
+// + proc __src_main norecurse external ccc {
+// +     #0 = 16, align 8
 // +
 // + entry:
-// +     store #0, i16 0, align 2
-// +     %0 = ptradd #0, 2
+// +     store @_S1x.1, i16 0, align 2
+// +     %0 = ptradd @_S1x.1, 2
 // +     store %0, i16 0, align 2
 // +     %1 = call ccc (i64, i64) _S1cFqiE.3()
-// +     store #2, i64 %1:0, align 8
-// +     %2 = ptradd #2, 8
+// +     store #0, i64 %1:0, align 8
+// +     %2 = ptradd #0, 8
 // +     store %2, i64 %1:1, align 8
-// +     %3 = load i64, #2, align 8
-// +     %4 = ptradd #2, 8
+// +     %3 = load i64, #0, align 8
+// +     %4 = ptradd #0, 8
 // +     %5 = load i64, %4, align 8
-// +     store #1, i64 %3, align 8
-// +     %6 = ptradd #1, 8
+// +     store @_S1y.2, i64 %3, align 8
+// +     %6 = ptradd @_S1y.2, 8
 // +     store %6, i64 %5, align 8
 // +     ret
 // + }
@@ -194,31 +195,30 @@ var y = c();
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + @_S1x.1 = private global [4 x i8] undef, align 2
+//L + @_S1y.2 = private global [16 x i8] undef, align 8
+//L +
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
-//L +   %1 = alloca i8, i64 4, align 2
-//L +   %2 = alloca i8, i64 16, align 8
-//L +   %3 = alloca i8, i64 16, align 8
-//L +   store i16 0, ptr %1, align 2
-//L +   %4 = getelementptr inbounds nuw i8, ptr %1, i32 2
-//L +   store i16 0, ptr %4, align 2
-//L +   %5 = call { i64, i64 } @_S1cFqiE.3()
-//L +   %6 = extractvalue { i64, i64 } %5, 0
-//L +   %7 = extractvalue { i64, i64 } %5, 1
-//L +   store i64 %6, ptr %3, align 8
-//L +   %8 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   store i64 %7, ptr %8, align 8
-//L +   %9 = load i64, ptr %3, align 8
-//L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   %11 = load i64, ptr %10, align 8
-//L +   store i64 %9, ptr %2, align 8
-//L +   %12 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 %11, ptr %12, align 8
+//L +   %1 = alloca i8, i64 16, align 8
+//L +   store i16 0, ptr @_S1x.1, align 2
+//L +   store i16 0, ptr getelementptr inbounds nuw (i8, ptr @_S1x.1, i64 2), align 2
+//L +   %2 = call { i64, i64 } @_S1cFqiE.3()
+//L +   %3 = extractvalue { i64, i64 } %2, 0
+//L +   %4 = extractvalue { i64, i64 } %2, 1
+//L +   store i64 %3, ptr %1, align 8
+//L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 %4, ptr %5, align 8
+//L +   %6 = load i64, ptr %1, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   %8 = load i64, ptr %7, align 8
+//L +   store i64 %6, ptr @_S1y.2, align 8
+//L +   store i64 %8, ptr getelementptr inbounds nuw (i8, ptr @_S1y.2, i64 8), align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private { i64, i64 } @_S1cFqiE.3() #0 {
+//L + define private { i64, i64 } @_S1cFqiE.3() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   store i64 2, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -232,7 +232,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private { i64, i64 } @_S1aFqiqiE.1(i64 %0, i64 %1) #0 {
+//L + define private { i64, i64 } @_S1aFqiqiE.1(i64 %0, i64 %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -250,7 +250,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private { i64, i64 } @_S1bFqiqiE.2(i64 %0, i64 %1) #0 {
+//L + define private { i64, i64 } @_S1bFqiqiE.2(i64 %0, i64 %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -268,7 +268,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f1FvE.4() #0 {
+//L + define private void @_S2f1FvE.4() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -297,7 +297,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f2FvE.5() #0 {
+//L + define private void @_S2f2FvE.5() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -325,7 +325,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f3FvE.6() #0 {
+//L + define private void @_S2f3FvE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 4
 //L +   %2 = alloca i8, i64 8, align 4
 //L +   %3 = alloca i8, i64 8, align 4
@@ -352,7 +352,8 @@ var y = c();
 //L +   ret void
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

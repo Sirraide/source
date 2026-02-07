@@ -12,21 +12,21 @@ struct y { i64 a; i64 b; i64 c; }
 var c = y(1, 2, 3);
 var d = c;
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
-// +     #2 = 24, align 8
-// +     #3 = 24, align 8
+// * @_S1a.1 = private 8, align 8
+// + @_S1b.2 = private 8, align 8
+// + @_S1c.3 = private 24, align 8
+// + @_S1d.4 = private 24, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 1, align 8
-// +     copy #1 <- #0, 8
-// +     store #2, i64 1, align 8
-// +     %0 = ptradd #2, 8
+// +     store @_S1a.1, i64 1, align 8
+// +     copy @_S1b.2 <- @_S1a.1, 8
+// +     store @_S1c.3, i64 1, align 8
+// +     %0 = ptradd @_S1c.3, 8
 // +     store %0, i64 2, align 8
-// +     %1 = ptradd #2, 16
+// +     %1 = ptradd @_S1c.3, 16
 // +     store %1, i64 3, align 8
-// +     copy #3 <- #2, 24
+// +     copy @_S1d.4 <- @_S1c.3, 24
 // +     ret
 // + }
 
@@ -35,27 +35,26 @@ var d = c;
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + @_S1a.1 = private global [8 x i8] undef, align 8
+//L + @_S1b.2 = private global [8 x i8] undef, align 8
+//L + @_S1c.3 = private global [24 x i8] undef, align 8
+//L + @_S1d.4 = private global [24 x i8] undef, align 8
+//L +
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
-//L +   %1 = alloca i8, i64 8, align 8
-//L +   %2 = alloca i8, i64 8, align 8
-//L +   %3 = alloca i8, i64 24, align 8
-//L +   %4 = alloca i8, i64 24, align 8
-//L +   store i64 1, ptr %1, align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %2, ptr %1, i64 8, i1 false)
-//L +   store i64 1, ptr %3, align 8
-//L +   %5 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   store i64 2, ptr %5, align 8
-//L +   %6 = getelementptr inbounds nuw i8, ptr %3, i32 16
-//L +   store i64 3, ptr %6, align 8
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %3, i64 24, i1 false)
+//L +   store i64 1, ptr @_S1a.1, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr @_S1b.2, ptr @_S1a.1, i64 8, i1 false)
+//L +   store i64 1, ptr @_S1c.3, align 8
+//L +   store i64 2, ptr getelementptr inbounds nuw (i8, ptr @_S1c.3, i64 8), align 8
+//L +   store i64 3, ptr getelementptr inbounds nuw (i8, ptr @_S1c.3, i64 16), align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr @_S1d.4, ptr @_S1c.3, i64 24, i1 false)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
 //L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #1
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
 //L +
 //L + !llvm.module.flags = !{!0}

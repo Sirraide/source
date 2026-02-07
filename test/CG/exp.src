@@ -23,7 +23,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // + @4 = "integer overflow\00"
 // + @5 = "*\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

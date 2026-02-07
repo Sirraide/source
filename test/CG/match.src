@@ -98,7 +98,7 @@ proc f13 (int? x) = match x {
     _: x;
 };
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -370,13 +370,13 @@ proc f13 (int? x) = match x {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f1FvE.1() #0 {
+//L + define private void @_S2f1FvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 -1, ptr %2, align 1
@@ -400,7 +400,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f2FvE.2() #0 {
+//L + define private void @_S2f2FvE.2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 0, ptr %2, align 1
@@ -424,7 +424,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f3FvE.3() #0 {
+//L + define private void @_S2f3FvE.3() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 -1, ptr %2, align 1
@@ -448,7 +448,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S2f4FibbE.4(i1 zeroext %0, i1 zeroext %1) #0 {
+//L + define private i64 @_S2f4FibbE.4(i1 zeroext %0, i1 zeroext %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = alloca i8, i64 1, align 1
 //L +   %5 = sext i1 %0 to i8
@@ -482,7 +482,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f5FvE.5() #0 {
+//L + define private void @_S2f5FvE.5() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -512,7 +512,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f6FvE.6() #0 {
+//L + define private void @_S2f6FvE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 -1, ptr %2, align 1
@@ -521,7 +521,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f7FvE.7() #0 {
+//L + define private void @_S2f7FvE.7() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 -1, ptr %2, align 1
@@ -530,7 +530,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2f8FvbE.8(i1 zeroext %0) #0 {
+//L + define private void @_S2f8FvbE.8(i1 zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = sext i1 %0 to i8
@@ -543,7 +543,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S2f9FiiE.9(i64 %0) #0 {
+//L + define private i64 @_S2f9FiiE.9(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -555,7 +555,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S3f10FiiE.10(i64 %0) #0 {
+//L + define private i64 @_S3f10FiiE.10(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -588,7 +588,7 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S3f11FiiE.11(i64 %0) #0 {
+//L + define private i64 @_S3f11FiiE.11(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -600,14 +600,14 @@ proc f13 (int? x) = match x {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S3f12FiiE.12(i64 %0) #0 {
+//L + define private i64 @_S3f12FiiE.12(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @_S3f13FiOiE.13(i64 %0, i8 %1) #0 {
+//L + define private i64 @_S3f13FiOiE.13(i64 %0, i8 %1) #1 {
 //L +   %3 = alloca i8, i64 9, align 8
 //L +   store i64 %0, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
@@ -632,7 +632,8 @@ proc f13 (int? x) = match x {
 //L +   ret i64 %15
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

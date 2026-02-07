@@ -771,17 +771,17 @@ struct srcc::MatchCase {
 };
 
 class srcc::MatchExpr final : public Expr,
-    TrailingObjects<MatchExpr, LocalDecl*, MatchCase> {
+    TrailingObjects<MatchExpr, Expr*, MatchCase> {
     friend TrailingObjects;
     const u32 num_cases : 31;
-    const u32 has_control_var : 1;
+    const u32 has_control_expr : 1;
 
-    auto numTrailingObjects(OverloadToken<LocalDecl*>) const -> usz { return has_control_var; }
+    auto numTrailingObjects(OverloadToken<Expr*>) const -> usz { return has_control_expr; }
     auto numTrailingObjects(OverloadToken<MatchCase>) const -> usz { return num_cases; }
 
 private:
     MatchExpr(
-        Ptr<LocalDecl> control_var,
+        Ptr<Expr> control_expr,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
@@ -791,7 +791,7 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
-        Ptr<LocalDecl> control_var,
+        Ptr<Expr> control_expr,
         Type ty,
         ValueCategory vc,
         ArrayRef<MatchCase> cases,
@@ -802,8 +802,8 @@ public:
         return getTrailingObjects<MatchCase>(num_cases);
     }
 
-    [[nodiscard]] auto control_var() -> Ptr<LocalDecl> {
-        return has_control_var ? *getTrailingObjects<LocalDecl*>() : nullptr;
+    [[nodiscard]] auto control_expr() -> Ptr<Expr> {
+        return has_control_expr ? *getTrailingObjects<Expr*>() : nullptr;
     }
 
     static auto classof(const Stmt* s) { return s->kind() == Kind::MatchExpr; }
@@ -885,6 +885,19 @@ public:
     auto return_type() const -> Type;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcRefExpr; }
+};
+
+/// Expression that can be referenced multiple times but is only
+/// evaluated once per procedure.
+class srcc::SaveExpr final : public Expr {
+public:
+    Expr* expr;
+
+    SaveExpr(Expr* expr, SLoc loc)
+        : Expr{Kind::SaveExpr, expr->type, expr->value_category, loc},
+          expr{expr} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::SaveExpr; }
 };
 
 class srcc::SliceConstructExpr final : public Expr {
@@ -1005,15 +1018,15 @@ public:
 
 class srcc::WithExpr : public Expr {
 public:
-    Ptr<LocalDecl> temporary_var;
+    Expr* object;
     Stmt* body;
 
     WithExpr(
-        Ptr<LocalDecl> temporary_var,
+        Expr* object,
         Stmt* body,
         SLoc location
     ) : Expr{Kind::WithExpr, body->type_or_void(), body->value_category_or_rvalue(), location},
-        temporary_var{temporary_var},
+        object{object},
         body{body} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::WithExpr; }
@@ -1352,6 +1365,12 @@ public:
 /// Global variable declaration.
 class srcc::GlobalDecl final : public ObjectDecl {
 public:
+    /// Initialiser.
+    Ptr<Expr> init;
+
+    /// Mangling number.
+    ManglingNumber mangling_number = ManglingNumber::None;
+
     GlobalDecl(
         TranslationUnit* owner,
         ModuleDecl* imported_from_module,
@@ -1361,6 +1380,9 @@ public:
         Mangling mangling,
         SLoc location
     );
+
+    /// Set the initialiser of this declaration.
+    void set_init(Ptr<Expr> expr) { init = expr; }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::GlobalDecl; }
 };
@@ -1556,10 +1578,10 @@ public:
 
 class srcc::WithFieldRefDecl final : public Decl {
 public:
-    LocalDecl* base;
+    SaveExpr* base;
     FieldDecl* referenced_field;
 
-    WithFieldRefDecl(LocalDecl* base, FieldDecl* referenced_field, SLoc location)
+    WithFieldRefDecl(SaveExpr* base, FieldDecl* referenced_field, SLoc location)
         : Decl{Kind::WithFieldRefDecl, referenced_field->name, location},
           base{base},
           referenced_field{referenced_field} {}
@@ -1569,11 +1591,11 @@ public:
 
 class srcc::WithBuiltinFieldRefDecl final : public Decl {
 public:
-    LocalDecl* base;
+    SaveExpr* base;
     BuiltinMemberAccessExpr::AccessKind referenced_field;
 
     WithBuiltinFieldRefDecl(
-        LocalDecl* base,
+        SaveExpr* base,
         BuiltinMemberAccessExpr::AccessKind referenced_field,
         SLoc location
     ) : Decl{
@@ -1584,6 +1606,38 @@ public:
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::WithBuiltinFieldRefDecl; }
 };
+
+namespace srcc {
+/// This is a hack because LocalDecl and GlobalDecl don't have a common base class;
+///
+/// FIXME: Actually make a 'VarDecl' base class and make all the 'ObjectDecl' stuff
+/// a separate mixing class.
+struct AnyVarDecl {
+    llvm::PointerUnion<LocalDecl*, GlobalDecl*> ptr;
+    AnyVarDecl() : ptr{nullptr} {}
+    AnyVarDecl(LocalDecl* ld) : ptr{ld} {}
+    AnyVarDecl(GlobalDecl* gd) : ptr{gd} {}
+
+    auto decl() -> Decl* {
+        if (auto l = dyn_cast<LocalDecl*>(ptr)) return l;
+        else return cast<GlobalDecl*>(ptr);
+    }
+
+    void set_init(Ptr<Expr> expr) {
+        if (auto l = dyn_cast<LocalDecl*>(ptr)) l->set_init(expr);
+        else cast<GlobalDecl*>(ptr)->set_init(expr);
+    }
+
+    auto set_invalid() -> Decl* {
+        return decl()->set_invalid();
+    }
+
+    auto type() -> Type& {
+        if (auto l = dyn_cast<LocalDecl*>(ptr)) return l->type;
+        else return cast<GlobalDecl*>(ptr)->type;
+    }
+};
+}
 
 // This can only be defined here because it needs to know how big 'Decl' is.
 inline auto srcc::Scope::decls() {

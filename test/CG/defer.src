@@ -102,7 +102,7 @@ proc f10 {
     q(6);
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

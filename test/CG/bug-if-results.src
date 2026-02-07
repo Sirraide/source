@@ -22,7 +22,7 @@ proc f (bool b) {
     }
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

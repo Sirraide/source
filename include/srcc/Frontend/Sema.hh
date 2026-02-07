@@ -673,8 +673,9 @@ private:
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
-    /// Next mangling number to use for procedures.
+    /// Next mangling number to use for procedures/globals.
     ManglingNumber next_proc_mangling_number = ManglingNumber(1);
+    ManglingNumber next_global_mangling_number = ManglingNumber(1);
 
     /// Whether were are inside of an eval.
     bool inside_eval = false;
@@ -746,10 +747,10 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Add an object to the with stack.
-    void AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with);
+    void AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with);
 
     /// Add an initialiser to a variable declaration.
-    void AddInitialiserToDecl(LocalDecl* d, Ptr<Expr> init);
+    void AddInitialiserToDecl(AnyVarDecl d, Ptr<Expr> init);
 
     /// Called after a parsed module is added. Returns the same module
     /// for convenience. If 'translate' is true, the module’s contents
@@ -1030,11 +1031,6 @@ private:
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
 
-    /// Materialise a temporary value and create a variable to store it;
-    /// returns a reference to the variable. If 'expr' already is a variable,
-    /// no new variable is created.
-    [[nodiscard]] auto MaterialiseVariable(Expr* expr) -> LocalDecl*;
-
     /// Mark that a number of match cases are unreachable.
     ///
     /// \param it The last case that can still be matched.
@@ -1067,6 +1063,9 @@ private:
 
     /// Whether a procedure requires a mangling number.
     bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
+
+    /// Create a SaveExpr wrapping an expression.
+    auto Save(Expr* s) -> SaveExpr*;
 
     /// Substitute types in a procedure template.
     auto SubstituteTemplate(

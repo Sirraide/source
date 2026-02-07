@@ -14,29 +14,29 @@ int[] sa;
 int[] sb;
 sa >< sb;
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
-// +     #1 = 8, align 8
-// +     #2 = 16, align 8
-// +     #3 = 16, align 8
+// * @_S1a.1 = private 8, align 8
+// + @_S1b.2 = private 8, align 8
+// + @_S2sa.3 = private 16, align 8
+// + @_S2sb.4 = private 16, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 0, align 8
-// +     store #1, i64 0, align 8
-// +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #0 dereferenceable 8)
-// +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr #0 dereferenceable 8, ptr #1 dereferenceable 8)
+// +     store @_S1a.1, i64 0, align 8
+// +     store @_S1b.2, i64 0, align 8
+// +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr @_S1a.1 dereferenceable 8, ptr @_S1a.1 dereferenceable 8)
+// +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr @_S1a.1 dereferenceable 8, ptr @_S1b.2 dereferenceable 8)
 // +     %0 = call ccc zeroext i1 x()
-// +     %1 = select %0, ptr #0, #1
+// +     %1 = select %0, ptr @_S1a.1, @_S1b.2
 // +     %2 = call ccc zeroext i1 x()
-// +     %3 = select %2, ptr #1, #0
+// +     %3 = select %2, ptr @_S1b.2, @_S1a.1
 // +     call ccc void _S$11__srcc_swapFvx2ix2iE(ptr %1 dereferenceable 8, ptr %3 dereferenceable 8)
-// +     store #2, ptr nil, align 8
-// +     %4 = ptradd #2, 8
+// +     store @_S2sa.3, ptr nil, align 8
+// +     %4 = ptradd @_S2sa.3, 8
 // +     store %4, i64 0, align 8
-// +     store #3, ptr nil, align 8
-// +     %5 = ptradd #3, 8
+// +     store @_S2sb.4, ptr nil, align 8
+// +     %5 = ptradd @_S2sb.4, 8
 // +     store %5, i64 0, align 8
-// +     call ccc void _S$11__srcc_swapFvx2Six2SiE(ptr #2 dereferenceable 16, ptr #3 dereferenceable 16)
+// +     call ccc void _S$11__srcc_swapFvx2Six2SiE(ptr @_S2sa.3 dereferenceable 16, ptr @_S2sb.4 dereferenceable 16)
 // +     ret
 // + }
 // +
@@ -85,71 +85,67 @@ sa >< sb;
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + @_S1a.1 = private global [8 x i8] undef, align 8
+//L + @_S1b.2 = private global [8 x i8] undef, align 8
+//L + @_S2sa.3 = private global [16 x i8] undef, align 8
+//L + @_S2sb.4 = private global [16 x i8] undef, align 8
+//L +
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
-//L +   %5 = alloca i8, i64 8, align 8
-//L +   %6 = alloca i8, i64 8, align 8
-//L +   %7 = alloca i8, i64 16, align 8
-//L +   %8 = alloca i8, i64 16, align 8
-//L +   store i64 0, ptr %5, align 8
-//L +   store i64 0, ptr %6, align 8
-//L +   %9 = load i64, ptr %5, align 8
-//L +   store i64 %9, ptr %2, align 8
-//L +   %10 = load i64, ptr %5, align 8
-//L +   store i64 %10, ptr %5, align 8
-//L +   %11 = load i64, ptr %2, align 8
-//L +   store i64 %11, ptr %5, align 8
-//L +   %12 = load i64, ptr %5, align 8
-//L +   store i64 %12, ptr %3, align 8
-//L +   %13 = load i64, ptr %6, align 8
-//L +   store i64 %13, ptr %5, align 8
-//L +   %14 = load i64, ptr %3, align 8
-//L +   store i64 %14, ptr %6, align 8
-//L +   %15 = call zeroext i1 @x()
-//L +   %16 = select i1 %15, ptr %5, ptr %6
-//L +   %17 = call zeroext i1 @x()
-//L +   %18 = select i1 %17, ptr %6, ptr %5
-//L +   %19 = load i64, ptr %16, align 8
-//L +   store i64 %19, ptr %4, align 8
-//L +   %20 = load i64, ptr %18, align 8
-//L +   store i64 %20, ptr %16, align 8
-//L +   %21 = load i64, ptr %4, align 8
-//L +   store i64 %21, ptr %18, align 8
-//L +   store ptr null, ptr %7, align 8
-//L +   %22 = getelementptr inbounds nuw i8, ptr %7, i32 8
-//L +   store i64 0, ptr %22, align 8
-//L +   store ptr null, ptr %8, align 8
-//L +   %23 = getelementptr inbounds nuw i8, ptr %8, i32 8
-//L +   store i64 0, ptr %23, align 8
-//L +   %24 = load ptr, ptr %7, align 8
-//L +   %25 = getelementptr inbounds nuw i8, ptr %7, i32 8
-//L +   %26 = load i64, ptr %25, align 8
-//L +   store ptr %24, ptr %1, align 8
-//L +   %27 = getelementptr inbounds nuw i8, ptr %1, i32 8
-//L +   store i64 %26, ptr %27, align 8
-//L +   %28 = load ptr, ptr %8, align 8
-//L +   %29 = getelementptr inbounds nuw i8, ptr %8, i32 8
-//L +   %30 = load i64, ptr %29, align 8
-//L +   store ptr %28, ptr %7, align 8
-//L +   %31 = getelementptr inbounds nuw i8, ptr %7, i32 8
-//L +   store i64 %30, ptr %31, align 8
-//L +   %32 = load ptr, ptr %1, align 8
-//L +   %33 = getelementptr inbounds nuw i8, ptr %1, i32 8
-//L +   %34 = load i64, ptr %33, align 8
-//L +   store ptr %32, ptr %8, align 8
-//L +   %35 = getelementptr inbounds nuw i8, ptr %8, i32 8
-//L +   store i64 %34, ptr %35, align 8
+//L +   store i64 0, ptr @_S1a.1, align 8
+//L +   store i64 0, ptr @_S1b.2, align 8
+//L +   %5 = load i64, ptr @_S1a.1, align 8
+//L +   store i64 %5, ptr %2, align 8
+//L +   %6 = load i64, ptr @_S1a.1, align 8
+//L +   store i64 %6, ptr @_S1a.1, align 8
+//L +   %7 = load i64, ptr %2, align 8
+//L +   store i64 %7, ptr @_S1a.1, align 8
+//L +   %8 = load i64, ptr @_S1a.1, align 8
+//L +   store i64 %8, ptr %3, align 8
+//L +   %9 = load i64, ptr @_S1b.2, align 8
+//L +   store i64 %9, ptr @_S1a.1, align 8
+//L +   %10 = load i64, ptr %3, align 8
+//L +   store i64 %10, ptr @_S1b.2, align 8
+//L +   %11 = call zeroext i1 @x()
+//L +   %12 = select i1 %11, ptr @_S1a.1, ptr @_S1b.2
+//L +   %13 = call zeroext i1 @x()
+//L +   %14 = select i1 %13, ptr @_S1b.2, ptr @_S1a.1
+//L +   %15 = load i64, ptr %12, align 8
+//L +   store i64 %15, ptr %4, align 8
+//L +   %16 = load i64, ptr %14, align 8
+//L +   store i64 %16, ptr %12, align 8
+//L +   %17 = load i64, ptr %4, align 8
+//L +   store i64 %17, ptr %14, align 8
+//L +   store ptr null, ptr @_S2sa.3, align 8
+//L +   store i64 0, ptr getelementptr inbounds nuw (i8, ptr @_S2sa.3, i64 8), align 8
+//L +   store ptr null, ptr @_S2sb.4, align 8
+//L +   store i64 0, ptr getelementptr inbounds nuw (i8, ptr @_S2sb.4, i64 8), align 8
+//L +   %18 = load ptr, ptr @_S2sa.3, align 8
+//L +   %19 = load i64, ptr getelementptr inbounds nuw (i8, ptr @_S2sa.3, i64 8), align 8
+//L +   store ptr %18, ptr %1, align 8
+//L +   %20 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 %19, ptr %20, align 8
+//L +   %21 = load ptr, ptr @_S2sb.4, align 8
+//L +   %22 = load i64, ptr getelementptr inbounds nuw (i8, ptr @_S2sb.4, i64 8), align 8
+//L +   store ptr %21, ptr @_S2sa.3, align 8
+//L +   store i64 %22, ptr getelementptr inbounds nuw (i8, ptr @_S2sa.3, i64 8), align 8
+//L +   %23 = load ptr, ptr %1, align 8
+//L +   %24 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   %25 = load i64, ptr %24, align 8
+//L +   store ptr %23, ptr @_S2sb.4, align 8
+//L +   store i64 %25, ptr getelementptr inbounds nuw (i8, ptr @_S2sb.4, i64 8), align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare zeroext i1 @x() #0
+//L + declare zeroext i1 @x() #1
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

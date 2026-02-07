@@ -924,29 +924,38 @@ struct CodeGen::Mangler {
     CodeGen& CG;
     SmallString<256> name;
 
-    explicit Mangler(CodeGen& CG, ProcDecl* proc) : CG(CG) {
+    explicit Mangler(CodeGen& CG, ObjectDecl* obj) : CG(CG) {
         name = "_S";
 
-        if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(proc->imported_from_module)) {
+        if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(obj->imported_from_module)) {
             name += "M";
             Append(m->linkage_name);
             name += "$";
-        } else if (CG.tu.is_module and proc->linkage == Linkage::Exported) {
+        } else if (CG.tu.is_module and obj->linkage == Linkage::Exported) {
             name += "M";
             Append(CG.tu.name);
             name += "$";
         }
 
-        for (auto p : proc->parents_top_down()) {
-            Append(p->name.str());
-            name += "$";
+        if (auto proc = dyn_cast<ProcDecl>(obj)) {
+            for (auto p : proc->parents_top_down()) {
+                Append(p->name.str());
+                name += "$";
+            }
+
+            Append(proc->name.str());
+            Append(proc->type);
+
+            if (proc->props.mangling_number != ManglingNumber::None)
+                Format(name, ".{}", +proc->props.mangling_number);
+
+            return;
         }
 
-        Append(proc->name.str());
-        Append(proc->type);
-
-        if (proc->props.mangling_number != ManglingNumber::None)
-            Format(name, ".{}", +proc->props.mangling_number);
+        auto global = cast<GlobalDecl>(obj);
+        Append(global->name.str());
+        if (global->mangling_number != ManglingNumber::None)
+            Format(name, ".{}", +global->mangling_number);
     }
 
     void Append(StringRef s);
@@ -1038,29 +1047,24 @@ void CodeGen::Mangler::Append(Type ty) {
     ty->visit(Visitor{*this});
 }
 
-auto CodeGen::MangledName(ProcDecl* proc) -> String {
-    if (proc->mangling == Mangling::None) return proc->name.str();
+auto CodeGen::MangledName(ObjectDecl* obj) -> String {
+    if (obj->mangling == Mangling::None) return obj->name.str();
 
     // Maybe we’ve already cached this?
-    auto it = mangled_names.find(proc);
+    auto it = mangled_names.find(obj);
     if (it != mangled_names.end()) return it->second;
 
     // Compute it.
     auto name = [&] -> SmallString<256> {
-        switch (proc->mangling) {
+        switch (obj->mangling) {
             case Mangling::None: Unreachable();
-            case Mangling::Source: return std::move(Mangler(*this, proc).name);
+            case Mangling::Source: return std::move(Mangler(*this, obj).name);
             case Mangling::CXX: Todo("Mangle C++ function name");
         }
         Unreachable("Invalid mangling");
     }();
 
-    return mangled_names[proc] = tu.save(name);
-}
-
-auto CodeGen::MangledName(GlobalDecl* g) -> String {
-    if (g->mangling == Mangling::None) return g->name.str();
-    Todo();
+    return mangled_names[obj] = tu.save(name);
 }
 
 // ============================================================================
@@ -1794,6 +1798,17 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
     for (auto s : expr->stmts()) {
         // Initialise variables.
         if (auto var = dyn_cast<LocalDecl>(s)) EmitLocal(var);
+        if (auto var = dyn_cast<GlobalDecl>(s)) {
+            Assert(var->init.present(), "Sema should always create an initialiser for variables");
+            if (IsZeroSizedType(var->type)) {
+                Emit(var->init.get());
+                continue;
+            }
+
+            auto g = EmitGlobal(var);
+            EmitRValue(LLVM::AddressOfOp::create(*this, C(var->location()), g), var->init.get());
+            continue;
+        }
 
         // Emitting any other declarations is a no-op. So is emitting constant
         // expressions that are unused.
@@ -2270,22 +2285,30 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     return {};
 }
 
-auto CodeGen::EmitGlobalRefExpr(GlobalRefExpr* expr) -> IRValue {
-    auto& g = global_vars[expr->decl];
+auto CodeGen::EmitGlobal(GlobalDecl* decl) -> mlir::LLVM::GlobalOp {
+    Assert(not IsZeroSizedType(decl->type));
+    auto& g = global_vars[decl];
     if (not g) {
         InsertionGuard _{*this};
         SetInsertPointAfterLastOpOfTypeIn<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
         g = LLVM::GlobalOp::create(
             *this,
-            C(expr->decl->location()),
-            ConvertToByteArrayType(expr->decl->type),
+            C(decl->location()),
+            ConvertToByteArrayType(decl->type),
             false,
-            LLVM::Linkage::External,
-            MangledName(expr->decl),
+            C(decl->linkage),
+            MangledName(decl),
             mlir::Attribute(),
-            expr->decl->type->align(tu).value().bytes()
+            decl->type->align(tu).value().bytes()
         );
+        global_vars_reverse_lookup[g] = decl;
     }
+    return g;
+}
+
+auto CodeGen::EmitGlobalRefExpr(GlobalRefExpr* expr) -> IRValue {
+    if (IsZeroSizedType(expr->type)) return {};
+    auto g = EmitGlobal(expr->decl);
     return LLVM::AddressOfOp::create(*this, C(expr->location()), g);
 }
 
@@ -2454,14 +2477,14 @@ auto CodeGen::EmitLoopExpr(LoopExpr* stmt) -> IRValue {
 auto CodeGen::EmitMatchExpr(MatchExpr* expr) -> IRValue {
     // If there are no cases at all, just emit the variable.
     if (expr->cases().empty()) {
-        if (auto var = expr->control_var().get_or_null()) EmitWithCleanup(var);
+        if (auto e = expr->control_expr().get_or_null()) EmitWithCleanup(e);
         return {};
     }
 
     // Otherwise, at least one case must be reachable.
     EnterCleanupScope _{*this};
     Assert(llvm::any_of(expr->cases(), [](auto& c) { return not c.unreachable; }));
-    if (auto var = expr->control_var().get_or_null()) EmitLocal(var);
+    if (auto e = expr->control_expr().get_or_null()) Emit(e);
     auto join = CreateBlock();
     if (not IsZeroSizedType(expr->type)) {
         join->addArgument(
@@ -2636,6 +2659,9 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
             auto l = C(m->location());
             ir::CallOp::create(*this, l, ir::ProcRefOp::create(*this, l, init));
         }
+
+        // The initialiser procedure is never called recursively.
+        curr.proc.setNorecurse(true);
     }
 
     // Lower parameters.
@@ -2689,6 +2715,15 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
     auto ret_vals = abi().lower_direct_return(*this, l, val);
     CreateReturn(l, llvm::to_vector(ret_vals | vws::transform(&abi::Arg::value)));
     return {};
+}
+
+auto CodeGen::EmitSaveExpr(SaveExpr* expr) -> IRValue {
+    if (auto it = curr.saved_exprs.find(expr); it != curr.saved_exprs.end())
+        return it->second;
+
+    auto val = Emit(expr->expr);
+    curr.saved_exprs.try_emplace(expr, val);
+    return val;
 }
 
 auto CodeGen::EmitSliceConstructExpr(SliceConstructExpr* expr) -> IRValue {
@@ -2844,7 +2879,7 @@ auto CodeGen::EmitWhileStmt(WhileStmt* stmt) -> IRValue {
 
 auto CodeGen::EmitWithExpr(WithExpr* expr) -> IRValue {
     EnterCleanupScope _{*this};
-    if (auto var = expr->temporary_var.get_or_null()) EmitLocal(var);
+    Emit(expr->object);
     return Emit(expr->body);
 }
 
@@ -2985,6 +3020,12 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     // Run canonicalisation etc.
     if (not finalise_for_constant_evaluation(vm_entry_point)) return nullptr;
     return vm_entry_point;
+}
+
+auto CodeGen::lookup(mlir::LLVM::GlobalOp op) -> Ptr<GlobalDecl> {
+    auto it = global_vars_reverse_lookup.find(op);
+    if (it != global_vars_reverse_lookup.end()) return it->second;
+    return nullptr;
 }
 
 auto CodeGen::lookup(ir::ProcOp op) -> Ptr<ProcDecl> {

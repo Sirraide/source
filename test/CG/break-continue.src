@@ -125,7 +125,7 @@ proc p13 {
 
 // * @0 = "123\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

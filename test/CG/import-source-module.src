@@ -8,7 +8,7 @@ import testmodule;
 testmodule::hello();
 
 // * Running module initialiser...
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     call ccc void __src_static_init.testmodule()
 // +     call ccc void _SM10testmodule$5helloFvE.1()

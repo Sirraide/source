@@ -12,22 +12,22 @@ x(&a2);
 x(b);
 x(b2);
 
-// * proc __src_main external ccc {
-// +     #0 = 32, align 8
-// +     #1 = 128, align 8
-// +     #2 = 8, align 8
-// +     #3 = 8, align 8
+// * @_S1a.1 = private 32, align 8
+// + @_S2a2.2 = private 128, align 8
+// + @_S1b.3 = private 8, align 8
+// + @_S2b2.4 = private 8, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     set ptr #0, i8 0, i64 32
-// +     set ptr #1, i8 0, i64 128
-// +     store #2, ptr #0, align 8
-// +     store #3, ptr #1, align 8
-// +     call ccc void x(ptr #0)
-// +     call ccc void x(ptr #1)
-// +     %0 = load ptr, #2, align 8
+// +     set ptr @_S1a.1, i8 0, i64 32
+// +     set ptr @_S2a2.2, i8 0, i64 128
+// +     store @_S1b.3, ptr @_S1a.1, align 8
+// +     store @_S2b2.4, ptr @_S2a2.2, align 8
+// +     call ccc void x(ptr @_S1a.1)
+// +     call ccc void x(ptr @_S2a2.2)
+// +     %0 = load ptr, @_S1b.3, align 8
 // +     call ccc void x(ptr %0)
-// +     %1 = load ptr, #3, align 8
+// +     %1 = load ptr, @_S2b2.4, align 8
 // +     call ccc void x(ptr %1)
 // +     ret
 // + }

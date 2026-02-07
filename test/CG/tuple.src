@@ -109,7 +109,7 @@ proc f9 nomangle {
     sink(x7);
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -422,13 +422,13 @@ proc f9 nomangle {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f() #0 {
+//L + define private i64 @f() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 1, ptr %1, align 8
 //L +   %2 = load i64, ptr %1, align 8
@@ -436,7 +436,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f1() #0 {
+//L + define private void @f1() #1 {
 //L +   %1 = alloca i8, i64 24, align 8
 //L +   store i64 1, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -454,10 +454,10 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @sink() #0
+//L + declare void @sink() #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f2() #0 {
+//L + define private void @f2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -471,7 +471,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f3() #0 {
+//L + define private void @f3() #1 {
 //L +   %1 = alloca i8, i64 1, align 1
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 1, align 1
@@ -485,7 +485,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f4() #0 {
+//L + define private void @f4() #1 {
 //L +   %1 = alloca i8, i64 9, align 8
 //L +   %2 = alloca i8, i64 9, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 9, i1 false)
@@ -498,7 +498,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @broadcast() #0 {
+//L + define private void @broadcast() #1 {
 //L +   %1 = alloca i8, i64 32, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   br label %3
@@ -534,7 +534,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f5() #0 {
+//L + define private void @f5() #1 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   %2 = alloca i8, i64 40, align 8
 //L +   %3 = alloca i8, i64 40, align 8
@@ -581,7 +581,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f6() #0 {
+//L + define private void @f6() #1 {
 //L +   %1 = alloca i8, i64 48, align 8
 //L +   %2 = alloca i8, i64 48, align 8
 //L +   %3 = alloca i8, i64 48, align 8
@@ -646,7 +646,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f7() #0 {
+//L + define private void @f7() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -666,7 +666,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f8() #0 {
+//L + define private void @f8() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -713,7 +713,7 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f9() #0 {
+//L + define private void @f9() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = call i64 @f()
@@ -725,10 +725,11 @@ proc f9 nomangle {
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
-//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { nounwind }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
+//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

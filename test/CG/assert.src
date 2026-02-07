@@ -12,7 +12,7 @@ proc foo(in int a, in int b) {
 // + @2 = "a should be greater than 42\00"
 // + @3 = "a > 42\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -110,13 +110,13 @@ proc foo(in int a, in int b) {
 //L + @__srcc_str.2 = private constant [28 x i8] c"a should be greater than 42\00", align 1
 //L + @__srcc_str.3 = private constant [7 x i8] c"a > 42\00", align 1
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S3fooFvxixiE.1(i64 %0, i64 %1) #0 {
+//L + define private void @_S3fooFvxixiE.1(i64 %0, i64 %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8
@@ -184,7 +184,8 @@ proc foo(in int a, in int b) {
 //L +
 //L + declare void @__src_assert_fail(ptr)
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

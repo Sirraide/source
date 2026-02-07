@@ -26,7 +26,7 @@ proc x(int a, int b, bool d) {
 // + @2 = "%s\00"
 // + @3 = "\0A\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     call ccc void _S1xFviibE.1(i64 1, i64 2, i1 true zeroext)
 // +     call ccc void _S1xFviibE.1(i64 2, i64 1, i1 false zeroext)
@@ -98,7 +98,7 @@ proc x(int a, int b, bool d) {
 //L + @__srcc_str.2 = private constant [3 x i8] c"%s\00", align 1
 //L + @__srcc_str.3 = private constant [2 x i8] c"\0A\00", align 1
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   call void @_S1xFviibE.1(i64 1, i64 2, i1 zeroext true)
 //L +   call void @_S1xFviibE.1(i64 2, i64 1, i1 zeroext false)
@@ -106,7 +106,7 @@ proc x(int a, int b, bool d) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1xFviibE.1(i64 %0, i64 %1, i1 zeroext %2) #0 {
+//L + define private void @_S1xFviibE.1(i64 %0, i64 %1, i1 zeroext %2) #1 {
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 8, align 8
 //L +   %6 = alloca i8, i64 1, align 1
@@ -158,9 +158,10 @@ proc x(int a, int b, bool d) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare i32 @printf(ptr, ...) #0
+//L + declare i32 @printf(ptr, ...) #1
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

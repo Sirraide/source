@@ -291,6 +291,7 @@ public:
 
     /// Allocate an mrvalue.
     [[nodiscard]] auto allocate_memory_value(Type ty) -> RawByteBuffer;
+    [[nodiscard]] auto allocate_memory_value(Size sz, Align a) -> RawByteBuffer;
 
     /// Allocate a tree.
     [[nodiscard]] auto allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue*;
@@ -304,12 +305,14 @@ public:
     /// \param stmt Statement to evaluate.
     /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
     /// \param dump_ir Print the IR used for evaluation, if any.
+    /// \param allow_globals Allow evaluating global variables; 'true' when evaluating entire TUs.
     /// \return The value of the statement, if it can be evaluated.
     [[nodiscard]] auto eval(
         Sema* sema,
         Stmt* stmt,
         bool complain = true,
-        bool dump_ir = false
+        bool dump_ir = false,
+        bool allow_globals = false
     ) -> std::optional<RValue>;
 
     /// Initialise the VM.

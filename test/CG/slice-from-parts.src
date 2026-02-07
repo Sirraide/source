@@ -23,7 +23,7 @@ proc p4 -> i8[] {
     return (&j, 1);
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

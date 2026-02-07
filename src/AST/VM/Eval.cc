@@ -319,6 +319,9 @@ class eval::VirtualMemoryMap {
     /// Known strings.
     SmallVector<String> string_constants;
 
+    /// Mutable global variables.
+    DenseMap<LLVM::GlobalOp, RawByteBuffer> globals;
+
 public:
     VirtualMemoryMap(VM& vm) : vm{vm} {}
 
@@ -343,6 +346,9 @@ public:
 
     /// Check if a pointer is a virtual procedure pointer.
     [[nodiscard]] bool is_virtual_proc_ptr(Pointer p);
+
+    /// Create a pointer to a global variable.
+    [[nodiscard]] auto make_global_ptr(LLVM::GlobalOp op) -> Pointer;
 
     /// Create a pointer to a global variable.
     [[nodiscard]] auto make_string_ptr(String c) -> Pointer;
@@ -430,6 +436,18 @@ auto VirtualMemoryMap::make_host_pointer(uptr v) -> Pointer {
     return Pointer(v);
 }
 
+auto VirtualMemoryMap::make_global_ptr(LLVM::GlobalOp op) -> Pointer {
+    auto it = globals.find(op);
+    if (it != globals.end()) return make_host_pointer(uptr(it->getSecond().data()));
+    auto dl = mlir::DataLayout::closest(op);
+    auto val = vm.allocate_memory_value(
+        ir::GetTypeSize(dl, op.getGlobalType()),
+        Align(op.getAlignment().value_or(1))
+    );
+    globals.try_emplace(op, val);
+    return make_host_pointer(uptr(val.data()));
+}
+
 auto VirtualMemoryMap::make_proc_ptr(ir::ProcOp proc) -> Pointer {
     Assert(proc);
     auto& lookup_val = lookup[proc];
@@ -499,8 +517,9 @@ public:
     Pointer stack_top{};
     SLoc entry;
     bool complain;
+    bool allow_globals;
 
-    Eval(VM& vm, Sema* sema, bool complain);
+    Eval(VM& vm, Sema* sema, bool complain, bool allow_globals);
 
     [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
 
@@ -511,6 +530,12 @@ private:
     template <typename... Args>
     bool Error(SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         if (complain) diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        return false;
+    }
+
+    template <typename... Args>
+    bool Note(SLoc where, std::format_string<Args...> fmt, Args&&... args) {
+        if (complain) diags().diag(Diagnostic::Level::Note, where, fmt, std::forward<Args>(args)...);
         return false;
     }
 
@@ -550,12 +575,13 @@ private:
     void StoreSRValue(void* mem, const SRValue& val);
 };
 
-Eval::Eval(VM& vm, Sema* sema, bool complain)
+Eval::Eval(VM& vm, Sema* sema, bool complain, bool allow_globals)
     : vm{vm},
       sema{sema},
       cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
       stack_top{vm.memory->get_stack_bottom()},
-      complain{complain} {}
+      complain{complain},
+      allow_globals{allow_globals} {}
 
 auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
     l.constant_eval = true;
@@ -754,7 +780,32 @@ bool Eval::EvalLoop() {
         if (auto a = dyn_cast<LLVM::AddressOfOp>(i)) {
             auto g = cast<LLVM::GlobalOp>(i->getParentOfType<mlir::ModuleOp>().lookupSymbol(a.getGlobalName()));
             Assert(g, "Invalid reference to global");
-            Assert(g.getConstant(), "TODO: Global variables in the constant evaluator");
+
+            // If this is a global variable, retrieve its address.
+            if (not g.getConstant()) {
+                if (not allow_globals) {
+                    auto decl = cg.lookup(g);
+                    if (auto d = decl.get_or_null()) {
+                        Error(
+                            SLoc::Decode(i->getLoc()),
+                            "Cannot access global variable '{}' in compile-time evaluation",
+                            d->name
+                        );
+
+                        Note(d->location(), "Declared here");
+                        return false;
+                    }
+
+                    return Error(
+                        SLoc::Decode(i->getLoc()),
+                        "Cannot access global variable in compile-time evaluation"
+                    );
+                }
+
+                auto mem = vm.memory->make_global_ptr(g);
+                Temp(a) = SRValue(mem);
+                continue;
+            }
 
             // Copy the data out because the global might get DCE’d.
             //
@@ -1479,9 +1530,15 @@ VM::VM(TranslationUnit& owner_tu)
 auto VM::allocate_memory_value(Type ty) -> RawByteBuffer {
     auto sz = ty->memory_size(owner());
     auto align = ty->align(owner());
-    auto mem = owner().allocate(sz.bytes(), align.value().bytes());
+    auto buf = allocate_memory_value(sz, align);
+    if (ty == owner().StrLitTy) buf.is_str = true;
+    return buf;
+}
+
+auto VM::allocate_memory_value(Size sz, Align a) -> RawByteBuffer {
+    auto mem = owner().allocate(sz.bytes(), a.value().bytes());
     std::memset(mem, 0, sz.bytes());
-    return RawByteBuffer(mem, sz, ty == owner().StrLitTy);
+    return RawByteBuffer(mem, sz, false);
 }
 
 auto VM::allocate_tree_value(QuoteExpr* quote, ArrayRef<TreeValue*> unquotes) -> TreeValue* {
@@ -1494,7 +1551,8 @@ auto VM::eval(
     Sema* sema,
     Stmt* stmt,
     bool complain,
-    bool dump_ir
+    bool dump_ir,
+    bool allow_globals
 ) -> std::optional<RValue> { // clang-format off
     using OptVal = std::optional<RValue>;
     Assert(initialised);
@@ -1523,7 +1581,7 @@ auto VM::eval(
     // performs a template instantiation that contains an 'eval' statement.
     Assert(not evaluating, "We somehow triggered a nested evaluation?");
     tempset evaluating = true;
-    Eval e{*this, sema, complain};
+    Eval e{*this, sema, complain, allow_globals};
     auto res = e.eval(stmt);
     if (dump_ir) std::println("{}", text::RenderColours(
         owner_tu.context().use_colours,

@@ -57,7 +57,7 @@ proc arith (in int a, in int b) {
 // + @11 = "shift amount exceeds bit width\00"
 // + @12 = "<<<\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

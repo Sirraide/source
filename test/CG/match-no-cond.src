@@ -38,7 +38,7 @@ proc f7 (int x, int y) nomangle = match {
     _: 5;
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -148,27 +148,27 @@ proc f7 (int x, int y) nomangle = match {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f1(i64 %0) #0 {
+//L + define private void @f1(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f2(i64 %0) #0 {
+//L + define private i64 @f2(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f3(i64 %0) #0 {
+//L + define private i64 @f3(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -178,7 +178,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f4(i64 %0) #0 {
+//L + define private i64 @f4(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -200,7 +200,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f5(i64 %0) #0 {
+//L + define private i64 @f5(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -217,10 +217,10 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @exit() #0
+//L + declare void @exit() #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f6(i64 %0) #0 {
+//L + define private i64 @f6(i64 %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -236,7 +236,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f7(i64 %0, i64 %1) #0 {
+//L + define private i64 @f7(i64 %0, i64 %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -259,7 +259,8 @@ proc f7 (int x, int y) nomangle = match {
 //L +   br label %10
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

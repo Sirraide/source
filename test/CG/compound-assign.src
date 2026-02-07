@@ -31,7 +31,7 @@ proc x (int a, in int b) {
 // + @9 = "shift amount exceeds bit width\00"
 // + @10 = "<<<\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -168,7 +168,7 @@ proc x (int a, in int b) {
 // +     ret
 // + }
 
-//U * proc __src_main external ccc {
+//U * proc __src_main norecurse external ccc {
 //U + entry:
 //U +     ret
 //U + }
@@ -248,13 +248,13 @@ proc x (int a, in int b) {
 //L + @__srcc_str.9 = private constant [31 x i8] c"shift amount exceeds bit width\00", align 1
 //L + @__srcc_str.10 = private constant [4 x i8] c"<<<\00", align 1
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #0 {
+//L + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8
@@ -593,16 +593,17 @@ proc x (int a, in int b) {
 //L + declare void @__src_int_arith_error(ptr)
 //L +
 //L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-//L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #1
+//L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #2
 //L +
 //L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-//L + declare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64) #1
+//L + declare { i64, i1 } @llvm.ssub.with.overflow.i64(i64, i64) #2
 //L +
 //L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-//L + declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64) #1
+//L + declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64) #2
 //L +
-//L + attributes #0 = { nounwind }
-//L + attributes #1 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
+//L + attributes #2 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +
@@ -613,13 +614,13 @@ proc x (int a, in int b) {
 //UL + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //UL + target triple = "x86_64-unknown-linux"
 //UL +
-//UL + ; Function Attrs: nounwind
+//UL + ; Function Attrs: norecurse nounwind
 //UL + define void @__src_main() #0 {
 //UL +   ret void
 //UL + }
 //UL +
 //UL + ; Function Attrs: nounwind
-//UL + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #0 {
+//UL + define private void @_S1xFvixiE.1(i64 %0, i64 %1) #1 {
 //UL +   %3 = alloca i8, i64 8, align 8
 //UL +   %4 = alloca i8, i64 8, align 8
 //UL +   store i64 %0, ptr %3, align 8
@@ -675,7 +676,8 @@ proc x (int a, in int b) {
 //UL +   ret void
 //UL + }
 //UL +
-//UL + attributes #0 = { nounwind }
+//UL + attributes #0 = { norecurse nounwind }
+//UL + attributes #1 = { nounwind }
 //UL +
 //UL + !llvm.module.flags = !{!0}
 //UL +

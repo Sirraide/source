@@ -265,6 +265,10 @@ LOWERING(ProcOp, {
     // We don’t support exception handling.
     func.setNoUnwind(true);
 
+    // Propagate 'norecurse'.
+    if (op.getNorecurse())
+        func.setPassthroughAttr(r.getArrayAttr(r.getStringAttr("norecurse")));
+
     // Preserve argument and return value attributes.
     PropagateArgAndResultAttrs(func, op);
 

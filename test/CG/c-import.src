@@ -16,7 +16,7 @@ stdio::printf("bar: %d\n".data, 12);
 // + @__srcc_str.1 = private constant [4 x i8] c"foo\00", align 1
 // + @__srcc_str.2 = private constant [9 x i8] c"bar: %d\0A\00", align 1
 // +
-// + ; Function Attrs: nounwind
+// + ; Function Attrs: norecurse nounwind
 // + define void @__src_main() #0 {
 // +   %1 = load i8, ptr @__srcc_str.0, align 1
 // +   %2 = sext i8 %1 to i32
@@ -27,15 +27,16 @@ stdio::printf("bar: %d\n".data, 12);
 // + }
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @putchar(i32) #0
+// + declare i32 @putchar(i32) #1
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @puts(ptr) #0
+// + declare i32 @puts(ptr) #1
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @printf(ptr, ...) #0
+// + declare i32 @printf(ptr, ...) #1
 // +
-// + attributes #0 = { nounwind }
+// + attributes #0 = { norecurse nounwind }
+// + attributes #1 = { nounwind }
 // +
 // + !llvm.module.flags = !{!0}
 // +

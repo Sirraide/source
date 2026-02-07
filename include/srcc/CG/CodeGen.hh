@@ -199,6 +199,7 @@ public:
     };
 
     DenseMap<LocalDecl*, Value> locals;
+    DenseMap<SaveExpr*, IRValue> saved_exprs;
     SmallVector<Loop> loop_stack;
     Value environment_for_nested_procs;
     Value abort_info_slot;
@@ -225,9 +226,10 @@ class srcc::cg::CodeGen : public DiagsProducer
     Opt<ir::ProcOp> printf;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
-    DenseMap<ProcDecl*, String> mangled_names;
+    DenseMap<ObjectDecl*, String> mangled_names;
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
     DenseMap<GlobalDecl*, mlir::LLVM::GlobalOp> global_vars;
+    DenseMap<mlir::LLVM::GlobalOp, GlobalDecl*> global_vars_reverse_lookup;
     mlir::ModuleOp mlir_module;
     ir::ProcOp vm_entry_point;
     LangOpts lang_opts;
@@ -278,7 +280,8 @@ public:
     /// Get the MLIR pointer type.
     [[nodiscard]] auto get_ptr_ty() -> mlir::Type { return ptr_ty; }
 
-    /// Given an IR procedure, attempt to find the Source procedure it corresponds to.
+    /// Given an IR entity, attempt to find the AST entity it corresponds to.
+    [[nodiscard]] auto lookup(mlir::LLVM::GlobalOp op) -> Ptr<GlobalDecl>;
     [[nodiscard]] auto lookup(ir::ProcOp op) -> Ptr<ProcDecl>;
 
     /// Get the MLIR context.
@@ -451,6 +454,9 @@ public:
     /// Emit the initialiser of a local variable, allocating stack space if needed.
     void EmitLocal(LocalDecl* decl);
 
+    /// Emit the address of a global variable.
+    auto EmitGlobal(GlobalDecl* decl) -> mlir::LLVM::GlobalOp;
+
     /// Emit an lvalue to rvalue conversion.
     auto EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value>;
 
@@ -570,11 +576,8 @@ public:
     /// Check if a local variable has a stack slot.
     bool LocalNeedsAlloca(LocalDecl* local);
 
-    /// Get the mangled name of a procedure.
-    auto MangledName(ProcDecl* proc) -> String;
-
-    /// Get the mangled name of a global variable.
-    auto MangledName(GlobalDecl* proc) -> String;
+    /// Get the mangled name of an object.
+    auto MangledName(ObjectDecl* proc) -> String;
 
     /// Determine whether this parameter type is passed by reference under
     /// the given intent.

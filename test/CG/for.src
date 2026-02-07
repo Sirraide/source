@@ -64,7 +64,7 @@ proc l {
     for i in a1 do foo(i);
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -352,13 +352,13 @@ proc l {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1aFvE.1() #0 {
+//L + define private void @_S1aFvE.1() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -375,7 +375,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1bFvE.2() #0 {
+//L + define private void @_S1bFvE.2() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -397,10 +397,10 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @foo(i16) #0
+//L + declare void @foo(i16) #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1cFvE.3() #0 {
+//L + define private void @_S1cFvE.3() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %9, %0
@@ -427,7 +427,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1dFvE.4() #0 {
+//L + define private void @_S1dFvE.4() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -444,7 +444,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1eFvE.5() #0 {
+//L + define private void @_S1eFvE.5() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -468,7 +468,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1fFvE.6() #0 {
+//L + define private void @_S1fFvE.6() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %12, %0
@@ -499,7 +499,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1gFvE.7() #0 {
+//L + define private void @_S1gFvE.7() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %7, %0
@@ -523,7 +523,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1hFvE.8() #0 {
+//L + define private void @_S1hFvE.8() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %8, %0
@@ -549,7 +549,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1iFvE.9() #0 {
+//L + define private void @_S1iFvE.9() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %5, %0
@@ -569,7 +569,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1jFvE.10() #0 {
+//L + define private void @_S1jFvE.10() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %14, %0
@@ -607,7 +607,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1kFvE.11() #0 {
+//L + define private void @_S1kFvE.11() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -625,7 +625,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1lFvE.12() #0 {
+//L + define private void @_S1lFvE.12() #1 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -654,7 +654,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

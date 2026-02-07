@@ -74,8 +74,8 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     ds.push_back(d);
 }
 
-void Sema::AddEntryToWithStack(Scope* scope, LocalDecl* object, SLoc with) {
-    if (not object->is_valid) return;
+void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
+    Assert(object);
     Assert(object->value_category_or_rvalue() == Expr::LValue);
     Assert(object->type);
 
@@ -258,7 +258,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         },
         [&](WithFieldRefDecl* with) -> Ptr<Expr> {
             return BuildMemberAccessExpr(
-                CreateReference(with->base, loc).get(),
+                with->base,
                 with->referenced_field,
                 loc
             );
@@ -266,7 +266,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         [&](WithBuiltinFieldRefDecl* with) -> Ptr<Expr> {
             return BuildBuiltinMemberAccessExpr(
                 with->referenced_field,
-                CreateReference(with->base, loc).get(),
+                with->base,
                 loc
             );
         },
@@ -635,20 +635,6 @@ auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
-auto Sema::MaterialiseVariable(Expr* expr) -> LocalDecl* {
-    if (auto ld = dyn_cast<LocalRefExpr>(expr)) return ld->decl;
-    auto init = BuildInitialiser(expr->type, expr, expr->location()).get(); // Should never fail.
-    auto local = MakeLocal(
-        expr->type,
-        Expr::LValue,
-        "",
-        expr->location()
-    );
-
-    local->set_init(init);
-    return local;
-}
-
 void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
@@ -685,41 +671,47 @@ bool Sema::RequiresManglingNumber(const ParsedProcAttrs& attrs) {
     return not attrs.no_mangling_number;
 }
 
+auto Sema::Save(Expr* e) -> SaveExpr* {
+    auto se = dyn_cast<SaveExpr>(e);
+    if (se) return se;
+    return new (*tu) SaveExpr(e, e->location());
+}
+
 // ============================================================================
 //  Initialisation.
 // ============================================================================
 Sema::Conversion::~Conversion() = default;
-void Sema::AddInitialiserToDecl(LocalDecl* decl, Ptr<Expr> init) {
+void Sema::AddInitialiserToDecl(AnyVarDecl decl, Ptr<Expr> init) {
     // Deduce the type from the initialiser, if need be.
-    if (decl->type == Type::DeducedTy) {
-        if (init) decl->type = init.get()->type;
+    if (decl.type() == Type::DeducedTy) {
+        if (init) decl.type() = init.get()->type;
         else {
-            Error(decl->location(), "Type inference requires an initialiser");
-            decl->type = Type::VoidTy;
-            decl->set_invalid();
+            Error(decl.decl()->location(), "Type inference requires an initialiser");
+            decl.type() = Type::VoidTy;
+            decl.set_invalid();
             return;
         }
     }
 
     // Now that the type has been deduced (if necessary), we can check
     // if we can even create a variable of this type.
-    if (not CheckVariableType(decl->type, decl->location())) {
-        decl->set_invalid();
+    if (not CheckVariableType(decl.type(), decl.decl()->location())) {
+        decl.set_invalid();
         return;
     }
 
     // Then, perform initialisation.
     init = BuildInitialiser(
-        decl->type,
+        decl.type(),
         init ? init.get() : ArrayRef<Expr*>{},
-        init ? init.get()->location() : decl->location()
+        init ? init.get()->location() : decl.decl()->location()
     );
 
     // If this fails, make sure to mark the decl as invalid so that
     // e.g. an 'eval' doesn’t try to evaluate a decl with an invalid
     // initialiser.
-    if (init.invalid()) decl->set_invalid();
-    decl->set_init(init);
+    if (init.invalid()) decl.set_invalid();
+    decl.set_init(init);
 }
 
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
@@ -3552,15 +3544,9 @@ auto Sema::BuildMatchExpr(
     MutableArrayRef<MatchCase> cases,
     SLoc loc
 ) -> Ptr<Expr> {
-    Ptr<LocalDecl> control_var;
     bool exhaustive = false;
     if (auto control = control_expr.get_or_null()) {
-        auto var = MaterialiseVariable(control);
-        if (not isa<LocalRefExpr>(control)) {
-            control = CreateReference(var, loc).get();
-            control_var = var;
-        }
-
+        control_expr = control = Save(MaterialiseTemporary(control));
         auto ty = control->type;
         exhaustive = CheckMatchExhaustive(loc, control, ty, cases);
     } else {
@@ -3634,7 +3620,7 @@ auto Sema::BuildMatchExpr(
 
     return MatchExpr::Create(
         *tu,
-        control_var,
+        control_expr,
         tvc.type(),
         tvc.value_category(),
         cases,
@@ -3671,10 +3657,22 @@ auto Sema::BuildProcDeclInitial(
     InheritedProcedureProperties props,
     ProcTemplateDecl* pattern
 ) -> ProcDecl* {
+    auto parent_scope = curr_scope() == proc_scope
+        ? proc_scope->parent()
+        : proc_scope;
+
     // Get the parent procedure, which determines whether this is a nested
-    // procedure; top-level procedures are *not* considered nested inside
-    // the initialiser procedure (since the latter is just an implementation
-    // detail).
+    // procedure; top-level procedures (that is, procedures declared at the
+    // global scope) are *not* considered nested inside the initialiser procedure
+    // (since the latter is just an implementation detail).
+    //
+    // It *is* possible for a procedure to have the initialiser procedure
+    // as its parent, however. Assuming we’re at the top-level:
+    //
+    //     proc x {} // Parent is nullptr.
+    //     {
+    //         proc x {} // Parent is initialiser procedure.
+    //     }
     //
     // Note that the parent computation assumes that we’re currently inside the
     // lexical parent of this procedure; this *should* always be true since we
@@ -3686,8 +3684,7 @@ auto Sema::BuildProcDeclInitial(
     // For templates, instead use the parent of the pattern.
     ProcDecl* parent{};
     if (pattern) parent = pattern->parent.get_or_null();
-    else parent = curr_proc().proc;
-    if (parent == tu->initialiser_proc) parent = {};
+    else if (parent_scope != global_scope()) parent = curr_proc().proc;
 
     // Actually create the procedure.
     auto proc = ProcDecl::Create(
@@ -4770,31 +4767,51 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
 auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     if (parsed->is_static) Todo();
     Assert(not parsed->with_loc.is_valid(), "'with' should currently only be parsed on param decls");
-    auto decl = MakeLocal(
-        TranslateType(parsed->type),
-        Expr::LValue,
-        parsed->name.str(),
-        parsed->loc
-    );
+
+    // If we're at the global scope, make this a global variable.
+    AnyVarDecl decl;
+    auto ty = TranslateType(parsed->type);
+    if (curr_scope() == global_scope()) {
+        auto g = new (*tu) GlobalDecl(
+            tu.get(),
+            nullptr,
+            ty,
+            parsed->name,
+            Linkage::Internal,
+            Mangling::Source,
+            parsed->loc
+        );
+
+        g->mangling_number = next_global_mangling_number++;
+        AddDeclToScope(curr_scope(), g);
+        decl = g;
+    } else {
+        decl = MakeLocal(
+            ty,
+            Expr::LValue,
+            parsed->name.str(),
+            parsed->loc
+        );
+    }
 
     // Don’t even bother with the initialiser if the type is ill-formed.
-    if (not decl->type) {
-        decl->type = Type::VoidTy;
-        return decl->set_invalid();
+    if (not ty) {
+        decl.type() = Type::VoidTy;
+        return decl.set_invalid();
     }
 
     // Translate the initialiser.
     Ptr<Expr> init;
     if (auto val = parsed->init.get_or_null()) {
-        init = TranslateExpr(val, decl->type != Type::DeducedTy ? decl->type : Type());
-        if (init.invalid()) return decl->set_invalid();
+        init = TranslateExpr(val, decl.type() != Type::DeducedTy ? decl.type() : Type());
+        if (init.invalid()) return decl.set_invalid();
     }
 
     // And attempt to add an initialiser irrespective of whether we
     // parsed one; this will check if default initialisation is valid
     // if need be.
     AddInitialiserToDecl(decl, init);
-    return decl;
+    return decl.decl();
 }
 
 auto Sema::TranslateProc(
@@ -4836,7 +4853,7 @@ auto Sema::TranslateProcBody(
 
         if (parsed_decl->with_loc.is_valid()) AddEntryToWithStack(
             curr_scope(),
-            param,
+            Save(CreateReference(param, param->location()).get()),
             parsed_decl->with_loc
         );
     }
@@ -4951,7 +4968,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         decl = ProcTemplateDecl::Create(
             *tu,
             parsed,
-            curr_proc().proc,
+            curr_scope() == global_scope() ? nullptr : curr_proc().proc,
             props,
             has_variadic_param
         );
@@ -5089,18 +5106,10 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
 
 auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
-    auto expr = TRY(TranslateExpr(parsed->expr));
-    auto var = MaterialiseVariable(expr);
-    AddEntryToWithStack(curr_scope(), var, parsed->loc);
+    auto expr = Save(MaterialiseTemporary(TRY(TranslateExpr(parsed->expr))));
+    AddEntryToWithStack(curr_scope(), expr, parsed->loc);
     auto body = TRY(TranslateStmt(parsed->body));
-
-    // Only store the variable if it is a temporary as we may otherwise
-    // try to emit an existing variable again.
-    return new (*tu) WithExpr(
-        isa<LocalRefExpr>(expr) ? nullptr : var,
-        body,
-        parsed->loc
-    );
+    return new (*tu) WithExpr(expr, body, parsed->loc);
 }
 
 // ============================================================================

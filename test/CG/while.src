@@ -27,7 +27,7 @@ proc while_infinite_empty {
     while true {}
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -119,13 +119,13 @@ proc while_infinite_empty {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S12while_simpleFvE.1() #0 {
+//L + define private void @_S12while_simpleFvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -146,7 +146,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S12while_nestedFvE.2() #0 {
+//L + define private void @_S12while_nestedFvE.2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -183,7 +183,7 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S14while_infiniteFvE.3() #0 {
+//L + define private void @_S14while_infiniteFvE.3() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
 //L +   br label %2
@@ -196,14 +196,15 @@ proc while_infinite_empty {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S20while_infinite_emptyFvE.4() #0 {
+//L + define private void @_S20while_infinite_emptyFvE.4() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %1, %0
 //L +   br label %1
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

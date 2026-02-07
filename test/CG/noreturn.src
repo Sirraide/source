@@ -14,7 +14,7 @@ proc a3 { true and __srcc_unreachable(); }
 proc a4 { sink(exit()); }
 proc a5 { sink_lv(exit()); }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -58,49 +58,50 @@ proc a5 { sink_lv(exit()); }
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a1FvE.1() #0 {
+//L + define private void @_S2a1FvE.1() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @exit() #0
+//L + declare void @exit() #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a2FvE.2() #0 {
+//L + define private void @_S2a2FvE.2() #1 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a3FvE.3() #0 {
+//L + define private void @_S2a3FvE.3() #1 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a4FvE.4() #0 {
+//L + define private void @_S2a4FvE.4() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @sink(i64) #0
+//L + declare void @sink(i64) #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2a5FvE.5() #0 {
+//L + define private void @_S2a5FvE.5() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @sink_lv(ptr dereferenceable(8)) #0
+//L + declare void @sink_lv(ptr dereferenceable(8)) #1
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

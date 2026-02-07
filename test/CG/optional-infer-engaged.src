@@ -39,7 +39,7 @@ proc p3(in int^? a, in int^? b) {
 // * @0 = "x != nil\00"
 // + @1 = "optional-infer-engaged.src\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -169,13 +169,13 @@ proc p3(in int^? a, in int^? b) {
 //L + @__srcc_str.0 = private constant [9 x i8] c"x != nil\00", align 1
 //L + @__srcc_str.1 = private constant [27 x i8] c"optional-infer-engaged.src\00", align 1
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2p1FvE.1() #0 {
+//L + define private void @_S2p1FvE.1() #1 {
 //L +   %1 = alloca i8, i64 17, align 8
 //L +   %2 = alloca i8, i64 80, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 17, i1 false)
@@ -240,7 +240,7 @@ proc p3(in int^? a, in int^? b) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2p2FvxORixORiE.2(ptr %0, ptr %1) #0 {
+//L + define private void @_S2p2FvxORixORiE.2(ptr %0, ptr %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -266,7 +266,7 @@ proc p3(in int^? a, in int^? b) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S2p3FvxORixORiE.3(ptr %0, ptr %1) #0 {
+//L + define private void @_S2p3FvxORixORiE.3(ptr %0, ptr %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -294,10 +294,11 @@ proc p3(in int^? a, in int^? b) {
 //L + declare void @__src_assert_fail(ptr)
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
-//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { nounwind }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
+//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

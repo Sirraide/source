@@ -14,11 +14,11 @@ proc h = a() + loop;
 
 var x = if 1 == 1 then 3 else loop;
 
-// * proc __src_main external ccc {
-// +     #0 = 8, align 8
+// * @_S1x.1 = private 8, align 8
 // +
+// + proc __src_main norecurse external ccc {
 // + entry:
-// +     store #0, i64 3, align 8
+// +     store @_S1x.1, i64 3, align 8
 // +     ret
 // + }
 // +

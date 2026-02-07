@@ -22,7 +22,7 @@ proc g {
     B b;
 }
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -60,13 +60,13 @@ proc g {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1fFvE.1() #0 {
+//L + define private void @_S1fFvE.1() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -83,7 +83,7 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S1gFvE.2() #0 {
+//L + define private void @_S1gFvE.2() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 16, i1 false)
@@ -92,10 +92,11 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
-//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #1
+//L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { nounwind }
-//L + attributes #1 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
+//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

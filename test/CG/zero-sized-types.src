@@ -27,7 +27,7 @@ proc interleaved2 (int a, void b, int c, void d) = a | c;
 interleaved1(2, void(), 3, void());
 interleaved2(2, void(), 3, void());
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     %0 = call ccc i64 _S12interleaved1FixivxivE.8(i64 2, i64 3)
 // +     %1 = call ccc i64 _S12interleaved2FiivivE.9(i64 2, i64 3)

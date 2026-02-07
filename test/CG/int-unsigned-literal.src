@@ -10,7 +10,7 @@ proc f5 -> i16 = -32768;
 proc f6 -> i16 = 65535;
 proc f7 -> i16 = 65534;
 
-// * proc __src_main external ccc {
+// * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }
@@ -55,47 +55,48 @@ proc f7 -> i16 = 65534;
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f1FI8E.1() #0 {
+//L + define private i8 @_S2f1FI8E.1() #1 {
 //L +   ret i8 -128
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f2FI8E.2() #0 {
+//L + define private i8 @_S2f2FI8E.2() #1 {
 //L +   ret i8 -128
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f3FI8E.3() #0 {
+//L + define private i8 @_S2f3FI8E.3() #1 {
 //L +   ret i8 -1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i8 @_S2f4FI8E.4() #0 {
+//L + define private i8 @_S2f4FI8E.4() #1 {
 //L +   ret i8 -2
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f5FI16E.5() #0 {
+//L + define private i16 @_S2f5FI16E.5() #1 {
 //L +   ret i16 -32768
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f6FI16E.6() #0 {
+//L + define private i16 @_S2f6FI16E.6() #1 {
 //L +   ret i16 -1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i16 @_S2f7FI16E.7() #0 {
+//L + define private i16 @_S2f7FI16E.7() #1 {
 //L +   ret i16 -2
 //L + }
 //L +
-//L + attributes #0 = { nounwind }
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

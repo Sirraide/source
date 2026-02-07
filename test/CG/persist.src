@@ -129,7 +129,7 @@ proc str1 {
 // + @8 = "quux\00"
 // + @9 = "1234\00"
 // +
-// + proc __src_main external ccc {
+// + proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
 // + }

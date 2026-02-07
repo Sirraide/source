@@ -6,6 +6,17 @@
 - Refactor: Try using the 'ptr' dialect and replace our store/load/ptradd ops.
 - Maybe add unsigned integer types after all? Essentially, being able to store e.g. the value '200' in an 8-bit integer is useful, and while this is currently allowed with literals, it feels like the semantics about this get ... weird; especially once enums are involved; maybe we want unsigned types after all? In that case, we might just want to make sure that comparisons with mixed signed/unsigned integers are well-formed and respect signedness (e.g. that `-1 as i8 < 2 as u8` is `true`).
 
+- FIXME: Figure out how to prevent this:
+```
+proc x {
+   // BAD: Accesses 'x' before it is initialised!!! Can we perform some sort of
+   // dataflow analysis to detect this; this also needs to be done for global vars.
+   int y = f();
+   int x = 42;
+   proc f -> int = x;
+}
+```
+
 
 - Initial design for optional access checking as an MLIR pass: we need 5 IR operations. These operate on pointers:
 
