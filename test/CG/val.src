@@ -1,0 +1,15 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc g(int val^ imm, int^ mut) {
+    imm = mut;
+    imm = mut as int val^;
+    mut = imm as! int^;
+}
+
+proc preserve_lvalueness(int val^ imm, int^ mut) {
+    proc p(inout int val^ byref) {}
+    p(imm);
+    p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
+    p(mut as int val^); // As do casts.
+}

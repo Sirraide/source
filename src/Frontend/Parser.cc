@@ -40,6 +40,7 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
         case Tk::MinusMinus:
         case Tk::Caret:    // This is a type operator only.
         case Tk::Question: // This is a type operator only.
+        case Tk::Val:      // This is a type operator only.
             return 5'000;
 
         case Tk::LParen:
@@ -618,10 +619,11 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-call>     // Function that returns a type
 //          | "(" <expr> ")"  // Any expression in parens can be treated as a type
 //          | <expr>          // In type-only contexts
+//
 // <type-qualified> ::= <type> { <qualifier> }
 // <type-typeof> ::= TYPEOF "(" <expr> ")"
 // <type-range> ::= RANGE "<" <type> ">"
-// <qualifier> ::= "[" "]" | "^" | "?"
+// <qualifier> ::= "[" "]" | "^" | "?" | VAL
 // <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
 auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
     auto BuiltinType = [&](Type ty) {
@@ -820,7 +822,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParsedTupleExpr::Create(*this, exprs, parens.left);
         } break;
 
-        // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | NORETURN
+        // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | NORETURN
         case Tk::Bool: lhs = BuiltinType(Type::BoolTy); break;
         case Tk::Int: lhs = BuiltinType(Type::IntTy); break;
         case Tk::NoReturn: lhs = BuiltinType(Type::NoReturnTy); break;
@@ -828,6 +830,10 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
         case Tk::Type: lhs = BuiltinType(Type::TypeTy); break;
         case Tk::Void: lhs = BuiltinType(Type::VoidTy); break;
         case Tk::Var: lhs = BuiltinType(Type::DeducedTy); break;
+        case Tk::Val: {
+            auto ty = BuiltinType(Type::DeducedTy);
+            lhs = new (*this) ParsedValueType(ty, ty->loc);
+        } break;
 
         // INTEGER_TYPE
         case Tk::IntegerType:
@@ -961,6 +967,12 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
             case Tk::Question:
                 lhs = new (*this) ParsedOptionalType(lhs.get(), lhs.get()->loc);
+                Next();
+                continue;
+
+            case Tk::Val:
+                if (isa<ParsedValueType>(lhs.get())) Error(tok->location, "'%1(val val%)' is invalid");
+                lhs = new (*this) ParsedValueType(lhs.get(), lhs.get()->loc);
                 Next();
                 continue;
 

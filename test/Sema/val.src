@@ -1,0 +1,68 @@
+// V %srcc --sema --verify %s
+program test;
+
+int mx = 3;
+int val x = 3;
+proc f (int val c) {
+    int val x = 3;
+    c = 42; // expected-error: Cannot assign to immutable value
+}
+
+proc bad(proc f(int val)) {} // expected-error: 'val' is only allowed in variable declarations or pointer types
+
+int^ mp1 = &mx;
+int^ mp2 = &x; // expected-error: Cannot convert expression of type 'int val^' to 'int^'
+int val^ p1 = &x;
+int val^ p2 = &x;
+^p1 = 42; // expected-error: Cannot assign to immutable value
+^p2 = 42; // expected-error: Cannot assign to immutable value
+
+proc g(int val^ imm, int^ mut) {
+    imm = mut;
+    imm = mut as int val^;
+    imm = mut as! int val^; // expected-warning: Cast from 'int^' to 'int val^' should use 'as'
+    mut = imm; // expected-error: Cannot assign value of type 'int val^' to 'int^'
+    mut = imm as int^; // expected-error: Cast from 'int val^' to 'int^' requires 'as!'
+    mut = imm as! int^;
+}
+
+proc preserve_lvalueness(int val^ imm, int^ mut) {
+    proc p(inout int val^ byref) {}
+    p(imm);
+    p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
+    p(mut as int val^); // As do casts.
+    p(mut as! int val^); // expected-warning: Cast from 'int^' to 'int val^' should use 'as'
+}
+
+proc structs {
+    struct s { int y; nested n; };
+    struct nested { int z; }
+    s val s1 = (1, (2));
+    s1.y = 42; // expected-error: Cannot assign to immutable value
+    s1.n.z = 42; // expected-error: Cannot assign to immutable value
+}
+
+proc common_type(int val^ imm, int^ mut, bool b) {
+    int x = ^(if b then mut else mut);
+    int x = ^(if b then imm else mut);
+    int x = ^(if b then mut else imm);
+    int x = ^(if b then imm else imm);
+    ^(if b then mut else mut) = 42;
+    ^(if b then imm else mut) = 42; // expected-error: Cannot assign to immutable value
+    ^(if b then mut else imm) = 42; // expected-error: Cannot assign to immutable value
+    ^(if b then imm else imm) = 42; // expected-error: Cannot assign to immutable value
+
+    int x = ^(match b { true: mut; false: mut; });
+    int x = ^(match b { true: imm; false: mut; });
+    int x = ^(match b { true: mut; false: imm; });
+    int x = ^(match b { true: imm; false: imm; });
+    ^(match b { true: mut; false: mut; }) = 42;
+    ^(match b { true: imm; false: mut; }) = 42; // expected-error: Cannot assign to immutable value
+    ^(match b { true: mut; false: imm; }) = 42; // expected-error: Cannot assign to immutable value
+    ^(match b { true: imm; false: imm; }) = 42; // expected-error: Cannot assign to immutable value
+}
+
+proc loops(int[5] val imm, int[5] mut) {
+    for v in mut do v = 4;
+    for v in imm do v = 4; // expected-error: Cannot assign to immutable value
+}

@@ -148,8 +148,8 @@
 <type-qualified> ::= <type> { <qualifier> }
 <type-range> ::= RANGE "<" <type> ">"
 <type-typeof> ::= TYPEOF "(" <expr> ")"
-<qualifier> ::= "[" "]" | "^" | "?"
-<type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | INTEGER_TYPE
+<qualifier> ::= "[" "]" | "^" | "?" | VAL
+<type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | INTEGER_TYPE
 
 // ============================================================================
 //  Pragmas

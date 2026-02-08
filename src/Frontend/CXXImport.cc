@@ -211,7 +211,7 @@ auto Sema::Importer::ImportFunction(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
     for (auto [I, P] : enumerate(D->parameters())) {
         Params.push_back(new (*S.tu) ParamDecl(
             &PD->param_types()[I],
-            Expr::LValue,
+            Expr::MLValue, // We pass by value so this is irrelevant.
             S.tu->save(P->getName()),
             PD,
             u32(I),
@@ -781,6 +781,7 @@ auto Sema::LookUpCXXName(
             tu.get(),
             nullptr,
             *ty,
+            true,
             tu->save(name),
             Linkage::Imported,
             Mangling::None,

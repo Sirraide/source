@@ -200,12 +200,21 @@ protected:
 
 public:
     using enum ValueCategory;
+    static constexpr auto LValue(bool immutable) -> ValueCategory {
+        return immutable ? ILValue : MLValue;
+    }
 
     /// Look through any parentheses.
     [[nodiscard]] auto ignore_parens() -> Expr*;
 
     /// Check if this expression is an lvalue.
-    [[nodiscard]] bool is_lvalue() const { return value_category == LValue; }
+    [[nodiscard]] bool is_lvalue() const { return not is_rvalue(); }
+
+    /// Check if this expression is an immutable lvalue.
+    [[nodiscard]] bool is_immutable_lvalue() const { return value_category == ILValue; }
+
+    /// Check if this expression is a mutable lvalue.
+    [[nodiscard]] bool is_mutable_lvalue() const { return value_category == MLValue; }
 
     /// Check if this expression is an rvalue.
     [[nodiscard]] bool is_rvalue() const { return value_category == RValue; }
@@ -566,13 +575,14 @@ public:
         implicit{implicit} {}
 
     static auto Dereference(TranslationUnit& tu, Expr* expr) -> CastExpr* {
+        auto ptr = cast<PtrType>(expr->type);
         return new (tu) CastExpr{
-            cast<PtrType>(expr->type)->elem(),
+            ptr->elem(),
             Deref,
             expr,
             expr->location(),
             true,
-            LValue
+            LValue(ptr->is_immutable())
         };
     }
 
@@ -617,7 +627,7 @@ public:
     EvalExpr(
         Stmt* stmt,
         SLoc location
-    ) : Expr{Kind::EvalExpr, stmt->type_or_void(), LValue /* dummy */, location}, stmt{stmt} {}
+    ) : Expr{Kind::EvalExpr, stmt->type_or_void(), ILValue /* dummy */, location}, stmt{stmt} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EvalExpr; }
 };
@@ -727,7 +737,7 @@ public:
     Expr* temporary;
 
     MaterialiseTemporaryExpr(Expr* temporary, SLoc location)
-        : Expr(Kind::MaterialiseTemporaryExpr, temporary->type, LValue, location),
+        : Expr(Kind::MaterialiseTemporaryExpr, temporary->type, MLValue, location),
           temporary{temporary} {}
 
     static bool classof(const Stmt* e) {
@@ -1379,10 +1389,14 @@ public:
     /// Mangling number.
     ManglingNumber mangling_number = ManglingNumber::None;
 
+    /// Whether this is an immutable global.
+    bool immutable;
+
     GlobalDecl(
         TranslationUnit* owner,
         ModuleDecl* imported_from_module,
         Type type,
+        bool immutable,
         DeclName name,
         Linkage linkage,
         Mangling mangling,

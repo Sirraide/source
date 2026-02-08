@@ -478,12 +478,19 @@ public:
 
 class srcc::PtrType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit PtrType(Type elem) : SingleElementTypeBase{Kind::PtrType, elem} {}
+    const bool immutable;
+    explicit PtrType(Type elem, bool immutable)
+        : SingleElementTypeBase{Kind::PtrType, elem},
+          immutable{immutable} {}
 
 public:
-    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(TranslationUnit& mod, Type elem) -> PtrType*;
-    static void Profile(FoldingSetNodeID& ID, Type elem);
+    /// Whether this is an immutable pointer type (that is, whether the *pointee*
+    /// is immutable).
+    [[nodiscard]] bool is_immutable() const { return immutable; }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), immutable); }
+    static auto Get(TranslationUnit& mod, Type elem, bool immutable = false) -> PtrType*;
+    static void Profile(FoldingSetNodeID& ID, Type elem, bool immutable);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::PtrType; }
 };
 

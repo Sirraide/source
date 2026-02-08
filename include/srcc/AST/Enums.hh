@@ -143,11 +143,14 @@ enum class srcc::ValueCategory : base::u8 {
     /// ABI-dependent, so it was removed from the AST.
     RValue,
 
-    /// An object on the stack or heap that stores a value and has
-    /// a memory location that can be references.
+    /// An mutable object on the stack or heap that stores a value and has
+    /// a memory location that can be referenced.
     ///
     /// These roughly correspond to glvalues in C++.
-    LValue,
+    MLValue,
+
+    /// An immutable MValue.
+    ILValue,
 
     // NOTE: Update TypeAndValueCategory if new categories require
     // us to use more than 2 bits to store this.

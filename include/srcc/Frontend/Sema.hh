@@ -156,6 +156,7 @@ private:
             LValueToRValue,
             MaterialisePoison,
             MaterialiseTemporary,
+            MutableToImmutable,
             NilToOptional,
             OptionalUnwrap,
             OptionalWrap,
@@ -198,6 +199,7 @@ private:
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
+        static auto MutableToImmutable(Type ty) -> Conversion { return Conversion{Kind::MutableToImmutable, ty}; }
         static auto NilToOptional(Type ty) -> Conversion { return Conversion{Kind::NilToOptional, ty}; }
         static auto OptionalUnwrap(Type ty) -> Conversion { return Conversion{Kind::OptionalUnwrap, ty}; }
         static auto OptionalWrap(Type ty) -> Conversion { return Conversion{Kind::OptionalWrap, ty}; }
@@ -1100,7 +1102,15 @@ private:
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr>;
-    auto BuildParamDecl(ProcScopeInfo& proc, const ParamTypeData* param, u32 index, bool with_param, String name, SLoc loc) -> ParamDecl*;
+    auto BuildParamDecl(
+        ProcScopeInfo& proc,
+        const ParamTypeData* param,
+        u32 index,
+        bool with_param,
+        bool immutable,
+        String name,
+        SLoc loc
+    ) -> ParamDecl*;
     auto BuildProcDeclInitial(
         Scope* proc_scope,
         ProcType* ty,
@@ -1155,7 +1165,12 @@ private:
     auto TranslateTypeofType(ParsedTypeofType* parsed) -> Type;
     auto TranslateOptionalType(ParsedOptionalType* stmt) -> Type;
     auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
-    auto TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters = {}) -> Type;
+    auto TranslateProcType(
+        ParsedProcType* parsed,
+        bool allow_immutable_params = false,
+        ArrayRef<Type> deduced_var_parameters = {}
+    ) -> Type;
+    auto TranslateValueType(ParsedValueType* parsed) -> Type;
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {

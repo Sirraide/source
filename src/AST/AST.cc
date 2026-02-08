@@ -207,10 +207,11 @@ void Stmt::Printer::PrintBasicNode(
 }
 
 void Stmt::Printer::Print(Stmt* e) {
-    auto VCLowercase = [&](ValueCategory v) -> String {
+    auto VCLowercase = [](ValueCategory v) -> String {
         switch (v) {
             case ValueCategory::RValue: return "rvalue";
-            case ValueCategory::LValue: return "lvalue";
+            case ValueCategory::MLValue: return "lvalue";
+            case ValueCategory::ILValue: return "lvalue immutable";
         }
         return "<invalid value category>";
     };
@@ -310,12 +311,14 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::OptionalUnwrap: print("unwrap"); break;
                 case CastExpr::OptionalWrap: print("value->optional"); break;
-                case CastExpr::MaterialisePoisonValue: print("poison {}", VCLowercase(c->value_category)); break;
+                case CastExpr::MaterialisePoisonValue: print("poison"); break;
                 case CastExpr::NilToOptional: print("nil->optional"); break;
                 case CastExpr::Pointer: print("pointer"); break;
                 case CastExpr::Range: print("range->range"); break;
                 case CastExpr::SliceFromArray: print("array->slice"); break;
             }
+
+            if (c->is_lvalue()) print(" {}", VCLowercase(c->value_category));
             print("\n");
             PrintChildren(c->arg);
         },
@@ -372,6 +375,7 @@ void Stmt::Printer::Print(Stmt* e) {
         [&](GlobalDecl* g) {
             PrintBasicHeader(e, "GlobalDecl");
             print(" %2({}%) {}", utils::Escape(g->name.str(), false, true), g->type->print());
+            if (g->immutable) print(" immutable");
             if (g->mangling_number != ManglingNumber::None) print(" %3(#{}%)", +g->mangling_number);
             print("\n");
             if (auto i = g->init.get_or_null()) PrintChildren(i);
@@ -439,6 +443,7 @@ void Stmt::Printer::Print(Stmt* e) {
             auto PrintNameAndType = [&] {
                 print("%{}({}%)", is_param ? '4' : '8', d->name);
                 if (is_param) print(" %1({}%)", cast<ParamDecl>(d)->intent());
+                if (d->category == Expr::ILValue) print(" immutable");
                 if (d->captured) print(" captured");
                 print(" {}", d->type->print());
             };

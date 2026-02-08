@@ -118,7 +118,7 @@ auto CodeGen::C(SLoc l) -> mlir::Location {
 }
 
 auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
-    if (vc == Expr::LValue) return ptr_ty;
+    if (vc != Expr::RValue) return ptr_ty;
     auto conv = TryConvertToMLIRType(ty);
     Assert(conv.has_value(), "Unsupported type in C(): '{}'", ty);
     return conv.value();
@@ -1103,7 +1103,7 @@ void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RV
 
 auto CodeGen::EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value> {
     Assert(expr->kind == CastExpr::LValueToRValue);
-    Assert(expr->arg->value_category == Expr::LValue);
+    Assert(expr->arg->value_category != Expr::RValue);
     auto addr = Emit(expr->arg);
     if (IsZeroSizedType(expr->type)) return {};
     return {CreateLoad(C(expr->location()), addr.scalar(), expr->type), addr.scalar()};

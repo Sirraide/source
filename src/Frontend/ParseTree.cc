@@ -712,6 +712,12 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 Format(out, "%1(typeof(%)<expr>%1()%)");
             } break;
 
+            case Kind::ValueType: {
+                auto p = cast<ParsedValueType>(type);
+                Append(p->elem);
+                out += " %1(val%)";
+            } break;
+
             case Kind::DeclRefExpr: {
                 auto d = cast<ParsedDeclRefExpr>(type);
                 Format(out, "%8({}%)", utils::join(d->names(), "::"));

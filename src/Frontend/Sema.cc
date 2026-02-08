@@ -126,6 +126,16 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
     auto t = exprs.front()->type;
     auto vc = exprs.front()->value_category;
     for (auto [i, e] : enumerate(exprs.drop_front())) {
+        auto MergeVC = [&] {
+            if (vc == Expr::RValue or e->value_category == Expr::RValue) {
+                vc = Expr::RValue;
+            } else if (vc == Expr::ILValue or e->value_category == Expr::ILValue) {
+                vc = Expr::ILValue;
+            } else {
+                vc = Expr::MLValue;
+            }
+        };
+
         // If either type is 'noreturn', the common type is the type of the other
         // branch (unless both are noreturn, in which case the type is just 'noreturn').
         if (e->type == Type::NoReturnTy) continue;
@@ -135,13 +145,12 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
             continue;
         }
 
-        // If both are lvalues of the same type, the result is an lvalue
-        // of that type.
-        if (
-            t == e->type and
-            vc == Expr::LValue and
-            e->value_category == Expr::LValue
-        ) continue;
+        // If both values have the same type, the common type is that type. The value
+        // category needs to be merged as well.
+        if (t == e->type) {
+            MergeVC();
+            continue;
+        }
 
 
         // If either type is an optional, and the other is that optional’s
@@ -168,6 +177,18 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
 
             // Offset the index by '1' since we dropped the first element above.
             for (auto& expr: exprs.take_front(i + 1)) expr = UnwrapOptional(expr, expr->location());
+            continue;
+        }
+
+        // If both types are pointers with the same element type that differ only
+        // in mutability, the result is an immutable pointer type with merged value
+        // category.
+        auto t_ptr = dyn_cast<PtrType>(t);
+        auto e_ptr = dyn_cast<PtrType>(e->type);
+        if (t_ptr and e_ptr  and t_ptr->elem() == e_ptr->elem()) {
+            Assert(t_ptr->is_immutable() != e_ptr->is_immutable());
+            t = t_ptr->is_immutable() ? t_ptr : e_ptr;
+            MergeVC();
             continue;
         }
 
@@ -722,13 +743,14 @@ void Sema::AddInitialiserToDecl(AnyVarDecl decl, Ptr<Expr> init) {
 }
 
 auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
-    auto Cast = [&](CastExpr::CastKind kind) {
+    auto Cast = [&](CastExpr::CastKind kind, ValueCategory vc = Expr::RValue) {
         return new (*tu) CastExpr(
             conv.type(),
             kind,
             e,
             loc,
-            true
+            true,
+            vc
         );
     };
 
@@ -749,6 +771,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         );
 
         case K::MaterialiseTemporary: return MaterialiseTemporary(e);
+        case K::MutableToImmutable: return Cast(CastExpr::Pointer, e->value_category);
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
@@ -832,6 +855,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::LValueToRValue:
         case K::MaterialisePoison:
         case K::MaterialiseTemporary:
+        case K::MutableToImmutable:
         case K::NilToOptional:
         case K::OptionalUnwrap:
         case K::OptionalWrap:
@@ -1249,14 +1273,27 @@ auto Sema::BuildConversionSequence(
                 return seq;
             }
 
-            // Allow implicitly converting a pointer to a (multidimensional)
-            // array to a pointer to the pointee type.
-            //
-            // TODO: Investigate what happens if the array has dimension 0.
-            auto var_pointee = cast<PtrType>(var_type)->elem();
+            auto var_ptr = cast<PtrType>(var_type);
+            auto var_pointee = var_ptr->elem();
             auto arg_ptr = dyn_cast<PtrType>(a->type);
             if (arg_ptr) {
                 auto pointee = arg_ptr->elem();
+
+                // Allow converting a mutable to an immutable pointer type.
+                if (
+                    pointee == var_pointee and
+                    not arg_ptr->is_immutable()
+                ) {
+                    Assert(var_ptr->is_immutable());
+                    if (not want_lvalue) seq.add(Conversion::LValueToRValue());
+                    seq.add(Conversion::MutableToImmutable(var_type));
+                    return seq;
+                }
+
+                // Allow implicitly converting a pointer to a (multidimensional)
+                // array to a pointer to the pointee type.
+                //
+                // TODO: Investigate what happens if the array has dimension 0.
                 while (isa<ArrayType>(pointee)) {
                     pointee = cast<ArrayType>(pointee)->elem();
                     if (pointee == var_pointee) {
@@ -1437,7 +1474,7 @@ auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
         MaterialiseTemporary(expr),
         loc,
         true,
-        Expr::LValue
+        Expr::MLValue
     );
 }
 
@@ -1617,6 +1654,7 @@ auto Sema::SubstituteTemplate(
     // Now that that is done, we can convert the type properly.
     auto ty = TranslateProcType(
         proc_template->pattern->type,
+        true,
         deduced_var_parameters
     );
 
@@ -1710,6 +1748,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::ArrayDecay:
             case K::IntegralCast:
             case K::MaterialisePoison:
+            case K::MutableToImmutable:
             case K::NilToOptional:
             case K::OptionalUnwrap:
             case K::OptionalWrap:
@@ -2735,6 +2774,7 @@ auto Sema::BuildAssertExpr(
             &proc->param_types().front(),
             u32(0),
             false,
+            false,
             "",
             loc
         );
@@ -2868,8 +2908,10 @@ auto Sema::BuildBinaryExpr(
         }
 
         // LHS must be an lvalue.
-        if (e->value_category != LValue)
+        if (not e->is_mutable_lvalue()) {
+            if (e->is_lvalue()) return Error(e->location(), "Cannot assign to immutable value");
             return Error(e->location(), "Invalid target for assignment");
+        }
 
         return true;
     };
@@ -2922,7 +2964,10 @@ auto Sema::BuildBinaryExpr(
             }
 
             // A subscripting operation yields an lvalue.
-            return Build(cast<SingleElementTypeBase>(lhs->type)->elem(), LValue);
+            return Build(
+                cast<SingleElementTypeBase>(lhs->type)->elem(),
+                Expr::LValue(lhs->is_immutable_lvalue())
+            );
         }
 
         case Tk::As:
@@ -3068,14 +3113,14 @@ auto Sema::BuildBinaryExpr(
             if (op == Tk::Assign) {
                 if (isa<RecordType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
                 if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
-                return Build(lhs->type, LValue);
+                return Build(lhs->type, MLValue);
             }
 
             // Compound assignment.
             if (not CheckIntegral()) return nullptr;
             if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
             if (not rhs) return nullptr;
-            if (op != Tk::StarStarEq) return Build(lhs->type, LValue);
+            if (op != Tk::StarStarEq) return Build(lhs->type, MLValue);
 
             // '**=' requires a separate function since it needs to return the lhs.
             if (lhs->type->bit_width(*tu) < Size::Bits(2)) return ErrorExpI1();
@@ -3445,8 +3490,8 @@ auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
 
 auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr> {
     auto from = arg->type;
-    auto Make = [&](CastExpr::CastKind k) {
-        return new (*tu) CastExpr(to, k, arg, loc);
+    auto Make = [&](CastExpr::CastKind k, ValueCategory vc = Expr::RValue) {
+        return new (*tu) CastExpr(to, k, arg, loc, false, vc);
     };
 
     auto HardCast = [&]{
@@ -3476,11 +3521,26 @@ auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) ->
         return Make(CastExpr::ExplicitDiscard);
     }
 
-    // Casting between pointers is allowed with 'as!'.
+    // Casting between pointers.
     if (isa<PtrType>(from) and isa<PtrType>(to)) {
-        HardCast();
-        arg = LValueToRValue(arg);
-        return Make(CastExpr::Pointer);
+        auto pfrom = cast<PtrType>(from);
+        auto pto = cast<PtrType>(to);
+
+        // Cast between completely different pointer types.
+        if (pfrom->elem() != pto->elem()) {
+            HardCast();
+            arg = LValueToRValue(arg);
+        }
+
+        // Cast from an immutable to a mutable pointer or vice versa; this preserves
+        // the value category, but it does require 'as!' if we’re stripping immutability.
+        else {
+            Assert(pfrom->is_immutable() != pto->is_immutable());
+            if (pfrom->is_immutable()) HardCast();
+            else SoftCast();
+        }
+
+        return Make(CastExpr::Pointer, arg->value_category);
     }
 
     // So is casting from integers/enums to enums.
@@ -3604,10 +3664,19 @@ auto Sema::BuildMatchExpr(
         if (llvm::all_of(cases, [&](auto& c) {
             return c.unreachable or (
                 c.body->type_or_void() == ty and
-                c.body->value_category_or_rvalue() == Expr::LValue
+                c.body->value_category_or_rvalue() != Expr::RValue
             );
         })) {
-            tvc = {ty, Expr::LValue};
+            // If any case yields an immutable lvalue, the entire expression is immutable.
+            auto vc = Expr::MLValue;
+            for (auto& c : cases) {
+                if (c.body->value_category_or_rvalue() == Expr::ILValue) {
+                    vc = Expr::ILValue;
+                    break;
+                }
+            }
+
+            tvc = {ty, vc};
         }
 
         // Convert each match arm. For 'void' we just skip this step because
@@ -3646,10 +3715,20 @@ auto Sema::BuildParamDecl(
     const ParamTypeData* param,
     u32 index,
     bool with_param,
+    bool immutable,
     String name,
     SLoc loc
 ) -> ParamDecl* {
-    auto decl = new (*tu) ParamDecl(param, Expr::LValue, name, proc.proc, index, with_param, loc);
+    auto decl = new (*tu) ParamDecl(
+        param,
+        Expr::LValue(immutable),
+        name,
+        proc.proc,
+        index,
+        with_param,
+        loc
+    );
+
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
@@ -3838,7 +3917,10 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
         // to know what an lvalue is (or why something isn’t an lvalue in
         // the case of e.g. if/match).
         if (not operand->is_lvalue()) return Error(loc, "Cannot take address of non-lvalue");
-        return Build(PtrType::Get(*tu, operand->type), Expr::RValue);
+        return Build(
+            PtrType::Get(*tu, operand->type, operand->is_immutable_lvalue()),
+            Expr::RValue
+        );
     }
 
     // Handle overloaded operators.
@@ -3870,7 +3952,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
             }
 
             operand = LValueToRValue(operand);
-            return Build(ptr->elem(), Expr::LValue);
+            return Build(ptr->elem(), Expr::LValue(ptr->is_immutable()));
         }
 
         // Procedure call inlining.
@@ -3918,13 +4000,13 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
         // Increment and decrement.
         case Tk::MinusMinus:
         case Tk::PlusPlus: {
-            if (operand->value_category != Expr::LValue) return Error(
+            if (not operand->is_mutable_lvalue()) return Error(
                 operand->location(),
                 "Invalid operand for '{}'",
                 Spelling(op)
             );
 
-            return BuildIntOp(Expr::LValue);
+            return BuildIntOp(Expr::MLValue);
         }
     }
 }
@@ -4543,8 +4625,8 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
 
         r->type->visit(utils::Overloaded{
             [&](auto*) { Unreachable(); },
-            [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue); },
-            [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue); },
+            [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue(r->is_immutable_lvalue())); },
+            [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue(r->is_immutable_lvalue())); },
             [&](RangeType* ty) { MakeVar(ty->elem(), Expr::RValue); },
         });
     }
@@ -4775,14 +4857,19 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     if (parsed->is_static) Todo();
     Assert(not parsed->with_loc.is_valid(), "'with' should currently only be parsed on param decls");
 
+    // Translate the type; note that we allow 'val' here.
+    auto immutable = dyn_cast<ParsedValueType>(parsed->type);
+    Type ty = TranslateType(immutable ? immutable->elem : parsed->type);
+    auto vc = Expr::LValue(immutable != nullptr);
+
     // If we're at the global scope, make this a global variable.
     AnyVarDecl decl;
-    auto ty = TranslateType(parsed->type);
     if (curr_scope() == global_scope()) {
         auto g = new (*tu) GlobalDecl(
             tu.get(),
             nullptr,
             ty,
+            immutable != nullptr,
             parsed->name,
             Linkage::Internal,
             Mangling::Source,
@@ -4795,7 +4882,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     } else {
         decl = MakeLocal(
             ty,
-            Expr::LValue,
+            vc,
             parsed->name.str(),
             parsed->loc
         );
@@ -4854,6 +4941,7 @@ auto Sema::TranslateProcBody(
             &param_info,
             u32(i),
             false,
+            isa<ParsedValueType>(parsed_decl->type),
             parsed_decl->name.str(),
             parsed_decl->loc
         );
@@ -4988,7 +5076,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         // TODO: Check for redeclaration here. Codegen will crash horribly if
         // there are two procedures w/ the same name.
         EnterScope scope{*this, ScopeKind::Procedure};
-        auto type = TranslateProcType(parsed->type);
+        auto type = TranslateProcType(parsed->type, true);
         auto ty = cast_if_present<ProcType>(type);
         if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
         decl = BuildProcDeclInitial(
@@ -5232,7 +5320,11 @@ auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Type {
     return OptionalType::Get(*tu, elem);
 }
 
-auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_parameters) -> Type {
+auto Sema::TranslateProcType(
+    ParsedProcType* parsed,
+    bool allow_immutable_params,
+    ArrayRef<Type> deduced_var_parameters
+) -> Type {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
@@ -5251,7 +5343,21 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_
     bool ok = true;
     u32 var_params = 0;
     for (auto a : parsed->param_types()) {
-        auto ty = TranslateType(a.type);
+        // Drop 'val' here if we're parsing a *procedure* declaration. Specifically, we
+        // want to allow
+        //
+        //     proc f (int val x) { ... }
+        //
+        // but *not*
+        //
+        //     proc f (proc g(int val)) { ... }
+        //
+        // here, only 'f' is a procedure declaration; 'g' is a variable declaration.
+        auto parsed_ty = a.type;
+        if (auto val = dyn_cast<ParsedValueType>(parsed_ty); val and allow_immutable_params)
+            parsed_ty = val->elem;
+
+        auto ty = TranslateType(parsed_ty);
 
         // If this parameter’s type is 'var', then substitute whatever we
         // deduced for it.
@@ -5304,9 +5410,10 @@ auto Sema::TranslateProcType(ParsedProcType* parsed, ArrayRef<Type> deduced_var_
 }
 
 auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
-    auto ty = TranslateType(stmt->elem);
+    auto immutable = dyn_cast<ParsedValueType>(stmt->elem);
+    auto ty = TranslateType(immutable ? immutable->elem : stmt->elem);
     if (not CheckVariableType(ty, stmt->loc)) return Type();
-    return PtrType::Get(*tu, ty);
+    return PtrType::Get(*tu, ty, immutable != nullptr);
 }
 
 auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
@@ -5341,6 +5448,16 @@ auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
 
 auto Sema::TranslateTypeofType(ParsedTypeofType* parsed) -> Type {
     return TRY(TranslateExpr(parsed->arg))->type;
+}
+
+auto Sema::TranslateValueType(ParsedValueType* parsed) -> Type {
+    // 'val' is parsed as a type, but it isn’t really a type, but rather a
+    // property of variables and specifically pointer types; any contexts that
+    // admit 'val' must handle it separately; if we encounter it anywhere else
+    // then that’s just an error.
+    auto ty = TranslateType(parsed->elem);
+    Error(parsed->loc, "'%1(val%)' is only allowed in variable declarations or pointer types");
+    return ty;
 }
 
 auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {

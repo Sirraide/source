@@ -1,5 +1,5 @@
-// R      %srcc --ir --target x86_64-unknown-linux %s
-// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+// R      %srcc --ir --target x86_64-unknown-linux -fshort-filenames %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -fshort-filenames %s
 program test;
 
 bool g;
@@ -116,7 +116,7 @@ proc r15 = match 4 {
 // * @_S1g.1 = private 1, align 1
 // + @0 = "+\00"
 // + @1 = "integer overflow\00"
-// + @2 = "test/CG/match.src\00"
+// + @2 = "match.src\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
@@ -371,7 +371,7 @@ proc r15 = match 4 {
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("test/CG/match.src":103:26) arithmetic(ptr #1)
+// +     abort at loc("match.src":103:26) arithmetic(ptr #1)
 // +
 // + bb2:
 // +     %12 = icmp eq i64 %2:0, 5
@@ -398,7 +398,7 @@ proc r15 = match 4 {
 //L + @_S1g.1 = private global [1 x i8] undef, align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
 //L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
-//L + @__srcc_str.2 = private constant [18 x i8] c"test/CG/match.src\00", align 1
+//L + @__srcc_str.2 = private constant [10 x i8] c"match.src\00", align 1
 //L +
 //L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
@@ -650,7 +650,7 @@ proc r15 = match 4 {
 //L + 8:                                                ; preds = %1
 //L +   store ptr @__srcc_str.2, ptr %3, align 8
 //L +   %9 = getelementptr inbounds nuw i8, ptr %3, i32 8
-//L +   store i64 17, ptr %9, align 8
+//L +   store i64 9, ptr %9, align 8
 //L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 16
 //L +   store i64 103, ptr %10, align 8
 //L +   %11 = getelementptr inbounds nuw i8, ptr %3, i32 24

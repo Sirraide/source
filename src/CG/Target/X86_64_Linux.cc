@@ -13,6 +13,8 @@
 
 #include "TargetDefs.hh"
 
+// FIXME: Get rid of all of this code once LLVM’s ABI lowering library is available upstream.
+
 using namespace srcc;
 using namespace srcc::cg;
 using mlir::Value;

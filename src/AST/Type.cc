@@ -293,7 +293,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
     };
 
     // Append the base type.
-    visit(utils::Overloaded{
+    visit(utils::Overloaded{ // clang-format off
         [&](ArrayType* arr) {
             Format(
                 out,
@@ -304,15 +304,15 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         },
         [&](BuiltinType* b) {
             switch (b->builtin_kind()) {
-                case BuiltinKind::Bool: out += "%6(bool%)"; break;
-                case BuiltinKind::Deduced: out += "%6(var%)"; break;
-                case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; break;
-                case BuiltinKind::Int: out += "%6(int%)"; break;
-                case BuiltinKind::NoReturn: out += "%6(noreturn%)"; break;
-                case BuiltinKind::Tree: out += "%6(tree%)"; break;
-                case BuiltinKind::Type: out += "%6(type%)"; break;
-                case BuiltinKind::Void: out += "%6(void%)"; break;
-                case BuiltinKind::Nil: out += "%6(nil%)"; break;
+                case BuiltinKind::Bool: out += "%6(bool%)"; return;
+                case BuiltinKind::Deduced: out += "%6(var%)"; return;
+                case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; return;
+                case BuiltinKind::Int: out += "%6(int%)"; return;
+                case BuiltinKind::NoReturn: out += "%6(noreturn%)"; return;
+                case BuiltinKind::Tree: out += "%6(tree%)"; return;
+                case BuiltinKind::Type: out += "%6(type%)"; return;
+                case BuiltinKind::Void: out += "%6(void%)"; return;
+                case BuiltinKind::Nil: out += "%6(nil%)"; return;
             }
             Unreachable();
         },
@@ -320,16 +320,23 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         [&](IntType* int_ty) { Format(out, "%6(i{:i}%)", int_ty->bit_width()); },
         [&](OptionalType* opt) { Format(out, "{}%1(?%)", MaybeParenthesise(opt->elem())); },
         [&](ProcType* proc) { out += proc->print(String()); },
-        [&](PtrType* ptr) { Format(out, "{}%1(^%)", MaybeParenthesise(ptr->elem())); },
+        [&](PtrType* ptr) {
+            Format(
+                out,
+                "{}%1({}^%)",
+                MaybeParenthesise(ptr->elem()),
+                ptr->is_immutable() ? " val" : ""
+            );
+        },
         [&](RangeType* range) { Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print()); },
         [&](SliceType* slice) { Format(out, "{}%1([]%)", MaybeParenthesise(slice->elem())); },
         [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
         [&](TupleType* s) {
-            Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d){
+            Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d) {
                 return d->type->print();
             }));
         },
-    });
+    }); // clang-format on
 
     return out;
 }
@@ -460,13 +467,14 @@ auto OptionalType::get_engaged_offset() const -> Size {
     return layout_and_field_index.getPointer()->fields()[layout_and_field_index.getInt()]->offset;
 }
 
-auto PtrType::Get(TranslationUnit& mod, Type elem) -> PtrType* {
-    auto CreateNew = [&] { return new (mod) PtrType{elem}; };
-    return GetOrCreateType(mod.ptr_types, CreateNew, elem);
+auto PtrType::Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType* {
+    auto CreateNew = [&] { return new (mod) PtrType{elem, immutable}; };
+    return GetOrCreateType(mod.ptr_types, CreateNew, elem, immutable);
 }
 
-void PtrType::Profile(FoldingSetNodeID& ID, Type elem) {
+void PtrType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
     ID.AddPointer(elem.ptr());
+    ID.AddBoolean(immutable);
 }
 
 auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType* {

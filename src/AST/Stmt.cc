@@ -224,7 +224,7 @@ auto ForStmt::Create(
 }
 
 GlobalRefExpr::GlobalRefExpr(GlobalDecl* decl, SLoc location)
-    : Expr{Kind::GlobalRefExpr, decl->type, LValue, location}, decl{decl} {}
+    : Expr{Kind::GlobalRefExpr, decl->type, LValue(decl->immutable), location}, decl{decl} {}
 
 QuoteExpr::QuoteExpr(
     ParsedQuoteExpr* quoted,
@@ -279,7 +279,7 @@ MemberAccessExpr::MemberAccessExpr(
     Expr* base,
     FieldDecl* field,
     SLoc location
-) : Expr{Kind::MemberAccessExpr, field->type, LValue, location},
+) : Expr{Kind::MemberAccessExpr, field->type, LValue(base->is_immutable_lvalue()), location},
     base{base},
     field{field} {}
 
@@ -360,6 +360,7 @@ GlobalDecl::GlobalDecl(
     TranslationUnit* owner,
     ModuleDecl* imported_from_module,
     Type type,
+    bool immutable,
     DeclName name,
     Linkage linkage,
     Mangling mangling,
@@ -373,7 +374,7 @@ GlobalDecl::GlobalDecl(
     linkage,
     mangling,
     location
-) {
+), immutable(immutable) {
     owner->global_vars.push_back(this);
 }
 
