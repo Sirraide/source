@@ -19,6 +19,7 @@ enum class ValueCategory : u8;
 enum class OverflowBehaviour : u8;
 enum class ScopeKind : u8;
 enum class ParamPassingMode : u8;
+enum class EvalMode : u8;
 } // namespace srcc
 
 /// Parameter intents.
@@ -169,6 +170,16 @@ enum class srcc::ScopeKind : base::u8 {
 
     /// A struct declaration.
     Struct,
+};
+
+/// Value category of an rvalue used for evaluation; this is strictly
+/// type-dependent.
+///
+/// This used to be expressed by splitting RValue into SRValue and
+/// MRValue, but this distinction has proven unuseful outside codegen.
+enum class srcc::EvalMode : base::u8 {
+    Scalar,
+    Memory,
 };
 
 template <>

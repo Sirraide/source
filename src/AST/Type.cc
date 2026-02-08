@@ -179,6 +179,37 @@ void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
+auto TypeBase::eval_mode() const -> EvalMode {
+    switch (kind()) {
+        case TypeBase::Kind::BuiltinType:
+        case TypeBase::Kind::EnumType:
+        case TypeBase::Kind::IntType:
+        case TypeBase::Kind::ProcType:
+        case TypeBase::Kind::PtrType:
+        case TypeBase::Kind::SliceType:
+            return EvalMode::Scalar;
+
+        case TypeBase::Kind::OptionalType: {
+            auto opt = cast<OptionalType>(this);
+            if (opt->has_transparent_layout()) return opt->elem()->eval_mode();
+            return EvalMode::Memory; // This is an aggregate.
+        }
+
+        // TODO: Ranges are weird in that both eval modes make sense: memory
+        // for calls and scalar for casts and for how they’re created; maybe
+        // this warrants a separate eval mode (like Clang’s complex eval mode)?
+        case TypeBase::Kind::RangeType:
+            return EvalMode::Scalar;
+
+        case TypeBase::Kind::ArrayType:
+        case TypeBase::Kind::StructType:
+        case TypeBase::Kind::TupleType:
+            return EvalMode::Memory;
+    }
+
+    Unreachable();
+}
+
 bool TypeBase::is_aggregate() const {
     if (auto opt = dyn_cast<OptionalType>(this)) {
         if (not opt->has_transparent_layout()) return true;

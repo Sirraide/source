@@ -154,8 +154,6 @@ proc f10 {
 // + }
 // +
 // + proc _S2f5FvE.5 private ccc {
-// +     #0 = 8, align 8
-// +
 // + entry:
 // +     %0 = call ccc zeroext i1 h()
 // +     br %0 to bb1 else bb2
@@ -199,7 +197,6 @@ proc f10 {
 // +
 // + bb10:
 // +     call ccc void g(i64 6)
-// +     store #0, i64 1, align 8
 // +     call ccc void g(i64 7)
 // +     br bb11
 // +

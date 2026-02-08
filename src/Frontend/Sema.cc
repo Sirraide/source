@@ -76,7 +76,6 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
 
 void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
     Assert(object);
-    Assert(object->value_category_or_rvalue() == Expr::LValue);
     Assert(object->type);
 
     // The type must be complete.
@@ -85,6 +84,7 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
 
     // Declare the object’s members in the current scope, if there are any.
     if (auto s = dyn_cast<StructType>(ty)) {
+        Assert(object->is_lvalue());
         for (auto f : s->layout().fields()) {
             auto d = new (*tu) WithFieldRefDecl{object, f, with};
             AddDeclToScope(scope, d);
@@ -672,8 +672,15 @@ bool Sema::RequiresManglingNumber(const ParsedProcAttrs& attrs) {
 }
 
 auto Sema::Save(Expr* e) -> SaveExpr* {
+    // If we have a SaveExpr already, just reuse it.
     auto se = dyn_cast<SaveExpr>(e);
     if (se) return se;
+
+    // A memory rvalue isn’t really a value we can refer to, so
+    // materialise it first.
+    if (e->is_rvalue() and e->type->eval_mode() == EvalMode::Memory)
+        e = MaterialiseTemporary(e);
+
     return new (*tu) SaveExpr(e, e->location());
 }
 
@@ -3546,7 +3553,7 @@ auto Sema::BuildMatchExpr(
 ) -> Ptr<Expr> {
     bool exhaustive = false;
     if (auto control = control_expr.get_or_null()) {
-        control_expr = control = Save(MaterialiseTemporary(control));
+        control_expr = control = Save(control);
         auto ty = control->type;
         exhaustive = CheckMatchExhaustive(loc, control, ty, cases);
     } else {
@@ -5106,7 +5113,7 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
 
 auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
     EnterScope _{*this};
-    auto expr = Save(MaterialiseTemporary(TRY(TranslateExpr(parsed->expr))));
+    auto expr = Save(TRY(TranslateExpr(parsed->expr)));
     AddEntryToWithStack(curr_scope(), expr, parsed->loc);
     auto body = TRY(TranslateStmt(parsed->body));
     return new (*tu) WithExpr(expr, body, parsed->loc);

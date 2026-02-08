@@ -598,37 +598,6 @@ auto CodeGen::GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType* {
     return nullptr;
 }
 
-auto CodeGen::GetEvalMode(Type ty) -> EvalMode {
-    switch (ty->kind()) {
-        case TypeBase::Kind::BuiltinType:
-        case TypeBase::Kind::EnumType:
-        case TypeBase::Kind::IntType:
-        case TypeBase::Kind::ProcType:
-        case TypeBase::Kind::PtrType:
-        case TypeBase::Kind::SliceType:
-            return EvalMode::Scalar;
-
-        case TypeBase::Kind::OptionalType: {
-            auto opt = cast<OptionalType>(ty);
-            if (opt->has_transparent_layout()) return GetEvalMode(opt->elem());
-            return EvalMode::Memory; // This is an aggregate.
-        }
-
-        // TODO: Ranges are weird in that both eval modes make sense: memory
-        // for calls and scalar for casts and for how they’re created; maybe
-        // this warrants a separate eval mode (like Clang’s complex eval mode)?
-        case TypeBase::Kind::RangeType:
-            return EvalMode::Scalar;
-
-        case TypeBase::Kind::ArrayType:
-        case TypeBase::Kind::StructType:
-        case TypeBase::Kind::TupleType:
-            return EvalMode::Memory;
-    }
-
-    Unreachable();
-}
-
 auto CodeGen::GetEnvPtr() -> Value {
     Assert(curr.decl and curr.decl->has_captures);
     return curr.proc.getArguments().back();
@@ -1127,7 +1096,7 @@ void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RV
         Todo("Array init");
     }
 
-    Assert(GetEvalMode(rv.type()) == EvalMode::Scalar);
+    Assert(rv.type()->eval_mode() == EvalMode::Scalar);
     auto init_val = EmitValue(loc, rv);
     EmitScalarRValueImpl(loc, rv.type(), addr, init_val);
 };
@@ -1154,7 +1123,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     init = init->ignore_parens();
 
     // Check if this is an srvalue.
-    if (GetEvalMode(init->type) == EvalMode::Scalar) {
+    if (init->type->eval_mode() == EvalMode::Scalar) {
         IRValue init_val;
         Value init_from_addr;
         defer { HandleOptionalInitialised(addr, init, init_from_addr); };
@@ -1822,7 +1791,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
 
         // This is an mrvalue expression that is not the return value; we
         // allow these here, but we need to provide stack space for them.
-        else if (GetEvalMode(s->type_or_void()) == EvalMode::Memory) {
+        else if (s->type_or_void()->eval_mode() == EvalMode::Memory) {
             auto e = cast<Expr>(s);
             if (IsZeroSizedType(e->type)) {
                 Emit(s);
@@ -2052,7 +2021,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     auto mem = tu.target().abi().write_call_results_to_mem(ctx);
 
     // If this is an srvalue, just load it.
-    if (GetEvalMode(expr->type) == EvalMode::Scalar)
+    if (expr->type->eval_mode() == EvalMode::Scalar)
         return CreateLoad(l, mem, ret);
 
     // Sanity check: if this is an mrvalue, we should always construct into
@@ -2139,7 +2108,7 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
 
 auto CodeGen::EmitDefaultInit(Type ty, mlir::Location l) -> IRValue {
     if (IsZeroSizedType(ty)) return {};
-    Assert(GetEvalMode(ty) == EvalMode::Scalar, "Emitting non-srvalue on its own?");
+    Assert(ty->eval_mode() == EvalMode::Scalar, "Emitting non-srvalue on its own?");
 
     if (ty->is_integer_or_bool() or isa<EnumType>(ty)) return CreateInt(l, 0, C(ty));
     if (isa<PtrType>(ty)) return CreateNullPointer(l);

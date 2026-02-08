@@ -46,7 +46,7 @@ parameter of a function. Lastly, such values may not be returned from the functi
 ## Operators
 `+~` for wrapping addition and `+|` for saturating addition.
 
-Use `:>`, `<:`, `:>=`, `<=:` for unsigned comparison. `:/` and `:%` for unsigned division/remainder. 
+Use `:>`, `<:`, `:>=`, `<=:` for unsigned comparison. `:/` and `:%` for unsigned division/remainder.
 (note: multiplication isn’t signed, so `**` can still be exponentiation).
 
 `try` establishes a context that has the effect of

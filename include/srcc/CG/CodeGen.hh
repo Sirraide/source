@@ -20,7 +20,6 @@ class VMCodeGen;
 class ArgumentMapping;
 class IRValue;
 class ProcData;
-enum class EvalMode : u8;
 
 namespace detail {
 class CodeGenBase {
@@ -163,16 +162,6 @@ public:
         Assert(not is_null());
         return scalar_or_first().getLoc();
     }
-};
-
-/// Value category of an rvalue used for evaluation; this is strictly
-/// type-dependent.
-///
-/// This used to be expressed by splitting RValue into SRValue and
-/// MRValue, but this distinction has proven unuseful outside codegen.
-enum class srcc::cg::EvalMode : base::u8 {
-    Scalar,
-    Memory,
 };
 
 /// State used when emitting a procedure.
@@ -490,9 +479,6 @@ public:
 
     /// Get the struct type equivalent to a builtin aggregate type.
     auto GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType*;
-
-    /// Determine the evaluation mode for a type.
-    auto GetEvalMode(Type ty) -> EvalMode;
 
     /// Get a procedure, declaring it if it doesn’t exist yet.
     auto GetOrCreateProc(

@@ -80,4 +80,3 @@ proc d = macros::NOT_CONSTEXPR;
 //L + !1 = !{i32 1, !"wchar_size", i32 4}
 //L + !2 = !{i32 8, !"PIC Level", i32 0}
 //L + !3 = !{i32 7, !"PIE Level", i32 2}
-//L + !4 = !{!"clang version 22.0.0git"}

@@ -157,6 +157,10 @@ public:
     void dump(bool use_colour = false) const;
     void dump_colour() const { dump(true); }
 
+    /// Get the evaluation mode of this type; this determines whether values
+    /// of this type always need to live in memory or not.
+    [[nodiscard]] auto eval_mode() const -> EvalMode;
+
     /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
 
