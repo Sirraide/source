@@ -292,15 +292,18 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         return s;
     };
 
-    // FIXME: Use a visitor.
-    switch (kind()) {
-        case Kind::ArrayType: {
-            auto* arr = cast<ArrayType>(this);
-            Format(out, "{}%1([%5({}%)]%)", MaybeParenthesise(arr->elem()), arr->dimension());
-        } break;
-
-        case Kind::BuiltinType: {
-            switch (cast<BuiltinType>(this)->builtin_kind()) {
+    // Append the base type.
+    visit(utils::Overloaded{
+        [&](ArrayType* arr) {
+            Format(
+                out,
+                "{}%1([%5({}%)]%)",
+                MaybeParenthesise(arr->elem()),
+                arr->dimension()
+            );
+        },
+        [&](BuiltinType* b) {
+            switch (b->builtin_kind()) {
                 case BuiltinKind::Bool: out += "%6(bool%)"; break;
                 case BuiltinKind::Deduced: out += "%6(var%)"; break;
                 case BuiltinKind::UnresolvedOverloadSet: out += "%6(<overload set>%)"; break;
@@ -311,55 +314,22 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 case BuiltinKind::Void: out += "%6(void%)"; break;
                 case BuiltinKind::Nil: out += "%6(nil%)"; break;
             }
-        } break;
-
-        case Kind::EnumType: {
-            auto* e = cast<EnumType>(this);
-            Format(out, "%6({}%)", e->decl()->name);
-        } break;
-
-        case Kind::IntType: {
-            auto* int_ty = cast<IntType>(this);
-            Format(out, "%6(i{:i}%)", int_ty->bit_width());
-        } break;
-
-        case Kind::OptionalType: {
-            auto* ref = cast<OptionalType>(this);
-            Format(out, "{}%1(?%)", MaybeParenthesise(ref->elem()));
-        } break;
-
-        case Kind::ProcType: {
-            auto proc = cast<ProcType>(this);
-            out += proc->print(String());
-        } break;
-
-        case Kind::PtrType: {
-            auto* ref = cast<PtrType>(this);
-            Format(out, "{}%1(^%)", MaybeParenthesise(ref->elem()));
-        } break;
-
-        case Kind::RangeType: {
-            auto* range = cast<RangeType>(this);
-            Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print());
-        } break;
-
-        case Kind::SliceType: {
-            auto* slice = cast<SliceType>(this);
-            Format(out, "{}%1([]%)", MaybeParenthesise(slice->elem()));
-        } break;
-
-        case Kind::StructType: {
-            auto* s = cast<StructType>(this);
-            Format(out, "%6({}%)", s->name());
-        } break;
-
-        case Kind::TupleType: {
-            auto* s = cast<TupleType>(this);
+            Unreachable();
+        },
+        [&](EnumType* e) { Format(out, "%6({}%)", e->decl()->name); },
+        [&](IntType* int_ty) { Format(out, "%6(i{:i}%)", int_ty->bit_width()); },
+        [&](OptionalType* opt) { Format(out, "{}%1(?%)", MaybeParenthesise(opt->elem())); },
+        [&](ProcType* proc) { out += proc->print(String()); },
+        [&](PtrType* ptr) { Format(out, "{}%1(^%)", MaybeParenthesise(ptr->elem())); },
+        [&](RangeType* range) { Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print()); },
+        [&](SliceType* slice) { Format(out, "{}%1([]%)", MaybeParenthesise(slice->elem())); },
+        [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
+        [&](TupleType* s) {
             Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d){
                 return d->type->print();
             }));
-        } break;
-    }
+        },
+    });
 
     return out;
 }
