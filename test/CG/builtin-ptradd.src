@@ -44,7 +44,7 @@ proc p3 (int offs) -> i8^ {
 // +     ret ptr %0
 // + }
 // +
-// + proc _S2p3FRI8iE.3 (i64 %0) private ccc -> ptr {
+// + proc _S2p3FRI8iE.3 (i64 %0 noundef) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +     #1 = 1, align 1
 // +
@@ -86,7 +86,7 @@ proc p3 (int offs) -> i8^ {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S2p3FRI8iE.3(i64 %0) #1 {
+//L + define private ptr @_S2p3FRI8iE.3(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   store i64 %0, ptr %2, align 8

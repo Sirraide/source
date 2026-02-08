@@ -115,13 +115,13 @@ proc f4 -> int {
 // +     store #2, ptr #0, align 8
 // +     %0 = ptradd #2, 8
 // +     store %0, ptr #1, align 8
-// +     %1 = call ccc i64 _S2f3$1hFibE.9(i1 true zeroext, ptr #2 nest nofree noundef readonly)
-// +     %2 = call ccc i64 _S2f3$1gFibE.10(i1 true zeroext, ptr #2 nest nofree noundef readonly)
+// +     %1 = call ccc i64 _S2f3$1hFibE.9(i1 true noundef zeroext, ptr #2 nest nofree noundef readonly)
+// +     %2 = call ccc i64 _S2f3$1gFibE.10(i1 true noundef zeroext, ptr #2 nest nofree noundef readonly)
 // +     %3 = add i64 %1, %2
 // +     ret i64 %3
 // + }
 // +
-// + proc _S2f3$1hFibE.9 (i1 %0 zeroext, ptr %1 nest nofree noundef readonly) private ccc -> i64 {
+// + proc _S2f3$1hFibE.9 (i1 %0 noundef zeroext, ptr %1 nest nofree noundef readonly) private ccc -> i64 {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -132,7 +132,7 @@ proc f4 -> int {
 // +     br %4 to bb1 else bb2
 // +
 // + bb1:
-// +     %5 = call ccc i64 _S2f3$1gFibE.10(i1 false zeroext, ptr %1 nest nofree noundef readonly)
+// +     %5 = call ccc i64 _S2f3$1gFibE.10(i1 false noundef zeroext, ptr %1 nest nofree noundef readonly)
 // +     br bb3(%5)
 // +
 // + bb2:
@@ -144,7 +144,7 @@ proc f4 -> int {
 // +     ret i64 %8
 // + }
 // +
-// + proc _S2f3$1gFibE.10 (i1 %0 zeroext, ptr %1 nest nofree noundef readonly) private ccc -> i64 {
+// + proc _S2f3$1gFibE.10 (i1 %0 noundef zeroext, ptr %1 nest nofree noundef readonly) private ccc -> i64 {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -155,7 +155,7 @@ proc f4 -> int {
 // +     br %4 to bb1 else bb2
 // +
 // + bb1:
-// +     %5 = call ccc i64 _S2f3$1hFibE.9(i1 false zeroext, ptr %1 nest nofree noundef readonly)
+// +     %5 = call ccc i64 _S2f3$1hFibE.9(i1 false noundef zeroext, ptr %1 nest nofree noundef readonly)
 // +     br bb3(%5)
 // +
 // + bb2:
@@ -318,14 +318,14 @@ proc f4 -> int {
 //L +   store ptr %1, ptr %3, align 8
 //L +   %4 = getelementptr inbounds nuw i8, ptr %3, i32 8
 //L +   store ptr %2, ptr %4, align 8
-//L +   %5 = call i64 @"_S2f3$1hFibE.9"(i1 zeroext true, ptr nest nofree noundef readonly %3)
-//L +   %6 = call i64 @"_S2f3$1gFibE.10"(i1 zeroext true, ptr nest nofree noundef readonly %3)
+//L +   %5 = call i64 @"_S2f3$1hFibE.9"(i1 noundef zeroext true, ptr nest nofree noundef readonly %3)
+//L +   %6 = call i64 @"_S2f3$1gFibE.10"(i1 noundef zeroext true, ptr nest nofree noundef readonly %3)
 //L +   %7 = add i64 %5, %6
 //L +   ret i64 %7
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @"_S2f3$1hFibE.9"(i1 zeroext %0, ptr nest nofree noundef readonly %1) #1 {
+//L + define private i64 @"_S2f3$1hFibE.9"(i1 noundef zeroext %0, ptr nest nofree noundef readonly %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
 //L +   store i8 %4, ptr %3, align 1
@@ -334,7 +334,7 @@ proc f4 -> int {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %2
-//L +   %8 = call i64 @"_S2f3$1gFibE.10"(i1 zeroext false, ptr nest nofree noundef readonly %1)
+//L +   %8 = call i64 @"_S2f3$1gFibE.10"(i1 noundef zeroext false, ptr nest nofree noundef readonly %1)
 //L +   br label %12
 //L +
 //L + 9:                                                ; preds = %2
@@ -348,7 +348,7 @@ proc f4 -> int {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @"_S2f3$1gFibE.10"(i1 zeroext %0, ptr nest nofree noundef readonly %1) #1 {
+//L + define private i64 @"_S2f3$1gFibE.10"(i1 noundef zeroext %0, ptr nest nofree noundef readonly %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
 //L +   store i8 %4, ptr %3, align 1
@@ -357,7 +357,7 @@ proc f4 -> int {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %2
-//L +   %8 = call i64 @"_S2f3$1hFibE.9"(i1 zeroext false, ptr nest nofree noundef readonly %1)
+//L +   %8 = call i64 @"_S2f3$1hFibE.9"(i1 noundef zeroext false, ptr nest nofree noundef readonly %1)
 //L +   br label %13
 //L +
 //L + 9:                                                ; preds = %2

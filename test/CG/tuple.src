@@ -138,7 +138,7 @@ proc f9 nomangle {
 // +     %3 = ptradd #0, 16
 // +     store %3, i64 6, align 8
 // +     call ccc void sink()
-// +     call ccc void sink(ptr #0 dereferenceable 24)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 24)
 // +     ret
 // + }
 // +
@@ -153,9 +153,9 @@ proc f9 nomangle {
 // +     store #0, i64 0, align 8
 // +     store #1, i64 1, align 8
 // +     store #2, i64 2, align 8
-// +     call ccc void sink(ptr #0 dereferenceable 8)
-// +     call ccc void sink(ptr #1 dereferenceable 8)
-// +     call ccc void sink(ptr #2 dereferenceable 8)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 8)
 // +     ret
 // + }
 // +
@@ -168,9 +168,9 @@ proc f9 nomangle {
 // +     store #0, i8 0, align 1
 // +     store #1, i8 -128, align 1
 // +     store #2, i8 -127, align 1
-// +     call ccc void sink(ptr #0 dereferenceable 1)
-// +     call ccc void sink(ptr #1 dereferenceable 1)
-// +     call ccc void sink(ptr #2 dereferenceable 1)
+// +     call ccc void sink(ptr #0 align 1 dereferenceable 1)
+// +     call ccc void sink(ptr #1 align 1 dereferenceable 1)
+// +     call ccc void sink(ptr #2 align 1 dereferenceable 1)
 // +     ret
 // + }
 // +
@@ -183,8 +183,8 @@ proc f9 nomangle {
 // +     store #1, i64 1, align 8
 // +     %0 = ptradd #1, 8
 // +     store %0, i8 2, align 1
-// +     call ccc void sink(ptr #0 dereferenceable 9)
-// +     call ccc void sink(ptr #1 dereferenceable 9)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 9)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 9)
 // +     ret
 // + }
 // +
@@ -218,8 +218,8 @@ proc f9 nomangle {
 // +     br bb3(%9)
 // +
 // + bb5:
-// +     call ccc void sink(ptr #0 dereferenceable 32)
-// +     call ccc void sink(ptr #1 dereferenceable 32)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 32)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 32)
 // +     ret
 // + }
 // +
@@ -264,10 +264,10 @@ proc f9 nomangle {
 // +     store %13, i64 4, align 8
 // +     %14 = ptradd %13, 8
 // +     store %14, i64 5, align 8
-// +     call ccc void sink(ptr #0 dereferenceable 40)
-// +     call ccc void sink(ptr #1 dereferenceable 40)
-// +     call ccc void sink(ptr #2 dereferenceable 40)
-// +     call ccc void sink(ptr #3 dereferenceable 40)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 40)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 40)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 40)
+// +     call ccc void sink(ptr #3 align 8 dereferenceable 40)
 // +     ret
 // + }
 // +
@@ -327,11 +327,11 @@ proc f9 nomangle {
 // +     store %18, i8 12, align 1
 // +     %19 = ptradd %17, 16
 // +     set ptr %19, i8 0, i64 9
-// +     call ccc void sink(ptr #0 dereferenceable 48)
-// +     call ccc void sink(ptr #1 dereferenceable 48)
-// +     call ccc void sink(ptr #2 dereferenceable 48)
-// +     call ccc void sink(ptr #3 dereferenceable 48)
-// +     call ccc void sink(ptr #4 dereferenceable 48)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 48)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 48)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 48)
+// +     call ccc void sink(ptr #3 align 8 dereferenceable 48)
+// +     call ccc void sink(ptr #4 align 8 dereferenceable 48)
 // +     ret
 // + }
 // +
@@ -348,11 +348,11 @@ proc f9 nomangle {
 // +     store #2, i64 3, align 8
 // +     store #3, i64 4, align 8
 // +     store #4, i64 5, align 8
-// +     call ccc void sink(ptr #0 dereferenceable 8)
-// +     call ccc void sink(ptr #1 dereferenceable 8)
-// +     call ccc void sink(ptr #2 dereferenceable 8)
-// +     call ccc void sink(ptr #3 dereferenceable 8)
-// +     call ccc void sink(ptr #4 dereferenceable 8)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #3 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #4 align 8 dereferenceable 8)
 // +     ret
 // + }
 // +
@@ -395,12 +395,12 @@ proc f9 nomangle {
 // +     store #11, i64 %10, align 8
 // +     %11 = load i64, #11, align 8
 // +     store #5, i64 %11, align 8
-// +     call ccc void sink(ptr #0 dereferenceable 8)
-// +     call ccc void sink(ptr #1 dereferenceable 8)
-// +     call ccc void sink(ptr #2 dereferenceable 8)
-// +     call ccc void sink(ptr #3 dereferenceable 8)
-// +     call ccc void sink(ptr #4 dereferenceable 8)
-// +     call ccc void sink(ptr #5 dereferenceable 8)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #3 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #4 align 8 dereferenceable 8)
+// +     call ccc void sink(ptr #5 align 8 dereferenceable 8)
 // +     ret
 // + }
 // +
@@ -413,7 +413,7 @@ proc f9 nomangle {
 // +     store #1, i64 %0, align 8
 // +     %1 = load i64, #1, align 8
 // +     store #0, i64 %1, align 8
-// +     call ccc void sink(ptr #0 dereferenceable 8)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
 // +     ret
 // + }
 
@@ -449,7 +449,7 @@ proc f9 nomangle {
 //L +   %5 = getelementptr inbounds nuw i8, ptr %1, i32 16
 //L +   store i64 6, ptr %5, align 8
 //L +   call void @sink()
-//L +   call void @sink(ptr dereferenceable(24) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(24) %1)
 //L +   ret void
 //L + }
 //L +
@@ -464,9 +464,9 @@ proc f9 nomangle {
 //L +   store i64 0, ptr %1, align 8
 //L +   store i64 1, ptr %2, align 8
 //L +   store i64 2, ptr %3, align 8
-//L +   call void @sink(ptr dereferenceable(8) %1)
-//L +   call void @sink(ptr dereferenceable(8) %2)
-//L +   call void @sink(ptr dereferenceable(8) %3)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %3)
 //L +   ret void
 //L + }
 //L +
@@ -478,9 +478,9 @@ proc f9 nomangle {
 //L +   store i8 0, ptr %1, align 1
 //L +   store i8 -128, ptr %2, align 1
 //L +   store i8 -127, ptr %3, align 1
-//L +   call void @sink(ptr dereferenceable(1) %1)
-//L +   call void @sink(ptr dereferenceable(1) %2)
-//L +   call void @sink(ptr dereferenceable(1) %3)
+//L +   call void @sink(ptr align 1 dereferenceable(1) %1)
+//L +   call void @sink(ptr align 1 dereferenceable(1) %2)
+//L +   call void @sink(ptr align 1 dereferenceable(1) %3)
 //L +   ret void
 //L + }
 //L +
@@ -492,8 +492,8 @@ proc f9 nomangle {
 //L +   store i64 1, ptr %2, align 8
 //L +   %3 = getelementptr inbounds nuw i8, ptr %2, i32 8
 //L +   store i8 2, ptr %3, align 1
-//L +   call void @sink(ptr dereferenceable(9) %1)
-//L +   call void @sink(ptr dereferenceable(9) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(9) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(9) %2)
 //L +   ret void
 //L + }
 //L +
@@ -528,8 +528,8 @@ proc f9 nomangle {
 //L +   br label %10
 //L +
 //L + 17:                                               ; preds = %10
-//L +   call void @sink(ptr dereferenceable(32) %1)
-//L +   call void @sink(ptr dereferenceable(32) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(32) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(32) %2)
 //L +   ret void
 //L + }
 //L +
@@ -573,10 +573,10 @@ proc f9 nomangle {
 //L +   store i64 4, ptr %18, align 8
 //L +   %19 = getelementptr inbounds nuw i8, ptr %18, i32 8
 //L +   store i64 5, ptr %19, align 8
-//L +   call void @sink(ptr dereferenceable(40) %1)
-//L +   call void @sink(ptr dereferenceable(40) %2)
-//L +   call void @sink(ptr dereferenceable(40) %3)
-//L +   call void @sink(ptr dereferenceable(40) %4)
+//L +   call void @sink(ptr align 8 dereferenceable(40) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(40) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(40) %3)
+//L +   call void @sink(ptr align 8 dereferenceable(40) %4)
 //L +   ret void
 //L + }
 //L +
@@ -637,11 +637,11 @@ proc f9 nomangle {
 //L +   store i8 12, ptr %29, align 1
 //L +   %30 = getelementptr inbounds nuw i8, ptr %28, i32 16
 //L +   call void @llvm.memset.p0.i64(ptr %30, i8 0, i64 9, i1 false)
-//L +   call void @sink(ptr dereferenceable(48) %1)
-//L +   call void @sink(ptr dereferenceable(48) %2)
-//L +   call void @sink(ptr dereferenceable(48) %3)
-//L +   call void @sink(ptr dereferenceable(48) %4)
-//L +   call void @sink(ptr dereferenceable(48) %5)
+//L +   call void @sink(ptr align 8 dereferenceable(48) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(48) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(48) %3)
+//L +   call void @sink(ptr align 8 dereferenceable(48) %4)
+//L +   call void @sink(ptr align 8 dereferenceable(48) %5)
 //L +   ret void
 //L + }
 //L +
@@ -657,11 +657,11 @@ proc f9 nomangle {
 //L +   store i64 3, ptr %3, align 8
 //L +   store i64 4, ptr %4, align 8
 //L +   store i64 5, ptr %5, align 8
-//L +   call void @sink(ptr dereferenceable(8) %1)
-//L +   call void @sink(ptr dereferenceable(8) %2)
-//L +   call void @sink(ptr dereferenceable(8) %3)
-//L +   call void @sink(ptr dereferenceable(8) %4)
-//L +   call void @sink(ptr dereferenceable(8) %5)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %3)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %4)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %5)
 //L +   ret void
 //L + }
 //L +
@@ -703,12 +703,12 @@ proc f9 nomangle {
 //L +   store i64 %23, ptr %12, align 8
 //L +   %24 = load i64, ptr %12, align 8
 //L +   store i64 %24, ptr %6, align 8
-//L +   call void @sink(ptr dereferenceable(8) %1)
-//L +   call void @sink(ptr dereferenceable(8) %2)
-//L +   call void @sink(ptr dereferenceable(8) %3)
-//L +   call void @sink(ptr dereferenceable(8) %4)
-//L +   call void @sink(ptr dereferenceable(8) %5)
-//L +   call void @sink(ptr dereferenceable(8) %6)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %2)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %3)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %4)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %5)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %6)
 //L +   ret void
 //L + }
 //L +
@@ -720,7 +720,7 @@ proc f9 nomangle {
 //L +   store i64 %3, ptr %2, align 8
 //L +   %4 = load i64, ptr %2, align 8
 //L +   store i64 %4, ptr %1, align 8
-//L +   call void @sink(ptr dereferenceable(8) %1)
+//L +   call void @sink(ptr align 8 dereferenceable(8) %1)
 //L +   ret void
 //L + }
 //L +

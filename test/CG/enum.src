@@ -17,7 +17,7 @@ proc p (x v) = v;
 // +     ret
 // + }
 // +
-// + proc _S1pFT1xT1xE.1 (i64 %0) private ccc -> i64 {
+// + proc _S1pFT1xT1xE.1 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:

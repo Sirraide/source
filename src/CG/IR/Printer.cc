@@ -48,7 +48,7 @@ struct CodeGen::Printer {
 
     Printer(CodeGen& cg, bool verbose = false) : cg{cg}, verbose{verbose} {}
     void print(mlir::ModuleOp module);
-    void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap);
+    void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only);
     void print_result_attrs(ProcAndCallOpInterface proc_or_call, unsigned idx);
     void print_attr(mlir::NamedAttribute attr);
     void print_op(Operation* op);
@@ -127,7 +127,28 @@ void CodeGen::Printer::print(mlir::ModuleOp module) {
         print_top_level_op(&op);
 }
 
-void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only, bool wrap) {
+void CodeGen::Printer::print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only) {
+    // Wrap if we have at least for arguments, or if at least 2 arguments are 'ptr's
+    // since we usually have a soup of 'noundef align dereferenceable' attributes
+    // on those.
+    bool wrap = proc_or_call.getNumCallArgs() > 3;
+    if (not wrap) {
+        unsigned num_ptrs = 0;
+        for (unsigned i = 0; i < proc_or_call.getNumCallArgs(); i++) {
+            if (
+                isa<LLVM::LLVMPointerType>(proc_or_call.getCallArgType(i)) and
+                proc_or_call.getCallArgAttrs(i) and
+                not proc_or_call.getCallArgAttrs(i).empty()
+            ) {
+                num_ptrs++;
+                if (num_ptrs == 2) {
+                    wrap = true;
+                    break;
+                }
+            }
+        }
+    }
+
     bool is_proc = isa<ProcOp>(proc_or_call);
     auto save_indent = indent.size();
     defer { indent.truncate(save_indent); };
@@ -192,6 +213,8 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
         Format(out, " %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
         Format(out, " %1(dereferenceable %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
+    } else if (attr.getName() == LLVMDialect::getAlignAttrName()) {
+        Format(out, " %1(align %)%5({}%)", cast<mlir::IntegerAttr>(attr.getValue()).getInt());
     } else {
         Format(out, " <DON'T KNOW HOW TO PRINT '{}'>", attr.getName().strref());
     }
@@ -318,7 +341,7 @@ void CodeGen::Printer::print_op(Operation* op) {
 
         out += " ";
         out += val(c.getAddr(), false);
-        print_arg_list(c, false, c.getNumCallArgs() > 3);
+        print_arg_list(c, false);
         return;
     }
 
@@ -550,7 +573,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     Format(out, "%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
 
     // Print args.
-    print_arg_list(proc, proc.isDeclaration(), proc.getNumCallArgs() > 3);
+    print_arg_list(proc, proc.isDeclaration());
 
     // Print attributes.
     if (proc.getVariadic()) out += " %1(variadic%)";

@@ -233,7 +233,7 @@ proc p13 {
 // +     br bb1
 // +
 // + bb1:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb3
 // +
@@ -242,13 +242,13 @@ proc p13 {
 // +     ret
 // +
 // + bb3:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     br bb1
 // + }
 // +
-// + proc f (i64) external ccc;
+// + proc f (i64 noundef) external ccc;
 // +
 // + proc b external ccc -> i1 zeroext;
 // +
@@ -257,7 +257,7 @@ proc p13 {
 // +     br bb1
 // +
 // + bb1:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %0 = call ccc zeroext i1 b()
 // +     br %0 to bb2 else bb3
 // +
@@ -266,7 +266,7 @@ proc p13 {
 // +     br bb1
 // +
 // + bb3:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     br bb1
@@ -281,7 +281,7 @@ proc p13 {
 // +     br %0 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %1 = call ccc zeroext i1 b()
 // +     br %1 to bb3 else bb4
 // +
@@ -290,7 +290,7 @@ proc p13 {
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     br bb1
@@ -308,7 +308,7 @@ proc p13 {
 // +     br %0 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %1 = call ccc zeroext i1 b()
 // +     br %1 to bb3 else bb4
 // +
@@ -317,7 +317,7 @@ proc p13 {
 // +     br bb1
 // +
 // + bb4:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     br bb1
@@ -336,7 +336,7 @@ proc p13 {
 // +     br %2 to bb2 else bb5
 // +
 // + bb2:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %3 = call ccc zeroext i1 b()
 // +     br %3 to bb3 else bb4
 // +
@@ -345,7 +345,7 @@ proc p13 {
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     %4 = ptradd %1, 1
@@ -365,7 +365,7 @@ proc p13 {
 // +     br %2 to bb2 else bb6
 // +
 // + bb2:
-// +     call ccc void f(i64 1)
+// +     call ccc void f(i64 1 noundef)
 // +     %3 = call ccc zeroext i1 b()
 // +     br %3 to bb3 else bb4
 // +
@@ -374,7 +374,7 @@ proc p13 {
 // +     br bb5
 // +
 // + bb4:
-// +     call ccc void f(i64 2)
+// +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
 // +     br bb5

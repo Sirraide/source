@@ -13,3 +13,48 @@ proc preserve_lvalueness(int val^ imm, int^ mut) {
     p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
     p(mut as int val^); // As do casts.
 }
+
+// * proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1gFvRiRiE.1 (
+// +     ptr %0 align 8 dereferenceable 8 noundef readonly,
+// +     ptr %1 align 8 dereferenceable 8 noundef,
+// + ) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     %2 = load ptr, #1, align 8
+// +     store #0, ptr %2, align 8
+// +     %3 = load ptr, #1, align 8
+// +     store #0, ptr %3, align 8
+// +     %4 = load ptr, #0, align 8
+// +     store #1, ptr %4, align 8
+// +     ret
+// + }
+// +
+// + proc _S19preserve_lvaluenessFvRiRiE.2 (
+// +     ptr %0 align 8 dereferenceable 8 noundef readonly,
+// +     ptr %1 align 8 dereferenceable 8 noundef,
+// + ) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     store #1, ptr %1, align 8
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #1 align 8 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc _S19preserve_lvalueness$1pFvx2RiE.3 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + entry:
+// +     ret
+// + }

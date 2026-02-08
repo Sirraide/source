@@ -62,7 +62,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxiE.1 (i64 %0) private ccc {
+// + proc _S4sinkFvxiE.1 (i64 %0 noundef) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -70,7 +70,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvxbE.2 (i1 %0 zeroext) private ccc {
+// + proc _S4sinkFvxbE.2 (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -79,7 +79,7 @@ proc arith (in int a, in int b) {
 // +     ret
 // + }
 // +
-// + proc _S13arith_checkedFvxixiE.3 (i64 %0, i64 %1) private ccc {
+// + proc _S13arith_checkedFvxixiE.3 (i64 %0 noundef, i64 %1 noundef) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 80, align 8
@@ -96,7 +96,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":8:10) arithmetic(ptr #2)
 // +
 // + bb2:
-// +     call ccc void _S4sinkFvxiE.1(i64 %4:0)
+// +     call ccc void _S4sinkFvxiE.1(i64 %4:0 noundef)
 // +     %14 = load i64, #0, align 8
 // +     %15 = load i64, #1, align 8
 // +     %16 = ssub ov i64 %14, %15
@@ -106,7 +106,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":9:10) arithmetic(ptr #2)
 // +
 // + bb4:
-// +     call ccc void _S4sinkFvxiE.1(i64 %16:0)
+// +     call ccc void _S4sinkFvxiE.1(i64 %16:0 noundef)
 // +     %26 = load i64, #0, align 8
 // +     %27 = load i64, #1, align 8
 // +     %28 = smul ov i64 %26, %27
@@ -116,7 +116,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":10:10) arithmetic(ptr #2)
 // +
 // + bb6:
-// +     call ccc void _S4sinkFvxiE.1(i64 %28:0)
+// +     call ccc void _S4sinkFvxiE.1(i64 %28:0 noundef)
 // +     %38 = load i64, #0, align 8
 // +     %39 = load i64, #1, align 8
 // +     %40 = icmp eq i64 %39, 0
@@ -136,7 +136,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb10:
 // +     %62 = sdiv i64 %38, %39
-// +     call ccc void _S4sinkFvxiE.1(i64 %62)
+// +     call ccc void _S4sinkFvxiE.1(i64 %62 noundef)
 // +     %63 = load i64, #0, align 8
 // +     %64 = load i64, #1, align 8
 // +     %65 = icmp eq i64 %64, 0
@@ -156,7 +156,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb14:
 // +     %87 = srem i64 %63, %64
-// +     call ccc void _S4sinkFvxiE.1(i64 %87)
+// +     call ccc void _S4sinkFvxiE.1(i64 %87 noundef)
 // +     %88 = load i64, #0, align 8
 // +     %89 = load i64, #1, align 8
 // +     %90 = icmp eq i64 %89, 0
@@ -167,7 +167,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb16:
 // +     %100 = udiv i64 %88, %89
-// +     call ccc void _S4sinkFvxiE.1(i64 %100)
+// +     call ccc void _S4sinkFvxiE.1(i64 %100 noundef)
 // +     %101 = load i64, #0, align 8
 // +     %102 = load i64, #1, align 8
 // +     %103 = icmp eq i64 %102, 0
@@ -178,7 +178,7 @@ proc arith (in int a, in int b) {
 // +
 // + bb18:
 // +     %113 = urem i64 %101, %102
-// +     call ccc void _S4sinkFvxiE.1(i64 %113)
+// +     call ccc void _S4sinkFvxiE.1(i64 %113 noundef)
 // +     %114 = load i64, #0, align 8
 // +     %115 = load i64, #1, align 8
 // +     %116 = icmp uge i64 %115, 64
@@ -198,7 +198,7 @@ proc arith (in int a, in int b) {
 // +     abort at loc("binary-ops.src":17:10) arithmetic(ptr #2)
 // +
 // + bb22:
-// +     call ccc void _S4sinkFvxiE.1(i64 %126)
+// +     call ccc void _S4sinkFvxiE.1(i64 %126 noundef)
 // +     %139 = load i64, #0, align 8
 // +     %140 = load i64, #1, align 8
 // +     %141 = icmp uge i64 %140, 64
@@ -209,11 +209,11 @@ proc arith (in int a, in int b) {
 // +
 // + bb24:
 // +     %151 = shl i64 %139, %140
-// +     call ccc void _S4sinkFvxiE.1(i64 %151)
+// +     call ccc void _S4sinkFvxiE.1(i64 %151 noundef)
 // +     ret
 // + }
 // +
-// + proc _S5arithFvxixiE.4 (i64 %0, i64 %1) private ccc {
+// + proc _S5arithFvxixiE.4 (i64 %0 noundef, i64 %1 noundef) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -223,70 +223,70 @@ proc arith (in int a, in int b) {
 // +     %2 = load i64, #0, align 8
 // +     %3 = load i64, #1, align 8
 // +     %4 = add i64 %2, %3
-// +     call ccc void _S4sinkFvxiE.1(i64 %4)
+// +     call ccc void _S4sinkFvxiE.1(i64 %4 noundef)
 // +     %5 = load i64, #0, align 8
 // +     %6 = load i64, #1, align 8
 // +     %7 = sub i64 %5, %6
-// +     call ccc void _S4sinkFvxiE.1(i64 %7)
+// +     call ccc void _S4sinkFvxiE.1(i64 %7 noundef)
 // +     %8 = load i64, #0, align 8
 // +     %9 = load i64, #1, align 8
 // +     %10 = mul i64 %8, %9
-// +     call ccc void _S4sinkFvxiE.1(i64 %10)
+// +     call ccc void _S4sinkFvxiE.1(i64 %10 noundef)
 // +     %11 = load i64, #0, align 8
 // +     %12 = load i64, #1, align 8
 // +     %13 = ashr i64 %11, %12
-// +     call ccc void _S4sinkFvxiE.1(i64 %13)
+// +     call ccc void _S4sinkFvxiE.1(i64 %13 noundef)
 // +     %14 = load i64, #0, align 8
 // +     %15 = load i64, #1, align 8
 // +     %16 = lshr i64 %14, %15
-// +     call ccc void _S4sinkFvxiE.1(i64 %16)
+// +     call ccc void _S4sinkFvxiE.1(i64 %16 noundef)
 // +     %17 = load i64, #0, align 8
 // +     %18 = load i64, #1, align 8
 // +     %19 = and i64 %17, %18
-// +     call ccc void _S4sinkFvxiE.1(i64 %19)
+// +     call ccc void _S4sinkFvxiE.1(i64 %19 noundef)
 // +     %20 = load i64, #0, align 8
 // +     %21 = load i64, #1, align 8
 // +     %22 = or i64 %20, %21
-// +     call ccc void _S4sinkFvxiE.1(i64 %22)
+// +     call ccc void _S4sinkFvxiE.1(i64 %22 noundef)
 // +     %23 = load i64, #0, align 8
 // +     %24 = load i64, #1, align 8
 // +     %25 = icmp slt i64 %23, %24
-// +     call ccc void _S4sinkFvxbE.2(i1 %25 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %25 noundef zeroext)
 // +     %26 = load i64, #0, align 8
 // +     %27 = load i64, #1, align 8
 // +     %28 = icmp sle i64 %26, %27
-// +     call ccc void _S4sinkFvxbE.2(i1 %28 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %28 noundef zeroext)
 // +     %29 = load i64, #0, align 8
 // +     %30 = load i64, #1, align 8
 // +     %31 = icmp sgt i64 %29, %30
-// +     call ccc void _S4sinkFvxbE.2(i1 %31 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %31 noundef zeroext)
 // +     %32 = load i64, #0, align 8
 // +     %33 = load i64, #1, align 8
 // +     %34 = icmp sge i64 %32, %33
-// +     call ccc void _S4sinkFvxbE.2(i1 %34 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %34 noundef zeroext)
 // +     %35 = load i64, #0, align 8
 // +     %36 = load i64, #1, align 8
 // +     %37 = icmp ult i64 %35, %36
-// +     call ccc void _S4sinkFvxbE.2(i1 %37 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %37 noundef zeroext)
 // +     %38 = load i64, #0, align 8
 // +     %39 = load i64, #1, align 8
 // +     %40 = icmp ule i64 %38, %39
-// +     call ccc void _S4sinkFvxbE.2(i1 %40 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %40 noundef zeroext)
 // +     %41 = load i64, #0, align 8
 // +     %42 = load i64, #1, align 8
 // +     %43 = icmp ugt i64 %41, %42
-// +     call ccc void _S4sinkFvxbE.2(i1 %43 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %43 noundef zeroext)
 // +     %44 = load i64, #0, align 8
 // +     %45 = load i64, #1, align 8
 // +     %46 = icmp uge i64 %44, %45
-// +     call ccc void _S4sinkFvxbE.2(i1 %46 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %46 noundef zeroext)
 // +     %47 = load i64, #0, align 8
 // +     %48 = load i64, #1, align 8
 // +     %49 = icmp eq i64 %47, %48
-// +     call ccc void _S4sinkFvxbE.2(i1 %49 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %49 noundef zeroext)
 // +     %50 = load i64, #0, align 8
 // +     %51 = load i64, #1, align 8
 // +     %52 = icmp ne i64 %50, %51
-// +     call ccc void _S4sinkFvxbE.2(i1 %52 zeroext)
+// +     call ccc void _S4sinkFvxbE.2(i1 %52 noundef zeroext)
 // +     ret
 // + }

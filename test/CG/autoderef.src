@@ -35,8 +35,8 @@ sink(a.x + p1.x + p2.x + p3.x);
 // +     %10 = load ptr, %9, align 8
 // +     %11 = load i64, %10, align 8
 // +     %12 = add i64 %7, %11
-// +     call ccc void sink(i64 %12)
+// +     call ccc void sink(i64 %12 noundef)
 // +     ret
 // + }
 // +
-// + proc sink (i64) external ccc;
+// + proc sink (i64 noundef) external ccc;

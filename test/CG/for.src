@@ -99,7 +99,7 @@ proc l {
 // +     br %3 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void foo(i16 %2)
+// +     call ccc void foo(i16 %2 noundef)
 // +     %4 = add i16 %2, 1
 // +     br bb1(%4)
 // +
@@ -107,7 +107,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc foo (i16) external ccc;
+// + proc foo (i16 noundef) external ccc;
 // +
 // + proc _S1cFvE.3 private ccc {
 // + entry:
@@ -122,7 +122,7 @@ proc l {
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void foo(i64 %2)
+// +     call ccc void foo(i64 %2 noundef)
 // +     %4 = add i64 %2, 1
 // +     br bb2(%4)
 // +
@@ -164,7 +164,7 @@ proc l {
 // +     br %4 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void foo(i16 %3, i64 %2)
+// +     call ccc void foo(i16 %3 noundef, i64 %2 noundef)
 // +     %5 = add i64 %2, 1
 // +     %6 = add i16 %3, 1
 // +     br bb1(%5, %6)
@@ -187,10 +187,10 @@ proc l {
 // +
 // + bb3:
 // +     call ccc void foo(
-// +         i64 %0,
-// +         i64 %3,
-// +         i64 %1,
-// +         i64 %4)
+// +         i64 %0 noundef,
+// +         i64 %3 noundef,
+// +         i64 %1 noundef,
+// +         i64 %4 noundef)
 // +     %6 = add i64 %3, 1
 // +     %7 = add i64 %4, 1
 // +     br bb2(%6, %7)
@@ -217,7 +217,7 @@ proc l {
 // +     br %3 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void foo(i64 %0, i64 %1)
+// +     call ccc void foo(i64 %0 noundef, i64 %1 noundef)
 // +     %4 = add i64 %0, 1
 // +     %5 = add i64 %1, 1
 // +     br bb1(%4, %5)
@@ -239,7 +239,7 @@ proc l {
 // +     br %4 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void foo(i64 %0, i64 %1, i64 %2)
+// +     call ccc void foo(i64 %0 noundef, i64 %1 noundef, i64 %2 noundef)
 // +     %5 = add i64 %0, 1
 // +     %6 = add i64 %1, 1
 // +     %7 = add i64 %2, 1
@@ -258,7 +258,7 @@ proc l {
 // +     br %2 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void foo(i64 %0)
+// +     call ccc void foo(i64 %0 noundef)
 // +     %3 = add i64 %0, 1
 // +     %4 = add i64 %1, 1
 // +     br bb1(%3, %4)
@@ -288,7 +288,7 @@ proc l {
 // +     br %8 to bb5 else bb6
 // +
 // + bb5:
-// +     call ccc void foo(i64 %0, i64 %1)
+// +     call ccc void foo(i64 %0 noundef, i64 %1 noundef)
 // +     %9 = add i64 %0, 1
 // +     %10 = add i64 %1, 1
 // +     %11 = add i64 %2, 1
@@ -309,7 +309,7 @@ proc l {
 // +     br %1 to bb2 else bb3
 // +
 // + bb2:
-// +     call ccc void foo(i64 42)
+// +     call ccc void foo(i64 42 noundef)
 // +     %2 = add i64 %0, 1
 // +     br bb1(%2)
 // +
@@ -339,7 +339,7 @@ proc l {
 // +
 // + bb2:
 // +     %7 = load i64, %5, align 8
-// +     call ccc void foo(i64 %7)
+// +     call ccc void foo(i64 %7 noundef)
 // +     %8 = ptradd %5, 8
 // +     br bb1(%8)
 // +
@@ -388,7 +388,7 @@ proc l {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %4
-//L +   call void @foo(i16 %5)
+//L +   call void @foo(i16 noundef %5)
 //L +   %8 = add i16 %5, 1
 //L +   br label %4
 //L +
@@ -397,7 +397,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @foo(i16) #1
+//L + declare void @foo(i16 noundef) #1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private void @_S1cFvE.3() #1 {
@@ -414,7 +414,7 @@ proc l {
 //L +   br i1 %6, label %7, label %9
 //L +
 //L + 7:                                                ; preds = %4
-//L +   call void @foo(i64 %5)
+//L +   call void @foo(i64 noundef %5)
 //L +   %8 = add i64 %5, 1
 //L +   br label %4
 //L +
@@ -458,7 +458,7 @@ proc l {
 //L +   br i1 %7, label %8, label %11
 //L +
 //L + 8:                                                ; preds = %4
-//L +   call void @foo(i16 %6, i64 %5)
+//L +   call void @foo(i16 noundef %6, i64 noundef %5)
 //L +   %9 = add i64 %5, 1
 //L +   %10 = add i16 %6, 1
 //L +   br label %4
@@ -484,7 +484,7 @@ proc l {
 //L +   br i1 %8, label %9, label %12
 //L +
 //L + 9:                                                ; preds = %5
-//L +   call void @foo(i64 %2, i64 %6, i64 %3, i64 %7)
+//L +   call void @foo(i64 noundef %2, i64 noundef %6, i64 noundef %3, i64 noundef %7)
 //L +   %10 = add i64 %6, 1
 //L +   %11 = add i64 %7, 1
 //L +   br label %5
@@ -513,7 +513,7 @@ proc l {
 //L +   br i1 %6, label %7, label %10
 //L +
 //L + 7:                                                ; preds = %5
-//L +   call void @foo(i64 %2, i64 %3)
+//L +   call void @foo(i64 noundef %2, i64 noundef %3)
 //L +   %8 = add i64 %2, 1
 //L +   %9 = add i64 %3, 1
 //L +   br label %1
@@ -538,7 +538,7 @@ proc l {
 //L +   br i1 %7, label %8, label %12
 //L +
 //L + 8:                                                ; preds = %6
-//L +   call void @foo(i64 %2, i64 %3, i64 %4)
+//L +   call void @foo(i64 noundef %2, i64 noundef %3, i64 noundef %4)
 //L +   %9 = add i64 %2, 1
 //L +   %10 = add i64 %3, 1
 //L +   %11 = add i64 %4, 1
@@ -559,7 +559,7 @@ proc l {
 //L +   br i1 %4, label %5, label %8
 //L +
 //L + 5:                                                ; preds = %1
-//L +   call void @foo(i64 %2)
+//L +   call void @foo(i64 noundef %2)
 //L +   %6 = add i64 %2, 1
 //L +   %7 = add i64 %3, 1
 //L +   br label %1
@@ -594,7 +594,7 @@ proc l {
 //L +   br i1 %13, label %14, label %20
 //L +
 //L + 14:                                               ; preds = %12
-//L +   call void @foo(i64 %2, i64 %3)
+//L +   call void @foo(i64 noundef %2, i64 noundef %3)
 //L +   %15 = add i64 %2, 1
 //L +   %16 = add i64 %3, 1
 //L +   %17 = add i64 %4, 1
@@ -616,7 +616,7 @@ proc l {
 //L +   br i1 %3, label %4, label %6
 //L +
 //L + 4:                                                ; preds = %1
-//L +   call void @foo(i64 42)
+//L +   call void @foo(i64 noundef 42)
 //L +   %5 = add i64 %2, 1
 //L +   br label %1
 //L +
@@ -646,7 +646,7 @@ proc l {
 //L +
 //L + 10:                                               ; preds = %7
 //L +   %11 = load i64, ptr %8, align 8
-//L +   call void @foo(i64 %11)
+//L +   call void @foo(i64 noundef %11)
 //L +   %12 = getelementptr inbounds nuw i8, ptr %8, i32 8
 //L +   br label %7
 //L +

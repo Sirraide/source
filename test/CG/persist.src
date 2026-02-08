@@ -187,12 +187,12 @@ proc str1 {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     %0 = call ccc i64 _S2p6$2t1FiiE.17(i64 42)
+// +     %0 = call ccc i64 _S2p6$2t1FiiE.17(i64 42 noundef)
 // +     store #1, i64 %0, align 8
 // +     ret
 // + }
 // +
-// + proc _S2p6$2t1FiiE.17 (i64 %0) private ccc -> i64 {
+// + proc _S2p6$2t1FiiE.17 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:

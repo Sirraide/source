@@ -109,26 +109,26 @@ proc f10 {
 // +
 // + proc _S2f1FvE.1 private ccc {
 // + entry:
-// +     call ccc void g(i64 1)
-// +     call ccc void g(i64 2)
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
 // +     ret
 // + }
 // +
-// + proc g (i64) external ccc;
+// + proc g (i64 noundef) external ccc;
 // +
 // + proc _S2f2FvE.2 private ccc {
 // + entry:
-// +     call ccc void g(i64 1)
-// +     call ccc void g(i64 2)
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
-// +     call ccc void g(i64 5)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
+// +     call ccc void g(i64 5 noundef)
 // +     ret
 // + }
 // +
-// + proc _S2f3FvbE.3 (i1 %0 zeroext) private ccc {
+// + proc _S2f3FvbE.3 (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:
@@ -139,12 +139,12 @@ proc f10 {
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     call ccc void g(i64 2)
+// +     call ccc void g(i64 2 noundef)
 // +     ret
 // +
 // + bb2:
-// +     call ccc void g(i64 1)
-// +     call ccc void g(i64 2)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void g(i64 2 noundef)
 // +     ret
 // + }
 // +
@@ -159,7 +159,7 @@ proc f10 {
 // +     br %0 to bb1 else bb2
 // +
 // + bb1:
-// +     call ccc void g(i64 1)
+// +     call ccc void g(i64 1 noundef)
 // +     br bb2
 // +
 // + bb2:
@@ -167,7 +167,7 @@ proc f10 {
 // +     br %1 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void g(i64 2)
+// +     call ccc void g(i64 2 noundef)
 // +     br bb4
 // +
 // + bb4:
@@ -175,7 +175,7 @@ proc f10 {
 // +     br %2 to bb5 else bb6
 // +
 // + bb5:
-// +     call ccc void g(i64 3)
+// +     call ccc void g(i64 3 noundef)
 // +     br bb4
 // +
 // + bb6:
@@ -183,7 +183,7 @@ proc f10 {
 // +     br %3 to bb7 else bb8(1)
 // +
 // + bb7:
-// +     call ccc void g(i64 4)
+// +     call ccc void g(i64 4 noundef)
 // +     br bb6
 // +
 // + bb8(i64 %4):
@@ -191,17 +191,17 @@ proc f10 {
 // +     br %5 to bb9 else bb10
 // +
 // + bb9:
-// +     call ccc void g(i64 5)
+// +     call ccc void g(i64 5 noundef)
 // +     %6 = add i64 %4, 1
 // +     br bb8(%6)
 // +
 // + bb10:
-// +     call ccc void g(i64 6)
-// +     call ccc void g(i64 7)
+// +     call ccc void g(i64 6 noundef)
+// +     call ccc void g(i64 7 noundef)
 // +     br bb11
 // +
 // + bb11:
-// +     call ccc void g(i64 8)
+// +     call ccc void g(i64 8 noundef)
 // +     br bb11
 // + }
 // +
@@ -213,7 +213,7 @@ proc f10 {
 // +     br %0 to bb1 else bb2
 // +
 // + bb1:
-// +     call ccc void g(i64 1)
+// +     call ccc void g(i64 1 noundef)
 // +     br bb2
 // +
 // + bb2:
@@ -221,7 +221,7 @@ proc f10 {
 // +     br %1 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void g(i64 2)
+// +     call ccc void g(i64 2 noundef)
 // +     br bb4
 // +
 // + bb4:
@@ -230,11 +230,11 @@ proc f10 {
 // +
 // + proc _S2f7FvE.7 private ccc {
 // + entry:
-// +     call ccc void g(i64 1)
-// +     call ccc void g(i64 2)
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
-// +     call ccc void g(i64 5)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
+// +     call ccc void g(i64 5 noundef)
 // +     ret
 // + }
 // +
@@ -248,11 +248,11 @@ proc f10 {
 // +
 // + proc _S2f9FvE.9 private ccc {
 // + entry:
-// +     call ccc void g(i64 1)
-// +     call ccc void g(i64 2)
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
-// +     call ccc void g(i64 5)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
+// +     call ccc void g(i64 5 noundef)
 // +     ret
 // + }
 // +
@@ -269,40 +269,40 @@ proc f10 {
 // +     br %1 to bb3 else bb4
 // +
 // + bb3:
-// +     call ccc void g(i64 4)
+// +     call ccc void g(i64 4 noundef)
 // +     ret
 // +
 // + bb4:
-// +     call ccc void q(i64 1)
+// +     call ccc void q(i64 1 noundef)
 // +     %2 = call ccc zeroext i1 h()
 // +     br %2 to bb5 else bb6
 // +
 // + bb5:
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
 // +     ret
 // +
 // + bb6:
-// +     call ccc void q(i64 2)
+// +     call ccc void q(i64 2 noundef)
 // +     %3 = call ccc zeroext i1 h()
 // +     br %3 to bb7 else bb8
 // +
 // + bb7:
-// +     call ccc void g(i64 2)
-// +     call ccc void g(i64 3)
-// +     call ccc void g(i64 4)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void g(i64 4 noundef)
 // +     ret
 // +
 // + bb8:
-// +     call ccc void q(i64 3)
-// +     call ccc void g(i64 1)
-// +     call ccc void q(i64 4)
-// +     call ccc void g(i64 2)
-// +     call ccc void q(i64 5)
-// +     call ccc void g(i64 3)
-// +     call ccc void q(i64 6)
-// +     call ccc void g(i64 4)
+// +     call ccc void q(i64 3 noundef)
+// +     call ccc void g(i64 1 noundef)
+// +     call ccc void q(i64 4 noundef)
+// +     call ccc void g(i64 2 noundef)
+// +     call ccc void q(i64 5 noundef)
+// +     call ccc void g(i64 3 noundef)
+// +     call ccc void q(i64 6 noundef)
+// +     call ccc void g(i64 4 noundef)
 // +     ret
 // + }
 // +
-// + proc q (i64) external ccc;
+// + proc q (i64 noundef) external ccc;

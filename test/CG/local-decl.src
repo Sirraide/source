@@ -19,7 +19,7 @@ proc foo(int a, int b) {
 // +     ret
 // + }
 // +
-// + proc _S3fooFviiE.1 (i64 %0, i64 %1) private ccc {
+// + proc _S3fooFviiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -42,7 +42,7 @@ proc foo(int a, int b) {
 // +     %7 = load i64, #2, align 8
 // +     %8 = load i64, #5, align 8
 // +     %9 = call variadic ccc i32 printf(
-// +         ptr @0,
+// +         ptr @0 align 1 dereferenceable 1 noundef,
 // +         i64 %5,
 // +         i64 %6,
 // +         i64 %7,
@@ -50,7 +50,7 @@ proc foo(int a, int b) {
 // +     ret
 // + }
 // +
-// + proc printf (ptr) variadic external ccc -> i32;
+// + proc printf (ptr align 1 dereferenceable 1 noundef) variadic external ccc -> i32;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -65,7 +65,7 @@ proc foo(int a, int b) {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @_S3fooFviiE.1(i64 %0, i64 %1) #1 {
+//L + define private void @_S3fooFviiE.1(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 8, align 8
@@ -85,12 +85,12 @@ proc foo(int a, int b) {
 //L +   %13 = load i64, ptr %6, align 8
 //L +   %14 = load i64, ptr %5, align 8
 //L +   %15 = load i64, ptr %8, align 8
-//L +   %16 = call i32 (ptr, ...) @printf(ptr @__srcc_str.0, i64 %12, i64 %13, i64 %14, i64 %15)
+//L +   %16 = call i32 (ptr, ...) @printf(ptr noundef align 1 dereferenceable(1) @__srcc_str.0, i64 %12, i64 %13, i64 %14, i64 %15)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare i32 @printf(ptr, ...) #1
+//L + declare i32 @printf(ptr noundef align 1 dereferenceable(1), ...) #1
 //L +
 //L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nounwind }

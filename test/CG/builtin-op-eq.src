@@ -38,18 +38,18 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // + proc _S1aFbE.1 private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @0,
-// +         i64 4,
-// +         ptr @1,
-// +         i64 4)
+// +         ptr @0 noundef,
+// +         i64 4 noundef,
+// +         ptr @1 noundef,
+// +         i64 4 noundef)
 // +     ret i1 %0
 // + }
 // +
 // + proc _S$2==FbxSI8xSI8E (
-// +     ptr %0,
-// +     i64 %1,
-// +     ptr %2,
-// +     i64 %3,
+// +     ptr %0 noundef,
+// +     i64 %1 noundef,
+// +     ptr %2 noundef,
+// +     i64 %3 noundef,
 // + ) private ccc -> i1 zeroext {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
@@ -111,38 +111,38 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // + proc _S1bFbE.2 private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @2,
-// +         i64 1,
-// +         ptr @3,
-// +         i64 2)
+// +         ptr @2 noundef,
+// +         i64 1 noundef,
+// +         ptr @3 noundef,
+// +         i64 2 noundef)
 // +     ret i1 %0
 // + }
 // +
 // + proc _S1cFbE.3 private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @2,
-// +         i64 1,
-// +         ptr @2,
-// +         i64 1)
+// +         ptr @2 noundef,
+// +         i64 1 noundef,
+// +         ptr @2 noundef,
+// +         i64 1 noundef)
 // +     ret i1 %0
 // + }
 // +
 // + proc _S1dFbE.4 private ccc -> i1 zeroext {
 // + entry:
 // +     %0 = call ccc zeroext i1 _S$2==FbxSI8xSI8E(
-// +         ptr @4,
-// +         i64 0,
-// +         ptr @4,
-// +         i64 0)
+// +         ptr @4 noundef,
+// +         i64 0 noundef,
+// +         ptr @4 noundef,
+// +         i64 0 noundef)
 // +     ret i1 %0
 // + }
 // +
 // + proc _S1eFbSI64SI64E.5 (
-// +     ptr %0,
-// +     i64 %1,
-// +     ptr %2,
-// +     i64 %3,
+// +     ptr %0 noundef,
+// +     i64 %1 noundef,
+// +     ptr %2 noundef,
+// +     i64 %3 noundef,
 // + ) private ccc -> i1 zeroext {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
@@ -161,18 +161,18 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     %10 = ptradd #1, 8
 // +     %11 = load i64, %10, align 8
 // +     %12 = call ccc zeroext i1 _S$2==FbxSI64xSI64E(
-// +         ptr %6,
-// +         i64 %8,
-// +         ptr %9,
-// +         i64 %11)
+// +         ptr %6 noundef,
+// +         i64 %8 noundef,
+// +         ptr %9 noundef,
+// +         i64 %11 noundef)
 // +     ret i1 %12
 // + }
 // +
 // + proc _S$2==FbxSI64xSI64E (
-// +     ptr %0,
-// +     i64 %1,
-// +     ptr %2,
-// +     i64 %3,
+// +     ptr %0 noundef,
+// +     i64 %1 noundef,
+// +     ptr %2 noundef,
+// +     i64 %3 noundef,
 // + ) private ccc -> i1 zeroext {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
@@ -248,11 +248,16 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     engage #3
 // +     %0 = load ptr, #2, align 8
 // +     %1 = load ptr, #3, align 8
-// +     %2 = call ccc zeroext i1 _S$2==FbxORixORiE(ptr %0, ptr %1)
+// +     %2 = call ccc zeroext i1 _S$2==FbxORixORiE(
+// +         ptr %0 align 8 dereferenceable 8 noundef,
+// +         ptr %1 align 8 dereferenceable 8 noundef)
 // +     ret i1 %2
 // + }
 // +
-// + proc _S$2==FbxORixORiE (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// + proc _S$2==FbxORixORiE (
+// +     ptr %0 align 8 dereferenceable 8 noundef,
+// +     ptr %1 align 8 dereferenceable 8 noundef,
+// + ) private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -300,7 +305,10 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     ret i1 %13
 // + }
 // +
-// + proc _S2p2FbORI8ORI8E.7 (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// + proc _S2p2FbORI8ORI8E.7 (
+// +     ptr %0 align 1 dereferenceable 1 noundef,
+// +     ptr %1 align 1 dereferenceable 1 noundef,
+// + ) private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -309,11 +317,16 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     store #1, ptr %1, align 8
 // +     %2 = load ptr, #0, align 8
 // +     %3 = load ptr, #1, align 8
-// +     %4 = call ccc zeroext i1 _S$2==FbxORI8xORI8E(ptr %2, ptr %3)
+// +     %4 = call ccc zeroext i1 _S$2==FbxORI8xORI8E(
+// +         ptr %2 align 1 dereferenceable 1 noundef,
+// +         ptr %3 align 1 dereferenceable 1 noundef)
 // +     ret i1 %4
 // + }
 // +
-// + proc _S$2==FbxORI8xORI8E (ptr %0, ptr %1) private ccc -> i1 zeroext {
+// + proc _S$2==FbxORI8xORI8E (
+// +     ptr %0 align 1 dereferenceable 1 noundef,
+// +     ptr %1 align 1 dereferenceable 1 noundef,
+// + ) private ccc -> i1 zeroext {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -361,32 +374,40 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     ret i1 %13
 // + }
 // +
-// + proc _S2p3FbxA4ixA4iE.8 (ptr %0 dereferenceable 32, ptr %1 dereferenceable 32) private ccc -> i1 zeroext {
+// + proc _S2p3FbxA4ixA4iE.8 (
+// +     ptr %0 align 8 dereferenceable 32,
+// +     ptr %1 align 8 dereferenceable 32,
+// + ) private ccc -> i1 zeroext {
 // +     #0 = 32, align 8
 // +     #1 = 32, align 8
 // +
 // + entry:
 // +     copy #0 <- %0, 32
 // +     copy #1 <- %1, 32
-// +     %2 = call ccc zeroext i1 _S$2==FbxA4ixA4iE(ptr #0 dereferenceable 32, ptr #1 dereferenceable 32)
+// +     %2 = call ccc zeroext i1 _S$2==FbxA4ixA4iE(
+// +         ptr #0 align 8 dereferenceable 32,
+// +         ptr #1 align 8 dereferenceable 32)
 // +     ret i1 %2
 // + }
 // +
-// + proc _S$2==FbxA4ixA4iE (ptr %0 dereferenceable 32, ptr %1 dereferenceable 32) inline private ccc -> i1 zeroext {
+// + proc _S$2==FbxA4ixA4iE (
+// +     ptr %0 align 8 dereferenceable 32,
+// +     ptr %1 align 8 dereferenceable 32,
+// + ) inline private ccc -> i1 zeroext {
 // + entry:
 // +     %2 = call ccc zeroext i1 _S$2==FbxSixSiE(
-// +         ptr %0,
-// +         i64 4,
-// +         ptr %1,
-// +         i64 4)
+// +         ptr %0 noundef,
+// +         i64 4 noundef,
+// +         ptr %1 noundef,
+// +         i64 4 noundef)
 // +     ret i1 %2
 // + }
 // +
 // + proc _S$2==FbxSixSiE (
-// +     ptr %0,
-// +     i64 %1,
-// +     ptr %2,
-// +     i64 %3,
+// +     ptr %0 noundef,
+// +     i64 %1 noundef,
+// +     ptr %2 noundef,
+// +     i64 %3 noundef,
 // + ) private ccc -> i1 zeroext {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
@@ -465,12 +486,12 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private zeroext i1 @_S1aFbE.1() #1 {
-//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.0, i64 4, ptr @__srcc_str.1, i64 4)
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.0, i64 noundef 4, ptr noundef @__srcc_str.1, i64 noundef 4)
 //L +   ret i1 %1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr %0, i64 %1, ptr %2, i64 %3) #1 {
+//L + define private zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -530,24 +551,24 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private zeroext i1 @_S1bFbE.2() #1 {
-//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.3, i64 2)
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.2, i64 noundef 1, ptr noundef @__srcc_str.3, i64 noundef 2)
 //L +   ret i1 %1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private zeroext i1 @_S1cFbE.3() #1 {
-//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.2, i64 1, ptr @__srcc_str.2, i64 1)
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.2, i64 noundef 1, ptr noundef @__srcc_str.2, i64 noundef 1)
 //L +   ret i1 %1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private zeroext i1 @_S1dFbE.4() #1 {
-//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr @__srcc_str.4, i64 0, ptr @__srcc_str.4, i64 0)
+//L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.4, i64 noundef 0, ptr noundef @__srcc_str.4, i64 noundef 0)
 //L +   ret i1 %1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @_S1eFbSI64SI64E.5(ptr %0, i64 %1, ptr %2, i64 %3) #1 {
+//L + define private zeroext i1 @_S1eFbSI64SI64E.5(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -562,12 +583,12 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   %12 = load ptr, ptr %6, align 8
 //L +   %13 = getelementptr inbounds nuw i8, ptr %6, i32 8
 //L +   %14 = load i64, ptr %13, align 8
-//L +   %15 = call zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %9, i64 %11, ptr %12, i64 %14)
+//L +   %15 = call zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr noundef %9, i64 noundef %11, ptr noundef %12, i64 noundef %14)
 //L +   ret i1 %15
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr %0, i64 %1, ptr %2, i64 %3) #1 {
+//L + define private zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8
@@ -639,12 +660,12 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   store ptr %2, ptr %4, align 8
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = load ptr, ptr %4, align 8
-//L +   %7 = call zeroext i1 @"_S$2==FbxORixORiE"(ptr %5, ptr %6)
+//L +   %7 = call zeroext i1 @"_S$2==FbxORixORiE"(ptr noundef align 8 dereferenceable(8) %5, ptr noundef align 8 dereferenceable(8) %6)
 //L +   ret i1 %7
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @"_S$2==FbxORixORiE"(ptr %0, ptr %1) #1 {
+//L + define private zeroext i1 @"_S$2==FbxORixORiE"(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -686,19 +707,19 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @_S2p2FbORI8ORI8E.7(ptr %0, ptr %1) #1 {
+//L + define private zeroext i1 @_S2p2FbORI8ORI8E.7(ptr noundef align 1 dereferenceable(1) %0, ptr noundef align 1 dereferenceable(1) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
 //L +   store ptr %1, ptr %4, align 8
 //L +   %5 = load ptr, ptr %3, align 8
 //L +   %6 = load ptr, ptr %4, align 8
-//L +   %7 = call zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr %5, ptr %6)
+//L +   %7 = call zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr noundef align 1 dereferenceable(1) %5, ptr noundef align 1 dereferenceable(1) %6)
 //L +   ret i1 %7
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr %0, ptr %1) #1 {
+//L + define private zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr noundef align 1 dereferenceable(1) %0, ptr noundef align 1 dereferenceable(1) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -740,17 +761,17 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @_S2p3FbxA4ixA4iE.8(ptr dereferenceable(32) %0, ptr dereferenceable(32) %1) #1 {
+//L + define private zeroext i1 @_S2p3FbxA4ixA4iE.8(ptr align 8 dereferenceable(32) %0, ptr align 8 dereferenceable(32) %1) #1 {
 //L +   %3 = alloca i8, i64 32, align 8
 //L +   %4 = alloca i8, i64 32, align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %3, ptr %0, i64 32, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %1, i64 32, i1 false)
-//L +   %5 = call zeroext i1 @"_S$2==FbxSixSiE"(ptr dereferenceable(32) %3, i64 4, ptr dereferenceable(32) %4, i64 4)
+//L +   %5 = call zeroext i1 @"_S$2==FbxSixSiE"(ptr noundef align 8 dereferenceable(32) %3, i64 noundef 4, ptr noundef align 8 dereferenceable(32) %4, i64 noundef 4)
 //L +   ret i1 %5
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private zeroext i1 @"_S$2==FbxSixSiE"(ptr %0, i64 %1, ptr %2, i64 %3) #1 {
+//L + define private zeroext i1 @"_S$2==FbxSixSiE"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %5, align 8

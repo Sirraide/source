@@ -32,21 +32,21 @@ with q() {
 // +     store @_S1a.1, i64 1, align 8
 // +     store @_S1a.1, i64 4, align 8
 // +     %0 = load i64, @_S1a.1, align 8
-// +     call ccc void sink(i64 %0)
+// +     call ccc void sink(i64 %0 noundef)
 // +     store #0, i64 2, align 8
 // +     %1 = load i64, #0, align 8
-// +     call ccc void sink(i64 %1)
+// +     call ccc void sink(i64 %1 noundef)
 // +     store #0, i64 3, align 8
 // +     %2 = load i64, #0, align 8
-// +     call ccc void sink(i64 %2)
+// +     call ccc void sink(i64 %2 noundef)
 // +     %3 = call ccc i64 _S1qFT1sE.1()
 // +     store #1, i64 %3, align 8
 // +     %4 = load i64, #1, align 8
-// +     call ccc void sink(i64 %4)
+// +     call ccc void sink(i64 %4 noundef)
 // +     ret
 // + }
 // +
-// + proc sink (i64) external ccc;
+// + proc sink (i64 noundef) external ccc;
 // +
 // + proc _S1qFT1sE.1 private ccc -> i64 {
 // +     #0 = 8, align 8

@@ -175,6 +175,22 @@ struct Impl final : Target {
     return {INTEGER};
 }
 
+static auto GetElemTyAttrsForPointee(
+    CodeGen& cg,
+    Type pointee
+) -> std::array<mlir::NamedAttribute, 2> {
+    return {
+        cg.getNamedAttr(
+            LLVMDialect::getDereferenceableAttrName(),
+            cg.getI64IntegerAttr(i64(pointee->memory_size(cg.translation_unit()).bytes()))
+        ),
+        cg.getNamedAttr(
+            LLVMDialect::getAlignAttrName(),
+            cg.getI64IntegerAttr(i64(pointee->align(cg.translation_unit()).value().bytes()))
+        ),
+    };
+};
+
 auto target::CreateX86_64_Linux(
     llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI
 ) -> std::unique_ptr<Target> {
@@ -339,7 +355,19 @@ auto ABIImpl::LowerByValArgOrReturn(
     }
 
     // Pointers are just passed through, and so are compile-time values.
-    else if (isa<PtrType>(t) or t == Type::TreeTy or t == Type::TypeTy) {
+    else if (auto ptr_ty = dyn_cast<PtrType>(t)) {
+        PassThrough();
+        append_range(info[0].attrs, GetElemTyAttrsForPointee(cg, ptr_ty->elem()));
+        if (ptr_ty->is_immutable()) info[0].attrs.push_back(cg.getNamedAttr(
+            LLVMDialect::getReadonlyAttrName(),
+            cg.getUnitAttr()
+        ));
+    }
+
+    // So are compile-time values.
+    else if (t == Type::TreeTy or t == Type::TypeTy) {
+        // We don’t really bother emitting alignment/dereferencable information for
+        // these types since the IR is always interpreted (and not optimised) anyway.
         PassThrough();
     }
 
@@ -347,6 +375,12 @@ auto ABIImpl::LowerByValArgOrReturn(
     else {
         cg.ICE(SLoc::Decode(l), "Unsupported type in call lowering: {}", t);
     }
+
+    // Make everything 'noundef'
+    for (auto& i : info) i.attrs.emplace_back(cg.getNamedAttr(
+        LLVMDialect::getNoUndefAttrName(),
+        cg.getUnitAttr()
+    ));
 
     return info;
 }
@@ -503,13 +537,7 @@ auto ABIImpl::lower_procedure_signature(
     auto AddByRefArg = [&](Value v, Type t) {
         ctx.allocate();
         info.args.push_back(v);
-        AddArgType(
-            cg.get_ptr_ty(),
-            cg.getNamedAttr(
-                LLVMDialect::getDereferenceableAttrName(),
-                cg.getI64IntegerAttr(i64(t->memory_size(cg.translation_unit()).bytes()))
-            )
-        );
+        AddArgType(cg.get_ptr_ty(), GetElemTyAttrsForPointee(cg, t));
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {

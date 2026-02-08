@@ -609,7 +609,7 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::RangeType; }
 };
 
-
+// TODO: We also need an 'immutable' flag for slices.
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
     explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}

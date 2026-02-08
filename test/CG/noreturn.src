@@ -43,7 +43,7 @@ proc a5 { sink_lv(exit()); }
 // +     unreachable
 // + }
 // +
-// + proc sink (i64) external ccc;
+// + proc sink (i64 noundef) external ccc;
 // +
 // + proc _S2a5FvE.5 private ccc {
 // + entry:
@@ -51,7 +51,7 @@ proc a5 { sink_lv(exit()); }
 // +     unreachable
 // + }
 // +
-// + proc sink_lv (ptr dereferenceable 8) external ccc;
+// + proc sink_lv (ptr align 8 dereferenceable 8) external ccc;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -89,7 +89,7 @@ proc a5 { sink_lv(exit()); }
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @sink(i64) #1
+//L + declare void @sink(i64 noundef) #1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private void @_S2a5FvE.5() #1 {
@@ -98,7 +98,7 @@ proc a5 { sink_lv(exit()); }
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @sink_lv(ptr dereferenceable(8)) #1
+//L + declare void @sink_lv(ptr align 8 dereferenceable(8)) #1
 //L +
 //L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nounwind }

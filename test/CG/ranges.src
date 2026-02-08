@@ -68,7 +68,7 @@ var y = c();
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S1aFqiqiE.1 (i64 %0, i64 %1) private ccc -> (i64, i64) {
+// + proc _S1aFqiqiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -85,7 +85,7 @@ var y = c();
 // +     ret i64 %4, i64 %6
 // + }
 // +
-// + proc _S1bFqiqiE.2 (i64 %0, i64 %1) private ccc -> (i64, i64) {
+// + proc _S1bFqiqiE.2 (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -232,7 +232,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private { i64, i64 } @_S1aFqiqiE.1(i64 %0, i64 %1) #1 {
+//L + define private { i64, i64 } @_S1aFqiqiE.1(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -250,7 +250,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private { i64, i64 } @_S1bFqiqiE.2(i64 %0, i64 %1) #1 {
+//L + define private { i64, i64 } @_S1bFqiqiE.2(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8

@@ -29,12 +29,12 @@ interleaved2(2, void(), 3, void());
 
 // * proc __src_main norecurse external ccc {
 // + entry:
-// +     %0 = call ccc i64 _S12interleaved1FixivxivE.8(i64 2, i64 3)
-// +     %1 = call ccc i64 _S12interleaved2FiivivE.9(i64 2, i64 3)
+// +     %0 = call ccc i64 _S12interleaved1FixivxivE.8(i64 2 noundef, i64 3 noundef)
+// +     %1 = call ccc i64 _S12interleaved2FiivivE.9(i64 2 noundef, i64 3 noundef)
 // +     ret
 // + }
 // +
-// + proc _S12interleaved1FixivxivE.8 (i64 %0, i64 %1) private ccc -> i64 {
+// + proc _S12interleaved1FixivxivE.8 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -47,7 +47,7 @@ interleaved2(2, void(), 3, void());
 // +     ret i64 %4
 // + }
 // +
-// + proc _S12interleaved2FiivivE.9 (i64 %0, i64 %1) private ccc -> i64 {
+// + proc _S12interleaved2FiivivE.9 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +

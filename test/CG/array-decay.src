@@ -23,13 +23,13 @@ x(b2);
 // +     set ptr @_S2a2.2, i8 0, i64 128
 // +     store @_S1b.3, ptr @_S1a.1, align 8
 // +     store @_S2b2.4, ptr @_S2a2.2, align 8
-// +     call ccc void x(ptr @_S1a.1)
-// +     call ccc void x(ptr @_S2a2.2)
+// +     call ccc void x(ptr @_S1a.1 align 8 dereferenceable 8 noundef)
+// +     call ccc void x(ptr @_S2a2.2 align 8 dereferenceable 8 noundef)
 // +     %0 = load ptr, @_S1b.3, align 8
-// +     call ccc void x(ptr %0)
+// +     call ccc void x(ptr %0 align 8 dereferenceable 8 noundef)
 // +     %1 = load ptr, @_S2b2.4, align 8
-// +     call ccc void x(ptr %1)
+// +     call ccc void x(ptr %1 align 8 dereferenceable 8 noundef)
 // +     ret
 // + }
 // +
-// + proc x (ptr) external ccc;
+// + proc x (ptr align 8 dereferenceable 8 noundef) external ccc;

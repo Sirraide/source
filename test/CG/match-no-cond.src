@@ -43,7 +43,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret
 // + }
 // +
-// + proc f1 (i64 %0) private ccc {
+// + proc f1 (i64 %0 noundef) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -51,7 +51,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret
 // + }
 // +
-// + proc f2 (i64 %0) private ccc -> i64 {
+// + proc f2 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -59,7 +59,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 1
 // + }
 // +
-// + proc f3 (i64 %0) private ccc -> i64 {
+// + proc f3 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -70,7 +70,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %3
 // + }
 // +
-// + proc f4 (i64 %0) private ccc -> i64 {
+// + proc f4 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -88,7 +88,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %5
 // + }
 // +
-// + proc f5 (i64 %0) private ccc -> i64 {
+// + proc f5 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -107,7 +107,7 @@ proc f7 (int x, int y) nomangle = match {
 // +
 // + proc exit noreturn external ccc;
 // +
-// + proc f6 (i64 %0) private ccc -> i64 {
+// + proc f6 (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -123,7 +123,7 @@ proc f7 (int x, int y) nomangle = match {
 // +     ret i64 %3
 // + }
 // +
-// + proc f7 (i64 %0, i64 %1) private ccc -> i64 {
+// + proc f7 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -154,21 +154,21 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private void @f1(i64 %0) #1 {
+//L + define private void @f1(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f2(i64 %0) #1 {
+//L + define private i64 @f2(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f3(i64 %0) #1 {
+//L + define private i64 @f3(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -178,7 +178,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f4(i64 %0) #1 {
+//L + define private i64 @f4(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -200,7 +200,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f5(i64 %0) #1 {
+//L + define private i64 @f5(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -220,7 +220,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + declare void @exit() #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f6(i64 %0) #1 {
+//L + define private i64 @f6(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -236,7 +236,7 @@ proc f7 (int x, int y) nomangle = match {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i64 @f7(i64 %0, i64 %1) #1 {
+//L + define private i64 @f7(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %3, align 8

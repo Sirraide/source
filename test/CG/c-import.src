@@ -20,20 +20,20 @@ stdio::printf("bar: %d\n".data, 12);
 // + define void @__src_main() #0 {
 // +   %1 = load i8, ptr @__srcc_str.0, align 1
 // +   %2 = sext i8 %1 to i32
-// +   %3 = call i32 @putchar(i32 %2)
-// +   %4 = call i32 @puts(ptr @__srcc_str.1)
-// +   %5 = call i32 (ptr, ...) @printf(ptr @__srcc_str.2, i64 12)
+// +   %3 = call i32 @putchar(i32 noundef %2)
+// +   %4 = call i32 @puts(ptr noundef align 1 dereferenceable(1) @__srcc_str.1)
+// +   %5 = call i32 (ptr, ...) @printf(ptr noundef align 1 dereferenceable(1) @__srcc_str.2, i64 12)
 // +   ret void
 // + }
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @putchar(i32) #1
+// + declare i32 @putchar(i32 noundef) #1
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @puts(ptr) #1
+// + declare i32 @puts(ptr noundef align 1 dereferenceable(1)) #1
 // +
 // + ; Function Attrs: nounwind
-// + declare i32 @printf(ptr, ...) #1
+// + declare i32 @printf(ptr noundef align 1 dereferenceable(1), ...) #1
 // +
 // + attributes #0 = { norecurse nounwind }
 // + attributes #1 = { nounwind }
