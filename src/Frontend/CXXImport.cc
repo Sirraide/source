@@ -353,14 +353,14 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
         case K::RValueReference: {
             auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return std::nullopt;
-            return PtrType::Get(*S.tu, *Elem);
+            return PtrType::Get(*S.tu, *Elem, T->getPointeeType().isConstQualified());
         }
 
         // C++ pointers are nullable, so wrap them in an optional.
         case K::Pointer: {
             auto Elem = ImportType(T->getPointeeType());
             if (not Elem) return std::nullopt;
-            auto Ptr = PtrType::Get(*S.tu, *Elem);
+            auto Ptr = PtrType::Get(*S.tu, *Elem, T->getPointeeType().isConstQualified());
             return OptionalType::Get(*S.tu, Ptr);
         }
 

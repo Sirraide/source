@@ -67,17 +67,20 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     FFILongLongTy = IntType::Get(*this, Size::Bits(target().clang().getLongLongWidth()));
 
     // Initialise other cached types.
-    StrLitTy = SliceType::Get(*this, I8Ty);
-    I8PtrTy = PtrType::Get(*this, I8Ty);
+    StrLitTy = SliceType::Get(*this, I8Ty, true);
+    I8PtrTy = PtrType::Get(*this, I8Ty, false);
+
+    // Only CodeGen cares about these, so the pointer types used for these don’t
+    // actually matter; it just needs to be *a* pointer.
     SliceEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, Type::IntTy});
     ClosureEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, I8PtrTy});
 
     // struct AbortInfo {
-    //     i8[] filename;
+    //     i8 val[] filename;
     //     int line;
     //     int col;
-    //     i8[] msg1;
-    //     i8[] msg2;
+    //     i8 val[] msg1;
+    //     i8 val[] msg2;
     //     proc stringifier (inout __src_assert_msg_buf);
     // }
     AbortInfoEquivalentTy = TupleType::Get(
@@ -167,6 +170,15 @@ struct Stmt::Printer : PrinterBase<Stmt> {
     );
 };
 
+static auto VCLowercase(ValueCategory v) -> String {
+    switch (v) {
+        case ValueCategory::RValue: return "rvalue";
+        case ValueCategory::MLValue: return "lvalue";
+        case ValueCategory::ILValue: return "lvalue immutable";
+    }
+    return "<invalid value category>";
+}
+
 void Stmt::Printer::PrintBasicHeader(Stmt* s, StringRef name) {
     print("%1({}%) %4({}%)", name, static_cast<void*>(s));
 
@@ -199,7 +211,7 @@ void Stmt::Printer::PrintBasicNode(
 
     if (auto e = dyn_cast<Expr>(s); e and print_type) {
         if (e->value_category != Expr::RValue) {
-            print(" lvalue");
+            print(" {}", VCLowercase(e->value_category));
         }
     }
 
@@ -207,15 +219,6 @@ void Stmt::Printer::PrintBasicNode(
 }
 
 void Stmt::Printer::Print(Stmt* e) {
-    auto VCLowercase = [](ValueCategory v) -> String {
-        switch (v) {
-            case ValueCategory::RValue: return "rvalue";
-            case ValueCategory::MLValue: return "lvalue";
-            case ValueCategory::ILValue: return "lvalue immutable";
-        }
-        return "<invalid value category>";
-    };
-
     auto PrintProps = [&](const InheritedProcedureProperties props) {
         if (props.is_compile_time_only) print(" compile_time");
         if (props.always_inline) print(" inline");
@@ -313,6 +316,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::OptionalWrap: print("value->optional"); break;
                 case CastExpr::MaterialisePoisonValue: print("poison"); break;
                 case CastExpr::NilToOptional: print("nil->optional"); break;
+                case CastExpr::Nop: print("nop"); break;
                 case CastExpr::Pointer: print("pointer"); break;
                 case CastExpr::Range: print("range->range"); break;
                 case CastExpr::SliceFromArray: print("array->slice"); break;

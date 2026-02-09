@@ -474,26 +474,6 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
     );
 }
 
-auto CodeGen::DeclarePrintf() -> ir::ProcOp {
-    if (not printf) {
-        printf = GetOrCreateProc(
-            SLoc(),
-            "printf",
-            Linkage::Imported,
-            ProcType::Get(
-                tu,
-                tu.FFIIntTy,
-                {{Intent::Copy, PtrType::Get(tu, tu.I8Ty)}},
-                CallingConvention::Native,
-                true
-            ),
-            false
-        );
-    }
-
-    return printf.value();
-}
-
 auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
     auto& ir_proc = declared_procs[proc];
     if (not ir_proc) {
@@ -1846,7 +1826,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
         }
 
         case B::Ptradd: {
-            Assert(expr->args()[0]->type == tu.I8PtrTy);
+            Assert(cast<PtrType>(expr->args()[0]->type)->elem() == tu.I8Ty);
             auto ptr = EmitScalar(expr->args()[0]);
             auto offset = EmitScalar(expr->args()[1]);
             return CreatePtrAdd(loc, ptr, offset);
@@ -2067,6 +2047,9 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 
         case CastExpr::NilToOptional:
             return EmitDefaultInit(expr->type, C(expr->location()));
+
+        case CastExpr::Nop:
+            return val;
 
         case CastExpr::OptionalUnwrap: {
             Assert(expr->is_lvalue());
@@ -2959,7 +2942,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     SmallVector<ParamTypeData> args;
     auto ty = stmt->type_or_void();
     auto yields_value = not IsZeroSizedType(ty);
-    if (yields_value) args.push_back({Intent::Copy, PtrType::Get(tu, ty)});
+    if (yields_value) args.push_back({Intent::Copy, PtrType::Get(tu, ty, false)});
 
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());

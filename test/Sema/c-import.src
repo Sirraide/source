@@ -7,4 +7,4 @@ stdio::puts("foo".data);
 stdio::printf("bar: %d\n".data, 12);
 
 stdio::puts("foo");
-stdio::printf("baz: %d\n".data, " "); // expected-error: Passing a value of type 'i8[]' as a varargs argument is not supported
+stdio::printf("baz: %d\n".data, " "); // expected-error: Passing a value of type 'i8 val[]' as a varargs argument is not supported

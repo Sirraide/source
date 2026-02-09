@@ -329,7 +329,14 @@ auto TypeBase::print() const -> SmallUnrenderedString {
             );
         },
         [&](RangeType* range) { Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print()); },
-        [&](SliceType* slice) { Format(out, "{}%1([]%)", MaybeParenthesise(slice->elem())); },
+        [&](SliceType* slice) {
+            Format(
+                out,
+                "{}%1({}[]%)",
+                MaybeParenthesise(slice->elem()),
+                slice->is_immutable() ? " val" : ""
+            );
+        },
         [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
         [&](TupleType* s) {
             Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d) {
@@ -603,13 +610,18 @@ void RangeType::Profile(FoldingSetNodeID& ID, Type elem) {
     ID.AddPointer(elem.ptr());
 }
 
-auto SliceType::Get(TranslationUnit& mod, Type elem) -> SliceType* {
-    auto CreateNew = [&] { return new (mod) SliceType{elem}; };
-    return GetOrCreateType(mod.slice_types, CreateNew, elem);
+auto SliceType::Get(TranslationUnit& tu, Type elem, bool immutable) -> SliceType* {
+    auto CreateNew = [&] {
+        auto ptr = PtrType::Get(tu, elem, immutable);
+        return new (tu) SliceType{elem, ptr, immutable};
+    };
+
+    return GetOrCreateType(tu.slice_types, CreateNew, elem, immutable);
 }
 
-void SliceType::Profile(FoldingSetNodeID& ID, Type elem) {
+void SliceType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
     ID.AddPointer(elem.ptr());
+    ID.AddBoolean(immutable);
 }
 
 // ============================================================================

@@ -489,7 +489,7 @@ public:
     [[nodiscard]] bool is_immutable() const { return immutable; }
 
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), immutable); }
-    static auto Get(TranslationUnit& mod, Type elem, bool immutable = false) -> PtrType*;
+    static auto Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, bool immutable);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::PtrType; }
 };
@@ -612,12 +612,23 @@ public:
 // TODO: We also need an 'immutable' flag for slices.
 class srcc::SliceType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    explicit SliceType(Type elem) : SingleElementTypeBase{Kind::SliceType, elem} {}
+    Type data_ty;
+    const bool immutable;
+    explicit SliceType(Type elem, Type data_ty, bool immutable)
+        : SingleElementTypeBase{Kind::SliceType, elem},
+          data_ty{data_ty},
+          immutable{immutable} {}
 
 public:
-    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
-    static auto Get(TranslationUnit& mod, Type elem) -> SliceType*;
-    static void Profile(FoldingSetNodeID& ID, Type elem);
+    /// Get the type of the 'data' member of this slice.
+    [[nodiscard]] auto data_ptr_type() const -> Type { return data_ty; }
+
+    /// Get whether this is an immutable slice type.
+    [[nodiscard]] bool is_immutable() const { return immutable; }
+
+    void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), immutable); }
+    static auto Get(TranslationUnit& mod, Type elem, bool immutable) -> SliceType*;
+    static void Profile(FoldingSetNodeID& ID, Type elem, bool immutable);
     static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
 };
 

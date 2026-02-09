@@ -9,11 +9,11 @@ proc p {
 
     // No-op.
     proc p1 = i as int;
-    proc p2 = "" as i8[];
+    proc p2 = "" as i8 val[];
     proc p3 = (1..=2) as range<int>;
     proc p4 = pa as int^;
     proc p5 = i as! int;
-    proc p6 = "" as! i8[];
+    proc p6 = "" as! i8 val[];
     proc p7 = (1..=2) as! range<int>;
     proc p8 = pa as! int^;
 
@@ -74,7 +74,7 @@ proc p {
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$2p2FSI8E.3 private ccc -> (i64, i64) {
+// + proc _S1p$2p2FSI8E.3 private ccc -> (ptr, i64) {
 // + entry:
 // +     ret ptr @0, i64 0
 // + }
@@ -107,7 +107,7 @@ proc p {
 // +     ret i64 %2
 // + }
 // +
-// + proc _S1p$2p6FSI8E.7 private ccc -> (i64, i64) {
+// + proc _S1p$2p6FSI8E.7 private ccc -> (ptr, i64) {
 // + entry:
 // +     ret ptr @0, i64 0
 // + }

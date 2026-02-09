@@ -44,7 +44,7 @@ proc append_int (inout assert_msg_buf into, copy int value) nomangle {
     append_str(into, (&tmp, bits_used));
 }
 
-proc append_str (inout assert_msg_buf into, i8[] str) nomangle {
+proc append_str (inout assert_msg_buf into, i8 val[] str) nomangle {
     if into.size + str.size >= into.capacity return;
     __srcc_memcpy(__srcc_ptradd(into.data, into.size), str.data, str.size);
     into.size += str.size;

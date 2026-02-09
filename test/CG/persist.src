@@ -100,7 +100,7 @@ proc r6 {
 }
 
 struct string {
-    i8[] str;
+    i8 val[] str;
 }
 
 proc str {

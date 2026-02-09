@@ -212,7 +212,6 @@ class srcc::cg::CodeGen : public DiagsProducer
 
     TranslationUnit& tu;
     ProcData curr;
-    Opt<ir::ProcOp> printf;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ObjectDecl*, String> mangled_names;
@@ -406,7 +405,6 @@ public:
         tu.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
     }
 
-    auto DeclarePrintf() -> ir::ProcOp;
     auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 
     void Emit(ArrayRef<ProcDecl*> procs);

@@ -12,4 +12,4 @@ var h = int(int(int(3)));
 var i = var(1); // expected-error: Type deduction is not allowed here
 var j = void();
 var k = void(1); // expected-error: Cannot convert expression of type 'int' to 'void'
-var l = i8[]("foo");
+var l = i8 val[]("foo");

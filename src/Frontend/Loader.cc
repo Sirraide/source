@@ -66,12 +66,21 @@ public:
             [&](const IntType* ty) {
                 *this << K::IntType << ty->bit_width();
             },
+            [&](const OptionalType* ty) {
+                *this << ty->kind() << ty->elem();
+            },
             [&](const ProcType* ty) {
                 *this << K::ProcType << ty->has_c_varargs() << ty->cconv()
                       << ty->ret() << ty->params();
             },
-            [&](const SingleElementTypeBase* ty) {
+            [&](const PtrType* ty) {
+                *this << ty->kind() << ty->elem() << ty->is_immutable();
+            },
+            [&](const RangeType* ty) {
                 *this << ty->kind() << ty->elem();
+            },
+            [&](const SliceType* ty) {
+                *this << ty->kind() << ty->elem() << ty->is_immutable();
             },
             [&](const TupleType* ty) {
                 *this << K::TupleType << ty->layout();
@@ -296,7 +305,7 @@ public:
             }
 
             case K::PtrType: {
-                return PtrType::Get(*S.tu, Read(Type));
+                return PtrType::Get(*S.tu, Read(Type), Read(bool));
             }
 
             case K::RangeType: {
@@ -304,7 +313,7 @@ public:
             }
 
             case K::SliceType: {
-                return SliceType::Get(*S.tu, Read(Type));
+                return SliceType::Get(*S.tu, Read(Type), Read(bool));
             }
 
             case K::StructType: {

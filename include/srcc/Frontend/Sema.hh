@@ -797,6 +797,7 @@ private:
         ConversionSequence& seq,
         SliceType* a,
         ArrayRef<Expr*> args,
+        bool want_lvalue,
         SLoc loc
     ) -> MaybeDiags;
 
@@ -1123,7 +1124,7 @@ private:
 
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
-    auto BuildSliceType(Type base, SLoc loc) -> Type;
+    auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Type;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
     auto BuildTupleType(ArrayRef<TypeLoc> types) -> Type;
     auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;

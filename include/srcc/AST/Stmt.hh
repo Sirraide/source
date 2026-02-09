@@ -534,6 +534,9 @@ public:
         /// optional.
         NilToOptional,
 
+        /// Cast that only changes something at the AST-level but is a no-op in the IR.
+        Nop,
+
         /// Given an lvalue optional, yield an lvalue to the value.
         OptionalUnwrap,
 

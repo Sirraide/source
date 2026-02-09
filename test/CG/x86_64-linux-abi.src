@@ -162,10 +162,10 @@ proc returns {
     var x21 = r21();
 }
 
-proc s1(i8[], i8[], i8[], i8[]) extern;
-proc s2(inout i8[], copy i8[], out i8[], in i8[]) extern;
-proc s3(inout i8[], copy i8[], out i8[], in i8[], in i8[], in i8[]) extern;
-proc s4() extern -> i8[];
+proc s1(i8 val[], i8 val[], i8 val[], i8 val[]) extern;
+proc s2(inout i8 val[], copy i8 val[], out i8 val[], in i8 val[]) extern;
+proc s3(inout i8 val[], copy i8 val[], out i8 val[], in i8 val[], in i8 val[], in i8 val[]) extern;
+proc s4() extern -> i8 val[];
 proc slices {
     var s = "q";
     s1("1", "2", "3", "4");
@@ -189,11 +189,15 @@ proc closures {
     var q = c4();
 }
 
+proc slice_return = "foo";
+proc closure_return = slice_return;
+
 // * @0 = "q\00"
 // + @1 = "1\00"
 // + @2 = "2\00"
 // + @3 = "3\00"
 // + @4 = "4\00"
+// + @5 = "foo\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
@@ -1671,8 +1675,8 @@ proc closures {
 // +         i64 %26 noundef,
 // +         ptr #4 byval i8[16] noundef,
 // +         ptr #5 byval i8[16] noundef)
-// +     %35 = call ccc (i64, i64) s4()
-// +     store #1, i64 %35:0, align 8
+// +     %35 = call ccc (ptr, i64) s4()
+// +     store #1, ptr %35:0, align 8
 // +     %36 = ptradd #1, 8
 // +     store %36, i64 %35:1, align 8
 // +     ret
@@ -1708,7 +1712,7 @@ proc closures {
 // +     ptr byval i8[16] noundef,
 // + ) external ccc;
 // +
-// + proc s4 external ccc -> (i64, i64);
+// + proc s4 external ccc -> (ptr, i64);
 // +
 // + proc _S8closuresFvE.10 private ccc {
 // +     #0 = 16, align 8
@@ -1796,10 +1800,10 @@ proc closures {
 // +         ptr %26 noundef,
 // +         ptr #4 byval i8[16] noundef,
 // +         ptr #5 byval i8[16] noundef)
-// +     %35 = call ccc (i64, i64) c4()
-// +     store #1, i64 %35:0, align 8
+// +     %35 = call ccc (ptr, ptr) c4()
+// +     store #1, ptr %35:0, align 8
 // +     %36 = ptradd #1, 8
-// +     store %36, i64 %35:1, align 8
+// +     store %36, ptr %35:1, align 8
 // +     ret
 // + }
 // +
@@ -1835,7 +1839,17 @@ proc closures {
 // +     ptr byval i8[16] noundef,
 // + ) external ccc;
 // +
-// + proc c4 external ccc -> (i64, i64);
+// + proc c4 external ccc -> (ptr, ptr);
+// +
+// + proc _S12slice_returnFSI8E.11 private ccc -> (ptr, i64) {
+// + entry:
+// +     ret ptr @5, i64 3
+// + }
+// +
+// + proc _S14closure_returnFFSI8EE.12 private ccc -> (ptr, ptr) {
+// + entry:
+// +     ret _S12slice_returnFSI8E.11, ptr nil
+// + }
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
@@ -1847,6 +1861,7 @@ proc closures {
 //L + @__srcc_str.2 = private constant [2 x i8] c"2\00", align 1
 //L + @__srcc_str.3 = private constant [2 x i8] c"3\00", align 1
 //L + @__srcc_str.4 = private constant [2 x i8] c"4\00", align 1
+//L + @__srcc_str.5 = private constant [4 x i8] c"foo\00", align 1
 //L +
 //L + ; Function Attrs: norecurse nounwind
 //L + define void @__src_main() #0 {
@@ -2852,10 +2867,10 @@ proc closures {
 //L +   %41 = getelementptr inbounds nuw i8, ptr %6, i32 8
 //L +   store i64 %40, ptr %41, align 8
 //L +   call void @s3(ptr align 8 dereferenceable(16) %1, ptr noundef %28, i64 noundef %30, ptr align 8 dereferenceable(16) %1, ptr noundef %31, i64 noundef %33, ptr noundef byval([16 x i8]) %5, ptr noundef byval([16 x i8]) %6)
-//L +   %42 = call { i64, i64 } @s4()
-//L +   %43 = extractvalue { i64, i64 } %42, 0
-//L +   %44 = extractvalue { i64, i64 } %42, 1
-//L +   store i64 %43, ptr %2, align 8
+//L +   %42 = call { ptr, i64 } @s4()
+//L +   %43 = extractvalue { ptr, i64 } %42, 0
+//L +   %44 = extractvalue { ptr, i64 } %42, 1
+//L +   store ptr %43, ptr %2, align 8
 //L +   %45 = getelementptr inbounds nuw i8, ptr %2, i32 8
 //L +   store i64 %44, ptr %45, align 8
 //L +   ret void
@@ -2871,7 +2886,7 @@ proc closures {
 //L + declare void @s3(ptr align 8 dereferenceable(16), ptr noundef, i64 noundef, ptr align 8 dereferenceable(16), ptr noundef, i64 noundef, ptr noundef byval([16 x i8]), ptr noundef byval([16 x i8])) #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare { i64, i64 } @s4() #1
+//L + declare { ptr, i64 } @s4() #1
 //L +
 //L + ; Function Attrs: nounwind
 //L + define private void @_S8closuresFvE.10() #1 {
@@ -2930,12 +2945,12 @@ proc closures {
 //L +   %41 = getelementptr inbounds nuw i8, ptr %6, i32 8
 //L +   store ptr %40, ptr %41, align 8
 //L +   call void @c3(ptr align 8 dereferenceable(16) %1, ptr noundef %28, ptr noundef %30, ptr align 8 dereferenceable(16) %1, ptr noundef %31, ptr noundef %33, ptr noundef byval([16 x i8]) %5, ptr noundef byval([16 x i8]) %6)
-//L +   %42 = call { i64, i64 } @c4()
-//L +   %43 = extractvalue { i64, i64 } %42, 0
-//L +   %44 = extractvalue { i64, i64 } %42, 1
-//L +   store i64 %43, ptr %2, align 8
+//L +   %42 = call { ptr, ptr } @c4()
+//L +   %43 = extractvalue { ptr, ptr } %42, 0
+//L +   %44 = extractvalue { ptr, ptr } %42, 1
+//L +   store ptr %43, ptr %2, align 8
 //L +   %45 = getelementptr inbounds nuw i8, ptr %2, i32 8
-//L +   store i64 %44, ptr %45, align 8
+//L +   store ptr %44, ptr %45, align 8
 //L +   ret void
 //L + }
 //L +
@@ -2952,7 +2967,17 @@ proc closures {
 //L + declare void @c3(ptr align 8 dereferenceable(16), ptr noundef, ptr noundef, ptr align 8 dereferenceable(16), ptr noundef, ptr noundef, ptr noundef byval([16 x i8]), ptr noundef byval([16 x i8])) #1
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare { i64, i64 } @c4() #1
+//L + declare { ptr, ptr } @c4() #1
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private { ptr, i64 } @_S12slice_returnFSI8E.11() #1 {
+//L +   ret { ptr, i64 } { ptr @__srcc_str.5, i64 3 }
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private { ptr, ptr } @_S14closure_returnFFSI8EE.12() #1 {
+//L +   ret { ptr, ptr } { ptr @_S12slice_returnFSI8E.11, ptr null }
+//L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
 //L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #2

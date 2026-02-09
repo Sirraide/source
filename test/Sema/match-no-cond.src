@@ -15,19 +15,19 @@ match {}
 match { _: 2; }
 match {
     1: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'int'
-    "": 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
-    "".data: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8^'
+    "": 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8 val[]'
+    "".data: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8 val^'
     {}: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'void'
     1..=2: 2; // expected-error: Condition of 'match' must be of type 'bool', but was 'range<int>'
     _: 2;
 }
 
 match {
-    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
+    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8 val[]'
     _: 2; // expected-note: Because this pattern already makes the 'match' fully exhaustive
-    "": 3; // expected-error (Condition of 'match' must be of type 'bool', but was 'i8[]') expected-warning (This and any following patterns will never be matched)
+    "": 3; // expected-error (Condition of 'match' must be of type 'bool', but was 'i8 val[]') expected-warning (This and any following patterns will never be matched)
     true: 1;
-    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8[]'
+    "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8 val[]'
 }
 
 int x = match {
@@ -54,7 +54,7 @@ int y = match { // expected-error: Cannot convert expression of type 'void' to '
     false: "34";
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+int y = match { // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
     true: "12";
     false: "34";
     _: "56";

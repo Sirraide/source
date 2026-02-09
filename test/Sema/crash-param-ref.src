@@ -6,9 +6,9 @@ program test;
 // find a way to actually just emit the note.
 
 // 'In argument to parameter' note is *not* emitted for this call.
-callee(""); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+callee(""); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
 
 proc callee (int a) {} // expected-note: In argument to parameter 'a'
 
 // It is for this call.
-callee(""); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+callee(""); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'

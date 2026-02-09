@@ -180,8 +180,8 @@ i8 y = match 1 -> i8 {
 };
 
 i8 y = match 1 -> i8 {
-    1: ""; // expected-error: Cannot convert expression of type 'i8[]' to 'i8'
-    _: "".data; // expected-error (Cannot convert expression of type 'i8^' to 'i8') expected-note (Because this pattern already makes the 'match' fully exhaustive)
+    1: ""; // expected-error: Cannot convert expression of type 'i8 val[]' to 'i8'
+    _: "".data; // expected-error (Cannot convert expression of type 'i8 val^' to 'i8') expected-note (Because this pattern already makes the 'match' fully exhaustive)
 
     // No error here since we don’t attempt to convert unreachable patterns.
     1: 2; // expected-warning: This and any following patterns will never be matched

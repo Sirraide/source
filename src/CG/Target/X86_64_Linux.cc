@@ -266,7 +266,7 @@ auto ABIImpl::LowerByValArgOrReturn(
 
         // This is passed in two registers.
         else if (sz <= Word * 2 and ctx.allocate(2)) {
-            // As an optimisation, pass closures and slices directly.
+            // We need special handling for slices/closures since they contain pointers.
             if (isa<SliceType, ProcType>(t)) {
                 auto ty = cg.GetEquivalentRecordTypeForAggregate(t);
                 info.emplace_back(cg.C(ty->layout().fields()[0]->type));
@@ -579,9 +579,16 @@ auto ABIImpl::lower_procedure_signature(
         if (sz <= Word) {
             AddReturnType(cg.IntTy(sz.as_bytes()));
         } else if (sz <= Word * 2) {
-            // TODO: This returns padding bytes if the struct is e.g. (i32, i64); do we care?
-            AddReturnType(cg.getI64Type());
-            AddReturnType(cg.IntTy((sz - Word).as_bytes()));
+            // We need special handling for slices/closures since they contain pointers.
+            if (isa<SliceType, ProcType>(ret)) {
+                auto ty = cg.GetEquivalentRecordTypeForAggregate(ret);
+                AddReturnType(cg.C(ty->layout().fields()[0]->type));
+                AddReturnType(cg.C(ty->layout().fields()[1]->type));
+            } else {
+                // TODO: This returns padding bytes if the struct is e.g. (i32, i64); do we care?
+                AddReturnType(cg.getI64Type());
+                AddReturnType(cg.IntTy((sz - Word).as_bytes()));
+            }
         } else {
             Unreachable("Should never be returned directly");
         }

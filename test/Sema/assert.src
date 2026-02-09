@@ -5,7 +5,7 @@ assert 1 == 1;
 assert 1 == 1, "bar";
 
 assert 0; // expected-error: Condition of 'assert' must be of type 'bool', but was 'int'
-assert "x"; // expected-error: Condition of 'assert' must be of type 'bool', but was 'i8[]'
+assert "x"; // expected-error: Condition of 'assert' must be of type 'bool', but was 'i8 val[]'
 assert 2 + 3; // expected-error: Condition of 'assert' must be of type 'bool', but was 'int'
 assert 0, 0; // expected-error: Condition of 'assert' must be of type 'bool', but was 'int'
 assert 0, "foo"; // expected-error: Condition of 'assert' must be of type 'bool', but was 'int'

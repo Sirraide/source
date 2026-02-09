@@ -8,11 +8,11 @@ i8^ pb = &j;
 
 // No-op.
 i as int;
-"" as i8[];
+"" as i8 val[];
 (1..=2) as range<int>;
 pa as int^;
 i as! int;
-"" as! i8[];
+"" as! i8 val[];
 (1..=2) as! range<int>;
 pa as! int^;
 
@@ -32,7 +32,7 @@ i64.max as! i8; // expected-warning: Cast from 'i64' to 'i8' should use 'as'
 (1..=2) as void;
 pa as void;
 1 as! void; // expected-warning: Cast from 'int' to 'void' should use 'as'
-"" as! void; // expected-warning: Cast from 'i8[]' to 'void' should use 'as'
+"" as! void; // expected-warning: Cast from 'i8 val[]' to 'void' should use 'as'
 (1..=2) as! void; // expected-warning: Cast from 'range<int>' to 'void' should use 'as'
 pa as! void; // expected-warning: Cast from 'int^' to 'void' should use 'as'
 

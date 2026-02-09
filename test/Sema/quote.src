@@ -12,7 +12,7 @@ proc good -> int {
 proc bad {
     #inject(1); // expected-error: Cannot inject value of type 'int'
     #inject(int); // expected-error: Cannot inject value of type 'type'
-    #inject(""); // expected-error: Cannot inject value of type 'i8[]'
+    #inject(""); // expected-error: Cannot inject value of type 'i8 val[]'
 }
 
 proc add (tree a) = quote {

@@ -7,5 +7,5 @@ pi = ();
 pi = (1);
 pi = (1,);
 pi = pi;
-pi = ""; // expected-error: Cannot assign value of type 'i8[]' to 'int?'
+pi = ""; // expected-error: Cannot assign value of type 'i8 val[]' to 'int?'
 pi = &i; // expected-error: Cannot assign value of type 'int^' to 'int?'

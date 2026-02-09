@@ -14,6 +14,9 @@ proc preserve_lvalueness(int val^ imm, int^ mut) {
     p(mut as int val^); // As do casts.
 }
 
+proc conv_ptr (int^ a) -> int val^ = a;
+proc conv_slice (int[] a) -> int val[] = a;
+
 // * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
@@ -48,13 +51,35 @@ proc preserve_lvalueness(int val^ imm, int^ mut) {
 // + entry:
 // +     store #0, ptr %0, align 8
 // +     store #1, ptr %1, align 8
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #0 align 8 dereferenceable 8)
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #1 align 8 dereferenceable 8)
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.3(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #1 align 8 dereferenceable 8)
 // +     ret
 // + }
 // +
-// + proc _S19preserve_lvalueness$1pFvx2RiE.3 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + proc _S19preserve_lvalueness$1pFvx2RiE.5 (ptr %0 align 8 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
+// + }
+// +
+// + proc _S8conv_ptrFRiRiE.3 (ptr %0 align 8 dereferenceable 8 noundef) private ccc -> ptr {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %1 = load ptr, #0, align 8
+// +     ret ptr %1
+// + }
+// +
+// + proc _S10conv_sliceFSiSiE.4 (ptr %0 noundef, i64 %1 noundef) private ccc -> (ptr, i64) {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     %2 = ptradd #0, 8
+// +     store %2, i64 %1, align 8
+// +     %3 = load ptr, #0, align 8
+// +     %4 = ptradd #0, 8
+// +     %5 = load i64, %4, align 8
+// +     ret ptr %3, i64 %5
 // + }

@@ -183,11 +183,23 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
         // If both types are pointers with the same element type that differ only
         // in mutability, the result is an immutable pointer type with merged value
         // category.
-        auto t_ptr = dyn_cast<PtrType>(t);
-        auto e_ptr = dyn_cast<PtrType>(e->type);
-        if (t_ptr and e_ptr  and t_ptr->elem() == e_ptr->elem()) {
+        if (
+            auto t_ptr = dyn_cast<PtrType>(t), e_ptr = dyn_cast<PtrType>(e->type);
+            t_ptr and e_ptr and t_ptr->elem() == e_ptr->elem()
+        ) {
             Assert(t_ptr->is_immutable() != e_ptr->is_immutable());
             t = t_ptr->is_immutable() ? t_ptr : e_ptr;
+            MergeVC();
+            continue;
+        }
+
+        // Similarly for slices.
+        if (
+            auto t_slice = dyn_cast<SliceType>(t), e_slice = dyn_cast<SliceType>(e->type);
+            t_slice and e_slice and t_slice->elem() == e_slice->elem()
+        ) {
+            Assert(t_slice->is_immutable() != e_slice->is_immutable());
+            t = t_slice->is_immutable() ? t_slice : e_slice;
             MergeVC();
             continue;
         }
@@ -771,7 +783,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         );
 
         case K::MaterialiseTemporary: return MaterialiseTemporary(e);
-        case K::MutableToImmutable: return Cast(CastExpr::Pointer, e->value_category);
+        case K::MutableToImmutable: return Cast(CastExpr::Nop, e->value_category);
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
@@ -783,7 +795,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         }
 
         case K::SliceFromArray: return new (*tu) CastExpr(
-            SliceType::Get(*tu, cast<ArrayType>(e->type)->elem()),
+            SliceType::Get(*tu, cast<ArrayType>(e->type)->elem(), false),
             CastExpr::SliceFromArray,
             MaterialiseTemporary(e),
             loc,
@@ -1026,6 +1038,7 @@ auto Sema::BuildSliceInitialiser(
     ConversionSequence& seq,
     SliceType* s,
     ArrayRef<Expr*> args,
+    bool want_lvalue,
     SLoc loc
 ) -> MaybeDiags {
     if (args.empty()) {
@@ -1042,6 +1055,17 @@ auto Sema::BuildSliceInitialiser(
        return {};
     }
 
+    // A mutable slice can be converted to an immutable slice.
+    if (
+        auto from = dyn_cast<SliceType>(args.front()->type);
+        args.size() == 1 and from and from->elem() == s->elem() and not from->is_immutable()
+    ) {
+        Assert(s->is_immutable());
+        if (not want_lvalue) seq.add(Conversion::LValueToRValue());
+        seq.add(Conversion::MutableToImmutable(s));
+        return {};
+    }
+
     // If we have 2 arguments, and the first is a pointer and the second is
     // an integer, try initialisation from pointer + size.
     //
@@ -1049,7 +1073,7 @@ auto Sema::BuildSliceInitialiser(
     // especially since it may sometimes be unclear whether we want to do this or construct
     // a slice with two elements...
     if (args.size() == 2 and isa<PtrType>(args[0]->type) and args[1]->type->is_integer()) {
-        auto ptr_seq = BuildConversionSequence(PtrType::Get(*tu, s->elem()), args[0], loc);
+        auto ptr_seq = BuildConversionSequence(s->data_ptr_type(), args[0], loc);
         auto size_seq = BuildConversionSequence(Type::IntTy, args[1], loc);
         if (ptr_seq and size_seq) {
             Conversion::SliceFromPtrAndSizeData data;
@@ -1167,7 +1191,7 @@ auto Sema::BuildConversionSequence(
         }
 
         if (auto s = dyn_cast<SliceType>(var_type)) {
-            Try(BuildSliceInitialiser(seq, s, args, init_loc));
+            Try(BuildSliceInitialiser(seq, s, args, want_lvalue, init_loc));
             return seq;
         }
 
@@ -1268,7 +1292,7 @@ auto Sema::BuildConversionSequence(
         // are not nullable! That’s what optional pointers are for.
         case TypeBase::Kind::PtrType: {
             // Allow implicitly converting string literals to C string.
-            if (isa<StrLitExpr>(a) and var_type == tu->I8PtrTy) {
+            if (isa<StrLitExpr>(a) and var_type == tu->StrLitTy->data_ptr_type()) {
                 seq.add(Conversion::StrLitToCStr());
                 return seq;
             }
@@ -1320,7 +1344,7 @@ auto Sema::BuildConversionSequence(
         }
 
         case TypeBase::Kind::SliceType:
-            Try(BuildSliceInitialiser(seq, cast<SliceType>(var_type), args, init_loc));
+            Try(BuildSliceInitialiser(seq, cast<SliceType>(var_type), args, want_lvalue, init_loc));
             return seq;
 
         case TypeBase::Kind::ArrayType:
@@ -2942,8 +2966,18 @@ auto Sema::BuildBinaryExpr(
             // Aggregates need to be in memory before we can do anything
             // with them; slices are srvalues and should be loaded whole.
             // FIXME: Stop doing that for slices.
-            if (isa<TupleType, ArrayType>(lhs->type)) lhs = MaterialiseTemporary(lhs);
-            else lhs = LValueToRValue(lhs);
+            //
+            // Furthermote, an array/tuple subscript is immutable if the LHS
+            // is immutable; a slice subscript is immutable if the slice *type*
+            // is immutable.
+            bool immutable = false;
+            if (isa<TupleType, ArrayType>(lhs->type)) {
+                immutable = lhs->is_immutable_lvalue();
+                lhs = MaterialiseTemporary(lhs);
+            } else {
+                immutable = cast<SliceType>(lhs->type)->is_immutable();
+                lhs = LValueToRValue(lhs);
+            }
 
             // For tuples, the integer must be a compile-time constant, and
             // the result of a subscript operation is a member access.
@@ -2966,7 +3000,7 @@ auto Sema::BuildBinaryExpr(
             // A subscripting operation yields an lvalue.
             return Build(
                 cast<SingleElementTypeBase>(lhs->type)->elem(),
-                Expr::LValue(lhs->is_immutable_lvalue())
+                Expr::LValue(immutable)
             );
         }
 
@@ -3167,18 +3201,6 @@ auto Sema::BuildBuiltinCallExpr(
         );
     };
 
-    auto CheckTypeExact = [&](Type ty, usz n) -> bool {
-        if (args[n]->type == ty) return true;
-        return Error(
-            args[n]->location(),
-            "Argument #{} of '%2({}%)' must be of type {}, but was {}",
-            n + 1,
-            builtin,
-            ty,
-            args[n]->type
-        );
-    };
-
     auto ToInt = [&](usz n) -> Ptr<Expr> {
         return BuildInitialiser(Type::IntTy, args[n], args[n]->location());
     };
@@ -3205,7 +3227,16 @@ auto Sema::BuildBuiltinCallExpr(
 
         case B::Ptradd: {
             if (not CheckNArgs(2)) return nullptr;
-            if (not CheckTypeExact(tu->I8PtrTy, 0)) return nullptr;
+            auto ptr = dyn_cast<PtrType>(args[0]->type);
+            if (not ptr or ptr->elem() != tu->I8Ty) return Error(
+                args[0]->location(),
+                "Argument #{} of '%2({}%)' must be a pointer to '{}', but was '{}'",
+                1,
+                builtin,
+                tu->I8Ty,
+                args[0]->type
+            );
+
             auto size = TRY(ToInt(1));
             return Make(args[0]->type, {LValueToRValue(args[0]), size});
         }
@@ -3269,7 +3300,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::IntTy;
 
             case SliceData:
-                return PtrType::Get(*tu, cast<SliceType>(operand->type)->elem());
+                return cast<SliceType>(operand->type)->data_ptr_type();
 
             // Range Properties.
             case RangeStart:
@@ -3540,7 +3571,19 @@ auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) ->
             else SoftCast();
         }
 
-        return Make(CastExpr::Pointer, arg->value_category);
+        return Make(CastExpr::Nop, arg->value_category);
+    }
+
+    // Casting between slices (adding/removing immutability).
+    if (isa<SliceType>(from) and isa<SliceType>(to)) {
+        auto sfrom = cast<SliceType>(from);
+        auto sto = cast<SliceType>(to);
+        if (sfrom->elem() == sto->elem()) {
+            Assert(sfrom->is_immutable() != sto->is_immutable());
+            if (sfrom->is_immutable()) HardCast();
+            else SoftCast();
+            return Make(CastExpr::Nop, arg->value_category);
+        }
     }
 
     // So is casting from integers/enums to enums.
@@ -4626,7 +4669,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
         r->type->visit(utils::Overloaded{
             [&](auto*) { Unreachable(); },
             [&](ArrayType* ty) { MakeVar(ty->elem(), Expr::LValue(r->is_immutable_lvalue())); },
-            [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue(r->is_immutable_lvalue())); },
+            [&](SliceType* ty) { MakeVar(ty->elem(), Expr::LValue(ty->is_immutable())); },
             [&](RangeType* ty) { MakeVar(ty->elem(), Expr::RValue); },
         });
     }
@@ -5261,9 +5304,9 @@ auto Sema::BuildCompleteStructType(
     );
 }
 
-auto Sema::BuildSliceType(Type base, SLoc loc) -> Type {
+auto Sema::BuildSliceType(Type base, bool immutable, SLoc loc) -> Type {
     if (not CheckVariableType(base, loc)) return Type();
-    return SliceType::Get(*tu, base);
+    return SliceType::Get(*tu, base, immutable);
 }
 
 auto Sema::BuildTupleType(ArrayRef<TypeLoc> types) -> Type {
@@ -5354,8 +5397,11 @@ auto Sema::TranslateProcType(
         //
         // here, only 'f' is a procedure declaration; 'g' is a variable declaration.
         auto parsed_ty = a.type;
-        if (auto val = dyn_cast<ParsedValueType>(parsed_ty); val and allow_immutable_params)
+        bool immutable = false;
+        if (auto val = dyn_cast<ParsedValueType>(parsed_ty); val and allow_immutable_params) {
+            immutable = true;
             parsed_ty = val->elem;
+        }
 
         auto ty = TranslateType(parsed_ty);
 
@@ -5380,7 +5426,7 @@ auto Sema::TranslateProcType(
         // Do *not* do this if this is a 'var...' parameter since we pass
         // those as a tuple; this will have already been handled during
         // substitution.
-        if (a.variadic and not is_var_param) ty = BuildSliceType(ty, a.type->loc);
+        if (a.variadic and not is_var_param) ty = BuildSliceType(ty, immutable, a.type->loc);
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty, a.variadic);
     }
@@ -5434,8 +5480,9 @@ auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
 }
 
 auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
-    auto ty = TranslateType(parsed->elem);
-    return BuildSliceType(ty, parsed->loc);
+    auto immutable = dyn_cast<ParsedValueType>(parsed->elem);
+    auto ty = TranslateType(immutable ? immutable->elem : parsed->elem);
+    return BuildSliceType(ty, immutable != nullptr, parsed->loc);
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {

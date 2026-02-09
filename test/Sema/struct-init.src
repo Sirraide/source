@@ -20,9 +20,9 @@ var z = "";
 }
 
 {
-var x = DefaultInit(1, "foo"); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
-var y = DefaultInit("foo", 1); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
-var y = DefaultInit("foo", "foo"); // expected-error: Cannot convert expression of type 'i8[]' to 'int'
+var x = DefaultInit(1, "foo"); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
+var y = DefaultInit("foo", 1); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
+var y = DefaultInit("foo", "foo"); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
 }
 
 {

@@ -19,8 +19,8 @@ i++;
 i--;
 
 var z = "";
-z++; // expected-error:  Operand of '++' must be an integer, but was 'i8[]'
-z--; // expected-error:  Operand of '--' must be an integer, but was 'i8[]'
+z++; // expected-error:  Operand of '++' must be an integer, but was 'i8 val[]'
+z--; // expected-error:  Operand of '--' must be an integer, but was 'i8 val[]'
 
 var q = {};
 q++; // expected-error:  Operand of '++' must be an integer, but was 'void'

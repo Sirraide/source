@@ -9,7 +9,7 @@ eval {
 
 eval {
     type t1 = typeof("0");
-    assert t1 == i8[];
+    assert t1 == i8 val[];
 }
 
 #assert typeof(type) == type;
