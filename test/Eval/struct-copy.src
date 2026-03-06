@@ -1,4 +1,4 @@
-// R %srcc --eval %s
+// V %srcc --eval %s
 program test;
 
 struct y { i64 a; i64 b; i64 c; }

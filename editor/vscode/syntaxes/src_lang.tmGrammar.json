@@ -2,7 +2,7 @@
     "scopeName": "source.src_lang",
     "patterns": [
         {
-            "begin": "// ([RVX])[\\s\\[]",
+            "begin": "// ([IRVX])[\\s\\[]",
             "end": "$",
             "beginCaptures": {
                 "1": { "name": "fchk.directive"}

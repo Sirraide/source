@@ -1,4 +1,4 @@
-// R %srcc --parse --ast %s
+// V %srcc --parse --ast %s
 program test;
 
 proc f_move(int) {}

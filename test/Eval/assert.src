@@ -1,4 +1,4 @@
-// R %srcc --sema --verify %s
+// V %srcc --sema --verify %s
 program test;
 
 #assert true;

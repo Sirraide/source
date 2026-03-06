@@ -1,4 +1,4 @@
-// R %srcc --eval %s
+// V %srcc --eval %s
 program test;
 
 i1 j1 = i1.max;

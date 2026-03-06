@@ -1,6 +1,5 @@
-// V true
+// I
 module testmodule;
-// FIXME: introduce an 'I' run directive to FCHK.
 
 import <cstdio> as libc;
 

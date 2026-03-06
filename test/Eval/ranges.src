@@ -1,4 +1,4 @@
-// R %srcc --eval %s
+// V %srcc --eval %s
 program test;
 
 proc a = 3..=4;
