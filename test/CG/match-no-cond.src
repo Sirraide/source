@@ -95,14 +95,14 @@ proc f7 (int x, int y) nomangle = match {
 // +     store #0, i64 %0, align 8
 // +     %1 = load i64, #0, align 8
 // +     %2 = icmp eq i64 %1, 1
-// +     br %2 to bb2(2) else bb1
+// +     br %2 to bb2 else bb1
 // +
 // + bb1:
 // +     call ccc void exit()
 // +     unreachable
 // +
-// + bb2(i64 %3):
-// +     ret i64 %3
+// + bb2:
+// +     ret i64 2
 // + }
 // +
 // + proc exit noreturn external ccc;
@@ -114,13 +114,13 @@ proc f7 (int x, int y) nomangle = match {
 // +     store #0, i64 %0, align 8
 // +     %1 = load i64, #0, align 8
 // +     %2 = icmp eq i64 %1, 1
-// +     br %2 to bb2(2) else bb1
+// +     br %2 to bb2 else bb1
 // +
 // + bb1:
 // +     ret i64 3
 // +
-// + bb2(i64 %3):
-// +     ret i64 %3
+// + bb2:
+// +     ret i64 2
 // + }
 // +
 // + proc f7 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
@@ -212,8 +212,7 @@ proc f7 (int x, int y) nomangle = match {
 //L +   unreachable
 //L +
 //L + 6:                                                ; preds = %1
-//L +   %7 = phi i64 [ 2, %1 ]
-//L +   ret i64 %7
+//L +   ret i64 2
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
@@ -231,8 +230,7 @@ proc f7 (int x, int y) nomangle = match {
 //L +   ret i64 3
 //L +
 //L + 6:                                                ; preds = %1
-//L +   %7 = phi i64 [ 2, %1 ]
-//L +   ret i64 %7
+//L +   ret i64 2
 //L + }
 //L +
 //L + ; Function Attrs: nounwind

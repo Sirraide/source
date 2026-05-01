@@ -562,7 +562,7 @@ auto Sema::LookUpUnqualifiedName(
     }
 
     // If we couldn’t find it, try to find it in the open modules.
-    if (not tu->open_modules.empty()) {
+    if (not this_scope_only and not tu->open_modules.empty()) {
         Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
         auto mod = tu->open_modules.front();
         if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
@@ -2630,6 +2630,7 @@ bool Sema::CheckMatchExhaustive(
     MutableArrayRef<MatchCase> cases
 ) {
     // FIXME: Try to avoid heap-allocating these if possible.
+    // TODO: Implementing a caching mechanism should help.
     auto AllocateMatchContext = [&] (this auto& self, Type ty) -> std::unique_ptr<MatchContext> {
         if (ty->is_integer()) {
             return std::make_unique<IntMatchContext>(*this, ty);

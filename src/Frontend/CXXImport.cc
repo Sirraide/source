@@ -429,19 +429,7 @@ auto Sema::Importer::ImportValue(
             return eval::RValue(val.getInt(), *int_ty);
         }
 
-        case clang::APValue::None:
-        case clang::APValue::Indeterminate:
-        case clang::APValue::Float:
-        case clang::APValue::FixedPoint:
-        case clang::APValue::ComplexInt:
-        case clang::APValue::ComplexFloat:
-        case clang::APValue::LValue:
-        case clang::APValue::Vector:
-        case clang::APValue::Array:
-        case clang::APValue::Struct:
-        case clang::APValue::Union:
-        case clang::APValue::MemberPointer:
-        case clang::APValue::AddrLabelDiff:
+        default:
             return std::nullopt;
     }
 

@@ -527,6 +527,58 @@ Use `<type> val` as the syntax, e.g. `i8 val`, `int val`; this makes more sense 
 (‘int value’ vs ‘value int’), and also doesn’t run into the problem that it’s not obvious what
 `val int^` would be.
 
+# Syntax for by-value captures
+Captures by value:
+```
+int x;
+int y;
+proc f(int a) val x, y {
+
+}
+
+// Terse syntax.
+a, `x, `y -> {}
+```
+Alternatively, `var` can be used for mutable captures.
+
+Init captures:
+```
+proc f(int a) val x = 4, y = 5 {
+
+}
+
+// Terse syntax:
+a, `x = 4, `y = 5 -> {}
+```
+
+Capture everything it needs by value:
+```
+proc f(int a) val * {
+
+}
+
+// Terse syntax:
+a, `* ->
+```
+
+## Inline out parameters
+Essentially, allow this:
+```
+proc f (out int x) { x = 4; }
+f(var y);
+```
+The variable is added to the scope after the call expr is fully translated:
+```
+f(var y) && var > 4; // Ok
+f(var y, y);         // Error
+f(var y, &y);        // Should this be ok?
+```
+We should issue a better diagnostic than 'Unknown symbol' for this; to do this, add
+the variable to the scope early but set a flag that indicates that it's *value* is not
+usable yet.
+
+Actually, can we use dataflow analysis to diagnose this as an uninitialised variable instead?
+
 # Failed Ideas
 ## Renaming copy to var
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this

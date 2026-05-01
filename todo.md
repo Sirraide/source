@@ -6,6 +6,16 @@
 - Refactor: Try using the 'ptr' dialect and replace our store/load/ptradd ops.
 - Maybe add unsigned integer types after all? Essentially, being able to store e.g. the value '200' in an 8-bit integer is useful, and while this is currently allowed with literals, it feels like the semantics about this get ... weird; especially once enums are involved; maybe we want unsigned types after all? In that case, we might just want to make sure that comparisons with mixed signed/unsigned integers are well-formed and respect signedness (e.g. that `-1 as i8 < 2 as u8` is `true`).
 
+- Can we require `var`/`val` in a var decl? that would simplify quite a few things
+  (to specify a type: `var x : int`).
+
+
+- Render notes in-line. In particular:
+  - for notes, print the diagnostic message after the caret
+  - if a note and primary diag are on the same line, only print the source line once and
+    instead add multiple lines of carets for the notes
+
+
 - FIXME: Figure out how to prevent this:
 ```
 proc x {
