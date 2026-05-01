@@ -313,6 +313,11 @@ struct Falsy {
     // Allow conversion to false.
     constexpr /* implicit */ operator bool() const { return false; }
 
+    // Allow conversion to std::nullopt_t.
+    template <typename ty>
+    requires std::constructible_from<ty, std::nullopt_t>
+    constexpr /* implicit */ operator ty() const { return std::nullopt; }
+
     // Allow conversion to any nullable type.
     template <typename ty>
     requires std::convertible_to<std::nullptr_t, ty>

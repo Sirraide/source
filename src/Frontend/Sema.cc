@@ -3,18 +3,20 @@
 #include <srcc/AST/Eval.hh>
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
-#include <srcc/Core/Constants.hh>
 #include <srcc/CG/Target/Target.hh>
 #include <srcc/ClangForward.hh>
+#include <srcc/Core/Constants.hh>
 #include <srcc/Frontend/Parser.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/AST/ASTImporterSharedState.h>
+
 #include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Casting.h>
@@ -581,9 +583,9 @@ auto Sema::LookUpName(
     bool complain
 ) -> LookupResult {
     auto res = names.size() == 1
-                 ? LookUpUnqualifiedName(in_scope, names[0], hint, false)
-                 : LookUpQualifiedName(in_scope, names, hint);
-    if (not res.successful() and complain) ReportLookupFailure(res, loc);
+        ? LookUpUnqualifiedName(in_scope, names[0], hint, false)
+        : LookUpQualifiedName(in_scope, names, hint);
+    if (not res.successful() and complain) ReportLookupFailure(std::move(res), loc);
     return res;
 }
 
@@ -668,7 +670,7 @@ auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
-void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
+void Sema::ReportLookupFailure(LookupResult&& result, SLoc loc) {
     switch (result.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
@@ -686,6 +688,11 @@ void Sema::ReportLookupFailure(const LookupResult& result, SLoc loc) {
                 result.name
             );
         } break;
+    }
+
+    if (result.note) {
+        diags().report(std::move(*result.note));
+        result.note.reset();
     }
 }
 
@@ -3505,7 +3512,7 @@ auto Sema::BuildDeclRefExpr(
         if (res.successful()) return CreateReference(res.decls.front(), loc);
     }
 
-    ReportLookupFailure(res, loc);
+    ReportLookupFailure(std::move(res), loc);
     return {};
 }
 
@@ -4123,8 +4130,13 @@ Sema::TypeTranslationRAII::~TypeTranslationRAII() {
     if (engaged) S.type_translation_stack.pop_back();
 }
 
-Sema::Sema(Context& ctx) : ctx(ctx) {}
 Sema::~Sema() = default;
+Sema::Sema(Context& ctx) : ctx(ctx) {
+    using namespace llvm::vfs;
+    ImportVFS = llvm::makeIntrusiveRefCnt<OverlayFileSystem>(getRealFileSystem());
+    PCHVFS = llvm::makeIntrusiveRefCnt<InMemoryFileSystem>();
+    ImportVFS->pushOverlay(PCHVFS);
+}
 
 auto Sema::AddParsedModule(ParsedModule::Ptr p, bool translate) -> ParsedModule* {
     if (p == nullptr) return nullptr;

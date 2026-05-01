@@ -2,10 +2,10 @@ program raylib_test;
 
 import <raylib.h> as *;
 
-InitWindow(800, 600, "Hello from Source".data);
+InitWindow(800, 600, "Hello from Source");
 SetTargetFPS(60);
 while not WindowShouldClose() {
     BeginDrawing();
-    ClearBackground(Color(200, 100, 80, 255));
+    ClearBackground(RED);
     EndDrawing();
 }

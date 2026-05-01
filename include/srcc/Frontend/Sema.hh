@@ -23,6 +23,10 @@ namespace srcc {
 class TemplateInstantiator;
 }
 
+namespace clang {
+class ASTImporterSharedState;
+}
+
 class srcc::Sema : public DiagsProducer {
     SRCC_IMMOVABLE(Sema);
 
@@ -301,6 +305,11 @@ private:
         /// Reason for failure.
         Reason result;
 
+        /// Note that describes what went wrong, if any.
+        ///
+        /// Stored on the heap to keep most lookup results small.
+        std::unique_ptr<Diagnostic> note;
+
         LookupResult(DeclName name) : name{name}, result{Reason::NotFound} {}
         LookupResult(ArrayRef<Decl*> decls, DeclName name, Reason result) : decls{decls}, name{name}, result{result} {}
         LookupResult(Decl* decl, DeclName name, Reason result) : name{name}, result{result} {
@@ -316,7 +325,13 @@ private:
             return LookupResult{decls, name, Reason::Ambiguous};
         }
 
-        static auto FailedToImport(DeclName name) { return LookupResult{{}, name, Reason::FailedToImport}; }
+        static auto FailedToImport(DeclName name, std::unique_ptr<Diagnostic> note = nullptr) {
+            if (note) Assert(note->level == Diagnostic::Level::Note);
+            LookupResult lr{{}, name, Reason::FailedToImport};
+            lr.note = std::move(note);
+            return lr;
+        }
+
         static auto NonScopeInPath(DeclName name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
         static auto NotFound(DeclName name) { return LookupResult{name}; }
         static auto Success(Decl* decl) {
@@ -637,6 +652,7 @@ private:
     ArrayRef<std::string> clang_include_paths;
     usz assert_stringifiers = 0;
     usz generated_cxx_macro_decls = 0;
+    usz cxx_import_file_counter = 0;
 
     /// Modules that need to be translated.
     SmallVector<ParsedModule::Ptr> modules_to_translate;
@@ -654,6 +670,9 @@ private:
     /// Template deduction information for each template.
     DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> parsed_template_deduction_infos;
 
+    /// Shared state for Clang's ASTImporter.
+    std::shared_ptr<clang::ASTImporterSharedState> clang_importer_state;
+
     /// C++ decls that have already been imported (or that
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
@@ -668,6 +687,10 @@ private:
 
     /// C++ TUs that we own.
     SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
+
+    /// VFS that contains precompiled headers; used for importing declarations.
+    llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> ImportVFS;
+    llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> PCHVFS;
 
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
@@ -1041,7 +1064,7 @@ private:
     void MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases);
 
     /// Parse C++ code into a new TU.
-    auto ParseCXX(StringRef code) -> std::unique_ptr<clang::ASTUnit>;
+    auto ParseCXX(StringRef code, std::optional<std::string> PCH = {}) -> std::unique_ptr<clang::ASTUnit>;
 
     /// Resolve an overload set.
     auto PerformOverloadResolution(
@@ -1054,7 +1077,7 @@ private:
     auto ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<>;
 
     /// Issue an error about lookup failure.
-    void ReportLookupFailure(const LookupResult& result, SLoc loc);
+    void ReportLookupFailure(LookupResult&& result, SLoc loc);
 
     /// Issue an error about overload resolution failure.
     void ReportOverloadResolutionFailure(

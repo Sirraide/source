@@ -7,3 +7,8 @@ import <macros.h> as macros;
 #assert macros::NESTED == 42;
 #assert macros::FOOBAR == 84;
 #assert macros::SIX == 6;
+
+#assert macros::STRUCT_LITERAL.a == 1;
+#assert macros::STRUCT_LITERAL.b == 2;
+#assert macros::STRUCT_LITERAL.c == 3;
+#assert macros::STRUCT_LITERAL.d == 4;
