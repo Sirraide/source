@@ -2784,7 +2784,7 @@ auto Sema::BuildAssertExpr(
         auto proc = ProcDecl::Create(
             *tu,
             nullptr,
-            ProcType::Get(*tu, Type::VoidTy, {{Intent::Inout, assert_buffer_type, false}}),
+            ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, assert_buffer_type, false}}),
             tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
             Linkage::Internal,
             Mangling::None,
@@ -3465,7 +3465,7 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
     return CallExpr::Create(
         *tu,
         proc->ret(),
-        Expr::RValue,
+        proc->return_value_category(),
         resolved_callee,
         converted_args,
         loc
@@ -3897,8 +3897,21 @@ auto Sema::BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnEx
     //
     // If the type is zero-sized, there is no need to do anything since we’ll
     // drop it anyway.
-    if (auto val = value.get_or_null())
-        value = BuildInitialiser(proc->return_type(), {val}, val->location());
+    if (auto val = value.get_or_null()) {
+        value = BuildInitialiser(
+            proc->return_type(),
+            {val},
+            val->location(),
+            proc->returns_lvalue()
+        );
+
+        // Returning an immutable reference from a function that returns a
+        // mutable reference is not supported.
+        if (
+            proc->return_value_category() == Expr::MLValue and
+            value.present() and value.get()->is_immutable_lvalue()
+        ) Error(loc, "Cannot return immutable value as mutable");
+    }
 
     return new (*tu) ReturnExpr(value.get_or_null(), loc, implicit);
 }
@@ -5134,7 +5147,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         EnterScope scope{*this, ScopeKind::Procedure};
         auto type = TranslateProcType(parsed->type, true);
         auto ty = cast_if_present<ProcType>(type);
-        if (not ty) ty = ProcType::Get(*tu, Type::VoidTy);
+        if (not ty) ty = ProcType::Get(*tu, {Type::VoidTy, Expr::RValue});
         decl = BuildProcDeclInitial(
             scope.get(),
             ty,
@@ -5461,7 +5474,7 @@ auto Sema::TranslateProcType(
     if (not ok) return Type();
     return ProcType::Get(
         *tu,
-        ret,
+        {ret, Expr::RValue},
         params,
         CallingConvention::Native,
         parsed->attrs.c_varargs

@@ -487,7 +487,7 @@ void PtrType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType* {
     return Get(
         mod,
-        new_ret,
+        {new_ret, ty->return_value_category()},
         ty->params(),
         ty->cconv(),
         ty->has_c_varargs()
@@ -496,7 +496,7 @@ auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> Pr
 
 auto ProcType::Get(
     TranslationUnit& mod,
-    Type return_type,
+    TypeAndValueCategory return_type,
     ArrayRef<ParamTypeData> param_types,
     CallingConvention cconv,
     bool c_varargs
@@ -525,7 +525,7 @@ auto ProcType::Get(
 ProcType::ProcType(
     CallingConvention cconv,
     bool variadic,
-    Type return_type,
+    TypeAndValueCategory return_type,
     ArrayRef<ParamTypeData> param_types
 ) : TypeBase{Kind::ProcType},
     cc{cconv},
@@ -541,14 +541,15 @@ ProcType::ProcType(
 
 void ProcType::Profile(
     FoldingSetNodeID& ID,
-    Type return_type,
+    TypeAndValueCategory return_type,
     ArrayRef<ParamTypeData> param_types,
     CallingConvention cc,
     bool is_varargs
 ) {
     ID.AddInteger(+cc);
     ID.AddBoolean(is_varargs);
-    ID.AddPointer(return_type.ptr());
+    ID.AddPointer(return_type.type().ptr());
+    ID.AddInteger(+return_type.value_category());
     ID.AddInteger(param_types.size());
     for (const auto& t : param_types) {
         ID.AddInteger(+t.intent);
@@ -590,9 +591,10 @@ auto ProcType::print(
             out += " nomangle";
     }
 
-    // Add return type.
-    if (not ret()->is_void())
-        Format(out, " -> {}", ret()->print());
+    // Add return type and value category.
+    if (not ret()->is_void()) Format(out, " -> {}", ret()->print());
+    if (return_type.value_category() == Expr::ILValue) out += " val ref";
+    else if (return_type.value_category() == Expr::MLValue) out += " ref";
 
     out += "%)";
     return out;

@@ -71,7 +71,7 @@ public:
             },
             [&](const ProcType* ty) {
                 *this << K::ProcType << ty->has_c_varargs() << ty->cconv()
-                      << ty->ret() << ty->params();
+                      << ty->ret() << ty->return_value_category() << ty->params();
             },
             [&](const PtrType* ty) {
                 *this << ty->kind() << ty->elem() << ty->is_immutable();
@@ -296,8 +296,9 @@ public:
                 bool c_varargs = Read(bool);
                 auto cconv = Read(CallingConvention);
                 auto ret = Read(Type);
+                auto vc = Read(ValueCategory);
                 auto params = Read(SmallVector<ParamTypeData>);
-                return ProcType::Get(*S.tu, ret, params, cconv, c_varargs);
+                return ProcType::Get(*S.tu, {ret, vc}, params, cconv, c_varargs);
             }
 
             case K::OptionalType: {
@@ -334,7 +335,6 @@ public:
 
     template <typename T>
     auto read() -> Result<T> { return Base::read<T>(); }
-
 
     template <>
     auto read<APInt>() -> Result<APInt> {

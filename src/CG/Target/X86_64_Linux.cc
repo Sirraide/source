@@ -508,6 +508,7 @@ auto ABIImpl::lower_direct_return(
     mlir::Location l,
     Expr* arg
 ) const -> cg::abi::ArgInfo {
+    Assert(not arg->is_lvalue(), "LValues should be handled w/o calling this");
     LoweringContext ctx;
     return LowerByValArgOrReturn(cg, ctx, l, arg, arg->type);
 }
@@ -552,12 +553,21 @@ auto ABIImpl::lower_procedure_signature(
         return nullptr;
     };
 
+    // Unwrap optionals.
     auto ret = proc->ret();
     if (auto opt = dyn_cast<OptionalType>(ret); opt and opt->has_transparent_layout())
         ret = opt->elem();
 
-    auto sz = ret->bit_width(cg.translation_unit());
-    if (cg.IsZeroSizedType(ret)) {
+    // LValue returns are just pointers.
+    if (proc->returns_lvalue()) {
+        AddReturnType(
+            cg.get_ptr_ty(),
+            GetElemTyAttrsForPointee(cg, ret)
+        );
+    }
+
+    // Zero-sized types are dropped.
+    else if (cg.IsZeroSizedType(ret)) {
         if (ret == Type::NoReturnTy) info.no_return = true;
     }
 
@@ -575,7 +585,7 @@ auto ABIImpl::lower_procedure_signature(
     }
 
     // Small aggregates are returned in registers.
-    else if (ret->is_aggregate()) {
+    else if (auto sz = ret->bit_width(cg.translation_unit()); ret->is_aggregate()) {
         if (sz <= Word) {
             AddReturnType(cg.IntTy(sz.as_bytes()));
         } else if (sz <= Word * 2) {

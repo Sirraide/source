@@ -344,12 +344,35 @@ public:
 
     /// Get the type.
     [[nodiscard]] auto type() const -> Type { return data.getPointer(); }
+    void set_type(Type ty) { data.setPointer(ty.ptr()); }
 
     /// Get the value category.
     [[nodiscard]] auto value_category() const -> ValueCategory {
         return data.getInt();
     }
+    void set_value_category(ValueCategory vc) { data.setInt(vc); }
 };
+
+template <>
+struct std::tuple_size<srcc::TypeAndValueCategory>
+    : std::integral_constant<base::usz, 2> {};
+
+template <>
+struct std::tuple_element<0, srcc::TypeAndValueCategory>
+    : std::type_identity<srcc::Type> {};
+
+template <>
+struct std::tuple_element<1, srcc::TypeAndValueCategory>
+    : std::type_identity<srcc::ValueCategory> {};
+
+namespace srcc {
+template <std::size_t i>
+constexpr auto get(TypeAndValueCategory tvc) {
+    if constexpr (i == 0) return tvc.type();
+    else if constexpr (i == 1) return tvc.value_category();
+    else static_assert(false, "Invalid index");
+}
+}
 
 template <>
 struct llvm::simplify_type<srcc::TypeAndValueCategory> {
@@ -515,14 +538,14 @@ class srcc::ProcType final : public TypeBase
     CallingConvention cc;
     bool is_varargs;
     const u32 num_params;
-    Type return_type;
+    TypeAndValueCategory return_type;
 
     auto numTrailingObjects(OverloadToken<ParamTypeData>) -> usz { return num_params; }
 
     ProcType(
         CallingConvention cconv,
         bool variadic,
-        Type return_type,
+        TypeAndValueCategory return_type,
         ArrayRef<ParamTypeData> param_types
     );
 
@@ -562,7 +585,14 @@ public:
     ) const -> SmallUnrenderedString;
 
     /// Get the return type of this procedure type.
-    auto ret() const -> Type { return return_type; }
+    auto ret() const -> Type { return return_type.type(); }
+    auto return_value_category() const -> ValueCategory {
+        return return_type.value_category();
+    }
+
+    bool returns_lvalue() const {
+        return return_value_category() != ValueCategory::RValue;
+    }
 
     void Profile(FoldingSetNodeID& ID) const {
         Profile(ID, return_type, params(), cc, is_varargs);
@@ -574,7 +604,7 @@ public:
 
     static auto Get(
         TranslationUnit& mod,
-        Type return_type,
+        TypeAndValueCategory return_type,
         ArrayRef<ParamTypeData> param_types = {},
         CallingConvention cconv = CallingConvention::Native,
         bool variadic = false
@@ -582,7 +612,7 @@ public:
 
     static void Profile(
         FoldingSetNodeID& ID,
-        Type return_type,
+        TypeAndValueCategory return_type,
         ArrayRef<ParamTypeData> param_types,
         CallingConvention cconv,
         bool variadic

@@ -302,6 +302,33 @@ void Format(std::string& buffer, std::format_string<Args...> fmt, Args&& ...args
 }
 } // namespace srcc
 
+template <typename T>
+struct llvm::ValueIsPresent<srcc::Ptr<T>> {
+  using UnwrappedType = T*;
+  static bool isPresent(srcc::Ptr<T> t) { return t.present(); }
+  static T* unwrapValue(srcc::Ptr<T> t) { return t.get(); }
+};
+
+template <typename T>
+struct llvm::PointerLikeTypeTraits<srcc::Ptr<T>> {
+    static constexpr int NumLowBitsAvailable = PointerLikeTypeTraits<T*>::NumLowBitsAvailable;
+    static constexpr bool isPtrLike = true;
+    static auto getAsVoidPointer(srcc::Ptr<T> t) -> void* { return t.get_or_null(); }
+    static auto getFromVoidPointer(void* p) -> srcc::Ptr<T> { return static_cast<T*>(p); }
+};
+
+template <typename T>
+struct llvm::simplify_type<srcc::Ptr<T>> {
+    using SimpleType = T*;
+    static SimpleType getSimplifiedValue(srcc::Ptr<T> v) { return v.get_or_null(); }
+};
+
+template <typename T>
+struct llvm::simplify_type<const srcc::Ptr<T>> {
+    using SimpleType = T*;
+    static SimpleType getSimplifiedValue(srcc::Ptr<T> v) { return v.get_or_null(); }
+};
+
 // Rarely used helpers go here.
 //
 // We use the 'utils' namespace of 'base' for this to avoid creating

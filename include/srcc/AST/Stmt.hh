@@ -902,6 +902,9 @@ public:
 
 /// Expression that can be referenced multiple times but is only
 /// evaluated once per procedure.
+///
+/// FIXME: Wrapping a ConstExpr in a SaveExpr is a bit stupid;
+///        can we combine the two (into a 'ValueExpr' maybe)?
 class srcc::SaveExpr final : public Expr {
 public:
     Expr* expr;
@@ -1150,6 +1153,9 @@ public:
 
 class srcc::ValueDecl final : public Decl {
 public:
+    // This need NOT be a SaveExpr! We use this for e.g. C++ macros, in which
+    // case we *do* want this to be evaluated multiple times (if the same macro
+    // is referenced multiple times within the same function).
     Expr* value;
 
     ValueDecl(String name, Expr* value, SLoc location)
@@ -1547,10 +1553,12 @@ public:
     }
 
     /// Get the procedure type.
-    auto proc_type() const -> ProcType*;
+    LLVM_READONLY auto proc_type() const -> ProcType*;
 
     /// Get the procedure's return type.
-    auto return_type() -> Type;
+    LLVM_READONLY auto return_type() -> Type;
+    LLVM_READONLY auto return_value_category() -> ValueCategory;
+    LLVM_READONLY bool returns_lvalue();
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };

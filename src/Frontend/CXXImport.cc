@@ -53,6 +53,7 @@ public:
     auto ImportRecordImpl(clang::RecordDecl* RD) -> std::optional<Type>;
     auto ImportFunctionImpl(clang::FunctionDecl* D) -> Ptr<ProcDecl>;
     auto ImportName(clang::TagDecl* D) -> StringRef;
+    auto ImportReturnType(clang::QualType T) -> std::optional<TypeAndValueCategory>;
     auto ImportType(const clang::Type* T) -> std::optional<Type>;
     auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
     auto ImportSourceLocation(clang::SourceLocation sloc) -> SLoc;
@@ -310,6 +311,17 @@ auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* RD) -> std::optional<Ty
     return Struct;
 }
 
+auto Sema::Importer::ImportReturnType(clang::QualType T) -> std::optional<TypeAndValueCategory> {
+    auto vc = Expr::RValue;
+    if (T->isReferenceType()) {
+        T = T.getNonReferenceType();
+        vc = Expr::LValue(T.isConstQualified());
+    }
+
+    auto ty = TRY(ImportType(T));
+    return TypeAndValueCategory{ty, vc};
+}
+
 auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
     // FIXME: C++ pointers should be imported as nullable pointers once
     // we support optionals.
@@ -399,19 +411,19 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
             auto FPT = cast<clang::FunctionProtoType>(T);
             if (FPT->getCallConv() != clang::CallingConv::CC_C) return std::nullopt;
 
-            auto Ret = FPT->getExtInfo().getNoReturn() ? Type::NoReturnTy : ImportType(FPT->getReturnType());
-            if (not Ret) return std::nullopt;
+            auto Ret = FPT->getExtInfo().getNoReturn()
+                ? TypeAndValueCategory{Type::NoReturnTy, Expr::RValue}
+                : TRY(ImportReturnType(FPT->getReturnType()));
 
             SmallVector<ParamTypeData, 6> Params;
             for (auto P : FPT->param_types()) {
-                auto Ty = ImportType(P);
-                if (not Ty) return std::nullopt;
-                Params.emplace_back(Intent::Copy, *Ty);
+                auto Ty = TRY(ImportType(P));
+                Params.emplace_back(Intent::Copy, Ty);
             }
 
             return ProcType::Get(
                 *S.tu,
-                *Ret,
+                Ret,
                 Params,
                 CallingConvention::Native,
                 FPT->isVariadic()
@@ -497,16 +509,36 @@ auto Sema::ParseCXX(
         "-x",
         "c++",
         Name,
+
+        // Pass through whatever target we’re compiling for.
         "-target",
         tu->target().triple().getTriple(),
+
+        // Use the latest standard.
         "-std=c++2c",
+
+        // Diagnostic options.
         "-Wall",
         "-Wextra",
         "-Werror=return-type",
         "-Wno-unused",
-        "-fcolor-diagnostics",
-        "-fsyntax-only",
+
+        // Forward our use_colours setting.
+        std::format("-fdiagnostics-color={}", tu->context().use_colours ? "always" : "never"),
+
+        // Make sure we always emit declarations if requested, even 'inline' ones.
+        "-femit-all-decls",
     };
+
+    int clang_opt_level = 0;
+    if (ctx.opt_level == 4) {
+        args.push_back("-march=native");
+        clang_opt_level = 3;
+    } else {
+        clang_opt_level = ctx.opt_level;
+    }
+
+    args.push_back(std::format("-O{}", clang_opt_level));
 
     if (PCH.has_value()) {
         args.push_back("-include-pch");
@@ -776,27 +808,44 @@ auto Sema::LookUpCXXName(
         PCHVFS->addFile(pch_name, 0, llvm::MemoryBuffer::getMemBufferCopy(pch));
     }
 
-    // Wrap the expansion in a function; take care to strip the quotes around the string literal.
-    auto name = Format("__srcc_expanded_macro_{}", generated_cxx_macro_decls);
+    // Wrap the macro in a function that returns it and also create a variable initialised
+    // with a call to it; the latter is used to try and constant-evaluate the function.
+    //
+    // Clang gets mad if we combine 'extern "C"' and 'decltype(auto)', so use '__asm__'
+    // instead to set the function name; this however requires separating the definition and
+    // declaration for some reason...
+    //
+    // The 'always_inline' is required, else inlining just doesn't happen at all (possibly
+    // because the function has 'linkonce_odr' linkage).
+    auto name_base = Format("__srcc_expanded_macro_{}", generated_cxx_macro_decls);
+    auto proc_name = Format("{}_init", name_base);
+    auto var_name = Format("{}_var", name_base);
     auto code = Format(
-        "extern \"C\" decltype(auto) {} = [] {{ return {}; }} ();",
-        name,
-        names.front().str()
+        "[[clang::always_inline]] constexpr decltype(auto) {0}() __asm__(\"{0}\");\n"
+        "constexpr decltype(auto) {0}() {{ return {1}; }}\n"
+        "decltype(auto) {2} = {0}();\n",
+        proc_name,
+        names.front().str(),
+        var_name
     );
 
     auto macro_tu = ParseCXX(code, std::move(pch_name));
     if (not macro_tu or macro_tu->getSema().hasUncompilableErrorOccurred())
         return LookupResult::FailedToImport(names.back());
 
-    // Take care to retrieve the II in the preprocessor of the new TU.
-    clang::DeclarationName expanded_name{macro_tu->getPreprocessor().getIdentifierInfo(name)};
-    auto res = macro_tu->getASTContext().getTranslationUnitDecl()->lookup(expanded_name);
-    if (not res.isSingleResult() or res.front()->isInvalidDecl())
-        return LookupResult::FailedToImport(names.back());
+    // Get the procedure or variable decl. Take care to retrieve the II
+    // in the preprocessor of the new TU.
+    auto GetDecl = [&](StringRef name) -> Ptr<clang::Decl> {
+        clang::DeclarationName ident{macro_tu->getPreprocessor().getIdentifierInfo(name)};
+        auto res = macro_tu->getASTContext().getTranslationUnitDecl()->lookup(ident);
+        if (not res.isSingleResult() or res.front()->isInvalidDecl())
+            return nullptr;
+        return res.front();
+    };
 
-    clang::APValue init_val;
-    SmallVector<clang::PartialDiagnosticAt> diags;
-    auto var = cast<clang::VarDecl>(res.front());
+    // Retrieve the variable.
+    auto var = cast_if_present<clang::VarDecl>(GetDecl(var_name));
+    if (not var) return LookupResult::FailedToImport(names.back());
 
     // Import the source location of the macro.
     SLoc macro_loc;
@@ -814,8 +863,44 @@ auto Sema::LookUpCXXName(
         SLoc()
     );
 
-    // If we can’t evaluate this as a constant, instead emit it into an LLVM
-    // module and reference it as a global declaration.
+    Importer main_importer{*this, clang_module};
+    Importer fake_importer{*this, fake_module};
+
+    // Import a type from the Clang ASTUnit used for expansion to Source.
+    auto ImportTypeFromExpansionAST = [&](clang::QualType clang_ty) -> std::expected<Type, LookupResult> {
+        // Import the type of the value from the new ASTUnit to the main one;
+        // this is to make sure that two references to the same type actually
+        // resolve to the same Source type.
+        clang::ASTImporter clang_importer{
+            ast->getASTContext(),
+            ast->getFileManager(),
+            fake_module->clang_ast.getASTContext(),
+            fake_module->clang_ast.getFileManager(),
+            /*MinimalImport=*/false,
+            clang_importer_state
+        };
+
+        auto imported_type = clang_importer.Import(clang_ty);
+        if (auto err = imported_type.takeError()) {
+            return std::unexpected(fake_importer.FormatTypeFailure(
+                names.back(),
+                clang_ty
+            ));
+        }
+
+        // Then import the type from the main module to Source.
+        Importer i{*this, clang_module};
+        auto ty = i.ImportType(*imported_type);
+        if (not ty) return std::unexpected(i.FormatTypeFailure(names.back(), *imported_type));
+        return *ty;
+    };
+
+    // If we can’t evaluate this as a constant, instead emit the function
+    // into an LLVM module and create a *local* value whose initialiser is
+    // a call to it.
+    clang::APValue init_val;
+    SmallVector<clang::PartialDiagnosticAt> diags;
+    Expr* value = nullptr;
     if (
         not var->getInit()->EvaluateAsInitializer(
             init_val,
@@ -825,10 +910,14 @@ auto Sema::LookUpCXXName(
             false
         ) or not diags.empty()
     )  {
-        // Import the variable’s type.
-        Importer i{*this, fake_module};
-        auto ty = i.ImportType(var->getType());
-        if (not ty.has_value()) return LookupResult::FailedToImport(names.back());
+        // Retrieve the procedure.
+        auto clang_proc = cast_if_present<clang::FunctionDecl>(GetDecl(proc_name));
+        if (not clang_proc) return LookupResult::FailedToImport(names.back());
+
+        // Import its return type.
+        auto clang_ret_ty = clang_proc->getType()->getAs<clang::FunctionProtoType>()->getReturnType();
+        auto ret_ty = fake_importer.ImportReturnType(clang_ret_ty);
+        if (not ret_ty) return LookupResult::FailedToImport(names.back());
 
         // Emit it.
         defer { generated_cxx_macro_decls++; };
@@ -842,65 +931,50 @@ auto Sema::LookUpCXXName(
             tu->llvm_context
         )};
 
+        // Make sure we actually emit this.
+        clang_proc->setIsUsed();
+
         // I need to fix this API at some point, because the fact that you have to
         // *remember* to call Initialize() is... not great.
         cg->Initialize(macro_tu->getASTContext());
-        cg->HandleTopLevelDecl(clang::DeclGroupRef(var));
+        cg->HandleTopLevelDecl(clang::DeclGroupRef(clang_proc));
         cg->HandleTranslationUnit(macro_tu->getASTContext());
         if (not cg->GetModule()) return LookupResult::FailedToImport(names.back());
         tu->link_llvm_modules.emplace_back(cg->ReleaseModule());
 
-        // Create a declaration for the variable.
-        auto g = new (*tu) GlobalDecl(
-            tu.get(),
-            nullptr,
-            *ty,
-            true,
-            tu->save(name),
+        // Declare the procedure on our end.
+        auto proc = ProcDecl::Create(
+            *tu,
+            clang_module,
+            ProcType::Get(*tu, *ret_ty),
+            tu->save(proc_name),
             Linkage::Imported,
             Mangling::None,
+            nullptr,
+            InheritedProcedureProperties{.always_inline = true},
             macro_loc
         );
 
-        imported_macros[mi] = g;
-        return LookupResult::Success(g);
+        // Create a call to it. This should never fail.
+        value = BuildCallExpr(
+            CreateReference(proc, macro_loc).get(),
+            {},
+            macro_loc
+        ).get();
     }
 
     // Ok, we managed to constant-evaluate the initialiser; convert
     // it to an RValue.
-    eval::RValue val;
-    {
-        // Import the type of the value from the new ASTUnit to the main one;
-        // this is to make sure that two references to the same type actually
-        // resolve to the same Source type.
-        clang::ASTImporter clang_importer{
-            ast->getASTContext(),
-            ast->getFileManager(),
-            fake_module->clang_ast.getASTContext(),
-            fake_module->clang_ast.getFileManager(),
-            /*MinimalImport=*/false,
-            clang_importer_state
-        };
-
-        auto imported_type = clang_importer.Import(var->getType());
-        if (auto err = imported_type.takeError()) {
-            return Importer{*this, fake_module}.FormatTypeFailure(
-                names.back(),
-                var->getType()
-            );
-        }
-
-        // Then import the type from the main module to Source.
-        Importer i{*this, clang_module};
-        auto ty = i.ImportType(*imported_type);
-        if (not ty) return i.FormatTypeFailure(names.back(), *imported_type);
+    else {
+        auto ty = ImportTypeFromExpansionAST(var->getType());
+        if (not ty) return std::move(ty.error());
 
         // Finally, import the value.
-        auto v = i.ImportValue(*var->getEvaluatedValue(), *ty);
+        auto v = fake_importer.ImportValue(*var->getEvaluatedValue(), *ty);
         if (not v.has_value()) {
             SmallString<128> str;
             llvm::raw_svector_ostream os{str};
-            var->getEvaluatedValue()->printPretty(os, clang_module->clang_ast.getASTContext(), *imported_type);
+            var->getEvaluatedValue()->printPretty(os, fake_module->clang_ast.getASTContext(), var->getType());
             auto diag = CreateNote(
                 macro_loc,
                 "Unsupported '{}' APValue: {}",
@@ -913,11 +987,13 @@ auto Sema::LookUpCXXName(
                 std::make_unique<Diagnostic>(std::move(diag))
             );
         }
-        val = std::move(*v);
+
+        value = MakeConstExpr(nullptr, std::move(*v), macro_loc);
     }
 
-    auto ce = MakeConstExpr(nullptr, std::move(val), macro_loc);
-    auto vd = new (*tu) ValueDecl("", ce, ce->location());
+    // Do NOT wrap the value in a SaveExpr! We want it to be evaluated every
+    // time the macro is referenced so that it actually behaves like a C++ macro.
+    auto vd = new (*tu) ValueDecl("", value, value->location());
     imported_macros[mi] = vd;
     return LookupResult::Success(vd);
 }

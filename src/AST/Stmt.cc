@@ -457,6 +457,14 @@ auto ProcDecl::return_type() -> Type {
     return proc_type()->ret();
 }
 
+auto ProcDecl::return_value_category() -> ValueCategory {
+    return proc_type()->return_value_category();
+}
+
+bool ProcDecl::returns_lvalue() {
+    return proc_type()->returns_lvalue();
+}
+
 ProcTemplateDecl::ProcTemplateDecl(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,

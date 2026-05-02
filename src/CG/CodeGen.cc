@@ -1928,8 +1928,11 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
 
     // Make sure we have a slot for the return type.
     auto ret = proc->ret();
-    if (abi().needs_indirect_return(*this, ret) and not mrvalue_slot)
-        mrvalue_slot = CreateAlloca(l, ret);
+    if (
+        not proc->returns_lvalue() and
+        abi().needs_indirect_return(*this, ret) and
+        not mrvalue_slot
+    ) mrvalue_slot = CreateAlloca(l, ret);
 
     // Try to avoid passing an environment to it if possible.
     bool env_is_nil = callee.is_aggregate() and isa_and_present<ir::NilOp>(callee.second().getDefiningOp());
@@ -1993,8 +1996,11 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
         return {};
     }
 
-    // Simple return types can be used as-is.
-    if (abi().can_use_return_value_directly(*this, ret)) return op.getResults();
+    // Simple return types (which includes lvalues) can be used as-is.
+    if (
+        proc->returns_lvalue() or
+        abi().can_use_return_value_directly(*this, ret)
+    ) return op.getResults();
 
     // More complicated ones need to be written to memory.
     abi::IRToSourceConversionContext ctx{*this, l, op.getResults(), ret, mrvalue_slot};
@@ -2604,7 +2610,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
                 m->location(),
                 tu.save(constants::EntryPointName(m->linkage_name)),
                 Linkage::Imported,
-                ProcType::Get(tu, Type::VoidTy),
+                ProcType::Get(tu, {Type::VoidTy, Expr::RValue}),
                 false
             );
 
@@ -2664,6 +2670,14 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
         return {};
     }
 
+    // LValues should be returned directly.
+    if (curr.decl and curr.decl->returns_lvalue()) {
+        Assert(val->is_lvalue());
+        CreateReturn(l, EmitScalar(val));
+        return {};
+    }
+
+    // Everything else needs to go through ABI lowering.
     auto ret_vals = abi().lower_direct_return(*this, l, val);
     CreateReturn(l, llvm::to_vector(ret_vals | vws::transform(&abi::Arg::value)));
     return {};
@@ -2946,7 +2960,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
 
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
-    auto info = abi().lower_proc_type(*this, ProcType::Get(tu, Type::VoidTy, args), false);
+    auto info = abi().lower_proc_type(*this, ProcType::Get(tu, {Type::VoidTy, Expr::RValue}, args), false);
     auto loc = C(stmt->location());
     vm_entry_point = ir::ProcOp::create(
         *this,

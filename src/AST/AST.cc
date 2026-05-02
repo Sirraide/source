@@ -106,7 +106,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     initialiser_proc = ProcDecl::Create(
         *this,
         nullptr,
-        ProcType::Get(*this, Type::VoidTy),
+        ProcType::Get(*this, {Type::VoidTy, Expr::RValue}),
         is_module ? save(constants::EntryPointName(name)) : constants::ProgramEntryPoint,
         Linkage::Exported,
         Mangling::None,

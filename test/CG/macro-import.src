@@ -1,73 +1,70 @@
 // R      %srcc --ir   --target x86_64-unknown-linux -I test/inputs %s
 // R[//L] %srcc --llvm --target x86_64-unknown-linux -I test/inputs %s
-program test;
+module test;
 
 import <macros.h> as macros;
 
-proc a = macros::NESTED;
-proc b = macros::FOOBAR;
-proc c = macros::SIX;
-proc d = macros::NOT_CONSTEXPR;
+export proc a = macros::NESTED;
+export proc b = macros::FOOBAR;
+export proc c = macros::SIX;
+export proc d = macros::NOT_CONSTEXPR;
 
-// * @__srcc_expanded_macro_0 = external 8, align 8
-// +
-// + proc __src_main norecurse external ccc {
+// * proc __src_static_init.test norecurse external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S1aFI32E.1 private ccc -> i32 {
+// + proc _SM4test$1aFI32E.1 external ccc -> i32 {
 // + entry:
 // +     ret i32 42
 // + }
 // +
-// + proc _S1bFI32E.2 private ccc -> i32 {
+// + proc _SM4test$1bFI32E.2 external ccc -> i32 {
 // + entry:
 // +     ret i32 84
 // + }
 // +
-// + proc _S1cFI32E.3 private ccc -> i32 {
+// + proc _SM4test$1cFI32E.3 external ccc -> i32 {
 // + entry:
 // +     ret i32 6
 // + }
 // +
-// + proc _S1dFORvE.4 private ccc -> ptr {
+// + proc _SM4test$1dFORvE.4 external ccc -> ptr {
 // + entry:
-// +     %0 = load ptr, @__srcc_expanded_macro_0, align 8
+// +     %0 = call ccc ptr __srcc_expanded_macro_0_init()
 // +     ret ptr %0
 // + }
+// +
+// + proc __srcc_expanded_macro_0_init external ccc -> ptr;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + @__srcc_expanded_macro_0 = dso_local global ptr inttoptr (i64 -1 to ptr), align 8
-//L +
 //L + ; Function Attrs: norecurse nounwind
-//L + define void @__src_main() #0 {
+//L + define void @__src_static_init.test() #0 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1aFI32E.1() #1 {
+//L + define i32 @"_SM4test$1aFI32E.1"() #1 {
 //L +   ret i32 42
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1bFI32E.2() #1 {
+//L + define i32 @"_SM4test$1bFI32E.2"() #1 {
 //L +   ret i32 84
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private i32 @_S1cFI32E.3() #1 {
+//L + define i32 @"_SM4test$1cFI32E.3"() #1 {
 //L +   ret i32 6
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + define private ptr @_S1dFORvE.4() #1 {
-//L +   %1 = load ptr, ptr @__srcc_expanded_macro_0, align 8
-//L +   ret ptr %1
+//L + define ptr @"_SM4test$1dFORvE.4"() #1 {
+//L +   ret ptr inttoptr (i64 -1 to ptr)
 //L + }
 //L +
 //L + attributes #0 = { norecurse nounwind }
