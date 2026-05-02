@@ -984,7 +984,8 @@ auto Sema::LookUpCXXMacro(
     auto proc_name = Format("{}_init", name_base);
     auto var_name = Format("{}_var", name_base);
     auto code = Format(
-        "[[__clang__::__always_inline__]] constexpr decltype(auto) {0}() __asm__(\"{0}\");\n"
+        "#line 1 \"<macro-expansion>\"\n"
+        "[[_Clang::__always_inline__]] constexpr decltype(auto) {0}() __asm__(\"{0}\");\n"
         "constexpr decltype(auto) {0}() {{ return {1}; }}\n"
         "decltype(auto) {2} = {0}();\n",
         proc_name,
