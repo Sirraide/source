@@ -6,6 +6,7 @@
 #include <srcc/Core/Constants.hh>
 #include <srcc/Core/Core.hh>
 
+#include <clang/AST/Mangle.h>
 #include <clang/Frontend/CompilerInstance.h>
 
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -120,6 +121,12 @@ auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name,
     Assert(not name.empty(), "Use CreateEmpty() to create an empty module");
     auto m = new TranslationUnit{ctx, opts, name, is_module};
     return std::unique_ptr<TranslationUnit>(m);
+}
+
+auto TranslationUnit::create_cxx_mangler(clang::ASTContext& ctx) -> clang::MangleContext* {
+    auto mctx = ctx.createMangleContext();
+    clang_mangle_contexts.emplace_back(mctx);
+    return mctx;
 }
 
 void TranslationUnit::dump() const {
@@ -535,7 +542,7 @@ void Stmt::Printer::Print(Stmt* e) {
             print(" %2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
             if (p->parent.present()) print(" nested");
-            if (p->instantiated_from) print(" instantiation");
+            if (p->is_instantiation()) print(" instantiation");
             if (p->linkage == Linkage::Exported or p->linkage == Linkage::Reexported) print(" exported");
             if (p->linkage == Linkage::Imported or p->linkage == Linkage::Reexported) print(" imported");
             if (p->has_captures) print(" has_captures");
@@ -546,7 +553,7 @@ void Stmt::Printer::Print(Stmt* e) {
 
             // Print template parameters and parameters.
             SmallVector<Stmt*> children;
-            if (p->instantiated_from) children.push_back(p->instantiated_from);
+            if (p->is_instantiation()) children.push_back(p->pattern());
             if (not p->is_imported()) append_range(children, p->params());
 
             // Take care we don’t recursively print ourselves when printing our parent.

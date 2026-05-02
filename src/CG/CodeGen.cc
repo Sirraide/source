@@ -7,6 +7,7 @@
 #include <srcc/Core/Constants.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/AST/Mangle.h>
 #include <clang/Basic/TargetInfo.h>
 #include <llvm/IR/DataLayout.h>
 
@@ -29,6 +30,7 @@ using Vals = mlir::ValueRange;
 using Ty = mlir::Type;
 namespace LLVM = mlir::LLVM;
 
+CodeGen::~CodeGen() = default;
 CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
     : CodeGenBase(),
       OpBuilder(&mlir),
@@ -981,6 +983,11 @@ void CodeGen::Mangler::Append(Type ty) {
             Format(M.name, "T{}{}", ty->name().str().size(), ty->name());
         }
 
+        void operator()(OpaqueType* ty) {
+            if (ty->name().empty()) Todo();
+            Format(M.name, "T{}{}", ty->name().size(), ty->name());
+        }
+
         void operator()(StructType* ty) {
             if (ty->name().empty()) Todo();
             Format(M.name, "T{}{}", ty->name().size(), ty->name());
@@ -1004,16 +1011,27 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
     if (it != mangled_names.end()) return it->second;
 
     // Compute it.
-    auto name = [&] -> SmallString<256> {
+    auto name = [&] -> String {
         switch (obj->mangling) {
             case Mangling::None: Unreachable();
-            case Mangling::Source: return std::move(Mangler(*this, obj).name);
-            case Mangling::CXX: Todo("Mangle C++ function name");
+            case Mangling::Source: return tu.save(std::move(Mangler(*this, obj).name));
+            case Mangling::CXX: {
+                if (auto proc = dyn_cast<ProcDecl>(obj)) {
+                    llvm::SmallString<256> str;
+                    llvm::raw_svector_ostream os{str};
+                    auto mod = cast<ImportedClangModuleDecl>(proc->imported_from_module);
+                    mod->mangle_context->mangleName(proc->clang_decl(), os);
+                    return tu.save(str);
+                }
+
+                // Other decls aren't mangled.
+                return obj->name.str();
+            }
         }
         Unreachable("Invalid mangling");
     }();
 
-    return mangled_names[obj] = tu.save(name);
+    return mangled_names[obj] = name;
 }
 
 // ============================================================================
@@ -2487,6 +2505,7 @@ auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> IR
 }
 
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> IRValue {
+    Assert(not expr->field->is_bit_field(), "TODO: Emit 'address' of bit field");
     auto base = EmitScalar(expr->base);
     if (IsZeroSizedType(expr->type)) return base;
     return CreatePtrAdd(C(expr->location()), base, expr->field->offset);

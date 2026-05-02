@@ -106,6 +106,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
             Assert(ty->is_complete(), "Requested size of incomplete struct");
             return ty->layout().align();
         },
+        [&](const OpaqueType* ty) -> Align { Unreachable("Querying property of opaque type"); },
         [&](const OptionalType* ty) {
             if (ty->has_transparent_layout()) return ty->elem()->align(t);
             return ty->get_equivalent_record_layout()->align();
@@ -154,6 +155,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
         },
         [&](const EnumType*) { return true; },
         [&](const IntType*) { return true; },
+        [&](const OpaqueType* ty) -> bool { Unreachable("Querying property of opaque type"); },
         [&](const OptionalType* ty) { return true; },
         [&](const ProcType*) { return false; },
         [&](const PtrType*) { return false; },
@@ -181,15 +183,19 @@ void TypeBase::dump(bool use_colour) const {
 
 auto TypeBase::eval_mode() const -> EvalMode {
     switch (kind()) {
-        case TypeBase::Kind::BuiltinType:
-        case TypeBase::Kind::EnumType:
-        case TypeBase::Kind::IntType:
-        case TypeBase::Kind::ProcType:
-        case TypeBase::Kind::PtrType:
-        case TypeBase::Kind::SliceType:
+        using K = TypeBase::Kind;
+        case K::BuiltinType:
+        case K::EnumType:
+        case K::IntType:
+        case K::ProcType:
+        case K::PtrType:
+        case K::SliceType:
             return EvalMode::Scalar;
 
-        case TypeBase::Kind::OptionalType: {
+        case K::OpaqueType:
+            Unreachable("Querying property of opaque type");
+
+        case K::OptionalType: {
             auto opt = cast<OptionalType>(this);
             if (opt->has_transparent_layout()) return opt->elem()->eval_mode();
             return EvalMode::Memory; // This is an aggregate.
@@ -198,12 +204,12 @@ auto TypeBase::eval_mode() const -> EvalMode {
         // TODO: Ranges are weird in that both eval modes make sense: memory
         // for calls and scalar for casts and for how they’re created; maybe
         // this warrants a separate eval mode (like Clang’s complex eval mode)?
-        case TypeBase::Kind::RangeType:
+        case K::RangeType:
             return EvalMode::Scalar;
 
-        case TypeBase::Kind::ArrayType:
-        case TypeBase::Kind::StructType:
-        case TypeBase::Kind::TupleType:
+        case K::ArrayType:
+        case K::StructType:
+        case K::TupleType:
             return EvalMode::Memory;
     }
 
@@ -220,8 +226,9 @@ bool TypeBase::is_aggregate() const {
 }
 
 bool TypeBase::is_complete() const {
-    auto s = dyn_cast<RecordType>(this);
-    return not s or s->is_complete();
+    if (isa<OpaqueType>(this)) return false;
+    if (auto s = dyn_cast<RecordType>(this)) return s->is_complete();
+    return true;
 }
 
 bool TypeBase::is_integer() const {
@@ -244,6 +251,9 @@ bool TypeBase::is_or_contains_pointer() const {
         [&](const RecordType* ty) {
             Assert(ty->is_complete(), "Querying property of incomplete type");
             return ty->layout().bits().contains_pointer;
+        },
+        [&](const OpaqueType* ty) -> bool {
+            Unreachable("Querying property of opaque type");
         },
         [&](const OptionalType* ty) {
             if (ty->has_transparent_layout()) return ty->elem()->is_or_contains_pointer();
@@ -318,6 +328,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         },
         [&](EnumType* e) { Format(out, "%6({}%)", e->decl()->name); },
         [&](IntType* int_ty) { Format(out, "%6(i{:i}%)", int_ty->bit_width()); },
+        [&](OpaqueType* ty) { Format(out, "%3({}%)", ty->name()); },
         [&](OptionalType* opt) { Format(out, "{}%1(?%)", MaybeParenthesise(opt->elem())); },
         [&](ProcType* proc) { out += proc->print(String()); },
         [&](PtrType* ptr) {
@@ -387,6 +398,9 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
             return elem->array_size(t) + elem->memory_size(t);
         }
 
+        case Kind::OpaqueType:
+            Unreachable("Querying size of opaque type");
+
         case Kind::OptionalType: {
             auto opt = cast<OptionalType>(this);
             if (opt->has_transparent_layout()) return opt->elem()->size_impl(t);
@@ -451,6 +465,16 @@ auto IntType::Get(TranslationUnit& mod, Size bits) -> IntType* {
 
 void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
     ID.AddInteger(bits.bits());
+}
+
+auto OpaqueType::Create(TranslationUnit& tu, String name, SLoc decl_loc) -> OpaqueType* {
+    auto type = new (tu) OpaqueType();
+    type->type_decl = new (tu) TypeDecl{type, name, decl_loc};
+    return type;
+}
+
+auto OpaqueType::name() const -> String {
+    return type_decl->name.str();
 }
 
 auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {

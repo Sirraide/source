@@ -677,10 +677,6 @@ private:
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
 
-    /// C++ records that have already been imported (or that
-    /// already failed to import before).
-    DenseMap<clang::RecordDecl*, std::optional<Type>> imported_records;
-
     /// C++ macros that have already been imported (or that
     /// already failed to import before).
     DenseMap<clang::MacroInfo*, Ptr<Decl>> imported_macros;

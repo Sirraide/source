@@ -26,6 +26,10 @@ class TranslationUnit;
 class Target;
 }
 
+namespace clang {
+class MangleContext;
+}
+
 /// Representation of a single program or module. NOT thread-safe.
 class srcc::TranslationUnit {
     SRCC_IMMOVABLE(TranslationUnit);
@@ -71,6 +75,9 @@ private:
 
     /// All scopes in this TU.
     std::vector<std::unique_ptr<Scope>> all_scopes;
+
+    /// All mangle contexts associated w/ clang modules.
+    std::vector<std::unique_ptr<clang::MangleContext>> clang_mangle_contexts;
 
     /// If this was imported, the path to the module file.
     String import_path;
@@ -200,6 +207,9 @@ public:
         return static_cast<ScopeTy*>(all_scopes.back().get());
     }
 
+    /// Create a C++ name mangling context for a module.
+    auto create_cxx_mangler(clang::ASTContext& ctx) -> clang::MangleContext*;
+
     /// Dump the contents of the module.
     void dump() const;
 
@@ -217,6 +227,7 @@ public:
 
     /// Save a string in the module.
     auto save(StringRef s) -> String { return String::Save(saver, s); }
+    auto save(String s) -> String = delete("No need to save() a String; just use it directly");
 
     /// Save a constant in the module.
     auto save(eval::RValue val) -> eval::RValue*;

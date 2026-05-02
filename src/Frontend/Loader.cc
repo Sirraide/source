@@ -66,6 +66,9 @@ public:
             [&](const IntType* ty) {
                 *this << K::IntType << ty->bit_width();
             },
+            [&](const OpaqueType* ty) {
+                *this << ty->name() << ty->decl()->location();
+            },
             [&](const OptionalType* ty) {
                 *this << ty->kind() << ty->elem();
             },
@@ -161,6 +164,7 @@ private:
         ty->visit(utils::Overloaded{
             [&](const BuiltinType* ty) {},
             [&](const IntType*) {},
+            [&](const OpaqueType*) {},
             [&](const SingleElementTypeBase* ty) { RegisterType(ty->elem()); },
             [&](const RecordType* ty) {
                 for (auto f : ty->layout().field_types())
@@ -299,6 +303,12 @@ public:
                 auto vc = Read(ValueCategory);
                 auto params = Read(SmallVector<ParamTypeData>);
                 return ProcType::Get(*S.tu, {ret, vc}, params, cconv, c_varargs);
+            }
+
+            case K::OpaqueType: {
+                auto name = Read(String);
+                auto loc = Read(SLoc);
+                return OpaqueType::Create(*S.tu, name, loc);
             }
 
             case K::OptionalType: {

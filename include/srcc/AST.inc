@@ -116,6 +116,7 @@ AST_TYPE_LEAF(RangeType)
 
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
+AST_TYPE_LEAF(OpaqueType)
 AST_TYPE_LEAF(ProcType)
 
 AST_TYPE(RecordType)

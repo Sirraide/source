@@ -3,7 +3,10 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Frontend/Parser.hh>
 
+#include <clang/AST/Mangle.h>
+
 #include <llvm/Support/Casting.h>
+
 #include <base/Assert.hh>
 
 #include <memory>
@@ -380,12 +383,14 @@ GlobalDecl::GlobalDecl(
 
 ImportedClangModuleDecl::ImportedClangModuleDecl(
     clang::ASTUnit& clang_ast,
+    clang::MangleContext* mctx,
     String logical_name,
     ArrayRef<String> header_names,
     SLoc loc
 ) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, loc},
     num_headers{u32(header_names.size())},
-    clang_ast{clang_ast} {
+    clang_ast{clang_ast},
+    mangle_context(mctx) {
     uninitialized_copy(header_names, getTrailingObjects());
 }
 
@@ -398,7 +403,8 @@ auto ImportedClangModuleDecl::Create(
 ) -> ImportedClangModuleDecl* {
     auto sz = totalSizeToAlloc<String>(header_names.size());
     auto mem = tu.allocate(sz, alignof(ImportedClangModuleDecl));
-    return ::new (mem) ImportedClangModuleDecl{clang_ast, logical_name, header_names, loc};
+    auto mctx = tu.create_cxx_mangler(clang_ast.getASTContext());
+    return ::new (mem) ImportedClangModuleDecl{clang_ast, mctx, logical_name, header_names, loc};
 }
 
 ProcDecl::ProcDecl(
@@ -463,6 +469,13 @@ auto ProcDecl::return_value_category() -> ValueCategory {
 
 bool ProcDecl::returns_lvalue() {
     return proc_type()->returns_lvalue();
+}
+
+void ProcDecl::set_clang_decl(clang::FunctionDecl* d) {
+    Assert(associated_decl.isNull());
+    auto module = cast<ImportedClangModuleDecl>(imported_from_module);
+    Assert(&module->clang_ast.getASTContext() == &d->getASTContext());
+    associated_decl = d;
 }
 
 ProcTemplateDecl::ProcTemplateDecl(

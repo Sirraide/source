@@ -10,8 +10,11 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
+#include <clang/AST/Decl.h>
+
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/TrailingObjects.h>
+
 #include <base/Serialisation.hh>
 
 #include <functional>
@@ -19,6 +22,7 @@
 
 namespace clang {
 class ASTUnit;
+class MangleContext;
 }
 
 namespace srcc {
@@ -1134,6 +1138,13 @@ public:
         SLoc location
     ) : Decl{Kind::FieldDecl, name, location}, type{type}, offset{offset} {}
 
+    /// Whether this is a 'bit field', i.e. any integer field whose bit width
+    /// is not a multiple of the byte size.
+    bool is_bit_field() const {
+        auto int_ty = dyn_cast<IntType>(type);
+        return int_ty and not int_ty->bit_width().is_byte_aligned();
+    }
+
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
 };
 
@@ -1209,10 +1220,12 @@ class srcc::ImportedClangModuleDecl final : public ModuleDecl
 
 public:
     clang::ASTUnit& clang_ast;
+    clang::MangleContext* mangle_context;
 
 private:
     ImportedClangModuleDecl(
         clang::ASTUnit& clang_ast,
+        clang::MangleContext* mangle_context,
         String logical_name,
         ArrayRef<String> header_names,
         SLoc loc
@@ -1456,8 +1469,10 @@ public:
     /// The parameter declarations are stored at the start of this array.
     ArrayRef<LocalDecl*> locals;
 
-    /// The template this was instantiated from.
-    ProcTemplateDecl* instantiated_from = nullptr;
+    /// The template this was instantiated from if this is a template
+    /// instantiation, or the clang FunctionDecl that this was imported
+    /// from.
+    llvm::PointerUnion<ProcTemplateDecl*, clang::FunctionDecl*> associated_decl;
 
     /// Properties of this procedure.
     InheritedProcedureProperties props;
@@ -1509,6 +1524,11 @@ public:
     /// Get the procedure's calling convention.
     auto cconv() const { return proc_type()->cconv(); }
 
+    /// Get the Clang decl this was imported from.
+    auto clang_decl() const -> clang::FunctionDecl* {
+        return cast<clang::FunctionDecl*>(associated_decl);
+    }
+
     /// Finalise analysing a procedure.
     ///
     /// \param body The body of the procedure.
@@ -1518,6 +1538,11 @@ public:
 
     /// Check if this declaration declares an overloaded operator.
     bool is_overloaded_operator() const { return name.is_operator_name(); }
+
+    /// Check if this is a template instantiation.
+    bool is_instantiation() const {
+        return not associated_decl.isNull() and isa<ProcTemplateDecl*>(associated_decl);
+    }
 
     /// Get the parameter declarations.
     auto params() const -> ArrayRef<ParamDecl*> {
@@ -1553,6 +1578,11 @@ public:
         return ps;
     }
 
+    /// If this is a template instantiation, the pattern this was instantiated from.
+    auto pattern() const -> ProcTemplateDecl* {
+        return cast<ProcTemplateDecl*>(associated_decl);
+    }
+
     /// Get the procedure type.
     LLVM_READONLY auto proc_type() const -> ProcType*;
 
@@ -1560,6 +1590,15 @@ public:
     LLVM_READONLY auto return_type() -> Type;
     LLVM_READONLY auto return_value_category() -> ValueCategory;
     LLVM_READONLY bool returns_lvalue();
+
+    /// Set the clang decl that this was imported from.
+    void set_clang_decl(clang::FunctionDecl* d);
+
+    /// Set the template that this was instantiated from.
+    void set_instantiated_from(ProcTemplateDecl* d) {
+        Assert(associated_decl.isNull());
+        associated_decl = d;
+    }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::ProcDecl; }
 };

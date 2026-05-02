@@ -459,6 +459,23 @@ public:
     static bool classof(const TypeBase* e) { return e->kind() == Kind::EnumType; }
 };
 
+class srcc::OpaqueType final : public TypeBase {
+    TypeDecl* type_decl{};
+    explicit OpaqueType() : TypeBase(Kind::OpaqueType) {}
+
+public:
+    /// Create a type and the corresponding declaration.
+    static auto Create(TranslationUnit& tu, String name, SLoc decl_loc) -> OpaqueType*;
+
+    /// Get the declaration of this type.
+    auto decl() const -> TypeDecl* { return type_decl; }
+
+    /// Get the name of the type.
+    auto name() const -> String;
+
+    static bool classof(const TypeBase* e) { return e->kind() == Kind::OpaqueType; }
+};
+
 class srcc::OptionalType final : public SingleElementTypeBase
     , public FoldingSetNode {
     llvm::PointerIntPair<const RecordLayout*, 1> layout_and_field_index = {};

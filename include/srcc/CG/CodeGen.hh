@@ -231,6 +231,7 @@ class srcc::cg::CodeGen : public DiagsProducer
 
 public:
     CodeGen(TranslationUnit& tu, LangOpts lang_opts);
+    ~CodeGen();
 
     /// Get the current ABI.
     [[nodiscard]] auto abi() const -> const abi::ABI& { return tu.target().abi(); }

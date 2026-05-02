@@ -102,7 +102,7 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
     }
 
     // Warn on non-struct types with no members if we’re not in a template.
-    else if (not curr_proc().proc->instantiated_from) {
+    else if (not curr_proc().proc->is_instantiation()) {
         Warn(with, "'%1(with%)' has no effect as type '{}' has no members", ty);
     }
 }
@@ -439,13 +439,14 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
 
 bool Sema::RequireCompleteType(Type ty) {
     Assert(ty, "Null type passed to RequireCompleteType()");
-    if (ty->is_complete()) return true;
-    if (auto s = dyn_cast_if_present<StructType>(ty.ptr())) {
-        if (not s->is_complete()) CompleteDefinition(s);
-        return s->is_complete(); // Check this again since it might have failed.
+
+    // Structs can be made complete on demand.
+    if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
+        CompleteDefinition(s);
+        return s->is_complete();
     }
 
-    Unreachable("Unexpected incomplete type: {}", ty);
+    return ty->is_complete();
 }
 
 bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
@@ -1335,6 +1336,9 @@ auto Sema::BuildConversionSequence(
             return TypeMismatch();
         }
 
+        case TypeBase::Kind::OpaqueType:
+            Unreachable("Attempted to initialise opaque type");
+
         case TypeBase::Kind::OptionalType: {
             if (a->type == Type::NilTy) {
                 seq.add(Conversion::NilToOptional(var_type));
@@ -1597,7 +1601,7 @@ auto Sema::SubstituteTemplate(
                 ty = DeduceType(parsed.type, input_types[i].ty);
                 if (not ty) {
                     return SubstitutionResult::DeductionFailed{
-                        tu->save(name),
+                        name,
                         i
                     };
                 }
@@ -1612,7 +1616,7 @@ auto Sema::SubstituteTemplate(
                         Type next = DeduceType(parsed.type, input_types[j].ty);
                             if (not next) {
                             return SubstitutionResult::DeductionFailed{
-                                tu->save(name),
+                                name,
                                 j
                             };
                         }
@@ -3538,7 +3542,7 @@ auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) ->
 
     auto SoftCast = [&]{
         if (not is_hard_cast) return;
-        if (curr_proc().proc->instantiated_from != nullptr) return;
+        if (curr_proc().proc->is_instantiation()) return;
         Warn(loc, "Cast from '{}' to '{}' should use '%1(as%)'", from, to);
     };
 
@@ -3835,7 +3839,7 @@ auto Sema::BuildProcDeclInitial(
     );
 
     // Remember what template we were instantiated from.
-    proc->instantiated_from = pattern;
+    proc->set_instantiated_from(pattern);
 
     // If this is an overloaded operator, check its arity and other properties.
     if (
