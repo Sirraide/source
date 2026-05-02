@@ -235,6 +235,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
         [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
         [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
         [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
+        [&](CXXMacroExpansionDecl* md) -> Ptr<Expr> { return md->value; },
         [&](EnumeratorDecl* e) -> Ptr<Expr> {
             // Do NOT check if the entire enum is complete here as enumerators are allowed to
             // depend on preceding enumerators!
@@ -287,9 +288,6 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                 local->category,
                 loc
             );
-        },
-        [&](ValueDecl* vd) -> Ptr<Expr> {
-            return vd->value;
         },
         [&](WithFieldRefDecl* with) -> Ptr<Expr> {
             return BuildMemberAccessExpr(

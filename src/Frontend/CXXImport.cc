@@ -991,9 +991,7 @@ auto Sema::LookUpCXXName(
         value = MakeConstExpr(nullptr, std::move(*v), macro_loc);
     }
 
-    // Do NOT wrap the value in a SaveExpr! We want it to be evaluated every
-    // time the macro is referenced so that it actually behaves like a C++ macro.
-    auto vd = new (*tu) ValueDecl("", value, value->location());
-    imported_macros[mi] = vd;
-    return LookupResult::Success(vd);
+    auto md = new (*tu) CXXMacroExpansionDecl("", value, value->location());
+    imported_macros[mi] = md;
+    return LookupResult::Success(md);
 }

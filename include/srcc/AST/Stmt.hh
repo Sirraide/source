@@ -1086,12 +1086,26 @@ public:
     [[nodiscard]] bool valid() const { return is_valid; }
 
     static bool classof(const Stmt* e) {
-        return e->kind() >= Kind::EnumeratorDecl;
+        return e->kind() >= Kind::CXXMacroExpansionDecl;
     }
 
     /// Visit this declaration.
     template <typename Visitor>
     auto visit(Visitor&& v) -> decltype(auto);
+};
+
+/// 'Declaration' that contains an expression that should be evaluated every time
+/// a C++ macro is encountered.
+class srcc::CXXMacroExpansionDecl final : public Decl {
+public:
+    // This should NOT be a SaveExpr! We *do* want this to be evaluated
+    // again every time the macro is referenced.
+    Expr* value;
+
+    CXXMacroExpansionDecl(String name, Expr* value, SLoc location)
+        : Decl{Kind::CXXMacroExpansionDecl, name, location}, value{value} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::CXXMacroExpansionDecl; }
 };
 
 class srcc::EnumeratorDecl final : public Decl {
@@ -1149,19 +1163,6 @@ public:
     static bool classof(const Stmt* e) {
         return e->kind() == Kind::TypeDecl || e->kind() == Kind::TemplateTypeParamDecl;
     }
-};
-
-class srcc::ValueDecl final : public Decl {
-public:
-    // This need NOT be a SaveExpr! We use this for e.g. C++ macros, in which
-    // case we *do* want this to be evaluated multiple times (if the same macro
-    // is referenced multiple times within the same function).
-    Expr* value;
-
-    ValueDecl(String name, Expr* value, SLoc location)
-        : Decl{Kind::ValueDecl, name, location}, value{value} {}
-
-    static bool classof(const Stmt* e) { return e->kind() == Kind::ValueDecl; }
 };
 
 class srcc::TemplateTypeParamDecl final : public TypeDecl {

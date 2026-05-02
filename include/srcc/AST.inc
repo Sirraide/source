@@ -83,6 +83,7 @@ AST_STMT_LEAF(WithExpr)
 //  Declarations
 // =================================================================================
 AST_STMT(Decl)
+AST_DECL_LEAF(CXXMacroExpansionDecl)
 AST_DECL_LEAF(EnumeratorDecl)
 AST_DECL_LEAF(FieldDecl)
 AST_DECL_LEAF(LocalDecl)
@@ -90,7 +91,6 @@ AST_DECL_LEAF(ParamDecl)
 AST_DECL_LEAF(ProcTemplateDecl)
 AST_DECL_LEAF(TemplateTypeParamDecl)
 AST_DECL_LEAF(TypeDecl)
-AST_DECL_LEAF(ValueDecl)
 AST_DECL_LEAF(WithFieldRefDecl)
 AST_DECL_LEAF(WithBuiltinFieldRefDecl)
 

@@ -651,8 +651,8 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren(u->arg);
         },
 
-        [&](ValueDecl* d) {
-            PrintBasicNode(e, "ValueDecl");
+        [&](CXXMacroExpansionDecl* d) {
+            PrintBasicNode(e, "CXXMacroExpansionDecl");
             PrintChildren(d->value);
         },
 
