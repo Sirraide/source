@@ -88,7 +88,7 @@ public:
             return str;
         } else if constexpr (utils::is<NonRef, clang::Type*, const clang::Type*>) {
             return PreprocessDiagArg(i, QualType(val, 0));
-        } else if constexpr (utils::is<NonRef, clang::Type*, clang::APValue>) {
+        } else if constexpr (utils::is<NonRef, clang::APValue>) {
             SmallString<128> str;
             llvm::raw_svector_ostream os{str};
             val.dump(os, i.clang_module->clang_ast.getASTContext());
@@ -847,28 +847,49 @@ auto Sema::LookUpCXXNameImpl(
     Unreachable();
 }
 
-auto Sema::LookUpCXXName(
+/// Expand a C++ macro and import the result.
+///
+/// The general strategy for this is as follows: first, we ask Clang's
+/// preprocessor to expand the macro; if this results in a single identifier
+/// token, we perform name lookup on that identifier.
+///
+/// Otherwise, we create a source string that contains a function declaration
+/// with a 'return' statement that returns the macro; it is constexpr so we
+/// can attempt to constant-fold it. We also build a variable declaration whose
+/// initialiser is a call to that function, just so we get a CallExpr that we
+/// can evaluate.
+///
+/// This source string is compiled into a new ASTUnit; the orginal ASTUnit is
+/// emitted as a precompiled header and included into the new one via '-include-pch';
+/// this allows us to reference types and declarations in the imported C++ headers
+/// without having to parse them again or modify the original ASTUnit.
+///
+/// Assuming there are no errors in this process, we then attempt to constant-evaluate
+/// the initialiser of the variable we created. If this succeeds, we get a compile-time
+/// constant in the form of a ConstExpr; this is the 'value' of the macro expansion.
+///
+/// If constant evaluation fails, we may have a macro that expands to either a late
+/// compile-time constant (e.g. an integer constant cast to a pointer type), or some
+/// runtime code; in this case, we need to generate a runtime call to the function we
+/// created. This also means we need to tell Clang to codegen the function so we can
+/// actually link against it. We emit it to LLVM IR and then our CodeGen will then link
+/// that LLVM module into our own one after IR->LLVM lowering. The result of the call is
+/// the 'value' of the macro expansion.
+///
+/// Either way, the 'value' is some expression; we wrap it in a CXXMacroExpansionDecl
+/// since name lookup needs to resolve to a declaration. When referenced, this 'declaration'
+/// emits the expression that is the 'value', which in the case of it being a runtime call
+/// results in the function being called, and thus the macro expansion being executed anew,
+/// every time the macro is 'expanded' in source.
+///
+/// This entire process is cached, i.e. we create a single CXXMacroExpansionDecl for every
+/// MacroInfo; subsequent uses reference the same declaration.
+auto Sema::LookUpCXXMacro(
     ImportedClangModuleDecl* clang_module,
-    ArrayRef<DeclName> names,
+    clang::MacroInfo* mi,
+    String macro_name,
     LookupHint hint
 ) -> LookupResult {
-    Assert(not names.empty(), "Empty name lookup?");
-    auto DoNameLookup = [&] {
-        return LookUpCXXNameImpl(clang_module, names, hint);
-    };
-
-    // If this is anything other than a single identifier, it can’t be a macro.
-    if (names.size() != 1 or not names.front().is_str())
-        return DoNameLookup();
-
-    // Check if this is a macro.
-    auto ast = &clang_module->clang_ast;
-    auto& clang_sema = ast->getSema();
-    auto& pp = clang_sema.getPreprocessor();
-    auto id = pp.getIdentifierInfo(names.front().str());
-    auto *mi = pp.getMacroInfo(id);
-    if (not mi) return DoNameLookup();
-
     // Import the source location of the macro.
     Importer main_importer{*this, clang_module};
     SLoc macro_loc = main_importer.ImportSourceLocation(mi->getDefinitionLoc());
@@ -876,7 +897,7 @@ auto Sema::LookUpCXXName(
     // Return an error.
     auto Err = [&]<typename ...Args>(std::format_string<Args...> fmt, Args&& ...args) {
         return LookupResult::FailedToImport(
-            names.back(),
+            macro_name,
             std::make_unique<Diagnostic>(CreateNote(macro_loc, fmt, std::forward<Args>(args)...))
         );
     };
@@ -884,25 +905,27 @@ auto Sema::LookUpCXXName(
     // Refuse to import ‘builtin’ macros (i.e. __LINE__, __COUNTER__, and friends)
     // as well as function-like macros.
     if (mi->isBuiltinMacro())
-        return Err("Cannot import builtin macro '{}'", names.front());
+        return Err("Cannot import builtin macro '{}'", macro_name);
     if (mi->isFunctionLike())
-        return Err("Cannot import function-like macro '{}'", names.front());
+        return Err("Cannot import function-like macro '{}'", macro_name);
 
     // If we have attempted to find this before, do not do so again.
     if (auto it = imported_macros.find(mi); it != imported_macros.end()) {
         if (it->second.present()) return LookupResult::Success(it->second.get());
-        return LookupResult::FailedToImport(names.back());
+        return LookupResult::FailedToImport(macro_name);
     }
 
     // Cache that we attempted to import this.
     imported_macros[mi] = nullptr;
 
     // Enter the macro definition as a new file.
+    auto& clang_sema = clang_module->clang_ast.getSema();
+    auto& pp = clang_sema.getPreprocessor();
     auto& sm = clang_sema.getSourceManager();
     auto clang_sloc = sm.getLocForStartOfFile(sm.getMainFileID());
     auto fid = sm.createFileID(
         llvm::MemoryBuffer::getMemBufferCopy(
-            names.front().str(),
+            macro_name,
             "<macro expansion>"
         )
     );
@@ -942,7 +965,6 @@ auto Sema::LookUpCXXName(
     auto pch_name = std::format("__srcc_pch_{}", static_cast<void*>(clang_module));
     if (not PCHVFS->exists(pch_name)) {
         SmallString<0> pch;
-        clang::CodeGenOptions default_opts{};
         llvm::raw_svector_ostream os{pch};
         if (clang_module->clang_ast.serialize(os))
             return Err("AST serialisation failed");
@@ -962,11 +984,11 @@ auto Sema::LookUpCXXName(
     auto proc_name = Format("{}_init", name_base);
     auto var_name = Format("{}_var", name_base);
     auto code = Format(
-        "[[clang::always_inline]] constexpr decltype(auto) {0}() __asm__(\"{0}\");\n"
+        "[[__clang__::__always_inline__]] constexpr decltype(auto) {0}() __asm__(\"{0}\");\n"
         "constexpr decltype(auto) {0}() {{ return {1}; }}\n"
         "decltype(auto) {2} = {0}();\n",
         proc_name,
-        names.front().str(),
+        macro_name,
         var_name
     );
 
@@ -975,7 +997,7 @@ auto Sema::LookUpCXXName(
         // No diagnostic here; Clang already told the user what was wrong.
         // TODO: Introduce a custom Clang diags consumer (or at least set a
         // custom ostream).
-        return LookupResult::FailedToImport(names.back());
+        return LookupResult::FailedToImport(macro_name);
 
     // Get the procedure or variable decl. Take care to retrieve the II
     // in the preprocessor of the new TU.
@@ -1006,8 +1028,8 @@ auto Sema::LookUpCXXName(
         // this is to make sure that two references to the same type actually
         // resolve to the same Source type.
         clang::ASTImporter clang_importer{
-            ast->getASTContext(),
-            ast->getFileManager(),
+            clang_module->clang_ast.getASTContext(),
+            clang_module->clang_ast.getFileManager(),
             fake_module->clang_ast.getASTContext(),
             fake_module->clang_ast.getFileManager(),
             /*MinimalImport=*/false,
@@ -1052,7 +1074,7 @@ auto Sema::LookUpCXXName(
         auto clang_ret_ty = clang_proc->getType()->castAs<clang::FunctionProtoType>()->getReturnType();
         auto ret_ty = fake_importer.ImportReturnType(macro_loc, clang_ret_ty);
         if (not ret_ty.has_value()) return LookupResult::FailedToImport(
-            names.back(),
+            macro_name,
             std::move(ret_ty.error())
         );
 
@@ -1068,6 +1090,7 @@ auto Sema::LookUpCXXName(
         )};
 
         // Make sure we actually emit this.
+        // FIXME: I don't think this is needed.
         clang_proc->setIsUsed();
 
         // Emit the decl; no custom diagnostic here; if this fails, Clang should
@@ -1075,7 +1098,7 @@ auto Sema::LookUpCXXName(
         cg->Initialize(macro_tu->getASTContext());
         cg->HandleTopLevelDecl(clang::DeclGroupRef(clang_proc));
         cg->HandleTranslationUnit(macro_tu->getASTContext());
-        if (not cg->GetModule()) return LookupResult::FailedToImport(names.back());
+        if (not cg->GetModule()) return LookupResult::FailedToImport(macro_name);
         tu->link_llvm_modules.emplace_back(cg->ReleaseModule());
 
         // Declare the procedure on our end. We don't associate it with a Clang
@@ -1107,14 +1130,14 @@ auto Sema::LookUpCXXName(
     else {
         auto ty = ImportTypeFromExpansionAST(var->getType());
         if (not ty.has_value()) return LookupResult::FailedToImport(
-            names.back(),
+            macro_name,
             std::move(ty.error())
         );
 
         // Finally, import the value.
         auto v = fake_importer.ImportValue(macro_loc, *var->getEvaluatedValue(), *ty);
         if (not v.has_value()) return LookupResult::FailedToImport(
-            names.back(),
+            macro_name,
             std::move(v.error())
         );
 
@@ -1124,4 +1147,27 @@ auto Sema::LookUpCXXName(
     auto md = new (*tu) CXXMacroExpansionDecl("", value, value->location());
     imported_macros[mi] = md;
     return LookupResult::Success(md);
+}
+
+auto Sema::LookUpCXXName(
+    ImportedClangModuleDecl* clang_module,
+    ArrayRef<DeclName> names,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not names.empty(), "Empty name lookup?");
+    auto DoNameLookup = [&] {
+        return LookUpCXXNameImpl(clang_module, names, hint);
+    };
+
+    // If this is anything other than a single identifier, it can’t be a macro.
+    if (names.size() != 1 or not names.front().is_str())
+        return DoNameLookup();
+
+    // Check if this is a macro.
+    auto ast = &clang_module->clang_ast;
+    auto& pp = ast->getSema().getPreprocessor();
+    auto id = pp.getIdentifierInfo(names.front().str());
+    auto *mi = pp.getMacroInfo(id);
+    if (not mi) return DoNameLookup();
+    return LookUpCXXMacro(clang_module, mi, names.front().str(), hint);
 }

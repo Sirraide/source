@@ -25,6 +25,7 @@ class TemplateInstantiator;
 
 namespace clang {
 class ASTImporterSharedState;
+class MacroInfo;
 }
 
 class srcc::Sema : public DiagsProducer {
@@ -965,12 +966,21 @@ private:
     ) -> Ptr<ImportedSourceModuleDecl>;
 
     /// Use LookUpName() instead.
+    auto LookUpCXXMacro(
+        ImportedClangModuleDecl* clang_module,
+        clang::MacroInfo* mi,
+        String name,
+        LookupHint hint
+    ) -> LookupResult;
+
+    /// Use LookUpName() instead.
     auto LookUpCXXName(
         ImportedClangModuleDecl* clang_module,
         ArrayRef<DeclName> names,
         LookupHint hint
     ) -> LookupResult;
 
+    /// Use LookUpName() instead.
     auto LookUpCXXNameImpl(
         ImportedClangModuleDecl* clang_module,
         ArrayRef<DeclName> names,
