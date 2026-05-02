@@ -35,8 +35,23 @@
 #include <llvm/TargetParser/Host.h>
 
 using namespace srcc;
+using clang::QualType;
 
-#define TRY(v) ({ auto _v = v; if (not _v) return utils::Falsy(); *_v; })
+#define TRY(expr) ({                                                       \
+    auto _v = expr;                                                        \
+    if (not _v.has_value()) return std::unexpected(std::move(_v.error())); \
+    *_v;                                                                   \
+})
+
+template <typename Value>
+struct Res : std::expected<Value, std::unique_ptr<Diagnostic>> {
+    using Base = std::expected<Value, std::unique_ptr<Diagnostic>>;
+    using Base::Base;
+
+    Res() = delete("Return a diagnostic instead");
+    Res(std::nullptr_t) = delete("Return a diagnostic instead");
+    Res(std::nullopt_t) = delete("Return a diagnostic instead");
+};
 
 class Sema::Importer {
     Sema& S;
@@ -46,77 +61,128 @@ public:
     explicit Importer(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
     auto AST() -> clang::ASTContext& { return clang_module->clang_ast.getASTContext(); }
 
-    auto FormatTypeFailure(DeclName name, clang::QualType ty) -> LookupResult;
-
-    auto ImportDecl(clang::Decl* D) -> Ptr<Decl>;
-    auto ImportDeclImpl(clang::Decl* D) -> Ptr<Decl>;
-    auto ImportRecordImpl(clang::RecordDecl* RD) -> std::optional<Type>;
-    auto ImportFunctionImpl(clang::FunctionDecl* D) -> Ptr<ProcDecl>;
-    auto ImportName(clang::TagDecl* D) -> StringRef;
-    auto ImportReturnType(clang::QualType T) -> std::optional<TypeAndValueCategory>;
-    auto ImportType(const clang::Type* T) -> std::optional<Type>;
-    auto ImportType(clang::QualType T) { return ImportType(T.getTypePtr()); }
+    auto ImportDecl(clang::Decl* d) -> Res<Decl*>;
+    auto ImportDeclImpl(clang::Decl* d) -> Res<Decl*>;
+    auto ImportRecordImpl(clang::RecordDecl* rd) -> Res<Type>;
+    auto ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*>;
+    auto ImportName(clang::TagDecl* td) -> StringRef;
+    auto ImportReturnType(SLoc sloc, QualType ty) -> Res<TypeAndValueCategory>;
+    auto ImportType(clang::SourceLocation sloc, QualType ty) -> Res<Type>;
+    auto ImportType(SLoc sloc, QualType ty) -> Res<Type>;
     auto ImportSourceLocation(clang::SourceLocation sloc) -> SLoc;
-    auto ImportValue(const clang::APValue& val, Type ty) -> std::optional<eval::RValue>;
+    auto ImportValue(SLoc loc, const clang::APValue& val, Type ty) -> Res<eval::RValue>;
+
+    // Convert 'QualType' and other clang types that can't be formatted w/o an ASTContext
+    // to a string so it can be used in a diagnostic.
+    template <typename T>
+    static auto PreprocessDiagArg(Importer& i, T val) {
+        using NonRef = std::remove_cvref_t<T>;
+        if constexpr (utils::is<NonRef, QualType, clang::CanQualType>) {
+            SmallString<32> str;
+            llvm::raw_svector_ostream os{str};
+            val.print(os, clang::PrintingPolicy(i.clang_module->clang_ast.getLangOpts()));
+            return str;
+        } else if constexpr (utils::is<NonRef, clang::Type*, const clang::Type*>) {
+            return PreprocessDiagArg(i, QualType(val, 0));
+        } else if constexpr (utils::is<NonRef, clang::Type*, clang::APValue>) {
+            SmallString<128> str;
+            llvm::raw_svector_ostream os{str};
+            val.dump(os, i.clang_module->clang_ast.getASTContext());
+            return str;
+        } else if constexpr (std::convertible_to<NonRef, clang::Decl*>) {
+            if (auto n = dyn_cast<clang::NamedDecl>(val)) {
+                return std::format("'{}'", n->getQualifiedNameAsString());
+            } else {
+                return std::string(static_cast<const clang::Decl*>(val)->getDeclKindName());
+            }
+        } else {
+            return std::move(val);
+        }
+    }
+
+    template <typename Entity, typename... Args>
+    auto MakeErr(
+        Entity e,
+        std::format_string<decltype(PreprocessDiagArg(std::declval<Importer&>(), std::declval<Args>()))...> fmt,
+        Args&&... args
+    ) {
+        SLoc loc{};
+
+        using Pointee = std::remove_pointer_t<Entity>;
+        if constexpr (std::derived_from<Pointee, clang::Decl>) {
+            loc = ImportSourceLocation(e->getLocation());
+        } else if constexpr (std::derived_from<Pointee, clang::Stmt>) {
+            loc = ImportSourceLocation(e->getBeginLoc());
+        } else if constexpr (std::is_same_v<Entity, clang::SourceLocation>) {
+            loc = ImportSourceLocation(e);
+        } else if constexpr (std::is_same_v<Entity, SLoc>) {
+            loc = e;
+        } else {
+            static_assert(false, "Unknown entity");
+        }
+
+        auto diag = CreateNote(loc, fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
+        return std::unexpected(std::make_unique<Diagnostic>(diag));
+    }
+
+    template <typename Entity, typename... Args>
+    auto NYI(
+        Entity e,
+        std::format_string<decltype(PreprocessDiagArg(std::declval<Importer&>(), std::declval<Args>()))...> fmt,
+        Args&&... args
+    ){
+        auto msg = Format(fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
+        return MakeErr(e, "Importing {} is not yet supported", msg);
+    }
+
+    auto AlreadyDiagnosed() {
+        return std::unexpected(std::unique_ptr<Diagnostic>());
+    }
 };
 
-auto Sema::Importer::FormatTypeFailure(DeclName name, clang::QualType ty) -> LookupResult {
-    SmallString<128> str;
-    llvm::raw_svector_ostream os{str};
-    ty.print(os, clang::PrintingPolicy(clang_module->clang_ast.getLangOpts()));
-    auto diag = CreateNote(SLoc(), "Unsupported Clang type: {}", str);
-    return LookupResult::FailedToImport(
-        name,
-        std::make_unique<Diagnostic>(std::move(diag))
-    );
-}
+// auto Sema::Importer::FormatTypeFailure(DeclName name, QualType ty) -> LookupResult {
+//     SmallString<128> str;
+//     llvm::raw_svector_ostream os{str};
+//     ty.print(os, clang::PrintingPolicy(clang_module->clang_ast.getLangOpts()));
+//     auto diag = CreateNote(SLoc(), "Unsupported Clang type: {}", str);
+//     return LookupResult::FailedToImport(
+//         name,
+//         std::make_unique<Diagnostic>(std::move(diag))
+//     );
+// }
 
-auto Sema::Importer::ImportDecl(clang::Decl* D) -> Ptr<Decl> {
-    D = D->getCanonicalDecl();
+auto Sema::Importer::ImportDecl(clang::Decl* d) -> Res<Decl*> {
+    d = d->getCanonicalDecl();
 
     // If we have attempted to find this before, do not do so again.
-    if (auto it = S.imported_decls.find(D); it != S.imported_decls.end())
-        return it->second;
+    if (auto it = S.imported_decls.find(d); it != S.imported_decls.end()){
+        if (auto d = it->second.get_or_null()) return d;
+        return AlreadyDiagnosed();
+    }
 
     // Otherwise, try to create it now.
     //
     // Don’t hold on to a reference to 'S.imported_decls[D]' as importing a decl
     // might import more decls, which might invalidate it.
-    S.imported_decls[D] = nullptr; // Mark that we’ve already tried doing this.
-    auto imported = ImportDeclImpl(D);
-    if (imported) {
-        S.imported_decls[D] = imported;
-        return imported;
-    }
-
-    if (auto n = dyn_cast<clang::NamedDecl>(D)) {
-        S.Error(
-            ImportSourceLocation(n->getLocation()),
-            "Importing declaration of '{}' from C++ is not supported",
-            n->getQualifiedNameAsString()
-        );
-    } else {
-        S.Error(
-            ImportSourceLocation(D->getBeginLoc()),
-            "Importing this C++ declaration is not supported"
-        );
-    }
-
-    return {};
+    S.imported_decls[d] = nullptr; // Mark that we’ve already tried doing this.
+    auto imported = TRY(ImportDeclImpl(d));
+    S.imported_decls[d] = imported;
+    return imported;
 }
 
-auto Sema::Importer::ImportDeclImpl(clang::Decl* D) -> Ptr<Decl> {
+auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
     // Ignore invalid ones.
-    if (D->isInvalidDecl()) return {};
-    switch (D->getKind()) {
+    Assert(d);
+    if (d->isInvalidDecl()) return MakeErr(d, "declaration of '{}' is invalid", d);
+    switch (d->getKind()) {
         using K = clang::Decl::Kind;
         default: break;
         case K::Enum: {
-            auto e = cast<clang::EnumDecl>(D);
+            auto e = cast<clang::EnumDecl>(d);
             for (auto enumerator : e->enumerators())
                 S.imported_decls[enumerator->getCanonicalDecl()] = nullptr;
 
-            auto underlying = TRY(ImportType(e->getIntegerType()));
+            auto underlying = TRY(ImportType(e->getLocation(), e->getIntegerType()));
             auto loc = ImportSourceLocation(e->getLocation());
             auto name = ImportName(e);
             auto scope = S.tu->create_scope(S.global_scope());
@@ -138,12 +204,13 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* D) -> Ptr<Decl> {
         } break;
 
         case K::EnumConstant: {
-            TRY(ImportDecl(cast<clang::EnumConstantDecl>(D)->getType()->getAsEnumDecl()));
-            return S.imported_decls[D];
+            TRY(ImportDecl(cast<clang::EnumConstantDecl>(d)->getType()->getAsEnumDecl()));
+            if (auto decl = S.imported_decls[d].get_or_null()) return decl;
+            return AlreadyDiagnosed();
         }
 
         case K::Function:
-            return ImportFunctionImpl(cast<clang::FunctionDecl>(D));
+            return ImportFunctionImpl(cast<clang::FunctionDecl>(d));
 
         case K::Namespace:
             // TODO
@@ -151,18 +218,13 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* D) -> Ptr<Decl> {
 
         case K::Record:
         case K::CXXRecord:
-            return cast<StructType>(TRY(ImportRecordImpl(cast<clang::RecordDecl>(D))))->decl();
+            return cast<StructType>(TRY(ImportRecordImpl(cast<clang::RecordDecl>(d))))->decl();
 
         case K::Typedef: {
-            auto td = cast<clang::TypedefDecl>(D);
-            auto clang_ty = AST().getTypedefType(
-                clang::ElaboratedTypeKeyword::None,
-                std::nullopt,
-                td
-            );
-
+            auto td = cast<clang::TypedefDecl>(d);
+            auto clang_ty = td->getUnderlyingType();
             if (clang_ty->isRecordType()) {
-                auto ty = TRY(ImportType(clang_ty));
+                auto ty = TRY(ImportType(td->getLocation(), clang_ty));
                 return cast<StructType>(ty)->decl();
             }
         } break;
@@ -176,55 +238,61 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* D) -> Ptr<Decl> {
             break;
     }
 
-    return nullptr;
+    return NYI(d, "declaration of kind {}", d->getDeclKindName());
 }
 
-auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* D) -> Ptr<ProcDecl> {
-    D = D->getDefinition() ?: D->getFirstDecl();
-    if (isa<clang::CXXMethodDecl>(D)) return {};
-    auto FPT = D->getType()->getAs<clang::FunctionProtoType>();
-    Assert(FPT, "No prototype in C++?");
+auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*> {
+    d = d->getDefinition() ?: d->getFirstDecl();
+    if (isa<clang::CXXMethodDecl>(d)) return NYI(d, "member functions");
 
     // If the return type hasn’t been deduced yet, we can’t import it.
-    if (D->getReturnType()->getAs<clang::AutoType>()) return {};
+    if (d->getReturnType()->getAs<clang::AutoType>())
+        return NYI(d, "function with deduced return type");
 
     // Don’t import immediate or inline functions for now.
-    if (D->isImmediateFunction() or D->isInlineSpecified()) return {};
+    // TODO: Constant-evaluation of C++ functions.
+    if (d->isImmediateFunction())
+        return NYI(d, "'%1(consteval%)' function");
+
+    // TODO: Inline functions need to be emitted when they're called; we still
+    // need to implement that.
+    if (d->isInlineSpecified())
+        return NYI(d, "'%1(inline%)' function");
 
     // Don’t import functions with internal linkage, or anything
     // attached to a module.
-    if (D->getLinkageInternal() != clang::Linkage::External) return {};
-    if (D->getOwningModule()) return {};
+    if (d->getLinkageInternal() != clang::Linkage::External)
+        return NYI(d, "'%1(static%)' function");
+    if (d->getOwningModule())
+        return NYI(d, "function that is part of a C++20 module");
 
     // Do not import language builtins.
-    if (auto ID = D->getBuiltinID()) {
+    if (auto builtin = d->getBuiltinID()) {
         // Note: Clang treats C standard library functions (e.g. 'puts') as
         // builtins as well, but those count as ‘library builtins’.
-        if (not AST().BuiltinInfo.isPredefinedLibFunction(ID))
-            return {};
+        if (not AST().BuiltinInfo.isPredefinedLibFunction(builtin))
+            return NYI(d, "builtin function");
     }
 
     // Import the type.
-    auto T = ImportType(FPT);
-    if (not T) return {};
-    if (not isa<ProcType>(*T)) return {};
+    auto ty = TRY(ImportType(d->getLocation(), QualType(d->getFunctionType(), 0)));
 
     // Create the procedure.
     auto PD = ProcDecl::Create(
         *S.tu,
         clang_module,
-        cast<ProcType>(T.value().ptr()),
-        S.tu->save(D->getNameAsString()),
+        cast<ProcType>(ty),
+        S.tu->save(d->getNameAsString()),
         Linkage::Imported,
-        D->isExternC() ? Mangling::None : Mangling::CXX,
+        d->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
         InheritedProcedureProperties(),
-        ImportSourceLocation(D->getNameInfo().getBeginLoc())
+        ImportSourceLocation(d->getNameInfo().getBeginLoc())
     );
 
     // Create param decls.
     SmallVector<LocalDecl*> Params;
-    for (auto [I, P] : enumerate(D->parameters())) {
+    for (auto [I, P] : enumerate(d->parameters())) {
         Params.push_back(new (*S.tu) ParamDecl(
             &PD->param_types()[I],
             Expr::MLValue, // We pass by value so this is irrelevant.
@@ -247,101 +315,105 @@ auto Sema::Importer::ImportName(clang::TagDecl* td) -> StringRef {
     return "";
 }
 
-auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* RD) -> std::optional<Type> {
-    Assert(RD);
-    RD = cast<clang::RecordDecl>(RD->getDefinition() ?: RD->getFirstDecl());
-    auto it = S.imported_records.find(RD);
-    if (it != S.imported_records.end()) return it->second;
+auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<Type> {
+    rd = cast<clang::RecordDecl>(rd->getDefinition() ?: rd->getFirstDecl());
+    auto it = S.imported_records.find(rd);
+    if (it != S.imported_records.end()) {
+        if (it->second.has_value()) return *it->second;
+        return AlreadyDiagnosed();
+    }
 
     // Create the cache entry now so we fail fast next time if we can’t import
     // this; don’t hold on to a reference to the cache entry here since we’re
     // about to import more types, which might invalidate it.
-    S.imported_records[RD] = std::nullopt;
+    S.imported_records[rd] = std::nullopt;
 
     // Skip unions and incomplete types.
-    if (not RD or not RD->isCompleteDefinition() or RD->isUnion()) return std::nullopt;
+    if (not rd->isCompleteDefinition()) return NYI(rd, "incomplete type '{}'", rd);
+    if (rd->isUnion()) return NYI(rd, "union type '{}'", rd);
+
+    if (auto CXX = dyn_cast<clang::CXXRecordDecl>(rd)) {
+        if (not CXX->isCLike()) return NYI(rd, "non-trivial class type");
+    }
 
     // Import the fields.
-    auto& RL = AST().getASTRecordLayout(RD);
-    SmallVector<FieldDecl*> Fields;
-    for (auto [I, F] : enumerate(RD->fields())) {
-        if (F->isBitField()) return std::nullopt;
-        if (F->getMaxAlignment() != 0) return std::nullopt;
-        if (F->hasInClassInitializer()) return std::nullopt;
-        auto FTY = ImportType(F->getType());
-        if (not FTY) return std::nullopt;
-        Fields.push_back(new (*S.tu) FieldDecl(
-            FTY.value(),
-            Size::Bits(RL.getFieldOffset(unsigned(I))),
-            S.tu->save(F->getName()),
-            ImportSourceLocation(F->getLocation())
+    auto& layout = AST().getASTRecordLayout(rd);
+    SmallVector<FieldDecl*> fields;
+    for (auto [i, f] : enumerate(rd->fields())) {
+        if (f->isBitField()) return NYI(f, "bit field");
+        if (f->getMaxAlignment() != 0) return NYI(f, "unaligned or overaligned field");
+        if (f->hasInClassInitializer()) return NYI(f, "field with in-class initialiser");
+        fields.push_back(new (*S.tu) FieldDecl(
+            TRY(ImportType(f->getLocation(), f->getType())),
+            Size::Bits(layout.getFieldOffset(unsigned(i))),
+            S.tu->save(f->getName()),
+            ImportSourceLocation(f->getLocation())
         ));
     }
 
-    // Validate other properties of this type.
-    if (auto CXX = dyn_cast<clang::CXXRecordDecl>(RD)) {
-        if (not CXX->isCLike()) return std::nullopt;
-    }
-
     // Determine the name of this type.
-    StringRef Name = ImportName(RD);
+    StringRef name = ImportName(rd);
 
     // Determine if this contains a pointer.
-    bool contains_pointer = any_of(Fields, [&](auto *fd) {
+    bool contains_pointer = any_of(fields, [&](auto *fd) {
         return fd->type->is_or_contains_pointer();
     });
 
     // Build the layout.
     auto rl = RecordLayout::Create(
         *S.tu,
-        Fields,
-        Size::Bytes(RL.getSize().getQuantity()),
-        Size::Bytes(RL.getSize().getQuantity()),
-        Align(RL.getAlignment().getQuantity()),
+        fields,
+        Size::Bytes(layout.getSize().getQuantity()),
+        Size::Bytes(layout.getSize().getQuantity()),
+        Align(layout.getAlignment().getQuantity()),
         RecordLayout::Bits::Trivial(contains_pointer)
     );
 
-    auto Struct = S.BuildCompleteStructType(
-        S.tu->save(Name),
+    auto struct_ty = S.BuildCompleteStructType(
+        S.tu->save(name),
         rl,
-        ImportSourceLocation(RD->getLocation())
+        ImportSourceLocation(rd->getLocation())
     );
 
-    S.imported_records[RD] = Struct;
-    return Struct;
+    S.imported_records[rd] = struct_ty;
+    return struct_ty;
 }
 
-auto Sema::Importer::ImportReturnType(clang::QualType T) -> std::optional<TypeAndValueCategory> {
+auto Sema::Importer::ImportReturnType(
+    SLoc loc,
+    QualType ty
+) -> Res<TypeAndValueCategory> {
     auto vc = Expr::RValue;
-    if (T->isReferenceType()) {
-        T = T.getNonReferenceType();
-        vc = Expr::LValue(T.isConstQualified());
+
+    if (ty->isReferenceType()) {
+        ty = ty->getPointeeType();
+        vc = Expr::LValue(ty.isConstQualified());
     }
 
-    auto ty = TRY(ImportType(T));
-    return TypeAndValueCategory{ty, vc};
+    return TypeAndValueCategory{TRY(ImportType(loc, ty)), vc};
 }
 
-auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
-    // FIXME: C++ pointers should be imported as nullable pointers once
-    // we support optionals.
+auto Sema::Importer::ImportType(clang::SourceLocation sloc, QualType ty) -> Res<Type> {
+    return ImportType(ImportSourceLocation(sloc), ty);
+}
 
+auto Sema::Importer::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
     // Handle known type sugar first.
     if (
-        auto TD = T->getAs<clang::TypedefType>();
-        TD and TD->getDecl()->getName() == "size_t" and
-        T->getCanonicalTypeUnqualified() == AST().getSizeType()
+        auto td = ty->getAs<clang::TypedefType>();
+        td and td->getDecl()->getName() == "size_t" and
+        ty->getCanonicalTypeUnqualified() == AST().getSizeType()
     ) return Type::IntTy;
 
     // Only handle canonical types from here on.
-    T = T->getCanonicalTypeUnqualified().getTypePtr();
-    switch (T->getTypeClass()) {
+    ty = ty->getCanonicalTypeUnqualified();
+    switch (ty->getTypeClass()) {
         using K = clang::Type::TypeClass;
-        default: return std::nullopt;
+        default: break;
         case K::Builtin: {
-            switch (cast<clang::BuiltinType>(T)->getKind()) {
+            switch (cast<clang::BuiltinType>(ty)->getKind()) {
                 using K = clang::BuiltinType::Kind;
-                default: return std::nullopt;
+                default: break;
                 case K::Void: return Type::VoidTy;
                 case K::Bool: return Type::BoolTy;
 
@@ -375,67 +447,72 @@ auto Sema::Importer::ImportType(const clang::Type* T) -> std::optional<Type> {
                 case K::UInt128:
                     return S.tu->I128Ty;
             }
-        }
+        } break;
 
         case K::LValueReference:
         case K::RValueReference: {
-            auto Elem = ImportType(T->getPointeeType());
-            if (not Elem) return std::nullopt;
-            return PtrType::Get(*S.tu, *Elem, T->getPointeeType().isConstQualified());
+            auto elem = TRY(ImportType(sloc, ty->getPointeeType()));
+            return PtrType::Get(*S.tu, elem, ty->getPointeeType().isConstQualified());
         }
 
         // C++ pointers are nullable, so wrap them in an optional.
         case K::Pointer: {
-            auto Elem = ImportType(T->getPointeeType());
-            if (not Elem) return std::nullopt;
-            auto Ptr = PtrType::Get(*S.tu, *Elem, T->getPointeeType().isConstQualified());
-            return OptionalType::Get(*S.tu, Ptr);
+            auto elem = TRY(ImportType(sloc, ty->getPointeeType()));
+            auto ptr = PtrType::Get(*S.tu, elem, ty->getPointeeType().isConstQualified());
+            return OptionalType::Get(*S.tu, ptr);
         }
 
         case K::BitInt: {
-            auto B = cast<clang::BitIntType>(T);
-            return IntType::Get(*S.tu, Size::Bits(B->getNumBits()));
+            auto b = cast<clang::BitIntType>(ty);
+            return IntType::Get(*S.tu, Size::Bits(b->getNumBits()));
         }
 
         case K::ConstantArray: {
-            auto C = cast<clang::ConstantArrayType>(T);
-            auto Elem = ImportType(C->getElementType());
-            if (not Elem) return std::nullopt;
-            return ArrayType::Get(*S.tu, *Elem, i64(C->getSize().getZExtValue()));
+            auto c = cast<clang::ConstantArrayType>(ty);
+            auto elem = TRY(ImportType(sloc, c->getElementType()));
+            return ArrayType::Get(*S.tu, elem, i64(c->getSize().getZExtValue()));
         }
 
         case K::Enum:
-            return cast<TypeDecl>(TRY(ImportDecl(T->getAsEnumDecl())))->type;
+            return cast<TypeDecl>(TRY(ImportDecl(ty->getAsEnumDecl())))->type;
 
         case K::FunctionProto: {
-            auto FPT = cast<clang::FunctionProtoType>(T);
-            if (FPT->getCallConv() != clang::CallingConv::CC_C) return std::nullopt;
+            auto fpt = cast<clang::FunctionProtoType>(ty);
+            if (fpt->getCallConv() != clang::CallingConv::CC_C) {
+                return NYI(
+                    sloc,
+                    "function with '{}' calling convention",
+                    clang::FunctionType::getNameForCallConv(fpt->getCallConv())
+                );
+            }
 
-            auto Ret = FPT->getExtInfo().getNoReturn()
+            auto ret = fpt->getExtInfo().getNoReturn()
                 ? TypeAndValueCategory{Type::NoReturnTy, Expr::RValue}
-                : TRY(ImportReturnType(FPT->getReturnType()));
+                : TRY(ImportReturnType(sloc, fpt->getReturnType()));
 
-            SmallVector<ParamTypeData, 6> Params;
-            for (auto P : FPT->param_types()) {
-                auto Ty = TRY(ImportType(P));
-                Params.emplace_back(Intent::Copy, Ty);
+            SmallVector<ParamTypeData, 6> params;
+            for (auto param : fpt->param_types()) {
+                auto param_ty = TRY(ImportType(sloc, param));
+                params.emplace_back(Intent::Copy, param_ty);
             }
 
             return ProcType::Get(
                 *S.tu,
-                Ret,
-                Params,
+                ret,
+                params,
                 CallingConvention::Native,
-                FPT->isVariadic()
+                fpt->isVariadic()
             );
         }
 
         case K::Record: {
-            auto RD = T->getAsRecordDecl();
-            if (not RD) return std::nullopt;
-            return cast<TypeDecl>(TRY(ImportDecl(RD)))->type;
+            auto rd = ty->getAsRecordDecl();
+            Assert(rd);
+            return cast<TypeDecl>(TRY(ImportDecl(rd)))->type;
         }
     }
+
+    return NYI(sloc, "type '{}'", ty);
 }
 
 auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
@@ -447,19 +524,19 @@ auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
 }
 
 auto Sema::Importer::ImportValue(
+    SLoc loc,
     const clang::APValue& val,
     Type ty
-) -> std::optional<eval::RValue> {
+) -> Res<eval::RValue> {
     switch (val.getKind()) {
         case clang::APValue::Int: {
-            if (not ty->is_integer_or_bool()) return std::nullopt;
+            Assert(ty->is_integer_or_bool());
             return eval::RValue(val.getInt(), ty);
         }
 
         case clang::APValue::Struct: {
             // Type must be a struct type.
-            auto struct_ty = dyn_cast<RecordType>(ty);
-            if (not struct_ty) return std::nullopt;
+            auto struct_ty = cast<RecordType>(ty);
 
             // Field count must match what we expect.
             u32 num_fields = val.getStructNumFields();
@@ -469,6 +546,7 @@ auto Sema::Importer::ImportValue(
             SmallVector<eval::RValue*> fields;
             for (u32 i = 0; i < num_fields; i++) {
                 auto field = TRY(ImportValue(
+                    loc,
                     val.getStructField(i),
                     struct_ty->layout().fields()[i]->type
                 ));
@@ -482,17 +560,15 @@ auto Sema::Importer::ImportValue(
             );
         }
 
-        default: return std::nullopt;
+        default: break;
     }
 
-    Unreachable();
-}
-
-auto Sema::ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl> {
-    Importer importer(*this, clang_module);
-    auto d = importer.ImportDecl(decl);
-    imported_decls[decl] = d;
-    return d;
+    return MakeErr(
+        loc,
+        "Unsupported {} APValue: {}",
+        enchantum::to_string(val.getKind()),
+        val
+    );
 }
 
 auto Sema::ParseCXX(
@@ -620,7 +696,6 @@ auto Sema::ImportCXXHeaders(
 namespace {
 enum class Kind {
     Nothing,
-    Unsupported,
     Function,
     Enumerator,
     Type,
@@ -656,8 +731,6 @@ auto Sema::LookUpCXXNameImpl(
     auto Merge = [&](Kind k) {
         using enum Kind;
         Assert(k != Nothing, "'Nothing' should only be used as an initial state");
-        Assert(kind != Unsupported, "Should not process any more decls after reaching 'Unsupported'");
-        Assert(k != Unsupported, "Should just early return instead of merging 'Unsupported'");
         if (k == kind) {} // Do nothing. They’re the same anyway.
         else if (kind == Nothing) kind = k;
         else if (kind == Type and hint == LookupHint::Type) {} // Prefer types if types were requested.
@@ -669,14 +742,23 @@ auto Sema::LookUpCXXNameImpl(
         }
     };
 
+    Importer i{*this, clang_module};
     for (auto d : res) {
         if (d->isInvalidDecl()) continue;
         if (isa<clang::FunctionDecl>(d)) Merge(Kind::Function);
         else if (isa<clang::TypedefDecl, clang::EnumDecl, clang::RecordDecl>(d)) Merge(Kind::Type);
         else if (isa<clang::EnumConstantDecl>(d)) Merge(Kind::Enumerator);
         else {
-            kind = Kind::Unsupported;
-            break;
+            auto diag = CreateNote(
+                i.ImportSourceLocation(d->getLocation()),
+                "Importing a '{}Decl' is not supported (yet)",
+                d->getDeclKindName()
+            );
+
+            return LookupResult::FailedToImport(
+                names.back(),
+                std::make_unique<Diagnostic>(std::move(diag))
+            );
         }
     }
 
@@ -685,9 +767,9 @@ auto Sema::LookUpCXXNameImpl(
     auto ImportFiltered = [&](auto filter) {
         for (auto d : res) {
             if (d->isInvalidDecl() or not std::invoke(filter, d)) continue;
-            auto decl = ImportCXXDecl(clang_module, d);
-            if (not decl) return LookupResult::FailedToImport(names.back());
-            if (not is_contained(converted, decl.get())) converted.push_back(decl.get());
+            auto decl = i.ImportDecl(d);
+            if (not decl.has_value()) return LookupResult::FailedToImport(names.back(), std::move(decl.error()));
+            if (not is_contained(converted, *decl)) converted.push_back(*decl);
         }
 
         if (converted.empty()) return LookupResult::NotFound(names.back());
@@ -698,9 +780,6 @@ auto Sema::LookUpCXXNameImpl(
     switch (kind) {
         case Kind::Nothing:
             return LookupResult::NotFound(names.back());
-
-        case Kind::Unsupported:
-            return LookupResult::FailedToImport(names.back());
 
         case Kind::Function:
             return ImportFiltered([](auto* d){ return isa<clang::FunctionDecl>(d); });
@@ -735,6 +814,7 @@ auto Sema::LookUpCXXName(
     if (names.size() != 1 or not names.front().is_str())
         return DoNameLookup();
 
+    // Check if this is a macro.
     auto ast = &clang_module->clang_ast;
     auto& clang_sema = ast->getSema();
     auto& pp = clang_sema.getPreprocessor();
@@ -742,10 +822,24 @@ auto Sema::LookUpCXXName(
     auto *mi = pp.getMacroInfo(id);
     if (not mi) return DoNameLookup();
 
+    // Import the source location of the macro.
+    Importer main_importer{*this, clang_module};
+    SLoc macro_loc = main_importer.ImportSourceLocation(mi->getDefinitionLoc());
+
+    // Return an error.
+    auto Err = [&]<typename ...Args>(std::format_string<Args...> fmt, Args&& ...args) {
+        return LookupResult::FailedToImport(
+            names.back(),
+            std::make_unique<Diagnostic>(CreateNote(macro_loc, fmt, std::forward<Args>(args)...))
+        );
+    };
+
     // Refuse to import ‘builtin’ macros (i.e. __LINE__, __COUNTER__, and friends)
     // as well as function-like macros.
-    if (mi->isBuiltinMacro() or mi->isFunctionLike())
-        return LookupResult::FailedToImport(names.back());
+    if (mi->isBuiltinMacro())
+        return Err("Cannot import builtin macro '{}'", names.front());
+    if (mi->isFunctionLike())
+        return Err("Cannot import function-like macro '{}'", names.front());
 
     // If we have attempted to find this before, do not do so again.
     if (auto it = imported_macros.find(mi); it != imported_macros.end()) {
@@ -767,7 +861,7 @@ auto Sema::LookUpCXXName(
     );
 
     if (pp.EnterSourceFile(fid, nullptr, clang_sloc))
-        return LookupResult::FailedToImport(names.back());
+        return Err("Failed to enter source file");
 
     // Ask the preprocessor to expand the macro.
     std::vector<clang::Token> toks;
@@ -779,11 +873,11 @@ auto Sema::LookUpCXXName(
         auto& tok = toks.emplace_back();
         pp.Lex(tok);
         if (tok.is(clang::tok::eof)) break;
-        if (tok.is(clang::tok::unknown)) return LookupResult::FailedToImport(names.back());
+        if (tok.is(clang::tok::unknown)) return Err("Unknown token in macro expansion");
     }
 
     // Macro expanded to nothing.
-    if (toks.size() == 1) return LookupResult::FailedToImport(names.back());
+    if (toks.size() == 1) return Err("Macro has empty expansion");
 
     // If it is a single identifier, just look up that name.
     if (
@@ -804,7 +898,7 @@ auto Sema::LookUpCXXName(
         clang::CodeGenOptions default_opts{};
         llvm::raw_svector_ostream os{pch};
         if (clang_module->clang_ast.serialize(os))
-            return LookupResult::FailedToImport(names.back());
+            return Err("AST serialisation failed");
         PCHVFS->addFile(pch_name, 0, llvm::MemoryBuffer::getMemBufferCopy(pch));
     }
 
@@ -831,28 +925,22 @@ auto Sema::LookUpCXXName(
 
     auto macro_tu = ParseCXX(code, std::move(pch_name));
     if (not macro_tu or macro_tu->getSema().hasUncompilableErrorOccurred())
+        // No diagnostic here; Clang already told the user what was wrong.
+        // TODO: Introduce a custom Clang diags consumer (or at least set a
+        // custom ostream).
         return LookupResult::FailedToImport(names.back());
 
     // Get the procedure or variable decl. Take care to retrieve the II
     // in the preprocessor of the new TU.
-    auto GetDecl = [&](StringRef name) -> Ptr<clang::Decl> {
+    auto GetDecl = [&](StringRef name) -> clang::Decl* {
         clang::DeclarationName ident{macro_tu->getPreprocessor().getIdentifierInfo(name)};
         auto res = macro_tu->getASTContext().getTranslationUnitDecl()->lookup(ident);
-        if (not res.isSingleResult() or res.front()->isInvalidDecl())
-            return nullptr;
+        Assert(res.isSingleResult() and not res.front()->isInvalidDecl());
         return res.front();
     };
 
     // Retrieve the variable.
-    auto var = cast_if_present<clang::VarDecl>(GetDecl(var_name));
-    if (not var) return LookupResult::FailedToImport(names.back());
-
-    // Import the source location of the macro.
-    SLoc macro_loc;
-    {
-        Importer i{*this, clang_module};
-        macro_loc = i.ImportSourceLocation(mi->getDefinitionLoc());
-    }
+    auto var = cast<clang::VarDecl>(GetDecl(var_name));
 
     // The importer requires a module, so fabricate one for this.
     auto fake_module = ImportedClangModuleDecl::Create(
@@ -863,11 +951,10 @@ auto Sema::LookUpCXXName(
         SLoc()
     );
 
-    Importer main_importer{*this, clang_module};
     Importer fake_importer{*this, fake_module};
 
     // Import a type from the Clang ASTUnit used for expansion to Source.
-    auto ImportTypeFromExpansionAST = [&](clang::QualType clang_ty) -> std::expected<Type, LookupResult> {
+    auto ImportTypeFromExpansionAST = [&](QualType clang_ty) -> Res<Type> {
         // Import the type of the value from the new ASTUnit to the main one;
         // this is to make sure that two references to the same type actually
         // resolve to the same Source type.
@@ -882,17 +969,16 @@ auto Sema::LookUpCXXName(
 
         auto imported_type = clang_importer.Import(clang_ty);
         if (auto err = imported_type.takeError()) {
-            return std::unexpected(fake_importer.FormatTypeFailure(
-                names.back(),
-                clang_ty
-            ));
+            return fake_importer.MakeErr(
+                macro_loc,
+                "Clang ASTImporter failed to import '{}': {}",
+                clang_ty,
+                toString(std::move(err))
+            );
         }
 
         // Then import the type from the main module to Source.
-        Importer i{*this, clang_module};
-        auto ty = i.ImportType(*imported_type);
-        if (not ty) return std::unexpected(i.FormatTypeFailure(names.back(), *imported_type));
-        return *ty;
+        return main_importer.ImportType(macro_loc, *imported_type);
     };
 
     // If we can’t evaluate this as a constant, instead emit the function
@@ -910,17 +996,20 @@ auto Sema::LookUpCXXName(
             false
         ) or not diags.empty()
     )  {
+        generated_cxx_macro_decls++;
+
         // Retrieve the procedure.
-        auto clang_proc = cast_if_present<clang::FunctionDecl>(GetDecl(proc_name));
-        if (not clang_proc) return LookupResult::FailedToImport(names.back());
+        auto clang_proc = cast<clang::FunctionDecl>(GetDecl(proc_name));
 
         // Import its return type.
-        auto clang_ret_ty = clang_proc->getType()->getAs<clang::FunctionProtoType>()->getReturnType();
-        auto ret_ty = fake_importer.ImportReturnType(clang_ret_ty);
-        if (not ret_ty) return LookupResult::FailedToImport(names.back());
+        auto clang_ret_ty = clang_proc->getType()->castAs<clang::FunctionProtoType>()->getReturnType();
+        auto ret_ty = fake_importer.ImportReturnType(macro_loc, clang_ret_ty);
+        if (not ret_ty.has_value()) return LookupResult::FailedToImport(
+            names.back(),
+            std::move(ret_ty.error())
+        );
 
         // Emit it.
-        defer { generated_cxx_macro_decls++; };
         std::unique_ptr<clang::CodeGenerator> cg{clang::CreateLLVMCodeGen(
             macro_tu->getDiagnostics(),
             fake_module->name.str(),
@@ -934,8 +1023,8 @@ auto Sema::LookUpCXXName(
         // Make sure we actually emit this.
         clang_proc->setIsUsed();
 
-        // I need to fix this API at some point, because the fact that you have to
-        // *remember* to call Initialize() is... not great.
+        // Emit the decl; no custom diagnostic here; if this fails, Clang should
+        // emit a diagnostic.
         cg->Initialize(macro_tu->getASTContext());
         cg->HandleTopLevelDecl(clang::DeclGroupRef(clang_proc));
         cg->HandleTranslationUnit(macro_tu->getASTContext());
@@ -967,26 +1056,17 @@ auto Sema::LookUpCXXName(
     // it to an RValue.
     else {
         auto ty = ImportTypeFromExpansionAST(var->getType());
-        if (not ty) return std::move(ty.error());
+        if (not ty.has_value()) return LookupResult::FailedToImport(
+            names.back(),
+            std::move(ty.error())
+        );
 
         // Finally, import the value.
-        auto v = fake_importer.ImportValue(*var->getEvaluatedValue(), *ty);
-        if (not v.has_value()) {
-            SmallString<128> str;
-            llvm::raw_svector_ostream os{str};
-            var->getEvaluatedValue()->printPretty(os, fake_module->clang_ast.getASTContext(), var->getType());
-            auto diag = CreateNote(
-                macro_loc,
-                "Unsupported '{}' APValue: {}",
-                enchantum::to_string(var->getEvaluatedValue()->getKind()),
-                str
-            );
-
-            return LookupResult::FailedToImport(
-                names.back(),
-                std::make_unique<Diagnostic>(std::move(diag))
-            );
-        }
+        auto v = fake_importer.ImportValue(macro_loc, *var->getEvaluatedValue(), *ty);
+        if (not v.has_value()) return LookupResult::FailedToImport(
+            names.back(),
+            std::move(v.error())
+        );
 
         value = MakeConstExpr(nullptr, std::move(*v), macro_loc);
     }

@@ -920,9 +920,6 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
-    /// Import a declaration from a C++ AST.
-    auto ImportCXXDecl(ImportedClangModuleDecl* clang_module, CXXDecl* decl) -> Ptr<Decl>;
-
     /// Import a C++ header.
     auto ImportCXXHeaders(
         String logical_name,
