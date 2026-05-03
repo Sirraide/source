@@ -5,7 +5,9 @@
             "begin": "// ([IRVX])[\\s\\[]",
             "end": "$",
             "beginCaptures": {
-                "1": { "name": "fchk.directive"}
+                "1": {
+                    "name": "fchk.directive"
+                }
             },
             "name": "comment.line.fchk",
             "patterns": [
@@ -20,16 +22,26 @@
                 {
                     "match": "(-+[a-zA-Z0-9_]*)(=)([^ ]*)",
                     "captures": {
-                        "1": { "name": "fchk.arg" },
-                        "2": { "name": "fchk.eq" },
-                        "3": { "name": "fchk.value" }
+                        "1": {
+                            "name": "fchk.arg"
+                        },
+                        "2": {
+                            "name": "fchk.eq"
+                        },
+                        "3": {
+                            "name": "fchk.value"
+                        }
                     }
                 },
                 {
                     "match": "(-+[a-zA-Z0-9_]*)(?:\\s+([^-% ][^ ]*))?",
                     "captures": {
-                        "1": { "name": "fchk.arg" },
-                        "2": { "name": "fchk.value" }
+                        "1": {
+                            "name": "fchk.arg"
+                        },
+                        "2": {
+                            "name": "fchk.value"
+                        }
                     }
                 }
             ]
@@ -38,28 +50,48 @@
             "begin": "//[A-Z]* ([+*p!bdeu]|re\\*|re\\+)[\\s\\[]",
             "end": "$",
             "beginCaptures": {
-                "1": { "name": "fchk.directive"}
+                "1": {
+                    "name": "fchk.directive"
+                }
             },
             "name": "comment.line.fchk"
         },
         {
             "match": "(//)\\s*(expected-no-diagnostics)$",
             "captures": {
-                "1": { "name": "srcc.verify.diag_text" },
-                "2": { "name": "srcc.verify.directive" }
+                "1": {
+                    "name": "srcc.verify.diag_text"
+                },
+                "2": {
+                    "name": "srcc.verify.directive"
+                }
             }
         },
         {
             "begin": "(//)\\s*(expected-(?:error|note|warning))(@([+-]?\\d+|\\*))?\\s*(\\s\\d+)?\\s*(:)\\s*(.*)",
             "end": "$",
             "beginCaptures": {
-                "1": { "name": "srcc.verify.diag_text" },
-                "2": { "name": "srcc.verify.directive" },
-                "3": { "name": "srcc.verify.operator" },
-                "4": { "name": "srcc.verify.line" },
-                "5": { "name": "srcc.verify.count" },
-                "6": { "name": "srcc.verify.operator" },
-                "7": { "name": "srcc.verify.diag_text" }
+                "1": {
+                    "name": "srcc.verify.diag_text"
+                },
+                "2": {
+                    "name": "srcc.verify.directive"
+                },
+                "3": {
+                    "name": "srcc.verify.operator"
+                },
+                "4": {
+                    "name": "srcc.verify.line"
+                },
+                "5": {
+                    "name": "srcc.verify.count"
+                },
+                "6": {
+                    "name": "srcc.verify.operator"
+                },
+                "7": {
+                    "name": "srcc.verify.diag_text"
+                }
             },
             "name": "comment.line"
         },
@@ -67,36 +99,110 @@
             "begin": "//\\s*?(?=expected)",
             "end": "$",
             "name": "comment.line",
-            "beginCaptures": { "0": { "name": "srcc.verify.diag_text" } },
+            "beginCaptures": {
+                "0": {
+                    "name": "srcc.verify.diag_text"
+                }
+            },
             "patterns": [
                 {
-                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\(\\()([^\n]*?)(\\)\\)\\))",
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\()([^\n]*?)(\\))",
                     "captures": {
-                        "1": { "name": "srcc.verify.directive" },
-                        "2": { "name": "srcc.verify.count" },
-                        "3": { "name": "srcc.verify.operator" },
-                        "4": { "name": "srcc.verify.diag_text" },
-                        "5": { "name": "srcc.verify.operator" }
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
                     }
                 },
                 {
                     "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\()([^\n]*?)(\\)\\))",
                     "captures": {
-                        "1": { "name": "srcc.verify.directive" },
-                        "2": { "name": "srcc.verify.count" },
-                        "3": { "name": "srcc.verify.operator" },
-                        "4": { "name": "srcc.verify.diag_text" },
-                        "5": { "name": "srcc.verify.operator" }
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
                     }
                 },
                 {
-                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\()([^\n]*?)(\\))",
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\(\\()([^\n]*?)(\\)\\)\\))",
                     "captures": {
-                        "1": { "name": "srcc.verify.directive" },
-                        "2": { "name": "srcc.verify.count" },
-                        "3": { "name": "srcc.verify.operator" },
-                        "4": { "name": "srcc.verify.diag_text" },
-                        "5": { "name": "srcc.verify.operator" }
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
+                    }
+                },
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\(\\(\\()([^\n]*?)(\\)\\)\\)\\))",
+                    "captures": {
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
+                    }
+                },
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\(\\(\\(\\()([^\n]*?)(\\)\\)\\)\\)\\))",
+                    "captures": {
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
                     }
                 }
             ]
@@ -122,36 +228,62 @@
             ]
         },
         {
-            "match": "(import)\\s+((?:<[^>]+>(,?)\\s*)+)\\s+(as)\\s+([a-zA-Z_0-9]+|\\*)",
+            "match": "(import)\\s+((?:<[^>]+>(,?)\\s*)+)\\s+(as)\\s+([a-zA-Z_][a-zA-Z_0-9]*|\\*)",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "string.other" },
-                "3": { "name": "keyword.other" },
-                "4": { "name": "keyword.other" },
-                "5": { "name": "entity.name.module" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "string.other"
+                },
+                "3": {
+                    "name": "keyword.other"
+                },
+                "4": {
+                    "name": "keyword.other"
+                },
+                "5": {
+                    "name": "entity.name.module"
+                }
             }
         },
         {
-            "match": "(import)\\s+([a-zA-Z_0-9]+)(?:\\s+(as)\\s+([a-zA-Z_0-9]+|\\*))?",
+            "match": "(import)\\s+([a-zA-Z_][a-zA-Z_0-9]*)(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z_0-9]*|\\*))?",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "entity.name.module" },
-                "3": { "name": "keyword.other" },
-                "4": { "name": "entity.name.module" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.module"
+                },
+                "3": {
+                    "name": "keyword.other"
+                },
+                "4": {
+                    "name": "entity.name.module"
+                }
             }
         },
         {
             "match": "\\b(pragma)\\b\\s+\\b(include)\\b",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "entity.name.pragma" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.pragma"
+                }
             }
         },
         {
-            "match": "\\b(program|module|__srcc_ser_module__)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "match": "\\b(program|module|__srcc_ser_module__)\\b\\s+\\b([a-zA-Z_][a-zA-Z_0-9]*)\\b",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "entity.name.module" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.module"
+                }
             }
         },
         {
@@ -160,13 +292,23 @@
         },
         {
             "name": "keyword.other",
-            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|inline|is|loop|match|nil|not|or|return|static|struct|then|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
+            "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|inline|is|loop|match|nil|not|or|return|static|struct|then|this|This|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
         },
         {
-            "match": "\\b(proc)\\s+([a-zA-Z_][a-zA-Z_0-9]*)?",
+            "match": "\\b(proc)\\s+(?:([a-zA-Z_][a-zA-Z_0-9]*)\\s*(::)\\s*)*([a-zA-Z_][a-zA-Z_0-9]*)?",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "entity.name.function" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.type"
+                },
+                "3": {
+                    "name": "keyword.other"
+                },
+                "4": {
+                    "name": "entity.name.function"
+                }
             }
         },
         {
@@ -174,64 +316,122 @@
             "match": "\\bproc\\b"
         },
         {
-            "match": "\\b(struct)\\b\\s+\\b([a-zA-Z_0-9]+)\\b",
+            "match": "\\b(struct)\\b\\s+\\b([a-zA-Z_][a-zA-Z_0-9]*)\\b",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "entity.name.type" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.type"
+                }
             }
         },
         {
             "name": "stmt.macro",
-            "begin": "(#[a-zA-Z_0-9]+|\\$)\\s*(\\()",
+            "begin": "(#[a-zA-Z_][a-zA-Z_0-9]*|\\$)\\s*(\\()",
             "end": "\\)",
             "beginCaptures": {
-                "1": { "name": "entity.name.macro" },
-                "2": { "name": "entity.name.macro" }
+                "1": {
+                    "name": "entity.name.macro"
+                },
+                "2": {
+                    "name": "entity.name.macro"
+                }
             },
             "endCaptures": {
-                "0": { "name": "entity.name.macro" }
+                "0": {
+                    "name": "entity.name.macro"
+                }
             },
-            "patterns": [{ "include": "$self" }]
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
         },
         {
             "name": "stmt.macro",
             "begin": "(quote)\\s*(\\{)",
             "end": "\\}",
             "beginCaptures": {
-                "1": { "name": "entity.name.macro" },
-                "2": { "name": "entity.name.macro" }
+                "1": {
+                    "name": "entity.name.macro"
+                },
+                "2": {
+                    "name": "entity.name.macro"
+                }
             },
             "endCaptures": {
-                "0": { "name": "entity.name.macro" }
+                "0": {
+                    "name": "entity.name.macro"
+                }
             },
-            "patterns": [{ "include": "$self" }]
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
         },
         {
             "name": "stmt.macro",
             "begin": "(quote)\\s*(\\()",
             "end": "\\)",
             "beginCaptures": {
-                "1": { "name": "entity.name.macro" },
-                "2": { "name": "entity.name.macro" }
+                "1": {
+                    "name": "entity.name.macro"
+                },
+                "2": {
+                    "name": "entity.name.macro"
+                }
             },
             "endCaptures": {
-                "0": { "name": "entity.name.macro" }
+                "0": {
+                    "name": "entity.name.macro"
+                }
             },
-            "patterns": [{ "include": "$self" }]
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
         },
         {
             "begin": "\\(",
             "end": "\\)",
-            "beginCaptures": { "0": { "name": "keyword.other" } },
-            "endCaptures": { "0": { "name": "keyword.other" } },
-            "patterns": [{ "include": "$self" }]
+            "beginCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
         },
         {
             "begin": "\\{",
             "end": "\\}",
-            "beginCaptures": { "0": { "name": "keyword.other" } },
-            "endCaptures": { "0": { "name": "keyword.other" } },
-            "patterns": [{ "include": "$self" }]
+            "beginCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
         },
         {
             "name": "entity.name.type",
@@ -242,35 +442,78 @@
             "match": "\\b(i\\d+|int|type|tree|range|void|noreturn|bool|__srcc_ffi_char|__srcc_ffi_char16|__srcc_ffi_char32|__srcc_ffi_int|__srcc_ffi_long|__srcc_ffi_longdouble|__srcc_ffi_longlong|__srcc_ffi_short|__srcc_ffi_size_t|__srcc_ffi_wchar)\\b"
         },
         {
-            "match": "(\\.)(\\b([a-zA-Z_0-9]+)\\b)",
+            "begin": "(\\.)\\s*([a-zA-Z_][a-zA-Z_0-9]*)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.function"
+                },
+                "3": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
+        },
+        {
+            "match": "(\\.)\\s*([a-zA-Z_][a-zA-Z_0-9]*)",
             "captures": {
-                "1": { "name": "keyword.other" },
-                "2": { "name": "variable.other.property" }
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "variable.other.property"
+                }
             }
         },
         {
-            "match": "\\b([a-zA-Z_0-9]+)\\b(::)",
+            "name": "stmt.call",
+            "begin": "\\b([a-zA-Z_][a-zA-Z_0-9]*)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": {
+                    "name": "entity.name.function"
+                },
+                "2": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "$self"
+                }
+            ]
+        },
+        {
+            "match": "\\b([a-zA-Z_][a-zA-Z_0-9]*)\\b(::)",
             "captures": {
-                "1": { "name": "entity.name.module" },
-                "2": { "name": "keyword.other" }
+                "1": {
+                    "name": "entity.name.module"
+                },
+                "2": {
+                    "name": "keyword.other"
+                }
             }
         },
         {
             "name": "keyword.other",
             "match": "[;,\\.=:|?!\\\\/*\\-+&\\^(){}\\[\\]<>%~#\\$]"
-        },
-        {
-            "name": "stmt.call",
-            "begin": "([a-zA-Z_0-9]+)\\s*(\\()",
-            "end": "\\)",
-            "beginCaptures": {
-                "1": { "name": "entity.name.function" },
-                "2": { "name": "keyword.other" }
-            },
-            "endCaptures": {
-                "0": { "name": "keyword.other" }
-            },
-            "patterns": [{ "include": "$self" }]
         },
         {
             "name": "constant.numeric",
