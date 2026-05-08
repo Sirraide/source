@@ -25,7 +25,7 @@ void ParsedModule::dump() const {
             c,
             "%1(Import%) %4({}%) %1(as%) %4({}%)",
             utils::join(i.linkage_names),
-            i.import_name
+            i.import_name.empty() ? "*" : i.import_name
         );
 
         if (i.is_header_import) utils::Print(c, " header-import");
