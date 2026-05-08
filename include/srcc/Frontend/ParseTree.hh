@@ -111,7 +111,7 @@ public:
         Variant<Owning, NonOwning> range;
 
         Children() : range{NonOwning{}} {}
-        Children(ParsedStmt* s) : range{NonOwning{s}} {}
+        Children(ParsedStmt* s) : range{Owning{s}} {}
         Children(Owning vec) : range{std::move(vec)} {}
         Children(NonOwning ref) : range{ref} {}
         Children(std::initializer_list<ParsedStmt*> l) : range{Owning{l}} {}
@@ -347,7 +347,7 @@ public:
         SRange cond_range
     ) : ParsedStmt{Kind::AssertExpr, location},
         cond{cond},
-        message{std::move(message)},
+        message{message},
         is_compile_time{is_compile_time},
         cond_range{cond_range} {}
 

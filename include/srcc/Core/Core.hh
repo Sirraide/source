@@ -127,6 +127,10 @@ struct srcc::LangOpts {
     /// Disable the preamble.
     bool no_preamble : 1 = false;
 
+    /// Always emit a warning when importing a C++ declaration fails,
+    /// irrespective of whether it is used or now.
+    bool wcxx_import : 1 = false;
+
     /// Enable generation of code that stringifies assert messages.
     bool stringify_asserts : 1 = true;
 };

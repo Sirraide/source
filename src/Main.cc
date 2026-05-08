@@ -62,6 +62,9 @@ using options = clopts< // clang-format off
     flag<"-fshort-filenames", "Use the filename only instead of the full path in diagnostics">,
     flag<"-fruntime", "Automatically import the runtime module", {.default_value = true}>,
 
+    // Warnings.
+    flag<"-Wc++-import", "Always emit a warning when importing a C++ declaration fails">,
+
     // Some people might try and do '-fno-...'; we don’t support that, but
     // issue a more helpful error.
     multiple<short_option<"-fno-", "<dummy>", std::string, {.hidden = true}>>,
@@ -228,6 +231,7 @@ int main(int argc, char** argv) {
             .overflow_checking = opts.get<"-foverflow-checks">(),
             .no_runtime = not opts.get<"-fruntime">(),
             .no_preamble = not opts.get<"-Xpreamble">(),
+            .wcxx_import = opts.get<"-Wc++-import">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
         },
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),

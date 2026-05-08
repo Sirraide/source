@@ -139,6 +139,16 @@ public:
         return MakeErr(e, "Importing {} is not yet supported", msg);
     }
 
+    template <typename... Args>
+    void Warn(
+        SLoc loc,
+        std::format_string<Args...> fmt,
+        Args&&... args
+    ) {
+        if (not S.tu->lang_opts().wcxx_import) return;
+        S.ReportDiag(DiagsProducer::CreateWarning(loc, fmt, std::forward<Args>(args)...));
+    }
+
     auto AlreadyDiagnosed() {
         return std::unexpected(std::unique_ptr<Diagnostic>());
     }
@@ -174,10 +184,14 @@ auto Sema::Importer::ImportDecl(clang::Decl* d) -> Res<Decl*> {
 }
 
 auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
+    DebugAssert(
+        S.imported_decls.at(d).invalid() and d == GetStableCanonicalDecl(d),
+        "ImportDeclImpl() should only be called by ImportDecl()"
+    );
+
     // Ignore invalid ones.
     Assert(d);
     if (d->isInvalidDecl()) return MakeErr(d, "declaration of '{}' is invalid", d);
-    Assert(d == GetStableCanonicalDecl(d));
     switch (d->getKind()) {
         using K = clang::Decl::Kind;
         default: break;
@@ -228,10 +242,8 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
         case K::Typedef: {
             auto td = cast<clang::TypedefDecl>(d);
             auto clang_ty = td->getUnderlyingType();
-            if (clang_ty->isRecordType()) {
-                auto ty = TRY(ImportType(td->getLocation(), clang_ty));
-                return cast<StructType>(ty)->decl();
-            }
+            if (clang_ty->isRecordType())
+                return ImportDecl(clang_ty->castAsRecordDecl());
         } break;
 
         case K::Using:
@@ -269,6 +281,11 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
 }
 
 auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*> {
+    DebugAssert(
+        S.imported_decls.at(d).invalid() and d == GetStableCanonicalDecl(d),
+        "Call ImportDecl() instead of ImportFunctionImpl()"
+    );
+
     if (isa<clang::CXXMethodDecl>(d)) return NYI(d, "member functions");
 
     // If the return type hasn’t been deduced yet, we can’t import it.
@@ -345,6 +362,11 @@ auto Sema::Importer::ImportName(clang::TagDecl* td) -> StringRef {
 }
 
 auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
+    DebugAssert(
+        S.imported_decls.at(rd).invalid() and rd == GetStableCanonicalDecl(rd),
+        "Call ImportDecl() instead of ImportRecordImpl()"
+    );
+
     // Incomplete types are treated as opaque.
     if (not rd->isCompleteDefinition()) return OpaqueType::Create(
         *S.tu,
@@ -541,8 +563,12 @@ auto Sema::Importer::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
 auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
     if (not sloc.isValid()) return {};
     auto& sm = AST().getSourceManager();
-    auto f = S.ctx.try_get_file(sm.getFilename(sloc).str());
-    if (not f.has_value()) return {};
+    auto name = sm.getFilename(sloc);
+    auto f = S.ctx.try_get_file(name.str());
+    if (not f.has_value()) {
+        Warn(SLoc(), "Could not import file for source location: {}", name);
+        return {};
+    }
     return SLoc(f.value()->data() + sm.getFileOffset(sloc));
 }
 
