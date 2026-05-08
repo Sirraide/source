@@ -636,7 +636,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             for (auto param : p->param_types())
                 children.push_back(param.type);
             children.push_back(p->ret_type);
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedPtrType* p) -> Children { return SingleType(p->elem); },
@@ -651,7 +651,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             Children::Owning children;
             children.push_back(a->cond);
             if (auto msg = a->message.get_or_null()) children.push_back(msg);
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedBlockExpr* b) -> Children { return b->stmts(); },
@@ -662,7 +662,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             Children::Owning children;
             if (c->callee) children.push_back(c->callee);
             if (auto a = c->args(); not a.empty()) children.append(a.begin(), a.end());
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedDeclRefExpr* d) -> Children {
@@ -679,7 +679,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             for (auto& enumerator : e->enumerators())
                 if (enumerator.value.present())
                     children.push_back(enumerator.value.get());
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedEvalExpr* e) -> Children { return e->expr; },
@@ -688,13 +688,13 @@ auto ParsedStmt::children(bool include_types) -> Children {
         [&](ParsedForStmt* f) -> Children {
             Children::Owning children{f->ranges()};
             children.push_back(f->body);
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedIfExpr* i) -> Children {
             Children::Owning children{i->cond, i->then};
             if (auto e = i->else_.get_or_null()) children.push_back(e);
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedInjectExpr* i) -> Children { return i->injected; },
@@ -712,7 +712,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
                 children.push_back(c.cond);
                 children.push_back(c.body);
             }
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedMemberExpr* m) -> Children {  return m->base; },
@@ -721,7 +721,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             Children::Owning children;
             if (include_types) children.push_back(v->type);
             if (v->init) children.push_back(v->init.get());
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedQuoteExpr* q) -> Children {
@@ -742,7 +742,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             append_range(children, p->params());
             if (auto where = p->where.get_or_null()) children.push_back(where);
             if (auto b = p->body.get_or_null()) children.push_back(b);
-            return children;
+            return std::move(children);
         },
 
         [&](ParsedStrLitExpr*) -> Children { return {}; },
