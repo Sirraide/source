@@ -401,6 +401,9 @@ public:
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
     void CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset = {});
 
+    void AddDiagRemark(std::string&& s) { tu.context().diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { tu.context().diags().report(std::move(d)); }
+
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
         tu.context().diags().diag(lvl, where, fmt, std::forward<Args>(args)...);

@@ -173,6 +173,12 @@ enum class srcc::ScopeKind : base::u8 {
 
     /// A struct declaration.
     Struct,
+
+    /// Scope of a module; this is used to store exports.
+    Module,
+
+    // NOTE: Adjust the PointerUnion in 'Scope' if adding an enumerator leads
+    // to us requiring more bits to store this.
 };
 
 /// Value category of an rvalue used for evaluation; this is strictly

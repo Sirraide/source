@@ -1,8 +1,9 @@
 // V %srcc --parse --verify %s
 program test;
 
-proc :: {} // expected-error: Operator '::' cannot be overloaded
-proc . {} // expected-error: Operator '.' cannot be overloaded
+// FIXME: Without the semicolons synchronisation is poor here.
+proc :: {}; // expected-error: Operator '::' cannot be overloaded
+proc . {}; // expected-error: Operator '.' cannot be overloaded
 
 proc [] {}
 proc ++ {}
@@ -58,7 +59,7 @@ proc and {}
 proc or {}
 proc xor {}
 
-proc = {} // expected-error: Operator '=' cannot be overloaded
+proc = {}; // expected-error: Operator '=' cannot be overloaded
 proc += {}
 proc -= {}
 proc *= {}
@@ -81,8 +82,8 @@ proc += = 3;
 proc + -> int = 3;
 proc + extern -> int;
 
-proc ( () {} // expected-error: To overload the call operator, write 'proc ()'
-proc [ {} // expected-error: To overload the subscript operator, write 'proc []'
+proc ( () {}; // expected-error: To overload the call operator, write 'proc ()'
+proc [ {}; // expected-error: To overload the subscript operator, write 'proc []'
 
 // Error recovery of this is ... not great because '{}' parses as a valid type.
 proc ( {} // expected-error 2 (Unexpected token in procedure argument list) expected-error ((Expected ')')) expected-error (Procedures declared with 'proc' must have a name)

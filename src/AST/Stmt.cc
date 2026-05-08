@@ -1,7 +1,7 @@
 #include <srcc/AST/AST.hh>
 #include <srcc/AST/Enums.hh>
 #include <srcc/AST/Stmt.hh>
-#include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/ParseTree.hh>
 
 #include <clang/AST/Mangle.h>
 

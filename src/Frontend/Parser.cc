@@ -11,11 +11,74 @@
 #include <utility>
 
 using namespace srcc;
+using namespace srcc::parser;
 
 #define TRY(x, ...)       ({auto _x = x; if (not _x) { __VA_ARGS__ ; return {}; } *_x; })
 #define TryParseExpr() TRY(ParseExpr())
 #define TryParseStmt() TRY(ParseStmt())
 #define TryParseType() TRY(ParseType())
+
+// ============================================================================
+//  Tentative Parsing
+// ============================================================================
+void Parser::AddDiagRemark(std::string&& s) {
+    if (tentative) {
+        if (not tentative->caught_diags.empty())
+            tentative->caught_diags.back().extra += s;
+    } else {
+        diags().add_remark(std::move(s));
+    }
+}
+
+void Parser::ReportDiag(Diagnostic&& d) {
+    using enum Diagnostic::Level;
+    if (d.level == Ignored) return;
+    if (tentative) {
+        tentative->caught_diags.push_back(std::move(d));
+        has_diag = true;
+        if (d.level == Error) has_error = true;
+        return;
+    }
+
+    diags().report(std::move(d));
+}
+
+TentativeParseScope::TentativeParseScope(Parser& p)
+    : p{p}, saved_state{static_cast<const State&>(p)} {
+    p.tentative = this;
+    p.has_diag = false;
+    p.has_error = false;
+}
+
+TentativeParseScope::~TentativeParseScope() {
+    p.State::operator=(saved_state);
+}
+
+void TentativeParseScope::commit() {
+    // Update the saved state to reflect the current state,
+    // nut keep the parent action.
+    auto parent_action = parent();
+    saved_state.State::operator=(p);
+    saved_state.tentative = parent_action;
+
+    // If we have any diagnostics, either add them to the parent,
+    // or emit them now if there is no parent.
+    if (parent_action) {
+        append_range(parent_action->caught_diags, std::move(caught_diags));
+        caught_diags.clear();
+    } else {
+        for (auto& d : caught_diags) p.ReportDiag(std::move(d));
+    }
+}
+
+bool TentativeParseScope::ok() {
+    return not p.has_error;
+}
+
+auto TentativeParseScope::parent() -> TentativeParseScope* {
+    if (saved_state.tentative) return saved_state.tentative;
+    return nullptr;
+}
 
 // ============================================================================
 //  Parser Helpers
@@ -301,6 +364,8 @@ bool Parser::AtStartOfExpression() {
         case Tk::Return:
         case Tk::StringLiteral:
         case Tk::TemplateType:
+        case Tk::ThisLower:
+        case Tk::ThisUpper:
         case Tk::Tilde:
         case Tk::Tree:
         case Tk::True:
@@ -360,6 +425,26 @@ bool Parser::ConsumeOrError(Tk tk) {
         return false;
     }
     return true;
+}
+
+auto Parser::CreateDRE(parser::ScopeSpec&& ss, DeclNameLoc name) -> ParsedDeclRefExpr* {
+    Assert(not name.name.empty());
+    ss.names.push_back(name);
+
+    InitialDREScope s = [&]{
+        if (ss.global_loc.is_valid()) return InitialDREScope::Global;
+        if (ss.expr.present()) return InitialDREScope::Expr;
+        return InitialDREScope::None;
+    }();
+
+    SLoc loc = [&]{
+        if (ss.global_loc.is_valid()) return ss.global_loc;
+        if (ss.expr.present()) return ss.expr.get()->loc;
+        return ss.names.front().loc;
+    }();
+
+    Assert(loc.is_valid());
+    return ParsedDeclRefExpr::Create(*this, s, ss.expr, ss.names, loc);
 }
 
 auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
@@ -560,25 +645,30 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
-// <expr-decl-ref> ::= [ "::" ] IDENTIFIER [ "::" <expr-decl-ref> ]
-auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
-    SmallVector<DeclName> strings;
-    auto scope = InitialDREScope::None;
-    auto loc = tok->location;
-    if (Consume(Tk::ColonColon))
-        scope = InitialDREScope::Global;
+// <expr-decl-ref> ::= [ "::" | <expr> "::" ] { IDENT "::" } ( IDENT | <operator-name> )
+auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<ParsedStmt> {
+    auto ss = ParseOptionalScopeSpec(root_expr);
 
-    do {
-        if (not At(Tk::Identifier)) {
-            Error("Expected identifier after '::'");
-            SkipTo(Tk::Semicolon);
-            return {};
+    // Parse the last segment.
+    if (At(Tk::Identifier)) {
+        auto dre = CreateDRE(std::move(ss), {tok->text, tok->location});
+        Next();
+        return dre;
+    }
+
+    if (auto op = ParseOverloadableOperatorName()) {
+        // We can't have another '::' after the operator.
+        if (At(Tk::ColonColon)) {
+            Error("Operator name cannot be followed by '%1(::%)'");
+            return nullptr;
         }
 
-        strings.push_back(tok->text);
-        Next();
-    } while (Consume(Tk::ColonColon));
-    return ParsedDeclRefExpr::Create(*this, scope, strings, loc);
+        return CreateDRE(std::move(ss), *op);
+    }
+
+    if (ctx == DREContext::AfterHashInMacroCall) Error("Expected macro name or keyword after '%1(#%)'");
+    else Error("Expected identifier or operator name after '%1(::%)'");
+    return nullptr;
 }
 
 // This parses expressions and also some declarations (e.g.
@@ -602,6 +692,7 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 //          | <expr-quote>
 //          | <expr-return>
 //          | <expr-subscript>
+//          | <expr-this>
 //          | <expr-tuple>
 //          | <expr-postfix>
 //          | <expr-with>
@@ -624,8 +715,8 @@ auto Parser::ParseDeclRefExpr() -> Ptr<ParsedDeclRefExpr> {
 // <type-typeof> ::= TYPEOF "(" <expr> ")"
 // <type-range> ::= RANGE "<" <type> ">"
 // <qualifier> ::= "[" "]" | "^" | "?" | VAL
-// <type-prim> ::= BOOL | INT | VOID | VAR | INTEGER_TYPE
-auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
+// <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | NORETURN |INTEGER_TYPE | "This"
+auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> {
     auto BuiltinType = [&](Type ty) {
         return new (*this) ParsedBuiltinType(ty, Next());
     };
@@ -668,8 +759,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                     }
 
                     // <expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <call-args> ] ")"
-                    if (not At(Tk::Identifier)) return Error("Expected macro name or keyword after '%1(#%)'");
-                    auto ident = TRY(ParseDeclRefExpr());
+                    auto ident = TRY(ParseDeclRefExpr(DREContext::AfterHashInMacroCall));
 
                     // Parse arguments as '#quote'd.
                     BracketTracker parens{*this, Tk::LParen};
@@ -730,9 +820,19 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = ParseIf(false);
             break;
 
-        case Tk::Identifier:
+        case Tk::Identifier: {
+            // If we have 'IDENT::', we can just delegate to the DRE parsing code;
+            // otherwise, this is an unqualified name.
+            if (LookAhead().is(Tk::ColonColon)) {
+                lhs = ParseDeclRefExpr(DREContext::ColonColon);
+            } else {
+                lhs = ParsedDeclRefExpr::Create(*this, {tok->text, tok->location});
+                Next();
+            }
+        } break;
+
         case Tk::ColonColon:
-            lhs = ParseDeclRefExpr();
+            lhs = ParseDeclRefExpr(DREContext::ColonColon);
             break;
 
         case Tk::Match:
@@ -775,6 +875,12 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedTypeofType(arg, loc);
         } break;
 
+        // <expr-this> ::= "this"
+        case Tk::ThisLower:
+            lhs = new (*this) ParsedThisExpr(false, tok->location);
+            Next();
+            break;
+
         // <expr-return>   ::= RETURN [ <expr> ]
         case Tk::Return: {
             auto loc = Next();
@@ -784,48 +890,15 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             lhs = new (*this) ParsedReturnExpr{value, loc};
         } break;
 
-        // <expr-paren> ::= "(" <expr> ")"
-        // <expr-tuple> ::= "(" [ <expr> { "," <expr> } [ "," ] ] ")"
-        case Tk::LParen: {
-            BracketTracker parens{*this, Tk::LParen};
+        case Tk::LParen:
+            lhs = ParseParenExpr();
+            break;
 
-            // '()'.
-            if (At(Tk::RParen)) {
-                parens.close();
-                lhs = ParsedTupleExpr::Create(*this, {}, parens.left);
-                break;
-            }
-
-            // Parenthesised expression.
-            lhs = ParseExpr();
-            if (At(Tk::RParen)) {
-                parens.close();
-                if (not lhs) return {};
-                lhs = new (*this) ParsedParenExpr{lhs.get(), parens.left};
-                break;
-            }
-
-            // Tuple.
-            SmallVector<ParsedStmt*> exprs;
-            if (lhs) exprs.push_back(lhs.get());
-            do {
-                // Error about a missing comma, and skip multiple consecutive commas.
-                if (not Consume(Tk::Comma)) Error("Expected '%1(,%)' in tuple");
-                while (Consume(Tk::Comma)) Error(std::prev(tok)->location, "Unexpected ','");
-                if (At(Tk::RParen)) break;
-
-                lhs = ParseExpr();
-                if (lhs) exprs.push_back(lhs.get());
-                else SkipTo(Tk::Comma, Tk::RParen);
-            } while (not At(Tk::RParen, Tk::Eof));
-            parens.close();
-            lhs = ParsedTupleExpr::Create(*this, exprs, parens.left);
-        } break;
-
-        // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | NORETURN
+        // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | NORETURN | INTEGER_TYPE | "This"
         case Tk::Bool: lhs = BuiltinType(Type::BoolTy); break;
         case Tk::Int: lhs = BuiltinType(Type::IntTy); break;
         case Tk::NoReturn: lhs = BuiltinType(Type::NoReturnTy); break;
+        case Tk::ThisUpper: lhs = new (*this) ParsedThisExpr(true, Next()); break;
         case Tk::Tree: lhs = BuiltinType(Type::TreeTy); break;
         case Tk::Type: lhs = BuiltinType(Type::TypeTy); break;
         case Tk::Void: lhs = BuiltinType(Type::VoidTy); break;
@@ -847,7 +920,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
             if (not ParseSignature(sig, nullptr, false)) return nullptr;
 
             // A procedure name is not allowed here.
-            if (not sig.name.empty()) Error(
+            if (not sig.name.name.empty()) Error(
                 sig.tok_after_proc,
                 "A name is not allowed in a procedure type"
             );
@@ -875,7 +948,6 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
 
             // Drop the '$' from the type.
             auto ty = new (*this) ParsedTemplateType(tok->text.drop(), tok->location);
-            current_signature->add_deduced_template_param(ty->name);
             Next();
             lhs = ty;
         } break;
@@ -899,7 +971,7 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                 break;
             }
 
-            if (expect_type) Error("Expected type");
+            if (flags & ParseExprFlags::ExpectType) Error("Expected type");
             else Error("Expected expression");
             return {};
         }
@@ -957,6 +1029,12 @@ auto Parser::ParseExpr(int precedence, bool expect_type) -> Ptr<ParsedStmt> {
                     index,
                     lhs.get()->loc
                 };
+                continue;
+            }
+
+            case Tk::ColonColon: {
+                Next();
+                lhs = ParseDeclRefExpr(DREContext::ColonColon, lhs);
                 continue;
             }
 
@@ -1392,65 +1470,105 @@ auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl> {
     return decl;
 }
 
+auto Parser::ParseOptionalScopeSpec(const Ptr<ParsedStmt> start_expr) -> ScopeSpec {
+    ScopeSpec ss;
+    ss.expr = start_expr;
+
+    // Check if this starts with '::'.
+    if (ss.empty()) Consume(ss.global_loc, Tk::ColonColon);
+
+    // Parse an expression if we have one followed by a colon and if the scope
+    // specifier is still empty.
+    auto TryParseExpression = [&] {
+        // An expression is only allowed if the SS is entirely empty.
+        if (not ss.empty())
+            return false;
+
+        // Try parse an expression; take care to set the precedence high enough to
+        // ensure that any subsequent '::' isn't interpreted as part of it.
+        TentativeParseScope scope{*this};
+        static constexpr int Prec = BinaryOrPostfixPrecedence(Tk::ColonColon) + 1;
+        auto e = ParseExpr(Prec);
+        if (e.present() and scope.ok() and At(Tk::ColonColon)) {
+            scope.commit();
+            ss.expr = e;
+            return true;
+        }
+
+        return false;
+    };
+
+    // Parse the chain of names.
+    do {
+        // Either 'IDENT::', or an expression.
+        if (At(Tk::Identifier)) {
+            if (LookAhead().is(Tk::ColonColon)) {
+                ss.names.emplace_back(tok->text, tok->location);
+                Next();
+                continue;
+            }
+
+            if (TryParseExpression())
+                continue;
+
+            // This identifier is not part of the scope specifier.
+            break;
+        }
+
+        // The first element may be some other expression.
+        if (not TryParseExpression())
+            break;
+    } while (Consume(Tk::ColonColon));
+
+    Assert(ss.empty() or std::prev(tok)->is(Tk::ColonColon));
+    return ss;
+}
+
 /// Check if the current token represents an operator name that
 /// can be used in a function definition to define an overloaded
 /// operator function.
 ///
 /// Note that it’s possible for this function to do nothing at all
 /// if this is a signature without a name.
-void Parser::ParseOverloadableOperatorName(Signature& sig) {
+auto Parser::ParseOverloadableOperatorName() -> std::optional<DeclNameLoc> {
     // Parse 'proc ()' as the call operator. For an empty argument list,
     // people should just omit the '()' (and for anonymous functions, we
     // shouldn’t even be using 'proc' in the first place...).
-    //
-    // Note that '(' on its own is not an operator, but rather the start
-    // of an argument list, so don’t error in that case. Also correct
-    // 'proc ( (' to 'proc () ('.
     if (At(Tk::LParen)) {
-        if (LookAhead().is(Tk::RParen, Tk::LParen)) {
-            sig.name = Tk::LParen;
+        if (LookAhead().is(Tk::RParen)) {
             BracketTracker parens{*this, Tk::LParen, false};
-            if (not parens.close()) Error(
-                parens.left,
-                "To overload the call operator, write '%1(proc ()%)'"
-            );
+            Assert(parens.close());
+            return DeclNameLoc{Tk::LParen, parens.left};
         }
     }
 
     // Similarly, '[]' is a valid operator.
     else if (At(Tk::LBrack)) {
-        sig.name = Tk::LBrack;
-        BracketTracker brackets{*this, Tk::LBrack, false};
-        if (not brackets.close()) Error(
-            brackets.left,
-            "To overload the subscript operator, write '%1(proc []%)'"
-        );
+        if (LookAhead().is(Tk::RBrack)) {
+            BracketTracker brackets{*this, Tk::LBrack, false};
+            Assert(brackets.close());
+            return DeclNameLoc{Tk::LBrack, brackets.left};
+        }
     }
 
     // Handle other builtin operators.
     else if (
         BinaryOrPostfixPrecedence(tok->type) != NotAnOperator or
-        IsPrefix(tok->type)
-    ) {
-        if (At(Tk::Assign, Tk::ColonColon, Tk::Dot)) Error(
-            "Operator '{}' cannot be overloaded",
-            tok->type
-        );
-
-        // Continue parsing either way.
-        sig.name = tok->type;
-        Next();
-    }
+        IsPrefix(tok->type) or
+        IsPostfix(tok->type)
+    ) return DeclNameLoc{tok->type, Next()};
+    return std::nullopt;
 }
 
 // <param-decl>  ::= [ WITH ] [ <intent> ] <param-rest>
-// <param-rest>  ::= <type> [ "..." ] [ IDENT ] | <signature>
+// <param-rest>  ::= <type> [ "..." ] [ IDENT ] | "this" | <signature>
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
     String name;
     SLoc name_loc;
     SLoc with_loc;
     bool variadic = false;
+    bool is_this = false;
     Consume(with_loc, Tk::With);
 
     // Parse intent.
@@ -1474,19 +1592,29 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     if (At(Tk::Proc)) {
         Signature inner;
         if (not ParseSignature(inner, nullptr, false)) return false;
-        if (inner.name.is_operator_name()) {
-            Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name);
+        if (inner.name.name.is_operator_name()) {
+            Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name.name);
         } else {
-            name = inner.name.str();
+            name = inner.name.name.str();
             name_loc = inner.tok_after_proc;
         }
 
         type = CreateType(inner);
+    }
 
-        // For all template parameters that appear in the signature,
-        // add the index of the parameter that is the signature.
-        for (const auto& p : inner.deduction_info)
-            sig.add_deduced_template_param(p.first);
+    // As well as lowercase 'this'. This is equivalent to 'with This this'.
+    else if (At(Tk::ThisLower)) {
+        type = new (*this) ParsedThisExpr(true, tok->location);
+        name = "this";
+        name_loc = tok->location;
+        is_this = true;
+
+        if (with_loc.is_valid()) Warn(
+            with_loc,
+            "'%1(with%)' is redundant here as it is implied by '%1(this%)'"
+        );
+
+        Next();
     }
 
     // Otherwise, parse a regular type and a name if we’re
@@ -1497,6 +1625,11 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         variadic = Consume(Tk::Ellipsis);
     }
 
+    if (is_this and variadic) {
+        Error(name_loc, "'%1(this%)' parameter cannot be variadic");
+        variadic = false;
+    }
+
     sig.param_types.emplace_back(intent, type.get(), variadic);
 
     // If decls is not null, then we allow named parameters here; parse
@@ -1504,8 +1637,11 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     if (decls) {
         if (At(Tk::Identifier)) {
             if (not name.empty()) {
-                Error("Parameter cannot have two names");
-                Note(name_loc, "Name was already specified here");
+                if (is_this) Error("'%1(this%)' parameter cannot have an additional name");
+                else {
+                    Error("Parameter cannot have two names");
+                    Note(name_loc, "Name was already specified here");
+                }
             }
 
             name = tok->text;
@@ -1513,7 +1649,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         } else if (not At(Tk::Comma, Tk::RParen)) {
             if (IsKeyword(tok->type)) {
                 Error(
-                    "'%1({})' is not a valid parameter name because it is "
+                    "'%1({}%)' is not a valid parameter name because it is "
                     "a reserved word.",
                     tok->text
                 );
@@ -1524,7 +1660,15 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             SkipTo(Tk::Comma, Tk::RParen);
         }
 
-        decls->push_back(new (*this) ParsedVarDecl{name, type.get(), start_loc, intent, false, with_loc});
+        decls->push_back(new (*this) ParsedVarDecl{
+            name,
+            type.get(),
+            start_loc,
+            intent,
+            false,
+            is_this,
+            with_loc
+        });
     } else {
         if (At(Tk::Identifier)) {
             Error("Named parameters are not allowed here");
@@ -1542,6 +1686,43 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     return true;
 }
 
+// <expr-paren> ::= "(" <expr> ")"
+// <expr-tuple> ::= "(" [ <expr> { "," <expr> } [ "," ] ] ")"
+auto Parser::ParseParenExpr() -> Ptr<ParsedStmt> {
+    Assert(At(Tk::LParen));
+    BracketTracker parens{*this, Tk::LParen};
+
+    // '()'.
+    if (At(Tk::RParen)) {
+        parens.close();
+        return ParsedTupleExpr::Create(*this, {}, parens.left);
+    }
+
+    // Parenthesised expression.
+    auto expr = ParseExpr();
+    if (At(Tk::RParen)) {
+        parens.close();
+        if (not expr) return {};
+        return new (*this) ParsedParenExpr{expr.get(), parens.left};
+    }
+
+    // Tuple.
+    SmallVector<ParsedStmt*> exprs;
+    if (expr) exprs.push_back(expr.get());
+    do {
+        // Error about a missing comma, and skip multiple consecutive commas.
+        if (not Consume(Tk::Comma)) Error("Expected '%1(,%)' in tuple");
+        while (Consume(Tk::Comma)) Error(std::prev(tok)->location, "Unexpected ','");
+        if (At(Tk::RParen)) break;
+
+        expr = ParseExpr();
+        if (expr) exprs.push_back(expr.get());
+        else SkipTo(Tk::Comma, Tk::RParen);
+    } while (not At(Tk::RParen, Tk::Eof));
+    parens.close();
+    return ParsedTupleExpr::Create(*this, exprs, parens.left);
+}
+
 // <preamble> ::= <header> { <import> }
 void Parser::ParsePreamble() {
     ParseHeader();
@@ -1557,10 +1738,18 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     if (not ParseSignature(sig, &param_decls, true)) return nullptr;
 
     // The 'proc' syntax requires a name.
-    if (sig.name.empty()) {
-        Error("Procedures declared with '%1(proc%)' must have a name");
-        return nullptr;
-    }
+    if (sig.name.name.empty())
+        return Error("Procedures declared with '%1(proc%)' must have a name");
+
+    // Disallow certain operators.
+    if (
+        sig.name.name.is_operator_name() and
+        Is(sig.name.name.operator_name(), Tk::Assign, Tk::ColonColon, Tk::Dot)
+    ) return Error(
+        sig.name.loc,
+        "Operator '{}' cannot be overloaded",
+        sig.name
+    );
 
     // If we failed to parse a return type, or if there was
     // none, just default to void instead, or deduce the type
@@ -1606,16 +1795,14 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
 
     auto proc = ParsedProcDecl::Create(
         *this,
-        sig.name,
+        sig.name.name,
+        sig.associated_type,
         CreateType(sig),
         param_decls,
         body,
         sig.where,
-        sig.name.empty() ? sig.proc_loc : sig.tok_after_proc
+        sig.name.name.empty() ? sig.proc_loc : sig.name.loc
     );
-
-    if (not sig.deduction_info.empty())
-        mod->template_deduction_infos[proc] = std::move(sig.deduction_info);
 
     return proc;
 }
@@ -1717,7 +1904,7 @@ bool Parser::ParseSignature(
     return ParseSignatureImpl(decls, allow_constraint);
 }
 
-// <signature>  ::= PROC [ IDENTIFIER ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
+// <signature>  ::= PROC [ <expr-decl-ref> ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 // <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 // <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
 // <proc-where> ::= WHERE <expr>
@@ -1728,14 +1915,55 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
     // Yeet 'proc'.
     sig.proc_loc = Next();
 
-    // Parse name.
+    // Parse scope specifier.
     sig.tok_after_proc = tok->location;
-    if (At(Tk::Identifier)) {
-        sig.name = tok->text;
-        Next();
-    } else {
-        ParseOverloadableOperatorName(sig);
+    auto ss = ParseOptionalScopeSpec();
+    if (not ss.empty()) {
+        // Just 'proc ::f() {}' is invalid.
+        if (ss.names.empty() and ss.expr.invalid()) {
+            Assert(ss.global_loc.is_valid());
+
+            // If the next token is not an identifier, instead diagnose that '::'
+            // can't be overloaded. Also return in that case since the parser will
+            // just get confused otherwise.
+            if (not At(Tk::Identifier)) return Error(ss.global_loc, "Operator '%1(::%)' cannot be overloaded");
+            else Error(ss.global_loc, "Associated procedure type cannot consist of just '%1(::%)'");
+        }
+
+        // We only have an expression.
+        else if (ss.names.empty()) {
+            Assert(ss.expr.present());
+            sig.associated_type = ss.expr;
+        }
+
+        // We have at least one name.
+        else {
+            auto name = ss.names.pop_back_val();
+            sig.associated_type = CreateDRE(std::move(ss), name);
+        }
     }
+
+    // Parse name.
+    //
+    // Also correct 'proc ( (' to 'proc () (' as well as 'proc [' to 'proc []'.
+    if (At(Tk::Identifier)) {
+        sig.name = {tok->text, tok->location};
+        Next();
+    } else if (auto op = ParseOverloadableOperatorName()) {
+        sig.name = *op;
+    } else if (At(Tk::LParen) and LookAhead().is(Tk::LParen)) {
+        Error("To overload the call operator, write '%1(proc ()%)'");
+        auto loc = NextTokenImpl(); // Consume the mismatched '('.
+        sig.name = {Tk::LParen, loc};
+    } else if (At(Tk::LBrack)) {
+        Error("To overload the subscript operator, write '%1(proc []%)'");
+        auto loc = NextTokenImpl(); // Consume the mismatched '['.
+        sig.name = {Tk::LBrack, loc};
+    }
+
+    // If we have a scope, specifier, then we must also have a name.
+    if (sig.associated_type.present() and sig.name.name.empty())
+        Error("Expected name after %1('::'%)");
 
     // Parse params.
     if (At(Tk::LParen)) {
@@ -1939,6 +2167,10 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                     ParsedUnquoteExpr
                 >(s)) return true;
 
+                // 'This' is a type, but 'this' isn't.
+                if (auto t = dyn_cast<ParsedThisExpr>(s))
+                    return t->is_type;
+
                 // Subscripts could be array types instead.
                 if (auto bin = dyn_cast<ParsedBinaryExpr>(s))
                     return bin->op == Tk::LBrack;
@@ -2030,4 +2262,8 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
 
     braces.close();
     return ParsedStructDecl::Create(*this, name, fields, struct_loc);
+}
+
+auto Parser::ParseType(int precedence) -> Ptr<ParsedStmt> {
+    return ParseExpr(precedence, parser::ParseExprFlags::ExpectType);
 }

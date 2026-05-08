@@ -129,7 +129,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> utils::Falsy {
-        This.diags().report(DiagsProducer::CreateError(where, fmt, std::forward<Args>(args)...));
+        This.ReportDiag(DiagsProducer::CreateError(where, fmt, std::forward<Args>(args)...));
         return utils::Falsy();
     }
 
@@ -140,7 +140,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) -> utils::Falsy {
-        This.diags().report(DiagsProducer::CreateICE(where, fmt, std::forward<Args>(args)...));
+        This.ReportDiag(DiagsProducer::CreateICE(where, fmt, std::forward<Args>(args)...));
         return utils::Falsy();
     }
 
@@ -151,7 +151,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.diags().report(DiagsProducer::CreateNote(loc, fmt, std::forward<Args>(args)...));
+        This.ReportDiag(DiagsProducer::CreateNote(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
@@ -161,7 +161,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.diags().report(DiagsProducer::CreateWarning(loc, fmt, std::forward<Args>(args)...));
+        This.ReportDiag(DiagsProducer::CreateWarning(loc, fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
@@ -170,7 +170,7 @@ public:
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
-        This.diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
+        This.AddDiagRemark(std::format(fmt, std::forward<Args>(args)...));
     }
 };
 

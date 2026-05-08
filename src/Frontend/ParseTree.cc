@@ -115,20 +115,58 @@ auto ParsedCallExpr::Create(
     return ::new (mem) ParsedCallExpr{callee, args, location};
 }
 
-ParsedDeclRefExpr::ParsedDeclRefExpr(InitialDREScope scope, ArrayRef<DeclName> names, SLoc location)
-    : ParsedStmt(Kind::DeclRefExpr, location), num_parts(u32(names.size())), scope(scope) {
+ParsedDeclRefExpr::ParsedDeclRefExpr(
+    InitialDREScope scope,
+    Ptr<ParsedStmt> root,
+    ArrayRef<DeclNameLoc> names,
+    SLoc location
+) : ParsedStmt(Kind::DeclRefExpr, location),
+    num_parts(u32(names.size())),
+    root_scope{root, scope} {
     std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects());
+    Assert(not empty(), "Empty DRE!");
 }
 
 auto ParsedDeclRefExpr::Create(
     Parser& parser,
     InitialDREScope scope,
-    ArrayRef<DeclName> names,
+    Ptr<ParsedStmt> root,
+    ArrayRef<DeclNameLoc> names,
     SLoc location
 ) -> ParsedDeclRefExpr* {
-    const auto size = totalSizeToAlloc<DeclName>(names.size());
+    const auto size = totalSizeToAlloc<DeclNameLoc>(names.size());
     auto mem = parser.allocate(size, alignof(ParsedDeclRefExpr));
-    return ::new (mem) ParsedDeclRefExpr{scope, names, location};
+    return ::new (mem) ParsedDeclRefExpr{scope, root, names, location};
+}
+
+bool ParsedDeclRefExpr::empty() const {
+    return names().empty();
+}
+
+bool ParsedDeclRefExpr::is_single_ident() const {
+    return num_parts == 1 and
+           names().front().name.is_str() and
+           initial_scope() == InitialDREScope::None;
+}
+
+auto ParsedDeclRefExpr::to_string() const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    switch (initial_scope()) {
+        case srcc::InitialDREScope::None: break;
+        case srcc::InitialDREScope::Global: out += "%1(::%)"; break;
+        case srcc::InitialDREScope::Expr: out += "<expr>"; break;
+    }
+
+    if (names().empty())
+        return out;
+
+    for (auto n : names().drop_back()) {
+        out += utils::Escape(n.name.str(), false, true);
+        out += "%1(::%)";
+    }
+
+    out += utils::Escape(names().back().name.str(), false, true);
+    return out;
 }
 
 ParsedMatchExpr::ParsedMatchExpr(
@@ -263,6 +301,7 @@ auto ParsedEnumDecl::Create(
 
 ParsedProcDecl::ParsedProcDecl(
     DeclName name,
+    Ptr<ParsedStmt> associated_type,
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
@@ -271,7 +310,8 @@ ParsedProcDecl::ParsedProcDecl(
 ) : ParsedDecl{Kind::ProcDecl, name, location},
     body{body},
     type{type},
-    where{where} {
+    where{where},
+    associated_type{associated_type} {
     std::uninitialized_copy_n(
         param_decls.begin(),
         param_decls.size(),
@@ -282,6 +322,7 @@ ParsedProcDecl::ParsedProcDecl(
 auto ParsedProcDecl::Create(
     Parser& parser,
     DeclName name,
+    Ptr<ParsedStmt> associated_type,
     ParsedProcType* type,
     ArrayRef<ParsedVarDecl*> param_decls,
     Ptr<ParsedStmt> body,
@@ -290,7 +331,15 @@ auto ParsedProcDecl::Create(
 ) -> ParsedProcDecl* {
     const auto size = totalSizeToAlloc<ParsedVarDecl*>(param_decls.size());
     auto mem = parser.allocate(size, alignof(ParsedProcDecl));
-    return ::new (mem) ParsedProcDecl{name, type, param_decls, body, where, location};
+    return ::new (mem) ParsedProcDecl{
+        name,
+        associated_type,
+        type,
+        param_decls,
+        body,
+        where,
+        location,
+    };
 }
 
 ParsedStructDecl::ParsedStructDecl(
@@ -354,32 +403,20 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 #       define PARSE_TREE_LEAF_TYPE(n) case Kind::n:
 #       include "srcc/ParseTree.inc"
             print("%1(Type%) {}\n", s->dump_as_type());
-            break;
+            return;
 
         case Kind::AssertExpr: {
-            auto& a = *cast<ParsedAssertExpr>(s);
             PrintHeader(s, "AssertExpr");
-            SmallVector<ParsedStmt*, 2> children;
-            children.push_back(a.cond);
-            if (auto msg = a.message.get_or_null()) children.push_back(msg);
-            PrintChildren(children);
         } break;
 
         case Kind::BlockExpr: {
-            auto& b = *cast<ParsedBlockExpr>(s);
             PrintHeader(s, "BlockExpr");
-
-            SmallVector<ParsedStmt*, 10> children;
-            if (auto a = b.stmts(); not a.empty()) children.append(a.begin(), a.end());
-            PrintChildren(children);
         } break;
 
         case Kind::BinaryExpr: {
             auto& b = *cast<ParsedBinaryExpr>(s);
             PrintHeader(s, "BinaryExpr", false);
             print("%1({}%)\n", utils::Escape(Spelling(b.op), false, true));
-            SmallVector<ParsedStmt*, 2> children{b.lhs, b.rhs};
-            PrintChildren(children);
         } break;
 
         case Kind::BoolLitExpr: {
@@ -396,30 +433,18 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         } break;
 
         case Kind::CallExpr: {
-            auto& c = *cast<ParsedCallExpr>(s);
             PrintHeader(s, "CallExpr");
-
-            SmallVector<ParsedStmt*, 10> children;
-            if (c.callee) children.push_back(c.callee);
-            if (auto a = c.args(); not a.empty()) children.append(a.begin(), a.end());
-            PrintChildren(children);
         } break;
 
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(s);
             PrintHeader(s, "DeclRefExpr", false);
-            switch (d.scope) {
-                using enum InitialDREScope;
-                case None: break;
-                case Global: print("::");
-            }
-            print("%8({}%)\n", utils::join(d.names(), "::"));
+            print("%8({}%)\n", d.to_string());
         } break;
 
-        case Kind::DeferStmt: {
+        case Kind::DeferStmt:
             PrintHeader(s, "DeferStmt");
-            PrintChildren(cast<ParsedDeferStmt>(s)->body);
-        } break;
+            break;
 
         case Kind::EmptyStmt:
             PrintHeader(s, "EmptyStmt");
@@ -436,19 +461,16 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
                 if (enumerator.value) PrintChildren(enumerator.value.get());
             });
             PrintChildren<Child>(children);
-        } break;
+            return;
+        }
 
-        case Kind::EvalExpr: {
-            auto& v = *cast<ParsedEvalExpr>(s);
+        case Kind::EvalExpr:
             PrintHeader(s, "EvalExpr");
-            PrintChildren(v.expr);
-        } break;
+            break;
 
-        case Kind::ExportDecl: {
-            auto& e = *cast<ParsedExportDecl>(s);
+        case Kind::ExportDecl:
             PrintHeader(s, "ExportDecl");
-            PrintChildren(e.decl);
-        } break;
+            break;
 
         case Kind::FieldDecl: {
             auto& f = *cast<ParsedFieldDecl>(s);
@@ -471,23 +493,16 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             }
 
             print("\n");
-            SmallVector<ParsedStmt*> children{f.ranges()};
-            children.push_back(f.body);
-            PrintChildren(children);
         } break;
 
         case Kind::IfExpr: {
             auto& i = *cast<ParsedIfExpr>(s);
             PrintHeader(s, "IfExpr", not i.is_static);
             if (i.is_static) print("static\n");
-            SmallVector<ParsedStmt*, 3> children{i.cond, i.then};
-            if (auto e = i.else_.get_or_null()) children.push_back(e);
-            PrintChildren(children);
         } break;
 
         case Kind::InjectExpr: {
             PrintHeader(s, "InjectExpr");
-            PrintChildren(cast<ParsedInjectExpr>(s)->injected);
         } break;
 
         case Kind::IntLitExpr: {
@@ -498,27 +513,16 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
 
         case Kind::LoopExpr: {
             PrintHeader(s, "LoopExpr");
-            if (auto b = cast<ParsedLoopExpr>(s)->body.get_or_null()) PrintChildren(b);
         } break;
 
         case Kind::MatchExpr: {
-            auto m = cast<ParsedMatchExpr>(s);
             PrintHeader(s, "MatchExpr");
-            SmallVector<ParsedStmt*, 8> children{};
-            if (auto e = m->control_expr().get_or_null()) children.push_back(e);
-            if (auto e = m->declared_type().get_or_null()) children.push_back(e);
-            for (auto c : m->cases()) {
-                children.push_back(c.cond);
-                children.push_back(c.body);
-            }
-            PrintChildren(children);
         } break;
 
         case Kind::MemberExpr: {
             auto& m = *cast<ParsedMemberExpr>(s);
             PrintHeader(s, "MemberExpr", false);
             print("%8({}%)\n", m.member);
-            PrintChildren(m.base);
         } break;
 
 
@@ -532,9 +536,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
             if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
             if (p.is_static) print("static ");
+            if (p.is_this_param) print("this_param ");
             if (p.with_loc.is_valid()) print("with ");
             print("{}\n", p.type->dump_as_type());
-            if (p.init) PrintChildren(p.init.get());
         } break;
 
         case Kind::QuoteExpr: {
@@ -550,33 +554,23 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
                 });
             }
             PrintChildren<Child>(children);
-        } break;
+            return;
+        }
 
         case Kind::UnquoteExpr: {
             PrintHeader(s, "UnquoteExpr");
-            PrintChildren(cast<ParsedUnquoteExpr>(s)->arg);
         } break;
 
         case Kind::ParenExpr: {
             PrintHeader(s, "ParenExpr");
-            PrintChildren(cast<ParsedParenExpr>(s)->inner);
         } break;
 
         case Kind::ProcDecl: {
             auto& p = *cast<ParsedProcDecl>(s);
             PrintHeader(s, "ProcDecl", false);
-            print(
-                "%2({}%){}{}\n",
-                utils::Escape(p.name.str(), false, true),
-                p.name.empty() ? ""sv : " "sv,
-                p.type->dump_as_type()
-            );
-
-            // No need to print the param decls here.
-            SmallVector<ParsedStmt*, 10> children;
-            if (auto b = p.body.get_or_null()) children.push_back(b);
-            if (auto where = p.where.get_or_null()) children.push_back(where);
-            PrintChildren(children);
+            if (auto a = p.associated_type.get_or_null()) print("{}%1(::%)", a->dump_as_type());
+            if (not p.name.empty()) print("%2({}%) ", utils::Escape(p.name.str(), false, true));
+            print("{}\n", p.type->dump_as_type());
         } break;
 
         case Kind::StrLitExpr: {
@@ -586,22 +580,23 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         } break;
 
         case Kind::ReturnExpr: {
-            auto ret = cast<ParsedReturnExpr>(s);
             PrintHeader(s, "ReturnExpr");
-            if (auto val = ret->value.get_or_null()) PrintChildren(val);
         } break;
 
         case Kind::StructDecl: {
             auto& d = *cast<ParsedStructDecl>(s);
             PrintHeader(s, "StructDecl", false);
             print("%6({}%)\n", d.name);
-            PrintChildren<ParsedFieldDecl*>(d.fields());
+        } break;
+
+        case Kind::ThisExpr: {
+            auto t = cast<ParsedThisExpr>(s);
+            if (t->is_type) print("%1(Type%) {}\n", s->dump_as_type());
+            else PrintHeader(s, "ThisExpr");
         } break;
 
         case Kind::TupleExpr: {
-            auto t = cast<ParsedTupleExpr>(s);
             PrintHeader(s, "TupleExpr");
-            PrintChildren(t->exprs());
         } break;
 
         case Kind::UnaryExpr: {
@@ -610,23 +605,165 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%1({}%)", u.op);
             if (u.postfix) print(" %3(postfix%)");
             print("\n");
-            PrintChildren(u.arg);
         } break;
 
         case Kind::WhileStmt: {
-            auto& w = *cast<ParsedWhileStmt>(s);
             PrintHeader(s, "WhileStmt");
-            SmallVector<ParsedStmt*, 2> children{w.cond, w.body};
-            PrintChildren(children);
         } break;
 
         case Kind::WithExpr: {
-            auto& w = *cast<ParsedWithExpr>(s);
             PrintHeader(s, "WithExpr");
-            SmallVector<ParsedStmt*, 2> children{w.expr, w.body};
-            PrintChildren(children);
         } break;
     }
+
+    s->children(false).range.visit([&](auto&& r) { PrintChildren(r); });
+}
+
+auto ParsedStmt::children(bool include_types) -> Children {
+    auto SingleType = [&] (ParsedStmt* ty) -> Children {
+        if (include_types) return ty;
+        return {};
+    };
+
+    return visit(utils::Overloaded{
+        // Types.
+        [&](ParsedBuiltinType*) -> Children { return {}; },
+        [&](ParsedIntType*) -> Children { return {}; },
+        [&](ParsedOptionalType* o) -> Children { return SingleType(o->elem); },
+        [&](ParsedProcType* p) -> Children {
+            if (not include_types) return {};
+            Children::Owning children;
+            for (auto param : p->param_types())
+                children.push_back(param.type);
+            children.push_back(p->ret_type);
+            return children;
+        },
+
+        [&](ParsedPtrType* p) -> Children { return SingleType(p->elem); },
+        [&](ParsedRangeType* r) -> Children { return SingleType(r->elem); },
+        [&](ParsedSliceType* s) -> Children { return SingleType(s->elem); },
+        [&](ParsedTemplateType*) -> Children { return {}; },
+        [&](ParsedTypeofType* t) -> Children { return SingleType(t->arg); },
+        [&](ParsedValueType* v) -> Children { return SingleType(v->elem); },
+
+        // Statements.
+        [&](ParsedAssertExpr* a) -> Children {
+            Children::Owning children;
+            children.push_back(a->cond);
+            if (auto msg = a->message.get_or_null()) children.push_back(msg);
+            return children;
+        },
+
+        [&](ParsedBlockExpr* b) -> Children { return b->stmts(); },
+        [&](ParsedBinaryExpr* b) -> Children { return {b->lhs, b->rhs}; },
+        [&](ParsedBoolLitExpr*) -> Children { return {}; },
+        [&](ParsedBreakContinueExpr*) -> Children { return {}; },
+        [&](ParsedCallExpr* c) -> Children {
+            Children::Owning children;
+            if (c->callee) children.push_back(c->callee);
+            if (auto a = c->args(); not a.empty()) children.append(a.begin(), a.end());
+            return children;
+        },
+
+        [&](ParsedDeclRefExpr* d) -> Children {
+            if (auto r = d->root().get_or_null()) return r;
+            return {};
+        },
+
+        [&](ParsedDeferStmt* d) -> Children { return d->body; },
+        [&](ParsedEmptyStmt*) -> Children { return {}; },
+        [&](ParsedEnumDecl* e) -> Children {
+            Children::Owning children;
+            if (include_types and e->underlying_type.present())
+                children.push_back(e->underlying_type.get());
+            for (auto& enumerator : e->enumerators())
+                if (enumerator.value.present())
+                    children.push_back(enumerator.value.get());
+            return children;
+        },
+
+        [&](ParsedEvalExpr* e) -> Children { return e->expr; },
+        [&](ParsedExportDecl* e) -> Children { return e->decl; },
+        [&](ParsedFieldDecl* f) -> Children { return f->type; },
+        [&](ParsedForStmt* f) -> Children {
+            Children::Owning children{f->ranges()};
+            children.push_back(f->body);
+            return children;
+        },
+
+        [&](ParsedIfExpr* i) -> Children {
+            Children::Owning children{i->cond, i->then};
+            if (auto e = i->else_.get_or_null()) children.push_back(e);
+            return children;
+        },
+
+        [&](ParsedInjectExpr* i) -> Children { return i->injected; },
+        [&](ParsedIntLitExpr*) -> Children { return {}; },
+        [&](ParsedLoopExpr* l) -> Children {
+            if (auto b = l->body.get_or_null()) return b;
+            return {};
+        },
+
+        [&](ParsedMatchExpr* m) -> Children {
+            Children::Owning children;
+            if (auto e = m->control_expr().get_or_null()) children.push_back(e);
+            if (auto e = m->declared_type().get_or_null(); e and include_types) children.push_back(e);
+            for (auto c : m->cases()) {
+                children.push_back(c.cond);
+                children.push_back(c.body);
+            }
+            return children;
+        },
+
+        [&](ParsedMemberExpr* m) -> Children {  return m->base; },
+        [&](ParsedNilExpr*) -> Children { return {}; },
+        [&](ParsedVarDecl* v) -> Children {
+            Children::Owning children;
+            if (include_types) children.push_back(v->type);
+            if (v->init) children.push_back(v->init.get());
+            return children;
+        },
+
+        [&](ParsedQuoteExpr* q) -> Children {
+            return Children::NonOwning{
+                reinterpret_cast<ParsedStmt* const*>(q->unquotes().data()),
+                q->unquotes().size()
+            };
+        },
+        [&](ParsedUnquoteExpr* u) -> Children { return u->arg; },
+        [&](ParsedParenExpr* p) -> Children { return p->inner; },
+        [&](ParsedProcDecl* p) -> Children {
+            Children::Owning children;
+            if (include_types) {
+                children.push_back(p->type);
+                if (auto a = p->associated_type.get_or_null()) children.push_back(a);
+            }
+
+            append_range(children, p->params());
+            if (auto where = p->where.get_or_null()) children.push_back(where);
+            if (auto b = p->body.get_or_null()) children.push_back(b);
+            return children;
+        },
+
+        [&](ParsedStrLitExpr*) -> Children { return {}; },
+        [&](ParsedReturnExpr* r) -> Children {
+            if (auto val = r->value.get_or_null()) return val;
+            return {};
+        },
+
+        [&](ParsedStructDecl* s) -> Children {
+            return Children::NonOwning{
+                reinterpret_cast<ParsedStmt* const*>(s->fields().data()),
+                s->fields().size()
+            };
+        },
+
+        [&](ParsedThisExpr*) -> Children { return {}; },
+        [&](ParsedTupleExpr* t) -> Children { return t->exprs(); },
+        [&](ParsedUnaryExpr* u) -> Children { return u->arg; },
+        [&](ParsedWhileStmt* w) -> Children {  return {w->cond, w->body}; },
+        [&](ParsedWithExpr* w) -> Children { return {w->expr, w->body}; },
+    });
 }
 
 void ParsedStmt::dump(bool use_colour) const {
@@ -720,7 +857,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
 
             case Kind::DeclRefExpr: {
                 auto d = cast<ParsedDeclRefExpr>(type);
-                Format(out, "%8({}%)", utils::join(d->names(), "::"));
+                Format(out, "%8({}%)", d->to_string());
             } break;
 
             case Kind::BinaryExpr: {
@@ -742,6 +879,10 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 out += ")%)";
             } break;
 
+            case Kind::ThisExpr:
+                out += "%1(This%)";
+                break;
+
             default:
                 out += "<invalid type>";
                 break;
@@ -750,6 +891,14 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
 
     Append(this);
     return out;
+}
+
+bool ParsedStmt::traverse_impl(llvm::function_ref<bool(ParsedStmt*)> visitor) {
+    if (not visitor(this)) return false;
+    for (auto c : children(true))
+        if (not c->traverse_impl(visitor))
+            return false;
+    return true;
 }
 
 #define PARSE_TREE_NODE(node)                                                                                \

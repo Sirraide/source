@@ -20,6 +20,9 @@
 namespace srcc {
 class Target;
 class Scope;
+class BlockScope;
+class ModuleScope;
+class ProcScope;
 class StructScope;
 class TemplateTypeParamDecl;
 class TranslationUnit;
@@ -43,63 +46,6 @@ class TypeLoc;
 
 /// Casting.
 } // namespace srcc
-
-/// Scope that stores declarations.
-///
-/// These need to be allocated separately because we usually need
-/// to be able to look up declarations in one before we create the
-/// node that contains it.
-///
-/// Note that these are only valid during sema and should not be
-/// referenced after that.
-class srcc::Scope {
-    SRCC_IMMOVABLE(Scope);
-
-    friend TranslationUnit;
-
-    /// The parent scope.
-    Scope* parent_scope;
-
-    /// Whether this is a procedure scope.
-    const ScopeKind kind;
-
-protected:
-    explicit Scope(Scope* parent, ScopeKind k = ScopeKind::Block);
-
-public:
-    /// Declarations in this scope.
-    DeclNameMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
-
-    /// Defaulted out-of-line.
-    virtual ~Scope();
-
-    /// Get a flat list of all declarations in this scope.
-    auto decls();
-
-    /// Check if this is a specific kind of scope.
-    bool is_block_scope() const { return kind == ScopeKind::Block; }
-    bool is_proc_scope() const { return kind == ScopeKind::Procedure; }
-    bool is_struct_scope() const { return kind == ScopeKind::Struct; }
-
-    /// Get the parent scope.
-    ///
-    /// This returns null if this is the global scope.
-    auto parent() -> Scope* { return parent_scope; }
-
-    /// Get a list of declarations, sorted in source order.
-    [[nodiscard]] auto sorted_decls() -> SmallVector<Decl*>;
-};
-
-/// Scope that stores struct members, initialisers, etc.
-class srcc::StructScope : public Scope {
-    friend TranslationUnit;
-
-    StructScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
-
-public:
-    /// Initialiser declarations.
-    SmallVector<Decl*> inits;
-};
 
 /// Base class for all types.
 ///
@@ -220,6 +166,104 @@ public:
 private:
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
     [[nodiscard]] auto size_impl(const Target& t) const -> Size;
+};
+
+/// Scope that stores declarations.
+///
+/// These need to be allocated separately because we usually need
+/// to be able to look up declarations in one before we create the
+/// node that contains it.
+///
+/// Note that these are only valid during sema and should not be
+/// referenced after that.
+class alignas(8) srcc::Scope {
+    SRCC_IMMOVABLE(Scope);
+
+    /// The parent scope and scope kind.
+    llvm::PointerIntPair<Scope*, 3, ScopeKind> parent_scope_and_kind;
+
+protected:
+    explicit Scope(Scope* parent, ScopeKind k);
+
+public:
+    /// Declarations in this scope.
+    DeclNameMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
+
+    /// Defaulted out-of-line.
+    virtual ~Scope();
+
+    /// Get the associated type of this scope.
+    auto associated_type() -> Type;
+
+    /// Get a flat list of all declarations in this scope.
+    auto decls();
+
+    /// Get this scope’s enclosing procedure scope (which may be itself).
+    auto enclosing_proc() -> ProcScope*;
+
+    /// Get the kind of this scope.
+    auto kind() const -> ScopeKind { return parent_scope_and_kind.getInt(); }
+
+    /// Check if this is a specific kind of scope.
+    bool is_block_scope() const { return kind() == ScopeKind::Block; }
+    bool is_module_scope() const { return kind() == ScopeKind::Module; }
+    bool is_proc_scope() const { return kind() == ScopeKind::Procedure; }
+    bool is_struct_scope() const { return kind() == ScopeKind::Struct; }
+
+    /// Get the parent scope.
+    ///
+    /// This returns null if this is the global scope.
+    auto parent() -> Scope* { return parent_scope_and_kind.getPointer(); }
+
+    /// Get a list of declarations, sorted in source order.
+    [[nodiscard]] auto sorted_decls() -> SmallVector<Decl*>;
+};
+
+/// Scope of a block.
+class srcc::BlockScope : public Scope {
+    friend TranslationUnit;
+    BlockScope(Scope* parent) : Scope{parent, ScopeKind::Block} {}
+    static bool classof(const Scope* s) { return s->is_block_scope(); }
+};
+
+/// Scope used for the exports of a module; NOTE: the global scope is *not* a module scope!
+class srcc::ModuleScope : public Scope {
+    friend TranslationUnit;
+    ModuleScope() : Scope{nullptr, ScopeKind::Module} {}
+    static bool classof(const Scope* s) { return s->is_module_scope(); }
+};
+
+/// Scope of a procedure.
+class srcc::ProcScope : public Scope {
+    friend TranslationUnit;
+
+    ProcScope(Scope* parent, TypeBase* associated_type)
+        : Scope{parent, ScopeKind::Procedure},
+          associated_type{associated_type} {}
+
+public:
+    /// The associated type of the procedure. We also store this here because
+    /// we need to know this before the actual declaration is created.
+    TypeBase* associated_type;
+
+    /// Initialiser declarations.
+    SmallVector<Decl*> inits;
+
+    /// Check if 's' is a proc scope.
+    static bool classof(const Scope* s) { return s->is_proc_scope(); }
+};
+
+/// Scope that stores struct members, initialisers, etc.
+class srcc::StructScope : public Scope {
+    friend TranslationUnit;
+
+    StructScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
+
+public:
+    /// Initialiser declarations.
+    SmallVector<Decl*> inits;
+
+    static bool classof(const Scope* s) { return s->is_struct_scope(); }
 };
 
 class srcc::BuiltinType final : public TypeBase {

@@ -1,0 +1,58 @@
+// V %srcc --sema --verify %s
+program test;
+
+struct S {
+    int x;
+}
+
+struct T {
+    int x;
+}
+
+proc S::double (inout S s) { s.x *= 2; }
+proc S::triple (with inout This s) { x *= 3; }
+proc S::quadruple (inout this) { x *= 4; }
+
+proc T::double (inout this) { x *= 2; }
+
+eval {
+    var s = S(2);
+    s.double();
+    assert s.x == 4;
+    s.triple();
+    assert s.x == 12;
+    s.quadruple();
+    assert s.x == 48;
+}
+
+eval {
+    var t = T(2);
+    t.double();
+    assert t.x == 4;
+}
+
+proc int::double (this) = this * 2;
+eval {
+    int x = 4.double();
+    assert x == 8;
+}
+
+proc int::load(This^ x) = ^x;
+proc int::store(This^ x, int y) { ^x = y };
+eval {
+    int x;
+    int^ px = &x;
+    int^^ ppx = &px;
+
+    px.store(42);
+    assert px.load() == 42;
+
+    ppx.store(43);
+    assert ppx.load() == 43;
+}
+
+proc (int^)::foo(this) {}; // expected-error: Pointer type 'int^' cannot be used as an associated type
+proc (int^)::bar(this, int x) {}; // expected-error: Pointer type 'int^' cannot be used as an associated type
+proc (int?)::baz(this, int x) {}; // expected-error: Optional type 'int?' cannot be used as an associated type
+proc (int?^?^??)::quux(this, int x) {}; // expected-error: Optional type 'int?^?^??' cannot be used as an associated type
+proc (int?^?^?^)::asdf(this, int x) {}; // expected-error: Pointer type 'int?^?^?^' cannot be used as an associated type

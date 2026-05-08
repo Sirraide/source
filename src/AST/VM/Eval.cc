@@ -6,7 +6,7 @@
 #include <srcc/CG/IR/MLIRFormatters.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
-#include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/ParseTree.hh>
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
@@ -526,6 +526,9 @@ public:
 private:
     auto diags() const -> DiagnosticsEngine& { return vm.owner().context().diags(); }
     auto frame() -> StackFrame& { return call_stack.back(); }
+
+    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
 
     template <typename... Args>
     bool Error(SLoc where, std::format_string<Args...> fmt, Args&&... args) {

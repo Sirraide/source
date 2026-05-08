@@ -64,8 +64,7 @@ TypeLoc::TypeLoc(Expr* e) : ty{e->type}, loc{e->location()} {}
 // ============================================================================
 Scope::~Scope() = default;
 Scope::Scope(Scope* parent, ScopeKind k)
-    : parent_scope{parent},
-      kind{k} {}
+    : parent_scope_and_kind{parent, k} {}
 
 // ============================================================================
 //  Type

@@ -67,6 +67,9 @@ struct [[nodiscard]] Lexer : str, DiagsProducer {
 
     using DiagsProducer::Error;
 
+    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
+
     template <typename... Args>
     auto Error(std::format_string<Args...> fmt, Args&&... args) -> utils::Falsy {
         return Error(tok().location, fmt, LIBBASE_FWD(args)...);

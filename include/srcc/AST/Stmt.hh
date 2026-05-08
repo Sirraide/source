@@ -39,6 +39,7 @@ struct InheritedProcedureProperties;
 class ParsedStmt;
 class ParsedProcDecl;
 class ParsedQuoteExpr;
+class ParsedDeclRefExpr;
 
 // Token to identify a loop.
 enum class LoopToken : u32;
@@ -1435,21 +1436,21 @@ public:
 /// Properties of a procedure that are inherited from the template
 /// if the procedure is an instantiation.
 struct srcc::InheritedProcedureProperties {
-    LIBBASE_SERIALISE(
-        InheritedProcedureProperties,
-        mangling_number,
-        is_compile_time_only,
-        always_inline
-    );
+    /// Associated type, of this procedure, if any.
+    ///
+    /// If this procedure was declared with a scope specifier, e.g. 'proc a::b::c', then
+    /// its associated type is the type named by the scope specifier, in this case 'a::b'.
+    /// This type determines the type of 'this' and 'This'.
+    Type associated_type{};
 
     /// Mangling number of this procedure.
     ManglingNumber mangling_number = ManglingNumber::None;
 
-    /// Whether this procedure cannot be called at runtime.
-    bool is_compile_time_only = false;
-
     /// Whether this procedure should always be inlined if possible.
     bool always_inline = false;
+
+    /// Whether this procedure cannot be called at runtime.
+    bool is_compile_time_only = false;
 };
 
 /// Procedure declaration.

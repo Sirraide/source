@@ -50,7 +50,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     vm.init(*tgt);
 
     // Create the global scope.
-    create_scope(nullptr);
+    create_scope<ProcScope>(nullptr, nullptr);
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
@@ -152,6 +152,19 @@ auto TranslationUnit::store_int(APInt value) -> StoredInteger {
     return integers.front().store_int(std::move(value));
 }
 
+auto Scope::associated_type() -> Type {
+    return enclosing_proc()->associated_type;
+}
+
+auto Scope::enclosing_proc() -> ProcScope* {
+    for (Scope* s = this; s; s = s->parent())
+        if (auto proc = dyn_cast<ProcScope>(s))
+            return proc;
+
+    // The global scope *is* a procedure scope, so we should never get here.
+    Unreachable("We should always be in a procedure");
+}
+
 auto Scope::sorted_decls() -> SmallVector<Decl*> {
     SmallVector<Decl*> ret;
     append_range(ret, decls());
@@ -233,9 +246,6 @@ void Stmt::Printer::Print(Stmt* e) {
     };
 
     e->visit(utils::Overloaded{
-        [&](auto* node) {
-            PrintBasicNode(e, enchantum::to_string(node->kind()));
-        },
         [&](ArrayBroadcastExpr* a) {
             PrintBasicNode(e, "ArrayBroadcastExpr");
             PrintChildren(a->element);
@@ -343,6 +353,10 @@ void Stmt::Printer::Print(Stmt* e) {
             if (c->stmt) PrintChildren(c->stmt.get());
         },
 
+        [&](DefaultInitExpr* e) {
+            PrintBasicNode(e, "DefaultInitExpr");
+        },
+
         [&](DeferStmt* d) {
             PrintBasicNode(e, "DeferStmt");
             PrintChildren(d->body);
@@ -351,6 +365,10 @@ void Stmt::Printer::Print(Stmt* e) {
         [&](EvalExpr* ev) {
             PrintBasicNode(e, "EvalExpr");
             PrintChildren(ev->stmt);
+        },
+
+        [&](EmptyStmt* e) {
+            PrintBasicNode(e, "EmptyStmt");
         },
 
         [&](EnumeratorDecl* e) {
@@ -539,7 +557,9 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](ProcDecl* p) {
             PrintBasicHeader(p, "ProcDecl");
-            print(" %2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
+            print(" ");
+            if (p->props.associated_type) print("{}%1(::%)", p->props.associated_type);
+            print("%2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
             if (p->parent.present()) print(" nested");
             if (p->is_instantiation()) print(" instantiation");
@@ -665,16 +685,23 @@ void Stmt::Printer::Print(Stmt* e) {
 
         [&](WhileStmt* w) {
             PrintBasicNode(e, "WhileStmt", [&] { print("%3(#{}%)", +w->token); });
-            SmallVector<Stmt*, 2> children{w->cond, w->body};
-            PrintChildren(children);
+            PrintChildren({w->cond, w->body});
+        },
+
+        [&](WithBuiltinFieldRefDecl* w) {
+            auto PrintField = [&]{ print("%5({}%)", BuiltinMemberAccessExpr::ToMemberName(w->referenced_field)); };
+            PrintBasicNode(w, "WithFieldRefDecl", PrintField);
+            PrintChildren(w->base);
         },
 
         [&](WithExpr* w) {
             PrintBasicNode(e, "WithExpr");
-            SmallVector<Stmt*, 2> children;
-            children.push_back(w->object);
-            children.push_back(w->body);
-            PrintChildren(children);
+            PrintChildren({w->object, w->body});
+        },
+
+        [&](WithFieldRefDecl* w) {
+            PrintBasicNode(w, "WithFieldRefDecl");
+            PrintChildren({w->base, w->referenced_field});
         },
     });
 }

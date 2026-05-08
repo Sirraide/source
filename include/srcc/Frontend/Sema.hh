@@ -5,7 +5,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Core/Diagnostics.hh>
-#include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/ParseTree.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/ArrayRef.h>
@@ -50,6 +50,11 @@ private:
     class [[nodiscard]] EnterScope {
         LIBBASE_NO_COPY(EnterScope);
 
+        template <typename ScopeTy>
+        struct Tag {
+            using type = ScopeTy;
+        };
+
     public:
         Sema& S;
 
@@ -57,8 +62,13 @@ private:
         Scope* scope = nullptr;
 
     public:
-        EnterScope(Sema& S, ScopeKind kind = ScopeKind::Block, bool should_enter = true);
-        EnterScope(Sema& S, bool should_enter);
+        // Tag that denotes what scope we want to create. Block is the default.
+        static constexpr Tag<ProcScope> Procedure;
+        static constexpr Tag<BlockScope> Struct;
+
+        EnterScope(Sema& S, bool should_enter = true);
+        EnterScope(Sema& S, Tag<ProcScope>, Type associated_type);
+        EnterScope(Sema& S, Tag<StructScope>);
         EnterScope(Sema& S, Scope* scope);
         ~EnterScope();
 
@@ -165,6 +175,7 @@ private:
             NilToOptional,
             OptionalUnwrap,
             OptionalWrap,
+            PointerDeref,
             RangeCast,
             RecordInit,
             SelectOverload,
@@ -208,6 +219,7 @@ private:
         static auto NilToOptional(Type ty) -> Conversion { return Conversion{Kind::NilToOptional, ty}; }
         static auto OptionalUnwrap(Type ty) -> Conversion { return Conversion{Kind::OptionalUnwrap, ty}; }
         static auto OptionalWrap(Type ty) -> Conversion { return Conversion{Kind::OptionalWrap, ty}; }
+        static auto PointerDeref() -> Conversion { return Conversion{Kind::PointerDeref}; }
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
@@ -301,7 +313,7 @@ private:
 
         /// The name we failed to look up, if any. Will be unset
         /// if the lookup was successful.
-        DeclName name;
+        DeclNameLoc name;
 
         /// Reason for failure.
         Reason result;
@@ -311,30 +323,40 @@ private:
         /// Stored on the heap to keep most lookup results small.
         std::unique_ptr<Diagnostic> note;
 
-        LookupResult(DeclName name) : name{name}, result{Reason::NotFound} {}
-        LookupResult(ArrayRef<Decl*> decls, DeclName name, Reason result) : decls{decls}, name{name}, result{result} {}
-        LookupResult(Decl* decl, DeclName name, Reason result) : name{name}, result{result} {
+        LookupResult(DeclNameLoc name)
+            : name{name}, result{Reason::NotFound} {}
+        LookupResult(ArrayRef<Decl*> decls, DeclNameLoc name, Reason result)
+            : decls{decls}, name{name}, result{result} {}
+        LookupResult(Decl* decl, DeclNameLoc name, Reason result)
+            : name{name}, result{result} {
             if (decl) decls.push_back(decl);
         }
 
         /// Check if this lookup result is a success.
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
+        [[nodiscard]] auto successful_or_ambiguous() const -> bool {
+            return result == Reason::Success or result == Reason::Ambiguous;
+        }
+
         [[nodiscard]] explicit operator bool() const { return successful(); }
 
-        static auto Ambiguous(DeclName name, ArrayRef<Decl*> decls) {
+        static auto Ambiguous(DeclNameLoc name, ArrayRef<Decl*> decls) {
             Assert(not decls.empty());
             return LookupResult{decls, name, Reason::Ambiguous};
         }
 
-        static auto FailedToImport(DeclName name, std::unique_ptr<Diagnostic> note = nullptr) {
+        static auto FailedToImport(DeclNameLoc name, std::unique_ptr<Diagnostic> note = nullptr) {
             if (note) Assert(note->level == Diagnostic::Level::Note);
             LookupResult lr{{}, name, Reason::FailedToImport};
             lr.note = std::move(note);
             return lr;
         }
 
-        static auto NonScopeInPath(DeclName name, Decl* decl = nullptr) { return LookupResult{decl, name, Reason::NonScopeInPath}; }
-        static auto NotFound(DeclName name) { return LookupResult{name}; }
+        static auto NonScopeInPath(DeclNameLoc name, Decl* decl = nullptr) {
+            return LookupResult{decl, name, Reason::NonScopeInPath};
+        }
+
+        static auto NotFound(DeclNameLoc name) { return LookupResult{name}; }
         static auto Success(Decl* decl) {
             Assert(decl);
             return LookupResult{decl, {}, Reason::Success};
@@ -669,7 +691,7 @@ private:
     SmallVector<Scope*> scope_stack;
 
     /// Template deduction information for each template.
-    DenseMap<ParsedProcDecl*, TemplateParamDeductionInfo> parsed_template_deduction_infos;
+    DenseMap<ProcTemplateDecl*, TemplateParamDeductionInfo> template_deduction_infos;
 
     /// Shared state for Clang's ASTImporter.
     std::shared_ptr<clang::ASTImporterSharedState> clang_importer_state;
@@ -769,7 +791,12 @@ private:
     void AddDeclToScope(Scope* scope, Decl* d);
 
     /// Add an object to the with stack.
-    void AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with);
+    void AddEntryToWithStack(
+        Scope* scope,
+        SaveExpr* object,
+        SLoc with,
+        bool is_this = false
+    );
 
     /// Add an initialiser to a variable declaration.
     void AddInitialiserToDecl(AnyVarDecl d, Ptr<Expr> init);
@@ -842,14 +869,16 @@ private:
     ///    initialisation.
     ///
     /// \param init_loc Location to report diagnostics at.
-    /// \param want_lvalue If do, try to produce an lvalue.
+    /// \param want_lvalue Try to produce an lvalue.
+    /// \param allow_auto_deref Auto-dereference pointers and optionals.
     ///
     /// \return Whether initialisation was successful.
     auto BuildConversionSequence(
         Type var_type,
         ArrayRef<Expr*> args,
         SLoc init_loc,
-        bool want_lvalue = false
+        bool want_lvalue = false,
+        bool allow_auto_deref = false
     ) -> ConversionSequenceOrDiags;
 
     /// Overload of BuildInitialiser() that builds the initialiser immediately.
@@ -857,7 +886,8 @@ private:
         Type var_type,
         ArrayRef<Expr*> args,
         SLoc loc,
-        bool want_lvalue = false
+        bool want_lvalue = false,
+        bool allow_auto_deref = false
     ) -> Ptr<Expr>;
 
     /// Check that a type is valid for a record field.
@@ -969,37 +999,33 @@ private:
     auto LookUpCXXMacro(
         ImportedClangModuleDecl* clang_module,
         clang::MacroInfo* mi,
-        String name,
+        DeclNameLoc name,
         LookupHint hint
     ) -> LookupResult;
 
     /// Use LookUpName() instead.
     auto LookUpCXXName(
         ImportedClangModuleDecl* clang_module,
-        ArrayRef<DeclName> names,
+        ArrayRef<DeclNameLoc> names,
         LookupHint hint
     ) -> LookupResult;
 
     /// Use LookUpName() instead.
     auto LookUpCXXNameImpl(
         ImportedClangModuleDecl* clang_module,
-        ArrayRef<DeclName> names,
+        ArrayRef<DeclNameLoc> names,
         LookupHint hint
     ) -> LookupResult;
 
-    /// Use LookUpName() instead.
-    auto LookUpQualifiedName(
-        Scope* in_scope,
-        ArrayRef<DeclName> names,
-        LookupHint hint
-    ) -> LookupResult;
+    /// Perform unqualified name lookup; this will iterate upwards
+    /// in the scope stack until we find something.
+    auto LookUpUnqualifiedName(DeclNameLoc name, LookupHint hint) -> LookupResult;
 
-    /// Perform unqualified name lookup.
-    auto LookUpUnqualifiedName(
+    /// Look up a name in a scope.
+    auto LookUpNameInScope(
         Scope* in_scope,
-        DeclName name,
-        LookupHint hint,
-        bool this_scope_only
+        DeclNameLoc name,
+        LookupHint hint
     ) -> LookupResult;
 
     /// Look up a name in a scope.
@@ -1014,17 +1040,17 @@ private:
     /// then looked up in the scope of the declaration found by the previous
     /// segment only.
     ///
-    /// \param in_scope The scope to start searching in.
+    /// \param in_scope The scope to start searching in. If null, performs unqualified
+    ///        lookup of the first element in 'names' starting at the current scope.
     /// \param names The path to look up.
     /// \param loc The location of the lookup.
     /// \param hint Hint as to what we’re looking for.
     /// \param complain Emit a diagnostic if lookup fails.
     auto LookUpName(
-        Scope* in_scope,
-        ArrayRef<DeclName> names,
+        Ptr<Scope> in_scope,
+        ArrayRef<DeclNameLoc> names,
         SLoc loc,
-        LookupHint hint = LookupHint::Any,
-        bool complain = true
+        LookupHint hint = LookupHint::Any
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
@@ -1073,6 +1099,7 @@ private:
     auto PerformOverloadResolution(
         OverloadSetExpr* overload_set,
         ArrayRef<Expr*> args,
+        bool is_associated_call,
         SLoc call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
 
@@ -1080,7 +1107,7 @@ private:
     auto ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<>;
 
     /// Issue an error about lookup failure.
-    void ReportLookupFailure(LookupResult&& result, SLoc loc);
+    void ReportLookupFailure(LookupResult&& result);
 
     /// Issue an error about overload resolution failure.
     void ReportOverloadResolutionFailure(
@@ -1111,7 +1138,7 @@ private:
     auto UnwrapOptional(Expr* opt, SLoc loc) -> Expr*;
 
     /// Unwrap (multi-level) pointers and optionals.
-    auto UnwrapPointersAndOptionals(Expr* e) -> Ptr<Expr>;
+    auto UnwrapPointersAndOptionals(Expr* e, Type stop_at = {}) -> Ptr<Expr>;
 
     /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;
@@ -1121,9 +1148,10 @@ private:
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
-    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
+    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc, bool is_associated_call = false) -> Ptr<Expr>;
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
-    auto BuildDeclRefExpr(InitialDREScope scope, ArrayRef<DeclName> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
+    auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
+    auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
@@ -1168,6 +1196,31 @@ private:
 
     auto TranslateExpr(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Expr>;
 
+    /// A member access may also reference an associated procedure; we want to avoid
+    /// introducing an AST node for it because we would then have to introduce code to
+    /// handle that node in other contexts (we want to avoid Clang's 'CheckPlaceHolderExpr()'
+    /// approach here).
+    struct MemberAccess {
+        Expr* base;
+        Expr* callee;
+
+    private:
+        MemberAccess(Expr* base, Expr* callee) :base{base}, callee{callee} {
+            Assert(base != nullptr);
+        }
+
+    public:
+        static auto Simple(Expr* access) { return MemberAccess{access, nullptr}; }
+        static auto AssociatedProcRef(Expr* object, Expr* callee) {
+            Assert(callee != nullptr);
+            return MemberAccess{object, callee};
+        }
+
+        bool is_associated_proc_ref() { return callee != nullptr; }
+    };
+
+    auto TranslateMemberAccess(ParsedMemberExpr* parsed, bool is_call) -> std::optional<MemberAccess>;
+
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateEnumDeclInitial(ParsedEnumDecl* parsed) -> Ptr<TypeDecl>;
@@ -1198,6 +1251,9 @@ private:
         ArrayRef<Type> deduced_var_parameters = {}
     ) -> Type;
     auto TranslateValueType(ParsedValueType* parsed) -> Type;
+
+    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
 
     template <typename... Args>
     void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {

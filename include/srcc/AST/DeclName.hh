@@ -45,6 +45,15 @@ private:
     friend bool operator==(DeclName, DeclName);
 };
 
+struct DeclNameLoc {
+    DeclName name{};
+    SLoc loc{};
+
+    DeclNameLoc() = default;
+    DeclNameLoc(DeclName name, SLoc loc)
+        : name{name}, loc{loc} {}
+};
+
 template <typename T>
 using DeclNameMap = DenseMap<DeclName, T>;
 }
@@ -79,6 +88,14 @@ struct std::formatter<srcc::DeclName> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(const srcc::DeclName& n, FormatContext& ctx) const {
         return std::formatter<std::string_view>::format(n.str().sv(), ctx);
+    }
+};
+
+template <>
+struct std::formatter<srcc::DeclNameLoc> : std::formatter<srcc::DeclName> {
+    template <typename FormatContext>
+    auto format(const srcc::DeclNameLoc& n, FormatContext& ctx) const {
+        return std::formatter<srcc::DeclName>::format(n.name, ctx);
     }
 };
 

@@ -48,6 +48,7 @@ public:
 
     ASTWriter(const Context& ctx, ByteBuffer& buf) : Base{buf}, ctx{ctx} {
         types.push_back(Type());
+        type_indices[Type()] = TypeIndex(0);
     }
 
     void emit_type_def(Type ty) {
@@ -147,6 +148,11 @@ public:
 
     void write(const RecordLayout& l) {
         *this << l.size() << l.array_size() << l.align() << l.bits() << l.fields();
+    }
+
+    void write(const InheritedProcedureProperties& props) {
+        *this << props.associated_type << props.mangling_number
+              << props.always_inline << props.is_compile_time_only;
     }
 
 private:
@@ -282,7 +288,7 @@ public:
 
                 // The parent of this scope is irrelevant since we won’t actually do any checking
                 // or lookup *from* it.
-                auto scope = S.tu->create_scope(S.tu->global_scope());
+                auto scope = S.tu->create_scope<BlockScope>(S.tu->global_scope());
                 auto enum_ty = new (*S.tu) EnumType(*S.tu, scope, name, underlying_type, loc);
 
                 // Add enumerators.
@@ -408,6 +414,20 @@ public:
         auto idx = Read(TypeIndex);
         Assert(+idx < types.size(), "Invalid type index");
         return types[+idx];
+    }
+
+    template <>
+    auto read<InheritedProcedureProperties>() -> Result<InheritedProcedureProperties> {
+        auto associated_type = Read(Type);
+        auto mangling_number = Read(ManglingNumber);
+        auto always_inline = Read(bool);
+        auto is_compile_time_only = Read(bool);
+        return InheritedProcedureProperties{
+            .associated_type = associated_type,
+            .mangling_number = mangling_number,
+            .always_inline = always_inline,
+            .is_compile_time_only = is_compile_time_only,
+        };
     }
 };
 

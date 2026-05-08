@@ -111,7 +111,7 @@ public:
     SmallVector<GlobalDecl*> global_vars;
 
     /// Declarations exported from this module.
-    Scope exports{nullptr};
+    ModuleScope exports;
 
     /// Template instantiations by template.
     DenseMap<ProcTemplateDecl*, SmallVector<ProcDecl*>> template_instantiations;
@@ -201,7 +201,7 @@ public:
     }
 
     /// Create a new scope.
-    template <typename ScopeTy = Scope, typename... Args>
+    template <std::derived_from<Scope> ScopeTy, typename... Args>
     auto create_scope(Args&&... args) -> ScopeTy* {
         all_scopes.emplace_back(new ScopeTy{std::forward<Args>(args)...});
         return static_cast<ScopeTy*>(all_scopes.back().get());

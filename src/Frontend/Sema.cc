@@ -30,10 +30,10 @@
 
 using namespace srcc;
 
-#define TRY(expression) ({                     \
-    auto _res = expression;                    \
-    if (_res.invalid()) return utils::Falsy(); \
-    _res.get();                                \
+#define TRY(expression) ({               \
+    auto _res = expression;              \
+    if (not _res) return utils::Falsy(); \
+    *_res;                               \
 })
 
 struct Err {
@@ -76,7 +76,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     ds.push_back(d);
 }
 
-void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
+void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool is_this) {
     Assert(object);
     Assert(object->type);
 
@@ -101,8 +101,9 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with) {
         }
     }
 
-    // Warn on non-struct types with no members if we’re not in a template.
-    else if (not curr_proc().proc->is_instantiation()) {
+    // Warn on non-struct types with no members if we’re not in a template. Also
+    // don't warn if this is 'this' because the with entry for it is added implicitly.
+    else if (not curr_proc().proc->is_instantiation() and not is_this) {
         Warn(with, "'%1(with%)' has no effect as type '{}' has no members", ty);
     }
 }
@@ -460,22 +461,70 @@ bool Sema::IsZeroSizedOrIncomplete(Type ty) {
     return ty->memory_size(*tu) == Size();
 }
 
-auto Sema::LookUpQualifiedName(
+/// Look up a name in a scope.
+auto Sema::LookUpNameInScope(
     Scope* in_scope,
-    ArrayRef<DeclName> names,
+    DeclNameLoc name,
     LookupHint hint
 ) -> LookupResult {
-    Assert(names.size() > 1, "Should not be qualified lookup");
+    auto it = in_scope->decls_by_name.find(name.name);
+    if (it == in_scope->decls_by_name.end())
+        return LookupResult::NotFound(name);
 
-    // The first segment is looked up using unqualified lookup, but don’t
-    // complain immediately if we can’t find it because we also need to
-    // check module names. The first segment is also allowed to be empty,
-    // which means we’re looking up a name in the global scope.
-    auto first = names.front();
-    if (first.empty()) in_scope = global_scope();
-    else {
-        auto res = LookUpUnqualifiedName(in_scope, first, LookupHint::Scope, false);
-        switch (res.result) {
+    Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
+    if (it->second.size() == 1) return LookupResult::Success(it->second.front());
+    return LookupResult::Ambiguous(name, it->second);
+}
+
+auto Sema::LookUpUnqualifiedName(
+    DeclNameLoc name,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not name.name.empty());
+    auto in_scope = curr_scope();
+    while (in_scope) {
+        auto res = LookUpNameInScope(in_scope, name, hint);
+        if (res.result != LookupResult::Reason::NotFound) return res;
+        else in_scope = in_scope->parent();
+    }
+
+    // If we couldn’t find it, try to find it in the open modules.
+    if (not tu->open_modules.empty()) {
+        Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
+        auto mod = tu->open_modules.front();
+        if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
+            return LookUpNameInScope(&s->exports, name, hint);
+        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name, hint);
+    }
+
+    return LookupResult::NotFound(name);
+}
+
+auto Sema::LookUpName(
+    Ptr<Scope> start_scope,
+    ArrayRef<DeclNameLoc> names,
+    SLoc loc,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not names.empty());
+
+    // If we have no scope and a single name, then this is unqualified lookup.
+    if (start_scope.invalid() and names.size() == 1)
+        return LookUpUnqualifiedName(names.front(), hint);
+
+    // If we don't have a scope, perform unqualified lookup of the first name
+    // first. If we only have a single name, instead use the current scope.
+    Scope* in_scope = nullptr;
+    if (start_scope.invalid()) {
+        Assert(names.size() > 1);
+
+        // The first segment is looked up using unqualified lookup, but don’t
+        // complain immediately if we can’t find it because we also need to
+        // check module names. The first segment is also allowed to be empty,
+        // which means we’re looking up a name in the global scope.
+        auto first = names.consume_front();
+        Assert(not first.name.empty());
+        switch (auto res = LookUpUnqualifiedName(first, LookupHint::Scope); res.result) {
             using enum LookupResult::Reason;
             case Success: {
                 auto scope = GetScopeFromDecl(res.decls.front());
@@ -504,7 +553,7 @@ auto Sema::LookUpQualifiedName(
             // lookup finds a module name, because a module name alone is useless
             // if it’s not on the lhs of `::`.
             case NotFound: {
-                auto it = tu->logical_imports.find(first.str());
+                auto it = tu->logical_imports.find(first.name.str());
                 if (it == tu->logical_imports.end() or not it->getValue()) return res;
                 if (auto s = dyn_cast<ImportedSourceModuleDecl>(it->second)) {
                     in_scope = &s->exports;
@@ -513,15 +562,18 @@ auto Sema::LookUpQualifiedName(
 
                 // We found an imported C++ header; do a C++ lookup.
                 auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
-                return LookUpCXXName(hdr, names.drop_front(), hint);
+                return LookUpCXXName(hdr, names, hint);
             } break;
         }
+    } else {
+        in_scope = start_scope.get();
     }
 
     // For all elements but the last, we have to look up scopes.
-    for (auto name : names.drop_front().drop_back()) {
+    Assert(in_scope);
+    for (auto name : names.drop_back()) {
         // Perform lookup.
-        auto it = in_scope->decls_by_name.find(name);
+        auto it = in_scope->decls_by_name.find(name.name);
         if (it == in_scope->decls_by_name.end()) return LookupResult(name);
 
         // The declaration must not be ambiguous.
@@ -536,56 +588,8 @@ auto Sema::LookUpQualifiedName(
         in_scope = scope.get();
     }
 
-    // Finally, look up the name in the last scope.
-    return LookUpUnqualifiedName(in_scope, names.back(), hint, true);
-}
-
-auto Sema::LookUpUnqualifiedName(
-    Scope* in_scope,
-    DeclName name,
-    LookupHint hint,
-    bool this_scope_only
-) -> LookupResult {
-    if (name.empty()) return LookupResult(name);
-    while (in_scope) {
-        // Look up the name in the this scope.
-        auto it = in_scope->decls_by_name.find(name);
-        if (it == in_scope->decls_by_name.end()) {
-            if (this_scope_only) break;
-            in_scope = in_scope->parent();
-            continue;
-        }
-
-        // Found something.
-        Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
-        if (it->second.size() == 1) return LookupResult::Success(it->second.front());
-        return LookupResult::Ambiguous(name, it->second);
-    }
-
-    // If we couldn’t find it, try to find it in the open modules.
-    if (not this_scope_only and not tu->open_modules.empty()) {
-        Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
-        auto mod = tu->open_modules.front();
-        if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
-            return LookUpUnqualifiedName(&s->exports, name, hint, true);
-        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name, hint);
-    }
-
-    return LookupResult::NotFound(name);
-}
-
-auto Sema::LookUpName(
-    Scope* in_scope,
-    ArrayRef<DeclName> names,
-    SLoc loc,
-    LookupHint hint,
-    bool complain
-) -> LookupResult {
-    auto res = names.size() == 1
-        ? LookUpUnqualifiedName(in_scope, names[0], hint, false)
-        : LookUpQualifiedName(in_scope, names, hint);
-    if (not res.successful() and complain) ReportLookupFailure(std::move(res), loc);
-    return res;
+    // Finally, look up the last name in the scope.
+    return LookUpNameInScope(in_scope, names.back(), hint);
 }
 
 auto Sema::LValueToRValue(Expr* expr) -> Expr* {
@@ -669,29 +673,29 @@ auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
 }
 
-void Sema::ReportLookupFailure(LookupResult&& result, SLoc loc) {
-    switch (result.result) {
+void Sema::ReportLookupFailure(LookupResult&& res) {
+    switch (res.result) {
         using enum LookupResult::Reason;
         case Success: Unreachable("Diagnosing a successful lookup?");
-        case FailedToImport: Error(loc, "Could not import symbol '{}' from Clang", result.name); break;
-        case NotFound: Error(loc, "Unknown symbol '{}'", result.name); break;
+        case FailedToImport: Error(res.name.loc, "Could not import symbol '{}' from Clang", res.name); break;
+        case NotFound: Error(res.name.loc, "Unknown symbol '{}'", res.name); break;
         case Ambiguous: {
-            Error(loc, "Ambiguous symbol '{}'", result.name);
-            for (auto d : result.decls) Note(d->location(), "Candidate here");
+            Error(res.name.loc, "Ambiguous symbol '{}'", res.name);
+            for (auto d : res.decls) Note(d->location(), "Candidate here");
         } break;
         case NonScopeInPath: {
-            Error(loc, "Invalid left-hand side for '::'");
-            if (not result.decls.empty()) Note(
-                result.decls.front()->location(),
+            Error(res.name.loc, "Invalid left-hand side for '::'");
+            if (not res.decls.empty()) Note(
+                res.decls.front()->location(),
                 "'{}' does not contain a scope",
-                result.name
+                res.name
             );
         } break;
     }
 
-    if (result.note) {
-        diags().report(std::move(*result.note));
-        result.note.reset();
+    if (res.note) {
+        diags().report(std::move(*res.note));
+        res.note.reset();
     }
 }
 
@@ -793,6 +797,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
+        case K::PointerDeref: return BuildUnaryExpr(Tk::Caret, e, false, loc).get();
         case K::RangeCast: return Cast(CastExpr::Range);
 
         case K::SelectOverload: {
@@ -877,6 +882,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::NilToOptional:
         case K::OptionalUnwrap:
         case K::OptionalWrap:
+        case K::PointerDeref:
         case K::RangeCast:
         case K::SelectOverload:
         case K::SliceFromArray:
@@ -1104,7 +1110,8 @@ auto Sema::BuildConversionSequence(
     Type var_type,
     ArrayRef<Expr*> args,
     SLoc init_loc,
-    bool want_lvalue
+    bool want_lvalue,
+    bool allow_auto_deref
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
 
@@ -1216,6 +1223,23 @@ auto Sema::BuildConversionSequence(
     auto ty = args.front()->type;
     if (ty == var_type) {
         if (args.front()->is_lvalue() and not want_lvalue) seq.add(Conversion::LValueToRValue());
+        return seq;
+    }
+
+    // Perform auto-dereferencing.
+    if (
+        allow_auto_deref and
+        ty->strip_pointers_and_optionals() == var_type->strip_pointers_and_optionals()
+    ) {
+        while (ty != var_type) {
+            auto elem = cast<SingleElementTypeBase>(ty)->elem();
+            if (isa<PtrType>(ty)) seq.add(Conversion::PointerDeref());
+            else if (isa<OptionalType>(ty)) seq.add(Conversion::OptionalUnwrap(elem));
+            else Unreachable("Should have been a pointer or optional");
+            ty = elem;
+        }
+
+        if (not want_lvalue) seq.add(Conversion::LValueToRValue());
         return seq;
     }
 
@@ -1481,9 +1505,10 @@ auto Sema::BuildInitialiser(
     Type var_type,
     ArrayRef<Expr*> args,
     SLoc loc,
-    bool want_lvalue
+    bool want_lvalue,
+    bool allow_auto_deref
 ) -> Ptr<Expr> {
-    auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue);
+    auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue, allow_auto_deref);
 
     // The conversion succeeded.
     if (seq_or_err.has_value())
@@ -1511,16 +1536,18 @@ auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
     );
 }
 
-auto Sema::UnwrapPointersAndOptionals(Expr* base) -> Ptr<Expr> {
-    for (;;) {
+auto Sema::UnwrapPointersAndOptionals(Expr* base, Type stop_at) -> Ptr<Expr> {
+    while (base->type != stop_at) {
         if (isa<PtrType>(base->type)) {
             base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
         } else if (isa<OptionalType>(base->type)) {
             base = UnwrapOptional(base, base->location());
         } else {
-            return base;
+            break;
         }
     }
+
+    return base;
 }
 
 // ============================================================================
@@ -1580,8 +1607,8 @@ auto Sema::SubstituteTemplate(
     // Note that we might not have any if this is a variadic function with
     // no actual template parameters.
     auto param_types = proc_template->pattern->type->param_types();
-    auto it = parsed_template_deduction_infos.find(proc_template->pattern);
-    if (it != parsed_template_deduction_infos.end()) {
+    auto it = template_deduction_infos.find(proc_template);
+    if (it != template_deduction_infos.end()) {
         for (const auto& [name, indices] : it->second) {
             for (auto i : indices) {
                 auto parsed = param_types[i];
@@ -1678,7 +1705,7 @@ auto Sema::SubstituteTemplate(
     if (info) return info;
 
     // Create a scope for the procedure and save the template arguments there.
-    EnterScope scope{*this, ScopeKind::Procedure};
+    EnterScope scope{*this, EnterScope::Procedure, proc_template->props.associated_type};
     for (auto [name, d] : deduced) AddDeclToScope(
         scope.get(),
         new (*tu) TemplateTypeParamDecl(name, d.second)
@@ -1785,6 +1812,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::NilToOptional:
             case K::OptionalUnwrap:
             case K::OptionalWrap:
+            case K::PointerDeref:
             case K::RangeCast:
             case K::SliceFromArray:
             case K::StrLitToCStr:
@@ -2012,6 +2040,7 @@ bool Sema::IsUserDefinedOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
 auto Sema::PerformOverloadResolution(
     OverloadSetExpr* overload_set,
     ArrayRef<Expr*> args,
+    bool is_associated_call,
     SLoc call_loc
 ) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
     // Since this may also entail template substitution etc. we always
@@ -2099,7 +2128,8 @@ auto Sema::PerformOverloadResolution(
                 p.type,
                 args,
                 loc,
-                p.intent == Intent::Out or p.intent == Intent::Inout
+                p.intent == Intent::Out or p.intent == Intent::Inout,
+                is_associated_call and param_index == 0
             );
 
             // If this failed, stop checking this candidate.
@@ -2772,8 +2802,10 @@ auto Sema::BuildAssertExpr(
         // Get a procedure from the runtime.
         auto GetRuntimeSymbol = [&](String name) {
             return BuildDeclRefExpr(
-                InitialDREScope::None,
-                {DeclName("__src_runtime"), DeclName(name)},
+                {
+                    {DeclName("__src_runtime"), loc},
+                    {DeclName(name), loc}
+                },
                 loc
             ).get();
         };
@@ -2782,7 +2814,7 @@ auto Sema::BuildAssertExpr(
         // procedure, even if it is the initialiser procedure, because we need to be
         // able to capture its local variables.
         auto assert_buffer_type = cast<TypeExpr>(GetRuntimeSymbol("__src_assert_msg_buf"))->value;
-        auto scope = tu->create_scope(curr_scope(), ScopeKind::Procedure);
+        auto scope = tu->create_scope<ProcScope>(curr_scope(), nullptr);
         auto proc = ProcDecl::Create(
             *tu,
             nullptr,
@@ -2920,7 +2952,7 @@ auto Sema::BuildBinaryExpr(
     };
 
     auto BuildCall = [&](DeclName fun) -> Ptr<Expr> {
-        auto ref = BuildDeclRefExpr(InitialDREScope::None, fun, loc);
+        auto ref = BuildDeclRefExpr(DeclNameLoc{fun, loc}, loc);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
@@ -3334,13 +3366,18 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     };
 }
 
-auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr> {
+auto Sema::BuildCallExpr(
+    Expr* callee_expr,
+    ArrayRef<Expr*> args,
+    SLoc loc,
+    bool is_associated_call
+) -> Ptr<Expr> {
     // If this is an overload set, perform overload resolution.
     Expr* resolved_callee = nullptr;
     SmallVector<Expr*> converted_args;
     if (auto os = dyn_cast<OverloadSetExpr>(callee_expr)) {
         ProcDecl* d{};
-        std::tie(d, converted_args) = PerformOverloadResolution(os, args, loc);
+        std::tie(d, converted_args) = PerformOverloadResolution(os, args, is_associated_call, loc);
         if (not d) return nullptr;
         resolved_callee = CreateReference(d, loc).get();
     }
@@ -3392,7 +3429,8 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
                 p.type,
                 args,
                 loc,
-                p.intent == Intent::Out or p.intent == Intent::Inout
+                p.intent == Intent::Out or p.intent == Intent::Inout,
+                is_associated_call and param_index == 0
             );
 
             // Point to the procedure if this is a direct call.
@@ -3475,20 +3513,40 @@ auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> P
 }
 
 auto Sema::BuildDeclRefExpr(
-    InitialDREScope initial_scope,
-    ArrayRef<DeclName> names,
+    ArrayRef<DeclNameLoc> names,
     SLoc loc,
     Type desired_type
 ) -> Ptr<Expr> {
-    Scope* scope = nullptr;
+    return BuildDeclRefExpr(
+        InitialDREScope::None,
+        nullptr,
+        names,
+        loc,
+        desired_type
+    );
+}
+
+auto Sema::BuildDeclRefExpr(
+    InitialDREScope initial_scope,
+    Scope* root,
+    ArrayRef<DeclNameLoc> names,
+    SLoc loc,
+    Type desired_type
+) -> Ptr<Expr> {
+    Assert((root != nullptr) == (initial_scope == InitialDREScope::Expr));
+    Assert(not names.empty());
+
+    // Determine the initial scope.
+    Ptr<Scope> scope;
     switch (initial_scope) {
-        case InitialDREScope::None: scope = curr_scope(); break;
+        case InitialDREScope::None: break;
         case InitialDREScope::Global: scope = global_scope(); break;
+        case InitialDREScope::Expr: scope = root; break;
     }
 
     // This does perform unqualified lookup for e.g. '::a', but that’s fine
     // since the global scope has no parents anyway.
-    auto res = LookUpName(scope, names, loc, LookupHint::Any, false);
+    auto res = LookUpName(scope, names, loc, LookupHint::Any);
     if (res.successful()) return CreateReference(res.decls.front(), loc);
 
     // Overload sets are ok here.
@@ -3510,11 +3568,11 @@ auto Sema::BuildDeclRefExpr(
         res.result == LookupResult::Reason::NotFound
     ) {
         auto e = dyn_cast<EnumType>(desired_type);
-        auto res = LookUpUnqualifiedName(e->scope(), names.front(), LookupHint::Any, true);
+        auto res = LookUpNameInScope(e->scope(), names.front(), LookupHint::Any);
         if (res.successful()) return CreateReference(res.decls.front(), loc);
     }
 
-    ReportLookupFailure(std::move(res), loc);
+    ReportLookupFailure(std::move(res));
     return {};
 }
 
@@ -3991,7 +4049,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
 
     // Handle overloaded operators.
     if (IsUserDefinedOverloadedOperator(op, operand->type)) {
-        auto ref = BuildDeclRefExpr(InitialDREScope::None, DeclName(op), loc);
+        auto ref = BuildDeclRefExpr(DeclNameLoc{op, loc}, loc);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), operand, loc);
     }
@@ -4100,21 +4158,18 @@ auto Sema::EnterLoop::token() -> LoopToken {
     return S.curr_proc().loop_depth;
 }
 
-Sema::EnterScope::EnterScope(Sema& S, ScopeKind kind, bool should_enter) : S{S} {
-    if (not should_enter) return;
-    Assert(not S.scope_stack.empty(), "Should not be used for the global scope");
-    scope = S.tu->create_scope(S.curr_scope(), kind);
-    S.scope_stack.push_back(scope);
-}
-
 Sema::EnterScope::EnterScope(Sema& S, bool should_enter)
-    : EnterScope(S, ScopeKind::Block, should_enter) {}
+    : EnterScope(S, should_enter ? S.tu->create_scope<BlockScope>(S.curr_scope()) : nullptr) {}
+
+Sema::EnterScope::EnterScope(Sema& S, Tag<ProcScope>, Type associated_type)
+    : EnterScope(S, S.tu->create_scope<ProcScope>(S.curr_scope(), associated_type.ptr())) {}
+
+Sema::EnterScope::EnterScope(Sema& S, Tag<StructScope>)
+    : EnterScope(S, S.tu->create_scope<StructScope>(S.curr_scope())) {}
 
 Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
     if (not scope) return;
 
-    // Allow entering the global scope multiple times; this is a bit
-    // of a hack admittedly...
     Assert(
         S.scope_stack.empty() or S.curr_scope() != scope,
         "Entering the same scope twice in a row; this is probably a bug"
@@ -4159,8 +4214,6 @@ auto Sema::AddParsedModule(ParsedModule::Ptr p, bool translate) -> ParsedModule*
     tu->add_allocator(std::move(p->alloc));
     tu->add_integer_storage(std::move(p->integers));
     tu->add_quoted_tokens(std::move(p->quoted_tokens));
-    for (auto& [decl, info] : p->template_deduction_infos)
-        parsed_template_deduction_infos[decl] = std::move(info);
 
     if (translate) {
         Assert(not started_translating, "Cannot enqueue module during translation");
@@ -4384,32 +4437,74 @@ auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Type) -> 
 }
 
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
-    // Translate arguments.
     SmallVector<Expr*> args;
-    bool errored = false;
-    for (auto a : parsed->args()) {
-        auto expr = TranslateExpr(a);
-        if (expr.invalid()) errored = true;
-        else args.push_back(expr.get());
+    Expr* callee{};
+    auto TranslateArgs = [&] -> bool {
+        bool ok = true;
+        for (auto a : parsed->args()) {
+            auto expr = TranslateExpr(a);
+            if (expr.invalid()) ok = false;
+            else args.push_back(expr.get());
+        }
+        return ok;
+    };
+
+    // The callee may be a builtin.
+    if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->is_single_ident()) {
+        auto bk = BuiltinCallExpr::Parse(dre->names().front().name.str());
+        if (bk.has_value()) {
+            if (not TranslateArgs()) return {};
+            return BuildBuiltinCallExpr(bk.value(), args, parsed->loc);
+        }
     }
 
-    // Stop if there was an error.
-    if (errored) return nullptr;
-
-    // Callee may be a builtin.
-    if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->names().size() == 1) {
-        auto bk = BuiltinCallExpr::Parse(dre->names().front().str());
-        if (bk.has_value()) return BuildBuiltinCallExpr(bk.value(), args, parsed->loc);
+    // The callee may also be an associated procedure, so if this is a member
+    // access expression, we need to handle it explicitly here.
+    bool is_associated_call = false;
+    if (auto ma = dyn_cast<ParsedMemberExpr>(parsed->callee)) {
+        auto access = TRY(TranslateMemberAccess(ma, true));
+        if (access.is_associated_proc_ref()) {
+            args.push_back(access.base);
+            callee = access.callee;
+            is_associated_call = true;
+        } else {
+            callee = access.base;
+        }
     }
 
-    // Translate callee.
-    auto callee = TRY(TranslateExpr(parsed->callee));
-    return BuildCallExpr(callee, args, parsed->loc);
+    // Otherwise, it’s a regular expression.
+    else callee = TRY(TranslateExpr(parsed->callee));
+
+    // Finally, build the call.
+    Assert(callee);
+    if (not TranslateArgs()) return {};
+    return BuildCallExpr(callee, args, parsed->loc, is_associated_call);
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
 auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) -> Ptr<Stmt> {
-    return BuildDeclRefExpr(parsed->scope, parsed->names(), parsed->loc, desired_type);
+    Assert(not parsed->empty(), "DRE is empty?");
+
+    // Handle the root expression if we have one. This must resolve to a type
+    // that contains a scope (such as a struct or enum type).
+    Scope* root = nullptr;
+    if (auto r = parsed->root().get_or_null()) {
+        auto ty = TranslateType(r);
+        if (not ty) return {};
+
+        // This must be some type that has a scope.
+        if (auto e = dyn_cast<EnumType>(ty)) root = e->scope();
+        else if (auto s = dyn_cast<StructType>(ty)) root = s->scope();
+        else return Error(parsed->loc, "Cannot perform scope access on type '{}'", ty);
+    }
+
+    return BuildDeclRefExpr(
+        parsed->initial_scope(),
+        root,
+        parsed->names(),
+        parsed->loc,
+        desired_type
+    );
 }
 
 /// Perform initial processing of a decl so it can be used by the rest
@@ -4494,7 +4589,7 @@ auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
     // Create and declare the enum type.
     auto enum_type = new (*tu) EnumType(
         *tu,
-        tu->create_scope(curr_scope()),
+        tu->create_scope<BlockScope>(curr_scope()),
         e->name,
         underlying_type,
         e->loc
@@ -4805,8 +4900,8 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr
         if (
             auto dre = dyn_cast<ParsedDeclRefExpr>(c.cond);
             dre and
-            dre->names().size() == 1 and
-            dre->names().front().str() == "_"
+            dre->is_single_ident() and
+            dre->names().front().name.str() == "_"
         ) {
             if (body) cases.emplace_back(MatchCase::Pattern::Wildcard(), body.get(), dre->loc);
             continue;
@@ -4826,19 +4921,55 @@ auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr
     return BuildMatchExpr(control_expr, ty, cases, parsed->loc);
 }
 
-auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateMemberAccess(
+    ParsedMemberExpr* parsed,
+    bool is_call
+) -> std::optional<MemberAccess> {
+    // Translate the base access.
     auto base = TRY(TranslateExpr(parsed->base));
     auto ty = base->type->strip_pointers_and_optionals();
+    auto TryAssociatedLookup = [&](auto FallbackError) -> std::optional<MemberAccess> {
+        auto res = LookUpUnqualifiedName(
+            DeclNameLoc{parsed->member, parsed->loc},
+            LookupHint::Any
+        );
+
+        if (not res.successful_or_ambiguous())
+            return std::invoke(FallbackError);
+
+        // Filter out all declarations whose associated type doesn't match.
+        llvm::erase_if(res.decls, [&](Decl* d) {
+            auto proc = dyn_cast<ProcDecl>(d);
+            return not proc or proc->props.associated_type != ty;
+        });
+
+        // If this leaves us with nothing, fail.
+        if (res.decls.empty())
+            return std::invoke(FallbackError);
+
+        Expr* callee{};
+        if (res.decls.size() == 1) callee = TRY(CreateReference(res.decls.front(), parsed->loc));
+        else callee = OverloadSetExpr::Create(*tu, res.decls, parsed->loc);
+        return MemberAccess::AssociatedProcRef(base, callee);
+    };
+
+    // Helper to call 'TryAssociatedLookup' w/ a lambda that issues a diagnostic.
+#   define TRY_ASSOCIATED(...) TryAssociatedLookup([&] { return Error(__VA_ARGS__); });
 
     // Struct member access.
     if (auto s = dyn_cast<StructType>(ty)) {
-        if (not s->is_complete()) return Error(
+        if (not s->is_complete()) return TRY_ASSOCIATED(
             parsed->loc,
             "Member access on incomplete type '{}'",
             ty
         );
 
-        auto field = LookUpUnqualifiedName(s->scope(), parsed->member, LookupHint::Any, true);
+        auto field = LookUpNameInScope(
+            s->scope(),
+            DeclNameLoc{parsed->member, parsed->loc},
+            LookupHint::Any
+        );
+
         switch (field.result) {
             using enum LookupResult::Reason;
             case Success: break;
@@ -4847,7 +4978,7 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
             case NonScopeInPath:
                 Unreachable();
 
-            case NotFound: return Error(
+            case NotFound: return TRY_ASSOCIATED(
                 parsed->loc,
                 "Struct '{}' has no member named '{}'",
                 ty,
@@ -4855,26 +4986,40 @@ auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
             );
         }
 
-        return BuildMemberAccessExpr(base, cast<FieldDecl>(field.decls.front()), parsed->loc);
+        auto access = TRY(BuildMemberAccessExpr(
+            base,
+            cast<FieldDecl>(field.decls.front()),
+            parsed->loc
+        ));
+
+        return MemberAccess::Simple(access);
     }
 
     // Member access on builtin types.
     auto members = BuiltinMemberAccessExpr::GetAllBuiltinMembersOf(ty);
-    if (members.empty()) return Error(
+    if (members.empty()) return TRY_ASSOCIATED(
         parsed->loc,
         "Cannot perform member access on type '{}'",
         ty
     );
 
     auto it = rgs::find(members, parsed->member, &BuiltinMemberAccessExpr::BuiltinMember::name);
-    if (it == members.end()) return Error(
+    if (it == members.end()) return TRY_ASSOCIATED(
         parsed->loc,
         "'{}' has no member named '{}'",
         ty,
         parsed->member
     );
 
-    return BuildBuiltinMemberAccessExpr(it->kind, base, parsed->loc);
+    auto access = TRY(BuildBuiltinMemberAccessExpr(it->kind, base, parsed->loc));
+    return MemberAccess::Simple(access);
+#   undef TRY_ASSOCIATED
+}
+
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
+    auto access = TRY(TranslateMemberAccess(parsed, false));
+    Assert(not access.is_associated_proc_ref());
+    return access.base;
 }
 
 auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Type desired_type) -> Ptr<Stmt> {
@@ -4903,6 +5048,23 @@ auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Type) -> Ptr<Stmt> {
     }
 
     return QuoteExpr::Create(*tu, parsed, unquotes, parsed->loc);
+}
+
+auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Type) -> Ptr<Stmt> {
+    // Find the associated type.
+    Type asociated_type = curr_scope()->associated_type();
+    if (not asociated_type) return Error(
+        parsed->loc,
+        "'%1({}%)' cannot be used outside of a member function",
+        parsed->spelling()
+    );
+
+    // If this is 'This', then it is that type.
+    if (parsed->is_type)
+        return new (*tu) TypeExpr(asociated_type, parsed->loc);
+
+    // Otherwise, perform name lookup for 'this'.
+    return BuildDeclRefExpr(DeclNameLoc{String("this"), parsed->loc}, parsed->loc);
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
@@ -5017,10 +5179,11 @@ auto Sema::TranslateProcBody(
             parsed_decl->loc
         );
 
-        if (parsed_decl->with_loc.is_valid()) AddEntryToWithStack(
+        if (parsed_decl->with_loc.is_valid() or parsed_decl->is_this_param) AddEntryToWithStack(
             curr_scope(),
             Save(CreateReference(param, param->location()).get()),
-            parsed_decl->with_loc
+            parsed_decl->with_loc,
+            parsed_decl->is_this_param
         );
     }
 
@@ -5090,9 +5253,16 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     }
 
     // Check if this is a template.
+    TemplateParamDeductionInfo deduction_info;
     auto IsTemplate = [&] {
-        auto it = parsed_template_deduction_infos.find(parsed);
-        if (it != parsed_template_deduction_infos.end()) return true;
+        for (auto [i, p] : enumerate(parsed->params())) {
+            p->traverse([&](ParsedTemplateType* t) {
+                deduction_info[t->name].insert(u32(i));
+            });
+        }
+
+
+        if (not deduction_info.empty()) return true;
 
         // A function with a 'var' parameter is also a template.
         return rgs::any_of(parsed->type->param_types(), [&](auto& p) {
@@ -5128,16 +5298,47 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // TODO: When translating composite types, compute whether they’re compile-time only.
     props.is_compile_time_only = inside_eval;
 
+    // Resolve the associated type.
+    if (auto a = parsed->associated_type.get_or_null()) {
+        props.associated_type = TranslateType(a);
+
+        // We auto-dereference pointers an optionals, so it's a bit problematic if
+        // the associated type is one of those.
+        if (isa<PtrType, OptionalType>(props.associated_type)) {
+            SmallString<32> quals;
+            Type ty = props.associated_type;
+            for (;;) {
+                if (isa<PtrType>(ty)) quals += "^";
+                else if (isa<OptionalType>(ty)) quals += "?";
+                else break;
+                ty = cast<SingleElementTypeBase>(ty)->elem();
+            }
+
+            Error(
+                a->loc,
+                "{} type '{}' cannot be used as an associated type",
+                isa<PtrType>(props.associated_type) ? "Pointer" : "Optional",
+                props.associated_type
+            );
+
+            Remark("Write '{}%1(::%)' instead and then use '%1(This{}%)' as the parameter type", ty, quals);
+        }
+    }
+
     // If this is a template, we can’t do much right now.
     Decl* decl{};
     if (IsTemplate()) {
-        decl = ProcTemplateDecl::Create(
+        auto temp = ProcTemplateDecl::Create(
             *tu,
             parsed,
             curr_scope() == global_scope() ? nullptr : curr_proc().proc,
             props,
             has_variadic_param
         );
+
+        decl = temp;
+        if (not deduction_info.empty())
+            template_deduction_infos.try_emplace(temp, std::move(deduction_info));
     }
 
     // Otherwise, convert its signature now.
@@ -5146,7 +5347,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 
         // TODO: Check for redeclaration here. Codegen will crash horribly if
         // there are two procedures w/ the same name.
-        EnterScope scope{*this, ScopeKind::Procedure};
+        EnterScope scope{*this, EnterScope::Procedure, props.associated_type};
         auto type = TranslateProcType(parsed->type, true);
         auto ty = cast_if_present<ProcType>(type);
         if (not ty) ty = ProcType::Get(*tu, {Type::VoidTy, Expr::RValue});
@@ -5368,8 +5569,12 @@ auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
 }
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
-    auto res = LookUpName(curr_scope(), parsed->names(), parsed->loc, LookupHint::Type);
-    if (not res) return Type();
+    Assert(not parsed->empty(), "DRE is empty?");
+    auto res = LookUpName(nullptr, parsed->names(), parsed->loc, LookupHint::Type);
+    if (not res.successful()) {
+        ReportLookupFailure(std::move(res));
+        return {};
+    }
 
     // Template type.
     if (auto ttd = dyn_cast<TemplateTypeParamDecl>(res.decls.front()))
@@ -5514,7 +5719,7 @@ auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
-    auto res = LookUpUnqualifiedName(curr_scope(), parsed->name, LookupHint::Type, true);
+    auto res = LookUpNameInScope(curr_scope(), {parsed->name, parsed->loc}, LookupHint::Type);
     if (not res) return Error(parsed->loc, "Deduced template type cannot occur here");
     auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
     if (not ty->in_substitution) return Error(parsed->loc, "Deduced template type cannot occur here");

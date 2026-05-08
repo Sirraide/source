@@ -897,6 +897,12 @@ struct CodeGen::Mangler {
             Append(proc->name.str());
             Append(proc->type);
 
+            // Also add the associated type if there is one.
+            if (proc->props.associated_type) {
+                name += "$";
+                Append(proc->props.associated_type);
+            }
+
             if (proc->props.mangling_number != ManglingNumber::None)
                 Format(name, ".{}", +proc->props.mangling_number);
 

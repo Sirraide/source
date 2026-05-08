@@ -143,6 +143,10 @@ public:
     int run_job();
 
 private:
+    friend DiagsProducer;
+    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
+
     template <typename... Args>
     void Diag(Diagnostic::Level level, SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
         ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);

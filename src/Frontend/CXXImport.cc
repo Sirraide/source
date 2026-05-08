@@ -190,7 +190,7 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
             auto underlying = TRY(ImportType(e->getLocation(), e->getIntegerType()));
             auto loc = ImportSourceLocation(e->getLocation());
             auto name = ImportName(e);
-            auto scope = S.tu->create_scope(S.global_scope());
+            auto scope = S.tu->create_scope<BlockScope>(S.global_scope());
             auto enum_ty = new (*S.tu) EnumType(*S.tu, scope, S.tu->save(name), underlying, loc);
             for (auto enumerator : e->enumerators()) {
                 auto decl = new (*S.tu) EnumeratorDecl(
@@ -744,7 +744,7 @@ constexpr  Kind& operator|=(Kind& a, Kind b) {
 
 auto Sema::LookUpCXXNameImpl(
     ImportedClangModuleDecl* clang_module,
-    ArrayRef<DeclName> names,
+    ArrayRef<DeclNameLoc> names,
     LookupHint hint
 ) -> LookupResult {
     auto ast = &clang_module->clang_ast;
@@ -755,7 +755,7 @@ auto Sema::LookUpCXXNameImpl(
     // Look up all scopes in the path.
     clang::DeclContext* ctx = ast_ctx.getTranslationUnitDecl();
     for (auto n : names.drop_back()) {
-        auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(n.str())));
+        auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(n.name.str())));
         if (not res.isSingleResult()) return LookupResult::NonScopeInPath(n);
         auto new_ctx = dyn_cast<clang::DeclContext>(res.front());
         if (not new_ctx) return LookupResult::NonScopeInPath(n);
@@ -764,7 +764,7 @@ auto Sema::LookUpCXXNameImpl(
 
     // Look up the last segment in the scope.
     // TODO: Support operators.
-    auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back().str())));
+    auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back().name.str())));
 
     // Figure out what we found.
     auto found = Kind::Nothing;
@@ -814,7 +814,7 @@ auto Sema::LookUpCXXNameImpl(
 
     // If we still have multiple things left, then that's an error.
     if (std::popcount(+found) > 1) {
-        auto diag = CreateNote(SLoc(), "There are multiple incompatible declarations");
+        auto diag = CreateNote(names.back().loc, "There are multiple incompatible declarations");
         return LookupResult::FailedToImport(
             names.back(),
             std::make_unique<Diagnostic>(std::move(diag))
@@ -887,7 +887,7 @@ auto Sema::LookUpCXXNameImpl(
 auto Sema::LookUpCXXMacro(
     ImportedClangModuleDecl* clang_module,
     clang::MacroInfo* mi,
-    String macro_name,
+    DeclNameLoc macro_name,
     LookupHint hint
 ) -> LookupResult {
     // Import the source location of the macro.
@@ -925,7 +925,7 @@ auto Sema::LookUpCXXMacro(
     auto clang_sloc = sm.getLocForStartOfFile(sm.getMainFileID());
     auto fid = sm.createFileID(
         llvm::MemoryBuffer::getMemBufferCopy(
-            macro_name,
+            macro_name.name.str(),
             "<macro expansion>"
         )
     );
@@ -955,7 +955,7 @@ auto Sema::LookUpCXXMacro(
         toks.front().is(clang::tok::identifier)
     ) return LookUpCXXNameImpl(
         clang_module,
-        DeclName(tu->save(toks.front().getIdentifierInfo()->getName())),
+        DeclNameLoc{tu->save(toks.front().getIdentifierInfo()->getName()), macro_name.loc},
         hint
     );
 
@@ -1152,7 +1152,7 @@ auto Sema::LookUpCXXMacro(
 
 auto Sema::LookUpCXXName(
     ImportedClangModuleDecl* clang_module,
-    ArrayRef<DeclName> names,
+    ArrayRef<DeclNameLoc> names,
     LookupHint hint
 ) -> LookupResult {
     Assert(not names.empty(), "Empty name lookup?");
@@ -1161,14 +1161,14 @@ auto Sema::LookUpCXXName(
     };
 
     // If this is anything other than a single identifier, it can’t be a macro.
-    if (names.size() != 1 or not names.front().is_str())
+    if (names.size() != 1 or not names.front().name.is_str())
         return DoNameLookup();
 
     // Check if this is a macro.
     auto ast = &clang_module->clang_ast;
     auto& pp = ast->getSema().getPreprocessor();
-    auto id = pp.getIdentifierInfo(names.front().str());
+    auto id = pp.getIdentifierInfo(names.front().name.str());
     auto *mi = pp.getMacroInfo(id);
     if (not mi) return DoNameLookup();
-    return LookUpCXXMacro(clang_module, mi, names.front().str(), hint);
+    return LookUpCXXMacro(clang_module, mi, names.front(), hint);
 }
