@@ -82,7 +82,7 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
 
     // The type must be complete.
     Type ty = object->type->strip_pointers_and_optionals();
-    if (not RequireCompleteType(ty)) return;
+    if (not RequireCompleteType(ty, with)) return;
 
     // Declare the object’s members in the current scope, if there are any.
     if (auto s = dyn_cast<StructType>(ty)) {
@@ -110,7 +110,6 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
 
 bool Sema::CheckFieldType(Type type, SLoc loc) {
     if (not CheckVariableType(type, loc)) return false;
-    if (not RequireCompleteType(type)) return false;
     return true;
 }
 
@@ -118,10 +117,15 @@ bool Sema::CheckVariableType(Type ty, SLoc loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
     if (not ty) return false;
+    if (not ProhibitDeducedTypes(ty, loc)) return false;
+    return RequireCompleteType(ty, loc);
+}
+
+bool Sema::ProhibitDeducedTypes(Type ty, SLoc loc) {
     if (ty == Type::DeducedTy) return Error(loc, "Type deduction is not allowed here");
     if (ty == Type::NoReturnTy) return Error(loc, "'{}' is not allowed here", Type::NoReturnTy);
-    if (ty == Type::UnresolvedOverloadSetTy) return Error(loc, "Unresolved overload set in parameter declaration");
-    return RequireCompleteType(ty);
+    if (ty == Type::UnresolvedOverloadSetTy) return Error(loc, "Unresolved overload set is not allowed here");
+    return true;
 }
 
 auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory {
@@ -438,7 +442,7 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
     else return Size::Bits(i.getActiveBits()) <= bits;
 }
 
-bool Sema::RequireCompleteType(Type ty) {
+bool Sema::RequireCompleteType(Type ty, SLoc loc) {
     Assert(ty, "Null type passed to RequireCompleteType()");
 
     // Structs can be made complete on demand.
@@ -447,7 +451,9 @@ bool Sema::RequireCompleteType(Type ty) {
         return s->is_complete();
     }
 
-    return ty->is_complete();
+    if (not ty->is_complete())
+        return Error(loc,  "Invalid use of incomplete type '{}'", ty);
+    return true;
 }
 
 bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
@@ -1120,7 +1126,7 @@ auto Sema::BuildConversionSequence(
     // so this usually shouldn’t cause any problems even if we’re building conversion sequences
     // tentatively.
     Assert(var_type, "Null type is not supported here");
-    if (not RequireCompleteType(var_type)) return CreateError(
+    if (not RequireCompleteType(var_type, init_loc)) return CreateError(
         init_loc,
         "Cannot create instance of incomplete type '{}'",
         var_type
@@ -1227,6 +1233,7 @@ auto Sema::BuildConversionSequence(
     }
 
     // Perform auto-dereferencing.
+    // FIXME: This does the wrong thing if we have e.g. 'int^^' and 'int??'.
     if (
         allow_auto_deref and
         ty->strip_pointers_and_optionals() == var_type->strip_pointers_and_optionals()
@@ -5691,7 +5698,7 @@ auto Sema::TranslateProcType(
 auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
     auto immutable = dyn_cast<ParsedValueType>(stmt->elem);
     auto ty = TranslateType(immutable ? immutable->elem : stmt->elem);
-    if (not CheckVariableType(ty, stmt->loc)) return Type();
+    if (not ProhibitDeducedTypes(ty, stmt->loc)) return Type();
     return PtrType::Get(*tu, ty, immutable != nullptr);
 }
 

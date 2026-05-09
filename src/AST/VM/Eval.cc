@@ -924,7 +924,7 @@ bool Eval::EvalLoop() {
         if (auto prop = dyn_cast<ir::TypePropertyOp>(i)) {
             auto loc = SLoc::Decode(i->getLoc());
             auto ty = Val(prop.getTypeArgument()).cast<Type>();
-            if (not sema or not sema->RequireCompleteType(ty)) return Error(
+            if (not sema or not sema->RequireCompleteType(ty, loc)) return Error(
                 loc,
                 "Querying property of incomplete type '{}'",
                 ty

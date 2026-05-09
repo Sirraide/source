@@ -178,7 +178,8 @@ struct Impl final : Target {
 static auto GetElemTyAttrsForPointee(
     CodeGen& cg,
     Type pointee
-) -> std::array<mlir::NamedAttribute, 2> {
+) -> SmallVector<mlir::NamedAttribute, 2> {
+    if (not pointee->is_complete()) return {};
     return {
         cg.getNamedAttr(
             LLVMDialect::getDereferenceableAttrName(),

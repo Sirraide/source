@@ -1,0 +1,48 @@
+// R      %srcc --ir   --target x86_64-unknown-linux -I test/inputs %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux -I test/inputs %s
+program test;
+
+import <opaque.hh> as *;
+
+// Check that we don't attempt to add 'dereferenceable' attributes to
+// pointers to opaque type (this would require knowing the size of the
+// pointee type, which isn't possible for opaque types and would crash).
+
+proc f(OpaqueType^) {}
+
+// * proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1fFvRT10OpaqueTypeE.1 (ptr %0 noundef) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, ptr %0, align 8
+// +     ret
+// + }
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + ; Function Attrs: norecurse nounwind
+//L + define void @__src_main() #0 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private void @_S1fFvRT10OpaqueTypeE.1(ptr noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store ptr %0, ptr %2, align 8
+//L +   ret void
+//L + }
+//L +
+//L + attributes #0 = { norecurse nounwind }
+//L + attributes #1 = { nounwind }
+//L +
+//L + !llvm.module.flags = !{!0}
+//L +
+//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

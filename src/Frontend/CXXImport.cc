@@ -104,28 +104,29 @@ public:
         }
     }
 
+    template <typename Entity>
+    auto GetEntityLoc(Entity e) -> SLoc {
+        using Pointee = std::remove_pointer_t<Entity>;
+        if constexpr (std::derived_from<Pointee, clang::Decl>) {
+            return ImportSourceLocation(e->getLocation());
+        } else if constexpr (std::derived_from<Pointee, clang::Stmt>) {
+            return ImportSourceLocation(e->getBeginLoc());
+        } else if constexpr (std::is_same_v<Entity, clang::SourceLocation>) {
+            return ImportSourceLocation(e);
+        } else if constexpr (std::is_same_v<Entity, SLoc>) {
+            return e;
+        } else {
+            static_assert(false, "Unknown entity");
+        }
+    }
+
     template <typename Entity, typename... Args>
     auto MakeErr(
         Entity e,
         std::format_string<decltype(PreprocessDiagArg(std::declval<Importer&>(), std::declval<Args>()))...> fmt,
         Args&&... args
     ) {
-        SLoc loc{};
-
-        using Pointee = std::remove_pointer_t<Entity>;
-        if constexpr (std::derived_from<Pointee, clang::Decl>) {
-            loc = ImportSourceLocation(e->getLocation());
-        } else if constexpr (std::derived_from<Pointee, clang::Stmt>) {
-            loc = ImportSourceLocation(e->getBeginLoc());
-        } else if constexpr (std::is_same_v<Entity, clang::SourceLocation>) {
-            loc = ImportSourceLocation(e);
-        } else if constexpr (std::is_same_v<Entity, SLoc>) {
-            loc = e;
-        } else {
-            static_assert(false, "Unknown entity");
-        }
-
-        auto diag = CreateNote(loc, fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
+        auto diag = CreateNote(GetEntityLoc(e), fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
         return std::unexpected(std::make_unique<Diagnostic>(diag));
     }
 
@@ -136,6 +137,7 @@ public:
         Args&&... args
     ){
         auto msg = Format(fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
+        if (S.tu->lang_opts().wcxx_import) Warn(GetEntityLoc(e), "Importing {} is not yet supported", msg);
         return MakeErr(e, "Importing {} is not yet supported", msg);
     }
 

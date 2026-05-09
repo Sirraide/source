@@ -968,7 +968,7 @@ private:
     bool IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated);
 
     /// Check that we have a complete type.
-    [[nodiscard]] bool RequireCompleteType(Type ty);
+    [[nodiscard]] bool RequireCompleteType(Type ty, SLoc loc);
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
     bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
@@ -1102,6 +1102,9 @@ private:
         bool is_associated_call,
         SLoc call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
+
+    /// Issue an error if 'ty' is deduced somehow.
+    bool ProhibitDeducedTypes(Type ty, SLoc loc);
 
     /// Deserialise an AST.
     auto ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<>;
