@@ -831,12 +831,12 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 true
 //L + }
 //L +
-//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 //L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #2
 //L +
 //L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nounwind }
-//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

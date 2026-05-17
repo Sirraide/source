@@ -2979,16 +2979,16 @@ proc closure_return = slice_return;
 //L +   ret { ptr, ptr } { ptr @_S12slice_returnFSI8E.11, ptr null }
 //L + }
 //L +
-//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: readwrite)
+//L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 //L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #2
 //L +
-//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
 //L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #3
 //L +
 //L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nounwind }
-//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: readwrite) }
-//L + attributes #3 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+//L + attributes #3 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +

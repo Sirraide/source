@@ -91,12 +91,12 @@ proc g {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+//L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
 //L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
 //L + attributes #0 = { norecurse nounwind }
 //L + attributes #1 = { nounwind }
-//L + attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+//L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
 //L +
 //L + !llvm.module.flags = !{!0}
 //L +
