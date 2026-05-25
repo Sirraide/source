@@ -65,26 +65,26 @@ public:
         std::string output_file_name;
 
         /// Directories to search for modules.
-        std::span<std::string> module_search_paths;
+        Span<std::string> module_search_paths;
 
         /// Directories to add to the C/C++ header search path.
-        std::span<std::string> clang_include_paths;
+        Span<std::string> clang_include_paths;
 
         /// Directories to add to the native library search path.
-        std::span<std::string> lib_paths;
+        Span<std::string> lib_paths;
 
         /// Libraries to link against.
-        std::span<std::string> link_libs;
+        Span<std::string> link_libs;
 
         /// Additional objects to link in.
         ///
         /// Unlike 'link_libs', these are directly passed to the linker
         /// as-is rather than via '-l'.
-        std::span<std::string> link_objects;
+        Span<std::string> link_objects;
 
         /// Shared objects to load at compile time so they can be called into
         /// during constant evaluation.
-        std::span<fs::Path> eval_libs;
+        Span<fs::Path> eval_libs;
 
         /// The action to perform.
         Action action;
