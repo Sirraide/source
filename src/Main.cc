@@ -24,6 +24,7 @@ using options = clopts< // clang-format off
     option<"-o", "Override the default output file name">,
     option<"--eval-steps", "Maximum number of evaluation steps before compile-time evaluation results in an error", std::int64_t>,
     option<"--target", "Target triple to compile for">,
+    multiple<option<"--load", "Load a shared library that can be called into at compile time", fs::Path>>,
     multiple<option<"--link-object", "Link a compiled object file into every TU that is part of this compilation">>,
     multiple<short_option<"-M", "Path to a directory that should be searched for compiled modules">>,
     multiple<short_option<"-I", "Add a directory to the C/C++ header search path">>,
@@ -226,6 +227,7 @@ int main(int argc, char** argv) {
         .lib_paths = opts.get<"-L">(),
         .link_libs = opts.get<"-l">(),
         .link_objects = opts.get<"--link-object">(),
+        .eval_libs = opts.get<"--load">(),
         .action = action,
         .lang_opts = {
             .overflow_checking = opts.get<"-foverflow-checks">(),

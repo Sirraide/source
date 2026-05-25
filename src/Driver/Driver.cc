@@ -37,8 +37,14 @@ int Driver::run_job() {
     // Always create a regular diags engine first for driver diags.
     ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
 
-    /// Print pending diagnostics on exit.
+    // Print pending diagnostics on exit.
     defer { ctx.diags().flush(); };
+
+    // Load shared libraries.
+    for (const auto& p : opts.eval_libs) {
+        auto res = ctx.load_shared_library(p);
+        if (not res) return Error("Could not load shared library '{}': {}", p.string(), res.error());
+    }
 
     // Check if the target is supported.
     if (not opts.triple.isOSLinux() or opts.triple.getArch() != llvm::Triple::x86_64) {

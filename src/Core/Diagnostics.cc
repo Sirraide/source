@@ -426,7 +426,7 @@ StreamingDiagnosticsEngine::StreamingDiagnosticsEngine(
 ) : DiagnosticsEngine(ctx), stream(output_stream), error_limit(error_limit) {}
 
 StreamingDiagnosticsEngine::~StreamingDiagnosticsEngine() {
-    Assert(backlog.empty(), "Diagnostics not flushed?");
+    if (not backlog.empty()) EmitDiagnostics();
 }
 
 auto StreamingDiagnosticsEngine::Create(

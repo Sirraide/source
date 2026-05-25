@@ -28,7 +28,13 @@ struct LangOpts;
 using FileId = i32;
 } // namespace srcc
 
+namespace llvm::sys {
+class DynamicLibrary;
+}
+
 class srcc::Context {
+    LIBBASE_IMMOVABLE(Context);
+
     friend Driver;
 
     /// Module dir.
@@ -43,6 +49,9 @@ class srcc::Context {
     /// Files loaded by the context.
     std::vector<std::unique_ptr<File>> all_files;
     std::unordered_map<fs::Path, File*> files_by_path; // FIXME: use inode number instead.
+
+    /// Libraries loaded by the context.
+    std::vector<llvm::sys::DynamicLibrary> libs;
 
     /// For saving strings.
     llvm::BumpPtrAllocator alloc;
@@ -63,6 +72,7 @@ public:
 
     /// Create a new context with default options.
     explicit Context();
+    ~Context();
 
     /// Create a virtual file.
     [[nodiscard]] auto create_virtual_file(
@@ -96,6 +106,12 @@ public:
 
     /// DO NOT CALL THIS. This is only here for the driver.
     void _initialise_context_(fs::Path module_path, int opt_level);
+
+    /// Get the shared libraries loaded in this context.
+    auto libraries() -> MutableSpan<llvm::sys::DynamicLibrary>;
+
+    /// Load a shared library to be used at compile time.
+    auto load_shared_library(fs::PathRef path) -> Result<>;
 
     /// The directory in which modules should be placed.
     [[nodiscard]] auto module_path() const -> fs::PathRef;

@@ -82,6 +82,10 @@ public:
         /// as-is rather than via '-l'.
         std::span<std::string> link_objects;
 
+        /// Shared objects to load at compile time so they can be called into
+        /// during constant evaluation.
+        std::span<fs::Path> eval_libs;
+
         /// The action to perform.
         Action action;
 

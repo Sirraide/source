@@ -53,6 +53,10 @@ Context::Context() {
     });
 }
 
+Context::~Context() {
+    for (auto& l : libs) llvm::sys::DynamicLibrary::closeLibrary(l);
+}
+
 auto Context::create_virtual_file(
     std::unique_ptr<llvm::MemoryBuffer> data,
     fs::PathRef name
@@ -95,6 +99,19 @@ auto Context::get_file(fs::PathRef path) -> const File& {
 void Context::_initialise_context_(fs::Path module_path, int optimisation_level) {
     module_dir = std::move(module_path);
     opt_level = optimisation_level;
+}
+
+auto Context::libraries() -> MutableSpan<llvm::sys::DynamicLibrary> {
+    return libs;
+}
+
+auto Context::load_shared_library(fs::PathRef path) -> Result<> {
+    std::string err;
+    auto lib = llvm::sys::DynamicLibrary::getLibrary(path.c_str(), &err);
+    if (not err.empty()) return Error("{}", err);
+    Assert(lib.isValid(), "Should not return invalid lib w/o populating 'err'");
+    libs.push_back(std::move(lib));
+    return {};
 }
 
 auto Context::module_path() const -> fs::PathRef {

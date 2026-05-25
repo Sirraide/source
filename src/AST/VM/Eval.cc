@@ -1198,11 +1198,25 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
     // Obtain the procedure address.
     auto [it, not_found] = vm.native_symbols.try_emplace(proc, nullptr);
     if (not_found) {
-        auto sym = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(std::string{proc.getSymName()});
+        std::string sym_name{proc.getSymName()};
+        auto sym = [&] -> void* {
+            auto s = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(sym_name);
+            if (s) return s;
+
+            // If we couldn’t find it, try other libraries.
+            for (auto& l : vm.owner().context().libraries()) {
+                s = l.getAddressOfSymbol(sym_name.c_str());
+                if (s) return s;
+            }
+
+            return nullptr;
+        }();
+
         if (not sym) {
             Error(entry, "Failed to find symbol for FFI call to '{}'", proc.getSymName());
             return std::nullopt;
         }
+
         it->second = sym;
     }
 
