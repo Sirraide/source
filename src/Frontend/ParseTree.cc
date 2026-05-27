@@ -902,8 +902,8 @@ bool ParsedStmt::traverse_impl(llvm::function_ref<bool(ParsedStmt*)> visitor) {
 }
 
 #define PARSE_TREE_NODE(node)                                                                                \
-    static_assert(alignof(SRCC_CAT(Parsed, node)) < __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Alignment to large"); \
-    static_assert(__is_trivially_destructible(SRCC_CAT(Parsed, node)), "Parse tree nodes must be trivially destructible");
+    static_assert(alignof(LIBBASE_CAT(Parsed, node)) < __STDCPP_DEFAULT_NEW_ALIGNMENT__, "Alignment to large"); \
+    static_assert(__is_trivially_destructible(LIBBASE_CAT(Parsed, node)), "Parse tree nodes must be trivially destructible");
 
 PARSE_TREE_NODE(Stmt);
 #include "srcc/ParseTree.inc"

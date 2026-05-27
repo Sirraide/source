@@ -5418,7 +5418,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed, Type desired_type) -> Ptr<Stmt> {
         return BuildTypeExpr(ty, parsed->loc); \
     }
 #define PARSE_TREE_LEAF_NODE(node) \
-    case K::node: return SRCC_CAT(Translate, node)(cast<SRCC_CAT(Parsed, node)>(parsed), desired_type);
+    case K::node: return LIBBASE_CAT(Translate, node)(cast<LIBBASE_CAT(Parsed, node)>(parsed), desired_type);
 #include "srcc/ParseTree.inc"
     }
 

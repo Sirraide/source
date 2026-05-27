@@ -21,13 +21,13 @@ struct ParsedEnumerator;
 /// in which that template parameter is deduced.
 using TemplateParamDeductionInfo = HashMap<String, llvm::SmallDenseSet<u32>>;
 
-#define PARSE_TREE_NODE(node) class SRCC_CAT(Parsed, node);
+#define PARSE_TREE_NODE(node) class LIBBASE_CAT(Parsed, node);
 #include "srcc/ParseTree.inc"
 } // namespace srcc
 
 /// Parsed representation of a single file. NOT thread-safe.
 class srcc::ParsedModule {
-    SRCC_IMMOVABLE(ParsedModule);
+    LIBBASE_IMMOVABLE(ParsedModule);
     friend Parser;
     Context& ctx;
 
@@ -132,9 +132,7 @@ protected:
     ParsedStmt(Kind kind, SLoc loc) : expr_kind{kind}, loc{loc} {}
 
 public:
-    // Only allow allocating these in the parser.
-    void* operator new(usz) = SRCC_DELETED("Use `new (parser) { ... }` instead");
-    void* operator new(usz size, Parser& parser);
+    SRCC_ALLOCATE_IN_CONTEXT(ParsedStmt, Parser);
 
     auto kind() const -> Kind { return expr_kind; }
 

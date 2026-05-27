@@ -76,7 +76,7 @@ LIBBASE_DEFINE_FLAG_ENUM(ParseExprFlags);
 }
 
 class srcc::Parser : DiagsProducer, parser::State {
-    SRCC_IMMOVABLE(Parser);
+    LIBBASE_IMMOVABLE(Parser);
 
     friend parser::TentativeParseScope;
 

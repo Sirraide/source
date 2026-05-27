@@ -17,10 +17,6 @@
 
 #include <base/DSA.hh>
 
-#define ALLOCATE_IN_TU(TYPE)                                                  \
-    void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead"); \
-    void* operator new(usz size, TranslationUnit& tu) { return tu.allocate<TYPE>(); }
-
 namespace srcc {
 class TranslationUnit;
 class Target;
@@ -32,7 +28,7 @@ class MangleContext;
 
 /// Representation of a single program or module. NOT thread-safe.
 class srcc::TranslationUnit {
-    SRCC_IMMOVABLE(TranslationUnit);
+    LIBBASE_IMMOVABLE(TranslationUnit);
 
 public:
     using Ptr = std::unique_ptr<TranslationUnit>;

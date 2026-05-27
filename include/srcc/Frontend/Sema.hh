@@ -29,7 +29,7 @@ class MacroInfo;
 }
 
 class srcc::Sema : public DiagsProducer {
-    SRCC_IMMOVABLE(Sema);
+    LIBBASE_IMMOVABLE(Sema);
 
     class Importer;
     class ImmediateInitContext;
@@ -89,7 +89,7 @@ private:
     };
 
     struct ProcScopeInfo {
-        SRCC_IMMOVABLE(ProcScopeInfo);
+        LIBBASE_IMMOVABLE(ProcScopeInfo);
         ProcDecl* proc;
         SmallVector<LocalDecl*> locals;
         LoopToken loop_depth = LoopToken(0);
@@ -101,7 +101,7 @@ private:
     };
 
     class [[nodiscard]] EnterProcedure {
-        SRCC_IMMOVABLE(EnterProcedure);
+        LIBBASE_IMMOVABLE(EnterProcedure);
         ProcScopeInfo info;
 
     public:
@@ -110,7 +110,7 @@ private:
     };
 
     class [[nodiscard]] EnterLoop {
-        SRCC_IMMOVABLE(EnterLoop);
+        LIBBASE_IMMOVABLE(EnterLoop);
         Sema& S;
         bool save_current_loop_has_break;
 
@@ -365,7 +365,10 @@ private:
 
     /// A successful template substitution.
     struct TemplateSubstitution : public FoldingSetNode {
-        ALLOCATE_IN_TU(TemplateSubstitution);
+        SRCC_ALLOCATE_IN_CONTEXT(TemplateSubstitution, TranslationUnit) {
+            return ctx.allocate<TemplateSubstitution>();
+        }
+
         FoldingSetNodeIDRef hash;
 
         /// The substituted procedure type.

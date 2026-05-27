@@ -177,7 +177,7 @@ public:
 /// This class handles dispatching diagnostics. Objects of this
 /// type are NOT thread-safe. Create a separate one for each thread.
 class srcc::DiagnosticsEngine : public llvm::RefCountedBase<DiagnosticsEngine> {
-    SRCC_IMMOVABLE(DiagnosticsEngine);
+    LIBBASE_IMMOVABLE(DiagnosticsEngine);
 
 protected:
     /// The context that owns this engine.

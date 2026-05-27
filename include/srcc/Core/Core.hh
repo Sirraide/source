@@ -153,7 +153,7 @@ struct srcc::LangOpts {
 
 /// A file in the context.
 class srcc::File {
-    SRCC_IMMOVABLE(File);
+    LIBBASE_IMMOVABLE(File);
 
 public:
     using Id = FileId;

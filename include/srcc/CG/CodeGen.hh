@@ -42,7 +42,7 @@ class srcc::cg::IRValue {
 
 public:
     IRValue() = default;
-    IRValue(std::nullptr_t) = delete("Use '{}' instead to create an empty SRValue or RType");
+    IRValue(std::nullptr_t) = delete("Use '{}' instead to create an empty IRValue");
     IRValue(Value first_val) : vals{first_val, nullptr} {}
     IRValue(Value first_val, Value second_val) : vals{first_val, second_val} {
         Assert(vals[0] and vals[1]);
@@ -294,7 +294,7 @@ public:
     );
 
     class EnterProcedure {
-        SRCC_IMMOVABLE(EnterProcedure);
+        LIBBASE_IMMOVABLE(EnterProcedure);
 
         CodeGen& CG;
         ProcData old;
@@ -306,7 +306,7 @@ public:
     };
 
     class EnterCleanupScope {
-        SRCC_IMMOVABLE(EnterCleanupScope);
+        LIBBASE_IMMOVABLE(EnterCleanupScope);
         CodeGen& cg;
         ProcData::CleanupScope sc;
 
@@ -317,7 +317,7 @@ public:
     };
 
     class EnterLoop {
-        SRCC_IMMOVABLE(EnterLoop);
+        LIBBASE_IMMOVABLE(EnterLoop);
         CodeGen& cg;
 
     public:

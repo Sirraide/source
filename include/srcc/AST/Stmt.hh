@@ -66,7 +66,7 @@ constexpr ManglingNumber operator++(ManglingNumber& t, int) {
 // ============================================================================
 /// Root of the AST inheritance hierarchy.
 class srcc::Stmt {
-    SRCC_IMMOVABLE(Stmt);
+    LIBBASE_IMMOVABLE(Stmt);
     struct Printer;
     friend Printer;
 
@@ -88,9 +88,7 @@ protected:
     explicit Stmt(Kind kind, SLoc loc) : stmt_kind{kind}, loc{loc} {}
 
 public:
-    // Only allow allocating these in the module.
-    void* operator new(usz) = SRCC_DELETED("Use `new (tu) { ... }` instead");
-    void* operator new(usz size, TranslationUnit& tu);
+    SRCC_ALLOCATE_IN_CONTEXT(Stmt, TranslationUnit);
 
     /// Dump the statement.
     void dump(bool use_colour = false) const;

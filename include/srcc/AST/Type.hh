@@ -52,7 +52,7 @@ class TypeLoc;
 /// The 'alignas(8)' is required to ensure that we have some low bits
 /// available in the pointer for other purposes.
 class alignas(8) srcc::TypeBase {
-    SRCC_IMMOVABLE(TypeBase);
+    LIBBASE_IMMOVABLE(TypeBase);
 
     friend Type;
 
@@ -69,9 +69,7 @@ protected:
     explicit constexpr TypeBase(Kind kind) : type_kind{kind} {}
 
 public:
-    // Only allow allocating these in the module.
-    void* operator new(usz) = SRCC_DELETED("Use `new (mod) { ... }` instead");
-    void* operator new(usz size, TranslationUnit& mod);
+    SRCC_ALLOCATE_IN_CONTEXT(TypeBase, TranslationUnit);
 
     /// Get the alignment of this type.
     [[nodiscard]] auto align(TranslationUnit& tu) const -> Align;
@@ -177,7 +175,7 @@ private:
 /// Note that these are only valid during sema and should not be
 /// referenced after that.
 class alignas(8) srcc::Scope {
-    SRCC_IMMOVABLE(Scope);
+    LIBBASE_IMMOVABLE(Scope);
 
     /// The parent scope and scope kind.
     llvm::PointerIntPair<Scope*, 3, ScopeKind> parent_scope_and_kind;
@@ -278,7 +276,7 @@ public:
     /// Get the kind of this builtin type.
     auto builtin_kind() const -> BuiltinKind { return b_kind; }
 
-    static auto Get(TranslationUnit& mod, BuiltinKind kind) = SRCC_DELETED("Use Types::VoidTy and friends instead");
+    static auto Get(TranslationUnit& mod, BuiltinKind kind) = delete("Use Types::VoidTy and friends instead");
     static bool classof(const TypeBase* e) { return e->kind() == Kind::BuiltinType; }
 };
 

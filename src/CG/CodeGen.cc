@@ -1331,9 +1331,9 @@ auto CodeGen::Emit(Stmt* stmt) -> IRValue {
     switch (stmt->kind()) {
         using K = Stmt::Kind;
 #define AST_DECL_LEAF(node) \
-    case K::node: Unreachable("Cannot emit " SRCC_STR(node));
+    case K::node: Unreachable("Cannot emit " LIBBASE_STR(node));
 #define AST_STMT_LEAF(node) \
-    case K::node: return SRCC_CAT(Emit, node)(cast<node>(stmt));
+    case K::node: return LIBBASE_CAT(Emit, node)(cast<node>(stmt));
 #include "srcc/AST.inc"
     }
 
