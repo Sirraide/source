@@ -72,6 +72,9 @@ private:
     /// All scopes in this TU.
     std::vector<std::unique_ptr<Scope>> all_scopes;
 
+    /// C++ TUs that we own.
+    SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
+
     /// All mangle contexts associated w/ clang modules.
     std::vector<std::unique_ptr<clang::MangleContext>> clang_mangle_contexts;
 
@@ -182,6 +185,12 @@ public:
 
     /// Add an allocator to the module.
     void add_allocator(std::unique_ptr<llvm::BumpPtrAllocator> alloc) { allocs.push_back(std::move(alloc)); }
+
+    /// Add a Clang AST unit.
+    auto add_clang_ast_unit(std::unique_ptr<clang::ASTUnit> ast) -> clang::ASTUnit* {
+        clang_ast_units.push_back(std::move(ast));
+        return clang_ast_units.back().get();
+    }
 
     /// Add a file to the module.
     void add_file(const File& file) { files.push_back(&file); }

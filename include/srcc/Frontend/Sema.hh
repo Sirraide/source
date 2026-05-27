@@ -707,9 +707,6 @@ private:
     /// already failed to import before).
     DenseMap<clang::MacroInfo*, Ptr<Decl>> imported_macros;
 
-    /// C++ TUs that we own.
-    SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
-
     /// VFS that contains precompiled headers; used for importing declarations.
     llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> ImportVFS;
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> PCHVFS;

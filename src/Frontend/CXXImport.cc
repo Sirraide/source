@@ -734,10 +734,9 @@ auto Sema::ImportCXXHeaders(
         return {};
     }
 
-    clang_ast_units.push_back(std::move(AST));
     return ImportedClangModuleDecl::Create(
         *tu,
-        *clang_ast_units.back(),
+        *tu->add_clang_ast_unit(std::move(AST)),
         logical_name,
         header_names,
         import_loc

@@ -125,6 +125,7 @@ auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name,
 
 auto TranslationUnit::create_cxx_mangler(clang::ASTContext& ctx) -> clang::MangleContext* {
     auto mctx = ctx.createMangleContext();
+    Assert(mctx);
     clang_mangle_contexts.emplace_back(mctx);
     return mctx;
 }
