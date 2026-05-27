@@ -30,6 +30,7 @@ using options = clopts< // clang-format off
     multiple<short_option<"-I", "Add a directory to the C/C++ header search path">>,
     multiple<short_option<"-L", "Add a directory to the library search path">>,
     multiple<short_option<"-l", "Link against a library">>,
+    multiple<option<"-Xclang", "Pass an option to Clang when parsing C++">>,
     short_option<"-O", "Optimisation level", values<0, 1, 2, 3, 4>>,
 
     // Flags that determine what action to take.
@@ -70,8 +71,8 @@ using options = clopts< // clang-format off
     // issue a more helpful error.
     multiple<short_option<"-fno-", "<dummy>", std::string, {.hidden = true}>>,
 
-    // Internal flags.
-    flag<"-Xpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
+    // Internal flags. We use 'Q' as a prefix because it’s unlikely to be used for anything else.
+    flag<"-Qpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
 
     help<>
 >; // clang-format on
@@ -204,6 +205,15 @@ int main(int argc, char** argv) {
         triple = llvm::Triple(llvm::sys::getDefaultTargetTriple());
     }
 
+    // Split Clang options.
+    std::vector<std::string> clang_options;
+    for (const auto& opt_str : opts.get<"-Xclang">()) {
+        for (auto opt : str(opt_str).split(",")) {
+            if (opt.trim().empty()) continue;
+            clang_options.emplace_back(opt.text());
+        }
+    }
+
     // TODO:
     //  - Move lang opts to be TU-specific in case the TU wants
     //    to alter them using e.g. pragmas.
@@ -227,12 +237,13 @@ int main(int argc, char** argv) {
         .lib_paths = opts.get<"-L">(),
         .link_libs = opts.get<"-l">(),
         .link_objects = opts.get<"--link-object">(),
+        .clang_options = clang_options,
         .eval_libs = opts.get<"--load">(),
         .action = action,
         .lang_opts = {
             .overflow_checking = opts.get<"-foverflow-checks">(),
             .no_runtime = not opts.get<"-fruntime">(),
-            .no_preamble = not opts.get<"-Xpreamble">(),
+            .no_preamble = not opts.get<"-Qpreamble">(),
             .wcxx_import = opts.get<"-Wc++-import">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
         },

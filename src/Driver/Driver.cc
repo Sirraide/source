@@ -169,7 +169,8 @@ int Driver::run_job() {
             opts.lang_opts,
             std::move(modules),
             opts.module_search_paths,
-            opts.clang_include_paths
+            opts.clang_include_paths,
+            opts.clang_options
         );
 
         if (not tu or ctx.diags().has_error()) return 1;
@@ -205,7 +206,8 @@ int Driver::run_job() {
         opts.lang_opts,
         std::move(parsed_modules),
         opts.module_search_paths,
-        opts.clang_include_paths
+        opts.clang_include_paths,
+        opts.clang_options
     );
 
     if (a == Action::Sema) {

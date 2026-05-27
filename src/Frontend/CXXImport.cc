@@ -299,11 +299,6 @@ auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*
     if (d->isImmediateFunction())
         return NYI(d, "'%1(consteval%)' function");
 
-    // TODO: Inline functions need to be emitted when they're called; we still
-    // need to implement that.
-    if (d->isInlineSpecified())
-        return NYI(d, "'%1(inline%)' function");
-
     // Don’t import functions with internal linkage, or anything
     // attached to a module.
     if (d->getLinkageInternal() != clang::Linkage::External)
@@ -331,7 +326,7 @@ auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*
         Linkage::Imported,
         d->isExternC() ? Mangling::None : Mangling::CXX,
         nullptr,
-        InheritedProcedureProperties(),
+        InheritedProcedureProperties{.is_cxx_inline_function = d->isInlineSpecified() and d->hasBody()},
         ImportSourceLocation(d->getNameInfo().getBeginLoc())
     );
 
@@ -657,6 +652,7 @@ auto Sema::ParseCXX(
         "-femit-all-decls",
     };
 
+    // Add opt level.
     int clang_opt_level = 0;
     if (ctx.opt_level == 4) {
         args.push_back("-march=native");
@@ -667,15 +663,20 @@ auto Sema::ParseCXX(
 
     args.push_back(std::format("-O{}", clang_opt_level));
 
+    // Add the PCH if we have one.
     if (PCH.has_value()) {
         args.push_back("-include-pch");
         args.push_back(std::move(PCH.value()));
     }
 
+    // Add include paths.
     for (const auto& p : clang_include_paths) {
         args.push_back("-I");
         args.push_back(p);
     }
+
+    // Add user-specified options last.
+    append_range(args, clang_options);
 
     // We don't use clang::tooling::buildASTFromCodeWithArgs() because we handle
     // setting up the file system ourselves.
@@ -728,7 +729,18 @@ auto Sema::ImportCXXHeaders(
     ArrayRef<String> header_names,
     SLoc import_loc
 ) -> Ptr<ImportedClangModuleDecl> {
-    auto AST = ParseCXX(utils::join(header_names, "", "#include {}\n"));
+    auto lc = import_loc.seek_line_column(context());
+    auto file = import_loc.file_name(context());
+
+    // Use quoted includes so source-file-relative includes work.
+    SmallString<128> code;
+    for (auto h : header_names) {
+        Assert(h.starts_with("<") and h.ends_with(">"));
+        if (lc and file) Format(code, "#line {} \"{}\"\n", lc->line, *file);
+        Format(code, "#include \"{}\"\n", h.drop().drop_back());
+    }
+
+    auto AST = ParseCXX(code);
     if (not AST) {
         Error(import_loc, "Header import failed");
         return {};
@@ -1107,15 +1119,7 @@ auto Sema::LookUpCXXMacro(
         );
 
         // Emit it.
-        std::unique_ptr<clang::CodeGenerator> cg{clang::CreateLLVMCodeGen(
-            macro_tu->getDiagnostics(),
-            fake_module->name.str(),
-            macro_tu->getVirtualFileSystemPtr(),
-            macro_tu->getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
-            macro_tu->getPreprocessor().getPreprocessorOpts(),
-            macro_tu->getCodeGenOpts(),
-            tu->llvm_context
-        )};
+        auto cg = fake_module->create_clang_codegen(tu->llvm_context);
 
         // Make sure we actually emit this.
         // FIXME: I don't think this is needed.

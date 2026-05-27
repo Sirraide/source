@@ -22,6 +22,7 @@
 
 namespace clang {
 class ASTUnit;
+class CodeGenerator;
 class MangleContext;
 }
 
@@ -1239,6 +1240,9 @@ public:
         SLoc loc
     ) -> ImportedClangModuleDecl*;
 
+    /// Create a CodeGenerator for this module.
+    auto create_clang_codegen(llvm::LLVMContext& ctx) -> std::unique_ptr<clang::CodeGenerator>;
+
     /// Get the headers that make up this module.
     auto headers() const -> ArrayRef<String> {
         return getTrailingObjects(num_headers);
@@ -1449,6 +1453,10 @@ struct srcc::InheritedProcedureProperties {
 
     /// Whether this procedure cannot be called at runtime.
     bool is_compile_time_only = false;
+
+    /// Whether this is a C++ 'inline' function that we need to emit
+    /// a definition for when it is referenced.
+    bool is_cxx_inline_function = false;
 };
 
 /// Procedure declaration.

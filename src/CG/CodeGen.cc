@@ -9,6 +9,7 @@
 
 #include <clang/AST/Mangle.h>
 #include <clang/Basic/TargetInfo.h>
+#include <clang/CodeGen/ModuleBuilder.h>
 #include <llvm/IR/DataLayout.h>
 
 #include <base/Assert.hh>
@@ -488,6 +489,18 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
         );
 
         proc_reverse_lookup[ir_proc] = proc;
+
+        // If this is a C++ inline function, ask Clang to emit it.
+        if (proc->props.is_cxx_inline_function) {
+            auto mod = cast<ImportedClangModuleDecl>(proc->imported_from_module);
+            auto& cg = clang_codegen_map[mod];
+            if (not cg) {
+                cg = mod->create_clang_codegen(tu.llvm_context);
+                cg->Initialize(mod->clang_ast.getASTContext());
+            }
+
+            cg->HandleTopLevelDecl(clang::DeclGroupRef(proc->clang_decl()));
+        }
     }
     return ir_proc;
 }

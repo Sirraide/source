@@ -53,6 +53,10 @@ public:
     /// if this location is invalid.
     [[nodiscard]] auto file(const Context& ctx) const -> const File*;
 
+    /// Get the name of the file to which this location belongs. Returns nullopt
+    /// if this location is invalid.
+    [[nodiscard]] auto file_name(const Context& ctx) const -> std::optional<String>;
+
     /// Format this location to a string.
     [[nodiscard]] auto format(const Context& ctx, bool include_file_name) const -> std::string;
 

@@ -4,6 +4,7 @@
 #include <srcc/Frontend/ParseTree.hh>
 
 #include <clang/AST/Mangle.h>
+#include <clang/CodeGen/ModuleBuilder.h>
 
 #include <llvm/Support/Casting.h>
 
@@ -405,6 +406,20 @@ auto ImportedClangModuleDecl::Create(
     auto mem = tu.allocate(sz, alignof(ImportedClangModuleDecl));
     auto mctx = tu.create_cxx_mangler(clang_ast.getASTContext());
     return ::new (mem) ImportedClangModuleDecl{clang_ast, mctx, logical_name, header_names, loc};
+}
+
+auto ImportedClangModuleDecl::create_clang_codegen(
+    llvm::LLVMContext& ctx
+) -> std::unique_ptr<clang::CodeGenerator> {
+    return clang::CreateLLVMCodeGen(
+        clang_ast.getDiagnostics(),
+        name.str(),
+        clang_ast.getVirtualFileSystemPtr(),
+        clang_ast.getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
+        clang_ast.getPreprocessor().getPreprocessorOpts(),
+        clang_ast.getCodeGenOpts(),
+        ctx
+    );
 }
 
 ProcDecl::ProcDecl(

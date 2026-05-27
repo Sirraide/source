@@ -676,6 +676,7 @@ private:
     TranslationUnit::Ptr tu;
     ArrayRef<std::string> search_paths;
     ArrayRef<std::string> clang_include_paths;
+    ArrayRef<std::string> clang_options;
     usz assert_stringifiers = 0;
     usz generated_cxx_macro_decls = 0;
     usz cxx_import_file_counter = 0;
@@ -762,7 +763,8 @@ public:
         const LangOpts& opts,
         SmallVector<ParsedModule::Ptr> modules,
         ArrayRef<std::string> module_search_paths,
-        ArrayRef<std::string> clang_include_paths
+        ArrayRef<std::string> clang_include_paths,
+        ArrayRef<std::string> clang_options
     ) -> TranslationUnit::Ptr;
 
     /// Get the context.

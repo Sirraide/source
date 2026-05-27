@@ -48,6 +48,12 @@ auto SLoc::file(const Context& ctx) const -> const File* {
     return nullptr;
 }
 
+auto SLoc::file_name(const Context& ctx) const -> std::optional<String> {
+    auto f = file(ctx);
+    if (not f) return std::nullopt;
+    return ctx.file_name(f->file_id());
+}
+
 auto SLoc::format(const Context& ctx, bool include_file_name) const -> std::string {
     auto f = seek_line_column(ctx);
     if (not f) return "<invalid>";

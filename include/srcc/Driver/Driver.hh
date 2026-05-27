@@ -82,6 +82,9 @@ public:
         /// as-is rather than via '-l'.
         Span<std::string> link_objects;
 
+        /// Additional options to pass to Clang.
+        Span<std::string> clang_options;
+
         /// Shared objects to load at compile time so they can be called into
         /// during constant evaluation.
         Span<fs::Path> eval_libs;

@@ -2,6 +2,8 @@
 #include <srcc/CG/IR/IR.hh>
 #include <srcc/Core/Constants.hh>
 
+#include <clang/CodeGen/ModuleBuilder.h>
+
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Module.h>
@@ -412,15 +414,24 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     m->setTargetTriple(machine.getTargetTriple());
     m->setDataLayout(machine.createDataLayout());
 
+    llvm::Linker link{*m};
     if (not tu.link_llvm_modules.empty()) {
         Assert(not tu.emitted_llvm, "Cannot emit module twice as it contains other LLVM modules");
         tu.emitted_llvm = true;
-        llvm::Linker link{*m};
         for (auto& l : tu.link_llvm_modules) {
             if (link.linkInModule(std::move(l))) {
                 if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
                 return nullptr;
             }
+        }
+    }
+
+    for (const auto& [mod, cg] : clang_codegen_map) {
+        cg->HandleTranslationUnit(mod->clang_ast.getASTContext());
+        auto llvm_module = cg->ReleaseModule();
+        if (link.linkInModule(std::move(llvm_module))) {
+            if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
+            return nullptr;
         }
     }
 

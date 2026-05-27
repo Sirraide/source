@@ -152,7 +152,8 @@ public:
 
     void write(const InheritedProcedureProperties& props) {
         *this << props.associated_type << props.mangling_number
-              << props.always_inline << props.is_compile_time_only;
+              << props.always_inline << props.is_compile_time_only
+              << props.is_cxx_inline_function;
     }
 
 private:
@@ -422,11 +423,13 @@ public:
         auto mangling_number = Read(ManglingNumber);
         auto always_inline = Read(bool);
         auto is_compile_time_only = Read(bool);
+        auto is_cxx_inline_function = Read(bool);
         return InheritedProcedureProperties{
             .associated_type = associated_type,
             .mangling_number = mangling_number,
             .always_inline = always_inline,
             .is_compile_time_only = is_compile_time_only,
+            .is_cxx_inline_function = is_cxx_inline_function,
         };
     }
 };
