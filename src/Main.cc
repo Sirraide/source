@@ -15,7 +15,7 @@
 using namespace srcc;
 using namespace base::cmd;
 using options = clopts< // clang-format off
-    positional<"file", "The file to compile">,
+    positional<"file", "The file to compile", fs::Path>,
 
     // General options.
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
@@ -111,7 +111,7 @@ static void InitSignalHandlers() {
 static auto ParseArgs(int argc, char** argv) -> Result<options::optvals_type> {
     Result<> err;
     auto opts = options::parse(argc, argv, [&](std::string msg) {
-        err = Error("{}", msg);
+        err = Error("{}; run '--help' for more information", msg);
         return false;
     });
 

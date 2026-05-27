@@ -24,8 +24,8 @@ class ParsedModule;
 }
 using namespace srcc;
 
-void Driver::add_file(std::string_view file_path) {
-    files.push_back(fs::Path(file_path));
+void Driver::add_file(fs::Path file_path) {
+    files.push_back(std::move(file_path));
 }
 
 int Driver::run_job() {

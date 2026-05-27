@@ -136,7 +136,7 @@ public:
     explicit Driver(Options opts) : opts{std::move(opts)} {}
 
     /// Add a file to the list of files to compile.
-    void add_file(std::string_view file_path);
+    void add_file(fs::Path file_path);
 
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& {  return ctx.diags(); }
