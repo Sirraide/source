@@ -129,28 +129,6 @@ target_link_libraries(options INTERFACE libbase)
 ## Add ‘include’ to the include path.
 target_include_directories(options INTERFACE "${PROJECT_SOURCE_DIR}/include")
 
-## As well as everything in ‘libs’.
-if (EXISTS ${PROJECT_SOURCE_DIR}/libs)
-    file(GLOB libs ${PROJECT_SOURCE_DIR}/libs/*)
-
-    ## Add the include directory to the include path, or the root
-    ## directory if there is no include directory.
-    foreach(lib ${libs})
-        if (IS_DIRECTORY ${lib}/include)
-            target_include_directories(options INTERFACE ${lib}/include)
-        else()
-            target_include_directories(options INTERFACE ${lib})
-        endif()
-    endforeach()
-
-    ## Also add all of them as subdirectories if they have a CMakeLists.txt.
-    foreach (lib ${libs})
-        if (EXISTS ${lib}/CMakeLists.txt)
-            add_subdirectory(${lib})
-        endif()
-    endforeach()
-endif()
-
 ## ============================================================================
 ##  Add LLVM.
 ## ============================================================================
@@ -224,17 +202,6 @@ add_definitions(
     "-DSOURCE_CLANG_EXE=\"${SOURCE_LLVM_ROOT}/bin/clang++\""
 )
 
-#[[
-## Clang’s resource directory is a relative path by default; as we’re
-## building this out of tree, we need to set the path explicitly.
-execute_process(
-    COMMAND "${LLVM_BUILD_DIR}/bin/clang" -print-resource-dir
-    OUTPUT_VARIABLE SRCC_CLANG_RESOURCE_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    COMMAND_ERROR_IS_FATAL ANY
-)
-]]
-
 ## ============================================================================
 ##  Helper Functions
 ## ============================================================================
@@ -254,9 +221,6 @@ function (add_srcc_library name path_name)
     target_link_libraries(srcc-${name} PRIVATE ${ARG_LINK})
 endfunction()
 
-## FIXME: Library layering is non-existent at the moment due to the fact that
-## constant evaluation depends on codegen, so we’ve thrown it out the window
-## for the time being.
 file(GLOB_RECURSE _headers_core include/*.hh)
 file(GLOB_RECURSE _sources_core
     src/*.hh
@@ -278,29 +242,6 @@ target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
 ## ============================================================================
 add_subdirectory(include/srcc/CG/IR)
 target_include_directories(srcc-core PRIVATE "${CMAKE_BINARY_DIR}/include")
-
-#[[
-## ============================================================================
-##  Core library
-## ============================================================================
-## This is what everything else depends on so we handle it separately
-## since it must be built first.
-file(GLOB_RECURSE _headers_core include/*.hh)
-file(GLOB_RECURSE _sources_core src/Core/*.cc)
-add_library(srcc-core STATIC ${_sources_core})
-target_sources(srcc-core PUBLIC FILE_SET HEADERS FILES ${_headers_core})
-
-target_link_libraries(srcc-core PRIVATE options)
-target_precompile_headers(srcc-core PUBLIC include/srcc/Core/Utils.hh)
-
-
-## ============================================================================
-##  Other libraries
-## ============================================================================
-add_srcc_library(ast AST)
-add_srcc_library(codegen CG LINK srcc-ast)
-add_srcc_library(frontend Frontend LINK srcc-ast srcc-codegen)
-add_srcc_library(driver Driver LINK srcc-ast srcc-frontend srcc-codegen)]]
 
 ## ============================================================================
 ##  Compiler executable
