@@ -30,10 +30,12 @@ namespace srcc {
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
-#define SRCC_ALL_BUILTINS(F)   \
-    F(Dump, "__srcc_dump")     \
-    F(Memcpy, "__srcc_memcpy") \
-    F(Ptradd, "__srcc_ptradd") \
+#define SRCC_ALL_BUILTINS(F)                \
+    F(Dump, "__srcc_dump")                  \
+    F(MakeClosure, "__srcc_make_closure")   \
+    F(Memcpy, "__srcc_memcpy")              \
+    F(Ptradd, "__srcc_ptradd")              \
+    F(SplitClosure, "__srcc_split_closure") \
     F(Unreachable, "__srcc_unreachable")
 
 struct MatchCase;

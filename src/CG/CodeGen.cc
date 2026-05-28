@@ -1170,6 +1170,12 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         [&](ArrayBroadcastExpr* e) { EmitArrayBroadcastExpr(e, addr); },
         [&](ArrayInitExpr* e) { EmitArrayInitExpr(e, addr); },
 
+        // Some builtins emit closures or 2-tuples.
+        [&](BuiltinCallExpr* e) {
+            auto v = EmitBuiltinCallExpr(e);
+            CreateBuiltinAggregateStore(C(init->location()), addr, e->type, v);
+        },
+
         // Blocks can be mrvalues if the last expression is an mrvalue.
         [&](BlockExpr* e) { EmitBlockExpr(e, addr); },
 
@@ -1847,7 +1853,13 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
     auto loc = C(expr->location());
     switch (expr->builtin) {
         using B = BuiltinCallExpr::Builtin;
-        case B::Dump: return {};
+        case B::Dump: Unreachable("Evaluated in Sema");
+        case B::MakeClosure: {
+            auto ptr = EmitScalar(expr->args()[0]);
+            auto env = EmitScalar(expr->args()[1]);
+            return {ptr, env};
+        }
+
         case B::Memcpy: {
             auto to = EmitScalar(expr->args()[0]);
             auto from = EmitScalar(expr->args()[1]);
@@ -1870,6 +1882,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
             return CreatePtrAdd(loc, ptr, offset);
         }
 
+        case B::SplitClosure: return Emit(expr->args()[0]);
         case B::Unreachable: {
             LLVM::UnreachableOp::create(*this, loc);
             EnterBlock(CreateBlock());

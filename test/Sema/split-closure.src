@@ -1,0 +1,28 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f(int i) = i + i;
+eval {
+    var x = __srcc_split_closure(f);
+    var c = __srcc_make_closure(proc (int) -> int, x[0], x[1]);
+    assert c(20) == 40;
+}
+
+i8 i;
+i8^ p = &i;
+
+__srcc_split_closure(); // expected-error: '__srcc_split_closure' takes 1 arguments, got 0
+__srcc_split_closure(1, 1); // expected-error: '__srcc_split_closure' takes 1 arguments, got 2
+__srcc_split_closure(1); // expected-error: Argument #1 of '__srcc_split_closure' must be a closure, but was 'int'
+__srcc_split_closure(p); // expected-error: Argument #1 of '__srcc_split_closure' must be a closure, but was 'i8^'
+__srcc_split_closure(f);
+
+__srcc_make_closure(); // expected-error: '__srcc_make_closure' takes 3 arguments, got 0
+__srcc_make_closure(1); // expected-error: '__srcc_make_closure' takes 3 arguments, got 1
+__srcc_make_closure(1, 1); // expected-error: '__srcc_make_closure' takes 3 arguments, got 2
+__srcc_make_closure(1, 1, 1, 1); // expected-error: '__srcc_make_closure' takes 3 arguments, got 4
+__srcc_make_closure(1, 1, 1); // expected-error: Argument #1 of '__srcc_make_closure' must be a type, but was int
+__srcc_make_closure(int, 1, 1); // expected-error: Argument #2 of '__srcc_make_closure' must be a pointer, but was int
+__srcc_make_closure(proc, p, 1); // expected-error: Argument #3 of '__srcc_make_closure' must be a pointer, but was int
+__srcc_make_closure(int, p, p); // expected-error: Argument #1 of '__srcc_make_closure' must be a procedure type, was 'int'
+__srcc_make_closure(proc, p, p);

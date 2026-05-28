@@ -3254,6 +3254,17 @@ auto Sema::BuildBuiltinCallExpr(
         );
     };
 
+    auto CheckType = [&](usz n) -> bool {
+        if (args[n]->type == Type::TypeTy) return true;
+        return Error(
+            args[n]->location(),
+            "Argument #{} of '%2({}%)' must be a type, but was {}",
+            n + 1,
+            builtin,
+            args[n]->type
+        );
+    };
+
     auto ToInt = [&](usz n) -> Ptr<Expr> {
         return BuildInitialiser(Type::IntTy, args[n], args[n]->location());
     };
@@ -3272,6 +3283,28 @@ auto Sema::BuildBuiltinCallExpr(
     switch (builtin) {
         using B = BuiltinCallExpr::Builtin;
         case B::Dump: Unreachable("Handled by caller");
+        case B::MakeClosure: {
+            if (not CheckNArgs(3)) return nullptr;
+            if (not CheckType(0) or not CheckPointer(1) or not CheckPointer(2)) return nullptr;
+            auto arg0 = LValueToRValue(args[0]);
+            auto ty_res = Evaluate(arg0);
+            if (not ty_res) return Error(
+                arg0->location(),
+                "Argument #1 of '{}' is not a compile-time constant",
+                builtin
+            );
+
+            auto ty = ty_res->cast<Type>();
+            if (not isa<ProcType>(ty)) return Error(
+                arg0->location(),
+                "Argument #1 of '{}' must be a procedure type, was '{}'",
+                builtin,
+                ty
+            );
+
+            return Make(ty, {LValueToRValue(args[1]), LValueToRValue(args[2])});
+        }
+
         case B::Memcpy: {
             if (not CheckNArgs(3)) return nullptr;
             if (not CheckPointer(0) or not CheckPointer(1)) return nullptr;
@@ -3284,8 +3317,7 @@ auto Sema::BuildBuiltinCallExpr(
             auto ptr = dyn_cast<PtrType>(args[0]->type);
             if (not ptr or ptr->elem() != tu->I8Ty) return Error(
                 args[0]->location(),
-                "Argument #{} of '%2({}%)' must be a pointer to '{}', but was '{}'",
-                1,
+                "Argument #1 of '%2({}%)' must be a pointer to '{}', but was '{}'",
                 builtin,
                 tu->I8Ty,
                 args[0]->type
@@ -3293,6 +3325,18 @@ auto Sema::BuildBuiltinCallExpr(
 
             auto size = TRY(ToInt(1));
             return Make(args[0]->type, {LValueToRValue(args[0]), size});
+        }
+
+        case B::SplitClosure: {
+            if (not CheckNArgs(1)) return nullptr;
+            if (not isa<ProcType>(args[0]->type)) return Error(
+                args[0]->location(),
+                "Argument #1 of '%2({}%)' must be a closure, but was '{}'",
+                builtin,
+                args[0]->type
+            );
+
+            return Make(tu->ClosureEquivalentTupleTy, args[0]);
         }
 
         case B::Unreachable: {
