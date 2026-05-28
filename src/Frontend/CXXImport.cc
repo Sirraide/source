@@ -241,16 +241,17 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
         case K::CXXRecord:
             return ImportRecordImpl(cast<clang::RecordDecl>(d));
 
-        case K::Typedef: {
-            auto td = cast<clang::TypedefDecl>(d);
+        case K::Typedef:
+        case K::TypeAlias: {
+            auto td = cast<clang::TypedefNameDecl>(d);
             auto clang_ty = td->getUnderlyingType();
             if (clang_ty->isRecordType())
                 return ImportDecl(clang_ty->castAsRecordDecl());
-        } break;
 
-        case K::Using:
-            // TODO
-            break;
+            auto loc = ImportSourceLocation(td->getLocation());
+            auto ty = TRY(ImportType(loc, clang_ty));
+            return new (*S.tu) TypeDecl{ty, S.tu->save(td->getName()), loc};
+        } break;
 
         case K::Var: {
             auto var = cast<clang::VarDecl>(d);
@@ -352,9 +353,8 @@ auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*
 }
 
 auto Sema::Importer::ImportName(clang::TagDecl* td) -> StringRef {
-    if (not td->hasNameForLinkage()) return "";
-    if (td->getDeclName().isIdentifier()) return td->getName();
     if (auto tdef = td->getTypedefNameForAnonDecl()) return tdef->getName();
+    if (td->getDeclName().isIdentifier()) return td->getName();
     return "";
 }
 
@@ -805,15 +805,24 @@ auto Sema::LookUpCXXNameImpl(
     // TODO: Support operators.
     auto res = ctx->lookup(clang::DeclarationName(pp.getIdentifierInfo(names.back().name.str())));
 
+    // Filters.
+    #define FILTER(F, ...)
+    static const auto EnumeratorFilter = [](clang::Decl* d) { return isa<clang::EnumConstantDecl>(d); };
+    static const auto FunctionFilter = [](clang::Decl* d) { return isa<clang::FunctionDecl>(d); };
+    static const auto VarFilter = [](clang::Decl* d) { return isa<clang::VarDecl>(d); };
+    static const auto TypeFilter = [](clang::Decl* d) {
+        return isa<clang::TypedefNameDecl, clang::EnumDecl, clang::RecordDecl>(d);
+    };
+
     // Figure out what we found.
     auto found = Kind::Nothing;
     Importer i{*this, clang_module};
     for (auto d : res) {
         if (d->isInvalidDecl()) continue;
-        if (isa<clang::VarDecl>(d)) found |= Kind::Var;
-        else if (isa<clang::FunctionDecl>(d)) found |= Kind::Function;
-        else if (isa<clang::TypedefDecl, clang::EnumDecl, clang::RecordDecl>(d)) found |= Kind::Type;
-        else if (isa<clang::EnumConstantDecl>(d)) found |= Kind::Enumerator;
+        if (VarFilter(d)) found |= Kind::Var;
+        else if (FunctionFilter(d)) found |= Kind::Function;
+        else if (TypeFilter(d)) found |= Kind::Type;
+        else if (EnumeratorFilter(d)) found |= Kind::Enumerator;
         else {
             auto diag = CreateNote(
                 i.ImportSourceLocation(d->getLocation()),
@@ -861,26 +870,11 @@ auto Sema::LookUpCXXNameImpl(
     }
 
     switch (found) {
-        case Kind::Nothing:
-            return LookupResult::NotFound(names.back());
-
-        case Kind::Function:
-            return ImportFiltered([](auto* d){ return isa<clang::FunctionDecl>(d); });
-
-        case Kind::Enumerator:
-            return ImportFiltered([](auto* d){ return isa<clang::EnumConstantDecl>(d); });
-
-        case Kind::Type:
-            return ImportFiltered([](auto* d){
-                return isa<
-                    clang::TypedefDecl,
-                    clang::EnumDecl,
-                    clang::RecordDecl
-                >(d);
-            });
-
-        case Kind::Var:
-            return ImportFiltered([](auto* d){ return isa<clang::VarDecl>(d); });
+        case Kind::Nothing: return LookupResult::NotFound(names.back());
+        case Kind::Function: return ImportFiltered(FunctionFilter);
+        case Kind::Enumerator: return ImportFiltered(EnumeratorFilter);
+        case Kind::Type: return ImportFiltered(TypeFilter);
+        case Kind::Var: return ImportFiltered(VarFilter);
     }
 
     Unreachable();

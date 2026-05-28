@@ -1,0 +1,15 @@
+// V %srcc --sema --verify %s -I test/inputs
+// expected-no-diagnostics
+program test;
+
+import <typedef.h> as *;
+
+#assert int_typedef == __srcc_ffi_int;
+#assert int_using == __srcc_ffi_int;
+
+#assert named_class_typedef == named_class_using;
+#assert named_class_typedef == s;
+#assert named_class_using == s;
+
+anon_class_typedef tx;
+anon_class_using ux;
