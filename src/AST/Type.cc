@@ -653,12 +653,19 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 //  Record Types
 // ============================================================================
 auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDecl* {
-    // TODO: Optimise layout if this isn’t meant for FFI.
+    Size offset;
+
+    // The aligment of a struct is the alignment of its most-aligned field.
     auto fa = ty->align(tu);
-    sz = sz.align(fa);
-    decls.push_back(new (tu) FieldDecl(ty, sz, name, loc));
-    sz += ty->memory_size(tu);
     a = std::max(a, fa);
+
+    // Compute the field offset; note that all union fields have offset 0.
+    if (not bits.is_union) {
+        offset = sz.align(fa);
+        sz = offset + ty->memory_size(tu);
+    }
+
+    decls.push_back(new (tu) FieldDecl(ty, offset, name, loc));
     return decls.back();
 }
 
@@ -680,6 +687,8 @@ auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLay
     // it should only be visible within 'f'). Perhaps we want to store
     // local member functions outside the struct itself and in the local
     // scope instead?
+    //
+    // TODO: Maybe optimise layout if this isn’t meant for FFI.
     if (initialisers.empty()) {
         // Compute whether we can define a default initialiser for this.
         bits.init_from_no_args = bits.default_initialiser = rgs::all_of(

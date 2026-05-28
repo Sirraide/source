@@ -54,6 +54,10 @@ Context::Context() {
 }
 
 Context::~Context() {
+    // Reset the diagnostics engine first, else we might crash because we may
+    // try to access files in the context after they’ve been deleted when we
+    // emit a diagnostic.
+    diags_engine.reset();
     for (auto& l : libs) llvm::sys::DynamicLibrary::closeLibrary(l);
 }
 

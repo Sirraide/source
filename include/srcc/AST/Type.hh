@@ -732,10 +732,11 @@ public:
         bool literal_initialiser : 1 = false;
         bool zero_init           : 1 = false;
         bool contains_pointer    : 1 = false;
-        u8 padding : 3{};
+        bool is_union            : 1 = false;
+        u8 padding : 2{};
 
         static auto Trivial(bool contains_pointer) -> Bits {
-            return {true, true, true, true, contains_pointer};
+            return {true, true, true, true, contains_pointer, false};
         }
 
         void serialise(ByteWriter& w) const { w << std::bit_cast<u8>(*this); }
@@ -772,7 +773,9 @@ public:
         SmallVector<FieldDecl*> decls;
 
     public:
-        explicit Builder(TranslationUnit& tu): tu{tu} {}
+        explicit Builder(TranslationUnit& tu, bool is_union = false): tu{tu} {
+            bits.is_union = is_union;
+        }
 
         /// Add a field with the specified type and name.
         ///

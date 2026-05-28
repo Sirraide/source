@@ -11,5 +11,12 @@ import <typedef.h> as *;
 #assert named_class_typedef == s;
 #assert named_class_using == s;
 
+#assert named_union_typedef == named_union_using;
+#assert named_union_typedef == Union;
+#assert named_union_using == Union;
+
 anon_class_typedef tx;
 anon_class_using ux;
+
+anon_union_typedef ty;
+anon_union_using uy;

@@ -144,6 +144,11 @@ public:
     /// Get the diagnostics engine.
     auto diags() const -> DiagnosticsEngine& {  return ctx.diags(); }
 
+    /// Dump one or more modules.
+    ///
+    /// \return 0 on success, non-zero on failure.
+    int dump_module(StringRef import_string);
+
     /// Run compile jobs.
     ///
     /// \return 0 on success, non-zero on failure.
@@ -167,6 +172,7 @@ private:
 
     /// Parse a file and return the parsed module.
     auto ParseFile(fs::PathRef path, bool verify) -> ParsedModule::Ptr;
+    auto PrepareJob() -> int;
 };
 
 #endif // SRCC_DRIVER_HH

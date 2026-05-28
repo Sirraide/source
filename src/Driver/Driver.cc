@@ -24,11 +24,7 @@ class ParsedModule;
 }
 using namespace srcc;
 
-void Driver::add_file(fs::Path file_path) {
-    files.push_back(std::move(file_path));
-}
-
-int Driver::run_job() {
+auto Driver::PrepareJob() -> int {
     Assert(not compiled, "Can only call compile() once per Driver instance!");
     compiled = true;
     auto a = opts.action;
@@ -84,32 +80,69 @@ int Driver::run_job() {
     ctx.use_short_filenames = opts.short_filenames;
     ctx.target_triple = opts.triple;
 
-    // Handle this first; it only supports 1 file.
-    if (a == Action::DumpModule) {
-        if (files.size() != 1) return Error("'%3(--dump-module%)' requires exactly one file");
-    }
-
-    // Otherwise, check for duplicate TUs as they would create
-    // horrible linker errors.
+    // Check for duplicate TUs as they would create horrible linker errors.
     // FIXME: Use inode instead?
-    else {
-        std::unordered_set<fs::Path> file_uniquer;
-        for (const auto& f : files) {
-            if (not fs::File::Exists(f)) {
-                Error("File '{}' does not exist", f);
-                continue;
-            }
-
-            auto can = canonical(f);
-            if (not file_uniquer.insert(can).second) Fatal(
-                "Duplicate file name in command-line: '{}'",
-                can
-            );
+    std::unordered_set<fs::Path> file_uniquer;
+    for (const auto& f : files) {
+        if (not fs::File::Exists(f)) {
+            Error("File '{}' does not exist", f);
+            continue;
         }
+
+        auto can = canonical(f);
+        if (not file_uniquer.insert(can).second) Fatal(
+            "Duplicate file name in command-line: '{}'",
+            can
+        );
     }
 
     // Stop if there was a file we couldn’t find.
     if (ctx.diags().has_error()) return 1;
+    return 0;
+}
+
+void Driver::add_file(fs::Path file_path) {
+    files.push_back(std::move(file_path));
+}
+
+int Driver::dump_module(StringRef import_string) {
+    Assert(opts.action == Action::DumpModule);
+    if (auto res = PrepareJob(); res != 0)
+        return res;
+
+    static constexpr String ImportName = "__srcc_dummy_import__";
+    auto import_str = std::format(
+        "program __srcc_dummy__; import {} as {};",
+        import_string,
+        ImportName
+    );
+
+    auto mod = Parser::Parse(ctx.create_virtual_file(import_str), nullptr);
+    if (not mod) return 1;
+
+    SmallVector<ParsedModule::Ptr> modules;
+    modules.push_back(std::move(mod));
+    auto tu = Sema::Translate(
+        opts.lang_opts,
+        std::move(modules),
+        opts.module_search_paths,
+        opts.clang_include_paths,
+        opts.clang_options
+    );
+
+    if (not tu or ctx.diags().has_error()) return 1;
+    tu->logical_imports.at(ImportName)->dump(ctx.use_colours);
+    return 0;
+}
+
+int Driver::run_job() {
+    if (auto res = PrepareJob(); res != 0)
+        return res;
+
+    Assert(
+        opts.action != Action::DumpModule,
+        "Call dump_module() instead of run_job() to dump a module"
+    );
 
     // Replace driver diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
@@ -122,6 +155,7 @@ int Driver::run_job() {
     };
 
     // We only allow one file if we’re only lexing.
+    auto a = opts.action;
     if (a == Action::Lex or a == Action::DumpTokens) {
         if (files.size() != 1) return Error("Lexing supports one file");
         auto engine = opts.verify ? static_cast<VerifyDiagnosticsEngine*>(&ctx.diags()) : nullptr;
@@ -149,33 +183,6 @@ int Driver::run_job() {
         }
 
         return ctx.diags().has_error();
-    }
-
-    // Dump a module.
-    if (a == Action::DumpModule) {
-        static constexpr String ImportName = "__srcc_dummy_import__";
-        auto import_str = std::format(
-            "program __srcc_dummy__; import {} as {};",
-            files.front().string(),
-            ImportName
-        );
-
-        auto mod = Parser::Parse(ctx.create_virtual_file(import_str), nullptr);
-        if (not mod) return 1;
-
-        SmallVector<ParsedModule::Ptr> modules;
-        modules.push_back(std::move(mod));
-        auto tu = Sema::Translate(
-            opts.lang_opts,
-            std::move(modules),
-            opts.module_search_paths,
-            opts.clang_include_paths,
-            opts.clang_options
-        );
-
-        if (not tu or ctx.diags().has_error()) return 1;
-        tu->logical_imports.at(ImportName)->dump(ctx.use_colours);
-        return 0;
     }
 
     // Parse files.

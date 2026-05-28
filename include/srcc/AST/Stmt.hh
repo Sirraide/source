@@ -31,6 +31,7 @@ namespace srcc {
 #include "srcc/AST.inc"
 
 #define SRCC_ALL_BUILTINS(F)   \
+    F(Dump, "__srcc_dump")     \
     F(Memcpy, "__srcc_memcpy") \
     F(Ptradd, "__srcc_ptradd") \
     F(Unreachable, "__srcc_unreachable")

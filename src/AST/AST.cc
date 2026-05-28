@@ -643,7 +643,8 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(td, "TypeDecl");
             if (auto s = dyn_cast<StructType>(td->type.ptr())) {
                 print(
-                    " %1(struct %3({}%) size %3({:y}%)/%3({:y}%) align %3({}%)%)\n",
+                    " %1({} %3({}%) size %3({:y}%)/%3({:y}%) align %3({}%)%)\n",
+                    s->layout().bits().is_union ? "union"sv : "struct"sv,
                     s->name(),
                     s->layout().size(),
                     s->layout().array_size(),

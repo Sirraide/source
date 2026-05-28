@@ -371,9 +371,6 @@ auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
         ImportSourceLocation(rd->getLocation())
     )->decl();
 
-    // Unions are not supported.
-    if (rd->isUnion()) return NYI(rd, "union type '{}'", rd);
-
     // Neither are types that have a destructor, constructor, etc.
     if (auto CXX = dyn_cast<clang::CXXRecordDecl>(rd)) {
         if (not CXX->isCLike()) return NYI(rd, "non-trivial class type");
@@ -408,13 +405,15 @@ auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
     });
 
     // Build the layout.
+    auto bits = RecordLayout::Bits::Trivial(contains_pointer);
+    bits.is_union = rd->isUnion();
     auto rl = RecordLayout::Create(
         *S.tu,
         fields,
         Size::Bytes(layout.getSize().getQuantity()),
         Size::Bytes(layout.getSize().getQuantity()),
         Align(layout.getAlignment().getQuantity()),
-        RecordLayout::Bits::Trivial(contains_pointer)
+        bits
     );
 
     type->finalise(rl);

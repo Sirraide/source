@@ -15,7 +15,7 @@
 using namespace srcc;
 using namespace base::cmd;
 using options = clopts< // clang-format off
-    positional<"file", "The file to compile", fs::Path>,
+    positional<"file", "The file to compile", fs::Path, false>,
 
     // General options.
     option<"--colour", "Enable or disable coloured output (default: auto)", values<"auto", "always", "never">>,
@@ -38,7 +38,7 @@ using options = clopts< // clang-format off
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
     flag<"--exports", "Dump the module description to stdout">,
-    flag<"--dump-module", "Dump the contents of a module or C++ header that we can import">,
+    option<"--dump-module", "Dump the contents of a module or C++ header that we can import", std::string>,
     flag<"--ir", "Run codegen and emit IR. See also --cg, --llvm.">,
     flag<"--lex", "Lex tokens only (but do not print them) and exit">,
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
@@ -119,6 +119,9 @@ static auto ParseArgs(int argc, char** argv) -> Result<options::optvals_type> {
     Try(err);
     if (auto fno = opts.get<"-fno-">(); not fno.empty())
         return Error("Options of the form '-fno-XY' are not supported; use '-fXY=false' instead");
+
+    if (not opts.get<"--dump-module">() and not opts.get<"file">())
+        return Error("No input files");
 
     return opts;
 }
@@ -260,8 +263,13 @@ int main(int argc, char** argv) {
         .ir_verbose = opts.get<"--ir-verbose">(),
     }}; // clang-format on
 
+    if (action == Action::DumpModule)
+        return driver.dump_module(*opts.get<"--dump-module">());
+
     // Add files.
-    driver.add_file(*opts.get<"file">());
+    auto f = opts.get<"file">();
+    Assert(f);
+    driver.add_file(*f);
 
     // Dew it.
     return driver.run_job();

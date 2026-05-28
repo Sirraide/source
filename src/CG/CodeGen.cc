@@ -1847,6 +1847,7 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
     auto loc = C(expr->location());
     switch (expr->builtin) {
         using B = BuiltinCallExpr::Builtin;
+        case B::Dump: return {};
         case B::Memcpy: {
             auto to = EmitScalar(expr->args()[0]);
             auto from = EmitScalar(expr->args()[1]);

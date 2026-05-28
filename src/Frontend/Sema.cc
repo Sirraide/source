@@ -979,8 +979,12 @@ auto Sema::BuildAggregateInitialiser(
 
     // Second case: option 3. Option 2 is handled before we get here,
     // i.e. at this point, we know we’re building a literal initialiser.
-    Assert(not args.empty(), "Should have called BuildDefaultInitialiser() instead");
+    Assert(not args.empty(), "Should have handled this in BuildConversionSequence()");
     Assert(rl.has_literal_init(), "Should have rejected before we ever get here");
+
+    // Currently, we don't support initialising unions (apart from zero-initialisation).
+    if (rl.bits().is_union)
+        return CreateICE(loc, "TODO: Non-trivial union initialisation");
 
     // Recursively build an initialiser for each element that the user provided.
     std::vector<ConversionSequence> field_seqs;
@@ -3267,6 +3271,7 @@ auto Sema::BuildBuiltinCallExpr(
 
     switch (builtin) {
         using B = BuiltinCallExpr::Builtin;
+        case B::Dump: Unreachable("Handled by caller");
         case B::Memcpy: {
             if (not CheckNArgs(3)) return nullptr;
             if (not CheckPointer(0) or not CheckPointer(1)) return nullptr;
@@ -4462,6 +4467,32 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
     if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->is_single_ident()) {
         auto bk = BuiltinCallExpr::Parse(dre->names().front().name.str());
         if (bk.has_value()) {
+            // 'Dump' does not take an expression, but rather any node.
+            if (bk.value() == BuiltinCallExpr::Builtin::Dump) {
+                for (auto a : parsed->args()) {
+                    ctx.diags().flush();
+                    std::println(stderr, "== Parse Tree ==");
+                    a->dump(ctx.use_colours);
+                    std::println(stderr, "== AST ==");
+                    auto res = TranslateStmt(a);
+                    if (auto s = res.get_or_null()) {
+                        // FIXME: Introduce some printing mode that also dumps e.g. the TypeDecl
+                        // of a TypeExpr if it is a struct.
+                        if (auto te = dyn_cast<TypeExpr>(s)) {
+                            if (auto rd = dyn_cast<StructType>(te->value)) {
+                                rd->decl()->dump(ctx.use_colours);
+                                continue;
+                            }
+                        }
+
+                        s->dump(ctx.use_colours);
+                    }
+                }
+
+                // Return a void expression.
+                return BuildInitialiser(Type::VoidTy, {}, parsed->loc);
+            }
+
             if (not TranslateArgs()) return {};
             return BuildBuiltinCallExpr(bk.value(), args, parsed->loc);
         }

@@ -1,0 +1,21 @@
+// V %srcc %s --sema --verify                      -I test/inputs
+// R %srcc %s --sema --target x86_64-unknown-linux -I test/inputs
+// expected-no-diagnostics
+program test;
+
+import <typedef.h> as *;
+
+// * union Union size 8/8 align 8
+// +   x offs 0
+// +   y offs 0
+// +   z offs 0
+__srcc_dump(Union);
+
+eval {
+    Union u;
+    assert u.x == 0;
+    assert u.y == 0;
+    assert u.z == 0;
+    u.y = 42;
+    assert u.z == 42;
+}
