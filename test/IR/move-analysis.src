@@ -1,0 +1,74 @@
+// V %srcc --ir --verify %s
+program test;
+
+struct Small {
+    int x;
+    delete { }
+};
+
+proc f1 {
+    var s = Small(42);
+    delete s;
+    s = Small(45);
+    delete s;
+}
+
+proc f2 (bool x) {
+    var s = Small(42);
+    if x {
+        delete s;
+    } else {
+        delete s;
+    }
+}
+
+proc f3 (bool x) {
+    var s = Small(42);
+    if x delete s;
+}
+
+proc f4 (bool x) {
+    var s = Small(42);
+    if x {} else delete s;
+}
+
+proc e1 {
+    var s = Small(42);
+    delete s; // expected-note: Deleted here
+    delete s; // expected-error: 'delete' of deleted value
+}
+
+proc e2 -> int {
+    var s = Small(42);
+    delete s; // expected-note 2: Deleted here
+    return s.x + s.x; // expected-error 2: Use of deleted value
+}
+
+proc e3 (bool x) -> int {
+    var s = Small(42);
+    if x {
+        delete s;
+    } else {
+        delete s; // expected-note: Deleted here
+    }
+    return s.x; // expected-error: Use of deleted value
+}
+
+proc e4 (bool x) -> int {
+    var s = Small(42);
+    if x delete s; // expected-note: Deleted here
+    return s.x; // expected-error: Use of deleted value
+}
+
+proc e5 (bool x) -> int {
+    var s = Small(42);
+    if x {} else delete s; // expected-note: Deleted here
+    return s.x; // expected-error: Use of deleted value
+}
+
+proc e6() {
+    Small x;
+    loop {
+        delete x; // expected-error ('delete' of deleted value) expected-note (Deleted here)
+    }
+}

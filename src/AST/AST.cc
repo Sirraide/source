@@ -358,6 +358,12 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, "DefaultInitExpr");
         },
 
+        [&](DeleteExpr* e) {
+            tempset print_procedure_bodies = false;
+            PrintBasicNode(e, "DeleteExpr");
+            PrintChildren({e->val, e->deleter()});
+        },
+
         [&](DeferStmt* d) {
             PrintBasicNode(e, "DeferStmt");
             PrintChildren(d->body);

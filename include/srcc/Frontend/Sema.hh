@@ -1109,6 +1109,9 @@ private:
     /// Materialise a temporary value.
     [[nodiscard]] auto MaterialiseTemporary(Expr* expr) -> Expr*;
 
+    /// Build a delete expression if the type of this argument requires one.
+    auto MaybeBuildDeleteExpr(Expr* arg, bool implicit, SLoc loc) -> Ptr<DeleteExpr>;
+
     /// Mark that a number of match cases are unreachable.
     ///
     /// \param it The last case that can still be matched.
@@ -1178,7 +1181,6 @@ private:
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
-    auto BuildDeleteExpr(Expr* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;

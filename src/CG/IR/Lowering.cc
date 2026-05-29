@@ -202,10 +202,60 @@ LOWERING(CallOp, {
     return op.getNumResults() == 0 ? SmallVector<mlir::Value>() : SmallVector{call.getResult()};
 });
 
+struct DeleteOpLowering final : mlir ::OpConversionPattern<ir ::DeleteOp> {
+    CodeGen& cg;
+    DeleteOpLowering(CodeGen& cg, const mlir ::LLVMTypeConverter& tc)
+        : OpConversionPattern(tc, cg.mlir_context()), cg{cg} {}
+
+    auto matchAndRewrite(
+        ir::DeleteOp op,
+        ir::DeleteOpAdaptor a,
+        mlir::ConversionPatternRewriter& r
+    ) const -> mlir ::LogicalResult override {
+        auto fty = LLVM::LLVMFunctionType::get(
+            LLVM::LLVMVoidType::get(getContext()),
+            LLVM::LLVMPointerType::get(getContext()),
+            false
+        );
+
+        // If it has a flag, we need to conditionally delete this.
+        auto l = op.getLoc();
+        if (a.getDeleteFlag()) {
+            auto prev = op->getBlock();
+            auto join = r.splitBlock(op->getBlock(), op->getIterator());
+            auto then = r.createBlock(join);
+
+            // Test if the flag is not zero.
+            r.setInsertionPointToEnd(prev);
+            auto flag = LLVM::LoadOp::create(r, l, r.getI8Type(), a.getDeleteFlag());
+            auto zero = LLVM::ConstantOp::create(r, l, r.getI8Type(), 0);
+            auto is_live = LLVM::ICmpOp::create(r, l, LLVM::ICmpPredicate::ne, flag, zero);
+
+            // Call the deleter if so.
+            LLVM::CondBrOp::create(r, l, is_live, then, join);
+            r.setInsertionPointToEnd(then);
+            LLVM::CallOp::create(r, l, fty, a.getDeleter(), a.getAddr());
+
+            // No need to unset the flag here as we already do that
+            // when we create the DeleteOp, so just branch to the
+            // join block.
+            LLVM::BrOp::create(r, l, join);
+        }
+
+        // Otherwise, delete it unconditionally.
+        else { LLVM::CallOp::create(r, l, fty, a.getDeleter(), a.getAddr()); }
+
+        // And erase the original delete.
+        r.eraseOp(op);
+        return mlir::success();
+    }
+};
+
 // These are no-ops and only relevant for the optional lifetime analysis pass.
 ERASE_OP(DisengageOp);
 ERASE_OP(EngageOp);
 ERASE_OP(EngageCopyOp);
+ERASE_OP(MoveOp);
 
 LOWERING(LoadOp, {
     return LLVM::LoadOp::create(
@@ -317,6 +367,7 @@ LOWERING(RetOp, {
     return LLVM::ReturnOp::create(r, op.getLoc(), res);
 });
 
+LOWERING(RetainOp, { return a.getPtr(); });
 LOWERING(SAddOvOp, { return LowerOverflowOp<LLVM::SAddWithOverflowOp>(op, a, r); });
 LOWERING(SMulOvOp, { return LowerOverflowOp<LLVM::SMulWithOverflowOp>(op, a, r); });
 LOWERING(SSubOvOp, { return LowerOverflowOp<LLVM::SSubWithOverflowOp>(op, a, r); });
@@ -365,15 +416,18 @@ void LoweringPass::runOnOperation() {
 
     patterns.add< // clang-format off
         AbortOpLowering,
+        DeleteOpLowering,
         DisengageOpLowering,
         EngageOpLowering,
         EngageCopyOpLowering,
         CallOpLowering,
         LoadOpLowering,
+        MoveOpLowering,
         NilOpLowering,
         ProcOpLowering,
         ProcRefOpLowering,
         RetOpLowering,
+        RetainOpLowering,
         SAddOvOpLowering,
         SMulOvOpLowering,
         SSubOvOpLowering,

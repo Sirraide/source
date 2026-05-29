@@ -428,7 +428,7 @@ bool Sema::CompleteDefinition(StructType* s) {
             if (not f->type->requires_deletion()) continue;
             auto ref = BuildMemberAccessExpr(this_ptr, f, loc);
             if (not ref) continue;
-            auto del = BuildDeleteExpr(ref.get(), loc);
+            auto del = MaybeBuildDeleteExpr(ref.get(), true, loc);
             if (del) stmts.push_back(del.get());
         }
     };
@@ -2177,7 +2177,8 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
     return true;
 }
 
-bool Sema::IsUserDefinedOverloadedOperator(Tk, ArrayRef<Type> argument_types) {
+bool Sema::IsUserDefinedOverloadedOperator(Tk tk, ArrayRef<Type> argument_types) {
+    if (tk == Tk::Assign) return false;
     auto CanOverload = [](Type t) { return isa<StructType>(t); };
     return any_of(argument_types, CanOverload);
 }
@@ -3294,7 +3295,6 @@ auto Sema::BuildBinaryExpr(
 
             // Regular assignment.
             if (op == Tk::Assign) {
-                if (isa<RecordType, ArrayType>(lhs->type)) return ICE(rhs->location(), "TODO: struct/array assignment");
                 if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
                 return Build(lhs->type, MLValue);
             }
@@ -3421,6 +3421,17 @@ auto Sema::BuildBuiltinCallExpr(
 
             auto size = TRY(ToInt(1));
             return Make(args[0]->type, {LValueToRValue(args[0]), size});
+        }
+
+        case B::Retain: {
+            if (not CheckNArgs(1)) return nullptr;
+            if (not args[0]->is_mutable_lvalue()) return Error(
+                args[0]->location(),
+                "Argument #1 of '%2({}%)' must be a mutable lvalue",
+                builtin
+            );
+
+            return Make(args[0]->type, args[0], Expr::MLValue);
         }
 
         case B::SplitClosure: {
@@ -3729,34 +3740,34 @@ auto Sema::BuildDeclRefExpr(
     return {};
 }
 
-auto Sema::BuildDeleteExpr(Expr* arg, SLoc loc) -> Ptr<Expr> {
+auto Sema::MaybeBuildDeleteExpr(Expr* arg, bool implicit, SLoc loc) -> Ptr<DeleteExpr> {
+    // If the type does not require deletion, just throw away the argument.
+    if (not arg->type->requires_deletion())
+        return nullptr;
+
+    // Only lvalues can be deleted.
+    arg = MaterialiseTemporary(arg);
     if (not arg->is_mutable_lvalue()) return Error(
         loc,
         "Argument of '%1(delete%)' must be a mutable lvalue"
     );
 
-    // If the type does not require deletion, just throw away the argument.
-    if (not arg->type->requires_deletion())
-        return CastExpr::Discard(*tu, arg);
-
     // If it is a record, invoke its deleter.
-    if (auto r = dyn_cast<RecordType>(arg->type)) return BuildCallExpr(
-        CreateReference(r->deleter().get(), loc).get(),
+    if (auto r = dyn_cast<RecordType>(arg->type)) return new (*tu) DeleteExpr(
         arg,
+        r->deleter().get(),
+        implicit,
         loc
     );
 
     // Otherwise, call '__srcc_delete'.
-    auto delete_template = BuildDeclRefExpr(
-        {DeclNameLoc{String("__srcc_delete"), loc}},
-        loc,
-        Type()
-    );
-
-    if (delete_template.invalid())
-        return ICE(loc, "'__srcc_delete' not found");
-
-    return BuildCallExpr(delete_template.get(), arg, loc);
+    auto res = LookUpName(global_scope(), {DeclNameLoc{String("__srcc_delete"), loc}}, loc);
+    if (not res.successful()) return ICE(loc, "'__srcc_delete' not found");
+    auto decl_template = cast<ProcTemplateDecl>(res.decls.front());
+    auto subst = SubstituteTemplate(decl_template, {{arg->type, loc}});
+    if (not subst.success()) return ICE(loc, "Substitution of '__srcc_delete' failed");
+    auto deleter = InstantiateTemplate(decl_template, *subst.data.get<TemplateSubstitution*>(), loc);
+    return new (*tu) DeleteExpr(arg, deleter, implicit, loc);
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
@@ -4028,7 +4039,7 @@ auto Sema::BuildParamDecl(
         param->type->requires_deletion() and
         (param->intent == Intent::Move or param->intent == Intent::Copy)
     ) {
-        auto del = BuildDeleteExpr(CreateReference(decl, loc).get(), loc).get_or_null();
+        auto del = MaybeBuildDeleteExpr(CreateReference(decl, loc).get(), true, loc).get_or_null();
         decl->deleter_call = del;
     }
 
@@ -4753,7 +4764,7 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
 
 auto Sema::TranslateDeleteExpr(ParsedDeleteExpr* expr, Type) -> Ptr<Stmt> {
     auto arg = TRY(TranslateExpr(expr->expr));
-    return BuildDeleteExpr(arg, expr->loc);
+    return MaybeBuildDeleteExpr(arg, false, expr->loc);
 }
 
 auto Sema::TranslateDeferStmt(ParsedDeferStmt* stmt, Type) -> Ptr<Stmt> {
@@ -5368,7 +5379,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     //  so we use the deduced type if applicable.
     if (decl.decl()->valid() and decl.type()->requires_deletion()) {
         auto ref = CreateReference(decl.decl(), parsed->loc).get();
-        auto del = BuildDeleteExpr(ref, parsed->loc).get_or_null();
+        auto del = MaybeBuildDeleteExpr(ref, true, parsed->loc).get_or_null();
         if (del) decl.set_deleter(del);
     }
 

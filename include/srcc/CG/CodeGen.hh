@@ -339,6 +339,7 @@ public:
 
     /// Add code to be run at end of scope.
     void AddCleanup(ProcData::Cleanup cleanup);
+    void AddCleanupForDecl(LocalDecl* var);
 
     /// Implemented in IRTransforms.cc
     void AddRequiredTransformPasses(mlir::PassManager& pm);
@@ -504,9 +505,6 @@ public:
     /// Handle a backend diagnostic.
     void HandleMLIRDiagnostic(mlir::Diagnostic& diag);
 
-    /// Mark an optional as engaged or disengaged after initialisation.
-    void HandleOptionalInitialised(mlir::Value addr, Expr* init, mlir::Value init_from_addr);
-
     /// Check whether the current insertion point has a terminator.
     bool HasTerminator();
 
@@ -589,6 +587,9 @@ public:
         Value cond,
         llvm::function_ref<void()> emit_else
     );
+
+    /// Called after a variable was initialised.
+    void VariableInitialised(mlir::Value addr, Expr* init, mlir::Value init_from_addr);
 };
 
 #endif // SRCC_CG_HH

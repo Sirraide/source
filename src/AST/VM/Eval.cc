@@ -4,6 +4,7 @@
 #include <srcc/CG/CodeGen.hh>
 #include <srcc/CG/IR/IR.hh>
 #include <srcc/CG/IR/MLIRFormatters.hh>
+#include <srcc/CG/Target/Target.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Core/Serialisation.hh>
 #include <srcc/Frontend/ParseTree.hh>
@@ -28,7 +29,6 @@
 #include <memory>
 #include <optional>
 #include <print>
-#include <srcc/CG/Target/Target.hh>
 
 using namespace srcc;
 using namespace srcc::eval;
@@ -606,7 +606,6 @@ auto Eval::AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> 
     return std::nullopt;
 }
 
-
 void Eval::BranchTo(Block* block, mlir::ValueRange args) {
     // Copy the argument values out of their slots in case we’re doing
     // something horrible like
@@ -632,7 +631,6 @@ void Eval::BranchTo(Block* block, MutableArrayRef<SRValue> args) {
     for (auto [slot, arg] : zip(block->getArguments(), args))
         Temp(slot) = std::move(arg);
 }
-
 
 bool Eval::EvalLoop() {
     auto CastOp = [&] [[nodiscard]] (
@@ -858,14 +856,42 @@ bool Eval::EvalLoop() {
             continue;
         }
 
+        if (auto d = dyn_cast<ir::DeleteOp>(i)) {
+            auto mod = i->getParentOfType<mlir::ModuleOp>();
+            auto del = mod.lookupSymbol<ir::ProcOp>(d.getDeleter());
+            auto addr = Val(d.getAddr());
+            if (not del) return ICE(
+                SLoc::Decode(d->getLoc()),
+                "Deleter '{}' not found",
+                d.getDeleter()
+            );
+
+            if (del.empty()) {
+                auto decl = cg.lookup(del);
+                cg.emit(decl.get());
+                if (not cg.finalise_for_constant_evaluation(del)) return false;
+            }
+
+            if (auto f = d.getDeleteFlag()) {
+                auto mem = GetHostMemoryPointer(f);
+                if (not mem) return false;
+                u8 flag = u8(LoadInt(mem, Size::Bytes(1)).cast<APInt>().getZExtValue());
+                if (flag == 0) continue;
+            }
+
+            PushFrame(d->getLoc(), del, addr, {});
+            continue;
+        }
+
         // These are only used by lifetime analysis and don’t have any
         // runtime semantics.
         if (isa<
             ir::EngageOp,
             ir::EngageCopyOp,
             ir::DisengageOp,
-            ir::UnwrapOp
-        >(i)) continue;
+            ir::MoveOp,
+            ir::UnwrapOp>(i)
+        ) continue;
 
         if (auto l = dyn_cast<ir::LoadOp>(i)) {
             auto ptr = GetHostMemoryPointer(l.getAddr());
@@ -902,6 +928,11 @@ bool Eval::EvalLoop() {
             auto quote = cast<QuoteExpr>(tree.getTree());
             for (auto u : tree.getUnquotes()) unquotes.push_back(Val(u).cast<TreeValue*>());
             Temp(i->getResult(0)) = SRValue(vm.allocate_tree_value(quote, unquotes));
+            continue;
+        }
+
+        if (auto r = dyn_cast<ir::RetainOp>(i)) {
+            Temp(r->getResult(0)) = Val(r.getPtr());
             continue;
         }
 
@@ -1083,9 +1114,9 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        INT_OP(AndIOp,lhs & rhs);
+        INT_OP(AndIOp, lhs & rhs);
         INT_OP(OrIOp, lhs | rhs);
-        INT_OP(XOrIOp,lhs ^ rhs);
+        INT_OP(XOrIOp, lhs ^ rhs);
         INT_OP(AddIOp, lhs + rhs);
         INT_OP(ShRSIOp, lhs.ashr(rhs));
         INT_OP(MulIOp, lhs * rhs);
@@ -1111,7 +1142,6 @@ bool Eval::EvalLoop() {
             TRY(OvOp(i, &APInt::ssub_ov));
             continue;
         }
-
 
         return ICE(SLoc::Decode(i->getLoc()), "Unsupported op in constant evaluation: '{}'", i->getName().getStringRef());
     }
@@ -1314,7 +1344,6 @@ auto Eval::LoadTree(const void* mem) -> TreeValue* {
     std::memcpy(&ptr, mem, sizeof(TreeValue*));
     return ptr;
 }
-
 
 auto Eval::LoadType(const void* mem) -> Type {
     TypeBase* ptr{};

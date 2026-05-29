@@ -518,6 +518,30 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
+    if (auto e = dyn_cast<ir::MoveOp>(op)) {
+        Format(out, "move {}", val(e.getValue(), false));
+        return;
+    }
+
+    if (auto e = dyn_cast<ir::RetainOp>(op)) {
+        Format(out, "retain {}", val(e.getPtr(), false));
+        return;
+    }
+
+    if (auto d = dyn_cast<ir::DeleteOp>(op)) {
+        Format(
+            out,
+            "delete {} using %2({}%)",
+            val(d.getAddr(), false),
+            utils::Escape(d.getDeleter(), false, true)
+        );
+
+        if (d.getDeleteFlag())
+            Format(out, " if {}", val(d.getDeleteFlag(), false));
+
+        return;
+    }
+
     if (isa<mlir::arith::AddIOp>(op)) return PrintArithOp("add");
     if (isa<mlir::arith::AndIOp>(op)) return PrintArithOp("and");
     if (isa<mlir::arith::DivSIOp>(op)) return PrintArithOp("sdiv");

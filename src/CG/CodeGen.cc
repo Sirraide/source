@@ -1155,7 +1155,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     if (init->type->eval_mode() == EvalMode::Scalar) {
         IRValue init_val;
         Value init_from_addr;
-        defer { HandleOptionalInitialised(addr, init, init_from_addr); };
+        defer { VariableInitialised(addr, init, init_from_addr); };
 
         // Emit the initialiser.
         //
@@ -1202,7 +1202,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
             if (e->kind == CastExpr::CastKind::LValueToRValue) {
                 auto init_addr = EmitScalar(e->arg);
                 CreateMemCpy(loc, addr, init_addr, e->type);
-                HandleOptionalInitialised(addr, init, init_addr);
+                VariableInitialised(addr, init, init_addr);
                 return;
             }
 
@@ -1276,29 +1276,32 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
     });
 } // clang-format on
 
-void CodeGen::HandleOptionalInitialised(Value addr, Expr* init, Value init_from_addr) {
-    auto opt = dyn_cast<OptionalType>(init->type);
-    if (not opt) return;
-    Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
-    Assert(not isa<ParenExpr>(init), "Should have ignored parens");
+void CodeGen::VariableInitialised(Value addr, Expr* init, Value init_from_addr) {
+    // Mark an optional as engaged or disengaged after initialisation.
+    if (auto opt = dyn_cast<OptionalType>(init->type); opt) {
+        Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
+        Assert(not isa<ParenExpr>(init), "Should have ignored parens");
 
-    // If we assigned a value of the underlying type, engage the optional.
-    auto cast = dyn_cast<CastExpr>(init);
-    if (cast) {
-        if (cast->kind == CastExpr::OptionalWrap) {
-            ir::EngageOp::create(*this, C(init->location()), addr);
-            return;
+        // If we assigned a value of the underlying type, engage the optional.
+        auto cast = dyn_cast<CastExpr>(init);
+        if (cast) {
+            if (cast->kind == CastExpr::OptionalWrap) {
+                ir::EngageOp::create(*this, C(init->location()), addr);
+                return;
+            }
+
+            if (cast->kind == CastExpr::LValueToRValue) {
+                Assert(init_from_addr);
+                ir::EngageCopyOp::create(*this, C(init->location()), addr, init_from_addr);
+                return;
+            }
         }
 
-        if (cast->kind == CastExpr::LValueToRValue) {
-            Assert(init_from_addr);
-            ir::EngageCopyOp::create(*this, C(init->location()), addr, init_from_addr);
-            return;
-        }
+        // Any other form of assignment disengages the optional.
+        ir::DisengageOp::create(*this, C(init->location()), addr);
     }
 
-    // Any other form of assignment disengages the optional.
-    ir::DisengageOp::create(*this, C(init->location()), addr);
+    // Mark an address as moved-from if the type we’re moving has a destructor.
 }
 
 // ============================================================================
@@ -1316,6 +1319,13 @@ CodeGen::EnterCleanupScope::~EnterCleanupScope() {
 void CodeGen::AddCleanup(ProcData::Cleanup cleanup) {
     Assert(curr.current_cleanup_scope);
     curr.current_cleanup_scope->cleanups.push_back(std::move(cleanup));
+}
+
+void CodeGen::AddCleanupForDecl(LocalDecl* var) {
+    if (not var->type->requires_deletion()) return;
+    Assert(not IsZeroSizedType(var->type), "TODO: delete zero-sized type");
+    Assert(var->deleter_call.present(), "Deleter must be present since '{}' requires deletion", var->type);
+    AddCleanup([this, var] { EmitDeleteExpr(var->deleter_call.get()); });
 }
 
 void CodeGen::EmitCleanups(const ProcData::CleanupScope& target_scope) {
@@ -1825,10 +1835,12 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
         }
 
         // This is an mrvalue expression that is not the return value; we
-        // allow these here, but we need to provide stack space for them.
+        // allow these here, but we need to provide stack space for them
+        // if they're rvalues; if they're lvalues, e.g. the result of
+        // 'a = b', then we don't need a temporary.
         else if (s->type_or_void()->eval_mode() == EvalMode::Memory) {
             auto e = cast<Expr>(s);
-            if (IsZeroSizedType(e->type)) {
+            if (IsZeroSizedType(e->type) or e->is_lvalue()) {
                 Emit(s);
             } else {
                 auto l = CreateAlloca(C(e->location()), e->type);
@@ -1892,6 +1904,11 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
             auto ptr = EmitScalar(expr->args()[0]);
             auto offset = EmitScalar(expr->args()[1]);
             return CreatePtrAdd(loc, ptr, offset);
+        }
+
+        case B::Retain: {
+            auto ptr = EmitScalar(expr->args()[0]);
+            return ir::RetainOp::create(*this, loc, ptr);
         }
 
         case B::SplitClosure: return Emit(expr->args()[0]);
@@ -2185,6 +2202,14 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
     return EmitDefaultInit(ty, l);
 }
 
+auto CodeGen::EmitDeleteExpr(DeleteExpr* del) -> IRValue {
+    auto loc = C(del->location());
+    auto addr = EmitScalar(del->val);
+    auto deleter = DeclareProcedure(del->deleter());
+    ir::DeleteOp::create(*this, loc, addr, deleter, del->implicit());
+    return {};
+}
+
 auto CodeGen::EmitDeferStmt(DeferStmt* stmt) -> IRValue {
     AddCleanup([this, stmt] { Emit(stmt->body); });
     return {};
@@ -2476,10 +2501,7 @@ void CodeGen::EmitLocal(LocalDecl* var) {
     // in the middle of a function at compile-time.
     if (not curr.locals.contains(var)) EmitAllocaForLocal(var);
     EmitRValue(curr.locals.at(var), var->init.get());
-
-    // Emit the deleter if there is one.
-    if (var->deleter_call.present())
-        AddCleanup([this, var] { Emit(var->deleter_call.get()); });
+    AddCleanupForDecl(var);
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
@@ -2697,9 +2719,9 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Declare other local variables and call the deleter for parameters.
     EnterCleanupScope _{*this};
     for (auto l : proc->locals) {
-        if (isa<ParamDecl>(l)) {
-            if (l->deleter_call.present())
-                AddCleanup([this, l] { Emit(l->deleter_call.get()); });
+        if (auto p = dyn_cast<ParamDecl>(l)) {
+            if (p->intent() == Intent::Copy or p->intent() == Intent::Move)
+                AddCleanupForDecl(l);
         } else if (not IsZeroSizedType(l->type)) {
             EmitAllocaForLocal(l);
         }
@@ -2707,6 +2729,11 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
 
     // Emit the body.
     Emit(proc->body().get());
+
+    // If we have an unclosed block at the end, it should be unreachable. Add
+    // a terminator so MLIR doesn't have a stroke trying to process a block
+    // without one.
+    if (not HasTerminator()) LLVM::UnreachableOp::create(*this, C(proc->location()));
 }
 
 auto CodeGen::EmitParenExpr(ParenExpr* e) -> IRValue {

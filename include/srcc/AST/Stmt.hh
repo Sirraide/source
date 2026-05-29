@@ -35,6 +35,7 @@ namespace srcc {
     F(MakeClosure, "__srcc_make_closure")   \
     F(Memcpy, "__srcc_memcpy")              \
     F(Ptradd, "__srcc_ptradd")              \
+    F(Retain, "__srcc_retain")              \
     F(SplitClosure, "__srcc_split_closure") \
     F(Unreachable, "__srcc_unreachable")
 
@@ -638,6 +639,33 @@ public:
     ) : Expr{Kind::DefaultInitExpr, type, RValue, location} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DefaultInitExpr; }
+};
+
+/// Run a deleter.
+class srcc::DeleteExpr final : public Expr {
+    llvm::PointerIntPair<ProcDecl*, 1, bool> deleter_and_implicit;
+
+public:
+    Expr* val;
+
+    DeleteExpr(
+        Expr* val,
+        ProcDecl* deleter,
+        bool implicit,
+        SLoc location
+    ) : Expr{Kind::DeleteExpr, Type::VoidTy, RValue, location},
+        deleter_and_implicit{deleter, implicit},
+        val{val} {}
+
+    /// Get the deleter that should be invoked by this.
+    auto deleter() -> ProcDecl* { return deleter_and_implicit.getPointer(); }
+
+    /// Whether this 'delete' is implicit; an implicit 'delete' is dropped
+    /// by the compiler if the value is already moved by the time we get to
+    /// is.
+    bool implicit() { return deleter_and_implicit.getInt(); }
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::DeleteExpr; }
 };
 
 /// This is wrapped with a 'ConstExpr' after evaluation, so the
@@ -1329,7 +1357,7 @@ public:
     Ptr<Expr> init;
 
     /// Deleter call, if any.
-    Ptr<Expr> deleter_call;
+    Ptr<DeleteExpr> deleter_call;
 
 protected:
     LocalDecl(
@@ -1721,7 +1749,7 @@ struct AnyVarDecl {
         else return cast<GlobalDecl*>(ptr);
     }
 
-    void set_deleter(Ptr<Expr> expr) {
+    void set_deleter(Ptr<DeleteExpr> expr) {
         if (auto l = dyn_cast<LocalDecl*>(ptr)) l->deleter_call = expr;
         else Todo("Add deleter to global variable");
     }

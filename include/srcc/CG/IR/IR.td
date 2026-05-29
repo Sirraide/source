@@ -315,6 +315,39 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
     }];
 }
 
+def DeleteOp : SRCC_Op<"delete"> {
+    let summary = "Call a destructor";
+    let arguments = (
+        ins SRCC_Ptr:$addr,
+        SymbolNameAttr:$deleter,
+        UnitAttr:$implicit,
+        Optional<SRCC_Ptr>:$delete_flag
+    );
+
+    let builders = [
+        OpBuilder<(ins
+            "::mlir::Value":$addr,
+            "ProcOp":$proc,
+            "bool":$implicit
+        ), [{
+            build(
+                $_builder,
+                $_state,
+                addr,
+                proc.getSymName(),
+                implicit,
+                nullptr
+            );
+        }]>
+    ];
+
+    let extraClassDeclaration = [{
+        void setDeleterFlag(::mlir::Value deleter_flag) {
+            getOperation()->setOperands({getAddr(), deleter_flag});
+        }
+    }];
+}
+
 def DisengageOp : SRCC_Op<"disengage"> {
     let summary = "Disengage an optional";
     let arguments = (ins SRCC_Ptr:$optional);
@@ -356,6 +389,11 @@ def LoadOp : SRCC_Op<"load", [Pure]> {
     ];
 }
 
+def MoveOp : SRCC_Op<"move"> {
+    let summary = "Mark a memory location as moved-from";
+    let arguments = (ins SRCC_Ptr:$value);
+}
+
 def NilOp : SRCC_Op<"nil", [Pure]> {
     let summary = "Create the nil value of a type";
     let results = (outs SRCC_AnyType:$res);
@@ -389,6 +427,12 @@ def QuoteOp : SRCC_Op<"quote", [Pure]> {
     let summary = "A parse tree";
     let arguments = (ins Property<"Stmt*">:$tree, Variadic<SRCC_Tree>:$unquotes);
     let results = (outs SRCC_Tree);
+}
+
+def RetainOp : SRCC_Op<"retain", [Pure, AllTypesMatch<["ptr", "res"]>]> {
+    let summary = "Convert an unowned into an owned pointer";
+    let arguments = (ins SRCC_Ptr:$ptr);
+    let results = (outs SRCC_Ptr:$res);
 }
 
 def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {

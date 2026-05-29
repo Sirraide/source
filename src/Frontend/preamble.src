@@ -11,7 +11,7 @@ __srcc_internal__
 proc __srcc_delete (inout $T lvalue) __srcc_no_mnum__ {
     #if T.is_optional {
         #assert T.elem.requires_deletion;
-        if lvalue != nil then delete (lvalue as T.elem);
+        if lvalue != nil then delete __srcc_retain(lvalue as T.elem);
     } #elif T.is_array {
         #assert T.elem.requires_deletion;
         #if T.elems != 0 {
@@ -19,7 +19,7 @@ proc __srcc_delete (inout $T lvalue) __srcc_no_mnum__ {
             int i = T.elems;
             loop {
                 --i;
-                delete lvalue[i];
+                delete __srcc_retain(lvalue[i]);
                 if i == 0 return;
             }
         }
