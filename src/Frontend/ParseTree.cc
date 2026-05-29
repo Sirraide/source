@@ -345,24 +345,31 @@ auto ParsedProcDecl::Create(
 ParsedStructDecl::ParsedStructDecl(
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
+    Ptr<ParsedStmt> deleter,
     SLoc loc
-) : ParsedDecl{Kind::StructDecl, name, loc}, num_fields(u32(fields.size())) {
+) : ParsedDecl{Kind::StructDecl, name, loc},
+    num_fields(u32(fields.size())),
+    has_deleter(deleter.present()) {
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),
-        getTrailingObjects()
+        getTrailingObjects<ParsedFieldDecl*>()
     );
+
+    if (deleter.present())
+        *getTrailingObjects<ParsedStmt*>() = deleter.get();
 }
 
 auto ParsedStructDecl::Create(
     Parser& parser,
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
+    Ptr<ParsedStmt> deleter,
     SLoc loc
 ) -> ParsedStructDecl* {
-    const auto size = totalSizeToAlloc<ParsedFieldDecl*>(fields.size());
+    const auto size = totalSizeToAlloc<ParsedFieldDecl*, ParsedStmt*>(fields.size(), deleter.present());
     auto mem = parser.allocate(size, alignof(ParsedStructDecl));
-    return ::new (mem) ParsedStructDecl{name, fields, loc};
+    return ::new (mem) ParsedStructDecl{name, fields, deleter, loc};
 }
 
 // ============================================================================
@@ -405,13 +412,9 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%1(Type%) {}\n", s->dump_as_type());
             return;
 
-        case Kind::AssertExpr: {
-            PrintHeader(s, "AssertExpr");
-        } break;
-
-        case Kind::BlockExpr: {
-            PrintHeader(s, "BlockExpr");
-        } break;
+        default:
+            PrintHeader(s, enchantum::to_string(s->kind()));
+            break;
 
         case Kind::BinaryExpr: {
             auto& b = *cast<ParsedBinaryExpr>(s);
@@ -432,23 +435,11 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             );
         } break;
 
-        case Kind::CallExpr: {
-            PrintHeader(s, "CallExpr");
-        } break;
-
         case Kind::DeclRefExpr: {
             auto& d = *cast<ParsedDeclRefExpr>(s);
             PrintHeader(s, "DeclRefExpr", false);
             print("%8({}%)\n", d.to_string());
         } break;
-
-        case Kind::DeferStmt:
-            PrintHeader(s, "DeferStmt");
-            break;
-
-        case Kind::EmptyStmt:
-            PrintHeader(s, "EmptyStmt");
-            break;
 
         case Kind::EnumDecl: {
             auto e = cast<ParsedEnumDecl>(s);
@@ -463,14 +454,6 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintChildren<Child>(children);
             return;
         }
-
-        case Kind::EvalExpr:
-            PrintHeader(s, "EvalExpr");
-            break;
-
-        case Kind::ExportDecl:
-            PrintHeader(s, "ExportDecl");
-            break;
 
         case Kind::FieldDecl: {
             auto& f = *cast<ParsedFieldDecl>(s);
@@ -501,22 +484,10 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             if (i.is_static) print("static\n");
         } break;
 
-        case Kind::InjectExpr: {
-            PrintHeader(s, "InjectExpr");
-        } break;
-
         case Kind::IntLitExpr: {
             PrintHeader(s, "IntLitExpr", false);
             auto val = cast<ParsedIntLitExpr>(s)->storage.str(false);
             print("%5({}%)\n", val);
-        } break;
-
-        case Kind::LoopExpr: {
-            PrintHeader(s, "LoopExpr");
-        } break;
-
-        case Kind::MatchExpr: {
-            PrintHeader(s, "MatchExpr");
         } break;
 
         case Kind::MemberExpr: {
@@ -524,11 +495,6 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "MemberExpr", false);
             print("%8({}%)\n", m.member);
         } break;
-
-
-        case Kind::NilExpr:
-            PrintHeader(s, "NilExpr");
-            break;
 
         case Kind::VarDecl: {
             auto& p = *cast<ParsedVarDecl>(s);
@@ -557,14 +523,6 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             return;
         }
 
-        case Kind::UnquoteExpr: {
-            PrintHeader(s, "UnquoteExpr");
-        } break;
-
-        case Kind::ParenExpr: {
-            PrintHeader(s, "ParenExpr");
-        } break;
-
         case Kind::ProcDecl: {
             auto& p = *cast<ParsedProcDecl>(s);
             PrintHeader(s, "ProcDecl", false);
@@ -579,10 +537,6 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             print("%3(\"{}\"%)\n", utils::Escape(str.value, true, true));
         } break;
 
-        case Kind::ReturnExpr: {
-            PrintHeader(s, "ReturnExpr");
-        } break;
-
         case Kind::StructDecl: {
             auto& d = *cast<ParsedStructDecl>(s);
             PrintHeader(s, "StructDecl", false);
@@ -595,24 +549,12 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             else PrintHeader(s, "ThisExpr");
         } break;
 
-        case Kind::TupleExpr: {
-            PrintHeader(s, "TupleExpr");
-        } break;
-
         case Kind::UnaryExpr: {
             auto& u = *cast<ParsedUnaryExpr>(s);
             PrintHeader(s, "UnaryExpr", false);
             print("%1({}%)", u.op);
             if (u.postfix) print(" %3(postfix%)");
             print("\n");
-        } break;
-
-        case Kind::WhileStmt: {
-            PrintHeader(s, "WhileStmt");
-        } break;
-
-        case Kind::WithExpr: {
-            PrintHeader(s, "WithExpr");
         } break;
     }
 
@@ -671,6 +613,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
         },
 
         [&](ParsedDeferStmt* d) -> Children { return d->body; },
+        [&](ParsedDeleteExpr* d) -> Children { return d->expr; },
         [&](ParsedEmptyStmt*) -> Children { return {}; },
         [&](ParsedEnumDecl* e) -> Children {
             Children::Owning children;
@@ -752,10 +695,16 @@ auto ParsedStmt::children(bool include_types) -> Children {
         },
 
         [&](ParsedStructDecl* s) -> Children {
-            return Children::NonOwning{
+            auto del = s->deleter().get_or_null();
+            if (not del) return Children::NonOwning{
                 reinterpret_cast<ParsedStmt* const*>(s->fields().data()),
                 s->fields().size()
             };
+
+            Children::Owning children;
+            append_range(children, s->fields());
+            children.push_back(del);
+            return std::move(children);
         },
 
         [&](ParsedThisExpr*) -> Children { return {}; },

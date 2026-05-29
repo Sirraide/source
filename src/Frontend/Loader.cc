@@ -91,7 +91,8 @@ public:
             },
             [&](const StructType* ty) {
                 *this << K::StructType << ty->decl()->name.str() << ty->decl()->location()
-                      << ty->layout();
+                      << ty->layout() << ty->deleter().present();
+                if (ty->deleter().present()) *this << ty->deleter().get();
             },
         });
     }
@@ -140,6 +141,12 @@ public:
 
     void write(FieldDecl* f) {
         *this << f->type << f->offset << f->name.str() << f->location();
+    }
+
+    void write(ProcDecl* proc) {
+        *this << proc->kind() << proc->mangling
+              << proc->type << proc->name << proc->props
+              << proc->location();
     }
 
     void write(EnumeratorDecl* e) {
@@ -338,7 +345,9 @@ public:
                 auto decl_name = Read(String);
                 auto decl_loc = Read(SLoc);
                 auto layout = Read(RecordLayout*);
-                return S.BuildCompleteStructType(decl_name, layout, decl_loc);
+                auto ty = S.BuildCompleteStructType(decl_name, layout, decl_loc);
+                if (Read(bool)) ty->set_deleter(cast<ProcDecl>(Try(read_decl())));
+                return ty;
             }
 
             case K::TupleType: {
@@ -593,9 +602,7 @@ auto TranslationUnit::serialise() -> ByteBuffer {
         using K = Stmt::Kind;
         if (auto proc = dyn_cast<ProcDecl>(d)) {
             Assert(not proc->parent, "Exporting local procedure?");
-            w << K::ProcDecl << proc->mangling
-              << proc->type << proc->name << proc->props
-              << proc->location();
+            w << proc;
             continue;
         }
 

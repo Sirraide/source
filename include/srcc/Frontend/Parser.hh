@@ -161,7 +161,7 @@ private:
     bool ParseParameter(parser::Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
     auto ParseParenExpr() -> Ptr<ParsedStmt>;
     void ParsePreamble();
-    auto ParseProcBody() -> Ptr<ParsedStmt>;
+    auto ParseProcBody(parser::Signature sig, ArrayRef<ParsedVarDecl*> param_decls) -> Ptr<ParsedProcDecl>;
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
     auto ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt>;
     bool ParseSignature(parser::Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);

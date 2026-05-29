@@ -1652,10 +1652,16 @@ auto BuiltinMemberAccessExpr::Evaluate(
         case TypeArraySize: return Integer(ty->array_size(tu).bytes());
         case TypeBits: return Integer(ty->bit_width(tu).bits());
         case TypeBytes: return Integer(ty->memory_size(tu).bytes());
-        case TypeSize: return Integer(ty->memory_size(tu).bytes());
         case TypeIsArray: return eval::RValue(isa<ArrayType>(ty));
         case TypeIsOptional: return eval::RValue(isa<OptionalType>(ty));
         case TypeIsSlice: return eval::RValue(isa<SliceType>(ty));
+        case TypeRequiresDeletion: return eval::RValue(ty->requires_deletion());
+
+        case TypeArrayElems: {
+            auto a = dyn_cast<ArrayType>(ty);
+            if (not a) return InvalidQuery();
+            return Integer(u64(a->dimension()));
+        }
 
         case TypeMaxVal:
             if (not ty->is_integer()) return InvalidQuery();

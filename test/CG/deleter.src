@@ -1,0 +1,248 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+proc g extern;
+
+struct Small {
+    int x;
+    delete { g(); }
+};
+
+struct Big {
+    int[3] x;
+    delete { g(); }
+};
+
+struct Q{};
+proc simple {
+    var x = Small(1);
+    var x = Big(int[3](2, 3, 4));
+}
+
+proc array {
+    var x = Small[3](6, 7, 8);
+    var x = Big[3](int[3](9, 10, 11), int[3](11, 12, 13), int[3](14, 15, 16));
+}
+
+proc optional {
+    Small? x;
+    Big? x;
+    var x = Small?(17);
+    var x = Big?(int[3](18, 19, 20));
+}
+
+simple();
+array();
+optional();
+
+// * @0 = "-\00"
+// + @1 = "integer overflow\00"
+// + @2 = "__srcc_preamble.src\00"
+// + @3 = "[\00"
+// + @4 = "out of bounds access\00"
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     call ccc void _S6simpleFvE.1()
+// +     call ccc void _S5arrayFvE.2()
+// +     call ccc void _S8optionalFvE.3()
+// +     ret
+// + }
+// +
+// + proc _S6simpleFvE.1 private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 24, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     store #1, i64 2, align 8
+// +     %0 = ptradd #1, 8
+// +     store %0, i64 3, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, i64 4, align 8
+// +     call ccc void $T3Big.delete(ptr #1 align 8 dereferenceable 24)
+// +     call ccc void $T5Small.delete(ptr #0 align 8 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc _S5arrayFvE.2 private ccc {
+// +     #0 = 24, align 8
+// +     #1 = 72, align 8
+// +
+// + entry:
+// +     store #0, i64 6, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 7, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, i64 8, align 8
+// +     store #1, i64 9, align 8
+// +     %2 = ptradd #1, 8
+// +     store %2, i64 10, align 8
+// +     %3 = ptradd %2, 8
+// +     store %3, i64 11, align 8
+// +     %4 = ptradd #1, 24
+// +     store %4, i64 11, align 8
+// +     %5 = ptradd %4, 8
+// +     store %5, i64 12, align 8
+// +     %6 = ptradd %5, 8
+// +     store %6, i64 13, align 8
+// +     %7 = ptradd %4, 24
+// +     store %7, i64 14, align 8
+// +     %8 = ptradd %7, 8
+// +     store %8, i64 15, align 8
+// +     %9 = ptradd %8, 8
+// +     store %9, i64 16, align 8
+// +     call ccc void _S$13__srcc_deleteFvx2A3T3BigE(ptr #1 align 8 dereferenceable 72)
+// +     call ccc void _S$13__srcc_deleteFvx2A3T5SmallE(ptr #0 align 8 dereferenceable 24)
+// +     ret
+// + }
+// +
+// + proc _S8optionalFvE.3 private ccc {
+// +     #0 = 9, align 8
+// +     #1 = 25, align 8
+// +     #2 = 9, align 8
+// +     #3 = 25, align 8
+// +
+// + entry:
+// +     set ptr #0, i8 0, i64 9
+// +     set ptr #1, i8 0, i64 25
+// +     store #2, i64 17, align 8
+// +     %0 = ptradd #2, 8
+// +     store %0, i8 -1, align 1
+// +     engage #2
+// +     store #3, i64 18, align 8
+// +     %1 = ptradd #3, 8
+// +     store %1, i64 19, align 8
+// +     %2 = ptradd %1, 8
+// +     store %2, i64 20, align 8
+// +     %3 = ptradd #3, 24
+// +     store %3, i8 -1, align 1
+// +     engage #3
+// +     call ccc void _S$13__srcc_deleteFvx2OT3BigE(ptr #3 align 8 dereferenceable 25)
+// +     call ccc void _S$13__srcc_deleteFvx2OT5SmallE(ptr #2 align 8 dereferenceable 9)
+// +     call ccc void _S$13__srcc_deleteFvx2OT3BigE(ptr #1 align 8 dereferenceable 25)
+// +     call ccc void _S$13__srcc_deleteFvx2OT5SmallE(ptr #0 align 8 dereferenceable 9)
+// +     ret
+// + }
+// +
+// + proc $T3Big.delete (ptr %0 align 8 dereferenceable 24) external ccc {
+// + entry:
+// +     call ccc void g()
+// +     ret
+// + }
+// +
+// + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
+// + entry:
+// +     call ccc void g()
+// +     ret
+// + }
+// +
+// + proc _S$13__srcc_deleteFvx2A3T3BigE (ptr %0 align 8 dereferenceable 72) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 3, align 8
+// +     br bb1
+// +
+// + bb1:
+// +     %1 = load i64, #0, align 8
+// +     %2 = ssub ov i64 %1, 1
+// +     br %2:1 to bb2 else bb3
+// +
+// + bb2:
+// +     abort at loc("__srcc_preamble.src":19:17) arithmetic(ptr #1)
+// +
+// + bb3:
+// +     store #0, i64 %2:0, align 8
+// +     %12 = load i64, #0, align 8
+// +     %13 = icmp uge i64 %12, 3
+// +     br %13 to bb4 else bb5
+// +
+// + bb4:
+// +     abort at loc("__srcc_preamble.src":20:24) arithmetic(ptr #1)
+// +
+// + bb5:
+// +     %23 = mul i64 %12, 24
+// +     %24 = ptradd %0, i64 %23
+// +     call ccc void $T3Big.delete(ptr %24 align 8 dereferenceable 24)
+// +     %25 = load i64, #0, align 8
+// +     %26 = icmp eq i64 %25, 0
+// +     br %26 to bb6 else bb1
+// +
+// + bb6:
+// +     ret
+// + }
+// +
+// + proc _S$13__srcc_deleteFvx2A3T5SmallE (ptr %0 align 8 dereferenceable 24) private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 3, align 8
+// +     br bb1
+// +
+// + bb1:
+// +     %1 = load i64, #0, align 8
+// +     %2 = ssub ov i64 %1, 1
+// +     br %2:1 to bb2 else bb3
+// +
+// + bb2:
+// +     abort at loc("__srcc_preamble.src":19:17) arithmetic(ptr #1)
+// +
+// + bb3:
+// +     store #0, i64 %2:0, align 8
+// +     %12 = load i64, #0, align 8
+// +     %13 = icmp uge i64 %12, 3
+// +     br %13 to bb4 else bb5
+// +
+// + bb4:
+// +     abort at loc("__srcc_preamble.src":20:24) arithmetic(ptr #1)
+// +
+// + bb5:
+// +     %23 = mul i64 %12, 8
+// +     %24 = ptradd %0, i64 %23
+// +     call ccc void $T5Small.delete(ptr %24 align 8 dereferenceable 8)
+// +     %25 = load i64, #0, align 8
+// +     %26 = icmp eq i64 %25, 0
+// +     br %26 to bb6 else bb1
+// +
+// + bb6:
+// +     ret
+// + }
+// +
+// + proc _S$13__srcc_deleteFvx2OT3BigE (ptr %0 align 8 dereferenceable 25) private ccc {
+// + entry:
+// +     %1 = ptradd %0, 24
+// +     %2 = load i8, %1, align 1
+// +     %3 = trunc i8 %2 to i1
+// +     br %3 to bb1 else bb2
+// +
+// + bb1:
+// +     engage %0
+// +     unwrap %0
+// +     call ccc void $T3Big.delete(ptr %0 align 8 dereferenceable 24)
+// +     br bb2
+// +
+// + bb2:
+// +     ret
+// + }
+// +
+// + proc _S$13__srcc_deleteFvx2OT5SmallE (ptr %0 align 8 dereferenceable 9) private ccc {
+// + entry:
+// +     %1 = ptradd %0, 8
+// +     %2 = load i8, %1, align 1
+// +     %3 = trunc i8 %2 to i1
+// +     br %3 to bb1 else bb2
+// +
+// + bb1:
+// +     engage %0
+// +     unwrap %0
+// +     call ccc void $T5Small.delete(ptr %0 align 8 dereferenceable 8)
+// +     br bb2
+// +
+// + bb2:
+// +     ret
+// + }
+// +
+// + proc g external ccc;

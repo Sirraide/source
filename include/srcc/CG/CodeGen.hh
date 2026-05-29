@@ -568,6 +568,9 @@ public:
     /// Get the mangled name of an object.
     auto MangledName(ObjectDecl* proc) -> String;
 
+    /// Mangle a type name.
+    static auto MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256>;
+
     /// Determine whether this parameter type is passed by reference under
     /// the given intent.
     ///

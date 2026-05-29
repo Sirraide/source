@@ -1,0 +1,48 @@
+// R %srcc --eval %s
+program test;
+
+import <cstdio> as *;
+
+struct Small {
+    int x;
+    delete { printf("Small: %zi\n", x); }
+};
+
+struct Big {
+    int[3] x;
+    delete { printf("Big: %zi %zi %zi\n", x[0], x[1], x[2]); }
+};
+
+proc simple {
+    // * Big: 2 3 4
+    // + Small: 1
+    var x = Small(1);
+    var x = Big(int[3](2, 3, 4));
+}
+
+simple();
+
+proc array {
+    // + Big: 14 15 16
+    // + Big: 11 12 13
+    // + Big: 9 10 11
+    // + Small: 8
+    // + Small: 7
+    // + Small: 6
+    var x = Small[3](6, 7, 8);
+    var x = Big[3](int[3](9, 10, 11), int[3](11, 12, 13), int[3](14, 15, 16));
+}
+
+array();
+
+proc optional {
+    Small? x;
+    Big? x;
+
+    // + Big: 18 19 20
+    // + Small: 17
+    var x = Small?(17);
+    var x = Big?(int[3](18, 19, 20));
+}
+
+optional();

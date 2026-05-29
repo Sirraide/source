@@ -4,6 +4,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/AST/Type.hh>
 #include <srcc/CG/Target/Target.hh>
+#include <srcc/CG/CodeGen.hh>
 #include <srcc/ClangForward.hh>
 #include <srcc/Core/Constants.hh>
 #include <srcc/Frontend/Parser.hh>
@@ -42,12 +43,6 @@ struct Err {
     Err(std::nullptr_t) : Err(false) {}
     explicit operator bool() const { return value; }
 };
-
-namespace {
-constexpr const char PreambleSource[]{
-#embed "preamble.src" suffix(, 0)
-};
-}
 
 // ============================================================================
 //  Helpers
@@ -107,6 +102,63 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
         Warn(with, "'%1(with%)' has no effect as type '{}' has no members", ty);
     }
 }
+
+auto Sema::BuildImplicitProcedure(
+    DeclName name,
+    TypeAndValueCategory ret,
+    ArrayRef<ParamSpec> params,
+    Linkage linkage,
+    Mangling mangling,
+    SLoc loc,
+    llvm::function_ref<void(ProcDecl*, SmallVectorImpl<Stmt*>&)> BuildBody
+) -> ProcDecl* {
+    auto param_types = llvm::to_vector(vws::transform(params, [](auto& p) { return p.type; }));
+    auto scope = tu->create_scope<ProcScope>(curr_scope(), nullptr);
+    auto proc = ProcDecl::Create(
+        *tu,
+        nullptr,
+        ProcType::Get(*tu, ret, param_types),
+        name,
+        linkage,
+        mangling,
+        curr_proc().proc,
+        InheritedProcedureProperties(),
+        loc
+    );
+
+    // Set the parent, else captures will break horribly.
+    proc->parent = curr_proc().proc;
+    proc->scope = scope;
+
+    // Enter it and declare the parameters.
+    EnterProcedure _{*this, proc};
+    for (auto [i, p] : enumerate(params)) {
+        const auto& [name, ty] = p;
+        BuildParamDecl(
+            curr_proc(),
+            &ty,
+            u32(i),
+            false,
+            false,
+            name.name.str(),
+            name.loc
+        );
+    }
+
+    // Build the body inside a block expression.
+    BlockExpr* block{};
+    {
+        EnterScope _{*this};
+        SmallVector<Stmt*> stmts;
+        BuildBody(proc, stmts);
+        block = BuildBlockExpr(curr_scope(), stmts, loc);
+    }
+
+    // Attach it to the procedure.
+    auto body = BuildProcBody(proc, block);
+    proc->finalise(body, curr_proc().locals);
+    return proc;
+};
 
 bool Sema::CheckFieldType(Type type, SLoc loc) {
     if (not CheckVariableType(type, loc)) return false;
@@ -263,6 +315,7 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                 curr_proc().proc != local->parent and
                 local->type->memory_size(*tu) != Size()
             ) {
+                // Mark it as captured.
                 local->captured = true;
                 local->parent->introduces_captures = true;
 
@@ -285,6 +338,17 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                 for (auto p = curr_proc().proc; p != (*parent_scope)->proc; p = p->parent.get_or_null()) {
                     if (p->has_captures) break;
                     p->has_captures = true;
+
+                    // A procedure defined inside a struct (currently, this only includes deleters)
+                    // may not capture any variables. Diagnose this, but allow the capture for better
+                    // error recovery; this is fine so long as we don’t try to emit it.
+                    //
+                    // FIXME: Make sure we don’t try to 'eval' a procedure that contains errors,
+                    // otherwise, this wil break things quite horribly.
+                    if (p->scope->parent() and p->scope->parent()->is_struct_scope()) {
+                        Error(loc, "Variable '{}' cannot be captured inside a deleter", local->name);
+                        Note(d->location(), "Variable declared here");
+                    }
                 }
             }
 
@@ -325,6 +389,7 @@ bool Sema::CompleteDefinition(StructType* s) {
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
     RecordLayout::Builder lb{*tu};
+    bool needs_deleter = false;
     for (auto f : parsed->fields()) {
         auto ty = TranslateType(f->type);
         if (not CheckFieldType(ty, f->loc)) {
@@ -333,10 +398,54 @@ bool Sema::CompleteDefinition(StructType* s) {
             lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
         } else {
             AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
+            needs_deleter = needs_deleter and ty->requires_deletion();
         }
     }
 
     s->finalise(lb.build());
+
+    // If we don’t need a deleter, we’re done.
+    auto parsed_del = parsed->deleter().get_or_null();
+    if (not parsed_del and not needs_deleter) return true;
+
+    // Generate the deleter.
+    auto loc = parsed_del ? parsed_del->loc : s->decl()->location();
+    auto BuildImplicitDeleterBody = [&](ProcDecl* proc, SmallVectorImpl<Stmt*>& stmts) {
+        auto this_ptr = CreateReference(curr_proc().locals[0], loc).get();
+
+        // Insert the user-defined deleter if there is one.
+        if (parsed_del) {
+            AddEntryToWithStack(curr_scope(), Save(this_ptr), loc, true);
+            auto user_del = TranslateStmt(parsed_del);
+            if (user_del) {
+                stmts.push_back(user_del.get());
+                if (user_del.get()->type_or_void() == Type::NoReturnTy) return;
+            }
+        }
+
+        // Call the deleter of each field in reverse order.
+        for (auto f : reverse(s->layout().fields())) {
+            if (not f->type->requires_deletion()) continue;
+            auto ref = BuildMemberAccessExpr(this_ptr, f, loc);
+            if (not ref) continue;
+            auto del = BuildDeleteExpr(ref.get(), loc);
+            if (del) stmts.push_back(del.get());
+        }
+    };
+
+    // FIXME: Once structs have linkage, reuse the struct's linkage.
+    Linkage deleter_linkage = Linkage::Exported;
+    auto deleter = BuildImplicitProcedure(
+        tu->save(std::format("${}.delete", cg::CodeGen::MangleTypeName(*tu, s))),
+        {Type::VoidTy, Expr::RValue},
+        {{{String("this"), loc}, {Intent::Inout, s, false}}},
+        deleter_linkage,
+        Mangling::None,
+        loc,
+        BuildImplicitDeleterBody
+    );
+
+    s->set_deleter(deleter);
     return true;
 }
 
@@ -2018,12 +2127,37 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
         }
     }();
 
-    if (min == max and min != AnyNumber and d->param_count() != min)
-        return Error(d->location(), "Operator '{}' requires exactly {} parameters", t, min);
-    if (min != AnyNumber and d->param_count() < min)
-        return Error(d->location(), "Operator '{}' requires at least {} parameters", t, min);
-    if (max != AnyNumber and d->param_count() > max)
-        return Error(d->location(), "Operator '{}' takes at most {} parameters", t, max);
+    if (min == max and min != AnyNumber and d->param_count() != min) return Error(
+        d->location(),
+        "Operator '{}' requires exactly {} parameter{}",
+        t,
+        min,
+        min == 1 ? "" : "s"
+    );
+
+    if (min != AnyNumber and d->param_count() < min) return Error(
+        d->location(),
+        "Operator '{}' requires at least {} parameter{}",
+        t,
+        min,
+        min == 1 ? "" : "s"
+    );
+
+    if (max != AnyNumber) {
+        if (d->param_count() > max) return Error(
+            d->location(),
+            "Operator '{}' takes at most {} parameter{}",
+            t,
+            max,
+            max == 1 ? "" : "s"
+        );
+
+        if (d->proc_type()->has_c_varargs())
+            return Error(d->location(), "Operator '{}' cannot use C varargs", t);
+        if (d->proc_type()->is_variadic())
+            return Error(d->location(), "Operator '{}' cannot be variadic", t);
+    }
+
 
     // Disallow overriding builtin operators or defining overloads that take
     // only builtin types.
@@ -2821,75 +2955,37 @@ auto Sema::BuildAssertExpr(
             ).get();
         };
 
-        // Create the procedure manually; we want to set the parent to the containing
-        // procedure, even if it is the initialiser procedure, because we need to be
-        // able to capture its local variables.
-        auto assert_buffer_type = cast<TypeExpr>(GetRuntimeSymbol("__src_assert_msg_buf"))->value;
-        auto scope = tu->create_scope<ProcScope>(curr_scope(), nullptr);
-        auto proc = ProcDecl::Create(
-            *tu,
-            nullptr,
-            ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, assert_buffer_type, false}}),
-            tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
-            Linkage::Internal,
-            Mangling::None,
-            curr_proc().proc,
-            InheritedProcedureProperties(),
-            loc
-        );
+        // Build the stringifier.
+        auto BuildBody = [&](ProcDecl* proc, SmallVectorImpl<Stmt*>& stmts) {
+            // Append a string to the buffer.
+            auto param = curr_proc().locals[0];
+            auto AppendStr = [&](String s){
+                auto str = StrLitExpr::Create(*tu, s, loc);
+                auto append_str = GetRuntimeSymbol("__src_assert_append_str");
+                auto call = BuildCallExpr(append_str, {CreateReference(param, loc).get(), str}, loc);
+                stmts.push_back(call.get());
+            };
 
-        // Set the parent, else captures will break horribly.
-        proc->parent = curr_proc().proc;
-
-        // Enter it.
-        proc->scope = scope;
-        EnterProcedure _{*this, proc};
-
-        // Declare the parameter.
-        auto param = BuildParamDecl(
-            curr_proc(),
-            &proc->param_types().front(),
-            u32(0),
-            false,
-            false,
-            "",
-            loc
-        );
-
-        // Enter a block expression scope.
-        EnterScope _{*this};
-        SmallVector<Stmt*> stmts;
-
-        // Append a string to the buffer.
-        auto AppendStr = [&](String s){
-            auto str = StrLitExpr::Create(*tu, s, loc);
-            auto append_str = GetRuntimeSymbol("__src_assert_append_str");
-            auto call = BuildCallExpr(append_str, {CreateReference(param, loc).get(), str}, loc);
-            stmts.push_back(call.get());
+            // Attempt to decompose the expression.
+            cond->visit(utils::Overloaded{
+                [&](auto*) { AppendStr("???"); },
+                [&](BoolLitExpr* ile) {
+                    if (ile->value) AppendStr("true");
+                    else AppendStr("false");
+                }
+            });
         };
 
-        // Keep track of whether we actually managed to stringify anything.
-        // bool trivial = true;
-
-        // Attempt to decompose the expression.
-        cond->visit(utils::Overloaded{
-            [&](auto*) { AppendStr("???"); },
-            [&](BoolLitExpr* ile) {
-                // trivial = false;
-                if (ile->value) AppendStr("true");
-                else AppendStr("false");
-            }
-        });
-
-        // Wrap everything into a block.
-        // if (not trivial) {
-        auto block = BuildBlockExpr(curr_scope(), stmts, loc);
-        auto body = BuildProcBody(proc, block);
-        proc->finalise(body, curr_proc().locals);
-        stringifier = proc;
-        // } else {
-        //      // Somehow mark that this shouldn’t be emitted.
-        // }
+        auto assert_buffer_type = cast<TypeExpr>(GetRuntimeSymbol("__src_assert_msg_buf"))->value;
+        stringifier = BuildImplicitProcedure(
+            tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
+            {Type::VoidTy, Expr::RValue},
+            {{{String(""), loc}, {Intent::Inout, assert_buffer_type, false}}},
+            Linkage::Internal,
+            Mangling::None,
+            loc,
+            BuildBody
+        );
     }
 
     auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range, stringifier);
@@ -3358,10 +3454,10 @@ auto Sema::BuildBuiltinMemberAccessExpr(
         switch (ak) {
             // Type Properties.
             case TypeAlign:
+            case TypeArrayElems:
             case TypeArraySize:
             case TypeBits:
             case TypeBytes:
-            case TypeSize:
                 return Type::IntTy;
 
             case TypeElem:
@@ -3370,6 +3466,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
             case TypeIsArray:
             case TypeIsOptional:
             case TypeIsSlice:
+            case TypeRequiresDeletion:
                 return Type::BoolTy;
 
             case TypeName:
@@ -3630,6 +3727,36 @@ auto Sema::BuildDeclRefExpr(
 
     ReportLookupFailure(std::move(res));
     return {};
+}
+
+auto Sema::BuildDeleteExpr(Expr* arg, SLoc loc) -> Ptr<Expr> {
+    if (not arg->is_mutable_lvalue()) return Error(
+        loc,
+        "Argument of '%1(delete%)' must be a mutable lvalue"
+    );
+
+    // If the type does not require deletion, just throw away the argument.
+    if (not arg->type->requires_deletion())
+        return CastExpr::Discard(*tu, arg);
+
+    // If it is a record, invoke its deleter.
+    if (auto r = dyn_cast<RecordType>(arg->type)) return BuildCallExpr(
+        CreateReference(r->deleter().get(), loc).get(),
+        arg,
+        loc
+    );
+
+    // Otherwise, call '__srcc_delete'.
+    auto delete_template = BuildDeclRefExpr(
+        {DeclNameLoc{String("__srcc_delete"), loc}},
+        loc,
+        Type()
+    );
+
+    if (delete_template.invalid())
+        return ICE(loc, "'__srcc_delete' not found");
+
+    return BuildCallExpr(delete_template.get(), arg, loc);
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
@@ -3896,6 +4023,15 @@ auto Sema::BuildParamDecl(
         loc
     );
 
+    // Only delete 'move' and 'copy' parameters.
+    if (
+        param->type->requires_deletion() and
+        (param->intent == Intent::Move or param->intent == Intent::Copy)
+    ) {
+        auto del = BuildDeleteExpr(CreateReference(decl, loc).get(), loc).get_or_null();
+        decl->deleter_call = del;
+    }
+
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
@@ -4038,7 +4174,6 @@ auto Sema::BuildStaticIfExpr(
     Ptr<ParsedStmt> else_,
     SLoc loc
 ) -> Ptr<Stmt> {
-    // Otherwise, check this now.
     if (not MakeCondition(cond, "#if")) return {};
     auto val = Evaluate(cond);
     if (not val) return {};
@@ -4338,7 +4473,7 @@ void Sema::Translate(bool load_runtime) {
     if (not tu->lang_opts().no_preamble) {
         auto preamble = AddParsedModule(
             Parser::Parse(
-                ctx.create_virtual_file(PreambleSource, "__srcc_preamble.src"),
+                ctx.create_virtual_file(srcc::sema::preamble::PreambleSource, "__srcc_preamble.src"),
                 /*comment_callback=*/{},
                 /*is_internal_file=*/true
             )
@@ -4614,6 +4749,11 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     if (auto s = dyn_cast<ParsedStructDecl>(d)) return TranslateStructDeclInitial(s);
     if (auto e = dyn_cast<ParsedEnumDecl>(d)) return TranslateEnumDeclInitial(e);
     return std::nullopt;
+}
+
+auto Sema::TranslateDeleteExpr(ParsedDeleteExpr* expr, Type) -> Ptr<Stmt> {
+    auto arg = TRY(TranslateExpr(expr->expr));
+    return BuildDeleteExpr(arg, expr->loc);
 }
 
 auto Sema::TranslateDeferStmt(ParsedDeferStmt* stmt, Type) -> Ptr<Stmt> {
@@ -5222,6 +5362,16 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     // parsed one; this will check if default initialisation is valid
     // if need be.
     AddInitialiserToDecl(decl, init);
+
+    // Call the variable’s deleter if it has one. Make sure to do this
+    // after adding the initialiser and query the type of the variable
+    //  so we use the deduced type if applicable.
+    if (decl.decl()->valid() and decl.type()->requires_deletion()) {
+        auto ref = CreateReference(decl.decl(), parsed->loc).get();
+        auto del = BuildDeleteExpr(ref, parsed->loc).get_or_null();
+        if (del) decl.set_deleter(del);
+    }
+
     return decl.decl();
 }
 

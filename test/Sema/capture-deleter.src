@@ -1,0 +1,22 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f (int x) extern;
+
+proc f1 (int x) { // expected-note: Variable declared here
+    struct C {
+        delete { f(x); } // expected-error: Variable 'x' cannot be captured inside a deleter
+    }
+}
+
+proc f2 (int y) {
+    struct C {
+        delete {
+            proc g(int x) {
+                proc h {
+                    f(x); // Ok.
+                }
+            }
+        }
+    }
+}

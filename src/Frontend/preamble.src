@@ -4,7 +4,32 @@ __srcc_internal__
 // exporting templates from
 
 // ============================================================================
-//  Builtin Exponentiation Operator(s)
+//  Deleter for Optionals and Arrays
+// ============================================================================
+/// The compiler invokes this procedure when 'delete' is applied to
+/// an optional or array type that requires deletion.
+proc __srcc_delete (inout $T lvalue) __srcc_no_mnum__ {
+    #if T.is_optional {
+        #assert T.elem.requires_deletion;
+        if lvalue != nil then delete (lvalue as T.elem);
+    } #elif T.is_array {
+        #assert T.elem.requires_deletion;
+        #if T.elems != 0 {
+            // FIXME: Use reverse for loop once we support it.
+            int i = T.elems;
+            loop {
+                --i;
+                delete lvalue[i];
+                if i == 0 return;
+            }
+        }
+    } #else {
+        #assert false, "Invalid argument type to __srcc_delete";
+    }
+}
+
+// ============================================================================
+//  Builtin Exponentiation Operators
 // ============================================================================
 proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
     // Anything to the power of 0 is 1.

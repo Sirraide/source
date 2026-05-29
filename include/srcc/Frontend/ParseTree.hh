@@ -547,6 +547,19 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeferStmt; }
 };
 
+class srcc::ParsedDeleteExpr final : public ParsedStmt {
+public:
+    ParsedStmt* expr;
+
+    ParsedDeleteExpr(
+        ParsedStmt* expr,
+        SLoc location
+    ) : ParsedStmt{Kind::DeleteExpr, location}, expr{expr} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::DeleteExpr; }
+};
+
+
 /// A single semicolon.
 class srcc::ParsedEmptyStmt final : public ParsedStmt {
 public:
@@ -1076,23 +1089,35 @@ public:
 };
 
 class srcc::ParsedStructDecl final : public ParsedDecl
-    , TrailingObjects<ParsedStructDecl, ParsedFieldDecl*> {
+    , TrailingObjects<ParsedStructDecl, ParsedFieldDecl*, ParsedStmt*> {
     friend TrailingObjects;
 
-    u32 num_fields;
-    auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) -> usz { return num_fields; }
-    ParsedStructDecl(String name, ArrayRef<ParsedFieldDecl*> fields, SLoc loc);
+    u32 num_fields : 31;
+    u32 has_deleter : 1;
+    auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) const -> usz { return num_fields; }
+    auto numTrailingObjects(OverloadToken<ParsedStmt*>) const -> usz { return has_deleter; }
+    ParsedStructDecl(
+        String name,
+        ArrayRef<ParsedFieldDecl*> fields,
+        Ptr<ParsedStmt> deleter,
+        SLoc loc
+    );
 
 public:
     static auto Create(
         Parser& parser,
         String name,
         ArrayRef<ParsedFieldDecl*> fields,
+        Ptr<ParsedStmt> deleter,
         SLoc loc
     ) -> ParsedStructDecl*;
 
+    auto deleter() -> Ptr<ParsedStmt> {
+        return has_deleter ? *getTrailingObjects<ParsedStmt*>() : nullptr;
+    }
+
     auto fields() -> ArrayRef<ParsedFieldDecl*> {
-        return getTrailingObjects(num_fields);
+        return getTrailingObjects<ParsedFieldDecl*>(num_fields);
     }
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::StructDecl; }

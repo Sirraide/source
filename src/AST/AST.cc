@@ -479,7 +479,10 @@ void Stmt::Printer::Print(Stmt* e) {
             };
 
             PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);
-            if (auto init = d->init.get_or_null()) PrintChildren(init);
+            SmallVector<Stmt*> children;
+            if (auto init = d->init.get_or_null()) children.push_back(init);
+            if (auto del = d->deleter_call.get_or_null()) children.push_back(del);
+            PrintChildren(children);
         },
 
         [&](LocalRefExpr* d) {

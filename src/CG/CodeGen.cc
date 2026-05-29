@@ -885,52 +885,54 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
 // TODO: Yeet all of this; we don’t need name mangling because of how our modules
 // work (keep a pretty name in the IR and generate some random nonsense for LLVM IR).
 struct CodeGen::Mangler {
-    CodeGen& CG;
+    TranslationUnit& tu;
     SmallString<256> name;
 
-    explicit Mangler(CodeGen& CG, ObjectDecl* obj) : CG(CG) {
-        name = "_S";
-
-        if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(obj->imported_from_module)) {
-            name += "M";
-            Append(m->linkage_name);
-            name += "$";
-        } else if (CG.tu.is_module and obj->linkage == Linkage::Exported) {
-            name += "M";
-            Append(CG.tu.name);
-            name += "$";
-        }
-
-        if (auto proc = dyn_cast<ProcDecl>(obj)) {
-            for (auto p : proc->parents_top_down()) {
-                Append(p->name.str());
-                name += "$";
-            }
-
-            Append(proc->name.str());
-            Append(proc->type);
-
-            // Also add the associated type if there is one.
-            if (proc->props.associated_type) {
-                name += "$";
-                Append(proc->props.associated_type);
-            }
-
-            if (proc->props.mangling_number != ManglingNumber::None)
-                Format(name, ".{}", +proc->props.mangling_number);
-
-            return;
-        }
-
-        auto global = cast<GlobalDecl>(obj);
-        Append(global->name.str());
-        if (global->mangling_number != ManglingNumber::None)
-            Format(name, ".{}", +global->mangling_number);
-    }
-
+    explicit Mangler(TranslationUnit& tu) : tu(tu) {}
+    void Append(ObjectDecl* obj);
     void Append(StringRef s);
     void Append(Type ty);
 };
+
+void CodeGen::Mangler::Append(ObjectDecl* obj) {
+    name = "_S";
+
+    if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(obj->imported_from_module)) {
+        name += "M";
+        Append(m->linkage_name);
+        name += "$";
+    } else if (tu.is_module and obj->linkage == Linkage::Exported) {
+        name += "M";
+        Append(tu.name);
+        name += "$";
+    }
+
+    if (auto proc = dyn_cast<ProcDecl>(obj)) {
+        for (auto p : proc->parents_top_down()) {
+            Append(p->name.str());
+            name += "$";
+        }
+
+        Append(proc->name.str());
+        Append(proc->type);
+
+        // Also add the associated type if there is one.
+        if (proc->props.associated_type) {
+            name += "$";
+            Append(proc->props.associated_type);
+        }
+
+        if (proc->props.mangling_number != ManglingNumber::None)
+            Format(name, ".{}", +proc->props.mangling_number);
+
+        return;
+    }
+
+    auto global = cast<GlobalDecl>(obj);
+    Append(global->name.str());
+    if (global->mangling_number != ManglingNumber::None)
+        Format(name, ".{}", +global->mangling_number);
+}
 
 void CodeGen::Mangler::Append(StringRef s) {
     Assert(not s.empty());
@@ -1033,7 +1035,11 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
     auto name = [&] -> String {
         switch (obj->mangling) {
             case Mangling::None: Unreachable();
-            case Mangling::Source: return tu.save(std::move(Mangler(*this, obj).name));
+            case Mangling::Source: {
+                Mangler m{tu};
+                m.Append(obj);
+                return tu.save(std::move(m.name));
+            }
             case Mangling::CXX: {
                 if (auto proc = dyn_cast<ProcDecl>(obj)) {
                     llvm::SmallString<256> str;
@@ -1051,6 +1057,12 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
     }();
 
     return mangled_names[obj] = name;
+}
+
+auto CodeGen::MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256> {
+    Mangler m{tu};
+    m.Append(t);
+    return std::move(m.name);
 }
 
 // ============================================================================
@@ -2455,6 +2467,7 @@ void CodeGen::EmitLocal(LocalDecl* var) {
     Assert(not isa<ParamDecl>(var), "Parameters are handled elsewhere");
     Assert(var->init, "Sema should always create an initialiser for local vars");
     if (IsZeroSizedType(var->type)) {
+        Assert(not var->deleter_call, "TODO: Deleting zero-sized types");
         Emit(var->init.get());
         return;
     }
@@ -2463,6 +2476,10 @@ void CodeGen::EmitLocal(LocalDecl* var) {
     // in the middle of a function at compile-time.
     if (not curr.locals.contains(var)) EmitAllocaForLocal(var);
     EmitRValue(curr.locals.at(var), var->init.get());
+
+    // Emit the deleter if there is one.
+    if (var->deleter_call.present())
+        AddCleanup([this, var] { Emit(var->deleter_call.get()); });
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
@@ -2677,10 +2694,15 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     // Lower parameters.
     tu.target().abi().lower_parameters(*this, curr);
 
-    // Declare other local variables.
+    // Declare other local variables and call the deleter for parameters.
+    EnterCleanupScope _{*this};
     for (auto l : proc->locals) {
-        if (IsZeroSizedType(l->type) or isa<ParamDecl>(l)) continue;
-        EmitAllocaForLocal(l);
+        if (isa<ParamDecl>(l)) {
+            if (l->deleter_call.present())
+                AddCleanup([this, l] { Emit(l->deleter_call.get()); });
+        } else if (not IsZeroSizedType(l->type)) {
+            EmitAllocaForLocal(l);
+        }
     }
 
     // Emit the body.

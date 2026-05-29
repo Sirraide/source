@@ -57,6 +57,7 @@
                    | <expr-call>
                    | <expr-continue>
                    | <expr-decl-ref>
+                   | <expr-delete>
                    | <expr-eval>
                    | <expr-inject>
                    | <expr-lit>
@@ -83,6 +84,7 @@
 <expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <macro-args> ] ")"
 <expr-continue>   ::= CONTINUE
 <expr-decl-ref>   ::= [ "::" | <expr> "::" ] IDENT { "::" IDENT } [ "::" <operator-name> ]
+<expr-delete>     ::= DELETE <expr>
 <expr-eval>       ::= EVAL ( <sub-stmt> )
 <expr-inject>     ::= "#" INJECT "(" <expr> ")"
 <expr-if>         ::= [ "#" ] IF <expr> <if-expr-body> { [ "#" ] ELIF <expr> <if-expr-body> } [ [ "#" ] ELSE <if-expr-body> ]
@@ -119,7 +121,7 @@
 <decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | <decl-enum> | EXPORT <decl>
 <decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ]
 <decl-proc>   ::= <signature> <proc-body>
-<decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" } "}"
+<decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" | <deleter> } "}"
 <decl-enum>   ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
 <signature>   ::= PROC [ <expr-decl-ref> ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
@@ -130,6 +132,7 @@
 <param-rest>  ::= <type> [ "..." ] [ IDENT ] | "this" | <signature>
 <intent>      ::= IN | OUT | INOUT | COPY
 <enumerator>  ::= IDENT [ "=" <expr> ]
+<deleter>     ::= DELETE "{ <stmts> "}"
 
 // ============================================================================
 //  Types

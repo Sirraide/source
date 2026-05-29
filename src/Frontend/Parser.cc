@@ -337,6 +337,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Caret:
         case Tk::ColonColon:
         case Tk::Continue:
+        case Tk::Delete:
         case Tk::Dollar:
         case Tk::Eval:
         case Tk::False:
@@ -681,6 +682,7 @@ auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<
 //          | <expr-call>
 //          | <expr-continue>
 //          | <expr-decl-ref>
+//          | <expr-delete>
 //          | <expr-eval>
 //          | <expr-if>
 //          | <expr-lit>
@@ -800,6 +802,13 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         case Tk::LBrace:
             lhs = ParseBlock();
             break;
+
+        // <expr-delete> ::= DELETE <expr>
+        case Tk::Delete: {
+            auto start = Next();
+            auto arg = TryParseStmt();
+            lhs = new (*this) ParsedDeleteExpr{arg, start};
+        } break;
 
         // <expr-eval> ::= EVAL <sub-stmt>
         case Tk::Eval: {
@@ -1729,28 +1738,11 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <decl-proc> ::= <signature> <proc-body>
 // <proc-body> ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
-auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
-    // Parse signature.
-    SmallVector<ParsedVarDecl*, 10> param_decls;
-    Signature sig;
-    if (not ParseSignature(sig, &param_decls, true)) return nullptr;
-
-    // The 'proc' syntax requires a name.
-    if (sig.name.name.empty())
-        return Error("Procedures declared with '%1(proc%)' must have a name");
-
-    // Disallow certain operators.
-    if (
-        sig.name.name.is_operator_name() and
-        Is(sig.name.name.operator_name(), Tk::Assign, Tk::ColonColon, Tk::Dot)
-    ) return Error(
-        sig.name.loc,
-        "Operator '{}' cannot be overloaded",
-        sig.name
-    );
-
+auto Parser::ParseProcBody(
+    Signature sig,
+    ArrayRef<ParsedVarDecl*> param_decls
+) -> Ptr<ParsedProcDecl> {
     // If we failed to parse a return type, or if there was
     // none, just default to void instead, or deduce the type
     // if this is a '= <expr>' declaration.
@@ -1805,6 +1797,30 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     );
 
     return proc;
+}
+
+// <decl-proc> ::= <signature> <proc-body>
+auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
+    // Parse signature.
+    SmallVector<ParsedVarDecl*, 10> param_decls;
+    Signature sig;
+    if (not ParseSignature(sig, &param_decls, true)) return nullptr;
+
+    // The 'proc' syntax requires a name.
+    if (sig.name.name.empty())
+        return Error("Procedures declared with '%1(proc%)' must have a name");
+
+    // Disallow certain operators.
+    if (
+        sig.name.name.is_operator_name() and
+        Is(sig.name.name.operator_name(), Tk::Assign, Tk::ColonColon, Tk::Dot)
+    ) return Error(
+        sig.name.loc,
+        "Operator '{}' cannot be overloaded",
+        sig.name
+    );
+
+    return ParseProcBody(std::move(sig), param_decls);
 }
 
 auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt> {
@@ -1910,6 +1926,7 @@ bool Parser::ParseSignature(
 // <proc-where> ::= WHERE <expr>
 bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint) {
     Assert(current_signature);
+    Assert(At(Tk::Proc));
     auto& sig = *current_signature;
 
     // Yeet 'proc'.
@@ -2223,7 +2240,8 @@ void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at) {
     }
 }
 
-// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" } "}"
+// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" | <deleter> } "}"
+// <deleter>     ::= DELETE "{ <stmts> "}"
 auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     auto struct_loc = Next();
 
@@ -2234,6 +2252,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
 
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
+    Ptr<ParsedStmt> deleter;
     BracketTracker braces{*this, Tk::LBrace};
     while (not At(Tk::RBrace, Tk::Eof)) {
         auto ParseField = [&] {
@@ -2253,6 +2272,19 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
             fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), ty.get()->loc});
         };
 
+        if (SLoc loc; Consume(loc, Tk::Delete)) {
+            if (not At(Tk::LBrace)) Error("Expected '%1({{%)' after '%1(delete%)'");
+            auto del = ParseExpr();
+            if (auto prev = deleter.get_or_null()) {
+                Error(loc, "Struct already defines a deleter");
+                Note(prev->loc, "Previous deleter defined here");
+            }
+
+            if (del.present()) del.get()->loc = loc;
+            deleter = del;
+            continue;
+        }
+
         ParseField();
         if (not ExpectSemicolon()) {
             SkipTo(Tk::Semicolon, Tk::RBrace);
@@ -2261,7 +2293,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     }
 
     braces.close();
-    return ParsedStructDecl::Create(*this, name, fields, struct_loc);
+    return ParsedStructDecl::Create(*this, name, fields, deleter, struct_loc);
 }
 
 auto Parser::ParseType(int precedence) -> Ptr<ParsedStmt> {

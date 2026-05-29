@@ -145,6 +145,9 @@ public:
         return stream_fields_impl(tu, {});
     }*/
 
+    /// Whether this type has a destructor.
+    [[nodiscard]] bool requires_deletion() const;
+
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() const -> Type;
 
@@ -152,7 +155,9 @@ public:
     [[nodiscard]] auto strip_pointers_and_optionals() const -> Type;
 
     /// Whether this type is trivially copyable.
-    [[nodiscard]] bool trivially_copyable() const { return true; }
+    [[nodiscard]] bool trivially_copyable() const {
+        return not requires_deletion();
+    }
 
     /// Visit this type.
     template <typename Visitor>
@@ -847,19 +852,29 @@ public:
 /// Base class for 'TupleType' and 'StructType'.
 class srcc::RecordType : public TypeBase {
 protected:
+    Ptr<ProcDecl> deleter_proc;
     RecordLayout* record_layout = nullptr;
     RecordType(Kind k) : TypeBase{k} {}
 
 public:
+    /// Get the deleter of this struct, if any.
+    auto deleter() const -> Ptr<ProcDecl> { return deleter_proc; }
+
     /// Get whether this type is complete, i.e. whether we can
     /// declare variables and create objects of this type.
     bool is_complete() const { return record_layout != nullptr; }
-
 
     /// Get the layout of this type.
     auto layout() const -> const RecordLayout& {
         Assert(record_layout);
         return *record_layout;
+    }
+
+    /// Set the deleter of this record.
+    void set_deleter(ProcDecl* deleter) {
+        Assert(not deleter_proc, "Deleter already set");
+        Assert(deleter);
+        deleter_proc = deleter;
     }
 
     static bool classof(const TypeBase* t) {

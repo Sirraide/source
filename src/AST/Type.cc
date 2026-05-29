@@ -287,7 +287,7 @@ bool TypeBase::is_void() const {
 
 bool TypeBase::move_is_copy() const {
     // This will have to change once we have destructors.
-    return true;
+    return not requires_deletion();
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
@@ -364,6 +364,21 @@ auto TypeBase::memory_size(TranslationUnit& tu) const -> Size {
 
 auto TypeBase::memory_size(const Target& t) const -> Size {
     return size_impl(t).as_bytes();
+}
+
+bool TypeBase::requires_deletion() const {
+    Type t = this;
+
+    // Arrays and optionals require destruction if their element type does.
+    while (isa<ArrayType, OptionalType>(t))
+        t = cast<SingleElementTypeBase>(t)->elem();
+
+    // Records may have a deleter.
+    auto r = dyn_cast<RecordType>(t);
+    if (r) return r->deleter().present();
+
+    // Other types do not.
+    return false;
 }
 
 auto TypeBase::size_impl(const Target& t) const -> Size {

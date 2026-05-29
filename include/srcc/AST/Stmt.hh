@@ -415,16 +415,17 @@ public:
 #define SRCC_BUILTIN_TYPE_MEMBERS(M) \
     M(TypeAlign, "align")            \
     M(TypeArraySize, "arrsize")      \
+    M(TypeArrayElems, "elems")       \
     M(TypeBits, "bits")              \
     M(TypeBytes, "bytes")            \
-    M(TypeSize, "size")              \
     M(TypeName, "name")              \
     M(TypeMaxVal, "max")             \
     M(TypeMinVal, "min")             \
     M(TypeElem, "elem")              \
     M(TypeIsArray, "is_array")       \
     M(TypeIsOptional, "is_optional") \
-    M(TypeIsSlice, "is_slice")
+    M(TypeIsSlice, "is_slice")       \
+    M(TypeRequiresDeletion, "requires_deletion")
 
 #define SRCC_BUILTIN_SLICE_MEMBERS(M) \
     M(SliceData, "data")              \
@@ -593,6 +594,17 @@ public:
             expr->location(),
             true,
             LValue(ptr->is_immutable())
+        };
+    }
+
+    static auto Discard(TranslationUnit& tu, Expr* expr) -> CastExpr* {
+        return new (tu) CastExpr{
+            Type::VoidTy,
+            ExplicitDiscard,
+            expr,
+            expr->location(),
+            true,
+            RValue
         };
     }
 
@@ -1316,6 +1328,9 @@ public:
     /// location as an argument.
     Ptr<Expr> init;
 
+    /// Deleter call, if any.
+    Ptr<Expr> deleter_call;
+
 protected:
     LocalDecl(
         Kind k,
@@ -1704,6 +1719,11 @@ struct AnyVarDecl {
     auto decl() -> Decl* {
         if (auto l = dyn_cast<LocalDecl*>(ptr)) return l;
         else return cast<GlobalDecl*>(ptr);
+    }
+
+    void set_deleter(Ptr<Expr> expr) {
+        if (auto l = dyn_cast<LocalDecl*>(ptr)) l->deleter_call = expr;
+        else Todo("Add deleter to global variable");
     }
 
     void set_init(Ptr<Expr> expr) {

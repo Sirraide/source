@@ -28,6 +28,10 @@ class ASTImporterSharedState;
 class MacroInfo;
 }
 
+namespace srcc::sema::preamble {
+extern const String PreambleSource;
+}
+
 class srcc::Sema : public DiagsProducer {
     LIBBASE_IMMOVABLE(Sema);
 
@@ -892,6 +896,23 @@ private:
         bool allow_auto_deref = false
     ) -> Ptr<Expr>;
 
+    /// Parameter definition passed to BuildImplicitProcedure().
+    struct ParamSpec {
+        DeclNameLoc name;
+        ParamTypeData type;
+    };
+
+    /// Build an implicit procedure.
+    [[nodiscard]] auto BuildImplicitProcedure(
+        DeclName name,
+        TypeAndValueCategory ret,
+        ArrayRef<ParamSpec> params,
+        Linkage linkage,
+        Mangling mangling,
+        SLoc loc,
+        llvm::function_ref<void(ProcDecl*, SmallVectorImpl<Stmt*>&)> BuildBody
+    ) -> ProcDecl*;
+
     /// Check that a type is valid for a record field.
     [[nodiscard]] bool CheckFieldType(Type ty, SLoc loc);
 
@@ -1157,6 +1178,7 @@ private:
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
+    auto BuildDeleteExpr(Expr* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
