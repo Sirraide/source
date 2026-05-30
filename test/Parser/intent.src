@@ -10,8 +10,8 @@ proc foo(
     out int x,
     inout int,
     inout int x,
-    copy int,
-    copy int x,
+    __srcc_by_value__ int,
+    __srcc_by_value__ int x,
 
     // Some of the keywords are contextual, but you can still
     // not have multiple intents and thus also not a type named
@@ -22,8 +22,8 @@ proc foo(
     out in, // expected-error: Cannot specify more than one parameter intent
     in inout, // expected-error: Cannot specify more than one parameter intent
     inout out, // expected-error: Cannot specify more than one parameter intent
-    copy in, // expected-error: Cannot specify more than one parameter intent
-    in copy, // expected-error: Cannot specify more than one parameter intent
+    __srcc_by_value__ in, // expected-error: Cannot specify more than one parameter intent
+    in __srcc_by_value__, // expected-error: Cannot specify more than one parameter intent
     in out x, // expected-error: Cannot specify more than one parameter intent
     in out int, // expected-error: Cannot specify more than one parameter intent
 
@@ -31,8 +31,8 @@ proc foo(
     int in, // expected-error: Expected expression
     int out,
     int inout,
-    int copy,
+    int __srcc_by_value__,
     in int out,
     in int inout,
-    in int copy
+    in int __srcc_by_value__
 ) {}

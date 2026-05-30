@@ -130,7 +130,7 @@
 <proc-body>   ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
 <param-decl>  ::= [ WITH ] [ <intent> ] <param-rest>
 <param-rest>  ::= <type> [ "..." ] [ IDENT ] | "this" | <signature>
-<intent>      ::= IN | OUT | INOUT | COPY
+<intent>      ::= IN | OUT | INOUT
 <enumerator>  ::= IDENT [ "=" <expr> ]
 <deleter>     ::= DELETE "{ <stmts> "}"
 

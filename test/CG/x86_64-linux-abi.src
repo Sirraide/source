@@ -101,7 +101,7 @@ proc in_move_small {
 struct big { i64[50] x; }
 proc big1(in big, in big, in big, in big, in big, in big, big, in big, a) extern;
 proc big2(big, big, big, big, big, big, big, big, a) extern;
-proc big3(copy big, copy big, copy big, copy big, copy big, copy big, copy big, big, a) extern;
+proc big3(__srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, big, a) extern;
 proc big4(inout big, inout big, inout big, inout big, inout big, inout big, big, inout big, a) extern;
 proc big5(out big, out big, out big, out big, out big, out big, big, out big, a) extern;
 proc big_struct {
@@ -163,8 +163,8 @@ proc returns {
 }
 
 proc s1(i8 val[], i8 val[], i8 val[], i8 val[]) extern;
-proc s2(inout i8 val[], copy i8 val[], out i8 val[], in i8 val[]) extern;
-proc s3(inout i8 val[], copy i8 val[], out i8 val[], in i8 val[], in i8 val[], in i8 val[]) extern;
+proc s2(inout i8 val[], __srcc_by_value__ i8 val[], out i8 val[], in i8 val[]) extern;
+proc s3(inout i8 val[], __srcc_by_value__ i8 val[], out i8 val[], in i8 val[], in i8 val[], in i8 val[]) extern;
 proc s4() extern -> i8 val[];
 proc slices {
     var s = "q";
@@ -177,8 +177,8 @@ proc slices {
 
 proc cx extern;
 proc c1(proc, proc, proc, proc) extern;
-proc c2(inout proc, copy proc, out proc, in proc) extern;
-proc c3(inout proc, copy proc, out proc, in proc, in proc, in proc) extern;
+proc c2(inout proc, __srcc_by_value__ proc, out proc, in proc) extern;
+proc c3(inout proc, __srcc_by_value__ proc, out proc, in proc, in proc, in proc) extern;
 proc c4() extern -> proc;
 proc closures {
     var c = cx;

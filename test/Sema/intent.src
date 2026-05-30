@@ -9,8 +9,8 @@ proc f_out(out int) {}
 proc f_out_10000(out i10000) {}
 proc f_inout(inout int) {}
 proc f_inout_10000(inout i10000) {}
-proc f_copy(copy int) {}
-proc f_copy_10000(copy i10000) {}
+proc f_copy(__srcc_by_value__ int) {}
+proc f_copy_10000(__srcc_by_value__ i10000) {}
 
 int i;
 i10000 j;

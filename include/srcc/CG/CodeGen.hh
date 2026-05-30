@@ -166,13 +166,15 @@ public:
 
 /// State used when emitting a procedure.
 class srcc::cg::ProcData {
-    LIBBASE_MOVE_ONLY(ProcData);
+    LIBBASE_IMMOVABLE(ProcData);
 
 public:
     using Cleanup = std::move_only_function<void() const>;
     struct CleanupScope {
-        CleanupScope* parent = nullptr;
+        LIBBASE_IMMOVABLE(CleanupScope);
+        CleanupScope* parent;
         SmallVector<Cleanup> cleanups;
+        CleanupScope(CleanupScope* parent) : parent{parent} {}
     };
 
     struct Loop {
@@ -193,7 +195,7 @@ public:
     Value environment_for_nested_procs;
     Value abort_info_slot;
     ir::ProcOp proc;
-    CleanupScope root_cleanup_scope{};
+    CleanupScope root_cleanup_scope{nullptr};
     CleanupScope* current_cleanup_scope = nullptr;
     ProcDecl* decl = nullptr;
 
@@ -211,7 +213,7 @@ class srcc::cg::CodeGen : public DiagsProducer
     friend LLVMCodeGen;
 
     TranslationUnit& tu;
-    ProcData curr;
+    ProcData* curr = nullptr;
     DenseMap<ProcDecl*, ir::ProcOp> declared_procs;
     DenseMap<ir::ProcOp, ProcDecl*> proc_reverse_lookup;
     DenseMap<ObjectDecl*, String> mangled_names;
@@ -298,11 +300,12 @@ public:
         LIBBASE_IMMOVABLE(EnterProcedure);
 
         CodeGen& CG;
-        ProcData old;
+        ProcData data;
+        ProcData* prev;
         InsertionGuard guard;
 
     public:
-        EnterProcedure(CodeGen& CG, ir::ProcOp func, ProcDecl* old_proc);
+        EnterProcedure(CodeGen& CG, ir::ProcOp func, ProcDecl* proc);
         ~EnterProcedure();
     };
 
@@ -459,9 +462,17 @@ public:
     /// Test if an optional is nil.
     auto EmitOptionalNilTest(mlir::Location loc, Value addr, OptionalType* ty, bool equal) -> Value;
 
+    /// If 'init' is not an lvalue, create a temporary value to hold an mrvalue.
+    /// Returns the address of the temporary.
+    auto EmitToMemoryIfNeeded(mlir::Location l, Expr* init) -> Value;
+
     /// Create a temporary value to hold an mrvalue. Returns the address of
     /// the temporary.
     auto EmitToMemory(mlir::Location l, Expr* init) -> Value;
+
+    /// Emit a temporary and add a cleanup to ensure it gets deleted. Returns the
+    /// address of the temporary.
+    auto EmitTemporaryWithCleanup(mlir::Location l, Expr* init) -> Value;
 
     /// Emit an mrvalue into a memory location.
     void EmitRValue(Value addr, Expr* init);

@@ -1,5 +1,5 @@
 // R %srcc --parse --ast %s
 program test;
 
-// * f proc (int, in int, out int, inout int, copy int) -> void
-proc f(int, in int, out int, inout int, copy int) {}
+// * f proc (int, in int, out int, inout int, byval int) -> void
+proc f(int, in int, out int, inout int, __srcc_by_value__ int) {}

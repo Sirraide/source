@@ -6,7 +6,7 @@ __srcc_internal__
 // ============================================================================
 //  Builtin Exponentiation Operators
 // ============================================================================
-proc ** (in $T base, copy $T exp) __srcc_builtin_op__ -> T = match {
+proc ** (in $T base, $T exp) __srcc_builtin_op__ -> T = match {
     // Anything to the power of 0 is 1.
     exp == 0: 1;
 

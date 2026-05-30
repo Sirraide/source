@@ -7,6 +7,10 @@ struct Small {
 };
 
 proc sink(Small) extern;
+proc sink_int(int) {}
+proc sink_in(in Small) {}
+proc sink_copy(__srcc_by_value__ Small) {}
+proc sink_move(Small) {}
 
 proc f1 {
     var s = Small(42);
@@ -38,6 +42,16 @@ proc f5 {
     var s1 = Small(1);
     var s2 = Small(1);
     s1 >< s2;
+}
+
+proc f6 {
+    Small(1);
+    Small(2).x;
+    sink_int(Small(3).x);
+    sink_int(Small(5).x + Small(4).x);
+    sink_in(Small(6));
+    sink_copy(Small(7));
+    sink_move(Small(8));
 }
 
 proc e1 {
@@ -101,4 +115,11 @@ proc e10 {
     var s1 = Small(42);
     sink(s1); // expected-note: Moved here
     var s3 = s1; // expected-error: Use of moved value
+}
+
+proc e11 {
+    // Passing a type that requires deletion 'by value' doesn't copy it; it still moves it.
+    var s = Small(42);
+    sink_copy(s); // expected-note: Moved here
+    sink_copy(s); // expected-error: Use of moved value
 }

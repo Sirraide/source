@@ -91,7 +91,7 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
 // ============================================================================
 auto CodeGen::AppendBlock(std::unique_ptr<Block> bb) -> Block* {
     auto b = bb.release();
-    curr.proc.push_back(b);
+    curr->proc.push_back(b);
     return b;
 }
 
@@ -128,11 +128,11 @@ auto CodeGen::C(Type ty, ValueCategory vc) -> mlir::Type {
 }
 
 CodeGen::EnterLoop::EnterLoop(CodeGen& CG, ProcData::Loop l): cg{CG} {
-    cg.curr.loop_stack.push_back(l);
+    cg.curr->loop_stack.push_back(l);
 }
 
 CodeGen::EnterLoop::~EnterLoop() {
-    cg.curr.loop_stack.pop_back();
+    cg.curr->loop_stack.pop_back();
 }
 
 // Find the last operation of type 'Op' in the block and set the insert point after it.
@@ -158,14 +158,14 @@ void CodeGen::CreateAbort(
     IRValue stringifier
 ) {
     // Reuse the abort info slot if there is one.
-    if (!curr.abort_info_slot)
-        curr.abort_info_slot = CreateAlloca(loc, tu.AbortInfoEquivalentTy);
+    if (!curr->abort_info_slot)
+        curr->abort_info_slot = CreateAlloca(loc, tu.AbortInfoEquivalentTy);
 
     // Get the file name, line, and column.
     //
     // Don’t require a valid location here as this is also called from within
     // implicitly generated code.
-    auto op = ir::AbortOp::create(*this, loc, reason, curr.abort_info_slot);
+    auto op = ir::AbortOp::create(*this, loc, reason, curr->abort_info_slot);
     InsertionGuard _{*this};
     setInsertionPointToStart(&op.getBody().emplaceBlock());
     op.getBody().addArgument(ptr_ty, loc);
@@ -202,7 +202,7 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
     //     mlir::DataLayout dl{mlir_module};
     //     if (ir::GetTypeSize(dl, *mlir_ty) >= ty->memory_size(tu)) {
     //         InsertionGuard _{*this};
-    //         SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr.proc.front());
+    //         SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr->proc.front());
     //         return LLVM::AllocaOp::create(
     //             *this,
     //             loc,
@@ -224,7 +224,7 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     InsertionGuard _{*this};
-    SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr.proc.front());
+    SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr->proc.front());
     return LLVM::AllocaOp::create(
         *this,
         loc,
@@ -435,7 +435,7 @@ auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, ByteOffset offs) -> V
 
 void CodeGen::CreateReturn(mlir::Location loc, mlir::ValueRange values) {
     if (HasTerminator()) return;
-    EmitCleanups(curr.root_cleanup_scope);
+    EmitCleanups(curr->root_cleanup_scope);
     ir::RetOp::create(*this, loc, values);
 }
 
@@ -525,13 +525,13 @@ auto CodeGen::EnterBlock(Block* bb, Vals args) -> Block* {
 }
 
 CodeGen::EnterProcedure::EnterProcedure(CodeGen& CG, ir::ProcOp proc, ProcDecl* decl)
-    : CG(CG), guard{CG} {
-    old = std::exchange(CG.curr, {proc, decl});
+    : CG(CG), data{proc, decl}, prev{CG.curr}, guard{CG} {
+    CG.curr = &data;
     CG.EnterBlock(proc.getOrCreateEntryBlock());
 }
 
 CodeGen::EnterProcedure::~EnterProcedure() {
-    CG.curr = std::move(old);
+    CG.curr = prev;
 }
 
 auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
@@ -539,8 +539,8 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
 
     // First, try to find the variable in the current procedure. We
     // also cache capture lookups here.
-    auto l = curr.locals.find(decl);
-    if (l != curr.locals.end()) return l->second;
+    auto l = curr->locals.find(decl);
+    if (l != curr->locals.end()) return l->second;
 
     // If this is a captured variable (and we’re actually in a nested
     // procedure), we need to load its address via the static chain.
@@ -548,7 +548,7 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
     // Note: It’s possible for there to be no current proc *decl*, if
     // we’re performing constant evaluation in the middle of a nested
     // procedure.
-    if (decl->captured and curr.decl and decl->parent != curr.decl) {
+    if (decl->captured and curr->decl and decl->parent != curr->decl) {
         auto env = GetStaticChainPointer(decl->parent, loc);
         auto vars = decl->parent->captured_vars();
         auto it = rgs::find(vars, decl);
@@ -563,7 +563,7 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
             tu.target().ptr_size() * idx
         );
 
-        curr.locals[decl] = ptr;
+        curr->locals[decl] = ptr;
         return ptr;
     }
 
@@ -594,8 +594,8 @@ auto CodeGen::GetEquivalentRecordTypeForAggregate(Type ty) -> RecordType* {
 }
 
 auto CodeGen::GetEnvPtr() -> Value {
-    Assert(curr.decl and curr.decl->has_captures);
-    return curr.proc.getArguments().back();
+    Assert(curr->decl and curr->decl->has_captures);
+    return curr->proc.getArguments().back();
 }
 
 auto CodeGen::GetOrCreateProc(
@@ -647,7 +647,7 @@ auto CodeGen::GetStaticChainPointer(ProcDecl* proc, mlir::Location loc) -> Value
     // Start at our parent; we don’t want to insert an extra load if
     // the current procedure introduces captures since we already have
     // our own environment pointer.
-    auto p = curr.decl->parent.get_or_null();
+    auto p = curr->decl->parent.get_or_null();
     while (p and p != proc) {
         if (p->introduces_captures) env = CreateLoad(loc, env, ptr_ty, tu.target().ptr_align());
         p = p->parent.get_or_null();
@@ -792,8 +792,18 @@ bool CodeGen::LocalNeedsAlloca(LocalDecl* local) {
     return true;
 }
 
-auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
+auto CodeGen::EmitTemporaryWithCleanup(mlir::Location l, Expr* init) -> Value {
+    auto temp = EmitToMemory(l, init);
+    AddVarCleanup(temp, init->type);
+    return temp;
+}
+
+auto CodeGen::EmitToMemoryIfNeeded(mlir::Location l, Expr* init) -> Value {
     if (init->is_lvalue()) return EmitScalar(init);
+    return EmitToMemory(l, init);
+}
+
+auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
     auto temp = CreateAlloca(l, init->type);
     EmitRValue(temp, init);
     return temp;
@@ -953,7 +963,7 @@ void CodeGen::Mangler::Append(Type ty) {
                         case Intent::In: return "x";
                         case Intent::Out: return "x1";
                         case Intent::Inout: return "x2";
-                        case Intent::Copy: return "x3";
+                        case Intent::ByValue: return "x3";
                     }
                     Unreachable();
                 }();
@@ -1273,18 +1283,18 @@ void CodeGen::VariableInitialised(Value addr, Expr* init, Value init_from_addr) 
 // ============================================================================
 //  Cleanup
 // ============================================================================
-CodeGen::EnterCleanupScope::EnterCleanupScope(CodeGen& cg) : cg{cg} {
-    sc.parent = std::exchange(cg.curr.current_cleanup_scope, &sc);
+CodeGen::EnterCleanupScope::EnterCleanupScope(CodeGen& cg)
+    : cg{cg}, sc{cg.curr->current_cleanup_scope} {
+    cg.curr->current_cleanup_scope = &sc;
 }
 
 CodeGen::EnterCleanupScope::~EnterCleanupScope() {
     cg.EmitCleanups(sc);
-    cg.curr.current_cleanup_scope = sc.parent;
+    cg.curr->current_cleanup_scope = sc.parent;
 }
 
 void CodeGen::AddCleanup(ProcData::Cleanup cleanup) {
-    Assert(curr.current_cleanup_scope);
-    curr.current_cleanup_scope->cleanups.push_back(std::move(cleanup));
+    curr->current_cleanup_scope->cleanups.push_back(std::move(cleanup));
 }
 
 void CodeGen::AddVarCleanup(Value addr, Type ty) {
@@ -1310,7 +1320,7 @@ void CodeGen::EmitCleanups(const ProcData::CleanupScope& target_scope) {
 
     // Emit everything up to the target scope.
     for (
-        const auto* s = curr.current_cleanup_scope;
+        const auto* s = curr->current_cleanup_scope;
         s and s != &target_scope;
         s = s->parent
     ) EmitScope(*s);
@@ -1320,7 +1330,7 @@ void CodeGen::EmitCleanups(const ProcData::CleanupScope& target_scope) {
 }
 
 void CodeGen::EmitCleanups() {
-    EmitCleanups(*curr.current_cleanup_scope);
+    EmitCleanups(*curr->current_cleanup_scope);
 }
 
 // ============================================================================
@@ -1793,7 +1803,11 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
     EnterCleanupScope _{*this};
     for (auto s : expr->stmts()) {
         // Initialise variables.
-        if (auto var = dyn_cast<LocalDecl>(s)) EmitLocal(var);
+        if (auto var = dyn_cast<LocalDecl>(s)) {
+            EmitLocal(var);
+            continue;
+        }
+
         if (auto var = dyn_cast<GlobalDecl>(s)) {
             Assert(var->init.present(), "Sema should always create an initialiser for variables");
             if (IsZeroSizedType(var->type)) {
@@ -1810,6 +1824,15 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
         // expressions that are unused.
         if (isa<ConstExpr, Decl>(s)) continue;
 
+        // If this is not an expression, emit it without a cleanup scope.
+        if (not isa<Expr>(s)) {
+            Emit(s);
+            continue;
+        }
+
+        // Push a cleanup so block-level expressions are deleted properly.
+        EnterCleanupScope _{*this};
+
         // This is the expression we need to return from the block.
         if (s == expr->return_expr()) {
             if (mrvalue_slot) EmitRValue(mrvalue_slot, cast<Expr>(s));
@@ -1825,8 +1848,7 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
             if (IsZeroSizedType(e->type) or e->is_lvalue()) {
                 Emit(s);
             } else {
-                auto l = CreateAlloca(C(e->location()), e->type);
-                EmitRValue(l, e);
+                EmitTemporaryWithCleanup(C(e->location()), e);
             }
         }
 
@@ -1842,7 +1864,7 @@ auto CodeGen::EmitBoolLitExpr(BoolLitExpr* stmt) -> IRValue {
 
 auto CodeGen::EmitBreakContinueExpr(BreakContinueExpr* expr) -> IRValue {
     if (HasTerminator()) return {};
-    auto& loop = curr.loop_stack[+expr->target_loop - 1]; // '0' means 'no loop'.
+    auto& loop = curr->loop_stack[+expr->target_loop - 1]; // '0' means 'no loop'.
     EmitCleanups(*loop.cleanup);
     mlir::cf::BranchOp::create(
         *this,
@@ -2328,8 +2350,8 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
 
     // Add the loop variables to the current scope.
     auto block_args = bb_cond->getArguments().drop_front(enum_var ? 1 : 0);
-    if (enum_var) curr.locals[enum_var] = bb_cond->getArgument(0);
-    for (auto [v, a] : zip(stmt->vars(), block_args)) curr.locals[v] = a;
+    if (enum_var) curr->locals[enum_var] = bb_cond->getArgument(0);
+    for (auto [v, a] : zip(stmt->vars(), block_args)) curr->locals[v] = a;
 
     // If we have multiple ranges, break if we’ve reach the end of any one of them.
     for (auto [a, e] : zip(block_args, end_vals)) {
@@ -2351,8 +2373,8 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
     }
 
     // Remove the loop variables again.
-    if (enum_var) curr.locals.erase(enum_var);
-    for (auto v : stmt->vars()) curr.locals.erase(v);
+    if (enum_var) curr->locals.erase(enum_var);
+    for (auto v : stmt->vars()) curr->locals.erase(v);
 
     // Emit increments for all of them.
     EnterBlock(std::move(bb_inc));
@@ -2458,31 +2480,31 @@ auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
 
     // This procedure is directly nested within the current procedure; build
     // the environment for it.
-    if (decl->parent.get() == curr.decl) {
-        Assert(curr.decl);
+    if (decl->parent.get() == curr->decl) {
+        Assert(curr->decl);
 
         // Check if we’ve already cached the computation of the environment.
-        if (curr.environment_for_nested_procs) return {ref, curr.environment_for_nested_procs};
+        if (curr->environment_for_nested_procs) return {ref, curr->environment_for_nested_procs};
 
         // If this procedure introduces new captures, we need to build
         // a new environment.
-        if (curr.decl->introduces_captures) {
+        if (curr->decl->introduces_captures) {
             // If, additionally, the environment already contained captures before
             // that, store a pointer to that environment in the new one.
-            auto captures = curr.decl->captured_vars();
-            auto extra_ptr = curr.decl->has_captures;
+            auto captures = curr->decl->captured_vars();
+            auto extra_ptr = curr->decl->has_captures;
             auto size = tu.target().ptr_size();
             auto align = tu.target().ptr_align();
-            curr.environment_for_nested_procs = CreateAlloca(
+            curr->environment_for_nested_procs = CreateAlloca(
                 loc,
                 size * (u64(rgs::distance(captures)) + extra_ptr),
                 align
             );
 
-            if (extra_ptr) CreateStore(loc, curr.environment_for_nested_procs, GetEnvPtr(), align);
+            if (extra_ptr) CreateStore(loc, curr->environment_for_nested_procs, GetEnvPtr(), align);
             for (auto [i, c] : enumerate(captures)) CreateStore(
                 loc,
-                curr.environment_for_nested_procs,
+                curr->environment_for_nested_procs,
                 GetAddressOfLocal(c, loc),
                 align,
                 size * (i + extra_ptr)
@@ -2490,8 +2512,8 @@ auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
         }
 
         // Otherwise, reuse our own environment.
-        else { curr.environment_for_nested_procs = GetEnvPtr(); }
-        return {ref, curr.environment_for_nested_procs};
+        else { curr->environment_for_nested_procs = GetEnvPtr(); }
+        return {ref, curr->environment_for_nested_procs};
     }
 
     // Otherwise, we’re calling a sibling procedure, e.g.
@@ -2508,7 +2530,7 @@ auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
     // ancestor’s environment pointer is also the environment pointer for
     // the callee. Walk the static chain to extract it.
     llvm::SmallPtrSet<ProcDecl*, 16> our_ancestors;
-    for (auto p : curr.decl->parents()) our_ancestors.insert(p);
+    for (auto p : curr->decl->parents()) our_ancestors.insert(p);
     auto ancestor = our_ancestors.find(decl->parent.get());
     Assert(ancestor != our_ancestors.end(), "No common ancestor!");
     return {ref, GetStaticChainPointer(*ancestor, loc)};
@@ -2539,7 +2561,7 @@ auto CodeGen::EmitQuoteExpr(QuoteExpr* expr) -> IRValue {
 }
 
 void CodeGen::EmitAllocaForLocal(LocalDecl* decl) {
-    if (LocalNeedsAlloca(decl)) curr.locals[decl] = CreateAlloca(C(decl->location()), decl->type);
+    if (LocalNeedsAlloca(decl)) curr->locals[decl] = CreateAlloca(C(decl->location()), decl->type);
 }
 
 void CodeGen::EmitLocal(LocalDecl* var) {
@@ -2552,8 +2574,8 @@ void CodeGen::EmitLocal(LocalDecl* var) {
 
     // The variable may not exist yet if e.g. we started evaluating a block
     // in the middle of a function at compile-time.
-    if (not curr.locals.contains(var)) EmitAllocaForLocal(var);
-    EmitRValue(curr.locals.at(var), var->init.get());
+    if (not curr->locals.contains(var)) EmitAllocaForLocal(var);
+    EmitRValue(curr->locals.at(var), var->init.get());
     AddVarCleanup(GetAddressOfLocal(var, C(var->location())), var->type);
 }
 
@@ -2624,9 +2646,7 @@ auto CodeGen::EmitMaterialiseTemporaryExpr(MaterialiseTemporaryExpr* stmt) -> IR
         return {};
     }
 
-    auto var = CreateAlloca(C(stmt->location()), stmt->type);
-    EmitRValue(var, stmt->temporary);
-    return var;
+    return EmitTemporaryWithCleanup(C(stmt->location()), stmt->temporary);
 }
 
 auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> IRValue {
@@ -2719,7 +2739,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         ICE(
             proc->location(),
             "An IR function with this name already exists: '{}'",
-            curr.proc.getName()
+            curr->proc.getName()
         );
         return;
     }
@@ -2748,7 +2768,7 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     //         return 3;
     //     }
     //
-    curr.proc.setVisibility(mlir::SymbolTable::Visibility::Public);
+    curr->proc.setVisibility(mlir::SymbolTable::Visibility::Public);
 
     // If this is the initialiser procedure, emit calls to the initialisers
     // of any imported modules.
@@ -2772,18 +2792,18 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
         }
 
         // The initialiser procedure is never called recursively.
-        curr.proc.setNorecurse(true);
+        curr->proc.setNorecurse(true);
     }
 
     // Lower parameters.
-    tu.target().abi().lower_parameters(*this, curr);
+    tu.target().abi().lower_parameters(*this, *curr);
 
     // Declare other local variables and call the deleter for parameters.
     EnterCleanupScope _{*this};
     for (auto l : proc->locals) {
         if (auto p = dyn_cast<ParamDecl>(l)) {
-            // Copy and move parameters need to be deleted.
-            if (p->intent() == Intent::Copy or p->intent() == Intent::Move)
+            // By-value and move parameters need to be deleted.
+            if (p->intent() == Intent::ByValue or p->intent() == Intent::Move)
                 AddVarCleanup(GetAddressOfLocal(l, C(l->location())), l->type);
         } else if (not IsZeroSizedType(l->type)) {
             EmitAllocaForLocal(l);
@@ -2816,7 +2836,7 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
 
     // An indirect return is a store to a pointer.
     if (abi().needs_indirect_return(*this, ty)) {
-        EmitRValue(curr.proc.getArgument(0), expr->value.get());
+        EmitRValue(curr->proc.getArgument(0), expr->value.get());
         CreateReturn(l, {});
         return {};
     }
@@ -2835,7 +2855,7 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
     }
 
     // LValues should be returned directly.
-    if (curr.decl and curr.decl->returns_lvalue()) {
+    if (curr->decl and curr->decl->returns_lvalue()) {
         Assert(val->is_lvalue());
         CreateReturn(l, EmitScalar(val));
         return {};
@@ -2848,11 +2868,11 @@ auto CodeGen::EmitReturnExpr(ReturnExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitSaveExpr(SaveExpr* expr) -> IRValue {
-    if (auto it = curr.saved_exprs.find(expr); it != curr.saved_exprs.end())
+    if (auto it = curr->saved_exprs.find(expr); it != curr->saved_exprs.end())
         return it->second;
 
     auto val = Emit(expr->expr);
-    curr.saved_exprs.try_emplace(expr, val);
+    curr->saved_exprs.try_emplace(expr, val);
     return val;
 }
 
@@ -3120,7 +3140,7 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     SmallVector<ParamTypeData> args;
     auto ty = stmt->type_or_void();
     auto yields_value = not IsZeroSizedType(ty);
-    if (yields_value) args.push_back({Intent::Copy, PtrType::Get(tu, ty, false)});
+    if (yields_value) args.push_back({Intent::ByValue, PtrType::Get(tu, ty, false)});
 
     // Build a procedure for this statement.
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());

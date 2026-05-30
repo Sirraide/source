@@ -4,7 +4,7 @@ program test;
 proc p_in (in $T) {}
 proc p_out (out $T x) { __srcc_unreachable(); }
 proc p_inout (inout $T) {}
-proc p_copy (copy $T) {}
+proc p_copy (__srcc_by_value__ $T) {}
 proc p_move ($T) {}
 
 // SRValue.

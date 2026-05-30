@@ -1,4 +1,4 @@
-// R %srcc --ir --target x86_64-unknown-linux %s
+// R %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
 program test;
 
 proc g extern;
@@ -13,7 +13,11 @@ struct Big {
     delete { g(); }
 };
 
-struct Q{};
+proc sink_int(int) {}
+proc sink_in(in Small) {}
+proc sink_copy(__srcc_by_value__ Small) {}
+proc sink_move(Small) {}
+
 proc simple {
     var x = Small(1);
     var x = Big(int[3](2, 3, 4));
@@ -31,19 +35,31 @@ proc optional {
     var x = Big?(int[3](18, 19, 20));
 }
 
+proc temporaries {
+    Small(1);
+    Small(2).x;
+    sink_int(Small(3).x);
+    sink_int(Small(5).x + Small(4).x);
+    sink_in(Small(6));
+    sink_copy(Small(7));
+    sink_move(Small(8));
+}
+
 simple();
 array();
 optional();
+temporaries();
 
 // * proc __src_main norecurse external ccc {
 // + entry:
-// +     call ccc void _S6simpleFvE.1()
-// +     call ccc void _S5arrayFvE.2()
-// +     call ccc void _S8optionalFvE.3()
+// +     call ccc void _S6simpleFvE.5()
+// +     call ccc void _S5arrayFvE.6()
+// +     call ccc void _S8optionalFvE.7()
+// +     call ccc void _S11temporariesFvE.8()
 // +     ret
 // + }
 // +
-// + proc _S6simpleFvE.1 private ccc {
+// + proc _S6simpleFvE.5 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 24, align 8
 // +
@@ -59,7 +75,7 @@ optional();
 // +     ret
 // + }
 // +
-// + proc _S5arrayFvE.2 private ccc {
+// + proc _S5arrayFvE.6 private ccc {
 // +     #0 = 24, align 8
 // +     #1 = 72, align 8
 // +
@@ -117,7 +133,7 @@ optional();
 // +     ret
 // + }
 // +
-// + proc _S8optionalFvE.3 private ccc {
+// + proc _S8optionalFvE.7 private ccc {
 // +     #0 = 9, align 8
 // +     #1 = 25, align 8
 // +     #2 = 9, align 8
@@ -185,9 +201,49 @@ optional();
 // +     ret
 // + }
 // +
-// + proc $T3Big.delete (ptr %0 align 8 dereferenceable 24) external ccc {
+// + proc _S11temporariesFvE.8 private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 8, align 8
+// +     #5 = 8, align 8
+// +     #6 = 8, align 8
+// +     #7 = 8, align 8
+// +
 // + entry:
-// +     call ccc void g()
+// +     store #0, i64 1, align 8
+// +     delete #0 using $T5Small.delete implicit
+// +     store #1, i64 2, align 8
+// +     delete #1 using $T5Small.delete implicit
+// +     store #2, i64 3, align 8
+// +     %0 = load i64, #2, align 8
+// +     call ccc void _S8sink_intFviE.1(i64 %0 noundef)
+// +     delete #2 using $T5Small.delete implicit
+// +     store #3, i64 5, align 8
+// +     %1 = load i64, #3, align 8
+// +     store #4, i64 4, align 8
+// +     %2 = load i64, #4, align 8
+// +     %3 = add i64 %1, %2
+// +     call ccc void _S8sink_intFviE.1(i64 %3 noundef)
+// +     delete #4 using $T5Small.delete implicit
+// +     delete #3 using $T5Small.delete implicit
+// +     store #5, i64 6, align 8
+// +     call ccc void _S7sink_inFvxT5SmallE.2(ptr #5 align 8 dereferenceable 8)
+// +     delete #5 using $T5Small.delete implicit
+// +     store #6, i64 7, align 8
+// +     %4 = load i64, #6, align 8
+// +     call ccc void _S9sink_copyFvx3T5SmallE.3(i64 %4 noundef)
+// +     store #7, i64 8, align 8
+// +     call ccc void _S9sink_moveFvT5SmallE.4(ptr #7 align 8 dereferenceable 8 move)
+// +     ret
+// + }
+// +
+// + proc _S8sink_intFviE.1 (i64 %0 noundef) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
 // +     ret
 // + }
 // +
@@ -198,3 +254,29 @@ optional();
 // + }
 // +
 // + proc g external ccc;
+// +
+// + proc _S7sink_inFvxT5SmallE.2 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S9sink_copyFvx3T5SmallE.3 (i64 %0 noundef) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     delete #0 using $T5Small.delete implicit
+// +     ret
+// + }
+// +
+// + proc _S9sink_moveFvT5SmallE.4 (ptr %0 align 8 dereferenceable 8 move) private ccc {
+// + entry:
+// +     delete %0 using $T5Small.delete implicit
+// +     ret
+// + }
+// +
+// + proc $T3Big.delete (ptr %0 align 8 dereferenceable 24) external ccc {
+// + entry:
+// +     call ccc void g()
+// +     ret
+// + }

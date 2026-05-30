@@ -42,10 +42,14 @@ enum class srcc::Intent : base::u8 {
     /// may also inspect it before that.
     Inout,
 
-    /// The parameter is copied and behaves like a local variable in
-    /// the callee. This is the only valid intent for procedures that
-    /// use the C++ ABI.
-    Copy,
+    /// The parameter is passed by value. This is the only valid intent
+    /// for procedures that use the C++ ABI.
+    ///
+    /// Note that this does *not* mean the value is copied! *Logically*,
+    /// this is still a move (e.g. if you pass a variable by value, it
+    /// will be moved unless it is trivially-copyable or you explicitly
+    /// copy it).
+    ByValue,
 };
 
 /// Parameter passing modes.
@@ -202,7 +206,7 @@ struct std::formatter<srcc::Intent> : std::formatter<std::string_view> {
                 case In: return "in";
                 case Out: return "out";
                 case Inout: return "inout";
-                case Copy: return "copy";
+                case ByValue: return "byval";
             }
             return "<invalid intent>";
         }();

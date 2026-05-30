@@ -37,8 +37,8 @@ j = 10;
 f_inout(i);
 f_inout(j);
 
-proc f_copy(copy int i) = i = i * 6;
-proc f_copy(copy i10000 i) = i = i * 6;
+proc f_copy(__srcc_by_value__ int i) = i = i * 6;
+proc f_copy(__srcc_by_value__ i10000 i) = i = i * 6;
 
 i = 5;
 j = 10;

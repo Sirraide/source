@@ -9,7 +9,7 @@ struct assert_msg_buf {
     int capacity;
 }
 
-proc append_int (inout assert_msg_buf into, copy int value) nomangle {
+proc append_int (inout assert_msg_buf into, __srcc_by_value__ int value) nomangle {
     // 0 is a special case.
     if value == 0 then {
         append_str(into, '0');

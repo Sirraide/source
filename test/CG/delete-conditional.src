@@ -46,7 +46,7 @@ proc f6 {
     s = Small(33);
 }
 
-proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
+proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout Small s5) {
     s4 = Small(1);
 }
 

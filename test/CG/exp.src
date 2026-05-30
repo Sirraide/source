@@ -11,7 +11,7 @@ proc exp (in int a, in int b, in i8 c, in i8 d) {
     sink(c ** d);
 }
 
-proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
+proc exp_ass (__srcc_by_value__ int a, in int b, __srcc_by_value__ i8 c, in i8 d) {
     a **= b;
     c **= d;
 }
@@ -62,24 +62,24 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store #3, i8 %3, align 1
 // +     %4 = load i64, #0, align 8
 // +     %5 = load i64, #1, align 8
-// +     %6 = call ccc i64 _S$2**Fixix3iE(i64 %4 noundef, i64 %5 noundef)
+// +     %6 = call ccc i64 _S$2**FixiiE(i64 %4 noundef, i64 %5 noundef)
 // +     call ccc void _S4sinkFvxiE.1(i64 %6 noundef)
 // +     %7 = load i64, #0, align 8
 // +     %8 = load i64, #1, align 8
-// +     %9 = call ccc i64 _S$2**Fixix3iE(i64 %7 noundef, i64 %8 noundef)
+// +     %9 = call ccc i64 _S$2**FixiiE(i64 %7 noundef, i64 %8 noundef)
 // +     call ccc void _S4sinkFvxiE.1(i64 %9 noundef)
 // +     %10 = load i8, #2, align 1
 // +     %11 = load i8, #3, align 1
-// +     %12 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %10 noundef, i8 %11 noundef)
+// +     %12 = call ccc i8 _S$2**FI8xI8I8E(i8 %10 noundef, i8 %11 noundef)
 // +     call ccc void _S4sinkFvxI8E.2(i8 %12 noundef)
 // +     %13 = load i8, #2, align 1
 // +     %14 = load i8, #3, align 1
-// +     %15 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %13 noundef, i8 %14 noundef)
+// +     %15 = call ccc i8 _S$2**FI8xI8I8E(i8 %13 noundef, i8 %14 noundef)
 // +     call ccc void _S4sinkFvxI8E.2(i8 %15 noundef)
 // +     ret
 // + }
 // +
-// + proc _S$2**Fixix3iE (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
+// + proc _S$2**FixiiE (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -166,7 +166,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     ret i64 %53
 // + }
 // +
-// + proc _S$2**FI8xI8x3I8E (i8 %0 noundef, i8 %1 noundef) private ccc -> i8 {
+// + proc _S$2**FI8xI8I8E (i8 %0 noundef, i8 %1 noundef) private ccc -> i8 {
 // +     #0 = 1, align 1
 // +     #1 = 1, align 1
 // +     #2 = 1, align 1
@@ -283,7 +283,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store #0, i64 %1, align 8
 // +     %2 = load i64, %0, align 8
 // +     %3 = load i64, #0, align 8
-// +     %4 = call ccc i64 _S$2**Fixix3iE(i64 %2 noundef, i64 %3 noundef)
+// +     %4 = call ccc i64 _S$2**FixiiE(i64 %2 noundef, i64 %3 noundef)
 // +     store %0, i64 %4, align 8
 // +     ret ptr %0
 // + }
@@ -295,7 +295,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     store #0, i8 %1, align 1
 // +     %2 = load i8, %0, align 1
 // +     %3 = load i8, #0, align 1
-// +     %4 = call ccc i8 _S$2**FI8xI8x3I8E(i8 %2 noundef, i8 %3 noundef)
+// +     %4 = call ccc i8 _S$2**FI8xI8I8E(i8 %2 noundef, i8 %3 noundef)
 // +     store %0, i8 %4, align 1
 // +     ret ptr %0
 // + }

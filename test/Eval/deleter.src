@@ -13,6 +13,11 @@ struct Big {
     delete { printf("Big: %zi %zi %zi\n", x[0], x[1], x[2]); }
 };
 
+proc sink_int(int) {}
+proc sink_in(in Small) {}
+proc sink_copy(__srcc_by_value__ Small) {}
+proc sink_move(Small) {}
+
 proc simple {
     // * Big: 2 3 4
     // + Small: 1
@@ -46,3 +51,23 @@ proc optional {
 }
 
 optional();
+
+proc temporaries {
+    // + 1
+    // + 2
+    // + 3
+    // + 4
+    // + 5
+    // + 6
+    // + 7
+    // + 8
+    Small(1);
+    Small(2).x;
+    sink_int(Small(3).x);
+    sink_int(Small(5).x + Small(4).x);
+    sink_in(Small(6));
+    sink_copy(Small(7));
+    sink_move(Small(8));
+}
+
+temporaries();

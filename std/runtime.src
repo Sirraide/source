@@ -84,7 +84,7 @@ export proc __src_assert_fail (AbortInfo val^ info) native -> noreturn {
     libc::abort();
 }
 
-export proc __src_assert_append_int (inout __src_assert_msg_buf into, copy int value) nomangle {
+export proc __src_assert_append_int (inout __src_assert_msg_buf into, int value) nomangle {
     // 0 is a special case.
     if value == 0 then {
         __src_assert_append_str(into, '0');

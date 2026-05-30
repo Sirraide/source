@@ -1427,7 +1427,7 @@ auto Parser::ParseIntent() -> std::pair<SLoc, Intent> {
     // The other intents are contextual keywords.
     if (ConsumeContextual(loc, "out")) return {loc, Intent::Out};
     if (ConsumeContextual(loc, "inout")) return {loc, Intent::Inout};
-    if (ConsumeContextual(loc, "copy")) return {loc, Intent::Copy};
+    if (ConsumeContextual(loc, "__srcc_by_value__")) return {loc, Intent::ByValue};
 
     // If no intent is present, just return this as a default.
     return {{}, Intent::Move};

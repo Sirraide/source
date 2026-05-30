@@ -126,18 +126,16 @@ bool TypeBase::pass_by_reference(const Target& t, Intent i) const {
     // 'inout' and 'out' parameters are always references.
     if (i == Intent::Inout or i == Intent::Out) return true;
 
-    // Move parameters are references only if the type is not trivial
-    // (because 'move' is equivalent to 'copy' otherwise); that is, for
-    // trivially-copyable types, any modification of the ‘moved’ value
-    // must not be reflected in the caller.
+    // Move parameters are references only if the type is not trivial;
+    // that is, for trivially-copyable types, any modification of the
+    // ‘moved’ value must not be reflected in the caller.
     //
     // Specifically, moving for these types is *logically* a copy, that
     // is the ‘moved’ value is not actually considered ‘moved’, and the
     // caller may continue accessing it.
     if (i == Intent::Move) return not trivially_copyable();
 
-    // Copy parameters are always passed by value; whether this is
-    // accomplished by making a copy in the caller and passing a
+    // Whether by-value parameters making a copy in the caller and passing a
     // pointer or whether they are passed in registers is up to the
     // target ABI and handled in a separate lowering pass.
     return false;

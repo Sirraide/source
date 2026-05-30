@@ -534,7 +534,7 @@ auto Sema::Importer::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
             SmallVector<ParamTypeData, 6> params;
             for (auto param : fpt->param_types()) {
                 auto param_ty = TRY(ImportType(sloc, param));
-                params.emplace_back(Intent::Copy, param_ty);
+                params.emplace_back(Intent::ByValue, param_ty);
             }
 
             return ProcType::Get(

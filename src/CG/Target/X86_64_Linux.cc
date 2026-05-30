@@ -215,7 +215,7 @@ auto ABIImpl::LowerByValArgOrReturn(
         if (not arg_ty) arg_ty = cg.ConvertToByteArrayType(t);
         info.emplace_back(cg.get_ptr_ty()).add_byval(arg_ty);
         if (auto a = arg.get_or_null()) {
-            auto addr = cg.EmitToMemory(l, a);
+            auto addr = cg.EmitToMemoryIfNeeded(l, a);
 
             // Take care not to modify the original object if we’re passing by value.
             if (a->is_lvalue()) {
@@ -265,7 +265,7 @@ auto ABIImpl::LowerByValArgOrReturn(
         if (sz <= Word) {
             ctx.allocate();
             auto& a = info.emplace_back(cg.IntTy(sz.as_bytes()));
-            if (arg) a.value = LoadWord(cg.EmitToMemory(l, arg.get()), sz);
+            if (arg) a.value = LoadWord(cg.EmitToMemoryIfNeeded(l, arg.get()), sz);
         }
 
         // This is passed in two registers.
@@ -291,7 +291,7 @@ auto ABIImpl::LowerByValArgOrReturn(
                 info.emplace_back(cg.getI64Type());
                 info.emplace_back(cg.IntTy(sz - Word));
                 if (arg) {
-                    auto addr = cg.EmitToMemory(l, arg.get());
+                    auto addr = cg.EmitToMemoryIfNeeded(l, arg.get());
                     info[0].value = LoadWord(addr, Word);
                     info[1].value = LoadWord(cg.CreatePtrAdd(l, addr, Word), sz - Word);
                 }
@@ -310,7 +310,7 @@ auto ABIImpl::LowerByValArgOrReturn(
                 info.emplace_back(cg.getI64Type());
                 info.emplace_back(cg.getI64Type());
                 if (auto a = arg.get_or_null()) {
-                    auto mem = cg.EmitToMemory(l, a);
+                    auto mem = cg.EmitToMemoryIfNeeded(l, a);
                     auto align = t->align(cg.translation_unit());
                     info[0].value = cg.CreateLoad(l, mem, cg.getI64Type(), align);
                     info[1].value = cg.CreateLoad(l, mem, cg.getI64Type(), align, Word);
@@ -333,7 +333,7 @@ auto ABIImpl::LowerByValArgOrReturn(
             if (auto a = arg.get_or_null()) {
                 info[0].value = cg.CreateLoad(
                     l,
-                    cg.EmitToMemory(l, a),
+                    cg.EmitToMemoryIfNeeded(l, a),
                     i128_ty,
                     t->align(cg.translation_unit())
                 );
@@ -650,7 +650,7 @@ auto ABIImpl::lower_procedure_signature(
             if (auto a = Arg(i)) cg.Emit(a);
         } else if (param.type->pass_by_reference(target, param.intent)) {
             Value arg;
-            if (auto a = Arg(i)) arg = cg.EmitToMemory(l, a);
+            if (auto a = Arg(i)) arg = cg.EmitToMemoryIfNeeded(l, a);
             AddByRefArg(arg, param.type, param.intent);
         } else {
             AddByValArg(Arg(i), param.type);
@@ -669,7 +669,7 @@ auto ABIImpl::lower_procedure_signature(
         if (env_ptr) info.args.push_back(env_ptr);
     }
 
-    // Extra variadic arguments are always passed as 'copy' parameters.
+    // Extra variadic arguments are always passed as by-value parameters.
     if (args.size() > proc->params().size()) {
         for (auto arg : args.drop_front(proc->params().size())) {
             Assert(not cg.IsZeroSizedType(arg->type), "Passing zero-sized type as variadic argument?");
