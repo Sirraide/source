@@ -375,6 +375,16 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
     });
 }
 
+auto Sema::CreateReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr> {
+    if (res.successful()) return CreateReference(res.decls.front(), loc);
+    Assert(res.result == LookupResult::Reason::Ambiguous);
+
+    // TODO: Validate overload set; i.e. that there are no two functions that
+    // differ only in return type, or not at all. Also: don’t allow overloading
+    // on intent (for now).
+    return OverloadSetExpr::Create(*tu, res.decls, loc);
+}
+
 bool Sema::CompleteDefinition(StructType* s) {
     if (s->is_complete()) return true;
     auto raii = TypeTranslationRAII::Enter(*this, s, s->decl()->location());
@@ -2149,7 +2159,6 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
             case Tk::StarStarEq:
             case Tk::StarTilde:
             case Tk::StarTildeEq:
-            case Tk::Swap:
             case Tk::UGe:
             case Tk::UGt:
             case Tk::ULe:
@@ -2211,7 +2220,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
 }
 
 bool Sema::IsUserDefinedOverloadedOperator(Tk tk, ArrayRef<Type> argument_types) {
-    if (tk == Tk::Assign) return false;
+    if (tk == Tk::Assign or tk == Tk::Swap) return false;
     auto CanOverload = [](Type t) { return isa<StructType>(t); };
     return any_of(argument_types, CanOverload);
 }
@@ -3093,7 +3102,27 @@ auto Sema::BuildBinaryExpr(
     };
 
     auto BuildCall = [&](DeclName fun) -> Ptr<Expr> {
-        auto ref = BuildDeclRefExpr(DeclNameLoc{fun, loc}, loc);
+        // Perform lookup for operator names manually since 'unknown symbol' is
+        // a terrible error message for this (it looks like a parse error), and
+        // moreover, the regular lookup failure diagnostics code doesn't have access
+        // to the parameter types.
+        auto res = LookUpUnqualifiedName(DeclNameLoc{fun, loc});
+        if (res.result == LookupResult::Reason::NotFound and fun.is_operator_name()) {
+            return Error(
+                loc,
+                "Could not find overload of '%1({}%)' for '{}' and '{}'",
+                fun,
+                lhs->type,
+                rhs->type
+            );
+        }
+
+        if (not res.successful_or_ambiguous()) {
+            ReportLookupFailure(std::move(res));
+            return {};
+        }
+
+        auto ref = CreateReferenceOrOverloadSet(loc, res);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
@@ -3355,7 +3384,7 @@ auto Sema::BuildBinaryExpr(
                 rhs->type
             );
 
-            return BuildCall(DeclName("__srcc_swap"));
+            return Build(Type::VoidTy);
         }
     }
 }
@@ -3744,16 +3773,8 @@ auto Sema::BuildDeclRefExpr(
     // This does perform unqualified lookup for e.g. '::a', but that’s fine
     // since the global scope has no parents anyway.
     auto res = LookUpName(scope, names, loc, LookupHint::Any);
-    if (res.successful()) return CreateReference(res.decls.front(), loc);
-
-    // Overload sets are ok here.
-    // TODO: Validate overload set; i.e. that there are no two functions that
-    // differ only in return type, or not at all. Also: don’t allow overloading
-    // on intent (for now).
-    if (
-        res.result == LookupResult::Reason::Ambiguous and
-        isa<ProcDecl, ProcTemplateDecl>(res.decls.front())
-    ) return OverloadSetExpr::Create(*tu, res.decls, loc);
+    if (res.successful() or res.is_overload_set())
+        return CreateReferenceOrOverloadSet(loc, res);
 
     // If we failed to find anything, and the desired type is an enum type, try to
     // see if this is one of its enumerators.

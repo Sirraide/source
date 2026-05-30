@@ -336,6 +336,12 @@ private:
             if (decl) decls.push_back(decl);
         }
 
+        /// Check if this is an overload set.
+        [[nodiscard]] bool is_overload_set() const {
+            return result == LookupResult::Reason::Ambiguous and
+                   isa<ProcDecl, ProcTemplateDecl>(decls.front());
+        }
+
         /// Check if this lookup result is a success.
         [[nodiscard]] auto successful() const -> bool { return result == Reason::Success; }
         [[nodiscard]] auto successful_or_ambiguous() const -> bool {
@@ -952,6 +958,10 @@ private:
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, SLoc loc) -> Ptr<Expr>;
 
+    /// Create a reference to a declaration or an overload set if there
+    /// are multiple declarations.
+    [[nodiscard]] auto CreateReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr>;
+
     /// Add a variable to the current scope and procedure.
     void DeclareLocal(LocalDecl* d);
 
@@ -1043,13 +1053,16 @@ private:
 
     /// Perform unqualified name lookup; this will iterate upwards
     /// in the scope stack until we find something.
-    auto LookUpUnqualifiedName(DeclNameLoc name, LookupHint hint) -> LookupResult;
+    auto LookUpUnqualifiedName(
+        DeclNameLoc name,
+        LookupHint hint = LookupHint::Any
+    ) -> LookupResult;
 
     /// Look up a name in a scope.
     auto LookUpNameInScope(
         Scope* in_scope,
         DeclNameLoc name,
-        LookupHint hint
+        LookupHint hint = LookupHint::Any
     ) -> LookupResult;
 
     /// Look up a name in a scope.
@@ -1174,7 +1187,7 @@ private:
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;
     auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
     auto BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Type;
-    auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, SLoc loc) -> Ptr<Expr>;
+    auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, SLoc op_loc) -> Ptr<Expr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;

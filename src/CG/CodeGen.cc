@@ -1612,6 +1612,20 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
             return arith::AndIOp::create(*this, loc, start_cmp, end_cmp).getResult();
         }
 
+        // 'swap' operator.
+        case Tk::Swap: {
+            auto ty = expr->lhs->type;
+            auto del = ty->requires_deletion();
+            auto loc = C(expr->location());
+            auto lhs = EmitScalar(expr->lhs);
+            auto rhs = EmitScalar(expr->rhs);
+            auto tmp = CreateAlloca(l, ty);
+            CreateMemCpy(loc, tmp, lhs, ty, del);
+            CreateMemCpy(loc, lhs, rhs, ty, del);
+            CreateMemCpy(loc, rhs, tmp, ty, del);
+            return {};
+        }
+
         // Anything else.
         default: {
             auto lhs = EmitScalar(expr->lhs);

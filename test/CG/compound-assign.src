@@ -50,7 +50,7 @@ proc x (int a, in int b) {
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("compound-assign.src":8:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":8:7) arithmetic(ptr #2)
 // +
 // + bb2:
 // +     store #0, i64 %4:0, align 8
@@ -64,7 +64,7 @@ proc x (int a, in int b) {
 // +     br %19:1 to bb3 else bb4
 // +
 // + bb3:
-// +     abort at loc("compound-assign.src":10:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":10:7) arithmetic(ptr #2)
 // +
 // + bb4:
 // +     store #0, i64 %19:0, align 8
@@ -78,7 +78,7 @@ proc x (int a, in int b) {
 // +     br %34:1 to bb5 else bb6
 // +
 // + bb5:
-// +     abort at loc("compound-assign.src":12:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":12:7) arithmetic(ptr #2)
 // +
 // + bb6:
 // +     store #0, i64 %34:0, align 8
@@ -92,7 +92,7 @@ proc x (int a, in int b) {
 // +     br %49 to bb7 else bb8
 // +
 // + bb7:
-// +     abort at loc("compound-assign.src":14:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":14:7) arithmetic(ptr #2)
 // +
 // + bb8:
 // +     %59 = icmp eq i64 %47, -9223372036854775808
@@ -101,7 +101,7 @@ proc x (int a, in int b) {
 // +     br %61 to bb9 else bb10
 // +
 // + bb9:
-// +     abort at loc("compound-assign.src":14:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":14:7) arithmetic(ptr #2)
 // +
 // + bb10:
 // +     %71 = sdiv i64 %47, %48
@@ -112,7 +112,7 @@ proc x (int a, in int b) {
 // +     br %74 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at loc("compound-assign.src":15:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":15:7) arithmetic(ptr #2)
 // +
 // + bb12:
 // +     %84 = icmp eq i64 %72, -9223372036854775808
@@ -121,7 +121,7 @@ proc x (int a, in int b) {
 // +     br %86 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at loc("compound-assign.src":15:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":15:7) arithmetic(ptr #2)
 // +
 // + bb14:
 // +     %96 = srem i64 %72, %73
@@ -132,7 +132,7 @@ proc x (int a, in int b) {
 // +     br %99 to bb15 else bb16
 // +
 // + bb15:
-// +     abort at loc("compound-assign.src":16:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":16:7) arithmetic(ptr #2)
 // +
 // + bb16:
 // +     %109 = shl i64 %97, %98
@@ -142,7 +142,7 @@ proc x (int a, in int b) {
 // +     br %112 to bb17 else bb18
 // +
 // + bb17:
-// +     abort at loc("compound-assign.src":16:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":16:7) arithmetic(ptr #2)
 // +
 // + bb18:
 // +     store #0, i64 %109, align 8
@@ -156,7 +156,7 @@ proc x (int a, in int b) {
 // +     br %127 to bb19 else bb20
 // +
 // + bb19:
-// +     abort at loc("compound-assign.src":18:5) arithmetic(ptr #2)
+// +     abort at loc("compound-assign.src":18:7) arithmetic(ptr #2)
 // +
 // + bb20:
 // +     %137 = shl i64 %125, %126
@@ -274,7 +274,7 @@ proc x (int a, in int b) {
 //L +   %13 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 8, ptr %13, align 8
 //L +   %14 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %14, align 8
+//L +   store i64 7, ptr %14, align 8
 //L +   %15 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.0, ptr %15, align 8
 //L +   %16 = getelementptr inbounds nuw i8, ptr %15, i32 8
@@ -310,7 +310,7 @@ proc x (int a, in int b) {
 //L +   %32 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 10, ptr %32, align 8
 //L +   %33 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %33, align 8
+//L +   store i64 7, ptr %33, align 8
 //L +   %34 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.3, ptr %34, align 8
 //L +   %35 = getelementptr inbounds nuw i8, ptr %34, i32 8
@@ -346,7 +346,7 @@ proc x (int a, in int b) {
 //L +   %51 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 12, ptr %51, align 8
 //L +   %52 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %52, align 8
+//L +   store i64 7, ptr %52, align 8
 //L +   %53 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.4, ptr %53, align 8
 //L +   %54 = getelementptr inbounds nuw i8, ptr %53, i32 8
@@ -380,7 +380,7 @@ proc x (int a, in int b) {
 //L +   %68 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 14, ptr %68, align 8
 //L +   %69 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %69, align 8
+//L +   store i64 7, ptr %69, align 8
 //L +   %70 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.5, ptr %70, align 8
 //L +   %71 = getelementptr inbounds nuw i8, ptr %70, i32 8
@@ -409,7 +409,7 @@ proc x (int a, in int b) {
 //L +   %82 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 14, ptr %82, align 8
 //L +   %83 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %83, align 8
+//L +   store i64 7, ptr %83, align 8
 //L +   %84 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.5, ptr %84, align 8
 //L +   %85 = getelementptr inbounds nuw i8, ptr %84, i32 8
@@ -440,7 +440,7 @@ proc x (int a, in int b) {
 //L +   %97 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 15, ptr %97, align 8
 //L +   %98 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %98, align 8
+//L +   store i64 7, ptr %98, align 8
 //L +   %99 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.7, ptr %99, align 8
 //L +   %100 = getelementptr inbounds nuw i8, ptr %99, i32 8
@@ -469,7 +469,7 @@ proc x (int a, in int b) {
 //L +   %111 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 15, ptr %111, align 8
 //L +   %112 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %112, align 8
+//L +   store i64 7, ptr %112, align 8
 //L +   %113 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.7, ptr %113, align 8
 //L +   %114 = getelementptr inbounds nuw i8, ptr %113, i32 8
@@ -500,7 +500,7 @@ proc x (int a, in int b) {
 //L +   %126 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 16, ptr %126, align 8
 //L +   %127 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %127, align 8
+//L +   store i64 7, ptr %127, align 8
 //L +   %128 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.8, ptr %128, align 8
 //L +   %129 = getelementptr inbounds nuw i8, ptr %128, i32 8
@@ -530,7 +530,7 @@ proc x (int a, in int b) {
 //L +   %141 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 16, ptr %141, align 8
 //L +   %142 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %142, align 8
+//L +   store i64 7, ptr %142, align 8
 //L +   %143 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.8, ptr %143, align 8
 //L +   %144 = getelementptr inbounds nuw i8, ptr %143, i32 8
@@ -564,7 +564,7 @@ proc x (int a, in int b) {
 //L +   %158 = getelementptr inbounds nuw i8, ptr %5, i32 16
 //L +   store i64 18, ptr %158, align 8
 //L +   %159 = getelementptr inbounds nuw i8, ptr %5, i32 24
-//L +   store i64 5, ptr %159, align 8
+//L +   store i64 7, ptr %159, align 8
 //L +   %160 = getelementptr inbounds nuw i8, ptr %5, i32 32
 //L +   store ptr @__srcc_str.10, ptr %160, align 8
 //L +   %161 = getelementptr inbounds nuw i8, ptr %160, i32 8

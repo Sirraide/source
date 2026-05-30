@@ -61,7 +61,7 @@ proc p3 = inline c() + inline c();
 // +     br %4:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("inline.src":10:13) arithmetic(ptr #3)
+// +     abort at loc("inline.src":10:17) arithmetic(ptr #3)
 // +
 // + bb2:
 // +     store #2, i64 %4:0, align 8
@@ -116,7 +116,7 @@ proc p3 = inline c() + inline c();
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("inline.src":25:11) arithmetic(ptr #0)
+// +     abort at loc("inline.src":25:22) arithmetic(ptr #0)
 // +
 // + bb2:
 // +     ret i64 %2:0
@@ -156,7 +156,7 @@ proc p3 = inline c() + inline c();
 //L +   %10 = getelementptr inbounds nuw i8, ptr %4, i32 16
 //L +   store i64 10, ptr %10, align 8
 //L +   %11 = getelementptr inbounds nuw i8, ptr %4, i32 24
-//L +   store i64 13, ptr %11, align 8
+//L +   store i64 17, ptr %11, align 8
 //L +   %12 = getelementptr inbounds nuw i8, ptr %4, i32 32
 //L +   store ptr @__srcc_str.0, ptr %12, align 8
 //L +   %13 = getelementptr inbounds nuw i8, ptr %12, i32 8
@@ -223,7 +223,7 @@ proc p3 = inline c() + inline c();
 //L +   %7 = getelementptr inbounds nuw i8, ptr %1, i32 16
 //L +   store i64 25, ptr %7, align 8
 //L +   %8 = getelementptr inbounds nuw i8, ptr %1, i32 24
-//L +   store i64 11, ptr %8, align 8
+//L +   store i64 22, ptr %8, align 8
 //L +   %9 = getelementptr inbounds nuw i8, ptr %1, i32 32
 //L +   store ptr @__srcc_str.0, ptr %9, align 8
 //L +   %10 = getelementptr inbounds nuw i8, ptr %9, i32 8

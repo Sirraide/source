@@ -34,6 +34,12 @@ proc f4 (bool x) {
     if x {} else delete s;
 }
 
+proc f5 {
+    var s1 = Small(1);
+    var s2 = Small(1);
+    s1 >< s2;
+}
+
 proc e1 {
     var s = Small(42);
     delete s; // expected-note: Deleted here

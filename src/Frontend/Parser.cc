@@ -623,8 +623,9 @@ auto Parser::ParseFragment(Context& ctx, const TokenStream& toks) -> ParsedModul
 // <expr-assert> ::= [ "#" ] ASSERT <expr> [ "," <expr> ]
 auto Parser::ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr> {
     auto start = Next();
+    auto cond_start = tok->location;
     auto cond = TryParseExpr();
-    SRange cond_range{cond->loc, std::prev(tok)->location};
+    SRange cond_range{cond_start, std::prev(tok)->location};
 
     // Message is optional.
     Ptr<ParsedStmt> message;
@@ -1079,14 +1080,14 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         }
 
         auto op = tok->type;
-        Next();
+        auto op_loc = Next();
         if (IsPostfix(op)) {
-            lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, lhs.get()->loc};
+            lhs = new (*this) ParsedUnaryExpr{op, lhs.get(), true, op_loc};
         } else {
             if (op == Tk::DotDot) Error("'%1(..%)' is not a valid operator; did you mean '%1(..=%)' or '%1(..<%)'?");
             auto rhs = ParseExpr(BinaryOrPostfixPrecedence(op));
             if (not rhs) return {};
-            lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), lhs.get()->loc};
+            lhs = new (*this) ParsedBinaryExpr{op, lhs.get(), rhs.get(), op_loc};
         }
     }
 
@@ -1813,7 +1814,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
     // Disallow certain operators.
     if (
         sig.name.name.is_operator_name() and
-        Is(sig.name.name.operator_name(), Tk::Assign, Tk::ColonColon, Tk::Dot)
+        Is(sig.name.name.operator_name(), Tk::Assign, Tk::Swap, Tk::ColonColon, Tk::Dot)
     ) return Error(
         sig.name.loc,
         "Operator '{}' cannot be overloaded",

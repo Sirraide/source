@@ -371,7 +371,7 @@ proc r15 = match 4 {
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("match.src":103:26) arithmetic(ptr #1)
+// +     abort at loc("match.src":103:28) arithmetic(ptr #1)
 // +
 // + bb2:
 // +     %12 = icmp eq i64 %2:0, 5
@@ -654,7 +654,7 @@ proc r15 = match 4 {
 //L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 16
 //L +   store i64 103, ptr %10, align 8
 //L +   %11 = getelementptr inbounds nuw i8, ptr %3, i32 24
-//L +   store i64 26, ptr %11, align 8
+//L +   store i64 28, ptr %11, align 8
 //L +   %12 = getelementptr inbounds nuw i8, ptr %3, i32 32
 //L +   store ptr @__srcc_str.0, ptr %12, align 8
 //L +   %13 = getelementptr inbounds nuw i8, ptr %12, i32 8

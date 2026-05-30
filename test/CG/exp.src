@@ -143,7 +143,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     br %31:1 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at loc("__srcc_preamble.src":34:13) arithmetic(ptr #3)
+// +     abort at loc("__srcc_preamble.src":34:15) arithmetic(ptr #3)
 // +
 // + bb12:
 // +     store #2, i64 %31:0, align 8
@@ -152,7 +152,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     br %42:1 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at loc("__srcc_preamble.src":35:13) arithmetic(ptr #3)
+// +     abort at loc("__srcc_preamble.src":35:17) arithmetic(ptr #3)
 // +
 // + bb14:
 // +     store #1, i64 %42:0, align 8
@@ -230,7 +230,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     br %31:1 to bb11 else bb12
 // +
 // + bb11:
-// +     abort at loc("__srcc_preamble.src":34:13) arithmetic(ptr #3)
+// +     abort at loc("__srcc_preamble.src":34:15) arithmetic(ptr #3)
 // +
 // + bb12:
 // +     store #2, i8 %31:0, align 1
@@ -239,7 +239,7 @@ proc exp_ass (copy int a, in int b, copy i8 c, in i8 d) {
 // +     br %42:1 to bb13 else bb14
 // +
 // + bb13:
-// +     abort at loc("__srcc_preamble.src":35:13) arithmetic(ptr #3)
+// +     abort at loc("__srcc_preamble.src":35:17) arithmetic(ptr #3)
 // +
 // + bb14:
 // +     store #1, i8 %42:0, align 1

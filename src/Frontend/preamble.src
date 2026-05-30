@@ -74,12 +74,3 @@ proc + (in $T a, in T b) __srcc_builtin_op__ -> T where T.is_array {
     for enum i, v1, v2 in a, b do res[i] = v1 + v2;
     return res;
 }
-
-// ============================================================================
-//  Swap Implementation
-// ============================================================================
-proc __srcc_swap (inout $T a, inout $T b) inline __srcc_no_mnum__ {
-    T tmp = a;
-    a = b;
-    b = tmp;
-}
