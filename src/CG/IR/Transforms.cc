@@ -30,10 +30,10 @@
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/Passes.h>
 
-#define DEBUG_MOVE_ANALYSIS(...) /*                             \
-    do {                                                        \
-        if (std::getenv("DEBUG_MOVE_ANALYSIS")) { __VA_ARGS__ } \
-    } while (false) */
+#define DEBUG_MOVE_ANALYSIS(...)                                     \
+    do {                                                             \
+        if (std::getenv("SRCC_DEBUG_MOVE_ANALYSIS")) { __VA_ARGS__ } \
+    } while (false)
 
 #define DEBUG_OPTIONAL_ANALYSIS(...) // __VA_ARGS__
 #define TCase(type, name, ...) .Case<type>([&](auto&& name) { return __VA_ARGS__; })
@@ -194,15 +194,23 @@ private:
 // Check if this use of a value is a definition.
 static auto UseIsDef(Value val, Operation* user) -> bool {
     if (auto s = dyn_cast<ir::StoreOp>(user)) return s.getAddr() == val;
-    if (auto m = dyn_cast<mlir::LLVM::MemcpyOp>(user)) return m.getDst() == val;
+    if (auto c = dyn_cast<ir::CopyOp>(user)) return c.getDest() == val;
     if (auto m = dyn_cast<mlir::LLVM::MemsetOp>(user)) return m.getDst() == val;
     return false;
 };
 
 // Check if this use of a value is a move.
-static auto UseIsMove(Value val, Operation* user) -> bool {
+static auto UseIsMove(u32 idx, Operation* user) -> bool {
+    if (auto a = dyn_cast<ir::CallOp>(user)) {
+        if (idx == 0) return false; // Operand 0 is the address.
+        auto attrs = a.getCallArgAttrs(idx - 1);
+        return attrs and attrs.contains(ir::MoveParamAttrName);
+    }
+
+    auto val = user->getOperand(idx);
     if (auto m = dyn_cast<ir::MoveOp>(user)) return m.getValue() == val;
     if (auto d = dyn_cast<ir::DeleteOp>(user)) return d.getAddr() == val;
+    if (auto c = dyn_cast<ir::CopyOp>(user)) return c.getMove() and c.getSrc() == val;
     return false;
 };
 
@@ -219,8 +227,8 @@ struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Mov
         auto changed = after->join(before);
         if (auto a = dyn_cast<mlir::LLVM::AllocaOp>(op)) changed |= after->defined(a);
         if (auto r = dyn_cast<ir::RetainOp>(op)) changed |= after->defined(r);
-        for (auto v : op->getOperands()) {
-            if (UseIsMove(v, op)) changed |= after->moved(v, op);
+        for (auto [i, v] : llvm::enumerate(op->getOperands())) {
+            if (UseIsMove(u32(i), op)) changed |= after->moved(v, op);
             else if (UseIsDef(v, op)) changed |= after->defined(v);
         }
 
@@ -397,9 +405,9 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
 
     SmallVector<Entry> ops_to_rewrite;
     proc->walk([&](Operation* op){
-        for (auto v : op->getOperands()) {
+        for (auto [i, v] : llvm::enumerate(op->getOperands())) {
             if (not need_delete_flag.contains(v)) continue;
-            if (UseIsMove(v, op)) ops_to_rewrite.emplace_back(op, v, false);
+            if (UseIsMove(u32(i), op)) ops_to_rewrite.emplace_back(op, v, false);
             else if (UseIsDef(v, op)) ops_to_rewrite.emplace_back(op, v, true);
         }
     });

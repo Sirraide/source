@@ -152,10 +152,7 @@ public:
     /// (e.g. does this fit in a register); any other conditions
     /// that would require passing by reference (such as the value
     /// not being trivially copyable) will have already been checked.
-    [[nodiscard]] virtual bool pass_in_parameter_by_reference(
-        CodeGen& cg,
-        Type ty
-    ) const = 0;
+    [[nodiscard]] virtual bool pass_in_parameter_by_reference(Type ty) const = 0;
 
     /// Write the results of a call operation to memory.
     [[nodiscard]] virtual auto write_call_results_to_mem(

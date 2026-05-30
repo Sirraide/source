@@ -394,7 +394,7 @@ public:
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
     auto CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset = {}) -> IRValue;
     auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
-    void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty);
+    void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty, bool is_move = false);
     auto CreateNullClosure(mlir::Location loc) -> IRValue;
     auto CreateNullPointer(mlir::Location loc) -> Value;
     void CreateReturn(mlir::Location loc, mlir::ValueRange values);
@@ -574,14 +574,6 @@ public:
 
     /// Mangle a type name.
     static auto MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256>;
-
-    /// Determine whether this parameter type is passed by reference under
-    /// the given intent.
-    ///
-    /// No calling convention is passed to this since parameters to native
-    /// procedures should always have the 'copy' intent, which by definition
-    /// always passes by value.
-    bool PassByReference(Type ty, Intent i);
 
     /// Set the insert point to the start of a block, but skip over all
     /// operations of a certain type.

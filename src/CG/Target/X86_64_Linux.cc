@@ -61,6 +61,9 @@ public:
 };
 
 struct ABIImpl final : abi::ABI {
+    Target& target;
+    ABIImpl(Target& tgt) : target{tgt} {}
+
     bool can_use_return_value_directly(
         CodeGen& cg,
         Type ty
@@ -91,7 +94,7 @@ struct ABIImpl final : abi::ABI {
     ) const -> abi::CallInfo override;
 
     bool needs_indirect_return(CodeGen& cg, Type ty) const override;
-    bool pass_in_parameter_by_reference(CodeGen& cg, Type ty) const override;
+    bool pass_in_parameter_by_reference(Type ty) const override;
     auto write_call_results_to_mem(abi::IRToSourceConversionContext& ctx) const -> mlir::Value override;
 
     /// Lower a single argument that is passed by value.
@@ -116,7 +119,7 @@ struct ABIImpl final : abi::ABI {
 
 struct Impl final : Target {
     Impl(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI)
-        : Target(std::move(TI), std::make_unique<ABIImpl>()) {}
+        : Target(std::move(TI), std::make_unique<ABIImpl>(*this)) {}
 };
 }
 
@@ -538,10 +541,17 @@ auto ABIImpl::lower_procedure_signature(
 
     auto AddByRefArg = [&](Value v, Type t, Intent i) {
         auto attrs = GetElemTyAttrsForPointee(cg, t);
-        if (i == Intent::Out) attrs.push_back(cg.getNamedAttr(
-            ir::OutParamAttrName,
-            cg.getUnitAttr()
-        ));
+        if (i == Intent::Out) {
+            attrs.push_back(cg.getNamedAttr(
+                ir::OutParamAttrName,
+                cg.getUnitAttr()
+            ));
+        } else if (i == Intent::Move) {
+            attrs.push_back(cg.getNamedAttr(
+                ir::MoveParamAttrName,
+                cg.getUnitAttr()
+            ));
+        }
 
         ctx.allocate();
         info.args.push_back(v);
@@ -638,7 +648,7 @@ auto ABIImpl::lower_procedure_signature(
     for (auto [i, param] : enumerate(proc->params())) {
         if (cg.IsZeroSizedType(param.type)) {
             if (auto a = Arg(i)) cg.Emit(a);
-        } else if (cg.PassByReference(param.type, param.intent)) {
+        } else if (param.type->pass_by_reference(target, param.intent)) {
             Value arg;
             if (auto a = Arg(i)) arg = cg.EmitToMemory(l, a);
             AddByRefArg(arg, param.type, param.intent);
@@ -687,7 +697,7 @@ void ABIImpl::lower_parameters(CodeGen& cg, ProcData& pdata) const {
 
     for (auto param : pdata.decl->params()) {
         if (cg.IsZeroSizedType(param->type)) continue;
-        if (cg.PassByReference(param->type, param->intent())) {
+        if (param->type->pass_by_reference(target, param->intent())) {
             pdata.locals[param] = pdata.proc.getArgument(vals_used++);
             lowering.allocate();
         } else {
@@ -719,8 +729,8 @@ bool ABIImpl::needs_indirect_return(CodeGen& cg, Type ty) const {
     return ty->memory_size(cg.translation_unit()) > Size::Bits(128);
 }
 
-bool ABIImpl::pass_in_parameter_by_reference(CodeGen& cg, Type ty) const {
-    return ty->memory_size(cg.translation_unit()) > Size::Bits(128);
+bool ABIImpl::pass_in_parameter_by_reference(Type ty) const {
+    return ty->memory_size(target) > Size::Bits(128);
 }
 
 auto ABIImpl::write_call_results_to_mem(

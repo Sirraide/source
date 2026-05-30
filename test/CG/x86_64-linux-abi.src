@@ -1271,102 +1271,88 @@ proc closure_return = slice_return;
 // + proc _S10big_structFvE.7 private ccc {
 // +     #0 = 400, align 8
 // +     #1 = 400, align 8
-// +     #2 = 400, align 8
+// +     #2 = 4, align 4
 // +     #3 = 400, align 8
 // +     #4 = 400, align 8
 // +     #5 = 400, align 8
 // +     #6 = 400, align 8
 // +     #7 = 400, align 8
 // +     #8 = 400, align 8
-// +     #9 = 4, align 4
+// +     #9 = 400, align 8
 // +     #10 = 400, align 8
-// +     #11 = 400, align 8
+// +     #11 = 4, align 4
 // +     #12 = 400, align 8
 // +     #13 = 400, align 8
 // +     #14 = 400, align 8
 // +     #15 = 400, align 8
 // +     #16 = 400, align 8
 // +     #17 = 400, align 8
-// +     #18 = 4, align 4
+// +     #18 = 400, align 8
 // +     #19 = 400, align 8
-// +     #20 = 400, align 8
+// +     #20 = 4, align 4
 // +     #21 = 400, align 8
-// +     #22 = 400, align 8
+// +     #22 = 4, align 4
 // +     #23 = 400, align 8
-// +     #24 = 400, align 8
-// +     #25 = 400, align 8
-// +     #26 = 400, align 8
-// +     #27 = 4, align 4
-// +     #28 = 400, align 8
-// +     #29 = 4, align 4
-// +     #30 = 400, align 8
-// +     #31 = 4, align 4
+// +     #24 = 4, align 4
 // +
 // + entry:
 // +     set ptr #0, i8 0, i64 400
 // +     copy #1 <- #0, 400
-// +     copy #2 <- #0, 400
+// +     store #2, i32 42, align 4
+// +     %0 = load i32, #2, align 4
+// +     call ccc void big1(
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #1 byval i8[400] noundef,
+// +         ptr #0 align 8 dereferenceable 400,
+// +         i32 %0 noundef)
 // +     copy #3 <- #0, 400
 // +     copy #4 <- #0, 400
 // +     copy #5 <- #0, 400
 // +     copy #6 <- #0, 400
 // +     copy #7 <- #0, 400
 // +     copy #8 <- #0, 400
-// +     store #9, i32 42, align 4
-// +     %0 = load i32, #9, align 4
-// +     call ccc void big1(
-// +         ptr #1 align 8 dereferenceable 400,
-// +         ptr #2 align 8 dereferenceable 400,
-// +         ptr #3 align 8 dereferenceable 400,
-// +         ptr #4 align 8 dereferenceable 400,
-// +         ptr #5 align 8 dereferenceable 400,
-// +         ptr #6 align 8 dereferenceable 400,
-// +         ptr #7 byval i8[400] noundef,
-// +         ptr #8 align 8 dereferenceable 400,
-// +         i32 %0 noundef)
+// +     copy #9 <- #0, 400
 // +     copy #10 <- #0, 400
-// +     copy #11 <- #0, 400
+// +     store #11, i32 42, align 4
+// +     %1 = load i32, #11, align 4
+// +     call ccc void big2(
+// +         ptr #3 byval i8[400] noundef,
+// +         ptr #4 byval i8[400] noundef,
+// +         ptr #5 byval i8[400] noundef,
+// +         ptr #6 byval i8[400] noundef,
+// +         ptr #7 byval i8[400] noundef,
+// +         ptr #8 byval i8[400] noundef,
+// +         ptr #9 byval i8[400] noundef,
+// +         ptr #10 byval i8[400] noundef,
+// +         i32 %1 noundef)
 // +     copy #12 <- #0, 400
 // +     copy #13 <- #0, 400
 // +     copy #14 <- #0, 400
 // +     copy #15 <- #0, 400
 // +     copy #16 <- #0, 400
 // +     copy #17 <- #0, 400
-// +     store #18, i32 42, align 4
-// +     %1 = load i32, #18, align 4
-// +     call ccc void big2(
-// +         ptr #10 byval i8[400] noundef,
-// +         ptr #11 byval i8[400] noundef,
+// +     copy #18 <- #0, 400
+// +     copy #19 <- #0, 400
+// +     store #20, i32 42, align 4
+// +     %2 = load i32, #20, align 4
+// +     call ccc void big3(
 // +         ptr #12 byval i8[400] noundef,
 // +         ptr #13 byval i8[400] noundef,
 // +         ptr #14 byval i8[400] noundef,
 // +         ptr #15 byval i8[400] noundef,
 // +         ptr #16 byval i8[400] noundef,
 // +         ptr #17 byval i8[400] noundef,
-// +         i32 %1 noundef)
-// +     copy #19 <- #0, 400
-// +     copy #20 <- #0, 400
-// +     copy #21 <- #0, 400
-// +     copy #22 <- #0, 400
-// +     copy #23 <- #0, 400
-// +     copy #24 <- #0, 400
-// +     copy #25 <- #0, 400
-// +     copy #26 <- #0, 400
-// +     store #27, i32 42, align 4
-// +     %2 = load i32, #27, align 4
-// +     call ccc void big3(
+// +         ptr #18 byval i8[400] noundef,
 // +         ptr #19 byval i8[400] noundef,
-// +         ptr #20 byval i8[400] noundef,
-// +         ptr #21 byval i8[400] noundef,
-// +         ptr #22 byval i8[400] noundef,
-// +         ptr #23 byval i8[400] noundef,
-// +         ptr #24 byval i8[400] noundef,
-// +         ptr #25 byval i8[400] noundef,
-// +         ptr #26 byval i8[400] noundef,
 // +         i32 %2 noundef)
-// +     copy #28 <- #0, 400
-// +     store #29, i32 42, align 4
-// +     %3 = load i32, #29, align 4
+// +     copy #21 <- #0, 400
+// +     store #22, i32 42, align 4
+// +     %3 = load i32, #22, align 4
 // +     call ccc void big4(
 // +         ptr #0 align 8 dereferenceable 400,
 // +         ptr #0 align 8 dereferenceable 400,
@@ -1374,12 +1360,12 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 400,
 // +         ptr #0 align 8 dereferenceable 400,
 // +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #28 byval i8[400] noundef,
+// +         ptr #21 byval i8[400] noundef,
 // +         ptr #0 align 8 dereferenceable 400,
 // +         i32 %3 noundef)
-// +     copy #30 <- #0, 400
-// +     store #31, i32 42, align 4
-// +     %4 = load i32, #31, align 4
+// +     copy #23 <- #0, 400
+// +     store #24, i32 42, align 4
+// +     %4 = load i32, #24, align 4
 // +     call ccc void big5(
 // +         ptr #0 align 8 dereferenceable 400 out,
 // +         ptr #0 align 8 dereferenceable 400 out,
@@ -1387,7 +1373,7 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 400 out,
 // +         ptr #0 align 8 dereferenceable 400 out,
 // +         ptr #0 align 8 dereferenceable 400 out,
-// +         ptr #30 byval i8[400] noundef,
+// +         ptr #23 byval i8[400] noundef,
 // +         ptr #0 align 8 dereferenceable 400 out,
 // +         i32 %4 noundef)
 // +     ret
@@ -2558,78 +2544,64 @@ proc closure_return = slice_return;
 //L + define private void @_S10big_structFvE.7() #1 {
 //L +   %1 = alloca i8, i64 400, align 8
 //L +   %2 = alloca i8, i64 400, align 8
-//L +   %3 = alloca i8, i64 400, align 8
+//L +   %3 = alloca i8, i64 4, align 4
 //L +   %4 = alloca i8, i64 400, align 8
 //L +   %5 = alloca i8, i64 400, align 8
 //L +   %6 = alloca i8, i64 400, align 8
 //L +   %7 = alloca i8, i64 400, align 8
 //L +   %8 = alloca i8, i64 400, align 8
 //L +   %9 = alloca i8, i64 400, align 8
-//L +   %10 = alloca i8, i64 4, align 4
+//L +   %10 = alloca i8, i64 400, align 8
 //L +   %11 = alloca i8, i64 400, align 8
-//L +   %12 = alloca i8, i64 400, align 8
+//L +   %12 = alloca i8, i64 4, align 4
 //L +   %13 = alloca i8, i64 400, align 8
 //L +   %14 = alloca i8, i64 400, align 8
 //L +   %15 = alloca i8, i64 400, align 8
 //L +   %16 = alloca i8, i64 400, align 8
 //L +   %17 = alloca i8, i64 400, align 8
 //L +   %18 = alloca i8, i64 400, align 8
-//L +   %19 = alloca i8, i64 4, align 4
+//L +   %19 = alloca i8, i64 400, align 8
 //L +   %20 = alloca i8, i64 400, align 8
-//L +   %21 = alloca i8, i64 400, align 8
+//L +   %21 = alloca i8, i64 4, align 4
 //L +   %22 = alloca i8, i64 400, align 8
-//L +   %23 = alloca i8, i64 400, align 8
+//L +   %23 = alloca i8, i64 4, align 4
 //L +   %24 = alloca i8, i64 400, align 8
-//L +   %25 = alloca i8, i64 400, align 8
-//L +   %26 = alloca i8, i64 400, align 8
-//L +   %27 = alloca i8, i64 400, align 8
-//L +   %28 = alloca i8, i64 4, align 4
-//L +   %29 = alloca i8, i64 400, align 8
-//L +   %30 = alloca i8, i64 4, align 4
-//L +   %31 = alloca i8, i64 400, align 8
-//L +   %32 = alloca i8, i64 4, align 4
+//L +   %25 = alloca i8, i64 4, align 4
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %2, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %3, ptr %1, i64 400, i1 false)
+//L +   store i32 42, ptr %3, align 4
+//L +   %26 = load i32, ptr %3, align 4
+//L +   call void @big1(ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr noundef byval([400 x i8]) %2, ptr align 8 dereferenceable(400) %1, i32 noundef %26)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %6, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %7, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %8, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %9, ptr %1, i64 400, i1 false)
-//L +   store i32 42, ptr %10, align 4
-//L +   %33 = load i32, ptr %10, align 4
-//L +   call void @big1(ptr align 8 dereferenceable(400) %2, ptr align 8 dereferenceable(400) %3, ptr align 8 dereferenceable(400) %4, ptr align 8 dereferenceable(400) %5, ptr align 8 dereferenceable(400) %6, ptr align 8 dereferenceable(400) %7, ptr noundef byval([400 x i8]) %8, ptr align 8 dereferenceable(400) %9, i32 noundef %33)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %10, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %11, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %12, ptr %1, i64 400, i1 false)
+//L +   store i32 42, ptr %12, align 4
+//L +   %27 = load i32, ptr %12, align 4
+//L +   call void @big2(ptr noundef byval([400 x i8]) %4, ptr noundef byval([400 x i8]) %5, ptr noundef byval([400 x i8]) %6, ptr noundef byval([400 x i8]) %7, ptr noundef byval([400 x i8]) %8, ptr noundef byval([400 x i8]) %9, ptr noundef byval([400 x i8]) %10, ptr noundef byval([400 x i8]) %11, i32 noundef %27)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %13, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %14, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %15, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %16, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %17, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %18, ptr %1, i64 400, i1 false)
-//L +   store i32 42, ptr %19, align 4
-//L +   %34 = load i32, ptr %19, align 4
-//L +   call void @big2(ptr noundef byval([400 x i8]) %11, ptr noundef byval([400 x i8]) %12, ptr noundef byval([400 x i8]) %13, ptr noundef byval([400 x i8]) %14, ptr noundef byval([400 x i8]) %15, ptr noundef byval([400 x i8]) %16, ptr noundef byval([400 x i8]) %17, ptr noundef byval([400 x i8]) %18, i32 noundef %34)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %19, ptr %1, i64 400, i1 false)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %20, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %21, ptr %1, i64 400, i1 false)
+//L +   store i32 42, ptr %21, align 4
+//L +   %28 = load i32, ptr %21, align 4
+//L +   call void @big3(ptr noundef byval([400 x i8]) %13, ptr noundef byval([400 x i8]) %14, ptr noundef byval([400 x i8]) %15, ptr noundef byval([400 x i8]) %16, ptr noundef byval([400 x i8]) %17, ptr noundef byval([400 x i8]) %18, ptr noundef byval([400 x i8]) %19, ptr noundef byval([400 x i8]) %20, i32 noundef %28)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %22, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %23, ptr %1, i64 400, i1 false)
+//L +   store i32 42, ptr %23, align 4
+//L +   %29 = load i32, ptr %23, align 4
+//L +   call void @big4(ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr noundef byval([400 x i8]) %22, ptr align 8 dereferenceable(400) %1, i32 noundef %29)
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr %24, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %25, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %26, ptr %1, i64 400, i1 false)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %27, ptr %1, i64 400, i1 false)
-//L +   store i32 42, ptr %28, align 4
-//L +   %35 = load i32, ptr %28, align 4
-//L +   call void @big3(ptr noundef byval([400 x i8]) %20, ptr noundef byval([400 x i8]) %21, ptr noundef byval([400 x i8]) %22, ptr noundef byval([400 x i8]) %23, ptr noundef byval([400 x i8]) %24, ptr noundef byval([400 x i8]) %25, ptr noundef byval([400 x i8]) %26, ptr noundef byval([400 x i8]) %27, i32 noundef %35)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %29, ptr %1, i64 400, i1 false)
-//L +   store i32 42, ptr %30, align 4
-//L +   %36 = load i32, ptr %30, align 4
-//L +   call void @big4(ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr noundef byval([400 x i8]) %29, ptr align 8 dereferenceable(400) %1, i32 noundef %36)
-//L +   call void @llvm.memcpy.p0.p0.i64(ptr %31, ptr %1, i64 400, i1 false)
-//L +   store i32 42, ptr %32, align 4
-//L +   %37 = load i32, ptr %32, align 4
-//L +   call void @big5(ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr noundef byval([400 x i8]) %31, ptr align 8 dereferenceable(400) %1, i32 noundef %37)
+//L +   store i32 42, ptr %25, align 4
+//L +   %30 = load i32, ptr %25, align 4
+//L +   call void @big5(ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr align 8 dereferenceable(400) %1, ptr noundef byval([400 x i8]) %24, ptr align 8 dereferenceable(400) %1, i32 noundef %30)
 //L +   ret void
 //L + }
 //L +

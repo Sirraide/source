@@ -54,8 +54,8 @@ optional();
 // +     store %0, i64 3, align 8
 // +     %1 = ptradd %0, 8
 // +     store %1, i64 4, align 8
-// +     delete #1 using $T3Big.delete
-// +     delete #0 using $T5Small.delete
+// +     delete #1 using $T3Big.delete implicit
+// +     delete #0 using $T5Small.delete implicit
 // +     ret
 // + }
 // +
@@ -91,7 +91,7 @@ optional();
 // +
 // + bb1(ptr %11):
 // +     %12 = retain %11
-// +     delete %12 using $T3Big.delete
+// +     delete %12 using $T3Big.delete implicit
 // +     %13 = cmp eq ptr %11, #1
 // +     br %13 to bb3 else bb2
 // +
@@ -105,7 +105,7 @@ optional();
 // +
 // + bb4(ptr %16):
 // +     %17 = retain %16
-// +     delete %17 using $T5Small.delete
+// +     delete %17 using $T5Small.delete implicit
 // +     %18 = cmp eq ptr %16, #0
 // +     br %18 to bb6 else bb5
 // +
@@ -145,7 +145,7 @@ optional();
 // +
 // + bb1:
 // +     engage #3
-// +     delete #3 using $T3Big.delete
+// +     delete #3 using $T3Big.delete implicit
 // +     br bb2
 // +
 // + bb2:
@@ -156,7 +156,7 @@ optional();
 // +
 // + bb3:
 // +     engage #2
-// +     delete #2 using $T5Small.delete
+// +     delete #2 using $T5Small.delete implicit
 // +     br bb4
 // +
 // + bb4:
@@ -167,7 +167,7 @@ optional();
 // +
 // + bb5:
 // +     engage #1
-// +     delete #1 using $T3Big.delete
+// +     delete #1 using $T3Big.delete implicit
 // +     br bb6
 // +
 // + bb6:
@@ -178,7 +178,7 @@ optional();
 // +
 // + bb7:
 // +     engage #0
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using $T5Small.delete implicit
 // +     br bb8
 // +
 // + bb8:

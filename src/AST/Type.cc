@@ -113,6 +113,36 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
     });
 } // clang-format on
 
+bool TypeBase::pass_by_reference(const Target& t, Intent i) const {
+    // Zero-sized types are passed by value.
+    if (memory_size(t) == Size()) return false;
+
+    // Large or non-trivially copyable 'in' parameters are references.
+    if (i == Intent::In) {
+        if (not trivially_copyable()) return true;
+        return t.abi().pass_in_parameter_by_reference(this);
+    }
+
+    // 'inout' and 'out' parameters are always references.
+    if (i == Intent::Inout or i == Intent::Out) return true;
+
+    // Move parameters are references only if the type is not trivial
+    // (because 'move' is equivalent to 'copy' otherwise); that is, for
+    // trivially-copyable types, any modification of the ‘moved’ value
+    // must not be reflected in the caller.
+    //
+    // Specifically, moving for these types is *logically* a copy, that
+    // is the ‘moved’ value is not actually considered ‘moved’, and the
+    // caller may continue accessing it.
+    if (i == Intent::Move) return not trivially_copyable();
+
+    // Copy parameters are always passed by value; whether this is
+    // accomplished by making a copy in the caller and passing a
+    // pointer or whether they are passed in registers is up to the
+    // target ABI and handled in a separate lowering pass.
+    return false;
+}
+
 auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
     return array_size(tu.target());
 }

@@ -121,14 +121,18 @@ static void PropagateArgAndResultAttrs(auto func_or_call, auto op) {
     // such as the one used to tag out parameters.
     if (op.getArgAttrsAttr()) {
         if (llvm::any_of(op.getArgAttrsAttr(), [](auto a) {
-            return cast<mlir::DictionaryAttr>(a).contains(ir::OutParamAttrName);
+            auto d = cast<mlir::DictionaryAttr>(a);
+            return d.contains(ir::OutParamAttrName) or d.contains(ir::MoveParamAttrName);
         })) {
             SmallVector<mlir::Attribute> copy;
             for (auto a : op.getArgAttrsAttr()) {
                 auto d = cast<mlir::DictionaryAttr>(a);
-                if (d.contains(ir::OutParamAttrName)) {
+                if (d.contains(ir::OutParamAttrName) or d.contains(ir::MoveParamAttrName)) {
                     SmallVector<mlir::NamedAttribute> named{d.begin(), d.end()};
-                    llvm::erase_if(named, [&](auto a) { return a.getName().getValue() == ir::OutParamAttrName; });
+                    llvm::erase_if(named, [&](auto a) {
+                        auto name = a.getName().getValue();
+                        return name == ir::OutParamAttrName or name == ir::MoveParamAttrName;
+                    });
                     copy.push_back(mlir::DictionaryAttr::get(op->getContext(), named));
                 } else {
                     copy.push_back(d);
@@ -227,6 +231,17 @@ LOWERING(CallOp, {
     }
 
     return op.getNumResults() == 0 ? SmallVector<mlir::Value>() : SmallVector{call.getResult()};
+});
+
+LOWERING(CopyOp, {
+    return LLVM::MemcpyOp::create(
+        r,
+        op->getLoc(),
+        a.getDest(),
+        a.getSrc(),
+        a.getBytes(),
+        false
+    );
 });
 
 struct DeleteOpLowering final : mlir ::OpConversionPattern<ir ::DeleteOp> {
@@ -443,18 +458,19 @@ void LoweringPass::runOnOperation() {
 
     patterns.add< // clang-format off
         AbortOpLowering,
+        CallOpLowering,
+        CopyOpLowering,
         DeleteOpLowering,
         DisengageOpLowering,
-        EngageOpLowering,
         EngageCopyOpLowering,
-        CallOpLowering,
+        EngageOpLowering,
         LoadOpLowering,
         MoveOpLowering,
         NilOpLowering,
         ProcOpLowering,
         ProcRefOpLowering,
-        RetOpLowering,
         RetainOpLowering,
+        RetOpLowering,
         SAddOvOpLowering,
         SMulOvOpLowering,
         SSubOvOpLowering,

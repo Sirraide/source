@@ -2025,25 +2025,58 @@ static void ConvertArgumentsForCall(
     );
 }
 
-bool Sema::CheckIntents(ProcType* ty, ArrayRef<Expr*> args) {
+bool Sema::CheckIntents(ProcType* ty, MutableArrayRef<Expr*> args) {
     bool ok = true;
     for (auto [p, a] : zip(ty->params(), args)) {
         if (
-            (p.intent == Intent::Inout or p.intent == Intent::Out) and
+            p.type->pass_by_reference(tu->target(), p.intent) and
             (not isa<CastExpr>(a) or cast<CastExpr>(a)->kind != CastExpr::MaterialisePoisonValue) and
-            not a->is_lvalue()
+            not a->is_mutable_lvalue()
         ) {
+            // We want to make sure that 'inout' and 'out' parameters always use the original
+            // object since writes to it must update that object; for other intents, we can
+            // just materialise it.
+            //
+            // The exception is that we cannot move immutable lvalues.
+            if (
+                p.intent != Intent::Inout and
+                p.intent != Intent::Out and
+                (a->is_rvalue() or p.intent != Intent::Move)
+            ) {
+                a = MaterialiseTemporary(a);
+                continue;
+            }
+
+            // If this is itself a parameter, issue a better error.
             ok = false;
             if (auto dre = dyn_cast_if_present<LocalRefExpr>(a); dre and isa<ParamDecl>(dre->decl)) {
-                // If this is itself a parameter, issue a better error.
-                Error(
-                    a->location(),
-                    "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
-                    cast<ParamDecl>(dre->decl)->intent(),
-                    p.intent
-                );
-                Note(dre->decl->location(), "Parameter declared here");
-            } else {
+                auto a_param = cast<ParamDecl>(dre->decl);
+                if (p.intent == Intent::Move) {
+                    Error(
+                        a->location(),
+                        "Cannot move %1({}%) parameter",
+                        a_param->intent()
+                    );
+                } else {
+                    Error(
+                        a->location(),
+                        "Cannot pass parameter of intent %1({}%) to a parameter with intent %1({}%)",
+                        a_param->intent(),
+                        p.intent
+                    );
+                }
+
+                Note(a_param->location(), "Parameter declared here");
+            }
+
+            // Better error for moving an immovable value.
+            else if (a->is_immutable_lvalue()) {
+                if (p.intent == Intent::Move) Error(a->location(), "Cannot move immutable value");
+                else Error(a->location(), "Cannot pass immutable value to an %1({}%) parameter.", p.intent);
+            }
+
+            // Generic error; this could probably be improved a bit.
+            else {
                 Error(a->location(), "Cannot bind this expression to an %1({}%) parameter.", p.intent);
                 Remark("Try storing this in a variable first.");
             }
@@ -2274,7 +2307,7 @@ auto Sema::PerformOverloadResolution(
                 p.type,
                 args,
                 loc,
-                p.intent == Intent::Out or p.intent == Intent::Inout,
+                p.type->pass_by_reference(tu->target(), p.intent),
                 is_associated_call and param_index == 0
             );
 
@@ -3593,7 +3626,7 @@ auto Sema::BuildCallExpr(
                 p.type,
                 args,
                 loc,
-                p.intent == Intent::Out or p.intent == Intent::Inout,
+                p.type->pass_by_reference(tu->target(), p.intent),
                 is_associated_call and param_index == 0
             );
 

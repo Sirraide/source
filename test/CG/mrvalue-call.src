@@ -264,7 +264,6 @@ proc mrvalue_large {
 // +     #3 = 800, align 8
 // +     #4 = 800, align 8
 // +     #5 = 800, align 8
-// +     #6 = 800, align 8
 // +
 // + entry:
 // +     set ptr #0, i8 0, i64 800
@@ -274,12 +273,11 @@ proc mrvalue_large {
 // +     call ccc void _S6p_copyFvx3T5largeE.4(ptr #2 byval i8[800] noundef)
 // +     set ptr #3, i8 0, i64 800
 // +     call ccc void _S6p_moveFvT5largeE.5(ptr #3 byval i8[800] noundef)
+// +     call ccc void _S4p_inFvxT5largeE.1(ptr #0 align 8 dereferenceable 800)
 // +     copy #4 <- #0, 800
-// +     call ccc void _S4p_inFvxT5largeE.1(ptr #4 align 8 dereferenceable 800)
+// +     call ccc void _S6p_copyFvx3T5largeE.4(ptr #4 byval i8[800] noundef)
 // +     copy #5 <- #0, 800
-// +     call ccc void _S6p_copyFvx3T5largeE.4(ptr #5 byval i8[800] noundef)
-// +     copy #6 <- #0, 800
-// +     call ccc void _S6p_moveFvT5largeE.5(ptr #6 byval i8[800] noundef)
+// +     call ccc void _S6p_moveFvT5largeE.5(ptr #5 byval i8[800] noundef)
 // +     call ccc void _S7p_inoutFvx2T5largeE.3(ptr #0 align 8 dereferenceable 800)
 // +     call ccc void _S5p_outFvx1T5largeE.2(ptr #0 align 8 dereferenceable 800 out)
 // +     ret

@@ -211,6 +211,8 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
         out += " %1(readonly%)";
     } else if (attr.getName() == ir::OutParamAttrName.sv()) {
         out += " %1(out%)";
+    } else if (attr.getName() == ir::MoveParamAttrName.sv()) {
+        out += " %1(move%)";
     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
         Format(out, " %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {
@@ -375,13 +377,13 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto m = dyn_cast<LLVM::MemcpyOp>(op)) {
+    if (auto m = dyn_cast<ir::CopyOp>(op)) {
         Format(out,
-            "copy{} {} <- {}, {}",
-            m.getIsVolatile() ? " volatile" : "",
-            val(m.getDst(), false),
+            "{} {} <- {}, {}",
+            m.getMove() ? "move" : "copy",
+            val(m.getDest(), false),
             val(m.getSrc(), false),
-            val(m.getLen(), false)
+            val(m.getBytes(), false)
         );
         return;
     }
@@ -540,6 +542,9 @@ void CodeGen::Printer::print_op(Operation* op) {
 
         if (d.getDeleteFlag())
             Format(out, " if {}", val(d.getDeleteFlag(), false));
+
+        if (d.getImplicit())
+            out += " implicit";
 
         return;
     }

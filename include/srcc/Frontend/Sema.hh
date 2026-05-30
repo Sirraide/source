@@ -916,8 +916,9 @@ private:
     /// Check that a type is valid for a record field.
     [[nodiscard]] bool CheckFieldType(Type ty, SLoc loc);
 
-    /// Check additional constraints on a call that need to happen after overload resolution.
-    bool CheckIntents(ProcType* ty, ArrayRef<Expr*> args);
+    /// Check additional constraints and apply additional processing to call arguments
+    /// based on the corresponding parameter intents.
+    bool CheckIntents(ProcType* ty, MutableArrayRef<Expr*> args);
 
     /// Check that a collection of patterns is exhaustive, and return 'true' if so.
     bool CheckMatchExhaustive(

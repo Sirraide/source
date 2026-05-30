@@ -392,7 +392,7 @@ auto CodeGen::CreateLoad(
     );
 }
 
-void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
+void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty, bool is_move) {
     // For integer types and pointers, emit a load-store pair.
     if (ty->is_integer_or_bool() or isa<EnumType>(ty) or isa<PtrType>(ty)) {
         auto a = ty->align(tu);
@@ -402,13 +402,13 @@ void CodeGen::CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty) {
     }
 
     // For everything else, emit a memcpy.
-    LLVM::MemcpyOp::create(
+    ir::CopyOp::create(
         *this,
         loc,
         to,
         from,
         CreateInt(loc, i64(ty->memory_size(tu).bytes())),
-        false
+        is_move
     );
 }
 
@@ -799,38 +799,6 @@ auto CodeGen::EmitToMemory(mlir::Location l, Expr* init) -> Value {
     return temp;
 }
 
-bool CodeGen::PassByReference(Type ty, Intent i) {
-    Assert(not IsZeroSizedType(ty));
-
-    // 'inout' and 'out' parameters are always references.
-    if (i == Intent::Inout or i == Intent::Out) return true;
-
-    // Large or non-trivially copyable 'in' parameters are references.
-    if (i == Intent::In) {
-        if (not ty->trivially_copyable()) return true;
-        return abi().pass_in_parameter_by_reference(*this, ty);
-    }
-
-    // Move parameters are references only if the type is not trivial
-    // (because 'move' is equivalent to 'copy' otherwise); that is, for
-    // trivially-copyable types, any modification of the ‘moved’ value
-    // must not be reflected in the caller.
-    //
-    // Specifically, moving for these types is *logically* a copy, that
-    // is the ‘moved’ value is not actually considered ‘moved’, and the
-    // caller may continue accessing it.
-    if (i == Intent::Move) {
-        if (not ty->trivially_copyable()) return true;
-        return false;
-    }
-
-    // Copy parameters are always passed by value; whether this is
-    // accomplished by making a copy in the caller and passing a
-    // pointer or whether they are passed in registers is up to the
-    // target ABI and handled in a separate lowering pass.
-    return false;
-}
-
 auto CodeGen::TryConvertToMLIRType(Type ty) -> std::optional<mlir::Type> {
     Assert(not IsZeroSizedType(ty));
 
@@ -1201,7 +1169,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
             auto loc = C(e->location());
             if (e->kind == CastExpr::CastKind::LValueToRValue) {
                 auto init_addr = EmitScalar(e->arg);
-                CreateMemCpy(loc, addr, init_addr, e->type);
+                CreateMemCpy(loc, addr, init_addr, e->type, e->type->requires_deletion());
                 VariableInitialised(addr, init, init_addr);
                 return;
             }
@@ -1888,13 +1856,12 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
             auto to = EmitScalar(expr->args()[0]);
             auto from = EmitScalar(expr->args()[1]);
             auto size = EmitScalar(expr->args()[2]);
-            LLVM::MemcpyOp::create(
+            ir::CopyOp::create(
                 *this,
                 loc,
                 to,
                 from,
-                size,
-                false
+                size
             );
             return {};
         }

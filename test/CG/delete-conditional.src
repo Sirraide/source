@@ -116,7 +116,7 @@ proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using $T5Small.delete if #0
+// +     delete #2 using $T5Small.delete if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
@@ -142,7 +142,7 @@ proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using $T5Small.delete if #0
+// +     delete #2 using $T5Small.delete if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
@@ -165,14 +165,14 @@ proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using $T5Small.delete implicit
 // +     store #0, i64 33, align 8
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using $T5Small.delete implicit
 // +     ret
 // + }
 // +
 // + proc _S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7 (
-// +     ptr %0 align 8 dereferenceable 8,
+// +     ptr %0 align 8 dereferenceable 8 move,
 // +     i64 %1 noundef,
 // +     ptr %2 align 8 dereferenceable 8,
 // +     ptr %3 align 8 dereferenceable 8 out,
@@ -183,8 +183,8 @@ proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
 // + entry:
 // +     store #0, i64 %1, align 8
 // +     store %3, i64 1, align 8
-// +     delete #0 using $T5Small.delete
-// +     delete %0 using $T5Small.delete
+// +     delete #0 using $T5Small.delete implicit
+// +     delete %0 using $T5Small.delete implicit
 // +     ret
 // + }
 

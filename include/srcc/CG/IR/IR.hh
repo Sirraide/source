@@ -62,6 +62,10 @@ SRCC_ENUMS_EXPOSED_TO_MLIR(COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE);
 /// parameter is undefined upon entry to a procedure; this is used
 /// for out parameters.
 constexpr String OutParamAttrName = "srcc.out_param";
+
+/// Attribute that indicates that a parameter or argument is a move
+/// parameter. In particular, this marks a procedure argument as moved.
+constexpr String MoveParamAttrName = "srcc.move";
 }
 }
 

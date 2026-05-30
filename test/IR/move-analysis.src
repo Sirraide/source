@@ -6,6 +6,8 @@ struct Small {
     delete { }
 };
 
+proc sink(Small) extern;
+
 proc f1 {
     var s = Small(42);
     delete s;
@@ -75,4 +77,22 @@ proc e6() {
 
 proc e7 (out Small s1) { // expected-error: 'out' parameter is not written to on all control paths
     var s = s1; // expected-error: 'out' parameter must be written to before it can be used
+}
+
+proc e8 {
+    var s1 = Small(42);
+    var s2 = s1; // expected-note: Moved here
+    var s3 = s1; // expected-error: Use of moved value
+}
+
+proc e9 (bool b) {
+    var s1 = Small(42);
+    if b { var s2 = s1; } // expected-note: Moved here
+    var s3 = s1; // expected-error: Use of moved value
+}
+
+proc e10 {
+    var s1 = Small(42);
+    sink(s1); // expected-note: Moved here
+    var s3 = s1; // expected-error: Use of moved value
 }

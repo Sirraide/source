@@ -132,6 +132,7 @@ private:
     Options opts;
     SmallVector<fs::Path> files;
     Context ctx;
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> driver_diags;
     bool compiled = false;
 
 public:
@@ -156,12 +157,12 @@ public:
 
 private:
     friend DiagsProducer;
-    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
-    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
+    void AddDiagRemark(std::string&& s) { driver_diags->add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { driver_diags->report(std::move(d)); }
 
     template <typename... Args>
     void Diag(Diagnostic::Level level, SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(level, loc, fmt, std::forward<Args>(args)...);
+        driver_diags->diag(level, loc, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>

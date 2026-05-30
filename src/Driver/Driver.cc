@@ -31,7 +31,8 @@ auto Driver::PrepareJob() -> int {
     ctx._initialise_context_(opts.module_output_path, opts.opt_level);
 
     // Always create a regular diags engine first for driver diags.
-    ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
+    driver_diags = StreamingDiagnosticsEngine::Create(ctx, opts.error_limit);
+    ctx.set_diags(driver_diags);
 
     // Print pending diagnostics on exit.
     defer { ctx.diags().flush(); };
@@ -144,7 +145,10 @@ int Driver::run_job() {
         "Call dump_module() instead of run_job() to dump a module"
     );
 
-    // Replace driver diags with the actual diags engine.
+    defer { driver_diags->flush(); };
+    defer { ctx.diags().flush(); };
+
+    // Replace context diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
 
     // Run the verifier.
@@ -152,6 +156,20 @@ int Driver::run_job() {
         ctx.diags().flush();
         auto& engine = static_cast<VerifyDiagnosticsEngine&>(ctx.diags());
         return engine.verify() ? 0 : 1;
+    };
+
+    // Check if we failed.
+    const auto CanContinue = [&] (StringRef phase) {
+        if (not ctx.diags().has_error()) return true;
+
+        // If we're in verify mode, report that we couldn't get to the step
+        // we want to verify due to a prior error.
+        if (opts.verify) Error(
+            "Could not run '--verify' as compilation failed during {}",
+            phase
+        );
+
+        return false;
     };
 
     // We only allow one file if we’re only lexing.
@@ -200,7 +218,7 @@ int Driver::run_job() {
     }
 
     // Stop if there was an error.
-    if (ctx.diags().has_error()) return 1;
+    if (not CanContinue("parsing")) return 1;
 
     // Combine parsed modules that belong to the same module.
     // TODO: topological sort, group, and schedule.
@@ -227,7 +245,7 @@ int Driver::run_job() {
     // Run the constant evaluator.
     if (a == Action::Eval or a == Action::EvalDumpIR) {
         // TODO: Static initialisation.
-        if (ctx.diags().has_error()) return 1;
+        if (not CanContinue("sema")) return 1;
         auto res = tu->vm.eval(nullptr, tu->file_scope_block, true, a == Action::EvalDumpIR, true);
         return res.has_value() ? 0 : 1;
     }
@@ -241,10 +259,7 @@ int Driver::run_job() {
     auto machine = tu->target().create_machine(opts.opt_level);
 
     // Don’t try and codegen if there was an error.
-    if (ctx.diags().has_error()) {
-        if (opts.verify) ICE(SLoc(), "Could not run verifier on codegen due to Sema error");
-        return 1;
-    }
+    if (not CanContinue("sema")) return 1;
 
     // Run codegen.
     cg::CodeGen cg{*tu, tu->lang_opts()};
@@ -255,19 +270,12 @@ int Driver::run_job() {
     }
 
     // Don’t run the finaliser if codegen failed.
-    if (ctx.diags().has_error()) {
-        if (opts.verify) {
-            ctx.set_diags(StreamingDiagnosticsEngine::Create(ctx, opts.error_limit));
-            ICE(SLoc(), "Could not run --verify on finalised IR due to codegen error");
-            Note(SLoc(), "Pass --cg if you want to test unfinalised IR");
-        }
-        return 1;
-    }
+    if (not CanContinue("codegen")) return 1;
 
     // Run finalisation.
     bool finalise_ok = opts.ir_no_finalise or cg.finalise(not opts.ir_no_verify);
     if (opts.verify) return Verify();
-    if (ctx.diags().has_error()) return 1;
+    if (not CanContinue("IR finalisation")) return 1;
 
     // Dump exports.
     if (a == Action::DumpExports) {
@@ -289,7 +297,7 @@ int Driver::run_job() {
 
     // Run LLVM lowering.
     auto ir_module = cg.emit_llvm(*machine);
-    if (ctx.diags().has_error()) return 1;
+    if (not CanContinue("LLVM lowering")) return 1;
 
     // Always run the optimiser before potentially dumping the module.
     //

@@ -900,11 +900,11 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto m = dyn_cast<LLVM::MemcpyOp>(i)) {
-            auto dest = GetHostMemoryPointer(m.getDst());
+        if (auto m = dyn_cast<ir::CopyOp>(i)) {
+            auto dest = GetHostMemoryPointer(m.getDest());
             auto src = GetHostMemoryPointer(m.getSrc());
             if (not dest or not src) return false;
-            auto bytes = Val(m.getLen()).cast<APInt>().getZExtValue();
+            auto bytes = Val(m.getBytes()).cast<APInt>().getZExtValue();
             std::memcpy(dest, src, bytes);
             continue;
         }

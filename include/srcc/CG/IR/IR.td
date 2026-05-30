@@ -315,6 +315,17 @@ def CallOp : SRCC_Op<"call", [ProcAndCallOpInterface]> {
     }];
 }
 
+// We don't use LLVM MemCpy because we need extra flags.
+def CopyOp : SRCC_Op<"copy"> {
+    let summary = "Copy memory";
+    let arguments = (ins
+        SRCC_Ptr:$dest,
+        SRCC_Ptr:$src,
+        Builtin_Integer:$bytes,
+        UnitAttr:$move
+    );
+}
+
 def DeleteOp : SRCC_Op<"delete"> {
     let summary = "Call a destructor";
     let arguments = (
