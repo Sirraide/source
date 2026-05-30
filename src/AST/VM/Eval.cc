@@ -153,22 +153,22 @@ namespace {
 /// \see VirtualMemoryMap
 class Pointer {
     friend VirtualMemoryMap; // Only this is allowed to construct and unwrap pointers.
-    uptr value{};
-    Pointer(uptr v) : value{v} {}
+    iptr value{};
+    Pointer(iptr v) : value{v} {}
 
 public:
     Pointer() = default;
 
     /// Align this pointer.
     [[nodiscard]] auto align(Align a) const -> Pointer {
-        return Pointer(uptr(Size::Bytes(value).align(a).bytes()));
+        return Pointer(iptr(Size::Bytes(value).align(a).bytes()));
     }
 
     /// Check if this is the null pointer.
     [[nodiscard]] bool is_null() const { return value == 0; }
 
     /// Offset this pointer.
-    [[nodiscard]] auto offset(Size sz) const { return Pointer(value + sz.bytes()); }
+    [[nodiscard]] auto offset(ByteOffset sz) const { return Pointer(value + sz.bytes()); }
 
     /// Get a string representation of this pointer.
     [[nodiscard]] auto str() const -> SmallString<64> {
@@ -176,7 +176,7 @@ public:
     }
 
     /// Get the raw value suitable for storing to memory.
-    [[nodiscard]] auto raw_value() const -> uptr { return value; }
+    [[nodiscard]] auto raw_value() const -> iptr { return value; }
 
     [[nodiscard]] friend bool operator==(Pointer, Pointer) = default;
     [[nodiscard]] static auto Null() -> Pointer { return Pointer(); }
@@ -303,7 +303,7 @@ bool SRValue::operator==(const SRValue& other) const {
 ///
 /// The zero value is used to represent the null pointer for both address spaces.
 class eval::VirtualMemoryMap {
-    static constexpr usz MapSize = 1 << 20;
+    static constexpr isz MapSize = 1 << 20;
     [[maybe_unused]] VM& vm;
     std::unique_ptr<std::byte[]> address_range = std::make_unique<std::byte[]>(MapSize);
     SmallVector<ir::ProcOp> procedures;
@@ -354,7 +354,7 @@ public:
     [[nodiscard]] auto make_string_ptr(String c) -> Pointer;
 
     /// Create a pointer to host memory.
-    [[nodiscard]] auto make_host_pointer(uptr v) -> Pointer;
+    [[nodiscard]] auto make_host_pointer(iptr v) -> Pointer;
 
     /// Add a procedure to the table if it isn't already registered and return a VM
     /// pointer to it.
@@ -364,26 +364,26 @@ public:
     [[nodiscard]] auto stack_size() -> Size { return max_stack_size; }
 
 private:
-    bool IsVirtualProcPtr(uptr p);
+    bool IsVirtualProcPtr(iptr p);
     auto MakeVirtualPointer(ir::ProcOp proc) -> Pointer;
     auto UnwrapVirtualPointer(Pointer ptr) -> ir::ProcOp;
 };
 
-bool VirtualMemoryMap::IsVirtualProcPtr(uptr p) {
-    uptr start = uptr(address_range.get());
-    uptr end = start + MapSize;
+bool VirtualMemoryMap::IsVirtualProcPtr(iptr p) {
+    iptr start = iptr(address_range.get());
+    iptr end = start + MapSize;
     return p >= start and p < end;
 }
 
 auto VirtualMemoryMap::MakeVirtualPointer(ir::ProcOp proc) -> Pointer {
     // Get the index AFTER insertion because it’s 1-based.
     procedures.push_back(proc);
-    return Pointer(uptr(address_range.get() + procedures.size()));
+    return Pointer(iptr(address_range.get() + procedures.size()));
 }
 
 auto VirtualMemoryMap::UnwrapVirtualPointer(Pointer ptr) -> ir::ProcOp {
     Assert(is_virtual_proc_ptr(ptr));
-    auto idx = usz(ptr.value - uptr(address_range.get()) - 1);
+    auto idx = usz(ptr.value - iptr(address_range.get()) - 1);
     if (idx >= procedures.size()) return {};
     return procedures[idx];
 }
@@ -391,8 +391,8 @@ auto VirtualMemoryMap::UnwrapVirtualPointer(Pointer ptr) -> ir::ProcOp {
 auto VirtualMemoryMap::get_known_string_pointer(Pointer p) -> std::optional<String> {
     if (not is_host_pointer(p)) return {};
     for (auto s : string_constants) {
-        auto start = uptr(s.data());
-        auto end = start + uptr(s.size());
+        auto start = iptr(s.data());
+        auto end = start + iptr(s.size());
         if (p.value >= start and p.value < end) return s;
     }
     return {};
@@ -409,7 +409,7 @@ auto VirtualMemoryMap::get_procedure(Pointer p) -> ir::ProcOp {
 }
 
 auto VirtualMemoryMap::get_stack_bottom() -> Pointer {
-    return Pointer(uptr(stack.get()));
+    return Pointer(iptr(stack.get()));
 }
 
 bool VirtualMemoryMap::is_host_pointer(Pointer p) {
@@ -417,18 +417,18 @@ bool VirtualMemoryMap::is_host_pointer(Pointer p) {
 }
 
 bool VirtualMemoryMap::is_stack_pointer(Pointer p) {
-    uptr start = uptr(stack.get());
-    uptr end = start + max_stack_size.bytes();
+    iptr start = iptr(stack.get());
+    iptr end = start + isz(max_stack_size.bytes());
     return p.value >= start and p.value < end;
 }
 
 bool VirtualMemoryMap::is_virtual_proc_ptr(Pointer p) {
-    uptr start = uptr(address_range.get());
-    uptr end = start + MapSize;
+    iptr start = iptr(address_range.get());
+    iptr end = start + MapSize;
     return p.value >= start and p.value < end;
 }
 
-auto VirtualMemoryMap::make_host_pointer(uptr v) -> Pointer {
+auto VirtualMemoryMap::make_host_pointer(iptr v) -> Pointer {
     // It is technically valid for the program to just randomly guess what the
     // reserved memory region is and build a pointer to it; we don’t want to crash
     // or error on that; we *will* error when trying to store to or load from it
@@ -438,14 +438,14 @@ auto VirtualMemoryMap::make_host_pointer(uptr v) -> Pointer {
 
 auto VirtualMemoryMap::make_global_ptr(LLVM::GlobalOp op) -> Pointer {
     auto it = globals.find(op);
-    if (it != globals.end()) return make_host_pointer(uptr(it->getSecond().data()));
+    if (it != globals.end()) return make_host_pointer(iptr(it->getSecond().data()));
     auto dl = mlir::DataLayout::closest(op);
     auto val = vm.allocate_memory_value(
         ir::GetTypeSize(dl, op.getGlobalType()),
         Align(op.getAlignment().value_or(1))
     );
     globals.try_emplace(op, val);
-    return make_host_pointer(uptr(val.data()));
+    return make_host_pointer(iptr(val.data()));
 }
 
 auto VirtualMemoryMap::make_proc_ptr(ir::ProcOp proc) -> Pointer {
@@ -457,7 +457,7 @@ auto VirtualMemoryMap::make_proc_ptr(ir::ProcOp proc) -> Pointer {
 
 auto VirtualMemoryMap::make_string_ptr(String s) -> Pointer {
     string_constants.push_back(s);
-    return make_host_pointer(uptr(s.data()));
+    return make_host_pointer(iptr(s.data()));
 }
 
 // ============================================================================
@@ -753,7 +753,7 @@ bool Eval::EvalLoop() {
             }
 
             SmallVector<SRValue> args;
-            args.emplace_back(vm.memory->make_host_pointer(uptr(&assert_buffer.emplace())));
+            args.emplace_back(vm.memory->make_host_pointer(iptr(&assert_buffer.emplace())));
             args.emplace_back(info->closure.env);
             PushFrame(a.getLoc(), callee, args, {});
             call_stack.back().is_assert_stringifier_frame = true;
@@ -981,7 +981,7 @@ bool Eval::EvalLoop() {
                     auto str = s.pointer.base().get<String>();
                     Assert(s.pointer.offset() == Size());
                     Assert(s.size.getZExtValue() == str.size());
-                    Temp(i->getResult(0)) = SRValue(vm.memory->make_host_pointer(uptr(str.data())));
+                    Temp(i->getResult(0)) = SRValue(vm.memory->make_host_pointer(iptr(str.data())));
                     Temp(i->getResult(1)) = SRValue(i64(str.size()));
                 }
             });
@@ -991,10 +991,10 @@ bool Eval::EvalLoop() {
 
         if (auto gep = dyn_cast<LLVM::GEPOp>(i)) {
             auto idx = gep.getIndices()[0];
-            uptr offs;
-            if (auto lit = dyn_cast<mlir::IntegerAttr>(idx)) offs = lit.getValue().getZExtValue();
-            else offs = Val(cast<Value>(idx)).cast<APInt>().getZExtValue();
-            Temp(gep) = SRValue(Val(gep.getBase()).cast<Pointer>().offset(Size::Bytes(offs)));
+            i64 offs;
+            if (auto lit = dyn_cast<mlir::IntegerAttr>(idx)) offs = lit.getValue().getSExtValue();
+            else offs = Val(cast<Value>(idx)).cast<APInt>().getSExtValue();
+            Temp(gep) = SRValue(Val(gep.getBase()).cast<Pointer>().offset(ByteOffset(offs)));
             continue;
         }
 
@@ -1304,7 +1304,7 @@ auto Eval::GetHostMemoryPointer(Value v) -> void* {
 
 auto Eval::LoadInt(const void* mem, Size width) -> SRValue {
     if (width == Size::Bits(1)) {
-        uptr b{};
+        iptr b{};
         std::memcpy(&b, mem, vm.owner().target().int_size(Size::Bits(1)).bytes());
         return SRValue(b != 0);
     }
@@ -1323,7 +1323,7 @@ auto Eval::LoadInt(const void* mem, Size width) -> SRValue {
 
 auto Eval::LoadPointer(const void* mem) -> SRValue {
     // Note: We currently assert in VM::VM that std::uintptr_t can store a target pointer.
-    uptr p{};
+    iptr p{};
     std::memcpy(&p, mem, vm.owner().target().ptr_size().bytes());
     return SRValue(vm.memory->make_host_pointer(p));
 }
@@ -1364,7 +1364,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
 
         // Strings can just be passed through.
         if (auto s = vm.memory->get_known_string_pointer(ptr)) {
-            auto offs = Size::Bytes(ptr.raw_value() - uptr(s->data()));
+            auto offs = Size::Bytes(ptr.raw_value() - iptr(s->data()));
             return EvaluatedPointer(*s, offs);
         }
 
@@ -1502,7 +1502,7 @@ void Eval::StoreSRValue(void* ptr, const SRValue& val) {
             );
         },
         [&](Pointer p) {
-            uptr v = p.raw_value();
+            iptr v = p.raw_value();
             std::memcpy(ptr, &v, vm.owner().target().ptr_size().bytes());
         },
         [&](Type t) {
@@ -1643,13 +1643,13 @@ void VM::init(const Target& tgt) {
 
     // We currently assume that a host std::uintptr_t can store a target pointer value.
     Assert(
-        tgt.ptr_size() <= Size::Of<uptr>(),
+        tgt.ptr_size() <= Size::Of<iptr>(),
         "Cross-compiling to an architecture whose pointer size is larger is not supported"
     );
 
-    // If 'bool' doesn’t fit in 'uptr', then there’s something seriously wrong with our target.
+    // If 'bool' doesn’t fit in 'iptr', then there’s something seriously wrong with our target.
     Assert(
-        tgt.int_size(Size::Bits(1)) <= Size::Of<uptr>(),
+        tgt.int_size(Size::Bits(1)) <= Size::Of<iptr>(),
         "What kind of unholy abomination is this target???"
     );
 }

@@ -643,27 +643,23 @@ public:
 
 /// Run a deleter.
 class srcc::DeleteExpr final : public Expr {
-    llvm::PointerIntPair<ProcDecl*, 1, bool> deleter_and_implicit;
+    llvm::PointerIntPair<Expr*, 1, bool> val_and_implicit;
 
 public:
-    Expr* val;
-
     DeleteExpr(
         Expr* val,
-        ProcDecl* deleter,
         bool implicit,
         SLoc location
     ) : Expr{Kind::DeleteExpr, Type::VoidTy, RValue, location},
-        deleter_and_implicit{deleter, implicit},
-        val{val} {}
-
-    /// Get the deleter that should be invoked by this.
-    auto deleter() -> ProcDecl* { return deleter_and_implicit.getPointer(); }
+        val_and_implicit{val, implicit} {}
 
     /// Whether this 'delete' is implicit; an implicit 'delete' is dropped
     /// by the compiler if the value is already moved by the time we get to
     /// is.
-    bool implicit() { return deleter_and_implicit.getInt(); }
+    bool implicit() { return val_and_implicit.getInt(); }
+
+    /// Get the value to be deleted.
+    auto val() -> Expr* { return val_and_implicit.getPointer(); }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::DeleteExpr; }
 };
@@ -1356,9 +1352,6 @@ public:
     /// location as an argument.
     Ptr<Expr> init;
 
-    /// Deleter call, if any.
-    Ptr<DeleteExpr> deleter_call;
-
 protected:
     LocalDecl(
         Kind k,
@@ -1747,11 +1740,6 @@ struct AnyVarDecl {
     auto decl() -> Decl* {
         if (auto l = dyn_cast<LocalDecl*>(ptr)) return l;
         else return cast<GlobalDecl*>(ptr);
-    }
-
-    void set_deleter(Ptr<DeleteExpr> expr) {
-        if (auto l = dyn_cast<LocalDecl*>(ptr)) l->deleter_call = expr;
-        else Todo("Add deleter to global variable");
     }
 
     void set_init(Ptr<Expr> expr) {

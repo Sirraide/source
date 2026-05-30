@@ -421,8 +421,8 @@ auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
     return ir::NilOp::create(*this, loc, ptr_ty);
 }
 
-auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value {
-    if (offs == Size()) return addr;
+auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, ByteOffset offs) -> Value {
+    if (offs == ByteOffset()) return addr;
     return createOrFold<LLVM::GEPOp>(
         loc,
         ptr_ty,
@@ -1300,8 +1300,6 @@ void CodeGen::VariableInitialised(Value addr, Expr* init, Value init_from_addr) 
         // Any other form of assignment disengages the optional.
         ir::DisengageOp::create(*this, C(init->location()), addr);
     }
-
-    // Mark an address as moved-from if the type we’re moving has a destructor.
 }
 
 // ============================================================================
@@ -1321,11 +1319,9 @@ void CodeGen::AddCleanup(ProcData::Cleanup cleanup) {
     curr.current_cleanup_scope->cleanups.push_back(std::move(cleanup));
 }
 
-void CodeGen::AddCleanupForDecl(LocalDecl* var) {
-    if (not var->type->requires_deletion()) return;
-    Assert(not IsZeroSizedType(var->type), "TODO: delete zero-sized type");
-    Assert(var->deleter_call.present(), "Deleter must be present since '{}' requires deletion", var->type);
-    AddCleanup([this, var] { EmitDeleteExpr(var->deleter_call.get()); });
+void CodeGen::AddVarCleanup(Value addr, Type ty) {
+    if (not ty->requires_deletion()) return;
+    AddCleanup([this, addr, ty] { EmitDelete(addr.getLoc(), addr, ty, true); });
 }
 
 void CodeGen::EmitCleanups(const ProcData::CleanupScope& target_scope) {
@@ -1537,14 +1533,18 @@ auto CodeGen::EmitBinaryExpr(BinaryExpr* expr) -> IRValue {
 
         // Assignment.
         case Tk::Assign: {
+            auto addr = Emit(expr->lhs);
+
+            // Delete the previous value.
+            if (expr->lhs->type->requires_deletion())
+                EmitDelete(C(expr->location()), addr.scalar(), expr->lhs->type, true);
+
             if (IsZeroSizedType(expr->lhs->type)) {
-                Emit(expr->lhs);
                 Emit(expr->rhs);
                 return {};
             }
 
-            auto addr = EmitScalar(expr->lhs);
-            EmitRValue(addr, expr->rhs);
+            EmitRValue(addr.scalar(), expr->rhs);
             return addr;
         }
 
@@ -2202,11 +2202,84 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
     return EmitDefaultInit(ty, l);
 }
 
+void CodeGen::EmitDelete(mlir::Location loc, Value base_addr, Type ty, bool implicit) {
+    // Unwrap the record type that has the actual deleter.
+    Type base = ty;
+    while (isa<ArrayType, OptionalType>(base))
+        base = cast<SingleElementTypeBase>(base)->elem();
+
+    // Declare it.
+    auto del = DeclareProcedure(cast<RecordType>(base)->deleter().get());
+
+    // Delete a type.
+    auto EmitDeleteImpl = [&](this auto& Self, Value addr, Type ty) -> void {
+        ty->visit(utils::Overloaded{
+            [](auto*) { Unreachable(); },
+            [&](ArrayType* a) {
+                if (a->dimension() == 0) return;
+
+                // We emit a do-while loop here; i.e. delete an element first
+                // and then check if we should break.
+                auto bb_body = CreateBlock(ptr_ty);
+                auto bb_inc = CreateBlock();
+                auto bb_end = CreateBlock();
+                auto body = bb_body.get();
+
+                // Compute the offset of the last element.
+                auto sz = a->elem()->array_size(tu.target());
+                auto last = sz * u64(a->dimension() - 1);
+                auto last_ptr = CreatePtrAdd(loc, addr, last);
+
+                // Emit body.
+                EnterBlock(std::move(bb_body), last_ptr);
+                Self(body->getArgument(0), a->elem());
+
+                // Emit condition.
+                auto done = LLVM::ICmpOp::create(
+                    *this,
+                    loc,
+                    LLVM::ICmpPredicate::eq,
+                    body->getArgument(0),
+                    addr
+                );
+
+                mlir::cf::CondBranchOp::create(
+                    *this,
+                    loc,
+                    done,
+                    bb_end.get(),
+                    bb_inc.get()
+                );
+
+                // Emit increment.
+                EnterBlock(std::move(bb_inc));
+                auto prev = CreatePtrAdd(loc, body->getArgument(0), -ByteOffset(sz));
+                mlir::cf::BranchOp::create(*this, loc, body, prev);
+
+                // Continue after the loop.
+                EnterBlock(std::move(bb_end));
+            },
+            [&](OptionalType* o) {
+                If(loc, EmitOptionalNilTest(loc, addr, o, false), [&]{
+                    Self(addr, o->elem());
+                });
+            },
+            [&](StructType* s) {
+                // If we’re not deleting the base address, retain it to tell the
+                // move analysis pass that this deletion is fine.
+                if (addr != base_addr) addr = ir::RetainOp::create(*this, loc, addr);
+                ir::DeleteOp::create(*this, loc, addr, del, implicit);
+            }
+        });
+    };
+
+    EmitDeleteImpl(base_addr, ty);
+}
+
 auto CodeGen::EmitDeleteExpr(DeleteExpr* del) -> IRValue {
     auto loc = C(del->location());
-    auto addr = EmitScalar(del->val);
-    auto deleter = DeclareProcedure(del->deleter());
-    ir::DeleteOp::create(*this, loc, addr, deleter, del->implicit());
+    auto addr = EmitScalar(del->val());
+    EmitDelete(loc, addr, del->val()->type, del->implicit());
     return {};
 }
 
@@ -2492,7 +2565,6 @@ void CodeGen::EmitLocal(LocalDecl* var) {
     Assert(not isa<ParamDecl>(var), "Parameters are handled elsewhere");
     Assert(var->init, "Sema should always create an initialiser for local vars");
     if (IsZeroSizedType(var->type)) {
-        Assert(not var->deleter_call, "TODO: Deleting zero-sized types");
         Emit(var->init.get());
         return;
     }
@@ -2501,7 +2573,7 @@ void CodeGen::EmitLocal(LocalDecl* var) {
     // in the middle of a function at compile-time.
     if (not curr.locals.contains(var)) EmitAllocaForLocal(var);
     EmitRValue(curr.locals.at(var), var->init.get());
-    AddCleanupForDecl(var);
+    AddVarCleanup(GetAddressOfLocal(var, C(var->location())), var->type);
 }
 
 auto CodeGen::EmitLocalRefExpr(LocalRefExpr* expr) -> IRValue {
@@ -2587,31 +2659,31 @@ auto CodeGen::EmitNilExpr(NilExpr*) -> IRValue {
     return {}; // This is a zero-sized type.
 }
 
-auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
-    Assert(e->optional->is_lvalue());
-    auto optional = Emit(e->optional);
-    Emit(e->nil); // Discarded.
-    auto ty = cast<OptionalType>(e->optional->type);
-    auto l = C(e->location());
+auto CodeGen::EmitOptionalNilTest(
+    mlir::Location l,
+    Value optional,
+    OptionalType* ty,
+    bool equal
+) -> Value {
     Value flag;
     if (ty->has_transparent_layout()) {
         if (isa<PtrType>(ty->elem())) {
             flag = LLVM::ICmpOp::create(
                 *this,
                 l,
-                e->is_equal ? LLVM::ICmpPredicate::eq : LLVM::ICmpPredicate::ne,
-                CreateLoad(l, optional.scalar(), ptr_ty, tu.target().ptr_align()),
+                equal ? LLVM::ICmpPredicate::eq : LLVM::ICmpPredicate::ne,
+                CreateLoad(l, optional, ptr_ty, tu.target().ptr_align()),
                 CreateNullPointer(l)
             );
         } else {
             Unreachable("Unsupported optional type w/ transparent layout: {}", ty);
         }
     } else {
-        flag = CreateLoad(l, optional.scalar(), Type::BoolTy, ty->get_engaged_offset()).scalar();
+        flag = CreateLoad(l, optional, Type::BoolTy, ty->get_engaged_offset()).scalar();
 
         // A value of 'true' corresponds to '!= nil', so if the operator is '==',
         // we need to flip the value.
-        if (e->is_equal) flag = arith::XOrIOp::create(
+        if (equal) flag = arith::XOrIOp::create(
             *this,
             l,
             flag,
@@ -2620,14 +2692,23 @@ auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
     }
 
     auto b = If(l, flag, true, [&]{
-        if (not e->is_equal) ir::EngageOp::create(*this, l, optional.scalar());
+        if (not equal) ir::EngageOp::create(*this, l, optional);
         return CreateBool(l, true);
     }, [&]{
-        if (e->is_equal) ir::EngageOp::create(*this, l, optional.scalar());
+        if (equal) ir::EngageOp::create(*this, l, optional);
         return CreateBool(l, false);
     });
 
     return b->getArgument(0);
+}
+
+auto CodeGen::EmitOptionalNilTestExpr(OptionalNilTestExpr* e) -> IRValue {
+    Assert(e->optional->is_lvalue());
+    auto optional = EmitScalar(e->optional);
+    Emit(e->nil); // Discarded.
+    auto ty = cast<OptionalType>(e->optional->type);
+    auto l = C(e->location());
+    return EmitOptionalNilTest(l, optional, ty, e->is_equal);
 }
 
 auto CodeGen::EmitOverloadSetExpr(OverloadSetExpr*) -> IRValue {
@@ -2720,8 +2801,9 @@ void CodeGen::EmitProcedure(ProcDecl* proc) {
     EnterCleanupScope _{*this};
     for (auto l : proc->locals) {
         if (auto p = dyn_cast<ParamDecl>(l)) {
+            // Copy and move parameters need to be deleted.
             if (p->intent() == Intent::Copy or p->intent() == Intent::Move)
-                AddCleanupForDecl(l);
+                AddVarCleanup(GetAddressOfLocal(l, C(l->location())), l->type);
         } else if (not IsZeroSizedType(l->type)) {
             EmitAllocaForLocal(l);
         }

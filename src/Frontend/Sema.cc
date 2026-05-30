@@ -3752,22 +3752,7 @@ auto Sema::MaybeBuildDeleteExpr(Expr* arg, bool implicit, SLoc loc) -> Ptr<Delet
         "Argument of '%1(delete%)' must be a mutable lvalue"
     );
 
-    // If it is a record, invoke its deleter.
-    if (auto r = dyn_cast<RecordType>(arg->type)) return new (*tu) DeleteExpr(
-        arg,
-        r->deleter().get(),
-        implicit,
-        loc
-    );
-
-    // Otherwise, call '__srcc_delete'.
-    auto res = LookUpName(global_scope(), {DeclNameLoc{String("__srcc_delete"), loc}}, loc);
-    if (not res.successful()) return ICE(loc, "'__srcc_delete' not found");
-    auto decl_template = cast<ProcTemplateDecl>(res.decls.front());
-    auto subst = SubstituteTemplate(decl_template, {{arg->type, loc}});
-    if (not subst.success()) return ICE(loc, "Substitution of '__srcc_delete' failed");
-    auto deleter = InstantiateTemplate(decl_template, *subst.data.get<TemplateSubstitution*>(), loc);
-    return new (*tu) DeleteExpr(arg, deleter, implicit, loc);
+    return new (*tu) DeleteExpr(arg, implicit, loc);
 }
 
 auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
@@ -4033,15 +4018,6 @@ auto Sema::BuildParamDecl(
         with_param,
         loc
     );
-
-    // Only delete 'move' and 'copy' parameters.
-    if (
-        param->type->requires_deletion() and
-        (param->intent == Intent::Move or param->intent == Intent::Copy)
-    ) {
-        auto del = MaybeBuildDeleteExpr(CreateReference(decl, loc).get(), true, loc).get_or_null();
-        decl->deleter_call = del;
-    }
 
     if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
@@ -5373,16 +5349,6 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     // parsed one; this will check if default initialisation is valid
     // if need be.
     AddInitialiserToDecl(decl, init);
-
-    // Call the variable’s deleter if it has one. Make sure to do this
-    // after adding the initialiser and query the type of the variable
-    //  so we use the deduced type if applicable.
-    if (decl.decl()->valid() and decl.type()->requires_deletion()) {
-        auto ref = CreateReference(decl.decl(), parsed->loc).get();
-        auto del = MaybeBuildDeleteExpr(ref, true, parsed->loc).get_or_null();
-        if (del) decl.set_deleter(del);
-    }
-
     return decl.decl();
 }
 

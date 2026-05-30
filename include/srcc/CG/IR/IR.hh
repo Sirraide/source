@@ -56,8 +56,12 @@ COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::TreeValue*);
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Stmt*);
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Type);
 SRCC_ENUMS_EXPOSED_TO_MLIR(COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE);
-
 #undef COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE
+
+/// Attribute that indicates that the value pointed to by a 'ptr'
+/// parameter is undefined upon entry to a procedure; this is used
+/// for out parameters.
+constexpr String OutParamAttrName = "srcc.out_param";
 }
 }
 

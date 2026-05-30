@@ -72,3 +72,7 @@ proc e6() {
         delete x; // expected-error ('delete' of deleted value) expected-note (Deleted here)
     }
 }
+
+proc e7 (out Small s1) { // expected-error: 'out' parameter is not written to on all control paths
+    var s = s1; // expected-error: 'out' parameter must be written to before it can be used
+}

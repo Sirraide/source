@@ -209,6 +209,8 @@ void CodeGen::Printer::print_attr(mlir::NamedAttribute attr) {
         out += " %1(noundef%)";
     } else if (attr.getName() == LLVMDialect::getReadonlyAttrName()) {
         out += " %1(readonly%)";
+    } else if (attr.getName() == ir::OutParamAttrName.sv()) {
+        out += " %1(out%)";
     } else if (attr.getName() == LLVMDialect::getStructRetAttrName()) {
         Format(out, " %1(sret %){}", FormatType(cast<mlir::TypeAttr>(attr.getValue()).getValue()));
     } else if (attr.getName() == LLVMDialect::getDereferenceableAttrName()) {

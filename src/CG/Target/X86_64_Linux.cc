@@ -536,10 +536,16 @@ auto ABIImpl::lower_procedure_signature(
         info.result_attrs.push_back(cg.getDictionaryAttr(attrs));
     };
 
-    auto AddByRefArg = [&](Value v, Type t) {
+    auto AddByRefArg = [&](Value v, Type t, Intent i) {
+        auto attrs = GetElemTyAttrsForPointee(cg, t);
+        if (i == Intent::Out) attrs.push_back(cg.getNamedAttr(
+            ir::OutParamAttrName,
+            cg.getUnitAttr()
+        ));
+
         ctx.allocate();
         info.args.push_back(v);
-        AddArgType(cg.get_ptr_ty(), GetElemTyAttrsForPointee(cg, t));
+        AddArgType(cg.get_ptr_ty(), attrs);
     };
 
     auto AddByValArg = [&](Expr* arg, Type t) {
@@ -635,7 +641,7 @@ auto ABIImpl::lower_procedure_signature(
         } else if (cg.PassByReference(param.type, param.intent)) {
             Value arg;
             if (auto a = Arg(i)) arg = cg.EmitToMemory(l, a);
-            AddByRefArg(arg, param.type);
+            AddByRefArg(arg, param.type, param.intent);
         } else {
             AddByValArg(Arg(i), param.type);
         }

@@ -359,9 +359,8 @@ void Stmt::Printer::Print(Stmt* e) {
         },
 
         [&](DeleteExpr* e) {
-            tempset print_procedure_bodies = false;
             PrintBasicNode(e, "DeleteExpr");
-            PrintChildren({e->val, e->deleter()});
+            PrintChildren(e->val());
         },
 
         [&](DeferStmt* d) {
@@ -487,7 +486,6 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicNode(e, is_param ? "ParamDecl" : "LocalDecl", PrintNameAndType);
             SmallVector<Stmt*> children;
             if (auto init = d->init.get_or_null()) children.push_back(init);
-            if (auto del = d->deleter_call.get_or_null()) children.push_back(del);
             PrintChildren(children);
         },
 

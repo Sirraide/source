@@ -2,7 +2,7 @@
 program test;
 
 proc p_in (in $T) {}
-proc p_out (out $T) {}
+proc p_out (out $T x) { __srcc_unreachable(); }
 proc p_inout (inout $T) {}
 proc p_copy (copy $T) {}
 proc p_move ($T) {}
@@ -109,9 +109,9 @@ proc mrvalue_large {
 // +     %12 = load i64, %11, align 8
 // +     call ccc void _S6p_moveFvSI8E.5(ptr %10 noundef, i64 %12 noundef)
 // +     call ccc void _S7p_inoutFvx2iE.3(ptr #0 align 8 dereferenceable 8)
-// +     call ccc void _S5p_outFvx1iE.2(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void _S5p_outFvx1iE.2(ptr #0 align 8 dereferenceable 8 out)
 // +     call ccc void _S7p_inoutFvx2SI8E.3(ptr #1 align 8 dereferenceable 16)
-// +     call ccc void _S5p_outFvx1SI8E.2(ptr #1 align 8 dereferenceable 16)
+// +     call ccc void _S5p_outFvx1SI8E.2(ptr #1 align 8 dereferenceable 16 out)
 // +     ret
 // + }
 // +
@@ -174,9 +174,9 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1iE.2 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + proc _S5p_outFvx1iE.2 (ptr %0 align 8 dereferenceable 8 out) private ccc {
 // + entry:
-// +     ret
+// +     unreachable
 // + }
 // +
 // + proc _S7p_inoutFvx2SI8E.3 (ptr %0 align 8 dereferenceable 16) private ccc {
@@ -184,9 +184,9 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1SI8E.2 (ptr %0 align 8 dereferenceable 16) private ccc {
+// + proc _S5p_outFvx1SI8E.2 (ptr %0 align 8 dereferenceable 16 out) private ccc {
 // + entry:
-// +     ret
+// +     unreachable
 // + }
 // +
 // + proc _S13mrvalue_smallFvE.7 private ccc {
@@ -219,7 +219,7 @@ proc mrvalue_large {
 // +     %5 = load i64, #6, align 8
 // +     call ccc void _S6p_moveFvT5smallE.5(i64 %5 noundef)
 // +     call ccc void _S7p_inoutFvx2T5smallE.3(ptr #0 align 8 dereferenceable 8)
-// +     call ccc void _S5p_outFvx1T5smallE.2(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void _S5p_outFvx1T5smallE.2(ptr #0 align 8 dereferenceable 8 out)
 // +     ret
 // + }
 // +
@@ -252,9 +252,9 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1T5smallE.2 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + proc _S5p_outFvx1T5smallE.2 (ptr %0 align 8 dereferenceable 8 out) private ccc {
 // + entry:
-// +     ret
+// +     unreachable
 // + }
 // +
 // + proc _S13mrvalue_largeFvE.8 private ccc {
@@ -281,7 +281,7 @@ proc mrvalue_large {
 // +     copy #6 <- #0, 800
 // +     call ccc void _S6p_moveFvT5largeE.5(ptr #6 byval i8[800] noundef)
 // +     call ccc void _S7p_inoutFvx2T5largeE.3(ptr #0 align 8 dereferenceable 800)
-// +     call ccc void _S5p_outFvx1T5largeE.2(ptr #0 align 8 dereferenceable 800)
+// +     call ccc void _S5p_outFvx1T5largeE.2(ptr #0 align 8 dereferenceable 800 out)
 // +     ret
 // + }
 // +
@@ -305,7 +305,7 @@ proc mrvalue_large {
 // +     ret
 // + }
 // +
-// + proc _S5p_outFvx1T5largeE.2 (ptr %0 align 8 dereferenceable 800) private ccc {
+// + proc _S5p_outFvx1T5largeE.2 (ptr %0 align 8 dereferenceable 800 out) private ccc {
 // + entry:
-// +     ret
+// +     unreachable
 // + }

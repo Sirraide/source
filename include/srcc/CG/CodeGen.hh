@@ -339,7 +339,7 @@ public:
 
     /// Add code to be run at end of scope.
     void AddCleanup(ProcData::Cleanup cleanup);
-    void AddCleanupForDecl(LocalDecl* var);
+    void AddVarCleanup(Value addr, Type ty);
 
     /// Implemented in IRTransforms.cc
     void AddRequiredTransformPasses(mlir::PassManager& pm);
@@ -399,7 +399,7 @@ public:
     auto CreateNullPointer(mlir::Location loc) -> Value;
     void CreateReturn(mlir::Location loc, mlir::ValueRange values);
     auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
-    auto CreatePtrAdd(mlir::Location loc, Value addr, Size offs) -> Value;
+    auto CreatePtrAdd(mlir::Location loc, Value addr, ByteOffset offs) -> Value;
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
     void CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset = {});
 
@@ -438,6 +438,9 @@ public:
     /// Emit a closure.
     auto EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue;
 
+    /// Emit a delete.
+    void EmitDelete(mlir::Location loc, Value addr, Type ty, bool implicit);
+
     /// Emit the default initialiser for a type.
     auto EmitDefaultInit(Type ty, mlir::Location loc) -> IRValue;
 
@@ -452,6 +455,9 @@ public:
 
     /// Emit an lvalue to rvalue conversion.
     auto EmitLValueToRValueConversion(CastExpr* expr) -> std::pair<IRValue, Value>;
+
+    /// Test if an optional is nil.
+    auto EmitOptionalNilTest(mlir::Location loc, Value addr, OptionalType* ty, bool equal) -> Value;
 
     /// Create a temporary value to hold an mrvalue. Returns the address of
     /// the temporary.

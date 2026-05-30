@@ -207,7 +207,9 @@ static auto UseIsMove(Value val, Operation* user) -> bool {
 };
 
 struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<MoveLatticePoint> {
-    using DenseForwardDataFlowAnalysis::DenseForwardDataFlowAnalysis;
+    ir::ProcOp proc;
+    DeletionAnalysis(mlir::DataFlowSolver &solver, ir::ProcOp proc)
+        : DenseForwardDataFlowAnalysis(solver), proc{proc} {}
 
     auto visitOperation(
         Operation* op,
@@ -227,7 +229,19 @@ struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Mov
     }
 
     void setToEntryState(MoveLatticePoint *lattice) override {
-        propagateIfChanged(lattice, lattice->reset());
+        auto changed = lattice->reset();
+
+        // Initialise all pointer parameters as defined, except for out params;
+        // those should be marked as Moved instead so we drop implicit deletes
+        // when assigning to them.
+        for (auto [i, arg] : enumerate(proc.getArguments())) {
+            if (not isa<mlir::LLVM::LLVMPointerType>(arg.getType())) continue;
+            auto attrs = proc.getCallArgAttrs(u32(i));
+            if (attrs and attrs.contains(ir::OutParamAttrName)) changed |= lattice->moved(arg, proc);
+            else changed |= lattice->defined(arg);
+        }
+
+        propagateIfChanged(lattice, changed);
     }
 };
 
@@ -243,7 +257,7 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
     solver.load<mlir::dataflow::DeadCodeAnalysis>();
 
     // Run the analysis.
-    solver.load<DeletionAnalysis>();
+    solver.load<DeletionAnalysis>(proc);
     if (failed(solver.initializeAndRun(proc))) {
         cg.ICE(SLoc::Decode(proc.getLoc()), "Failed to run dataflow analysis on procedure");
         signalPassFailure();
@@ -254,6 +268,7 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
     // moved by the time we get there, and remove it if so.
     SmallVector<ir::DeleteOp> ops_to_erase;
     llvm::SmallDenseMap<Value, mlir::LLVM::AllocaOp> need_delete_flag;
+    llvm::SmallPtrSet<Value, 2> already_diagnosed_out_params;
     proc.getBody().walk([&](Operation* op){
         using enum MovedState;
         auto point = solver.getProgramPointBefore(op);
@@ -265,6 +280,17 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
                 auto mover = state->get_moving_op(v);
                 bool was_deleted = isa<ir::DeleteOp>(mover);
                 bool is_delete = isa<ir::DeleteOp>(op);
+
+                // Hack: if the 'mover' is a ProcOp, then this is an uninitialised
+                // out parameter.
+                if (isa<ir::ProcOp>(mover)) {
+                    cg.Error(
+                        SLoc::Decode(op->getLoc()),
+                        " '%1(out%)' parameter must be written to before it can be {}",
+                        is_delete ? "deleted" : "used"
+                    );
+                    return;
+                }
 
                 cg.Error(
                     SLoc::Decode(op->getLoc()),
@@ -309,10 +335,30 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
             // Fall through to the regular use checking code below.
         }
 
+        // Allow ptradd.
+        if (isa<mlir::LLVM::GEPOp>(op)) return;
+
         // Any other operation that references a moved-from value is an error.
         for (auto v : op->getOperands())
             if (not UseIsDef(v, op))
                 DiagnoseIfMoved(v);
+
+        // If this is a return op, check that all out parameter are defined.
+        if (isa<ir::RetOp>(op)) {
+            for (auto [i, arg] : enumerate(proc.getArguments())) {
+                auto attrs = proc.getCallArgAttrs(u32(i));
+                if (
+                    attrs and attrs.contains(ir::OutParamAttrName) and
+                    state->get_state(arg) != Defined and
+                    already_diagnosed_out_params.insert(arg).second
+                ) {
+                    cg.Error(
+                        SLoc::Decode(arg.getLoc()),
+                        "'%1(out%)' parameter is not written to on all control paths"
+                    );
+                }
+            }
+        }
     });
 
     // Delete implicit deletes of moved-from values. Do this before rewriting

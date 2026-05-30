@@ -110,9 +110,36 @@ auto LowerOverflowOp(auto op, auto& a, mlir::ConversionPatternRewriter& r) -> Sm
 
 static void PropagateArgAndResultAttrs(auto func_or_call, auto op) {
     func_or_call.setAlwaysInline(op.getAlwaysInline());
-    func_or_call.setArgAttrsAttr(op.getArgAttrsAttr());
     if (auto attrs = op.getCallResultAttrs(0))
         func_or_call.setResAttrsAttr(mlir::ArrayAttr::get(op.getContext(), attrs));
+
+    // Propagate argument attrs.
+    //
+    // This horrible nonsense, which potentially entals rebuilding the entire
+    // attribute, is required because we may need to strip out some of our own
+    // attributes that LLVM doesn't understand (and which MLIR would warn about),
+    // such as the one used to tag out parameters.
+    if (op.getArgAttrsAttr()) {
+        if (llvm::any_of(op.getArgAttrsAttr(), [](auto a) {
+            return cast<mlir::DictionaryAttr>(a).contains(ir::OutParamAttrName);
+        })) {
+            SmallVector<mlir::Attribute> copy;
+            for (auto a : op.getArgAttrsAttr()) {
+                auto d = cast<mlir::DictionaryAttr>(a);
+                if (d.contains(ir::OutParamAttrName)) {
+                    SmallVector<mlir::NamedAttribute> named{d.begin(), d.end()};
+                    llvm::erase_if(named, [&](auto a) { return a.getName().getValue() == ir::OutParamAttrName; });
+                    copy.push_back(mlir::DictionaryAttr::get(op->getContext(), named));
+                } else {
+                    copy.push_back(d);
+                }
+            }
+
+            func_or_call.setArgAttrsAttr(mlir::ArrayAttr::get(op->getContext(), copy));
+        } else {
+            func_or_call.setArgAttrsAttr(op.getArgAttrsAttr());
+        }
+    }
 }
 
 LOWERING(AbortOp, {

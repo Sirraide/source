@@ -1139,14 +1139,14 @@ proc closure_return = slice_return;
 // +     copy #4 <- #0, 4
 // +     %3 = load i32, #4, align 4
 // +     call ccc void h2(
-// +         ptr #0 align 4 dereferenceable 4,
-// +         ptr #0 align 4 dereferenceable 4,
-// +         ptr #0 align 4 dereferenceable 4,
-// +         ptr #0 align 4 dereferenceable 4,
-// +         ptr #0 align 4 dereferenceable 4,
+// +         ptr #0 align 4 dereferenceable 4 out,
+// +         ptr #0 align 4 dereferenceable 4 out,
+// +         ptr #0 align 4 dereferenceable 4 out,
+// +         ptr #0 align 4 dereferenceable 4 out,
+// +         ptr #0 align 4 dereferenceable 4 out,
 // +         i32 %2 noundef,
 // +         i32 %3 noundef,
-// +         ptr #0 align 4 dereferenceable 4)
+// +         ptr #0 align 4 dereferenceable 4 out)
 // +     ret
 // + }
 // +
@@ -1162,14 +1162,14 @@ proc closure_return = slice_return;
 // + ) external ccc;
 // +
 // + proc h2 (
-// +     ptr align 4 dereferenceable 4,
-// +     ptr align 4 dereferenceable 4,
-// +     ptr align 4 dereferenceable 4,
-// +     ptr align 4 dereferenceable 4,
-// +     ptr align 4 dereferenceable 4,
+// +     ptr align 4 dereferenceable 4 out,
+// +     ptr align 4 dereferenceable 4 out,
+// +     ptr align 4 dereferenceable 4 out,
+// +     ptr align 4 dereferenceable 4 out,
+// +     ptr align 4 dereferenceable 4 out,
 // +     i32 noundef,
 // +     i32 noundef,
-// +     ptr align 4 dereferenceable 4,
+// +     ptr align 4 dereferenceable 4 out,
 // + ) external ccc;
 // +
 // + proc _S13in_move_smallFvE.6 private ccc {
@@ -1381,14 +1381,14 @@ proc closure_return = slice_return;
 // +     store #31, i32 42, align 4
 // +     %4 = load i32, #31, align 4
 // +     call ccc void big5(
-// +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #0 align 8 dereferenceable 400,
-// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400 out,
+// +         ptr #0 align 8 dereferenceable 400 out,
+// +         ptr #0 align 8 dereferenceable 400 out,
+// +         ptr #0 align 8 dereferenceable 400 out,
+// +         ptr #0 align 8 dereferenceable 400 out,
+// +         ptr #0 align 8 dereferenceable 400 out,
 // +         ptr #30 byval i8[400] noundef,
-// +         ptr #0 align 8 dereferenceable 400,
+// +         ptr #0 align 8 dereferenceable 400 out,
 // +         i32 %4 noundef)
 // +     ret
 // + }
@@ -1442,14 +1442,14 @@ proc closure_return = slice_return;
 // + ) external ccc;
 // +
 // + proc big5 (
-// +     ptr align 8 dereferenceable 400,
-// +     ptr align 8 dereferenceable 400,
-// +     ptr align 8 dereferenceable 400,
-// +     ptr align 8 dereferenceable 400,
-// +     ptr align 8 dereferenceable 400,
-// +     ptr align 8 dereferenceable 400,
+// +     ptr align 8 dereferenceable 400 out,
+// +     ptr align 8 dereferenceable 400 out,
+// +     ptr align 8 dereferenceable 400 out,
+// +     ptr align 8 dereferenceable 400 out,
+// +     ptr align 8 dereferenceable 400 out,
+// +     ptr align 8 dereferenceable 400 out,
 // +     ptr byval i8[400] noundef,
-// +     ptr align 8 dereferenceable 400,
+// +     ptr align 8 dereferenceable 400 out,
 // +     i32 noundef,
 // + ) external ccc;
 // +
@@ -1645,7 +1645,7 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 16,
 // +         ptr %15 noundef,
 // +         i64 %17 noundef,
-// +         ptr #0 align 8 dereferenceable 16,
+// +         ptr #0 align 8 dereferenceable 16 out,
 // +         ptr %18 noundef,
 // +         i64 %20 noundef)
 // +     %21 = load ptr, #0, align 8
@@ -1670,7 +1670,7 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 16,
 // +         ptr %21 noundef,
 // +         i64 %23 noundef,
-// +         ptr #0 align 8 dereferenceable 16,
+// +         ptr #0 align 8 dereferenceable 16 out,
 // +         ptr %24 noundef,
 // +         i64 %26 noundef,
 // +         ptr #4 byval i8[16] noundef,
@@ -1696,7 +1696,7 @@ proc closure_return = slice_return;
 // +     ptr align 8 dereferenceable 16,
 // +     ptr noundef,
 // +     i64 noundef,
-// +     ptr align 8 dereferenceable 16,
+// +     ptr align 8 dereferenceable 16 out,
 // +     ptr noundef,
 // +     i64 noundef,
 // + ) external ccc;
@@ -1705,7 +1705,7 @@ proc closure_return = slice_return;
 // +     ptr align 8 dereferenceable 16,
 // +     ptr noundef,
 // +     i64 noundef,
-// +     ptr align 8 dereferenceable 16,
+// +     ptr align 8 dereferenceable 16 out,
 // +     ptr noundef,
 // +     i64 noundef,
 // +     ptr byval i8[16] noundef,
@@ -1770,7 +1770,7 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 16,
 // +         ptr %15 noundef,
 // +         ptr %17 noundef,
-// +         ptr #0 align 8 dereferenceable 16,
+// +         ptr #0 align 8 dereferenceable 16 out,
 // +         ptr %18 noundef,
 // +         ptr %20 noundef)
 // +     %21 = load ptr, #0, align 8
@@ -1795,7 +1795,7 @@ proc closure_return = slice_return;
 // +         ptr #0 align 8 dereferenceable 16,
 // +         ptr %21 noundef,
 // +         ptr %23 noundef,
-// +         ptr #0 align 8 dereferenceable 16,
+// +         ptr #0 align 8 dereferenceable 16 out,
 // +         ptr %24 noundef,
 // +         ptr %26 noundef,
 // +         ptr #4 byval i8[16] noundef,
@@ -1823,7 +1823,7 @@ proc closure_return = slice_return;
 // +     ptr align 8 dereferenceable 16,
 // +     ptr noundef,
 // +     ptr noundef,
-// +     ptr align 8 dereferenceable 16,
+// +     ptr align 8 dereferenceable 16 out,
 // +     ptr noundef,
 // +     ptr noundef,
 // + ) external ccc;
@@ -1832,7 +1832,7 @@ proc closure_return = slice_return;
 // +     ptr align 8 dereferenceable 16,
 // +     ptr noundef,
 // +     ptr noundef,
-// +     ptr align 8 dereferenceable 16,
+// +     ptr align 8 dereferenceable 16 out,
 // +     ptr noundef,
 // +     ptr noundef,
 // +     ptr byval i8[16] noundef,

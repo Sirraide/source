@@ -85,8 +85,8 @@ f_copy(j);
 // +         ptr #2 sret i8[1256],
 // +         ptr #3 align 8 dereferenceable 1256)
 // +     %11 = call ccc i64 _S4f_inFixiE.3(i64 20 noundef)
-// +     call ccc void _S5f_outFvx1iE.5(ptr @_S1i.3 align 8 dereferenceable 8)
-// +     call ccc void _S5f_outFvx1I10000E.6(ptr @_S1j.4 align 8 dereferenceable 1256)
+// +     call ccc void _S5f_outFvx1iE.5(ptr @_S1i.3 align 8 dereferenceable 8 out)
+// +     call ccc void _S5f_outFvx1I10000E.6(ptr @_S1j.4 align 8 dereferenceable 1256 out)
 // +     store @_S1i.3, i64 5, align 8
 // +     store @_S1j.4, i10048 10, align 8
 // +     %12 = call ccc i64 _S7f_inoutFix2iE.7(ptr @_S1i.3 align 8 dereferenceable 8)
@@ -153,13 +153,13 @@ f_copy(j);
 // +     ret
 // + }
 // +
-// + proc _S5f_outFvx1iE.5 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + proc _S5f_outFvx1iE.5 (ptr %0 align 8 dereferenceable 8 out) private ccc {
 // + entry:
 // +     store %0, i64 100, align 8
 // +     ret
 // + }
 // +
-// + proc _S5f_outFvx1I10000E.6 (ptr %0 align 8 dereferenceable 1256) private ccc {
+// + proc _S5f_outFvx1I10000E.6 (ptr %0 align 8 dereferenceable 1256 out) private ccc {
 // + entry:
 // +     store %0, i10048 1000, align 8
 // +     ret

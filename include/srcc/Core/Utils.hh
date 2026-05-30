@@ -119,6 +119,30 @@ public:
     explicit operator bool() const { return present(); }
 };
 
+/// A byte offset.
+class ByteOffset {
+    static constexpr i64 BitsPerByte = 8;
+
+    i64 val;
+
+public:
+    constexpr ByteOffset() : ByteOffset(0) {}
+    constexpr ByteOffset(i64 val) : val{val} {}
+    constexpr ByteOffset(Size s) : ByteOffset(i64(s.bytes())) {}
+    constexpr i64 bytes() const { return val; }
+    constexpr i64 bits() const { return val * BitsPerByte; }
+
+    friend constexpr auto operator-(Size a, Size b) -> ByteOffset {
+        return {i64(a.bytes()) - i64(b.bytes())};
+    }
+
+    friend constexpr auto operator-(ByteOffset offs) -> ByteOffset {
+        return {-offs.val};
+    }
+
+    constexpr auto operator<=>(const ByteOffset&) const = default;
+};
+
 template <typename T>
 auto ref(SmallVectorImpl<T>& vec) -> MutableArrayRef<T> {
     return MutableArrayRef<T>(vec);

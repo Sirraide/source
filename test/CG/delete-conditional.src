@@ -41,6 +41,15 @@ proc f5() {
     }
 }
 
+proc f6 {
+    var s = Small(42);
+    s = Small(33);
+}
+
+proc f7(Small s1, copy Small s2, in Small s3, out Small s4, inout Small s5) {
+    s4 = Small(1);
+}
+
 // * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
@@ -149,6 +158,34 @@ proc f5() {
 // +     delete #0 using $T5Small.delete
 // +     store #0, i64 42, align 8
 // +     br bb1
+// + }
+// +
+// + proc _S2f6FvE.6 private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     delete #0 using $T5Small.delete
+// +     store #0, i64 33, align 8
+// +     delete #0 using $T5Small.delete
+// +     ret
+// + }
+// +
+// + proc _S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7 (
+// +     ptr %0 align 8 dereferenceable 8,
+// +     i64 %1 noundef,
+// +     ptr %2 align 8 dereferenceable 8,
+// +     ptr %3 align 8 dereferenceable 8 out,
+// +     ptr %4 align 8 dereferenceable 8,
+// + ) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %1, align 8
+// +     store %3, i64 1, align 8
+// +     delete #0 using $T5Small.delete
+// +     delete %0 using $T5Small.delete
+// +     ret
 // + }
 
 //L * ; ModuleID = 'test'
@@ -275,6 +312,26 @@ proc f5() {
 //L +   call void @"$T5Small.delete"(ptr %1)
 //L +   store i64 42, ptr %1, align 8
 //L +   br label %2
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private void @_S2f6FvE.6() #1 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   store i64 42, ptr %1, align 8
+//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   store i64 33, ptr %1, align 8
+//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + define private void @_S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7(ptr align 8 dereferenceable(8) %0, i64 noundef %1, ptr align 8 dereferenceable(8) %2, ptr align 8 dereferenceable(8) %3, ptr align 8 dereferenceable(8) %4) #1 {
+//L +   %6 = alloca i8, i64 8, align 8
+//L +   store i64 %1, ptr %6, align 8
+//L +   store i64 1, ptr %3, align 8
+//L +   call void @"$T5Small.delete"(ptr %6)
+//L +   call void @"$T5Small.delete"(ptr %0)
+//L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
