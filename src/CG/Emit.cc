@@ -38,6 +38,7 @@ public:
 
 // Largely copied and adapted from Clang.
 void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
+    llvm::TimeTraceScope _{"[LLVM] Optimisation"};
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
     llvm::CGSCCAnalysisManager CGAM;
@@ -77,6 +78,8 @@ int cg::CodeGen::write_to_file(
     ArrayRef<std::string> additional_objects,
     StringRef program_file_name_override
 ) {
+    llvm::TimeTraceScope _{"[LLVM] Backend"};
+
     // Create a temporary path for the object file.
     std::string object_file_path = fs::TempPath(".o");
 

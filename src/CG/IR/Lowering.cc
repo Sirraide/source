@@ -492,6 +492,7 @@ void LoweringPass::runOnOperation() {
 }
 
 auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::Module> {
+    llvm::TimeTraceScope _{"[SRCC] IR->LLVM Lowering"};
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
@@ -536,6 +537,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
 }
 
 bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
+    llvm::TimeTraceScope _{"[SRCC] IR Finalisation for Evaluation"};
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(mlir::createCanonicalizerPass());
@@ -555,6 +557,7 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
 }
 
 bool CodeGen::finalise(bool verify) {
+    llvm::TimeTraceScope _{"[SRCC] IR Finalisation"};
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(verify);
     pm.addPass(mlir::createCanonicalizerPass());

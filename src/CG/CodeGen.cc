@@ -3130,6 +3130,7 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
 
 auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     Assert(bool(lang_opts.constant_eval));
+    llvm::TimeTraceScope _{"[SRCC] IR Generation for Evaluation"};
 
     // Delete any remnants of the last constant evaluation.
     if (vm_entry_point) vm_entry_point.erase();

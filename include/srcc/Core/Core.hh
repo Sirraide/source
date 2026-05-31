@@ -9,6 +9,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/TimeProfiler.h>
 #include <llvm/Target/TargetMachine.h>
 
 #include <base/FS.hh>

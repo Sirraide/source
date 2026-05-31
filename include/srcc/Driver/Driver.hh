@@ -89,6 +89,9 @@ public:
         /// during constant evaluation.
         Span<fs::Path> eval_libs;
 
+        /// If provided, print statistics showing how long compilation took to this path.
+        std::optional<std::string> time_trace_path;
+
         /// The action to perform.
         Action action;
 

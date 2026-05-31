@@ -44,6 +44,7 @@ using options = clopts< // clang-format off
     flag<"--llvm", "Run codegen and emit LLVM IR. See also --cg, --ir.">,
     flag<"--parse", "Parse only and exit">,
     flag<"--sema", "Run sema only and exit">,
+    option<"--time", "Print statistics showing how long compilation took to a file">,
     flag<"--tokens", "Print tokens and exit">,
     mutually_exclusive<
         "--cg", "--eval", "--eval-dump-ir", "--exports", "--dump-module",
@@ -242,6 +243,7 @@ int main(int argc, char** argv) {
         .link_objects = opts.get<"--link-object">(),
         .clang_options = clang_options,
         .eval_libs = opts.get<"--load">(),
+        .time_trace_path = opts.get<"--time">() ? std::optional{*opts.get<"--time">()} : std::nullopt,
         .action = action,
         .lang_opts = {
             .overflow_checking = opts.get<"-foverflow-checks">(),

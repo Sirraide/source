@@ -620,6 +620,8 @@ auto Sema::ParseCXX(
     StringRef code,
     std::optional<std::string> PCH
 ) -> std::unique_ptr<clang::ASTUnit> {
+    llvm::TimeTraceScope _{"[Clang] C++ Parsing"};
+
     // For PCHs, we need to remember this file and its contents.
     auto Name = std::format("__srcc.imports.{}.cc", cxx_import_file_counter++);
     PCHVFS->addFile(Name, 0, llvm::MemoryBuffer::getMemBufferCopy(code, Name));

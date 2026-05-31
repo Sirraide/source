@@ -130,6 +130,7 @@ Lexer::Lexer(TokenStream& into, const srcc::File& f, Parser::CommentTokenCallbac
 
 auto Lexer::CurrLoc() -> SLoc { return SLoc(data_or_end()); }
 void Lexer::LexEntireFile() {
+    llvm::TimeTraceScope _{"[SRCC] Lexing"};
     do Next();
     while (not tok().eof());
     tokens.finish(SLoc(f.end() - 1));

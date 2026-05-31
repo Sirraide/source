@@ -745,6 +745,7 @@ bool Eval::EvalLoop() {
             if (callee.empty()) {
                 auto decl = cg.lookup(callee);
                 Assert(decl);
+                llvm::TimeTraceScope _{"[SRCC] IR Generation for Evaluation"};
                 cg.emit(decl.get());
 
                 // TODO: This can fail if one of our lifetime analyses reports an error.
@@ -1626,6 +1627,7 @@ auto VM::eval(
     // TODO: I think it’s possible to trigger this, actually, if an evaluation
     // performs a template instantiation that contains an 'eval' statement.
     Assert(not evaluating, "We somehow triggered a nested evaluation?");
+    llvm::TimeTraceScope _{"[SRCC] Compile-Time Evaluation"};
     tempset evaluating = true;
     Eval e{*this, sema, complain, allow_globals};
     auto res = e.eval(stmt);

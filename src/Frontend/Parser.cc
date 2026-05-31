@@ -1177,6 +1177,7 @@ auto Parser::ParseForStmt() -> Ptr<ParsedStmt> {
 
 // <file> ::= <preamble> { <stmt> }
 void Parser::ParseFile() {
+    llvm::TimeTraceScope _{"[SRCC] Parsing"};
     ParsePreamble();
     ParseStmts(mod->top_level);
 }

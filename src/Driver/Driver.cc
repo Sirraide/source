@@ -14,6 +14,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/ThreadPool.h>
+#include <llvm/Support/Timer.h>
 
 #include <filesystem>
 #include <print>
@@ -147,6 +148,9 @@ int Driver::run_job() {
 
     defer { driver_diags->flush(); };
     defer { ctx.diags().flush(); };
+
+    // Timing setup.
+    if (opts.time_trace_path.has_value()) llvm::timeTraceProfilerInitialize(0, "srcc");
 
     // Replace context diags with the actual diags engine.
     if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
@@ -311,8 +315,8 @@ int Driver::run_job() {
         return 0;
     }
 
-    // Finally, emit the module.
-    return cg.write_to_file(
+    // Emit the module.
+    int res = cg.write_to_file(
         *machine,
         *tu,
         *ir_module,
@@ -321,6 +325,16 @@ int Driver::run_job() {
         opts.link_objects,
         opts.output_file_name
     );
+
+    // Write the timing report if requested.
+    if (opts.time_trace_path.has_value()) {
+        SmallString<0> str;
+        llvm::raw_svector_ostream os{str};
+        llvm::timeTraceProfilerWrite(os);
+        File::WriteOrDie(str.data(), str.size(), *opts.time_trace_path);
+    }
+
+    return res;
 }
 
 auto Driver::ParseFile(fs::PathRef path, bool verify) -> ParsedModule::Ptr {

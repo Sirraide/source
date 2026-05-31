@@ -4551,6 +4551,7 @@ void Sema::Translate(bool load_runtime) {
 
     // Bail if we couldn’t load a module.
     if (ctx.diags().has_error()) return;
+    llvm::TimeTraceScope _{"[SRCC] Semantic Analysis"};
 
     // Collect all statements and translate them.
     for (auto& p : modules_to_translate) TranslateStmts(top_level_stmts, p->top_level);

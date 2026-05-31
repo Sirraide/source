@@ -476,6 +476,7 @@ auto Sema::LoadModuleFromArchive(
     SLoc import_loc
 ) -> Ptr<ImportedSourceModuleDecl> {
     if (search_paths.empty()) return ICE(import_loc, "No module search path");
+    llvm::TimeTraceScope _{"[SRCC] Module Loading"};
 
     // Append extension.
     std::string desc_name = std::format("{}.{}", linkage_name, constants::ModuleDescriptionFileExtension);
