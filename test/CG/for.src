@@ -340,7 +340,7 @@ proc l {
 // + bb2:
 // +     %7 = load i64, %5, align 8
 // +     call ccc void foo(i64 %7 noundef)
-// +     %8 = ptradd %5, 8
+// +     %8 = ptradd sibling %5, 8
 // +     br bb1(%8)
 // +
 // + bb3:

@@ -95,6 +95,7 @@ def SRCC_TypeAttr : SRCC_Attr<"Type", "type"> {
 }
 
 def SRCC_AbortReasonAttr : EnumAttr<SRCC_Dialect, SRCC_AbortReason_Enum, "AbortReason">;
+def SRCC_AliasingAttr : EnumAttr<SRCC_Dialect, SRCC_Aliasing_Enum, "Aliasing">;
 def SRCC_BuiltinMemberAccessKindAttr : SRCC_Attr<"BuiltinMemberAccessKind", "access_kind"> {
     let summary = "Type of a type constant or value";
     let description = "A compile-time type value";
@@ -434,16 +435,38 @@ def ProcRefOp : SRCC_Op<"procaddr", [Pure]> {
     }];
 }
 
+def PtrAddOp : SRCC_Op<"ptradd", [Pure, AllTypesMatch<["ptr", "res"]>]> {
+    let description = [{
+        Add an offset to a pointer
+
+        This operation takes a pointer and an offset and produces another
+        pointer that is the result of applying the offset to that pointer.
+
+        The offset may be negative, in which case it is subtracted from the
+        pointer, moving it backwards.
+
+        The 'aliasing' determines how the resulting pointer behaves during
+        alias analysis; specifically:
+
+          - 'None' indicates that the two pointers do not alias, i.e. the
+            result is a new base pointer.
+
+          - 'Derived' indicates that the result pointer is derived from the
+            input pointer.
+
+          - 'Sibling' indicates that the result pointer is derived from the
+            input pointer's base pointer; if the input pointer has no base
+            pointer, this becomes a new base pointer.
+    }];
+
+    let arguments = (ins SRCC_Ptr:$ptr, Builtin_Integer:$offs, SRCC_AliasingAttr:$aliasing);
+    let results = (outs SRCC_Ptr:$res);
+}
+
 def QuoteOp : SRCC_Op<"quote", [Pure]> {
     let summary = "A parse tree";
     let arguments = (ins Property<"Stmt*">:$tree, Variadic<SRCC_Tree>:$unquotes);
     let results = (outs SRCC_Tree);
-}
-
-def RetainOp : SRCC_Op<"retain", [Pure, AllTypesMatch<["ptr", "res"]>]> {
-    let summary = "Convert an unowned into an owned pointer";
-    let arguments = (ins SRCC_Ptr:$ptr);
-    let results = (outs SRCC_Ptr:$res);
 }
 
 def RetOp : SRCC_Op<"ret", [Pure, Terminator, ReturnLike, HasParent<"ProcOp">]> {

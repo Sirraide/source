@@ -31,7 +31,7 @@ proc p3 (int offs) -> i8^ {
 // +     store #0, i8 0, align 1
 // +     store #1, ptr #0, align 8
 // +     %0 = load ptr, #1, align 8
-// +     %1 = ptradd %0, 10
+// +     %1 = ptradd base %0, 10
 // +     ret ptr %1
 // + }
 // +
@@ -40,7 +40,7 @@ proc p3 (int offs) -> i8^ {
 // +
 // + entry:
 // +     store #0, i8 0, align 1
-// +     %0 = ptradd #0, 10
+// +     %0 = ptradd base #0, 10
 // +     ret ptr %0
 // + }
 // +
@@ -52,7 +52,7 @@ proc p3 (int offs) -> i8^ {
 // +     store #0, i64 %0, align 8
 // +     store #1, i8 0, align 1
 // +     %1 = load i64, #0, align 8
-// +     %2 = ptradd #1, i64 %1
+// +     %2 = ptradd base #1, %1
 // +     ret ptr %2
 // + }
 

@@ -106,13 +106,13 @@ temporaries();
 // +     br bb1(%10)
 // +
 // + bb1(ptr %11):
-// +     %12 = retain %11
+// +     %12 = ptradd base %11, 0
 // +     delete %12 using $T3Big.delete implicit
 // +     %13 = cmp eq ptr %11, #1
 // +     br %13 to bb3 else bb2
 // +
 // + bb2:
-// +     %14 = ptradd %11, -24
+// +     %14 = ptradd sibling %11, -24
 // +     br bb1(%14)
 // +
 // + bb3:
@@ -120,13 +120,13 @@ temporaries();
 // +     br bb4(%15)
 // +
 // + bb4(ptr %16):
-// +     %17 = retain %16
+// +     %17 = ptradd base %16, 0
 // +     delete %17 using $T5Small.delete implicit
 // +     %18 = cmp eq ptr %16, #0
 // +     br %18 to bb6 else bb5
 // +
 // + bb5:
-// +     %19 = ptradd %16, -8
+// +     %19 = ptradd sibling %16, -8
 // +     br bb4(%19)
 // +
 // + bb6:

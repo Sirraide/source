@@ -260,18 +260,19 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto gep = dyn_cast<LLVM::GEPOp>(op)) {
-        Assert(gep.getIndices().size() == 1);
-        Assert(
-            gep.getElemType().isSignlessInteger(8),
-            "Invalid base type for gep: {}",
-            FormatType(gep.getElemType())
+    if (auto ptradd = dyn_cast<ir::PtrAddOp>(op)) {
+        out += "ptradd ";
+
+        if (ptradd.getAliasing() != ir::Aliasing::Derived)
+            Format(out, "{} ", ir::stringifyAliasing(ptradd.getAliasing()));
+
+        Format(
+            out,
+            "{}, {}",
+            val(ptradd.getPtr(), false),
+            val(cast<Value>(ptradd.getOffs()), false)
         );
 
-        Format(out, "ptradd {}, ", val(gep.getBase(), false));
-        auto idx = gep.getIndices()[0];
-        if (auto i = dyn_cast<mlir::IntegerAttr>(idx)) Format(out, "%5({}%)", i.getValue());
-        else out += val(cast<Value>(idx));
         return;
     }
 
@@ -524,11 +525,6 @@ void CodeGen::Printer::print_op(Operation* op) {
 
     if (auto e = dyn_cast<ir::MoveOp>(op)) {
         Format(out, "move {}", val(e.getValue(), false));
-        return;
-    }
-
-    if (auto e = dyn_cast<ir::RetainOp>(op)) {
-        Format(out, "retain {}", val(e.getPtr(), false));
         return;
     }
 

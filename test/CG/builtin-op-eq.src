@@ -78,8 +78,8 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     %14 = load ptr, #1, align 8
 // +     %15 = ptradd #1, 8
 // +     %16 = load i64, %15, align 8
-// +     %17 = ptradd %11, i64 %13
-// +     %18 = ptradd %14, i64 %16
+// +     %17 = ptradd %11, %13
+// +     %18 = ptradd %14, %16
 // +     br bb3(%11, %14)
 // +
 // + bb3(ptr %19, ptr %20):
@@ -100,8 +100,8 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     ret i1 false
 // +
 // + bb7:
-// +     %26 = ptradd %19, 1
-// +     %27 = ptradd %20, 1
+// +     %26 = ptradd sibling %19, 1
+// +     %27 = ptradd sibling %20, 1
 // +     br bb3(%26, %27)
 // +
 // + bb8:
@@ -202,9 +202,9 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     %15 = ptradd #1, 8
 // +     %16 = load i64, %15, align 8
 // +     %17 = mul i64 %13, 8
-// +     %18 = ptradd %11, i64 %17
+// +     %18 = ptradd %11, %17
 // +     %19 = mul i64 %16, 8
-// +     %20 = ptradd %14, i64 %19
+// +     %20 = ptradd %14, %19
 // +     br bb3(%11, %14)
 // +
 // + bb3(ptr %21, ptr %22):
@@ -225,8 +225,8 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     ret i1 false
 // +
 // + bb7:
-// +     %28 = ptradd %21, 8
-// +     %29 = ptradd %22, 8
+// +     %28 = ptradd sibling %21, 8
+// +     %29 = ptradd sibling %22, 8
 // +     br bb3(%28, %29)
 // +
 // + bb8:
@@ -437,9 +437,9 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     %15 = ptradd #1, 8
 // +     %16 = load i64, %15, align 8
 // +     %17 = mul i64 %13, 8
-// +     %18 = ptradd %11, i64 %17
+// +     %18 = ptradd %11, %17
 // +     %19 = mul i64 %16, 8
-// +     %20 = ptradd %14, i64 %19
+// +     %20 = ptradd %14, %19
 // +     br bb3(%11, %14)
 // +
 // + bb3(ptr %21, ptr %22):
@@ -460,8 +460,8 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 // +     ret i1 false
 // +
 // + bb7:
-// +     %28 = ptradd %21, 8
-// +     %29 = ptradd %22, 8
+// +     %28 = ptradd sibling %21, 8
+// +     %29 = ptradd sibling %22, 8
 // +     br bb3(%28, %29)
 // +
 // + bb8:

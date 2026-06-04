@@ -345,16 +345,37 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
     return arith::ConstantOp::create(*this, loc, getIntegerAttr(ty, value));
 }
 
-auto CodeGen::CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset) -> IRValue {
+auto CodeGen::CreateLoad(
+    mlir::Location loc,
+    Value addr,
+    Type ty,
+    ByteOffset offset,
+    ir::Aliasing aliasing
+) -> IRValue {
     if (auto eqv = GetEquivalentRecordTypeForAggregate(ty)) {
         auto f1 = eqv->layout().fields()[0];
         auto f2 = eqv->layout().fields()[1];
-        auto v1 = CreateLoad(loc, addr, C(f1->type), f1->type->align(tu), f1->offset + offset);
-        auto v2 = CreateLoad(loc, addr, C(f2->type), f2->type->align(tu), f2->offset + offset);
+        auto v1 = CreateLoad(
+            loc,
+            addr,
+            C(f1->type),
+            f1->type->align(tu),
+            f1->offset + offset,
+            aliasing
+        );
+
+        auto v2 = CreateLoad(
+            loc,
+            addr,
+            C(f2->type),
+            f2->type->align(tu),
+            f2->offset + offset,
+            aliasing
+        );
         return {v1, v2};
     }
 
-    return CreateLoad(loc, addr, C(ty), ty->align(tu), offset);
+    return CreateLoad(loc, addr, C(ty), ty->align(tu), offset, aliasing);
 }
 
 auto CodeGen::CreateLoad(
@@ -362,7 +383,8 @@ auto CodeGen::CreateLoad(
     Value addr,
     mlir::Type type,
     Align align,
-    Size offset
+    ByteOffset offset,
+    ir::Aliasing aliasing
 ) -> Value {
     Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of load must be a pointer");
 
@@ -375,7 +397,7 @@ auto CodeGen::CreateLoad(
                 *this,
                 loc,
                 pref_ty,
-                CreatePtrAdd(loc, addr, offset),
+                CreatePtrAdd(loc, addr, offset, aliasing),
                 align
             );
 
@@ -387,7 +409,7 @@ auto CodeGen::CreateLoad(
         *this,
         loc,
         type,
-        CreatePtrAdd(loc, addr, offset),
+        CreatePtrAdd(loc, addr, offset, aliasing),
         align
     );
 }
@@ -421,15 +443,33 @@ auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
     return ir::NilOp::create(*this, loc, ptr_ty);
 }
 
-auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, ByteOffset offs) -> Value {
-    if (offs == ByteOffset()) return addr;
-    return createOrFold<LLVM::GEPOp>(
+auto CodeGen::CreatePtrAdd(
+    mlir::Location loc,
+    Value addr,
+    ByteOffset offs,
+    ir::Aliasing aliasing
+) -> Value {
+    // An offset of '0' when creating a derived pointer is a no-op. If we're
+    // creating a new base pointer, then always create the 'ptradd' even if the
+    // offset is zero as alias analysis needs to know that this is logically a
+    // new pointer.
+    if (offs == ByteOffset() and aliasing != ir::Aliasing::None) return addr;
+    return CreatePtrAdd(loc, addr, CreateInt(loc, offs.bytes()), aliasing);
+}
+
+auto CodeGen::CreatePtrAdd(
+    mlir::Location loc,
+    Value addr,
+    Value offs,
+    ir::Aliasing aliasing
+) -> Value {
+    return ir::PtrAddOp::create(
+        *this,
         loc,
         ptr_ty,
-        getI8Type(),
         addr,
-        LLVM::GEPArg(i32(offs.bytes())),
-        LLVM::GEPNoWrapFlags::inbounds | LLVM::GEPNoWrapFlags::nusw | LLVM::GEPNoWrapFlags::nuw
+        offs,
+        aliasing
     );
 }
 
@@ -437,17 +477,6 @@ void CodeGen::CreateReturn(mlir::Location loc, mlir::ValueRange values) {
     if (HasTerminator()) return;
     EmitCleanups(curr->root_cleanup_scope);
     ir::RetOp::create(*this, loc, values);
-}
-
-auto CodeGen::CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value {
-    return createOrFold<LLVM::GEPOp>(
-        loc,
-        ptr_ty,
-        getI8Type(),
-        addr,
-        LLVM::GEPArg(offs),
-        LLVM::GEPNoWrapFlags::inbounds | LLVM::GEPNoWrapFlags::nusw | LLVM::GEPNoWrapFlags::nuw
-    );
 }
 
 auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value {
@@ -459,8 +488,18 @@ auto CodeGen::CreateSICast(mlir::Location loc, Value val, Type from, Type to) ->
     return createOrFold<arith::ExtSIOp>(loc, C(to), val);
 }
 
-void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset) {
-    Assert(isa<LLVM::LLVMPointerType>(addr.getType()), "Address of store must be a pointer");
+void CodeGen::CreateStore(
+    mlir::Location loc,
+    Value addr,
+    Value val,
+    Align align,
+    ByteOffset offset,
+    ir::Aliasing aliasing
+) {
+    Assert(
+        isa<LLVM::LLVMPointerType>(addr.getType()),
+        "Address of store must be a pointer"
+    );
 
     // Sign-extend weird integers to a more proper size before storing them.
     if (val.getType().isInteger()) {
@@ -471,7 +510,7 @@ void CodeGen::CreateStore(mlir::Location loc, Value addr, Value val, Align align
     ir::StoreOp::create(
         *this,
         loc,
-        CreatePtrAdd(loc, addr, offset),
+        CreatePtrAdd(loc, addr, offset, aliasing),
         val,
         align
     );
@@ -1096,7 +1135,11 @@ void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RV
             );
 
             EmitRecord(*record, *opt->get_equivalent_record_layout());
-            ir::EngageOp::create(*this, loc, CreatePtrAdd(loc, addr, opt->get_engaged_offset()));
+            ir::EngageOp::create(
+                *this,
+                loc,
+                CreatePtrAdd(loc, addr, opt->get_engaged_offset())
+            );
             return;
         }
 
@@ -1257,7 +1300,12 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
                     continue;
                 }
 
-                auto offs = CreatePtrAdd(C(val->location()), addr, field->offset);
+                auto offs = CreatePtrAdd(
+                    C(val->location()),
+                    addr,
+                    field->offset
+                );
+
                 EmitRValue(offs, val);
             }
         }
@@ -1919,12 +1967,15 @@ auto CodeGen::EmitBuiltinCallExpr(BuiltinCallExpr* expr) -> IRValue {
             Assert(cast<PtrType>(expr->args()[0]->type)->elem() == tu.I8Ty);
             auto ptr = EmitScalar(expr->args()[0]);
             auto offset = EmitScalar(expr->args()[1]);
-            return CreatePtrAdd(loc, ptr, offset);
+
+            // Ptradd is an unsafe operation anyway, so just make this a
+            // new base pointer.
+            return CreatePtrAdd(loc, ptr, offset, ir::Aliasing::None);
         }
 
         case B::Retain: {
             auto ptr = EmitScalar(expr->args()[0]);
-            return ir::RetainOp::create(*this, loc, ptr);
+            return CreatePtrAdd(loc, ptr, ByteOffset(), ir::Aliasing::None);
         }
 
         case B::SplitClosure: return Emit(expr->args()[0]);
@@ -2274,7 +2325,12 @@ void CodeGen::EmitDelete(mlir::Location loc, Value base_addr, Type ty, bool impl
 
                 // Emit increment.
                 EnterBlock(std::move(bb_inc));
-                auto prev = CreatePtrAdd(loc, body->getArgument(0), -ByteOffset(sz));
+                auto prev = CreatePtrAdd(
+                    loc,
+                    body->getArgument(0),
+                    -ByteOffset(sz),
+                    ir::Aliasing::Sibling
+                );
                 mlir::cf::BranchOp::create(*this, loc, body, prev);
 
                 // Continue after the loop.
@@ -2286,9 +2342,9 @@ void CodeGen::EmitDelete(mlir::Location loc, Value base_addr, Type ty, bool impl
                 });
             },
             [&](StructType* s) {
-                // If we’re not deleting the base address, retain it to tell the
-                // move analysis pass that this deletion is fine.
-                if (addr != base_addr) addr = ir::RetainOp::create(*this, loc, addr);
+                // If we’re not deleting the base address, mark it as a new base
+                // pointer to tell the move analysis pass that this deletion is fine.
+                if (addr != base_addr) addr = CreatePtrAdd(loc, addr, ByteOffset(), ir::Aliasing::None);
                 ir::DeleteOp::create(*this, loc, addr, del, implicit);
             }
         });
@@ -2343,7 +2399,11 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
         if (isa<ArrayType>(expr->type)) {
             arg_types.push_back(ptr_ty);
             args.push_back(r.scalar());
-            end_vals.push_back(CreatePtrAdd(r.loc(), r.scalar(), expr->type->memory_size(tu)));
+            end_vals.push_back(CreatePtrAdd(
+                r.loc(),
+                r.scalar(),
+                expr->type->memory_size(tu)
+            ));
         } else if (isa<RangeType>(expr->type)) {
             arg_types.push_back(r.first().getType());
             args.push_back(r.first());
@@ -2352,7 +2412,10 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
             auto byte_size = createOrFold<arith::MulIOp>(
                 floc,
                 r.second(),
-                CreateInt(floc, i64(cast<SingleElementTypeBase>(expr->type)->elem()->array_size(tu).bytes()))
+                CreateInt(
+                    floc,
+                    i64(cast<SingleElementTypeBase>(expr->type)->elem()->array_size(tu).bytes())
+                )
             );
 
             arg_types.push_back(ptr_ty);
@@ -2412,7 +2475,8 @@ auto CodeGen::EmitForStmt(ForStmt* stmt) -> IRValue {
             args.push_back(CreatePtrAdd(
                 floc,
                 a,
-                cast<SingleElementTypeBase>(expr->type)->elem()->array_size(tu)
+                cast<SingleElementTypeBase>(expr->type)->elem()->array_size(tu),
+                ir::Aliasing::Sibling
             ));
         } else {
             Unreachable("Invalid for range type: {}", expr->type);
@@ -3133,7 +3197,8 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                 }
             });
 
-            return CreatePtrAdd(loc, base, p.offset());
+            // This is a constant, so what aliases what is irrelevant.
+            return CreatePtrAdd(loc, base, p.offset(), ir::Aliasing::None);
         },
         [&](eval::Record) -> IRValue {
             // TODO: Actually determine whether we can get here; I don’t think it’s

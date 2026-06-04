@@ -381,6 +381,17 @@ LOWERING(ProcRefOp, {
     );
 });
 
+LOWERING(PtrAddOp, {
+    return r.createOrFold<LLVM::GEPOp>(
+        op.getLoc(),
+        op.getType(),
+        r.getI8Type(),
+        op.getPtr(),
+        LLVM::GEPArg(op.getOffs()),
+        LLVM::GEPNoWrapFlags::inbounds | LLVM::GEPNoWrapFlags::nusw | LLVM::GEPNoWrapFlags::nuw
+    );
+});
+
 LOWERING(RetOp, {
     Value res;
 
@@ -409,7 +420,6 @@ LOWERING(RetOp, {
     return LLVM::ReturnOp::create(r, op.getLoc(), res);
 });
 
-LOWERING(RetainOp, { return a.getPtr(); });
 LOWERING(SAddOvOp, { return LowerOverflowOp<LLVM::SAddWithOverflowOp>(op, a, r); });
 LOWERING(SMulOvOp, { return LowerOverflowOp<LLVM::SMulWithOverflowOp>(op, a, r); });
 LOWERING(SSubOvOp, { return LowerOverflowOp<LLVM::SSubWithOverflowOp>(op, a, r); });
@@ -469,7 +479,7 @@ void LoweringPass::runOnOperation() {
         NilOpLowering,
         ProcOpLowering,
         ProcRefOpLowering,
-        RetainOpLowering,
+        PtrAddOpLowering,
         RetOpLowering,
         SAddOvOpLowering,
         SMulOvOpLowering,

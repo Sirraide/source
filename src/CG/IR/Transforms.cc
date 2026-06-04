@@ -225,8 +225,14 @@ struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Mov
         MoveLatticePoint* after
     ) -> mlir::LogicalResult override {
         auto changed = after->join(before);
-        if (auto a = dyn_cast<mlir::LLVM::AllocaOp>(op)) changed |= after->defined(a);
-        if (auto r = dyn_cast<ir::RetainOp>(op)) changed |= after->defined(r);
+
+        // Check if this is a new base pointer.
+        if (auto a = dyn_cast<mlir::LLVM::AllocaOp>(op))
+            changed |= after->defined(a);
+        if (auto p = dyn_cast<ir::PtrAddOp>(op); p and p.getAliasing() == ir::Aliasing::None)
+            changed |= after->defined(p);
+
+        // Track moves and defs based on the operands otherwise.
         for (auto [i, v] : llvm::enumerate(op->getOperands())) {
             if (UseIsMove(u32(i), op)) changed |= after->moved(v, op);
             else if (UseIsDef(v, op)) changed |= after->defined(v);

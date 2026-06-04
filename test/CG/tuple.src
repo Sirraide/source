@@ -201,7 +201,7 @@ proc f9 nomangle {
 // +
 // + bb2:
 // +     %2 = mul i64 %0, 8
-// +     %3 = ptradd #0, i64 %2
+// +     %3 = ptradd #0, %2
 // +     store %3, i64 1, align 8
 // +     %4 = add i64 %0, 1
 // +     br bb1(%4)
@@ -212,7 +212,7 @@ proc f9 nomangle {
 // +
 // + bb4:
 // +     %7 = mul i64 %5, 8
-// +     %8 = ptradd #1, i64 %7
+// +     %8 = ptradd #1, %7
 // +     store %8, i64 1, align 8
 // +     %9 = add i64 %5, 1
 // +     br bb3(%9)
@@ -288,7 +288,7 @@ proc f9 nomangle {
 // +
 // + bb2:
 // +     %2 = mul i64 %0, 16
-// +     %3 = ptradd #1, i64 %2
+// +     %3 = ptradd #1, %2
 // +     store %3, i64 1, align 8
 // +     %4 = ptradd %3, 8
 // +     store %4, i8 2, align 1
@@ -301,7 +301,7 @@ proc f9 nomangle {
 // +
 // + bb4:
 // +     %8 = mul i64 %6, 16
-// +     %9 = ptradd #2, i64 %8
+// +     %9 = ptradd #2, %8
 // +     store %9, i64 3, align 8
 // +     %10 = ptradd %9, 8
 // +     store %10, i8 4, align 1

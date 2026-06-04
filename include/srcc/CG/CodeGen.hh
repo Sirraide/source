@@ -367,10 +367,21 @@ public:
     /// Convert a type to an array of bytes whose dimension is the type size.
     auto ConvertToByteArrayType(Type ty) -> mlir::Type;
 
+    /// Create a stack allocation.
     auto CreateAlloca(mlir::Location loc, Type ty) -> Value;
     auto CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value;
-    void CreateAbort(mlir::Location loc, ir::AbortReason reason, IRValue msg1, IRValue msg2, IRValue stringifier);
 
+    /// Create an instruction that aborts the program.
+    void CreateAbort(
+        mlir::Location loc,
+        ir::AbortReason reason,
+        IRValue msg1,
+        IRValue msg2,
+        IRValue stringifier
+    );
+
+    /// If 'failure_cond' is 'true', abort and pass 'op' and 'name' to the
+    /// arithmetic abort handler.
     void CreateArithFailure(
         Value failure_cond,
         Tk op,
@@ -378,6 +389,9 @@ public:
         String name = "integer overflow"
     );
 
+    /// Create a binary operation. 'Unchecked' and 'Checked' are the operations used
+    /// to build unchecked/checked accesses depending on whether overflow checking
+    /// is enabled.
     template <typename Unchecked, typename Checked>
     auto CreateBinop(
         Type ty,
@@ -387,27 +401,96 @@ public:
         Tk op
     ) -> Value;
 
+    /// Create a new basic block; it is not attached anywhere.
     auto CreateBlock(ArrayRef<mlir::Type> args = {}) -> std::unique_ptr<Block>;
+
+    /// Create a boolean constant.
     auto CreateBool(mlir::Location loc, bool b) -> Value;
+
+    /// Store a 'builtin aggregate' (i.e. a slice, range, or closure).
     void CreateBuiltinAggregateStore(mlir::Location loc, Value addr, Type ty, IRValue aggregate);
+
+    /// Create an empty slice.
     auto CreateEmptySlice(mlir::Location loc) -> IRValue;
+
+    /// Create a global constant holding a string and return its address.
     auto CreateGlobalStringPtr(Align align, String data, bool null_terminated) -> Value;
     auto CreateGlobalStringPtr(String data) -> Value;
+
+    /// Create a global constant holding a string and return a slice to that string.
     auto CreateGlobalStringSlice(mlir::Location loc, String data) -> IRValue;
-    auto CreateICmp(mlir::Location loc, mlir::arith::CmpIPredicate pred, Value lhs, Value rhs) -> Value;
+
+    /// Create an integer comparison.
+    auto CreateICmp(
+        mlir::Location loc,
+        mlir::arith::CmpIPredicate pred,
+        Value lhs,
+        Value rhs
+    ) -> Value;
+
+    /// Create an integer constant.
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
-    auto CreateLoad(mlir::Location loc, Value addr, Type ty, Size offset = {}) -> IRValue;
-    auto CreateLoad(mlir::Location loc, Value addr, mlir::Type ty, Align align, Size offset = {}) -> Value;
+
+    /// Load a value from memory. If 'offset' is non-zero, the pointer is offset
+    /// by that value first.
+    auto CreateLoad(
+        mlir::Location loc,
+        Value addr,
+        Type ty,
+        ByteOffset offset = {},
+        ir::Aliasing aliasing = ir::Aliasing::Derived
+    ) -> IRValue;
+
+    auto CreateLoad(
+        mlir::Location loc,
+        Value addr,
+        mlir::Type ty,
+        Align align,
+        ByteOffset offset = {},
+        ir::Aliasing aliasing = ir::Aliasing::Derived
+    ) -> Value;
+
+    /// Create a memory copy.
     void CreateMemCpy(mlir::Location loc, Value to, Value from, Type ty, bool is_move = false);
+
+    /// Create the 'null' value of the closure type.
     auto CreateNullClosure(mlir::Location loc) -> IRValue;
+
+    /// Create a 'null' pointer value.
     auto CreateNullPointer(mlir::Location loc) -> Value;
+
+    /// Create a return.
     void CreateReturn(mlir::Location loc, mlir::ValueRange values);
-    auto CreatePtrAdd(mlir::Location loc, Value addr, Value offs) -> Value;
-    auto CreatePtrAdd(mlir::Location loc, Value addr, ByteOffset offs) -> Value;
+
+    /// Offset a pointer.
+    auto CreatePtrAdd(
+        mlir::Location loc,
+        Value addr,
+        Value offs,
+        ir::Aliasing aliasing = ir::Aliasing::Derived
+    ) -> Value;
+
+    auto CreatePtrAdd(
+        mlir::Location loc,
+        Value addr,
+        ByteOffset offs,
+        ir::Aliasing aliasing = ir::Aliasing::Derived
+    ) -> Value;
+
+    /// Cast a signed integer, truncating or extending as appropriate.
     auto CreateSICast(mlir::Location loc, Value val, Type from, Type to) -> Value;
-    void CreateStore(mlir::Location loc, Value addr, Value val, Align align, Size offset = {});
+
+    /// Store a value to memory.
+    void CreateStore(
+        mlir::Location loc,
+        Value addr,
+        Value val,
+        Align align,
+        ByteOffset offset = {},
+        ir::Aliasing aliasing = ir::Aliasing::Derived
+    );
 
     void AddDiagRemark(std::string&& s) { tu.context().diags().add_remark(std::move(s)); }
     void ReportDiag(Diagnostic&& d) { tu.context().diags().report(std::move(d)); }

@@ -932,11 +932,6 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto r = dyn_cast<ir::RetainOp>(i)) {
-            Temp(r->getResult(0)) = Val(r.getPtr());
-            continue;
-        }
-
         if (auto tree = dyn_cast<ir::TreeConstantOp>(i)) {
             Temp(i->getResult(0)) = SRValue(tree.getTree());
             continue;
@@ -990,12 +985,10 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto gep = dyn_cast<LLVM::GEPOp>(i)) {
-            auto idx = gep.getIndices()[0];
-            i64 offs;
-            if (auto lit = dyn_cast<mlir::IntegerAttr>(idx)) offs = lit.getValue().getSExtValue();
-            else offs = Val(cast<Value>(idx)).cast<APInt>().getSExtValue();
-            Temp(gep) = SRValue(Val(gep.getBase()).cast<Pointer>().offset(ByteOffset(offs)));
+        if (auto p = dyn_cast<ir::PtrAddOp>(i)) {
+            auto base = Val(p.getPtr()).cast<Pointer>();
+            auto offs = Val(p.getOffs()).cast<APInt>().getSExtValue();
+            Temp(p) = SRValue(base.offset(ByteOffset(offs)));
             continue;
         }
 

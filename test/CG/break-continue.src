@@ -348,7 +348,7 @@ proc p13 {
 // +     call ccc void f(i64 2 noundef)
 // +     call ccc void h()
 // +     call ccc void g()
-// +     %4 = ptradd %1, 1
+// +     %4 = ptradd sibling %1, 1
 // +     br bb1(%4)
 // +
 // + bb5:
@@ -380,7 +380,7 @@ proc p13 {
 // +     br bb5
 // +
 // + bb5:
-// +     %4 = ptradd %1, 1
+// +     %4 = ptradd sibling %1, 1
 // +     br bb1(%4)
 // +
 // + bb6:

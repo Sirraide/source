@@ -132,6 +132,10 @@ public:
     constexpr i64 bytes() const { return val; }
     constexpr i64 bits() const { return val * BitsPerByte; }
 
+    friend constexpr auto operator+(Size a, ByteOffset b) -> ByteOffset {
+        return {i64(a.bytes()) - i64(b.bytes())};
+    }
+
     friend constexpr auto operator-(Size a, Size b) -> ByteOffset {
         return {i64(a.bytes()) - i64(b.bytes())};
     }

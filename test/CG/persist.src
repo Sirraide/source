@@ -207,7 +207,8 @@ proc str1 {
 // + entry:
 // +     store #0, i64 42, align 8
 // +     %0 = ptradd #0, 8
-// +     store %0, ptr nil, align 8
+// +     %1 = ptradd base nil, 0
+// +     store %0, ptr %1, align 8
 // +     ret
 // + }
 // +
@@ -217,15 +218,17 @@ proc str1 {
 // + entry:
 // +     store #0, i64 1, align 8
 // +     %0 = ptradd #0, 8
-// +     store %0, ptr nil, align 8
-// +     %1 = ptradd #0, 16
-// +     store %1, i64 2, align 8
-// +     %2 = ptradd %1, 8
-// +     store %2, ptr nil, align 8
-// +     %3 = ptradd %1, 16
-// +     store %3, i8 -1, align 1
-// +     %4 = ptradd %1, 16
-// +     engage %4
+// +     %1 = ptradd base nil, 0
+// +     store %0, ptr %1, align 8
+// +     %2 = ptradd #0, 16
+// +     store %2, i64 2, align 8
+// +     %3 = ptradd %2, 8
+// +     %4 = ptradd base nil, 0
+// +     store %3, ptr %4, align 8
+// +     %5 = ptradd %2, 16
+// +     store %5, i8 -1, align 1
+// +     %6 = ptradd %2, 16
+// +     engage %6
 // +     ret
 // + }
 // +
@@ -258,7 +261,8 @@ proc str1 {
 // +     %0 = ptradd #0, 16
 // +     store %0, i64 3, align 8
 // +     %1 = ptradd %0, 8
-// +     store %1, ptr nil, align 8
+// +     %2 = ptradd base nil, 0
+// +     store %1, ptr %2, align 8
 // +     ret
 // + }
 // +
@@ -268,7 +272,8 @@ proc str1 {
 // + entry:
 // +     store #0, i64 0, align 8
 // +     %0 = ptradd #0, 8
-// +     store %0, ptr nil, align 8
+// +     %1 = ptradd base nil, 0
+// +     store %0, ptr %1, align 8
 // +     ret
 // + }
 // +
@@ -288,9 +293,10 @@ proc str1 {
 // +     store #2, ptr @7, align 8
 // +     %2 = ptradd #2, 8
 // +     store %2, i64 3, align 8
-// +     store #3, ptr @8, align 8
-// +     %3 = ptradd #3, 8
-// +     store %3, i64 4, align 8
+// +     %3 = ptradd base @8, 0
+// +     store #3, ptr %3, align 8
+// +     %4 = ptradd #3, 8
+// +     store %4, i64 4, align 8
 // +     ret
 // + }
 // +
@@ -301,12 +307,13 @@ proc str1 {
 // +     #3 = 8, align 8
 // +
 // + entry:
-// +     store #0, ptr @9, align 8
-// +     %0 = ptradd @9, 1
-// +     store #1, ptr %0, align 8
-// +     %1 = ptradd @9, 3
-// +     store #2, ptr %1, align 8
-// +     %2 = ptradd @9, 4
-// +     store #3, ptr %2, align 8
+// +     %0 = ptradd base @9, 0
+// +     store #0, ptr %0, align 8
+// +     %1 = ptradd base @9, 1
+// +     store #1, ptr %1, align 8
+// +     %2 = ptradd base @9, 3
+// +     store #2, ptr %2, align 8
+// +     %3 = ptradd base @9, 4
+// +     store #3, ptr %3, align 8
 // +     ret
 // + }
