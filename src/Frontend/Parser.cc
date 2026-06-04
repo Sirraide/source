@@ -337,6 +337,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::Caret:
         case Tk::ColonColon:
         case Tk::Continue:
+        case Tk::Copy:
         case Tk::Delete:
         case Tk::Dollar:
         case Tk::Eval:
@@ -682,6 +683,7 @@ auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<
 //          | <expr-break>
 //          | <expr-call>
 //          | <expr-continue>
+//          | <expr-copy>
 //          | <expr-decl-ref>
 //          | <expr-delete>
 //          | <expr-eval>
@@ -798,6 +800,14 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         case Tk::Continue:
             lhs = new (*this) ParsedBreakContinueExpr{true, Next()};
             break;
+
+        // <expr-copy> ::= COPY <expr>
+        case Tk::Copy: {
+            auto loc = Next();
+            auto arg = TryParseExpr();
+            lhs = new (*this) ParsedCopyExpr{arg, loc};
+        } break;
+
 
         // <expr-block> ::= "{" { <stmt> } "}"
         case Tk::LBrace:

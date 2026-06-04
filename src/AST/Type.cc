@@ -128,7 +128,8 @@ bool TypeBase::pass_by_reference(const Target& t, Intent i) const {
 
     // Move parameters are references only if the type is not trivial;
     // that is, for trivially-copyable types, any modification of the
-    // ‘moved’ value must not be reflected in the caller.
+    // ‘moved’ value must not be reflected in the caller, so we *must*
+    // pass by value rather than by reference.
     //
     // Specifically, moving for these types is *logically* a copy, that
     // is the ‘moved’ value is not actually considered ‘moved’, and the

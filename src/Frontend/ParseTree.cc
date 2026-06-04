@@ -607,6 +607,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
             return std::move(children);
         },
 
+        [&](ParsedCopyExpr* c) -> Children { return c->arg; },
         [&](ParsedDeclRefExpr* d) -> Children {
             if (auto r = d->root().get_or_null()) return r;
             return {};

@@ -455,6 +455,18 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CallExpr; }
 };
 
+class srcc::ParsedCopyExpr final : public ParsedStmt {
+public:
+    ParsedStmt* arg;
+
+    ParsedCopyExpr(
+        ParsedStmt* arg,
+        SLoc location
+    ) : ParsedStmt{Kind::CopyExpr, location}, arg{arg} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CopyExpr; }
+};
+
 namespace srcc {
 /// The scope marker present before the first name.
 enum struct InitialDREScope : u8 {

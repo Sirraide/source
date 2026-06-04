@@ -555,8 +555,11 @@ public:
         /// Cast a pointer to a pointer (or an optional pointer to an optional pointer).
         Pointer,
 
-        /// Convert an lvalue to an rvalue.
+        /// Convert an lvalue to an rvalue, moving the value.
         LValueToRValue,
+
+        /// Convert an lvalue to an rvalue by creating a copy.
+        LValueCopy,
 
         /// Materialise a poison value of the given type.
         MaterialisePoisonValue,

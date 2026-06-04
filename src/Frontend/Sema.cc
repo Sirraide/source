@@ -4768,6 +4768,34 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) ->
     );
 }
 
+auto Sema::TranslateCopyExpr(ParsedCopyExpr* c, Type) -> Ptr<Stmt> {
+    auto arg = TRY(TranslateExpr(c->arg));
+
+    // A trivially-copyable type need not be copied explicitly.
+    if (arg->type->move_is_copy()) {
+        if (not curr_proc().proc->is_instantiation()) Warn(
+            c->loc,
+            "Redundant explicit '%1(copy%)' of trivially-copyable type '{}'",
+            arg->type
+        );
+
+        return arg;
+    }
+
+    // Copying a temporary is a no-op.
+    if (arg->is_rvalue()) {
+        if (not curr_proc().proc->is_instantiation()) Warn(
+            c->loc,
+            "Redundant '%1(copy%)' of temporary value",
+            arg->type
+        );
+
+        return arg;
+    }
+
+    return new (*tu) CastExpr(arg->type, CastExpr::LValueCopy, arg, c->loc);
+}
+
 /// Perform initial processing of a decl so it can be used by the rest
 /// of the code. This only handles order-independent decls.
 auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {

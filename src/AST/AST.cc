@@ -329,6 +329,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 case CastExpr::Deref: print("deref"); break;
                 case CastExpr::ExplicitDiscard: print("discard"); break;
                 case CastExpr::LValueToRValue: print("lvalue->rvalue"); break;
+                case CastExpr::LValueCopy: print("lvalue->copy"); break;
                 case CastExpr::Integral: print("int->int"); break;
                 case CastExpr::OptionalUnwrap: print("unwrap"); break;
                 case CastExpr::OptionalWrap: print("value->optional"); break;

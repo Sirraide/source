@@ -1177,14 +1177,24 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // handled here.
         [&](CastExpr *e) {
             auto loc = C(e->location());
-            if (e->kind == CastExpr::CastKind::LValueToRValue) {
+            if (
+                e->kind == CastExpr::LValueToRValue or
+                e->kind == CastExpr::LValueCopy
+            ) {
                 auto init_addr = EmitScalar(e->arg);
-                CreateMemCpy(loc, addr, init_addr, e->type, e->type->requires_deletion());
+                CreateMemCpy(
+                    loc,
+                    addr,
+                    init_addr,
+                    e->type,
+                    e->type->requires_deletion() and e->kind != CastExpr::LValueCopy
+                );
+
                 VariableInitialised(addr, init, init_addr);
                 return;
             }
 
-            if (e->kind == CastExpr::CastKind::NilToOptional) {
+            if (e->kind == CastExpr::NilToOptional) {
                 auto opt = cast<OptionalType>(init->type);
                 Emit(e->arg); // Just discard this value.
                 CreateStore(
@@ -1200,7 +1210,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
             }
 
             // Emit the value into the address and then set the engaged flag.
-            Assert(e->kind == CastExpr::CastKind::OptionalWrap);
+            Assert(e->kind == CastExpr::OptionalWrap);
             auto o = cast<OptionalType>(init->type);
             EmitRValue(addr, e->arg);
 
@@ -1268,7 +1278,10 @@ void CodeGen::VariableInitialised(Value addr, Expr* init, Value init_from_addr) 
                 return;
             }
 
-            if (cast->kind == CastExpr::LValueToRValue) {
+            if (
+                cast->kind == CastExpr::LValueToRValue or
+                cast->kind == CastExpr::LValueCopy
+            ) {
                 Assert(init_from_addr);
                 ir::EngageCopyOp::create(*this, C(init->location()), addr, init_from_addr);
                 return;
@@ -2123,6 +2136,11 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 
         case CastExpr::LValueToRValue:
             Unreachable("Handled above");
+
+        case CastExpr::LValueCopy:
+            // LValueCopy casts are used to copy a non-trivially-copyable type;
+            // such types should always be emitted in EmitRValue() instead of here.
+            Unreachable("Should only be emitted in EmitRValue()");
 
         case CastExpr::MaterialisePoisonValue: {
             auto op = LLVM::PoisonOp::create(

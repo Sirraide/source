@@ -56,6 +56,7 @@
                    | <expr-break>
                    | <expr-call>
                    | <expr-continue>
+                   | <expr-copy>
                    | <expr-decl-ref>
                    | <expr-delete>
                    | <expr-eval>
@@ -83,6 +84,7 @@
 <expr-call>       ::= <expr> "(" [ <call-args> ] ")"
 <expr-macro-call> ::= "#" <expr-decl-ref> "(" [ <macro-args> ] ")"
 <expr-continue>   ::= CONTINUE
+<expr-copy>       ::= COPY <expr>
 <expr-decl-ref>   ::= [ "::" | <expr> "::" ] IDENT { "::" IDENT } [ "::" <operator-name> ]
 <expr-delete>     ::= DELETE <expr>
 <expr-eval>       ::= EVAL ( <sub-stmt> )

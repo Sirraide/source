@@ -486,7 +486,7 @@ Add a `__srcc_this_proc` builtin (the standard library can have a nicer name for
 - `and` and `or` should not associate.
 -
 
-## Variadic templates.
+## [DONE] Variadic templates.
 A homogeneous pack can be declared with the syntax `<type> "..." [ IDENT ]`, where
 `<type>` can also be a (possibly deduced) template parameter. A heterogeneous pack
 is declared using `var` as the `<type>`. When instantiated, a homogeneous pack is
@@ -522,7 +522,7 @@ proc sum (var ...vs) -> int {
 }
 ```
 
-# Immutable types
+# [DONE] Immutable types
 Use `<type> val` as the syntax, e.g. `i8 val`, `int val`; this makes more sense than e.g. `val int`
 (‘int value’ vs ‘value int’), and also doesn’t run into the problem that it’s not obvious what
 `val int^` would be.
@@ -579,8 +579,26 @@ usable yet.
 
 Actually, can we use dataflow analysis to diagnose this as an uninitialised variable instead?
 
+## Syntax for copies
+Copying non-trivially-copyable types is explicit, so we need _some_ syntax for that; maybe just
+```
+f(s.copy());
+```
+
+## Spread Record Types.
+E.g.
+```
+struct S { int x; int y; int z; };
+proc f(int a, int b, int c) {}
+var s = S(1, 2, 3);
+
+f(...s);
+f(...(1, 2, 3));
+var s2 = S(...s);
+```
+
 # Failed Ideas
-## Renaming copy to var
+## Renaming copy to var [DEFUNCT: 'copy' (now 'byval') is can no longer be spelt in source]
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this
 is probably an error. Allowing this would just be too weird...)
 
