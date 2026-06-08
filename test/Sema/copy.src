@@ -1,0 +1,25 @@
+// V %srcc --sema --verify %s
+program test;
+
+struct Small {
+    int x;
+    delete { }
+};
+
+proc sink(Small) {}
+proc sink_int(int) {}
+
+proc f() {
+    var s = Small(42);
+    sink(copy s);
+    sink(copy s);
+    sink(copy Small(42)); // expected-warning: Redundant 'copy' of temporary value
+    sink(s);
+}
+
+proc f2() {
+    int x;
+    sink_int(x);
+    sink_int(copy x); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
+    sink_int(copy 42); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
+}

@@ -1,0 +1,97 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+program test;
+
+struct Small {
+    int x;
+    delete { }
+};
+
+proc sink(Small) {}
+proc sink_int(int) {}
+
+proc f1() {
+    var s = Small(42);
+    sink(copy s);
+    sink(copy s);
+    sink(copy Small(42));
+    sink(s);
+}
+
+proc f2() {
+    var s = Small(42);
+    sink(copy s);
+}
+
+proc f3() {
+    int x;
+    sink_int(x);
+    sink_int(copy x);
+    sink_int(copy 42);
+}
+
+// * proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S4sinkFvT5SmallE.1 (ptr %0 align 8 dereferenceable 8 move) private ccc {
+// + entry:
+// +     delete %0 using $T5Small.delete implicit
+// +     ret
+// + }
+// +
+// + proc _S8sink_intFviE.2 (i64 %0 noundef) private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     ret
+// + }
+// +
+// + proc _S2f1FvE.3 private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     copy #1 <- #0, 8
+// +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
+// +     copy #2 <- #0, 8
+// +     call ccc void _S4sinkFvT5SmallE.1(ptr #2 align 8 dereferenceable 8 move)
+// +     store #3, i64 42, align 8
+// +     call ccc void _S4sinkFvT5SmallE.1(ptr #3 align 8 dereferenceable 8 move)
+// +     call ccc void _S4sinkFvT5SmallE.1(ptr #0 align 8 dereferenceable 8 move)
+// +     ret
+// + }
+// +
+// + proc _S2f2FvE.4 private ccc {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 42, align 8
+// +     copy #1 <- #0, 8
+// +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
+// +     delete #0 using $T5Small.delete implicit
+// +     ret
+// + }
+// +
+// + proc _S2f3FvE.5 private ccc {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 0, align 8
+// +     %0 = load i64, #0, align 8
+// +     call ccc void _S8sink_intFviE.2(i64 %0 noundef)
+// +     %1 = load i64, #0, align 8
+// +     call ccc void _S8sink_intFviE.2(i64 %1 noundef)
+// +     call ccc void _S8sink_intFviE.2(i64 42 noundef)
+// +     ret
+// + }
