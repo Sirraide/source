@@ -461,6 +461,12 @@ def PtrAddOp : SRCC_Op<"ptradd", [Pure, AllTypesMatch<["ptr", "res"]>]> {
 
     let arguments = (ins SRCC_Ptr:$ptr, Builtin_Integer:$offs, SRCC_AliasingAttr:$aliasing);
     let results = (outs SRCC_Ptr:$res);
+    let extraClassDeclaration = [{
+        /// Returns true if this pointer does not alias any other pointer.
+        bool isNewBasePointer() {
+            return getAliasing() == ir::Aliasing::None;
+        }
+    }];
 }
 
 def QuoteOp : SRCC_Op<"quote", [Pure]> {

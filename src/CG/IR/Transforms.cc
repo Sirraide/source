@@ -229,7 +229,7 @@ struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Mov
         // Check if this is a new base pointer.
         if (auto a = dyn_cast<mlir::LLVM::AllocaOp>(op))
             changed |= after->defined(a);
-        if (auto p = dyn_cast<ir::PtrAddOp>(op); p and p.getAliasing() == ir::Aliasing::None)
+        if (auto p = dyn_cast<ir::PtrAddOp>(op); p and p.isNewBasePointer())
             changed |= after->defined(p);
 
         // Track moves and defs based on the operands otherwise.
