@@ -377,6 +377,10 @@ bool VirtualMemoryMap::IsVirtualProcPtr(iptr p) {
 
 auto VirtualMemoryMap::MakeVirtualPointer(ir::ProcOp proc) -> Pointer {
     // Get the index AFTER insertion because it’s 1-based.
+    //
+    // FIXME: Multiply procedures.size() by Size::Bytes(8) to
+    // ensure the resulting ‘pointer’ value is aligned properly;
+    // we’ll need this e.g. for compile-time pointer tagging.
     procedures.push_back(proc);
     return Pointer(iptr(address_range.get() + procedures.size()));
 }

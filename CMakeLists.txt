@@ -118,7 +118,7 @@ set(LIBBASE_CXXFLAGS -fno-exceptions -fno-rtti -fwrapv -fnew-infallible)
 set(LIBBASE_LLVM_BINDINGS ON)
 FetchContent_Declare(libbase
     GIT_REPOSITORY https://github.com/Sirraide/libbase
-    GIT_TAG 0b945255656677191f208901e6fdceb38269d482
+    GIT_TAG 31be5337d5616bd77bc088b6950ab91686f9ff9b
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/libbase"
 )
 FetchContent_MakeAvailable(libbase)
@@ -159,10 +159,11 @@ include_directories(SYSTEM
     ${CLANG_INCLUDE_DIRS}
 )
 
-add_definitions(${LLVM_DEFINITIONS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+add_definitions(${LLVM_DEFINITIONS_LIST})
+list(APPEND CMAKE_REQUIRED_DEFINITIONS ${LLVM_DEFINITIONS_LIST})
 link_directories(${LLVM_LIBRARY_DIRS})
 
-separate_arguments(llvm_libs)
 target_link_libraries(options INTERFACE
     tinfo
     ffi
