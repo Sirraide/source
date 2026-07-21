@@ -37,24 +37,46 @@ class EnumeratorDecl;
 class RecordLayout;
 struct BuiltinTypes;
 
-#define AST_TYPE(node) class node;
+#define AST_TYPE_LEAF_WITH_IDENTITY(node) class node;
+#define AST_TYPE(node) class SRCC_DIAGNOSE_POINTER_COMPARISON node;
 #include "srcc/AST.inc"
 
 class Type;
 class TypeAndValueCategory;
 class TypeLoc;
 
+namespace types::detail {
+struct CanonicalTypeDenseMapInfo;
+struct NonCanonicalTypeDenseMapInfo;
+auto MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout*;
+}
+
 /// Casting.
+template <typename To> auto cast(Type from) -> To*;
+template <typename To> auto cast_if_present(Opt<Type> from) -> To*;
+template <typename To> auto dyn_cast(Type from) -> To*;
+template <typename... Ts> auto isa(Type from) -> bool;
+template <typename... Ts> auto isa_and_nonnull(Opt<Type> from) -> bool;
 } // namespace srcc
 
 /// Base class for all types.
 ///
 /// The 'alignas(8)' is required to ensure that we have some low bits
 /// available in the pointer for other purposes.
+///
+/// \see Type.
 class alignas(8) srcc::TypeBase {
     LIBBASE_IMMOVABLE(TypeBase);
 
+    #define AST_TYPE(node) friend node;
+    #include "srcc/AST.inc"
+
     friend Type;
+    friend types::detail::CanonicalTypeDenseMapInfo;
+    friend auto types::detail::MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout*;
+    template <typename To> friend auto ::srcc::cast(Type from) -> To*;
+    template <typename To> friend auto ::srcc::dyn_cast(Type from) -> To*;
+    template <typename... Ts> friend auto ::srcc::isa(Type from) -> bool;
 
 public:
     enum struct Kind : u8 {
@@ -63,10 +85,15 @@ public:
 
     };
 
+private:
+    /// Canonical type.
+    TypeBase* canonical;
+
+    /// Kind of this type.
     const Kind type_kind;
 
 protected:
-    explicit constexpr TypeBase(Kind kind) : type_kind{kind} {}
+    explicit constexpr TypeBase(Kind kind) : canonical{this}, type_kind{kind} {}
 
 public:
     SRCC_ALLOCATE_IN_CONTEXT(TypeBase, TranslationUnit);
@@ -171,13 +198,117 @@ public:
     template <typename Visitor>
     auto visit(Visitor&& v) const -> decltype(auto);
 
-    /// Get the type kind.
-    [[nodiscard]] auto kind() const -> Kind { return type_kind; }
+    /// Get the canonical type kind of this type.
+    [[nodiscard]] auto canonical_kind() const -> Kind { return canonical->type_kind; }
+
+    /// Get the exact type kind of this type, including type sugar if this is a sugared
+    /// type. You almost always want 'canonical_kind()' instead.
+    [[nodiscard]] auto exact_kind() const -> Kind { return type_kind; }
 
 private:
+    [[nodiscard]] auto desugar_once() const -> Type;
+    [[nodiscard]] bool is_canonical() const;
+    [[nodiscard]] bool is_sugar() const;
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
     [[nodiscard]] auto size_impl(const Target& t) const -> Size;
+
+    template <typename ...Types>
+    [[nodiscard]] auto strip_qualifiers() const -> Type;
+
+    /// As visit() but also visits non-canonical types.
+    template <typename Visitor>
+    auto visit_exact(Visitor&& v) const -> decltype(auto);
 };
+
+/// Class that holds a type.
+///
+/// The main purpose of this class is to allow writing equality comparisons
+/// between types as 'a == b'. We can’t simply do that w/ two 'TypeBase*'s
+/// since the builtin pointer comparison operator doesn't work properly as
+/// soon as type sugar is involved.
+///
+/// 'CanonicalType' is a variant of this that always stores a canonical type
+/// pointer; this avoids having to apply desugaring in cases where we only
+/// care about canonical types.
+///
+/// Generally, use 'CanonicalType' whenever you explicitly don't want to
+/// preserve type sugar, and 'Type' everywhere else. Note that equality
+/// comparison and hashing *always* look through type sugar. In situations
+/// where you *do* want to distinguish type sugar, use a 'TypeBase*' (e.g.
+/// serialisation).
+class srcc::Type {
+    TypeBase* pointer;
+
+public:
+    Type() = delete("Use 'Opt<Type>' instead of trying to construct a null 'Type'");
+    Type(std::nullptr_t) = delete("Use 'Opt<Type>' instead of trying to construct a null 'Type'");
+    constexpr Type(TypeBase* t) : pointer{t} { DebugAssert(t); }
+    constexpr Type(const TypeBase* t) : Type{const_cast<TypeBase*>(t)} {}
+
+    /// Get the type pointer.
+    [[nodiscard]] auto ptr() const -> TypeBase* { return pointer; }
+
+    /// Access the type pointer.
+    [[nodiscard]] auto operator->() const -> TypeBase* { return pointer; }
+
+    /// Check if two types are equal.
+    [[nodiscard]] auto operator==(Type ty) const -> bool {
+        // static_cast to void is required because we disallow pointer
+        // comparisons involving 'TypeBase*'.
+        return static_cast<void*>(pointer->canonical) ==
+               static_cast<void*>(ty.pointer->canonical);
+    }
+
+    [[nodiscard]] auto operator==(const TypeBase* ty) const -> bool {
+        return *this == Type{ty};
+    }
+
+    static const Type VoidTy;
+    static const Type NoReturnTy;
+    static const Type BoolTy;
+    static const Type IntTy;
+    static const Type DeducedTy;
+    static const Type TreeTy;
+    static const Type TypeTy;
+    static const Type UnresolvedOverloadSetTy;
+    static const Type NilTy;
+};
+
+/// Specialisation of 'Opt' for 'Type'.
+template <>
+class srcc::Opt<srcc::Type> {
+    llvm::PointerIntPair<TypeBase*, 1, bool> type_and_is_engaged;
+
+public:
+    Opt() : type_and_is_engaged(nullptr, false) {}
+    Opt(Type ty) : type_and_is_engaged(ty.ptr(), true) {}
+    Opt(std::derived_from<TypeBase> auto* ty) : type_and_is_engaged(ty, true) {}
+    Opt(std::nullopt_t) : Opt() {}
+
+    [[nodiscard]] bool has_value() const { return type_and_is_engaged.getInt(); }
+    [[nodiscard]] explicit operator bool() const { return has_value(); }
+    [[nodiscard]] auto value() const -> Type {
+        Assert(has_value());
+        return Type{type_and_is_engaged.getPointer()};
+    }
+
+    [[nodiscard]] auto value_or(Type ty) const -> Type {
+        if (has_value()) return value();
+        return ty;
+    }
+
+    [[nodiscard]] auto operator->() const -> TypeBase* { return value().ptr(); }
+    [[nodiscard]] auto operator*() const -> Type { return value(); }
+    [[nodiscard]] bool operator==(const Opt<Type>& other) const = default;
+};
+
+/// Query whether a type class is type sugar.
+template <typename Ty>
+consteval bool IsTypeSugarClass() {
+#   define AST_TYPE_SUGAR(Class) if constexpr (std::same_as<Ty, Class>) return true;
+#   include "srcc/AST.inc"
+    return false;
+}
 
 /// Scope that stores declarations.
 ///
@@ -204,7 +335,7 @@ public:
     virtual ~Scope();
 
     /// Get the associated type of this scope.
-    auto associated_type() -> Type;
+    auto associated_type() -> Opt<Type>;
 
     /// Get a flat list of all declarations in this scope.
     auto decls();
@@ -248,14 +379,14 @@ class srcc::ModuleScope : public Scope {
 class srcc::ProcScope : public Scope {
     friend TranslationUnit;
 
-    ProcScope(Scope* parent, TypeBase* associated_type)
+    ProcScope(Scope* parent, Opt<Type> associated_type)
         : Scope{parent, ScopeKind::Procedure},
           associated_type{associated_type} {}
 
 public:
     /// The associated type of the procedure. We also store this here because
     /// we need to know this before the actual declaration is created.
-    TypeBase* associated_type;
+    Opt<Type> associated_type;
 
     /// Initialiser declarations.
     SmallVector<Decl*> inits;
@@ -290,7 +421,7 @@ public:
     auto builtin_kind() const -> BuiltinKind { return b_kind; }
 
     static auto Get(TranslationUnit& mod, BuiltinKind kind) = delete("Use Types::VoidTy and friends instead");
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::BuiltinType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::BuiltinType; }
 };
 
 class srcc::IntType final : public TypeBase
@@ -315,74 +446,17 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, bits); }
     static auto Get(TranslationUnit& mod, Size size) -> IntType*;
     static void Profile(FoldingSetNodeID& ID, Size bit_width);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::IntType; }
-};
-
-/// A type together with qualifiers.
-class srcc::Type {
-    TypeBase* pointer = nullptr;
-
-public:
-    constexpr Type() = default;
-    constexpr Type(std::nullptr_t) {}
-    constexpr Type(TypeBase* t) : pointer{t} {}
-    constexpr Type(const TypeBase* t) : pointer{const_cast<TypeBase*>(t)} {}
-
-    /// Get the type pointer.
-    [[nodiscard]] auto ptr() const -> TypeBase* { return pointer; }
-
-    /// Access the type pointer.
-    [[nodiscard]] auto operator->() const -> TypeBase* { return pointer; }
-
-    /// Check if two types are equal.
-    [[nodiscard]] auto operator==(Type ty) const -> bool { return pointer == ty.pointer; }
-    [[nodiscard]] auto operator==(const TypeBase* ty) const -> bool { return pointer == ty; }
-
-    /// Check whether this holds a valid type.
-    [[nodiscard]] explicit operator bool() const { return pointer != nullptr; }
-
-    static const Type VoidTy;
-    static const Type NoReturnTy;
-    static const Type BoolTy;
-    static const Type IntTy;
-    static const Type DeducedTy;
-    static const Type TreeTy;
-    static const Type TypeTy;
-    static const Type UnresolvedOverloadSetTy;
-    static const Type NilTy;
-
-private:
-    /// For libassert.
-    friend auto operator<<(std::ostream& os, Type ty) -> std::ostream& {
-        return os << text::RenderColours(false, ty->print().str());
-    }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::IntType; }
 };
 
 namespace srcc {
-inline auto hash_value(Type ty) -> llvm::hash_code {
-    return llvm::hash_value(ty.ptr());
+inline auto hash_value(Type ty) = delete("Cannot hash 'Type'");
+
+/// For libassert.
+inline auto operator<<(std::ostream& os, Type ty) -> std::ostream& {
+    return os << text::RenderColours(false, ty->print().str());
 }
 }
-
-template <>
-struct llvm::PointerLikeTypeTraits<srcc::Type> {
-    static constexpr int NumLowBitsAvailable = PointerLikeTypeTraits<srcc::TypeBase*>::NumLowBitsAvailable;
-    static constexpr bool isPtrLike = true;
-    static auto getAsVoidPointer(srcc::Type t) -> void* { return t.ptr(); }
-    static auto getFromVoidPointer(void* p) -> srcc::Type { return srcc::Type{static_cast<srcc::TypeBase*>(p)}; }
-};
-
-template <>
-struct llvm::simplify_type<srcc::Type> {
-    using SimpleType = srcc::TypeBase*;
-    static SimpleType getSimplifiedValue(srcc::Type v) { return v.ptr(); }
-};
-
-template <>
-struct llvm::simplify_type<const srcc::Type> {
-    using SimpleType = srcc::TypeBase*;
-    static SimpleType getSimplifiedValue(srcc::Type v) { return v.ptr(); }
-};
 
 class srcc::TypeAndValueCategory {
     llvm::PointerIntPair<TypeBase*, 2, ValueCategory> data;
@@ -390,9 +464,7 @@ class srcc::TypeAndValueCategory {
 public:
     /// Create a new type and value category pair.
     TypeAndValueCategory(Type ty, ValueCategory val)
-        : data{ty.ptr(), val} {
-        Assert(ty, "Cannot create type and value category with null type");
-    }
+        : data{ty.ptr(), val} {}
 
     /// Create a void SRValue pair.
     TypeAndValueCategory() : TypeAndValueCategory(Type::VoidTy, ValueCategory::RValue) {}
@@ -460,7 +532,7 @@ public:
     auto elem() const -> Type { return element_type; }
 
     static bool classof(const TypeBase* e) {
-        return e->kind() >= Kind::ArrayType and e->kind() <= Kind::RangeType;
+        return e->exact_kind() >= Kind::ArrayType and e->exact_kind() <= Kind::RangeType;
     }
 };
 
@@ -482,7 +554,7 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), elems); }
     static auto Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, i64 size);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::ArrayType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::ArrayType; }
 };
 
 class srcc::EnumType final : public SingleElementTypeBase {
@@ -511,7 +583,7 @@ public:
     /// Get the scope of this enum.
     auto scope() const -> Scope* { return enum_scope; }
 
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::EnumType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::EnumType; }
 };
 
 class srcc::OpaqueType final : public TypeBase {
@@ -528,7 +600,7 @@ public:
     /// Get the name of the type.
     auto name() const -> String;
 
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::OpaqueType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::OpaqueType; }
 };
 
 class srcc::OptionalType final : public SingleElementTypeBase
@@ -568,7 +640,7 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
     static auto Get(TranslationUnit& mod, Type elem) -> OptionalType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::OptionalType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::OptionalType; }
 };
 
 class srcc::PtrType final : public SingleElementTypeBase
@@ -586,7 +658,7 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), immutable); }
     static auto Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, bool immutable);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::PtrType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::PtrType; }
 };
 
 /// Parts of a parameter that are relevant for the procedure type.
@@ -690,7 +762,7 @@ public:
         bool variadic
     );
 
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::ProcType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::ProcType; }
 };
 
 class srcc::RangeType final : public SingleElementTypeBase
@@ -708,7 +780,7 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem()); }
     static auto Get(TranslationUnit& mod, Type elem) -> RangeType*;
     static void Profile(FoldingSetNodeID& ID, Type elem);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::RangeType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::RangeType; }
 };
 
 // TODO: We also need an 'immutable' flag for slices.
@@ -731,12 +803,13 @@ public:
     void Profile(FoldingSetNodeID& ID) const { Profile(ID, elem(), immutable); }
     static auto Get(TranslationUnit& mod, Type elem, bool immutable) -> SliceType*;
     static void Profile(FoldingSetNodeID& ID, Type elem, bool immutable);
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::SliceType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::SliceType; }
 };
 
 class srcc::RecordLayout final : llvm::TrailingObjects<RecordLayout, FieldDecl*> {
     LIBBASE_IMMOVABLE(RecordLayout);
     friend TrailingObjects;
+    friend auto MakeCanonical(TranslationUnit& tu, const RecordLayout* rl) -> RecordLayout*;
 
 public:
     struct Bits {
@@ -886,7 +959,7 @@ public:
     }
 
     static bool classof(const TypeBase* t) {
-        return t->kind() == Kind::StructType or t->kind() == Kind::TupleType;
+        return t->exact_kind() == Kind::StructType or t->exact_kind() == Kind::TupleType;
     }
 };
 
@@ -900,7 +973,7 @@ public:
     static auto Get(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
     static auto Get(TranslationUnit& tu, RecordLayout* layout) -> TupleType*;
     static void Profile(FoldingSetNodeID& tu, auto elem_types);
-    static bool classof(const TypeBase* t) {  return t->kind() == Kind::TupleType; }
+    static bool classof(const TypeBase* t) {  return t->exact_kind() == Kind::TupleType; }
 };
 
 class srcc::StructType final : public RecordType {
@@ -943,7 +1016,7 @@ public:
     /// initialisers of this struct.
     auto scope() const -> StructScope* { return struct_scope; }
 
-    static bool classof(const TypeBase* e) { return e->kind() == Kind::StructType; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::StructType; }
 };
 
 /// Visit this type.
@@ -951,13 +1024,20 @@ template <typename Visitor>
 auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     // We const_cast here because types are never modified anyway,
     // so the 'const' is just superfluous and does nothing.
-    switch (kind()) {
-#define AST_TYPE_LEAF(node)                               \
-    case Kind::node: return std::invoke(                  \
-        std::forward<Visitor>(v),                         \
-        const_cast<node*>(static_cast<const node*>(this)) \
-    );
-#include "srcc/AST.inc"
+    switch (canonical_kind()) {
+        // Canonical types.
+#       define AST_TYPE_SUGAR(node)
+#       define AST_TYPE_LEAF(node)                                \
+           case Kind::node: return std::invoke(                   \
+                std::forward<Visitor>(v),                         \
+                const_cast<node*>(static_cast<const node*>(this)) \
+            );
+#       include "srcc/AST.inc"
+
+        // Type sugar.
+#       define AST_TYPE_SUGAR(node) case Kind::node:
+#       include "srcc/AST.inc"
+            Unreachable("Canonical type should never be type sugar");
     }
     Unreachable();
 }
@@ -966,7 +1046,7 @@ template <>
 struct std::formatter<srcc::Type> : std::formatter<std::string_view> {
     template <typename FormatContext>
     auto format(srcc::Type t, FormatContext& ctx) const {
-        return std::formatter<std::string_view>::format(std::string_view{t ? t->print().str() : "(null)"}, ctx);
+        return std::formatter<std::string_view>::format(std::string_view{t->print().str()}, ctx);
     }
 };
 
@@ -978,24 +1058,61 @@ struct std::formatter<Ty*> : std::formatter<std::string_view> {
     }
 };
 
-template <>
-struct llvm::DenseMapInfo<srcc::Type> {
-    static constexpr srcc::Type getEmptyKey() {
+struct srcc::types::detail::CanonicalTypeDenseMapInfo {
+    static constexpr Type getEmptyKey() {
         return reinterpret_cast<srcc::TypeBase*>(~0zu);
     }
 
-    static constexpr srcc::Type getTombstoneKey() {
+    static constexpr Type getTombstoneKey() {
         return reinterpret_cast<srcc::TypeBase*>(~1zu);
     }
 
     static unsigned getHashValue(srcc::Type v) {
-        return DenseMapInfo<void*>::getHashValue(v.ptr());
+        return llvm::DenseMapInfo<void*>::getHashValue(v.ptr()->canonical);
     }
 
     static bool isEqual(srcc::Type lhs, srcc::Type rhs) {
         return lhs == rhs;
     }
 };
+
+struct srcc::types::detail::NonCanonicalTypeDenseMapInfo {
+    static constexpr Type getEmptyKey() {
+        return reinterpret_cast<srcc::TypeBase*>(~0zu);
+    }
+
+    static constexpr Type getTombstoneKey() {
+        return reinterpret_cast<srcc::TypeBase*>(~1zu);
+    }
+
+    static unsigned getHashValue(srcc::Type v) {
+        return llvm::DenseMapInfo<void*>::getHashValue(v.ptr());
+    }
+
+    static bool isEqual(srcc::Type lhs, srcc::Type rhs) {
+        // static_cast to void is required because we disallow pointer
+        // comparisons involving 'TypeBase*'.
+        return static_cast<void*>(lhs.ptr()) == static_cast<void*>(rhs.ptr());
+    }
+};
+
+namespace srcc {
+/// Map that maps 'Type's to 'Value's, ignoring type sugar.
+template <typename Value>
+using CanonicalTypeMap = llvm::DenseMap<
+    Type,
+    Value,
+    types::detail::CanonicalTypeDenseMapInfo
+>;
+
+/// Map that maps 'Type's to 'Value's, preserving type sugar.
+template <typename Value>
+using NonCanonicalTypeMap = llvm::DenseMap<
+    Type,
+    Value,
+    types::detail::NonCanonicalTypeDenseMapInfo
+>;
+}
 
 template <>
 struct libassert::stringifier<srcc::Type> {
@@ -1004,20 +1121,37 @@ struct libassert::stringifier<srcc::Type> {
     }
 };
 
-/*
 template <typename To>
-auto srcc::cast(srcc::Type from) -> To* {
-    return llvm::cast<To>(from.ptr());
+[[nodiscard]] auto srcc::dyn_cast(Type from) -> To* {
+    if constexpr (IsTypeSugarClass<To>()) return llvm::dyn_cast<To>(from.ptr());
+    return llvm::dyn_cast<To>(from->canonical);
 }
 
 template <typename To>
-auto srcc::dyn_cast(srcc::Type from) -> To* {
-    return llvm::dyn_cast<To>(from.ptr());
+[[nodiscard]] auto srcc::cast(Type from) -> To* {
+    if constexpr (IsTypeSugarClass<To>()) return llvm::dyn_cast<To>(from.ptr());
+    return llvm::cast<To>(from->canonical);
+}
+
+template <typename To>
+[[nodiscard]] auto srcc::cast_if_present(Opt<Type> ty) -> To* {
+    if (ty.has_value()) return srcc::cast<To>(*ty);
+    return nullptr;
 }
 
 template <typename... Ts>
-auto srcc::isa(srcc::Type from) -> bool {
-    return llvm::isa<Ts...>(from.ptr());
-}*/
+[[nodiscard]] auto srcc::isa(Type from) -> bool {
+    if constexpr ((IsTypeSugarClass<Ts>() or ...))
+        if (llvm::isa<Ts...>(from.ptr()))
+            return true;
+
+    return llvm::isa<Ts...>(from->canonical);
+}
+
+template <typename... Ts>
+[[nodiscard]] auto srcc::isa_and_nonnull(Opt<Type> ty) -> bool {
+    if (ty.has_value()) return srcc::isa<Ts...>(ty.value());
+    return false;
+}
 
 #endif // SRCC_AST_TYPE_HH

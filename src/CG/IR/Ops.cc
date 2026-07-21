@@ -107,7 +107,7 @@ auto SRCCDialect::materializeConstant(
 
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(TreeValue*, TreeAttr, ir::TreeType::get(ctx), "<tree>")
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Stmt*, StmtAttr, ir::TreeType::get(ctx), "<type>")
-COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(Type, TypeAttr, ir::TypeType::get(ctx), "<stmt>")
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::cg::ir::TypeWrapper, TypeAttr, ir::TypeType::get(ctx), "<stmt>")
 SRCC_ENUMS_EXPOSED_TO_MLIR(EXPOSE_ENUM_PROPERTY)
 
 // ============================================================================
@@ -142,7 +142,7 @@ auto SSubOvOp::fold(FoldAdaptor adaptor, SmallVectorImpl<mlir::OpFoldResult>& re
 }
 
 auto TypeConstantOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
-    return ir::TypeAttr::get(getContext(), ir::TypeType::get(getContext()), adaptor.getValue());
+    return ir::TypeAttr::get(getContext(), ir::TypeType::get(getContext()), adaptor.getValueImpl());
 }
 
 auto TypeEqOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
@@ -151,7 +151,7 @@ auto TypeEqOp::fold(FoldAdaptor adaptor) -> mlir::OpFoldResult {
     auto lhs = dyn_cast_if_present<ir::TypeAttr>(adaptor.getLhs());
     auto rhs = dyn_cast_if_present<ir::TypeAttr>(adaptor.getRhs());
     if (not lhs or not rhs) return nullptr;
-    return b.getBoolAttr(lhs.getValue() == rhs.getValue());
+    return b.getBoolAttr(Type{lhs.getValue().ty} == rhs.getValue().ty);
 }
 
 // ============================================================================

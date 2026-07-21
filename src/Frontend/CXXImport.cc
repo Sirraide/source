@@ -1088,15 +1088,15 @@ auto Sema::LookUpCXXMacro(
     // If we can’t evaluate this as a constant, instead emit the function
     // into an LLVM module and create a *local* value whose initialiser is
     // a call to it.
-    clang::APValue init_val;
+    clang::Expr::EvalResult er;
     SmallVector<clang::PartialDiagnosticAt> diags;
+    er.Diag = &diags;
     Expr* value = nullptr;
     if (
         not var->getInit()->EvaluateAsInitializer(
-            init_val,
             macro_tu->getASTContext(),
             var,
-            diags,
+            er,
             false
         ) or not diags.empty()
     )  {

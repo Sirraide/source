@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
 project(Source VERSION 0.1.0 LANGUAGES C CXX)
 
+message(STATUS "CMAKE_CXX_COMPILER_ID set to ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "CMAKE_CXX_COMPILER set to ${CMAKE_CXX_COMPILER}")
+message(STATUS "SOURCE_LLVM_ROOT set to ${SOURCE_LLVM_ROOT}")
+
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR "This project must be built with Clang (or, on Windows, clang-cl)")
 endif()
@@ -8,8 +12,13 @@ endif()
 if (NOT SOURCE_LLVM_ROOT)
     message(FATAL_ERROR "SOURCE_LLVM_ROOT is not set. See README.md for instructions.")
 endif()
+
 if (NOT EXISTS "${SOURCE_LLVM_ROOT}/bin/clang")
     message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
+endif()
+
+if (NOT CMAKE_CXX_COMPILER STREQUAL "${SOURCE_LLVM_ROOT}/bin/clang++")
+    message(FATAL_ERROR "The C++ compiler must be set to the '$SOURCE_LLVM_ROOT/bin/clang++'")
 endif()
 
 ## ============================================================================

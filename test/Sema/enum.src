@@ -80,8 +80,8 @@ enum E7 : i8 {
 
 #assert E7.elem == i8;
 
-enum E8 : void {} // expected-error: Underyling type of enum must be an integer type, was 'void'
-enum E9 : type {} // expected-error: Underyling type of enum must be an integer type, was 'type'
+enum E8 : void {} // expected-error: Underlying type of enum must be an integer type, was 'void'
+enum E9 : type {} // expected-error: Underlying type of enum must be an integer type, was 'type'
 enum E10 : bool {}
 
 #assert E10.elem == bool;

@@ -125,24 +125,24 @@ public:
     SmallVector<std::unique_ptr<llvm::Module>> link_llvm_modules;
 
     /// FFI Types.
-    Type FFICharTy;
-    Type FFIWCharTy;
-    Type FFIShortTy;
-    Type FFIIntTy;
-    Type FFILongTy;
-    Type FFILongLongTy;
+    IntType* FFICharTy{};
+    IntType* FFIWCharTy{};
+    IntType* FFIShortTy{};
+    IntType* FFIIntTy{};
+    IntType* FFILongTy{};
+    IntType* FFILongLongTy{};
 
     /// Convenience accessors because they’re used often.
-    Type I8Ty;
-    Type I16Ty;
-    Type I32Ty;
-    Type I64Ty;
-    Type I128Ty;
-    Type I8PtrTy;
-    SliceType* StrLitTy;
-    TupleType* SliceEquivalentTupleTy;
-    TupleType* ClosureEquivalentTupleTy;
-    TupleType* AbortInfoEquivalentTy;
+    IntType* I8Ty{};
+    IntType* I16Ty{};
+    IntType* I32Ty{};
+    IntType* I64Ty{};
+    IntType* I128Ty{};
+    PtrType* I8PtrTy{};
+    SliceType* StrLitTy{};
+    TupleType* SliceEquivalentTupleTy{};
+    TupleType* ClosureEquivalentTupleTy{};
+    TupleType* AbortInfoEquivalentTy{};
 
     /// Type caches.
     FoldingSet<ArrayType> array_types;

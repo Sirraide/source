@@ -89,7 +89,7 @@ def SRCC_TreeAttr : SRCC_Attr<"Tree", "tree"> {
 def SRCC_TypeAttr : SRCC_Attr<"Type", "type"> {
     let summary = "Type of a type constant or value";
     let description = "A compile-time type value";
-    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::Type":$value);
+    let parameters = (ins AttributeSelfTypeParameter<"">:$type, "::srcc::cg::ir::TypeWrapper":$value);
     let hasCustomAssemblyFormat = 1;
     let genMnemonicAlias = 1;
 }
@@ -535,9 +535,14 @@ def TreeConstantOp : SRCC_Op<"tree", [Pure]> {
 
 def TypeConstantOp : SRCC_Op<"type", [ConstantLike, Pure]> {
     let summary = "A type constant";
-    let arguments = (ins Property<"::srcc::Type">:$value);
+    let arguments = (ins Property<"::srcc::cg::ir::TypeWrapper">:$value_impl);
     let results = (outs SRCC_Type);
     let hasFolder = 1;
+    let extraClassDeclaration = [{
+        auto getValue() -> ::srcc::Type {
+            return getValueImpl().ty;
+        }
+    }];
 }
 
 def TypeEqOp : SRCC_Op<"type.eq", [Pure]> {

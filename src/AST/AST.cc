@@ -50,7 +50,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     vm.init(*tgt);
 
     // Create the global scope.
-    create_scope<ProcScope>(nullptr, nullptr);
+    create_scope<ProcScope>(nullptr, std::nullopt);
 
     // Initialise integer types.
     I8Ty = IntType::Get(*this, Size::Bits(8));
@@ -153,7 +153,7 @@ auto TranslationUnit::store_int(APInt value) -> StoredInteger {
     return integers.front().store_int(std::move(value));
 }
 
-auto Scope::associated_type() -> Type {
+auto Scope::associated_type() -> Opt<Type> {
     return enclosing_proc()->associated_type;
 }
 
@@ -567,7 +567,7 @@ void Stmt::Printer::Print(Stmt* e) {
         [&](ProcDecl* p) {
             PrintBasicHeader(p, "ProcDecl");
             print(" ");
-            if (p->props.associated_type) print("{}%1(::%)", p->props.associated_type);
+            if (p->props.associated_type) print("{}%1(::%)", *p->props.associated_type);
             print("%2({}%) {}", utils::Escape(p->name.str(), false, true), p->type->print());
 
             if (p->parent.present()) print(" nested");

@@ -31,8 +31,8 @@
 
 using namespace srcc;
 
-#define TRY(expression) ({               \
-    auto _res = expression;              \
+#define TRY(...) ({                      \
+    auto _res = (__VA_ARGS__);           \
     if (not _res) return utils::Falsy(); \
     *_res;                               \
 })
@@ -73,7 +73,6 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
 
 void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool is_this) {
     Assert(object);
-    Assert(object->type);
 
     // The type must be complete.
     Type ty = object->type->strip_pointers_and_optionals();
@@ -113,7 +112,7 @@ auto Sema::BuildImplicitProcedure(
     llvm::function_ref<void(ProcDecl*, SmallVectorImpl<Stmt*>&)> BuildBody
 ) -> ProcDecl* {
     auto param_types = llvm::to_vector(vws::transform(params, [](auto& p) { return p.type; }));
-    auto scope = tu->create_scope<ProcScope>(curr_scope(), nullptr);
+    auto scope = tu->create_scope<ProcScope>(curr_scope(), std::nullopt);
     auto proc = ProcDecl::Create(
         *tu,
         nullptr,
@@ -168,7 +167,6 @@ bool Sema::CheckFieldType(Type type, SLoc loc) {
 bool Sema::CheckVariableType(Type ty, SLoc loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
-    if (not ty) return false;
     if (not ProhibitDeducedTypes(ty, loc)) return false;
     return RequireCompleteType(ty, loc);
 }
@@ -402,12 +400,12 @@ bool Sema::CompleteDefinition(StructType* s) {
     bool needs_deleter = false;
     for (auto f : parsed->fields()) {
         auto ty = TranslateType(f->type);
-        if (not CheckFieldType(ty, f->loc)) {
+        if (not ty or not CheckFieldType(*ty, f->loc)) {
             // If the field’s type is invalid, we can’t query any of its
             // properties, so just insert a dummy field and continue.
             lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
         } else {
-            AddDeclToScope(s->scope(), lb.add_field(ty, f->name.str(), f->loc));
+            AddDeclToScope(s->scope(), lb.add_field(*ty, f->name.str(), f->loc));
             needs_deleter = needs_deleter and ty->requires_deletion();
         }
     }
@@ -503,7 +501,7 @@ auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
     });
 }
 
-bool Sema::InjectTree(Expr* injected, Type desired_type, InjectionContext context) {
+bool Sema::InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext context) {
     if (not MakeRValue(Type::TreeTy, injected, [&]{
         Error(
             injected->location(),
@@ -562,8 +560,6 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
 }
 
 bool Sema::RequireCompleteType(Type ty, SLoc loc) {
-    Assert(ty, "Null type passed to RequireCompleteType()");
-
     // Structs can be made complete on demand.
     if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
         CompleteDefinition(s);
@@ -581,7 +577,6 @@ bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
 }
 
 bool Sema::IsZeroSizedOrIncomplete(Type ty) {
-    Assert(ty, "Must check for null type before calling this");
     if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) return true;
     return ty->memory_size(*tu) == Size();
 }
@@ -1248,7 +1243,6 @@ auto Sema::BuildConversionSequence(
     // generally, we should almost never encounter incomplete types that we fail to complete,
     // so this usually shouldn’t cause any problems even if we’re building conversion sequences
     // tentatively.
-    Assert(var_type, "Null type is not supported here");
     if (not RequireCompleteType(var_type, init_loc)) return CreateError(
         init_loc,
         "Cannot create instance of incomplete type '{}'",
@@ -1444,7 +1438,7 @@ auto Sema::BuildConversionSequence(
         return false;
     };
 
-    switch (var_type->kind()) {
+    switch (var_type->canonical_kind()) {
         case TypeBase::Kind::EnumType:
             return TypeMismatch();
 
@@ -1666,7 +1660,7 @@ auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
     );
 }
 
-auto Sema::UnwrapPointersAndOptionals(Expr* base, Type stop_at) -> Ptr<Expr> {
+auto Sema::UnwrapPointersAndOptionals(Expr* base, Opt<Type> stop_at) -> Ptr<Expr> {
     while (base->type != stop_at) {
         if (isa<PtrType>(base->type)) {
             base = TRY(BuildUnaryExpr(Tk::Caret, base, false, base->location()));
@@ -1683,12 +1677,12 @@ auto Sema::UnwrapPointersAndOptionals(Expr* base, Type stop_at) -> Ptr<Expr> {
 // ============================================================================
 //  Templates.
 // ============================================================================
-auto Sema::DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type {
+auto Sema::DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type> {
     if (isa<ParsedTemplateType>(parsed_type))
         return input_type;
 
     // TODO: Support more complicated deduction.
-    return Type();
+    return {};
 }
 
 auto Sema::InstantiateTemplate(
@@ -1747,7 +1741,6 @@ auto Sema::SubstituteTemplate(
                 // pass any variadic arguments to this. In that case, use
                 // what ever we deduced earlier, or 'void' if this is the
                 // only place where this parameter is deduced.
-                Type ty;
                 if (input_types.size() == i) {
                     Assert(proc_template->has_variadic_param);
                     deduced.try_emplace(name, Deduced{u32(i), {Type::VoidTy, parsed.type->loc}});
@@ -1755,7 +1748,7 @@ auto Sema::SubstituteTemplate(
                 }
 
                 // Otherwise, deduce the parameter from its corresponding argument(s).
-                ty = DeduceType(parsed.type, input_types[i].ty);
+                auto ty = DeduceType(parsed.type, input_types[i].ty);
                 if (not ty) {
                     return SubstitutionResult::DeductionFailed{
                         name,
@@ -1770,11 +1763,11 @@ auto Sema::SubstituteTemplate(
                     // start at the one after it, if there is one, and make sure we
                     // get the same type for each argument.
                     for (u32 j = u32(param_types.size()), e = u32(input_types.size()); j < e; j++) {
-                        Type next = DeduceType(parsed.type, input_types[j].ty);
-                            if (not next) {
+                        auto next = DeduceType(parsed.type, input_types[j].ty);
+                        if (not next) {
                             return SubstitutionResult::DeductionFailed{
                                 name,
-                                j
+                                j,
                             };
                         }
 
@@ -1782,15 +1775,15 @@ auto Sema::SubstituteTemplate(
                             name,
                             u32(i),
                             u32(j),
-                            ty,
-                            next,
+                            *ty,
+                            *next,
                         };
                     }
                 }
 
 
                 // If the type has not been deduced yet, remember it.
-                auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {ty, parsed.type->loc}});
+                auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {*ty, parsed.type->loc}});
                 if (inserted) continue;
 
                 // Otherwise, check that the deduction result is the same.
@@ -1800,7 +1793,7 @@ auto Sema::SubstituteTemplate(
                         it->second.first,
                         u32(i),
                         it->second.second.ty,
-                        ty,
+                        *ty,
                     };
                 }
             }
@@ -1816,8 +1809,8 @@ auto Sema::SubstituteTemplate(
             Assert(i == param_types.size() - 1);
 
             // Build a tuple consisting of the remaining arguments.
-            auto ty = BuildTupleType(input_types.drop_front(i));
-            if (not ty) return {}; // TODO: Maybe this should not be a hard error.
+            // TODO: Maybe a failure to build the type here should not be a hard error.
+            auto ty = TRY(BuildTupleType(input_types.drop_front(i)));
             deduced_var_parameters.push_back(ty);
         }
     }
@@ -1866,7 +1859,7 @@ auto Sema::SubstituteTemplate(
     // Store the type for later if substitution succeeded.
     info = new (*tu) TemplateSubstitution(
         id.Intern(tu->allocator()),
-        cast<ProcType>(ty),
+        cast<ProcType>(*ty),
         scope.get()
     );
 
@@ -3161,8 +3154,7 @@ auto Sema::BuildBinaryExpr(
         // Array or slice subscript.
         case Tk::LBrack: {
             if (auto ty = dyn_cast<TypeExpr>(lhs)) {
-                auto arr = BuildArrayType({ty->value, ty->location()}, rhs);
-                if (not arr) return {};
+                auto arr = TRY(BuildArrayType({ty->value, ty->location()}, rhs));
                 return BuildTypeExpr(arr, loc);
             }
 
@@ -3522,7 +3514,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     Expr* operand,
     SLoc loc
 ) -> Ptr<BuiltinMemberAccessExpr> {
-    auto type = [&] -> Type {
+    auto type = [&] -> Opt<Type> {
         using enum BuiltinMemberAccessExpr::AccessKind;
         switch (ak) {
             // Type Properties.
@@ -3543,7 +3535,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::BoolTy;
 
             case TypeName:
-                return tu->StrLitTy;
+                return Type(tu->StrLitTy);
 
             // The values of these are type-dependent, e.g. 'i8.max' yields a value of
             // type 'i8'; this means we can’t really construct such an expression if the
@@ -3584,7 +3576,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
         operand = LValueToRValue(operand);
 
     return new (*tu) BuiltinMemberAccessExpr{
-        type,
+        *type,
         Expr::RValue,
         operand,
         ak,
@@ -3741,7 +3733,7 @@ auto Sema::BuildCallExpr(
 auto Sema::BuildDeclRefExpr(
     ArrayRef<DeclNameLoc> names,
     SLoc loc,
-    Type desired_type
+    Opt<Type> desired_type
 ) -> Ptr<Expr> {
     return BuildDeclRefExpr(
         InitialDREScope::None,
@@ -3757,7 +3749,7 @@ auto Sema::BuildDeclRefExpr(
     Scope* root,
     ArrayRef<DeclNameLoc> names,
     SLoc loc,
-    Type desired_type
+    Opt<Type> desired_type
 ) -> Ptr<Expr> {
     Assert((root != nullptr) == (initial_scope == InitialDREScope::Expr));
     Assert(not names.empty());
@@ -3782,10 +3774,10 @@ auto Sema::BuildDeclRefExpr(
         initial_scope == InitialDREScope::None and
         names.size() == 1 and
         desired_type and
-        isa<EnumType>(desired_type) and
+        isa<EnumType>(*desired_type) and
         res.result == LookupResult::Reason::NotFound
     ) {
-        auto e = dyn_cast<EnumType>(desired_type);
+        auto e = dyn_cast<EnumType>(*desired_type);
         auto res = LookUpNameInScope(e->scope(), names.front(), LookupHint::Any);
         if (res.successful()) return CreateReference(res.decls.front(), loc);
     }
@@ -4073,7 +4065,6 @@ auto Sema::BuildParamDecl(
         loc
     );
 
-    if (not param->type) decl->set_invalid();
     DeclareLocal(decl);
     return decl;
 }
@@ -4393,8 +4384,8 @@ auto Sema::EnterLoop::token() -> LoopToken {
 Sema::EnterScope::EnterScope(Sema& S, bool should_enter)
     : EnterScope(S, should_enter ? S.tu->create_scope<BlockScope>(S.curr_scope()) : nullptr) {}
 
-Sema::EnterScope::EnterScope(Sema& S, Tag<ProcScope>, Type associated_type)
-    : EnterScope(S, S.tu->create_scope<ProcScope>(S.curr_scope(), associated_type.ptr())) {}
+Sema::EnterScope::EnterScope(Sema& S, Tag<ProcScope>, Opt<Type> associated_type)
+    : EnterScope(S, S.tu->create_scope<ProcScope>(S.curr_scope(), associated_type)) {}
 
 Sema::EnterScope::EnterScope(Sema& S, Tag<StructScope>)
     : EnterScope(S, S.tu->create_scope<StructScope>(S.curr_scope())) {}
@@ -4574,7 +4565,11 @@ void Sema::Translate(bool load_runtime) {
     Assert(scope_stack.size() == 1);
 }
 
-bool Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type) {
+bool Sema::TranslateStmts(
+    SmallVectorImpl<Stmt*>& stmts,
+    ArrayRef<ParsedStmt*> parsed,
+    Opt<Type> desired_type
+) {
     // Translate object declarations first since they may be out of order.
     //
     // Note that only the declaration part of definitions is translated here, e.g.
@@ -4621,7 +4616,7 @@ bool Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
             continue;
         }
 
-        auto stmt = TranslateStmt(p, p == parsed.back() ? desired_type : Type());
+        auto stmt = TranslateStmt(p, p == parsed.back() ? desired_type : std::nullopt);
         if (stmt.present()) stmts.push_back(stmt.get());
         else ok = false;
     }
@@ -4632,31 +4627,31 @@ bool Sema::TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> p
 // ============================================================================
 //  Translation of Individual Statements
 // ============================================================================
-auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateAssertExpr(ParsedAssertExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     auto cond = TRY(TranslateExpr(parsed->cond));
     Ptr<Expr> msg;
     if (auto m = parsed->message.get_or_null()) msg = TRY(TranslateExpr(m));
     return BuildAssertExpr(cond, msg, parsed->is_compile_time, parsed->loc, parsed->cond_range);
 }
 
-auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateBinaryExpr(ParsedBinaryExpr* expr, Opt<Type> desired_type) -> Ptr<Stmt> {
     auto lhs = TRY(TranslateExpr(expr->lhs, desired_type));
     auto rhs = TRY(TranslateExpr(expr->rhs, desired_type));
     return BuildBinaryExpr(expr->op, lhs, rhs, expr->loc);
 }
 
-auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateBlockExpr(ParsedBlockExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     EnterScope _{*this, parsed->should_push_scope};
     SmallVector<Stmt*> stmts;
     if (not TranslateStmts(stmts, parsed->stmts(), desired_type)) return {};
     return BuildBlockExpr(curr_scope(), stmts, parsed->loc);
 }
 
-auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateBoolLitExpr(ParsedBoolLitExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     return new (*tu) BoolLitExpr(parsed->value, parsed->loc);
 }
 
-auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     if (curr_proc().loop_depth == LoopToken(0)) return Error(
         parsed->loc,
         "'%1({}%)' outside loop",
@@ -4671,7 +4666,7 @@ auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Type) -> 
     );
 }
 
-auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     SmallVector<Expr*> args;
     Expr* callee{};
     auto TranslateArgs = [&] -> bool {
@@ -4743,15 +4738,14 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Type) -> Ptr<Stmt> {
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
-auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     Assert(not parsed->empty(), "DRE is empty?");
 
     // Handle the root expression if we have one. This must resolve to a type
     // that contains a scope (such as a struct or enum type).
     Scope* root = nullptr;
     if (auto r = parsed->root().get_or_null()) {
-        auto ty = TranslateType(r);
-        if (not ty) return {};
+        auto ty = TRY(TranslateType(r));
 
         // This must be some type that has a scope.
         if (auto e = dyn_cast<EnumType>(ty)) root = e->scope();
@@ -4768,7 +4762,7 @@ auto Sema::TranslateDeclRefExpr(ParsedDeclRefExpr* parsed, Type desired_type) ->
     );
 }
 
-auto Sema::TranslateCopyExpr(ParsedCopyExpr* c, Type) -> Ptr<Stmt> {
+auto Sema::TranslateCopyExpr(ParsedCopyExpr* c, Opt<Type>) -> Ptr<Stmt> {
     auto arg = TRY(TranslateExpr(c->arg));
 
     // A trivially-copyable type need not be copied explicitly.
@@ -4821,12 +4815,12 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
     return std::nullopt;
 }
 
-auto Sema::TranslateDeleteExpr(ParsedDeleteExpr* expr, Type) -> Ptr<Stmt> {
+auto Sema::TranslateDeleteExpr(ParsedDeleteExpr* expr, Opt<Type>) -> Ptr<Stmt> {
     auto arg = TRY(TranslateExpr(expr->expr));
     return MaybeBuildDeleteExpr(arg, false, expr->loc);
 }
 
-auto Sema::TranslateDeferStmt(ParsedDeferStmt* stmt, Type) -> Ptr<Stmt> {
+auto Sema::TranslateDeferStmt(ParsedDeferStmt* stmt, Opt<Type>) -> Ptr<Stmt> {
     auto body = TRY(TranslateStmt(stmt->body));
     return new (*tu) DeferStmt(body, stmt->loc);
 }
@@ -4866,17 +4860,16 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     return cast<Decl>(res.get());
 }
 
-auto Sema::TranslateEnumDecl(ParsedEnumDecl* e, Type) -> Decl* {
+auto Sema::TranslateEnumDecl(ParsedEnumDecl* e, Opt<Type>) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
 auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
     Type underlying_type = Type::IntTy;
     if (auto parsed_ty = e->underlying_type.get_or_null()) {
-        auto ty = TranslateType(parsed_ty);
-        if (ty) {
-            if (ty->is_integer_or_bool()) underlying_type = ty;
-            else Error(e->loc, "Underyling type of enum must be an integer type, was '{}'", ty);
+        if (auto ty = TranslateType(parsed_ty)) {
+            if (ty->is_integer_or_bool()) underlying_type = *ty;
+            else Error(e->loc, "Underlying type of enum must be an integer type, was '{}'", *ty);
         }
     }
 
@@ -4989,23 +4982,23 @@ void Sema::TranslateEnumerators(EnumType* e) {
     return;
 }
 
-auto Sema::TranslateExportDecl(ParsedExportDecl*, Type) -> Decl* {
+auto Sema::TranslateExportDecl(ParsedExportDecl*, Opt<Type>) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
-auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateEmptyStmt(ParsedEmptyStmt* parsed, Opt<Type>) -> Ptr<Stmt> {
     return new (*tu) EmptyStmt(parsed->loc);
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.
-auto Sema::TranslateExpr(ParsedStmt* parsed, Type desired_type) -> Ptr<Expr> {
+auto Sema::TranslateExpr(ParsedStmt* parsed, Opt<Type> desired_type) -> Ptr<Expr> {
     auto stmt = TranslateStmt(parsed, desired_type);
     if (stmt.invalid()) return nullptr;
     if (not isa<Expr>(stmt.get())) return Error(parsed->loc, "Expected expression");
     return cast<Expr>(stmt.get());
 }
 
-auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     EnterScope _{*this};
     Stmt* arg{};
 
@@ -5017,11 +5010,11 @@ auto Sema::TranslateEvalExpr(ParsedEvalExpr* parsed, Type) -> Ptr<Stmt> {
     return BuildEvalExpr(arg, parsed->loc);
 }
 
-auto Sema::TranslateFieldDecl(ParsedFieldDecl*, Type) -> Decl* {
+auto Sema::TranslateFieldDecl(ParsedFieldDecl*, Opt<Type>) -> Decl* {
     Unreachable("Handled as part of StructDecl translation");
 }
 
-auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateForStmt(ParsedForStmt* parsed, Opt<Type>) -> Ptr<Stmt> {
     EnterScope _{*this};
     EnterLoop loop{*this};
 
@@ -5096,7 +5089,7 @@ auto Sema::TranslateForStmt(ParsedForStmt* parsed, Type) -> Ptr<Stmt> {
     return ForStmt::Create(*tu, loop.token(), enum_var, vars, ranges, body, parsed->loc);
 }
 
-auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     EnterScope _{*this, not parsed->is_static};
     auto cond = TRY(TranslateExpr(parsed->cond));
     if (parsed->is_static) return BuildStaticIfExpr(cond, parsed->then, parsed->else_, parsed->loc);
@@ -5105,29 +5098,31 @@ auto Sema::TranslateIfExpr(ParsedIfExpr* parsed, Type desired_type) -> Ptr<Stmt>
     return BuildIfExpr(cond, then, else_, parsed->loc);
 }
 
-auto Sema::TranslateInjectExpr(ParsedInjectExpr* parsed, Type ty) -> Ptr<Stmt> {
+auto Sema::TranslateInjectExpr(ParsedInjectExpr* parsed, Opt<Type> ty) -> Ptr<Stmt> {
     auto injected = TRY(TranslateExpr(parsed->injected));
     Stmt* ptr{};
     if (not InjectTree(injected, ty, &ptr)) return {};
     return ptr;
 }
 
-auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     // Determine the type of this.
     //
     // If we have a desired type, and the value fits in that type,
     // then the type of the literal is that type. Otherwise, if the
     // value fits in an 'int', its type is 'int'. If not, the type
     // is the smallest power of two large enough to store the value.
-    Type ty;
     auto val = parsed->storage.value();
-    if (desired_type and desired_type->is_integer() and IntegerLiteralFitsInType(val, desired_type, false)) {
-        ty = desired_type;
-    } else if (IntegerLiteralFitsInType(val, Type::IntTy, false)) {
-        ty = Type::IntTy;
-    } else if (auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits())); bits <= IntType::MaxBits) {
-        ty = IntType::Get(*tu, bits);
-    } else {
+    Type ty = TRY([&] -> Opt<Type> {
+        if (desired_type and desired_type->is_integer() and IntegerLiteralFitsInType(val, *desired_type, false))
+            return desired_type;
+        if (IntegerLiteralFitsInType(val, Type::IntTy, false))
+            return Type::IntTy;
+
+        auto bits = Size::Bits(llvm::PowerOf2Ceil(val.getActiveBits()));
+        if (bits <= IntType::MaxBits)
+            return IntType::Get(*tu, bits);
+
         // Print and colour the type names manually here since we can’t
         // even create a type this large properly...
         Error(parsed->loc, "Sorry, we can’t compile a number that big :(");
@@ -5140,8 +5135,8 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
             bits,
             parsed->storage.str(false) // Parsed literals are unsigned.
         );
-        return nullptr;
-    }
+        return {};
+    }());
 
     auto desired_bits = ty->bit_width(*tu);
     auto stored_bits = Size::Bits(val.getBitWidth());
@@ -5156,7 +5151,7 @@ auto Sema::TranslateIntLitExpr(ParsedIntLitExpr* parsed, Type desired_type) -> P
     );
 }
 
-auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     EnterScope _{*this};
     EnterLoop loop{*this};
     Ptr<Stmt> body;
@@ -5169,7 +5164,7 @@ auto Sema::TranslateLoopExpr(ParsedLoopExpr* parsed, Type) -> Ptr<Stmt> {
     );
 }
 
-auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateMatchExpr(ParsedMatchExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     EnterScope _{*this};
     SmallVector<MatchCase> cases;
     bool ok = true;
@@ -5310,21 +5305,21 @@ auto Sema::TranslateMemberAccess(
 #   undef TRY_ASSOCIATED
 }
 
-auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateMemberExpr(ParsedMemberExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     auto access = TRY(TranslateMemberAccess(parsed, false));
     Assert(not access.is_associated_proc_ref());
     return access.base;
 }
 
-auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     return new (*tu) NilExpr(parsed->loc);
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     return new (*tu) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
 }
 
-auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     // Translate all unquotes.
     SmallVector<Expr*> unquotes;
     for (auto u : parsed->unquotes()) {
@@ -5344,10 +5339,10 @@ auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Type) -> Ptr<Stmt> {
     return QuoteExpr::Create(*tu, parsed, unquotes, parsed->loc);
 }
 
-auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     // Find the associated type.
-    Type asociated_type = curr_scope()->associated_type();
-    if (not asociated_type) return Error(
+    auto associated_type = curr_scope()->associated_type();
+    if (not associated_type) return Error(
         parsed->loc,
         "'%1({}%)' cannot be used outside of a member function",
         parsed->spelling()
@@ -5355,13 +5350,13 @@ auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Type) -> Ptr<Stmt> {
 
     // If this is 'This', then it is that type.
     if (parsed->is_type)
-        return new (*tu) TypeExpr(asociated_type, parsed->loc);
+        return new (*tu) TypeExpr(*associated_type, parsed->loc);
 
     // Otherwise, perform name lookup for 'this'.
     return BuildDeclRefExpr(DeclNameLoc{String("this"), parsed->loc}, parsed->loc);
 }
 
-auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     SmallVector<Expr*> exprs;
     SmallVector<Type> types;
     bool ok = true;
@@ -5380,13 +5375,13 @@ auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Type) -> Ptr<Stmt> {
     return TupleExpr::Create(*tu, tt, exprs, parsed->loc);
 }
 
-auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
+auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
     if (parsed->is_static) Todo();
     Assert(not parsed->with_loc.is_valid(), "'with' should currently only be parsed on param decls");
 
     // Translate the type; note that we allow 'val' here.
     auto immutable = dyn_cast<ParsedValueType>(parsed->type);
-    Type ty = TranslateType(immutable ? immutable->elem : parsed->type);
+    auto ty = TranslateType(immutable ? immutable->elem : parsed->type);
     auto vc = Expr::LValue(immutable != nullptr);
 
     // If we're at the global scope, make this a global variable.
@@ -5395,7 +5390,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
         auto g = new (*tu) GlobalDecl(
             tu.get(),
             nullptr,
-            ty,
+            ty.value_or(Type::VoidTy),
             immutable != nullptr,
             parsed->name,
             Linkage::Internal,
@@ -5408,7 +5403,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
         decl = g;
     } else {
         decl = MakeLocal(
-            ty,
+            ty.value_or(Type::VoidTy),
             vc,
             parsed->name.str(),
             parsed->loc
@@ -5416,15 +5411,12 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Type) -> Decl* {
     }
 
     // Don’t even bother with the initialiser if the type is ill-formed.
-    if (not ty) {
-        decl.type() = Type::VoidTy;
-        return decl.set_invalid();
-    }
+    if (not ty) return decl.set_invalid();
 
     // Translate the initialiser.
     Ptr<Expr> init;
     if (auto val = parsed->init.get_or_null()) {
-        init = TranslateExpr(val, decl.type() != Type::DeducedTy ? decl.type() : Type());
+        init = TranslateExpr(val, decl.type() != Type::DeducedTy ? Opt<Type>(decl.type()) : std::nullopt);
         if (init.invalid()) return decl.set_invalid();
     }
 
@@ -5483,7 +5475,7 @@ auto Sema::TranslateProcBody(
 
     // Translate body.
     auto ret = decl->return_type();
-    auto body = TranslateExpr(parsed_body, ret != Type::DeducedTy ? ret : Type());
+    auto body = TranslateExpr(parsed_body, ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt);
     if (body.invalid()) {
         // If we’re attempting to deduce the return type of this procedure,
         // but the body contains an error, just set it to void.
@@ -5497,7 +5489,7 @@ auto Sema::TranslateProcBody(
     return BuildProcBody(decl, body.get());
 }
 
-auto Sema::TranslateProcDecl(ParsedProcDecl*, Type) -> Decl* {
+auto Sema::TranslateProcDecl(ParsedProcDecl*, Opt<Type>) -> Decl* {
     Unreachable("Should not be translated in TranslateStmt()");
 }
 
@@ -5598,9 +5590,9 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 
         // We auto-dereference pointers an optionals, so it's a bit problematic if
         // the associated type is one of those.
-        if (isa<PtrType, OptionalType>(props.associated_type)) {
+        if (isa_and_nonnull<PtrType, OptionalType>(props.associated_type)) {
             SmallString<32> quals;
-            Type ty = props.associated_type;
+            Type ty = *props.associated_type;
             for (;;) {
                 if (isa<PtrType>(ty)) quals += "^";
                 else if (isa<OptionalType>(ty)) quals += "?";
@@ -5611,8 +5603,8 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
             Error(
                 a->loc,
                 "{} type '{}' cannot be used as an associated type",
-                isa<PtrType>(props.associated_type) ? "Pointer" : "Optional",
-                props.associated_type
+                isa<PtrType>(*props.associated_type) ? "Pointer" : "Optional",
+                *props.associated_type
             );
 
             Remark("Write '{}%1(::%)' instead and then use '%1(This{}%)' as the parameter type", ty, quals);
@@ -5695,13 +5687,12 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 }
 
 /// Dispatch to translate a statement.
-auto Sema::TranslateStmt(ParsedStmt* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateStmt(ParsedStmt* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
 #define PARSE_TREE_LEAF_TYPE(node)             \
     case K::node: {                            \
-        auto ty = TranslateType(parsed);       \
-        if (not ty) return {};                 \
+        auto ty = TRY(TranslateType(parsed));  \
         return BuildTypeExpr(ty, parsed->loc); \
     }
 #define PARSE_TREE_LEAF_NODE(node) \
@@ -5712,7 +5703,7 @@ auto Sema::TranslateStmt(ParsedStmt* parsed, Type desired_type) -> Ptr<Stmt> {
     Unreachable("Invalid parsed statement kind: {}", +parsed->kind());
 }
 
-auto Sema::TranslateStructDecl(ParsedStructDecl*, Type) -> Decl* {
+auto Sema::TranslateStructDecl(ParsedStructDecl*, Opt<Type>) -> Decl* {
     Unreachable("Should not be translated normally");
 }
 
@@ -5731,12 +5722,12 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
 }
 
 /// Translate a string literal.
-auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     return StrLitExpr::Create(*tu, parsed->value, parsed->loc);
 }
 
 /// Translate a return expression.
-auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     Ptr<Expr> ret_val;
     if (parsed->value.present()) {
         ret_val = TranslateExpr(
@@ -5747,16 +5738,16 @@ auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed, Type) -> Ptr<Stmt> {
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
 
-auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Type desired_type) -> Ptr<Stmt> {
+auto Sema::TranslateUnaryExpr(ParsedUnaryExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
     auto arg = TRY(TranslateExpr(parsed->arg, desired_type));
     return BuildUnaryExpr(parsed->op, arg, parsed->postfix, parsed->loc);
 }
 
-auto Sema::TranslateUnquoteExpr(ParsedUnquoteExpr*, Type) -> Ptr<Stmt> {
+auto Sema::TranslateUnquoteExpr(ParsedUnquoteExpr*, Opt<Type>) -> Ptr<Stmt> {
     Unreachable("Never translated as an expression");
 }
 
-auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Opt<Type>) -> Ptr<Stmt> {
     EnterScope _{*this};
     EnterLoop loop{*this};
     auto cond = TRY(TranslateExpr(parsed->cond));
@@ -5765,7 +5756,7 @@ auto Sema::TranslateWhileStmt(ParsedWhileStmt* parsed, Type) -> Ptr<Stmt> {
     return new (*tu) WhileStmt(loop.token(), cond, body, parsed->loc);
 }
 
-auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
+auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     EnterScope _{*this};
     auto expr = Save(TRY(TranslateExpr(parsed->expr)));
     AddEntryToWithStack(curr_scope(), expr, parsed->loc);
@@ -5776,16 +5767,15 @@ auto Sema::TranslateWithExpr(ParsedWithExpr* parsed, Type) -> Ptr<Stmt> {
 // ============================================================================
 //  Translation of Types
 // ============================================================================
-auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
-    auto size = Evaluate(size_expr);
-    if (not size) return Type();
-    auto integer = size->dyn_cast<APInt>();
+auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Opt<Type> {
+    auto size = TRY(Evaluate(size_expr));
+    auto integer = size.dyn_cast<APInt>();
 
     // Check that the size is a 64-bit integer.
     if (not integer) return Error(
         size_expr->location(),
         "Array size must be an integer, but was '{}'",
-        size->type()
+        size.type()
     );
 
     if (not integer->isSingleWord()) return Error(
@@ -5797,8 +5787,8 @@ auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Type {
     return BuildArrayType(base, v, base.loc);
 }
 
-auto Sema::BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Type {
-    if (not CheckVariableType(base.ty, base.loc)) return Type();
+auto Sema::BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Opt<Type> {
+    if (not CheckVariableType(base.ty, base.loc)) return {};
     if (size < 0) return Error(
         loc,
         "Array size cannot be negative (value: {})",
@@ -5827,25 +5817,24 @@ auto Sema::BuildCompleteStructType(
     );
 }
 
-auto Sema::BuildSliceType(Type base, bool immutable, SLoc loc) -> Type {
-    if (not CheckVariableType(base, loc)) return Type();
+auto Sema::BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type> {
+    if (not CheckVariableType(base, loc)) return {};
     return SliceType::Get(*tu, base, immutable);
 }
 
-auto Sema::BuildTupleType(ArrayRef<TypeLoc> types) -> Type {
+auto Sema::BuildTupleType(ArrayRef<TypeLoc> types) -> Opt<Type> {
     bool ok = true;
     for (auto [ty, loc] : types)
         if (not CheckFieldType(ty, loc))
             ok = false;
 
-    if (not ok) return Type();
+    if (not ok) return {};
     return TupleType::Get(*tu, llvm::to_vector(vws::transform(types, &TypeLoc::ty)));
 }
 
-auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Type {
+auto Sema::TranslateArrayType(ParsedBinaryExpr* parsed) -> Opt<Type> {
     Assert(parsed->op == Tk::LBrack);
-    auto elem = TranslateType(parsed->lhs);
-    if (not elem) return Type();
+    auto elem = TRY(TranslateType(parsed->lhs));
     auto size = TRY(TranslateExpr(parsed->rhs));
     return BuildArrayType({elem, parsed->loc}, size);
 }
@@ -5862,7 +5851,7 @@ auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
     return IntType::Get(*tu, parsed->bit_width);
 }
 
-auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
+auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Opt<Type> {
     Assert(not parsed->empty(), "DRE is empty?");
     auto res = LookUpName(nullptr, parsed->names(), parsed->loc, LookupHint::Type);
     if (not res.successful()) {
@@ -5880,12 +5869,12 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type {
 
     Error(parsed->loc, "'{}' does not name a type", utils::join(parsed->names(), "::"));
     Note(res.decls.front()->location(), "Declared here");
-    return Type();
+    return {};
 }
 
-auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Type {
-    auto elem = TranslateType(parsed->elem);
-    if (not CheckVariableType(elem, parsed->loc)) return Type();
+auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Opt<Type> {
+    auto elem = TRY(TranslateType(parsed->elem));
+    if (not CheckVariableType(elem, parsed->loc)) return {};
     if (elem == Type::NilTy) return Error(parsed->loc, "Element type of optional cannot be '%1(nil%)'");
     return OptionalType::Get(*tu, elem);
 }
@@ -5894,19 +5883,18 @@ auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     bool allow_immutable_params,
     ArrayRef<Type> deduced_var_parameters
-) -> Type {
+) -> Opt<Type> {
     // Sanity check.
     //
     // We use u32s for indices here and there, so ensure that this is small
     // enough. For now, only allow up to 65535 parameters because that’s
     // more than anyone should need.
     if (parsed->param_types().size() > std::numeric_limits<u16>::max()) {
-        Error(
+        return Error(
             parsed->loc,
             "Sorry, that’s too many parameters (max is {})",
             std::numeric_limits<u16>::max()
         );
-        return Type();
     }
 
     SmallVector<ParamTypeData, 10> params;
@@ -5930,10 +5918,15 @@ auto Sema::TranslateProcType(
             parsed_ty = val->elem;
         }
 
-        auto ty = TranslateType(parsed_ty);
+        auto ty_res = TranslateType(parsed_ty);
+        if (not ty_res) {
+            ok = false;
+            continue;
+        }
 
         // If this parameter’s type is 'var', then substitute whatever we
         // deduced for it.
+        Type ty = *ty_res;
         bool is_var_param = ty == Type::DeducedTy;
         if (is_var_param) {
             Assert(var_params < deduced_var_parameters.size());
@@ -5945,7 +5938,7 @@ auto Sema::TranslateProcType(
         // anyway because of this error.
         //
         // see DeferredNativeProcArgOrReturn.
-        if (ty and parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
+        if (parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
             DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
         // If this is a variadic parameter, convert it to a slice.
@@ -5953,7 +5946,14 @@ auto Sema::TranslateProcType(
         // Do *not* do this if this is a 'var...' parameter since we pass
         // those as a tuple; this will have already been handled during
         // substitution.
-        if (a.variadic and not is_var_param) ty = BuildSliceType(ty, immutable, a.type->loc);
+        if (a.variadic and not is_var_param) {
+            auto ty_res = BuildSliceType(ty, immutable, a.type->loc);
+            if (not ty_res) {
+                ok = false;
+                continue;
+            }
+            ty = *ty_res;
+        }
         if (not CheckVariableType(ty, a.type->loc)) ok = false;
         params.emplace_back(a.intent, ty, a.variadic);
     }
@@ -5962,17 +5962,15 @@ auto Sema::TranslateProcType(
     // reference the names of parameters, e.g. 'proc ($T a, $U b) -> typeof(a + b)'
     // should be valid; this necessitates creating the parameter declarations before
     // translating the return type.
-
-    auto ret = TranslateType(parsed->ret_type);
-    if (not ret) ret = Type::VoidTy;
-    else if (
+    auto ret = TranslateType(parsed->ret_type, Type::VoidTy);
+    if (
         parsed->attrs.native and
         ret != Type::VoidTy and
         ret != Type::NoReturnTy and
         IsZeroSizedOrIncomplete(ret)
     ) DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
 
-    if (not ok) return Type();
+    if (not ok) return {};
     return ProcType::Get(
         *tu,
         {ret, Expr::RValue},
@@ -5982,37 +5980,33 @@ auto Sema::TranslateProcType(
     );
 }
 
-auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Type {
+auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Opt<Type> {
     auto immutable = dyn_cast<ParsedValueType>(stmt->elem);
-    auto ty = TranslateType(immutable ? immutable->elem : stmt->elem);
-    if (not ProhibitDeducedTypes(ty, stmt->loc)) return Type();
+    auto ty = TRY(TranslateType(immutable ? immutable->elem : stmt->elem));
+    if (not ProhibitDeducedTypes(ty, stmt->loc)) return {};
     return PtrType::Get(*tu, ty, immutable != nullptr);
 }
 
-auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Type {
-    auto ty = TranslateType(parsed->elem);
-    if (not ty) return Type();
+auto Sema::TranslateRangeType(ParsedRangeType* parsed) -> Opt<Type> {
+    auto ty = TRY(TranslateType(parsed->elem));
 
     // Only ranges of integers are supported.
-    if (not ty->is_integer()) {
-        Error(
-            parsed->loc,
-            "Range element type must be an integer, but was '%1({}%)'",
-            ty
-        );
-        return Type();
-    }
+    if (not ty->is_integer()) return Error(
+        parsed->loc,
+        "Range element type must be an integer, but was '%1({}%)'",
+        ty
+    );
 
     return RangeType::Get(*tu, ty);
 }
 
-auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Type {
+auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Opt<Type> {
     auto immutable = dyn_cast<ParsedValueType>(parsed->elem);
-    auto ty = TranslateType(immutable ? immutable->elem : parsed->elem);
+    auto ty = TRY(TranslateType(immutable ? immutable->elem : parsed->elem));
     return BuildSliceType(ty, immutable != nullptr, parsed->loc);
 }
 
-auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
+auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Opt<Type> {
     auto res = LookUpNameInScope(curr_scope(), {parsed->name, parsed->loc}, LookupHint::Type);
     if (not res) return Error(parsed->loc, "Deduced template type cannot occur here");
     auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
@@ -6020,36 +6014,40 @@ auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Type {
     return ty->arg_type();
 }
 
-auto Sema::TranslateTypeofType(ParsedTypeofType* parsed) -> Type {
+auto Sema::TranslateTypeofType(ParsedTypeofType* parsed) -> Opt<Type> {
     return TRY(TranslateExpr(parsed->arg))->type;
 }
 
-auto Sema::TranslateValueType(ParsedValueType* parsed) -> Type {
+auto Sema::TranslateValueType(ParsedValueType* parsed) -> Opt<Type> {
+    auto ty = TRY(TranslateType(parsed->elem));
+
     // 'val' is parsed as a type, but it isn’t really a type, but rather a
     // property of variables and specifically pointer types; any contexts that
     // admit 'val' must handle it separately; if we encounter it anywhere else
-    // then that’s just an error.
-    auto ty = TranslateType(parsed->elem);
+    // then that’s just an error. Pretend it isn't there.
     Error(parsed->loc, "'%1(val%)' is only allowed in variable declarations or pointer types");
     return ty;
 }
 
 auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
-    Type t;
+    return TranslateType(parsed).value_or(fallback);
+}
+
+auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
     switch (parsed->kind()) {
         using K = ParsedStmt::Kind;
-#       define PARSE_TREE_LEAF_TYPE(n) case K::n: t = Translate##n(cast<Parsed##n>(parsed)); break;
+#       define PARSE_TREE_LEAF_TYPE(n) case K::n: return Translate##n(cast<Parsed##n>(parsed));
 #       include "srcc/ParseTree.inc"
-        case K::DeclRefExpr: t = TranslateNamedType(cast<ParsedDeclRefExpr>(parsed)); break;
-        case K::ParenExpr: t = TranslateType(cast<ParsedParenExpr>(parsed)->inner); break;
-        case K::NilExpr: t = Type::NilTy; break;
+        case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
+        case K::ParenExpr: return TranslateType(cast<ParsedParenExpr>(parsed)->inner);
+        case K::NilExpr: return Type::NilTy;
 
         // Array types are parsed as subscript expressions.
         case K::BinaryExpr: {
             auto b = cast<ParsedBinaryExpr>(parsed);
             if (b->op != Tk::LBrack) goto default_;
-            t = TranslateArrayType(b);
-        } break;
+            return TranslateArrayType(b);
+        }
 
         // Tuples can be treated as types.
         case K::TupleExpr: {
@@ -6057,19 +6055,19 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
             auto t = cast<ParsedTupleExpr>(parsed);
             bool ok = true;
             for (auto e : t->exprs()) {
-                if (auto ty = TranslateType(e)) types.emplace_back(ty, e->loc);
+                if (auto ty = TranslateType(e)) types.emplace_back(*ty, e->loc);
                 else ok = false;
             }
 
             if (ok) return BuildTupleType(types);
-        } break;
+            return {};
+        }
 
         // Injections may yield a type.
         case K::InjectExpr: {
-            auto injected = TranslateInjectExpr(cast<ParsedInjectExpr>(parsed), Type());
-            if (not injected) return fallback;
-            if (injected.get()->type_or_void() != Type::TypeTy) goto default_;
-            auto ty = Evaluate(injected.get());
+            auto injected = TRY(TranslateInjectExpr(cast<ParsedInjectExpr>(parsed), std::nullopt));
+            if (injected->type_or_void() != Type::TypeTy) goto default_;
+            auto ty = Evaluate(injected);
             if (ty.has_value()) return ty->cast<Type>();
             goto default_;
         }
@@ -6077,16 +6075,10 @@ auto Sema::TranslateType(ParsedStmt* parsed, Type fallback) -> Type {
         // If we don’t know what this is, try to evaluate it as a type.
         default:
         default_: {
-            auto e = TranslateExpr(parsed, Type::TypeTy);
-            if (not e) break;
-            auto val = Evaluate(e.get());
-            if (not val) break;
-            if (val->isa<Type>()) return val->cast<Type>();
-            Error(parsed->loc, "Expected type");
-            break;
+            auto e = TRY(TranslateExpr(parsed, Type::TypeTy));
+            auto val = TRY(Evaluate(e));
+            if (val.isa<Type>()) return val.cast<Type>();
+            return Error(parsed->loc, "Expected type");
         }
     }
-
-    if (not t) t = fallback;
-    return t;
 }

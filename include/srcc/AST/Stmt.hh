@@ -1485,7 +1485,7 @@ struct srcc::InheritedProcedureProperties {
     /// If this procedure was declared with a scope specifier, e.g. 'proc a::b::c', then
     /// its associated type is the type named by the scope specifier, in this case 'a::b'.
     /// This type determines the type of 'this' and 'This'.
-    Type associated_type{};
+    Opt<Type> associated_type{};
 
     /// Mangling number of this procedure.
     ManglingNumber mangling_number = ManglingNumber::None;

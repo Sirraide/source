@@ -69,6 +69,22 @@ Scope::Scope(Scope* parent, ScopeKind k)
 // ============================================================================
 //  Type
 // ============================================================================
+/// Visit this type.
+template <typename Visitor>
+auto srcc::TypeBase::visit_exact(Visitor&& v) const -> decltype(auto) {
+    // We const_cast here because types are never modified anyway,
+    // so the 'const' is just superfluous and does nothing.
+    switch (exact_kind()) {
+#define AST_TYPE_LEAF(node)                               \
+    case Kind::node: return std::invoke(                  \
+        std::forward<Visitor>(v),                         \
+        const_cast<node*>(static_cast<const node*>(this)) \
+    );
+#include "srcc/AST.inc"
+    }
+    Unreachable();
+}
+
 void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
@@ -147,14 +163,14 @@ auto TypeBase::array_size(TranslationUnit& tu) const -> Size {
 }
 
 auto TypeBase::array_size(const Target& t) const -> Size {
-    if (auto s = dyn_cast<RecordType>(this)) return s->layout().array_size();
-    if (auto s = dyn_cast<RangeType>(this)) return s->elem()->array_size(t) * 2;
+    if (auto s = dyn_cast<RecordType>(canonical)) return s->layout().array_size();
+    if (auto s = dyn_cast<RangeType>(canonical)) return s->elem()->array_size(t) * 2;
     return memory_size(t);
 }
 
 auto TypeBase::bit_width(TranslationUnit& tu) const -> Size {
-    if (this == Type::BoolTy) return Size::Bits(1);
-    if (auto i = dyn_cast<IntType>(this)) return i->bit_width();
+    if (canonical == Type::BoolTy) return Size::Bits(1);
+    if (auto i = dyn_cast<IntType>(canonical)) return i->bit_width();
     return size_impl(tu.target());
 }
 
@@ -205,12 +221,16 @@ bool TypeBase::can_zero_init() const {
     return InitCheckHelper<&RecordLayout::has_zero_init>(this);
 }
 
+auto TypeBase::desugar_once() const -> Type {
+    return this;
+}
+
 void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
 auto TypeBase::eval_mode() const -> EvalMode {
-    switch (kind()) {
+    switch (canonical_kind()) {
         using K = TypeBase::Kind;
         case K::BuiltinType:
         case K::EnumType:
@@ -245,26 +265,32 @@ auto TypeBase::eval_mode() const -> EvalMode {
 }
 
 bool TypeBase::is_aggregate() const {
-    if (auto opt = dyn_cast<OptionalType>(this)) {
+    if (auto opt = dyn_cast<OptionalType>(canonical)) {
         if (not opt->has_transparent_layout()) return true;
         return opt->elem()->is_aggregate();
     }
 
-    return isa<RecordType, ArrayType, SliceType, RangeType, ProcType>(this);
+    return isa<RecordType, ArrayType, SliceType, RangeType, ProcType>(canonical);
+}
+
+bool TypeBase::is_canonical() const {
+    // static_cast to void is required because we disallow pointer
+    // comparisons involving 'TypeBase*'.
+    return static_cast<void*>(canonical) == static_cast<const void*>(this);
 }
 
 bool TypeBase::is_complete() const {
-    if (isa<OpaqueType>(this)) return false;
-    if (auto s = dyn_cast<RecordType>(this)) return s->is_complete();
+    if (isa<OpaqueType>(canonical)) return false;
+    if (auto s = dyn_cast<RecordType>(canonical)) return s->is_complete();
     return true;
 }
 
 bool TypeBase::is_integer() const {
-    return this == Type::IntTy or isa<IntType>(this);
+    return canonical == Type::IntTy or isa<IntType>(canonical);
 }
 
 bool TypeBase::is_integer_or_bool() const {
-    return is_integer() or this == Type::BoolTy;
+    return is_integer() or canonical == Type::BoolTy;
 }
 
 bool TypeBase::is_or_contains_pointer() const {
@@ -309,9 +335,13 @@ bool TypeBase::is_or_contains_pointer() const {
     });
 }
 
+bool TypeBase::is_sugar() const {
+    return false;
+}
+
 bool TypeBase::is_void() const {
-    return kind() == Kind::BuiltinType and
-           cast<BuiltinType>(this)->builtin_kind() == BuiltinKind::Void;
+    return isa<BuiltinType>(canonical) and
+           cast<BuiltinType>(canonical)->builtin_kind() == BuiltinKind::Void;
 }
 
 bool TypeBase::move_is_copy() const {
@@ -331,7 +361,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
     };
 
     // Append the base type.
-    visit(utils::Overloaded{ // clang-format off
+    visit_exact(utils::Overloaded{ // clang-format off
         [&](ArrayType* arr) {
             Format(
                 out,
@@ -396,7 +426,7 @@ auto TypeBase::memory_size(const Target& t) const -> Size {
 }
 
 bool TypeBase::requires_deletion() const {
-    Type t = this;
+    Type t = canonical;
 
     // Arrays and optionals require destruction if their element type does.
     while (isa<ArrayType, OptionalType>(t))
@@ -411,10 +441,9 @@ bool TypeBase::requires_deletion() const {
 }
 
 auto TypeBase::size_impl(const Target& t) const -> Size {
-    // FIXME: Use a visitor.
-    switch (type_kind) {
-        case Kind::BuiltinType: {
-            switch (cast<BuiltinType>(this)->builtin_kind()) {
+    return visit(utils::Overloaded{
+        [&](BuiltinType* b) {
+            switch (b->builtin_kind()) {
                 case BuiltinKind::Bool: return Size::Bits(1);
                 case BuiltinKind::Int: return t.int_size();
                 case BuiltinKind::Tree: return Size::Of<TreeValue*>();
@@ -429,58 +458,65 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
                 case BuiltinKind::Deduced:
                     Unreachable("Requested size of deduced type");
             }
-        }
-
-        case Kind::EnumType: return cast<EnumType>(this)->elem()->size_impl(t);
-        case Kind::IntType: return t.int_size(cast<IntType>(this));
-        case Kind::PtrType: return t.ptr_size();
-        case Kind::ProcType: return t.closure_size();
-        case Kind::SliceType: return t.slice_size();
-        case Kind::RangeType: {
-            auto elem = cast<RangeType>(this)->elem();
+        },
+        [&](EnumType* e) { return e->elem()->size_impl(t); },
+        [&](IntType* i) { return t.int_size(i); },
+        [&](PtrType*) { return t.ptr_size(); },
+        [&](ProcType*) { return t.closure_size(); },
+        [&](SliceType*) { return t.slice_size(); },
+        [&](RangeType* r) {
+            auto elem = r->elem();
             return elem->array_size(t) + elem->memory_size(t);
-        }
+        },
 
-        case Kind::OpaqueType:
-            Unreachable("Querying size of opaque type");
-
-        case Kind::OptionalType: {
-            auto opt = cast<OptionalType>(this);
+        [&](OpaqueType* ) -> Size { Unreachable("Querying size of opaque type"); },
+        [&](OptionalType* opt) {
             if (opt->has_transparent_layout()) return opt->elem()->size_impl(t);
             return opt->get_equivalent_record_layout()->size();
-        }
+        },
 
-        case Kind::StructType:
-        case Kind::TupleType: {
-            auto s = cast<RecordType>(this);
-            return s->layout().size();
-        }
+        [&](RecordType* s) { return s->layout().size(); },
+        [&](ArrayType* arr) { return arr->elem()->array_size(t) * u64(arr->dimension()); },
+    });
+}
 
-        case Kind::ArrayType: {
-            auto arr = cast<ArrayType>(this);
-            return arr->elem()->array_size(t) * u64(arr->dimension());
-        }
+template <typename ...Types>
+auto TypeBase::strip_qualifiers() const -> Type {
+    for (Type ty = this;;) {
+        // Strip qualifiers from the sugared type.
+        while (isa<Types...>(ty)) ty = cast<SingleElementTypeBase>(ty)->elem();
+
+        // If the canonical type no longer satisfies the predicate, stop.
+        if (not isa<Types...>(ty->canonical)) return ty;
+
+        // Otherwise, desugar until the predicate matches again.
+        do ty = ty->desugar_once();
+        while (not isa<Types...>(ty));
     }
-
-    Unreachable("Invalid type kind");
 }
 
 auto TypeBase::strip_arrays() const -> Type {
-    if (auto a = dyn_cast<ArrayType>(this)) return a->elem()->strip_arrays();
-    return this;
+    return strip_qualifiers<ArrayType>();
 }
 
 auto TypeBase::strip_pointers_and_optionals() const -> Type {
-    Type ty = this;
-    while (isa<PtrType, OptionalType>(ty)) ty = cast<SingleElementTypeBase>(ty)->elem();
-    return ty;
+    return strip_qualifiers<PtrType, OptionalType>();
 }
 
 // ============================================================================
 //  Types
 // ============================================================================
 auto ArrayType::Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType* {
-    auto CreateNew = [&] { return new (mod) ArrayType{elem, size}; };
+    auto CreateNew = [&] (this auto&& self) {
+        auto arr = new (mod) ArrayType{elem, size};
+        if (elem->is_canonical()) return arr;
+
+        // Build canonical type.
+        auto canonical = GetOrCreateType(mod.array_types, self, elem->canonical, size);
+        arr->canonical = canonical;
+        return arr;
+    };
+
     return GetOrCreateType(mod.array_types, CreateNew, elem, size);
 }
 
@@ -521,12 +557,20 @@ auto OpaqueType::name() const -> String {
 }
 
 auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {
-    auto CreateNew = [&] {
-        if (isa<PtrType, ProcType>(elem)) return new (mod) OptionalType{elem};
-        RecordLayout::Builder b{mod};
-        b.add_field(elem);
-        b.add_field(Type::BoolTy);
-        return new (mod) OptionalType{elem, b.build(), 1};
+    auto CreateNew = [&] (this auto&& self) {
+        OptionalType* ty = [&]{
+            if (isa<PtrType, ProcType>(elem)) return new (mod) OptionalType{elem};
+            RecordLayout::Builder b{mod};
+            b.add_field(elem);
+            b.add_field(Type::BoolTy);
+            return new (mod) OptionalType{elem, b.build(), 1};
+        }();
+        if (elem->is_canonical()) return ty;
+
+        // Build canonical type.
+        auto canonical = GetOrCreateType(mod.optional_types, self, elem->canonical);
+        ty->canonical = canonical;
+        return ty;
     };
 
     return GetOrCreateType(mod.optional_types, CreateNew, elem);
@@ -542,7 +586,16 @@ auto OptionalType::get_engaged_offset() const -> Size {
 }
 
 auto PtrType::Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType* {
-    auto CreateNew = [&] { return new (mod) PtrType{elem, immutable}; };
+    auto CreateNew = [&] (this auto&& self) {
+        auto ty = new (mod) PtrType{elem, immutable};
+        if (elem->is_canonical()) return ty;
+
+        // Build canonical type.
+        auto canonical = GetOrCreateType(mod.ptr_types, self, elem->canonical, immutable);
+        ty->canonical = canonical;
+        return ty;
+    };
+
     return GetOrCreateType(mod.ptr_types, CreateNew, elem, immutable);
 }
 
@@ -568,15 +621,39 @@ auto ProcType::Get(
     CallingConvention cconv,
     bool c_varargs
 ) -> ProcType* {
-    auto CreateNew = [&] {
+    auto CreateNew = [&] (this auto&& self) {
         const auto size = totalSizeToAlloc<ParamTypeData>(param_types.size());
         auto mem = mod.allocate(size, alignof(ProcType));
-        return ::new (mem) ProcType{
+        auto ty = ::new (mem) ProcType{
             cconv,
             c_varargs,
             return_type,
             param_types
         };
+
+        if (
+            return_type.type()->is_canonical() and
+            all_of(param_types, [](auto& p) { return p.type->is_canonical(); })
+        ) return ty;
+
+        // Build canonical type.
+        TypeAndValueCategory canonical_ret{return_type.type()->canonical, return_type.value_category()};
+        auto canonical_params = to_vector(vws::transform(
+            param_types,
+            [](auto& p) { return ParamTypeData{p.intent, p.type->canonical, p.variadic}; }
+        ));
+
+        auto canonical = GetOrCreateType(
+            mod.proc_types,
+            self,
+            canonical_ret,
+            canonical_params,
+            cconv,
+            c_varargs
+        );
+
+        ty->canonical = canonical;
+        return ty;
     };
 
     return GetOrCreateType(
@@ -680,9 +757,15 @@ void RangeType::Profile(FoldingSetNodeID& ID, Type elem) {
 }
 
 auto SliceType::Get(TranslationUnit& tu, Type elem, bool immutable) -> SliceType* {
-    auto CreateNew = [&] {
+    auto CreateNew = [&] (this auto&& self) {
         auto ptr = PtrType::Get(tu, elem, immutable);
-        return new (tu) SliceType{elem, ptr, immutable};
+        auto ty = new (tu) SliceType{elem, ptr, immutable};
+
+        // Build canonical type.
+        if (elem->is_canonical()) return ty;
+        auto canonical = GetOrCreateType(tu.slice_types, self, elem->canonical, immutable);
+        ty->canonical = canonical;
+        return ty;
     };
 
     return GetOrCreateType(tu.slice_types, CreateNew, elem, immutable);
@@ -696,10 +779,32 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 // ============================================================================
 //  Record Types
 // ============================================================================
+auto types::detail::MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout* {
+    if (rgs::all_of(rl->field_types(), &TypeBase::is_canonical, &Type::ptr))
+        return rl;
+
+    SmallVector<FieldDecl*> decls;
+    for (auto f : rl->fields()) decls.push_back(new (tu) FieldDecl(
+        f->type->canonical,
+        f->offset,
+        f->name.str(),
+        f->location()
+    ));
+
+    return RecordLayout::Create(
+        tu,
+        decls,
+        rl->size(),
+        rl->array_size(),
+        rl->align(),
+        rl->bits()
+    );
+}
+
 auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDecl* {
     Size offset;
 
-    // The aligment of a struct is the alignment of its most-aligned field.
+    // The alignment of a struct is the alignment of its most-aligned field.
     auto fa = ty->align(tu);
     a = std::max(a, fa);
 
@@ -820,10 +925,17 @@ void TupleType::Profile(FoldingSetNodeID& id) const {
 }
 
 auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
-    auto CreateNew = [&] {
+    auto CreateNew = [&] (this auto&& self) {
         RecordLayout::Builder lb{mod};
         for (auto ty : elems) lb.add_field(ty);
-        return new (mod) TupleType{lb.build()};
+        auto ty = new (mod) TupleType{lb.build()};
+        if (rgs::all_of(elems, &TypeBase::is_canonical, &Type::ptr)) return ty;
+
+        // Build canonical type.
+        auto canonical_elems = llvm::to_vector(vws::transform(elems, [](Type ty) { return ty->canonical; }));
+        auto canonical = GetOrCreateType(mod.tuple_types, self, elems);
+        ty->canonical = canonical;
+        return ty;
     };
 
     return GetOrCreateType(mod.tuple_types, CreateNew, elems);
@@ -831,6 +943,12 @@ auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
 
 auto TupleType::Get(TranslationUnit& mod, RecordLayout* rl) -> TupleType* {
     Assert(rl);
-    auto CreateNew = [&] { return new (mod) TupleType{rl}; };
+    auto CreateNew = [&] {
+        auto ty = new (mod) TupleType{rl};
+        auto canonical_rl = types::detail::MakeCanonical(mod, rl);
+        if (canonical_rl == rl) return ty;
+        ty->canonical = new (mod) TupleType{canonical_rl};
+        return ty;
+    };
     return GetOrCreateType(mod.tuple_types, CreateNew, rl->field_types());
 }

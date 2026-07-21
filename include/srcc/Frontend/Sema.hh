@@ -71,7 +71,7 @@ private:
         static constexpr Tag<BlockScope> Struct;
 
         EnterScope(Sema& S, bool should_enter = true);
-        EnterScope(Sema& S, Tag<ProcScope>, Type associated_type);
+        EnterScope(Sema& S, Tag<ProcScope>, Opt<Type> associated_type);
         EnterScope(Sema& S, Tag<StructScope>);
         EnterScope(Sema& S, Scope* scope);
         ~EnterScope();
@@ -966,7 +966,7 @@ private:
     void DeclareLocal(LocalDecl* d);
 
     /// Perform template deduction.
-    auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Type;
+    auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type>;
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return);
@@ -989,7 +989,7 @@ private:
     ) -> Ptr<ImportedClangModuleDecl>;
 
     /// Inject a parse tree into the program.
-    bool InjectTree(Expr* injected, Type desired_type, InjectionContext ctx);
+    bool InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext ctx);
 
     /// Instantiate a procedure template.
     auto InstantiateTemplate(
@@ -1181,20 +1181,20 @@ private:
     auto UnwrapOptional(Expr* opt, SLoc loc) -> Expr*;
 
     /// Unwrap (multi-level) pointers and optionals.
-    auto UnwrapPointersAndOptionals(Expr* e, Type stop_at = {}) -> Ptr<Expr>;
+    auto UnwrapPointersAndOptionals(Expr* e, Opt<Type> stop_at = {}) -> Ptr<Expr>;
 
     /// Building AST nodes.
     auto BuildAssertExpr(Expr* cond, Ptr<Expr> msg, bool is_compile_time, SLoc loc, SRange cond_range) -> Ptr<Expr>;
-    auto BuildArrayType(TypeLoc base, Expr* size) -> Type;
-    auto BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Type;
+    auto BuildArrayType(TypeLoc base, Expr* size) -> Opt<Type>;
+    auto BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Opt<Type>;
     auto BuildBinaryExpr(Tk op, Expr* lhs, Expr* rhs, SLoc op_loc) -> Ptr<Expr>;
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc, bool is_associated_call = false) -> Ptr<Expr>;
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
-    auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
-    auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Type desired_type = {}) -> Ptr<Expr>;
+    auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
+    auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
     auto BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr>;
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
@@ -1221,9 +1221,9 @@ private:
 
     auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
-    auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Type;
+    auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
-    auto BuildTupleType(ArrayRef<TypeLoc> types) -> Type;
+    auto BuildTupleType(ArrayRef<TypeLoc> types) -> Opt<Type>;
     auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr>;
 
@@ -1231,13 +1231,13 @@ private:
     void Translate(bool load_runtime);
 
     /// Statements.
-#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Ptr<Stmt>;
-#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Decl*;
-#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed, Type desired_type) -> Ptr<Stmt>;
+#define PARSE_TREE_LEAF_EXPR(Name) auto Translate##Name(Parsed##Name* parsed, Opt<Type> desired_type) -> Ptr<Stmt>;
+#define PARSE_TREE_LEAF_DECL(Name) auto Translate##Name(Parsed##Name* parsed, Opt<Type> desired_type) -> Decl*;
+#define PARSE_TREE_LEAF_STMT(Name) auto Translate##Name(Parsed##Name* parsed, Opt<Type> desired_type) -> Ptr<Stmt>;
 #define PARSE_TREE_LEAF_TYPE(Name)
 #include "srcc/ParseTree.inc"
 
-    auto TranslateExpr(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Expr>;
+    auto TranslateExpr(ParsedStmt* parsed, Opt<Type> desired_type = {}) -> Ptr<Expr>;
 
     /// A member access may also reference an associated procedure; we want to avoid
     /// introducing an AST node for it because we would then have to introduce code to
@@ -1272,28 +1272,29 @@ private:
     auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
     auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
-    auto TranslateStmt(ParsedStmt* parsed, Type desired_type = Type()) -> Ptr<Stmt>;
-    bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Type desired_type = Type());
+    auto TranslateStmt(ParsedStmt* parsed, Opt<Type> desired_type = {}) -> Ptr<Stmt>;
+    bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Opt<Type> desired_type = {});
     auto TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>;
 
     /// Types.
-    auto TranslateArrayType(ParsedBinaryExpr* parsed) -> Type;
+    auto TranslateArrayType(ParsedBinaryExpr* parsed) -> Opt<Type>;
     auto TranslateBuiltinType(ParsedBuiltinType* parsed) -> Type;
     auto TranslateIntType(ParsedIntType* parsed) -> Type;
-    auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Type;
-    auto TranslateRangeType(ParsedRangeType* parsed) -> Type;
-    auto TranslateSliceType(ParsedSliceType* parsed) -> Type;
-    auto TranslateTemplateType(ParsedTemplateType* parsed) -> Type;
-    auto TranslateType(ParsedStmt* stmt, Type fallback = Type()) -> Type;
-    auto TranslateTypeofType(ParsedTypeofType* parsed) -> Type;
-    auto TranslateOptionalType(ParsedOptionalType* stmt) -> Type;
-    auto TranslatePtrType(ParsedPtrType* stmt) -> Type;
+    auto TranslateNamedType(ParsedDeclRefExpr* parsed) -> Opt<Type>;
+    auto TranslateRangeType(ParsedRangeType* parsed) -> Opt<Type>;
+    auto TranslateSliceType(ParsedSliceType* parsed) -> Opt<Type>;
+    auto TranslateTemplateType(ParsedTemplateType* parsed) -> Opt<Type>;
+    auto TranslateType(ParsedStmt* stmt, Type fallback) -> Type;
+    auto TranslateType(ParsedStmt* stmt) -> Opt<Type>;
+    auto TranslateTypeofType(ParsedTypeofType* parsed) -> Opt<Type>;
+    auto TranslateOptionalType(ParsedOptionalType* stmt) -> Opt<Type>;
+    auto TranslatePtrType(ParsedPtrType* stmt) -> Opt<Type>;
     auto TranslateProcType(
         ParsedProcType* parsed,
         bool allow_immutable_params = false,
         ArrayRef<Type> deduced_var_parameters = {}
-    ) -> Type;
-    auto TranslateValueType(ParsedValueType* parsed) -> Type;
+    ) -> Opt<Type>;
+    auto TranslateValueType(ParsedValueType* parsed) -> Opt<Type>;
 
     void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
     void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }

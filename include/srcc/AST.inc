@@ -18,6 +18,14 @@
 #    define AST_TYPE_LEAF(node) AST_TYPE(node)
 #endif
 
+#ifndef AST_TYPE_LEAF_WITH_IDENTITY
+#    define AST_TYPE_LEAF_WITH_IDENTITY(node) AST_TYPE_LEAF(node)
+#endif
+
+#ifndef AST_TYPE_SUGAR
+#    define AST_TYPE_SUGAR(node) AST_TYPE_LEAF(node)
+#endif
+
 #ifndef AST_TYPE
 #    define AST_TYPE(node) AST_NODE(node)
 #endif
@@ -109,7 +117,7 @@ AST_DECL_LEAF(ProcDecl)
 AST_TYPE(TypeBase)
 AST_TYPE(SingleElementTypeBase)
 AST_TYPE_LEAF(ArrayType)
-AST_TYPE_LEAF(EnumType)
+AST_TYPE_LEAF_WITH_IDENTITY(EnumType)
 AST_TYPE_LEAF(OptionalType)
 AST_TYPE_LEAF(SliceType)
 AST_TYPE_LEAF(PtrType)
@@ -122,12 +130,14 @@ AST_TYPE_LEAF(ProcType)
 
 AST_TYPE(RecordType)
 AST_TYPE_LEAF(TupleType)
-AST_TYPE_LEAF(StructType)
+AST_TYPE_LEAF_WITH_IDENTITY(StructType)
 
 #undef AST_STMT_LEAF
 #undef AST_STMT
 #undef AST_INIT_LEAF
 #undef AST_DECL_LEAF
+#undef AST_TYPE_SUGAR
 #undef AST_TYPE_LEAF
+#undef AST_TYPE_LEAF_WITH_IDENTITY
 #undef AST_TYPE
 #undef AST_NODE

@@ -14,7 +14,7 @@ using namespace srcc;
 #define Read(...) Try(read<__VA_ARGS__>())
 
 namespace {
-enum struct TypeIndex : u64;
+enum struct TypeIndex : u64 { Invalid = ~u64(0) };
 constexpr u32 CurrentVersion = 1;
 
 struct Header {
@@ -41,56 +41,54 @@ public:
 
     const Context& ctx;
     SmallVector<Type> types;
-    DenseMap<Type, TypeIndex> type_indices;
+    NonCanonicalTypeMap<TypeIndex> type_indices;
     llvm::MapVector<File::Id, std::string> files;
-    TypeIndex next_index = TypeIndex(1);
+    TypeIndex next_index = TypeIndex(0);
     bool done_emitting_decls = false;
 
-    ASTWriter(const Context& ctx, ByteBuffer& buf) : Base{buf}, ctx{ctx} {
-        types.push_back(Type());
-        type_indices[Type()] = TypeIndex(0);
-    }
+    ASTWriter(const Context& ctx, ByteBuffer& buf) : Base{buf}, ctx{ctx} {}
 
     void emit_type_def(Type ty) {
         using K = TypeBase::Kind;
+        *this << ty->exact_kind();
         ty->visit(utils::Overloaded{
             [&](const ArrayType* ty) {
-                *this << K::ArrayType << ty->elem() << i64(ty->dimension());
+                *this << ty->elem() << i64(ty->dimension());
             },
             [&](const BuiltinType* ty) {
-                *this << K::BuiltinType << ty->builtin_kind();
+                *this << ty->builtin_kind();
             },
             [&](const EnumType* ty) {
-                *this << K::EnumType << ty->elem() << ty->name() << ty->decl()->location()
+                *this << ty->elem() << ty->name() << ty->decl()->location()
                       << llvm::to_vector(ty->enumerators());
             },
             [&](const IntType* ty) {
-                *this << K::IntType << ty->bit_width();
+                *this << ty->bit_width();
             },
             [&](const OpaqueType* ty) {
                 *this << ty->name() << ty->decl()->location();
             },
             [&](const OptionalType* ty) {
-                *this << ty->kind() << ty->elem();
+                *this << ty->elem();
             },
             [&](const ProcType* ty) {
-                *this << K::ProcType << ty->has_c_varargs() << ty->cconv()
+                *this << ty->has_c_varargs() << ty->cconv()
                       << ty->ret() << ty->return_value_category() << ty->params();
             },
             [&](const PtrType* ty) {
-                *this << ty->kind() << ty->elem() << ty->is_immutable();
+                *this << ty->elem() << ty->is_immutable();
             },
             [&](const RangeType* ty) {
-                *this << ty->kind() << ty->elem();
+                *this << ty->elem();
             },
             [&](const SliceType* ty) {
-                *this << ty->kind() << ty->elem() << ty->is_immutable();
+                *this << ty->elem() << ty->is_immutable();
             },
             [&](const TupleType* ty) {
-                *this << K::TupleType << ty->layout();
+                *this << ty->layout();
             },
             [&](const StructType* ty) {
-                *this << K::StructType << ty->decl()->name.str() << ty->decl()->location()
+                *this << ty->decl()->name.str() << ty->decl()->location()
                       << ty->layout() << ty->deleter().present();
                 if (ty->deleter().present()) *this << ty->deleter().get();
             },
@@ -135,6 +133,12 @@ public:
         *this << RegisterType(ty);
     }
 
+    template <typename T>
+    void write(const Opt<T>& opt) {
+        *this << opt.has_value();
+        if (opt.has_value()) *this << opt.value();
+    }
+
     void write(const ParamTypeData& p) {
         *this << p.intent << p.type << p.variadic;
     }
@@ -172,7 +176,7 @@ private:
         if (auto it = type_indices.find(ty); it != type_indices.end()) return it->second;
 
         Assert(not done_emitting_decls, "Forgot to register an element type!");
-        type_indices[ty] = TypeIndex(); // Support recursion.
+        type_indices[ty] = TypeIndex::Invalid; // Support recursion.
 
         // Register element types.
         ty->visit(utils::Overloaded{
@@ -205,8 +209,8 @@ public:
 
     Sema& S;
     ImportedSourceModuleDecl* module_decl;
-    llvm::SmallVector<Type> types{};
-    TypeIndex next_index = TypeIndex(1);
+    SmallVector<Type> types{};
+    TypeIndex next_index = TypeIndex(0);
 
     /// Map from serialised file IDs to the file IDs they correspond
     /// to in the current context (provided the file in question still
@@ -219,9 +223,7 @@ public:
     DenseMap<File::Id, std::optional<File::Id>> files;
 
     ASTReader(Sema& S, ImportedSourceModuleDecl* module_decl, ByteSpan buf)
-        : Base{buf}, S{S}, module_decl{module_decl} {
-        types.push_back(Type()); // TypeIndex(0).
-    }
+        : Base{buf}, S{S}, module_decl{module_decl} {}
 
     auto read_file_data() -> Result<> {
         auto [index, absolute_path] = Read(std::pair<File::Id, std::string>);
@@ -397,6 +399,12 @@ public:
     }
 
     template <>
+    auto read<Opt<Type>>() -> Result<Opt<Type>> {
+        if (Read(bool)) return read<Type>();
+        return std::nullopt;
+    }
+
+    template <>
     auto read<ParamTypeData>() -> Result<ParamTypeData> {
         auto intent = Read(Intent);
         auto type = Read(Type);
@@ -428,7 +436,7 @@ public:
 
     template <>
     auto read<InheritedProcedureProperties>() -> Result<InheritedProcedureProperties> {
-        auto associated_type = Read(Type);
+        auto associated_type = Read(Opt<Type>);
         auto mangling_number = Read(ManglingNumber);
         auto always_inline = Read(bool);
         auto is_compile_time_only = Read(bool);
@@ -630,7 +638,7 @@ auto TranslationUnit::serialise() -> ByteBuffer {
     w.done_emitting_decls = true;
 
     // Write the types.
-    for (auto ty : ArrayRef(w.types).drop_front()) w.emit_type_def(ty);
+    for (auto ty : ArrayRef(w.types)) w.emit_type_def(ty);
     u64 types_end = buf.size();
 
     // Write the files.

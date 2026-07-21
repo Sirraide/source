@@ -936,7 +936,7 @@ void CodeGen::Mangler::Append(ObjectDecl* obj) {
         // Also add the associated type if there is one.
         if (proc->props.associated_type) {
             name += "$";
-            Append(proc->props.associated_type);
+            Append(*proc->props.associated_type);
         }
 
         if (proc->props.mangling_number != ManglingNumber::None)
@@ -2021,7 +2021,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
                 expr->access_kind
             );
 
-            return op->getResults();
+            return IRValue(op.getResults());
         }
 
         // Otherwise, constant-fold the property.
@@ -2147,7 +2147,7 @@ auto CodeGen::EmitCallExpr(CallExpr* expr, Value mrvalue_slot) -> IRValue {
     if (
         proc->returns_lvalue() or
         abi().can_use_return_value_directly(*this, ret)
-    ) return op.getResults();
+    ) return IRValue{op.getResults()};
 
     // More complicated ones need to be written to memory.
     abi::IRToSourceConversionContext ctx{*this, l, op.getResults(), ret, mrvalue_slot};
@@ -2990,7 +2990,7 @@ auto CodeGen::EmitTypeConstant(Type ty, mlir::Location loc) -> Value {
         "Cannot emit types as values outside of constant evaluation"
     );
 
-    return ir::TypeConstantOp::create(*this, loc, ty);
+    return ir::TypeConstantOp::create(*this, loc, ir::TypeWrapper{ty.ptr()});
 }
 
 auto CodeGen::EmitTypeExpr(TypeExpr* e) -> IRValue {

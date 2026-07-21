@@ -69,9 +69,52 @@ template <typename Ty>
 class Opt : public std::optional<Ty> {
     using std::optional<Ty>::optional;
 
-    // Disallow these because they’re unsafe.
-    auto operator->() -> Ty* = delete;
-    auto operator*() -> Ty& = delete;
+    // Ensure these actually perform checking.
+    [[nodiscard]] auto operator->() -> Ty* {
+        Assert(this->has_value());
+        return std::addressof(this->value());
+    }
+
+    [[nodiscard]] auto operator*() -> Ty& {
+        Assert(this->has_value());
+        return this->value();
+    }
+};
+
+/// Class that allows deferred initialisation; used in cases where we
+/// normally want to disallow default-construction for a type but at
+/// the same time need to interact w/ existing code that requires
+/// default construction (e.g. MLIR properties).
+template <typename T>
+class LateInit {
+    static_assert(
+        not std::is_default_constructible_v<T>,
+        "LateInit<T> should not be used for default-constructible types"
+    );
+
+    Opt<T> val;
+
+public:
+    LateInit() = default;
+    LateInit(T val) : val{std::move(val)} {}
+    LateInit& operator=(T value) {
+        val = std::move(value);
+        return *this;
+    }
+
+    /// Emplace a value.
+    template <typename ...Args>
+    void emplace(Args... args) { val.emplace(LIBBASE_FWD(args)...); }
+
+    /// Get the value.
+    [[nodiscard]] auto value() -> T& { return *val; }
+    [[nodiscard]] auto operator*() -> T& { return *val; }
+
+    /// Access members of the value.
+    [[nodiscard]] auto operator->() -> T* { return std::addressof(*val); }
+
+    /// Convert to the value.
+    /* implicit */ operator T() { return value(); }
 };
 
 /// Nullable pointer.

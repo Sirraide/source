@@ -7,6 +7,22 @@
 #include <srcc/AST/Type.hh>
 #include <srcc/AST/Stmt.hh>
 
+namespace srcc::cg::ir {
+// MLIR's property system requires everything to be hashable etc, which is something
+// we DON'T want for 'Type'; we also can't use 'TypeBase*' since we disallow equality
+// comparisons on it, so instead use this hack.
+struct TypeWrapper {
+    TypeBase* ty{};
+    friend bool operator==(TypeWrapper a, TypeWrapper b) {
+        return static_cast<void*>(a.ty) == static_cast<void*>(b.ty);
+    }
+};
+
+inline auto hash_value(TypeWrapper value) -> llvm::hash_code {
+    return llvm::hash_value(static_cast<void*>(value.ty));
+}
+} // namespace srcc::cg::ir
+
 #include <mlir/IR/Dialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 
@@ -54,7 +70,7 @@ auto GetTypeSize(const mlir::DataLayout& dl, mlir::Type ty) -> Size;
 
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::TreeValue*);
 COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Stmt*);
-COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::Type);
+COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE(srcc::cg::ir::TypeWrapper);
 SRCC_ENUMS_EXPOSED_TO_MLIR(COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE);
 #undef COMPILE_TIME_ONLY_PROPERTY_BOILERPLATE
 
