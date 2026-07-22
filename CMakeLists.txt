@@ -127,7 +127,7 @@ set(LIBBASE_CXXFLAGS -fno-exceptions -fno-rtti -fwrapv -fnew-infallible)
 set(LIBBASE_LLVM_BINDINGS ON)
 FetchContent_Declare(libbase
     GIT_REPOSITORY https://github.com/Sirraide/libbase
-    GIT_TAG 31be5337d5616bd77bc088b6950ab91686f9ff9b
+    GIT_TAG f675eb9ceb909b52d90554f9f7b4670b402da7ca
     SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libs/libbase"
 )
 FetchContent_MakeAvailable(libbase)

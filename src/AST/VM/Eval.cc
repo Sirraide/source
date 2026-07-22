@@ -1022,7 +1022,7 @@ bool Eval::EvalLoop() {
             if (call_stack.back().is_assert_stringifier_frame) {
                 Note(
                     SLoc::Decode(call_stack.back().call_loc),
-                    "Expression evaluated to '{}'",
+                    "Condition evaluated to: {}",
                     std::string_view{assert_buffer->data, usz(assert_buffer->size)}
                 );
                 return false;

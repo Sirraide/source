@@ -1212,7 +1212,6 @@ public:
         SLoc location
     ) : TypeDecl{Kind::TypeDecl, type, name, location} {}
 
-public:
     static bool classof(const Stmt* e) {
         return e->kind() == Kind::TypeDecl || e->kind() == Kind::TemplateTypeParamDecl;
     }

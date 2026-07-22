@@ -53,12 +53,12 @@ struct Res : std::expected<Value, std::unique_ptr<Diagnostic>> {
     Res(std::nullopt_t) = delete("Return a diagnostic instead");
 };
 
-class Sema::Importer {
+class srcc::CXXImporter {
     Sema& S;
     ImportedClangModuleDecl* clang_module;
 
 public:
-    explicit Importer(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
+    explicit CXXImporter(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
     auto AST() -> clang::ASTContext& { return clang_module->clang_ast.getASTContext(); }
 
 
@@ -79,7 +79,7 @@ public:
     // Convert 'QualType' and other clang types that can't be formatted w/o an ASTContext
     // to a string so it can be used in a diagnostic.
     template <typename T>
-    static auto PreprocessDiagArg(Importer& i, T val) {
+    static auto PreprocessDiagArg(CXXImporter& i, T val) {
         using NonRef = std::remove_cvref_t<T>;
         if constexpr (utils::is<NonRef, QualType, clang::CanQualType>) {
             SmallString<32> str;
@@ -123,17 +123,17 @@ public:
     template <typename Entity, typename... Args>
     auto MakeErr(
         Entity e,
-        std::format_string<decltype(PreprocessDiagArg(std::declval<Importer&>(), std::declval<Args>()))...> fmt,
+        std::format_string<decltype(PreprocessDiagArg(std::declval<CXXImporter&>(), std::declval<Args>()))...> fmt,
         Args&&... args
     ) {
-        auto diag = CreateNote(GetEntityLoc(e), fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
+        auto diag = S.CreateNote(GetEntityLoc(e), fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
         return std::unexpected(std::make_unique<Diagnostic>(diag));
     }
 
     template <typename Entity, typename... Args>
     auto NYI(
         Entity e,
-        std::format_string<decltype(PreprocessDiagArg(std::declval<Importer&>(), std::declval<Args>()))...> fmt,
+        std::format_string<decltype(PreprocessDiagArg(std::declval<CXXImporter&>(), std::declval<Args>()))...> fmt,
         Args&&... args
     ){
         auto msg = Format(fmt, PreprocessDiagArg(*this, std::forward<Args>(args))...);
@@ -166,7 +166,7 @@ static auto GetStableCanonicalDecl(clang::Decl* d) -> clang::Decl* {
         .Default([&](auto* d){ return d->getCanonicalDecl(); });
 }
 
-auto Sema::Importer::ImportDecl(clang::Decl* d) -> Res<Decl*> {
+auto srcc::CXXImporter::ImportDecl(clang::Decl* d) -> Res<Decl*> {
     d = GetStableCanonicalDecl(d);
 
     // If we have attempted to find this before, do not do so again.
@@ -185,7 +185,7 @@ auto Sema::Importer::ImportDecl(clang::Decl* d) -> Res<Decl*> {
     return imported;
 }
 
-auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
+auto srcc::CXXImporter::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
     DebugAssert(
         S.imported_decls.at(d).invalid() and d == GetStableCanonicalDecl(d),
         "ImportDeclImpl() should only be called by ImportDecl()"
@@ -241,17 +241,57 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
         case K::CXXRecord:
             return ImportRecordImpl(cast<clang::RecordDecl>(d));
 
+        // There are 3 patterns that we want to handle here.
+        //
+        //  1. This is a typedef of some tag type whose name is the same as
+        //     that of the typedef (e.g. 'typedef struct foo { ... } foo').
+        //     Ignore the typedef and just import the underlying tag.
+        //
+        //  2. As 1, but the tag is anonymous (e.g. 'typedef struct { ... } foo');
+        //     Import the tag and set its name to that of the typedef.
+        //
+        //  3. If the typedef is 'size_t' (and it's _actually_ size_t and not
+        //     just called that), map it to 'int'.
+        //
+        //  4. None of the above; import the underlying type and create a type alias.
         case K::Typedef:
         case K::TypeAlias: {
             auto td = cast<clang::TypedefNameDecl>(d);
-            auto clang_ty = td->getUnderlyingType();
-            if (clang_ty->isRecordType())
-                return ImportDecl(clang_ty->castAsRecordDecl());
 
+            // Case 2.
+            //
+            // Using the typedef name as the tag name is handled when we
+            // import the tag, so no need to deal w/ that here.
+            if (auto anon = td->getAnonDeclWithTypedefName(true))
+                return TRY(ImportDecl(anon));
+
+            // Case 1.
+            //
+            // Use 'dyn_cast' rather than 'getAs' because we don't want to
+            // discard type sugar here.
+            auto underlying = td->getUnderlyingType();
+            if (
+                auto tt = dyn_cast<clang::TagType>(underlying);
+                tt and tt->getDecl()->getDeclName() == td->getDeclName()
+            ) return ImportDecl(tt->getDecl());
+
+            // Case 3.
             auto loc = ImportSourceLocation(td->getLocation());
-            auto ty = TRY(ImportType(loc, clang_ty));
-            return new (*S.tu) TypeDecl{ty, S.tu->save(td->getName()), loc};
-        } break;
+            if (
+                td->getName() == "size_t" and
+                underlying.getCanonicalType() == AST().getSizeType().getCanonicalType()
+            ) return AliasType::Create(*S.tu, Type::IntTy, String("size_t"), loc)->decl();
+
+            // Case 4.
+            //
+            // Type aliases may be recursive (in that they may refer to a
+            // struct that contains the a type alias); create the alias first
+            // and fill in the type later.
+            auto alias = AliasType::Create(*S.tu, Type::VoidTy, S.tu->save(td->getName()), loc);
+            S.imported_decls[td] = alias->decl();
+            alias->set_aliased_type(TRY(ImportType(loc, underlying)));
+            return alias->decl();
+        }
 
         case K::Var: {
             auto var = cast<clang::VarDecl>(d);
@@ -283,7 +323,7 @@ auto Sema::Importer::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
     return NYI(d, "declaration of kind {}", d->getDeclKindName());
 }
 
-auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*> {
+auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*> {
     DebugAssert(
         S.imported_decls.at(d).invalid() and d == GetStableCanonicalDecl(d),
         "Call ImportDecl() instead of ImportFunctionImpl()"
@@ -352,13 +392,13 @@ auto Sema::Importer::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDecl*
     return PD;
 }
 
-auto Sema::Importer::ImportName(clang::TagDecl* td) -> StringRef {
+auto srcc::CXXImporter::ImportName(clang::TagDecl* td) -> StringRef {
     if (auto tdef = td->getTypedefNameForAnonDecl()) return tdef->getName();
     if (td->getDeclName().isIdentifier()) return td->getName();
     return "";
 }
 
-auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
+auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
     DebugAssert(
         S.imported_decls.at(rd).invalid() and rd == GetStableCanonicalDecl(rd),
         "Call ImportDecl() instead of ImportRecordImpl()"
@@ -420,7 +460,7 @@ auto Sema::Importer::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*> {
     return type->decl();
 }
 
-auto Sema::Importer::ImportReturnType(
+auto srcc::CXXImporter::ImportReturnType(
     SLoc loc,
     QualType ty
 ) -> Res<TypeAndValueCategory> {
@@ -434,20 +474,11 @@ auto Sema::Importer::ImportReturnType(
     return TypeAndValueCategory{TRY(ImportType(loc, ty)), vc};
 }
 
-auto Sema::Importer::ImportType(clang::SourceLocation sloc, QualType ty) -> Res<Type> {
+auto srcc::CXXImporter::ImportType(clang::SourceLocation sloc, QualType ty) -> Res<Type> {
     return ImportType(ImportSourceLocation(sloc), ty);
 }
 
-auto Sema::Importer::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
-    // Handle known type sugar first.
-    if (
-        auto td = ty->getAs<clang::TypedefType>();
-        td and td->getDecl()->getName() == "size_t" and
-        ty->getCanonicalTypeUnqualified() == AST().getSizeType()
-    ) return Type::IntTy;
-
-    // Only handle canonical types from here on.
-    ty = ty->getCanonicalTypeUnqualified();
+auto srcc::CXXImporter::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
     switch (ty->getTypeClass()) {
         using K = clang::Type::TypeClass;
         default: break;
@@ -547,16 +578,28 @@ auto Sema::Importer::ImportType(SLoc sloc, QualType ty) -> Res<Type> {
         }
 
         case K::Record: {
-            auto rd = ty->getAsRecordDecl();
-            Assert(rd);
+            auto rd = ty->castAsRecordDecl();
             return cast<TypeDecl>(TRY(ImportDecl(rd)))->type;
         }
+
+        case K::Typedef: {
+            auto td = cast<clang::TypedefType>(ty);
+            return cast<TypeDecl>(TRY(ImportDecl(td->getDecl())))->type;
+        }
+
+        case K::Using: {
+            auto td = cast<clang::UsingType>(ty);
+            return cast<TypeDecl>(TRY(ImportDecl(td->getDecl()->getTargetDecl())))->type;
+        }
     }
+
+    if (ty != ty.getCanonicalType())
+        return ImportType(sloc, ty.getCanonicalType());
 
     return NYI(sloc, "type '{}'", ty);
 }
 
-auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
+auto srcc::CXXImporter::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
     if (not sloc.isValid()) return {};
     auto& sm = AST().getSourceManager();
     auto name = sm.getFilename(sloc);
@@ -568,7 +611,7 @@ auto Sema::Importer::ImportSourceLocation(clang::SourceLocation sloc) -> SLoc {
     return SLoc(f.value()->data() + sm.getFileOffset(sloc));
 }
 
-auto Sema::Importer::ImportValue(
+auto srcc::CXXImporter::ImportValue(
     SLoc loc,
     const clang::APValue& val,
     Type ty
@@ -817,7 +860,7 @@ auto Sema::LookUpCXXNameImpl(
 
     // Figure out what we found.
     auto found = Kind::Nothing;
-    Importer i{*this, clang_module};
+    CXXImporter i{*this, clang_module};
     for (auto d : res) {
         if (d->isInvalidDecl()) continue;
         if (VarFilter(d)) found |= Kind::Var;
@@ -925,7 +968,7 @@ auto Sema::LookUpCXXMacro(
     LookupHint hint
 ) -> LookupResult {
     // Import the source location of the macro.
-    Importer main_importer{*this, clang_module};
+    CXXImporter main_importer{*this, clang_module};
     SLoc macro_loc = main_importer.ImportSourceLocation(mi->getDefinitionLoc());
 
     // Return an error.
@@ -1055,7 +1098,7 @@ auto Sema::LookUpCXXMacro(
         SLoc()
     );
 
-    Importer fake_importer{*this, fake_module};
+    CXXImporter fake_importer{*this, fake_module};
 
     // Import a type from the Clang ASTUnit used for expansion to Source.
     auto ImportTypeFromExpansionAST = [&](QualType clang_ty) -> Res<Type> {

@@ -1439,6 +1439,11 @@ auto Sema::BuildConversionSequence(
     };
 
     switch (var_type->canonical_kind()) {
+#       define AST_TYPE(x)
+#       define AST_TYPE_SUGAR(x) case TypeBase::Kind::x:
+#       include "srcc/AST.inc"
+            Unreachable("Canonical type should not be type sugar");
+
         case TypeBase::Kind::EnumType:
             return TypeMismatch();
 
@@ -2995,8 +3000,19 @@ auto Sema::BuildAssertExpr(
         auto BuildBody = [&](ProcDecl* proc, SmallVectorImpl<Stmt*>& stmts) {
             // Append a string to the buffer.
             auto param = curr_proc().locals[0];
-            auto AppendStr = [&](String s){
-                auto str = StrLitExpr::Create(*tu, s, loc);
+            auto AppendStr = [&](StringRef s){
+                StrLitExpr* str{};
+
+                // At compile time, we can preserve colours as we’ll be printing this
+                // in a diagnostic, if at all; at runtime, we need to remove them since
+                // the runtime library doesn’t understand our colour formatting.
+                if (is_compile_time) {
+                    str = StrLitExpr::Create(*tu, tu->save(s), loc);
+                } else {
+                    auto stripped = text::RenderColours(false, std::string_view{s});
+                    str = StrLitExpr::Create(*tu, tu->save(stripped), loc);
+                }
+
                 auto append_str = GetRuntimeSymbol("__src_assert_append_str");
                 auto call = BuildCallExpr(append_str, {CreateReference(param, loc).get(), str}, loc);
                 stmts.push_back(call.get());
@@ -3004,10 +3020,25 @@ auto Sema::BuildAssertExpr(
 
             // Attempt to decompose the expression.
             cond->visit(utils::Overloaded{
-                [&](auto*) { AppendStr("???"); },
+                [&](auto* s) {
+                    auto k = static_cast<Stmt*>(s)->kind();
+                    AppendStr(String::CreateUnsafe("%0("s + enchantum::to_string(k) + "%)"));
+                },
                 [&](BoolLitExpr* ile) {
-                    if (ile->value) AppendStr("true");
-                    else AppendStr("false");
+                    if (ile->value) AppendStr("%1(true%)");
+                    else AppendStr("%1(false%)");
+                },
+                [&](TypeExpr* te) {
+                    auto type_name = te->value->print().str().str();
+                    if (not is_compile_time) type_name = text::RenderColours(false, type_name);
+                    AppendStr(tu->save(type_name));
+                },
+                [&](this auto&& self, BinaryExpr* b) {
+                    b->lhs->visit(self);
+                    AppendStr(" %1(");
+                    AppendStr(Spelling(b->op));
+                    AppendStr(" %)");
+                    b->rhs->visit(self);
                 }
             });
         };
@@ -4488,7 +4519,7 @@ void Sema::Translate(bool load_runtime) {
 
     // Initialise FFI types.
     auto DeclareBuiltinType = [&](String name, Type type) {
-        auto decl = new (*tu) TypeDecl(type, name, SLoc());
+        auto decl = AliasType::Create(*tu, type, name, SLoc())->decl();
         AddDeclToScope(global_scope(), decl);
     };
 

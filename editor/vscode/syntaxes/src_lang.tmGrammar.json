@@ -126,6 +126,46 @@
                     }
                 },
                 {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\[)([^\n]*?)(\\])",
+                    "captures": {
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
+                    }
+                },
+                {
+                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\{)([^\n]*?)(\\})",
+                    "captures": {
+                        "1": {
+                            "name": "srcc.verify.directive"
+                        },
+                        "2": {
+                            "name": "srcc.verify.count"
+                        },
+                        "3": {
+                            "name": "srcc.verify.operator"
+                        },
+                        "4": {
+                            "name": "srcc.verify.diag_text"
+                        },
+                        "5": {
+                            "name": "srcc.verify.operator"
+                        }
+                    }
+                },
+                {
                     "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\(\\()([^\n]*?)(\\)\\))",
                     "captures": {
                         "1": {

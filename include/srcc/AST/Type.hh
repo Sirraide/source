@@ -36,6 +36,7 @@ class ProcDecl;
 class EnumeratorDecl;
 class RecordLayout;
 struct BuiltinTypes;
+class CXXImporter;
 
 #define AST_TYPE_LEAF_WITH_IDENTITY(node) class node;
 #define AST_TYPE(node) class SRCC_DIAGNOSE_POINTER_COMPARISON node;
@@ -198,6 +199,10 @@ public:
     template <typename Visitor>
     auto visit(Visitor&& v) const -> decltype(auto);
 
+    /// As visit() but also visits non-canonical types.
+    template <typename Visitor>
+    auto visit_exact(Visitor&& v) const -> decltype(auto);
+
     /// Get the canonical type kind of this type.
     [[nodiscard]] auto canonical_kind() const -> Kind { return canonical->type_kind; }
 
@@ -211,13 +216,10 @@ private:
     [[nodiscard]] bool is_sugar() const;
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
     [[nodiscard]] auto size_impl(const Target& t) const -> Size;
+    [[nodiscard]] auto print_impl() const -> SmallUnrenderedString;
 
     template <typename ...Types>
     [[nodiscard]] auto strip_qualifiers() const -> Type;
-
-    /// As visit() but also visits non-canonical types.
-    template <typename Visitor>
-    auto visit_exact(Visitor&& v) const -> decltype(auto);
 };
 
 /// Class that holds a type.
@@ -303,11 +305,13 @@ public:
 };
 
 /// Query whether a type class is type sugar.
+namespace srcc {
 template <typename Ty>
 consteval bool IsTypeSugarClass() {
 #   define AST_TYPE_SUGAR(Class) if constexpr (std::same_as<Ty, Class>) return true;
 #   include "srcc/AST.inc"
     return false;
+}
 }
 
 /// Scope that stores declarations.
@@ -522,9 +526,8 @@ public:
 };
 
 class srcc::SingleElementTypeBase : public TypeBase {
-    Type element_type;
-
 protected:
+    Type element_type;
     SingleElementTypeBase(Kind kind, Type elem) : TypeBase{kind}, element_type{elem} {}
 
 public:
@@ -532,8 +535,39 @@ public:
     auto elem() const -> Type { return element_type; }
 
     static bool classof(const TypeBase* e) {
-        return e->exact_kind() >= Kind::ArrayType and e->exact_kind() <= Kind::RangeType;
+        return e->exact_kind() >= Kind::AliasType and e->exact_kind() <= Kind::RangeType;
     }
+};
+
+class srcc::AliasType final : public SingleElementTypeBase {
+    TypeDecl* alias_decl;
+
+    friend CXXImporter;
+
+    AliasType(TypeDecl* decl, Type aliased_type)
+        : SingleElementTypeBase(Kind::AliasType, aliased_type),
+          alias_decl(decl) {
+        canonical = aliased_type->canonical;
+    }
+
+public:
+    /// Create a new type alias along with a declaration.
+    static auto Create(
+        TranslationUnit& tu,
+        Type type,
+        DeclName alias,
+        SLoc decl_loc
+    ) -> AliasType*;
+
+    /// Get the alias declaration that this type corresponds to.
+    auto decl() const -> TypeDecl* { return alias_decl; }
+    static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::AliasType; }
+
+private:
+    /// Set the aliased type; this is used so we can create the type
+    /// ahead of time to resolve circular references. This should NOT
+    /// be used for anything else!
+    void set_aliased_type(Type ty);
 };
 
 class srcc::ArrayType final : public SingleElementTypeBase
@@ -1019,7 +1053,6 @@ public:
     static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::StructType; }
 };
 
-/// Visit this type.
 template <typename Visitor>
 auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
     // We const_cast here because types are never modified anyway,
@@ -1038,6 +1071,21 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
 #       define AST_TYPE_SUGAR(node) case Kind::node:
 #       include "srcc/AST.inc"
             Unreachable("Canonical type should never be type sugar");
+    }
+    Unreachable();
+}
+
+template <typename Visitor>
+auto srcc::TypeBase::visit_exact(Visitor&& v) const -> decltype(auto) {
+    // We const_cast here because types are never modified anyway,
+    // so the 'const' is just superfluous and does nothing.
+    switch (exact_kind()) {
+#       define AST_TYPE_LEAF(node)                                \
+            case Kind::node: return std::invoke(                  \
+                std::forward<Visitor>(v),                         \
+                const_cast<node*>(static_cast<const node*>(this)) \
+            );
+#       include "srcc/AST.inc"
     }
     Unreachable();
 }

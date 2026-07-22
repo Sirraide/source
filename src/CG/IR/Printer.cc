@@ -484,7 +484,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto ty = dyn_cast<TypeConstantOp>(op)) {
-        Format(out, "type {}", ty.getValue());
+        Format(out, "type {}", ty.getValue()->print());
         return;
     }
 

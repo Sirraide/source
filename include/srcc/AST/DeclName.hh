@@ -74,8 +74,8 @@ struct llvm::DenseMapInfo<srcc::DeclName> {
 
     static unsigned getHashValue(srcc::DeclName v) {
         using Tk = std::underlying_type_t<srcc::Tk>;
-        if (v.is_operator_name()) return DenseMapInfo<Tk>::getHashValue(Tk(v.opaque_value));
-        return DenseMapInfo<StringRef>::getHashValue(StringRef(v.ptr, v.opaque_value));
+        if (v.is_operator_name()) return DenseMapInfo<Tk>::getHashValue(Tk(v.operator_name()));
+        return DenseMapInfo<StringRef>::getHashValue(v.str());
     }
 
     static bool isEqual(srcc::DeclName lhs, srcc::DeclName rhs) {

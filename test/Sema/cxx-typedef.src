@@ -1,5 +1,4 @@
-// V %srcc --sema --verify %s -I test/inputs
-// expected-no-diagnostics
+// V %srcc --sema --verify %s -I test/inputs -fstringify-asserts
 program test;
 
 import <typedef.h> as *;
@@ -15,8 +14,42 @@ import <typedef.h> as *;
 #assert named_union_typedef == Union;
 #assert named_union_using == Union;
 
+#assert different_name_typedef == foo;
+#assert different_name_using == bar;
+
 anon_class_typedef tx;
 anon_class_using ux;
 
 anon_union_typedef ty;
 anon_union_using uy;
+
+// Test that we print type sugar properly.
+struct Q {}
+
+int_typedef i = (1, 2); // expected-error: Cannot initialise 'int_typedef (aka i32)' from '(int, int)'
+int_using i = (1, 2); // expected-error: Cannot initialise 'int_using (aka i32)' from '(int, int)'
+
+anon_class_typedef i = (1, 2); // expected-error: Cannot initialise 'anon_class_typedef' from '(int, int)'
+anon_class_using i = (1, 2); // expected-error: Cannot initialise 'anon_class_using' from '(int, int)'
+
+named_class_typedef i = (1, 2); // expected-error: Cannot initialise 'named_class_typedef (aka s)' from '(int, int)'
+named_class_using i = (1, 2); // expected-error: Cannot initialise 'named_class_using (aka s)' from '(int, int)'
+
+same_name_typedef i = (1, 2); // expected-error: Cannot initialise 'same_name_typedef' from '(int, int)'
+same_name_using i = (1, 2); // expected-error: Cannot initialise 'same_name_using' from '(int, int)'
+
+different_name_typedef i = (1, 2); // expected-error: Cannot initialise 'different_name_typedef (aka foo)' from '(int, int)'
+different_name_using i = (1, 2); // expected-error: Cannot initialise 'different_name_using (aka bar)' from '(int, int)'
+
+named_union_typedef i = (1, 2); // expected-error: Cannot initialise 'named_union_typedef (aka Union)' from '(int, int)'
+named_union_using i = (1, 2); // expected-error: Cannot initialise 'named_union_using (aka Union)' from '(int, int)'
+
+// Print these using assert messages as union initialisation is currently not implemented.
+#assert int == anon_union_typedef; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == anon_union_typedef]
+#assert int == anon_union_using; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == anon_union_using]
+
+#assert int == same_name_union_typedef; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == same_name_union_typedef]
+#assert int == same_name_union_using; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == same_name_union_using]
+
+#assert int == different_name_union_typedef; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == different_name_union_typedef (aka ufoo)]
+#assert int == different_name_union_using; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == different_name_union_using (aka ubar)]

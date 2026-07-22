@@ -611,8 +611,10 @@ void VerifyDiagnosticsEngine::ParseMagicComment(str comment, SLoc loc) {
 
     // Otherwise, if the comment starts with any number of parentheses, read everything until
     // we find a matching amount of parentheses.
-    if (comment.starts_with('(')) {
-        std::string closing_parens(comment.take_while('(').size(), ')');
+    if (comment.starts_with_any("([{")) {
+        char open = *comment.front();
+        char close = open == '(' ? open + 1 : open + 2; // See an ASCII chart for why this works.
+        std::string closing_parens(comment.take_while(open).size(), close);
         auto text = comment.take_until_or_empty(closing_parens).trim();
         if (text.empty()) return Error(loc, "End of comment reached while looking for '{}'", closing_parens);
         expected_diags.emplace_back(level, text.fold_ws(), diag_loc, count);
@@ -623,7 +625,7 @@ void VerifyDiagnosticsEngine::ParseMagicComment(str comment, SLoc loc) {
     }
 
     // Anything else is an error here.
-    return Error(loc, "Expected ':' or '(' in 'expected' comment");
+    return Error(loc, "Expected one of ':([{{' in 'expected' comment");
 }
 
 

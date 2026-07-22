@@ -51,7 +51,10 @@ public:
     void emit_type_def(Type ty) {
         using K = TypeBase::Kind;
         *this << ty->exact_kind();
-        ty->visit(utils::Overloaded{
+        ty->visit_exact(utils::Overloaded{
+            [&](const AliasType* ty) {
+                *this << ty->elem() << ty->decl()->name << ty->decl()->location();
+            },
             [&](const ArrayType* ty) {
                 *this << ty->elem() << i64(ty->dimension());
             },
@@ -265,6 +268,13 @@ public:
     auto read_type() -> Result<Type> {
         using K = TypeBase::Kind;
         switch (Read(K)) {
+            case K::AliasType: {
+                auto elem = Read(Type);
+                auto name = Read(DeclName);
+                auto loc = Read(SLoc);
+                return AliasType::Create(*S.tu, elem, name, loc);
+            }
+
             case K::ArrayType: {
                 auto elem = Read(Type);
                 auto dimension = Read(i64);

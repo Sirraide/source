@@ -17,6 +17,7 @@
 namespace srcc {
 class ModuleLoader;
 class Sema;
+class CXXImporter;
 }
 
 namespace srcc {
@@ -35,7 +36,6 @@ extern const String PreambleSource;
 class srcc::Sema : public DiagsProducer {
     LIBBASE_IMMOVABLE(Sema);
 
-    class Importer;
     class ImmediateInitContext;
     class OverloadInitContext;
     class TentativeInitContext;
@@ -48,7 +48,7 @@ private:
     friend DiagsProducer;
     friend eval::Eval;
     friend TemplateInstantiator;
-    friend Importer;
+    friend CXXImporter;
 
     /// RAII Object to push and pop a scope.
     class [[nodiscard]] EnterScope {

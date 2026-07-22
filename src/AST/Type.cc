@@ -69,22 +69,6 @@ Scope::Scope(Scope* parent, ScopeKind k)
 // ============================================================================
 //  Type
 // ============================================================================
-/// Visit this type.
-template <typename Visitor>
-auto srcc::TypeBase::visit_exact(Visitor&& v) const -> decltype(auto) {
-    // We const_cast here because types are never modified anyway,
-    // so the 'const' is just superfluous and does nothing.
-    switch (exact_kind()) {
-#define AST_TYPE_LEAF(node)                               \
-    case Kind::node: return std::invoke(                  \
-        std::forward<Visitor>(v),                         \
-        const_cast<node*>(static_cast<const node*>(this)) \
-    );
-#include "srcc/AST.inc"
-    }
-    Unreachable();
-}
-
 void* TypeBase::operator new(usz size, TranslationUnit& mod) {
     return mod.allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
@@ -171,6 +155,7 @@ auto TypeBase::array_size(const Target& t) const -> Size {
 auto TypeBase::bit_width(TranslationUnit& tu) const -> Size {
     if (canonical == Type::BoolTy) return Size::Bits(1);
     if (auto i = dyn_cast<IntType>(canonical)) return i->bit_width();
+    if (auto e = dyn_cast<EnumType>(canonical)) return e->elem()->bit_width(tu);
     return size_impl(tu.target());
 }
 
@@ -239,6 +224,11 @@ auto TypeBase::eval_mode() const -> EvalMode {
         case K::PtrType:
         case K::SliceType:
             return EvalMode::Scalar;
+
+#       define AST_TYPE(x)
+#       define AST_TYPE_SUGAR(x) case K::x:
+#       include "srcc/AST.inc"
+            Unreachable("Canonical type should not be type sugar");
 
         case K::OpaqueType:
             Unreachable("Querying property of opaque type");
@@ -336,7 +326,7 @@ bool TypeBase::is_or_contains_pointer() const {
 }
 
 bool TypeBase::is_sugar() const {
-    return false;
+    return isa<AliasType>(this);
 }
 
 bool TypeBase::is_void() const {
@@ -350,18 +340,36 @@ bool TypeBase::move_is_copy() const {
 }
 
 auto TypeBase::print() const -> SmallUnrenderedString {
+    SmallUnrenderedString out = print_impl();
+    if (is_sugar()) {
+        // FIXME: This ends up printing e.g. "foo (aka int)", which means
+        // that if we put the type in single quotes, we get "'foo (aka int)'",
+        // when really we want "'foo' (aka 'int')".
+        //
+        // This means the printing of 'aka' should be moved into the diagnostics
+        // rendering, but that’s currently just plain format strings, so we need
+        // to do something about that.
+        out += " %0((aka%) ";
+        out += canonical->print_impl();
+        out += "%0()%)";
+    }
+    return out;
+}
+
+auto TypeBase::print_impl() const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     auto MaybeParenthesise = [](Type ty) {
-        if (not isa<ProcType>(ty)) return ty->print();
+        if (not isa<ProcType>(ty)) return ty->print_impl();
         SmallUnrenderedString s;
         s += "%1((";
-        s += ty->print();
+        s += ty->print_impl();
         s += ")%)";
         return s;
     };
 
     // Append the base type.
     visit_exact(utils::Overloaded{ // clang-format off
+        [&](AliasType* alias) { Format(out, "%3({}%)", alias->decl()->name); },
         [&](ArrayType* arr) {
             Format(
                 out,
@@ -397,7 +405,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
                 ptr->is_immutable() ? " val" : ""
             );
         },
-        [&](RangeType* range) { Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print()); },
+        [&](RangeType* range) { Format(out, "%6(range%)%1(<%){}%1(>%)", range->elem()->print_impl()); },
         [&](SliceType* slice) {
             Format(
                 out,
@@ -409,7 +417,7 @@ auto TypeBase::print() const -> SmallUnrenderedString {
         [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
         [&](TupleType* s) {
             Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d) {
-                return d->type->print();
+                return d->type->print_impl();
             }));
         },
     }); // clang-format on
@@ -506,14 +514,29 @@ auto TypeBase::strip_pointers_and_optionals() const -> Type {
 // ============================================================================
 //  Types
 // ============================================================================
+/// Create a new type decl that declares a type alias.
+auto AliasType::Create(
+    TranslationUnit& tu,
+    Type type,
+    DeclName name,
+    SLoc decl_loc
+) -> AliasType* {
+    auto td = new (tu) TypeDecl(type, name, decl_loc);
+    auto alias = new (tu) AliasType(td, type);
+    td->type = alias;
+    return alias;
+}
+
+void AliasType::set_aliased_type(Type ty) {
+    element_type = ty;
+    canonical = ty->canonical;
+}
+
 auto ArrayType::Get(TranslationUnit& mod, Type elem, i64 size) -> ArrayType* {
-    auto CreateNew = [&] (this auto&& self) {
+    auto CreateNew = [&] {
         auto arr = new (mod) ArrayType{elem, size};
         if (elem->is_canonical()) return arr;
-
-        // Build canonical type.
-        auto canonical = GetOrCreateType(mod.array_types, self, elem->canonical, size);
-        arr->canonical = canonical;
+        arr->canonical = new (mod) ArrayType{elem->canonical, size};
         return arr;
     };
 
@@ -557,19 +580,18 @@ auto OpaqueType::name() const -> String {
 }
 
 auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {
-    auto CreateNew = [&] (this auto&& self) {
-        OptionalType* ty = [&]{
+    auto CreateNew = [&] {
+        auto Make = [&](Type elem) {
             if (isa<PtrType, ProcType>(elem)) return new (mod) OptionalType{elem};
             RecordLayout::Builder b{mod};
             b.add_field(elem);
             b.add_field(Type::BoolTy);
             return new (mod) OptionalType{elem, b.build(), 1};
-        }();
-        if (elem->is_canonical()) return ty;
+        };
 
-        // Build canonical type.
-        auto canonical = GetOrCreateType(mod.optional_types, self, elem->canonical);
-        ty->canonical = canonical;
+        OptionalType* ty = Make(elem);
+        if (elem->is_canonical()) return ty;
+        ty->canonical = Make(elem->canonical);
         return ty;
     };
 
@@ -586,13 +608,10 @@ auto OptionalType::get_engaged_offset() const -> Size {
 }
 
 auto PtrType::Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType* {
-    auto CreateNew = [&] (this auto&& self) {
+    auto CreateNew = [&] {
         auto ty = new (mod) PtrType{elem, immutable};
         if (elem->is_canonical()) return ty;
-
-        // Build canonical type.
-        auto canonical = GetOrCreateType(mod.ptr_types, self, elem->canonical, immutable);
-        ty->canonical = canonical;
+        ty->canonical = new (mod) PtrType{elem->canonical, immutable};
         return ty;
     };
 
@@ -621,16 +640,19 @@ auto ProcType::Get(
     CallingConvention cconv,
     bool c_varargs
 ) -> ProcType* {
-    auto CreateNew = [&] (this auto&& self) {
-        const auto size = totalSizeToAlloc<ParamTypeData>(param_types.size());
-        auto mem = mod.allocate(size, alignof(ProcType));
-        auto ty = ::new (mem) ProcType{
-            cconv,
-            c_varargs,
-            return_type,
-            param_types
+    auto CreateNew = [&] {
+        auto Make = [&](TypeAndValueCategory return_type, ArrayRef<ParamTypeData> param_types) {
+            const auto size = totalSizeToAlloc<ParamTypeData>(param_types.size());
+            auto mem = mod.allocate(size, alignof(ProcType));
+            return ::new (mem) ProcType{
+                cconv,
+                c_varargs,
+                return_type,
+                param_types
+            };
         };
 
+        auto ty = Make(return_type, param_types);
         if (
             return_type.type()->is_canonical() and
             all_of(param_types, [](auto& p) { return p.type->is_canonical(); })
@@ -643,16 +665,7 @@ auto ProcType::Get(
             [](auto& p) { return ParamTypeData{p.intent, p.type->canonical, p.variadic}; }
         ));
 
-        auto canonical = GetOrCreateType(
-            mod.proc_types,
-            self,
-            canonical_ret,
-            canonical_params,
-            cconv,
-            c_varargs
-        );
-
-        ty->canonical = canonical;
+        ty->canonical = Make(canonical_ret, canonical_params);
         return ty;
     };
 
@@ -723,7 +736,7 @@ auto ProcType::print(
             if (first) first = false;
             else out += ", ";
             if (p.intent != Intent::Move) Format(out, "{} ", p.intent);
-            out += p.type->print();
+            out += p.type->print_impl();
         }
         out += ")";
     }
@@ -736,7 +749,7 @@ auto ProcType::print(
     }
 
     // Add return type and value category.
-    if (not ret()->is_void()) Format(out, " -> {}", ret()->print());
+    if (not ret()->is_void()) Format(out, " -> {}", ret()->print_impl());
     if (return_type.value_category() == Expr::ILValue) out += " val ref";
     else if (return_type.value_category() == Expr::MLValue) out += " ref";
 
@@ -746,7 +759,11 @@ auto ProcType::print(
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
     auto CreateNew = [&] {
-        return new (mod) RangeType{elem, TupleType::Get(mod, {elem, elem})};
+        auto tuple = TupleType::Get(mod, {elem, elem});
+        auto ty = new (mod) RangeType{elem, tuple};
+        if (elem->is_canonical()) return ty;
+        ty->canonical = new (mod) RangeType{elem->canonical, cast<TupleType>(tuple->canonical)};
+        return ty;
     };
 
     return GetOrCreateType(mod.range_types, CreateNew, elem);
@@ -757,14 +774,11 @@ void RangeType::Profile(FoldingSetNodeID& ID, Type elem) {
 }
 
 auto SliceType::Get(TranslationUnit& tu, Type elem, bool immutable) -> SliceType* {
-    auto CreateNew = [&] (this auto&& self) {
+    auto CreateNew = [&] {
         auto ptr = PtrType::Get(tu, elem, immutable);
         auto ty = new (tu) SliceType{elem, ptr, immutable};
-
-        // Build canonical type.
         if (elem->is_canonical()) return ty;
-        auto canonical = GetOrCreateType(tu.slice_types, self, elem->canonical, immutable);
-        ty->canonical = canonical;
+        ty->canonical = new (tu) SliceType{elem->canonical, ptr->canonical, immutable};
         return ty;
     };
 
@@ -925,20 +939,9 @@ void TupleType::Profile(FoldingSetNodeID& id) const {
 }
 
 auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
-    auto CreateNew = [&] (this auto&& self) {
-        RecordLayout::Builder lb{mod};
-        for (auto ty : elems) lb.add_field(ty);
-        auto ty = new (mod) TupleType{lb.build()};
-        if (rgs::all_of(elems, &TypeBase::is_canonical, &Type::ptr)) return ty;
-
-        // Build canonical type.
-        auto canonical_elems = llvm::to_vector(vws::transform(elems, [](Type ty) { return ty->canonical; }));
-        auto canonical = GetOrCreateType(mod.tuple_types, self, elems);
-        ty->canonical = canonical;
-        return ty;
-    };
-
-    return GetOrCreateType(mod.tuple_types, CreateNew, elems);
+    RecordLayout::Builder lb{mod};
+    for (auto ty : elems) lb.add_field(ty);
+    return Get(mod, lb.build());
 }
 
 auto TupleType::Get(TranslationUnit& mod, RecordLayout* rl) -> TupleType* {

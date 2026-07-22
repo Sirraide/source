@@ -116,6 +116,7 @@ AST_DECL_LEAF(ProcDecl)
 // =================================================================================
 AST_TYPE(TypeBase)
 AST_TYPE(SingleElementTypeBase)
+AST_TYPE_SUGAR(AliasType)
 AST_TYPE_LEAF(ArrayType)
 AST_TYPE_LEAF_WITH_IDENTITY(EnumType)
 AST_TYPE_LEAF(OptionalType)
@@ -125,7 +126,7 @@ AST_TYPE_LEAF(RangeType)
 
 AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
-AST_TYPE_LEAF(OpaqueType)
+AST_TYPE_LEAF_WITH_IDENTITY(OpaqueType)
 AST_TYPE_LEAF(ProcType)
 
 AST_TYPE(RecordType)
