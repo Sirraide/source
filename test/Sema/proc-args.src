@@ -1,14 +1,14 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc a () {} // expected-note: Declared here
-proc b (int) {} // expected-note: Declared here
-proc c (int, int, int) {} // expected-note 2: Declared here
-proc d (int a, int b, int c) {} // expected-note: Declared here
+proc a () {} // expected-note: Callee declared here
+proc b (int) {} // expected-note: Callee declared here
+proc c (int, int, int) {} // expected-note 2: Callee declared here
+proc d (int a, int b, int c) {} // expected-note: Callee declared here
 proc e (int a, int a) {} // expected-error: Redeclaration of 'a'
                          // expected-note@-1: Previous declaration was here
-                         // expected-note@-2 2: Declared here
-proc f ( // expected-note 3: Declared here
+                         // expected-note@-2 2: Callee declared here
+proc f ( // expected-note 3: Callee declared here
     int, int, int, int, int,
     int, int, int, int, int
 ) {}

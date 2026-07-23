@@ -117,6 +117,10 @@ public:
         else *this << name.operator_name();
     }
 
+    void write(DeclNameLoc name) {
+        *this << name.name << name.loc;
+    }
+
     void write(const APInt& val) {
         *this << u32(val.getBitWidth()) << u32(val.getNumWords());
         for (unsigned w = 0; w < val.getNumWords(); w++) *this << u64(val.getRawData()[w]);
@@ -388,6 +392,13 @@ public:
         bool is_str = Read(bool);
         if (is_str) return Read(String);
         else return Read(Tk);
+    }
+
+    template <>
+    auto read<DeclNameLoc>() -> Result<DeclNameLoc> {
+        auto name = Read(DeclName);
+        auto loc = Read(SLoc);
+        return DeclNameLoc{name, loc};
     }
 
     template <>

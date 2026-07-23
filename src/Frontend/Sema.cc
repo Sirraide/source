@@ -132,15 +132,14 @@ auto Sema::BuildImplicitProcedure(
     // Enter it and declare the parameters.
     EnterProcedure _{*this, proc};
     for (auto [i, p] : enumerate(params)) {
-        const auto& [name, ty] = p;
+        const auto& [ty, name] = p;
         BuildParamDecl(
-            curr_proc(),
+            curr_proc().proc,
             &ty,
             u32(i),
             false,
             false,
-            name.name.str(),
-            name.loc
+            name
         );
     }
 
@@ -406,7 +405,7 @@ bool Sema::CompleteDefinition(StructType* s) {
             lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
         } else {
             AddDeclToScope(s->scope(), lb.add_field(*ty, f->name.str(), f->loc));
-            needs_deleter = needs_deleter and ty->requires_deletion();
+            needs_deleter = needs_deleter or ty->requires_deletion();
         }
     }
 
@@ -446,7 +445,7 @@ bool Sema::CompleteDefinition(StructType* s) {
     auto deleter = BuildImplicitProcedure(
         tu->save(std::format("${}.delete", cg::CodeGen::MangleTypeName(*tu, s))),
         {Type::VoidTy, Expr::RValue},
-        {{{String("this"), loc}, {Intent::Inout, s, false}}},
+        {{{Intent::Inout, s}, {String("this"), loc}}},
         deleter_linkage,
         Mangling::None,
         loc,
@@ -1875,46 +1874,125 @@ auto Sema::SubstituteTemplate(
 // ============================================================================
 //  Overloading.
 // ============================================================================
+template <typename Visitor>
+auto Sema::Callee::visit(Visitor&& v) const {
+    if (auto p = dyn_cast<ProcDecl>()) return std::invoke(v, p);
+    if (auto p = dyn_cast<ProcTemplateDecl>()) return std::invoke(v, p);
+    return std::invoke(v, cast<ProcType>());
+}
+
+template <typename Visitor>
+auto Sema::Callee::visit_type(Visitor&& v) const {
+    if (auto p = dyn_cast<ProcDecl>()) return std::invoke(v, p->proc_type());
+    if (auto p = dyn_cast<ProcTemplateDecl>()) return std::invoke(v, p);
+    return std::invoke(v, cast<ProcType>());
+}
+
+bool Sema::Callee::argument_count_matches_parameters(u32 num_args) {
+    auto required = num_non_variadic_params();
+    if (num_args == required) return true;
+    if (num_args < required) return false;
+    return has_c_varargs() or is_variadic();
+}
+
+bool Sema::Callee::has_c_varargs() const {
+    return visit_type(utils::Overloaded{
+        [](ProcType* ty) { return ty->has_c_varargs(); },
+        [](ProcTemplateDecl* decl) { return decl->pattern->type->attrs.c_varargs; }
+    });
+}
+
+auto Sema::Callee::index_of_named_param(String name) -> std::optional<u32> {
+    return visit(utils::Overloaded{
+        [](ProcType* ty) -> std::optional<u32> { return std::nullopt; },
+        [&](ProcDecl* decl) { return decl->index_of_named_param(name); },
+        [&](ProcTemplateDecl* decl) {
+            return utils::index_of<u32>(decl->pattern->params(), name, &ParsedVarDecl::name);
+        }
+    });
+}
+
+bool Sema::Callee::is_variadic() const {
+    return visit_type(utils::Overloaded{
+        [](ProcType* ty) { return ty->is_variadic(); },
+        [](ProcTemplateDecl* decl) { return decl->has_variadic_param; }
+    });
+}
+
+auto Sema::Callee::decl() const -> Ptr<Decl> {
+    return visit(utils::Overloaded{
+        [](ProcType* ty) { return Ptr<Decl>(); },
+        [](auto* decl) { return Ptr<Decl>(decl); },
+    });
+}
+
+auto Sema::Callee::name() const -> DeclNameLoc {
+    if (auto d = decl().get_or_null()) return DeclNameLoc{d->name, d->location()};
+    return {};
+}
+
+auto Sema::Callee::param_count() const -> u32 {
+    return visit_type(utils::Overloaded{
+        [](ProcType* ty) { return ty->param_count(); },
+        [](ProcTemplateDecl* decl) { return u32(decl->pattern->params().size()); }
+    });
+}
+
+auto Sema::Callee::param_loc(u32 index) const -> SLoc {
+    return visit(utils::Overloaded{
+        [](ProcType* ty) { return SLoc(); },
+        [&](ProcDecl* decl) { return decl->params()[index]->location(); },
+        [&](ProcTemplateDecl* decl) {
+            return decl->pattern->type->param_types()[index].type->loc;
+        }
+    });
+}
+
+auto Sema::Callee::param_name(u32 index) const -> DeclName {
+    return visit(utils::Overloaded{
+        [](ProcType* ty) { return DeclName(); },
+        [&](ProcDecl* decl) { return decl->params()[index]->name; },
+        [&](ProcTemplateDecl* decl) {
+            return decl->pattern->params()[index]->name;
+        }
+    });
+}
+
 bool Sema::Candidate::has_valid_proc_type() const {
     return status.is<Viable, ParamInitFailed>();
 }
 
-bool Sema::Candidate::has_c_varargs() const {
-    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->proc_type()->has_c_varargs();
-    return cast<ProcTemplateDecl>(decl)->pattern->type->attrs.c_varargs;
-}
-
-bool Sema::Candidate::is_variadic() const {
-    if (auto t = dyn_cast<ProcTemplateDecl>(decl)) return t->has_variadic_param;
-    return cast<ProcDecl>(decl)->proc_type()->is_variadic();
-}
-
-auto Sema::Candidate::non_variadic_params() const -> u32 {
-    return u32(param_count() - is_variadic());
-}
-
-auto Sema::Candidate::param_count() const -> usz {
-    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->param_count();
-    return cast<ProcTemplateDecl>(decl)->pattern->params().size();
-}
-
-auto Sema::Candidate::param_loc(usz index) const -> SLoc {
-    if (auto proc = dyn_cast<ProcDecl>(decl)) return proc->params()[index]->location();
-    return cast<ProcTemplateDecl>(decl)->pattern->type->param_types()[index].type->loc;
-}
-
 auto Sema::Candidate::proc_type() const -> ProcType* {
     Assert(has_valid_proc_type(), "proc_type() cannot be used if template substitution failed");
-    auto d = dyn_cast<ProcDecl>(decl);
+    auto d = callee.dyn_cast<ProcDecl>();
     if (d) return d->proc_type();
     return subst.success()->type;
 }
 
 auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
-    auto d = dyn_cast<ProcDecl>(decl);
+    auto d = callee.dyn_cast<ProcDecl>();
     if (d) return d->proc_type()->print();
     if (subst.success()) return subst.success()->type->print();
     return SmallUnrenderedString("(template)");
+}
+
+Sema::CandidateArgumentLists::CandidateArgumentLists(
+    const CallArgList& args
+) : unordered{args}, has_named_args{args.has_named_args()} {
+    if (not has_named_args) argument_lists.push_back(args.unnamed());
+}
+
+/// Add a list; only valid if we have named arguments.
+auto Sema::CandidateArgumentLists::add(List args) -> Id {
+    Assert(has_named_args);
+    argument_lists.push_back(std::move(args));
+    return Id(argument_lists.size() - 1);
+}
+
+/// Get a list by id.
+auto Sema::CandidateArgumentLists::operator[](Id id) const -> const List& {
+    if (not has_named_args) return argument_lists.front();
+    return argument_lists[+id];
 }
 
 u32 Sema::ConversionSequence::badness() {
@@ -2003,32 +2081,96 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
     else S.Note(loc, "In argument to parameter '{}'", name);
 }
 
-/// Check if the number of call arguments ‘matches’ the number of
-/// parameters—this does not mean that they’re equal!
-template <typename Callee>
-static bool ArgumentCountMatchesParameters(usz num_args, Callee* callee) {
-    auto required_param_count = callee->param_count() - usz(callee->is_variadic());
-    if (num_args == required_param_count) return true;
-    if (num_args < required_param_count) return false;
-    return callee->has_c_varargs() or callee->is_variadic();
+/// Resolve named arguments, i.e. figure out what positional parameters
+/// they map to.
+auto Sema::ResolveNamedArguments(
+    const CallArgList& args,
+    Callee callee
+) -> std::expected<SmallVector<Expr*>, Candidate::Status> {
+    // There is nothing to check if we have no parameters. This is called
+    // after ArgumentCountMatchesParameters(), so we a parameter count
+    // mismatch would have already been diagnosed.
+    if (args.size() == 0) return SmallVector<Expr*>{};
+    Assert(args.has_named_args(), "Should not have called this if there are no named args");
+    const auto num_non_variadic_args = callee.num_non_variadic_params();
+
+    // Add named and positional parameters.
+    u32 next_index = 0;
+    SmallVector<Expr*> ordered_params(args.size());
+    for (auto [arg_index, arg] : enumerate(args.ref())) {
+        u32 param_index;
+
+        // If the argument has a name, use the parameter index of the
+        // parameter with that name.
+        if (arg.name.name.valid()) {
+            auto idx = callee.index_of_named_param(arg.name.name.str());
+            if (not idx) return std::unexpected(Candidate::NamedParamNotFound{
+                arg.name.name.str(),
+                u32(arg_index),
+            });
+
+            param_index = *idx;
+
+            // The variadic parameter cannot be named this way.
+            if (param_index >= num_non_variadic_args) return std::unexpected(
+                Candidate::NamedArgReferencesVariadicParam{u32(arg_index)}
+            );
+        }
+
+        // Otherwise, use the next unused positional index. This loop should
+        // never go out of bounds (if it does, we have more arguments than
+        // parameters, which we should have diagnosed before ever getting here).
+        else {
+            while (ordered_params[next_index] != nullptr) next_index++;
+            param_index = next_index++;
+        }
+
+        // If the slot for that parameter is already mapped, then we’re trying to
+        // assign two parameters to the same slot.
+        if (ordered_params[param_index] != nullptr) return std::unexpected(Candidate::ParamSpecifiedTwice{
+            .param_index = param_index,
+            .arg_index_1 = utils::index_of<u32>(
+                args.ref(),
+                ordered_params[param_index],
+                &CallArgList::Arg::expr
+            ).value(),
+            .arg_index_2 = u32(arg_index),
+        });
+
+        // Parameter has no argument yet; assign it.
+        ordered_params[param_index] = arg.expr;
+    }
+
+    // If we get here, we have processed (at least) as many arguments as there are
+    // non-variadic parameters. Since we don’t allow binding two arguments to the
+    // same parameter, nor binding an argument by name to the variadic parameter,
+    // and we bail on any error, then by the pigeonhole principle, we should have
+    // an argument bound to each parameter.
+    DebugAssert(all_of(
+        ArrayRef(ordered_params).take_front(num_non_variadic_args),
+        [](Expr* p) { return p != nullptr; }
+    ));
+
+    return ordered_params;
 }
 
-/// Convert arguments to parameter types.
-template <typename Callee, typename Callback>
-static void ConvertArgumentsForCall(
+template <typename Callback>
+void Sema::ConvertArgumentsForCall(
     ArrayRef<Expr*> args,
-    Callee* c,
+    Callee c,
     Callback ConvertArg,
     SLoc call_loc
 ) {
+    auto num_required_args = c.num_non_variadic_params();
+
     // Convert the argument to each non-variadic parameter.
-    for (auto [i, a] : enumerate(args.take_front(c->non_variadic_params())))
+    for (auto [i, a] : enumerate(args.take_front(num_required_args)))
         ConvertArg(u32(i), a, a->location());
 
     // Convert any remaining arguments to the variadic parameter.
-    if (c->is_variadic()) ConvertArg(
-        u32(c->param_count() - 1),
-        args.drop_front(c->non_variadic_params()),
+    if (c.is_variadic()) ConvertArg(
+        u32(c.param_count() - 1),
+        args.drop_front(num_required_args),
         not args.empty() ? args.front()->location() : call_loc
     );
 }
@@ -2225,7 +2367,7 @@ bool Sema::IsUserDefinedOverloadedOperator(Tk tk, ArrayRef<Type> argument_types)
 
 auto Sema::PerformOverloadResolution(
     OverloadSetExpr* overload_set,
-    ArrayRef<Expr*> args,
+    const CallArgList& call_args,
     bool is_associated_call,
     SLoc call_loc
 ) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
@@ -2241,9 +2383,13 @@ auto Sema::PerformOverloadResolution(
     SmallVector<Candidate, 4> candidates;
 
     // Are we resolving a call to a builtin operator?
-    auto types = vws::transform(args, &Expr::type) | rgs::to<SmallVector<Type, 10>>();
+    auto types = llvm::to_vector(call_args | vws::transform([](auto& a) { return a.expr->type; }));
     bool resolving_builtin_operator = overload_set->name().is_operator_name() and
                                       not IsUserDefinedOverloadedOperator(overload_set->name().operator_name(), types);
+
+    // Unnamed parameters; these are precomputed here to avoid storing them
+    // separately for every overload. Only populated if we have no named arguments.
+    CandidateArgumentLists arg_lists{call_args};
 
     // Add a candidate to the overload set.
     auto AddCandidate = [&](Decl* proc) -> bool {
@@ -2267,9 +2413,20 @@ auto Sema::PerformOverloadResolution(
         // Argument count mismatch is not allowed, unless the
         // function is variadic. For variadic templates, we allow
         // the variadic parameter to be empty.
-        if (not ArgumentCountMatchesParameters(args.size(), &c)) {
+        if (not c.callee.argument_count_matches_parameters(u32(call_args.size()))) {
             c.status = Candidate::ArgumentCountMismatch{};
             return true;
+        }
+
+        // Check named parameters.
+        if (call_args.has_named_args()) {
+            auto resolved = ResolveNamedArguments(call_args, c.callee);
+            if (not resolved) {
+                c.status = std::move(resolved.error());
+                return true;
+            }
+
+            c.status.get<Candidate::Viable>().arg_list = arg_lists.add(std::move(*resolved));
         }
 
         // Candidate is a regular procedure.
@@ -2277,7 +2434,7 @@ auto Sema::PerformOverloadResolution(
 
         // Candidate is a template.
         SmallVector<TypeLoc, 6> types;
-        for (auto arg : args) types.emplace_back(arg->type, arg->location());
+        for (const auto& arg : arg_lists[c.arg_list()]) types.emplace_back(arg->type, arg->location());
         c.subst = SubstituteTemplate(templ, types);
 
         // If there was a hard error, abort overload resolution entirely.
@@ -2330,7 +2487,7 @@ auto Sema::PerformOverloadResolution(
             return true;
         };
 
-        ConvertArgumentsForCall(args, &c, ConvertArg, call_loc);
+        ConvertArgumentsForCall(arg_lists[c.arg_list()], c.callee, ConvertArg, call_loc);
         return true;
     };
 
@@ -2338,7 +2495,7 @@ auto Sema::PerformOverloadResolution(
     // candidates in the overload set were builtin operators.
     if (candidates.empty()) {
         Assert(
-            overload_set->name().is_operator_name() and args.size() == 2,
+            overload_set->name().is_operator_name() and call_args.size() == 2,
             "Only a few binary operators are currently handled this way"
         );
 
@@ -2346,8 +2503,8 @@ auto Sema::PerformOverloadResolution(
             call_loc,
             "Invalid operation: '%1({}%)' between '{}' and '{}'",
             Spelling(overload_set->name().operator_name()),
-            args[0]->type,
-            args[1]->type
+            call_args[0].expr->type,
+            call_args[1].expr->type
         );
         return {};
     }
@@ -2389,9 +2546,9 @@ auto Sema::PerformOverloadResolution(
         ProcDecl* final_callee;
 
         // Instantiate it now if it is a template.
-        if (c->is_template()) {
+        if (c->callee.is_template()) {
             auto inst = InstantiateTemplate(
-                cast<ProcTemplateDecl>(c->decl),
+                c->callee.cast<ProcTemplateDecl>(),
                 *c->subst.data.get<TemplateSubstitution*>(),
                 call_loc
             );
@@ -2399,10 +2556,11 @@ auto Sema::PerformOverloadResolution(
             if (not inst or not inst->is_valid) return {};
             final_callee = inst;
         } else {
-            final_callee = cast<ProcDecl>(c->decl);
+            final_callee = c->callee.cast<ProcDecl>();
         }
 
         // Now is the time to apply the argument conversions.
+        auto& args = arg_lists[c->arg_list()];
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
@@ -2414,95 +2572,151 @@ auto Sema::PerformOverloadResolution(
             ));
         };
 
-        ConvertArgumentsForCall(args, c, ConvertArg, call_loc);
+        ConvertArgumentsForCall(args, final_callee, ConvertArg, call_loc);
         if (not CheckIntents(final_callee->proc_type(), actual_args)) return {};
         return {final_callee, std::move(actual_args)};
     }
 
     // Overload resolution failed. :(
-    ReportOverloadResolutionFailure(candidates, args, call_loc, badness);
+    ReportOverloadResolutionFailure(candidates, call_args, call_loc, badness);
     return {};
 }
 
+void Sema::FormatTempSubstFailure(
+    const SubstitutionResult& info,
+    SmallString<256>& out,
+    std::string_view indent
+) {
+    info.data.visit(utils::Overloaded{// clang-format off
+        [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
+        [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+        [&](SubstitutionResult::ConstraintNotSatisfied) {
+            out += "'%1(where%)' clause evaluated to '%1(false%)'";
+        },
+
+        [&](SubstitutionResult::DeductionFailed f) {
+            Format(
+                out,
+                "In param #{}: could not infer ${}",
+                f.param_index + 1,
+                f.param
+            );
+        },
+
+        [&](const SubstitutionResult::DeductionAmbiguous& a) {
+            Format(
+                out,
+                "Inference mismatch for template parameter %3(${}%):\n"
+                "{}Argument #{}: Inferred as {}\n"
+                "{}Argument #{}: Inferred as {}",
+                a.param,
+                indent,
+                a.first + 1,
+                a.first_type,
+                indent,
+                a.second + 1,
+                a.second_type
+            );
+        }
+    }); // clang-format on
+}
+
+void Sema::ReportSingleOverloadResolutionFailure(
+    Callee callee,
+    Candidate::Status status,
+    std::optional<SubstitutionResult> subst,
+    const CallArgList& args,
+    SLoc call_loc
+) { // clang-format off
+    auto FormatName = [&](
+        StringRef pre,
+        StringRef post = "",
+        StringRef replacement = ""
+    ) -> SmallString<64> {
+        if (auto [name, _] = callee.name()) return Format("{}'{}'{}", pre, name, post);
+        return replacement;
+    };
+
+    bool should_note_callee = true;
+    status.visit(utils::Overloaded{
+        [](const Candidate::Viable&) { Unreachable(); },
+        [&](Candidate::ArgumentCountMismatch) {
+            Error(
+                call_loc,
+                "{} {} argument{}, got {}",
+                FormatName("Procedure ", " expects", "expected"),
+                callee.param_count(),
+                callee.param_count() == 1 ? "" : "s",
+                args.size()
+            );
+        },
+
+        [&](Candidate::DeductionError) {
+            Assert(subst.has_value());
+            SmallString<256> extra;
+            FormatTempSubstFailure(*subst, extra, "  ");
+            if (subst->data.is<SubstitutionResult::ConstraintNotSatisfied>()) {
+                Error(call_loc, "Constraints {}not satisfied", FormatName("of ", " "));
+                if (auto d = callee.dyn_cast<ProcTemplateDecl>()) {
+                    Note(d->pattern->where.get()->loc, "{}", extra);
+                    should_note_callee = false; // We already point to the where clause.
+                }
+            } else {
+                Error(call_loc, "Template argument substitution failed{}", FormatName("in call to "));
+                Remark("\r{}", extra);
+            }
+        },
+
+        [&](Candidate::NamedParamNotFound p) {
+            Error(
+                args.ref()[p.arg_index].name.loc,
+                "{} has no parameter named '{}'",
+                FormatName("Procedure "), // We should always have a name here.
+                p.param_name
+            );
+        },
+
+        [&](Candidate::NamedArgReferencesVariadicParam p) {
+            const auto& [name, loc] = args[p.arg_index].name;
+            Error(loc, "Named argument names the variadic parameter");
+        },
+
+        [&](Candidate::ParamInitFailed& p) {
+            for (auto& d : p.diags) diags().report(std::move(d));
+            if (auto d = callee.decl().get_or_null()) NoteParameter(*this, d, p.param_index);
+        },
+
+        [&](Candidate::ParamSpecifiedTwice& p) {
+            Error(
+                args[p.arg_index_2].expr->location(),
+                "An argument was already passed for parameter '{}'",
+                callee.param_name(p.param_index)
+            );
+            Note(args[p.arg_index_1].expr->location(), "Previously passed here");
+        },
+    });
+
+    if (not should_note_callee) return;
+    if (auto [_, loc] = callee.name()) Note(loc, "Callee declared here");
+} // clang-format on
+
 void Sema::ReportOverloadResolutionFailure(
     MutableArrayRef<Candidate> candidates,
-    ArrayRef<Expr*> call_args,
+    const CallArgList& args,
     SLoc call_loc,
     u32 final_badness
 ) {
-    auto FormatTempSubstFailure = [&](const SubstitutionResult& info, SmallString<256>& out, std::string_view indent) {
-        info.data.visit(utils::Overloaded{// clang-format off
-            [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
-            [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
-            [&](SubstitutionResult::ConstraintNotSatisfied) {
-                out += "'%1(where%)' clause evaluated to '%1(false%)'";
-            },
-
-            [&](SubstitutionResult::DeductionFailed f) {
-                Format(
-                    out,
-                    "In param #{}: could not infer ${}",
-                    f.param_index + 1,
-                    f.param
-                );
-            },
-
-            [&](const SubstitutionResult::DeductionAmbiguous& a) {
-                Format(
-                    out,
-                    "Inference mismatch for template parameter %3(${}%):\n"
-                    "{}Argument #{}: Inferred as {}\n"
-                    "{}Argument #{}: Inferred as {}",
-                    a.param,
-                    indent,
-                    a.first + 1,
-                    a.first_type,
-                    indent,
-                    a.second + 1,
-                    a.second_type
-                );
-            }
-        }); // clang-format on
-    };
-
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
     if (candidates.size() == 1) {
         auto& c = candidates.front();
-        auto V = utils::Overloaded{
-            // clang-format off
-            [](const Candidate::Viable&) { Unreachable(); },
-            [&](Candidate::ArgumentCountMismatch) {
-                Error(
-                    call_loc,
-                    "Procedure '%2({}%)' expects {} argument{}, got {}",
-                    c.decl->name,
-                    c.param_count(),
-                    c.param_count() == 1 ? "" : "s",
-                    call_args.size()
-                );
-                Note(c.decl->location(), "Declared here");
-            },
-
-            [&](Candidate::DeductionError) {
-                SmallString<256> extra;
-                FormatTempSubstFailure(c.subst, extra, "  ");
-                if (c.subst.data.is<SubstitutionResult::ConstraintNotSatisfied>()) {
-                    Error(call_loc, "Constraints not satisfied");
-                    Note(cast<ProcTemplateDecl>(c.decl)->pattern->where.get()->loc, "{}", extra);
-                } else {
-                    Error(call_loc, "Template argument substitution failed");
-                    Remark("\r{}", extra);
-                    Note(c.decl->location(), "Declared here");
-                }
-            },
-
-            [&](Candidate::ParamInitFailed& p) {
-                for (auto& d : p.diags) diags().report(std::move(d));
-                NoteParameter(*this, c.decl, p.param_index);
-            },
-        }; // clang-format on
-        c.status.visit(V);
+        ReportSingleOverloadResolutionFailure(
+            c.callee,
+            std::move(c.status),
+            std::move(c.subst),
+            args,
+            call_loc
+        );
         return;
     }
 
@@ -2516,7 +2730,7 @@ void Sema::ReportOverloadResolutionFailure(
     // First, print all overloads.
     for (auto [i, c] : enumerate(candidates)) {
         Format(message, "  %b({}.%) \v{}", i + 1, c.type_for_diagnostic());
-        Format(message, "\f%b(at%) {}", c.decl->location().format(ctx, true));
+        Format(message, "\f%b(at%) {}", c.callee.name().loc.format(ctx, true));
         message += "\n";
     }
 
@@ -2547,18 +2761,45 @@ void Sema::ReportOverloadResolutionFailure(
             },
 
             [&](Candidate::ArgumentCountMismatch) {
-                auto params = c.param_count();
-                Format(message,
+                auto params = c.callee.param_count();
+                Format(
+                    message,
                     "Expected {} arg{}, got {}",
                     params,
                     params == 1 ? "" : "s",
-                    call_args.size()
+                    args.size()
+                );
+            },
+
+            [&](Candidate::NamedParamNotFound p) {
+                Format(
+                    message,
+                    "Parameter with name '{}' not found",
+                    args[p.arg_index].name.name
+                );
+            },
+
+            [&](Candidate::NamedArgReferencesVariadicParam p) {
+                Format(
+                    message,
+                    "Named argument names the variadic parameter",
+                    args[p.arg_index].name.name
                 );
             },
 
             [&](Candidate::ParamInitFailed& i) {
                 Format(message, "In argument to parameter #{}:\n", i.param_index);
                 message += utils::Indent(Diagnostic::Render(ctx, i.diags, diags().cols() - 5, false), 2);
+            },
+
+            [&](Candidate::ParamSpecifiedTwice& p) {
+                Format(
+                    message,
+                    "Parameter #{} passed twice (via args #{} and #{})",
+                    p.param_index + 1,
+                    p.arg_index_1 + 1,
+                    p.arg_index_2 + 1
+                );
             },
 
             [&](Candidate::DeductionError) {
@@ -2577,7 +2818,7 @@ void Sema::ReportOverloadResolutionFailure(
     ctx.diags().report(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
-        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().decl->name),
+        std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().callee.name().name),
         message.str().str(),
     });
 }
@@ -3047,7 +3288,7 @@ auto Sema::BuildAssertExpr(
         stringifier = BuildImplicitProcedure(
             tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
             {Type::VoidTy, Expr::RValue},
-            {{{String(""), loc}, {Intent::Inout, assert_buffer_type, false}}},
+            {{{Intent::Inout, assert_buffer_type, false}}},
             Linkage::Internal,
             Mangling::None,
             loc,
@@ -3617,10 +3858,20 @@ auto Sema::BuildBuiltinMemberAccessExpr(
 
 auto Sema::BuildCallExpr(
     Expr* callee_expr,
-    ArrayRef<Expr*> args,
+    const CallArgList& args,
     SLoc loc,
     bool is_associated_call
 ) -> Ptr<Expr> {
+    // Check for duplicate argument names.
+    if (args.has_named_args()) {
+        llvm::StringSet<> param_names;
+        for (const auto& a : args) {
+            if (a.name.name.empty()) continue;
+            if (not param_names.insert(a.name.name.str()).second)
+                return Error(a.name.loc, "Duplicate argument name '{}'", a.name.name);
+        }
+    }
+
     // If this is an overload set, perform overload resolution.
     Expr* resolved_callee = nullptr;
     SmallVector<Expr*> converted_args;
@@ -3639,11 +3890,23 @@ auto Sema::BuildCallExpr(
             "Failed to evaluate expression designating a type"
         );
 
-        return BuildInitialiser(
-            type.value().cast<Type>(),
-            args,
-            loc
-        );
+        // Only struct types name have named initialisers.
+        auto ty = type.value().cast<Type>();
+        if (args.has_named_args()) {
+            if (not isa<StructType>(ty)) return Error(
+                callee_expr->location(),
+                "Cannot initialise type '{}' using named initialiser",
+                ty
+            );
+
+            return ICE(
+                callee_expr->location(),
+                "Named struct initialisers are not yet implemented"
+            );
+        }
+
+        // Strip the non-existent names and build an initialiser.
+        return BuildInitialiser(ty, args.unnamed(), loc);
     }
 
     // If the type of this is a procedure, then we can skip overload
@@ -3653,22 +3916,44 @@ auto Sema::BuildCallExpr(
     // work for indirect calls since for those we don’t have a reference
     // to the procedure declaration.
     else if (auto ty = dyn_cast<ProcType>(callee_expr->type)) {
+        Callee logical_callee{ty};
+        if (auto ref = dyn_cast<ProcRefExpr>(callee_expr->ignore_parens()))
+            logical_callee = ref->decl;
+
+        auto ReportAsOverloadResolutionFailure = [&](Candidate::Status s) {
+            ReportSingleOverloadResolutionFailure(
+                logical_callee,
+                std::move(s),
+                std::nullopt,
+                args,
+                loc
+            );
+        };
+
+        // The callee must be an rvalue.
         resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
-        if (not ArgumentCountMatchesParameters(args.size(), ty)) {
-            auto decl = dyn_cast<ProcRefExpr>(callee_expr);
-            Error(
-                loc,
-                "Procedure{} expects {} argument{}, got {}",
-                decl and not decl->decl->name.empty() ? Format(" '{}'", decl->decl->name) : SmallString<64>(),
-                ty->params().size(),
-                ty->params().size() == 1 ? "" : "s",
-                args.size()
-            );
+        if (not logical_callee.argument_count_matches_parameters(u32(args.size()))) {
+            ReportAsOverloadResolutionFailure(Candidate::ArgumentCountMismatch{});
+            return {};
+        }
 
-            if (decl) Note(decl->decl->location(), "Declared here");
-            return nullptr;
+        // Get the declaration if this is one.
+        SmallVector<Expr*> ordered_args;
+
+        // Resolve named parameters.
+        if (args.has_named_args()) {
+            if (logical_callee.is_indirect()) return Error(loc, "Named arguments are not allowed in indirect calls");
+            auto resolved = ResolveNamedArguments(args, logical_callee);
+            if (not resolved) {
+                ReportAsOverloadResolutionFailure(std::move(resolved.error()));
+                return {};
+            }
+
+            ordered_args = std::move(*resolved);
+        } else {
+            ordered_args = args.unnamed();
         }
 
         bool ok = true;
@@ -3684,10 +3969,8 @@ auto Sema::BuildCallExpr(
 
             // Point to the procedure if this is a direct call.
             if (not arg) {
-                if (isa<ProcRefExpr>(callee_expr)) {
-                    auto proc = cast<ProcRefExpr>(callee_expr);
-                    NoteParameter(*this, proc->decl, u32(param_index));
-                }
+                if (auto d = logical_callee.decl().get_or_null())
+                    NoteParameter(*this, d, u32(param_index));
 
                 ok = false;
                 return;
@@ -3696,7 +3979,7 @@ auto Sema::BuildCallExpr(
             converted_args.push_back(arg.get());
         };
 
-        ConvertArgumentsForCall(args, ty, ConvertArg, loc);
+        ConvertArgumentsForCall(ordered_args, logical_callee, ConvertArg, loc);
 
         // We can do this before adding the varargs arguments since we only allow
         // passing trivially copyable types as varargs arguments, and those always
@@ -3714,10 +3997,10 @@ auto Sema::BuildCallExpr(
         );
     }
 
-    // And check variadic arguments.
+    // And check C varargs arguments.
     auto ty = cast<ProcType>(resolved_callee->type);
     if (ty->has_c_varargs()) {
-        for (auto a : args.drop_front(ty->params().size())) {
+        for (auto [a, _] : args.ref().drop_front(ty->params().size())) {
             // Codegen is not set up to handle variadic arguments that are larger
             // than a word, so reject these here. If you need one of those, then
             // seriously, wtf are you doing.
@@ -4078,22 +4361,20 @@ auto Sema::BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<
 }
 
 auto Sema::BuildParamDecl(
-    ProcScopeInfo& proc,
+    ProcDecl* proc,
     const ParamTypeData* param,
     u32 index,
     bool with_param,
     bool immutable,
-    String name,
-    SLoc loc
+    DeclNameLoc name
 ) -> ParamDecl* {
     auto decl = new (*tu) ParamDecl(
         param,
         Expr::LValue(immutable),
         name,
-        proc.proc,
+        proc,
         index,
-        with_param,
-        loc
+        with_param
     );
 
     DeclareLocal(decl);
@@ -4698,20 +4979,27 @@ auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Opt<Type>
 }
 
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
-    SmallVector<Expr*> args;
     Expr* callee{};
-    auto TranslateArgs = [&] -> bool {
+    Ptr<Expr> object_param;
+    auto TranslateArgs = [&] -> std::optional<CallArgList> {
+        CallArgList::Args args;
+        if (auto p = object_param.get_or_null())
+            args.emplace_back(p, DeclNameLoc());
+
         bool ok = true;
         for (auto a : parsed->args()) {
-            auto expr = TranslateExpr(a);
+            if (a.is_spread()) Todo("Handle spread argument");
+            auto expr = TranslateExpr(a.expr());
             if (expr.invalid()) ok = false;
-            else args.push_back(expr.get());
+            else args.emplace_back(expr.get(), a.name);
         }
-        return ok;
+
+        if (not ok) return std::nullopt;
+        return CallArgList{std::move(args)};
     };
 
     // The callee may be a builtin.
-    if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre && dre->is_single_ident()) {
+    if (auto dre = dyn_cast<ParsedDeclRefExpr>(parsed->callee); dre and dre->is_single_ident()) {
         auto bk = BuiltinCallExpr::Parse(dre->names().front().name.str());
         if (bk.has_value()) {
             // 'Dump' does not take an expression, but rather any node.
@@ -4719,9 +5007,9 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
                 for (auto a : parsed->args()) {
                     ctx.diags().flush();
                     std::println(stderr, "== Parse Tree ==");
-                    a->dump(ctx.use_colours);
+                    a.expr()->dump(ctx.use_colours);
                     std::println(stderr, "== AST ==");
-                    auto res = TranslateStmt(a);
+                    auto res = TranslateStmt(a.expr());
                     if (auto s = res.get_or_null()) {
                         // FIXME: Introduce some printing mode that also dumps e.g. the TypeDecl
                         // of a TypeExpr if it is a struct.
@@ -4740,20 +5028,27 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
                 return BuildInitialiser(Type::VoidTy, {}, parsed->loc);
             }
 
-            if (not TranslateArgs()) return {};
-            return BuildBuiltinCallExpr(bk.value(), args, parsed->loc);
+            auto args = TRY(TranslateArgs());
+
+            // Allow this once we can declare all builtins in the preamble, which
+            // requires compile-time parameters, which requires the new parameter
+            // syntax refactor.
+            if (args.has_named_args()) return ICE(
+                parsed->loc,
+                "Named arguments to builtins are currently not supported"
+            );
+
+            return BuildBuiltinCallExpr(bk.value(), args.unnamed(), parsed->loc);
         }
     }
 
     // The callee may also be an associated procedure, so if this is a member
     // access expression, we need to handle it explicitly here.
-    bool is_associated_call = false;
     if (auto ma = dyn_cast<ParsedMemberExpr>(parsed->callee)) {
         auto access = TRY(TranslateMemberAccess(ma, true));
         if (access.is_associated_proc_ref()) {
-            args.push_back(access.base);
+            object_param = access.base;
             callee = access.callee;
-            is_associated_call = true;
         } else {
             callee = access.base;
         }
@@ -4764,8 +5059,8 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
 
     // Finally, build the call.
     Assert(callee);
-    if (not TranslateArgs()) return {};
-    return BuildCallExpr(callee, args, parsed->loc, is_associated_call);
+    auto args = TRY(TranslateArgs());
+    return BuildCallExpr(callee, std::move(args), parsed->loc, object_param.present());
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
@@ -5487,13 +5782,12 @@ auto Sema::TranslateProcBody(
     for (auto [i, pair] : enumerate(zip(ty->params(), decls))) {
         auto [param_info, parsed_decl] = pair;
         auto param = BuildParamDecl(
-            curr_proc(),
+            curr_proc().proc,
             &param_info,
             u32(i),
             false,
             isa<ParsedValueType>(parsed_decl->type),
-            parsed_decl->name.str(),
-            parsed_decl->loc
+            {parsed_decl->name, parsed_decl->loc}
         );
 
         if (parsed_decl->with_loc.is_valid() or parsed_decl->is_this_param) AddEntryToWithStack(
@@ -5682,15 +5976,6 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     }
 
     // Currently, only the last parameter is allowed to be variadic.
-    //
-    // NOTE: If we ever change that (for instance, once we support
-    // named parameters), then a number of places around overload
-    // resolution and building calls need to be updated to handle
-    // this (since they all assume that, if there is a variadic
-    // parameter, it is the last parameter).
-    //
-    // In that case, we would probably want to handle positional and
-    // named arguments separately.
     if (has_variadic_param) {
         auto params_except_last = parsed->type->param_types().drop_back();
         auto it = rgs::find_if(params_except_last, &ParsedParameter::variadic);

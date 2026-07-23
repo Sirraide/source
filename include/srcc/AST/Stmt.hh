@@ -1359,19 +1359,21 @@ protected:
         Kind k,
         Type type,
         ValueCategory category,
-        String name,
+        DeclName name,
         ProcDecl* parent,
         SLoc location
     ) : Decl{k, name, location},
         parent{parent},
         type{type},
-        category{category} {}
+        category{category} {
+        Assert(name.is_str());
+    }
 
 public:
     LocalDecl(
         Type type,
         ValueCategory category,
-        String name,
+        DeclName name,
         ProcDecl* parent,
         SLoc location
     ) : LocalDecl{Kind::LocalDecl, type, category, name, parent, location} {}
@@ -1387,19 +1389,18 @@ public:
 class srcc::ParamDecl : public LocalDecl {
     u32 idx;
     bool with;
+
 public:
     ParamDecl(
         const ParamTypeData* param,
         ValueCategory vc,
-        String name,
+        DeclNameLoc name,
         ProcDecl* parent,
         u32 index,
-        bool with_param,
-        SLoc location
-    ) : LocalDecl{Kind::ParamDecl, param->type, vc, name, parent, location},
+        bool with_param
+    ) : LocalDecl{Kind::ParamDecl, param->type, vc, name.name, parent, name.loc},
         idx{index},
-        with{with_param} {
-    }
+        with{with_param} {}
 
     /// Get the parameter’s index.
     [[nodiscard]] auto index() const -> u32 { return idx; }
@@ -1584,6 +1585,9 @@ public:
     ///        local variables of this procedure.
     void finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> locals);
 
+    /// Get the index of a named parameter.
+    auto index_of_named_param(String name) -> std::optional<u32>;
+
     /// Check if this declaration declares an overloaded operator.
     bool is_overloaded_operator() const { return name.is_operator_name(); }
 
@@ -1601,6 +1605,11 @@ public:
 
     /// Get the number of parameters that this procedure has.
     auto param_count() const -> usz { return param_types().size(); }
+
+    /// Get the name of the n-th parameter.
+    auto param_name(u32 n) {
+        return params()[n]->name.str();
+    }
 
     /// Get the parameter types.
     auto param_types() const -> ArrayRef<ParamTypeData> {

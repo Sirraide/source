@@ -214,6 +214,10 @@ void TypeBase::dump(bool use_colour) const {
     std::println("{}", text::RenderColours(use_colour, print().str()));
 }
 
+auto TypeBase::elem() const -> Type {
+    return cast<SingleElementTypeBase>(this)->elem();
+}
+
 auto TypeBase::eval_mode() const -> EvalMode {
     switch (canonical_kind()) {
         using K = TypeBase::Kind;
@@ -287,7 +291,7 @@ bool TypeBase::is_or_contains_pointer() const {
     return visit(utils::Overloaded{
         [&](const EnumType*) { return false; },
         [&](const IntType*) { return false; },
-        [&](const ProcType*) { return false; },
+        [&](const ProcType*) { return true; },
         [&](const PtrType*) { return true; },
         [&](const RangeType*) { return false; },
         [&](const SliceType*) { return true; },
@@ -624,6 +628,7 @@ void PtrType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 }
 
 auto ProcType::AdjustRet(TranslationUnit& mod, ProcType* ty, Type new_ret) -> ProcType* {
+    if (ty->ret() == new_ret) return ty;
     return Get(
         mod,
         {new_ret, ty->return_value_category()},
@@ -687,7 +692,7 @@ ProcType::ProcType(
 ) : TypeBase{Kind::ProcType},
     cc{cconv},
     is_varargs{variadic},
-    num_params{u32(param_types.size())},
+    num_params{utils::safe_cast<u32>(param_types.size())},
     return_type{return_type} {
     std::uninitialized_copy_n(
         param_types.begin(),
@@ -711,6 +716,7 @@ void ProcType::Profile(
     for (const auto& t : param_types) {
         ID.AddInteger(+t.intent);
         ID.AddPointer(t.type.ptr());
+        ID.AddBoolean(t.variadic);
     }
 }
 
@@ -883,7 +889,7 @@ RecordLayout::RecordLayout(
     Size arr_sz,
     Align a,
     Bits bits
-) : num_fields{u32(fields.size())},
+) : num_fields{utils::safe_cast<u32>(fields.size())},
     computed_alignment{a},
     computed_bits{bits},
     computed_size{sz},

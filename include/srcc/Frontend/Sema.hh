@@ -125,6 +125,52 @@ private:
         [[nodiscard]] auto token() -> LoopToken;
     };
 
+    /// An argument list to a call. Immutable once created to facilitate
+    /// caching certain properties.
+    struct CallArgList {
+        struct Arg {
+            Expr* expr;
+            DeclNameLoc name;
+            Arg(Expr* expr, DeclNameLoc name = {}) : expr{expr}, name{name} {}
+        };
+
+        using Args = SmallVector<Arg>;
+
+    private:
+        Args args;
+        bool named_args;
+
+    public:
+        CallArgList(Expr* expr) : CallArgList{Args{expr}} {}
+        CallArgList(std::initializer_list<Arg> args) : CallArgList{Args{args}} {}
+        CallArgList(Args&& args) :
+            args{std::move(args)},
+            named_args(any_of(this->args, [&](auto& a) { return a.name.name.valid(); })) {}
+
+        /// Get the n-th argument.
+        [[nodiscard]] auto operator[](u32 n) const -> const Arg& { return args[n]; }
+
+        /// Get an iterator to the start of the list.
+        [[nodiscard]] auto begin() const { return args.begin(); }
+
+        /// Get an iterator to the end of the list.
+        [[nodiscard]] auto end() const { return args.end(); }
+
+        /// Query whether the list contains named arguments.
+        [[nodiscard]] bool has_named_args() const { return named_args; }
+
+        /// Get an array ref to the arguments.
+        [[nodiscard]] auto ref() const -> ArrayRef<Arg> { return args; }
+
+        /// Get the number of arguments.
+        [[nodiscard]] auto size() const -> u32 { return u32(args.size()); }
+
+        /// Get a vector containing all arguments without their names.
+        [[nodiscard]] auto unnamed() const {
+            return to_vector(args | vws::transform(&Arg::expr));
+        }
+    };
+
     /// A (possibly empty) sequence of conversions applied to a type.
     class ConversionSequence;
 
@@ -469,16 +515,132 @@ private:
         }
     };
 
+    /// Argument lists used during overload resolution.
+    ///
+    /// If we have named arguments, each candidate gets its own list since
+    /// we may need to apply reordering; otherwise, all candidates use the
+    /// same list.
+    class CandidateArgumentLists {
+    public:
+        using List = SmallVector<Expr*>;
+        enum Id : u32 { Unnamed = 0 };
+
+        /// The unordered arguments.
+        const CallArgList& unordered;
+
+    private:
+        SmallVector<List, 1> argument_lists;
+        bool has_named_args = false;
+
+    public:
+        CandidateArgumentLists(const CallArgList& args);
+
+        /// Add a list; only valid if we have named arguments.
+        auto add(List args) -> Id;
+
+        /// Get a list by id.
+        auto operator[](Id id) const -> const List&;
+    };
+
+    /// Something that we can build a call to.
+    ///
+    /// This is either:
+    ///   - a template,
+    ///   - a procedure declaration, or
+    ///   - a procedure type (if this is an indirect call).
+    class Callee {
+        llvm::PointerUnion<ProcDecl*, ProcTemplateDecl*, ProcType*> data;
+
+    public:
+        Callee(ProcDecl* decl) : data(decl) {}
+        Callee(ProcTemplateDecl* decl) : data(decl) {}
+        Callee(ProcType* ty) : data(ty) {}
+
+
+        /// Check if the number of call arguments ‘matches’ the number of
+        /// parameters that this callee has—this does not mean that they’re
+        /// equal!
+        [[nodiscard]] bool argument_count_matches_parameters(u32 num_args);
+
+        /// Cast this callee.
+        template <typename T>
+        [[nodiscard]] auto cast() const -> T* { return llvm::cast<T*>(data); }
+
+        /// Try to get the callee as a declaration. Returns nullptr if this is
+        /// an indirect call.
+        [[nodiscard]] auto decl() const -> Ptr<Decl>;
+
+        /// Try to cast this callee.
+        template <typename T>
+        [[nodiscard]] auto dyn_cast() const -> T* { return llvm::dyn_cast<T*>(data); }
+
+        /// Whether this is a C varargs procedure.
+        [[nodiscard]] bool has_c_varargs() const;
+
+        /// Try to get the index of the parameter with the specified name.
+        /// Returns nullopt if this is an indirect call or if there is no
+        /// parameter with that name.
+        [[nodiscard]] auto index_of_named_param(String name) -> std::optional<u32>;
+
+        /// Whether this is an indirect call.
+        [[nodiscard]] bool is_indirect() const { return isa<ProcType*>(data); }
+
+        /// Whether this is a call to a template.
+        [[nodiscard]] bool is_template() const { return isa<ProcTemplateDecl*>(data); }
+
+        /// Whether this is a variadic (*not* C varargs!) procedure.
+        [[nodiscard]] bool is_variadic() const;
+
+        /// Try to get the name and location of the callee. Returns an invalid
+        /// location if this is an indirect call.
+        [[nodiscard]] auto name() const -> DeclNameLoc;
+
+        /// Get the number of non-variadic parameters.
+        [[nodiscard]] auto num_non_variadic_params() -> u32 {
+            return u32(param_count() - is_variadic());
+        }
+
+        /// Get the number of parameters that this callee has.
+        [[nodiscard]] auto param_count() const -> u32;
+
+        /// Try to get the location of the n-th parameter. Returns an invalid
+        /// location if this is an indirect call.
+        [[nodiscard]] auto param_loc(u32 n) const -> SLoc;
+
+        /// Try to get the name of the n-th parameter. Returns an empty string
+        /// if this is an indirect call.
+        [[nodiscard]] auto param_name(u32 index) const -> DeclName;
+
+    private:
+        /// Visit this callee.
+        template <typename Visitor>
+        auto visit(Visitor&& v) const;
+
+        /// Visit this callee, but if this is a ProcDecl*, visit the ProcType* instead.
+        template <typename Visitor>
+        auto visit_type(Visitor&& v) const;
+    };
+
     /// Overload resolution candidate.
-    struct Candidate {
+    class Candidate {
         LIBBASE_MOVE_ONLY(Candidate);
 
     public:
         // Viable candidate.
-        struct Viable {
+        class Viable {
+            // Making this move-only makes 'Status' move-only.
+            LIBBASE_MOVE_ONLY(Viable);
+
+        public:
+            Viable() = default;
+
             // The conversion sequences that need to be applied to each
             // argument if this overload does get selected.
             SmallVector<ConversionSequence, 4> conversions;
+
+            // Arguments to this call; if we have named arguments, each call gets its
+            // own list; otherwise, we store a pointer to a common list.
+            CandidateArgumentLists::Id arg_list{CandidateArgumentLists::Id::Unnamed};
 
             // How 'bad' is this overload, i.e. how many conversions are
             // required to make it work.
@@ -499,8 +661,26 @@ private:
             u32 param_index;
         };
 
+        // We failed to find a named parameter.
+        struct NamedParamNotFound {
+            String param_name;
+            u32 arg_index;
+        };
+
+        // A parameter was specified both as a positional and named parameter.
+        struct ParamSpecifiedTwice {
+            u32 param_index;
+            u32 arg_index_1;
+            u32 arg_index_2;
+        };
+
+        // A named argument names the variadic parameter of a procedure.
+        struct NamedArgReferencesVariadicParam {
+            u32 arg_index;
+        };
+
         // The procedure (template) that this candidate represents.
-        Decl* decl;
+        Callee callee;
 
         // Substitution for this template if this is one. This may not
         // exist in some error cases.
@@ -511,25 +691,39 @@ private:
             Viable,
             ArgumentCountMismatch,
             ParamInitFailed,
-            DeductionError
+            DeductionError,
+            NamedParamNotFound,
+            ParamSpecifiedTwice,
+            NamedArgReferencesVariadicParam
         >; // clang-format on
         Status status = Viable{};
 
-        Candidate(Decl* p) : decl{p} {
-            Assert((isa<ProcDecl, ProcTemplateDecl>(p)));
+        Candidate(Decl* p) : callee{dyn_cast<ProcDecl>(p)} {
+            if (auto t = dyn_cast<ProcTemplateDecl>(p)) callee = t;
         }
 
-        auto badness() const -> u32 { return status.get<Viable>().badness; }
-        auto param_count() const -> usz;
-        auto param_loc(usz index) const -> SLoc;
-        auto proc_type() const -> ProcType*;
-        auto type_for_diagnostic() const -> SmallUnrenderedString;
-        bool has_c_varargs() const;
-        bool has_valid_proc_type() const;
-        bool is_template() const { return isa<ProcTemplateDecl>(decl); }
-        bool is_variadic() const;
-        auto non_variadic_params() const -> u32;
-        bool viable() const { return status.is<Viable>(); }
+        /// Get the argument list id for this candidate.
+        [[nodiscard]] auto arg_list() const -> CandidateArgumentLists::Id {
+            return status.get<Viable>().arg_list;
+        }
+
+        /// Get how bad this candidate is.
+        /// FIXME: Instead of this, rank the candidates by comparing them.
+        [[nodiscard]] auto badness() const -> u32 { return status.get<Viable>().badness; }
+
+        /// Get the type of this callee; only valid if this is not a template
+        /// or if substitution was already performed and has succeeded.
+        [[nodiscard]] auto proc_type() const -> ProcType*;
+
+        /// Get a representation of the type of this callee for use in a
+        /// diagnostic; it is always valid to call this.
+        [[nodiscard]] auto type_for_diagnostic() const -> SmallUnrenderedString;
+
+        /// Whether this candidate is viable.
+        [[nodiscard]] bool viable() const { return status.is<Viable>(); }
+
+    private:
+        [[nodiscard]] bool has_valid_proc_type() const;
     };
 
     /// Pattern matching.
@@ -904,8 +1098,8 @@ private:
 
     /// Parameter definition passed to BuildImplicitProcedure().
     struct ParamSpec {
-        DeclNameLoc name;
         ParamTypeData type;
+        DeclNameLoc name{};
     };
 
     /// Build an implicit procedure.
@@ -955,6 +1149,15 @@ private:
     /// if there is one, ensure they all have the same type and value category.
     auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
 
+    /// Convert arguments to parameter types.
+    template <typename Callback>
+    void ConvertArgumentsForCall(
+        ArrayRef<Expr*> args,
+        Callee c,
+        Callback ConvertArg,
+        SLoc call_loc
+    );
+
     /// Create a reference to a declaration.
     [[nodiscard]] auto CreateReference(Decl* d, SLoc loc) -> Ptr<Expr>;
 
@@ -977,6 +1180,13 @@ private:
     /// Evaluate a statement, returning an expression that caches the result on success
     /// and nullptr on failure. The returned expression need not be a ConstExpr.
     auto EvaluateIntoExpr(Stmt* e, SLoc loc) -> Ptr<Expr>;
+
+    /// Format a message indicating why template substitution failed.
+    void FormatTempSubstFailure(
+        const SubstitutionResult& info,
+        SmallString<256>& out,
+        std::string_view indent
+    );
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
@@ -1138,7 +1348,7 @@ private:
     /// Resolve an overload set.
     auto PerformOverloadResolution(
         OverloadSetExpr* overload_set,
-        ArrayRef<Expr*> args,
+        const CallArgList& args,
         bool is_associated_call,
         SLoc call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
@@ -1153,15 +1363,38 @@ private:
     void ReportLookupFailure(LookupResult&& result);
 
     /// Issue an error about overload resolution failure.
+    ///
+    /// This takes a MutableArrayRef because some failure modes may contain
+    /// diagnostics that we want to move into the diagnostics engine.
     void ReportOverloadResolutionFailure(
         MutableArrayRef<Candidate> candidates,
-        ArrayRef<Expr*> call_args,
+        const CallArgList& args,
         SLoc call_loc,
         u32 final_badness
     );
 
+    /// Report overload resolution failure in cases where the 'overload set' contains
+    /// a single procedure; this is also used when building calls outside of overload
+    /// resolution to avoid duplicating code from ReportOverloadResolutionFailure().
+    ///
+    /// The 'decl' may be null if this is an indirect call.
+    void ReportSingleOverloadResolutionFailure(
+        Callee callee,
+        Candidate::Status status,
+        std::optional<SubstitutionResult> subst,
+        const CallArgList& args,
+        SLoc call_loc
+    );
+
     /// Whether a procedure requires a mangling number.
     bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
+
+    /// Resolve named arguments, i.e. figure out what positional parameters
+    /// they map to.
+    auto ResolveNamedArguments(
+        const CallArgList& args,
+        Callee callee
+    ) -> std::expected<SmallVector<Expr*>, Candidate::Status>;
 
     /// Create a SaveExpr wrapping an expression.
     auto Save(Expr* s) -> SaveExpr*;
@@ -1191,7 +1424,7 @@ private:
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
-    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc, bool is_associated_call = false) -> Ptr<Expr>;
+    auto BuildCallExpr(Expr* callee_expr, const CallArgList& args, SLoc loc, bool is_associated_call = false) -> Ptr<Expr>;
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
@@ -1201,13 +1434,12 @@ private:
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr>;
     auto BuildParamDecl(
-        ProcScopeInfo& proc,
+        ProcDecl* proc,
         const ParamTypeData* param,
         u32 index,
         bool with_param,
         bool immutable,
-        String name,
-        SLoc loc
+        DeclNameLoc name
     ) -> ParamDecl*;
     auto BuildProcDeclInitial(
         Scope* proc_scope,

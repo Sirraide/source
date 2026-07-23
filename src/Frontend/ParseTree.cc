@@ -97,7 +97,7 @@ auto ParsedBlockExpr::Create(
 
 ParsedCallExpr::ParsedCallExpr(
     ParsedStmt* callee,
-    ArrayRef<ParsedStmt*> args,
+    ArrayRef<ParsedCallArg> args,
     SLoc location
 ) : ParsedStmt{Kind::CallExpr, location},
     callee{callee}, num_args{u32(args.size())} {
@@ -107,10 +107,10 @@ ParsedCallExpr::ParsedCallExpr(
 auto ParsedCallExpr::Create(
     Parser& parser,
     ParsedStmt* callee,
-    ArrayRef<ParsedStmt*> args,
+    ArrayRef<ParsedCallArg> args,
     SLoc location
 ) -> ParsedCallExpr* {
-    const auto size = totalSizeToAlloc<ParsedStmt*>(args.size());
+    const auto size = totalSizeToAlloc<ParsedCallArg>(args.size());
     auto mem = parser.allocate(size, alignof(ParsedCallExpr));
     return ::new (mem) ParsedCallExpr{callee, args, location};
 }
@@ -603,7 +603,9 @@ auto ParsedStmt::children(bool include_types) -> Children {
         [&](ParsedCallExpr* c) -> Children {
             Children::Owning children;
             if (c->callee) children.push_back(c->callee);
-            if (auto a = c->args(); not a.empty()) children.append(a.begin(), a.end());
+            if (auto args = c->args(); not args.empty())
+                for (auto arg : args)
+                    children.push_back(arg.expr());
             return std::move(children);
         },
 

@@ -10,4 +10,4 @@ testmodule::hello(42); // expected-error: Procedure 'hello' expects 0 arguments,
 testmodule::hello2(); // expected-error: Unknown symbol 'hello2'
 
 // This note is in the imported module.
-// expected-note@*: Declared here
+// expected-note@*: Callee declared here

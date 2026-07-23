@@ -40,6 +40,9 @@ public:
     /// Get this as a string. It is valid to call this even if this is an operator name.
     [[nodiscard]] auto str() const -> String;
 
+    /// Check if this is not empty.
+    [[nodiscard]] bool valid() const { return not empty(); }
+
 private:
     /// Equality comparison.
     friend bool operator==(DeclName, DeclName);
@@ -52,6 +55,8 @@ struct DeclNameLoc {
     DeclNameLoc() = default;
     DeclNameLoc(DeclName name, SLoc loc)
         : name{name}, loc{loc} {}
+
+    explicit operator bool() { return name.valid(); }
 };
 
 template <typename T>

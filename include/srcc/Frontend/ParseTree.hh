@@ -16,6 +16,7 @@ struct ParsedMatchCase;
 struct ImportedModule;
 struct ParsedParameter;
 struct ParsedEnumerator;
+class ParsedCallArg;
 
 /// The list of parameter indices, for each template parameter,
 /// in which that template parameter is deduced.
@@ -418,10 +419,28 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BreakContinueExpr; }
 };
 
+class srcc::ParsedCallArg {
+    llvm::PointerIntPair<ParsedStmt*, 1, bool> arg_and_spread;
+
+public:
+    /// If this is a named argument (i.e. 'a: b'), the name.
+    DeclNameLoc name;
+
+    /// Constructor.
+    ParsedCallArg(ParsedStmt* arg, DeclNameLoc name, bool spread)
+        : arg_and_spread{arg, spread}, name{name} {}
+
+    /// Get the argument expression.
+    auto expr() const -> ParsedStmt* { return arg_and_spread.getPointer(); }
+
+    /// Get whether this is a spread argument (i.e. '...').
+    bool is_spread() const { return arg_and_spread.getInt(); }
+};
+
 /// A call to a function, or anything that syntactically
 /// resembles one.
 class srcc::ParsedCallExpr final : public ParsedStmt
-    , TrailingObjects<ParsedCallExpr, ParsedStmt*> {
+    , TrailingObjects<ParsedCallExpr, ParsedCallArg> {
     friend TrailingObjects;
 
 public:
@@ -431,11 +450,11 @@ public:
 private:
     const u32 num_args;
 
-    auto numTrailingObjects(OverloadToken<ParsedStmt*>) -> usz { return num_args; }
+    auto numTrailingObjects(OverloadToken<ParsedCallArg>) -> usz { return num_args; }
 
     ParsedCallExpr(
         ParsedStmt* callee,
-        ArrayRef<ParsedStmt*> args,
+        ArrayRef<ParsedCallArg> args,
         SLoc location
     );
 
@@ -443,12 +462,12 @@ public:
     static auto Create(
         Parser& parser,
         ParsedStmt* callee,
-        ArrayRef<ParsedStmt*> args,
+        ArrayRef<ParsedCallArg> args,
         SLoc location
     ) -> ParsedCallExpr*;
 
     /// Get the arguments to the call.
-    auto args() -> ArrayRef<ParsedStmt*> {
+    auto args() -> ArrayRef<ParsedCallArg> {
         return getTrailingObjects(num_args);
     }
 

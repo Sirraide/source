@@ -648,6 +648,36 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
+// <call-args> ::= <call-arg> { "," <call-arg> } [ "," ]
+// <call-arg>  ::= [ IDENT ":" ] <expr> [ "..." ]
+void Parser::ParseCallArgs(
+    SmallVectorImpl<ParsedCallArg>& into,
+    llvm::function_ref<Ptr<ParsedStmt>()> ParseArgExpr
+) {
+    BracketTracker parens{*this, Tk::LParen};
+    while (not At(Tk::RParen)) {
+        // Parse name.
+        DeclNameLoc name;
+        if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) {
+            name = {tok->text, tok->location};
+            Next();
+            Next();
+        }
+
+        // Parse whether this is a spread parameter.
+        bool spread = Consume(Tk::Ellipsis);
+
+        // Parse the actual argument expression.
+        if (auto arg = ParseArgExpr()) {
+            into.emplace_back(arg.get(), name, spread);
+            if (not Consume(Tk::Comma)) break;
+        } else {
+            break;
+        }
+    }
+    parens.close();
+}
+
 // <expr-decl-ref> ::= [ "::" | <expr> "::" ] { IDENT "::" } ( IDENT | <operator-name> )
 auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<ParsedStmt> {
     auto ss = ParseOptionalScopeSpec(root_expr);
@@ -767,19 +797,10 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
                     auto ident = TRY(ParseDeclRefExpr(DREContext::AfterHashInMacroCall));
 
                     // Parse arguments as '#quote'd.
-                    BracketTracker parens{*this, Tk::LParen};
-                    SmallVector<ParsedStmt*> args;
-                    while (not At(Tk::RParen, Tk::Eof)) {
-                        if (auto arg = ParseQuotedTokenSeq(tok->location, true).get_or_null()) {
-                            args.push_back(arg);
-                            if (not Consume(Tk::Comma)) break;
-                        } else {
-                            break;
-                        }
-                    }
+                    SmallVector<ParsedCallArg> args;
+                    ParseCallArgs(args, [&]{ return ParseQuotedTokenSeq(tok->location, true); });
 
                     // Create the call and wrap it with an '#inject'.
-                    parens.close();
                     lhs = ParsedCallExpr::Create(*this, ident, args, ident->loc);
                     lhs = new (*this) ParsedInjectExpr(lhs.get(), hash_loc);
                 } break;
@@ -1014,20 +1035,9 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
             default: break;
 
             // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
-            // <call-args> ::= <expr> { "," <expr> } [ "," ]
             case Tk::LParen: {
-                BracketTracker parens{*this, Tk::LParen};
-                SmallVector<ParsedStmt*> args;
-                while (not At(Tk::RParen)) {
-                    if (auto arg = ParseExpr()) {
-                        args.push_back(arg.get());
-                        if (not Consume(Tk::Comma)) break;
-                    } else {
-                        break;
-                    }
-                }
-
-                parens.close();
+                SmallVector<ParsedCallArg> args;
+                ParseCallArgs(args, [&]{ return ParseExpr(); });
                 lhs = ParsedCallExpr::Create(*this, lhs.get(), args, lhs.get()->loc);
                 continue;
             }
@@ -1585,8 +1595,7 @@ auto Parser::ParseOverloadableOperatorName() -> std::optional<DeclNameLoc> {
 // <param-rest>  ::= <type> [ "..." ] [ IDENT ] | "this" | <signature>
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     Ptr<ParsedStmt> type;
-    String name;
-    SLoc name_loc;
+    DeclNameLoc name;
     SLoc with_loc;
     bool variadic = false;
     bool is_this = false;
@@ -1616,8 +1625,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         if (inner.name.name.is_operator_name()) {
             Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name.name);
         } else {
-            name = inner.name.name.str();
-            name_loc = inner.tok_after_proc;
+            name = inner.name;
         }
 
         type = CreateType(inner);
@@ -1626,8 +1634,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     // As well as lowercase 'this'. This is equivalent to 'with This this'.
     else if (At(Tk::ThisLower)) {
         type = new (*this) ParsedThisExpr(true, tok->location);
-        name = "this";
-        name_loc = tok->location;
+        name = {String("this"), tok->location};
         is_this = true;
 
         if (with_loc.is_valid()) Warn(
@@ -1647,7 +1654,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     }
 
     if (is_this and variadic) {
-        Error(name_loc, "'%1(this%)' parameter cannot be variadic");
+        Error(name.loc, "'%1(this%)' parameter cannot be variadic");
         variadic = false;
     }
 
@@ -1657,15 +1664,15 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     // the name if there is one and create the declaration.
     if (decls) {
         if (At(Tk::Identifier)) {
-            if (not name.empty()) {
+            if (not name.name.empty()) {
                 if (is_this) Error("'%1(this%)' parameter cannot have an additional name");
                 else {
                     Error("Parameter cannot have two names");
-                    Note(name_loc, "Name was already specified here");
+                    Note(name.loc, "Name was already specified here");
                 }
             }
 
-            name = tok->text;
+            name = {tok->text, tok->location};
             Next();
         } else if (not At(Tk::Comma, Tk::RParen)) {
             if (IsKeyword(tok->type)) {
@@ -1682,7 +1689,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         }
 
         decls->push_back(new (*this) ParsedVarDecl{
-            name,
+            name.name.str(),
             type.get(),
             start_loc,
             intent,

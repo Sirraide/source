@@ -129,6 +129,11 @@ public:
     void dump(bool use_colour = false) const;
     void dump_colour() const { dump(true); }
 
+    /// If this is derived from SingleElementTypeBase, get the single element
+    /// type. Note that this does *not* work for types that *happen* to have
+    /// a single element type (e.g. a tuple type w/ arity 1).
+    [[nodiscard]] auto elem() const -> Type;
+
     /// Get the evaluation mode of this type; this determines whether values
     /// of this type always need to live in memory or not.
     [[nodiscard]] auto eval_mode() const -> EvalMode;
@@ -696,6 +701,23 @@ public:
 };
 
 /// Parts of a parameter that are relevant for the procedure type.
+///
+/// Parameter names are not—and cannot—be part of the procedure type,
+/// as that make computing type equality impossible w/o recursively
+/// walking the entire type (or creating a level of type sugar on top
+/// of ProcType, but that has its own issues, as type sugar should not
+/// be used to encode semantics).
+///
+/// Even if we were to accept that e.g. 'proc -> int' != 'proc -> int',
+/// which in and of itself is not great, this would start to cause major
+/// issues for cases like 'proc (proc -> int)' or '(proc -> int)[4]', as
+/// we would end up with '(proc -> int)[4]' != 'proc -> int)[4]', which
+/// means the type system just breaks down entirely as soon as procedure
+/// types are involved. This is untenable, so we can't do this, and in
+/// fact no other programming language considers names to be part of the
+/// type, likely for the same reasons.
+///
+/// Instead, parameter types are a property of the procedure declaration.
 struct srcc::ParamTypeData {
     Intent intent;
     Type type;

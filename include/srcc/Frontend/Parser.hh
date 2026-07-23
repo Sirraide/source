@@ -147,6 +147,7 @@ private:
     /// Each of these corresponds to a production in the grammar.
     auto ParseAssert(bool is_compile_time) -> Ptr<ParsedAssertExpr>;
     auto ParseBlock() -> Ptr<ParsedBlockExpr>;
+    void ParseCallArgs(SmallVectorImpl<ParsedCallArg>& into, llvm::function_ref<Ptr<ParsedStmt>()> ParseArgExpr);
     auto ParseDeclRefExpr(parser::DREContext ctx, Ptr<ParsedStmt> root_expr = nullptr) -> Ptr<ParsedStmt>;
     auto ParseExpr(int precedence = -1, parser::ParseExprFlags Flags = {}) -> Ptr<ParsedStmt>;
     auto ParseForStmt() -> Ptr<ParsedStmt>;

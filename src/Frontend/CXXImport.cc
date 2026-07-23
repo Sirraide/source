@@ -356,13 +356,13 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     }
 
     // Import the type.
-    auto ty = TRY(ImportType(d->getLocation(), QualType(d->getFunctionType(), 0)));
+    auto ty = cast<ProcType>(TRY(ImportType(d->getLocation(), QualType(d->getFunctionType(), 0))));
 
     // Create the procedure.
-    auto PD = ProcDecl::Create(
+    auto proc = ProcDecl::Create(
         *S.tu,
         clang_module,
-        cast<ProcType>(ty),
+        ty,
         S.tu->save(d->getNameAsString()),
         Linkage::Imported,
         d->isExternC() ? Mangling::None : Mangling::CXX,
@@ -372,24 +372,66 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     );
 
     // We may need to mangle this, so remember where it came from.
-    PD->set_clang_decl(d);
+    proc->set_clang_decl(d);
+
+    // In C++, parameter names may differ across declarations, so only specify
+    // a parameter name if it is the same across all declarations (in which that
+    // parameter has a name).
+    SmallVector<DeclNameLoc> param_names;
+    for (auto i : llvm::seq(ty->param_count())) {
+        std::optional<clang::DeclarationName> name;
+        clang::SourceLocation name_loc;
+        for (auto redecl : d->redecls()) {
+            auto clang_param = redecl->getParamDecl(u32(i));
+            auto n = clang_param->getDeclName();
+
+            // This parameter declaration has no name.
+            if (n.isEmpty()) continue;
+
+            // We don't have a name yet, use this name.
+            if (not name.has_value()) {
+                name = n;
+                name_loc = clang_param->getLocation();
+            }
+
+            // We already have a name; if it is different from the current one,
+            // clear it and give up.
+            else if (name.value() != n) {
+                name = std::nullopt;
+                break;
+            }
+        }
+
+        // If we have a name, add it to the type.
+        if (name.has_value()) {
+            param_names.emplace_back(
+                S.tu->save(name.value().getAsIdentifierInfo()->getName()),
+                ImportSourceLocation(name_loc)
+            );
+        } else {
+            param_names.emplace_back();
+        }
+    }
 
     // Create param decls.
-    SmallVector<LocalDecl*> Params;
-    for (auto [I, P] : enumerate(d->parameters())) {
-        Params.push_back(new (*S.tu) ParamDecl(
-            &PD->param_types()[I],
+    //
+    // Don't use BuildParamDecl() here as that requires creating a
+    // scope for the procedure, which we don't do here since we don't
+    // need it.
+    SmallVector<LocalDecl*> params;
+    for (auto [i, name] : enumerate(param_names)) {
+        params.push_back(new (*S.tu) ParamDecl(
+            &ty->params()[i],
             Expr::MLValue, // We pass by value so this is irrelevant.
-            S.tu->save(P->getName()),
-            PD,
-            u32(I),
-            false,
-            ImportSourceLocation(P->getLocation())
+            name,
+            proc,
+            u32(i),
+            false
         ));
     }
 
-    PD->finalise(nullptr, Params);
-    return PD;
+    proc->finalise(nullptr, params);
+    return proc;
 }
 
 auto srcc::CXXImporter::ImportName(clang::TagDecl* td) -> StringRef {

@@ -1,0 +1,43 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f (int x, int y) = 2 * x - y; // expected-note 6: Callee declared here
+
+#assert f(10, 2) == 18;
+#assert f(x: 10, y: 2) == 18;
+#assert f(y: 2, x: 10) == 18;
+#assert f(y: 2, 10) == 18;
+#assert f(x: 10, 2) == 18;
+
+f(x: 1, x: 2); // expected-error: Duplicate argument name 'x'
+f(q: 1, q: 2); // expected-error: Duplicate argument name 'q'
+f(x: 1, z: 2); // expected-error: Procedure 'f' has no parameter named 'z'
+f(
+    1, // expected-note: Previously passed here
+    x: 1, // expected-error: An argument was already passed for parameter 'x'
+);
+
+f(x: 1, y: 2, z: 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
+f(x: 1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
+f(1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
+f(1, y: 2, x: 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
+
+proc g (int x, int x) {} // expected-error (Redeclaration of 'x') expected-note (Previous declaration was here)
+
+proc variadic (int x, int ...y) -> int { // expected-note 3: Callee declared here
+    int sum;
+    for arg in y do sum += arg;
+    return x * 2 + sum;
+}
+
+#assert variadic(10, 1, 2, 3) == 26;
+#assert variadic(x: 10, 1, 2, 3) == 26;
+variadic(1, x: 2); // expected-error (An argument was already passed for parameter 'x') expected-note (Previously passed here)
+variadic(y: 1); // expected-error: Named argument names the variadic parameter
+variadic(1, 2, 3, y: 4); // expected-error: Named argument names the variadic parameter
+
+proc indirect(proc foo (int)) {
+    foo(x: 3); // expected-error: Named arguments are not allowed in indirect calls
+    var p = indirect;
+    p(x: 4); // expected-error: Named arguments are not allowed in indirect calls
+}

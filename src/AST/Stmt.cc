@@ -470,6 +470,10 @@ void ProcDecl::finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> vars) {
         Assert(isa<ParamDecl>(l), "Parameters must be ParamDecls");
 }
 
+auto ProcDecl::index_of_named_param(String name) -> std::optional<u32> {
+    return utils::index_of<u32>(params(), name, &ParamDecl::name);
+}
+
 auto ProcDecl::proc_type() const -> ProcType* {
     return cast<ProcType>(type);
 }

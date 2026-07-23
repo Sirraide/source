@@ -26,7 +26,7 @@ g(1);
 g(1, 2);
 g(1, 2, 3);
 
-proc h ($T ...x) {} // expected-note 2: Declared here
+proc h ($T ...x) {} // expected-note 2: Callee declared here
 
 h();
 h(1);
@@ -35,7 +35,7 @@ h(1, 2 as i32, 3); // expected-error: Template argument substitution failed
 h(1 as i32, 2 as i32, 3); // expected-error: Template argument substitution failed
 h(1 as i32, 2 as i32, 3 as i32);
 
-proc j ($T y, $T ...x) {} // expected-note 3: Declared here
+proc j ($T y, $T ...x) {} // expected-note 3: Callee declared here
 
 j(42);
 j(42, 1);
