@@ -41,3 +41,9 @@ proc indirect(proc foo (int)) {
     var p = indirect;
     p(x: 4); // expected-error: Named arguments are not allowed in indirect calls
 }
+
+proc op (int double) = double * 2;
+proc op (int triple) = triple * 3;
+
+#assert op(double: 2) == 4;
+#assert op(triple: 2) == 6;
