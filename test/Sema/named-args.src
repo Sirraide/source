@@ -47,3 +47,9 @@ proc op (int triple) = triple * 3;
 
 #assert op(double: 2) == 4;
 #assert op(triple: 2) == 6;
+op(2); // expected-error: Overload resolution failed in call to 'op'
+
+proc ambiguous (int x) {}
+proc ambiguous (int x) {}
+ambiguous(x: 2); // expected-error: Overload resolution failed in call to 'ambiguous'
+ambiguous(2); // expected-error: Overload resolution failed in call to 'ambiguous'
