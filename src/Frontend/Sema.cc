@@ -3862,6 +3862,16 @@ auto Sema::BuildCallExpr(
     SLoc loc,
     bool is_associated_call
 ) -> Ptr<Expr> {
+    auto ReportAsOverloadResolutionFailure = [&](Callee logical_callee, Candidate::Status s) {
+        ReportSingleOverloadResolutionFailure(
+            logical_callee,
+            std::move(s),
+            std::nullopt,
+            args,
+            loc
+        );
+    };
+
     // Check for duplicate argument names.
     if (args.has_named_args()) {
         llvm::StringSet<> param_names;
@@ -3891,9 +3901,11 @@ auto Sema::BuildCallExpr(
         );
 
         // Only struct types name have named initialisers.
+        SmallVector<Expr*> ordered_args;
         auto ty = type.value().cast<Type>();
         if (args.has_named_args()) {
-            if (not isa<StructType>(ty)) return Error(
+            auto struct_ty = dyn_cast<StructType>(ty);
+            if (not struct_ty) return Error(
                 callee_expr->location(),
                 "Cannot initialise type '{}' using named initialiser",
                 ty
@@ -3903,10 +3915,12 @@ auto Sema::BuildCallExpr(
                 callee_expr->location(),
                 "Named struct initialisers are not yet implemented"
             );
+        } else {
+            ordered_args = args.unnamed();
         }
 
         // Strip the non-existent names and build an initialiser.
-        return BuildInitialiser(ty, args.unnamed(), loc);
+        return BuildInitialiser(ty, ordered_args, loc);
     }
 
     // If the type of this is a procedure, then we can skip overload
@@ -3920,34 +3934,22 @@ auto Sema::BuildCallExpr(
         if (auto ref = dyn_cast<ProcRefExpr>(callee_expr->ignore_parens()))
             logical_callee = ref->decl;
 
-        auto ReportAsOverloadResolutionFailure = [&](Candidate::Status s) {
-            ReportSingleOverloadResolutionFailure(
-                logical_callee,
-                std::move(s),
-                std::nullopt,
-                args,
-                loc
-            );
-        };
-
         // The callee must be an rvalue.
         resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
         if (not logical_callee.argument_count_matches_parameters(u32(args.size()))) {
-            ReportAsOverloadResolutionFailure(Candidate::ArgumentCountMismatch{});
+            ReportAsOverloadResolutionFailure(logical_callee, Candidate::ArgumentCountMismatch{});
             return {};
         }
 
-        // Get the declaration if this is one.
-        SmallVector<Expr*> ordered_args;
-
         // Resolve named parameters.
+        SmallVector<Expr*> ordered_args;
         if (args.has_named_args()) {
             if (logical_callee.is_indirect()) return Error(loc, "Named arguments are not allowed in indirect calls");
             auto resolved = ResolveNamedArguments(args, logical_callee);
             if (not resolved) {
-                ReportAsOverloadResolutionFailure(std::move(resolved.error()));
+                ReportAsOverloadResolutionFailure(logical_callee, std::move(resolved.error()));
                 return {};
             }
 
