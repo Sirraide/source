@@ -1,0 +1,21 @@
+// V %srcc --sema --verify %s
+program test;
+
+struct S {
+    int x;
+    int y;
+    int z;
+}
+
+proc S::foo (this) = x + 2 * y + 3 * z;
+
+#assert S(x: 1, y: 2, z: 3).foo() == 14;
+#assert S(z: 3, x: 1, y: 2).foo() == 14;
+
+S(1, x: 1); // expected-error (An initialiser was already provided for field 'x') expected-note (Previously initialised here)
+S(x: 1, x: 1); // expected-error: Duplicate field name 'x'
+S(1, 2, y: 1); // expected-error (An initialiser was already provided for field 'y') expected-note (Previously initialised here)
+S(q: 1); // expected-error: Type 'S' has no field named 'q'
+
+S(x: 1, y: 2, 3, 4); // expected-error: Cannot initialise 'S' from '(int, int, int, int)'
+S(x: 1, y: 2); // expected-error: Cannot initialise 'S' from '(int, int)'

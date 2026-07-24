@@ -398,7 +398,7 @@ auto TypeBase::print_impl() const -> SmallUnrenderedString {
                 case BuiltinKind::Type: out += "%6(type%)"; return;
                 case BuiltinKind::Void: out += "%6(void%)"; return;
                 case BuiltinKind::Nil: out += "%6(nil%)"; return;
-                case BuiltinKind::CallArgList: out += "<init-list>"; return;
+                case BuiltinKind::CallArgList: out += "<call arg list>"; return;
             }
             Unreachable();
         },

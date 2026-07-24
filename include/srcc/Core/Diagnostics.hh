@@ -192,15 +192,19 @@ public:
     /// Add additional location information to a diagnostic.
     template <typename... Args>
     void add_extra_location(SLoc extra, std::format_string<Args...> fmt, Args&&... args) {
-        add_extra_location_impl(extra, std::format(fmt, std::forward<Args>(args)...));
+        auto d = get_current_pending_diagnostic();
+        if (d) d->extra_locations.emplace_back(extra, std::format(fmt, std::forward<Args>(args)...));
     }
 
     /// Add a remark to a diagnostic as extra information.
-    virtual void add_remark(std::string msg) {}
+    void add_remark(std::string_view msg) {
+        auto d = get_current_pending_diagnostic();
+        if (d) d->extra += msg;
+    }
 
     /// How many columns the output we’re printing to has. Returns
     /// 0 if there is no column limit.
-    virtual u32 cols() = 0;
+    virtual u32 cols() { return 0; }
 
     /// Issue a diagnostic.
     template <typename... Args>
@@ -216,6 +220,9 @@ public:
     /// Emit pending diagnostics.
     virtual void flush() {}
 
+    /// Get the most recent diagnostic that is still pending, if any.
+    virtual auto get_current_pending_diagnostic() -> Diagnostic* { return nullptr; }
+
     /// Check whether any diagnostics have been issued.
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
 
@@ -223,9 +230,12 @@ public:
     void report(Diagnostic&& diag);
 
 protected:
+    /// Call this to make sure the diagnostics engine records statistics (such as
+    /// whether there has been an error) inside of report().
+    void record_statistics(const Diagnostic& diag);
+
     /// Override this to implement the actual reporting.
     virtual void report_impl(Diagnostic&& diag) = 0;
-    virtual void add_extra_location_impl(SLoc, std::string) {}
 };
 
 /// Diagnostics engine that outputs to a stream.
@@ -250,12 +260,11 @@ public:
         llvm::raw_ostream& output_stream = llvm::errs()
     ) -> Ptr;
 
-    void add_remark(std::string msg) override;
-    u32 cols() override;
     void flush() override;
+    Diagnostic* get_current_pending_diagnostic() override;
 
 private:
-    void add_extra_location_impl(SLoc, std::string) override;
+    u32 cols() override;
     void report_impl(Diagnostic&&) override;
     void EmitDiagnostics();
 };
@@ -294,9 +303,6 @@ private:
 
 public:
     explicit VerifyDiagnosticsEngine(const Context& ctx);
-
-    /// Print everything in one line.
-    u32 cols() override { return 0; }
 
     /// Get the diagnostics engine for reporting errors during the verification
     /// and comment parsing steps.

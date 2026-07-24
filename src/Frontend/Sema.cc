@@ -849,6 +849,44 @@ auto Sema::Save(Expr* e) -> SaveExpr* {
 // ============================================================================
 //  Initialisation.
 // ============================================================================
+Sema::DiagnosticsTrap::DiagnosticsTrap(Sema& S)
+    : S{S}, prev_engine(&S.diags()),
+      first_new_diag_index(u32(S.trapping_engine->diags.size())) {
+    S.context().set_diags(S.trapping_engine);
+}
+
+Sema::DiagnosticsTrap::~DiagnosticsTrap() {
+    Assert(
+        S.trapping_engine->diags.size() == first_new_diag_index,
+        "Forgot to use trapped diagnostics?"
+    );
+
+    S.context().set_diags(prev_engine);
+}
+
+auto Sema::DiagnosticsTrap::get_trapped_diagnostics() -> DiagsVector {
+    auto& diags = S.trapping_engine->diags;
+    DebugAssert(first_new_diag_index <= u32(diags.size()));
+
+    // We didn’t trap anything.
+    if (u32(diags.size()) == first_new_diag_index) return {};
+
+    // Get the diagnostics that were trapped since the last time the trapping
+    // engine was installed; note that is is possible to have multiple traps
+    // on the stack recursively, so we can't just take all the diagnostics we
+    // trapped unless the engine was empty before.
+    if (first_new_diag_index == 0) return std::exchange(diags, DiagsVector());
+
+    // Extract diagnostics starting at the index.
+    DiagsVector new_vector{
+        std::make_move_iterator(diags.begin() + first_new_diag_index),
+        std::make_move_iterator(diags.end()),
+    };
+
+    diags.erase(diags.begin() + first_new_diag_index, diags.end());
+    return new_vector;
+}
+
 Sema::Conversion::~Conversion() = default;
 void Sema::AddInitialiserToDecl(AnyVarDecl decl, Ptr<Expr> init) {
     // Deduce the type from the initialiser, if need be.
@@ -1022,6 +1060,15 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             return;
         }
 
+        case K::ReorderTuple: {
+            Assert(exprs.size() == 1);
+            auto e = cast<TupleExpr>(exprs.front());
+            auto& indices = conv.data.get<SmallVector<u32>>();
+            exprs.clear();
+            for (auto i : indices) exprs.push_back(e->values()[i]);
+            return;
+        }
+
         case K::SliceFromPtrAndSize: {
             auto& data = conv.data.get<Conversion::SliceFromPtrAndSizeData>();
             exprs[0] = ApplyConversionSequence(exprs[0], *data.ptr, loc);
@@ -1098,6 +1145,40 @@ auto Sema::BuildAggregateInitialiser(
     // Currently, we don't support initialising unions (apart from zero-initialisation).
     if (rl.bits().is_union)
         return CreateICE(loc, "TODO: Non-trivial union initialisation");
+
+    // Handle initialisation of structs from a named argument list.
+    SmallVector<Expr*> reordered_args;
+    if (args.size() == 1) {
+        auto tuple = dyn_cast<TupleExpr>(args.front());
+        if (tuple and tuple->is_named()) {
+            auto expected_args = ResolveNamedArguments(tuple, r);
+            if (not expected_args) {
+                // FIXME: Can we move this to the very top level of BuildConversionSequence()? That
+                // way, we can just issue diagnostics directly everywhere in the conversion
+                // sequence code, which should simplify it quite a bit.
+                DiagnosticsTrap trap{*this};
+                ReportSingleOverloadResolutionFailure(
+                    r,
+                    std::move(expected_args.error()),
+                    std::nullopt,
+                    tuple,
+                    loc
+                );
+                return trap.get_trapped_diagnostics();
+            }
+
+            // Compute the reordering.
+            auto indices = llvm::to_vector(vws::transform(*expected_args, [&](Expr* arg) {
+                return utils::index_of<u32>(tuple->values(), arg).value();
+            }));
+
+            seq.add(Conversion::ReorderTuple(std::move(indices)));
+
+            // Replace 'args'.
+            reordered_args = std::move(*expected_args);
+            args = reordered_args;
+        }
+    }
 
     // Recursively build an initialiser for each element that the user provided.
     std::vector<ConversionSequence> field_seqs;
@@ -1252,6 +1333,8 @@ auto Sema::BuildConversionSequence(
     //
     // Note that this only handles literal tuples, e.g. a function returning a tuple
     // won’t get unwrapped here, which is probably what we want.
+    //
+    // Do not simplify tuples with named elements.
     {
         auto single_arg = args.size() == 1 ? args.front() : nullptr;
 
@@ -1261,7 +1344,7 @@ auto Sema::BuildConversionSequence(
         // to default initialisation in all contexts.
         if (
             auto t = dyn_cast_if_present<TupleExpr>(single_arg);
-            t and not t->is_struct()
+            t and not t->is_struct() and not t->is_named()
         ) {
             seq.add(Conversion::ExpandTuple());
             args = t->values();
@@ -1879,6 +1962,7 @@ template <typename Visitor>
 auto Sema::Callee::visit(Visitor&& v) const {
     if (auto p = dyn_cast<ProcDecl>()) return std::invoke(v, p);
     if (auto p = dyn_cast<ProcTemplateDecl>()) return std::invoke(v, p);
+    if (auto s = dyn_cast<RecordType>()) return std::invoke(v, s);
     return std::invoke(v, cast<ProcType>());
 }
 
@@ -1886,6 +1970,7 @@ template <typename Visitor>
 auto Sema::Callee::visit_type(Visitor&& v) const {
     if (auto p = dyn_cast<ProcDecl>()) return std::invoke(v, p->proc_type());
     if (auto p = dyn_cast<ProcTemplateDecl>()) return std::invoke(v, p);
+    if (auto s = dyn_cast<RecordType>()) return std::invoke(v, s);
     return std::invoke(v, cast<ProcType>());
 }
 
@@ -1899,7 +1984,8 @@ bool Sema::Callee::argument_count_matches_parameters(u32 num_args) {
 bool Sema::Callee::has_c_varargs() const {
     return visit_type(utils::Overloaded{
         [](ProcType* ty) { return ty->has_c_varargs(); },
-        [](ProcTemplateDecl* decl) { return decl->pattern->type->attrs.c_varargs; }
+        [](ProcTemplateDecl* decl) { return decl->pattern->type->attrs.c_varargs; },
+        [](RecordType*) { return false; },
     });
 }
 
@@ -1909,21 +1995,29 @@ auto Sema::Callee::index_of_named_param(String name) -> std::optional<u32> {
         [&](ProcDecl* decl) { return decl->index_of_named_param(name); },
         [&](ProcTemplateDecl* decl) {
             return utils::index_of<u32>(decl->pattern->params(), name, &ParsedVarDecl::name);
-        }
+        },
+        [&](RecordType* ty) -> std::optional<u32> {
+            return utils::index_of<u32>(ty->layout().fields(), name, &FieldDecl::name);
+        },
     });
 }
 
 bool Sema::Callee::is_variadic() const {
     return visit_type(utils::Overloaded{
         [](ProcType* ty) { return ty->is_variadic(); },
-        [](ProcTemplateDecl* decl) { return decl->has_variadic_param; }
+        [](ProcTemplateDecl* decl) { return decl->has_variadic_param; },
+        [](RecordType* ty) { return false; },
     });
 }
 
 auto Sema::Callee::decl() const -> Ptr<Decl> {
     return visit(utils::Overloaded{
-        [](ProcType* ty) { return Ptr<Decl>(); },
         [](auto* decl) { return Ptr<Decl>(decl); },
+        [](ProcType* ty) { return Ptr<Decl>(); },
+        [](RecordType* ty) -> Ptr<Decl> {
+            auto s = llvm::dyn_cast<StructType>(ty);
+            return s ? s->decl() : nullptr;
+        },
     });
 }
 
@@ -1935,7 +2029,8 @@ auto Sema::Callee::name() const -> DeclNameLoc {
 auto Sema::Callee::param_count() const -> u32 {
     return visit_type(utils::Overloaded{
         [](ProcType* ty) { return ty->param_count(); },
-        [](ProcTemplateDecl* decl) { return u32(decl->pattern->params().size()); }
+        [](ProcTemplateDecl* decl) { return u32(decl->pattern->params().size()); },
+        [](RecordType* ty) { return u32(ty->layout().fields().size()); },
     });
 }
 
@@ -1945,7 +2040,8 @@ auto Sema::Callee::param_loc(u32 index) const -> SLoc {
         [&](ProcDecl* decl) { return decl->params()[index]->location(); },
         [&](ProcTemplateDecl* decl) {
             return decl->pattern->type->param_types()[index].type->loc;
-        }
+        },
+        [&](RecordType* ty) { return ty->layout().fields()[index]->location(); },
     });
 }
 
@@ -1953,9 +2049,8 @@ auto Sema::Callee::param_name(u32 index) const -> DeclName {
     return visit(utils::Overloaded{
         [](ProcType* ty) { return DeclName(); },
         [&](ProcDecl* decl) { return decl->params()[index]->name; },
-        [&](ProcTemplateDecl* decl) {
-            return decl->pattern->params()[index]->name;
-        }
+        [&](ProcTemplateDecl* decl) { return decl->pattern->params()[index]->name; },
+        [&](RecordType* ty) { return ty->layout().fields()[index]->name; },
     });
 }
 
@@ -2007,6 +2102,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::ExpandTuple:
             case K::LValueToRValue:
             case K::MaterialiseTemporary:
+            case K::ReorderTuple:
             case K::SelectOverload:
             case K::StripParens:
                 break;
@@ -2626,24 +2722,23 @@ void Sema::ReportSingleOverloadResolutionFailure(
     TupleExpr* args,
     SLoc call_loc
 ) { // clang-format off
-    auto FormatName = [&](
-        StringRef pre,
-        StringRef post = "",
-        StringRef replacement = ""
-    ) -> SmallString<64> {
-        if (auto [name, _] = callee.name()) return Format("{}'{}'{}", pre, name, post);
-        return replacement;
-    };
-
-    bool should_note_callee = true;
+    String entity_name = callee.is_record() ? "Type"_s : "Procedure"_s;
+    String parameter_name = callee.is_record() ? "field"_s : "parameter"_s;
+    String argument_name = callee.is_record() ? "initialiser"_s : "argument"_s;
+    String callee_name = callee.name().name.str();
+    auto entity_and_callee_name = entity_name + " '" + callee_name + "'";
+    bool has_name = callee.name().name.valid();
+    bool is_record = callee.is_record();
+    bool should_note_callee = not is_record;
     status.visit(utils::Overloaded{
         [](const Candidate::Viable&) { Unreachable(); },
         [&](Candidate::ArgumentCountMismatch) {
             Error(
                 call_loc,
-                "{} {} argument{}, got {}",
-                FormatName("Procedure ", " expects", "expected"),
+                "{} {} {}{}, got {}",
+                has_name ? entity_and_callee_name + " expects" : "Expected",
                 callee.param_count(),
+                argument_name,
                 callee.param_count() == 1 ? "" : "s",
                 args->num_values()
             );
@@ -2654,13 +2749,21 @@ void Sema::ReportSingleOverloadResolutionFailure(
             SmallString<256> extra;
             FormatTempSubstFailure(*subst, extra, "  ");
             if (subst->data.is<SubstitutionResult::ConstraintNotSatisfied>()) {
-                Error(call_loc, "Constraints {}not satisfied", FormatName("of ", " "));
+                Error(
+                    call_loc,
+                    "Constraints{} not satisfied",
+                    has_name ? " of '"_s + callee_name + "' " : ""
+                );
                 if (auto d = callee.dyn_cast<ProcTemplateDecl>()) {
                     Note(d->pattern->where.get()->loc, "{}", extra);
                     should_note_callee = false; // We already point to the where clause.
                 }
             } else {
-                Error(call_loc, "Template argument substitution failed{}", FormatName("in call to "));
+                Error(
+                    call_loc,
+                    "Template argument substitution failed{}",
+                    has_name ? "in call to "_s + callee_name : ""
+                );
                 Remark("\r{}", extra);
             }
         },
@@ -2668,8 +2771,9 @@ void Sema::ReportSingleOverloadResolutionFailure(
         [&](Candidate::NamedParamNotFound p) {
             Error(
                 args->nth(p.arg_index).name.loc,
-                "{} has no parameter named '{}'",
-                FormatName("Procedure "), // We should always have a name here.
+                "{} has no {} named '{}'",
+                has_name ? entity_and_callee_name : entity_name.sv(),
+                parameter_name,
                 p.param_name
             );
         },
@@ -2687,10 +2791,18 @@ void Sema::ReportSingleOverloadResolutionFailure(
         [&](Candidate::ParamSpecifiedTwice& p) {
             Error(
                 args->nth(p.arg_index_2).expr->location(),
-                "An argument was already passed for parameter '{}'",
+                "An {} was already {} for {} '{}'",
+                argument_name,
+                is_record ? "provided" : "passed",
+                parameter_name,
                 callee.param_name(p.param_index)
             );
-            Note(args->nth(p.arg_index_1).expr->location(), "Previously passed here");
+
+            Note(
+                args->nth(p.arg_index_1).expr->location(),
+                "Previously {} here",
+                is_record ? "initialised" : "passed"
+            );
         },
     });
 
@@ -3880,8 +3992,12 @@ auto Sema::BuildCallExpr(
         llvm::StringSet<> param_names;
         for (const auto& [name, loc] : args->names()) {
             if (name.empty()) continue;
-            if (not param_names.insert(name.str()).second)
-                return Error(loc, "Duplicate argument name '{}'", name);
+            if (not param_names.insert(name.str()).second) return Error(
+                loc,
+                "Duplicate {} name '{}'",
+                isa<TypeExpr>(callee_expr) ? "field" : "argument",
+                name
+            );
         }
     }
 
@@ -3903,27 +4019,18 @@ auto Sema::BuildCallExpr(
             "Failed to evaluate expression designating a type"
         );
 
-        // Only struct types name have named initialisers.
-        SmallVector<Expr*> ordered_args;
+        // Only record types can use named initialisers.
         auto ty = type.value().cast<Type>();
-        if (args->is_named()) {
-            auto struct_ty = dyn_cast<StructType>(ty);
-            if (not struct_ty) return Error(
+        if (args->is_named() and not isa<RecordType>(ty)) {
+            return Error(
                 callee_expr->location(),
                 "Cannot initialise type '{}' using named initialiser",
                 ty
             );
-
-            return ICE(
-                callee_expr->location(),
-                "Named struct initialisers are not yet implemented"
-            );
-        } else {
-            append_range(ordered_args, args->values());
         }
 
         // Strip the non-existent names and build an initialiser.
-        return BuildInitialiser(ty, ordered_args, loc);
+        return BuildInitialiser(ty, args, loc);
     }
 
     // If the type of this is a procedure, then we can skip overload

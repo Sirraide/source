@@ -28,3 +28,9 @@ auto srcc::operator+=(std::string& s, String str) -> std::string& {
     s += str.value();
     return s;
 }
+
+auto srcc::operator+(String s1, String s2) -> std::string {
+    std::string s{s1.sv()};
+    s += s2;
+    return s;
+}

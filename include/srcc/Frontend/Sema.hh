@@ -182,6 +182,7 @@ private:
             PointerDeref,
             RangeCast,
             RecordInit,
+            ReorderTuple,
             SelectOverload,
             SliceFromArray,
             SliceFromPtrAndSize,
@@ -197,6 +198,7 @@ private:
             ArrayInitData,
             ArrayBroadcastData,
             SliceFromPtrAndSizeData,
+            SmallVector<u32>,
             u32
         > data; // clang-format on
 
@@ -208,6 +210,7 @@ private:
         Conversion(ArrayInitData data) : kind{Kind::ArrayInit}, data{std::move(data)} {}
         Conversion(ArrayBroadcastData data) : kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
         Conversion(SliceFromPtrAndSizeData data) : kind{Kind::SliceFromPtrAndSize}, data{std::move(data)} {}
+        Conversion(SmallVector<u32> data) : kind(Kind::ReorderTuple), data{std::move(data)} {}
 
     public:
         ~Conversion();
@@ -227,6 +230,7 @@ private:
         static auto Poison(Type ty, ValueCategory val) -> Conversion { return Conversion{Kind::MaterialisePoison, ty, val}; }
         static auto RangeCast(Type ty) -> Conversion { return Conversion{Kind::RangeCast, ty}; }
         static auto RecordInit(RecordInitData conversions) -> Conversion { return Conversion{std::move(conversions)}; }
+        static auto ReorderTuple(SmallVector<u32> indices) -> Conversion { return Conversion{std::move(indices)}; }
         static auto SelectOverload(u32 index) -> Conversion { return Conversion{Kind::SelectOverload, index}; }
         static auto SliceFromArray() -> Conversion { return Conversion{Kind::SliceFromArray}; }
         static auto SliceFromPtrAndSize(SliceFromPtrAndSizeData data) -> Conversion { return Conversion{std::move(data)}; }
@@ -282,6 +286,35 @@ private:
         using Base::Base;
         ValueOrDiagsVector(DiagsVector d) : Base(std::unexpected(std::move(d))) {}
         ValueOrDiagsVector(Diagnostic d) : Base(std::unexpected(DiagsVector{std::move(d)})) {}
+    };
+
+    /// Diagnostics engine that traps errors.
+    struct TrappingDiagnosticsEngine : DiagnosticsEngine {
+        using DiagnosticsEngine::DiagnosticsEngine;
+        DiagsVector diags;
+
+        Diagnostic* get_current_pending_diagnostic() override {
+            return diags.empty() ? nullptr : &diags.back();
+        }
+
+        void report_impl(Diagnostic &&diag) override {
+            // Do *not* call record_statistics() as we don't want to set the
+            // error flag here.
+            diags.push_back(std::move(diag));
+        }
+    };
+
+    /// Helper to trap any diagnostics emitted by Sema.
+    class DiagnosticsTrap {
+        LIBBASE_IMMOVABLE(DiagnosticsTrap);
+        Sema& S;
+        llvm::IntrusiveRefCntPtr<DiagnosticsEngine> prev_engine;
+        u32 first_new_diag_index;
+
+    public:
+        DiagnosticsTrap(Sema& S);
+        ~DiagnosticsTrap();
+        [[nodiscard]] auto get_trapped_diagnostics() -> DiagsVector;
     };
 
     /// Either an empty result or a list of diagnostics.
@@ -501,14 +534,15 @@ private:
     ///   - a template,
     ///   - a procedure declaration, or
     ///   - a procedure type (if this is an indirect call).
+    //    - a record type (if this is a named initialiser)
     class Callee {
-        llvm::PointerUnion<ProcDecl*, ProcTemplateDecl*, ProcType*> data;
+        llvm::PointerUnion<ProcDecl*, ProcTemplateDecl*, ProcType*, RecordType*> data;
 
     public:
         Callee(ProcDecl* decl) : data(decl) {}
         Callee(ProcTemplateDecl* decl) : data(decl) {}
         Callee(ProcType* ty) : data(ty) {}
-
+        Callee(RecordType* ty) : data(ty) {}
 
         /// Check if the number of call arguments ‘matches’ the number of
         /// parameters that this callee has—this does not mean that they’re
@@ -537,6 +571,9 @@ private:
 
         /// Whether this is an indirect call.
         [[nodiscard]] bool is_indirect() const { return isa<ProcType*>(data); }
+
+        /// Whether this is a record initialisation.
+        [[nodiscard]] bool is_record() const { return isa<RecordType*>(data); }
 
         /// Whether this is a call to a template.
         [[nodiscard]] bool is_template() const { return isa<ProcTemplateDecl*>(data); }
@@ -837,6 +874,10 @@ private:
     usz assert_stringifiers = 0;
     usz generated_cxx_macro_decls = 0;
     usz cxx_import_file_counter = 0;
+
+    /// Engine used by 'DiagnosticsTrap'
+    llvm::IntrusiveRefCntPtr<TrappingDiagnosticsEngine> trapping_engine
+        = llvm::makeIntrusiveRefCnt<TrappingDiagnosticsEngine>(ctx);
 
     /// Modules that need to be translated.
     SmallVector<ParsedModule::Ptr> modules_to_translate;
@@ -1331,6 +1372,15 @@ private:
     /// resolution to avoid duplicating code from ReportOverloadResolutionFailure().
     ///
     /// The 'decl' may be null if this is an indirect call.
+    void ReportSingleOverloadResolutionFailure(
+        DiagsVector& diags,
+        Callee callee,
+        Candidate::Status status,
+        std::optional<SubstitutionResult> subst,
+        TupleExpr* args,
+        SLoc call_loc
+    );
+
     void ReportSingleOverloadResolutionFailure(
         Callee callee,
         Candidate::Status status,

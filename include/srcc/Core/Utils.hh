@@ -306,9 +306,15 @@ public:
     [[nodiscard]] constexpr operator StringRef() const { return val; }
     [[nodiscard]] constexpr operator std::string_view() const { return val; }
     [[nodiscard]] constexpr operator str() const { return val; }
+
+private:
+    friend auto operator+(String s1, String s2) -> std::string;
 };
 
 auto operator+=(std::string& s, String str) -> std::string&;
+consteval auto operator""_s(const char* data, std::size_t sz) {
+    return String::CreateUnsafe(data, sz);
+}
 
 class StoredInteger;
 class IntegerStorage {

@@ -408,8 +408,6 @@ Diagnostic::Diagnostic(Level lvl, SLoc where, std::string msg, std::string extra
 // ============================================================================
 void DiagnosticsEngine::report(Diagnostic&& diag) {
     if (diag.level == Diagnostic::Level::Ignored) return;
-    if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
-        error_flag.store(true, std::memory_order_relaxed);
 
     // Save the current stack trace if this is an ICE. Skip 2 frames for
     // report() + ICE().
@@ -417,6 +415,11 @@ void DiagnosticsEngine::report(Diagnostic&& diag) {
         diag.trace = std::make_shared<stacktrace>(stacktrace::current(2));
 
     report_impl(std::move(diag));
+}
+
+void DiagnosticsEngine::record_statistics(const Diagnostic& diag) {
+    if (diag.level == Diagnostic::Level::Error or diag.level == Diagnostic::Level::ICE)
+        error_flag.store(true, std::memory_order_relaxed);
 }
 
 StreamingDiagnosticsEngine::StreamingDiagnosticsEngine(
@@ -445,16 +448,6 @@ void StreamingDiagnosticsEngine::EmitDiagnostics() {
     backlog.clear();
 }
 
-void StreamingDiagnosticsEngine::add_extra_location_impl(SLoc extra, std::string note) {
-    if (backlog.empty()) return;
-    backlog.back().extra_locations.emplace_back(std::move(note), extra);
-}
-
-void StreamingDiagnosticsEngine::add_remark(std::string msg) {
-    if (backlog.empty()) return;
-    backlog.back().extra += std::move(msg);
-}
-
 u32 StreamingDiagnosticsEngine::cols() {
     return std::max<u32>({llvm::sys::Process::StandardErrColumns(), llvm::sys::Process::StandardOutColumns(), 80});
 }
@@ -464,7 +457,14 @@ void StreamingDiagnosticsEngine::flush() {
     stream.flush();
 }
 
+Diagnostic* StreamingDiagnosticsEngine::get_current_pending_diagnostic() {
+    if (backlog.empty()) return nullptr;
+    return &backlog.back();
+}
+
 void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
+    record_statistics(diag);
+
     // Give up if we’ve printed too many errors.
     if (error_limit and printed >= error_limit) {
         if (printed == error_limit) {
@@ -628,8 +628,9 @@ void VerifyDiagnosticsEngine::ParseMagicComment(str comment, SLoc loc) {
     return Error(loc, "Expected one of ':([{{' in 'expected' comment");
 }
 
-
 void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
+    record_statistics(diag);
+
     // Remove line-wrap formatting codes.
     std::erase_if(diag.msg, [](char c) { return c == '\v' or c == '\r'; });
     rgs::replace(diag.msg, '\f', ' ');
