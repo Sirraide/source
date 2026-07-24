@@ -19,3 +19,36 @@ S(q: 1); // expected-error: Type 'S' has no field named 'q'
 
 S(x: 1, y: 2, 3, 4); // expected-error: Cannot initialise 'S' from '(int, int, int, int)'
 S(x: 1, y: 2); // expected-error: Cannot initialise 'S' from '(int, int)'
+
+eval {
+    S s1 = (x: 1, y: 2, z: 3);
+    S s2 = (y: 2, z: 3, x: 1);
+
+    assert s1.x == 1;
+    assert s1.y == 2;
+    assert s1.z == 3;
+    assert s1.foo() == 14;
+
+    assert s2.x == 1;
+    assert s2.y == 2;
+    assert s2.z == 3;
+    assert s2.foo() == 14;
+}
+
+struct A {
+    int a;
+    int b;
+}
+
+struct B {
+    int c;
+    int d;
+}
+
+proc g (A a) = a.a + 2 * a.b;
+proc g (B b) = b.c + 3 * b.d;
+
+#assert g((a: 1, b: 2)) == 5;
+#assert g((c: 3, d: 4)) == 15;
+g((a: 1, c: 2)); // expected-error: Overload resolution failed in call to 'g'
+g((a: 1)); // expected-error: Overload resolution failed in call to 'g'

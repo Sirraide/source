@@ -971,10 +971,16 @@ void Sema::ReportSingleOverloadResolutionFailure(
     String parameter_name = callee.is_record() ? "field"_s : "parameter"_s;
     String argument_name = callee.is_record() ? "initialiser"_s : "argument"_s;
     String callee_name = callee.name().name.str();
-    auto entity_and_callee_name = entity_name + " '" + callee_name + "'";
     bool has_name = callee.name().name.valid();
     bool is_record = callee.is_record();
     bool should_note_callee = not is_record;
+    auto entity_and_callee_name = std::format(
+        "{} '%{}({}%)'",
+        entity_name,
+        is_record ? '6' : '2',
+        callee_name
+    );
+
     status.visit(utils::Overloaded{
         [](const Candidate::Viable&) { Unreachable(); },
         [&](Candidate::ArgumentCountMismatch) {
