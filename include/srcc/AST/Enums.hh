@@ -83,6 +83,8 @@ enum class srcc::ParamPassingMode : base::u8 {
 };
 
 /// Builtin types.
+///
+/// See the corresponding declarations in 'Type' for a description of these.
 enum class srcc::BuiltinKind : base::u8 {
     Void,
     NoReturn,
@@ -92,6 +94,7 @@ enum class srcc::BuiltinKind : base::u8 {
     Tree,
     Type,
     UnresolvedOverloadSet,
+    CallArgList,
     Nil,
 };
 

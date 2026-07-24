@@ -270,14 +270,35 @@ public:
         return *this == Type{ty};
     }
 
+    /// 'void' is the unit type: there is only one value of this type,
+    /// and it has size 0.
     static const Type VoidTy;
+
+    /// 'noreturn' indicates diverging control flow.
     static const Type NoReturnTy;
+
+    /// 'bool' is either 'true' or 'false'.
     static const Type BoolTy;
+
+    /// 'int' is the pointer-sized integer type, i.e. 'size_t'.
     static const Type IntTy;
+
+    /// Type used as a place holder when performing type deduction.
     static const Type DeducedTy;
+
+    /// Type of a '#quote'd code fragment.
     static const Type TreeTy;
+
+    /// Type of a type.
     static const Type TypeTy;
+
+    /// Type of an overload set.
     static const Type UnresolvedOverloadSetTy;
+
+    /// Type of an argument list to a procedure call.
+    static const Type CallArgListTy;
+
+    /// This is the 'nil' type.
     static const Type NilTy;
 };
 

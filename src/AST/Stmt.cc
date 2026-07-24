@@ -534,21 +534,40 @@ bool ProcTemplateDecl::is_builtin_operator_template() const {
 }
 
 TupleExpr::TupleExpr(
-    RecordType* ty,
+    Type ty,
     ArrayRef<Expr*> fields,
+    ArrayRef<DeclNameLoc> names,
     SLoc location
-) : Expr{Kind::TupleExpr, ty, RValue, location} {
-    std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects());
+) : Expr{Kind::TupleExpr, ty, RValue, location}, num_exprs{utils::safe_cast<u32>(fields.size())} {
+    bits.tuple.has_names = not names.empty();
+    std::uninitialized_copy_n(fields.begin(), fields.size(), getTrailingObjects<Expr*>());
+    std::uninitialized_copy_n(names.begin(), names.size(), getTrailingObjects<DeclNameLoc>());
 }
 
 auto TupleExpr::Create(
     TranslationUnit& tu,
-    RecordType* type,
+    Type type,
     ArrayRef<Expr*> fields,
+    ArrayRef<DeclNameLoc> names,
     SLoc location
 ) -> TupleExpr* {
-    Assert(fields.size() == type->layout().fields().size(), "Argument count mismatch");
-    auto size = totalSizeToAlloc<Expr*>(fields.size());
+    if (auto r = dyn_cast<RecordType>(type)) {
+        Assert(
+            type == Type::CallArgListTy or
+            fields.size() == r->layout().fields().size(),
+            "Argument count mismatch"
+        );
+    } else {
+        Assert(
+            type == Type::CallArgListTy,
+            "Expected record or call arg list type, got {}", type
+        );
+    }
+
+    // Don't store any names if all of them are empty.
+    if (none_of(names, [](DeclNameLoc l) { return l.name.valid(); })) names = {};
+    else Assert(fields.size() == names.size());
+    auto size = totalSizeToAlloc<Expr*, DeclNameLoc>(fields.size(), names.size());
     auto mem = tu.allocate(size, alignof(TupleExpr));
-    return ::new (mem) TupleExpr{type, fields, location};
+    return ::new (mem) TupleExpr{type, fields, names, location};
 }

@@ -290,6 +290,7 @@ public:
                     case BuiltinKind::Bool: return Type::BoolTy;
                     case BuiltinKind::Deduced: return Type::DeducedTy;
                     case BuiltinKind::UnresolvedOverloadSet: return Type::UnresolvedOverloadSetTy;
+                    case BuiltinKind::CallArgList: return Type::CallArgListTy;
                     case BuiltinKind::Int: return Type::IntTy;
                     case BuiltinKind::NoReturn: return Type::NoReturnTy;
                     case BuiltinKind::Tree: return Type::TreeTy;

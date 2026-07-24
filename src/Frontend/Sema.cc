@@ -1016,7 +1016,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::RecordInit: {
             auto& data = conv.data.get<Conversion::RecordInitData>();
             for (auto [e, seq] : zip(exprs, data.field_convs)) e = ApplyConversionSequence(e, seq, loc);
-            auto e = TupleExpr::Create(*tu, data.ty, exprs, loc);
+            auto e = TupleExpr::Create(*tu, data.ty, exprs, {}, loc);
             exprs.clear();
             exprs.push_back(e);
             return;
@@ -1604,6 +1604,7 @@ auto Sema::BuildConversionSequence(
         // For builtin types, it depends.
         case TypeBase::Kind::BuiltinType: {
             switch (cast<BuiltinType>(var_type)->builtin_kind()) {
+                case BuiltinKind::CallArgList:
                 case BuiltinKind::Deduced:
                     return CreateError(init_loc, "Type deduction is not allowed here");
 
@@ -1977,21 +1978,21 @@ auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
 }
 
 Sema::CandidateArgumentLists::CandidateArgumentLists(
-    const CallArgList& args
-) : unordered{args}, has_named_args{args.has_named_args()} {
-    if (not has_named_args) argument_lists.push_back(args.unnamed());
+    TupleExpr* args
+) : unordered{args} {
+    if (not args->is_named()) argument_lists.emplace_back(args->values());
 }
 
 /// Add a list; only valid if we have named arguments.
 auto Sema::CandidateArgumentLists::add(List args) -> Id {
-    Assert(has_named_args);
+    Assert(unordered->is_named());
     argument_lists.push_back(std::move(args));
     return Id(argument_lists.size() - 1);
 }
 
 /// Get a list by id.
 auto Sema::CandidateArgumentLists::operator[](Id id) const -> const List& {
-    if (not has_named_args) return argument_lists.front();
+    if (not unordered->is_named()) return argument_lists.front();
     return argument_lists[+id];
 }
 
@@ -2084,28 +2085,29 @@ static void NoteParameter(Sema& S, Decl* proc, u32 i) {
 /// Resolve named arguments, i.e. figure out what positional parameters
 /// they map to.
 auto Sema::ResolveNamedArguments(
-    const CallArgList& args,
+    TupleExpr* args,
     Callee callee
 ) -> std::expected<SmallVector<Expr*>, Candidate::Status> {
     // There is nothing to check if we have no parameters. This is called
     // after ArgumentCountMatchesParameters(), so we a parameter count
     // mismatch would have already been diagnosed.
-    if (args.size() == 0) return SmallVector<Expr*>{};
-    Assert(args.has_named_args(), "Should not have called this if there are no named args");
+    if (args->num_values() == 0) return SmallVector<Expr*>{};
+    Assert(args->is_named(), "Should not have called this if there are no named args");
     const auto num_non_variadic_args = callee.num_non_variadic_params();
 
     // Add named and positional parameters.
     u32 next_index = 0;
-    SmallVector<Expr*> ordered_params(args.size());
-    for (auto [arg_index, arg] : enumerate(args.ref())) {
+    SmallVector<Expr*> ordered_params(args->num_values());
+    for (auto [arg_index, arg] : enumerate(args->elems())) {
         u32 param_index;
 
         // If the argument has a name, use the parameter index of the
         // parameter with that name.
-        if (arg.name.name.valid()) {
-            auto idx = callee.index_of_named_param(arg.name.name.str());
+        auto [expr, name] = arg;
+        if (name.name.valid()) {
+            auto idx = callee.index_of_named_param(name.name.str());
             if (not idx) return std::unexpected(Candidate::NamedParamNotFound{
-                arg.name.name.str(),
+                name.name.str(),
                 u32(arg_index),
             });
 
@@ -2129,16 +2131,12 @@ auto Sema::ResolveNamedArguments(
         // assign two parameters to the same slot.
         if (ordered_params[param_index] != nullptr) return std::unexpected(Candidate::ParamSpecifiedTwice{
             .param_index = param_index,
-            .arg_index_1 = utils::index_of<u32>(
-                args.ref(),
-                ordered_params[param_index],
-                &CallArgList::Arg::expr
-            ).value(),
+            .arg_index_1 = utils::index_of<u32>(args->values(), ordered_params[param_index]).value(),
             .arg_index_2 = u32(arg_index),
         });
 
         // Parameter has no argument yet; assign it.
-        ordered_params[param_index] = arg.expr;
+        ordered_params[param_index] = expr;
     }
 
     // If we get here, we have processed (at least) as many arguments as there are
@@ -2367,7 +2365,7 @@ bool Sema::IsUserDefinedOverloadedOperator(Tk tk, ArrayRef<Type> argument_types)
 
 auto Sema::PerformOverloadResolution(
     OverloadSetExpr* overload_set,
-    const CallArgList& call_args,
+    TupleExpr* call_args,
     bool is_associated_call,
     SLoc call_loc
 ) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
@@ -2383,7 +2381,7 @@ auto Sema::PerformOverloadResolution(
     SmallVector<Candidate, 4> candidates;
 
     // Are we resolving a call to a builtin operator?
-    auto types = llvm::to_vector(call_args | vws::transform([](auto& a) { return a.expr->type; }));
+    auto types = llvm::to_vector(call_args->values() | vws::transform([](Expr* e) { return e->type; }));
     bool resolving_builtin_operator = overload_set->name().is_operator_name() and
                                       not IsUserDefinedOverloadedOperator(overload_set->name().operator_name(), types);
 
@@ -2413,13 +2411,13 @@ auto Sema::PerformOverloadResolution(
         // Argument count mismatch is not allowed, unless the
         // function is variadic. For variadic templates, we allow
         // the variadic parameter to be empty.
-        if (not c.callee.argument_count_matches_parameters(u32(call_args.size()))) {
+        if (not c.callee.argument_count_matches_parameters(u32(call_args->num_values()))) {
             c.status = Candidate::ArgumentCountMismatch{};
             return true;
         }
 
         // Check named parameters.
-        if (call_args.has_named_args()) {
+        if (call_args->is_named()) {
             auto resolved = ResolveNamedArguments(call_args, c.callee);
             if (not resolved) {
                 c.status = std::move(resolved.error());
@@ -2495,7 +2493,7 @@ auto Sema::PerformOverloadResolution(
     // candidates in the overload set were builtin operators.
     if (candidates.empty()) {
         Assert(
-            overload_set->name().is_operator_name() and call_args.size() == 2,
+            overload_set->name().is_operator_name() and call_args->num_values() == 2,
             "Only a few binary operators are currently handled this way"
         );
 
@@ -2503,8 +2501,8 @@ auto Sema::PerformOverloadResolution(
             call_loc,
             "Invalid operation: '%1({}%)' between '{}' and '{}'",
             Spelling(overload_set->name().operator_name()),
-            call_args[0].expr->type,
-            call_args[1].expr->type
+            call_args->nth(0).expr->type,
+            call_args->nth(1).expr->type
         );
         return {};
     }
@@ -2625,7 +2623,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
     Callee callee,
     Candidate::Status status,
     std::optional<SubstitutionResult> subst,
-    const CallArgList& args,
+    TupleExpr* args,
     SLoc call_loc
 ) { // clang-format off
     auto FormatName = [&](
@@ -2647,7 +2645,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
                 FormatName("Procedure ", " expects", "expected"),
                 callee.param_count(),
                 callee.param_count() == 1 ? "" : "s",
-                args.size()
+                args->num_values()
             );
         },
 
@@ -2669,7 +2667,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
 
         [&](Candidate::NamedParamNotFound p) {
             Error(
-                args.ref()[p.arg_index].name.loc,
+                args->nth(p.arg_index).name.loc,
                 "{} has no parameter named '{}'",
                 FormatName("Procedure "), // We should always have a name here.
                 p.param_name
@@ -2677,7 +2675,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
         },
 
         [&](Candidate::NamedArgReferencesVariadicParam p) {
-            const auto& [name, loc] = args[p.arg_index].name;
+            const auto& [name, loc] = args->nth(p.arg_index).name;
             Error(loc, "Named argument names the variadic parameter");
         },
 
@@ -2688,11 +2686,11 @@ void Sema::ReportSingleOverloadResolutionFailure(
 
         [&](Candidate::ParamSpecifiedTwice& p) {
             Error(
-                args[p.arg_index_2].expr->location(),
+                args->nth(p.arg_index_2).expr->location(),
                 "An argument was already passed for parameter '{}'",
                 callee.param_name(p.param_index)
             );
-            Note(args[p.arg_index_1].expr->location(), "Previously passed here");
+            Note(args->nth(p.arg_index_1).expr->location(), "Previously passed here");
         },
     });
 
@@ -2702,7 +2700,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
 
 void Sema::ReportOverloadResolutionFailure(
     MutableArrayRef<Candidate> candidates,
-    const CallArgList& args,
+    TupleExpr* args,
     SLoc call_loc,
     u32 final_badness
 ) {
@@ -2767,7 +2765,7 @@ void Sema::ReportOverloadResolutionFailure(
                     "Expected {} arg{}, got {}",
                     params,
                     params == 1 ? "" : "s",
-                    args.size()
+                    args->num_values()
                 );
             },
 
@@ -2775,7 +2773,7 @@ void Sema::ReportOverloadResolutionFailure(
                 Format(
                     message,
                     "Parameter with name '{}' not found",
-                    args[p.arg_index].name.name
+                    args->nth(p.arg_index).name.name
                 );
             },
 
@@ -2783,7 +2781,7 @@ void Sema::ReportOverloadResolutionFailure(
                 Format(
                     message,
                     "Named argument names the variadic parameter",
-                    args[p.arg_index].name.name
+                    args->nth(p.arg_index).name.name
                 );
             },
 
@@ -3856,9 +3854,14 @@ auto Sema::BuildBuiltinMemberAccessExpr(
     };
 }
 
+auto Sema::BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr> {
+    auto call_arg_list = cast<TupleExpr>(TRY(BuildTuple(args, Type::CallArgListTy, {}, false, loc)));
+    return BuildCallExpr(callee_expr, call_arg_list, loc, false);
+}
+
 auto Sema::BuildCallExpr(
     Expr* callee_expr,
-    const CallArgList& args,
+    std::same_as<TupleExpr> auto* args,
     SLoc loc,
     bool is_associated_call
 ) -> Ptr<Expr> {
@@ -3873,12 +3876,12 @@ auto Sema::BuildCallExpr(
     };
 
     // Check for duplicate argument names.
-    if (args.has_named_args()) {
+    if (args->is_named()) {
         llvm::StringSet<> param_names;
-        for (const auto& a : args) {
-            if (a.name.name.empty()) continue;
-            if (not param_names.insert(a.name.name.str()).second)
-                return Error(a.name.loc, "Duplicate argument name '{}'", a.name.name);
+        for (const auto& [name, loc] : args->names()) {
+            if (name.empty()) continue;
+            if (not param_names.insert(name.str()).second)
+                return Error(loc, "Duplicate argument name '{}'", name);
         }
     }
 
@@ -3903,7 +3906,7 @@ auto Sema::BuildCallExpr(
         // Only struct types name have named initialisers.
         SmallVector<Expr*> ordered_args;
         auto ty = type.value().cast<Type>();
-        if (args.has_named_args()) {
+        if (args->is_named()) {
             auto struct_ty = dyn_cast<StructType>(ty);
             if (not struct_ty) return Error(
                 callee_expr->location(),
@@ -3916,7 +3919,7 @@ auto Sema::BuildCallExpr(
                 "Named struct initialisers are not yet implemented"
             );
         } else {
-            ordered_args = args.unnamed();
+            append_range(ordered_args, args->values());
         }
 
         // Strip the non-existent names and build an initialiser.
@@ -3938,14 +3941,14 @@ auto Sema::BuildCallExpr(
         resolved_callee = LValueToRValue(callee_expr);
 
         // Check arg count.
-        if (not logical_callee.argument_count_matches_parameters(u32(args.size()))) {
+        if (not logical_callee.argument_count_matches_parameters(args->num_values())) {
             ReportAsOverloadResolutionFailure(logical_callee, Candidate::ArgumentCountMismatch{});
             return {};
         }
 
         // Resolve named parameters.
         SmallVector<Expr*> ordered_args;
-        if (args.has_named_args()) {
+        if (args->is_named()) {
             if (logical_callee.is_indirect()) return Error(loc, "Named arguments are not allowed in indirect calls");
             auto resolved = ResolveNamedArguments(args, logical_callee);
             if (not resolved) {
@@ -3955,7 +3958,7 @@ auto Sema::BuildCallExpr(
 
             ordered_args = std::move(*resolved);
         } else {
-            ordered_args = args.unnamed();
+            append_range(ordered_args, args->values());
         }
 
         bool ok = true;
@@ -4002,7 +4005,7 @@ auto Sema::BuildCallExpr(
     // And check C varargs arguments.
     auto ty = cast<ProcType>(resolved_callee->type);
     if (ty->has_c_varargs()) {
-        for (auto [a, _] : args.ref().drop_front(ty->params().size())) {
+        for (auto a : args->values().drop_front(ty->params().size())) {
             // Codegen is not set up to handle variadic arguments that are larger
             // than a word, so reject these here. If you need one of those, then
             // seriously, wtf are you doing.
@@ -4086,6 +4089,20 @@ auto Sema::BuildDeclRefExpr(
 
     // If we failed to find anything, and the desired type is an enum type, try to
     // see if this is one of its enumerators.
+    //
+    // FIXME: This doesn't work with overload resolution (because we don't even know
+    // that we want an enum when we process the arguments). Instead of doing this,
+    // introduce an 'UnknownSymbolExpr' and 'UnknownSymbolType' (with the symbol
+    // tracked *in the type*), and introduce a conversion from 'UnknownSymbolType<X>'
+    // to any enum that has an enumerator named 'X'.
+    //
+    // Additionally, make sure every UnresolvedSymbolType is unique and store a pointer
+    // to it in Sema at creation time (erase it if the symbol is actually resolved), and
+    // diagnose it 1. if we never resolve it, or 2. if we fail to convert it to a different
+    // type in a place where that is a hard error.
+    //
+    // An 'UnresolvedSymbolType' can contain multiple symbols, which can happen if we
+    // have e.g. 'if x then A else B' where 'A' and 'B' are enumerators.
     if (
         initial_scope == InitialDREScope::None and
         names.size() == 1 and
@@ -4536,6 +4553,33 @@ auto Sema::BuildStaticIfExpr(
     return TranslateStmt(cond_val ? then : else_.get());
 }
 
+auto Sema::BuildTuple(
+    ArrayRef<Expr*> exprs,
+    Opt<Type> desired_ty,
+    ArrayRef<DeclNameLoc> names,
+    bool may_build_paren_expr,
+    SLoc loc
+) -> Ptr<Expr> {
+    if (desired_ty == Type::CallArgListTy) return TupleExpr::Create(
+        *tu,
+        Type::CallArgListTy,
+        exprs,
+        names,
+        loc
+    );
+
+    if (
+        exprs.size() == 1 and
+        (names.empty() or not names.front().name.valid()) and
+        may_build_paren_expr
+    ) return new (*tu) ParenExpr(exprs.front(), loc);
+
+    // Compute the tuple type.
+    auto types = llvm::to_vector(vws::transform(exprs, [&](Expr* e) { return e->type; }));
+    if (not all_of(types, [&] (Type ty) { return CheckFieldType(ty, loc); })) return {};
+    return TupleExpr::Create(*tu, TupleType::Get(*tu, types), exprs, names, loc);
+}
+
 auto Sema::BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr* {
     return new (*tu) TypeExpr(ty, loc);
 }
@@ -4982,22 +5026,10 @@ auto Sema::TranslateBreakContinueExpr(ParsedBreakContinueExpr* parsed, Opt<Type>
 
 auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     Expr* callee{};
-    Ptr<Expr> object_param;
-    auto TranslateArgs = [&] -> std::optional<CallArgList> {
-        CallArgList::Args args;
-        if (auto p = object_param.get_or_null())
-            args.emplace_back(p, DeclNameLoc());
-
-        bool ok = true;
-        for (auto a : parsed->args()) {
-            if (a.is_spread()) Todo("Handle spread argument");
-            auto expr = TranslateExpr(a.expr());
-            if (expr.invalid()) ok = false;
-            else args.emplace_back(expr.get(), a.name);
-        }
-
-        if (not ok) return std::nullopt;
-        return CallArgList{std::move(args)};
+    Opt<TupleExpr::ExprAndName> object_param;
+    auto TranslateArgs = [&] -> Ptr<TupleExpr> {
+        auto e = TranslateTupleExpr(object_param, parsed->args, Type::CallArgListTy);
+        return cast_if_present<TupleExpr>(e.get_or_null());
     };
 
     // The callee may be a builtin.
@@ -5006,7 +5038,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
         if (bk.has_value()) {
             // 'Dump' does not take an expression, but rather any node.
             if (bk.value() == BuiltinCallExpr::Builtin::Dump) {
-                for (auto a : parsed->args()) {
+                for (auto a : parsed->args->elems()) {
                     ctx.diags().flush();
                     std::println(stderr, "== Parse Tree ==");
                     a.expr()->dump(ctx.use_colours);
@@ -5035,12 +5067,12 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
             // Allow this once we can declare all builtins in the preamble, which
             // requires compile-time parameters, which requires the new parameter
             // syntax refactor.
-            if (args.has_named_args()) return ICE(
+            if (args->is_named()) return ICE(
                 parsed->loc,
                 "Named arguments to builtins are currently not supported"
             );
 
-            return BuildBuiltinCallExpr(bk.value(), args.unnamed(), parsed->loc);
+            return BuildBuiltinCallExpr(bk.value(), args->values(), parsed->loc);
         }
     }
 
@@ -5049,7 +5081,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     if (auto ma = dyn_cast<ParsedMemberExpr>(parsed->callee)) {
         auto access = TRY(TranslateMemberAccess(ma, true));
         if (access.is_associated_proc_ref()) {
-            object_param = access.base;
+            object_param.emplace(access.base, DeclNameLoc());
             callee = access.callee;
         } else {
             callee = access.base;
@@ -5062,7 +5094,7 @@ auto Sema::TranslateCallExpr(ParsedCallExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     // Finally, build the call.
     Assert(callee);
     auto args = TRY(TranslateArgs());
-    return BuildCallExpr(callee, std::move(args), parsed->loc, object_param.present());
+    return BuildCallExpr(callee, std::move(args), parsed->loc, object_param.has_value());
 }
 
 /// Translate a parsed name to a reference to the declaration it references.
@@ -5643,10 +5675,6 @@ auto Sema::TranslateNilExpr(ParsedNilExpr* parsed, Opt<Type> desired_type) -> Pt
     return new (*tu) NilExpr(parsed->loc);
 }
 
-auto Sema::TranslateParenExpr(ParsedParenExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
-    return new (*tu) ParenExpr(TRY(TranslateExpr(parsed->inner, desired_type)), parsed->loc);
-}
-
 auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     // Translate all unquotes.
     SmallVector<Expr*> unquotes;
@@ -5684,23 +5712,43 @@ auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     return BuildDeclRefExpr(DeclNameLoc{String("this"), parsed->loc}, parsed->loc);
 }
 
-auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
+auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
+    return TranslateTupleExpr(std::nullopt, parsed, desired_type);
+}
+
+auto Sema::TranslateTupleExpr(
+    Opt<TupleExpr::ExprAndName> object_param,
+    ParsedTupleExpr* parsed,
+    Opt<Type> desired_type
+) -> Ptr<Expr> {
     SmallVector<Expr*> exprs;
-    SmallVector<Type> types;
+    SmallVector<DeclNameLoc> names;
+    if (object_param.has_value()) {
+        exprs.push_back(object_param->expr);
+        names.push_back(object_param->name);
+    }
+
+    // Pass along the desired type if this is a single parenthesised expression.
+    auto desired_elem_ty = desired_type;
+    if (
+        desired_type == Type::CallArgListTy or
+        object_param.has_value() or
+        not parsed->is_paren_expr()
+    ) desired_elem_ty = std::nullopt;
+
     bool ok = true;
-    for (auto pe : parsed->exprs()) {
-        if (auto e = TranslateExpr(pe).get_or_null()) {
+    for (auto elem : parsed->elems()) {
+        if (elem.is_spread()) return ICE(elem.expr()->loc, "TODO: Spread in tuple");
+        if (auto e = TranslateExpr(elem.expr(), desired_elem_ty).get_or_null()) {
             exprs.push_back(e);
-            types.push_back(e->type);
-            if (not CheckFieldType(e->type, pe->loc)) ok = false;
+            names.push_back(elem.name);
         } else {
             ok = false;
         }
     }
 
     if (not ok) return {};
-    auto tt = TupleType::Get(*tu, types);
-    return TupleExpr::Create(*tu, tt, exprs, parsed->loc);
+    return BuildTuple(exprs, desired_type, names, not parsed->has_trailing_comma, parsed->loc);
 }
 
 auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
@@ -6357,7 +6405,6 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
 #       define PARSE_TREE_LEAF_TYPE(n) case K::n: return Translate##n(cast<Parsed##n>(parsed));
 #       include "srcc/ParseTree.inc"
         case K::DeclRefExpr: return TranslateNamedType(cast<ParsedDeclRefExpr>(parsed));
-        case K::ParenExpr: return TranslateType(cast<ParsedParenExpr>(parsed)->inner);
         case K::NilExpr: return Type::NilTy;
 
         // Array types are parsed as subscript expressions.
@@ -6372,11 +6419,16 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
             SmallVector<TypeLoc> types;
             auto t = cast<ParsedTupleExpr>(parsed);
             bool ok = true;
-            for (auto e : t->exprs()) {
-                if (auto ty = TranslateType(e)) types.emplace_back(*ty, e->loc);
+            for (auto e : t->elems()) {
+                if (auto ty = TranslateType(e.expr())) types.emplace_back(*ty, e.expr()->loc);
                 else ok = false;
             }
 
+            if (any_of(t->elems(), [&](auto& e) { return e.name.name.valid(); }))
+                return ICE(t->loc, "TODO: named tuple types");
+
+            // If this is a simple parenthesised expression, just return the 1st element type.
+            if (types.size() == 1 and t->is_paren_expr()) return types.front().ty;
             if (ok) return BuildTupleType(types);
             return {};
         }

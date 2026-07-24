@@ -979,8 +979,9 @@ void CodeGen::Mangler::Append(Type ty) {
         void operator()(BuiltinType* b) {
             switch (b->builtin_kind()) {
                 case BuiltinKind::Deduced:
+                case BuiltinKind::CallArgList:
                 case BuiltinKind::UnresolvedOverloadSet:
-                Unreachable("Can’t mangle this: {}", Type{b});
+                    Unreachable("Can’t mangle this: {}", Type{b});
                 case BuiltinKind::Tree: M.name += "tr"; return;
                 case BuiltinKind::Type: M.name += "ty"; return;
                 case BuiltinKind::Void: M.name += "v"; return;

@@ -16,7 +16,7 @@ struct ParsedMatchCase;
 struct ImportedModule;
 struct ParsedParameter;
 struct ParsedEnumerator;
-class ParsedCallArg;
+class ParsedTupleElem;
 
 /// The list of parameter indices, for each template parameter,
 /// in which that template parameter is deduced.
@@ -419,57 +419,21 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::BreakContinueExpr; }
 };
 
-class srcc::ParsedCallArg {
-    llvm::PointerIntPair<ParsedStmt*, 1, bool> arg_and_spread;
-
-public:
-    /// If this is a named argument (i.e. 'a: b'), the name.
-    DeclNameLoc name;
-
-    /// Constructor.
-    ParsedCallArg(ParsedStmt* arg, DeclNameLoc name, bool spread)
-        : arg_and_spread{arg, spread}, name{name} {}
-
-    /// Get the argument expression.
-    auto expr() const -> ParsedStmt* { return arg_and_spread.getPointer(); }
-
-    /// Get whether this is a spread argument (i.e. '...').
-    bool is_spread() const { return arg_and_spread.getInt(); }
-};
-
 /// A call to a function, or anything that syntactically
 /// resembles one.
-class srcc::ParsedCallExpr final : public ParsedStmt
-    , TrailingObjects<ParsedCallExpr, ParsedCallArg> {
-    friend TrailingObjects;
-
+class srcc::ParsedCallExpr final : public ParsedStmt {
 public:
     /// The expression that is called.
     ParsedStmt* callee;
 
-private:
-    const u32 num_args;
-
-    auto numTrailingObjects(OverloadToken<ParsedCallArg>) -> usz { return num_args; }
+    /// The arguments.
+    ParsedTupleExpr* args;
 
     ParsedCallExpr(
         ParsedStmt* callee,
-        ArrayRef<ParsedCallArg> args,
+        ParsedTupleExpr* args,
         SLoc location
-    );
-
-public:
-    static auto Create(
-        Parser& parser,
-        ParsedStmt* callee,
-        ArrayRef<ParsedCallArg> args,
-        SLoc location
-    ) -> ParsedCallExpr*;
-
-    /// Get the arguments to the call.
-    auto args() -> ArrayRef<ParsedCallArg> {
-        return getTrailingObjects(num_args);
-    }
+    ) : ParsedStmt{Kind::CallExpr, location}, callee{callee}, args{args} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::CallExpr; }
 };
@@ -799,18 +763,6 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::NilExpr; }
 };
 
-class srcc::ParsedParenExpr final : public ParsedStmt {
-public:
-    ParsedStmt* inner;
-
-    ParsedParenExpr(
-        ParsedStmt* inner,
-        SLoc location
-    ) : ParsedStmt{Kind::ParenExpr, location}, inner{inner} {}
-
-    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ParenExpr; }
-};
-
 class srcc::ParsedQuoteExpr final : public ParsedStmt
     , TrailingObjects<ParsedQuoteExpr, ParsedUnquoteExpr*> {
     friend TrailingObjects;
@@ -876,22 +828,56 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::ThisExpr; }
 };
 
-class srcc::ParsedTupleExpr final : public ParsedStmt,
-    TrailingObjects<ParsedTupleExpr, ParsedStmt*> {
-    friend TrailingObjects;
-    const u32 num_exprs;
+class srcc::ParsedTupleElem {
+    llvm::PointerIntPair<ParsedStmt*, 1, bool> arg_and_spread;
 
-    ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc);
+public:
+    /// If this is a named argument (i.e. 'a: b'), the name.
+    DeclNameLoc name;
+
+    /// Constructor.
+    ParsedTupleElem(ParsedStmt* arg, DeclNameLoc name, bool spread)
+        : arg_and_spread{arg, spread}, name{name} {}
+
+    /// Get the argument expression.
+    auto expr() const -> ParsedStmt* { return arg_and_spread.getPointer(); }
+
+    /// Get whether this is a spread argument (i.e. '...').
+    bool is_spread() const { return arg_and_spread.getInt(); }
+};
+
+class srcc::ParsedTupleExpr final : public ParsedStmt,
+    TrailingObjects<ParsedTupleExpr, ParsedTupleElem> {
+    friend TrailingObjects;
+    const u32 num_elems;
+
+public:
+    bool has_trailing_comma;
+
+private:
+    ParsedTupleExpr(
+        ArrayRef<ParsedTupleElem> elems,
+        bool has_trailing_comma,
+        SLoc loc
+    );
 
 public:
     static auto Create(
         Parser& p,
-        ArrayRef<ParsedStmt*> exprs,
+        ArrayRef<ParsedTupleElem> elems,
+        bool has_trailing_comma,
         SLoc loc
     ) -> ParsedTupleExpr*;
 
-    auto exprs() -> ArrayRef<ParsedStmt*> { return getTrailingObjects(num_exprs); }
+    /// Whether this is a simple parenthesised expression.
+    bool is_paren_expr() {
+        return not has_trailing_comma and
+               num_elems == 1 and
+               not elems().front().is_spread() and
+               not elems().front().name.name.valid();
+    }
 
+    auto elems() -> ArrayRef<ParsedTupleElem> { return getTrailingObjects(num_elems); }
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::TupleExpr; }
 };
 

@@ -95,26 +95,6 @@ auto ParsedBlockExpr::Create(
     return ::new (mem) ParsedBlockExpr{stmts, location};
 }
 
-ParsedCallExpr::ParsedCallExpr(
-    ParsedStmt* callee,
-    ArrayRef<ParsedCallArg> args,
-    SLoc location
-) : ParsedStmt{Kind::CallExpr, location},
-    callee{callee}, num_args{u32(args.size())} {
-    std::uninitialized_copy_n(args.begin(), args.size(), getTrailingObjects());
-}
-
-auto ParsedCallExpr::Create(
-    Parser& parser,
-    ParsedStmt* callee,
-    ArrayRef<ParsedCallArg> args,
-    SLoc location
-) -> ParsedCallExpr* {
-    const auto size = totalSizeToAlloc<ParsedCallArg>(args.size());
-    auto mem = parser.allocate(size, alignof(ParsedCallExpr));
-    return ::new (mem) ParsedCallExpr{callee, args, location};
-}
-
 ParsedDeclRefExpr::ParsedDeclRefExpr(
     InitialDREScope scope,
     Ptr<ParsedStmt> root,
@@ -223,19 +203,25 @@ auto ParsedQuoteExpr::Create(
     return ::new (mem) ParsedQuoteExpr(tokens, unquotes, brace_delimited, location);
 }
 
-ParsedTupleExpr::ParsedTupleExpr(ArrayRef<ParsedStmt*> exprs, SLoc loc)
-    : ParsedStmt{Kind::TupleExpr, loc}, num_exprs{u32(exprs.size())} {
-    std::uninitialized_copy_n(exprs.begin(), exprs.size(), getTrailingObjects());
+ParsedTupleExpr::ParsedTupleExpr(
+    ArrayRef<ParsedTupleElem> elems,
+    bool has_trailing_comma,
+    SLoc loc
+) : ParsedStmt{Kind::TupleExpr, loc},
+    num_elems{u32(elems.size())},
+    has_trailing_comma{has_trailing_comma} {
+    std::uninitialized_copy_n(elems.begin(), elems.size(), getTrailingObjects());
 }
 
 auto ParsedTupleExpr::Create(
     Parser& p,
-    ArrayRef<ParsedStmt*> exprs,
+    ArrayRef<ParsedTupleElem> elems,
+    bool has_trailing_comma,
     SLoc loc
 ) -> ParsedTupleExpr* {
-    const auto size = totalSizeToAlloc<ParsedStmt*>(exprs.size());
+    const auto size = totalSizeToAlloc<ParsedTupleElem>(elems.size());
     auto mem = p.allocate(size, alignof(ParsedTupleExpr));
-    return ::new (mem) ParsedTupleExpr(exprs, loc);
+    return ::new (mem) ParsedTupleExpr(elems, has_trailing_comma, loc);
 }
 
 ParsedForStmt::ParsedForStmt(
@@ -600,15 +586,7 @@ auto ParsedStmt::children(bool include_types) -> Children {
         [&](ParsedBinaryExpr* b) -> Children { return {b->lhs, b->rhs}; },
         [&](ParsedBoolLitExpr*) -> Children { return {}; },
         [&](ParsedBreakContinueExpr*) -> Children { return {}; },
-        [&](ParsedCallExpr* c) -> Children {
-            Children::Owning children;
-            if (c->callee) children.push_back(c->callee);
-            if (auto args = c->args(); not args.empty())
-                for (auto arg : args)
-                    children.push_back(arg.expr());
-            return std::move(children);
-        },
-
+        [&](ParsedCallExpr* c) -> Children { return {c->callee, c->args}; },
         [&](ParsedCopyExpr* c) -> Children { return c->arg; },
         [&](ParsedDeclRefExpr* d) -> Children {
             if (auto r = d->root().get_or_null()) return r;
@@ -677,7 +655,6 @@ auto ParsedStmt::children(bool include_types) -> Children {
             };
         },
         [&](ParsedUnquoteExpr* u) -> Children { return u->arg; },
-        [&](ParsedParenExpr* p) -> Children { return p->inner; },
         [&](ParsedProcDecl* p) -> Children {
             Children::Owning children;
             if (include_types) {
@@ -711,7 +688,12 @@ auto ParsedStmt::children(bool include_types) -> Children {
         },
 
         [&](ParsedThisExpr*) -> Children { return {}; },
-        [&](ParsedTupleExpr* t) -> Children { return t->exprs(); },
+        [&](ParsedTupleExpr* t) -> Children {
+            Children::Owning children;
+            for (auto e : t->elems()) children.push_back(e.expr());
+            return children;
+        },
+
         [&](ParsedUnaryExpr* u) -> Children { return u->arg; },
         [&](ParsedWhileStmt* w) -> Children {  return {w->cond, w->body}; },
         [&](ParsedWithExpr* w) -> Children { return {w->expr, w->body}; },
@@ -824,10 +806,15 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                 break;
             }
 
-            case Kind::ParenExpr: {
-                auto p = cast<ParsedParenExpr>(type);
+            case Kind::TupleExpr: {
+                auto p = cast<ParsedTupleExpr>(type);
                 out += "%1((";
-                Append(p->inner);
+                for (auto c : p->children(true)) {
+                    Append(c);
+                    out += ", ";
+                }
+                out.pop_back();
+                out.pop_back();
                 out += ")%)";
             } break;
 

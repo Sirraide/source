@@ -125,52 +125,6 @@ private:
         [[nodiscard]] auto token() -> LoopToken;
     };
 
-    /// An argument list to a call. Immutable once created to facilitate
-    /// caching certain properties.
-    struct CallArgList {
-        struct Arg {
-            Expr* expr;
-            DeclNameLoc name;
-            Arg(Expr* expr, DeclNameLoc name = {}) : expr{expr}, name{name} {}
-        };
-
-        using Args = SmallVector<Arg>;
-
-    private:
-        Args args;
-        bool named_args;
-
-    public:
-        CallArgList(Expr* expr) : CallArgList{Args{expr}} {}
-        CallArgList(std::initializer_list<Arg> args) : CallArgList{Args{args}} {}
-        CallArgList(Args&& args) :
-            args{std::move(args)},
-            named_args(any_of(this->args, [&](auto& a) { return a.name.name.valid(); })) {}
-
-        /// Get the n-th argument.
-        [[nodiscard]] auto operator[](u32 n) const -> const Arg& { return args[n]; }
-
-        /// Get an iterator to the start of the list.
-        [[nodiscard]] auto begin() const { return args.begin(); }
-
-        /// Get an iterator to the end of the list.
-        [[nodiscard]] auto end() const { return args.end(); }
-
-        /// Query whether the list contains named arguments.
-        [[nodiscard]] bool has_named_args() const { return named_args; }
-
-        /// Get an array ref to the arguments.
-        [[nodiscard]] auto ref() const -> ArrayRef<Arg> { return args; }
-
-        /// Get the number of arguments.
-        [[nodiscard]] auto size() const -> u32 { return u32(args.size()); }
-
-        /// Get a vector containing all arguments without their names.
-        [[nodiscard]] auto unnamed() const {
-            return to_vector(args | vws::transform(&Arg::expr));
-        }
-    };
-
     /// A (possibly empty) sequence of conversions applied to a type.
     class ConversionSequence;
 
@@ -526,14 +480,13 @@ private:
         enum Id : u32 { Unnamed = 0 };
 
         /// The unordered arguments.
-        const CallArgList& unordered;
+        TupleExpr* unordered;
 
     private:
         SmallVector<List, 1> argument_lists;
-        bool has_named_args = false;
 
     public:
-        CandidateArgumentLists(const CallArgList& args);
+        CandidateArgumentLists(TupleExpr* args);
 
         /// Add a list; only valid if we have named arguments.
         auto add(List args) -> Id;
@@ -1348,7 +1301,7 @@ private:
     /// Resolve an overload set.
     auto PerformOverloadResolution(
         OverloadSetExpr* overload_set,
-        const CallArgList& args,
+        TupleExpr* args,
         bool is_associated_call,
         SLoc call_loc
     ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
@@ -1368,7 +1321,7 @@ private:
     /// diagnostics that we want to move into the diagnostics engine.
     void ReportOverloadResolutionFailure(
         MutableArrayRef<Candidate> candidates,
-        const CallArgList& args,
+        TupleExpr* args,
         SLoc call_loc,
         u32 final_badness
     );
@@ -1382,7 +1335,7 @@ private:
         Callee callee,
         Candidate::Status status,
         std::optional<SubstitutionResult> subst,
-        const CallArgList& args,
+        TupleExpr* args,
         SLoc call_loc
     );
 
@@ -1392,7 +1345,7 @@ private:
     /// Resolve named arguments, i.e. figure out what positional parameters
     /// they map to.
     auto ResolveNamedArguments(
-        const CallArgList& args,
+        TupleExpr* args,
         Callee callee
     ) -> std::expected<SmallVector<Expr*>, Candidate::Status>;
 
@@ -1424,7 +1377,8 @@ private:
     auto BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr*;
     auto BuildBuiltinCallExpr(BuiltinCallExpr::Builtin builtin, ArrayRef<Expr*> args, SLoc call_loc) -> Ptr<BuiltinCallExpr>;
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
-    auto BuildCallExpr(Expr* callee_expr, const CallArgList& args, SLoc loc, bool is_associated_call = false) -> Ptr<Expr>;
+    auto BuildCallExpr(Expr* callee_expr, std::same_as<TupleExpr> auto* args, SLoc loc, bool is_associated_call) -> Ptr<Expr>;
+    auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
     auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
@@ -1456,6 +1410,14 @@ private:
     auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
     auto BuildTupleType(ArrayRef<TypeLoc> types) -> Opt<Type>;
+    auto BuildTuple(
+        ArrayRef<Expr*> exprs,
+        Opt<Type> desired_ty,
+        ArrayRef<DeclNameLoc> names,
+        bool may_build_paren_expr,
+        SLoc loc
+    ) -> Ptr<Expr>;
+
     auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr>;
 
@@ -1495,6 +1457,11 @@ private:
     };
 
     auto TranslateMemberAccess(ParsedMemberExpr* parsed, bool is_call) -> std::optional<MemberAccess>;
+    auto TranslateTupleExpr(
+        Opt<TupleExpr::ExprAndName> object_param,
+        ParsedTupleExpr* parsed,
+        Opt<Type> desired_type
+    ) -> Ptr<Expr>;
 
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;

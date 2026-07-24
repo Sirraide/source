@@ -26,6 +26,7 @@ struct srcc::BuiltinTypes {
     static constexpr BuiltinType TreeTyImpl{BuiltinKind::Tree};
     static constexpr BuiltinType TypeTyImpl{BuiltinKind::Type};
     static constexpr BuiltinType UnresolvedOverloadSetTyImpl{BuiltinKind::UnresolvedOverloadSet};
+    static constexpr BuiltinType CallArgListTyImpl{BuiltinKind::CallArgList};
     static constexpr BuiltinType NilTyImpl{BuiltinKind::Nil};
 };
 
@@ -37,6 +38,7 @@ constexpr Type Type::DeducedTy{const_cast<BuiltinType*>(&BuiltinTypes::DeducedTy
 constexpr Type Type::TreeTy{const_cast<BuiltinType*>(&BuiltinTypes::TreeTyImpl)};
 constexpr Type Type::TypeTy{const_cast<BuiltinType*>(&BuiltinTypes::TypeTyImpl)};
 constexpr Type Type::UnresolvedOverloadSetTy{const_cast<BuiltinType*>(&BuiltinTypes::UnresolvedOverloadSetTyImpl)};
+constexpr Type Type::CallArgListTy{const_cast<BuiltinType*>(&BuiltinTypes::CallArgListTyImpl)};
 constexpr Type Type::NilTy{const_cast<BuiltinType*>(&BuiltinTypes::NilTyImpl)};
 
 // ============================================================================
@@ -91,6 +93,7 @@ auto TypeBase::align(const Target& t) const -> Align { // clang-format off
                 case BuiltinKind::Tree: return Align::Of<TreeValue*>(); // This is a compile-time only type.
                 case BuiltinKind::Type: return Align::Of<TypeBase*>(); // This is a compile-time only type.
                 case BuiltinKind::UnresolvedOverloadSet: return t.closure_align();
+                case BuiltinKind::CallArgList: Unreachable("Requested alignment of init list");
                 case BuiltinKind::Deduced: Unreachable("Requested alignment of deduced type");
             }
             Unreachable();
@@ -178,6 +181,7 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
                     return false;
 
                 case BuiltinKind::Deduced:
+                case BuiltinKind::CallArgList:
                     Unreachable("Querying property of deduced type");
             }
             Unreachable();
@@ -322,6 +326,7 @@ bool TypeBase::is_or_contains_pointer() const {
                 return true;
 
                 case BuiltinKind::Deduced:
+                case BuiltinKind::CallArgList:
                     Unreachable("Querying property of deduced type");
             }
             Unreachable();
@@ -393,6 +398,7 @@ auto TypeBase::print_impl() const -> SmallUnrenderedString {
                 case BuiltinKind::Type: out += "%6(type%)"; return;
                 case BuiltinKind::Void: out += "%6(void%)"; return;
                 case BuiltinKind::Nil: out += "%6(nil%)"; return;
+                case BuiltinKind::CallArgList: out += "<init-list>"; return;
             }
             Unreachable();
         },
@@ -468,6 +474,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
                     return Size();
 
                 case BuiltinKind::Deduced:
+                case BuiltinKind::CallArgList:
                     Unreachable("Requested size of deduced type");
             }
         },

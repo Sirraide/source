@@ -69,6 +69,7 @@ template <typename Ty>
 class Opt : public std::optional<Ty> {
     using std::optional<Ty>::optional;
 
+public:
     // Ensure these actually perform checking.
     [[nodiscard]] auto operator->() -> Ty* {
         Assert(this->has_value());

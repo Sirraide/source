@@ -648,36 +648,6 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
     return ParsedBlockExpr::Create(*this, stmts, braces.left);
 }
 
-// <call-args> ::= <call-arg> { "," <call-arg> } [ "," ]
-// <call-arg>  ::= [ IDENT ":" ] <expr> [ "..." ]
-void Parser::ParseCallArgs(
-    SmallVectorImpl<ParsedCallArg>& into,
-    llvm::function_ref<Ptr<ParsedStmt>()> ParseArgExpr
-) {
-    BracketTracker parens{*this, Tk::LParen};
-    while (not At(Tk::RParen)) {
-        // Parse name.
-        DeclNameLoc name;
-        if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) {
-            name = {tok->text, tok->location};
-            Next();
-            Next();
-        }
-
-        // Parse whether this is a spread parameter.
-        bool spread = Consume(Tk::Ellipsis);
-
-        // Parse the actual argument expression.
-        if (auto arg = ParseArgExpr()) {
-            into.emplace_back(arg.get(), name, spread);
-            if (not Consume(Tk::Comma)) break;
-        } else {
-            break;
-        }
-    }
-    parens.close();
-}
-
 // <expr-decl-ref> ::= [ "::" | <expr> "::" ] { IDENT "::" } ( IDENT | <operator-name> )
 auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<ParsedStmt> {
     auto ss = ParseOptionalScopeSpec(root_expr);
@@ -722,7 +692,6 @@ auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<
 //          | <expr-loop>
 //          | <expr-match>
 //          | <expr-member>
-//          | <expr-paren>
 //          | <expr-prefix>
 //          | <expr-quote>
 //          | <expr-return>
@@ -797,12 +766,11 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
                     auto ident = TRY(ParseDeclRefExpr(DREContext::AfterHashInMacroCall));
 
                     // Parse arguments as '#quote'd.
-                    SmallVector<ParsedCallArg> args;
-                    ParseCallArgs(args, [&]{ return ParseQuotedTokenSeq(tok->location, true); });
+                    auto args = ParseTuple([&]{ return ParseQuotedTokenSeq(tok->location, true); });
 
                     // Create the call and wrap it with an '#inject'.
-                    lhs = ParsedCallExpr::Create(*this, ident, args, ident->loc);
-                    lhs = new (*this) ParsedInjectExpr(lhs.get(), hash_loc);
+                    auto call = new (*this) ParsedCallExpr(ident, args, hash_loc);
+                    lhs = new (*this) ParsedInjectExpr(call, hash_loc);
                 } break;
             }
         } break;
@@ -932,7 +900,7 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         } break;
 
         case Tk::LParen:
-            lhs = ParseParenExpr();
+            lhs = ParseTuple([&] { return ParseExpr(); });
             break;
 
         // <type-prim> ::= BOOL | INT | TREE | TYPE | VOID | VAR | VAL | NORETURN | INTEGER_TYPE | "This"
@@ -1034,11 +1002,10 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         switch (tok->type) {
             default: break;
 
-            // <expr-call> ::= <expr> "(" [ <call-args> ] ")"
+            // <expr-call> ::= <expr> <expr-tuple>
             case Tk::LParen: {
-                SmallVector<ParsedCallArg> args;
-                ParseCallArgs(args, [&]{ return ParseExpr(); });
-                lhs = ParsedCallExpr::Create(*this, lhs.get(), args, lhs.get()->loc);
+                auto args = ParseTuple([&] { return ParseExpr(); });
+                lhs = new (*this) ParsedCallExpr(lhs.get(), args, lhs.get()->loc);
                 continue;
             }
 
@@ -1261,7 +1228,7 @@ auto Parser::ParseIf(bool is_static) -> Ptr<ParsedIfExpr> {
     // e.g. 'if (x) (3)' and 'if (x) ++y', we would actually end up with
     // '(x)(3)' (a call) and '(x)++' (a unary expression) as the condition,
     // neither of which is a ParenExpr.
-    if (isa<ParsedParenExpr>(cond)) Warn(
+    if (auto c = dyn_cast<ParsedTupleExpr>(cond); c and c->elems().size() == 1) Warn(
         cond->loc,
         "Unnecessary parentheses around '%1(if%)' condition"
     );
@@ -1714,41 +1681,53 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     return true;
 }
 
-// <expr-paren> ::= "(" <expr> ")"
-// <expr-tuple> ::= "(" [ <expr> { "," <expr> } [ "," ] ] ")"
-auto Parser::ParseParenExpr() -> Ptr<ParsedStmt> {
-    Assert(At(Tk::LParen));
+// <expr-tuple>  ::= "(" [ <tuple-elems> ] ")"
+// <tuple-elems> ::= <tuple-elem> { "," <tuple-elem> } [ "," ]
+// <tuple-elem>  ::= [ <ident> ":" ] <expr>
+auto Parser::ParseTuple(llvm::function_ref<Ptr<ParsedStmt>()> ParseElement) -> ParsedTupleExpr* {
+    SmallVector<ParsedTupleElem> elements;
     BracketTracker parens{*this, Tk::LParen};
+    while (not At(Tk::RParen, Tk::Eof)) {
+        // Parse name.
+        DeclNameLoc name;
+        if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) {
+            name = {tok->text, tok->location};
+            Next();
+            Next();
+        }
 
-    // '()'.
-    if (At(Tk::RParen)) {
-        parens.close();
-        return ParsedTupleExpr::Create(*this, {}, parens.left);
-    }
+        // Parse whether this is a spread parameter. These are only allowed
+        // in calls, not tuples.
+        bool spread = Consume(Tk::Ellipsis);
 
-    // Parenthesised expression.
-    auto expr = ParseExpr();
-    if (At(Tk::RParen)) {
-        parens.close();
-        if (not expr) return {};
-        return new (*this) ParsedParenExpr{expr.get(), parens.left};
-    }
+        // Parse the actual argument expression.
+        if (auto arg = ParseElement()) {
+            elements.emplace_back(arg.get(), name, spread);
+        } else {
+            SkipTo(Tk::Comma, Tk::RParen);
+        }
 
-    // Tuple.
-    SmallVector<ParsedStmt*> exprs;
-    if (expr) exprs.push_back(expr.get());
-    do {
-        // Error about a missing comma, and skip multiple consecutive commas.
-        if (not Consume(Tk::Comma)) Error("Expected '%1(,%)' in tuple");
-        while (Consume(Tk::Comma)) Error(std::prev(tok)->location, "Unexpected ','");
+        // Stop if we've reached ')'.
         if (At(Tk::RParen)) break;
 
-        expr = ParseExpr();
-        if (expr) exprs.push_back(expr.get());
-        else SkipTo(Tk::Comma, Tk::RParen);
-    } while (not At(Tk::RParen, Tk::Eof));
+        // Otherwise, the next token must be a comma.
+        if (not Consume(Tk::Comma)) {
+            Error("Expected ',' in tuple");
+            SkipTo(Tk::Comma, Tk::RParen);
+            Consume(Tk::Comma);
+            continue;
+        }
+
+        // Diagnose multiple consecutive commas.
+        if (Consume(Tk::Comma)) {
+            Error(std::prev(tok)->location, "Unexpected ','");
+            while (Consume(Tk::Comma));
+        }
+    }
+
+    bool has_trailing_comma = std::prev(tok)->is(Tk::Comma);
     parens.close();
-    return ParsedTupleExpr::Create(*this, exprs, parens.left);
+    return ParsedTupleExpr::Create(*this, elements, has_trailing_comma, parens.left);
 }
 
 // <preamble> ::= <header> { <import> }
@@ -2198,7 +2177,6 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                     ParsedCallExpr,
                     ParsedDeclRefExpr,
                     ParsedInjectExpr,
-                    ParsedParenExpr,
                     ParsedTupleExpr,
                     ParsedUnquoteExpr
                 >(s)) return true;

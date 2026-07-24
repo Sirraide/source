@@ -82,6 +82,14 @@ public:
 
     };
 
+protected:
+    /// Bits that can be used by derived classes.
+    union {
+        struct {
+            bool has_names;
+        } tuple;
+    } bits;
+
 private:
     /// The kind of this statement.
     const Kind stmt_kind;
@@ -991,37 +999,77 @@ public:
 };
 
 class srcc::TupleExpr final : public Expr
-    , TrailingObjects<TupleExpr, Expr*> {
+    , TrailingObjects<TupleExpr, Expr*, DeclNameLoc> {
     friend TrailingObjects;
+
+public:
+    struct ExprAndName {
+        Expr* expr;
+        DeclNameLoc name;
+    };
+
+private:
     TupleExpr(
-        RecordType* ty,
+        Type ty,
         ArrayRef<Expr*> fields,
+        ArrayRef<DeclNameLoc> names,
         SLoc location
     );
+
+    const u32 num_exprs;
+    usz numTrailingObjects(OverloadToken<Expr*>) const { return num_exprs; }
+    usz numTrailingObjects(OverloadToken<DeclNameLoc>) const { return is_named() ? num_exprs : 0; }
 
 public:
     static auto Create(
         TranslationUnit& tu,
-        RecordType* type,
+        Type type,
         ArrayRef<Expr*> fields,
+        ArrayRef<DeclNameLoc> names,
         SLoc location
     ) -> TupleExpr*;
 
-    /// Whether this is the empty tuple, i.e. '()' or ‘nil’.
-    bool is_nil() { return not is_struct() and num_values() == 0; }
+    /// Return the elements in a form that can be iterated.
+    auto elems() const {
+        return vws::transform(vws::enumerate(values()), [this](auto el) {
+            auto [i, expr] = el;
+            return ExprAndName{expr, name(u32(i))};
+        });
+    }
+
+    /// Whether any of the elements have names.
+    bool is_named() const { return bits.tuple.has_names; }
+
+    /// Whether this is a struct.
+    bool is_struct() const { return isa<StructType>(type); }
+
+    /// Whether this is actually a tuple.
+    bool is_tuple() const { return isa<RecordType>(type); }
+
+    /// Get the name of the n-th field.
+    auto name(u32 i) const -> DeclNameLoc {
+        return is_named() ? names()[i] : DeclNameLoc();
+    }
+
+    /// Get the field names, if we have any.
+    auto names() const -> ArrayRef<DeclNameLoc> {
+        return getTrailingObjects<DeclNameLoc>(numTrailingObjects(OverloadToken<DeclNameLoc>()));
+    };
+
+    /// Get the n-th element.
+    auto nth(u32 i) const -> ExprAndName {
+        return {values()[i], name(i)};
+    }
 
     /// Get the number of expressions in this tuple.
-    auto num_values() -> u32 { return u32(record_type()->layout().fields().size()); }
+    auto num_values() const -> u32 { return num_exprs; }
 
     /// Get the type of this expression.
     auto record_type() const -> RecordType* { return cast<RecordType>(type.ptr()); }
 
-    /// Whether this tuple is actually a struct initialiser.
-    bool is_struct() { return isa<StructType>(type); }
-
     /// Get the expressions that make up this tuple.
-    auto values() -> ArrayRef<Expr*> {
-        return getTrailingObjects(num_values());
+    auto values() const -> ArrayRef<Expr*> {
+        return getTrailingObjects<Expr*>(num_values());
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::TupleExpr; }
