@@ -1144,11 +1144,10 @@ private:
     auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
 
     /// Convert arguments to parameter types.
-    template <typename Callback>
     void ConvertArgumentsForCall(
         ArrayRef<Expr*> args,
         Callee c,
-        Callback ConvertArg,
+        llvm::function_ref<void(u32 param_index, ArrayRef<Expr*> args, SLoc loc)> ConvertArg,
         SLoc call_loc
     );
 
@@ -1317,8 +1316,7 @@ private:
     ) -> LocalDecl*;
 
     /// Ensure that an expression is an rvalue of the given type.
-    template <typename Callback>
-    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, Callback EmitDiag);
+    [[nodiscard]] bool MakeRValue(Type ty, Expr*& e, llvm::function_ref<void()> EmitDiag);
 
     /// Ensure that an expression is an rvalue of the given type. This is
     /// mainly used for expressions involving operators.
@@ -1335,6 +1333,9 @@ private:
     /// \param it The last case that can still be matched.
     /// \param cases The *entire* list of match cases.
     void MarkUnreachableAfter(auto it, MutableArrayRef<MatchCase> cases);
+
+    /// Emit a note pointing to a parameter declaration.
+    void NoteParameter(Decl* proc, u32 i);
 
     /// Parse C++ code into a new TU.
     auto ParseCXX(StringRef code, std::optional<std::string> PCH = {}) -> std::unique_ptr<clang::ASTUnit>;
