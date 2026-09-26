@@ -227,7 +227,7 @@ struct DeletionAnalysis final : mlir::dataflow::DenseForwardDataFlowAnalysis<Mov
         auto changed = after->join(before);
 
         // Check if this is a new base pointer.
-        if (auto a = dyn_cast<mlir::LLVM::AllocaOp>(op))
+        if (auto a = dyn_cast<ir::AllocaOp>(op))
             changed |= after->defined(a);
         if (auto p = dyn_cast<ir::PtrAddOp>(op); p and p.isNewBasePointer())
             changed |= after->defined(p);
@@ -281,7 +281,7 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
     // For each 'delete' operation, check if the moved value is already
     // moved by the time we get there, and remove it if so.
     SmallVector<ir::DeleteOp> ops_to_erase;
-    llvm::SmallDenseMap<Value, mlir::LLVM::AllocaOp> need_delete_flag;
+    llvm::SmallDenseMap<Value, ir::AllocaOp> need_delete_flag;
     llvm::SmallPtrSet<Value, 2> already_diagnosed_out_params;
     proc.getBody().walk([&](Operation* op){
         using enum MovedState;
@@ -384,18 +384,9 @@ void UseAfterMoveCheckPass::CheckProcedure(ir::ProcOp proc) {
     // each definition to set it to 'false', and each move to set it to 'true'.
     if (need_delete_flag.empty()) return;
     mlir::OpBuilder b{proc.getBody()};
-    auto one_64 = mlir::arith::ConstantIntOp::create(b, proc.getLoc(), 1, 64);
     auto one_8 = mlir::arith::ConstantIntOp::create(b, proc.getLoc(), 1, 8);
-    auto ptr = mlir::LLVM::LLVMPointerType::get(proc->getContext());
     for (auto& [val, moved_flag] : need_delete_flag) {
-        moved_flag = mlir::LLVM::AllocaOp::create(
-            b,
-            val.getLoc(),
-            ptr,
-            b.getI8Type(),
-            one_64,
-            1
-        );
+        moved_flag = ir::AllocaOp::create(b, val.getLoc(), Size::Bytes(1), Align(1));
 
         // Initialise it to 1. This is necessary if e.g. the value is a 'move'
         // parameter, in which case we may never see a store to it before it is

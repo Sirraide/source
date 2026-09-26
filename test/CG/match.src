@@ -400,13 +400,13 @@ proc r15 = match 4 {
 //L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
 //L + @__srcc_str.2 = private constant [10 x i8] c"match.src\00", align 1
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   store i8 0, ptr @_S1g.1, align 1
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f1FvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = load i8, ptr @_S1g.1, align 1
@@ -428,7 +428,7 @@ proc r15 = match 4 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f2FvE.2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = load i8, ptr @_S1g.1, align 1
@@ -450,7 +450,7 @@ proc r15 = match 4 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f3FvE.3() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = load i8, ptr @_S1g.1, align 1
@@ -472,7 +472,7 @@ proc r15 = match 4 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f4FibbE.4(i1 noundef zeroext %0, i1 noundef zeroext %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = alloca i8, i64 1, align 1
@@ -506,7 +506,7 @@ proc r15 = match 4 {
 //L +   ret i64 %21
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f5FvE.5() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -519,21 +519,21 @@ proc r15 = match 4 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f6FvE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f7FvE.7() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f8FvbE.8(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
@@ -546,7 +546,7 @@ proc r15 = match 4 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f9FiiE.9(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
@@ -558,7 +558,7 @@ proc r15 = match 4 {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3f10FiiE.10(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
@@ -591,7 +591,7 @@ proc r15 = match 4 {
 //L +   br label %17
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3f11FiiE.11(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
@@ -603,14 +603,14 @@ proc r15 = match 4 {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3f12FiiE.12(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   ret i64 1
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3f13FiOiE.13(i64 noundef %0, i8 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 9, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -636,7 +636,7 @@ proc r15 = match 4 {
 //L +   ret i64 %15
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3f14FiiE.14(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 80, align 8
@@ -687,7 +687,7 @@ proc r15 = match 4 {
 //L +   br label %22
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3r15FiE.15() #1 {
 //L +   ret i64 9
 //L + }
@@ -697,10 +697,8 @@ proc r15 = match 4 {
 //L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #2
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

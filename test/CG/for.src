@@ -352,12 +352,12 @@ proc l {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1aFvE.1() #1 {
 //L +   br label %1
 //L +
@@ -374,7 +374,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1bFvE.2() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
@@ -397,9 +397,9 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: nounwind
-//L + declare void @foo(i16 noundef) #1
+//L + declare void @foo(i16 noundef) #2
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1cFvE.3() #1 {
 //L +   br label %1
 //L +
@@ -426,7 +426,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1dFvE.4() #1 {
 //L +   br label %1
 //L +
@@ -443,7 +443,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1eFvE.5() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
@@ -467,7 +467,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1fFvE.6() #1 {
 //L +   br label %1
 //L +
@@ -498,7 +498,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1gFvE.7() #1 {
 //L +   br label %1
 //L +
@@ -522,7 +522,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1hFvE.8() #1 {
 //L +   br label %1
 //L +
@@ -548,7 +548,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1iFvE.9() #1 {
 //L +   br label %1
 //L +
@@ -568,7 +568,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1jFvE.10() #1 {
 //L +   br label %1
 //L +
@@ -606,7 +606,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1kFvE.11() #1 {
 //L +   br label %1
 //L +
@@ -624,7 +624,7 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1lFvE.12() #1 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   store i64 5, ptr %1, align 8
@@ -654,9 +654,8 @@ proc l {
 //L +   ret void
 //L + }
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #2 = { nounwind }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

@@ -1,6 +1,7 @@
 #include <srcc/CG/CodeGen.hh>
 #include <srcc/Core/Constants.hh>
 
+#include <llvm/IR/AttributeMask.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/MC/MCContext.h>
@@ -35,6 +36,78 @@ public:
     operator llvm::raw_fd_ostream&() { return stream; }
 };
 
+/// Pass that removes some attributes that Clang adds to functions and
+/// adds default attributes that we want to have.
+///
+/// We do this because they conflict with the semantics of Source or
+/// because they cause other issues (e.g. a mismatch in target features
+/// inhibits 'alwaysinline').
+namespace {
+class AttributesAdjusterPass : public llvm::RequiredPassInfoMixin<AttributesAdjusterPass> {
+    cg::CodeGen& CG;
+
+public:
+    AttributesAdjusterPass(cg::CodeGen& CG) : CG{CG} {}
+
+    auto run(
+        llvm::Module& M,
+        llvm::ModuleAnalysisManager& MAM
+    ) -> llvm::PreservedAnalyses;
+
+private:
+    auto attrs_to_remove() -> llvm::AttributeMask;
+    auto attrs_for_proc_defs(llvm::LLVMContext& ctx) -> llvm::AttrBuilder;
+};
+}
+
+auto AttributesAdjusterPass::attrs_to_remove() -> llvm::AttributeMask {
+    llvm::AttributeMask mask;
+    mask.addAttribute(llvm::Attribute::MustProgress);
+    mask.addAttribute("min-legal-vector-width");
+    mask.addAttribute("no-trapping-math");
+    mask.addAttribute("stack-protector-buffer-size");
+    mask.addAttribute("target-cpu");
+    mask.addAttribute("target-features");
+    mask.addAttribute("tune-cpu");
+    return mask;
+}
+
+auto AttributesAdjusterPass::attrs_for_proc_defs(llvm::LLVMContext& ctx) -> llvm::AttrBuilder {
+    llvm::AttrBuilder ab{ctx};
+    ab.addUWTableAttr(CG.translation_unit().target().unwind_table_kind());
+    if (CG.context().opt_level == 0) {
+        ab.addAttribute(llvm::Attribute::OptimizeNone);
+        ab.addAttribute("frame-pointer", "all");
+        // Can’t add 'noinline' here as we shouldn’t add it to functions
+        // that are marked 'alwaysinline'.
+    }
+    return ab;
+}
+
+auto AttributesAdjusterPass::run(
+    llvm::Module& mod,
+    llvm::ModuleAnalysisManager& mgr
+) -> llvm::PreservedAnalyses {
+    auto mask = attrs_to_remove();
+    auto def_attrs = attrs_for_proc_defs(mod.getContext());
+    auto optnone = CG.context().opt_level == 0;
+
+    for (auto& f : mod) {
+        if (f.isIntrinsic()) continue;
+        f.removeFnAttrs(mask);
+        if (f.isDeclaration()) continue;
+
+        // Add default function definition attributes.
+        f.addFnAttrs(def_attrs);
+
+        // Add 'noinline'.
+        if (optnone && !f.hasFnAttribute(llvm::Attribute::AlwaysInline))
+            f.addFnAttr(llvm::Attribute::NoInline);
+    }
+
+    // Just invalidate all since this runs before everything else.
+    return llvm::PreservedAnalyses::none();
+}
 
 // Largely copied and adapted from Clang.
 void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
@@ -65,6 +138,7 @@ void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm:
     PB.registerLoopAnalyses(LAM);
     PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
     MPM.addPass(llvm::VerifierPass());
+    MPM.addPass(AttributesAdjusterPass(*this));
     MPM.addPass(PB.buildPerModuleDefaultPipeline(opt_level));
     MPM.run(m, MAM);
 }

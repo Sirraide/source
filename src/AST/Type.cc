@@ -49,11 +49,11 @@ auto GetOrCreateType(FoldingSet<T>& Set, auto CreateNew, Args&&... args) -> T* {
     FoldingSetNodeID ID;
     T::Profile(ID, std::forward<Args>(args)...);
 
-    void* pos = nullptr;
-    auto* type = Set.FindNodeOrInsertPos(ID, pos);
+    llvm::FoldingSetInsertToken pos;
+    auto* type = Set.lookup(ID, pos);
     if (not type) {
         type = CreateNew();
-        Set.InsertNode(type, pos);
+        Set.insert(type, pos);
     }
 
     return type;
@@ -198,6 +198,12 @@ bool InitCheckHelper(const TypeBase* type) { // clang-format off
     });
 } // clang-format on
 
+bool TypeBase::can_copy() const {
+    Type t = strip_arrays_and_optionals();
+    if (t->trivially_copyable()) return true;
+    return t->has_copy_proc();
+}
+
 bool TypeBase::can_default_init() const {
     return InitCheckHelper<&RecordLayout::has_default_init>(this);
 }
@@ -260,6 +266,12 @@ auto TypeBase::eval_mode() const -> EvalMode {
     }
 
     Unreachable();
+}
+
+bool TypeBase::has_copy_proc() const {
+    Type t = canonical->strip_arrays_and_optionals();
+    auto r = dyn_cast<RecordType>(t);
+    return r and r->get_copy().present();
 }
 
 bool TypeBase::is_aggregate() const {
@@ -444,18 +456,9 @@ auto TypeBase::memory_size(const Target& t) const -> Size {
 }
 
 bool TypeBase::requires_deletion() const {
-    Type t = canonical;
-
-    // Arrays and optionals require destruction if their element type does.
-    while (isa<ArrayType, OptionalType>(t))
-        t = cast<SingleElementTypeBase>(t)->elem();
-
-    // Records may have a deleter.
+    Type t = canonical->strip_arrays_and_optionals();
     auto r = dyn_cast<RecordType>(t);
-    if (r) return r->deleter().present();
-
-    // Other types do not.
-    return false;
+    return r and r->get_delete().present();
 }
 
 auto TypeBase::size_impl(const Target& t) const -> Size {
@@ -501,6 +504,7 @@ auto TypeBase::size_impl(const Target& t) const -> Size {
 
 template <typename ...Types>
 auto TypeBase::strip_qualifiers() const -> Type {
+    static_assert((std::derived_from<Types, SingleElementTypeBase> and ...));
     for (Type ty = this;;) {
         // Strip qualifiers from the sugared type.
         while (isa<Types...>(ty)) ty = cast<SingleElementTypeBase>(ty)->elem();
@@ -516,6 +520,10 @@ auto TypeBase::strip_qualifiers() const -> Type {
 
 auto TypeBase::strip_arrays() const -> Type {
     return strip_qualifiers<ArrayType>();
+}
+
+auto TypeBase::strip_arrays_and_optionals() const -> Type {
+    return strip_qualifiers<ArrayType, OptionalType>();
 }
 
 auto TypeBase::strip_pointers_and_optionals() const -> Type {
@@ -597,7 +605,11 @@ auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {
             RecordLayout::Builder b{mod};
             b.add_field(elem);
             b.add_field(Type::BoolTy);
-            return new (mod) OptionalType{elem, b.build(), 1};
+
+            // Ignore the properties of the record layout here; all code paths
+            // that care about those know to look through optionals.
+            auto [layout, _] = b.build();
+            return new (mod) OptionalType{elem, layout, 1};
         };
 
         OptionalType* ty = Make(elem);
@@ -772,7 +784,7 @@ auto ProcType::print(
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
     auto CreateNew = [&] {
-        auto tuple = TupleType::Get(mod, {elem, elem});
+        auto tuple = TupleType::GetTrivial(mod, {elem, elem});
         auto ty = new (mod) RangeType{elem, tuple};
         if (elem->is_canonical()) return ty;
         ty->canonical = new (mod) RangeType{elem->canonical, cast<TupleType>(tuple->canonical)};
@@ -806,28 +818,6 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 // ============================================================================
 //  Record Types
 // ============================================================================
-auto types::detail::MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout* {
-    if (rgs::all_of(rl->field_types(), &TypeBase::is_canonical, &Type::ptr))
-        return rl;
-
-    SmallVector<FieldDecl*> decls;
-    for (auto f : rl->fields()) decls.push_back(new (tu) FieldDecl(
-        f->type->canonical,
-        f->offset,
-        f->name.str(),
-        f->location()
-    ));
-
-    return RecordLayout::Create(
-        tu,
-        decls,
-        rl->size(),
-        rl->array_size(),
-        rl->align(),
-        rl->bits()
-    );
-}
-
 auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDecl* {
     Size offset;
 
@@ -845,7 +835,16 @@ auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDe
     return decls.back();
 }
 
-auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLayout* {
+auto RecordLayout::Builder::build(
+    ArrayRef<ProcDecl*> initialisers
+) -> std::pair<RecordLayout*, RecordLayout::Props> {
+    // Helper to invoke a callback on the type of a field.
+    auto Property = [](auto cb) {
+        return [cb](FieldDecl* fd) {
+            return std::invoke(cb, fd->type.ptr());
+        };
+    };
+
     // TODO: Initialisers are declared out-of-line, but they should
     // have been picked up during initial translation when we find
     // all the procedures in the current scope. Add any that we found
@@ -869,25 +868,26 @@ auto RecordLayout::Builder::build(ArrayRef<ProcDecl*> initialisers) -> RecordLay
         // Compute whether we can define a default initialiser for this.
         bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
             decls,
-            [](FieldDecl* d) { return d->type->can_init_from_no_args(); }
+            Property(&TypeBase::can_init_from_no_args)
         );
 
         // Compute whether we can use zero-initialisation for this.
         bits.zero_init = bits.default_initialiser and rgs::all_of(
             decls,
-            [](FieldDecl* d) { return d->type->can_zero_init(); }
+            Property(&TypeBase::can_zero_init)
         );
 
         // We always provide a literal initialiser in this case.
         bits.literal_initialiser = true;
     }
 
-    // Determine if this contains pointers.
-    bits.contains_pointer = any_of(decls, [](auto *fd) {
-        return fd->type->is_or_contains_pointer();
-    });
-
-    return RecordLayout::Create(tu, decls, sz, sz.align(a), a, bits);
+    // Determine various properties that depend on the fields.
+    RecordLayout::Props props;
+    bits.contains_pointer = any_of(decls, Property(&TypeBase::is_or_contains_pointer));
+    bits.can_copy = all_of(decls, Property(&TypeBase::can_copy));
+    props.must_define_delete = any_of(decls, Property(&TypeBase::requires_deletion));
+    props.must_define_copy = bits.can_copy and any_of(decls, Property(&TypeBase::has_copy_proc));
+    return {RecordLayout::Create(tu, decls, sz, sz.align(a), a, bits), props};
 }
 
 RecordLayout::RecordLayout(
@@ -944,27 +944,32 @@ auto StructType::name() const -> String {
 }
 
 void TupleType::Profile(FoldingSetNodeID& id, auto elem_types) {
-    for (Type ty : elem_types) id.AddPointer(ty.ptr());
+    for (Type ty : elem_types) id.AddPointer(ty->canonical);
 }
 
 void TupleType::Profile(FoldingSetNodeID& id) const {
     Profile(id, layout().field_types());
 }
 
-auto TupleType::Get(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
+auto TupleType::GetTrivial(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
     RecordLayout::Builder lb{mod};
     for (auto ty : elems) lb.add_field(ty);
-    return Get(mod, lb.build());
+    auto [layout, props] = lb.build();
+    Assert(props.trivial(), "Non-trivial tuples must be build by Sema");
+    return Get(mod, layout, nullptr);
 }
 
-auto TupleType::Get(TranslationUnit& mod, RecordLayout* rl) -> TupleType* {
+auto TupleType::Get(
+    TranslationUnit& mod,
+    RecordLayout* rl,
+    llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
+) -> TupleType* {
     Assert(rl);
     auto CreateNew = [&] {
         auto ty = new (mod) TupleType{rl};
-        auto canonical_rl = types::detail::MakeCanonical(mod, rl);
-        if (canonical_rl == rl) return ty;
-        ty->canonical = new (mod) TupleType{canonical_rl};
+        if (DefineSpecialProcedures) std::invoke(DefineSpecialProcedures, ty);
         return ty;
     };
+
     return GetOrCreateType(mod.tuple_types, CreateNew, rl->field_types());
 }

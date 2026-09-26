@@ -198,20 +198,19 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
 }
 
 auto Sema::BuildImplicitProcedure(
+    ProcType* ty,
     DeclName name,
-    TypeAndValueCategory ret,
     ArrayRef<ParamSpec> params,
     Linkage linkage,
     Mangling mangling,
     SLoc loc,
-    llvm::function_ref<void(ProcDecl*, SmallVectorImpl<Stmt*>&)> BuildBody
+    llvm::function_ref<Ptr<Expr>(ProcDecl*)> BuildBody
 ) -> ProcDecl* {
-    auto param_types = llvm::to_vector(vws::transform(params, [](auto& p) { return p.type; }));
     auto scope = tu->create_scope<ProcScope>(curr_scope(), std::nullopt);
     auto proc = ProcDecl::Create(
         *tu,
         nullptr,
-        ProcType::Get(*tu, ret, param_types),
+        ty,
         name,
         linkage,
         mangling,
@@ -226,30 +225,16 @@ auto Sema::BuildImplicitProcedure(
 
     // Enter it and declare the parameters.
     EnterProcedure _{*this, proc};
-    for (auto [i, p] : enumerate(params)) {
-        const auto& [ty, name] = p;
-        BuildParamDecl(
-            curr_proc().proc,
-            &ty,
-            u32(i),
-            false,
-            false,
-            name
-        );
+    BuildParamDecls(proc, params);
+
+    // Build the body.
+    if (auto body = BuildBody(proc)) {
+        body = BuildProcBody(proc, body.get());
+        proc->finalise(body, curr_proc().locals);
+    } else {
+        proc->set_invalid();
     }
 
-    // Build the body inside a block expression.
-    BlockExpr* block{};
-    {
-        EnterScope _{*this};
-        SmallVector<Stmt*> stmts;
-        BuildBody(proc, stmts);
-        block = BuildBlockExpr(curr_scope(), stmts, loc);
-    }
-
-    // Attach it to the procedure.
-    auto body = BuildProcBody(proc, block);
-    proc->finalise(body, curr_proc().locals);
     return proc;
 };
 
@@ -431,14 +416,19 @@ auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
                     if (p->has_captures) break;
                     p->has_captures = true;
 
-                    // A procedure defined inside a struct (currently, this only includes deleters)
-                    // may not capture any variables. Diagnose this, but allow the capture for better
-                    // error recovery; this is fine so long as we don’t try to emit it.
+                    // A procedure defined inside a struct may not capture any variables. Diagnose this,
+                    // but allow the capture for better error recovery; this is fine so long as we don’t
+                    // try to emit it.
                     //
                     // FIXME: Make sure we don’t try to 'eval' a procedure that contains errors,
                     // otherwise, this wil break things quite horribly.
-                    if (p->scope->parent() and p->scope->parent()->is_struct_scope()) {
-                        Error(loc, "Variable '{}' cannot be captured inside a deleter", local->name);
+                    if (p->special_proc != SpecialProcedure::None) {
+                        Error(
+                            loc,
+                            "Variable '{}' cannot be captured inside '%1({}%)'",
+                            local->name,
+                            SpecialProcedure(p->special_proc)
+                        );
                         Note(d->location(), "Variable declared here");
                     }
                 }
@@ -491,7 +481,6 @@ bool Sema::CompleteDefinition(StructType* s) {
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
     RecordLayout::Builder lb{*tu};
-    bool needs_deleter = false;
     for (auto f : parsed->fields()) {
         auto ty = TranslateType(f->type);
         if (not ty or not CheckFieldType(*ty, f->loc)) {
@@ -500,55 +489,107 @@ bool Sema::CompleteDefinition(StructType* s) {
             lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
         } else {
             AddDeclToScope(s->scope(), lb.add_field(*ty, f->name.str(), f->loc));
-            needs_deleter = needs_deleter or ty->requires_deletion();
         }
     }
 
-    s->finalise(lb.build());
+    auto [layout, props] = lb.build();
+    s->finalise(layout);
+    DefineSpecialProcedures(
+        s,
+        props,
+        parsed->deleter(),
+        parsed->copy_proc(),
+        s->decl()->location()
+    );
 
-    // If we don’t need a deleter, we’re done.
-    auto parsed_del = parsed->deleter().get_or_null();
-    if (not parsed_del and not needs_deleter) return true;
+    return true;
+}
 
-    // Generate the deleter.
-    auto loc = parsed_del ? parsed_del->loc : s->decl()->location();
-    auto BuildImplicitDeleterBody = [&](ProcDecl* proc, SmallVectorImpl<Stmt*>& stmts) {
-        auto this_ptr = CreateReference(curr_proc().locals[0], loc).get();
+void Sema::DefineSpecialProcedures(
+    RecordType* r,
+    RecordLayout::Props props,
+    Ptr<ParsedStmt> parsed_deleter,
+    Ptr<ParsedStmt> parsed_copy,
+    SLoc loc
+) {
+    // If we don’t need a deleter/copy, we’re done.
+    if (
+        parsed_deleter.invalid() and
+        parsed_copy.invalid() and
+        not props.must_define_delete and
+        not props.must_define_copy
+    ) return;
+
+    // Build the body of 'delete'.
+    auto delete_loc = parsed_deleter ? parsed_deleter.get()->loc : loc;
+    auto BuildDeleteBody = [&](ProcDecl* proc) -> Ptr<Expr> {
+        EnterScope scope{*this};
+        SmallVector<Stmt*> stmts;
+        proc->special_proc = SpecialProcedure::Delete;
+        r->set_delete(proc); // Set this first to allow recursion.
 
         // Insert the user-defined deleter if there is one.
-        if (parsed_del) {
-            AddEntryToWithStack(curr_scope(), Save(this_ptr), loc, true);
-            auto user_del = TranslateStmt(parsed_del);
+        auto this_ptr = CreateReference(curr_proc().locals[0], delete_loc).get();
+        if (auto body = parsed_deleter.get_or_null()) {
+            AddEntryToWithStack(curr_scope(), Save(this_ptr), delete_loc, true);
+            auto user_del = TranslateStmt(body);
             if (user_del) {
                 stmts.push_back(user_del.get());
-                if (user_del.get()->type_or_void() == Type::NoReturnTy) return;
+                if (user_del.get()->type_or_void() == Type::NoReturnTy) return nullptr;
             }
         }
 
         // Call the deleter of each field in reverse order.
-        for (auto f : reverse(s->layout().fields())) {
+        for (auto f : reverse(r->layout().fields())) {
             if (not f->type->requires_deletion()) continue;
-            auto ref = BuildMemberAccessExpr(this_ptr, f, loc);
+            auto ref = BuildMemberAccessExpr(this_ptr, f, delete_loc);
             if (not ref) continue;
-            auto del = MaybeBuildDeleteExpr(ref.get(), true, loc);
+            auto del = MaybeBuildDeleteExpr(ref.get(), true, delete_loc);
             if (del) stmts.push_back(del.get());
         }
+
+        return BuildBlockExpr(scope.get(), stmts, delete_loc);
+    };
+
+    // Build the body of 'copy'.
+    auto copy_loc = parsed_copy ? parsed_copy.get()->loc : loc;
+    auto BuildCopyBody = [&](ProcDecl* proc) -> Ptr<Expr> {
+        proc->special_proc = SpecialProcedure::Copy;
+        r->set_copy(proc); // Set this first to allow recursion.
+
+        // If the user provided a body, just use it.
+        if (auto body = parsed_copy.get()) return TranslateExpr(body, r);
+
+        // If not, build the equivalent of 'copy = (...this);'
+        Todo("Spread this");
     };
 
     // FIXME: Once structs have linkage, reuse the struct's linkage.
-    Linkage deleter_linkage = Linkage::Exported;
-    auto deleter = BuildImplicitProcedure(
-        tu->save(std::format("${}.delete", cg::CodeGen::MangleTypeName(*tu, s))),
-        {Type::VoidTy, Expr::RValue},
-        {{{Intent::Inout, s}, {String("this"), loc}}},
-        deleter_linkage,
-        Mangling::None,
-        loc,
-        BuildImplicitDeleterBody
-    );
+    Linkage linkage = Linkage::Exported;
+    auto mangled_name = cg::CodeGen::MangleTypeName(*tu, r);
+    if (props.must_define_delete or parsed_deleter.present()) {
+        BuildImplicitProcedure(
+            ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, r}}),
+            tu->save(std::format("${}.delete", mangled_name)),
+            {ParamSpec{.name = {String("this"), delete_loc}, .is_this = true}},
+            linkage,
+            Mangling::None,
+            delete_loc,
+            BuildDeleteBody
+        );
+    }
 
-    s->set_deleter(deleter);
-    return true;
+    if (props.must_define_copy or parsed_copy.present()) {
+        BuildImplicitProcedure(
+            ProcType::Get(*tu, {r, Expr::RValue}, {{Intent::In, r}}),
+            tu->save(std::format("${}.copy", mangled_name)),
+            {ParamSpec{.name = {String("this"), copy_loc}, .is_this = true}},
+            linkage,
+            Mangling::None,
+            copy_loc,
+            BuildCopyBody
+        );
+    }
 }
 
 void Sema::DeclareLocal(LocalDecl* d) {
@@ -655,6 +696,7 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
 
 bool Sema::RequireCompleteType(Type ty, SLoc loc) {
     // Structs can be made complete on demand.
+    // FIXME: Tuples as well.
     if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
         CompleteDefinition(s);
         return s->is_complete();

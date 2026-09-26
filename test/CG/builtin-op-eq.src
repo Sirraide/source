@@ -479,18 +479,18 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L + @__srcc_str.3 = private constant [3 x i8] c"bc\00", align 1
 //L + @__srcc_str.4 = private constant [1 x i8] zeroinitializer, align 1
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S1aFbE.1() #1 {
 //L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.0, i64 noundef 4, ptr noundef @__srcc_str.1, i64 noundef 4)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
@@ -549,25 +549,25 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 true
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S1bFbE.2() #1 {
 //L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.2, i64 noundef 1, ptr noundef @__srcc_str.3, i64 noundef 2)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S1cFbE.3() #1 {
 //L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.2, i64 noundef 1, ptr noundef @__srcc_str.2, i64 noundef 1)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S1dFbE.4() #1 {
 //L +   %1 = call zeroext i1 @"_S$2==FbxSI8xSI8E"(ptr noundef @__srcc_str.4, i64 noundef 0, ptr noundef @__srcc_str.4, i64 noundef 0)
 //L +   ret i1 %1
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S1eFbSI64SI64E.5(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
@@ -587,7 +587,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %15
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @"_S$2==FbxSI64xSI64E"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
@@ -648,7 +648,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 true
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S2p1FbE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -664,7 +664,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @"_S$2==FbxORixORiE"(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -706,7 +706,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %23
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S2p2FbORI8ORI8E.7(ptr noundef align 1 dereferenceable(1) %0, ptr noundef align 1 dereferenceable(1) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -718,7 +718,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @"_S$2==FbxORI8xORI8E"(ptr noundef align 1 dereferenceable(1) %0, ptr noundef align 1 dereferenceable(1) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -760,7 +760,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %23
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @_S2p3FbxA4ixA4iE.8(ptr align 8 dereferenceable(32) %0, ptr align 8 dereferenceable(32) %1) #1 {
 //L +   %3 = alloca i8, i64 32, align 8
 //L +   %4 = alloca i8, i64 32, align 8
@@ -770,7 +770,7 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L +   ret i1 %5
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private zeroext i1 @"_S$2==FbxSixSiE"(ptr noundef %0, i64 noundef %1, ptr noundef %2, i64 noundef %3) #1 {
 //L +   %5 = alloca i8, i64 16, align 8
 //L +   %6 = alloca i8, i64 16, align 8
@@ -834,10 +834,8 @@ proc p3 (in int[4] x, in int[4] y) -> bool {
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
 //L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

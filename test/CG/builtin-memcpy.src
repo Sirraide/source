@@ -46,12 +46,12 @@ proc pb {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2paFvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -61,7 +61,7 @@ proc pb {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2pbFvE.2() #1 {
 //L +   %1 = alloca i8, i64 20, align 1
 //L +   %2 = alloca i8, i64 20, align 1
@@ -77,11 +77,9 @@ proc pb {
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
 //L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #3
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 //L + attributes #3 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

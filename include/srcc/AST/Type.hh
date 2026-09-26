@@ -49,7 +49,6 @@ class TypeLoc;
 namespace types::detail {
 struct CanonicalTypeDenseMapInfo;
 struct NonCanonicalTypeDenseMapInfo;
-auto MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout*;
 }
 
 /// Casting.
@@ -74,7 +73,6 @@ class alignas(8) srcc::TypeBase {
 
     friend Type;
     friend types::detail::CanonicalTypeDenseMapInfo;
-    friend auto types::detail::MakeCanonical(TranslationUnit& tu, RecordLayout* rl) -> RecordLayout*;
     template <typename To> friend auto ::srcc::cast(Type from) -> To*;
     template <typename To> friend auto ::srcc::dyn_cast(Type from) -> To*;
     template <typename... Ts> friend auto ::srcc::isa(Type from) -> bool;
@@ -119,6 +117,9 @@ public:
     /// an initialiser with no arguments.
     [[nodiscard]] bool can_init_from_no_args() const;
 
+    /// Check if this type can be copied.
+    [[nodiscard]] bool can_copy() const;
+
     /// Get whether this type has a default initialiser.
     [[nodiscard]] bool can_default_init() const;
 
@@ -137,6 +138,9 @@ public:
     /// Get the evaluation mode of this type; this determines whether values
     /// of this type always need to live in memory or not.
     [[nodiscard]] auto eval_mode() const -> EvalMode;
+
+    /// Whether copying this type requires a call to a 'copy' procedure.
+    [[nodiscard]] bool has_copy_proc() const;
 
     /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
@@ -191,6 +195,9 @@ public:
 
     /// Strip array types from this type.
     [[nodiscard]] auto strip_arrays() const -> Type;
+
+    /// Strip arrays and optional types.
+    [[nodiscard]] auto strip_arrays_and_optionals() const -> Type;
 
     /// Strip pointers and optional types.
     [[nodiscard]] auto strip_pointers_and_optionals() const -> Type;
@@ -747,6 +754,10 @@ struct srcc::ParamTypeData {
     // and has no effect in CodeGen!
     bool variadic;
 
+    // The parameter contains an error. This is used as a hack to tell Sema
+    // to mark the parameter declaration as invalid when we create it.
+    bool contains_error = false;
+
     ParamTypeData(Intent intent, Type type, bool variadic = false) :
         intent{intent}, type{type}, variadic{variadic} {}
 };
@@ -889,17 +900,37 @@ class srcc::RecordLayout final : llvm::TrailingObjects<RecordLayout, FieldDecl*>
     friend auto MakeCanonical(TranslationUnit& tu, const RecordLayout* rl) -> RecordLayout*;
 
 public:
+    /// Computed properties that are not stored in the layout and are instead
+    /// only used when we create the record type.
+    struct Props {
+        bool must_define_delete : 1 = false;
+        bool must_define_copy : 1 = false;
+
+        bool trivial() const {
+            return not must_define_copy and not must_define_copy;
+        }
+    };
+
     struct Bits {
+        bool can_copy            : 1 = true;
+        bool contains_pointer    : 1 = false;
         bool default_initialiser : 1 = false;
         bool init_from_no_args   : 1 = false;
+        bool is_union            : 1 = false;
         bool literal_initialiser : 1 = false;
         bool zero_init           : 1 = false;
-        bool contains_pointer    : 1 = false;
-        bool is_union            : 1 = false;
-        u8 padding : 2{};
+        u8 padding : 1{};
 
-        static auto Trivial(bool contains_pointer) -> Bits {
-            return {true, true, true, true, contains_pointer, false};
+        // Get record bits for a type that is compatible with C.
+        static auto CLikeType(bool contains_pointer, bool is_union) -> Bits {
+            Bits b{};
+            b.contains_pointer = contains_pointer;
+            b.default_initialiser = true;
+            b.init_from_no_args = true;
+            b.literal_initialiser = true;
+            b.zero_init = true;
+            b.is_union = is_union;
+            return b;
         }
 
         void serialise(ByteWriter& w) const { w << std::bit_cast<u8>(*this); }
@@ -919,7 +950,7 @@ public:
 
 private:
     RecordLayout(
-        ArrayRef<FieldDecl*> fields,
+        ArrayRef<FieldDecl*> offsets,
         Size sz,
         Size arr_sz,
         Align a,
@@ -947,7 +978,9 @@ public:
         auto add_field(Type ty, String name = "", SLoc loc = {}) -> FieldDecl*;
 
         /// Build the layout.
-        [[nodiscard]] auto build(ArrayRef<ProcDecl*> initialisers = {}) -> RecordLayout*;
+        [[nodiscard]] auto build(
+            ArrayRef<ProcDecl*> initialisers = {}
+        ) -> std::pair<RecordLayout*, Props>;
     };
 
     static auto Create(
@@ -1010,13 +1043,17 @@ public:
 /// Base class for 'TupleType' and 'StructType'.
 class srcc::RecordType : public TypeBase {
 protected:
-    Ptr<ProcDecl> deleter_proc;
+    Ptr<ProcDecl> delete_proc;
+    Ptr<ProcDecl> copy_proc;
     RecordLayout* record_layout = nullptr;
     RecordType(Kind k) : TypeBase{k} {}
 
 public:
+    /// Get the copy procedure of this struct, if any.
+    auto get_copy() const -> Ptr<ProcDecl> { return copy_proc; }
+
     /// Get the deleter of this struct, if any.
-    auto deleter() const -> Ptr<ProcDecl> { return deleter_proc; }
+    auto get_delete() const -> Ptr<ProcDecl> { return delete_proc; }
 
     /// Get whether this type is complete, i.e. whether we can
     /// declare variables and create objects of this type.
@@ -1028,18 +1065,30 @@ public:
         return *record_layout;
     }
 
+    /// Set the copy procedure of this record.
+    void set_copy(ProcDecl* copy) {
+        Assert(not copy_proc, "Copy procedure already set");
+        Assert(copy);
+        copy_proc = copy;
+    }
+
     /// Set the deleter of this record.
-    void set_deleter(ProcDecl* deleter) {
-        Assert(not deleter_proc, "Deleter already set");
+    void set_delete(ProcDecl* deleter) {
+        Assert(not delete_proc, "Deleter already set");
         Assert(deleter);
-        deleter_proc = deleter;
+        delete_proc = deleter;
     }
 
     static bool classof(const TypeBase* t) {
-        return t->exact_kind() == Kind::StructType or t->exact_kind() == Kind::TupleType;
+        return t->exact_kind() == Kind::StructType or
+               t->exact_kind() == Kind::TupleType;
     }
 };
 
+/// A record consisting of a sequence of types. A TupleType is always
+/// canonical; tuples with non-canonical members are wrapped in a
+/// SugaredTupleType.
+/// TODO: Actually add SugaredTupleType.
 class srcc::TupleType final : public RecordType, public FoldingSetNode {
     explicit TupleType(RecordLayout* layout) : RecordType{Kind::TupleType} {
         record_layout = layout;
@@ -1047,8 +1096,16 @@ class srcc::TupleType final : public RecordType, public FoldingSetNode {
 
 public:
     void Profile(FoldingSetNodeID& ID) const;
-    static auto Get(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
-    static auto Get(TranslationUnit& tu, RecordLayout* layout) -> TupleType*;
+
+    /// Get a trivial tuple type, i.e. one that does not have a deleter/copy procedure.
+    static auto GetTrivial(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
+
+    /// Get a tuple type from a layout.
+    static auto Get(
+        TranslationUnit& tu,
+        RecordLayout* layout,
+        llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
+    ) -> TupleType*;
     static void Profile(FoldingSetNodeID& tu, auto elem_types);
     static bool classof(const TypeBase* t) {  return t->exact_kind() == Kind::TupleType; }
 };

@@ -248,12 +248,12 @@ proc x (int a, in int b) {
 //L + @__srcc_str.9 = private constant [31 x i8] c"shift amount exceeds bit width\00", align 1
 //L + @__srcc_str.10 = private constant [4 x i8] c"<<<\00", align 1
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S1xFvixiE.1(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -601,25 +601,23 @@ proc x (int a, in int b) {
 //L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
 //L + declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64) #2
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}
 
 //UL * ; ModuleID = 'test'
 //UL + source_filename = "test"
 //UL + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //UL + target triple = "x86_64-unknown-linux"
 //UL +
-//UL + ; Function Attrs: norecurse nounwind
+//UL + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //UL + define void @__src_main() #0 {
 //UL +   ret void
 //UL + }
 //UL +
-//UL + ; Function Attrs: nounwind
+//UL + ; Function Attrs: noinline nounwind optnone uwtable
 //UL + define private void @_S1xFvixiE.1(i64 noundef %0, i64 noundef %1) #1 {
 //UL +   %3 = alloca i8, i64 8, align 8
 //UL +   %4 = alloca i8, i64 8, align 8
@@ -676,9 +674,7 @@ proc x (int a, in int b) {
 //UL +   ret void
 //UL + }
 //UL +
-//UL + attributes #0 = { norecurse nounwind }
-//UL + attributes #1 = { nounwind }
+//UL + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//UL + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //UL +
-//UL + !llvm.module.flags = !{!0}
 //UL +
-//UL + !0 = !{i32 2, !"Debug Info Version", i32 3}

@@ -17,11 +17,8 @@ import <typedef.h> as *;
 #assert different_name_typedef == foo;
 #assert different_name_using == bar;
 
-anon_class_typedef tx;
-anon_class_using ux;
-
-anon_union_typedef ty;
-anon_union_using uy;
+anon_class_typedef tx = (1);
+anon_class_using ux = (1);
 
 // Test that we print type sugar properly.
 struct Q {}
@@ -41,10 +38,10 @@ same_name_using i = (1, 2); // expected-error: Cannot initialise 'same_name_usin
 different_name_typedef i = (1, 2); // expected-error: Cannot initialise 'different_name_typedef (aka foo)' from '(int, int)'
 different_name_using i = (1, 2); // expected-error: Cannot initialise 'different_name_using (aka bar)' from '(int, int)'
 
-named_union_typedef i = (1, 2); // expected-error: Cannot initialise 'named_union_typedef (aka Union)' from '(int, int)'
-named_union_using i = (1, 2); // expected-error: Cannot initialise 'named_union_using (aka Union)' from '(int, int)'
-
 // Print these using assert messages as union initialisation is currently not implemented.
+#assert int == named_union_typedef; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == named_union_typedef (aka Union)]
+#assert int == named_union_using; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == named_union_using (aka Union)]
+
 #assert int == anon_union_typedef; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == anon_union_typedef]
 #assert int == anon_union_using; // expected-error (Assertion failed) expected-note [Condition evaluated to: int == anon_union_using]
 

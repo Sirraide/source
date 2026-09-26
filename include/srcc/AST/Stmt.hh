@@ -235,6 +235,9 @@ public:
     /// Check if this expression is an rvalue.
     [[nodiscard]] bool is_rvalue() const { return value_category == RValue; }
 
+    /// Get a TypeLoc for this expression.
+    [[nodiscard]] auto type_loc() const -> TypeLoc { return {type, location()}; }
+
     static bool classof(const Stmt* e) {
         return e->kind() >= Kind::ArrayBroadcastExpr and e->kind() <= Kind::WithExpr;
     }
@@ -1448,7 +1451,9 @@ public:
         bool with_param
     ) : LocalDecl{Kind::ParamDecl, param->type, vc, name.name, parent, name.loc},
         idx{index},
-        with{with_param} {}
+        with{with_param} {
+            if (param->contains_error) set_invalid();
+        }
 
     /// Get the parameter’s index.
     [[nodiscard]] auto index() const -> u32 { return idx; }
@@ -1577,11 +1582,14 @@ public:
     /// Whether this procedure (or any of its nested procedures) contain
     /// variable accesses that refer to variables declared in a parent
     /// procedure.
-    bool has_captures = false;
+    bool has_captures : 1 = false;
 
     /// Whether any variables declared this procedure specifically are
     /// captured by any nested procedures.
-    bool introduces_captures = false;
+    bool introduces_captures : 1 = false;
+
+    /// This is a special procedure of a record, e.g. 'delete' or 'copy'.
+    SpecialProcedure special_proc : utils::BitsForEnum<SpecialProcedure>() = SpecialProcedure::None;
 
 private:
     ProcDecl(

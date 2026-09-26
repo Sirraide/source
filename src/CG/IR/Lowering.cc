@@ -189,6 +189,18 @@ LOWERING(AbortOp, {
     return LLVM::UnreachableOp::create(r, op.getLoc());
 });
 
+LOWERING(AllocaOp, {
+    auto sz = LLVM::ConstantOp::create(r, op->getLoc(), r.getI64Type(), i64(op.getSize().bytes()));
+    return LLVM::AllocaOp::create(
+        r,
+        op->getLoc(),
+        op.getType(),
+        sz,
+        op.getAlignment(),
+        r.getI8Type()
+    );
+});
+
 LOWERING(CallOp, {
     SmallVector<mlir::Value> args;
     SmallVector<mlir::Type> arg_types;
@@ -468,6 +480,7 @@ void LoweringPass::runOnOperation() {
 
     patterns.add< // clang-format off
         AbortOpLowering,
+        AllocaOpLowering,
         CallOpLowering,
         CopyOpLowering,
         DeleteOpLowering,

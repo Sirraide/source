@@ -144,7 +144,7 @@ auto Sema::SubstituteTemplate(
 
             // Build a tuple consisting of the remaining arguments.
             // TODO: Maybe a failure to build the type here should not be a hard error.
-            auto ty = TRY(BuildTupleType(input_types.drop_front(i)));
+            auto ty = TRY(BuildTupleType(input_types.drop_front(i), proc_template->location()));
             deduced_var_parameters.push_back(ty);
         }
     }
@@ -157,8 +157,8 @@ auto Sema::SubstituteTemplate(
     // Don’t hold on to a reference to the folding set (or the insert position)
     // here as we might end up invalidating it if template instantiation occurs
     // during the translation of the procedure type below.
-    void* _unused{};
-    auto info = template_substitutions[proc_template].FindNodeOrInsertPos(id, _unused);
+    llvm::FoldingSetInsertToken _unused;
+    auto info = template_substitutions[proc_template].lookup(id, _unused);
     if (info) return info;
 
     // Create a scope for the procedure and save the template arguments there.
@@ -197,7 +197,7 @@ auto Sema::SubstituteTemplate(
         scope.get()
     );
 
-    template_substitutions[proc_template].InsertNode(info);
+    template_substitutions[proc_template].insert(info);
     return info;
 }
 

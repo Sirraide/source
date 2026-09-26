@@ -20,6 +20,7 @@ enum class OverflowBehaviour : u8;
 enum class ScopeKind : u8;
 enum class ParamPassingMode : u8;
 enum class EvalMode : u8;
+enum class SpecialProcedure : u8;
 } // namespace srcc
 
 /// Parameter intents.
@@ -178,7 +179,7 @@ enum class srcc::ScopeKind : base::u8 {
     /// A block expression that is also the body of a procedure definition.
     Procedure,
 
-    /// A struct declaration.
+    /// A record type.
     Struct,
 
     /// Scope of a module; this is used to store exports.
@@ -196,6 +197,12 @@ enum class srcc::ScopeKind : base::u8 {
 enum class srcc::EvalMode : base::u8 {
     Scalar,
     Memory,
+};
+
+enum class srcc::SpecialProcedure : base::u8 {
+    None,   ///< Not a special procedure.
+    Delete, ///< 'delete'
+    Copy,   ///< 'copy'
 };
 
 template <>
@@ -216,5 +223,23 @@ struct std::formatter<srcc::Intent> : std::formatter<std::string_view> {
         return std::formatter<std::string_view>::format(s, ctx);
     }
 };
+
+template <>
+struct std::formatter<srcc::SpecialProcedure> : std::formatter<std::string_view> {
+    template <typename FormatContext>
+    auto format(srcc::SpecialProcedure s, FormatContext& ctx) const {
+        auto str = [s] -> std::string_view {
+            switch (s) {
+                using enum srcc::SpecialProcedure;
+                case None: return "<none>";
+                case Delete: return "delete";
+                case Copy: return "copy";
+            }
+            return "<invalid intent>";
+        }();
+        return std::formatter<std::string_view>::format(str, ctx);
+    }
+};
+
 
 #endif // SRCC_AST_ENUMS_HH

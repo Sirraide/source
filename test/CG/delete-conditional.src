@@ -193,12 +193,12 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f1FvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
@@ -208,12 +208,12 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define void @"$T5Small.delete"(ptr align 8 dereferenceable(8) %0) #1 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f2FvbE.2(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
@@ -236,7 +236,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f3FvbE.3(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 1, ptr %2, align 1
@@ -269,7 +269,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f4FvbE.4(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 1, ptr %2, align 1
@@ -302,7 +302,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f5FvE.5() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 8, i1 false)
@@ -314,7 +314,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br label %2
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f6FvE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
@@ -324,7 +324,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7(ptr align 8 dereferenceable(8) %0, i64 noundef %1, ptr align 8 dereferenceable(8) %2, ptr align 8 dereferenceable(8) %3, ptr align 8 dereferenceable(8) %4) #1 {
 //L +   %6 = alloca i8, i64 8, align 8
 //L +   store i64 %1, ptr %6, align 8
@@ -337,10 +337,8 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
 //L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #2
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

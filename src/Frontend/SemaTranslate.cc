@@ -404,6 +404,16 @@ auto Sema::TranslateCopyExpr(ParsedCopyExpr* c, Opt<Type>) -> Ptr<Stmt> {
         return arg;
     }
 
+    // If the type is not copyable, this is an error.
+    if (not arg->type->can_copy()) {
+        Error(c->loc, "Type '{}' is not copyable", arg->type);
+        Remark(
+            "If you want to be able to copy it, implement '%1(copy%)' for\f'{}'",
+            arg->type->strip_arrays_and_optionals()
+        );
+        return arg;
+    }
+
     return new (*tu) CastExpr(arg->type, CastExpr::LValueCopy, arg, c->loc);
 }
 
@@ -1059,9 +1069,21 @@ auto Sema::TranslateProc(
 ) -> ProcDecl* {
     if (not body) return decl;
 
-    // Translate the body.
+    // Translate the parameters.
     EnterProcedure _{*this, decl};
-    auto res = TranslateProcBody(decl, body.get(), decls);
+    auto specs = llvm::to_vector(vws::transform(decls, [](ParsedVarDecl* d){
+        return ParamSpec{
+            .name = {d->name, d->loc},
+            .with_loc = d->with_loc,
+            .immutable = isa<ParsedValueType>(d->type),
+            .is_this = d->is_this_param,
+        };
+    }));
+
+    BuildParamDecls(decl, specs);
+
+    // Translate the body.
+    auto res = TranslateProcBody(decl, body.get());
 
     // If there was an error, mark the procedure as errored.
     if (res.invalid()) decl->set_invalid();
@@ -1069,48 +1091,11 @@ auto Sema::TranslateProc(
     return decl;
 }
 
-auto Sema::TranslateProcBody(
-    ProcDecl* decl,
-    ParsedStmt* parsed_body,
-    ArrayRef<ParsedVarDecl*> decls
-) -> Ptr<Stmt> {
+auto Sema::TranslateProcBody(ProcDecl* decl, ParsedStmt* parsed_body) -> Ptr<Expr> {
     Assert(parsed_body);
-
-    // Translate parameters.
-    auto ty = decl->proc_type();
-    for (auto [i, pair] : enumerate(zip(ty->params(), decls))) {
-        auto [param_info, parsed_decl] = pair;
-        auto param = BuildParamDecl(
-            curr_proc().proc,
-            &param_info,
-            u32(i),
-            false,
-            isa<ParsedValueType>(parsed_decl->type),
-            {parsed_decl->name, parsed_decl->loc}
-        );
-
-        if (parsed_decl->with_loc.is_valid() or parsed_decl->is_this_param) AddEntryToWithStack(
-            curr_scope(),
-            Save(CreateReference(param, param->location()).get()),
-            parsed_decl->with_loc,
-            parsed_decl->is_this_param
-        );
-    }
-
-    // Translate body.
     auto ret = decl->return_type();
     auto body = TranslateExpr(parsed_body, ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt);
-    if (body.invalid()) {
-        // If we’re attempting to deduce the return type of this procedure,
-        // but the body contains an error, just set it to void.
-        if (ret == Type::DeducedTy) {
-            decl->type = ProcType::AdjustRet(*tu, decl->proc_type(), Type::VoidTy);
-            decl->set_invalid();
-        }
-        return nullptr;
-    }
-
-    return BuildProcBody(decl, body.get());
+    return BuildProcBody(decl, body);
 }
 
 auto Sema::TranslateProcDecl(ParsedProcDecl*, Opt<Type>) -> Decl* {
@@ -1431,7 +1416,6 @@ auto Sema::TranslateProcType(
     }
 
     SmallVector<ParamTypeData, 10> params;
-    bool ok = true;
     u32 var_params = 0;
     for (auto a : parsed->param_types()) {
         // Drop 'val' here if we're parsing a *procedure* declaration. Specifically, we
@@ -1451,10 +1435,11 @@ auto Sema::TranslateProcType(
             parsed_ty = val->elem;
         }
 
+        bool has_error = false;
         auto ty_res = TranslateType(parsed_ty);
         if (not ty_res) {
-            ok = false;
-            continue;
+            has_error = true;
+            ty_res = Type::VoidTy;
         }
 
         // If this parameter’s type is 'var', then substitute whatever we
@@ -1481,14 +1466,21 @@ auto Sema::TranslateProcType(
         // substitution.
         if (a.variadic and not is_var_param) {
             auto ty_res = BuildSliceType(ty, immutable, a.type->loc);
-            if (not ty_res) {
-                ok = false;
-                continue;
+            if (ty_res) {
+                ty = *ty_res;
+            } else {
+                has_error = true;
+                ty = Type::VoidTy;
             }
-            ty = *ty_res;
         }
-        if (not CheckVariableType(ty, a.type->loc)) ok = false;
+
+        if (not CheckVariableType(ty, a.type->loc)) {
+            has_error = true;
+            ty = Type::VoidTy;
+        }
+
         params.emplace_back(a.intent, ty, a.variadic);
+        params.back().contains_error = has_error;
     }
 
     // FIXME: The return type (and possibly attributes and the 'where' clause) may
@@ -1503,7 +1495,6 @@ auto Sema::TranslateProcType(
         IsZeroSizedOrIncomplete(ret)
     ) DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
 
-    if (not ok) return {};
     return ProcType::Get(
         *tu,
         {ret, Expr::RValue},
@@ -1596,7 +1587,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
 
             // If this is a simple parenthesised expression, just return the 1st element type.
             if (types.size() == 1 and t->is_paren_expr()) return types.front().ty;
-            if (ok) return BuildTupleType(types);
+            if (ok) return BuildTupleType(types, parsed->loc);
             return {};
         }
 

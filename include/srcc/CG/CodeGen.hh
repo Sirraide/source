@@ -432,6 +432,7 @@ public:
     auto CreateInt(mlir::Location loc, const APInt& value, Type ty) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, Type ty = Type::IntTy) -> Value;
     auto CreateInt(mlir::Location loc, i64 value, mlir::Type ty) -> Value;
+    auto CreateInt(mlir::Location loc, ByteOffset offs) -> Value;
 
     /// Load a value from memory. If 'offset' is non-zero, the pointer is offset
     /// by that value first.
@@ -502,6 +503,10 @@ public:
 
     auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 
+    /// Mark a non-transparent optional as disengaged. This does not delete the
+    /// optional if it currently contains a value.
+    void DisengageNonTransparentOptional(Value addr, OptionalType* ty, mlir::Location);
+
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> IRValue;
     auto EmitWithCleanup(Stmt* stmt) -> IRValue;
@@ -526,6 +531,9 @@ public:
 
     /// Emit a closure.
     auto EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue;
+
+    /// Emit a copy.
+    void EmitCopy(mlir::Location loc, Value dest, Value src, Type ty);
 
     /// Emit a delete.
     void EmitDelete(mlir::Location loc, Value addr, Type ty, bool implicit);
@@ -665,6 +673,15 @@ public:
 
     /// Check if a local variable has a stack slot.
     bool LocalNeedsAlloca(LocalDecl* local);
+
+    /// Emit a loop over the elements of an array.
+    void EmitArrayLoop(
+        Value addr,
+        ArrayType* a,
+        mlir::Location loc,
+        bool reverse,
+        llvm::function_ref<void(Value offset)> EmitBody
+    );
 
     /// Get the mangled name of an object.
     auto MangledName(ObjectDecl* proc) -> String;

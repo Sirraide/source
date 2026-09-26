@@ -14,24 +14,6 @@ using namespace srcc::cg;
 using namespace srcc::cg::ir;
 namespace LLVM = mlir::LLVM;
 
-/// If this is a fixed-sized alloca, return the element count.
-static auto GetConstantAllocaElemCount(LLVM::AllocaOp op) -> std::optional<u64> {
-    // If the array size is not a constant, then this is a dynamic alloca.
-    auto op_res = dyn_cast<mlir::OpResult>(op.getArraySize());
-    if (not op_res) return std::nullopt;
-    auto constant = dyn_cast<mlir::arith::ConstantOp>(op_res.getOwner());
-    if (not constant) return std::nullopt;
-
-    // Otherwise, retrieve the count.
-    auto size = cast<mlir::IntegerAttr>(constant.getValue());
-    return size.getValue().getZExtValue();
-}
-
-/// Check if this is a constant-size alloca.
-static auto IsConstantAlloca(LLVM::AllocaOp op) {
-    return GetConstantAllocaElemCount(op).has_value();
-}
-
 struct CodeGen::Printer {
     CodeGen& cg;
     SmallUnrenderedString out;
@@ -64,8 +46,8 @@ struct CodeGen::Printer {
 
     auto IsInlineOp(Operation* op) {
         if (verbose) return false;
-        if (auto a = dyn_cast<LLVM::AllocaOp>(op)) return IsConstantAlloca(a);
         return isa< // clang-format off
+            AllocaOp,
             NilOp,
             ProcRefOp,
             TreeConstantOp,
@@ -405,32 +387,14 @@ void CodeGen::Printer::print_op(Operation* op) {
         return;
     }
 
-    if (auto slot = dyn_cast<LLVM::AllocaOp>(op)) {
-        auto sz = GetConstantAllocaElemCount(slot);
-        if (slot.getElemType().isInteger(8)) {
-            if (sz.has_value()) return Format(
-                out,
-                "alloca %5({}%), align %5({}%)",
-                *sz,
-                slot.getAlignment().value_or(1)
-            );
-
-            return Format(
-                out,
-                "alloca {} x {}, align %5({}%)",
-                FormatType(slot.getElemType()),
-                val(slot.getArraySize(), false),
-                slot.getAlignment().value_or(1)
-            );
-        }
-
-        Assert(sz == 1, "Typed alloca should have array size 1");
-        return Format(
+    if (auto slot = dyn_cast<AllocaOp>(op)) {
+        Format(
             out,
-            "alloca {}, align %5({}%)",
-            FormatType(slot.getElemType()),
-            slot.getAlignment().value_or(1)
+            "alloca {:y}, align %5({}%)",
+            slot.getSize(),
+            slot.getAlign()
         );
+        return;
     }
 
     if (auto s = dyn_cast<mlir::arith::SelectOp>(op)) {
@@ -643,31 +607,18 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     if (not verbose) {
         i64 frame = 0;
         for (auto& f : proc.front()) {
-            auto slot = dyn_cast<LLVM::AllocaOp>(&f);
+            auto slot = dyn_cast<AllocaOp>(&f);
             if (not slot) continue;
-            auto sz = GetConstantAllocaElemCount(slot);
-            if (not sz) continue;
             auto id = frame_ids[&f] = frame++;
-
-            if (slot.getElemType().isInteger(8)) {
-                Format(
-                    out,
-                    "    %4(#{}%) %1(=%) %5({}%)%1(, align%) %5({}%)\n",
-                    id,
-                    *sz,
-                    slot.getAlignment().value_or(1)
-                );
-            } else {
-                Assert(sz == 1, "Typed allocas should have array size 1");
-                Format(
-                    out,
-                    "    %4(#{}%) %1(=%) {}%1(, align%) %5({}%)\n",
-                    id,
-                    FormatType(slot.getElemType()),
-                    slot.getAlignment().value_or(1)
-                );
-            }
+            Format(
+                out,
+                "    %4(#{}%) %1(=%) %5({:y}%)%1(, align%) %5({}%)\n",
+                id,
+                slot.getSize(),
+                slot.getAlign()
+            );
         }
+
 
         if (frame) out += "\n";
     }
@@ -812,7 +763,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
             return tmp;
         }
 
-        if (isa<LLVM::AllocaOp>(op)) {
+        if (isa<AllocaOp>(op)) {
             Format(tmp, "%4(#{}%)", Id(frame_ids, op));
             return tmp;
         }

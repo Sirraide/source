@@ -4,6 +4,7 @@ program test;
 struct Small {
     int x;
     delete { }
+    copy = (x);
 };
 
 proc sink(Small) {}
@@ -22,4 +23,34 @@ proc f2() {
     sink_int(x);
     sink_int(copy x); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
     sink_int(copy 42); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
+}
+
+struct S {
+    int x;
+    int y;
+    delete { }
+    copy = (x * 2, y * 2);
+}
+
+eval {
+    S a = (4, 5);
+    assert a.x == 4;
+    assert a.y == 5;
+
+    var b = copy a;
+    assert b.x == 8;
+    assert b.y == 10;
+
+    var c = copy b;
+    assert c.x == 16;
+    assert c.y == 20;
+
+    var d = c; // Not a copy.
+    assert d.x == 16;
+    assert d.y == 20;
+
+    // Copy elision applies to rvalues.
+    S e = copy copy copy S(1, 2); // expected-warning 3: Redundant 'copy' of temporary value
+    assert e.x == 1;
+    assert e.y == 2;
 }

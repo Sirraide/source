@@ -59,6 +59,7 @@ auto Driver::PrepareJob() -> int {
     if (
         opts.verify and
         a != Action::CodeGen and
+        a != Action::CodeGenLLVM and
         a != Action::Parse and
         a != Action::Sema and
         a != Action::Lex and
@@ -290,6 +291,7 @@ int Driver::run_job() {
 
     // Dump IR.
     if (a == Action::DumpIR) {
+        diags().flush();
         auto s = cg.dump(opts.ir_verbose, opts.ir_generic);
         std::print("{}", text::RenderColours(opts.colours, s.str()));
         return finalise_ok ? 0 : 1;
@@ -308,6 +310,7 @@ int Driver::run_job() {
     // We do this even at -O0 since there are some mandatory passes (e.g.
     // to process 'inline' functions).
     cg.optimise(*machine, *tu, *ir_module);
+    if (opts.action == Action::CodeGenLLVM) return 0;
 
     // Emit LLVM IR.
     if (a == Action::EmitLLVM) {

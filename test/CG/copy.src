@@ -1,9 +1,10 @@
-// R %srcc --ir --target x86_64-unknown-linux %s
+// R %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
 program test;
 
 struct Small {
     int x;
     delete { }
+    copy = x;
 };
 
 proc sink(Small) {}
@@ -29,6 +30,18 @@ proc f3() {
     sink_int(copy 42);
 }
 
+struct S {
+    int x;
+    int y;
+    delete { }
+    copy = (x * 2, y * 2);
+}
+
+proc f4() {
+    S a = (4, 5);
+    var b = copy a;
+}
+
 // * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
@@ -36,6 +49,16 @@ proc f3() {
 // +
 // + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
+// +     ret
+// + }
+// +
+// + proc $T5Small.copy (
+// +     ptr %0 sret i8[8],
+// +     ptr %1 align 8 dereferenceable 8,
+// + ) external ccc {
+// + entry:
+// +     %2 = load i64, %1, align 8
+// +     store %0, i64 %2, align 8
 // +     ret
 // + }
 // +
@@ -61,9 +84,9 @@ proc f3() {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     copy #1 <- #0, 8
+// +     call ccc void $T5Small.copy(ptr #1, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
-// +     copy #2 <- #0, 8
+// +     call ccc void $T5Small.copy(ptr #2, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #2 align 8 dereferenceable 8 move)
 // +     store #3, i64 42, align 8
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #3 align 8 dereferenceable 8 move)
@@ -77,7 +100,7 @@ proc f3() {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     copy #1 <- #0, 8
+// +     call ccc void $T5Small.copy(ptr #1, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
 // +     delete #0 using $T5Small.delete implicit
 // +     ret
@@ -93,5 +116,40 @@ proc f3() {
 // +     %1 = load i64, #0, align 8
 // +     call ccc void _S8sink_intFviE.2(i64 %1 noundef)
 // +     call ccc void _S8sink_intFviE.2(i64 42 noundef)
+// +     ret
+// + }
+// +
+// + proc _S2f4FvE.6 private ccc {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 4, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 5, align 8
+// +     call ccc void $T1S.copy(ptr #1, ptr #0)
+// +     delete #1 using $T1S.delete implicit
+// +     delete #0 using $T1S.delete implicit
+// +     ret
+// + }
+// +
+// + proc $T1S.copy (
+// +     ptr %0 sret i8[16],
+// +     ptr %1 align 8 dereferenceable 16,
+// + ) external ccc {
+// + entry:
+// +     %2 = load i64, %1, align 8
+// +     %3 = mul i64 %2, 2
+// +     store %0, i64 %3, align 8
+// +     %4 = ptradd %0, 8
+// +     %5 = ptradd %1, 8
+// +     %6 = load i64, %5, align 8
+// +     %7 = mul i64 %6, 2
+// +     store %4, i64 %7, align 8
+// +     ret
+// + }
+// +
+// + proc $T1S.delete (ptr %0 align 8 dereferenceable 16) external ccc {
+// + entry:
 // +     ret
 // + }

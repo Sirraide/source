@@ -119,12 +119,12 @@ proc while_infinite_empty {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S12while_simpleFvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -145,7 +145,7 @@ proc while_infinite_empty {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S12while_nestedFvE.2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -182,7 +182,7 @@ proc while_infinite_empty {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S14while_infiniteFvE.3() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -195,7 +195,7 @@ proc while_infinite_empty {
 //L +   br label %2
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S20while_infinite_emptyFvE.4() #1 {
 //L +   br label %1
 //L +
@@ -203,9 +203,7 @@ proc while_infinite_empty {
 //L +   br label %1
 //L + }
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

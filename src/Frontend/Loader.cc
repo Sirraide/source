@@ -31,6 +31,24 @@ struct EncodedSLoc {
 };
 
 using EncodedEnumeratorDecl = std::tuple<DeclName, APInt, SLoc>;
+
+struct SpecialProcedures {
+    Ptr<ProcDecl> deleter;
+    Ptr<ProcDecl> copy;
+
+    SpecialProcedures(Ptr<ProcDecl> deleter, Ptr<ProcDecl> copy)
+        : deleter{deleter}, copy{copy} {}
+
+    SpecialProcedures(const RecordType* ty) {
+        deleter = ty->get_delete();
+        copy = ty->get_copy();
+    }
+
+    void apply_to(RecordType* ty) {
+        if (deleter) ty->set_delete(deleter.get());
+        if (copy) ty->set_copy(copy.get());
+    }
+};
 }
 
 class Sema::ASTWriter : public base::ser::Writer<std::endian::native> {
@@ -88,27 +106,24 @@ public:
                 *this << ty->elem() << ty->is_immutable();
             },
             [&](const TupleType* ty) {
-                *this << ty->layout();
+                *this << ty->layout() << SpecialProcedures(ty);
             },
             [&](const StructType* ty) {
                 *this << ty->decl()->name.str() << ty->decl()->location()
-                      << ty->layout() << ty->deleter().present();
-                if (ty->deleter().present()) *this << ty->deleter().get();
+                      << ty->layout() << SpecialProcedures(ty);
             },
         });
+    }
+
+    void write(const APInt& val) {
+        *this << u32(val.getBitWidth()) << u32(val.getNumWords());
+        for (unsigned w = 0; w < val.getNumWords(); w++) *this << u64(val.getRawData()[w]);
     }
 
     template <typename T>
     void write(ArrayRef<T> vals) {
         *this << vals.size();
         for (auto v : vals) *this << v;
-    }
-
-    void write(String s) {
-        // This needs a custom deserialiser for interning, so we also have to
-        // define a custom serialiser.
-        *this << s.size();
-        append_bytes(s.data(), s.size());
     }
 
     void write(DeclName name) {
@@ -121,23 +136,18 @@ public:
         *this << name.name << name.loc;
     }
 
-    void write(const APInt& val) {
-        *this << u32(val.getBitWidth()) << u32(val.getNumWords());
-        for (unsigned w = 0; w < val.getNumWords(); w++) *this << u64(val.getRawData()[w]);
+    void write(EnumeratorDecl* e) {
+        *this << EncodedEnumeratorDecl(e->name, e->value->value(), e->location());
     }
 
-    void write(SLoc loc) {
-        EncodedSLoc e;
-        if (auto f = loc.file(ctx)) {
-            RegisterFile(*f);
-            e.offs = loc.pointer() - f->data();
-            e.file = f->file_id();
-        }
-        *this << e;
+    void write(FieldDecl* f) {
+        *this << f->type << f->offset << f->name.str() << f->location();
     }
 
-    void write(Type ty) {
-        *this << RegisterType(ty);
+    void write(const InheritedProcedureProperties& props) {
+        *this << props.associated_type << props.mangling_number
+              << props.always_inline << props.is_compile_time_only
+              << props.is_cxx_inline_function;
     }
 
     template <typename T>
@@ -150,28 +160,45 @@ public:
         *this << p.intent << p.type << p.variadic;
     }
 
-    void write(FieldDecl* f) {
-        *this << f->type << f->offset << f->name.str() << f->location();
-    }
-
     void write(ProcDecl* proc) {
         *this << proc->kind() << proc->mangling
               << proc->type << proc->name << proc->props
               << proc->location();
     }
 
-    void write(EnumeratorDecl* e) {
-        *this << EncodedEnumeratorDecl(e->name, e->value->value(), e->location());
-    }
-
     void write(const RecordLayout& l) {
         *this << l.size() << l.array_size() << l.align() << l.bits() << l.fields();
     }
 
-    void write(const InheritedProcedureProperties& props) {
-        *this << props.associated_type << props.mangling_number
-              << props.always_inline << props.is_compile_time_only
-              << props.is_cxx_inline_function;
+    void write(SLoc loc) {
+        EncodedSLoc e;
+        if (auto f = loc.file(ctx)) {
+            RegisterFile(*f);
+            e.offs = loc.pointer() - f->data();
+            e.file = f->file_id();
+        }
+        *this << e;
+    }
+
+    void write(const SpecialProcedures& specials) {
+        auto Write = [&](Ptr<ProcDecl> d) {
+            *this << d.present();
+            if (d.present()) *this << d.get();
+        };
+
+        Write(specials.deleter);
+        Write(specials.copy);
+    }
+
+    void write(String s) {
+        // This needs a custom deserialiser for interning, so we also have to
+        // define a custom serialiser.
+        *this << s.size();
+        append_bytes(s.data(), s.size());
+    }
+
+    void write(Type ty) {
+        *this << RegisterType(ty);
     }
 
 private:
@@ -363,13 +390,15 @@ public:
                 auto decl_loc = Read(SLoc);
                 auto layout = Read(RecordLayout*);
                 auto ty = S.BuildCompleteStructType(decl_name, layout, decl_loc);
-                if (Read(bool)) ty->set_deleter(cast<ProcDecl>(Try(read_decl())));
+                auto special = Read(SpecialProcedures);
+                special.apply_to(ty);
                 return ty;
             }
 
             case K::TupleType: {
                 auto layout = Read(RecordLayout*);
-                return TupleType::Get(*S.tu, layout);
+                auto special = Read(SpecialProcedures);
+                return TupleType::Get(*S.tu, layout, [&](TupleType* ty) { special.apply_to(ty); });
             }
         }
 
@@ -442,6 +471,19 @@ public:
         auto bits = Read(RecordLayout::Bits);
         auto fields = Read(SmallVector<FieldDecl*>);
         return RecordLayout::Create(*S.tu, fields, size, array_size, align, bits);
+    }
+
+    template <>
+    auto read<SpecialProcedures>() -> Result<SpecialProcedures> {
+        auto ReadProc = [&] -> Result<Ptr<ProcDecl>> {
+            auto present = Read(bool);
+            if (present) return cast<ProcDecl>(Try(read_decl()));
+            return nullptr;
+        };
+
+        auto deleter = Try(ReadProc());
+        auto copy = Try(ReadProc());
+        return SpecialProcedures{deleter, copy};
     }
 
     template <>

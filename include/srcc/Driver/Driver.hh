@@ -15,6 +15,9 @@ enum struct srcc::Action : srcc::u8 {
     /// Run codegen but do not emit anything.
     CodeGen,
 
+    /// Run codegen and convert to LLVM IR, but don’t emit anything.
+    CodeGenLLVM,
+
     /// Does what you’d expect: compile all input files to
     /// executables and modules and save them to disk.
     Compile,

@@ -110,7 +110,7 @@ def SRCC_BuiltinMemberAccessKindAttr : SRCC_Attr<"BuiltinMemberAccessKind", "acc
 def ProcOp : SRCC_Op<"proc", [
     AffineScope, AutomaticAllocationScope, CallableOpInterface,
     FunctionOpInterface, IsolatedFromAbove, OpAsmOpInterface,
-    ProcAndCallOpInterface
+    ProcAndCallOpInterface, SymbolName, SymbolVisibility, Symbol
 ]> {
     let summary = "Procedure";
     let regions = (region AnyRegion:$body);
@@ -124,7 +124,8 @@ def ProcOp : SRCC_Op<"proc", [
         UnitAttr:$always_inline,
         UnitAttr:$norecurse,
         OptionalAttr<DictArrayAttr>:$arg_attrs,
-        OptionalAttr<DictArrayAttr>:$res_attrs
+        OptionalAttr<DictArrayAttr>:$res_attrs,
+        OptionalAttr<StrAttr>:$sym_visibility
     );
 
     let skipDefaultBuilders = 1;
@@ -235,6 +236,35 @@ def ProcOp : SRCC_Op<"proc", [
         //===------------------------------------------------------------------===//
 
         bool isDeclaration() { return isExternal(); }
+    }];
+}
+
+def AllocaOp : SRCC_Op<"alloca", [Pure]> {
+    let summary = "Allocate a fixed amount of space on the stack";
+    let arguments = (ins
+        Builtin_IntegerAttr:$bytes,
+        Builtin_IntegerAttr:$alignment
+    );
+
+    let results = (outs SRCC_Ptr:$result);
+    let builders = [
+        OpBuilder<(ins
+            "Size":$size,
+            "Align":$alignment
+        ), [{
+            build(
+                $_builder,
+                $_state,
+                mlir::LLVM::LLVMPointerType::get($_builder.getContext()),
+                $_builder.getI64IntegerAttr(i64(size.bytes())),
+                $_builder.getI64IntegerAttr(i64(alignment.value().bytes()))
+            );
+        }]>
+    ];
+
+    let extraClassDeclaration = [{
+        Size getSize() { return Size::Bytes(getBytes().getValue().getZExtValue()); }
+        Align getAlign() { return Align(getAlignment().getValue().getZExtValue()); }
     }];
 }
 

@@ -377,7 +377,7 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     // In C++, parameter names may differ across declarations, so only specify
     // a parameter name if it is the same across all declarations (in which that
     // parameter has a name).
-    SmallVector<DeclNameLoc> param_names;
+    SmallVector<Sema::ParamSpec> param_specs;
     for (auto i : llvm::seq(ty->param_count())) {
         std::optional<clang::DeclarationName> name;
         clang::SourceLocation name_loc;
@@ -403,34 +403,26 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
         }
 
         // If we have a name, add it to the type.
+        DeclNameLoc param_name;
         if (name.has_value()) {
-            param_names.emplace_back(
+            param_name = {
                 S.tu->save(name.value().getAsIdentifierInfo()->getName()),
-                ImportSourceLocation(name_loc)
-            );
-        } else {
-            param_names.emplace_back();
+                ImportSourceLocation(name_loc),
+            };
         }
+
+        // We don't ever to anything to the body of a C++ function, so we don't
+        // care about 'with' or 'this' here or whether the parameters are immutable,
+        // so just preserve the name.
+        param_specs.emplace_back(param_name);
     }
 
     // Create param decls.
-    //
-    // Don't use BuildParamDecl() here as that requires creating a
-    // scope for the procedure, which we don't do here since we don't
-    // need it.
-    SmallVector<LocalDecl*> params;
-    for (auto [i, name] : enumerate(param_names)) {
-        params.push_back(new (*S.tu) ParamDecl(
-            &ty->params()[i],
-            Expr::MLValue, // We pass by value so this is irrelevant.
-            name,
-            proc,
-            u32(i),
-            false
-        ));
-    }
-
-    proc->finalise(nullptr, params);
+    auto scope = S.tu->create_scope<ProcScope>(nullptr, std::nullopt);
+    proc->scope = scope;
+    Sema::EnterProcedure _{S, proc};
+    S.BuildParamDecls(proc, param_specs);
+    proc->finalise(nullptr, S.curr_proc().locals);
     return proc;
 }
 
@@ -487,8 +479,7 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     });
 
     // Build the layout.
-    auto bits = RecordLayout::Bits::Trivial(contains_pointer);
-    bits.is_union = rd->isUnion();
+    auto bits = RecordLayout::Bits::CLikeType(contains_pointer, rd->isUnion());
     auto rl = RecordLayout::Create(
         *S.tu,
         fields,
@@ -767,6 +758,9 @@ auto Sema::ParseCXX(
     // We don't use clang::tooling::buildASTFromCodeWithArgs() because we handle
     // setting up the file system ourselves.
     struct Action : clang::tooling::ToolAction {
+        Sema& S;
+        Action(Sema& S) : S{S} {}
+
         std::unique_ptr<clang::ASTUnit> ast;
         bool runInvocation(
             std::shared_ptr<clang::CompilerInvocation> invocation,
@@ -782,6 +776,13 @@ auto Sema::ParseCXX(
                 /*ShouldOwnClient=*/false
             );
 
+            if (S.tu->lang_opts().dump_include_paths) {
+                std::println(stderr, "Clang header search paths:");
+                for (const auto& e : invocation.get()->getHeaderSearchOpts().UserEntries) {
+                    std::println(stderr, "  - {}", e.Path);
+                }
+            }
+
             ast = clang::ASTUnit::LoadFromCompilerInvocation(
                 std::move(invocation),
                 std::move(pch_ops),
@@ -796,7 +797,7 @@ auto Sema::ParseCXX(
         }
     };
 
-    Action the_action;
+    Action the_action{*this};
     auto file_mgr = llvm::makeIntrusiveRefCnt<clang::FileManager>(clang::FileSystemOptions(), ImportVFS);
     clang::tooling::ToolInvocation invocation{
         args,

@@ -11,6 +11,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/TinyPtrVector.h>
+#include <llvm/Support/VirtualFileSystem.h>
 
 #include <base/Macros.hh>
 
@@ -1092,19 +1093,21 @@ private:
 
     /// Parameter definition passed to BuildImplicitProcedure().
     struct ParamSpec {
-        ParamTypeData type;
         DeclNameLoc name{};
+        SLoc with_loc{};
+        bool immutable : 1 = false;
+        bool is_this : 1 = false;
     };
 
     /// Build an implicit procedure.
-    [[nodiscard]] auto BuildImplicitProcedure(
+    auto BuildImplicitProcedure(
+        ProcType* ty,
         DeclName name,
-        TypeAndValueCategory ret,
-        ArrayRef<ParamSpec> params,
+        ArrayRef<ParamSpec> param_specs,
         Linkage linkage,
         Mangling mangling,
         SLoc loc,
-        llvm::function_ref<void(ProcDecl*, SmallVectorImpl<Stmt*>&)> BuildBody
+        llvm::function_ref<Ptr<Expr>(ProcDecl*)> BuildBody
     ) -> ProcDecl*;
 
     /// Check that a type is valid for a record field.
@@ -1163,6 +1166,15 @@ private:
 
     /// Perform template deduction.
     auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type>;
+
+    /// Define special procedures (delete/copy) of a type.
+    void DefineSpecialProcedures(
+        RecordType* r,
+        RecordLayout::Props props,
+        Ptr<ParsedStmt> parsed_deleter,
+        Ptr<ParsedStmt> parsed_copy,
+        SLoc loc
+    );
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return);
@@ -1438,14 +1450,7 @@ private:
     auto BuildIfExpr(Expr* cond, Stmt* then, Ptr<Stmt> else_, SLoc loc) -> Ptr<IfExpr>;
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr>;
-    auto BuildParamDecl(
-        ProcDecl* proc,
-        const ParamTypeData* param,
-        u32 index,
-        bool with_param,
-        bool immutable,
-        DeclNameLoc name
-    ) -> ParamDecl*;
+    void BuildParamDecls(ProcDecl* proc, ArrayRef<ParamSpec> spec);
     auto BuildProcDeclInitial(
         Scope* proc_scope,
         ProcType* ty,
@@ -1456,11 +1461,11 @@ private:
         ProcTemplateDecl* pattern = nullptr
     ) -> ProcDecl*;
 
-    auto BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr>;
+    auto BuildProcBody(ProcDecl* proc, Ptr<Expr> body) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
-    auto BuildTupleType(ArrayRef<TypeLoc> types) -> Opt<Type>;
+    auto BuildTupleType(ArrayRef<TypeLoc> types, SLoc loc) -> Opt<Type>;
     auto BuildTuple(
         ArrayRef<Expr*> exprs,
         Opt<Type> desired_ty,
@@ -1520,7 +1525,7 @@ private:
     void TranslateEnumerators(EnumType* e);
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
     auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
-    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body, ArrayRef<ParsedVarDecl*> decls) -> Ptr<Stmt>;
+    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body) -> Ptr<Expr>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed, Opt<Type> desired_type = {}) -> Ptr<Stmt>;
     bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Opt<Type> desired_type = {});

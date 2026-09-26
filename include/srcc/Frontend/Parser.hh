@@ -160,8 +160,9 @@ private:
     auto ParseOverloadableOperatorName() -> std::optional<DeclNameLoc>;
     bool ParseParameter(parser::Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls);
     void ParsePreamble();
-    auto ParseProcBody(parser::Signature sig, ArrayRef<ParsedVarDecl*> param_decls) -> Ptr<ParsedProcDecl>;
+    auto ParseProcBody() -> std::pair<Ptr<ParsedStmt>, bool>;
     auto ParseProcDecl() -> Ptr<ParsedProcDecl>;
+    auto ParseProcRest(parser::Signature sig, ArrayRef<ParsedVarDecl*> param_decls) -> Ptr<ParsedProcDecl>;
     auto ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt>;
     bool ParseSignature(parser::Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);

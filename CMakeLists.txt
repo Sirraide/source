@@ -17,9 +17,12 @@ if (NOT EXISTS "${SOURCE_LLVM_ROOT}/bin/clang")
     message(FATAL_ERROR "SOURCE_LLVM_ROOT does not contain a vid Clang build. See README.md for instructions.")
 endif()
 
-if (NOT CMAKE_CXX_COMPILER STREQUAL "${SOURCE_LLVM_ROOT}/bin/clang++")
-    message(FATAL_ERROR "The C++ compiler must be set to the '$SOURCE_LLVM_ROOT/bin/clang++'")
-endif()
+# FIXME: We don't need the *exact same* compiler we’re building; it just needs
+# to be our fork; check for a macro defined by it or sth.
+#
+# if (NOT CMAKE_CXX_COMPILER STREQUAL "${SOURCE_LLVM_ROOT}/bin/clang++")
+#     message(FATAL_ERROR "The C++ compiler must be set to the '$SOURCE_LLVM_ROOT/bin/clang++'")
+# endif()
 
 ## ============================================================================
 ##  Global CMake Variables.

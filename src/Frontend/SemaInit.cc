@@ -258,7 +258,7 @@ auto Sema::BuildAggregateInitialiser(
     // Second case: option 3. Option 2 is handled before we get here,
     // i.e. at this point, we know we’re building a literal initialiser.
     Assert(not args.empty(), "Should have handled this in BuildConversionSequence()");
-    Assert(rl.has_literal_init(), "Should have rejected before we ever get here");
+    Assert(rl.has_literal_init(), "Type '{}' has no literal initialiser", r);
 
     // Currently, we don't support initialising unions (apart from zero-initialisation).
     if (rl.bits().is_union)

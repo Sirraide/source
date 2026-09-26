@@ -42,7 +42,10 @@ auto Sema::BuildAssertExpr(
         };
 
         // Build the stringifier.
-        auto BuildBody = [&](ProcDecl* proc, SmallVectorImpl<Stmt*>& stmts) {
+        auto BuildBody = [&](ProcDecl* proc) {
+            EnterScope scope{*this};
+            SmallVector<Stmt*> stmts;
+
             // Append a string to the buffer.
             auto param = curr_proc().locals[0];
             auto AppendStr = [&](StringRef s){
@@ -86,13 +89,15 @@ auto Sema::BuildAssertExpr(
                     b->rhs->visit(self);
                 }
             });
+
+            return BuildBlockExpr(scope.get(), stmts, loc);
         };
 
         auto assert_buffer_type = cast<TypeExpr>(GetRuntimeSymbol("__src_assert_msg_buf"))->value;
         stringifier = BuildImplicitProcedure(
+            ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, assert_buffer_type}}),
             tu->save(Format("__srcc_assert_stringifier_{}", assert_stringifiers++)),
-            {Type::VoidTy, Expr::RValue},
-            {{{Intent::Inout, assert_buffer_type, false}}},
+            {{{String("__buffer"), loc}}},
             Linkage::Internal,
             Mangling::None,
             loc,
@@ -1180,25 +1185,30 @@ auto Sema::BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<
     return new (*tu) MemberAccessExpr(base, field, loc);
 }
 
-auto Sema::BuildParamDecl(
-    ProcDecl* proc,
-    const ParamTypeData* param,
-    u32 index,
-    bool with_param,
-    bool immutable,
-    DeclNameLoc name
-) -> ParamDecl* {
-    auto decl = new (*tu) ParamDecl(
-        param,
-        Expr::LValue(immutable),
-        name,
-        proc,
-        index,
-        with_param
-    );
+void Sema::BuildParamDecls(ProcDecl* proc, ArrayRef<ParamSpec> specs) {
+    for (auto [index, param] : enumerate(zip_equal(proc->param_types(), specs))) {
+        auto [data, spec] = param;
+        auto decl = new (*tu) ParamDecl(
+            &data,
+            Expr::LValue(spec.immutable),
+            spec.name,
+            proc,
+            u32(index),
+            spec.with_loc.is_valid()
+        );
 
-    DeclareLocal(decl);
-    return decl;
+        DeclareLocal(decl);
+
+        // Implement 'with'.
+        if (spec.with_loc.is_valid() or spec.is_this) AddEntryToWithStack(
+            curr_scope(),
+            Save(CreateReference(decl, decl->location()).get()),
+            spec.with_loc,
+            spec.is_this
+        );
+
+        if (!decl->valid()) proc->set_invalid();
+    }
 }
 
 auto Sema::BuildProcDeclInitial(
@@ -1270,8 +1280,19 @@ auto Sema::BuildProcDeclInitial(
     return proc;
 }
 
-auto Sema::BuildProcBody(ProcDecl* proc, Expr* body) -> Ptr<Expr> {
+auto Sema::BuildProcBody(ProcDecl* proc, Ptr<Expr> body_or_null) -> Ptr<Expr> {
+    // If we’re attempting to deduce the return type of this procedure,
+    // but the body contains an error, just set it to void.
+    if (body_or_null.invalid()) {
+        if (proc->return_type() == Type::DeducedTy) {
+            proc->type = ProcType::AdjustRet(*tu, proc->proc_type(), Type::VoidTy);
+            proc->set_invalid();
+        }
+        return nullptr;
+    }
+
     // If the body is not a block, build an implicit return.
+    auto body = body_or_null.get();
     if (not isa<BlockExpr>(body)) body = BuildReturnExpr(body, body->location(), true);
 
     // Make sure all paths return a value. First, if the body is
@@ -1375,10 +1396,10 @@ auto Sema::BuildTuple(
         may_build_paren_expr
     ) return new (*tu) ParenExpr(exprs.front(), loc);
 
-    // Compute the tuple type.
-    auto types = llvm::to_vector(vws::transform(exprs, [&](Expr* e) { return e->type; }));
-    if (not all_of(types, [&] (Type ty) { return CheckFieldType(ty, loc); })) return {};
-    return TupleExpr::Create(*tu, TupleType::Get(*tu, types), exprs, names, loc);
+    // Ensure all the types are well formed.
+    auto types = llvm::to_vector(vws::transform(exprs, [&](Expr* e) { return e->type_loc(); }));
+    auto ty = TRY(BuildTupleType(types, loc));
+    return TupleExpr::Create(*tu, ty, exprs, names, loc);
 }
 
 auto Sema::BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr* {
@@ -1575,12 +1596,20 @@ auto Sema::BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type> {
     return SliceType::Get(*tu, base, immutable);
 }
 
-auto Sema::BuildTupleType(ArrayRef<TypeLoc> types) -> Opt<Type> {
+auto Sema::BuildTupleType(ArrayRef<TypeLoc> types, SLoc tuple_loc) -> Opt<Type> {
+    // FIXME: This should create an incomplete tuple first that is completed
+    // on-demand by 'CompleteDefinition()' (or at the end of the TU).
+    RecordLayout::Builder lb{*tu};
     bool ok = true;
-    for (auto [ty, loc] : types)
-        if (not CheckFieldType(ty, loc))
-            ok = false;
+    for (auto [ty, loc] : types) {
+        if (not CheckFieldType(ty, loc)) ok = false;
+        else lb.add_field(ty, "", loc);
+    }
 
+    // Build the layout.
     if (not ok) return {};
-    return TupleType::Get(*tu, llvm::to_vector(vws::transform(types, &TypeLoc::ty)));
+    auto [layout, props] = lb.build();
+    return TupleType::Get(*tu, layout, [&](TupleType* r) {
+        DefineSpecialProcedures(r, props, nullptr, nullptr, tuple_loc);
+    });
 }

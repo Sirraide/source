@@ -332,18 +332,22 @@ ParsedStructDecl::ParsedStructDecl(
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
     Ptr<ParsedStmt> deleter,
+    Ptr<ParsedStmt> copy_proc,
     SLoc loc
 ) : ParsedDecl{Kind::StructDecl, name, loc},
     num_fields(u32(fields.size())),
-    has_deleter(deleter.present()) {
+    has_deleter(deleter.present()),
+    has_copy_proc(copy_proc.present()) {
     std::uninitialized_copy_n(
         fields.begin(),
         fields.size(),
         getTrailingObjects<ParsedFieldDecl*>()
     );
 
-    if (deleter.present())
-        *getTrailingObjects<ParsedStmt*>() = deleter.get();
+    if (has_deleter)
+        getTrailingObjects<ParsedStmt*>()[0] = deleter.get();
+    if (has_copy_proc)
+        getTrailingObjects<ParsedStmt*>()[u32(has_deleter)] = copy_proc.get();
 }
 
 auto ParsedStructDecl::Create(
@@ -351,11 +355,16 @@ auto ParsedStructDecl::Create(
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
     Ptr<ParsedStmt> deleter,
+    Ptr<ParsedStmt> copy_proc,
     SLoc loc
 ) -> ParsedStructDecl* {
-    const auto size = totalSizeToAlloc<ParsedFieldDecl*, ParsedStmt*>(fields.size(), deleter.present());
+    const auto size = totalSizeToAlloc<ParsedFieldDecl*, ParsedStmt*>(
+        fields.size(),
+        deleter.present() + copy_proc.present()
+    );
+
     auto mem = parser.allocate(size, alignof(ParsedStructDecl));
-    return ::new (mem) ParsedStructDecl{name, fields, deleter, loc};
+    return ::new (mem) ParsedStructDecl{name, fields, deleter, copy_proc, loc};
 }
 
 // ============================================================================
@@ -676,14 +685,16 @@ auto ParsedStmt::children(bool include_types) -> Children {
 
         [&](ParsedStructDecl* s) -> Children {
             auto del = s->deleter().get_or_null();
-            if (not del) return Children::NonOwning{
+            auto copy = s->copy_proc().get_or_null();
+            if (not del and not copy) return Children::NonOwning{
                 reinterpret_cast<ParsedStmt* const*>(s->fields().data()),
                 s->fields().size()
             };
 
             Children::Owning children;
             append_range(children, s->fields());
-            children.push_back(del);
+            if (del) children.push_back(del);
+            if (copy) children.push_back(copy);
             return std::move(children);
         },
 

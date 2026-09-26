@@ -12,18 +12,16 @@ export proc x = eval called_at_compile_time();
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none)
+//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none) uwtable
 //L + define void @__src_static_init.test() local_unnamed_addr #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none)
+//L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none) uwtable
 //L + define noundef i64 @"_SM4test$1xFiE.3"() local_unnamed_addr #0 {
 //L +   ret i64 42
 //L + }
 //L +
-//L + attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memory(none) }
+//L + attributes #0 = { mustprogress nofree norecurse nosync nounwind willreturn memory(none) uwtable }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

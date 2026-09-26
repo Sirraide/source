@@ -35,6 +35,7 @@ using options = clopts< // clang-format off
 
     // Flags that determine what action to take.
     flag<"--cg", "Run codegen but do not emit anything. See also --ir, --llvm.">,
+    flag<"--cg-llvm", "Run codegen and convert to LLVM IR, but emit nothing.">,
     flag<"--eval", "Run the entire input through the constant evaluator">,
     flag<"--eval-dump-ir", "As --eval, but also dump the IR used for evaluation">,
     flag<"--exports", "Dump the module description to stdout">,
@@ -47,7 +48,7 @@ using options = clopts< // clang-format off
     option<"--time", "Print statistics showing how long compilation took to a file">,
     flag<"--tokens", "Print tokens and exit">,
     mutually_exclusive<
-        "--cg", "--eval", "--eval-dump-ir", "--exports", "--dump-module",
+        "--cg", "--cg-llvm", "--eval", "--eval-dump-ir", "--exports", "--dump-module",
         "--ir", "--lex", "--llvm", "--parse", "--sema", "--tokens"
     >,
 
@@ -74,6 +75,8 @@ using options = clopts< // clang-format off
 
     // Internal flags. We use 'Q' as a prefix because it’s unlikely to be used for anything else.
     flag<"-Qpreamble", "Enable or disable the preamble", {.hidden = true, .default_value = true}>,
+    flag<"-Qinclude", "Print include paths", {.hidden = true}>,
+    option<"-Qremarks", "Enable optimisation remarks", std::string, {.hidden = true}>,
 
     help<>
 >; // clang-format on
@@ -181,6 +184,7 @@ int main(int argc, char** argv) {
 
     // Figure out what we want to do.
     auto action = opts.get<"--cg">()           ? Action::CodeGen
+                : opts.get<"--cg-llvm">()      ? Action::CodeGenLLVM
                 : opts.get<"--eval-dump-ir">() ? Action::EvalDumpIR
                 : opts.get<"--eval">()         ? Action::Eval
                 : opts.get<"--exports">()      ? Action::DumpExports
@@ -218,6 +222,21 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (auto s = opts.get<"-Qremarks">()) {
+        const char* args[]{
+            "srcc",
+            "-pass-remarks",
+            s->c_str(),
+            "-pass-remarks-missed",
+            s->c_str(),
+            "-pass-remarks-analysis",
+            s->c_str(),
+            nullptr
+        };
+
+        llvm::cl::ParseCommandLineOptions(int(std::size(args)) - 1, args, "", &llvm::errs(), nullptr);
+    }
+
     // TODO:
     //  - Move lang opts to be TU-specific in case the TU wants
     //    to alter them using e.g. pragmas.
@@ -251,6 +270,7 @@ int main(int argc, char** argv) {
             .no_preamble = not opts.get<"-Qpreamble">(),
             .wcxx_import = opts.get<"-Wc++-import">(),
             .stringify_asserts = opts.get<"-fstringify-asserts">(),
+            .dump_include_paths = opts.get<"-Qinclude">(),
         },
         .eval_steps = u64(opts.get<"--eval-steps">(1 << 20)),
         .error_limit = u32(opts.get<"--error-limit">(20)),

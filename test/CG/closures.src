@@ -254,12 +254,12 @@ proc f4 -> int {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f1FiE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -274,19 +274,19 @@ proc f4 -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f1$1gFiE.5"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 %3
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f1$1hFiE.6"() #1 {
 //L +   ret i64 20
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f2FiE.2() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -296,7 +296,7 @@ proc f4 -> int {
 //L +   ret i64 %3
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f2$1gFiE.7"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -308,7 +308,7 @@ proc f4 -> int {
 //L +   ret i64 %5
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f3FiE.3() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -324,7 +324,7 @@ proc f4 -> int {
 //L +   ret i64 %7
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f3$1hFibE.9"(i1 noundef zeroext %0, ptr nest nofree noundef readonly %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
@@ -347,7 +347,7 @@ proc f4 -> int {
 //L +   ret i64 %13
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f3$1gFibE.10"(i1 noundef zeroext %0, ptr nest nofree noundef readonly %1) #1 {
 //L +   %3 = alloca i8, i64 1, align 1
 //L +   %4 = sext i1 %0 to i8
@@ -371,7 +371,7 @@ proc f4 -> int {
 //L +   ret i64 %14
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S2f4FiE.4() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
@@ -383,14 +383,14 @@ proc f4 -> int {
 //L +   ret i64 %5
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f4$2g1FiE.11"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load i64, ptr %2, align 8
 //L +   ret i64 %3
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f4$2g2FiE.12"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -409,7 +409,7 @@ proc f4 -> int {
 //L +   ret i64 %12
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f2$1g$1hFiE.8"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load ptr, ptr %2, align 8
@@ -421,7 +421,7 @@ proc f4 -> int {
 //L +   ret i64 %8
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f4$2g2$2g3FiE.13"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = load ptr, ptr %2, align 8
@@ -433,7 +433,7 @@ proc f4 -> int {
 //L +   ret i64 %8
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @"_S2f4$2g2$2g4FiE.14"(ptr nest nofree noundef readonly %0) #1 {
 //L +   %2 = load ptr, ptr %0, align 8
 //L +   %3 = call i64 @"_S2f4$2g1FiE.11"(ptr nest nofree noundef readonly %2)
@@ -450,9 +450,7 @@ proc f4 -> int {
 //L +   ret i64 %13
 //L + }
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

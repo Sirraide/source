@@ -73,8 +73,8 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
 
     // Only CodeGen cares about these, so the pointer types used for these don’t
     // actually matter; it just needs to be *a* pointer.
-    SliceEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, Type::IntTy});
-    ClosureEquivalentTupleTy = TupleType::Get(*this, {I8PtrTy, I8PtrTy});
+    SliceEquivalentTupleTy = TupleType::GetTrivial(*this, {I8PtrTy, Type::IntTy});
+    ClosureEquivalentTupleTy = TupleType::GetTrivial(*this, {I8PtrTy, I8PtrTy});
 
     // struct AbortInfo {
     //     i8 val[] filename;
@@ -84,7 +84,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     //     i8 val[] msg2;
     //     proc stringifier (inout __src_assert_msg_buf);
     // }
-    AbortInfoEquivalentTy = TupleType::Get(
+    AbortInfoEquivalentTy = TupleType::GetTrivial(
         *this,
         {StrLitTy, Type::IntTy, Type::IntTy, StrLitTy, StrLitTy, ClosureEquivalentTupleTy}
     );
@@ -662,6 +662,8 @@ void Stmt::Printer::Print(Stmt* e) {
                 SmallVector<Stmt*, 10> children;
                 children.append(s->layout().fields().begin(), s->layout().fields().end());
                 children.append(s->scope()->inits.begin(), s->scope()->inits.end());
+                if (auto d = s->get_delete()) children.push_back(d.get());
+                if (auto c = s->get_copy()) children.push_back(c.get());
                 PrintChildren(children);
                 return;
             }

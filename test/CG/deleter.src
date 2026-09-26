@@ -102,34 +102,31 @@ temporaries();
 // +     store %8, i64 15, align 8
 // +     %9 = ptradd %8, 8
 // +     store %9, i64 16, align 8
-// +     %10 = ptradd #1, 48
-// +     br bb1(%10)
+// +     br bb1(48)
 // +
-// + bb1(ptr %11):
+// + bb1(i64 %10):
+// +     %11 = ptradd #1, %10
 // +     %12 = ptradd base %11, 0
 // +     delete %12 using $T3Big.delete implicit
-// +     %13 = cmp eq ptr %11, #1
-// +     br %13 to bb3 else bb2
+// +     %13 = icmp eq i64 %10, 0
+// +     br %13 to bb3(16) else bb2
 // +
 // + bb2:
-// +     %14 = ptradd sibling %11, -24
+// +     %14 = add i64 %10, -24
 // +     br bb1(%14)
 // +
-// + bb3:
-// +     %15 = ptradd #0, 16
-// +     br bb4(%15)
-// +
-// + bb4(ptr %16):
+// + bb3(i64 %15):
+// +     %16 = ptradd #0, %15
 // +     %17 = ptradd base %16, 0
 // +     delete %17 using $T5Small.delete implicit
-// +     %18 = cmp eq ptr %16, #0
-// +     br %18 to bb6 else bb5
+// +     %18 = icmp eq i64 %15, 0
+// +     br %18 to bb5 else bb4
+// +
+// + bb4:
+// +     %19 = add i64 %15, -8
+// +     br bb3(%19)
 // +
 // + bb5:
-// +     %19 = ptradd sibling %16, -8
-// +     br bb4(%19)
-// +
-// + bb6:
 // +     ret
 // + }
 // +

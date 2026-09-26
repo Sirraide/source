@@ -41,7 +41,7 @@ Context::Context() {
             nullptr,
         };
 
-        llvm::cl::ParseCommandLineOptions(2, args, "", &llvm::errs(), nullptr);
+        llvm::cl::ParseCommandLineOptions(int(std::size(args)) - 1, args, "", &llvm::errs(), nullptr);
 
         // Open the current process as a library.
         std::string err_msg;

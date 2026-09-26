@@ -445,6 +445,13 @@ struct FStringWithSrcLocImpl {
 template <typename... Args>
 using FStringWithSrcLoc = FStringWithSrcLocImpl<std::type_identity_t<Args>...>;
 
+/// Compute the number of bits required to store a value of type 'E'
+template <typename E>
+requires std::is_enum_v<E>
+consteval usz BitsForEnum() {
+    return std::countr_zero(std::bit_ceil(usz(enchantum::max<E>))) + 1;
+}
+
 /// This parameter is moved-from because we’ll never use the
 /// same error more than once anyway.
 auto FormatError(llvm::Error& e) -> std::string;

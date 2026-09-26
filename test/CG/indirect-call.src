@@ -64,14 +64,14 @@ caller2(foo);
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   %1 = call i64 @_S7caller1FiFiEE.1(ptr noundef @_S3fooFiE.3, ptr noundef null)
 //L +   %2 = call i64 @_S7caller2FixFiEE.2(ptr noundef @_S3fooFiE.3, ptr noundef null)
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S7caller1FiFiEE.1(ptr noundef %0, ptr noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -84,12 +84,12 @@ caller2(foo);
 //L +   ret i64 %8
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S3fooFiE.3() #1 {
 //L +   ret i64 42
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private i64 @_S7caller2FixFiEE.2(ptr noundef %0, ptr noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -102,9 +102,7 @@ caller2(foo);
 //L +   ret i64 %8
 //L + }
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

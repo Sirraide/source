@@ -42,7 +42,7 @@ auto SRCCDialect::materializeConstant(
         llvm::function_ref<mlir::InFlightDiagnostic()> emitError                                       \
     ) {                                                                                                \
         if (not isa<ATTR>(attr)) {                                                                     \
-            emitError() << "invalid value for " #TYPE "; expected " #ATTR;                             \
+            Unreachable("invalid value for " #TYPE "; expected " #ATTR);                             \
             return mlir::failure();                                                                    \
         }                                                                                              \
                                                                                                        \
@@ -76,14 +76,19 @@ auto SRCCDialect::materializeConstant(
         mlir::Attribute attr,                                                                            \
         llvm::function_ref<mlir::InFlightDiagnostic()> emitError                                         \
     ) {                                                                                                  \
-        if (not isa<mlir::IntegerAttr>(attr)) {                                                          \
-            emitError() << "invalid value for " #TYPE "; expected IntegerAttr";                          \
-            return mlir::failure();                                                                      \
+        if (auto int_attr = dyn_cast<mlir::IntegerAttr>(attr)) {                                         \
+            storage = TYPE(int_attr.getValue().getZExtValue());                                          \
+            return mlir::success();                                                                      \
         }                                                                                                \
                                                                                                          \
-        auto value = cast<mlir::IntegerAttr>(attr).getInt();                                             \
-        storage = TYPE(value);                                                                           \
-        return mlir::success();                                                                          \
+        if (auto a = dyn_cast<ATTR>(attr)) {                                                             \
+            storage = a.getValue();                                                                      \
+            return mlir::success();                                                                      \
+        }                                                                                                \
+                                                                                                         \
+        Assert(emitError, "Error handler is null");                                                      \
+        emitError() << "invalid value for " #TYPE "; expected IntegerAttr";                              \
+        return mlir::failure();                                                                          \
     }                                                                                                    \
                                                                                                          \
     mlir::LogicalResult ir::readFromMlirBytecode(mlir::DialectBytecodeReader& reader, TYPE& storage) {   \

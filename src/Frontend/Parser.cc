@@ -1736,21 +1736,8 @@ void Parser::ParsePreamble() {
     while (At(Tk::Import)) ParseImport();
 }
 
-// <proc-body> ::= <expr-block> | "=" <expr-braces> | "=" <expr-no-braces> ";" | ";"
-auto Parser::ParseProcBody(
-    Signature sig,
-    ArrayRef<ParsedVarDecl*> param_decls
-) -> Ptr<ParsedProcDecl> {
-    // If we failed to parse a return type, or if there was
-    // none, just default to void instead, or deduce the type
-    // if this is a '= <expr>' declaration.
-    if (sig.ret.invalid()) {
-        sig.ret = new (*this) ParsedBuiltinType(
-            At(Tk::Assign) ? Type::DeducedTy.ptr() : Type::VoidTy.ptr(),
-            sig.proc_loc
-        );
-    }
-
+// <proc-body> ::= [ <expr-block> | "=" <expr> ]
+auto Parser::ParseProcBody() -> std::pair<Ptr<ParsedStmt>, bool> {
     // If the next token can’t introduce a body, skip any intervening junk
     // that the user may have put here.
     bool complained_about_body = false;
@@ -1770,6 +1757,26 @@ auto Parser::ParseProcBody(
     } else if (At(Tk::LBrace)) {
         body = ParseBlock();
     }
+
+    return {body, complained_about_body};
+}
+
+auto Parser::ParseProcRest(
+    Signature sig,
+    ArrayRef<ParsedVarDecl*> param_decls
+) -> Ptr<ParsedProcDecl> {
+    // If we failed to parse a return type, or if there was
+    // none, just default to void instead, or deduce the type
+    // if this is a '= <expr>' declaration.
+    if (sig.ret.invalid()) {
+        sig.ret = new (*this) ParsedBuiltinType(
+            At(Tk::Assign) ? Type::DeducedTy.ptr() : Type::VoidTy.ptr(),
+            sig.proc_loc
+        );
+    }
+
+    // Now parse the procedure body.
+    auto [body, complained_about_body] = ParseProcBody();
 
     // Procedures not declared 'extern' must have a body (and vice versa).
     // FIXME: Move this diagnostic to Sema instead.
@@ -1818,7 +1825,7 @@ auto Parser::ParseProcDecl() -> Ptr<ParsedProcDecl> {
         sig.name
     );
 
-    return ParseProcBody(std::move(sig), param_decls);
+    return ParseProcRest(std::move(sig), param_decls);
 }
 
 auto Parser::ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt> {
@@ -2237,8 +2244,9 @@ void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at) {
     }
 }
 
-// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" | <deleter> } "}"
+// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" | <deleter> | <copy-proc> } "}"
 // <deleter>     ::= DELETE "{ <stmts> "}"
+// <copy-proc>   ::= COPY <proc-body>
 auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     auto struct_loc = Next();
 
@@ -2250,6 +2258,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
     Ptr<ParsedStmt> deleter;
+    Ptr<ParsedStmt> copy_proc;
     BracketTracker braces{*this, Tk::LBrace};
     while (not At(Tk::RBrace, Tk::Eof)) {
         auto ParseField = [&] {
@@ -2282,6 +2291,24 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
             continue;
         }
 
+        if (SLoc loc; Consume(loc, Tk::Copy)) {
+            auto [body, complained] = ParseProcBody();
+            if (not body and not complained) {
+                Error("Expected procedure body after '%1(copy%)'");
+                continue;
+            }
+
+            ExpectSemicolon();
+            if (auto prev = copy_proc.get_or_null()) {
+                Error(loc, "Struct already defines a copy procedure");
+                Note(prev->loc, "Previous copy procedure defined here");
+            }
+
+            body.get()->loc = loc;
+            copy_proc = body;
+            continue;
+        }
+
         ParseField();
         if (not ExpectSemicolon()) {
             SkipTo(Tk::Semicolon, Tk::RBrace);
@@ -2290,7 +2317,14 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     }
 
     braces.close();
-    return ParsedStructDecl::Create(*this, name, fields, deleter, struct_loc);
+    return ParsedStructDecl::Create(
+        *this,
+        name,
+        fields,
+        deleter,
+        copy_proc,
+        struct_loc
+    );
 }
 
 auto Parser::ParseType(int precedence) -> Ptr<ParsedStmt> {

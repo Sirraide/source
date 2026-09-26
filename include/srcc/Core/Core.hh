@@ -150,6 +150,9 @@ struct srcc::LangOpts {
 
     /// Enable generation of code that stringifies assert messages.
     bool stringify_asserts : 1 = true;
+
+    /// Dump include paths.
+    bool dump_include_paths : 1 = false;
 };
 
 /// A file in the context.

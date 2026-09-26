@@ -120,6 +120,10 @@ struct ABIImpl final : abi::ABI {
 struct Impl final : Target {
     Impl(llvm::IntrusiveRefCntPtr<clang::TargetInfo> TI)
         : Target(std::move(TI), std::make_unique<ABIImpl>(*this)) {}
+
+    auto unwind_table_kind() const -> llvm::UWTableKind override {
+        return llvm::UWTableKind::Async;
+    }
 };
 }
 
@@ -726,6 +730,7 @@ auto ABIImpl::lower_proc_type(
 }
 
 bool ABIImpl::needs_indirect_return(CodeGen& cg, Type ty) const {
+    if (not ty->trivially_copyable()) return true;
     return ty->memory_size(cg.translation_unit()) > Size::Bits(128);
 }
 

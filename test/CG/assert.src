@@ -30,75 +30,74 @@ proc foo(in int a, in int b) {
 // +     %10 = i64 24
 // +     %11 = i64 5
 // +     %12 = i64 16
-// +     %13 = i64 10
-// +     %14 = addressof @1
-// +     %15 = i64 6
-// +     %16 = addressof @0
-// +     %17 = i64 0
-// +     %18 = i64 80
-// +     %19 = i64 8
+// +     %13 = i64 8
+// +     %14 = i64 10
+// +     %15 = addressof @1
+// +     %16 = i64 6
+// +     %17 = addressof @0
+// +     %18 = i64 0
+// +     %19 = alloca 8, align 8
 // +     %20 = alloca 8, align 8
-// +     %21 = alloca 8, align 8
-// +     %22 = alloca 80, align 8
-// +     store ptr %20, i64 %0, align 8
-// +     store ptr %21, i64 %1, align 8
+// +     %21 = alloca 80, align 8
+// +     store ptr %19, i64 %0, align 8
+// +     store ptr %20, i64 %1, align 8
+// +     %22 = load i64, ptr %19, align 8
 // +     %23 = load i64, ptr %20, align 8
-// +     %24 = load i64, ptr %21, align 8
-// +     %25 = icmp eq i64 %23, i64 %24
-// +     br i1 %25 to bb2 else bb1
+// +     %24 = icmp eq i64 %22, i64 %23
+// +     br i1 %24 to bb2 else bb1
 // +
 // + bb1:
+// +     %25 = nil
 // +     %26 = nil
-// +     %27 = nil
-// +     abort at loc("assert.src":6:5) assert(ptr %22) {
-// +         store ptr #, ptr %14, align 8
-// +         %28 = ptradd ptr #, i64 %19
-// +         store ptr %28, i64 %13, align 8
-// +         %29 = ptradd ptr #, i64 %12
-// +         store ptr %29, i64 %15, align 8
-// +         %30 = ptradd ptr #, i64 %10
-// +         store ptr %30, i64 %11, align 8
-// +         %31 = ptradd ptr #, i64 %9
-// +         store ptr %31, ptr %16, align 8
-// +         %32 = ptradd ptr %31, i64 %19
-// +         store ptr %32, i64 %15, align 8
-// +         %33 = ptradd ptr #, i64 %8
-// +         store ptr %33, ptr %26, align 8
-// +         %34 = ptradd ptr %33, i64 %19
-// +         store ptr %34, i64 %17, align 8
-// +         %35 = ptradd ptr #, i64 %7
-// +         store ptr %35, ptr %27, align 8
-// +         %36 = ptradd ptr %35, i64 %19
-// +         store ptr %36, ptr %27, align 8
+// +     abort at loc("assert.src":6:5) assert(ptr %21) {
+// +         store ptr #, ptr %15, align 8
+// +         %27 = ptradd ptr #, i64 %13
+// +         store ptr %27, i64 %14, align 8
+// +         %28 = ptradd ptr #, i64 %12
+// +         store ptr %28, i64 %16, align 8
+// +         %29 = ptradd ptr #, i64 %10
+// +         store ptr %29, i64 %11, align 8
+// +         %30 = ptradd ptr #, i64 %9
+// +         store ptr %30, ptr %17, align 8
+// +         %31 = ptradd ptr %30, i64 %13
+// +         store ptr %31, i64 %16, align 8
+// +         %32 = ptradd ptr #, i64 %8
+// +         store ptr %32, ptr %25, align 8
+// +         %33 = ptradd ptr %32, i64 %13
+// +         store ptr %33, i64 %18, align 8
+// +         %34 = ptradd ptr #, i64 %7
+// +         store ptr %34, ptr %26, align 8
+// +         %35 = ptradd ptr %34, i64 %13
+// +         store ptr %35, ptr %26, align 8
 // +     }
 // +
 // + bb2:
-// +     %37 = load i64, ptr %20, align 8
-// +     %38 = icmp sgt i64 %37, i64 %6
-// +     br i1 %38 to bb4 else bb3
+// +     %36 = load i64, ptr %19, align 8
+// +     %37 = icmp sgt i64 %36, i64 %6
+// +     br i1 %37 to bb4 else bb3
 // +
 // + bb3:
-// +     %39 = nil
-// +     abort at loc("assert.src":7:5) assert(ptr %22) {
-// +         store ptr #, ptr %14, align 8
-// +         %40 = ptradd ptr #, i64 %19
-// +         store ptr %40, i64 %13, align 8
-// +         %41 = ptradd ptr #, i64 %12
-// +         store ptr %41, i64 %2, align 8
-// +         %42 = ptradd ptr #, i64 %10
-// +         store ptr %42, i64 %11, align 8
-// +         %43 = ptradd ptr #, i64 %9
-// +         store ptr %43, ptr %3, align 8
-// +         %44 = ptradd ptr %43, i64 %19
-// +         store ptr %44, i64 %15, align 8
-// +         %45 = ptradd ptr #, i64 %8
-// +         store ptr %45, ptr %5, align 8
-// +         %46 = ptradd ptr %45, i64 %19
-// +         store ptr %46, i64 %4, align 8
-// +         %47 = ptradd ptr #, i64 %7
-// +         store ptr %47, ptr %39, align 8
-// +         %48 = ptradd ptr %47, i64 %19
-// +         store ptr %48, ptr %39, align 8
+// +     %38 = nil
+// +     abort at loc("assert.src":7:5) assert(ptr %21) {
+// +         store ptr #, ptr %15, align 8
+// +         %39 = ptradd ptr #, i64 %13
+// +         store ptr %39, i64 %14, align 8
+// +         %40 = ptradd ptr #, i64 %12
+// +         store ptr %40, i64 %2, align 8
+// +         %41 = ptradd ptr #, i64 %10
+// +         store ptr %41, i64 %11, align 8
+// +         %42 = ptradd ptr #, i64 %9
+// +         store ptr %42, ptr %3, align 8
+// +         %43 = ptradd ptr %42, i64 %13
+// +         store ptr %43, i64 %16, align 8
+// +         %44 = ptradd ptr #, i64 %8
+// +         store ptr %44, ptr %5, align 8
+// +         %45 = ptradd ptr %44, i64 %13
+// +         store ptr %45, i64 %4, align 8
+// +         %46 = ptradd ptr #, i64 %7
+// +         store ptr %46, ptr %38, align 8
+// +         %47 = ptradd ptr %46, i64 %13
+// +         store ptr %47, ptr %38, align 8
 // +     }
 // +
 // + bb4:
@@ -115,12 +114,12 @@ proc foo(in int a, in int b) {
 //L + @__srcc_str.2 = private constant [28 x i8] c"a should be greater than 42\00", align 1
 //L + @__srcc_str.3 = private constant [7 x i8] c"a > 42\00", align 1
 //L +
-//L + ; Function Attrs: norecurse nounwind
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   ret void
 //L + }
 //L +
-//L + ; Function Attrs: nounwind
+//L + ; Function Attrs: noinline nounwind optnone uwtable
 //L + define private void @_S3fooFvxixiE.1(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -189,9 +188,7 @@ proc foo(in int a, in int b) {
 //L +
 //L + declare void @__src_assert_fail(ptr)
 //L +
-//L + attributes #0 = { norecurse nounwind }
-//L + attributes #1 = { nounwind }
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L +
-//L + !llvm.module.flags = !{!0}
 //L +
-//L + !0 = !{i32 2, !"Debug Info Version", i32 3}

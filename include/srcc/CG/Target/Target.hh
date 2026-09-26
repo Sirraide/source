@@ -103,6 +103,10 @@ public:
     [[nodiscard]] auto triple() const -> const llvm::Triple& {
         return TI->getTriple();
     }
+
+    /// Some ABIs have mandatory unwind table emission, even if there is
+    /// no exception handling.
+    [[nodiscard]] virtual auto unwind_table_kind() const -> llvm::UWTableKind = 0;
 };
 
 #endif // SRCC_CG_TARGET_TARGET_HH

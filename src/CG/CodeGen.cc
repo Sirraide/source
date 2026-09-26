@@ -191,29 +191,6 @@ void CodeGen::CreateAbort(
 auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
     Assert(not IsZeroSizedType(ty));
 
-    // // Try to use the type directly if possible; MLIR’s Mem2Reg pass
-    // // requires the types of loads and stores to be the same as the
-    // // allocated type.
-    // if (auto mlir_ty = TryConvertToMLIRType(ty)) {
-    //     // Adjust weird integers.
-    //     if (mlir_ty->isInteger()) mlir_ty = GetPreferredIntType(*mlir_ty);
-
-    //     // If the MLIR type is big enough, use it.
-    //     mlir::DataLayout dl{mlir_module};
-    //     if (ir::GetTypeSize(dl, *mlir_ty) >= ty->memory_size(tu)) {
-    //         InsertionGuard _{*this};
-    //         SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr->proc.front());
-    //         return LLVM::AllocaOp::create(
-    //             *this,
-    //             loc,
-    //             ptr_ty,
-    //             *mlir_ty,
-    //             CreateInt(loc, i64(1)),
-    //             unsigned(tu.target().preferred_align(ty).value().bytes())
-    //         );
-    //     }
-    // }
-
     // Just allocate a blob of bytes.
     return CreateAlloca(
         loc,
@@ -224,15 +201,8 @@ auto CodeGen::CreateAlloca(mlir::Location loc, Type ty) -> Value {
 
 auto CodeGen::CreateAlloca(mlir::Location loc, Size sz, Align a) -> Value {
     InsertionGuard _{*this};
-    SetInsertPointAfterLastOpOfTypeIn<LLVM::AllocaOp>(&curr->proc.front());
-    return LLVM::AllocaOp::create(
-        *this,
-        loc,
-        ptr_ty,
-        getI8Type(),
-        CreateInt(loc, i64(sz.bytes())),
-        unsigned(a.value().bytes())
-    );
+    SetInsertPointAfterLastOpOfTypeIn<ir::AllocaOp>(&curr->proc.front());
+    return ir::AllocaOp::create(*this, loc, sz, a);
 }
 
 void CodeGen::CreateArithFailure(Value failure_cond, Tk op, mlir::Location loc, String name) {
@@ -343,6 +313,10 @@ auto CodeGen::CreateInt(mlir::Location loc, i64 value, Type ty) -> Value {
 
 auto CodeGen::CreateInt(mlir::Location loc, i64 value, Ty ty) -> Value {
     return arith::ConstantOp::create(*this, loc, getIntegerAttr(ty, value));
+}
+
+auto CodeGen::CreateInt(mlir::Location loc, ByteOffset offs) -> Value {
+    return CreateInt(loc, offs.bytes(), Type::IntTy);
 }
 
 auto CodeGen::CreateLoad(
@@ -542,6 +516,71 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
         }
     }
     return ir_proc;
+}
+
+void CodeGen::DisengageNonTransparentOptional(Value addr, OptionalType* ty, mlir::Location loc) {
+    CreateStore(
+        loc,
+        addr,
+        CreateBool(loc, false),
+        Type::BoolTy->align(tu),
+        ty->get_engaged_offset()
+    );
+
+    ir::DisengageOp::create(*this, loc, addr);
+}
+
+void CodeGen::EmitArrayLoop(
+    Value addr,
+    ArrayType* a,
+    mlir::Location loc,
+    bool reverse,
+    llvm::function_ref<void(Value offset)> EmitBody
+) {
+    if (a->dimension() == 0) return;
+
+    // We emit a do-while loop here; process an element first
+    // and then check if we should break.
+    auto bb_body = CreateBlock(int_ty);
+    auto bb_inc = CreateBlock();
+    auto bb_end = CreateBlock();
+    auto body = bb_body.get();
+
+    // Compute the offset of the starting element.
+    auto sz = a->elem()->array_size(tu);
+    auto last_offs = u64(a->dimension() - 1) * sz;
+    auto start = CreateInt(loc, reverse ? ByteOffset(last_offs) : 0);
+    auto end = CreateInt(loc, reverse ? ByteOffset() : u64(a->dimension() - 1) * sz);
+    auto inc = CreateInt(loc, reverse ? -ByteOffset(sz) : ByteOffset(sz));
+
+    // Emit body.
+    EnterBlock(std::move(bb_body), start);
+    EmitBody(body->getArgument(0));
+
+    // Emit condition.
+    auto done = CreateICmp(loc, arith::CmpIPredicate::eq, body->getArgument(0), end);
+    mlir::cf::CondBranchOp::create(
+        *this,
+        loc,
+        done,
+        bb_end.get(),
+        bb_inc.get()
+    );
+
+    // Emit increment.
+    EnterBlock(std::move(bb_inc));
+    auto next = EmitArithmeticOrComparisonOperator(
+        Tk::Plus,
+        Type::IntTy,
+        body->getArgument(0),
+        inc,
+        loc
+    );
+
+    mlir::cf::BranchOp::create(*this, loc, body, next);
+
+    // Continue after the loop.
+    EnterBlock(std::move(bb_end));
 }
 
 auto CodeGen::EnterBlock(std::unique_ptr<Block> bb, Vals args) -> Block* {
@@ -1221,6 +1260,12 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // handled here.
         [&](CastExpr *e) {
             auto loc = C(e->location());
+            if (e->kind == CastExpr::LValueCopy and e->type->has_copy_proc()) {
+                auto init_addr = EmitScalar(e->arg);
+                EmitCopy(loc, addr, init_addr, init->type);
+                return; // EmitCopy() already handles engaging/disengaging optionals.
+            }
+
             if (
                 e->kind == CastExpr::LValueToRValue or
                 e->kind == CastExpr::LValueCopy
@@ -1239,17 +1284,9 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
             }
 
             if (e->kind == CastExpr::NilToOptional) {
-                auto opt = cast<OptionalType>(init->type);
                 Emit(e->arg); // Just discard this value.
-                CreateStore(
-                    loc,
-                    addr,
-                    CreateBool(loc, false),
-                    Type::BoolTy->align(tu),
-                    opt->get_engaged_offset()
-                );
-
-                ir::DisengageOp::create(*this, C(init->location()), addr);
+                auto opt = cast<OptionalType>(init->type);
+                DisengageNonTransparentOptional(addr, opt, C(init->location()));
                 return;
             }
 
@@ -2248,6 +2285,52 @@ auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
     return EmitValue(C(constant->location()), *constant->value);
 }
 
+void CodeGen::EmitCopy(mlir::Location loc, Value dest, Value src, Type ty) {
+    // Declare the actual copy procedure.
+    Type base = ty->strip_arrays_and_optionals();
+    auto copy = DeclareProcedure(cast<RecordType>(base)->get_copy().get());
+
+    // Copy a type.
+    auto EmitCopyImpl = [&](this auto& Self, Value dest, Value src, Type ty) -> void {
+        ty->visit(utils::Overloaded{
+            [&](auto*) { Unreachable(); },
+            [&](ArrayType* a) {
+                EmitArrayLoop(dest, a, loc, true, [&] (Value offs) {
+                    auto dest_elem = CreatePtrAdd(loc, dest, offs);
+                    auto src_elem = CreatePtrAdd(loc, src, offs);
+                    Self(dest_elem, src_elem, a->elem());
+                });
+            },
+            [&](OptionalType* o) {
+                If(loc, EmitOptionalNilTest(loc, src, o, false), false, [&]{
+                    Self(dest, src, o->elem());
+                    ir::EngageOp::create(*this, loc, dest);
+                    return IRValue();
+                }, [&]{
+                    DisengageNonTransparentOptional(dest, o, loc);
+                    return IRValue();
+                });
+            },
+            [&](std::derived_from<RecordType> auto*) {
+                // A copy procedure always takes a 'this' pointer and an implicit return
+                // pointer (the existence of the copy procedure implies that it must be
+                // passed in memory). This means we don't need all of the machinery in
+                // EmitCallExpr() and can instead create the call directly. Note that the
+                // implicit return pointer is always the first argument, and that a copy
+                // procedure never has an environment.
+                ir::CallOp::create(
+                    *this,
+                    loc,
+                    ir::ProcRefOp::create(*this, loc, copy),
+                    {dest, src}
+                );
+            }
+        });
+    };
+
+    EmitCopyImpl(dest, src, ty);
+}
+
 auto CodeGen::EmitDefaultInit(Type ty, mlir::Location l) -> IRValue {
     if (IsZeroSizedType(ty)) return {};
     Assert(ty->eval_mode() == EvalMode::Scalar, "Emitting non-srvalue on its own?");
@@ -2276,73 +2359,26 @@ auto CodeGen::EmitDefaultInitExpr(DefaultInitExpr* stmt) -> IRValue {
 }
 
 void CodeGen::EmitDelete(mlir::Location loc, Value base_addr, Type ty, bool implicit) {
-    // Unwrap the record type that has the actual deleter.
-    Type base = ty;
-    while (isa<ArrayType, OptionalType>(base))
-        base = cast<SingleElementTypeBase>(base)->elem();
-
-    // Declare it.
-    auto del = DeclareProcedure(cast<RecordType>(base)->deleter().get());
+    // Declare the actual deleter.
+    Type base = ty->strip_arrays_and_optionals();
+    auto del = DeclareProcedure(cast<RecordType>(base)->get_delete().get());
 
     // Delete a type.
     auto EmitDeleteImpl = [&](this auto& Self, Value addr, Type ty) -> void {
         ty->visit(utils::Overloaded{
             [](auto*) { Unreachable(); },
             [&](ArrayType* a) {
-                if (a->dimension() == 0) return;
-
-                // We emit a do-while loop here; i.e. delete an element first
-                // and then check if we should break.
-                auto bb_body = CreateBlock(ptr_ty);
-                auto bb_inc = CreateBlock();
-                auto bb_end = CreateBlock();
-                auto body = bb_body.get();
-
-                // Compute the offset of the last element.
-                auto sz = a->elem()->array_size(tu.target());
-                auto last = sz * u64(a->dimension() - 1);
-                auto last_ptr = CreatePtrAdd(loc, addr, last);
-
-                // Emit body.
-                EnterBlock(std::move(bb_body), last_ptr);
-                Self(body->getArgument(0), a->elem());
-
-                // Emit condition.
-                auto done = LLVM::ICmpOp::create(
-                    *this,
-                    loc,
-                    LLVM::ICmpPredicate::eq,
-                    body->getArgument(0),
-                    addr
-                );
-
-                mlir::cf::CondBranchOp::create(
-                    *this,
-                    loc,
-                    done,
-                    bb_end.get(),
-                    bb_inc.get()
-                );
-
-                // Emit increment.
-                EnterBlock(std::move(bb_inc));
-                auto prev = CreatePtrAdd(
-                    loc,
-                    body->getArgument(0),
-                    -ByteOffset(sz),
-                    ir::Aliasing::Sibling
-                );
-                mlir::cf::BranchOp::create(*this, loc, body, prev);
-
-                // Continue after the loop.
-                EnterBlock(std::move(bb_end));
+                EmitArrayLoop(addr, a, loc, true, [&] (Value offset) {
+                    auto elem_addr = CreatePtrAdd(loc, addr, offset);
+                    Self(elem_addr, a->elem());
+                });
             },
             [&](OptionalType* o) {
                 If(loc, EmitOptionalNilTest(loc, addr, o, false), [&]{
                     Self(addr, o->elem());
                 });
             },
-            [&](StructType* s) {
+            [&](std::derived_from<RecordType> auto*) {
                 // If we’re not deleting the base address, mark it as a new base
                 // pointer to tell the move analysis pass that this deletion is fine.
                 if (addr != base_addr) addr = CreatePtrAdd(loc, addr, ByteOffset(), ir::Aliasing::None);

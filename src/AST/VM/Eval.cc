@@ -996,20 +996,11 @@ bool Eval::EvalLoop() {
             continue;
         }
 
-        if (auto s = dyn_cast<LLVM::AllocaOp>(i)) {
-            // For the mem2reg pass to work properly, we need to allow types
-            // other than 'i8' here, so figure out how many bytes that is.
-            auto sz = Val(s.getArraySize()).cast<APInt>();
-            auto el = s.getElemType();
-            if (not el.isInteger(8)) {
-                auto dl = mlir::DataLayout::closest(i);
-                sz *= ir::GetTypeSize(dl, el).bytes();
-            }
-
+        if (auto s = dyn_cast<ir::AllocaOp>(i)) {
             auto ptr = AllocateStackMemory(
                 s.getLoc(),
-                Size::Bytes(sz.getZExtValue()),
-                Align(s.getAlignment().value_or(1))
+                s.getSize(),
+                s.getAlign()
             );
 
             if (not ptr) return false;
