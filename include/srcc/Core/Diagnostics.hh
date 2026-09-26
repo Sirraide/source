@@ -220,7 +220,9 @@ public:
     /// Check whether any diagnostics have been issued.
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
 
-    /// Do NOT call this unless you’re implementing DiagsProducer::ReportDiag()!
+    /// Do NOT call this unless you’re implementing DiagsProducer::ReportDiag()! This
+    /// is because we need to be able to run code when a diagnostic is emitted in some
+    /// places, and calling this directly would bypass that.
     SRCC_DIAGNOSE_UNLESS_CALLER("ReportDiag")
     void report_diag(Diagnostic&& diag);
 
