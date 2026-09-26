@@ -20,5 +20,6 @@
     void* operator new(usz size, context& ctx)
 
 #define SRCC_DIAGNOSE_POINTER_COMPARISON [[clang::srcc_diagnose_pointer_comparison]]
+#define SRCC_DIAGNOSE_UNLESS_CALLER(caller) [[clang::srcc_diagnose_unless_caller(caller)]]
 
 #endif // SRCC_MACROS_HH

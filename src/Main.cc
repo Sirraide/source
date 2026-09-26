@@ -130,17 +130,31 @@ static auto ParseArgs(int argc, char** argv) -> Result<options::optvals_type> {
     return opts;
 }
 
+namespace {
+class MainDiagsProducer : public DiagsProducer {
+    Context ctx;
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags;
+
+public:
+    MainDiagsProducer(bool is_terminal) {
+        ctx.use_colours = is_terminal;
+        diags = StreamingDiagnosticsEngine::Create(ctx);
+    }
+
+    void ReportDiag(Diagnostic&& d) {
+        diags->report_diag(std::move(d));
+        diags->flush();
+    }
+};
+}
+
 int main(int argc, char** argv) {
     llvm::sys::DisableSystemDialogsOnCrash();
     libassert::enable_virtual_terminal_processing_if_needed();
     bool is_terminal = libassert::isatty(STDERR_FILENO) and libassert::isatty(STDOUT_FILENO);
     auto res = ParseArgs(argc, argv);
     if (not res) {
-        Context ctx;
-        auto diags = StreamingDiagnosticsEngine::Create(ctx);
-        ctx.use_colours = is_terminal;
-        diags->report(Diagnostic(Diagnostic::Level::Error, SLoc(), std::move(res.error())));
-        diags->flush();
+        MainDiagsProducer(is_terminal).Error(SLoc(), "{}", res.error());
         return 1;
     }
 

@@ -1588,6 +1588,15 @@ public:
     /// captured by any nested procedures.
     bool introduces_captures : 1 = false;
 
+    /// This procedure has a definition in this translation unit, but we
+    /// may not have translated it yet.
+    bool will_have_body : 1 = false;
+
+    /// This procedure contains an error. This is different from 'valid()'
+    /// as the type of the declaration itself may be well-formed even if
+    /// there was an error in its body.
+    bool contains_error = false;
+
     /// This is a special procedure of a record, e.g. 'delete' or 'copy'.
     SpecialProcedure special_proc : utils::BitsForEnum<SpecialProcedure>() = SpecialProcedure::None;
 

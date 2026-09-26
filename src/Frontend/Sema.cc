@@ -83,6 +83,10 @@ Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
     S.proc_stack.emplace_back(&info);
 }
 
+Sema::EnterProcedure::~EnterProcedure() {
+    info.es.S.proc_stack.pop_back();
+}
+
 Sema::EnterLoop::EnterLoop(Sema& S) : S{S} {
     ++S.curr_proc().loop_depth;
     save_current_loop_has_break = std::exchange(S.curr_proc().current_loop_has_break, false);
@@ -694,6 +698,11 @@ bool Sema::IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated) {
     else return Size::Bits(i.getActiveBits()) <= bits;
 }
 
+void Sema::ReportDiag(Diagnostic&& d) {
+    if (d.is_error()) curr_proc().proc->contains_error = true;
+    diags().report_diag(std::move(d));
+}
+
 bool Sema::RequireCompleteType(Type ty, SLoc loc) {
     // Structs can be made complete on demand.
     // FIXME: Tuples as well.
@@ -949,7 +958,7 @@ void Sema::ReportLookupFailure(LookupResult&& res) {
     }
 
     if (res.note) {
-        diags().report(std::move(*res.note));
+        ReportDiag(std::move(*res.note));
         res.note.reset();
     }
 }

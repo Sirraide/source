@@ -752,7 +752,7 @@ void CodeGen::HandleMLIRDiagnostic(mlir::Diagnostic& diag) {
 
         auto loc = SLoc::Decode(d.getLocation());
         auto msg = d.str();
-        Diag(level, loc, "{}", utils::Escape(msg, false, true));
+        ReportDiag({level, loc, utils::Escape(msg, false, true)});
     };
 
     EmitDiagnostic(diag);
@@ -2072,7 +2072,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         );
 
         if (res.has_value()) return EmitValue(l, res.value());
-        diags().report(std::move(res.error()));
+        ReportDiag(std::move(res.error()));
         return LLVM::PoisonOp::create(*this, l, int_ty)->getResult(0);
     }
 

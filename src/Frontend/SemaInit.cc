@@ -845,7 +845,7 @@ auto Sema::BuildInitialiser(
         return ApplyConversionSequence(args, seq_or_err.value(), loc);
 
     // There was an error.
-    for (auto& d : seq_or_err.error()) diags().report(std::move(d));
+    for (auto& d : seq_or_err.error()) ReportDiag(std::move(d));
     return nullptr;
 }
 

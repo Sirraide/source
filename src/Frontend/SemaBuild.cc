@@ -1218,6 +1218,7 @@ auto Sema::BuildProcDeclInitial(
     SLoc loc,
     ParsedProcAttrs attrs,
     InheritedProcedureProperties props,
+    bool will_have_body,
     ProcTemplateDecl* pattern
 ) -> ProcDecl* {
     auto parent_scope = curr_scope() == proc_scope
@@ -1261,6 +1262,8 @@ auto Sema::BuildProcDeclInitial(
         props,
         loc
     );
+
+    proc->will_have_body = will_have_body;
 
     // Remember what template we were instantiated from.
     proc->set_instantiated_from(pattern);

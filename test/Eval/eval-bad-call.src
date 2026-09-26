@@ -1,0 +1,22 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc f() {
+    eval f(); // expected-error: Cannot evaluate procedure 'f' whose body has not been compiled yet
+
+    // FIXME: We should allow out-of-order constant evaluation calls eventually.
+    eval g(); // expected-error: Cannot evaluate procedure 'g' whose body has not been compiled yet
+}
+
+proc g() {
+
+}
+
+proc invalid_ret() -> qefqefeqf {} // expected-error: Unknown symbol 'qefqefeqf'
+#assert invalid_ret() == 4; // expected-error: Invalid operation: '==' between 'void' and 'int'
+
+proc invalid_param(afadfeadf) {} // expected-error: Unknown symbol 'afadfeadf'
+#assert invalid_param() == 4;
+
+proc contains_error() -> int = "1234"; // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
+#assert contains_error() == 4;

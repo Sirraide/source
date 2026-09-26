@@ -75,12 +75,17 @@ public:
     ///
     /// \p render_colours If false, keep formatting codes in the
     ///    output rather than rendering it.
-    static auto Render(
+    [[nodiscard]] static auto Render(
         const Context& ctx,
         ArrayRef<Diagnostic> diagnostics,
         usz cols,
         bool render_colours = true
     ) -> std::string;
+
+    /// Whether this is an error.
+    [[nodiscard]] bool is_error() const {
+        return level == Level::Error or level == Level::ICE;
+    }
 };
 
 /// Mixin to provide helpers for creating errors.
@@ -124,7 +129,7 @@ public:
 
     template <typename... Args>
     auto Error(
-        this auto& This,
+        this auto&& This,
         SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
@@ -135,7 +140,7 @@ public:
 
     template <typename... Args>
     auto ICE(
-        this auto& This,
+        this auto&& This,
         SLoc where,
         std::format_string<Args...> fmt,
         Args&&... args
@@ -146,7 +151,7 @@ public:
 
     template <typename... Args>
     void Note(
-        this auto& This,
+        this auto&& This,
         SLoc loc,
         std::format_string<Args...> fmt,
         Args&&... args
@@ -156,7 +161,7 @@ public:
 
     template <typename... Args>
     void Warn(
-        this auto& This,
+        this auto&& This,
         SLoc loc,
         std::format_string<Args...> fmt,
         Args&&... args
@@ -166,7 +171,7 @@ public:
 
     template <typename... Args>
     void Remark(
-        this auto& This,
+        this auto&& This,
         std::format_string<Args...> fmt,
         Args&&... args
     ) {
@@ -206,17 +211,6 @@ public:
     /// 0 if there is no column limit.
     virtual u32 cols() { return 0; }
 
-    /// Issue a diagnostic.
-    template <typename... Args>
-    void diag(
-        Diagnostic::Level lvl,
-        SLoc where,
-        std::format_string<Args...> fmt,
-        Args&&... args
-    ) {
-        report(Diagnostic{lvl, where, std::format(fmt, std::forward<Args>(args)...)});
-    }
-
     /// Emit pending diagnostics.
     virtual void flush() {}
 
@@ -226,8 +220,9 @@ public:
     /// Check whether any diagnostics have been issued.
     [[nodiscard]] bool has_error() const { return error_flag.load(std::memory_order_relaxed); }
 
-    /// Issue a diagnostic.
-    void report(Diagnostic&& diag);
+    /// Do NOT call this unless you’re implementing DiagsProducer::ReportDiag()!
+    SRCC_DIAGNOSE_UNLESS_CALLER("ReportDiag")
+    void report_diag(Diagnostic&& diag);
 
 protected:
     /// Call this to make sure the diagnostics engine records statistics (such as
@@ -331,15 +326,11 @@ public:
 private:
     friend DiagsProducer;
 
-    // For reporting errors during the verification and comment parsing steps.
-    template <typename... Args>
-    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
-        diags_reporter->diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
+    void ReportDiag(Diagnostic&& diag) { diags_reporter->report_diag(std::move(diag)); }
 
     template <typename... Args>
     void Error(SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
-        Diag(Diagnostic::Level::Error, loc, fmt, std::forward<Args>(args)...);
+        ReportDiag(CreateError(loc, fmt, std::forward<Args>(args)...));
     }
 
     auto DecodeLocation(SLoc loc) -> Opt<DecodedLocation>;

@@ -34,6 +34,7 @@ auto Sema::InstantiateTemplate(
         pattern->location(),
         pattern->pattern->type->attrs,
         pattern->props,
+        pattern->pattern->body.present(),
         pattern
     );
 
@@ -1035,7 +1036,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
         },
 
         [&](Candidate::ParamInitFailed& p) {
-            for (auto& d : p.diags) diags().report(std::move(d));
+            for (auto& d : p.diags) ReportDiag(std::move(d));
             if (auto d = callee.decl().get_or_null()) NoteParameter(d, p.param_index);
         },
 
@@ -1176,7 +1177,7 @@ void Sema::ReportOverloadResolutionFailure(
     // Remove a trailing newline because rendering nested diagnostics
     // sometimes adds one too many.
     if (message.back() == '\n') message.pop_back();
-    ctx.diags().report(Diagnostic{
+    ReportDiag(Diagnostic{
         Diagnostic::Level::Error,
         call_loc,
         std::format("Overload resolution failed in call to\f'%2({}%)'", candidates.front().callee.name().name),

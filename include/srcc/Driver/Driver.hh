@@ -164,16 +164,11 @@ public:
 private:
     friend DiagsProducer;
     void AddDiagRemark(std::string&& s) { driver_diags->add_remark(std::move(s)); }
-    void ReportDiag(Diagnostic&& d) { driver_diags->report(std::move(d)); }
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level level, SLoc loc, std::format_string<Args...> fmt, Args&&... args) {
-        driver_diags->diag(level, loc, fmt, std::forward<Args>(args)...);
-    }
+    void ReportDiag(Diagnostic&& d) { driver_diags->report_diag(std::move(d)); }
 
     template <typename... Args>
     int Error(std::format_string<Args...> fmt, Args&&... args) {
-        Diag(Diagnostic::Level::Error, SLoc(), fmt, std::forward<Args>(args)...);
+        ReportDiag(CreateError(SLoc(), fmt, std::forward<Args>(args)...));
         return 1;
     }
 

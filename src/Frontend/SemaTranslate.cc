@@ -1252,7 +1252,8 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
             parsed->name,
             parsed->loc,
             parsed->type->attrs,
-            props
+            props,
+            parsed->body.present()
         );
 
         // Mark the decl as invalid if there was a problem with the type.

@@ -406,7 +406,7 @@ Diagnostic::Diagnostic(Level lvl, SLoc where, std::string msg, std::string extra
 // ============================================================================
 //  Streaming Diagnostics Engine
 // ============================================================================
-void DiagnosticsEngine::report(Diagnostic&& diag) {
+void DiagnosticsEngine::report_diag(Diagnostic&& diag) {
     if (diag.level == Diagnostic::Level::Ignored) return;
 
     // Save the current stack trace if this is an ICE. Skip 2 frames for

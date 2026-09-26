@@ -532,27 +532,23 @@ private:
     auto frame() -> StackFrame& { return call_stack.back(); }
 
     void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
-    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
+    void ReportDiag(Diagnostic&& d) { diags().report_diag(std::move(d)); }
 
     template <typename... Args>
     bool Error(SLoc where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) diags().diag(Diagnostic::Level::Error, where, fmt, std::forward<Args>(args)...);
+        if (complain) ReportDiag(CreateError(where, fmt, std::forward<Args>(args)...));
         return false;
     }
 
     template <typename... Args>
     bool Note(SLoc where, std::format_string<Args...> fmt, Args&&... args) {
-        if (complain) diags().diag(Diagnostic::Level::Note, where, fmt, std::forward<Args>(args)...);
+        if (complain) ReportDiag(CreateNote(where, fmt, std::forward<Args>(args)...));
         return false;
     }
 
     template <typename... Args>
     void Remark(std::format_string<Args...> fmt, Args&&... args) {
         if (complain) diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void Report(Diagnostic&& diag) {
-        if (complain) diags().report(std::move(diag));
     }
 
     [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
@@ -833,9 +829,34 @@ bool Eval::EvalLoop() {
 
             // Compile the procedure now if we haven’t done that yet.
             if (callee.empty()) {
+                auto decl = cg.lookup(callee).get_or_null();
+
+                // If we have a decl for this procedure, check that we can call it safely.
+                if (decl) {
+                    // Refuse to call procedures that contain an error or are invalid. We
+                    // don’t need to emit an error as either of these being true means we
+                    // will have already diagnosed something before getting here.
+                    if (not decl->is_valid or decl->contains_error) return false;
+
+                    // We can’t call a procedure if we’re in the middle of creating
+                    // that same procedure; this can happen if a user writes e.g.
+                    //
+                    //   proc f() { eval f(); }
+                    //
+                    // as well as
+                    //
+                    //   proc f() { eval g(); }
+                    //   proc g() { }
+                    //
+                    if (decl->will_have_body and not decl->body()) return Error(
+                        SLoc::Decode(i->getLoc()),
+                        "Cannot evaluate procedure '%2({}%)' whose body has not been compiled yet",
+                        decl->name
+                    );
+                }
+
                 // This is an external procedure.
-                auto decl = cg.lookup(callee);
-                if (not decl or not decl.get()->body()) {
+                if (not decl or not decl->body()) {
                     auto res = FFICall(callee, c);
                     if (not res) return false;
                     if (i->getNumResults() != 0) {
@@ -846,7 +867,7 @@ bool Eval::EvalLoop() {
                 }
 
                 // This is a procedure that hasn’t been compiled yet.
-                cg.emit(decl.get());
+                cg.emit(decl);
                 if (not cg.finalise_for_constant_evaluation(callee)) return false;
             }
 
@@ -969,7 +990,7 @@ bool Eval::EvalLoop() {
             );
 
             if (not res.has_value()) {
-                Report(std::move(res.error()));
+                ReportDiag(std::move(res.error()));
                 return false;
             }
 

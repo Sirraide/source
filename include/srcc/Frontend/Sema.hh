@@ -111,7 +111,7 @@ private:
 
     public:
         explicit EnterProcedure(Sema& S, ProcDecl* proc);
-        ~EnterProcedure() { info.es.S.proc_stack.pop_back(); }
+        ~EnterProcedure();
     };
 
     class [[nodiscard]] EnterLoop {
@@ -1458,6 +1458,7 @@ private:
         SLoc loc,
         ParsedProcAttrs attrs,
         InheritedProcedureProperties props,
+        bool will_have_body,
         ProcTemplateDecl* pattern = nullptr
     ) -> ProcDecl*;
 
@@ -1552,12 +1553,7 @@ private:
     auto TranslateValueType(ParsedValueType* parsed) -> Opt<Type>;
 
     void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
-    void ReportDiag(Diagnostic&& d) { diags().report(std::move(d)); }
-
-    template <typename... Args>
-    void Diag(Diagnostic::Level lvl, SLoc where, std::format_string<Args...> fmt, Args&&... args) {
-        ctx.diags().diag(lvl, where, fmt, std::forward<Args>(args)...);
-    }
+    void ReportDiag(Diagnostic&& d);
 };
 
 #endif // SRCC_FRONTEND_SEMA_HH

@@ -40,7 +40,7 @@ void Parser::ReportDiag(Diagnostic&& d) {
         return;
     }
 
-    diags().report(std::move(d));
+    diags().report_diag(std::move(d));
 }
 
 TentativeParseScope::TentativeParseScope(Parser& p)
