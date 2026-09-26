@@ -1271,14 +1271,33 @@ struct libassert::stringifier<srcc::Type> {
 
 template <typename To>
 [[nodiscard]] auto srcc::dyn_cast(Type from) -> To* {
-    if constexpr (IsTypeSugarClass<To>()) return llvm::dyn_cast<To>(from.ptr());
+    if constexpr (IsTypeSugarClass<To>()) {
+        while (from->is_sugar()) {
+            auto res = llvm::dyn_cast<To>(from.ptr());
+            if (res) return res;
+            from = from->desugar_once();
+        }
+
+        // Not type sugar.
+        return nullptr;
+    }
+
+    // Cast the canonical type directly if we’re not trying to
+    // find a type sugar class.
     return llvm::dyn_cast<To>(from->canonical);
 }
 
 template <typename To>
 [[nodiscard]] auto srcc::cast(Type from) -> To* {
-    if constexpr (IsTypeSugarClass<To>()) return llvm::dyn_cast<To>(from.ptr());
-    return llvm::cast<To>(from->canonical);
+    To* res = srcc::dyn_cast<To>(from);
+    Assert(
+        res,
+        "Invalid cast to {} of {} (canonical: {})",
+        libassert::type_name<To>(),
+        enchantum::to_string(from->exact_kind()),
+        enchantum::to_string(from->canonical_kind())
+    );
+    return res;
 }
 
 template <typename To>
@@ -1289,10 +1308,17 @@ template <typename To>
 
 template <typename... Ts>
 [[nodiscard]] auto srcc::isa(Type from) -> bool {
-    if constexpr ((IsTypeSugarClass<Ts>() or ...))
-        if (llvm::isa<Ts...>(from.ptr()))
-            return true;
+    if constexpr ((IsTypeSugarClass<Ts>() or ...)) {
+        while (from->is_sugar()) {
+            if (llvm::isa<Ts...>(from.ptr())) return true;
+            from = from->desugar_once();
+        }
 
+        // If we’re only looking for type sugar, then we’re done.
+        if constexpr ((IsTypeSugarClass<Ts>() and ...)) return false;
+    }
+
+    // Otherwise, check the canonical type.
     return llvm::isa<Ts...>(from->canonical);
 }
 
