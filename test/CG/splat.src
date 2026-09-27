@@ -1,0 +1,64 @@
+// R %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
+program test;
+
+struct S {
+    int x;
+    int y;
+    delete { }
+}
+
+struct int4 {
+    int x;
+    int y;
+    int z;
+    int w;
+}
+
+proc f {
+    proc get = S(1, 2);
+    int4 i = (*get(), *get());
+}
+
+// * proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S1fFvE.1 private ccc {
+// +     #0 = 32, align 8
+// +     #1 = 16, align 8
+// +     #2 = 16, align 8
+// +
+// + entry:
+// +     call ccc void _S1f$3getFT1SE.2(ptr #1 sret i8[16])
+// +     %0 = load i64, #1, align 8
+// +     store #0, i64 %0, align 8
+// +     %1 = ptradd #0, 8
+// +     %2 = ptradd #1, 8
+// +     %3 = load i64, %2, align 8
+// +     store %1, i64 %3, align 8
+// +     %4 = ptradd #0, 16
+// +     call ccc void _S1f$3getFT1SE.2(ptr #2 sret i8[16])
+// +     %5 = load i64, #2, align 8
+// +     store %4, i64 %5, align 8
+// +     %6 = ptradd #0, 24
+// +     %7 = ptradd #2, 8
+// +     %8 = load i64, %7, align 8
+// +     store %6, i64 %8, align 8
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T1SE implicit
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T1SE implicit
+// +     ret
+// + }
+// +
+// + proc _S1f$3getFT1SE.2 (ptr %0 sret i8[16]) private ccc {
+// + entry:
+// +     store %0, i64 1, align 8
+// +     %1 = ptradd %0, 8
+// +     store %1, i64 2, align 8
+// +     ret
+// + }
+// +
+// + proc _S$10__src_main$.6deleteFvx2T1SE (ptr %0 align 8 dereferenceable 16) external ccc {
+// + entry:
+// +     ret
+// + }

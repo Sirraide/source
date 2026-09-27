@@ -130,6 +130,9 @@ public:
 };
 
 struct srcc::LangOpts {
+    /// Maximum size of an array that we are willing to splat.
+    u32 array_splat_limit = 128;
+
     /// Enable overflow checking. When disabled, overflow is
     /// undefined behaviour instead.
     bool overflow_checking : 1 = true;

@@ -767,7 +767,11 @@ public:
         Type ty,
         StoredInteger integer,
         SLoc location
-    ) : Expr{Kind::IntLitExpr, ty, RValue, location}, storage{integer} {}
+    ) : Expr{Kind::IntLitExpr, ty, RValue, location}, storage{integer} {
+        Assert(ty->is_integer());
+    }
+
+    static auto Create(TranslationUnit& tu, Type ty, i64 val, SLoc loc) -> IntLitExpr*;
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::IntLitExpr; }
 };

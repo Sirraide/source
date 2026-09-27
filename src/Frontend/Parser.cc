@@ -1683,7 +1683,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
 
 // <expr-tuple>  ::= "(" [ <tuple-elems> ] ")"
 // <tuple-elems> ::= <tuple-elem> { "," <tuple-elem> } [ "," ]
-// <tuple-elem>  ::= [ <ident> ":" ] <expr>
+// <tuple-elem>  ::= [ <ident> ":" ] [ "*" | "**" ] <expr>
 auto Parser::ParseTuple(llvm::function_ref<Ptr<ParsedStmt>()> ParseElement) -> ParsedTupleExpr* {
     SmallVector<ParsedTupleElem> elements;
     BracketTracker parens{*this, Tk::LParen};
@@ -1698,11 +1698,13 @@ auto Parser::ParseTuple(llvm::function_ref<Ptr<ParsedStmt>()> ParseElement) -> P
 
         // Parse whether this is a spread parameter. These are only allowed
         // in calls, not tuples.
-        bool spread = Consume(Tk::Ellipsis);
+        auto splat = Consume(Tk::Star)     ? ParsedTupleElem::Splat::Positional
+                   : Consume(Tk::StarStar) ? ParsedTupleElem::Splat::Named
+                                           : ParsedTupleElem::Splat::None;
 
         // Parse the actual argument expression.
         if (auto arg = ParseElement()) {
-            elements.emplace_back(arg.get(), name, spread);
+            elements.emplace_back(arg.get(), name, splat);
         } else {
             SkipTo(Tk::Comma, Tk::RParen);
         }

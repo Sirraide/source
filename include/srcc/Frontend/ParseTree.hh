@@ -829,21 +829,29 @@ public:
 };
 
 class srcc::ParsedTupleElem {
-    llvm::PointerIntPair<ParsedStmt*, 1, bool> arg_and_spread;
+public:
+    enum class Splat : u8 {
+        None,
+        Positional, ///< '*x'.
+        Named,      ///< '**x'.
+    };
+
+private:
+    llvm::PointerIntPair<ParsedStmt*, 2, Splat> arg_and_splat;
 
 public:
     /// If this is a named argument (i.e. 'a: b'), the name.
     DeclNameLoc name;
 
     /// Constructor.
-    ParsedTupleElem(ParsedStmt* arg, DeclNameLoc name, bool spread)
-        : arg_and_spread{arg, spread}, name{name} {}
+    ParsedTupleElem(ParsedStmt* arg, DeclNameLoc name, Splat splat)
+        : arg_and_splat{arg, splat}, name{name} {}
 
     /// Get the argument expression.
-    auto expr() const -> ParsedStmt* { return arg_and_spread.getPointer(); }
+    auto expr() const -> ParsedStmt* { return arg_and_splat.getPointer(); }
 
-    /// Get whether this is a spread argument (i.e. '...').
-    bool is_spread() const { return arg_and_spread.getInt(); }
+    /// Get whether this is a splat argument (i.e. '*x' or '**x').
+    auto splat() const -> Splat { return arg_and_splat.getInt(); }
 };
 
 class srcc::ParsedTupleExpr final : public ParsedStmt,
@@ -873,7 +881,7 @@ public:
     bool is_paren_expr() {
         return not has_trailing_comma and
                num_elems == 1 and
-               not elems().front().is_spread() and
+               elems().front().splat() == ParsedTupleElem::Splat::None and
                not elems().front().name.name.valid();
     }
 

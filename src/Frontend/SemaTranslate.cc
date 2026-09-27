@@ -995,14 +995,84 @@ auto Sema::TranslateTupleExpr(
         not parsed->is_paren_expr()
     ) desired_elem_ty = std::nullopt;
 
+    // Translate the elements.
     bool ok = true;
     for (auto elem : parsed->elems()) {
-        if (elem.is_spread()) return ICE(elem.expr()->loc, "TODO: Spread in tuple");
-        if (auto e = TranslateExpr(elem.expr(), desired_elem_ty).get_or_null()) {
+        auto e = TranslateExpr(elem.expr(), desired_elem_ty).get_or_null();
+        if (not e) {
+            ok = false;
+            continue;
+        }
+
+        // Not a splat.
+        if (elem.splat() == ParsedTupleElem::Splat::None) {
             exprs.push_back(e);
             names.push_back(elem.name);
-        } else {
+            continue;
+        }
+
+        // Handle splats.
+        bool named = elem.splat() == ParsedTupleElem::Splat::Named;
+
+        // Literal tuples can be unpacked as is. Don’t allow doing so for
+        // tuples of struct type as the struct members may not match the
+        // tuple elements if we’re calling a constructor.
+        if (auto te = dyn_cast<TupleExpr>(e); te and te->is_tuple()) {
+            for (auto [expr, name] : te->elems()) {
+                exprs.push_back(expr);
+                if (named) names.push_back(name);
+                else names.push_back(DeclNameLoc());
+            }
+            continue;
+        }
+
+        // We can only splat aggregates; disallow builtin aggregates
+        // (e.g. closures, slices), since splatting them rarely makes
+        // sense.
+        if (not isa<ArrayType, RecordType>(e->type)) {
+            Error(e->location(), "Cannot splat expression of type '{}'", e->type);
             ok = false;
+            continue;
+        }
+
+        // Records generally need a member access here.
+        if (auto r = dyn_cast<RecordType>(e->type)) {
+            auto saved = Save(e);
+            for (auto f : r->scope()->fields()) {
+                auto ma = BuildMemberAccessExpr(saved, f, e->location());
+                if (not ma) {
+                    ok = false;
+                    continue;
+                }
+
+                exprs.push_back(ma.get());
+                if (named) names.push_back({f->name, f->location()});
+                else names.push_back(DeclNameLoc());
+            }
+            continue;
+        }
+
+        // Check that this isn’t too large; else the compiler will hang trying
+        // to splat a 1-billion-element array.
+        auto a = cast<ArrayType>(e->type);
+        auto dim = a->dimension();
+        auto limit = i64(tu->lang_opts().array_splat_limit);
+        if (limit != 0 and dim > limit) {
+            Error(e->location(), "Array dimension {} exceeds maximum splat size of {}", dim, limit);
+            Note(e->location(), "Pass '-farray-splat-limit=<value>' to increase the limit");
+            continue;
+        }
+
+        // Add each array element.
+        for (i64 i = 0; i < dim; i++) {
+            auto saved = Save(e);
+            auto idx = IntLitExpr::Create(*tu, Type::IntTy, i, e->location());
+            auto el = BuildBinaryExpr(Tk::LBrack, saved, idx, e->location());
+            if (not el) ok = false;
+            else {
+                exprs.push_back(el.get());
+                names.push_back(DeclNameLoc());
+            }
         }
     }
 

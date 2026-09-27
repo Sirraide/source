@@ -65,6 +65,7 @@ using options = clopts< // clang-format off
     flag<"-fstringify-asserts", "Stringify assert conditions if possible">,
     flag<"-fshort-filenames", "Use the filename only instead of the full path in diagnostics">,
     flag<"-fruntime", "Automatically import the runtime module", {.default_value = true}>,
+    option<"-farray-splat-limit", "Maximum size of an array that the compiler will allow splatting (0 disables the limit)", u32>,
 
     // Warnings.
     flag<"-Wc++-import", "Always emit a warning when importing a C++ declaration fails">,
@@ -279,6 +280,7 @@ int main(int argc, char** argv) {
         .time_trace_path = opts.get<"--time">() ? std::optional{*opts.get<"--time">()} : std::nullopt,
         .action = action,
         .lang_opts = {
+            .array_splat_limit = opts.get<"-farray-splat-limit">(128u),
             .overflow_checking = opts.get<"-foverflow-checks">(),
             .no_runtime = not opts.get<"-fruntime">(),
             .no_preamble = not opts.get<"-Qpreamble">(),

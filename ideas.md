@@ -592,9 +592,9 @@ struct S { int x; int y; int z; };
 proc f(int a, int b, int c) {}
 var s = S(1, 2, 3);
 
-f(...s);
-f(...(1, 2, 3));
-var s2 = S(...s);
+f(*s);
+f(*(1, 2, 3));
+var s2 = S(*s);
 ```
 
 # Failed Ideas

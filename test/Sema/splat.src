@@ -1,0 +1,70 @@
+// V %srcc --sema --verify %s
+program test;
+
+struct int2 {
+    int x;
+    int y;
+}
+
+struct int4 {
+    int x;
+    int y;
+    int z;
+    int w;
+}
+
+proc == (in int4 a, in int4 b) =
+    a.x == b.x and
+    a.y == b.y and
+    a.z == b.z and
+    a.w == b.w;
+
+eval {
+    var i = int2(1, 2);
+    assert int4(*i, *i) == (1, 2, 1, 2);
+    assert int4(**i, *i) == (1, 2, 1, 2);
+    assert int4(3, *i, 5) == (3, 1, 2, 5);
+
+    int[2] a = (5, 6);
+    assert int4(*a, *a) == (5, 6, 5, 6);
+    assert int4(**a, *a) == (5, 6, 5, 6);
+    assert int4(7, *a, 8) == (7, 5, 6, 8);
+
+    var e = ();
+    assert int4(*e, *a, *e, *e, *a, *e) == (5, 6, 5, 6);
+    assert int4(*(), *a, *(), *(), *a, *()) == (5, 6, 5, 6);
+};
+
+(*(1, 2));
+(**(1, 2));
+
+(*1); // expected-error: Cannot splat expression of type 'int'
+(**1); // expected-error: Cannot splat expression of type 'int'
+(*"asdf"); // expected-error: Cannot splat expression of type 'i8 val[]'
+(**"asdf"); // expected-error: Cannot splat expression of type 'i8 val[]'
+(*int); // expected-error: Cannot splat expression of type 'type'
+(**int); // expected-error: Cannot splat expression of type 'type'
+
+struct xy {
+    int x;
+    int y;
+}
+
+struct yx {
+    int y;
+    int x;
+}
+
+proc == (in yx a, in yx b) =
+    a.x == b.x and
+    a.y == b.y;
+
+eval {
+    xy x = (1, 2);
+    assert yx(*x) == (1, 2);
+    assert yx(**x) == (2, 1);
+}
+
+int[100000] big;
+(*big); // expected-error (Array dimension 100000 exceeds maximum splat size) expected-note (Pass '-farray-splat-limit=<value>' to increase the limit)
+(**big); // expected-error (Array dimension 100000 exceeds maximum splat size) expected-note (Pass '-farray-splat-limit=<value>' to increase the limit)

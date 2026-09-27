@@ -227,6 +227,11 @@ auto ForStmt::Create(
     return ::new (mem) ForStmt{token, enum_var, vars, ranges, body, location};
 }
 
+auto IntLitExpr::Create(TranslationUnit& tu, Type ty, i64 val, SLoc loc) -> IntLitExpr* {
+    APInt value{unsigned(ty->bit_width(tu).bits()), u64(val), /*isSigned=*/true};
+    return new (tu) IntLitExpr(ty, tu.store_int(value), loc);
+}
+
 GlobalRefExpr::GlobalRefExpr(GlobalDecl* decl, SLoc location)
     : Expr{Kind::GlobalRefExpr, decl->type, LValue(decl->immutable), location}, decl{decl} {}
 

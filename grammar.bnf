@@ -104,7 +104,7 @@
 <stmt-with>       ::= WITH <expr> [ DO ] <sub-stmt>
 
 <tuple-elems> ::= <tuple-elem> { "," <tuple-elem> } [ "," ]
-<tuple-elem>  ::= [ <ident> ":" ] <expr>
+<tuple-elem>  ::= [ <ident> ":" ] [ "*" | "**" ] <expr>
 <macro-args> ::= macro-body { "," macro-body } [ "," ]
 <macro-body> ::= { <tokens> | <unquote> }
 <sub-stmt> ::= <expr> | <stmt> // Essentially '<stmt>', but handling the semicolon is left to the caller.
