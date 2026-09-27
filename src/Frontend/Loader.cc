@@ -51,7 +51,7 @@ struct SpecialProcedures {
 };
 }
 
-class Sema::ASTWriter : public base::ser::Writer<std::endian::native> {
+class srcc::ASTWriter : public base::ser::Writer<std::endian::native> {
 public:
     using Base = base::ser::Writer<std::endian::native>;
     using Base::Base;
@@ -66,8 +66,20 @@ public:
 
     ASTWriter(const Context& ctx, ByteBuffer& buf) : Base{buf}, ctx{ctx} {}
 
+    void emit_record_rest(const RecordType* ty) {
+        for (auto f : ty->scope()->fields())
+            *this << f->type << f->name.str() << f->location();
+        *this << SpecialProcedures(ty);
+    }
+
     void emit_type_def(Type ty) {
         using K = TypeBase::Kind;
+
+        // Record whether this is canonical, as well as our canonical type.
+        *this << ty->is_canonical();
+        if (not ty->is_canonical()) *this << Type(ty->canonical);
+
+        // Serialise the type iself.
         *this << ty->exact_kind();
         ty->visit_exact(utils::Overloaded{
             [&](const AliasType* ty) {
@@ -106,11 +118,13 @@ public:
                 *this << ty->elem() << ty->is_immutable();
             },
             [&](const TupleType* ty) {
-                *this << ty->layout() << SpecialProcedures(ty);
+                *this << ty->layout();
+                emit_record_rest(ty);
             },
             [&](const StructType* ty) {
                 *this << ty->decl()->name.str() << ty->decl()->location()
-                      << ty->layout() << SpecialProcedures(ty);
+                      << ty->layout();
+                emit_record_rest(ty);
             },
         });
     }
@@ -140,10 +154,6 @@ public:
         *this << EncodedEnumeratorDecl(e->name, e->value->value(), e->location());
     }
 
-    void write(FieldDecl* f) {
-        *this << f->type << f->offset << f->name.str() << f->location();
-    }
-
     void write(const InheritedProcedureProperties& props) {
         *this << props.associated_type << props.mangling_number
               << props.always_inline << props.is_compile_time_only
@@ -167,7 +177,7 @@ public:
     }
 
     void write(const RecordLayout& l) {
-        *this << l.size() << l.array_size() << l.align() << l.bits() << l.fields();
+        *this << l.size() << l.array_size() << l.align() << l.bits() << l.field_offsets();
     }
 
     void write(SLoc loc) {
@@ -212,6 +222,10 @@ private:
         Assert(not done_emitting_decls, "Forgot to register an element type!");
         type_indices[ty] = TypeIndex::Invalid; // Support recursion.
 
+        // The canonical type is an element type of sorts because we need to
+        // deserialise it before deserialising this type.
+        if (not ty->is_canonical()) RegisterType(ty->canonical);
+
         // Register element types.
         ty->visit(utils::Overloaded{
             [&](const BuiltinType* ty) {},
@@ -219,8 +233,8 @@ private:
             [&](const OpaqueType*) {},
             [&](const SingleElementTypeBase* ty) { RegisterType(ty->elem()); },
             [&](const RecordType* ty) {
-                for (auto f : ty->layout().field_types())
-                RegisterType(f);
+                for (auto f : ty->scope()->fields())
+                RegisterType(f->type);
             },
             [&](const ProcType* ty) {
                 for (auto p : ty->param_types()) RegisterType(p);
@@ -236,7 +250,7 @@ private:
     }
 };
 
-class Sema::ASTReader : public base::ser::Reader<std::endian::native> {
+class srcc::ASTReader : public base::ser::Reader<std::endian::native> {
 public:
     using Base = base::ser::Reader<std::endian::native>;
     using Base::Base;
@@ -296,7 +310,30 @@ public:
         }
     }
 
+    auto read_record_rest(RecordType* ty) -> Result<Type> {
+        auto scope = ty->scope();
+        for (auto idx : vws::iota(0u, ty->layout().field_offsets().size())) {
+            auto field_type = Read(Type);
+            auto field_name = Read(String);
+            auto field_loc = Read(SLoc);
+            auto fd = new (*S.tu) FieldDecl(ty, field_type, field_name, idx, field_loc);
+            S.AddDeclToScope(scope, fd);
+        }
+
+        auto special = Read(SpecialProcedures);
+        special.apply_to(ty);
+        return ty;
+    }
+
     auto read_type() -> Result<Type> {
+        Opt<Type> canonical;
+        if (not Read(bool)) canonical = Read(Type);
+        auto ty = Try(read_type_impl());
+        if (canonical) ty->canonical = (*canonical).ptr();
+        return ty;
+    }
+
+    auto read_type_impl() -> Result<Type> {
         using K = TypeBase::Kind;
         switch (Read(K)) {
             case K::AliasType: {
@@ -348,7 +385,7 @@ public:
                 for (auto& [name, value, l] : enums) {
                     auto decl = new (*S.tu) EnumeratorDecl(enum_ty, name, l);
                     decl->value = S.tu->store_int(std::move(value));
-                    scope->decls_by_name[name.str()].push_back(decl);
+                    scope->add(decl);
                 }
 
                 return enum_ty;
@@ -386,19 +423,26 @@ public:
             }
 
             case K::StructType: {
+                auto scope = S.tu->create_scope<RecordScope>(S.tu->global_scope());
                 auto decl_name = Read(String);
                 auto decl_loc = Read(SLoc);
                 auto layout = Read(RecordLayout*);
-                auto ty = S.BuildCompleteStructType(decl_name, layout, decl_loc);
-                auto special = Read(SpecialProcedures);
-                special.apply_to(ty);
-                return ty;
+                auto ty = StructType::Create(
+                    *S.tu,
+                    scope,
+                    decl_name,
+                    decl_loc,
+                    layout
+                );
+
+                return read_record_rest(ty);
             }
 
             case K::TupleType: {
+                auto scope = S.tu->create_scope<RecordScope>(S.tu->global_scope());
                 auto layout = Read(RecordLayout*);
-                auto special = Read(SpecialProcedures);
-                return TupleType::Get(*S.tu, layout, [&](TupleType* ty) { special.apply_to(ty); });
+                auto ty = TupleType::CreateDeserialised(*S.tu, scope, layout);
+                return read_record_rest(ty);
             }
         }
 
@@ -432,15 +476,6 @@ public:
     }
 
     template <>
-    auto read<FieldDecl*>() -> Result<FieldDecl*> {
-        auto type = Read(Type);
-        auto offset = Read(Size);
-        auto name = Read(String);
-        auto loc = Read(SLoc);
-        return new (*S.tu) FieldDecl(type, offset, name, loc);
-    }
-
-    template <>
     auto read<SLoc>() -> Result<SLoc> {
         auto e = Read(EncodedSLoc);
         auto it = files.find(e.file);
@@ -469,8 +504,8 @@ public:
         auto array_size = Read(Size);
         auto align = Read(Align);
         auto bits = Read(RecordLayout::Bits);
-        auto fields = Read(SmallVector<FieldDecl*>);
-        return RecordLayout::Create(*S.tu, fields, size, array_size, align, bits);
+        auto offsets = Read(SmallVector<Size>);
+        return RecordLayout::Get(*S.tu, offsets, size, array_size, align, bits);
     }
 
     template <>
@@ -666,7 +701,7 @@ auto TranslationUnit::serialise() -> ByteBuffer {
     Assert(is_module, "Should never be called for programs");
 
     ByteBuffer buf;
-    Sema::ASTWriter w{context(), buf};
+    ASTWriter w{context(), buf};
     w << Header(); // Allocate space for the header.
 
     // Serialise each declaration, and collect the types we need.

@@ -451,7 +451,7 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     }
 
     // Declare the type now because it may be recursive.
-    auto scope = S.tu->create_scope<StructScope>(S.global_scope());
+    auto scope = S.tu->create_scope<RecordScope>(S.global_scope());
     auto name = S.tu->save(ImportName(rd));
     auto type = StructType::Create(*S.tu, scope, name, ImportSourceLocation(rd->getLocation()));
     S.imported_decls[rd] = type->decl();
@@ -459,17 +459,20 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     // Import the fields.
     auto& layout = AST().getASTRecordLayout(rd);
     SmallVector<FieldDecl*> fields;
+    SmallVector<Size> offsets;
     for (auto [i, f] : enumerate(rd->fields())) {
         if (f->getMaxAlignment() != 0) return NYI(f, "unaligned or overaligned field");
         if (f->hasInClassInitializer()) return NYI(f, "field with in-class initialiser");
         auto decl = new (*S.tu) FieldDecl(
+            type,
             TRY(ImportType(f->getLocation(), f->getType())),
-            Size::Bits(layout.getFieldOffset(unsigned(i))),
             S.tu->save(f->getName()),
+            utils::safe_cast<u32>(i),
             ImportSourceLocation(f->getLocation())
         );
 
         fields.push_back(decl);
+        offsets.push_back(Size::Bits(layout.getFieldOffset(u32(i))));
         S.AddDeclToScope(scope, decl);
     }
 
@@ -480,9 +483,9 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
 
     // Build the layout.
     auto bits = RecordLayout::Bits::CLikeType(contains_pointer, rd->isUnion());
-    auto rl = RecordLayout::Create(
+    auto rl = RecordLayout::Get(
         *S.tu,
-        fields,
+        offsets,
         Size::Bytes(layout.getSize().getQuantity()),
         Size::Bytes(layout.getSize().getQuantity()),
         Align(layout.getAlignment().getQuantity()),
@@ -661,15 +664,15 @@ auto srcc::CXXImporter::ImportValue(
 
             // Field count must match what we expect.
             u32 num_fields = val.getStructNumFields();
-            Assert(struct_ty->layout().fields().size() == num_fields);
+            Assert(struct_ty->layout().field_offsets().size() == num_fields);
 
             // Import each field.
             SmallVector<eval::RValue*> fields;
-            for (u32 i = 0; i < num_fields; i++) {
+            for (auto [i, f] : vws::enumerate(struct_ty->scope()->fields())) {
                 auto field = TRY(ImportValue(
                     loc,
-                    val.getStructField(i),
-                    struct_ty->layout().fields()[i]->type
+                    val.getStructField(u32(i)),
+                    f->type
                 ));
 
                 fields.push_back(S.tu->save(field));

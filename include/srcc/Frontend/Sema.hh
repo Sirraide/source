@@ -19,6 +19,8 @@ namespace srcc {
 class ModuleLoader;
 class Sema;
 class CXXImporter;
+class ASTReader;
+class ASTWriter;
 }
 
 namespace srcc {
@@ -41,11 +43,8 @@ class srcc::Sema : public DiagsProducer {
     class OverloadInitContext;
     class TentativeInitContext;
 
-public:
-    class ASTReader;
-    class ASTWriter;
-
-private:
+    friend ASTReader;
+    friend ASTWriter;
     friend DiagsProducer;
     friend eval::Eval;
     friend TemplateInstantiator;
@@ -73,7 +72,7 @@ private:
 
         EnterScope(Sema& S, bool should_enter = true);
         EnterScope(Sema& S, Tag<ProcScope>, Opt<Type> associated_type);
-        EnterScope(Sema& S, Tag<StructScope>);
+        EnterScope(Sema& S, Tag<RecordScope>);
         EnterScope(Sema& S, Scope* scope);
         ~EnterScope();
 
@@ -189,6 +188,7 @@ private:
             SliceFromPtrAndSize,
             StripParens,
             StrLitToCStr,
+            TupleNopCast,
             TupleToFirstElement,
         };
 
@@ -237,6 +237,7 @@ private:
         static auto SliceFromPtrAndSize(SliceFromPtrAndSizeData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto StripParens() -> Conversion { return Conversion{Kind::StripParens}; }
         static auto StrLitToCStr() -> Conversion { return Conversion{Kind::StrLitToCStr}; }
+        static auto TupleNopCast(Type to) -> Conversion { return Conversion{Kind::TupleNopCast, to}; }
         static auto TupleToFirstElement() -> Conversion { return Conversion{Kind::TupleToFirstElement}; }
 
         Type type() const { return data.get<TypeAndValueCategory>().type(); }
@@ -347,7 +348,7 @@ private:
 
         /// The decl(s) that were found, if any. May be completely empty
         /// if lookup failed.
-        llvm::TinyPtrVector<Decl*> decls;
+        SmallVector<Decl*> decls;
 
         /// The name we failed to look up, if any. Will be unset
         /// if the lookup was successful.
@@ -363,11 +364,19 @@ private:
 
         LookupResult(DeclNameLoc name)
             : name{name}, result{Reason::NotFound} {}
+
         LookupResult(ArrayRef<Decl*> decls, DeclNameLoc name, Reason result)
             : decls{decls}, name{name}, result{result} {}
+
         LookupResult(Decl* decl, DeclNameLoc name, Reason result)
             : name{name}, result{result} {
             if (decl) decls.push_back(decl);
+        }
+
+        LookupResult(ArrayRef<Decl*> decls, DeclNameLoc name) : decls{decls}, name{name} {
+            if (decls.empty()) result = Reason::NotFound;
+            else if (decls.size() == 1) result = Reason::Success;
+            else result = Reason::Ambiguous;
         }
 
         /// Check if this is an overload set.
@@ -1442,7 +1451,6 @@ private:
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, std::same_as<TupleExpr> auto* args, SLoc loc, bool is_associated_call) -> Ptr<Expr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
-    auto BuildCompleteStructType(String name, RecordLayout* layout, SLoc decl_loc) -> StructType*;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
@@ -1466,7 +1474,7 @@ private:
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
-    auto BuildTupleType(ArrayRef<TypeLoc> types, SLoc loc) -> Opt<Type>;
+    auto BuildTupleType(ArrayRef<TypeLoc> types, ArrayRef<String> names, SLoc loc) -> Opt<Type>;
     auto BuildTuple(
         ArrayRef<Expr*> exprs,
         Opt<Type> desired_ty,

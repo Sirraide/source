@@ -144,7 +144,7 @@ public:
     TupleType* ClosureEquivalentTupleTy{};
     TupleType* AbortInfoEquivalentTy{};
 
-    /// Type caches.
+    /// Caches.
     FoldingSet<ArrayType> array_types;
     FoldingSet<IntType> int_types;
     FoldingSet<OptionalType> optional_types;
@@ -153,6 +153,7 @@ public:
     FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
     FoldingSet<TupleType> tuple_types;
+    FoldingSet<RecordLayout> record_layouts;
 
     /// Whether we’ve already emitted LLVM IR for this TU; we can do
     /// so only once due to the presence of additional LLVM modules that

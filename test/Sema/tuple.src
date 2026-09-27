@@ -86,3 +86,14 @@ proc f1 {
 struct incomplete {
 
 }
+
+eval {
+    var x = (a: 1, b: 2, c: 3);
+    var y = x.a + x.b + x.c;
+    assert y == 6;
+}
+
+eval {
+    var x = (a: 1, b: 2, c: 3);
+    assert (with x do a + b + c) == 6;
+}

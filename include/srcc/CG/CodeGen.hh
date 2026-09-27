@@ -332,13 +332,17 @@ public:
         ~EnterLoop();
     };
 
-    struct RecordInitHelper {
+    class RecordInitHelper {
         CodeGen& CG;
-        RecordType* ty;
         Value base;
+        SmallVector<FieldDecl*> fields;
         usz i = 0;
 
-        RecordInitHelper(CodeGen& CG, RecordType* ty, Value base) : CG{CG}, ty{ty}, base{base} {}
+    public:
+        RecordInitHelper(CodeGen& CG, RecordType* ty, Value base) : CG{CG}, base{base} {
+            fields = llvm::to_vector(ty->scope()->fields());
+        }
+
         void emit_next_field(Value v);
         void emit_next_field(IRValue v);
     };
@@ -501,6 +505,7 @@ public:
     /// Mark a non-transparent optional as disengaged. This does not delete the
     /// optional if it currently contains a value.
     void DisengageNonTransparentOptional(Value addr, OptionalType* ty, mlir::Location);
+    void EngageNonTransparentOptional(Value addr, OptionalType* ty, mlir::Location);
 
     void Emit(ArrayRef<ProcDecl*> procs);
     auto Emit(Stmt* stmt) -> IRValue;

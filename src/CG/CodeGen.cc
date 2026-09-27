@@ -257,11 +257,11 @@ void CodeGen::CreateBuiltinAggregateStore(
 ) {
     auto eqv = GetEquivalentRecordTypeForAggregate(ty);
     Assert(eqv, "Could not get equivalent record layout for type '{}'", ty);
-    Assert(eqv->layout().fields().size() == 2);
-    auto f1 = eqv->layout().fields()[0];
-    auto f2 = eqv->layout().fields()[1];
-    CreateStore(loc, addr, aggregate.first(), f1->type->align(tu), f1->offset);
-    CreateStore(loc, addr, aggregate.second(), f2->type->align(tu), f2->offset);
+    Assert(eqv->layout().field_offsets().size() == 2);
+    auto f1 = eqv->scope()->field(0);
+    auto f2 = eqv->scope()->field(1);
+    CreateStore(loc, addr, aggregate.first(), f1->type->align(tu), f1->offset());
+    CreateStore(loc, addr, aggregate.second(), f2->type->align(tu), f2->offset());
 }
 
 auto CodeGen::CreateEmptySlice(mlir::Location loc) -> IRValue {
@@ -327,14 +327,14 @@ auto CodeGen::CreateLoad(
     ir::Aliasing aliasing
 ) -> IRValue {
     if (auto eqv = GetEquivalentRecordTypeForAggregate(ty)) {
-        auto f1 = eqv->layout().fields()[0];
-        auto f2 = eqv->layout().fields()[1];
+        auto f1 = eqv->scope()->field(0);
+        auto f2 = eqv->scope()->field(1);
         auto v1 = CreateLoad(
             loc,
             addr,
             C(f1->type),
             f1->type->align(tu),
-            f1->offset + offset,
+            f1->offset() + offset,
             aliasing
         );
 
@@ -343,7 +343,7 @@ auto CodeGen::CreateLoad(
             addr,
             C(f2->type),
             f2->type->align(tu),
-            f2->offset + offset,
+            f2->offset() + offset,
             aliasing
         );
         return {v1, v2};
@@ -528,6 +528,18 @@ void CodeGen::DisengageNonTransparentOptional(Value addr, OptionalType* ty, mlir
     );
 
     ir::DisengageOp::create(*this, loc, addr);
+}
+
+void CodeGen::EngageNonTransparentOptional(Value addr, OptionalType* ty, mlir::Location loc) {
+    CreateStore(
+        loc,
+        addr,
+        CreateBool(loc, true),
+        Type::BoolTy->align(tu),
+        ty->get_engaged_offset()
+    );
+
+    ir::EngageOp::create(*this, loc, addr);
 }
 
 void CodeGen::EmitArrayLoop(
@@ -946,7 +958,8 @@ struct CodeGen::Mangler {
 
     explicit Mangler(TranslationUnit& tu) : tu(tu) {}
     void Append(ObjectDecl* obj);
-    void Append(StringRef s);
+    void Append(String s);
+    void Append(DeclName s);
     void Append(Type ty);
 };
 
@@ -965,11 +978,11 @@ void CodeGen::Mangler::Append(ObjectDecl* obj) {
 
     if (auto proc = dyn_cast<ProcDecl>(obj)) {
         for (auto p : proc->parents_top_down()) {
-            Append(p->name.str());
+            Append(p->name);
             name += "$";
         }
 
-        Append(proc->name.str());
+        Append(proc->name);
         Append(proc->type);
 
         // Also add the associated type if there is one.
@@ -985,15 +998,20 @@ void CodeGen::Mangler::Append(ObjectDecl* obj) {
     }
 
     auto global = cast<GlobalDecl>(obj);
-    Append(global->name.str());
+    Append(global->name);
     if (global->mangling_number != ManglingNumber::None)
         Format(name, ".{}", +global->mangling_number);
 }
 
-void CodeGen::Mangler::Append(StringRef s) {
+void CodeGen::Mangler::Append(String s) {
     Assert(not s.empty());
-    if (not llvm::isAlpha(s.front())) name += "$";
+    if (not llvm::isAlpha(s.sv().front())) name += "$";
     Format(name, "{}{}", s.size(), s);
+}
+
+void CodeGen::Mangler::Append(DeclName s) {
+    if (s.is_operator_name()) name += ".";
+    Append(s.str());
 }
 
 // INVARIANT: No mangling code starts with a number (this means
@@ -1073,7 +1091,7 @@ void CodeGen::Mangler::Append(Type ty) {
 
         void operator()(TupleType* ty) {
             M.name += "Q";
-            for (auto f : ty->layout().fields()) f->type->visit(*this);
+            for (auto f : ty->scope()->fields()) f->type->visit(*this);
             M.name += "E";
         }
     };
@@ -1126,23 +1144,23 @@ auto CodeGen::MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256> {
 //  Initialisation.
 // ============================================================================
 void CodeGen::RecordInitHelper::emit_next_field(Value v) {
-    Assert(i < ty->layout().fields().size());
-    auto field = ty->layout().fields()[i++];
-    auto ptr = CG.CreatePtrAdd(v.getLoc(), base, field->offset);
+    Assert(i < fields.size());
+    auto field = fields[i++];
+    auto ptr = CG.CreatePtrAdd(v.getLoc(), base, field->offset());
     CG.CreateStore(v.getLoc(), ptr, v, field->type->align(CG.tu));
 }
 
 void CodeGen::RecordInitHelper::emit_next_field(IRValue v) {
-    Assert(i < ty->layout().fields().size());
-    auto field = ty->layout().fields()[i++];
-    auto ptr = CG.CreatePtrAdd(v.loc(), base, field->offset);
+    Assert(i < fields.size());
+    auto field = fields[i++];
+    auto ptr = CG.CreatePtrAdd(v.loc(), base, field->offset());
     CG.CreateBuiltinAggregateStore(v.loc(), ptr, field->type, v);
 }
 
 void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RValue& rv) {
     auto EmitRecord = [&](const eval::Record& record, const RecordLayout& rl) {
-        for (auto [value, field] : zip(record.fields, rl.fields())) {
-            auto ptr = CreatePtrAdd(loc, addr, field->offset);
+        for (auto [value, offs] : zip(record.fields, rl.field_offsets())) {
+            auto ptr = CreatePtrAdd(loc, addr, offs);
             EmitEvaluatedRValue(loc, ptr, *value);
         }
     };
@@ -1168,22 +1186,35 @@ void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RV
             return;
         }
 
-        if (auto opt = dyn_cast<OptionalType>(rv.type())) {
+        Todo("Array init");
+    }
+
+    if (auto optional = rv.dyn_cast<eval::Optional>()) {
+        auto opt = cast<OptionalType>(rv.type());
+        if (opt->has_transparent_layout()) {
             Assert(
-                not opt->has_transparent_layout(),
-                "Should not have created a record for this!"
+                isa<PtrType>(opt->elem()),
+                "Unsupported transparent optional element type: {}", opt->elem()
             );
 
-            EmitRecord(*record, *opt->get_equivalent_record_layout());
-            ir::EngageOp::create(
-                *this,
-                loc,
-                CreatePtrAdd(loc, addr, opt->get_engaged_offset())
-            );
-            return;
+            if (not optional->value) {
+                EmitScalarRValueImpl(loc, opt->elem(), addr, CreateNullPointer(loc));
+                ir::DisengageOp::create(*this, loc, addr);
+            } else {
+                auto init_val = EmitValue(loc, rv);
+                EmitScalarRValueImpl(loc, opt->elem(), addr, init_val);
+                ir::EngageOp::create(*this, loc, addr);
+            }
+        } else {
+            if (not optional->value) {
+                DisengageNonTransparentOptional(addr, opt, loc);
+            } else {
+                EmitEvaluatedRValue(loc, addr, *optional->value.get());
+                EngageNonTransparentOptional(addr, opt, loc);
+            }
         }
 
-        Todo("Array init");
+        return;
     }
 
     Assert(rv.type()->eval_mode() == EvalMode::Scalar);
@@ -1260,6 +1291,11 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // handled here.
         [&](CastExpr *e) {
             auto loc = C(e->location());
+            if (e->kind == CastExpr::Nop) {
+                EmitRValue(addr, e->arg);
+                return;
+            }
+
             if (e->kind == CastExpr::LValueCopy and e->type->has_copy_proc()) {
                 auto init_addr = EmitScalar(e->arg);
                 EmitCopy(loc, addr, init_addr, init->type);
@@ -1292,20 +1328,9 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 
             // Emit the value into the address and then set the engaged flag.
             Assert(e->kind == CastExpr::OptionalWrap);
-            auto o = cast<OptionalType>(init->type);
+            auto opt = cast<OptionalType>(init->type);
             EmitRValue(addr, e->arg);
-
-            // If there is a separate engaged flag, set it.
-            if (not o->has_transparent_layout()) CreateStore(
-                loc,
-                addr,
-                CreateBool(loc, true),
-                Type::BoolTy->align(tu),
-                o->get_engaged_offset()
-            );
-
-            // And mark the optional as engaged.
-            ir::EngageOp::create(*this, C(init->location()), addr);
+            EngageNonTransparentOptional(addr, opt, C(init->location()));
         },
 
         // If the initialiser is a constant expression, create a global constant for it.
@@ -1332,7 +1357,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // Structs literals are emitted field by field.
         [&](TupleExpr* e) {
             auto s = e->record_type();
-            for (auto [field, val] : zip(s->layout().fields(), e->values())) {
+            for (auto [field, val] : vws::zip(s->scope()->fields(), e->values())) {
                 if (IsZeroSizedType(field->type)) {
                     Emit(val);
                     continue;
@@ -1341,7 +1366,7 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
                 auto offs = CreatePtrAdd(
                     C(val->location()),
                     addr,
-                    field->offset
+                    field->offset()
                 );
 
                 EmitRValue(offs, val);
@@ -2080,9 +2105,9 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
         if (expr->operand->is_rvalue()) return Emit(expr->operand)[i];
         auto r = GetEquivalentRecordTypeForAggregate(expr->operand->type);
         Assert(r, "Could not get equivalent record layout for type '{}'", expr->operand->type);
-        auto f = r->layout().fields()[i];
+        auto f = r->scope()->field(i);
         auto addr = EmitScalar(expr->operand);
-        return CreateLoad(C(expr->location()), addr, f->type, f->offset);
+        return CreateLoad(C(expr->location()), addr, f->type, f->offset());
     };
 
     switch (expr->access_kind) {
@@ -2772,7 +2797,7 @@ auto CodeGen::EmitMemberAccessExpr(MemberAccessExpr* expr) -> IRValue {
     Assert(not expr->field->is_bit_field(), "TODO: Emit 'address' of bit field");
     auto base = EmitScalar(expr->base);
     if (IsZeroSizedType(expr->type)) return base;
-    return CreatePtrAdd(C(expr->location()), base, expr->field->offset);
+    return CreatePtrAdd(C(expr->location()), base, expr->field->offset());
 }
 
 auto CodeGen::EmitNilExpr(NilExpr*) -> IRValue {
@@ -3155,30 +3180,43 @@ auto CodeGen::EmitWithExpr(WithExpr* expr) -> IRValue {
 auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue { // clang-format off
     auto GetSLoc = [&] { return SLoc::Decode(loc); };
     utils::Overloaded V {
-        [&](std::monostate) -> IRValue { return {}; },
-        [&](eval::Nil) -> IRValue { return {}; },
-        [&](Type ty) -> IRValue { return EmitTypeConstant(ty, loc); },
-        [&](TreeValue* tree) -> IRValue { return EmitTreeConstant(tree, loc); },
-        [&](const APInt& value) -> IRValue { return CreateInt(loc, value, val.type()); },
-        [&](eval::RawByteBuffer v) -> IRValue {
+        [&](std::monostate, Type) -> IRValue { return {}; },
+        [&](eval::Nil, Type) -> IRValue { return {}; },
+        [&](Type ty, Type) -> IRValue { return EmitTypeConstant(ty, loc); },
+        [&](TreeValue* tree, Type) -> IRValue { return EmitTreeConstant(tree, loc); },
+        [&](const APInt& value, Type ty) -> IRValue { return CreateInt(loc, value, ty); },
+        [&](eval::RawByteBuffer v, Type) -> IRValue {
             // We should probably never get here as these should always be evaluated
             // into a memory location and are handled by EmitRValue().
             Unreachable();
         },
-        [&](const eval::Range& r) -> IRValue {
-            auto el = cast<RangeType>(val.type())->elem();
+        [&](const eval::Range& r, Type ty) -> IRValue {
+            auto el = ty->elem();
             return {CreateInt(loc, r.start, el), CreateInt(loc, r.end, el)};
         },
-        [&](this auto& self, const eval::Slice& s) -> IRValue {
-            auto ptr = self(s.pointer).scalar();
+        [&](this auto& self, const eval::Slice& s, Type ty) -> IRValue {
+            auto ptr = self(s.pointer, cast<SliceType>(ty)->data_ptr_type()).scalar();
             auto size = CreateInt(loc, s.size, Type::IntTy);
             return {ptr, size};
         },
-        [&](this auto& self, const eval::Closure& c) -> IRValue {
+        [&](this auto& self, const eval::Optional& o, Type ty) -> IRValue {
+            if (cast<OptionalType>(ty)->has_transparent_layout()) {
+                Assert(
+                    isa<PtrType>(ty->elem()),
+                    "Unsupported transparent optional element type: {}", ty->elem()
+                );
+
+                if (o.value.invalid()) return CreateNullPointer(loc);
+                return EmitValue(loc, *o.value.get());
+            }
+
+            Unreachable("Cannot handle non-scalar optionals here");
+        },
+        [&](this auto& self, const eval::Closure& c, Type) -> IRValue {
             // During constant evaluation, just emit this irrespective of what it is.
             if (lang_opts.constant_eval) {
-                auto ptr = self(c.proc).scalar();
-                auto env = self(c.env).scalar();
+                auto ptr = self(c.proc, tu.I8PtrTy).scalar();
+                auto env = self(c.env, tu.I8PtrTy).scalar();
                 return {ptr, env};
             }
 
@@ -3203,7 +3241,7 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
 
             return EmitClosure(proc, loc);
         },
-        [&](eval::EvaluatedPointer p) -> IRValue {
+        [&](eval::EvaluatedPointer p, Type) -> IRValue {
             auto Poison = [&] -> Value {
                 return LLVM::PoisonOp::create(
                     *this,
@@ -3237,7 +3275,7 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
             // This is a constant, so what aliases what is irrelevant.
             return CreatePtrAdd(loc, base, p.offset(), ir::Aliasing::None);
         },
-        [&](eval::Record) -> IRValue {
+        [&](eval::Record, Type) -> IRValue {
             // TODO: Actually determine whether we can get here; I don’t think it’s
             // possible since we should create temporaries for aggregates and then
             // manually handle Records there (and I don’t think a non-record can

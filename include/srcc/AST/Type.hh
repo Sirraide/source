@@ -23,7 +23,7 @@ class Scope;
 class BlockScope;
 class ModuleScope;
 class ProcScope;
-class StructScope;
+class RecordScope;
 class TemplateTypeParamDecl;
 class TranslationUnit;
 struct ParamTypeData;
@@ -37,6 +37,8 @@ class EnumeratorDecl;
 class RecordLayout;
 struct BuiltinTypes;
 class CXXImporter;
+class ASTReader;
+class ASTWriter;
 
 #define AST_TYPE_LEAF_WITH_IDENTITY(node) class node;
 #define AST_TYPE(node) class SRCC_DIAGNOSE_POINTER_COMPARISON node;
@@ -72,6 +74,8 @@ class alignas(8) srcc::TypeBase {
     #include "srcc/AST.inc"
 
     friend Type;
+    friend ASTReader;
+    friend ASTWriter;
     friend types::detail::CanonicalTypeDenseMapInfo;
     template <typename To> friend auto ::srcc::cast(Type from) -> To*;
     template <typename To> friend auto ::srcc::dyn_cast(Type from) -> To*;
@@ -361,21 +365,32 @@ class alignas(8) srcc::Scope {
     /// The parent scope and scope kind.
     llvm::PointerIntPair<Scope*, 3, ScopeKind> parent_scope_and_kind;
 
+    /// Declarations in this scope.
+    SmallVector<Decl*> declarations;
+
 protected:
     explicit Scope(Scope* parent, ScopeKind k);
 
 public:
-    /// Declarations in this scope.
-    DeclNameMap<llvm::TinyPtrVector<Decl*>> decls_by_name;
-
     /// Defaulted out-of-line.
     virtual ~Scope();
+
+    /// Add a declaration to the scope; this performs no checking to see if
+    /// this is well-formed.
+    void add(Decl* d) { declarations.push_back(d); }
 
     /// Get the associated type of this scope.
     auto associated_type() -> Opt<Type>;
 
     /// Get a flat list of all declarations in this scope.
-    auto decls();
+    auto decls() -> ArrayRef<Decl*> { return declarations; }
+
+    /// Iterate over declarations of a certain type.
+    template <typename T>
+    auto decls_of_type();
+
+    /// Iterate over all declarations with a certain name.
+    auto decls_with_name(DeclName name);
 
     /// Get this scope’s enclosing procedure scope (which may be itself).
     auto enclosing_proc() -> ProcScope*;
@@ -425,22 +440,22 @@ public:
     /// we need to know this before the actual declaration is created.
     Opt<Type> associated_type;
 
-    /// Initialiser declarations.
-    SmallVector<Decl*> inits;
-
     /// Check if 's' is a proc scope.
     static bool classof(const Scope* s) { return s->is_proc_scope(); }
 };
 
 /// Scope that stores struct members, initialisers, etc.
-class srcc::StructScope : public Scope {
+class srcc::RecordScope : public Scope {
     friend TranslationUnit;
 
-    StructScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
+    RecordScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
 
 public:
-    /// Initialiser declarations.
-    SmallVector<Decl*> inits;
+    /// Get the n-th field.
+    auto field(u32 n) -> FieldDecl*;
+
+    /// Iterate over all fields.
+    auto fields();
 
     static bool classof(const Scope* s) { return s->is_struct_scope(); }
 };
@@ -672,32 +687,25 @@ public:
 
 class srcc::OptionalType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    llvm::PointerIntPair<const RecordLayout*, 1> layout_and_field_index = {};
-    explicit OptionalType(Type elem, const RecordLayout* rl = nullptr, u32 field_index = 0)
+    const RecordLayout* layout = {};
+    explicit OptionalType(Type elem, const RecordLayout* rl = nullptr)
         : SingleElementTypeBase{Kind::OptionalType, elem},
-          layout_and_field_index{rl, field_index} {}
+          layout{rl} {}
 
 public:
     /// Whether this optional type has the same memory representation as
     /// its underlying types (this is the case e.g. for optional pointers).
     [[nodiscard]] bool has_transparent_layout() const {
-        return layout_and_field_index.getPointer() == nullptr;
+        return layout == nullptr;
     }
 
     /// Get the record layout for this optional type.
     ///
-    /// Optional types whose memory representation is essentially that of a
-    /// 'bool' + the actual type are treated like record types with two fields.
+    /// The generic representation of an optional type 'T?' is as though it were
+    /// a tuple of the form '(T, bool)'.
     [[nodiscard]] auto get_equivalent_record_layout() const -> const RecordLayout* {
         Assert(not has_transparent_layout());
-        return layout_and_field_index.getPointer();
-    }
-
-    /// If this optional type has record layout, the index of the field that
-    /// stores whether this is engaged.
-    [[nodiscard]] auto get_engaged_field_index() const -> u32 {
-        Assert(not has_transparent_layout());
-        return layout_and_field_index.getInt();
+        return layout;
     }
 
     /// If this optional type has record layout, the offset of the byte that
@@ -894,10 +902,9 @@ public:
     static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::SliceType; }
 };
 
-class srcc::RecordLayout final : llvm::TrailingObjects<RecordLayout, FieldDecl*> {
+class srcc::RecordLayout final : public FoldingSetNode, llvm::TrailingObjects<RecordLayout, Size> {
     LIBBASE_IMMOVABLE(RecordLayout);
     friend TrailingObjects;
-    friend auto MakeCanonical(TranslationUnit& tu, const RecordLayout* rl) -> RecordLayout*;
 
 public:
     /// Computed properties that are not stored in the layout and are instead
@@ -905,37 +912,38 @@ public:
     struct Props {
         bool must_define_delete : 1 = false;
         bool must_define_copy : 1 = false;
-
         bool trivial() const {
             return not must_define_copy and not must_define_copy;
         }
     };
 
     struct Bits {
+    private:
+        using Encoded = u8;
+
+    public:
         bool can_copy            : 1 = true;
         bool contains_pointer    : 1 = false;
-        bool default_initialiser : 1 = false;
-        bool init_from_no_args   : 1 = false;
+        bool default_initialiser : 1 = true;
+        bool init_from_no_args   : 1 = true;
         bool is_union            : 1 = false;
-        bool literal_initialiser : 1 = false;
-        bool zero_init           : 1 = false;
-        u8 padding : 1{};
+        bool literal_initialiser : 1 = true;
+        bool zero_init           : 1 = true;
+        Encoded padding : 1{};
 
         // Get record bits for a type that is compatible with C.
         static auto CLikeType(bool contains_pointer, bool is_union) -> Bits {
             Bits b{};
             b.contains_pointer = contains_pointer;
-            b.default_initialiser = true;
-            b.init_from_no_args = true;
-            b.literal_initialiser = true;
-            b.zero_init = true;
             b.is_union = is_union;
             return b;
         }
 
-        void serialise(ByteWriter& w) const { w << std::bit_cast<u8>(*this); }
+        Encoded encode() const { return std::bit_cast<Encoded>(*this); }
+
+        void serialise(ByteWriter& w) const { w << encode(); }
         static auto deserialise(ByteReader& r) -> Result<Bits> {
-            return std::bit_cast<Bits>(Try(r.read<u8>()));
+            return std::bit_cast<Bits>(Try(r.read<Encoded>()));
         }
     };
 
@@ -950,7 +958,7 @@ public:
 
 private:
     RecordLayout(
-        ArrayRef<FieldDecl*> offsets,
+        ArrayRef<Size> offsets,
         Size sz,
         Size arr_sz,
         Align a,
@@ -961,31 +969,31 @@ public:
     /// Helper to build a record layout.
     class Builder {
         TranslationUnit& tu;
+        SmallVector<Size> offsets;
+        RecordLayout::Bits bits;
         Size sz;
         Align a;
-        RecordLayout::Bits bits;
-        SmallVector<FieldDecl*> decls;
+        RecordLayout::Props props;
 
     public:
         explicit Builder(TranslationUnit& tu, bool is_union = false): tu{tu} {
             bits.is_union = is_union;
         }
 
-        /// Add a field with the specified type and name.
+        /// Add a field with the specified type.
         ///
         /// This does not perform any checking as to whether the type is even
         /// valid for a field; this must be done before calling this.
-        auto add_field(Type ty, String name = "", SLoc loc = {}) -> FieldDecl*;
+        void add_field(Type ty);
 
         /// Build the layout.
-        [[nodiscard]] auto build(
-            ArrayRef<ProcDecl*> initialisers = {}
-        ) -> std::pair<RecordLayout*, Props>;
+        [[nodiscard]] auto build() -> std::pair<RecordLayout*, Props>;
     };
 
-    static auto Create(
+    /// Get a record layout.
+    static auto Get(
         TranslationUnit& tu,
-        ArrayRef<FieldDecl*> fields,
+        ArrayRef<Size> offsets,
         Size sz,
         Size arr_sz,
         Align a,
@@ -1006,14 +1014,10 @@ public:
     /// Get the record bits.
     auto bits() const -> Bits { return computed_bits; }
 
-    /// Get the record’s fields.
-    auto fields() const -> ArrayRef<FieldDecl*> {
+    /// Get the record’s field offsets.
+    auto field_offsets() const -> ArrayRef<Size> {
         return getTrailingObjects(num_fields);
     }
-
-    /// Get the record’s field types.
-    // Defined out of line in Stmt.hh.
-    auto field_types() const;
 
     /// Whether this record has a default initialiser (i.e.
     /// an initialiser that takes no arguments and is *not*
@@ -1038,22 +1042,39 @@ public:
     /// *not* include tail padding (use 'array_size()' instead for
     /// that).
     auto size() const -> Size { return computed_size; }
+
+    void Profile(FoldingSetNodeID& ID) const;
+
+private:
+    static void Profile(
+        FoldingSetNodeID& ID,
+        ArrayRef<Size> offsets,
+        Size sz,
+        Size arr_sz,
+        Align a,
+        Bits bits
+    );
 };
 
 /// Base class for 'TupleType' and 'StructType'.
 class srcc::RecordType : public TypeBase {
+    friend TupleType;
+
 protected:
-    Ptr<ProcDecl> delete_proc;
-    Ptr<ProcDecl> copy_proc;
     RecordLayout* record_layout = nullptr;
-    RecordType(Kind k) : TypeBase{k} {}
+    RecordScope* record_scope;
+    RecordType(Kind k, RecordScope* scope) : TypeBase{k}, record_scope{scope} {}
 
 public:
     /// Get the copy procedure of this struct, if any.
-    auto get_copy() const -> Ptr<ProcDecl> { return copy_proc; }
+    auto get_copy() const -> Ptr<ProcDecl> {
+        return get_special_member(Tk::Copy);
+    }
 
     /// Get the deleter of this struct, if any.
-    auto get_delete() const -> Ptr<ProcDecl> { return delete_proc; }
+    auto get_delete() const -> Ptr<ProcDecl> {
+        return get_special_member(Tk::Delete);
+    }
 
     /// Get whether this type is complete, i.e. whether we can
     /// declare variables and create objects of this type.
@@ -1065,37 +1086,51 @@ public:
         return *record_layout;
     }
 
+    /// Get the scope containing the fields, member functions, and
+    /// initialisers of this struct.
+    auto scope() const -> RecordScope* { return record_scope; }
+
     /// Set the copy procedure of this record.
     void set_copy(ProcDecl* copy) {
-        Assert(not copy_proc, "Copy procedure already set");
-        Assert(copy);
-        copy_proc = copy;
+        set_special_member(Tk::Copy, copy);
     }
 
     /// Set the deleter of this record.
     void set_delete(ProcDecl* deleter) {
-        Assert(not delete_proc, "Deleter already set");
-        Assert(deleter);
-        delete_proc = deleter;
+        set_special_member(Tk::Delete, deleter);
     }
 
     static bool classof(const TypeBase* t) {
         return t->exact_kind() == Kind::StructType or
                t->exact_kind() == Kind::TupleType;
     }
+
+private:
+    auto get_special_member(Tk tok) const -> Ptr<ProcDecl>;
+    void set_special_member(Tk tok, ProcDecl* decl);
 };
 
-/// A record consisting of a sequence of types. A TupleType is always
-/// canonical; tuples with non-canonical members are wrapped in a
-/// SugaredTupleType.
-/// TODO: Actually add SugaredTupleType.
-class srcc::TupleType final : public RecordType, public FoldingSetNode {
-    explicit TupleType(RecordLayout* layout) : RecordType{Kind::TupleType} {
-        record_layout = layout;
-    }
+class srcc::TupleType final : public RecordType
+    , public FoldingSetNode {
+    friend ASTReader;
+
+    /// Profile of the canonical element types.
+    // FIXME: Technically this only needs to be stored in the canonical type.
+    FoldingSetNodeIDRef types_profile{};
+
+    TupleType(RecordLayout* layout, RecordScope* scope);
+
+    static auto CreateDeserialised(
+        TranslationUnit& tu,
+        RecordScope* scope,
+        RecordLayout* layout
+    ) -> TupleType*;
 
 public:
-    void Profile(FoldingSetNodeID& ID) const;
+    /// Check if this tuple has the same element types as another tuple.
+    bool has_same_elements(TupleType* other) {
+        return types_profile == other->types_profile;
+    }
 
     /// Get a trivial tuple type, i.e. one that does not have a deleter/copy procedure.
     static auto GetTrivial(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
@@ -1103,29 +1138,36 @@ public:
     /// Get a tuple type from a layout.
     static auto Get(
         TranslationUnit& tu,
+        Scope* parent_scope,
         RecordLayout* layout,
+        ArrayRef<Type> fields,
+        ArrayRef<String> names,
+        // FIXME: This is jank: I think we should move all code that uniques
+        // types and all code that translates/builds types into Sema (make a
+        // new SemaType.cpp for this).
         llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
     ) -> TupleType*;
-    static void Profile(FoldingSetNodeID& tu, auto elem_types);
-    static bool classof(const TypeBase* t) {  return t->exact_kind() == Kind::TupleType; }
+
+    // No need to profile the record layout as it is computed from the field types anyway.
+    void Profile(FoldingSetNodeID& ID) const;
+    static void Profile(FoldingSetNodeID& tu, const FoldingSetNodeID& types, auto names);
+    static bool classof(const TypeBase* t) { return t->exact_kind() == Kind::TupleType; }
 };
 
 class srcc::StructType final : public RecordType {
 private:
     TranslationUnit& owning_tu; // FIXME: Move this into TypeDecl.
     TypeDecl* type_decl = nullptr;
-    StructScope* struct_scope;
 
-    StructType(TranslationUnit& owner, StructScope* struct_scope)
-        : RecordType{Kind::StructType},
-          owning_tu{owner},
-          struct_scope{struct_scope} {}
+    StructType(TranslationUnit& owner, RecordScope* scope)
+        : RecordType{Kind::StructType, scope},
+          owning_tu{owner} {}
 
 public:
     /// Create a type and the corresponding declaration.
     static auto Create(
         TranslationUnit& owner,
-        StructScope* scope,
+        RecordScope* scope,
         String name,
         SLoc decl_loc,
         RecordLayout* layout = nullptr
@@ -1138,17 +1180,13 @@ public:
     void finalise(RecordLayout* layout);
 
     /// Get the user-declared initialisers for this struct.
-    auto initialisers() const -> ArrayRef<Decl*> { return struct_scope->inits; }
+    auto initialisers() const;
 
     /// Get the name of this type.
     auto name() const -> String;
 
     /// Get the translation unit this is attached to.
     auto owner() const -> TranslationUnit& { return owning_tu; }
-
-    /// Get the scope containing the fields, member functions, and
-    /// initialisers of this struct.
-    auto scope() const -> StructScope* { return struct_scope; }
 
     static bool classof(const TypeBase* e) { return e->exact_kind() == Kind::StructType; }
 };

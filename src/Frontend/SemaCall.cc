@@ -145,7 +145,9 @@ auto Sema::SubstituteTemplate(
 
             // Build a tuple consisting of the remaining arguments.
             // TODO: Maybe a failure to build the type here should not be a hard error.
-            auto ty = TRY(BuildTupleType(input_types.drop_front(i), proc_template->location()));
+            auto types = input_types.drop_front(i);
+            auto names = llvm::to_vector(vws::repeat(String(), types.size()));
+            auto ty = TRY(BuildTupleType(types, names, proc_template->location()));
             deduced_var_parameters.push_back(ty);
         }
     }
@@ -244,7 +246,7 @@ auto Sema::Callee::index_of_named_param(String name) -> std::optional<u32> {
             return utils::index_of<u32>(decl->pattern->params(), name, &ParsedVarDecl::name);
         },
         [&](RecordType* ty) -> std::optional<u32> {
-            return utils::index_of<u32>(ty->layout().fields(), name, &FieldDecl::name);
+            return utils::index_of<u32>(ty->scope()->fields(), name, &FieldDecl::name);
         },
     });
 }
@@ -277,7 +279,7 @@ auto Sema::Callee::param_count() const -> u32 {
     return visit_type(utils::Overloaded{
         [](ProcType* ty) { return ty->param_count(); },
         [](ProcTemplateDecl* decl) { return u32(decl->pattern->params().size()); },
-        [](RecordType* ty) { return u32(ty->layout().fields().size()); },
+        [](RecordType* ty) { return u32(ty->layout().field_offsets().size()); },
     });
 }
 
@@ -288,7 +290,7 @@ auto Sema::Callee::param_loc(u32 index) const -> SLoc {
         [&](ProcTemplateDecl* decl) {
             return decl->pattern->type->param_types()[index].type->loc;
         },
-        [&](RecordType* ty) { return ty->layout().fields()[index]->location(); },
+        [&](RecordType* ty) { return ty->scope()->field(index)->location(); },
     });
 }
 
@@ -297,7 +299,7 @@ auto Sema::Callee::param_name(u32 index) const -> DeclName {
         [](ProcType* ty) { return DeclName(); },
         [&](ProcDecl* decl) { return decl->params()[index]->name; },
         [&](ProcTemplateDecl* decl) { return decl->pattern->params()[index]->name; },
-        [&](RecordType* ty) { return ty->layout().fields()[index]->name; },
+        [&](RecordType* ty) { return ty->scope()->field(index)->name; },
     });
 }
 
@@ -366,6 +368,7 @@ u32 Sema::ConversionSequence::badness() {
             case K::RangeCast:
             case K::SliceFromArray:
             case K::StrLitToCStr:
+            case K::TupleNopCast:
             case K::TupleToFirstElement:
                 badness++;
                 break;

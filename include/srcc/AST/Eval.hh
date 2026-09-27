@@ -177,6 +177,12 @@ struct Record {
     ArrayRef<RValue*> fields;
 };
 
+/// An optional value.
+struct Optional {
+    /// Present iff the optional is engaged.
+    Ptr<RValue> value{};
+};
+
 /// Evaluated '#quote' with all unquotes substituted.
 class TreeValue final : llvm::TrailingObjects<TreeValue, TreeValue*> {
     friend VM;
@@ -203,6 +209,7 @@ class RValue {
         Range,
         Slice,
         Closure,
+        Optional,
         Type,
         TreeValue*,
         RawByteBuffer,
@@ -225,6 +232,7 @@ public:
     explicit RValue(EvaluatedPointer p, Type ty) : value(p), ty(ty) {}
     explicit RValue(Closure c, Type ty) : value(std::move(c)), ty(ty) {}
     explicit RValue(Record r, Type ty) : value(std::move(r)), ty(ty) {}
+    explicit RValue(Optional r, Type ty) : value(std::move(r)), ty(ty) {}
     explicit RValue(Nil n) : value(n), ty(Type::NilTy) {}
 
     /// cast<>() the contained value.
@@ -256,7 +264,10 @@ public:
     /// Run a visitor over this value.
     template <typename Visitor>
     auto visit(Visitor&& visitor) const -> decltype(auto) {
-        return std::visit(std::forward<Visitor>(visitor), value);
+        return std::visit(
+            [&](auto&& v) { return std::invoke(LIBBASE_FWD(visitor), LIBBASE_FWD(v), type()); },
+            value
+        );
     }
 };
 

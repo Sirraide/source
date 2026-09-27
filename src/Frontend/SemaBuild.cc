@@ -270,7 +270,7 @@ auto Sema::BuildBinaryExpr(
                 auto res = Evaluate(rhs);
                 if (not res) return {};
                 auto idx = i64(res->cast<APInt>().getSExtValue());
-                auto tuple_elems = i64(ty->layout().fields().size());
+                auto tuple_elems = i64(ty->layout().field_offsets().size());
                 if (idx < 0 or idx >= tuple_elems) return Error(
                     rhs->location(),
                     "Tuple index {} is out of bounds for {}-element tuple\f{}",
@@ -279,7 +279,7 @@ auto Sema::BuildBinaryExpr(
                     ty
                 );
 
-                return new (*tu) MemberAccessExpr(lhs, ty->layout().fields()[usz(idx)], loc);
+                return new (*tu) MemberAccessExpr(lhs, ty->scope()->field(u32(idx)), loc);
             }
 
             // A subscripting operation yields an lvalue.
@@ -1401,7 +1401,8 @@ auto Sema::BuildTuple(
 
     // Ensure all the types are well formed.
     auto types = llvm::to_vector(vws::transform(exprs, [&](Expr* e) { return e->type_loc(); }));
-    auto ty = TRY(BuildTupleType(types, loc));
+    auto field_names = llvm::to_vector(vws::transform(names, [&](auto n) { return n.name.str(); }));
+    auto ty = TRY(BuildTupleType(types, field_names, loc));
     return TupleExpr::Create(*tu, ty, exprs, names, loc);
 }
 
@@ -1575,44 +1576,39 @@ auto Sema::BuildArrayType(TypeLoc base, i64 size, SLoc loc) -> Opt<Type> {
     return ArrayType::Get(*tu, base.ty, size);
 }
 
-auto Sema::BuildCompleteStructType(
-    String name,
-    RecordLayout* layout,
-    SLoc decl_loc
-) -> StructType* {
-    auto scope = tu->create_scope<StructScope>(global_scope());
-    for (auto f : layout->fields())
-        if (f->is_valid)
-            AddDeclToScope(scope, f);
-
-    return StructType::Create(
-        *tu,
-        scope,
-        name,
-        decl_loc,
-        layout
-    );
-}
-
 auto Sema::BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type> {
     if (not CheckVariableType(base, loc)) return {};
     return SliceType::Get(*tu, base, immutable);
 }
 
-auto Sema::BuildTupleType(ArrayRef<TypeLoc> types, SLoc tuple_loc) -> Opt<Type> {
+auto Sema::BuildTupleType(
+    ArrayRef<TypeLoc> types,
+    ArrayRef<String> names,
+    SLoc tuple_loc
+) -> Opt<Type> {
+
     // FIXME: This should create an incomplete tuple first that is completed
     // on-demand by 'CompleteDefinition()' (or at the end of the TU).
     RecordLayout::Builder lb{*tu};
     bool ok = true;
     for (auto [ty, loc] : types) {
         if (not CheckFieldType(ty, loc)) ok = false;
-        else lb.add_field(ty, "", loc);
+        else lb.add_field(ty);
     }
 
     // Build the layout.
     if (not ok) return {};
     auto [layout, props] = lb.build();
-    return TupleType::Get(*tu, layout, [&](TupleType* r) {
+    auto DefineSpecial = [&](TupleType* r) {
         DefineSpecialProcedures(r, props, nullptr, nullptr, tuple_loc);
-    });
+    };
+
+    return TupleType::Get(
+        *tu,
+        curr_scope(),
+        layout,
+        llvm::to_vector(vws::transform(types, &TypeLoc::ty)),
+        names,
+        DefineSpecial
+    );
 }

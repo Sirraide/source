@@ -554,7 +554,7 @@ auto TupleExpr::Create(
     if (auto r = dyn_cast<RecordType>(type)) {
         Assert(
             type == Type::CallArgListTy or
-            fields.size() == r->layout().fields().size(),
+            fields.size() == r->layout().field_offsets().size(),
             "Argument count mismatch"
         );
     } else {

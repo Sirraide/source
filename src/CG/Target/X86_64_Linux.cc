@@ -277,8 +277,8 @@ auto ABIImpl::LowerByValArgOrReturn(
             // We need special handling for slices/closures since they contain pointers.
             if (isa<SliceType, ProcType>(t)) {
                 auto ty = cg.GetEquivalentRecordTypeForAggregate(t);
-                info.emplace_back(cg.C(ty->layout().fields()[0]->type));
-                info.emplace_back(cg.C(ty->layout().fields()[1]->type));
+                info.emplace_back(cg.C(ty->scope()->field(0)->type));
+                info.emplace_back(cg.C(ty->scope()->field(1)->type));
                 if (auto a = arg.get_or_null()) {
                     auto v = cg.Emit(a);
                     if (a->is_lvalue()) v = cg.CreateLoad(l, v.scalar(), t);
@@ -613,8 +613,8 @@ auto ABIImpl::lower_procedure_signature(
             // We need special handling for slices/closures since they contain pointers.
             if (isa<SliceType, ProcType>(ret)) {
                 auto ty = cg.GetEquivalentRecordTypeForAggregate(ret);
-                AddReturnType(cg.C(ty->layout().fields()[0]->type));
-                AddReturnType(cg.C(ty->layout().fields()[1]->type));
+                AddReturnType(cg.C(ty->scope()->field(0)->type));
+                AddReturnType(cg.C(ty->scope()->field(1)->type));
             } else {
                 // TODO: This returns padding bytes if the struct is e.g. (i32, i64); do we care?
                 AddReturnType(cg.getI64Type());

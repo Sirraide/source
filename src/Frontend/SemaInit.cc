@@ -99,11 +99,12 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
             loc
         ).get(); // Should never fail.
 
+        case K::TupleNopCast: return Cast(CastExpr::Nop, e->value_category);
         case K::TupleToFirstElement: {
             if (auto te = dyn_cast<TupleExpr>(e)) return te->values().front();
             auto ty = cast<TupleType>(e->type);
             auto temp = MaterialiseTemporary(e);
-            return new (*tu) MemberAccessExpr(temp, ty->layout().fields().front(), loc);
+            return new (*tu) MemberAccessExpr(temp, ty->scope()->field(0), loc);
         }
     }
 }
@@ -163,6 +164,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::SliceFromArray:
         case K::StripParens:
         case K::StrLitToCStr:
+        case K::TupleNopCast:
         case K::TupleToFirstElement: {
             Assert(exprs.size() == 1);
             exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
@@ -264,6 +266,18 @@ auto Sema::BuildAggregateInitialiser(
     if (rl.bits().is_union)
         return CreateICE(loc, "TODO: Non-trivial union initialisation");
 
+    // Tuples with the same element types (after flattening and canonicalisation) are
+    // convertible to one another.
+    if (args.size() == 1 and isa<TupleType>(r) and isa<TupleType>(args.front()->type)) {
+        auto t1 = cast<TupleType>(r);
+        auto t2 = cast<TupleType>(args.front()->type);
+        if (t1->has_same_elements(t2)) {
+            seq.add(Conversion::TupleNopCast(r));
+            seq.add(Conversion::LValueToRValue());
+            return {};
+        }
+    }
+
     // Handle initialisation of structs from a named argument list.
     SmallVector<Expr*> reordered_args;
     if (args.size() == 1) {
@@ -300,20 +314,22 @@ auto Sema::BuildAggregateInitialiser(
 
     // Recursively build an initialiser for each element that the user provided.
     std::vector<ConversionSequence> field_seqs;
-    for (auto [field, arg] : zip(rl.fields(), args)) {
+    for (auto [field, arg] : vws::zip(r->scope()->fields(), args)) {
         auto seq = BuildConversionSequence(field->type, arg, arg->location());
         if (not seq.has_value()) {
-            auto note = field->name.empty()
-                ? CreateNote(field->location(), "In initialiser for field declared here")
-                : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
-            seq.error().push_back(std::move(note));
+            if (field->location().is_valid()) {
+                auto note = field->name.empty()
+                    ? CreateNote(field->location(), "In initialiser for field declared here")
+                    : CreateNote(field->location(), "In initialiser for field '%6({}%)'", field->name);
+                seq.error().push_back(std::move(note));
+            }
             return std::move(seq.error());
         }
         field_seqs.push_back(std::move(seq.value()));
     }
 
     // For now, the number of arguments must match the number of fields in the struct.
-    if (rl.fields().size() != args.size()) return CreateError(
+    if (rl.field_offsets().size() != args.size()) return CreateError(
         loc,
         "Cannot initialise '{}' from\f'%1(({})%)'",
         Type{r},
@@ -437,6 +453,17 @@ auto Sema::BuildConversionSequence(
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
 
+    // Check if we have exactly the right type already.
+    auto CheckExactMatch = [&] {
+        if (args.size() == 1 and args.front()->type == var_type) {
+            // Ensure this is an rvalue if we want one.
+            if (args.front()->is_lvalue() and not want_lvalue) seq.add(Conversion::LValueToRValue());
+            return true;
+        }
+
+        return false;
+    };
+
     // Note: 'RequireCompleteType()' may issue diagnostics, but this is a bit unavoidable;
     // generally, we should almost never encounter incomplete types that we fail to complete,
     // so this usually shouldn’t cause any problems even if we’re building conversion sequences
@@ -447,12 +474,15 @@ auto Sema::BuildConversionSequence(
         var_type
     );
 
+    // Check for exact matches first before we do any tuple unwrapping.
+    if (CheckExactMatch()) return seq;
+
     // Simplify tuples and parenthesised expressions.
     //
     // Note that this only handles literal tuples, e.g. a function returning a tuple
     // won’t get unwrapped here, which is probably what we want.
     //
-    // Do not simplify tuples with named elements.
+    // Do not simplify tuples with named elements unless the target type is also a tuple.
     {
         auto single_arg = args.size() == 1 ? args.front() : nullptr;
 
@@ -462,7 +492,7 @@ auto Sema::BuildConversionSequence(
         // to default initialisation in all contexts.
         if (
             auto t = dyn_cast_if_present<TupleExpr>(single_arg);
-            t and not t->is_struct() and not t->is_named()
+            t and not t->is_struct() and (not t->is_named() or isa<TupleType>(var_type))
         ) {
             seq.add(Conversion::ExpandTuple());
             args = t->values();
@@ -542,15 +572,12 @@ auto Sema::BuildConversionSequence(
     // If we get here, there is only a single argument.
     Assert(args.size() == 1);
 
-    // If the types match, ensure this is an rvalue.
-    auto ty = args.front()->type;
-    if (ty == var_type) {
-        if (args.front()->is_lvalue() and not want_lvalue) seq.add(Conversion::LValueToRValue());
-        return seq;
-    }
+    // After unwrapping, we may have an exact match again.
+    if (CheckExactMatch()) return seq;
 
     // Perform auto-dereferencing.
     // FIXME: This does the wrong thing if we have e.g. 'int^^' and 'int??'.
+    auto ty = args.front()->type;
     if (
         allow_auto_deref and
         ty->strip_pointers_and_optionals() == var_type->strip_pointers_and_optionals()
@@ -588,8 +615,8 @@ auto Sema::BuildConversionSequence(
 
             // Unwrap 1-tuples.
             auto t = dyn_cast<TupleType>(unwrapped_type);
-            if (not t or t->layout().fields().size() != 1) break;
-            unwrapped_type = t->layout().fields().front()->type;
+            if (not t or t->layout().field_offsets().size() != 1) break;
+            unwrapped_type = t->scope()->field(0)->type;
             seq.add(Conversion::TupleToFirstElement());
         }
 

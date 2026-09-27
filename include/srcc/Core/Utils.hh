@@ -456,6 +456,14 @@ consteval usz BitsForEnum() {
 /// same error more than once anyway.
 auto FormatError(llvm::Error& e) -> std::string;
 
+/// Check if a range contains exactly 1 element.
+bool IsSingle(auto&& range) {
+    auto begin = rgs::begin(LIBBASE_FWD(range));
+    auto end = rgs::end(LIBBASE_FWD(range));
+    if (begin == end) return false;
+    return std::next(begin) == end;
+}
+
 /// Negate a predicate.
 [[nodiscard]] auto Not(auto Predicate) {
     return [Predicate = std::move(Predicate)]<typename... Args>(Args&&... args) {

@@ -438,9 +438,15 @@ auto TypeBase::print_impl() const -> SmallUnrenderedString {
         },
         [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
         [&](TupleType* s) {
-            Format(out, "%1(({})%)", utils::join_as(s->layout().fields(), [](FieldDecl* d) {
-                return d->type->print_impl();
-            }));
+            out += "%1((";
+            bool first = true;
+            for (auto decl : s->scope()->fields()) {
+                if (first) first = false;
+                else out += ", ";
+                if (not decl->name.empty()) Format(out, "%5({}%): ", decl->name);
+                out += decl->type->print_impl();
+            }
+            out += ")%)";
         },
     }); // clang-format on
 
@@ -609,7 +615,7 @@ auto OptionalType::Get(TranslationUnit& mod, Type elem) -> OptionalType* {
             // Ignore the properties of the record layout here; all code paths
             // that care about those know to look through optionals.
             auto [layout, _] = b.build();
-            return new (mod) OptionalType{elem, layout, 1};
+            return new (mod) OptionalType{elem, layout};
         };
 
         OptionalType* ty = Make(elem);
@@ -627,7 +633,7 @@ void OptionalType::Profile(FoldingSetNodeID& ID, Type elem) {
 
 auto OptionalType::get_engaged_offset() const -> Size {
     Assert(not has_transparent_layout());
-    return layout_and_field_index.getPointer()->fields()[layout_and_field_index.getInt()]->offset;
+    return layout->field_offsets()[1];
 }
 
 auto PtrType::Get(TranslationUnit& mod, Type elem, bool immutable) -> PtrType* {
@@ -818,112 +824,128 @@ void SliceType::Profile(FoldingSetNodeID& ID, Type elem, bool immutable) {
 // ============================================================================
 //  Record Types
 // ============================================================================
-auto RecordLayout::Builder::add_field(Type ty, String name, SLoc loc) -> FieldDecl* {
-    Size offset;
-
+void RecordLayout::Builder::add_field(Type ty) {
     // The alignment of a struct is the alignment of its most-aligned field.
     auto fa = ty->align(tu);
     a = std::max(a, fa);
 
     // Compute the field offset; note that all union fields have offset 0.
+    // TODO: Maybe optimise layout if this isn’t meant for FFI.
     if (not bits.is_union) {
-        offset = sz.align(fa);
+        auto offset = sz.align(fa);
         sz = offset + ty->memory_size(tu);
+        offsets.push_back(offset);
+    } else {
+        offsets.push_back(Size());
     }
 
-    decls.push_back(new (tu) FieldDecl(ty, offset, name, loc));
-    return decls.back();
+    // Update bits.
+    bits.default_initialiser = bits.init_from_no_args &= ty->can_init_from_no_args();
+    bits.zero_init &= bits.default_initialiser and ty->can_zero_init();
+    bits.contains_pointer |= ty->is_or_contains_pointer();
+    bits.can_copy &= ty->can_copy();
+
+    // Update props.
+    props.must_define_delete |= ty->requires_deletion();
+    props.must_define_copy = bits.can_copy and (props.must_define_copy or ty->has_copy_proc());
 }
 
-auto RecordLayout::Builder::build(
-    ArrayRef<ProcDecl*> initialisers
-) -> std::pair<RecordLayout*, RecordLayout::Props> {
-    // Helper to invoke a callback on the type of a field.
-    auto Property = [](auto cb) {
-        return [cb](FieldDecl* fd) {
-            return std::invoke(cb, fd->type.ptr());
-        };
-    };
+// TODO: Initialisers are declared out-of-line, but they should
+// have been picked up during initial translation when we find
+// all the procedures in the current scope. Add any that we found
+// here, and if we didn’t find any (or the 'default' attribute was
+// specified on the struct declaration), declare the default initialiser.
 
-    // TODO: Initialisers are declared out-of-line, but they should
-    // have been picked up during initial translation when we find
-    // all the procedures in the current scope. Add any that we found
-    // here, and if we didn’t find any (or the 'default' attribute was
-    // specified on the struct declaration), declare the default initialiser.
-
-    // TODO: If we decide to allow this:
-    //
-    // struct S { ... }
-    // proc f {
-    //    init S(...) { ... }
-    // }
-    //
-    // Then the initialiser should still respect normal lookup rules (i.e.
-    // it should only be visible within 'f'). Perhaps we want to store
-    // local member functions outside the struct itself and in the local
-    // scope instead?
-    //
-    // TODO: Maybe optimise layout if this isn’t meant for FFI.
-    if (initialisers.empty()) {
-        // Compute whether we can define a default initialiser for this.
-        bits.init_from_no_args = bits.default_initialiser = rgs::all_of(
-            decls,
-            Property(&TypeBase::can_init_from_no_args)
-        );
-
-        // Compute whether we can use zero-initialisation for this.
-        bits.zero_init = bits.default_initialiser and rgs::all_of(
-            decls,
-            Property(&TypeBase::can_zero_init)
-        );
-
-        // We always provide a literal initialiser in this case.
-        bits.literal_initialiser = true;
-    }
-
-    // Determine various properties that depend on the fields.
-    RecordLayout::Props props;
-    bits.contains_pointer = any_of(decls, Property(&TypeBase::is_or_contains_pointer));
-    bits.can_copy = all_of(decls, Property(&TypeBase::can_copy));
-    props.must_define_delete = any_of(decls, Property(&TypeBase::requires_deletion));
-    props.must_define_copy = bits.can_copy and any_of(decls, Property(&TypeBase::has_copy_proc));
-    return {RecordLayout::Create(tu, decls, sz, sz.align(a), a, bits), props};
+// TODO: If we decide to allow this:
+//
+// struct S { ... }
+// proc f {
+//    init S(...) { ... }
+// }
+//
+// Then the initialiser should still respect normal lookup rules (i.e.
+// it should only be visible within 'f'). Perhaps we want to store
+// local member functions outside the struct itself and in the local
+// scope instead?
+auto RecordLayout::Builder::build() -> std::pair<RecordLayout*, RecordLayout::Props> {
+    return {RecordLayout::Get(tu, offsets, sz, sz.align(a), a, bits), props};
 }
 
 RecordLayout::RecordLayout(
-    ArrayRef<FieldDecl*> fields,
+    ArrayRef<Size> offsets,
     Size sz,
     Size arr_sz,
     Align a,
     Bits bits
-) : num_fields{utils::safe_cast<u32>(fields.size())},
+) : num_fields{utils::safe_cast<u32>(offsets.size())},
     computed_alignment{a},
     computed_bits{bits},
     computed_size{sz},
     computed_array_size{arr_sz} {
     std::uninitialized_copy_n(
-        fields.begin(),
-        fields.size(),
+        offsets.begin(),
+        offsets.size(),
         getTrailingObjects()
     );
 }
 
-auto RecordLayout::Create(
+auto RecordLayout::Get(
     TranslationUnit &tu,
-    ArrayRef<FieldDecl *> fields,
+    ArrayRef<Size> offsets,
     Size sz,
     Size arr_sz,
     Align a,
     Bits bits
 ) -> RecordLayout* {
-    auto alloc_sz = totalSizeToAlloc<FieldDecl*>(fields.size());
+    // Check if this is an existing layout.
+    FoldingSetNodeID id;
+    llvm::FoldingSetInsertToken tok;
+    Profile(id, offsets, sz, arr_sz, a, bits);
+    if (auto rl = tu.record_layouts.lookup(id, tok)) return rl;
+
+    // If not, create it.
+    auto alloc_sz = totalSizeToAlloc<Size>(offsets.size());
     auto mem = tu.allocate(alloc_sz, alignof(RecordLayout));
-    return ::new (mem) RecordLayout(fields, sz, sz.align(a), a, bits);
+    auto rl = ::new (mem) RecordLayout(offsets, sz, arr_sz, a, bits);
+    tu.record_layouts.insert(rl, tok);
+    return rl;
+}
+
+void RecordLayout::Profile(FoldingSetNodeID& id) const {
+    Profile(id, field_offsets(), size(), array_size(), align(), bits());
+}
+
+void RecordLayout::Profile(
+    FoldingSetNodeID& id,
+    ArrayRef<Size> offsets,
+    Size sz,
+    Size arr_sz,
+    Align a,
+    Bits bits
+) {
+    for (auto o : offsets) id.AddInteger(o.bits());
+    id.AddInteger(sz.bits());
+    id.AddInteger(arr_sz.bits());
+    id.AddInteger(a.log_repr());
+    id.AddInteger(bits.encode());
+}
+
+auto RecordType::get_special_member(Tk tok) const -> Ptr<ProcDecl> {
+    auto d = record_scope->decls_with_name(tok);
+    if (d.empty()) return nullptr;
+    Assert(utils::IsSingle(d));
+    return cast<ProcDecl>(d.front());
+}
+
+void RecordType::set_special_member(Tk tok, ProcDecl* decl) {
+    Assert(decl);
+    Assert(record_scope->decls_with_name(tok).empty());
+    record_scope->add(decl);
 }
 
 auto StructType::Create(
     TranslationUnit& owner,
-    StructScope* scope,
+    RecordScope* scope,
     String name,
     SLoc decl_loc,
     RecordLayout* layout
@@ -943,33 +965,113 @@ auto StructType::name() const -> String {
     return type_decl->name.str();
 }
 
-void TupleType::Profile(FoldingSetNodeID& id, auto elem_types) {
-    for (Type ty : elem_types) id.AddPointer(ty->canonical);
+TupleType::TupleType(
+    RecordLayout* layout,
+    RecordScope* scope
+) : RecordType(Kind::TupleType, scope)  {
+    record_layout = layout;
 }
 
-void TupleType::Profile(FoldingSetNodeID& id) const {
-    Profile(id, layout().field_types());
+auto TupleType::CreateDeserialised(
+    TranslationUnit& tu,
+    RecordScope* scope,
+    RecordLayout* layout
+) -> TupleType* {
+    // Fields will be filled in by the deserialiser.
+    return new (tu) TupleType(layout, scope);
 }
 
-auto TupleType::GetTrivial(TranslationUnit& mod, ArrayRef<Type> elems) -> TupleType* {
-    RecordLayout::Builder lb{mod};
+auto TupleType::GetTrivial(TranslationUnit& tu, ArrayRef<Type> elems) -> TupleType* {
+    RecordLayout::Builder lb{tu};
     for (auto ty : elems) lb.add_field(ty);
     auto [layout, props] = lb.build();
     Assert(props.trivial(), "Non-trivial tuples must be build by Sema");
-    return Get(mod, layout, nullptr);
+    return Get(
+        tu,
+        tu.global_scope(),
+        layout,
+        elems,
+        llvm::to_vector(vws::repeat(String(), elems.size())),
+        [](auto) { /* Nothing to do here. */ }
+    );
 }
 
 auto TupleType::Get(
-    TranslationUnit& mod,
-    RecordLayout* rl,
+    TranslationUnit& tu,
+    Scope* parent_scope,
+    RecordLayout* layout,
+    ArrayRef<Type> fields,
+    ArrayRef<String> names,
     llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
 ) -> TupleType* {
-    Assert(rl);
-    auto CreateNew = [&] {
-        auto ty = new (mod) TupleType{rl};
-        if (DefineSpecialProcedures) std::invoke(DefineSpecialProcedures, ty);
-        return ty;
+    Assert(layout);
+    auto GetCanonicalType = [](auto ty) { return Type(ty->canonical); };
+    auto canonical_types = llvm::to_vector(vws::transform(fields, GetCanonicalType));
+
+    // Profile the element types recursively.
+    FoldingSetNodeID types_profile;
+    for (auto t : canonical_types) {
+        if (auto tuple = dyn_cast<TupleType>(t)) types_profile.AddNodeID(tuple->types_profile);
+        else types_profile.AddPointer(t.ptr());
+    }
+
+    // Allocate the tuple.
+    auto CreateTuple = [&](ArrayRef<Type> types) {
+        auto s = tu.create_scope<RecordScope>(parent_scope);
+        auto tuple = new (tu) TupleType{layout, s};
+        u32 index = 0;
+        for (auto [ty, name] : llvm::zip_equal(types, names))
+            s->add(new (tu) FieldDecl(tuple, ty, name, index++, SLoc()));
+        return tuple;
     };
 
-    return GetOrCreateType(mod.tuple_types, CreateNew, rl->field_types());
+    // Create the canonical tuple.
+    //
+    // This additionally defines the special functions. We only do this once
+    // since we would otherwise generate the same code twice.
+    auto CreateCanonical = [&] {
+        auto tuple = CreateTuple(canonical_types);
+        tuple->types_profile = types_profile.Intern(tu.allocator());
+        if (DefineSpecialProcedures) std::invoke(DefineSpecialProcedures, tuple);
+        return tuple;
+    };
+
+    auto canonical = GetOrCreateType(
+        tu.tuple_types,
+        CreateCanonical,
+        types_profile,
+        names
+    );
+
+    // Create the sugared tuple.
+    //
+    // Reuse the special members for the canonical tuple here.
+    auto CreateSugared = [&] {
+        auto tuple = CreateTuple(fields);
+        tuple->canonical = canonical;
+        tuple->types_profile = canonical->types_profile;
+        for (auto t : {Tk::Copy, Tk::Delete}) {
+            auto proc = canonical->get_special_member(t);
+            if (proc.present()) tuple->set_special_member(t, proc.get());
+        }
+        return tuple;
+    };
+
+    // Create the non-canonical tuple.
+    return GetOrCreateType(
+        tu.tuple_types,
+        CreateSugared,
+        types_profile,
+        names
+    );
+}
+
+void TupleType::Profile(FoldingSetNodeID& id, const FoldingSetNodeID& types, auto names) {
+    id.AddNodeID(types);
+    for (auto n : names) id.AddString(n);
+}
+
+void TupleType::Profile(FoldingSetNodeID& id) const {
+    auto Names = [](FieldDecl* f) { return f->name.str(); };
+    Profile(id, types_profile, vws::transform(record_scope->fields(), Names));
 }

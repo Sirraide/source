@@ -60,13 +60,13 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     store #0, i64 45, align 8
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     ret
 // + }
 // +
-// + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
+// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
 // +     ret
 // + }
@@ -84,11 +84,11 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     delete #1 using $T5Small.delete
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     br bb3
 // +
 // + bb2:
-// +     delete #1 using $T5Small.delete
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     br bb3
 // +
 // + bb3:
@@ -111,12 +111,12 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     delete #2 using $T5Small.delete
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     store #0, i8 0, align 1
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using $T5Small.delete if #0 implicit
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
@@ -137,12 +137,12 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +     br %3 to bb2 else bb1
 // +
 // + bb1:
-// +     delete #2 using $T5Small.delete
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     store #0, i8 0, align 1
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using $T5Small.delete if #0 implicit
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
@@ -155,7 +155,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +     br bb1
 // +
 // + bb1:
-// +     delete #0 using $T5Small.delete
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
 // +     store #0, i64 42, align 8
 // +     br bb1
 // + }
@@ -165,9 +165,9 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #0, i64 33, align 8
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
@@ -183,8 +183,8 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 // + entry:
 // +     store #0, i64 %1, align 8
 // +     store %3, i64 1, align 8
-// +     delete #0 using $T5Small.delete implicit
-// +     delete %0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 
@@ -202,14 +202,14 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L + define private void @_S2f1FvE.1() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
-//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
 //L +   store i64 45, ptr %1, align 8
-//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define void @"$T5Small.delete"(ptr align 8 dereferenceable(8) %0) #1 {
+//L + define void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr align 8 dereferenceable(8) %0) #1 {
 //L +   ret void
 //L + }
 //L +
@@ -225,11 +225,11 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br i1 %6, label %7, label %8
 //L +
 //L + 7:                                                ; preds = %1
-//L +   call void @"$T5Small.delete"(ptr %3)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %3)
 //L +   br label %9
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"$T5Small.delete"(ptr %3)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %3)
 //L +   br label %9
 //L +
 //L + 9:                                                ; preds = %7, %8
@@ -251,7 +251,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br i1 %7, label %8, label %9
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"$T5Small.delete"(ptr %4)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
 //L +   store i8 0, ptr %2, align 1
 //L +   br label %9
 //L +
@@ -261,7 +261,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br i1 %11, label %12, label %13
 //L +
 //L + 12:                                               ; preds = %9
-//L +   call void @"$T5Small.delete"(ptr %4)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
 //L +   br label %13
 //L +
 //L + 13:                                               ; preds = %12, %9
@@ -284,7 +284,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br i1 %7, label %9, label %8
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"$T5Small.delete"(ptr %4)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
 //L +   store i8 0, ptr %2, align 1
 //L +   br label %9
 //L +
@@ -294,7 +294,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br i1 %11, label %12, label %13
 //L +
 //L + 12:                                               ; preds = %9
-//L +   call void @"$T5Small.delete"(ptr %4)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
 //L +   br label %13
 //L +
 //L + 13:                                               ; preds = %12, %9
@@ -309,7 +309,7 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   br label %2
 //L +
 //L + 2:                                                ; preds = %2, %0
-//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
 //L +   store i64 42, ptr %1, align 8
 //L +   br label %2
 //L + }
@@ -318,9 +318,9 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L + define private void @_S2f6FvE.6() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
-//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
 //L +   store i64 33, ptr %1, align 8
-//L +   call void @"$T5Small.delete"(ptr %1)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
 //L +   ret void
 //L + }
 //L +
@@ -329,8 +329,8 @@ proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout S
 //L +   %6 = alloca i8, i64 8, align 8
 //L +   store i64 %1, ptr %6, align 8
 //L +   store i64 1, ptr %3, align 8
-//L +   call void @"$T5Small.delete"(ptr %6)
-//L +   call void @"$T5Small.delete"(ptr %0)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %6)
+//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %0)
 //L +   ret void
 //L + }
 //L +

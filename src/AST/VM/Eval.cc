@@ -78,15 +78,15 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     SmallUnrenderedString out;
     utils::Overloaded V{
         // clang-format off
-        [&](std::monostate) {},
-        [&](Type ty) { out += ty->print(); },
-        [&](TreeValue* tree) { out += tree->dump(ctx); },
-        [&](Nil) { out += "%1(nil%)"; },
-        [&](const RawByteBuffer& b) {
+        [&](std::monostate, Type) {},
+        [&](Type ty, Type) { out += ty->print(); },
+        [&](TreeValue* tree, Type) { out += tree->dump(ctx); },
+        [&](Nil, Type) { out += "%1(nil%)"; },
+        [&](const RawByteBuffer& b, Type) {
             if (b.is_string()) out += utils::Escape(b.str(), true, true);
             out += "<aggregate value>";
         },
-        [&](this auto& self, EvaluatedPointer p) {
+        [&](this auto& self, EvaluatedPointer p, Type) {
             p.base().visit(utils::Overloaded{
                 [&](String s) { Format(out, "%3(\"{}\"%)", utils::Escape(s, true, true)); },
                 [&](std::nullptr_t) { out += "%1(nil%)"; },
@@ -95,33 +95,41 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
                 [&](UnknownPointer) { out += "<unknown pointer>"; },
             });
         },
-        [&](this auto& self, const Range& r) {
-            self(r.start);
+        [&](this auto& self, const Range& r, Type ty) {
+            self(r.start, ty->elem());
             out += "%1(..<%)";
-            self(r.end);
+            self(r.end, ty->elem());
         },
-        [&](this auto& self, const Slice& s) {
+        [&](this auto& self, const Slice& s, Type ty) {
             out += "%1(slice(%)";
-            self(s.pointer);
+            self(s.pointer, srcc::cast<SliceType>(ty)->data_ptr_type());
             Format(out, "%1(, %)%5({}%)%1()%)", s.size);
         },
-        [&](const APInt& value) {
+        [&](this auto& self, const Optional& o, Type ty) {
+            if (o.value.invalid()) out += "%1(nil%)";
+            else {
+                out += ty->print();
+                out += "(";
+                out += o.value.get()->print(ctx);
+            }
+        },
+        [&](const APInt& value, Type) {
             if (type() == Type::BoolTy) out += value.getBoolValue() ? "%1(true%)"sv : "%1(false%)"sv;
             else Format(out, "%5({}%)", toString(value, 10, true));
         },
-        [&](this auto& self, const Closure& c) {
+        [&](this auto& self, const Closure& c, Type ty) {
             if (c.env.is_null()) {
-                self(c.proc);
+                self(c.proc, ty); // Type doesn't matter as it’s unused.
                 return;
             }
 
             out += "<closure";
-            self(c.proc);
+            self(c.proc, ty);
             out += ", env: ";
-            self(c.env);
+            self(c.env, ty);
             out += ">";
         },
-        [&](this auto& self, const Record& r) {
+        [&](this auto& self, const Record& r, Type) {
             if (not srcc::isa<TupleType>(type())) out += type()->print();
             out += "%1((%)";
             bool first = true;
@@ -995,10 +1003,10 @@ bool Eval::EvalLoop() {
             }
 
             res.value().visit(utils::Overloaded{
-                [&](auto&&) { Unreachable("Unsupported type property result: {}", res.value().print(&vm.owner().context())); },
-                [&](Type ty) { Temp(i->getResult(0)) = SRValue(ty); },
-                [&](APInt val) { Temp(i->getResult(0)) = SRValue(std::move(val)); },
-                [&](Slice s) {
+                [&](auto&&, Type) { Unreachable("Unsupported type property result: {}", res.value().print(&vm.owner().context())); },
+                [&](Type ty, Type) { Temp(i->getResult(0)) = SRValue(ty); },
+                [&](APInt val, Type) { Temp(i->getResult(0)) = SRValue(std::move(val)); },
+                [&](Slice s, Type) {
                     auto str = s.pointer.base().get<String>();
                     Assert(s.pointer.offset() == Size());
                     Assert(s.size.getZExtValue() == str.size());
@@ -1381,16 +1389,6 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         return EvaluatedPointer::GetUnknown();
     };
 
-    auto PersistRecord = [&](const void* mem, const RecordLayout& rl) -> Record {
-        SmallVector<RValue*> values;
-        values.reserve(rl.fields().size());
-        for (auto f : rl.fields()) {
-            auto ptr = mem + f->offset;
-            values.push_back(vm.owner().save(Persist(ptr, loc, f->type)));
-        }
-        return Record{ArrayRef(values).copy(vm.owner().allocator())};
-    };
-
     if (isa<PtrType>(ty)) return RValue(PersistPointer(mem), ty);
     if (ty->is_integer_or_bool()) return RValue(
         LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
@@ -1404,7 +1402,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
 
     if (isa<SliceType>(ty)) {
         auto pointer = PersistPointer(mem);
-        auto size_offs = vm.owner_tu.SliceEquivalentTupleTy->layout().fields()[1]->offset;
+        auto size_offs = vm.owner_tu.SliceEquivalentTupleTy->scope()->field(1)->offset();
         auto size = LoadInt(mem + size_offs, Type::IntTy->bit_width(vm.owner())).cast<APInt>();
         return RValue(Slice{pointer, std::move(size)}, ty);
     }
@@ -1421,7 +1419,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
             return proc.get();
         }();
 
-        auto env_offs = vm.owner_tu.ClosureEquivalentTupleTy->layout().fields()[1]->offset;
+        auto env_offs = vm.owner_tu.ClosureEquivalentTupleTy->scope()->field(1)->offset();
         auto env_ptr = PersistPointer(mem + env_offs);
         return RValue(Closure{proc_ptr, env_ptr}, ty);
     }
@@ -1441,12 +1439,34 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
     // Otherwise, persist each field individually.
     if (auto r = dyn_cast<RecordType>(ty)) {
         Assert(r->is_complete());
-        return RValue(PersistRecord(mem, r->layout()), r);
+        SmallVector<RValue*> values;
+        values.reserve(r->layout().field_offsets().size());
+        for (auto f : r->scope()->fields()) {
+            auto ptr = mem + f->offset();
+            values.push_back(vm.owner().save(Persist(ptr, loc, f->type)));
+        }
+
+        return RValue(Record{ArrayRef(values).copy(vm.owner().allocator())}, r);
     }
 
     if (auto o = dyn_cast<OptionalType>(ty)) {
-        if (o->has_transparent_layout()) return Persist(mem, loc, o->elem());
-        return RValue(PersistRecord(mem, *o->get_equivalent_record_layout()), o);
+        if (o->has_transparent_layout()) {
+            Assert(
+                isa<PtrType>(o->elem()),
+                "Unsupported transparent optional element type: {}", o->elem()
+            );
+
+            auto ptr = PersistPointer(mem);
+            if (ptr.is_null()) return RValue(Optional(), o);
+            auto saved = vm.owner().save(RValue(ptr, o->elem()));
+            return RValue(Optional(saved), o);
+        }
+
+        // Load the bool to check if this is engaged.
+        auto engaged = LoadInt(mem, Type::BoolTy->memory_size(vm.owner()));
+        if (not engaged.cast<APInt>().getBoolValue()) return RValue(Optional(), o);
+        auto value = Persist(mem, loc, o->elem());
+        return RValue(Optional(vm.owner().save(value)), o);
     }
 
     Todo();

@@ -7,8 +7,13 @@
 #include <base/Serialisation.hh>
 
 namespace srcc {
-/// Represents the name of a declaration; this can also be an operator
-/// name. This behaves like a 'Variant<String, Tk>'.
+/// Represents the name of a declaration.
+///
+/// This can be a string, an operator, or a token:
+///
+///   - If the name is an identifier, this stores a String.
+///   - If the name is an operator, this stores the operator token.
+///   - Tk::Init/Copy/Delete are used to store special members.
 class DeclName  {
     template <typename, typename>
     friend struct llvm::DenseMapInfo;

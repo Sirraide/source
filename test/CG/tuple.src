@@ -109,6 +109,16 @@ proc f9 nomangle {
     sink(x7);
 }
 
+proc f10 {
+    var x = (a: 1, b: 2, c: 3);
+    (int, int, int) y = x;
+
+    var x1 = (a: 1, b: (c: 2, d: 3), e: 4);
+    (int, (int, int), int) y1 = x1;
+    (int, int, int, int) y2 = x1;
+    (f: int, g: int, h: int, i: int) y3 = x1;
+}
+
 // * proc __src_main norecurse external ccc {
 // + entry:
 // +     ret
@@ -367,8 +377,6 @@ proc f9 nomangle {
 // +     #7 = 8, align 8
 // +     #8 = 8, align 8
 // +     #9 = 8, align 8
-// +     #10 = 8, align 8
-// +     #11 = 8, align 8
 // +
 // + entry:
 // +     %0 = call ccc i64 f()
@@ -384,17 +392,13 @@ proc f9 nomangle {
 // +     %5 = load i64, #8, align 8
 // +     store #2, i64 %5, align 8
 // +     %6 = call ccc i64 f()
-// +     store #9, i64 %6, align 8
-// +     %7 = load i64, #9, align 8
-// +     store #3, i64 %7, align 8
+// +     store #3, i64 %6, align 8
+// +     %7 = call ccc i64 f()
+// +     store #4, i64 %7, align 8
 // +     %8 = call ccc i64 f()
-// +     store #10, i64 %8, align 8
-// +     %9 = load i64, #10, align 8
-// +     store #4, i64 %9, align 8
-// +     %10 = call ccc i64 f()
-// +     store #11, i64 %10, align 8
-// +     %11 = load i64, #11, align 8
-// +     store #5, i64 %11, align 8
+// +     store #9, i64 %8, align 8
+// +     %9 = load i64, #9, align 8
+// +     store #5, i64 %9, align 8
 // +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
 // +     call ccc void sink(ptr #1 align 8 dereferenceable 8)
 // +     call ccc void sink(ptr #2 align 8 dereferenceable 8)
@@ -414,6 +418,34 @@ proc f9 nomangle {
 // +     %1 = load i64, #1, align 8
 // +     store #0, i64 %1, align 8
 // +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
+// +     ret
+// + }
+// +
+// + proc _S3f10FvE.1 private ccc {
+// +     #0 = 24, align 8
+// +     #1 = 24, align 8
+// +     #2 = 32, align 8
+// +     #3 = 32, align 8
+// +     #4 = 32, align 8
+// +     #5 = 32, align 8
+// +
+// + entry:
+// +     store #0, i64 1, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 2, align 8
+// +     %1 = ptradd #0, 16
+// +     store %1, i64 3, align 8
+// +     copy #1 <- #0, 24
+// +     store #2, i64 1, align 8
+// +     %2 = ptradd #2, 8
+// +     store %2, i64 2, align 8
+// +     %3 = ptradd %2, 8
+// +     store %3, i64 3, align 8
+// +     %4 = ptradd #2, 24
+// +     store %4, i64 4, align 8
+// +     copy #3 <- #2, 32
+// +     copy #4 <- #2, 32
+// +     copy #5 <- #2, 32
 // +     ret
 // + }
 
@@ -677,32 +709,26 @@ proc f9 nomangle {
 //L +   %8 = alloca i8, i64 8, align 8
 //L +   %9 = alloca i8, i64 8, align 8
 //L +   %10 = alloca i8, i64 8, align 8
-//L +   %11 = alloca i8, i64 8, align 8
-//L +   %12 = alloca i8, i64 8, align 8
+//L +   %11 = call i64 @f()
+//L +   store i64 %11, ptr %7, align 8
+//L +   %12 = load i64, ptr %7, align 8
+//L +   store i64 %12, ptr %1, align 8
 //L +   %13 = call i64 @f()
-//L +   store i64 %13, ptr %7, align 8
-//L +   %14 = load i64, ptr %7, align 8
-//L +   store i64 %14, ptr %1, align 8
+//L +   store i64 %13, ptr %8, align 8
+//L +   %14 = load i64, ptr %8, align 8
+//L +   store i64 %14, ptr %2, align 8
 //L +   %15 = call i64 @f()
-//L +   store i64 %15, ptr %8, align 8
-//L +   %16 = load i64, ptr %8, align 8
-//L +   store i64 %16, ptr %2, align 8
+//L +   store i64 %15, ptr %9, align 8
+//L +   %16 = load i64, ptr %9, align 8
+//L +   store i64 %16, ptr %3, align 8
 //L +   %17 = call i64 @f()
-//L +   store i64 %17, ptr %9, align 8
-//L +   %18 = load i64, ptr %9, align 8
-//L +   store i64 %18, ptr %3, align 8
+//L +   store i64 %17, ptr %4, align 8
+//L +   %18 = call i64 @f()
+//L +   store i64 %18, ptr %5, align 8
 //L +   %19 = call i64 @f()
 //L +   store i64 %19, ptr %10, align 8
 //L +   %20 = load i64, ptr %10, align 8
-//L +   store i64 %20, ptr %4, align 8
-//L +   %21 = call i64 @f()
-//L +   store i64 %21, ptr %11, align 8
-//L +   %22 = load i64, ptr %11, align 8
-//L +   store i64 %22, ptr %5, align 8
-//L +   %23 = call i64 @f()
-//L +   store i64 %23, ptr %12, align 8
-//L +   %24 = load i64, ptr %12, align 8
-//L +   store i64 %24, ptr %6, align 8
+//L +   store i64 %20, ptr %6, align 8
 //L +   call void @sink(ptr align 8 dereferenceable(8) %1)
 //L +   call void @sink(ptr align 8 dereferenceable(8) %2)
 //L +   call void @sink(ptr align 8 dereferenceable(8) %3)
@@ -724,12 +750,43 @@ proc f9 nomangle {
 //L +   ret void
 //L + }
 //L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private void @_S3f10FvE.1() #1 {
+//L +   %1 = alloca i8, i64 24, align 8
+//L +   %2 = alloca i8, i64 24, align 8
+//L +   %3 = alloca i8, i64 32, align 8
+//L +   %4 = alloca i8, i64 32, align 8
+//L +   %5 = alloca i8, i64 32, align 8
+//L +   %6 = alloca i8, i64 32, align 8
+//L +   store i64 1, ptr %1, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 2, ptr %7, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %1, i32 16
+//L +   store i64 3, ptr %8, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %2, ptr %1, i64 24, i1 false)
+//L +   store i64 1, ptr %3, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %3, i32 8
+//L +   store i64 2, ptr %9, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %9, i32 8
+//L +   store i64 3, ptr %10, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %3, i32 24
+//L +   store i64 4, ptr %11, align 8
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %4, ptr %3, i64 32, i1 false)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %5, ptr %3, i64 32, i1 false)
+//L +   call void @llvm.memcpy.p0.p0.i64(ptr %6, ptr %3, i64 32, i1 false)
+//L +   ret void
+//L + }
+//L +
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: write)
 //L + declare void @llvm.memset.p0.i64(ptr writeonly captures(none), i8, i64, i1 immarg) #3
+//L +
+//L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+//L + declare void @llvm.memcpy.p0.p0.i64(ptr noalias writeonly captures(none), ptr noalias readonly captures(none), i64, i1 immarg) #4
 //L +
 //L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
 //L + attributes #2 = { nounwind }
 //L + attributes #3 = { nocallback nofree nosync nounwind willreturn memory(argmem: write) }
+//L + attributes #4 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
 //L +
 //L +

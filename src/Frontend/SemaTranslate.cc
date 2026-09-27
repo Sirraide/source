@@ -865,7 +865,7 @@ auto Sema::TranslateMemberAccess(
 #   define TRY_ASSOCIATED(...) TryAssociatedLookup([&] { return Error(__VA_ARGS__); });
 
     // Struct member access.
-    if (auto s = dyn_cast<StructType>(ty)) {
+    if (auto s = dyn_cast<RecordType>(ty)) {
         if (not s->is_complete()) return TRY_ASSOCIATED(
             parsed->loc,
             "Member access on incomplete type '{}'",
@@ -1292,7 +1292,7 @@ auto Sema::TranslateStructDecl(ParsedStructDecl*, Opt<Type>) -> Decl* {
 }
 
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
-    auto sc = tu->create_scope<StructScope>(curr_scope());
+    auto sc = tu->create_scope<RecordScope>(curr_scope());
     auto ty = StructType::Create(
         *tu,
         sc,
@@ -1583,12 +1583,15 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
                 else ok = false;
             }
 
-            if (any_of(t->elems(), [&](auto& e) { return e.name.name.valid(); }))
-                return ICE(t->loc, "TODO: named tuple types");
+            // Bail if there was an error.
+            if (not ok) return {};
 
-            // If this is a simple parenthesised expression, just return the 1st element type.
+            // If this is a simple parenthesised expression, with no name, just return the 1st element type.
             if (types.size() == 1 and t->is_paren_expr()) return types.front().ty;
-            if (ok) return BuildTupleType(types, parsed->loc);
+
+            // Otherwise, build a tuople.
+            auto names = llvm::to_vector(vws::transform(t->elems(), [&](auto& e) { return e.name.name.str(); }));
+            if (ok) return BuildTupleType(types, names, parsed->loc);
             return {};
         }
 

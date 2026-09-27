@@ -47,12 +47,12 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
+// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc $T5Small.copy (
+// + proc _S$10__src_main$.4copyFT5SmallxT5SmallE (
 // +     ptr %0 sret i8[8],
 // +     ptr %1 align 8 dereferenceable 8,
 // + ) external ccc {
@@ -64,7 +64,7 @@ proc f4() {
 // +
 // + proc _S4sinkFvT5SmallE.1 (ptr %0 align 8 dereferenceable 8 move) private ccc {
 // + entry:
-// +     delete %0 using $T5Small.delete implicit
+// +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
@@ -84,9 +84,9 @@ proc f4() {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     call ccc void $T5Small.copy(ptr #1, ptr #0)
+// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #1, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
-// +     call ccc void $T5Small.copy(ptr #2, ptr #0)
+// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #2, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #2 align 8 dereferenceable 8 move)
 // +     store #3, i64 42, align 8
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #3 align 8 dereferenceable 8 move)
@@ -100,9 +100,9 @@ proc f4() {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     call ccc void $T5Small.copy(ptr #1, ptr #0)
+// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #1, ptr #0)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
@@ -127,13 +127,13 @@ proc f4() {
 // +     store #0, i64 4, align 8
 // +     %0 = ptradd #0, 8
 // +     store %0, i64 5, align 8
-// +     call ccc void $T1S.copy(ptr #1, ptr #0)
-// +     delete #1 using $T1S.delete implicit
-// +     delete #0 using $T1S.delete implicit
+// +     call ccc void _S$10__src_main$.4copyFT1SxT1SE(ptr #1, ptr #0)
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T1SE implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T1SE implicit
 // +     ret
 // + }
 // +
-// + proc $T1S.copy (
+// + proc _S$10__src_main$.4copyFT1SxT1SE (
 // +     ptr %0 sret i8[16],
 // +     ptr %1 align 8 dereferenceable 16,
 // + ) external ccc {
@@ -149,7 +149,7 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc $T1S.delete (ptr %0 align 8 dereferenceable 16) external ccc {
+// + proc _S$10__src_main$.6deleteFvx2T1SE (ptr %0 align 8 dereferenceable 16) external ccc {
 // + entry:
 // +     ret
 // + }

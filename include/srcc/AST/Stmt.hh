@@ -1221,21 +1221,28 @@ public:
 
 class srcc::FieldDecl final : public Decl {
 public:
+    RecordType* parent;
     Type type;
-    Size offset;
+    u32 index;
 
     FieldDecl(
+        RecordType* parent,
         Type type,
-        Size offset,
         String name,
+        u32 index,
         SLoc location
-    ) : Decl{Kind::FieldDecl, name, location}, type{type}, offset{offset} {}
+    ) : Decl{Kind::FieldDecl, name, location}, parent{parent}, type{type}, index{index} {}
 
     /// Whether this is a 'bit field', i.e. any integer field whose bit width
     /// is not a multiple of the byte size.
     bool is_bit_field() const {
         auto int_ty = dyn_cast<IntType>(type);
         return int_ty and not int_ty->bit_width().is_byte_aligned();
+    }
+
+    /// Get the offset of this field.
+    auto offset() const -> Size {
+        return parent->layout().field_offsets()[index];
     }
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::FieldDecl; }
@@ -1835,10 +1842,24 @@ struct AnyVarDecl {
 }
 
 // This can only be defined here because it needs to know how big 'Decl' is.
-inline auto srcc::Scope::decls() {
-    return decls_by_name                                                                           //
-         | vws::transform([](auto& entry) -> llvm::TinyPtrVector<Decl*>& { return entry.second; }) //
-         | vws::join;
+template <typename T>
+inline auto srcc::Scope::decls_of_type() {
+    return decls()
+        | vws::filter([](auto* d) { return isa<T>(d); })
+        | vws::transform([](auto* d) -> T* { return cast<T>(d); });
+}
+
+inline auto srcc::Scope::decls_with_name(DeclName name) {
+    return decls() | vws::filter([name](Decl* d) { return d->name == name; });
+}
+
+inline auto srcc::RecordScope::fields() { return decls_of_type<FieldDecl>(); }
+inline auto srcc::RecordScope::field(u32 n) -> FieldDecl* {
+    for (auto [i, f] : vws::enumerate(fields()))
+        if (i == n)
+            return f;
+
+    Unreachable("Field index out of bounds");
 }
 
 // And this in turn depends on Scope::decls().
@@ -1847,10 +1868,8 @@ inline auto srcc::EnumType::enumerators() const {
         | vws::transform([](Decl* d) -> EnumeratorDecl* { return cast<EnumeratorDecl>(d);}) ;
 }
 
-// This requires the definition of 'FieldDecl', so put it here.
-// FIXME: Stop storing decls in the record layout and store only offsets instead.
-inline auto srcc::RecordLayout::field_types() const {
-    return fields() | vws::transform([](FieldDecl* fd) -> Type { return fd->type; });
+inline auto srcc::StructType::initialisers() const {
+    return record_scope->decls_with_name(Tk::Init);
 }
 
 /// Visit a statement.

@@ -70,8 +70,8 @@ temporaries();
 // +     store %0, i64 3, align 8
 // +     %1 = ptradd %0, 8
 // +     store %1, i64 4, align 8
-// +     delete #1 using $T3Big.delete implicit
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T3BigE implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
@@ -107,7 +107,7 @@ temporaries();
 // + bb1(i64 %10):
 // +     %11 = ptradd #1, %10
 // +     %12 = ptradd base %11, 0
-// +     delete %12 using $T3Big.delete implicit
+// +     delete %12 using _S$10__src_main$.6deleteFvx2T3BigE implicit
 // +     %13 = icmp eq i64 %10, 0
 // +     br %13 to bb3(16) else bb2
 // +
@@ -118,7 +118,7 @@ temporaries();
 // + bb3(i64 %15):
 // +     %16 = ptradd #0, %15
 // +     %17 = ptradd base %16, 0
-// +     delete %17 using $T5Small.delete implicit
+// +     delete %17 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     %18 = icmp eq i64 %15, 0
 // +     br %18 to bb5 else bb4
 // +
@@ -158,7 +158,7 @@ temporaries();
 // +
 // + bb1:
 // +     engage #3
-// +     delete #3 using $T3Big.delete implicit
+// +     delete #3 using _S$10__src_main$.6deleteFvx2T3BigE implicit
 // +     br bb2
 // +
 // + bb2:
@@ -169,7 +169,7 @@ temporaries();
 // +
 // + bb3:
 // +     engage #2
-// +     delete #2 using $T5Small.delete implicit
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     br bb4
 // +
 // + bb4:
@@ -180,7 +180,7 @@ temporaries();
 // +
 // + bb5:
 // +     engage #1
-// +     delete #1 using $T3Big.delete implicit
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T3BigE implicit
 // +     br bb6
 // +
 // + bb6:
@@ -191,7 +191,7 @@ temporaries();
 // +
 // + bb7:
 // +     engage #0
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     br bb8
 // +
 // + bb8:
@@ -210,24 +210,24 @@ temporaries();
 // +
 // + entry:
 // +     store #0, i64 1, align 8
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #1, i64 2, align 8
-// +     delete #1 using $T5Small.delete implicit
+// +     delete #1 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #2, i64 3, align 8
 // +     %0 = load i64, #2, align 8
 // +     call ccc void _S8sink_intFviE.1(i64 %0 noundef)
-// +     delete #2 using $T5Small.delete implicit
+// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #3, i64 5, align 8
 // +     %1 = load i64, #3, align 8
 // +     store #4, i64 4, align 8
 // +     %2 = load i64, #4, align 8
 // +     %3 = add i64 %1, %2
 // +     call ccc void _S8sink_intFviE.1(i64 %3 noundef)
-// +     delete #4 using $T5Small.delete implicit
-// +     delete #3 using $T5Small.delete implicit
+// +     delete #4 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete #3 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #5, i64 6, align 8
 // +     call ccc void _S7sink_inFvxT5SmallE.2(ptr #5 align 8 dereferenceable 8)
-// +     delete #5 using $T5Small.delete implicit
+// +     delete #5 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     store #6, i64 7, align 8
 // +     %4 = load i64, #6, align 8
 // +     call ccc void _S9sink_copyFvx3T5SmallE.3(i64 %4 noundef)
@@ -244,7 +244,7 @@ temporaries();
 // +     ret
 // + }
 // +
-// + proc $T5Small.delete (ptr %0 align 8 dereferenceable 8) external ccc {
+// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
 // +     call ccc void g()
 // +     ret
@@ -262,17 +262,17 @@ temporaries();
 // +
 // + entry:
 // +     store #0, i64 %0, align 8
-// +     delete #0 using $T5Small.delete implicit
+// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
 // + proc _S9sink_moveFvT5SmallE.4 (ptr %0 align 8 dereferenceable 8 move) private ccc {
 // + entry:
-// +     delete %0 using $T5Small.delete implicit
+// +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
 // +     ret
 // + }
 // +
-// + proc $T3Big.delete (ptr %0 align 8 dereferenceable 24) external ccc {
+// + proc _S$10__src_main$.6deleteFvx2T3BigE (ptr %0 align 8 dereferenceable 24) external ccc {
 // + entry:
 // +     call ccc void g()
 // +     ret

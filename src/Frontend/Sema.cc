@@ -107,8 +107,8 @@ Sema::EnterScope::EnterScope(Sema& S, bool should_enter)
 Sema::EnterScope::EnterScope(Sema& S, Tag<ProcScope>, Opt<Type> associated_type)
     : EnterScope(S, S.tu->create_scope<ProcScope>(S.curr_scope(), associated_type)) {}
 
-Sema::EnterScope::EnterScope(Sema& S, Tag<StructScope>)
-    : EnterScope(S, S.tu->create_scope<StructScope>(S.curr_scope())) {}
+Sema::EnterScope::EnterScope(Sema& S, Tag<RecordScope>)
+    : EnterScope(S, S.tu->create_scope<RecordScope>(S.curr_scope())) {}
 
 Sema::EnterScope::EnterScope(Sema& S, Scope* scope) : S{S}, scope{scope} {
     if (not scope) return;
@@ -153,7 +153,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // And make sure to check for duplicates. Duplicate declarations
     // are usually allowed, but we forbid redeclaring e.g. (template)
     // parameters.
-    auto& ds = scope->decls_by_name[d->name];
+    auto ds = scope->decls_with_name(d->name);
     if (not ds.empty()) {
         if (isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
             Error(d->location(), "Redeclaration of '{}'", d->name);
@@ -167,7 +167,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
         }
     }
 
-    ds.push_back(d);
+    scope->add(d);
 }
 
 void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool is_this) {
@@ -178,9 +178,9 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
     if (not RequireCompleteType(ty, with)) return;
 
     // Declare the object’s members in the current scope, if there are any.
-    if (auto s = dyn_cast<StructType>(ty)) {
+    if (auto s = dyn_cast<RecordType>(ty)) {
         Assert(object->is_lvalue());
-        for (auto f : s->layout().fields()) {
+        for (auto f : s->scope()->fields()) {
             auto d = new (*tu) WithFieldRefDecl{object, f, with};
             AddDeclToScope(scope, d);
         }
@@ -485,15 +485,19 @@ bool Sema::CompleteDefinition(StructType* s) {
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
     RecordLayout::Builder lb{*tu};
-    for (auto f : parsed->fields()) {
+    for (auto [i, f] : enumerate(parsed->fields())) {
         auto ty = TranslateType(f->type);
-        if (not ty or not CheckFieldType(*ty, f->loc)) {
-            // If the field’s type is invalid, we can’t query any of its
-            // properties, so just insert a dummy field and continue.
-            lb.add_field(Type::VoidTy, f->name.str(), f->loc)->set_invalid();
-        } else {
-            AddDeclToScope(s->scope(), lb.add_field(*ty, f->name.str(), f->loc));
-        }
+        if (ty and not CheckFieldType(*ty, f->loc)) ty = std::nullopt;
+        auto field = new (*tu) FieldDecl(
+            s,
+            ty.value_or(Type::VoidTy),
+            f->name.str(),
+            u32(i),
+            f->loc
+        );
+
+        lb.add_field(ty.value_or(Type::VoidTy));
+        AddDeclToScope(s->scope(), field);
     }
 
     auto [layout, props] = lb.build();
@@ -544,7 +548,7 @@ void Sema::DefineSpecialProcedures(
         }
 
         // Call the deleter of each field in reverse order.
-        for (auto f : reverse(r->layout().fields())) {
+        for (auto f : reverse(llvm::to_vector(r->scope()->fields()))) {
             if (not f->type->requires_deletion()) continue;
             auto ref = BuildMemberAccessExpr(this_ptr, f, delete_loc);
             if (not ref) continue;
@@ -570,14 +574,13 @@ void Sema::DefineSpecialProcedures(
 
     // FIXME: Once structs have linkage, reuse the struct's linkage.
     Linkage linkage = Linkage::Exported;
-    auto mangled_name = cg::CodeGen::MangleTypeName(*tu, r);
     if (props.must_define_delete or parsed_deleter.present()) {
         BuildImplicitProcedure(
             ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, r}}),
-            tu->save(std::format("${}.delete", mangled_name)),
+            Tk::Delete,
             {ParamSpec{.name = {String("this"), delete_loc}, .is_this = true}},
             linkage,
-            Mangling::None,
+            Mangling::Source,
             delete_loc,
             BuildDeleteBody
         );
@@ -586,10 +589,10 @@ void Sema::DefineSpecialProcedures(
     if (props.must_define_copy or parsed_copy.present()) {
         BuildImplicitProcedure(
             ProcType::Get(*tu, {r, Expr::RValue}, {{Intent::In, r}}),
-            tu->save(std::format("${}.copy", mangled_name)),
+            Tk::Copy,
             {ParamSpec{.name = {String("this"), copy_loc}, .is_this = true}},
             linkage,
-            Mangling::None,
+            Mangling::Source,
             copy_loc,
             BuildCopyBody
         );
@@ -732,13 +735,8 @@ auto Sema::LookUpNameInScope(
     DeclNameLoc name,
     LookupHint hint
 ) -> LookupResult {
-    auto it = in_scope->decls_by_name.find(name.name);
-    if (it == in_scope->decls_by_name.end())
-        return LookupResult::NotFound(name);
-
-    Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
-    if (it->second.size() == 1) return LookupResult::Success(it->second.front());
-    return LookupResult::Ambiguous(name, it->second);
+    auto decls = in_scope->decls_with_name(name.name);
+    return LookupResult(llvm::to_vector(decls), name);
 }
 
 auto Sema::LookUpUnqualifiedName(
@@ -838,16 +836,15 @@ auto Sema::LookUpName(
     Assert(in_scope);
     for (auto name : names.drop_back()) {
         // Perform lookup.
-        auto it = in_scope->decls_by_name.find(name.name);
-        if (it == in_scope->decls_by_name.end()) return LookupResult(name);
-
-        // The declaration must not be ambiguous.
-        Assert(not in_scope->decls_by_name.empty(), "Invalid scope entry");
-        if (it->second.size() != 1) return LookupResult::Ambiguous(name, it->second);
+        LookupResult res{llvm::to_vector(in_scope->decls_with_name(name.name)), name};
+        if (not res.successful()) return res;
 
         // The declaration must reference a scope.
-        auto scope = GetScopeFromDecl(it->second.front());
-        if (scope.invalid()) return LookupResult::NonScopeInPath(name, it->second.front());
+        auto scope = GetScopeFromDecl(res.decls.front());
+        if (scope.invalid()) {
+            res.result = LookupResult::Reason::NonScopeInPath;
+            return res;
+        }
 
         // Keep going down the path.
         in_scope = scope.get();

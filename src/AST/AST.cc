@@ -394,7 +394,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 f->type->print(),
                 f->name.empty() ? ""sv : " "sv,
                 f->name,
-                f->offset
+                f->offset()
             );
         },
 
@@ -660,10 +660,7 @@ void Stmt::Printer::Print(Stmt* e) {
                 );
 
                 SmallVector<Stmt*, 10> children;
-                children.append(s->layout().fields().begin(), s->layout().fields().end());
-                children.append(s->scope()->inits.begin(), s->scope()->inits.end());
-                if (auto d = s->get_delete()) children.push_back(d.get());
-                if (auto c = s->get_copy()) children.push_back(c.get());
+                append_range(children, s->scope()->decls());
                 PrintChildren(children);
                 return;
             }
