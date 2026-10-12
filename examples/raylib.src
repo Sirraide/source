@@ -6,6 +6,6 @@ InitWindow(800, 600, "Hello from Source");
 SetTargetFPS(60);
 while not WindowShouldClose() {
     BeginDrawing();
+    defer EndDrawing();
     ClearBackground(RED);
-    EndDrawing();
 }
