@@ -52,9 +52,16 @@ using options = clopts< // clang-format off
         "--ir", "--lex", "--llvm", "--parse", "--sema", "--tokens"
     >,
 
+    flag<"--verify", "Run in verify-diagnostics mode">,
+    // FIXME: '--verify-annotate' should be a 'subcommand<>' and should parse
+    // the first line of the file to find the arguments for the actual compiler
+    // invocation (it should also verify that it contains '--verify').
+    option<"--verify-annotate", "Run in verify-diagnostics mode and annotate the file with diagnostic comments", fs::Path>,
+    mutually_exclusive<"--verify", "--verify-annotate">,
+    mutually_exclusive<"--verify-annotate", "--dump-module", "file">,
+
     // General flags.
     flag<"--ast", "Dump the parse tree / AST">,
-    flag<"--verify", "Run in verify-diagnostics mode">,
     flag<"--ir-generic", "Use the generic MLIR assembly format">,
     flag<"--ir-no-finalise", "Don’t finalise the IR">,
     flag<"--ir-no-verify", "Don’t verify the IR">,
@@ -125,8 +132,11 @@ static auto ParseArgs(int argc, char** argv) -> Result<options::optvals_type> {
     if (auto fno = opts.get<"-fno-">(); not fno.empty())
         return Error("Options of the form '-fno-XY' are not supported; use '-fXY=false' instead");
 
-    if (not opts.get<"--dump-module">() and not opts.get<"file">())
-        return Error("No input files");
+    if (
+        not opts.get<"--dump-module">() and
+        not opts.get<"--verify-annotate">() and
+        not opts.get<"file">()
+    ) return Error("No input files");
 
     return opts;
 }
@@ -292,7 +302,8 @@ int main(int argc, char** argv) {
         .error_limit = u32(opts.get<"--error-limit">(20)),
         .opt_level = u8(opts.get<"-O">(0)),
         .print_ast = opts.get<"--ast">(),
-        .verify = opts.get<"--verify">(),
+        .verify = opts.get<"--verify">() or opts.get<"--verify-annotate">() != nullptr,
+        .verify_annotate = opts.get<"--verify-annotate">() != nullptr,
         .colours = use_colour,
         .short_filenames = opts.get<"-fshort-filenames">(),
         .ir_generic = opts.get<"--ir-generic">(),
@@ -305,9 +316,13 @@ int main(int argc, char** argv) {
         return driver.dump_module(*opts.get<"--dump-module">());
 
     // Add files.
-    auto f = opts.get<"file">();
-    Assert(f);
-    driver.add_file(*f);
+    if (auto annotate = opts.get<"--verify-annotate">()) {
+        driver.add_file(*annotate);
+    } else {
+        auto f = opts.get<"file">();
+        Assert(f);
+        driver.add_file(*f);
+    }
 
     // Dew it.
     return driver.run_job();

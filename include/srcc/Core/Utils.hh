@@ -362,7 +362,16 @@ using SmallUnrenderedString = SmallString<128>;
 auto StripColours(const SmallUnrenderedString& s) -> std::string;
 
 /// Format to a small string.
+//
+// The IsReferenceToCharArray constraint is used to prevent this overload
+// from being selected instead of the 'std::string&' one below; this is a
+// bit of a hack that relies on the fact that you’re probably never going to
+// pass a string literal as a format argument (that would be a bit pointless
+// as you could just combine it with the format string instead).
+//
+// The extra 'void' argument is so we don't error if 'Args' is an empty pack.
 template <typename StringType = SmallString<64>, typename ...Args>
+requires (not utils::IsReferenceToConstCharArray<utils::nth_type<0, Args..., void>>)
 [[nodiscard]] auto Format(std::format_string<Args...> fmt, Args&& ...args) -> StringType {
     StringType str;
     std::format_to(std::back_inserter(str), fmt, LIBBASE_FWD(args)...);

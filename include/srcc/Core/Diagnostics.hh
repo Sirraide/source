@@ -295,11 +295,12 @@ private:
     SmallVector<SeenDiagnostic, 0> seen_diags;
     SmallVector<ExpectedDiagnostic, 0> expected_diags;
     llvm::IntrusiveRefCntPtr<DiagnosticsEngine> diags_reporter;
+    std::optional<FileId> annotate;
     bool expects_none = false;
     bool enable_colours;
 
 public:
-    explicit VerifyDiagnosticsEngine(const Context& ctx);
+    explicit VerifyDiagnosticsEngine(const Context& ctx, std::optional<FileId> annotate);
 
     /// Get the diagnostics engine for reporting errors during the verification
     /// and comment parsing steps.
@@ -321,13 +322,18 @@ public:
     bool verify();
 
     /// Create a new diagnostic engine.
-    [[nodiscard]] static auto Create(const Context& ctx) -> Ptr {
-        return llvm::IntrusiveRefCntPtr(new VerifyDiagnosticsEngine(ctx));
+    [[nodiscard]] static auto Create(
+        const Context& ctx,
+        std::optional<FileId> annotate = std::nullopt
+    ) -> Ptr {
+        auto engine = new VerifyDiagnosticsEngine(ctx, annotate);
+        return llvm::IntrusiveRefCntPtr(engine);
     }
 
 private:
     friend DiagsProducer;
 
+    bool Annotate();
     void ReportDiag(Diagnostic&& diag) { diags_reporter->report_diag(std::move(diag)); }
 
     template <typename... Args>

@@ -500,7 +500,10 @@ void StreamingDiagnosticsEngine::report_impl(Diagnostic&& diag) {
 // ============================================================================
 //  Verify Diagnostics Engine
 // ============================================================================
-VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : DiagnosticsEngine(ctx) {
+VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(
+    const Context& ctx,
+    std::optional<FileId> annotate
+) : DiagnosticsEngine(ctx), annotate(annotate) {
     // Colours are disabled in verify mode, so save whether
     // we *actually* want to use colours (in the output of
     // the verifier).
@@ -508,6 +511,158 @@ VerifyDiagnosticsEngine::VerifyDiagnosticsEngine(const Context& ctx) : Diagnosti
 
     // Nested engine for reporting errors.
     diags_reporter = StreamingDiagnosticsEngine::Create(ctx);
+}
+
+bool VerifyDiagnosticsEngine::Annotate() {
+    // Group diagnostics by line.
+    llvm::DenseMap<i64, llvm::SmallVector<ExpectedDiagnostic>> diags_by_line;
+    for (const auto& d : seen_diags) {
+        if (not d.loc) continue;
+        auto& diags = diags_by_line[d.loc->line];
+
+        // Is this a duplicate?
+        auto it = rgs::find_if(diags, [&](const ExpectedDiagnostic& expected) {
+            if (expected.loc != d.loc) return false;
+            if (expected.level != d.diag.level) return false;
+            return expected.text == d.diag.msg;
+        });
+
+        if (it != diags.end()) {
+            it->count++;
+            continue;
+        }
+
+        // It isn’t; add a new entry.
+        diags.push_back(ExpectedDiagnostic{d.diag.level, d.diag.msg, d.loc, 1});
+    }
+
+    // The edited file.
+    bool ok = true;
+    std::string new_file_contents;
+
+    // Split the file by lines and, for each line, check what diagnostics
+    // are on that line and add them.
+    for (auto [i, line] : vws::enumerate(str(ctx.file(annotate.value())->contents()).lines())) {
+        auto loc = SLoc(line.begin());
+        auto lineno = i + 1;
+
+        // Delete any diagnostic comments on this line. Note: we don’t support
+        // diagnostic and non-diagnostic comments on the same line.
+        new_file_contents += line.take_until("//");
+        str comment = line;
+        bool non_magic_comment = false;
+        if (comment.consume("//")) {
+            comment.drop_while('/');
+            comment.trim_front();
+
+            // If this is a magic comment, drop it and trim trailing whitespace.
+            if (comment.contains("expected-")) {
+                line = ""; // Don’t append the rest of the line.
+                auto len = new_file_contents.size();
+                auto trimmed = str(new_file_contents).trim_back().size();
+                if (trimmed < len) new_file_contents.erase(
+                    new_file_contents.begin() + i64(trimmed),
+                    new_file_contents.end()
+                );
+            }
+
+            // It isn't; retain it.
+            else non_magic_comment = true;
+        }
+
+        // Check if we have diagnostics here. If not; keep the rest
+        // of the line as-is.
+        auto it = diags_by_line.find(lineno);
+        if (it == diags_by_line.end()) {
+            new_file_contents += line;
+            new_file_contents += "\n";
+            continue;
+        }
+
+        // Refuse to replace non-magic comments.
+        if (non_magic_comment) {
+            ok = false;
+            Error(
+                loc,
+                "Cannot add diagnostic comment to line containing a regular comment"
+            );
+            continue;
+        }
+
+        // Determine how many diagnostics are on this line.
+        u32 count = rgs::fold_right(
+            it->second,
+            0u,
+            [](const ExpectedDiagnostic& d, u32 accum) { return accum + d.count; }
+        );
+
+        // Add a comment for each diagnostic.
+        bool first = true;
+        auto EmitDiag = [&](const ExpectedDiagnostic& expected) {
+            if (first) first = false;
+            else new_file_contents += ' ';
+
+            // Emit kind.
+            new_file_contents += "expected-";
+            switch (expected.level) {
+                case Diagnostic::Level::Ignored: Unreachable();
+                case Diagnostic::Level::ICE: new_file_contents += "ice"; break;
+                case Diagnostic::Level::Warning: new_file_contents += "warning"; break;
+                case Diagnostic::Level::Note: new_file_contents += "note"; break;
+                case Diagnostic::Level::Error: new_file_contents += "error"; break;
+            }
+
+            // Emit count.
+            if (expected.count != 1) srcc::Format(new_file_contents, " {}", expected.count);
+
+            // Emit opening delimiter.
+            String close{};
+            if (count == 1) new_file_contents += ": ";
+            else {
+                new_file_contents += " ";
+                if (not expected.text.contains("(")) {
+                    new_file_contents += '(';
+                    close = ")";
+                } else if (not expected.text.contains("[")) {
+                    new_file_contents += '[';
+                    close = "]";
+                } else if (not expected.text.contains("{")) {
+                    new_file_contents += '{';
+                    close = "}";
+                } else {
+                    // Be defensive.
+                    new_file_contents += "(((";
+                    close  = ")))";
+                }
+            }
+
+            // Emit text.
+            new_file_contents += expected.text;
+
+            // Emit closing delimiter.
+            new_file_contents += close;
+        };
+
+        new_file_contents += " // ";
+        for (const auto& d : it->second) EmitDiag(d);
+        new_file_contents += "\n";
+    }
+
+    // Stop if there was an error.
+    if (not ok) return false;
+
+    // Trim excess empty lines.
+    while (new_file_contents.ends_with("\n\n")) new_file_contents.pop_back();
+
+    // Overwrite the file.
+    auto path = ctx.file(annotate.value())->path();
+    auto res = fs::File::Write(path, new_file_contents);
+    if (not res) {
+        Error(SLoc(), "Could not write to file '{}': {}", path.string(), res.error());
+        return false;
+    }
+
+    return true;
 }
 
 /// Decode location so we don’t have to do that every time we check a
@@ -525,6 +680,8 @@ void VerifyDiagnosticsEngine::HandleCommentToken(const Token& tok) {
 }
 
 void VerifyDiagnosticsEngine::ParseMagicComment(str comment, SLoc loc) {
+    if (annotate) return;
+
     // Skip slashes and initial whitespace.
     comment.trim_front().drop_while('/').trim_front();
 
@@ -640,6 +797,11 @@ void VerifyDiagnosticsEngine::report_impl(Diagnostic&& diag) {
 
 bool VerifyDiagnosticsEngine::verify() {
     bool ok = true;
+
+    if (annotate) {
+        Annotate();
+        return true;
+    }
 
     // If we expected no diagnostics, complain if we were instructed to check for any.
     //

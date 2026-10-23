@@ -154,7 +154,14 @@ int Driver::run_job() {
     if (opts.time_trace_path.has_value()) llvm::timeTraceProfilerInitialize(0, "srcc");
 
     // Replace context diags with the actual diags engine.
-    if (opts.verify) ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
+    if (opts.verify) {
+        if (opts.verify_annotate) {
+            Assert(files.size() == 1, "--verify-annotate requires exactly 1 file");
+            ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx, ctx.get_file(*files.begin()).file_id()));
+        } else {
+            ctx.set_diags(VerifyDiagnosticsEngine::Create(ctx));
+        }
+    }
 
     // Run the verifier.
     const auto Verify = [&] {

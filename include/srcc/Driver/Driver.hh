@@ -119,6 +119,7 @@ public:
 
         /// Whether to run in verify-diagnostics mode.
         bool verify : 1;
+        bool verify_annotate : 1;
 
         /// Whether to use colours in the output.
         bool colours : 1;
