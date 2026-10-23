@@ -532,7 +532,7 @@ Captures by value:
 ```
 int x;
 int y;
-proc f(int a) val x, y {
+proc f(int a) val(x, y) {
 
 }
 
@@ -543,7 +543,7 @@ Alternatively, `var` can be used for mutable captures.
 
 Init captures:
 ```
-proc f(int a) val x = 4, y = 5 {
+proc f(int a) val(x = 4, y = 5) {
 
 }
 
@@ -553,7 +553,7 @@ a, `x = 4, `y = 5 -> {}
 
 Capture everything it needs by value:
 ```
-proc f(int a) val * {
+proc f(int a) val(*) {
 
 }
 
@@ -567,12 +567,16 @@ Essentially, allow this:
 proc f (out int x) { x = 4; }
 f(var y);
 ```
-The variable is added to the scope after the call expr is fully translated:
+
+The variable must be added to the scope *before* translating the rest of the call,
+else the first example here would work, which would be rather unintuitive:
 ```
-f(var y) && var > 4; // Ok
-f(var y, y);         // Error
-f(var y, &y);        // Should this be ok?
+int y;
+f(var y, y);                  // Error
+f(var y) and y > 4;           // Ok
+(true or f(var y)) and y > 4; // Ok in Sema, error in undefined variable checker in IR.
 ```
+
 We should issue a better diagnostic than 'Unknown symbol' for this; to do this, add
 the variable to the scope early but set a flag that indicates that it's *value* is not
 usable yet.
