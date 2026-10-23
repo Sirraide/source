@@ -331,40 +331,38 @@ auto ParsedProcDecl::Create(
 ParsedStructDecl::ParsedStructDecl(
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
+    ArrayRef<ParsedProcDecl*> initialisers,
     Ptr<ParsedStmt> deleter,
     Ptr<ParsedStmt> copy_proc,
     SLoc loc
 ) : ParsedDecl{Kind::StructDecl, name, loc},
-    num_fields(u32(fields.size())),
+    num_fields(utils::safe_cast<u32, FieldBits>(fields.size())),
+    num_inits(utils::safe_cast<u32, InitBits>(initialisers.size())),
     has_deleter(deleter.present()),
     has_copy_proc(copy_proc.present()) {
-    std::uninitialized_copy_n(
-        fields.begin(),
-        fields.size(),
-        getTrailingObjects<ParsedFieldDecl*>()
-    );
-
-    if (has_deleter)
-        getTrailingObjects<ParsedStmt*>()[0] = deleter.get();
-    if (has_copy_proc)
-        getTrailingObjects<ParsedStmt*>()[u32(has_deleter)] = copy_proc.get();
+    llvm::uninitialized_copy(fields, getTrailingObjects<ParsedFieldDecl*>());
+    llvm::uninitialized_copy(initialisers, getTrailingObjects<ParsedProcDecl*>());
+    if (has_deleter) getTrailingObjects<ParsedStmt*>()[0] = deleter.get();
+    if (has_copy_proc) getTrailingObjects<ParsedStmt*>()[u32(has_deleter)] = copy_proc.get();
 }
 
 auto ParsedStructDecl::Create(
     Parser& parser,
     String name,
     ArrayRef<ParsedFieldDecl*> fields,
+    ArrayRef<ParsedProcDecl*> initialisers,
     Ptr<ParsedStmt> deleter,
     Ptr<ParsedStmt> copy_proc,
     SLoc loc
 ) -> ParsedStructDecl* {
-    const auto size = totalSizeToAlloc<ParsedFieldDecl*, ParsedStmt*>(
+    const auto size = totalSizeToAlloc<ParsedFieldDecl*, ParsedProcDecl*, ParsedStmt*>(
         fields.size(),
+        initialisers.size(),
         deleter.present() + copy_proc.present()
     );
 
     auto mem = parser.allocate(size, alignof(ParsedStructDecl));
-    return ::new (mem) ParsedStructDecl{name, fields, deleter, copy_proc, loc};
+    return ::new (mem) ParsedStructDecl{name, fields, initialisers, deleter, copy_proc, loc};
 }
 
 // ============================================================================
@@ -686,13 +684,14 @@ auto ParsedStmt::children(bool include_types) -> Children {
         [&](ParsedStructDecl* s) -> Children {
             auto del = s->deleter().get_or_null();
             auto copy = s->copy_proc().get_or_null();
-            if (not del and not copy) return Children::NonOwning{
+            if (not del and not copy and s->initialisers().empty()) return Children::NonOwning{
                 reinterpret_cast<ParsedStmt* const*>(s->fields().data()),
                 s->fields().size()
             };
 
             Children::Owning children;
             append_range(children, s->fields());
+            append_range(children, s->initialisers());
             if (del) children.push_back(del);
             if (copy) children.push_back(copy);
             return std::move(children);

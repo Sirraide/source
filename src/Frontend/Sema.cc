@@ -500,6 +500,12 @@ bool Sema::CompleteDefinition(StructType* s) {
         AddDeclToScope(s->scope(), field);
     }
 
+    // Once we have iniitalisers, we need to adjust the bits in 'build()' below accordingly.
+    if (not parsed->initialisers().empty()) ICE(
+        s->decl()->location(),
+        "TODO: Handle structs with initialisers"
+    );
+
     auto [layout, props] = lb.build();
     s->finalise(layout);
     DefineSpecialProcedures(

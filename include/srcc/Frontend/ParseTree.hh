@@ -1114,17 +1114,27 @@ public:
 };
 
 class srcc::ParsedStructDecl final : public ParsedDecl
-    , TrailingObjects<ParsedStructDecl, ParsedFieldDecl*, ParsedStmt*> {
+    , TrailingObjects<ParsedStructDecl, ParsedFieldDecl*, ParsedProcDecl*, ParsedStmt*> {
     friend TrailingObjects;
 
-    u32 num_fields : 30;
+    enum {
+        FieldBits = 15,
+        InitBits = 15,
+    };
+
+    u32 num_fields : FieldBits;
+    u32 num_inits : InitBits;
     u32 has_deleter : 1;
     u32 has_copy_proc : 1;
+
     auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) const -> usz { return num_fields; }
+    auto numTrailingObjects(OverloadToken<ParsedProcDecl*>) const -> usz { return num_inits; }
     auto numTrailingObjects(OverloadToken<ParsedStmt*>) const -> usz { return has_deleter + has_copy_proc; }
+
     ParsedStructDecl(
         String name,
         ArrayRef<ParsedFieldDecl*> fields,
+        ArrayRef<ParsedProcDecl*> initialisers,
         Ptr<ParsedStmt> deleter,
         Ptr<ParsedStmt> copy_proc,
         SLoc loc
@@ -1135,6 +1145,7 @@ public:
         Parser& parser,
         String name,
         ArrayRef<ParsedFieldDecl*> fields,
+        ArrayRef<ParsedProcDecl*> initialisers,
         Ptr<ParsedStmt> deleter,
         Ptr<ParsedStmt> copy_proc,
         SLoc loc
@@ -1147,6 +1158,10 @@ public:
 
     auto deleter() -> Ptr<ParsedStmt> {
         return has_deleter ? *getTrailingObjects<ParsedStmt*>() : nullptr;
+    }
+
+    auto initialisers() -> ArrayRef<ParsedProcDecl*> {
+        return getTrailingObjects<ParsedProcDecl*>(num_inits);
     }
 
     auto fields() -> ArrayRef<ParsedFieldDecl*> {

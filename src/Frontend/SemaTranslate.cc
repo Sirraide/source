@@ -855,9 +855,7 @@ auto Sema::TranslateMemberAccess(
         if (res.decls.empty())
             return std::invoke(FallbackError);
 
-        Expr* callee{};
-        if (res.decls.size() == 1) callee = TRY(CreateReference(res.decls.front(), parsed->loc));
-        else callee = OverloadSetExpr::Create(*tu, res.decls, parsed->loc);
+        Expr* callee = TRY(CreateReferenceOrOverloadSet(parsed->loc, res));
         return MemberAccess::AssociatedProcRef(base, callee);
     };
 
@@ -1064,8 +1062,8 @@ auto Sema::TranslateTupleExpr(
         }
 
         // Add each array element.
+        auto saved = Save(e);
         for (i64 i = 0; i < dim; i++) {
-            auto saved = Save(e);
             auto idx = IntLitExpr::Create(*tu, Type::IntTy, i, e->location());
             auto el = BuildBinaryExpr(Tk::LBrack, saved, idx, e->location());
             if (not el) ok = false;

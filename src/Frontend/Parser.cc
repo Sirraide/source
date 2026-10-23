@@ -454,7 +454,7 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
     if (sig.ret.invalid()) {
         sig.ret = new (*this) ParsedBuiltinType(
             Type::VoidTy,
-            sig.proc_loc
+            sig.introducer_loc
         );
     }
 
@@ -463,7 +463,7 @@ auto Parser::CreateType(Signature& sig) -> ParsedProcType* {
         sig.ret.get(),
         sig.param_types,
         sig.attrs,
-        sig.proc_loc
+        sig.introducer_loc
     );
 }
 
@@ -840,6 +840,11 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
             }
         } break;
 
+        case Tk::Init:
+            Error("Initialisers must be inside a struct");
+            ParseInitialiser(); // Parse it for synchronisation but throw it away.
+            return nullptr;
+
         case Tk::ColonColon:
             lhs = ParseDeclRefExpr(DREContext::ColonColon);
             break;
@@ -930,7 +935,7 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
 
             // A procedure name is not allowed here.
             if (not sig.name.name.empty()) Error(
-                sig.tok_after_proc,
+                sig.tok_after_introducer,
                 "A name is not allowed in a procedure type"
             );
 
@@ -1395,6 +1400,14 @@ void Parser::ParseImport() {
     if (not Consume(Tk::Semicolon)) Error("Expected ';' at end of import");
 }
 
+// <init> ::= INIT <sig-rest> <proc-body>
+auto Parser::ParseInitialiser() -> Ptr<ParsedProcDecl> {
+    SmallVector<ParsedVarDecl*, 10> param_decls;
+    Signature sig;
+    if (not ParseSignature(sig, &param_decls, true)) return nullptr;
+    return ParseProcRest(std::move(sig), param_decls);
+}
+
 // <intent> ::= IN | OUT | INOUT | COPY
 auto Parser::ParseIntent() -> std::pair<SLoc, Intent> {
     SLoc loc;
@@ -1590,7 +1603,7 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         Signature inner;
         if (not ParseSignature(inner, nullptr, false)) return false;
         if (inner.name.name.is_operator_name()) {
-            Error(inner.tok_after_proc, "Invalid parameter name: '{}'", inner.name.name);
+            Error(inner.tok_after_introducer, "Invalid parameter name: '{}'", inner.name.name);
         } else {
             name = inner.name;
         }
@@ -1773,7 +1786,7 @@ auto Parser::ParseProcRest(
     if (sig.ret.invalid()) {
         sig.ret = new (*this) ParsedBuiltinType(
             At(Tk::Assign) ? Type::DeducedTy.ptr() : Type::VoidTy.ptr(),
-            sig.proc_loc
+            sig.introducer_loc
         );
     }
 
@@ -1786,7 +1799,7 @@ auto Parser::ParseProcRest(
         not complained_about_body and
         sig.attrs.extern_ != not bool(body)
     ) Error(
-        sig.proc_loc,
+        sig.introducer_loc,
         "Procedure that is{} declared '%1(extern%)' must{} have a body",
         sig.attrs.extern_ ? ""sv : " not"sv,
         sig.attrs.extern_ ? " not"sv : ""sv
@@ -1800,7 +1813,7 @@ auto Parser::ParseProcRest(
         param_decls,
         body,
         sig.where,
-        sig.name.name.empty() ? sig.proc_loc : sig.name.loc
+        sig.name.name.empty() ? sig.introducer_loc : sig.name.loc
     );
 
     return proc;
@@ -1923,24 +1936,23 @@ bool Parser::ParseSignature(
     SmallVectorImpl<ParsedVarDecl*>* decls,
     bool allow_constraint
 ) {
+    Assert(At(Tk::Init, Tk::Proc));
     tempset current_signature = &sig;
-    return ParseSignatureImpl(decls, allow_constraint);
+
+    // Yeet 'proc'/'init'.
+    bool is_proc = At(Tk::Proc);
+    sig.introducer_loc = Next();
+    sig.tok_after_introducer = tok->location;
+
+    // Regular procedures may have a name.
+    if (is_proc and not ParseSignatureName(sig)) return false;
+
+    // Parse the arguments etc.
+    return ParseSignatureRest(decls, allow_constraint);
 }
 
-// <signature>  ::= PROC [ <expr-decl-ref> ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
-// <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-// <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
-// <proc-where> ::= WHERE <expr>
-bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint) {
-    Assert(current_signature);
-    Assert(At(Tk::Proc));
-    auto& sig = *current_signature;
-
-    // Yeet 'proc'.
-    sig.proc_loc = Next();
-
+bool Parser::ParseSignatureName(parser::Signature& sig) {
     // Parse scope specifier.
-    sig.tok_after_proc = tok->location;
     auto ss = ParseOptionalScopeSpec();
     if (not ss.empty()) {
         // Just 'proc ::f() {}' is invalid.
@@ -1988,6 +2000,19 @@ bool Parser::ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
     // If we have a scope, specifier, then we must also have a name.
     if (sig.associated_type.present() and sig.name.name.empty())
         Error("Expected name after %1('::'%)");
+
+    // Even if something went wrong here, we can usually still parse the
+    // rest of the signature.
+    return true;
+}
+
+// <sig-rest>   ::= [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
+// <proc-args>  ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+// <proc-attrs> ::= { "native" | "extern" | "nomangle" | "variadic" }
+// <proc-where> ::= WHERE <expr>
+bool Parser::ParseSignatureRest(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint) {
+    Assert(current_signature);
+    auto& sig = *current_signature;
 
     // Parse params.
     if (At(Tk::LParen)) {
@@ -2259,6 +2284,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
 
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
+    SmallVector<ParsedProcDecl*> initialisers;
     Ptr<ParsedStmt> deleter;
     Ptr<ParsedStmt> copy_proc;
     BracketTracker braces{*this, Tk::LBrace};
@@ -2280,6 +2306,10 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
             fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), ty.get()->loc});
         };
 
+        // Stray semicolons are ignored.
+        if (Consume(Tk::Semicolon)) continue;
+
+        // Parse deleter.
         if (SLoc loc; Consume(loc, Tk::Delete)) {
             if (not At(Tk::LBrace)) Error("Expected '%1({{%)' after '%1(delete%)'");
             auto del = ParseExpr();
@@ -2293,6 +2323,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
             continue;
         }
 
+        // Parse copy.
         if (SLoc loc; Consume(loc, Tk::Copy)) {
             auto [body, complained] = ParseProcBody();
             if (not body and not complained) {
@@ -2311,6 +2342,13 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
             continue;
         }
 
+        // Parse initialiser.
+        if (At(Tk::Init)) {
+            auto decl = ParseInitialiser();
+            if (decl.present()) initialisers.push_back(decl.get());
+            continue;
+        }
+
         ParseField();
         if (not ExpectSemicolon()) {
             SkipTo(Tk::Semicolon, Tk::RBrace);
@@ -2323,6 +2361,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
         *this,
         name,
         fields,
+        initialisers,
         deleter,
         copy_proc,
         struct_loc

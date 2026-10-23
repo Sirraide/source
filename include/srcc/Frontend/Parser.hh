@@ -38,8 +38,8 @@ struct Signature {
     Ptr<ParsedStmt> where;
     DeclNameLoc name;
     Ptr<ParsedStmt> associated_type;
-    SLoc proc_loc;
-    SLoc tok_after_proc;
+    SLoc introducer_loc; // Either 'proc' or 'init'.
+    SLoc tok_after_introducer;
     ParsedProcAttrs attrs;
 };
 
@@ -154,6 +154,7 @@ private:
     void ParseHeader();
     auto ParseIf(bool is_static) -> Ptr<ParsedIfExpr>;
     void ParseImport();
+    auto ParseInitialiser() -> Ptr<ParsedProcDecl>;
     auto ParseIntent() -> std::pair<SLoc, Intent>;
     auto ParseMatchExpr() -> Ptr<ParsedMatchExpr>;
     auto ParseOptionalScopeSpec(Ptr<ParsedStmt> expr = nullptr) -> parser::ScopeSpec;
@@ -165,7 +166,8 @@ private:
     auto ParseProcRest(parser::Signature sig, ArrayRef<ParsedVarDecl*> param_decls) -> Ptr<ParsedProcDecl>;
     auto ParseQuotedTokenSeq(SLoc quote_loc, bool in_macro_call) -> Ptr<ParsedStmt>;
     bool ParseSignature(parser::Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
-    bool ParseSignatureImpl(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
+    bool ParseSignatureName(parser::Signature& sig);
+    bool ParseSignatureRest(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     void ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at = Tk::Eof);
     auto ParseStmt() -> Ptr<ParsedStmt>;
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;

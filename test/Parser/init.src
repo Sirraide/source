@@ -1,0 +1,17 @@
+// V %srcc --parse --verify %s
+program test;
+
+struct a {
+    int x;
+    init (int x) = (42);
+    init = 42;
+    init () = 42;
+    init -> int = 42;
+    init -> a???? = 42;
+    init -> a {}
+    init {}
+    init () {}
+    init (i32 b) {}
+}
+
+init {}; // expected-error: Initialisers must be inside a struct

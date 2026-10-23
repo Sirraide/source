@@ -162,6 +162,7 @@ int cg::CodeGen::write_to_file(
 
     // Use the legacy pass manager for this as the new one doesn’t
     // support codegen yet...
+    // FIXME: Can we use TargetMachine::buildCodeGenPipeline()?
     llvm::legacy::PassManager pm;
     if (machine.addPassesToEmitFile(pm, os, nullptr, llvm::CodeGenFileType::ObjectFile))
         Fatal("Unable to add passes to emit object file");

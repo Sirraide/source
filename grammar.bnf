@@ -122,9 +122,10 @@
 <decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | <decl-enum> | EXPORT <decl>
 <decl-var>    ::= [ STATIC ] <type> IDENT [ "=" <expr> ]
 <decl-proc>   ::= <signature> <proc-body>
-<decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" | <deleter> | <copy-proc> } "}"
+<decl-struct> ::= STRUCT IDENT "{" { <type> IDENT ";" | <deleter> | <copy> | <init> } "}"
 <decl-enum>   ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
-<signature>   ::= PROC [ <expr-decl-ref> ] [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
+<signature>   ::= PROC [ <expr-decl-ref> ] <sig-rest>
+<sig-rest>    ::= [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
 <proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-where>  ::= WHERE <expr>
@@ -134,7 +135,8 @@
 <intent>      ::= IN | OUT | INOUT
 <enumerator>  ::= IDENT [ "=" <expr> ]
 <deleter>     ::= DELETE "{ <stmts> "}"
-<copy-proc>   ::= COPY <proc-body>
+<copy>        ::= COPY <proc-body>
+<init>        ::= INIT <sig-rest> <proc-body>
 
 // ============================================================================
 //  Types

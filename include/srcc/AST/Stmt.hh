@@ -927,6 +927,7 @@ class srcc::OverloadSetExpr final : public Expr
     OverloadSetExpr(ArrayRef<Decl*> overloads, SLoc location);
 
 public:
+    /// Prefer calling 'Sema::CreateReferenceOrOverloadSet()' over calling this directly.
     static auto Create(
         TranslationUnit& tu,
         ArrayRef<Decl*> overloads,
