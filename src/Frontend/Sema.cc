@@ -162,25 +162,27 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
         }
 
         if (auto new_proc = dyn_cast<ProcDecl>(d); new_proc and new_proc->valid()) {
-            // A procedure conflicts with a declaration of something else; this is a bit
-            // of an issue since it would mess w/ overload resolution if we suddenly found
-            // other nonsense when looking for one.
-            if (not isa<ProcDecl>(ds.front())) {
-                d->set_invalid();
-                Error(d->location(), "Declaration of procedure '%2({}%)' shadows a different entity", d->name);
-                NotePrevDecl(ds.front());
-                return;
-            }
-
             // The existing decl is also a procedure; validate that the new one isn’t a
             // redeclaration of any existing procedure.
             for (auto old : ds) {
-                auto old_proc = cast<ProcDecl>(old);
-
-                // Skip invalid procedures here.
+                // Skip invalid declarations here.
                 if (!old->valid()) continue;
 
+                // As well as templates.
+                if (isa<ProcTemplateDecl>(old)) continue;
+
+                // A procedure conflicts with a declaration of something else; this is a bit
+                // of an issue since it would mess w/ overload resolution if we suddenly found
+                // other nonsense when looking for one.
+                if (not isa<ProcDecl>(old)) {
+                    d->set_invalid();
+                    Error(d->location(), "Declaration of procedure '%2({}%)' shadows a different entity", d->name);
+                    NotePrevDecl(old);
+                    return;
+                }
+
                 // Check if this overload is well-formed.
+                auto old_proc = cast<ProcDecl>(old);
                 auto CheckOverload = [&] -> bool {
                     // If the parameter count doesn’t match, this is fine.
                     auto old_ty = old_proc->proc_type();
@@ -227,12 +229,15 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
                         old_ty->params().back().type != new_ty->params().back().type
                     ) return true;
 
-                    // Procedures may not differ in return type alone.
-                    if (old_ty->ret() != new_ty->ret()) return Error(
-                        d->location(),
-                        "Cannot overload procedure '%2({}%)' on return type",
-                        d->name
-                    );
+                    // Procedures may not differ in return type alone, unless this is 'as'.
+                    if (old_ty->ret() != new_ty->ret()) {
+                        if (d->name == Tk::As) return true;
+                        return Error(
+                            d->location(),
+                            "Cannot overload procedure '%2({}%)' on return type",
+                            d->name
+                        );
+                    }
 
                     // The procedure are the exact same.
                     Assert(Type(old_ty) == new_ty);

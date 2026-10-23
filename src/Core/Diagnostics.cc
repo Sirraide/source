@@ -589,13 +589,6 @@ bool VerifyDiagnosticsEngine::Annotate() {
             continue;
         }
 
-        // Determine how many diagnostics are on this line.
-        u32 count = rgs::fold_right(
-            it->second,
-            0u,
-            [](const ExpectedDiagnostic& d, u32 accum) { return accum + d.count; }
-        );
-
         // Add a comment for each diagnostic.
         bool first = true;
         auto EmitDiag = [&](const ExpectedDiagnostic& expected) {
@@ -617,7 +610,7 @@ bool VerifyDiagnosticsEngine::Annotate() {
 
             // Emit opening delimiter.
             String close{};
-            if (count == 1) new_file_contents += ": ";
+            if (it->second.size() == 1) new_file_contents += ": ";
             else {
                 new_file_contents += " ";
                 if (not expected.text.contains("(")) {
@@ -653,6 +646,9 @@ bool VerifyDiagnosticsEngine::Annotate() {
 
     // Trim excess empty lines.
     while (new_file_contents.ends_with("\n\n")) new_file_contents.pop_back();
+
+    // We had no diagnostics.
+    if (diags_by_line.empty()) new_file_contents += "\n// expected-no-diagnostics\n";
 
     // Overwrite the file.
     auto path = ctx.file(annotate.value())->path();

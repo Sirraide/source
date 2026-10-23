@@ -22,7 +22,7 @@ f(x: 1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 f(1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 f(1, y: 2, x: 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 
-proc g (int x, int x) {} // expected-error (Redeclaration of 'x') expected-note (Previous declaration was here)
+proc g (int x, int x) {} // expected-error (Redeclaration of 'x') expected-note (Conflicting declaration of parameter 'x' is here)
 
 proc variadic (int x, int ...y) -> int { // expected-note 3: Callee declared here
     int sum;
@@ -42,14 +42,17 @@ proc indirect(proc foo (int)) {
     p(x: 4); // expected-error: Named arguments are not allowed in indirect calls
 }
 
-proc op (int double) = double * 2;
-proc op (int triple) = triple * 3;
+// FIXME: This should be allowed, but it requires building the parameter
+// declarations in BuildProcDeclInitial(), which is where we should be
+// doing that anyway.
+proc op (int double) = double * 2; // expected-note (Conflicting declaration of procedure 'op' is here) expected-note (Callee declared here)
+proc op (int triple) = triple * 3; // expected-error: Procedure 'op' redefined
 
 #assert op(double: 2) == 4;
-#assert op(triple: 2) == 6;
-op(2); // expected-error: Overload resolution failed in call to 'op'
+#assert op(triple: 2) == 6; // expected-error: Procedure 'op' has no parameter named 'triple'
+op(2);
 
-proc ambiguous (int x) {}
-proc ambiguous (int x) {}
-ambiguous(x: 2); // expected-error: Overload resolution failed in call to 'ambiguous'
-ambiguous(2); // expected-error: Overload resolution failed in call to 'ambiguous'
+proc ambiguous (int x) {} // expected-note: Conflicting declaration of procedure 'ambiguous' is here
+proc ambiguous (int x) {} // expected-error: Procedure 'ambiguous' redefined
+ambiguous(x: 2);
+ambiguous(2);

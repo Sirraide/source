@@ -3,7 +3,7 @@ program test;
 
 struct S {
     int x;
-    int y; // expected-note: Previous declaration was here
+    int y; // expected-note: Conflicting declaration of field 'y' is here
     int y; // expected-error: Redeclaration of 'y'
 }
 

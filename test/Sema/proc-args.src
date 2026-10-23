@@ -5,9 +5,7 @@ proc a () {} // expected-note: Callee declared here
 proc b (int) {} // expected-note: Callee declared here
 proc c (int, int, int) {} // expected-note 2: Callee declared here
 proc d (int a, int b, int c) {} // expected-note: Callee declared here
-proc e (int a, int a) {} // expected-error: Redeclaration of 'a'
-                         // expected-note@-1: Previous declaration was here
-                         // expected-note@-2 2: Callee declared here
+proc e (int a, int a) {} // expected-error (Redeclaration of 'a') expected-note (Conflicting declaration of parameter 'a' is here) expected-note 2 (Callee declared here)
 proc f ( // expected-note 3: Callee declared here
     int, int, int, int, int,
     int, int, int, int, int
@@ -21,7 +19,7 @@ e(1, 2); // No error here! The name is a problem, but we should recover from tha
 f(1, 2, 3, 4, 5, 6, 7, 8, 9, 0);
 
 a(1); // expected-error: Procedure 'a' expects 0 arguments, got 1
-b();  // expected-error: Procedure 'b' expects 1 argument, got 0
+b(); // expected-error: Procedure 'b' expects 1 argument, got 0
 c(1); // expected-error: Procedure 'c' expects 3 arguments, got 1
 c(1, 2, 3, 4); // expected-error: Procedure 'c' expects 3 arguments, got 4
 d(1, 2, 3, 4); // expected-error: Procedure 'd' expects 3 arguments, got 4
