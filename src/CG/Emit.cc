@@ -110,7 +110,7 @@ auto AttributesAdjusterPass::run(
 }
 
 // Largely copied and adapted from Clang.
-void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm::Module& m) {
+void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit& tu, llvm::Module& m) {
     llvm::TimeTraceScope _{"[LLVM] Optimisation"};
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
@@ -120,7 +120,7 @@ void cg::CodeGen::optimise(llvm::TargetMachine& machine, TranslationUnit&, llvm:
 
     llvm::PipelineTuningOptions PTO;
     PTO.MergeFunctions = +machine.getOptLevel() >= 2;
-    llvm::PassBuilder PB(&machine, PTO);
+    llvm::PassBuilder PB(tu.llvm_context, &machine, PTO);
 
     auto opt_level = [&]{
         switch (machine.getOptLevel()) {
