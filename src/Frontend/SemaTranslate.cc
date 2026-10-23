@@ -1307,9 +1307,6 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // Otherwise, convert its signature now.
     else {
         Assert(parsed->where.invalid(), "TODO: Constraint on non-template");
-
-        // TODO: Check for redeclaration here. Codegen will crash horribly if
-        // there are two procedures w/ the same name.
         EnterScope scope{*this, EnterScope::Procedure, props.associated_type};
         auto type = TranslateProcType(parsed->type, true);
         auto ty = cast_if_present<ProcType>(type);

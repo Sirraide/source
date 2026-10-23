@@ -157,13 +157,99 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     if (not ds.empty()) {
         if (isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
             Error(d->location(), "Redeclaration of '{}'", d->name);
-            Note(ds.front()->location(), "Previous declaration was here");
+            NotePrevDecl(ds.front());
             return;
+        }
+
+        if (auto new_proc = dyn_cast<ProcDecl>(d); new_proc and new_proc->valid()) {
+            // A procedure conflicts with a declaration of something else; this is a bit
+            // of an issue since it would mess w/ overload resolution if we suddenly found
+            // other nonsense when looking for one.
+            if (not isa<ProcDecl>(ds.front())) {
+                d->set_invalid();
+                Error(d->location(), "Declaration of procedure '%2({}%)' shadows a different entity", d->name);
+                NotePrevDecl(ds.front());
+                return;
+            }
+
+            // The existing decl is also a procedure; validate that the new one isn’t a
+            // redeclaration of any existing procedure.
+            for (auto old : ds) {
+                auto old_proc = cast<ProcDecl>(old);
+
+                // Skip invalid procedures here.
+                if (!old->valid()) continue;
+
+                // Check if this overload is well-formed.
+                auto CheckOverload = [&] -> bool {
+                    // If the parameter count doesn’t match, this is fine.
+                    auto old_ty = old_proc->proc_type();
+                    auto new_ty = new_proc->proc_type();
+                    auto num_old_params = old_ty->non_variadic_params();
+                    auto num_new_params = new_ty->non_variadic_params();
+                    if (num_old_params != num_new_params) return true;
+
+                    // If a parameter type doesn’t match, this is fine.
+                    auto old_params = old_ty->params().take_front(num_old_params);
+                    auto new_params = new_ty->params().take_front(num_new_params);
+                    for (auto [o, n] : zip_equal(old_params, new_params))
+                        if (o.type != n.type)
+                            return true;
+
+                    // They do; check if we’re overloading on intent.
+                    for (auto [i, pair] : enumerate(zip_equal(old_params, new_params))) {
+                        auto [o, n] = pair;
+                        if (o.intent != n.intent) return Error(
+                            d->location(),
+                            "Cannot overload procedure '%2({}%)' on parameter intent",
+                            d->name
+                        );
+                    }
+
+                    // A varargs procedure cannot overload a variadic procedure, and vice-versa.
+                    if (
+                        (old_ty->has_c_varargs() or old_ty->is_variadic()) and
+                        (new_ty->has_c_varargs() or new_ty->is_variadic()) and
+                        old_ty->has_c_varargs() != new_ty->has_c_varargs()
+                    ) return Error(
+                        d->location(),
+                        "{} procedure '%2({}%)' redefined as {}",
+                        old_ty->has_c_varargs() ? "'%1(varargs%)'" : "Variadic",
+                        d->name,
+                        new_ty->has_c_varargs() ? "'%1(varargs%)'" : "variadic"
+                    );
+
+                    // If both procedures are variadic, the variadic parameter can
+                    // have a different type. This is valid; it’s up to overload
+                    // resolution to figure out what to do w/ this.
+                    if (
+                        old_ty->is_variadic() and
+                        old_ty->params().back().type != new_ty->params().back().type
+                    ) return true;
+
+                    // Procedures may not differ in return type alone.
+                    if (old_ty->ret() != new_ty->ret()) return Error(
+                        d->location(),
+                        "Cannot overload procedure '%2({}%)' on return type",
+                        d->name
+                    );
+
+                    // The procedure are the exact same.
+                    Assert(Type(old_ty) == new_ty);
+                    return Error(d->location(), "Procedure '%2({}%)' redefined", d->name);
+                };
+
+                if (not CheckOverload()) {
+                    new_proc->set_invalid();
+                    NotePrevDecl(old);
+                    return;
+                }
+            }
         }
 
         if (isa<WithFieldRefDecl, WithBuiltinFieldRefDecl>(d)) {
             Warn(d->location(), "Implicit field decl '{}' shadows existing declaration", d->name);
-            Note(ds.front()->location(), "Previous declaration was here");
+            NotePrevDecl(ds.front());
         }
     }
 
@@ -938,6 +1024,32 @@ bool Sema::MakeRValue(Type ty, Expr*& e, StringRef elem_name, StringRef op) {
 auto Sema::MaterialiseTemporary(Expr* expr) -> Expr* {
     if (expr->is_lvalue()) return expr;
     return new (*tu) MaterialiseTemporaryExpr(expr, expr->location());
+}
+
+void Sema::NotePrevDecl(Decl *decl) {
+    using Ret = std::pair<StringRef, int>;
+    auto [what, colour] = decl->visit(utils::Overloaded{
+        [&](FieldDecl*) -> Ret { return {"field", 5}; },
+        [&](ModuleDecl*) -> Ret { return {"module", 4}; },
+        [&](ProcDecl*) -> Ret { return {"procedure", 2}; },
+        [&](ProcTemplateDecl*) -> Ret { return {"procedure", 2}; },
+        [&](TypeDecl*) -> Ret { return {"type", 5}; },
+        [&](GlobalDecl*) -> Ret { return {"global variable", 8}; },
+        [&](CXXMacroExpansionDecl*) -> Ret { return {"C++ macro", 2}; },
+        [&](EnumeratorDecl*) -> Ret { return {"enumerator", 4}; },
+        [&](LocalDecl*) -> Ret { return {"local variable", 8}; },
+        [&](ParamDecl*) -> Ret { return {"parameter", 4}; },
+        [&](WithFieldRefDecl*) -> Ret { return {"'%1(with%)' binding", 3}; },
+        [&](WithBuiltinFieldRefDecl*) -> Ret { return {"'%1(with%)' binding", 3}; },
+    });
+
+    Note(
+        decl->location(),
+        "Conflicting declaration of {} '%{}({}%)' is here",
+        what,
+        colour,
+        decl->name
+    );
 }
 
 void Sema::ReportLookupFailure(LookupResult&& res) {

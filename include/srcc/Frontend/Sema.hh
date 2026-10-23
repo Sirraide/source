@@ -1358,6 +1358,10 @@ private:
     /// Emit a note pointing to a parameter declaration.
     void NoteParameter(Decl* proc, u32 i);
 
+    /// Emit a note pointing to a declaration; this also prints what
+    /// kind of declaration it is.
+    void NotePrevDecl(Decl* decl);
+
     /// Parse C++ code into a new TU.
     auto ParseCXX(StringRef code, std::optional<std::string> PCH = {}) -> std::unique_ptr<clang::ASTUnit>;
 
