@@ -1,0 +1,40 @@
+// V %srcc --eval %s
+program test;
+
+struct Pair { int x; int y; }
+Pair explicit = Pair::(1, 2);
+Pair inferred = ::(3, 4);
+assert explicit.x == 1;
+assert explicit.y == 2;
+assert inferred.x == 3;
+assert inferred.y == 4;
+assert int::(42) == 42;
+int defaulted = ::();
+assert defaulted == 0;
+int[2] array = int[2]::(5, 6);
+assert array[0] == 5;
+assert array[1] == 6;
+(int, int) tuple = (int, int)::(7, 8);
+assert tuple[0] == 7;
+assert tuple[1] == 8;
+proc pair() -> Pair = ::(9, 10);
+assert pair().x == 9;
+proc sum(Pair p) -> int = p.x + p.y;
+assert sum(Pair::(11, 12)) == 23;
+
+Pair qualified = ::Pair::(y: 14, x: 13);
+assert qualified.x == 13;
+assert qualified.y == 14;
+int[2][2] nested = int[2][2]::(int[2]::(1, 2), int[2]::(3, 4));
+assert nested[0][1] == 2;
+assert nested[1][0] == 3;
+
+int? engaged = int?::(15);
+assert engaged != nil;
+assert engaged == 15;
+int? empty = int?::();
+assert empty == nil;
+
+var splat = (*Pair::(16, 17),);
+assert splat[0] == 16;
+assert splat[1] == 17;

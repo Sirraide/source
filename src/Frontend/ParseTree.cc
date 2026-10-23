@@ -676,6 +676,12 @@ auto ParsedStmt::children(bool include_types) -> Children {
         },
 
         [&](ParsedStrLitExpr*) -> Children { return {}; },
+        [&](ParsedRawTupleExpr* r) -> Children {
+            Children::Owning children;
+            if (include_types and r->type) children.push_back(r->type.get());
+            children.push_back(r->tuple);
+            return children;
+        },
         [&](ParsedReturnExpr* r) -> Children {
             if (auto val = r->value.get_or_null()) return val;
             return {};

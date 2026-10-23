@@ -652,6 +652,18 @@ auto Parser::ParseBlock() -> Ptr<ParsedBlockExpr> {
 auto Parser::ParseDeclRefExpr(DREContext ctx, Ptr<ParsedStmt> root_expr) -> Ptr<ParsedStmt> {
     auto ss = ParseOptionalScopeSpec(root_expr);
 
+    // A scope specifier followed by a tuple constructs a value of that type.
+    if (ctx == DREContext::ColonColon and At(Tk::LParen)) {
+        auto loc = std::prev(tok)->location;
+        Ptr<ParsedStmt> type = ss.expr;
+        if (not ss.names.empty()) {
+            auto name = ss.names.pop_back_val();
+            type = CreateDRE(std::move(ss), name);
+        }
+        auto tuple = ParseTuple([&] { return ParseExpr(); });
+        return new (*this) ParsedRawTupleExpr(type, tuple, loc);
+    }
+
     // Parse the last segment.
     if (At(Tk::Identifier)) {
         auto dre = CreateDRE(std::move(ss), {tok->text, tok->location});

@@ -68,6 +68,7 @@
                    | <expr-nil>
                    | <expr-prefix>
                    | <expr-quote>
+                   | <expr-raw-tuple>
                    | <expr-return>
                    | <expr-subscript>
                    | <expr-this>
@@ -96,6 +97,7 @@
 <expr-nil>        ::= NIL
 <expr-prefix>     ::= <prefix> <expr>
 <expr-quote>      ::= QUOTE ( "{" macro-body "}" | "(" macro-body ")" )
+<expr-raw-tuple>  ::= [ <type> ] "::" <expr-tuple>
 <expr-return>     ::= RETURN [ <expr> ]
 <expr-subscript>  ::= <expr> "[" <expr> "]" // Only one argument for now.
 <expr-this>       ::= "this"

@@ -801,6 +801,17 @@ public:
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::QuoteExpr; }
 };
 
+class srcc::ParsedRawTupleExpr final : public ParsedStmt {
+    public:
+    Ptr<ParsedStmt> type;
+    ParsedTupleExpr* tuple;
+
+    ParsedRawTupleExpr(Ptr<ParsedStmt> type, ParsedTupleExpr* tuple, SLoc loc)
+    : ParsedStmt{Kind::RawTupleExpr, loc}, type{type}, tuple{tuple} {}
+
+    static bool classof(const ParsedStmt* e) { return e->kind() == Kind::RawTupleExpr; }
+};
+
 /// A return from a function.
 class srcc::ParsedReturnExpr final : public ParsedStmt {
 public:

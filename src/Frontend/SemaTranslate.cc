@@ -952,6 +952,18 @@ auto Sema::TranslateQuoteExpr(ParsedQuoteExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     return QuoteExpr::Create(*tu, parsed, unquotes, parsed->loc);
 }
 
+auto Sema::TranslateRawTupleExpr(ParsedRawTupleExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
+    auto type = parsed->type ? TranslateType(parsed->type.get()) : desired_type;
+    if (not type or type == Type::CallArgListTy) {
+        if (not parsed->type) Error(parsed->loc, "Type of raw tuple cannot be inferred");
+        return {};
+    }
+
+    if (not CheckVariableType(*type, parsed->loc)) return {};
+    auto tuple = TRY(TranslateExpr(parsed->tuple, type));
+    return BuildInitialiser(*type, tuple, parsed->loc);
+}
+
 auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     // Find the associated type.
     auto associated_type = curr_scope()->associated_type();
