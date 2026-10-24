@@ -62,7 +62,7 @@ auto Sema::BuildAssertExpr(
                 }
 
                 auto append_str = GetRuntimeSymbol("__src_assert_append_str");
-                auto call = BuildCallExpr(append_str, {CreateReference(param, loc).get(), str}, loc);
+                auto call = BuildCallExpr(append_str, {RequestReference(param, loc).get(), str}, loc);
                 stmts.push_back(call.get());
             };
 
@@ -107,7 +107,7 @@ auto Sema::BuildAssertExpr(
 
     auto a = new (*tu) AssertExpr(cond, std::move(msg), false, loc, cond_range, stringifier);
     if (not is_compile_time) return a;
-    return EvaluateIntoExpr(a, loc);
+    return RequestEvaluationIntoExpr(a, loc);
 }
 
 auto Sema::BuildBlockExpr(Scope* scope, ArrayRef<Stmt*> stmts, SLoc loc) -> BlockExpr* {
@@ -180,7 +180,7 @@ auto Sema::BuildBinaryExpr(
         // a terrible error message for this (it looks like a parse error), and
         // moreover, the regular lookup failure diagnostics code doesn't have access
         // to the parameter types.
-        auto res = LookUpUnqualifiedName(DeclNameLoc{fun, loc});
+        auto res = RequestUnqualifiedLookup(DeclNameLoc{fun, loc});
         if (res.result == LookupResult::Reason::NotFound and fun.is_operator_name()) {
             return Error(
                 loc,
@@ -196,7 +196,7 @@ auto Sema::BuildBinaryExpr(
             return {};
         }
 
-        auto ref = CreateReferenceOrOverloadSet(loc, res);
+        auto ref = RequestReferenceOrOverloadSet(loc, res);
         if (not ref) return nullptr;
         return BuildCallExpr(ref.get(), {lhs, rhs}, loc);
     };
@@ -267,7 +267,7 @@ auto Sema::BuildBinaryExpr(
             // For tuples, the integer must be a compile-time constant, and
             // the result of a subscript operation is a member access.
             if (auto ty = dyn_cast<TupleType>(lhs->type)) {
-                auto res = Evaluate(rhs);
+                auto res = RequestEvaluation(rhs);
                 if (not res) return {};
                 auto idx = i64(res->cast<APInt>().getSExtValue());
                 auto tuple_elems = i64(ty->layout().field_offsets().size());
@@ -291,7 +291,7 @@ auto Sema::BuildBinaryExpr(
 
         case Tk::As:
         case Tk::AsBang: {
-            auto type = Evaluate(rhs);
+            auto type = RequestEvaluation(rhs);
             if (not type) return {};
             if (not type->isa<Type>()) return Error(rhs->location(), "Expected type");
             return BuildExplicitCast(type->cast<Type>(), lhs, loc, op == Tk::AsBang);
@@ -322,7 +322,7 @@ auto Sema::BuildBinaryExpr(
 
             // Check that the RHS is not the maximum representable value.
             if (op == Tk::DotDotEq) {
-                auto max = Evaluate(rhs, false);
+                auto max = RequestEvaluation(rhs, false);
                 if (max.has_value()) {
                     auto bits = lhs->type->bit_width(*tu);
 
@@ -518,7 +518,7 @@ auto Sema::BuildBuiltinCallExpr(
             if (not CheckNArgs(3)) return nullptr;
             if (not CheckType(0) or not CheckPointer(1) or not CheckPointer(2)) return nullptr;
             auto arg0 = LValueToRValue(args[0]);
-            auto ty_res = Evaluate(arg0);
+            auto ty_res = RequestEvaluation(arg0);
             if (not ty_res) return Error(
                 arg0->location(),
                 "Argument #1 of '{}' is not a compile-time constant",
@@ -707,12 +707,12 @@ auto Sema::BuildCallExpr(
         ProcDecl* d{};
         std::tie(d, converted_args) = PerformOverloadResolution(os, args, is_associated_call, loc);
         if (not d) return nullptr;
-        resolved_callee = CreateReference(d, loc).get();
+        resolved_callee = TRY(RequestReference(d, loc));
     }
 
     // If the ‘callee’ is a type, then this is an initialiser call.
     else if (isa<TypeExpr>(callee_expr)) {
-        auto type = Evaluate(callee_expr);
+        auto type = RequestEvaluation(callee_expr);
         if (not type) return ICE(
             callee_expr->location(),
             "Failed to evaluate expression designating a type"
@@ -770,6 +770,7 @@ auto Sema::BuildCallExpr(
         bool ok = true;
         auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
             auto p = ty->params()[param_index];
+            if (not CheckVariableType(p.type, loc)) { ok = false; return; }
             auto arg = BuildInitialiser(
                 p.type,
                 args,
@@ -889,9 +890,9 @@ auto Sema::BuildDeclRefExpr(
 
     // This does perform unqualified lookup for e.g. '::a', but that’s fine
     // since the global scope has no parents anyway.
-    auto res = LookUpName(scope, names, loc, LookupHint::Any);
+    auto res = RequestLookup(scope, names, loc, LookupHint::Any);
     if (res.successful() or res.is_overload_set())
-        return CreateReferenceOrOverloadSet(loc, res);
+        return RequestReferenceOrOverloadSet(loc, res);
 
     // If we failed to find anything, and the desired type is an enum type, try to
     // see if this is one of its enumerators.
@@ -917,8 +918,8 @@ auto Sema::BuildDeclRefExpr(
         res.result == LookupResult::Reason::NotFound
     ) {
         auto e = dyn_cast<EnumType>(*desired_type);
-        auto res = LookUpNameInScope(e->scope(), names.front(), LookupHint::Any);
-        if (res.successful()) return CreateReference(res.decls.front(), loc);
+        auto res = RequestScopeLookup(e->scope(), names.front(), LookupHint::Any);
+        if (res.successful()) return RequestReference(res.decls.front(), loc);
     }
 
     ReportLookupFailure(std::move(res));
@@ -948,7 +949,7 @@ auto Sema::BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr> {
         arg = init.get();
     }
 
-    return EvaluateIntoExpr(arg, loc);
+    return RequestEvaluationIntoExpr(arg, loc);
 }
 
 auto Sema::BuildExplicitCast(Type to, Expr* arg, SLoc loc, bool is_hard_cast) -> Ptr<Expr> {
@@ -1186,9 +1187,11 @@ auto Sema::BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<
 }
 
 void Sema::BuildParamDecls(ProcDecl* proc, ArrayRef<ParamSpec> specs) {
-    for (auto [index, param] : enumerate(zip_equal(proc->param_types(), specs))) {
-        auto [data, spec] = param;
-        auto decl = new (*tu) ParamDecl(
+    SmallVector<LocalDecl*> params;
+
+    for (auto [index, pair] : enumerate(zip_equal(proc->param_types(), specs))) {
+        auto [data, spec] = pair;
+        auto param = new (*tu) ParamDecl(
             &data,
             Expr::LValue(spec.immutable),
             spec.name,
@@ -1197,18 +1200,12 @@ void Sema::BuildParamDecls(ProcDecl* proc, ArrayRef<ParamSpec> specs) {
             spec.with_loc.is_valid()
         );
 
-        DeclareLocal(decl);
-
-        // Implement 'with'.
-        if (spec.with_loc.is_valid() or spec.is_this) AddEntryToWithStack(
-            curr_scope(),
-            Save(CreateReference(decl, decl->location()).get()),
-            spec.with_loc,
-            spec.is_this
-        );
-
-        if (!decl->valid()) proc->set_invalid();
+        AddDeclToScope(proc->scope, param);
+        if (not param->valid()) proc->set_invalid();
+        params.push_back(param);
     }
+
+    proc->locals = ArrayRef(params).copy(tu->allocator());
 }
 
 auto Sema::BuildProcDeclInitial(
@@ -1219,6 +1216,7 @@ auto Sema::BuildProcDeclInitial(
     ParsedProcAttrs attrs,
     InheritedProcedureProperties props,
     bool will_have_body,
+    ArrayRef<ParamSpec> specs,
     ProcTemplateDecl* pattern
 ) -> ProcDecl* {
     auto parent_scope = curr_scope() == proc_scope
@@ -1268,18 +1266,12 @@ auto Sema::BuildProcDeclInitial(
     // Remember what template we were instantiated from.
     proc->set_instantiated_from(pattern);
 
-    // If this is an overloaded operator, check its arity and other properties.
-    if (
-        proc->is_overloaded_operator() and
-        proc->valid() and
-        not CheckOverloadedOperator(proc, attrs.builtin_operator)
-    ) proc->set_invalid();
-
     // Don’t e.g. diagnose calls to this if the type is invalid.
     if (not ty) proc->set_invalid();
 
     // Add the procedure to the module and the parent scope.
     proc->scope = proc_scope;
+    BuildParamDecls(proc, specs);
     return proc;
 }
 
@@ -1323,6 +1315,42 @@ auto Sema::BuildProcBody(ProcDecl* proc, Ptr<Expr> body_or_null) -> Ptr<Expr> {
     );
 }
 
+auto Sema::BuildProcSignature(
+    ParsedProcDecl* parsed,
+    InheritedProcedureProperties props,
+    ArrayRef<Type> deduced_var_parameters,
+    ProcTemplateDecl* pattern
+) -> Ptr<ProcDecl> {
+    Assert(curr_scope()->is_proc_scope());
+    ProcDecl* proc = nullptr;
+    auto specs = GetParamSpecs(parsed->params());
+    auto type = TranslateProcType(
+        parsed->type,
+        true,
+        deduced_var_parameters,
+        [&](ProcType* provisional) {
+            proc = BuildProcDeclInitial(
+                curr_scope(),
+                provisional,
+                parsed->name,
+                parsed->loc,
+                parsed->type->attrs,
+                props,
+                parsed->body.present(),
+                specs,
+                pattern
+            );
+            return proc;
+        }
+    );
+
+    if (not type) return nullptr;
+    Assert(proc);
+    proc->type = *type;
+    request_data.procedure_sources[proc] = {parsed, GetRequestContext()};
+    return proc;
+}
+
 auto Sema::BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr* {
     // Perform return type deduction.
     auto proc = curr_proc().proc;
@@ -1363,7 +1391,7 @@ auto Sema::BuildStaticIfExpr(
     SLoc loc
 ) -> Ptr<Stmt> {
     if (not MakeCondition(cond, "#if")) return {};
-    auto val = Evaluate(cond);
+    auto val = RequestEvaluation(cond);
     if (not val) return {};
 
     // If there is no else clause, and the condition is false, return
@@ -1546,7 +1574,7 @@ auto Sema::BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<E
 //  Building Types
 // ============================================================================
 auto Sema::BuildArrayType(TypeLoc base, Expr* size_expr) -> Opt<Type> {
-    auto size = TRY(Evaluate(size_expr));
+    auto size = TRY(RequestEvaluation(size_expr));
     auto integer = size.dyn_cast<APInt>();
 
     // Check that the size is a 64-bit integer.
@@ -1588,7 +1616,7 @@ auto Sema::BuildTupleType(
 ) -> Opt<Type> {
 
     // FIXME: This should create an incomplete tuple first that is completed
-    // on-demand by 'CompleteDefinition()' (or at the end of the TU).
+    // on-demand by 'RequestStructLayout()' (or at the end of the TU).
     RecordLayout::Builder lb{*tu};
     bool ok = true;
     for (auto [ty, loc] : types) {

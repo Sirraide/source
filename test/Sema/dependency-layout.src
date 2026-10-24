@@ -1,0 +1,20 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+// The generated deleter is declared during layout and its body is built later.
+// It is legal for that body to use a containing type once its layout is ready.
+struct Outer { Inner inner; }
+struct Inner {
+    int value;
+    // FIXME: Warn about this unconditional recursion at runtime: destroying
+    // 'local' invokes Inner.delete again.
+    delete { Outer local; }
+}
+
+// A forward layout request must use the type's lexical context.
+proc nested() {
+    proc n() -> int = 3;
+    proc use(Local value) = value;
+    struct Local { int[n()] values; }
+}

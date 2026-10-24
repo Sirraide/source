@@ -927,7 +927,7 @@ class srcc::OverloadSetExpr final : public Expr
     OverloadSetExpr(ArrayRef<Decl*> overloads, SLoc location);
 
 public:
-    /// Prefer calling 'Sema::CreateReferenceOrOverloadSet()' over calling this directly.
+    /// Prefer calling 'Sema::RequestReferenceOrOverloadSet()' over calling this directly.
     static auto Create(
         TranslationUnit& tu,
         ArrayRef<Decl*> overloads,
@@ -1213,13 +1213,15 @@ public:
 class srcc::EnumeratorDecl final : public Decl {
 public:
     EnumType* parent;
+    u32 index;
     std::optional<StoredInteger> value;
 
     EnumeratorDecl(
         EnumType* parent,
+        u32 index,
         DeclName name,
         SLoc location
-    ) : Decl{Kind::EnumeratorDecl, name, location}, parent{parent} {}
+    ) : Decl{Kind::EnumeratorDecl, name, location}, parent{parent}, index{index} {}
 
     static bool classof(const Stmt* e) { return e->kind() == Kind::EnumeratorDecl; }
 };
@@ -1675,7 +1677,7 @@ public:
 
     /// Get the parameter declarations.
     auto params() const -> ArrayRef<ParamDecl*> {
-        Assert(not is_imported(), "Attempted to access parameter declarations of imported function");
+        Assert(locals.size() >= param_count(), "Missing parameter declarations");
         auto arr = locals.take_front(param_count());
         return {reinterpret_cast<ParamDecl* const*>(arr.data()), arr.size()};
     }
@@ -1867,10 +1869,13 @@ inline auto srcc::RecordScope::field(u32 n) -> FieldDecl* {
     Unreachable("Field index out of bounds");
 }
 
-// And this in turn depends on Scope::decls().
+// These depend on the definitions of Scope and EnumeratorDecl.
+inline auto srcc::EnumType::enumerator(u32 index) const -> EnumeratorDecl* {
+    return cast<EnumeratorDecl>(scope()->decls()[index]);
+}
+
 inline auto srcc::EnumType::enumerators() const {
-    return scope()->sorted_decls()
-        | vws::transform([](Decl* d) -> EnumeratorDecl* { return cast<EnumeratorDecl>(d);}) ;
+    return scope()->decls_of_type<EnumeratorDecl>();
 }
 
 inline auto srcc::StructType::initialisers() const {

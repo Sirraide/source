@@ -6,6 +6,7 @@
 #include <srcc/ClangForward.hh>
 #include <srcc/Core/Diagnostics.hh>
 #include <srcc/Frontend/ParseTree.hh>
+#include <srcc/Frontend/SemaRequests.hh>
 #include <srcc/Macros.hh>
 
 #include <llvm/ADT/ArrayRef.h>
@@ -92,21 +93,12 @@ class srcc::Sema : public DiagsProducer {
         }
     };
 
-    struct ProcScopeInfo {
-        LIBBASE_IMMOVABLE(ProcScopeInfo);
-        ProcDecl* proc;
-        SmallVector<LocalDecl*> locals;
-        LoopToken loop_depth = LoopToken(0);
-        bool current_loop_has_break = false;
-        const EnterScope es;
-
-        ProcScopeInfo(Sema& S, ProcDecl* proc)
-            : proc{proc}, es{S, proc->scope} {}
-    };
+    using ProcScopeInfo = sema::ProcedureContext;
 
     class [[nodiscard]] EnterProcedure {
         LIBBASE_IMMOVABLE(EnterProcedure);
-        ProcScopeInfo info;
+        Sema& S;
+        EnterScope scope;
 
     public:
         explicit EnterProcedure(Sema& S, ProcDecl* proc);
@@ -837,22 +829,6 @@ class srcc::Sema : public DiagsProducer {
         void note_missing(SLoc match_loc) override;
     };
 
-    class TypeTranslationRAII {
-        LIBBASE_NO_COPY(TypeTranslationRAII);
-        Sema& S;
-        bool engaged = true;
-        TypeTranslationRAII(Sema& S) : S{S} {}
-
-    public:
-        TypeTranslationRAII(TypeTranslationRAII&& other)
-            : S{other.S}, engaged{std::exchange(other.engaged, false)} {}
-        TypeTranslationRAII& operator=(TypeTranslationRAII&& other)  = delete("Not move-assignable");
-        ~TypeTranslationRAII();
-
-        /// Returns std::nullopt if there is an error that prevents us from translating the type.
-        static auto Enter(Sema& S, Type ty, SLoc loc) -> std::optional<TypeTranslationRAII>;
-    };
-
     /// Hint as to what lookup is trying to find.
     ///
     /// Note that no guarantee is made that successful lookup actually
@@ -949,16 +925,24 @@ class srcc::Sema : public DiagsProducer {
 
     SmallVector<DeferredNativeProcArgOrReturn> incomplete_structs_in_native_proc_type;
 
-    /// Struct declarations that are yet to be completed.
-    DenseMap<StructType*, ParsedStructDecl*> pending_struct_definitions;
+    using DeclarationRequest = sema::DeclarationRequest;
+    using ProcedureSource = sema::ProcedureSource;
+    using RequestState = sema::RequestState;
+    using RequestSubject = sema::RequestSubject;
+    sema::Requests request_data;
 
-    /// Enum declarations that are yet to be completed.
-    DenseMap<EnumType*, ParsedEnumDecl*> pending_enum_definitions;
+    class EnterRequestContext {
+        LIBBASE_IMMOVABLE(EnterRequestContext);
+        Sema& S;
+        SmallVector<Scope*> scopes;
+        SmallVector<ProcScopeInfo*> procedures;
+        bool inside_eval;
+        sema::ExpansionContext* expansion;
 
-    /// Stack of type definitions we’re currently completing; this is used e.g. to report
-    /// cycles and to check if an enumerator should be of the enum’s type or the underlying
-    /// type when we build a reference to it.
-    SmallVector<Type> type_translation_stack;
+    public:
+        EnterRequestContext(Sema& S, sema::RequestContext context);
+        ~EnterRequestContext();
+    };
 
     Sema(Context& ctx);
     ~Sema();
@@ -1108,6 +1092,9 @@ private:
         bool is_this : 1 = false;
     };
 
+    /// Activate the 'with' and 'this' bindings of the current procedure's parameters.
+    void ActivateWithParameters(ArrayRef<ParamSpec> specs);
+
     /// Build an implicit procedure.
     auto BuildImplicitProcedure(
         ProcType* ty,
@@ -1116,7 +1103,8 @@ private:
         Linkage linkage,
         Mangling mangling,
         SLoc loc,
-        llvm::function_ref<Ptr<Expr>(ProcDecl*)> BuildBody
+        std::move_only_function<Ptr<Expr>(ProcDecl*)> BuildBody,
+        bool defer_body = false
     ) -> ProcDecl*;
 
     /// Check that a type is valid for a record field.
@@ -1148,9 +1136,6 @@ private:
     /// Check that a type is valid for a variable declaration.
     [[nodiscard]] bool CheckVariableType(Type ty, SLoc loc);
 
-    /// Attempt to complete a struct type.
-    bool CompleteDefinition(StructType* ty);
-
     /// Determine the common type and value category of a set of expressions and,
     /// if there is one, ensure they all have the same type and value category.
     auto ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> TypeAndValueCategory;
@@ -1162,13 +1147,6 @@ private:
         llvm::function_ref<void(u32 param_index, ArrayRef<Expr*> args, SLoc loc)> ConvertArg,
         SLoc call_loc
     );
-
-    /// Create a reference to a declaration.
-    [[nodiscard]] auto CreateReference(Decl* d, SLoc loc) -> Ptr<Expr>;
-
-    /// Create a reference to a declaration or an overload set if there
-    /// are multiple declarations.
-    [[nodiscard]] auto CreateReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr>;
 
     /// Add a variable to the current scope and procedure.
     void DeclareLocal(LocalDecl* d);
@@ -1188,19 +1166,27 @@ private:
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
     void DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return);
 
-    /// Evaluate a statement.
-    auto Evaluate(Stmt* e, bool complain = true) -> std::optional<eval::RValue>;
-
-    /// Evaluate a statement, returning an expression that caches the result on success
-    /// and nullptr on failure. The returned expression need not be a ConstExpr.
-    auto EvaluateIntoExpr(Stmt* e, SLoc loc) -> Ptr<Expr>;
-
     /// Format a message indicating why template substitution failed.
     void FormatTempSubstFailure(
         const SubstitutionResult& info,
         SmallString<256>& out,
         std::string_view indent
     );
+
+    /// Get the request that produced a semantic declaration, if registered.
+    auto GetDeclarationRequest(Decl* decl) -> Ptr<DeclarationRequest>;
+
+    /// Get a parsed declaration's request in the current scope, if registered.
+    auto GetDeclarationRequest(ParsedDecl* decl) -> Ptr<DeclarationRequest>;
+
+    /// Describe the parameters of a parsed procedure declaration.
+    auto GetParamSpecs(ArrayRef<ParsedVarDecl*> params) -> SmallVector<ParamSpec>;
+
+    auto GetRequestContext() -> sema::RequestContext;
+
+    /// Get a completed result, including failure. New and active requests have
+    /// no completed result; recovery AST nodes do not override cached failures.
+    auto GetRequestResult(RequestSubject subject) -> std::optional<bool>;
 
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
@@ -1215,18 +1201,10 @@ private:
     /// Inject a parse tree into the program.
     bool InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext ctx);
 
-    /// Instantiate a procedure template.
-    auto InstantiateTemplate(
-        ProcTemplateDecl* pattern,
-        TemplateSubstitution& info,
-        SLoc inst_loc
-    ) -> ProcDecl*;
-
     /// Check if an integer literal can be stored in a given type.
     bool IntegerLiteralFitsInType(const APInt& i, Type ty, bool negated);
 
-    /// Check that we have a complete type.
-    [[nodiscard]] bool RequireCompleteType(Type ty, SLoc loc);
+    bool IsVariableVisible(const DeclarationRequest& declaration, SLoc use);
 
     /// Check if an operator that takes a sequence of argument types must be overloaded.
     bool IsUserDefinedOverloadedOperator(Tk op, ArrayRef<Type> argument_types);
@@ -1253,7 +1231,7 @@ private:
         SLoc import_loc
     ) -> Ptr<ImportedSourceModuleDecl>;
 
-    /// Use LookUpName() instead.
+    /// Use RequestLookup() instead.
     auto LookUpCXXMacro(
         ImportedClangModuleDecl* clang_module,
         clang::MacroInfo* mi,
@@ -1261,57 +1239,18 @@ private:
         LookupHint hint
     ) -> LookupResult;
 
-    /// Use LookUpName() instead.
+    /// Use RequestLookup() instead.
     auto LookUpCXXName(
         ImportedClangModuleDecl* clang_module,
         ArrayRef<DeclNameLoc> names,
         LookupHint hint
     ) -> LookupResult;
 
-    /// Use LookUpName() instead.
+    /// Use RequestLookup() instead.
     auto LookUpCXXNameImpl(
         ImportedClangModuleDecl* clang_module,
         ArrayRef<DeclNameLoc> names,
         LookupHint hint
-    ) -> LookupResult;
-
-    /// Perform unqualified name lookup; this will iterate upwards
-    /// in the scope stack until we find something.
-    auto LookUpUnqualifiedName(
-        DeclNameLoc name,
-        LookupHint hint = LookupHint::Any
-    ) -> LookupResult;
-
-    /// Look up a name in a scope.
-    auto LookUpNameInScope(
-        Scope* in_scope,
-        DeclNameLoc name,
-        LookupHint hint = LookupHint::Any
-    ) -> LookupResult;
-
-    /// Look up a name in a scope.
-    ///
-    /// Name lookup differs between unqualified and qualified names: for
-    /// unqualified names, we look up the name in the scope it was encountered
-    /// in, and all of its parent scope.
-    ///
-    /// For qualified name lookup, we start by performing unqualified lookup
-    /// for the first name in the path, except that names of imported modules
-    /// are also considered if all else fails. The remaining path segments are
-    /// then looked up in the scope of the declaration found by the previous
-    /// segment only.
-    ///
-    /// \param in_scope The scope to start searching in. If null, performs unqualified
-    ///        lookup of the first element in 'names' starting at the current scope.
-    /// \param names The path to look up.
-    /// \param loc The location of the lookup.
-    /// \param hint Hint as to what we’re looking for.
-    /// \param complain Emit a diagnostic if lookup fails.
-    auto LookUpName(
-        Ptr<Scope> in_scope,
-        ArrayRef<DeclNameLoc> names,
-        SLoc loc,
-        LookupHint hint = LookupHint::Any
     ) -> LookupResult;
 
     /// Convert an lvalue to an srvalue.
@@ -1415,6 +1354,104 @@ private:
         SLoc call_loc
     );
 
+    /// Evaluate and cache one semantic request, diagnosing dependency cycles.
+    bool Request(RequestSubject subject, SLoc loc);
+
+    /// Check that we have a complete type.
+    [[nodiscard]] bool RequestCompleteType(Type ty, SLoc loc);
+
+    auto RequestDeclaration(DeclarationRequest& request) -> Ptr<Decl>;
+    bool RequestDeclarationImpl(DeclarationRequest& request);
+
+    /// Resolve individual values and procedure bodies on demand.
+    bool RequestEnumerator(EnumeratorDecl* enumerator);
+    bool RequestEnumeratorImpl(EnumeratorDecl* enumerator);
+    void RequestEnumerators(EnumType* e);
+
+    /// Evaluate a statement.
+    auto RequestEvaluation(Stmt* e, bool complain = true) -> std::optional<eval::RValue>;
+
+    /// Evaluate a statement, returning an expression that caches the result on success
+    /// and nullptr on failure. The returned expression need not be a ConstExpr.
+    auto RequestEvaluationIntoExpr(Stmt* e, SLoc loc) -> Ptr<Expr>;
+
+    /// Look up a name in a scope.
+    ///
+    /// Name lookup differs between unqualified and qualified names: for
+    /// unqualified names, we look up the name in the scope it was encountered
+    /// in, and all of its parent scope.
+    ///
+    /// For qualified name lookup, we start by performing unqualified lookup
+    /// for the first name in the path, except that names of imported modules
+    /// are also considered if all else fails. The remaining path segments are
+    /// then looked up in the scope of the declaration found by the previous
+    /// segment only.
+    ///
+    /// \param in_scope The scope to start searching in. If null, performs unqualified
+    ///        lookup of the first element in 'names' starting at the current scope.
+    /// \param names The path to look up.
+    /// \param loc The location of the lookup.
+    /// \param hint Hint as to what we’re looking for.
+    /// \param complain Emit a diagnostic if lookup fails.
+    auto RequestLookup(
+        Ptr<Scope> in_scope,
+        ArrayRef<DeclNameLoc> names,
+        SLoc loc,
+        LookupHint hint = LookupHint::Any
+    ) -> LookupResult;
+
+    /// Require complete, valid parameter types before translating a body or
+    /// completing a declaration that has no body.
+    bool RequestParameterTypes(ProcDecl* proc);
+
+    /// Complete generated procedures registered for the owner, or the current
+    /// procedure if no owner is specified.
+    bool RequestPendingProcedureBodies(ProcDecl* owner = nullptr);
+
+    bool RequestProcedureBody(ProcDecl* proc, SLoc loc);
+    bool RequestProcedureBodyImpl(ProcDecl* proc);
+
+    /// Create a reference to a declaration.
+    [[nodiscard]] auto RequestReference(Decl* d, SLoc loc) -> Ptr<Expr>;
+
+    /// Create a reference to a declaration or an overload set if there
+    /// are multiple declarations.
+    [[nodiscard]] auto RequestReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr>;
+
+    /// Register a scope before resolving its order-independent declarations.
+    void RequestRegisterDeclarations(ArrayRef<ParsedStmt*> statements);
+
+    /// Look up a name in a scope.
+    auto RequestScopeLookup(
+        Scope* in_scope,
+        DeclNameLoc name,
+        LookupHint hint = LookupHint::Any
+    ) -> LookupResult;
+
+    /// Attempt to complete a struct type.
+    bool RequestStructLayout(StructType* ty);
+    bool RequestStructLayoutImpl(StructType* record);
+
+    /// Instantiate a procedure template.
+    auto RequestTemplateInstantiation(
+        ProcTemplateDecl* pattern,
+        TemplateSubstitution& info,
+        SLoc inst_loc
+    ) -> ProcDecl*;
+
+    /// Substitute types in a procedure template.
+    auto RequestTemplateSubstitution(
+        ProcTemplateDecl* proc_template,
+        ArrayRef<TypeLoc> input_types
+    ) -> SubstitutionResult;
+
+    /// Perform unqualified name lookup; this will iterate upwards
+    /// in the scope stack until we find something.
+    auto RequestUnqualifiedLookup(
+        DeclNameLoc name,
+        LookupHint hint = LookupHint::Any
+    ) -> LookupResult;
+
     /// Whether a procedure requires a mangling number.
     bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
 
@@ -1427,12 +1464,6 @@ private:
 
     /// Create a SaveExpr wrapping an expression.
     auto Save(Expr* s) -> SaveExpr*;
-
-    /// Substitute types in a procedure template.
-    auto SubstituteTemplate(
-        ProcTemplateDecl* proc_template,
-        ArrayRef<TypeLoc> input_types
-    ) -> SubstitutionResult;
 
     /// Try to perform variable initialisation and return the result if
     /// if it succeeds, and nullptr on failure, but don’t emit a diagnostic
@@ -1471,10 +1502,20 @@ private:
         ParsedProcAttrs attrs,
         InheritedProcedureProperties props,
         bool will_have_body,
+        ArrayRef<ParamSpec> params,
         ProcTemplateDecl* pattern = nullptr
     ) -> ProcDecl*;
 
     auto BuildProcBody(ProcDecl* proc, Ptr<Expr> body) -> Ptr<Expr>;
+    /// Build a procedure and its parameters before translating its return type,
+    /// then register the completed signature and source for its body request.
+    auto BuildProcSignature(
+        ParsedProcDecl* parsed,
+        InheritedProcedureProperties props,
+        ArrayRef<Type> deduced_var_parameters = {},
+        ProcTemplateDecl* pattern = nullptr
+    ) -> Ptr<ProcDecl>;
+
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;
@@ -1535,10 +1576,7 @@ private:
     /// Declarations.
     auto TranslateEntireDecl(Decl* decl, ParsedDecl* parsed) -> Ptr<Decl>;
     auto TranslateEnumDeclInitial(ParsedEnumDecl* parsed) -> Ptr<TypeDecl>;
-    void TranslateEnumerators(EnumType* e);
     auto TranslateDeclInitial(ParsedDecl* parsed) -> std::optional<Ptr<Decl>>;
-    auto TranslateProc(ProcDecl* decl, Ptr<ParsedStmt> body, ArrayRef<ParsedVarDecl*> decls) -> ProcDecl*;
-    auto TranslateProcBody(ProcDecl* decl, ParsedStmt* body) -> Ptr<Expr>;
     auto TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl>;
     auto TranslateStmt(ParsedStmt* parsed, Opt<Type> desired_type = {}) -> Ptr<Stmt>;
     bool TranslateStmts(SmallVectorImpl<Stmt*>& stmts, ArrayRef<ParsedStmt*> parsed, Opt<Type> desired_type = {});
@@ -1560,7 +1598,8 @@ private:
     auto TranslateProcType(
         ParsedProcType* parsed,
         bool allow_immutable_params = false,
-        ArrayRef<Type> deduced_var_parameters = {}
+        ArrayRef<Type> deduced_var_parameters = {},
+        llvm::function_ref<ProcDecl*(ProcType*)> declare = nullptr
     ) -> Opt<Type>;
     auto TranslateValueType(ParsedValueType* parsed) -> Opt<Type>;
 

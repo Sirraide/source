@@ -19,191 +19,6 @@ auto Sema::DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type> {
     return {};
 }
 
-auto Sema::InstantiateTemplate(
-    ProcTemplateDecl* pattern,
-    TemplateSubstitution& info,
-    SLoc inst_loc
-) -> ProcDecl* {
-    if (info.instantiation) return info.instantiation;
-
-    // Translate the declaration proper.
-    info.instantiation = BuildProcDeclInitial(
-        info.scope,
-        info.type,
-        pattern->name,
-        pattern->location(),
-        pattern->pattern->type->attrs,
-        pattern->props,
-        pattern->pattern->body.present(),
-        pattern
-    );
-
-    // Cache the instantiation.
-    tu->template_instantiations[pattern].push_back(info.instantiation);
-
-    // Translate the body and record the instantiation.
-    return TranslateProc(
-        info.instantiation,
-        pattern->pattern->body,
-        pattern->pattern->params()
-    );
-}
-
-auto Sema::SubstituteTemplate(
-    ProcTemplateDecl* proc_template,
-    ArrayRef<TypeLoc> input_types
-) -> SubstitutionResult {
-    // Perform deduction.
-    //
-    // We need to do this *before* caching, else e.g. 'proc f($T a, T b)' will
-    // be instantiated twice if called with 'f(i32, i16)' and 'f(i32, i8)', which
-    // is outright wrong.
-    using Deduced = std::pair<u32, TypeLoc>;
-    TreeMap<String, Deduced> deduced;
-
-    // First, handle all deduction sites.
-    //
-    // Note that we might not have any if this is a variadic function with
-    // no actual template parameters.
-    auto param_types = proc_template->pattern->type->param_types();
-    auto it = template_deduction_infos.find(proc_template);
-    if (it != template_deduction_infos.end()) {
-        for (const auto& [name, indices] : it->second) {
-            for (auto i : indices) {
-                auto parsed = param_types[i];
-
-                // There might be no corresponding argument if we didn’t
-                // pass any variadic arguments to this. In that case, use
-                // what ever we deduced earlier, or 'void' if this is the
-                // only place where this parameter is deduced.
-                if (input_types.size() == i) {
-                    Assert(proc_template->has_variadic_param);
-                    deduced.try_emplace(name, Deduced{u32(i), {Type::VoidTy, parsed.type->loc}});
-                    continue;
-                }
-
-                // Otherwise, deduce the parameter from its corresponding argument(s).
-                auto ty = DeduceType(parsed.type, input_types[i].ty);
-                if (not ty) {
-                    return SubstitutionResult::DeductionFailed{
-                        name,
-                        i
-                    };
-                }
-
-                if (parsed.variadic) {
-                    Assert(proc_template->has_variadic_param);
-
-                    // We already deduced 'ty' from the first variadic argument, so
-                    // start at the one after it, if there is one, and make sure we
-                    // get the same type for each argument.
-                    for (u32 j = u32(param_types.size()), e = u32(input_types.size()); j < e; j++) {
-                        auto next = DeduceType(parsed.type, input_types[j].ty);
-                        if (not next) {
-                            return SubstitutionResult::DeductionFailed{
-                                name,
-                                j,
-                            };
-                        }
-
-                        if (next != ty) return SubstitutionResult::DeductionAmbiguous{
-                            name,
-                            u32(i),
-                            u32(j),
-                            *ty,
-                            *next,
-                        };
-                    }
-                }
-
-
-                // If the type has not been deduced yet, remember it.
-                auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {*ty, parsed.type->loc}});
-                if (inserted) continue;
-
-                // Otherwise, check that the deduction result is the same.
-                if (it->second.second.ty != ty) {
-                    return SubstitutionResult::DeductionAmbiguous{
-                        name,
-                        it->second.first,
-                        u32(i),
-                        it->second.second.ty,
-                        *ty,
-                    };
-                }
-            }
-        }
-    }
-
-    // Next, deduce any 'var' parameters.
-    SmallVector<Type> deduced_var_parameters;
-    for (auto [i, p] : enumerate(param_types)) {
-        if (not IsBuiltinVarType(p.type)) continue;
-        if (not p.variadic) deduced_var_parameters.push_back(input_types[i].ty);
-        else {
-            Assert(i == param_types.size() - 1);
-
-            // Build a tuple consisting of the remaining arguments.
-            // TODO: Maybe a failure to build the type here should not be a hard error.
-            auto types = input_types.drop_front(i);
-            auto names = llvm::to_vector(vws::repeat(String(), types.size()));
-            auto ty = TRY(BuildTupleType(types, names, proc_template->location()));
-            deduced_var_parameters.push_back(ty);
-        }
-    }
-
-    // Now that deduction is done, check if we’ve substituted this before.
-    llvm::FoldingSetNodeID id;
-    for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
-    for (auto ty : deduced_var_parameters) id.AddPointer(ty.ptr());
-
-    // Don’t hold on to a reference to the folding set (or the insert position)
-    // here as we might end up invalidating it if template instantiation occurs
-    // during the translation of the procedure type below.
-    llvm::FoldingSetInsertToken _unused;
-    auto info = template_substitutions[proc_template].lookup(id, _unused);
-    if (info) return info;
-
-    // Create a scope for the procedure and save the template arguments there.
-    EnterScope scope{*this, EnterScope::Procedure, proc_template->props.associated_type};
-    for (auto [name, d] : deduced) AddDeclToScope(
-        scope.get(),
-        new (*tu) TemplateTypeParamDecl(name, d.second)
-    );
-
-    // Now that that is done, we can convert the type properly.
-    auto ty = TranslateProcType(
-        proc_template->pattern->type,
-        true,
-        deduced_var_parameters
-    );
-
-    // Mark that we’re done substituting.
-    for (auto d : scope.get()->decls())
-        cast<TemplateTypeParamDecl>(d)->in_substitution = false;
-    if (not ty) return {};
-
-    // Check the constraint.
-    if (auto where = proc_template->pattern->where.get_or_null()) {
-        auto constraint = TRY(TranslateExpr(where));
-        if (not MakeCondition(constraint, "where")) return {};
-        auto value = Evaluate(constraint);
-        if (not value.has_value()) return {};
-        if (not value->cast<APInt>().getBoolValue())
-            return SubstitutionResult::ConstraintNotSatisfied();
-    }
-
-    // Store the type for later if substitution succeeded.
-    info = new (*tu) TemplateSubstitution(
-        id.Intern(tu->allocator()),
-        cast<ProcType>(*ty),
-        scope.get()
-    );
-
-    template_substitutions[proc_template].insert(info);
-    return info;
-}
-
 // ============================================================================
 //  Building Calls and Overload Resolution
 // ============================================================================
@@ -403,15 +218,6 @@ void Sema::NoteParameter(Decl* proc, u32 i) {
     String name;
 
     if (auto d = dyn_cast<ProcDecl>(proc)) {
-        if (d->is_imported()) return; // FIXME: Report this location somehow.
-
-        // FIXME: Parameters are only created when we translate the body, but
-        // we need their source locations earlier than that if we are diagnosing
-        // a call to a procedure before translating its body. Either build the
-        // parameters earlier or store the locations elsewhere; for now, we just
-        // don’t emit this diagnostic if the parameters haven’t been created yet.
-        if (i >= d->params().size()) return;
-
         // Get the parameter name and location.
         auto p = d->params()[i];
         loc = p->location();
@@ -424,6 +230,7 @@ void Sema::NoteParameter(Decl* proc, u32 i) {
         return;
     }
 
+    if (not loc.is_valid()) return;
     if (name.empty()) Note(loc, "In argument to parameter declared here");
     else Note(loc, "In argument to parameter '{}'", name);
 }
@@ -778,7 +585,7 @@ auto Sema::PerformOverloadResolution(
         // Candidate is a template.
         SmallVector<TypeLoc, 6> types;
         for (const auto& arg : arg_lists[c.arg_list()]) types.emplace_back(arg->type, arg->location());
-        c.subst = SubstituteTemplate(templ, types);
+        c.subst = RequestTemplateSubstitution(templ, types);
 
         // If there was a hard error, abort overload resolution entirely.
         if (c.subst.data.is<SubstitutionResult::Error>()) return false;
@@ -808,8 +615,13 @@ auto Sema::PerformOverloadResolution(
             auto st = c.status.get_if<Candidate::Viable>();
             if (not st) return false;
 
-            // Check the next parameter.
+            // Calling conventions and conversions require the parameter layout.
             auto& p = params[param_index];
+            if (not CheckVariableType(p.type, loc)) {
+                c.status = Candidate::ParamInitFailed{{}, param_index};
+                return false;
+            }
+
             auto seq_or_err = BuildConversionSequence(
                 p.type,
                 args,
@@ -890,7 +702,7 @@ auto Sema::PerformOverloadResolution(
 
         // Instantiate it now if it is a template.
         if (c->callee.is_template()) {
-            auto inst = InstantiateTemplate(
+            auto inst = RequestTemplateInstantiation(
                 c->callee.cast<ProcTemplateDecl>(),
                 *c->subst.data.get<TemplateSubstitution*>(),
                 call_loc

@@ -208,9 +208,10 @@ auto srcc::CXXImporter::ImportDeclImpl(clang::Decl* d) -> Res<Decl*> {
             auto name = ImportName(e);
             auto scope = S.tu->create_scope<BlockScope>(S.global_scope());
             auto enum_ty = new (*S.tu) EnumType(*S.tu, scope, S.tu->save(name), underlying, loc);
-            for (auto enumerator : e->enumerators()) {
+            for (auto [index, enumerator] : enumerate(e->enumerators())) {
                 auto decl = new (*S.tu) EnumeratorDecl(
                     enum_ty,
+                    u32(index),
                     S.tu->save(enumerator->getName()),
                     ImportSourceLocation(enumerator->getLocation())
                 );
@@ -403,7 +404,11 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
         }
 
         // If we have a name, add it to the type.
-        DeclNameLoc param_name;
+        DeclNameLoc param_name{
+            String(),
+            ImportSourceLocation(d->getParamDecl(u32(i))->getLocation())
+        };
+
         if (name.has_value()) {
             param_name = {
                 S.tu->save(name.value().getAsIdentifierInfo()->getName()),
@@ -420,9 +425,7 @@ auto srcc::CXXImporter::ImportFunctionImpl(clang::FunctionDecl* d) -> Res<ProcDe
     // Create param decls.
     auto scope = S.tu->create_scope<ProcScope>(nullptr, std::nullopt);
     proc->scope = scope;
-    Sema::EnterProcedure _{S, proc};
     S.BuildParamDecls(proc, param_specs);
-    proc->finalise(nullptr, S.curr_proc().locals);
     return proc;
 }
 
@@ -1235,7 +1238,7 @@ auto Sema::LookUpCXXMacro(
 
         // Create a call to it. This should never fail.
         value = BuildCallExpr(
-            CreateReference(proc, macro_loc).get(),
+            RequestReference(proc, macro_loc).get(),
             {},
             macro_loc
         ).get();

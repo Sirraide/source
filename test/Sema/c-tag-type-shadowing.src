@@ -14,4 +14,4 @@ c::foo("foobar"); // expected-error: Cannot convert expression of type 'i8 val[]
 
 // This note is in the imported header.
 // expected-note@*: In initialiser for field 'a'
-
+// expected-note@*: In argument to parameter declared here

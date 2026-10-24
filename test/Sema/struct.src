@@ -37,14 +37,14 @@ struct ZeroSized {
     void b;
 }
 
-struct Recursive { // expected-error: Definition of type 'Recursive' depends on itself
+struct Recursive { // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 'Recursive')
     Recursive r;
 }
 
-struct MutuallyRecursive1 { // expected-error: Definition of type 'MutuallyRecursive1' depends on itself
+struct MutuallyRecursive1 { // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 'MutuallyRecursive1')
     MutuallyRecursive2 r;
 }
 
-struct MutuallyRecursive2 {
+struct MutuallyRecursive2 { // expected-note: While computing layout of 'MutuallyRecursive2'
     MutuallyRecursive1 r;
 }

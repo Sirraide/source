@@ -1,0 +1,9 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Injection cannot make a later variable visible by borrowing a quote's location.
+proc fragment() = quote { later; }; // expected-error: Unknown symbol 'later'
+proc expansion_order() {
+    #fragment();
+    int later = 42;
+}

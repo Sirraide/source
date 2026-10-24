@@ -1,0 +1,63 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+// Completing a procedure on demand must also work through an indirect call.
+#assert dispatch(callback, 41) == 42;
+proc dispatch(proc (int) -> int callee, int value) -> int = callee(value);
+proc callback(int value) -> int = value + 1;
+
+// Body completion during execution can itself evaluate more code.
+#assert run() == 130;
+proc run() -> int {
+    int sentinel = 123;
+    int value = deferred();
+    return sentinel + value;
+}
+proc deferred() -> int = eval nested();
+proc nested() -> int {
+    int scratch = eval leaf();
+    return scratch;
+}
+proc leaf() -> int {
+    int scratch = 7;
+    return scratch;
+}
+
+// Cleanup invokes a generated procedure without an AST reference to the callee.
+#assert cleanup() == 42;
+proc cleanup() -> int {
+    { Resource value; }
+    return 42;
+}
+
+struct Resource {
+    // Building a generated body can register and complete another generated body.
+    delete {
+        struct NestedResource {
+            delete { eval leaf(); }
+        }
+        NestedResource value;
+    }
+}
+
+// Quoted tokens keep definition locations. Both outer variables and declarations
+// introduced by nested expansions use the actual injection sites for visibility.
+proc fragment(tree value) = quote { int introduced = $(value); };
+proc nested_fragment(tree value) = quote { #fragment($(value)); };
+proc expansion_visibility() -> int {
+    int input = 42;
+    #nested_fragment(input);
+    return introduced;
+}
+#assert expansion_visibility() == 42;
+
+// A return type can register generated procedures before the body is translated.
+// Signature and body entries of the same procedure share their pending work.
+struct Token { int value; delete {} }
+proc make_token() -> (Token,) = ::(Token(42),);
+proc use_token() -> int {
+    var value = make_token();
+    return value[0].value;
+}
+#assert use_token() == 42;

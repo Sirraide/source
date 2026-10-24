@@ -244,14 +244,6 @@ temporaries();
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
-// + entry:
-// +     call ccc void g()
-// +     ret
-// + }
-// +
-// + proc g external ccc;
-// +
 // + proc _S7sink_inFvxT5SmallE.2 (ptr %0 align 8 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
@@ -266,6 +258,12 @@ temporaries();
 // +     ret
 // + }
 // +
+// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
+// + entry:
+// +     call ccc void g()
+// +     ret
+// + }
+// +
 // + proc _S9sink_moveFvT5SmallE.4 (ptr %0 align 8 dereferenceable 8 move) private ccc {
 // + entry:
 // +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
@@ -277,3 +275,5 @@ temporaries();
 // +     call ccc void g()
 // +     ret
 // + }
+// +
+// + proc g external ccc;

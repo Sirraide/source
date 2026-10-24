@@ -43,9 +43,9 @@ enum E {
 #assert E::d as int == 63;
 #assert E::e as int == 64;
 
-enum E2 { // expected-error: Definition of type 'E2' depends on itself
-    a = b,
-    b,
+enum E2 {
+    a = b, // expected-error (Cyclic semantic dependency) expected-note (While computing value of enumerator 'a')
+    b, // expected-note: While computing value of enumerator 'b'
 }
 
 #assert E3::a as int == 42;
@@ -64,15 +64,15 @@ enum E3 {
 
 int[E4::a as int] xx;
 
-enum E4 { // expected-error: Definition of type 'E4' depends on itself
-    a = b,
-    b,
+enum E4 {
+    a = b, // expected-error (Cyclic semantic dependency) expected-note (While computing value of enumerator 'a')
+    b, // expected-note: While computing value of enumerator 'b'
 }
 
 int[E4::a as int] yy;
 
-enum E5 { a = E6::a as int } // expected-error: Definition of type 'E5' depends on itself
-enum E6 { a = E5::a as int }
+enum E5 { a = E6::a as int } // expected-error (Cyclic semantic dependency) expected-note (While computing value of enumerator 'a')
+enum E6 { a = E5::a as int } // expected-note: While computing value of enumerator 'a'
 
 enum E7 : i8 {
     a = 100,

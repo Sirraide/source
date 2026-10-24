@@ -78,13 +78,21 @@ auto Sema::DiagnosticsTrap::get_trapped_diagnostics() -> DiagsVector {
 }
 
 Sema::EnterProcedure::EnterProcedure(Sema& S, ProcDecl* proc)
-    : info{S, proc} {
+    : S{S}, scope{S, not S.scope_stack.empty() and S.curr_scope() == proc->scope ? nullptr : proc->scope} {
     Assert(proc->scope, "Entering procedure without scope?");
-    S.proc_stack.emplace_back(&info);
+    auto& info = S.request_data.procedure_contexts.emplace_back(
+        std::make_unique<ProcScopeInfo>(
+            proc,
+            S.proc_stack.empty() ? nullptr : S.proc_stack.back()
+        )
+    );
+
+    append_range(info->locals, proc->params());
+    S.proc_stack.push_back(info.get());
 }
 
 Sema::EnterProcedure::~EnterProcedure() {
-    info.es.S.proc_stack.pop_back();
+    S.proc_stack.pop_back();
 }
 
 Sema::EnterLoop::EnterLoop(Sema& S) : S{S} {
@@ -126,26 +134,17 @@ Sema::EnterScope::~EnterScope() {
     S.scope_stack.pop_back();
 }
 
-auto Sema::TypeTranslationRAII::Enter(Sema& S, Type ty, SLoc loc) -> std::optional<TypeTranslationRAII> {
-    // Avoid cycles.
-    if (is_contained(S.type_translation_stack, ty)) {
-        S.Error(loc, "Definition of type '{}' depends on itself", ty);
-        S.Remark("Reference cycle: {} -> {}", utils::join(S.type_translation_stack, " -> "), ty);
-        return std::nullopt;
+void Sema::ActivateWithParameters(ArrayRef<ParamSpec> specs) {
+    for (auto [param, spec] : zip_equal(curr_proc().proc->params(), specs)) {
+        if (spec.with_loc.is_valid() or spec.is_this) AddEntryToWithStack(
+            curr_scope(),
+            Save(RequestReference(param, param->location()).get()),
+            spec.with_loc,
+            spec.is_this
+        );
     }
-
-    // Mark that we’ve started translating this.
-    S.type_translation_stack.push_back(ty);
-    return TypeTranslationRAII{S};
 }
 
-Sema::TypeTranslationRAII::~TypeTranslationRAII() {
-    if (engaged) S.type_translation_stack.pop_back();
-}
-
-// ============================================================================
-//  Helper Functions
-// ============================================================================
 void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // Do not add anonymous decls to the scope.
     if (d->name.empty()) return;
@@ -266,7 +265,7 @@ void Sema::AddEntryToWithStack(Scope* scope, SaveExpr* object, SLoc with, bool i
 
     // The type must be complete.
     Type ty = object->type->strip_pointers_and_optionals();
-    if (not RequireCompleteType(ty, with)) return;
+    if (not RequestCompleteType(ty, with)) return;
 
     // Declare the object’s members in the current scope, if there are any.
     if (auto s = dyn_cast<RecordType>(ty)) {
@@ -299,7 +298,8 @@ auto Sema::BuildImplicitProcedure(
     Linkage linkage,
     Mangling mangling,
     SLoc loc,
-    llvm::function_ref<Ptr<Expr>(ProcDecl*)> BuildBody
+    std::move_only_function<Ptr<Expr>(ProcDecl*)> BuildBody,
+    bool defer_body
 ) -> ProcDecl* {
     auto scope = tu->create_scope<ProcScope>(curr_scope(), std::nullopt);
     auto proc = ProcDecl::Create(
@@ -318,18 +318,17 @@ auto Sema::BuildImplicitProcedure(
     proc->parent = curr_proc().proc;
     proc->scope = scope;
 
-    // Enter it and declare the parameters.
-    EnterProcedure _{*this, proc};
+    // Build parameters.
+    auto context = GetRequestContext();
     BuildParamDecls(proc, params);
+    EnterProcedure procedure{*this, proc};
+    ActivateWithParameters(params);
 
-    // Build the body.
-    if (auto body = BuildBody(proc)) {
-        body = BuildProcBody(proc, body.get());
-        proc->finalise(body, curr_proc().locals);
-    } else {
-        proc->set_invalid();
-    }
-
+    // Defer building the body if requested, else build it now.
+    proc->will_have_body = true;
+    request_data.procedure_sources[proc] = {std::move(BuildBody), context};
+    if (defer_body) request_data.pending_procedure_bodies[context.procedure->proc].push_back(proc);
+    else RequestProcedureBody(proc, loc);
     return proc;
 };
 
@@ -342,7 +341,7 @@ bool Sema::CheckVariableType(Type ty, SLoc loc) {
     // Any places that want to do type deduction need to take
     // care of it *before* this is called.
     if (not ProhibitDeducedTypes(ty, loc)) return false;
-    return RequireCompleteType(ty, loc);
+    return RequestCompleteType(ty, loc);
 }
 
 bool Sema::ProhibitDeducedTypes(Type ty, SLoc loc) {
@@ -455,161 +454,6 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
     return {t, vc};
 }
 
-auto Sema::CreateReference(Decl* d, SLoc loc) -> Ptr<Expr> {
-    if (not d->valid()) return nullptr;
-    return d->visit(utils::Overloaded{
-        [&](FieldDecl*) -> Ptr<Expr> { Unreachable(); },
-        [&](ModuleDecl*) -> Ptr<Expr> { Unreachable(); },
-        [&](ProcDecl* proc) -> Ptr<Expr> { return new (*tu) ProcRefExpr(proc, loc); },
-        [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
-        [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
-        [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
-        [&](CXXMacroExpansionDecl* md) -> Ptr<Expr> { return md->value; },
-        [&](EnumeratorDecl* e) -> Ptr<Expr> {
-            // Do NOT check if the entire enum is complete here as enumerators are allowed to
-            // depend on preceding enumerators!
-            if (not e->value.has_value()) TranslateEnumerators(e->parent);
-
-            // Within the definition of an enum, the type of its enumerators is the underlying
-            // type of the enum rather than the enum type.
-            Type ty = is_contained(type_translation_stack, e->parent) ? e->parent->elem() : e->parent;
-            return MakeConstExpr(
-                e,
-                eval::RValue(e->value->value(), ty),
-                loc
-            );
-        },
-        [&](LocalDecl* local) -> Ptr<Expr> {
-            // Check if this variable is declared in a parent procedure and captured it
-            // if so; do *not* capture zero-sized variables however since they’ll be deleted
-            // entirely anyway.
-            if (
-                curr_proc().proc != local->parent and
-                local->type->memory_size(*tu) != Size()
-            ) {
-                // Mark it as captured.
-                local->captured = true;
-                local->parent->introduces_captures = true;
-
-                // Find the active procedure scope that corresponds to the local’s parent.
-                auto st = vws::reverse(proc_stack);
-                auto parent_scope = rgs::find_if(st, [&](ProcScopeInfo* i) { return i->proc == local->parent; });
-                Assert(parent_scope != st.end());
-
-                // Walk the procedure stack between it and the current procedure.
-                //
-                // Captures need to be passed down transitively, i.e. if procedure 'a' contains
-                // 'b' which contains 'c', and 'c' captures a variable declared in 'a', then
-                // 'b' needs to capture it as well even if it doesn’t use it so it can pass it
-                // down to 'c'.
-                //
-                // Because we always propagate captures up whenever we first encounter them, if
-                // a local has already been marked for capture in a scope, this loop will have
-                // also marked it for capture in any parent scopes, so we can stop if we encounter
-                // this situation.
-                for (auto p = curr_proc().proc; p != (*parent_scope)->proc; p = p->parent.get_or_null()) {
-                    if (p->has_captures) break;
-                    p->has_captures = true;
-
-                    // A procedure defined inside a struct may not capture any variables. Diagnose this,
-                    // but allow the capture for better error recovery; this is fine so long as we don’t
-                    // try to emit it.
-                    //
-                    // FIXME: Make sure we don’t try to 'eval' a procedure that contains errors,
-                    // otherwise, this wil break things quite horribly.
-                    if (p->special_proc != SpecialProcedure::None) {
-                        Error(
-                            loc,
-                            "Variable '{}' cannot be captured inside '%1({}%)'",
-                            local->name,
-                            SpecialProcedure(p->special_proc)
-                        );
-                        Note(d->location(), "Variable declared here");
-                    }
-                }
-            }
-
-            return new (*tu) LocalRefExpr(
-                local,
-                local->category,
-                loc
-            );
-        },
-        [&](WithFieldRefDecl* with) -> Ptr<Expr> {
-            return BuildMemberAccessExpr(
-                with->base,
-                with->referenced_field,
-                loc
-            );
-        },
-        [&](WithBuiltinFieldRefDecl* with) -> Ptr<Expr> {
-            return BuildBuiltinMemberAccessExpr(
-                with->referenced_field,
-                with->base,
-                loc
-            );
-        },
-    });
-}
-
-auto Sema::CreateReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr> {
-    if (res.successful()) return CreateReference(res.decls.front(), loc);
-    Assert(res.result == LookupResult::Reason::Ambiguous);
-
-    // TODO: Validate overload set; i.e. that there are no two functions that
-    // differ only in return type, or not at all. Also: don’t allow overloading
-    // on intent (for now).
-    return OverloadSetExpr::Create(*tu, res.decls, loc);
-}
-
-bool Sema::CompleteDefinition(StructType* s) {
-    if (s->is_complete()) return true;
-    auto raii = TypeTranslationRAII::Enter(*this, s, s->decl()->location());
-    if (not raii) return false;
-
-    // Get the field declarations.
-    auto it = pending_struct_definitions.find(s);
-    Assert(it != pending_struct_definitions.end(), "Completing struct that we didn’t parse?");
-    auto parsed = it->second;
-    pending_struct_definitions.erase(it);
-
-    // Translate the fields and build the layout.
-    EnterScope _{*this, s->scope()};
-    RecordLayout::Builder lb{*tu};
-    for (auto [i, f] : enumerate(parsed->fields())) {
-        auto ty = TranslateType(f->type);
-        if (ty and not CheckFieldType(*ty, f->loc)) ty = std::nullopt;
-        auto field = new (*tu) FieldDecl(
-            s,
-            ty.value_or(Type::VoidTy),
-            f->name.str(),
-            u32(i),
-            f->loc
-        );
-
-        lb.add_field(ty.value_or(Type::VoidTy));
-        AddDeclToScope(s->scope(), field);
-    }
-
-    // Once we have iniitalisers, we need to adjust the bits in 'build()' below accordingly.
-    if (not parsed->initialisers().empty()) ICE(
-        s->decl()->location(),
-        "TODO: Handle structs with initialisers"
-    );
-
-    auto [layout, props] = lb.build();
-    s->finalise(layout);
-    DefineSpecialProcedures(
-        s,
-        props,
-        parsed->deleter(),
-        parsed->copy_proc(),
-        s->decl()->location()
-    );
-
-    return true;
-}
-
 void Sema::DefineSpecialProcedures(
     RecordType* r,
     RecordLayout::Props props,
@@ -627,14 +471,12 @@ void Sema::DefineSpecialProcedures(
 
     // Build the body of 'delete'.
     auto delete_loc = parsed_deleter ? parsed_deleter.get()->loc : loc;
-    auto BuildDeleteBody = [&](ProcDecl* proc) -> Ptr<Expr> {
+    auto BuildDeleteBody = [=, this](ProcDecl* proc) -> Ptr<Expr> {
         EnterScope scope{*this};
         SmallVector<Stmt*> stmts;
-        proc->special_proc = SpecialProcedure::Delete;
-        r->set_delete(proc); // Set this first to allow recursion.
 
         // Insert the user-defined deleter if there is one.
-        auto this_ptr = CreateReference(curr_proc().locals[0], delete_loc).get();
+        auto this_ptr = RequestReference(curr_proc().locals[0], delete_loc).get();
         if (auto body = parsed_deleter.get_or_null()) {
             AddEntryToWithStack(curr_scope(), Save(this_ptr), delete_loc, true);
             auto user_del = TranslateStmt(body);
@@ -658,41 +500,46 @@ void Sema::DefineSpecialProcedures(
 
     // Build the body of 'copy'.
     auto copy_loc = parsed_copy ? parsed_copy.get()->loc : loc;
-    auto BuildCopyBody = [&](ProcDecl* proc) -> Ptr<Expr> {
-        proc->special_proc = SpecialProcedure::Copy;
-        r->set_copy(proc); // Set this first to allow recursion.
-
+    auto BuildCopyBody = [this, r, parsed_copy](ProcDecl* proc) -> Ptr<Expr> {
         // If the user provided a body, just use it.
         if (auto body = parsed_copy.get()) return TranslateExpr(body, r);
 
-        // If not, build the equivalent of 'copy = (...this);'
+        // If not, build the equivalent of 'copy = (*this);'
         Todo("Spread this");
     };
 
     // FIXME: Once structs have linkage, reuse the struct's linkage.
     Linkage linkage = Linkage::Exported;
     if (props.must_define_delete or parsed_deleter.present()) {
-        BuildImplicitProcedure(
+        auto proc = BuildImplicitProcedure(
             ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, r}}),
             Tk::Delete,
             {ParamSpec{.name = {String("this"), delete_loc}, .is_this = true}},
             linkage,
             Mangling::Source,
             delete_loc,
-            BuildDeleteBody
+            BuildDeleteBody,
+            /*defer_body=*/true
         );
+
+        proc->special_proc = SpecialProcedure::Delete;
+        r->set_delete(proc);
     }
 
     if (props.must_define_copy or parsed_copy.present()) {
-        BuildImplicitProcedure(
+        auto proc = BuildImplicitProcedure(
             ProcType::Get(*tu, {r, Expr::RValue}, {{Intent::In, r}}),
             Tk::Copy,
             {ParamSpec{.name = {String("this"), copy_loc}, .is_this = true}},
             linkage,
             Mangling::Source,
             copy_loc,
-            BuildCopyBody
+            BuildCopyBody,
+            /*defer_body=*/true
         );
+
+        proc->special_proc = SpecialProcedure::Copy;
+        r->set_copy(proc);
     }
 }
 
@@ -719,14 +566,15 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return) 
     );
 }
 
-auto Sema::Evaluate(Stmt* e, bool complain) -> std::optional<eval::RValue> {
-    return tu->vm.eval(this, e, complain);
-}
-
-auto Sema::EvaluateIntoExpr(Stmt* s, SLoc loc) -> Ptr<Expr> {
-    auto value = Evaluate(s);
-    if (not value.has_value()) return nullptr;
-    return MakeConstExpr(s, std::move(*value), loc);
+auto Sema::GetParamSpecs(ArrayRef<ParsedVarDecl*> params) -> SmallVector<ParamSpec> {
+    return llvm::to_vector(params | vws::transform([](auto param) {
+        return ParamSpec{
+            .name = {param->name, param->loc},
+            .with_loc = param->with_loc,
+            .immutable = isa<ParsedValueType>(param->type),
+            .is_this = param->is_this_param,
+        };
+    }));
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -750,7 +598,7 @@ bool Sema::InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext c
     })) return {};
 
     // Evaluate the injection.
-    auto res = Evaluate(injected);
+    auto res = RequestEvaluation(injected);
     if (not res) return {};
     auto top_level_tree = res->cast<TreeValue*>();
 
@@ -771,6 +619,17 @@ bool Sema::InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext c
     tokens.finish(top_level_tree->pattern()->location());
     auto fragment = AddParsedModule(Parser::ParseFragment(ctx, tokens));
     if (not fragment) return false;
+
+    // Keep diagnostic token locations, but compare visibility at the injection
+    // site when a reference crosses the boundary of this expansion.
+    auto parent = request_data.expansion;
+    auto& expansion = request_data.expansions.emplace_back(
+        parent,
+        injected->location(),
+        parent ? parent->depth + 1 : 1
+    );
+
+    tempset request_data.expansion = &expansion;
 
     // Translate the parse tree.
     SmallVector<Stmt*> stmts;
@@ -803,19 +662,6 @@ void Sema::ReportDiag(Diagnostic&& d) {
     diags().report_diag(std::move(d));
 }
 
-bool Sema::RequireCompleteType(Type ty, SLoc loc) {
-    // Structs can be made complete on demand.
-    // FIXME: Tuples as well.
-    if (auto s = dyn_cast<StructType>(ty.ptr()); s and not s->is_complete()) {
-        CompleteDefinition(s);
-        return s->is_complete();
-    }
-
-    if (not ty->is_complete())
-        return Error(loc,  "Invalid use of incomplete type '{}'", ty);
-    return true;
-}
-
 bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
     auto b = dyn_cast<ParsedBuiltinType>(stmt);
     return b and b->ty == Type::DeducedTy;
@@ -824,131 +670,6 @@ bool Sema::IsBuiltinVarType(ParsedStmt* stmt) {
 bool Sema::IsZeroSizedOrIncomplete(Type ty) {
     if (auto s = dyn_cast<StructType>(ty); s and not s->is_complete()) return true;
     return ty->memory_size(*tu) == Size();
-}
-
-/// Look up a name in a scope.
-auto Sema::LookUpNameInScope(
-    Scope* in_scope,
-    DeclNameLoc name,
-    LookupHint hint
-) -> LookupResult {
-    auto decls = in_scope->decls_with_name(name.name);
-    return LookupResult(llvm::to_vector(decls), name);
-}
-
-auto Sema::LookUpUnqualifiedName(
-    DeclNameLoc name,
-    LookupHint hint
-) -> LookupResult {
-    Assert(not name.name.empty());
-    auto in_scope = curr_scope();
-    while (in_scope) {
-        auto res = LookUpNameInScope(in_scope, name, hint);
-        if (res.result != LookupResult::Reason::NotFound) return res;
-        else in_scope = in_scope->parent();
-    }
-
-    // If we couldn’t find it, try to find it in the open modules.
-    if (not tu->open_modules.empty()) {
-        Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
-        auto mod = tu->open_modules.front();
-        if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
-            return LookUpNameInScope(&s->exports, name, hint);
-        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name, hint);
-    }
-
-    return LookupResult::NotFound(name);
-}
-
-auto Sema::LookUpName(
-    Ptr<Scope> start_scope,
-    ArrayRef<DeclNameLoc> names,
-    SLoc loc,
-    LookupHint hint
-) -> LookupResult {
-    Assert(not names.empty());
-
-    // If we have no scope and a single name, then this is unqualified lookup.
-    if (start_scope.invalid() and names.size() == 1)
-        return LookUpUnqualifiedName(names.front(), hint);
-
-    // If we don't have a scope, perform unqualified lookup of the first name
-    // first. If we only have a single name, instead use the current scope.
-    Scope* in_scope = nullptr;
-    if (start_scope.invalid()) {
-        Assert(names.size() > 1);
-
-        // The first segment is looked up using unqualified lookup, but don’t
-        // complain immediately if we can’t find it because we also need to
-        // check module names. The first segment is also allowed to be empty,
-        // which means we’re looking up a name in the global scope.
-        auto first = names.consume_front();
-        Assert(not first.name.empty());
-        switch (auto res = LookUpUnqualifiedName(first, LookupHint::Scope); res.result) {
-            using enum LookupResult::Reason;
-            case Success: {
-                auto scope = GetScopeFromDecl(res.decls.front());
-                if (scope.invalid()) return LookupResult::NonScopeInPath(first, res.decls.front());
-                in_scope = scope.get();
-            } break;
-
-            // Can’t perform scope access on an ambiguous lookup.
-            case Ambiguous:
-                return res;
-
-            // Failed imports can only happen with C++ declarations, which are handled
-            // elsewhere; we should *never* fail to import something from one of our
-            // own modules.
-            case FailedToImport:
-                Unreachable("Should never happen");
-
-            // Unqualified lookup should never complain about this.
-            case NonScopeInPath:
-                Unreachable("Non-scope error in unqualified lookup?");
-
-            // Search module names here.
-            //
-            // This way, we don’t have to try and represent modules in the AST,
-            // and we also don’t have to deal with what happens if unqualified
-            // lookup finds a module name, because a module name alone is useless
-            // if it’s not on the lhs of `::`.
-            case NotFound: {
-                auto it = tu->logical_imports.find(first.name.str());
-                if (it == tu->logical_imports.end() or not it->getValue()) return res;
-                if (auto s = dyn_cast<ImportedSourceModuleDecl>(it->second)) {
-                    in_scope = &s->exports;
-                    break;
-                }
-
-                // We found an imported C++ header; do a C++ lookup.
-                auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
-                return LookUpCXXName(hdr, names, hint);
-            } break;
-        }
-    } else {
-        in_scope = start_scope.get();
-    }
-
-    // For all elements but the last, we have to look up scopes.
-    Assert(in_scope);
-    for (auto name : names.drop_back()) {
-        // Perform lookup.
-        LookupResult res{llvm::to_vector(in_scope->decls_with_name(name.name)), name};
-        if (not res.successful()) return res;
-
-        // The declaration must reference a scope.
-        auto scope = GetScopeFromDecl(res.decls.front());
-        if (scope.invalid()) {
-            res.result = LookupResult::Reason::NonScopeInPath;
-            return res;
-        }
-
-        // Keep going down the path.
-        in_scope = scope.get();
-    }
-
-    // Finally, look up the last name in the scope.
-    return LookUpNameInScope(in_scope, names.back(), hint);
 }
 
 auto Sema::LValueToRValue(Expr* expr) -> Expr* {
@@ -1467,7 +1188,7 @@ bool Sema::CheckMatchExhaustiveImpl(
 
         // We only really care about constants here.
         auto e = c.cond.expr();
-        auto rv = Evaluate(LValueToRValue(e), false);
+        auto rv = RequestEvaluation(LValueToRValue(e), false);
         if (not rv.has_value()) {
             BuildComparison();
             continue;

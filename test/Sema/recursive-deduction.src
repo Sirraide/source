@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc x = x(); // expected-error (Cannot call procedure before its return type has been deduced) expected-note (Declared here)
+proc x = x(); // expected-error (Cyclic semantic dependency) expected-note (While translating body of 'x')
 
 // No error here since we have already diagnosed that there
 // is a problem with x.

@@ -1,0 +1,32 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Recovery values must not make a failed enumerator request succeed on reuse.
+enum Broken {
+    first = unknown, // expected-error: Unknown symbol 'unknown'
+    second,
+    reset = 40,
+    last,
+}
+#assert Broken::first as int == 123;
+#assert Broken::first as int == 123;
+#assert Broken::second as int == 123;
+#assert Broken::reset as int == 40;
+#assert Broken::last as int == 41;
+
+enum Overflow : i8 {
+    first = 255,
+    second, // expected-error: Value '256' of enumerator does not fit in underlying type 'i8'
+    third,
+    reset = 40,
+    last,
+}
+#assert Overflow::second as int == 0;
+#assert Overflow::third as int == 0;
+#assert Overflow::last as int == 41;
+
+// A completed recovery layout must likewise retain the request's failure.
+struct Invalid { unknown member; } // expected-error: Unknown symbol 'unknown'
+Invalid first;
+Invalid second;
+#assert Invalid.bytes == 123;

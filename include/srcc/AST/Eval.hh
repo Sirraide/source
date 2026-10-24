@@ -290,8 +290,9 @@ class VM {
     /// Whether init() has been called.
     bool initialised = false;
 
-    /// Whether we’re currently performing constant evaluation.
-    bool evaluating = false;
+    /// Nested evaluations allocate above the suspended evaluator's stack.
+    Eval* active_evaluation = nullptr;
+    usz evaluation_depth = 0;
 
     /// Virtual memory manager.
     std::unique_ptr<VirtualMemoryMap> memory;

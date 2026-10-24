@@ -1,0 +1,80 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+// Both inferred and explicit results can be requested before their declarations.
+#assert first(41) == 42;
+#assert explicit_result(7) == 21;
+proc first(int x) = second(x);
+proc second(int x) -> typeof(x) = x + 1;
+proc explicit_result(int x) -> int = x * 3;
+
+// Standalone and declared procedure types retain the same parameters and result.
+#assert typeof(second) == (proc (int) -> int);
+
+// Parameters exist while translating ordinary and specialised return types.
+#assert identity(12) == 12;
+#assert identity(true);
+proc identity($T x) -> typeof(x) = x;
+
+// Layout can request a procedure body, and signatures can name later structs.
+proc get_item(Item item) -> typeof(item) = item;
+proc take_array(int[extent()] values) = values[0];
+struct Container { Item item; }
+struct Item { int value; }
+proc extent() -> int = 3;
+#assert get_item(Item(42)).value == 42;
+#assert take_array((1, 2, 3)) == 1;
+
+// Enumerator values are separate requests; the dependency graph has no cycle.
+enum A { first = B::first as int, second = 42 }
+enum B { first = A::second as int }
+#assert A::first as int == 42;
+
+// Local declaration dependencies must not change runtime initialisation order.
+proc init_order() -> int {
+    int trace = 0;
+    var result = later();
+    int value = { trace = trace * 10 + 2; 42; };
+    proc later() -> int { trace = trace * 10 + 1; return typeof(value)(trace); }
+    assert trace == 12;
+    assert value == 42;
+    return trace;
+}
+#assert init_order() == 12;
+
+// Distinct specialisations have distinct local declaration requests.
+proc power($T x) -> T {
+    var value = x;
+    value *= x;
+    return value;
+}
+#assert power(3) == 9;
+#assert power(i8(4)) == i8(16);
+
+// Explicit result types permit ordinary and template recursion.
+#assert factorial(5) == 120;
+proc factorial($T n) -> T {
+    if n == 0 return T(1);
+    return n * factorial(n - 1);
+}
+
+// Taking a procedure value also resolves an inferred result type.
+proc indirect() -> int {
+    var callee = forward_value;
+    return callee();
+}
+proc forward_value() = 42;
+#assert indirect() == 42;
+
+// Each scope keeps its own forward declarations, including shadowing names.
+proc scope_lookup() -> int {
+    proc answer() -> int = 40;
+    int total = answer();
+    {
+        total += answer();
+        proc answer() -> int = 2;
+    }
+    return total;
+}
+#assert scope_lookup() == 42;

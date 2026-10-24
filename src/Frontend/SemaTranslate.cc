@@ -135,7 +135,9 @@ void Sema::Translate(bool load_runtime) {
     llvm::TimeTraceScope _{"[SRCC] Semantic Analysis"};
 
     // Collect all statements and translate them.
-    for (auto& p : modules_to_translate) TranslateStmts(top_level_stmts, p->top_level);
+    SmallVector<ParsedStmt*> statements;
+    for (auto& p : modules_to_translate) append_range(statements, p->top_level);
+    TranslateStmts(top_level_stmts, statements);
     tu->file_scope_block = BlockExpr::Create(*tu, global_scope(), top_level_stmts, SLoc{});
 
     // File scope block should never be dependent.
@@ -145,8 +147,9 @@ void Sema::Translate(bool load_runtime) {
     );
 
     // Perform any checks that require translation to be complete.
-    for (auto [s, loc, is_return] : incomplete_structs_in_native_proc_type) {
-        Assert(s->is_complete());
+    for (usz i = 0; i < incomplete_structs_in_native_proc_type.size(); ++i) {
+        auto [s, loc, is_return] = incomplete_structs_in_native_proc_type[i];
+        if (not RequestStructLayout(s)) continue;
         if (s->layout().size() == Size()) DiagnoseZeroSizedTypeInNativeProc(s, loc, is_return);
     }
 
@@ -185,41 +188,26 @@ bool Sema::TranslateStmts(
     ArrayRef<ParsedStmt*> parsed,
     Opt<Type> desired_type
 ) {
-    // Translate object declarations first since they may be out of order.
-    //
-    // Note that only the declaration part of definitions is translated here, e.g.
-    // for a ProcDecl, we only translate the procedure type, not the body; the latter
-    // is handled when we actually get to it later on.
-    //
-    // This translation only applies to *some* decls. It is allowed to do nothing,
-    // but if it does fail, then we can’t process the rest of this scope.
-    llvm::MapVector<ParsedStmt*, Decl*> translated_decls;
     bool ok = true;
-    for (auto p : parsed) {
-        if (auto d = dyn_cast<ParsedDecl>(p)) {
-            auto proc = TranslateDeclInitial(d);
 
-            // There was no initial translation here.
-            if (not proc.has_value()) continue;
+    // Register each declaration before we start resolving them.
+    RequestRegisterDeclarations(parsed);
 
-            // Initial translation encountered an error.
-            if (proc->invalid()) ok = false;
-
-            // Otherwise, store the translated decl for later.
-            else translated_decls[d] = proc->get();
-        }
+    // Request the type/signature of every order-independent declaration.
+    for (auto statement : parsed) {
+        if (auto exp = dyn_cast<ParsedExportDecl>(statement)) statement = exp->decl;
+        if (auto decl = dyn_cast<ParsedDecl>(statement); decl and not isa<ParsedVarDecl>(decl))
+            ok &= bool(RequestDeclaration(*GetDeclarationRequest(decl).get()));
     }
-
-    // Stop if there was a problem.
-    if (not ok) return false;
 
     // Having collected out-of-order symbols, now translate all statements for real.
     for (auto p : parsed) {
-        // Decls need the initial data that we passed to them earlier.
         if (auto d = dyn_cast<ParsedDecl>(p)) {
-            auto decl = TranslateEntireDecl(translated_decls[p], d);
-            if (decl.present()) stmts.push_back(decl.get());
-            if (decl.invalid() or not decl.get()->is_valid) ok = false;
+            if (auto exp = dyn_cast<ParsedExportDecl>(d)) d = exp->decl;
+            auto decl = RequestDeclaration(*GetDeclarationRequest(d).get());
+            if (decl and not isa<ParsedVarDecl>(d)) decl = TranslateEntireDecl(decl.get(), d);
+            if (decl) stmts.push_back(decl.get());
+            if (not decl or not decl.get()->valid()) ok = false;
             continue;
         }
 
@@ -236,6 +224,7 @@ bool Sema::TranslateStmts(
         else ok = false;
     }
 
+    ok &= RequestPendingProcedureBodies();
     return ok;
 }
 
@@ -463,13 +452,20 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
         if (not d) return nullptr;
         if (isa<ProcTemplateDecl>(d)) return d;
-        return TranslateProc(cast<ProcDecl>(d), proc->body, proc->params());
+        auto procedure = cast<ProcDecl>(d);
+        if (procedure->will_have_body) RequestProcedureBody(procedure, proc->loc);
+        else {
+            RequestParameterTypes(procedure);
+            RequestPendingProcedureBodies(procedure);
+        }
+
+        return procedure;
     }
 
     // Complete struct declarations.
     if (isa<ParsedStructDecl>(parsed)) {
         if (not d) return nullptr;
-        CompleteDefinition(cast<StructType>(cast<TypeDecl>(d)->type));
+        RequestStructLayout(cast<StructType>(cast<TypeDecl>(d)->type));
         return d;
     }
 
@@ -477,7 +473,7 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     if (isa<ParsedEnumDecl>(parsed)) {
         if (not d) return nullptr;
         auto ty = cast<EnumType>(cast<TypeDecl>(d)->type);
-        if (not ty->is_complete()) TranslateEnumerators(ty);
+        if (not ty->is_complete()) RequestEnumerators(ty);
         return d;
     }
 
@@ -509,14 +505,14 @@ auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
         e->loc
     );
 
-    pending_enum_definitions[enum_type] = e;
     AddDeclToScope(curr_scope(), enum_type->decl());
 
     // Declare the enumerators, but don’t compute their values yet.
     EnterScope scope{*this, enum_type->scope()};
-    for (auto enumerator : e->enumerators()) {
+    for (auto [index, enumerator] : enumerate(e->enumerators())) {
         auto decl = new (*tu) EnumeratorDecl(
             enum_type,
+            u32(index),
             enumerator.name,
             enumerator.loc
         );
@@ -525,88 +521,6 @@ auto Sema::TranslateEnumDeclInitial(ParsedEnumDecl* e) -> Ptr<TypeDecl> {
     }
 
     return enum_type->decl();
-}
-
-void Sema::TranslateEnumerators(EnumType* e) {
-    // Mark that we’re translating this enum. Fill in dummy values if we have
-    // a reference cycle.
-    auto raii = TypeTranslationRAII::Enter(*this, e, e->decl()->location());
-    if (not raii) {
-        auto zero = tu->store_int(APInt{unsigned(e->bit_width(*tu).bits()), 0});
-        for (auto enumerator : e->enumerators())
-            if (not enumerator->value)
-                enumerator->value = zero;
-
-        e->finalise();
-        return;
-    }
-
-    // Enter the scope of the enum so we can find the other enumerators.
-    EnterScope _{*this, e->scope()};
-
-    // Get the enumerators.
-    auto it = pending_enum_definitions.find(e);
-    Assert(it != pending_enum_definitions.end(), "Completing enum that we didn’t parse?");
-    auto parsed = it->second;
-    pending_enum_definitions.erase(it);
-
-    // Translate the enumerators.
-    std::optional<APInt> prev_value;
-    const APInt one{unsigned(e->bit_width(*tu).bits()), 1};
-    bool overflow = false;
-    for (auto [enumerator, p] : zip(e->enumerators(), parsed->enumerators())) {
-        auto MakeInit = [&] -> bool {
-            // Try constructing a value of the underlying type.
-            if (not p.value.present()) return false;
-            auto v = TRY(TranslateExpr(p.value.get()));
-            v = TRY(BuildInitialiser(e->elem(), v, v->location()));
-
-            // Evaluate it; if this succeeds, this is the enumerator value; make sure
-            // to also compute the next value.
-            auto eval = Evaluate(v);
-            if (not eval) return false;
-            overflow = false;
-            enumerator->value = tu->store_int(eval->cast<APInt>());
-            prev_value = std::move(eval->cast<APInt>());
-            return true;
-        };
-
-        // If the user specified an iniitaliser, try using it.
-        if (MakeInit()) continue;
-
-        // Otherwise, increment the previous value.
-        if (not prev_value) {
-            prev_value = APInt{unsigned(e->bit_width(*tu).bits()), 0};
-            enumerator->value = tu->store_int(*prev_value);
-            continue;
-        }
-
-        // Don’t complain about overflow more than once; keep incrementing anyway because
-        // we might have changed the previous value due to an explicit initialiser.
-        if (overflow) {
-            enumerator->value = tu->store_int(*prev_value);
-            continue;
-        }
-
-        // Ok, if we get here, it makes sense to try and increment the previous value.
-        auto next = prev_value->uadd_ov(one, overflow);
-        if (overflow) {
-            Error(
-                enumerator->location(),
-                "Value '%5({}%)' of enumerator does not fit in underlying type '{}'",
-                prev_value->zext(prev_value->getBitWidth() + 2) + 1,
-                e->elem()
-            );
-
-            enumerator->value = tu->store_int(*prev_value);
-        } else {
-            enumerator->value = tu->store_int(next);
-            prev_value = std::move(next);
-        }
-    }
-
-    e->finalise();
-    return;
 }
 
 auto Sema::TranslateExportDecl(ParsedExportDecl*, Opt<Type>) -> Decl* {
@@ -837,7 +751,7 @@ auto Sema::TranslateMemberAccess(
     auto base = TRY(TranslateExpr(parsed->base));
     auto ty = base->type->strip_pointers_and_optionals();
     auto TryAssociatedLookup = [&](auto FallbackError) -> std::optional<MemberAccess> {
-        auto res = LookUpUnqualifiedName(
+        auto res = RequestUnqualifiedLookup(
             DeclNameLoc{parsed->member, parsed->loc},
             LookupHint::Any
         );
@@ -855,7 +769,7 @@ auto Sema::TranslateMemberAccess(
         if (res.decls.empty())
             return std::invoke(FallbackError);
 
-        Expr* callee = TRY(CreateReferenceOrOverloadSet(parsed->loc, res));
+        Expr* callee = TRY(RequestReferenceOrOverloadSet(parsed->loc, res));
         return MemberAccess::AssociatedProcRef(base, callee);
     };
 
@@ -870,7 +784,7 @@ auto Sema::TranslateMemberAccess(
             ty
         );
 
-        auto field = LookUpNameInScope(
+        auto field = RequestScopeLookup(
             s->scope(),
             DeclNameLoc{parsed->member, parsed->loc},
             LookupHint::Any
@@ -1125,6 +1039,12 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
         );
     }
 
+    // Complete the request for this declaration.
+    if (auto request = GetDeclarationRequest(parsed)) {
+        request->result = decl.decl();
+        request_data.declaration_sources[decl.decl()] = request.get();
+    }
+
     // Don’t even bother with the initialiser if the type is ill-formed.
     if (not ty) return decl.set_invalid();
 
@@ -1140,42 +1060,6 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
     // if need be.
     AddInitialiserToDecl(decl, init);
     return decl.decl();
-}
-
-auto Sema::TranslateProc(
-    ProcDecl* decl,
-    Ptr<ParsedStmt> body,
-    ArrayRef<ParsedVarDecl*> decls
-) -> ProcDecl* {
-    if (not body) return decl;
-
-    // Translate the parameters.
-    EnterProcedure _{*this, decl};
-    auto specs = llvm::to_vector(vws::transform(decls, [](ParsedVarDecl* d){
-        return ParamSpec{
-            .name = {d->name, d->loc},
-            .with_loc = d->with_loc,
-            .immutable = isa<ParsedValueType>(d->type),
-            .is_this = d->is_this_param,
-        };
-    }));
-
-    BuildParamDecls(decl, specs);
-
-    // Translate the body.
-    auto res = TranslateProcBody(decl, body.get());
-
-    // If there was an error, mark the procedure as errored.
-    if (res.invalid()) decl->set_invalid();
-    else decl->finalise(res, curr_proc().locals);
-    return decl;
-}
-
-auto Sema::TranslateProcBody(ProcDecl* decl, ParsedStmt* parsed_body) -> Ptr<Expr> {
-    Assert(parsed_body);
-    auto ret = decl->return_type();
-    auto body = TranslateExpr(parsed_body, ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt);
-    return BuildProcBody(decl, body);
 }
 
 auto Sema::TranslateProcDecl(ParsedProcDecl*, Opt<Type>) -> Decl* {
@@ -1265,9 +1149,13 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // and thus, no possible overload set is ever going to contain both of
     // them. Here, we need to make sure that they end up with different names
     // in the IR.
-    props.mangling_number = RequiresManglingNumber(attrs)
-        ? next_proc_mangling_number++
-        : ManglingNumber::None;
+    if (auto request = GetDeclarationRequest(parsed)) {
+        props.mangling_number = request->mangling;
+    } else {
+        props.mangling_number = RequiresManglingNumber(attrs)
+            ? next_proc_mangling_number++
+            : ManglingNumber::None;
+    }
 
     // TODO: Check if the signature contains a compile-time only type (e.g. 'tree')/
     // TODO: When translating composite types, compute whether they’re compile-time only.
@@ -1312,6 +1200,8 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         );
 
         decl = temp;
+        if (auto request = GetDeclarationRequest(parsed))
+            request_data.declaration_sources[temp] = request.get();
         if (not deduction_info.empty())
             template_deduction_infos.try_emplace(temp, std::move(deduction_info));
     }
@@ -1320,21 +1210,15 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     else {
         Assert(parsed->where.invalid(), "TODO: Constraint on non-template");
         EnterScope scope{*this, EnterScope::Procedure, props.associated_type};
-        auto type = TranslateProcType(parsed->type, true);
-        auto ty = cast_if_present<ProcType>(type);
-        if (not ty) ty = ProcType::Get(*tu, {Type::VoidTy, Expr::RValue});
-        decl = BuildProcDeclInitial(
-            scope.get(),
-            ty,
-            parsed->name,
-            parsed->loc,
-            parsed->type->attrs,
-            props,
-            parsed->body.present()
-        );
+        auto proc = BuildProcSignature(parsed, props);
+        if (not proc) return nullptr;
+        decl = proc.get();
 
-        // Mark the decl as invalid if there was a problem with the type.
-        if (not type) decl->set_invalid();
+        // If this is an operator, check that we can overload it.
+        if (
+            proc->is_overloaded_operator() and
+            not CheckOverloadedOperator(proc.get(), attrs.builtin_operator)
+        ) proc->set_invalid();
     }
 
     // Currently, only the last parameter is allowed to be variadic.
@@ -1378,7 +1262,7 @@ auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl>
     );
 
     AddDeclToScope(curr_scope(), ty->decl());
-    pending_struct_definitions[ty] = parsed;
+    ty->parent = curr_scope() == global_scope() ? nullptr : curr_proc().proc;
     return ty->decl();
 }
 
@@ -1449,7 +1333,7 @@ auto Sema::TranslateIntType(ParsedIntType* parsed) -> Type {
 
 auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Opt<Type> {
     Assert(not parsed->empty(), "DRE is empty?");
-    auto res = LookUpName(nullptr, parsed->names(), parsed->loc, LookupHint::Type);
+    auto res = RequestLookup(nullptr, parsed->names(), parsed->loc, LookupHint::Type);
     if (not res.successful()) {
         ReportLookupFailure(std::move(res));
         return {};
@@ -1478,7 +1362,8 @@ auto Sema::TranslateOptionalType(ParsedOptionalType* parsed) -> Opt<Type> {
 auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     bool allow_immutable_params,
-    ArrayRef<Type> deduced_var_parameters
+    ArrayRef<Type> deduced_var_parameters,
+    llvm::function_ref<ProcDecl*(ProcType*)> declare
 ) -> Opt<Type> {
     // Sanity check.
     //
@@ -1552,7 +1437,7 @@ auto Sema::TranslateProcType(
             }
         }
 
-        if (not CheckVariableType(ty, a.type->loc)) {
+        if (not ProhibitDeducedTypes(ty, a.type->loc)) {
             has_error = true;
             ty = Type::VoidTy;
         }
@@ -1561,10 +1446,21 @@ auto Sema::TranslateProcType(
         params.back().contains_error = has_error;
     }
 
-    // FIXME: The return type (and possibly attributes and the 'where' clause) may
-    // reference the names of parameters, e.g. 'proc ($T a, $U b) -> typeof(a + b)'
-    // should be valid; this necessitates creating the parameter declarations before
-    // translating the return type.
+    auto type = ProcType::Get(
+        *tu,
+        {Type::DeducedTy, Expr::RValue},
+        params,
+        CallingConvention::Native,
+        parsed->attrs.c_varargs
+    );
+
+    // If we have a procedure here and not just a type, declare it now.
+    std::optional<EnterProcedure> proc_scope;
+    if (declare) {
+        auto proc = declare(type);
+        proc_scope.emplace(*this, proc);
+    }
+
     auto ret = TranslateType(parsed->ret_type, Type::VoidTy);
     if (
         parsed->attrs.native and
@@ -1573,13 +1469,7 @@ auto Sema::TranslateProcType(
         IsZeroSizedOrIncomplete(ret)
     ) DiagnoseZeroSizedTypeInNativeProc(ret, parsed->ret_type->loc, true);
 
-    return ProcType::Get(
-        *tu,
-        {ret, Expr::RValue},
-        params,
-        CallingConvention::Native,
-        parsed->attrs.c_varargs
-    );
+    return ProcType::AdjustRet(*tu, type, ret);
 }
 
 auto Sema::TranslatePtrType(ParsedPtrType* stmt) -> Opt<Type> {
@@ -1609,7 +1499,7 @@ auto Sema::TranslateSliceType(ParsedSliceType* parsed) -> Opt<Type> {
 }
 
 auto Sema::TranslateTemplateType(ParsedTemplateType* parsed) -> Opt<Type> {
-    auto res = LookUpNameInScope(curr_scope(), {parsed->name, parsed->loc}, LookupHint::Type);
+    auto res = RequestScopeLookup(curr_scope(), {parsed->name, parsed->loc}, LookupHint::Type);
     if (not res) return Error(parsed->loc, "Deduced template type cannot occur here");
     auto ty = cast<TemplateTypeParamDecl>(res.decls.front());
     if (not ty->in_substitution) return Error(parsed->loc, "Deduced template type cannot occur here");
@@ -1676,7 +1566,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
         case K::InjectExpr: {
             auto injected = TRY(TranslateInjectExpr(cast<ParsedInjectExpr>(parsed), std::nullopt));
             if (injected->type_or_void() != Type::TypeTy) goto default_;
-            auto ty = Evaluate(injected);
+            auto ty = RequestEvaluation(injected);
             if (ty.has_value()) return ty->cast<Type>();
             goto default_;
         }
@@ -1685,7 +1575,7 @@ auto Sema::TranslateType(ParsedStmt* parsed) -> Opt<Type> {
         default:
         default_: {
             auto e = TRY(TranslateExpr(parsed, Type::TypeTy));
-            auto val = TRY(Evaluate(e));
+            auto val = TRY(RequestEvaluation(e));
             if (val.isa<Type>()) return val.cast<Type>();
             return Error(parsed->loc, "Expected type");
         }

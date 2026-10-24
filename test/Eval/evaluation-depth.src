@@ -1,0 +1,40 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Every body completion requests another nested evaluation.
+#assert step0() == 0;
+proc step0() -> int = eval step1();
+proc step1() -> int = eval step2();
+proc step2() -> int = eval step3();
+proc step3() -> int = eval step4();
+proc step4() -> int = eval step5();
+proc step5() -> int = eval step6();
+proc step6() -> int = eval step7();
+proc step7() -> int = eval step8();
+proc step8() -> int = eval step9();
+proc step9() -> int = eval step10();
+proc step10() -> int = eval step11();
+proc step11() -> int = eval step12();
+proc step12() -> int = eval step13();
+proc step13() -> int = eval step14();
+proc step14() -> int = eval step15();
+proc step15() -> int = eval step16();
+proc step16() -> int = eval step17();
+proc step17() -> int = eval step18();
+proc step18() -> int = eval step19();
+proc step19() -> int = eval step20();
+proc step20() -> int = eval step21();
+proc step21() -> int = eval step22();
+proc step22() -> int = eval step23();
+proc step23() -> int = eval step24();
+proc step24() -> int = eval step25();
+proc step25() -> int = eval step26();
+proc step26() -> int = eval step27();
+proc step27() -> int = eval step28();
+proc step28() -> int = eval step29();
+proc step29() -> int = eval step30();
+proc step30() -> int = eval step31();
+proc step31() -> int = eval step32(); // expected-error: Exceeded maximum evaluation nesting depth (32)
+proc step32() -> int = eval step33();
+proc step33() -> int = eval step34();
+proc step34() -> int = 0;

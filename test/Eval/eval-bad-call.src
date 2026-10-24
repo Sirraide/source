@@ -1,11 +1,11 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc f() {
-    eval f(); // expected-error: Cannot evaluate procedure 'f' whose body has not been compiled yet
+proc f() { // expected-note: While translating body of 'f'
+    eval f(); // expected-error: Cyclic semantic dependency
 
-    // FIXME: We should allow out-of-order constant evaluation calls eventually.
-    eval g(); // expected-error: Cannot evaluate procedure 'g' whose body has not been compiled yet
+    // A later body is compiled on demand.
+    eval g();
 }
 
 proc g() {

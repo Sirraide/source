@@ -590,7 +590,7 @@ Eval::Eval(VM& vm, Sema* sema, bool complain, bool allow_globals)
     : vm{vm},
       sema{sema},
       cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
-      stack_top{vm.memory->get_stack_bottom()},
+      stack_top{vm.active_evaluation ? vm.active_evaluation->stack_top : vm.memory->get_stack_bottom()},
       complain{complain},
       allow_globals{allow_globals} {}
 
@@ -846,21 +846,13 @@ bool Eval::EvalLoop() {
                     // will have already diagnosed something before getting here.
                     if (not decl->is_valid or decl->contains_error) return false;
 
-                    // We can’t call a procedure if we’re in the middle of creating
-                    // that same procedure; this can happen if a user writes e.g.
-                    //
-                    //   proc f() { eval f(); }
-                    //
-                    // as well as
-                    //
-                    //   proc f() { eval g(); }
-                    //   proc g() { }
-                    //
-                    if (decl->will_have_body and not decl->body()) return Error(
-                        SLoc::Decode(i->getLoc()),
-                        "Cannot evaluate procedure '%2({}%)' whose body has not been compiled yet",
-                        decl->name
-                    );
+                    // Sema may perform nested constant evaluation while completing
+                    // this body. The suspended evaluator retains its own CG and stack.
+                    if (decl->will_have_body and not decl->body()) {
+                        auto loc = SLoc::Decode(i->getLoc());
+                        if (not sema) return Error(loc, "Procedure body is not available for evaluation");
+                        if (not sema->RequestProcedureBody(decl, loc)) return false;
+                    }
                 }
 
                 // This is an external procedure.
@@ -902,6 +894,7 @@ bool Eval::EvalLoop() {
 
             if (del.empty()) {
                 auto decl = cg.lookup(del);
+                if (sema and not sema->RequestProcedureBody(decl.get(), SLoc::Decode(d->getLoc()))) return false;
                 cg.emit(decl.get());
                 if (not cg.finalise_for_constant_evaluation(del)) return false;
             }
@@ -984,7 +977,7 @@ bool Eval::EvalLoop() {
         if (auto prop = dyn_cast<ir::TypePropertyOp>(i)) {
             auto loc = SLoc::Decode(i->getLoc());
             auto ty = Val(prop.getTypeArgument()).cast<Type>();
-            if (not sema or not sema->RequireCompleteType(ty, loc)) return Error(
+            if (not sema or not sema->RequestCompleteType(ty, loc)) return Error(
                 loc,
                 "Querying property of incomplete type '{}'",
                 ty
@@ -1554,6 +1547,14 @@ auto Eval::Val(Value v) -> const SRValue& {
 }
 
 auto Eval::eval(Stmt* s) -> std::optional<RValue> {
+    constexpr usz MaxEvaluationDepth = 32;
+    if (vm.evaluation_depth >= MaxEvaluationDepth) {
+        Error(s->location(), "Exceeded maximum evaluation nesting depth ({})", MaxEvaluationDepth);
+        return std::nullopt;
+    }
+
+    tempset vm.evaluation_depth = vm.evaluation_depth + 1;
+
     // Always reset the stack pointer when we’re done.
     tempset stack_top = stack_top;
 
@@ -1651,14 +1652,11 @@ auto VM::eval(
         }
     }
 
-    // Otherwise, we need to do this the complicated way. Evaluate the statement.
-    //
-    // TODO: I think it’s possible to trigger this, actually, if an evaluation
-    // performs a template instantiation that contains an 'eval' statement.
-    Assert(not evaluating, "We somehow triggered a nested evaluation?");
+    // Each evaluation owns its CodeGen and stack frames. A body request made
+    // during execution may recursively evaluate another compile-time expression.
     llvm::TimeTraceScope _{"[SRCC] Compile-Time Evaluation"};
-    tempset evaluating = true;
     Eval e{*this, sema, complain, allow_globals};
+    tempset active_evaluation = &e;
     auto res = e.eval(stmt);
     if (dump_ir) std::println("{}", text::RenderColours(
         owner_tu.context().use_colours,

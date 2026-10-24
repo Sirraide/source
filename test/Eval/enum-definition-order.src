@@ -1,0 +1,18 @@
+// V %srcc --sema --verify %s
+// expected-no-diagnostics
+program test;
+
+// The order of enumerators is their order in the expanded definition, even
+// when quoted fragments have source locations in a different order.
+proc tail() = quote { middle, last, };
+proc assemble(tree head, tree tail) = quote {
+    enum Expanded { $(head) $(tail) }
+};
+#inject(assemble(quote { first = 40, }, tail()));
+#assert Expanded::first as int == 40;
+#assert Expanded::middle as int == 41;
+#assert Expanded::last as int == 42;
+
+// A forward value request must resolve the indexed predecessor chain.
+#assert Forward::last as int == 44;
+enum Forward { first = 40, second, third, fourth, last }

@@ -147,6 +147,7 @@ public:
     }
 
     auto operator*() const -> Ty* { return get(); }
+    auto operator->() const -> Ty* { return get(); }
     auto get() const -> Ty* {
         Assert(value, "Value must be present!");
         return value;

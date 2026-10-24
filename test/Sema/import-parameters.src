@@ -1,0 +1,11 @@
+// V mkdir -p %t
+// V %srcc test/inputs/module-parameters.src --mo %t
+// V %srcc %s -M %t --sema --verify
+// expected-no-diagnostics
+program test;
+
+import parameters;
+
+// Parameters of both defined and external procedures survive module import.
+parameters::subtract(right: 2, left: 10);
+parameters::imported_only(second: true, first: 42);

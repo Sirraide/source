@@ -1,0 +1,25 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Procedure bodies retain lexical visibility even if translated much later.
+proc lexical() = hidden; // expected-error: Unknown symbol 'hidden'
+int hidden = 42;
+lexical();
+
+// Ordinary variable references remain ordered.
+var early = later; // expected-error: Unknown symbol 'later'
+int later = 42;
+
+// A template uses its declaration context rather than the instantiation context.
+proc template_lexical($T x) = template_hidden; // expected-error: Unknown symbol 'template_hidden'
+int template_hidden = 42;
+template_lexical(0);
+
+// Body inference cycles are diagnosed and cached, including repeated uses.
+proc first() = second(); // expected-note (While translating body of 'first') expected-note (While translating body of 'second')
+proc second() = first(); // expected-error: Cyclic semantic dependency
+first();
+first();
+
+// Signature cycles go through the same dependency evaluator.
+proc signature() -> typeof(signature()) = 1; // expected-error (Cyclic semantic dependency) expected-note (While resolving declaration 'signature') expected-error (Unknown symbol 'signature') expected-error (Cannot convert expression of type 'int' to 'void')

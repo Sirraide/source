@@ -77,7 +77,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
 
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
-            return CreateReference(proc, loc).get();
+            return RequestReference(proc, loc).get();
         }
 
         case K::SliceFromArray: return new (*tu) CastExpr(
@@ -464,11 +464,11 @@ auto Sema::BuildConversionSequence(
         return false;
     };
 
-    // Note: 'RequireCompleteType()' may issue diagnostics, but this is a bit unavoidable;
+    // Note: 'RequestCompleteType()' may issue diagnostics, but this is a bit unavoidable;
     // generally, we should almost never encounter incomplete types that we fail to complete,
     // so this usually shouldn’t cause any problems even if we’re building conversion sequences
     // tentatively.
-    if (not RequireCompleteType(var_type, init_loc)) return CreateError(
+    if (not RequestCompleteType(var_type, init_loc)) return CreateError(
         init_loc,
         "Cannot create instance of incomplete type '{}'",
         var_type
@@ -658,7 +658,7 @@ auto Sema::BuildConversionSequence(
 
         // If we ultimately found a literal, evaluate the original expression.
         if (isa_and_present<IntLitExpr>(lit)) {
-            auto val = Evaluate(e, false);
+            auto val = RequestEvaluation(e, false);
             return val and IntegerLiteralFitsInType(val->cast<APInt>(), ty, negated);
         }
 

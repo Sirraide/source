@@ -650,7 +650,10 @@ public:
     /// Get the declaration of this enum.
     auto decl() const -> TypeDecl* { return type_decl; }
 
-    /// Get all enumerators.
+    /// Get an enumerator by its position in the definition.
+    auto enumerator(u32 index) const -> EnumeratorDecl*;
+
+    /// Get all enumerators in definition order.
     auto enumerators() const;
 
     /// Mark an enum type as complete.
@@ -1164,6 +1167,9 @@ private:
           owning_tu{owner} {}
 
 public:
+    /// Lexical parent procedure, if this is a local type.
+    Ptr<ProcDecl> parent;
+
     /// Create a type and the corresponding declaration.
     static auto Create(
         TranslationUnit& owner,

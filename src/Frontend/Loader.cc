@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 1;
+constexpr u32 CurrentVersion = 2;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, types_size);
@@ -174,6 +174,11 @@ public:
         *this << proc->kind() << proc->mangling
               << proc->type << proc->name << proc->props
               << proc->location();
+
+        Assert(proc->params().size() == proc->param_count());
+        for (auto param : proc->params())
+            *this << DeclNameLoc{param->name, param->location()}
+                  << (param->category == Expr::ILValue) << param->is_with_param();
     }
 
     void write(const RecordLayout& l) {
@@ -290,7 +295,7 @@ public:
                 auto name = Read(DeclName);
                 auto props = Read(InheritedProcedureProperties);
                 auto loc = Read(SLoc);
-                return ProcDecl::Create(
+                auto proc = ProcDecl::Create(
                     *S.tu,
                     module_decl,
                     cast<ProcType>(type),
@@ -301,6 +306,22 @@ public:
                     props,
                     loc
                 );
+
+                SmallVector<Sema::ParamSpec> params;
+                for (usz i = 0; i < proc->param_count(); ++i) {
+                    auto name = Read(DeclNameLoc);
+                    auto immutable = Read(bool);
+                    auto with = Read(bool);
+                    params.push_back({
+                        .name = name,
+                        .with_loc = with ? name.loc : SLoc{},
+                        .immutable = immutable,
+                    });
+                }
+
+                proc->scope = S.tu->create_scope<ProcScope>(nullptr, std::nullopt);
+                S.BuildParamDecls(proc, params);
+                return proc;
             }
 
             case K::TypeDecl: {
@@ -382,8 +403,9 @@ public:
 
                 // Add enumerators.
                 auto enums = Read(SmallVector<EncodedEnumeratorDecl>);
-                for (auto& [name, value, l] : enums) {
-                    auto decl = new (*S.tu) EnumeratorDecl(enum_ty, name, l);
+                for (auto [index, enumerator] : enumerate(enums)) {
+                    auto& [name, value, l] = enumerator;
+                    auto decl = new (*S.tu) EnumeratorDecl(enum_ty, u32(index), name, l);
                     decl->value = S.tu->store_int(std::move(value));
                     scope->add(decl);
                 }

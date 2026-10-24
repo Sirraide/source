@@ -47,24 +47,14 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
-// + entry:
-// +     ret
-// + }
-// +
-// + proc _S$10__src_main$.4copyFT5SmallxT5SmallE (
-// +     ptr %0 sret i8[8],
-// +     ptr %1 align 8 dereferenceable 8,
-// + ) external ccc {
-// + entry:
-// +     %2 = load i64, %1, align 8
-// +     store %0, i64 %2, align 8
-// +     ret
-// + }
-// +
 // + proc _S4sinkFvT5SmallE.1 (ptr %0 align 8 dereferenceable 8 move) private ccc {
 // + entry:
 // +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     ret
+// + }
+// +
+// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
+// + entry:
 // +     ret
 // + }
 // +
@@ -91,6 +81,16 @@ proc f4() {
 // +     store #3, i64 42, align 8
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #3 align 8 dereferenceable 8 move)
 // +     call ccc void _S4sinkFvT5SmallE.1(ptr #0 align 8 dereferenceable 8 move)
+// +     ret
+// + }
+// +
+// + proc _S$10__src_main$.4copyFT5SmallxT5SmallE (
+// +     ptr %0 sret i8[8],
+// +     ptr %1 align 8 dereferenceable 8,
+// + ) external ccc {
+// + entry:
+// +     %2 = load i64, %1, align 8
+// +     store %0, i64 %2, align 8
 // +     ret
 // + }
 // +

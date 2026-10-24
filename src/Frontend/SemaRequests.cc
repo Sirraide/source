@@ -1,0 +1,952 @@
+// =================================================================================
+// SemaRequests.cc - Request Handlers
+//
+// Semantic requests compute one result; completed results live in the AST; the
+// request table caches success and failure. Re-entering an active request is an
+// error.
+//
+// For example, this resolves the signature and then requests the body of 'f':
+//
+//     #assert f() == 42;
+//     proc f() -> int = 42;
+//
+// A return-type inference cycle instead re-enters an active body request:
+//
+//     proc f() = g();
+//     proc g() = f();
+//
+// Providers are separate Sema members, dispatched by Request(). AST emission
+// retains source order even when a later variable's type is needed earlier, e.g.:
+//
+//     proc outer() {
+//         var result = later();
+//         int value = side_effect();
+//         proc later() -> int = typeof(value)(42);
+//     }
+//
+// 'value' is visible inside 'later', but its initialiser still runs after the
+// call. Each template specialisation has its own scope and declaration requests.
+// =================================================================================
+#include <srcc/AST/Eval.hh>
+#include <srcc/Frontend/Parser.hh>
+#include <srcc/Frontend/Sema.hh>
+
+using namespace srcc;
+
+#define TRY(...) ({                      \
+    auto _res = (__VA_ARGS__);           \
+    if (not _res) return utils::Falsy(); \
+    *_res;                               \
+})
+
+Sema::EnterRequestContext::EnterRequestContext(
+    Sema& S,
+    sema::RequestContext context
+) : S{S},
+    scopes{std::move(S.scope_stack)},
+    procedures{std::move(S.proc_stack)},
+    inside_eval{std::exchange(S.inside_eval, context.inside_eval)},
+    expansion{std::exchange(S.request_data.expansion, context.expansion)} {
+    // Rebuild scope stack.
+    S.scope_stack.clear();
+    for (auto scope = context.scope; scope; scope = scope->parent()) S.scope_stack.push_back(scope);
+    rgs::reverse(S.scope_stack);
+
+    // Rebuild procedure stack.
+    S.proc_stack.clear();
+    for (auto proc = context.procedure; proc; proc = proc->parent) S.proc_stack.push_back(proc);
+    rgs::reverse(S.proc_stack);
+}
+
+Sema::EnterRequestContext::~EnterRequestContext() {
+    S.scope_stack = std::move(scopes);
+    S.proc_stack = std::move(procedures);
+    S.inside_eval = inside_eval;
+    S.request_data.expansion = expansion;
+}
+
+auto Sema::GetDeclarationRequest(Decl* decl) -> Ptr<DeclarationRequest> {
+    return request_data.declaration_sources.lookup(decl);
+}
+
+auto Sema::GetDeclarationRequest(ParsedDecl* decl) -> Ptr<DeclarationRequest> {
+    auto request = request_data.declarations.find({curr_scope(), decl});
+    if (request == request_data.declarations.end()) return nullptr;
+    return request->second.get();
+}
+
+auto Sema::GetRequestContext() -> sema::RequestContext {
+    return {curr_scope(), &curr_proc(), inside_eval, request_data.expansion};
+}
+
+auto Sema::GetRequestResult(RequestSubject subject) -> std::optional<bool> {
+    auto it = request_data.results.find(subject);
+    if (it == request_data.results.end() or it->second == RequestState::Evaluating) return std::nullopt;
+    return it->second == RequestState::Complete;
+}
+
+bool Sema::IsVariableVisible(const DeclarationRequest& source, SLoc use) {
+    auto declaration = source.parsed->loc;
+    auto declaration_expansion = source.context.expansion;
+    auto use_expansion = request_data.expansion;
+
+    // Compare locations in their nearest shared expansion context.
+    while (declaration_expansion != use_expansion) {
+        auto declaration_depth = declaration_expansion ? declaration_expansion->depth : 0;
+        auto use_depth = use_expansion ? use_expansion->depth : 0;
+
+        if (declaration_depth >= use_depth) {
+            declaration = declaration_expansion->site;
+            declaration_expansion = declaration_expansion->parent;
+        }
+
+        if (use_depth >= declaration_depth) {
+            use = use_expansion->site;
+            use_expansion = use_expansion->parent;
+        }
+    }
+
+    // Determine whether the use of the variable precedes the declaration.
+    Assert(declaration.is_valid() and use.is_valid(), "Variables should have valid locations");
+    auto declaration_file = declaration.file(ctx);
+    auto use_file = use.file(ctx);
+    Assert(declaration_file and use_file);
+    if (declaration_file == use_file) return declaration <= use;
+    auto first = request_data.file_order.find(declaration_file);
+    auto second = request_data.file_order.find(use_file);
+    Assert(first != request_data.file_order.end() and second != request_data.file_order.end());
+    return first->second < second->second;
+}
+
+bool Sema::Request(RequestSubject subject, SLoc loc) {
+    // Check if the request has already been fulfilled.
+    if (auto result = GetRequestResult(subject)) return *result;
+
+    // If we’re currently resolving it, report an error.
+    //
+    // FIXME: We should think of a nicer way to format these, similarly
+    // to what we do for overload resolution diagnostics.
+    if (request_data.results.contains(subject)) {
+        Error(loc, "Cyclic semantic dependency");
+        bool in_cycle = false;
+        for (auto frame : request_data.stack) {
+            in_cycle |= frame.subject == subject;
+            if (not in_cycle) continue;
+            if (auto decl = llvm::dyn_cast<DeclarationRequest*>(frame.subject))
+                Note(frame.loc, "While resolving declaration '{}'", decl->parsed->name);
+            else if (auto proc = llvm::dyn_cast<ProcDecl*>(frame.subject))
+                Note(frame.loc, "While translating body of '{}'", proc->name);
+            else if (auto record = llvm::dyn_cast<StructType*>(frame.subject))
+                Note(frame.loc, "While computing layout of '{}'", record->decl()->name);
+            else
+                Note(
+                    frame.loc, "While computing value of enumerator '{}'",
+                    llvm::cast<EnumeratorDecl*>(frame.subject)->name
+                );
+        }
+        return false;
+    }
+
+    // Take care not to overflow the stack.
+    if (request_data.stack.size() >= sema::MaxRequestDepth) {
+        request_data.results[subject] = RequestState::Failed;
+        return Error(loc, "Exceeded maximum semantic request nesting depth ({})", sema::MaxRequestDepth);
+    }
+
+    // Mark that we’ve started processing this request.
+    request_data.results[subject] = RequestState::Evaluating;
+    request_data.stack.push_back({subject, loc});
+    defer { request_data.stack.pop_back(); };
+
+    // Actually process the request.
+    bool success;
+    if (auto decl = llvm::dyn_cast<DeclarationRequest*>(subject)) success = RequestDeclarationImpl(*decl);
+    else if (auto proc = llvm::dyn_cast<ProcDecl*>(subject)) success = RequestProcedureBodyImpl(proc);
+    else if (auto record = llvm::dyn_cast<StructType*>(subject)) success = RequestStructLayoutImpl(record);
+    else success = RequestEnumeratorImpl(llvm::cast<EnumeratorDecl*>(subject));
+
+    // Set its result.
+    request_data.results[subject] = success ? RequestState::Complete : RequestState::Failed;
+    return success;
+}
+
+bool Sema::RequestCompleteType(Type ty, SLoc loc) {
+    // Structs can be made complete on demand.
+    // FIXME: Tuples as well.
+    if (auto s = dyn_cast<StructType>(ty.ptr()))
+        return RequestStructLayout(s);
+    if (not ty->is_complete())
+        return Error(loc, "Invalid use of incomplete type '{}'", ty);
+    return true;
+}
+
+auto Sema::RequestDeclaration(DeclarationRequest& request) -> Ptr<Decl> {
+    Request(&request, request.parsed->loc);
+    return request.result;
+}
+
+bool Sema::RequestDeclarationImpl(DeclarationRequest& request) {
+    EnterRequestContext context{*this, request.context};
+
+    // Perform initial translation; for variables, which are order-dependent,
+    // we perform full translation instead.
+    if (not request.result) {
+        if (auto var = dyn_cast<ParsedVarDecl>(request.parsed)) {
+            request.result = TranslateVarDecl(var, {});
+        } else {
+            auto result = TranslateDeclInitial(request.parsed);
+            if (result) request.result = result->get_or_null();
+        }
+    }
+
+    if (not request.result) return false;
+    request_data.declaration_sources[request.result] = &request;
+    if (request.exported) {
+        AddDeclToScope(&tu->exports, request.result);
+        if (auto object = dyn_cast<ObjectDecl>(request.result)) object->linkage = Linkage::Exported;
+    }
+
+    return request.result->valid();
+}
+
+bool Sema::RequestEnumerator(EnumeratorDecl* enumerator) {
+    // Check if we already know its value.
+    if (auto result = GetRequestResult(enumerator)) return *result;
+    if (enumerator->value) return true;
+
+    // If not, request it and save it in the AST.
+    bool ok = Request(enumerator, enumerator->location());
+    if (not ok and not enumerator->value) {
+        enumerator->value = tu->store_int(
+            APInt{unsigned(enumerator->parent->bit_width(*tu).bits()), 0}
+        );
+    }
+    return ok;
+}
+
+bool Sema::RequestEnumeratorImpl(EnumeratorDecl* enumerator) {
+    auto e = enumerator->parent;
+    auto source = GetDeclarationRequest(e->decl());
+    Assert(source, "Computing an enumerator that we did not parse");
+
+    // Enter the scope of the enum.
+    EnterRequestContext context{*this, source->context};
+    EnterScope scope{*this, e->scope()};
+
+    // Mark that we’re entering the definition of this enumerator; this
+    // tells Sema to set its type to the underlying type of the enum.
+    request_data.enum_value_stack.push_back(e);
+    defer { request_data.enum_value_stack.pop_back(); };
+
+    // Translate the value if we parsed one.
+    auto parsed = cast<ParsedEnumDecl>(source->parsed);
+    auto index = enumerator->index;
+    auto& p = parsed->enumerators()[index];
+    bool ok = true;
+    if (auto init = p.value.get_or_null()) {
+        auto value = TranslateExpr(init);
+        if (value) value = BuildInitialiser(e->elem(), value.get(), init->loc);
+        if (value) {
+            if (auto evaluated = RequestEvaluation(value.get())) {
+                enumerator->value = tu->store_int(evaluated->cast<APInt>());
+                return true;
+            }
+        }
+        ok = false;
+    }
+
+    // If not, compute the next value; this may require recursively requesting
+    // the preceding enumerators.
+    APInt value{unsigned(e->bit_width(*tu).bits()), 0};
+    if (index) {
+        auto previous = e->enumerator(index - 1);
+        ok &= RequestEnumerator(previous);
+        value = previous->value->value();
+
+        // If the computation of the previous enumerator overflowed,
+        // this one logically must too.
+        if (request_data.overflowing_enumerators.contains(previous)) {
+            request_data.overflowing_enumerators.insert(enumerator);
+        }
+
+        // If not, compute the next value by adding 1.
+        else {
+            bool overflow = false;
+            auto next = value.uadd_ov(APInt{value.getBitWidth(), 1}, overflow);
+            if (overflow) {
+                Error(
+                    enumerator->location(),
+                    "Value '%5({}%)' of enumerator does not fit in underlying type '{}'",
+                    value.zext(value.getBitWidth() + 2) + 1, e->elem()
+                );
+
+                // Remember that this overflowed to prevent duplicate diagnostics.
+                request_data.overflowing_enumerators.insert(enumerator);
+                ok = false;
+            } else {
+                value = std::move(next);
+            }
+        }
+    }
+
+    // Store the value in the AST.
+    enumerator->value = tu->store_int(value);
+    return ok;
+}
+
+void Sema::RequestEnumerators(EnumType* e) {
+    auto source = GetDeclarationRequest(e->decl());
+    Assert(source, "Completing an enum that we did not parse");
+    auto parsed = cast<ParsedEnumDecl>(source->parsed);
+
+    // Resolving a value can introduce declarations through an injection. Use
+    // indices rather than retaining an iterator into the scope's declaration array.
+    for (usz index = 0; index < parsed->enumerators().size(); ++index)
+        RequestEnumerator(e->enumerator(u32(index)));
+
+    e->finalise();
+}
+
+auto Sema::RequestEvaluation(Stmt* e, bool complain) -> std::optional<eval::RValue> {
+    return tu->vm.eval(this, e, complain);
+}
+
+auto Sema::RequestEvaluationIntoExpr(Stmt* s, SLoc loc) -> Ptr<Expr> {
+    auto value = RequestEvaluation(s);
+    if (not value.has_value()) return nullptr;
+    return MakeConstExpr(s, std::move(*value), loc);
+}
+
+auto Sema::RequestLookup(
+    Ptr<Scope> start_scope,
+    ArrayRef<DeclNameLoc> names,
+    SLoc loc,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not names.empty());
+
+    // If we have no scope and a single name, then this is unqualified lookup.
+    if (start_scope.invalid() and names.size() == 1)
+        return RequestUnqualifiedLookup(names.front(), hint);
+
+    // If we don't have a scope, perform unqualified lookup of the first name
+    // first. If we only have a single name, instead use the current scope.
+    Scope* in_scope = nullptr;
+    if (start_scope.invalid()) {
+        Assert(names.size() > 1);
+
+        // The first segment is looked up using unqualified lookup, but don’t
+        // complain immediately if we can’t find it because we also need to
+        // check module names. The first segment is also allowed to be empty,
+        // which means we’re looking up a name in the global scope.
+        auto first = names.consume_front();
+        Assert(not first.name.empty());
+        switch (auto res = RequestUnqualifiedLookup(first, LookupHint::Scope); res.result) {
+            using enum LookupResult::Reason;
+            case Success: {
+                auto scope = GetScopeFromDecl(res.decls.front());
+                if (scope.invalid()) return LookupResult::NonScopeInPath(first, res.decls.front());
+                in_scope = scope.get();
+            } break;
+
+            // Can’t perform scope access on an ambiguous lookup.
+            case Ambiguous:
+                return res;
+
+            // Failed imports can only happen with C++ declarations, which are handled
+            // elsewhere; we should *never* fail to import something from one of our
+            // own modules.
+            case FailedToImport:
+                Unreachable("Should never happen");
+
+            // Unqualified lookup should never complain about this.
+            case NonScopeInPath:
+                Unreachable("Non-scope error in unqualified lookup?");
+
+            // Search module names here.
+            //
+            // This way, we don’t have to try and represent modules in the AST,
+            // and we also don’t have to deal with what happens if unqualified
+            // lookup finds a module name, because a module name alone is useless
+            // if it’s not on the lhs of `::`.
+            case NotFound: {
+                auto it = tu->logical_imports.find(first.name.str());
+                if (it == tu->logical_imports.end() or not it->getValue()) return res;
+                if (auto s = dyn_cast<ImportedSourceModuleDecl>(it->second)) {
+                    in_scope = &s->exports;
+                    break;
+                }
+
+                // We found an imported C++ header; do a C++ lookup.
+                auto hdr = dyn_cast<ImportedClangModuleDecl>(it->second);
+                return LookUpCXXName(hdr, names, hint);
+            } break;
+        }
+    } else {
+        in_scope = start_scope.get();
+    }
+
+    // For all elements but the last, we have to look up scopes.
+    Assert(in_scope);
+    for (auto name : names.drop_back()) {
+        // Perform lookup.
+        LookupResult res{llvm::to_vector(in_scope->decls_with_name(name.name)), name};
+        if (not res.successful()) return res;
+
+        // The declaration must reference a scope.
+        auto scope = GetScopeFromDecl(res.decls.front());
+        if (scope.invalid()) {
+            res.result = LookupResult::Reason::NonScopeInPath;
+            return res;
+        }
+
+        // Keep going down the path.
+        in_scope = scope.get();
+    }
+
+    // Finally, look up the last name in the scope.
+    return RequestScopeLookup(in_scope, names.back(), hint);
+}
+
+bool Sema::RequestParameterTypes(ProcDecl* proc) {
+    bool ok = true;
+    for (auto param : proc->params()) ok &= CheckVariableType(param->type, param->location());
+    if (not ok) proc->set_invalid();
+    return ok;
+}
+
+bool Sema::RequestPendingProcedureBodies(ProcDecl* owner) {
+    if (not owner) owner = curr_proc().proc;
+    bool ok = true;
+
+    // Detach each batch before invoking providers. Recursive drains see only
+    // newly registered work and cannot request an already-active body again.
+    for (;;) {
+        auto pending = request_data.pending_procedure_bodies.find(owner);
+        if (pending == request_data.pending_procedure_bodies.end()) break;
+        auto procedures = std::move(pending->second);
+        request_data.pending_procedure_bodies.erase(pending);
+        for (auto proc : procedures) ok &= RequestProcedureBody(proc, proc->location());
+    }
+
+    return ok;
+}
+
+bool Sema::RequestProcedureBody(ProcDecl* proc, SLoc loc) {
+    if (auto result = GetRequestResult(proc)) return *result;
+    if (proc->body()) return proc->valid() and not proc->contains_error;
+    if (not proc->will_have_body) return proc->valid();
+    return Request(proc, loc);
+}
+
+bool Sema::RequestProcedureBodyImpl(ProcDecl* proc) {
+    auto it = request_data.procedure_sources.find(proc);
+    if (it == request_data.procedure_sources.end())
+        return Error(proc->location(), "Procedure body is not available yet");
+
+    // The builder must stay alive if completing this body rehashes the map.
+    auto source = std::move(it->second);
+    EnterRequestContext context{*this, source.context};
+    EnterProcedure procedure{*this, proc};
+    RequestParameterTypes(proc);
+
+    // Generate or translate a parsed body.
+    Ptr<Expr> body;
+    if (auto build = source.body.get_if<ProcedureSource::BodyBuilder>()) {
+        body = (*build)(proc);
+    } else {
+        auto parsed = source.body.get<ParsedProcDecl*>();
+        if (
+            proc->is_instantiation() and
+            proc->is_overloaded_operator() and
+            not CheckOverloadedOperator(proc, parsed->type->attrs.builtin_operator)
+        ) {
+            proc->set_invalid();
+            return false;
+        }
+
+        ActivateWithParameters(GetParamSpecs(parsed->params()));
+        auto ret = proc->return_type();
+        body = TranslateExpr(parsed->body.get(), ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt);
+    }
+
+    // Finish building the body,
+    body = BuildProcBody(proc, body);
+    if (not RequestPendingProcedureBodies()) proc->set_invalid();
+    if (body) proc->finalise(body, curr_proc().locals);
+    else proc->set_invalid();
+    return proc->valid() and not proc->contains_error and bool(proc->body());
+}
+
+auto Sema::RequestReference(Decl* d, SLoc loc) -> Ptr<Expr> { // clang-format off
+    if (not d->valid()) return nullptr;
+    return d->visit(utils::Overloaded{
+        [&](FieldDecl*) -> Ptr<Expr> { Unreachable(); },
+        [&](ModuleDecl*) -> Ptr<Expr> { Unreachable(); },
+        [&](ProcDecl* proc) -> Ptr<Expr> {
+            if (
+                proc->return_type() == Type::DeducedTy and
+                not RequestProcedureBody(proc, loc)
+            ) return nullptr;
+            return new (*tu) ProcRefExpr(proc, loc);
+        },
+        [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
+        [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
+        [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
+        [&](CXXMacroExpansionDecl* md) -> Ptr<Expr> { return md->value; },
+        [&](EnumeratorDecl* e) -> Ptr<Expr> {
+            // Do NOT check if the entire enum is complete here as enumerators are allowed to
+            // depend on preceding enumerators!
+            if (not RequestEnumerator(e)) return nullptr;
+
+            // Within the definition of an enum, the type of its enumerators is the underlying
+            // type of the enum rather than the enum type.
+            Type ty = is_contained(request_data.enum_value_stack, e->parent) ? e->parent->elem() : e->parent;
+            return MakeConstExpr(
+                e,
+                eval::RValue(e->value->value(), ty),
+                loc
+            );
+        },
+        [&](LocalDecl* local) -> Ptr<Expr> {
+            // Check if this variable is declared in a parent procedure and captured it
+            // if so; do *not* capture zero-sized variables however since they’ll be deleted
+            // entirely anyway.
+            if (
+                curr_proc().proc != local->parent and
+                local->type->memory_size(*tu) != Size()
+            ) {
+                // Mark it as captured.
+                local->captured = true;
+                local->parent->introduces_captures = true;
+
+                // Find the active procedure scope that corresponds to the local’s parent.
+                auto st = vws::reverse(proc_stack);
+                auto parent_scope = rgs::find_if(st, [&](ProcScopeInfo* i) { return i->proc == local->parent; });
+                Assert(parent_scope != st.end());
+
+                // Walk the procedure stack between it and the current procedure.
+                //
+                // Captures need to be passed down transitively, i.e. if procedure 'a' contains
+                // 'b' which contains 'c', and 'c' captures a variable declared in 'a', then
+                // 'b' needs to capture it as well even if it doesn’t use it so it can pass it
+                // down to 'c'.
+                //
+                // Because we always propagate captures up whenever we first encounter them, if
+                // a local has already been marked for capture in a scope, this loop will have
+                // also marked it for capture in any parent scopes, so we can stop if we encounter
+                // this situation.
+                for (auto p = curr_proc().proc; p != (*parent_scope)->proc; p = p->parent.get_or_null()) {
+                    if (p->has_captures) break;
+                    p->has_captures = true;
+
+                    // A procedure defined inside a struct may not capture any variables. Diagnose this,
+                    // but allow the capture for better error recovery; this is fine so long as we don’t
+                    // try to emit it.
+                    //
+                    // FIXME: Make sure we don’t try to 'eval' a procedure that contains errors,
+                    // otherwise, this wil break things quite horribly.
+                    if (p->special_proc != SpecialProcedure::None) {
+                        Error(
+                            loc,
+                            "Variable '{}' cannot be captured inside '%1({}%)'",
+                            local->name,
+                            SpecialProcedure(p->special_proc)
+                        );
+                        Note(d->location(), "Variable declared here");
+                    }
+                }
+            }
+
+            return new (*tu) LocalRefExpr(
+                local,
+                local->category,
+                loc
+            );
+        },
+        [&](WithFieldRefDecl* with) -> Ptr<Expr> {
+            return BuildMemberAccessExpr(
+                with->base,
+                with->referenced_field,
+                loc
+            );
+        },
+        [&](WithBuiltinFieldRefDecl* with) -> Ptr<Expr> {
+            return BuildBuiltinMemberAccessExpr(
+                with->referenced_field,
+                with->base,
+                loc
+            );
+        },
+    });
+} // clang-format on
+
+auto Sema::RequestReferenceOrOverloadSet(SLoc loc, LookupResult& res) -> Ptr<Expr> {
+    if (res.successful()) return RequestReference(res.decls.front(), loc);
+    Assert(res.result == LookupResult::Reason::Ambiguous);
+    return OverloadSetExpr::Create(*tu, res.decls, loc);
+}
+
+void Sema::RequestRegisterDeclarations(ArrayRef<ParsedStmt*> statements) {
+    for (auto statement : statements) {
+        Assert(statement->loc.is_valid(), "Registered statements require source locations");
+        request_data.file_order.try_emplace(statement->loc.file(ctx), request_data.file_order.size());
+
+        // Skip this if it isn’t a declaration.
+        auto parsed = dyn_cast<ParsedDecl>(statement);
+        if (not parsed) continue;
+
+        // Unwrap 'export'.
+        bool exported = false;
+        if (auto exp = dyn_cast<ParsedExportDecl>(parsed)) {
+            parsed = exp->decl;
+            exported = true;
+        }
+
+        // If we’ve already registered a request, skip this.
+        if (GetDeclarationRequest(parsed)) continue;
+
+        // Create a new request for it.
+        auto request = std::make_unique<DeclarationRequest>();
+        request->parsed = parsed;
+        request->exported = exported;
+        request->context = GetRequestContext();
+        if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
+            auto attrs = proc->type->attrs;
+            if (attrs.native or attrs.extern_) attrs.nomangle = true;
+            if (RequiresManglingNumber(attrs)) request->mangling = next_proc_mangling_number++;
+        }
+
+        request_data.scope_declarations[curr_scope()].push_back(request.get());
+        request_data.declarations[{curr_scope(), parsed}] = std::move(request);
+    }
+
+    // Publish type identities before requesting any signature or layout.
+    for (auto statement : statements) {
+        if (auto exp = dyn_cast<ParsedExportDecl>(statement)) statement = exp->decl;
+        if (auto structure = dyn_cast<ParsedStructDecl>(statement)) {
+            auto request = GetDeclarationRequest(structure);
+            if (not request->result) {
+                request->result = TranslateStructDeclInitial(structure).get_or_null();
+                request_data.declaration_sources[request->result] = request.get();
+            }
+        }
+    }
+}
+
+auto Sema::RequestScopeLookup(
+    Scope* in_scope,
+    DeclNameLoc name,
+    LookupHint hint
+) -> LookupResult {
+    // Search declarations that have been registered for translation in this
+    // scope. Requests can append declarations, so use indices here.
+    for (usz index = 0;; ++index) {
+        auto pending = request_data.scope_declarations.find(in_scope);
+        if (
+            pending == request_data.scope_declarations.end() or
+            index >= pending->second.size()
+        ) break;
+
+        auto request = pending->second[index];
+        if (request->parsed->name != name.name) continue;
+
+        // Skip variables that are not in scope here.
+        if (
+            auto var = dyn_cast<ParsedVarDecl>(request->parsed);
+            var and
+            not IsVariableVisible(*request, name.loc)
+        ) continue;
+
+        // Skip variables that are still being translated.
+        if (
+            isa<ParsedVarDecl>(request->parsed) and
+            request->result and
+            request_data.results.lookup(request) == RequestState::Evaluating
+        ) continue;
+
+        // Request this for translation.
+        if (not RequestDeclaration(*request))
+            return LookupResult::NotFound(name);
+    }
+
+    // Next, search decls that have been requested.
+    SmallVector<Decl*> decls;
+    for (auto decl : in_scope->decls_with_name(name.name)) {
+        if (auto source = GetDeclarationRequest(decl)) {
+            if (
+                auto var = dyn_cast<ParsedVarDecl>(source->parsed);
+                var and
+                not IsVariableVisible(*source.get(), name.loc)
+            ) continue;
+        }
+        decls.push_back(decl);
+    }
+
+    return LookupResult(decls, name);
+}
+
+bool Sema::RequestStructLayout(StructType* s) {
+    if (auto result = GetRequestResult(s)) return *result;
+    if (s->is_complete()) return true;
+    return Request(s, s->decl()->location());
+}
+
+bool Sema::RequestStructLayoutImpl(StructType* s) {
+    auto source = GetDeclarationRequest(s->decl());
+    Assert(source, "Completing a struct that we did not parse");
+    EnterRequestContext context{*this, source->context};
+    auto parsed = cast<ParsedStructDecl>(source->parsed);
+
+    // Translate the fields and build the layout.
+    EnterScope _{*this, s->scope()};
+    RecordLayout::Builder lb{*tu};
+    bool ok = true;
+    for (auto [i, f] : enumerate(parsed->fields())) {
+        auto ty = TranslateType(f->type);
+        if (ty and not CheckFieldType(*ty, f->loc)) ty = std::nullopt;
+        ok &= ty.has_value();
+        auto field = new (*tu) FieldDecl(
+            s,
+            ty.value_or(Type::VoidTy),
+            f->name.str(),
+            u32(i),
+            f->loc
+        );
+
+        lb.add_field(ty.value_or(Type::VoidTy));
+        AddDeclToScope(s->scope(), field);
+    }
+
+    // Once we have iniitalisers, we need to adjust the bits in 'build()' below accordingly.
+    if (not parsed->initialisers().empty()) ICE(
+        s->decl()->location(),
+        "TODO: Handle structs with initialisers"
+    );
+
+    auto [layout, props] = lb.build();
+    s->finalise(layout);
+    if (not ok) s->decl()->set_invalid();
+    DefineSpecialProcedures(
+        s,
+        props,
+        parsed->deleter(),
+        parsed->copy_proc(),
+        s->decl()->location()
+    );
+
+    return ok;
+}
+
+auto Sema::RequestTemplateInstantiation(
+    ProcTemplateDecl* pattern,
+    TemplateSubstitution& info,
+    SLoc inst_loc
+) -> ProcDecl* {
+    if (not info.instantiation) {
+        Error(inst_loc, "Missing substituted procedure declaration");
+        return {};
+    }
+
+    auto& instantiations = tu->template_instantiations[pattern];
+    if (not is_contained(instantiations, info.instantiation))
+        instantiations.push_back(info.instantiation);
+
+    // Check if we already know the signature of this.
+    auto body = request_data.results.find(info.instantiation);
+    if (
+        body != request_data.results.end() and
+        body->second == RequestState::Evaluating and
+        info.instantiation->return_type() != Type::DeducedTy
+    ) return info.instantiation;
+
+    // If not, the return type is deduced; request the body.
+    if (not RequestProcedureBody(info.instantiation, inst_loc)) return {};
+    return info.instantiation;
+}
+
+auto Sema::RequestTemplateSubstitution(
+    ProcTemplateDecl* proc_template,
+    ArrayRef<TypeLoc> input_types
+) -> SubstitutionResult {
+    auto source = GetDeclarationRequest(proc_template);
+    EnterRequestContext context{*this, source ? source->context : GetRequestContext()};
+
+    // Perform deduction.
+    //
+    // We need to do this *before* caching, else e.g. 'proc f($T a, T b)' will
+    // be instantiated twice if called with 'f(i32, i16)' and 'f(i32, i8)', which
+    // is outright wrong.
+    using Deduced = std::pair<u32, TypeLoc>;
+    TreeMap<String, Deduced> deduced;
+
+    // First, handle all deduction sites.
+    //
+    // Note that we might not have any if this is a variadic function with
+    // no actual template parameters.
+    auto param_types = proc_template->pattern->type->param_types();
+    auto it = template_deduction_infos.find(proc_template);
+    if (it != template_deduction_infos.end()) {
+        for (const auto& [name, indices] : it->second) {
+            for (auto i : indices) {
+                auto parsed = param_types[i];
+
+                // There might be no corresponding argument if we didn’t
+                // pass any variadic arguments to this. In that case, use
+                // what ever we deduced earlier, or 'void' if this is the
+                // only place where this parameter is deduced.
+                if (input_types.size() == i) {
+                    Assert(proc_template->has_variadic_param);
+                    deduced.try_emplace(name, Deduced{u32(i), {Type::VoidTy, parsed.type->loc}});
+                    continue;
+                }
+
+                // Otherwise, deduce the parameter from its corresponding argument(s).
+                auto ty = DeduceType(parsed.type, input_types[i].ty);
+                if (not ty) {
+                    return SubstitutionResult::DeductionFailed{
+                        name,
+                        i
+                    };
+                }
+
+                if (parsed.variadic) {
+                    Assert(proc_template->has_variadic_param);
+
+                    // We already deduced 'ty' from the first variadic argument, so
+                    // start at the one after it, if there is one, and make sure we
+                    // get the same type for each argument.
+                    for (u32 j = u32(param_types.size()), e = u32(input_types.size()); j < e; j++) {
+                        auto next = DeduceType(parsed.type, input_types[j].ty);
+                        if (not next) {
+                            return SubstitutionResult::DeductionFailed{
+                                name,
+                                j,
+                            };
+                        }
+
+                        if (next != ty) return SubstitutionResult::DeductionAmbiguous{
+                            name,
+                            u32(i),
+                            u32(j),
+                            *ty,
+                            *next,
+                        };
+                    }
+                }
+
+                // If the type has not been deduced yet, remember it.
+                auto [it, inserted] = deduced.try_emplace(name, Deduced{u32(i), {*ty, parsed.type->loc}});
+                if (inserted) continue;
+
+                // Otherwise, check that the deduction result is the same.
+                if (it->second.second.ty != ty) {
+                    return SubstitutionResult::DeductionAmbiguous{
+                        name,
+                        it->second.first,
+                        u32(i),
+                        it->second.second.ty,
+                        *ty,
+                    };
+                }
+            }
+        }
+    }
+
+    // Next, deduce any 'var' parameters.
+    SmallVector<Type> deduced_var_parameters;
+    for (auto [i, p] : enumerate(param_types)) {
+        if (not IsBuiltinVarType(p.type)) continue;
+        if (not p.variadic) deduced_var_parameters.push_back(input_types[i].ty);
+        else {
+            Assert(i == param_types.size() - 1);
+
+            // Build a tuple consisting of the remaining arguments.
+            // TODO: Maybe a failure to build the type here should not be a hard error.
+            auto types = input_types.drop_front(i);
+            auto names = llvm::to_vector(vws::repeat (String(), types.size()));
+            auto ty = TRY(BuildTupleType(types, names, proc_template->location()));
+            deduced_var_parameters.push_back(ty);
+        }
+    }
+
+    // Now that deduction is done, check if we’ve substituted this before.
+    llvm::FoldingSetNodeID id;
+    for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
+    for (auto ty : deduced_var_parameters) id.AddPointer(ty.ptr());
+
+    // Don’t hold on to a reference to the folding set (or the insert position)
+    // here as we might end up invalidating it if template instantiation occurs
+    // during the translation of the procedure type below.
+    llvm::FoldingSetInsertToken _unused;
+    auto info = template_substitutions[proc_template].lookup(id, _unused);
+    if (info) return info;
+
+    // Create a scope for the procedure and save the template arguments there.
+    EnterScope scope{*this, EnterScope::Procedure, proc_template->props.associated_type};
+    for (auto [name, d] : deduced) AddDeclToScope(
+        scope.get(),
+        new (*tu) TemplateTypeParamDecl(name, d.second)
+    );
+
+    auto provisional = BuildProcSignature(
+        proc_template->pattern,
+        proc_template->props,
+        deduced_var_parameters,
+        proc_template
+    );
+
+    // Mark that we’re done substituting.
+    for (auto d : scope.get()->decls())
+        if (auto param = dyn_cast<TemplateTypeParamDecl>(d))
+            param->in_substitution = false;
+
+    // There was some error building the declaration; give up.
+    if (not provisional) return {};
+
+    // Check the constraint.
+    if (auto where = proc_template->pattern->where.get_or_null()) {
+        EnterProcedure parameters{*this, provisional.get()};
+        auto constraint = TRY(TranslateExpr(where));
+        if (not MakeCondition(constraint, "where")) return {};
+        auto value = RequestEvaluation(constraint);
+        if (not value.has_value()) return {};
+        if (not value->cast<APInt>().getBoolValue())
+            return SubstitutionResult::ConstraintNotSatisfied();
+    }
+
+    // Store the type for later if substitution succeeded.
+    info = new (*tu) TemplateSubstitution(
+        id.Intern(tu->allocator()),
+        provisional->proc_type(),
+        scope.get()
+    );
+
+    info->instantiation = provisional.get();
+    template_substitutions[proc_template].insert(info);
+    return info;
+}
+
+auto Sema::RequestUnqualifiedLookup(
+    DeclNameLoc name,
+    LookupHint hint
+) -> LookupResult {
+    Assert(not name.name.empty());
+    auto in_scope = curr_scope();
+    while (in_scope) {
+        auto res = RequestScopeLookup(in_scope, name, hint);
+        if (res.result != LookupResult::Reason::NotFound) return res;
+        else in_scope = in_scope->parent();
+    }
+
+    // If we couldn’t find it, try to find it in the open modules.
+    if (not tu->open_modules.empty()) {
+        Assert(tu->open_modules.size() == 1, "TODO: Lookup involving multiple open modules");
+        auto mod = tu->open_modules.front();
+        if (auto s = dyn_cast<ImportedSourceModuleDecl>(mod))
+            return RequestScopeLookup(&s->exports, name, hint);
+        return LookUpCXXName(cast<ImportedClangModuleDecl>(mod), name, hint);
+    }
+
+    return LookupResult::NotFound(name);
+}
