@@ -229,7 +229,13 @@ public:
     [[nodiscard]] auto exact_kind() const -> Kind { return type_kind; }
 
 private:
+    /// Remove one layer of type sugar.
     [[nodiscard]] auto desugar_once() const -> Type;
+
+    /// Remove type sugar; this is *not* the same as getting the canonical type;
+    /// the returned type may still not be canonical and could instead still contain
+    /// an element type that is type sugar.
+    [[nodiscard]] auto desugar() const -> Type;
     [[nodiscard]] bool is_sugar() const;
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
     [[nodiscard]] auto size_impl(const Target& t) const -> Size;
@@ -870,13 +876,13 @@ public:
 
 class srcc::RangeType final : public SingleElementTypeBase
     , public FoldingSetNode {
-    TupleType* equivalent_tuple;
-    explicit RangeType(Type elem, TupleType* equivalent_tuple)
+    CanonicalTupleType* equivalent_tuple;
+    explicit RangeType(Type elem, CanonicalTupleType* equivalent_tuple)
         : SingleElementTypeBase{Kind::RangeType, elem}, equivalent_tuple{equivalent_tuple} {}
 
 public:
     /// Get the tuple type that is structurally equivalent to this range.
-    [[nodiscard]] auto equivalent_tuple_type() const -> TupleType* {
+    [[nodiscard]] auto equivalent_tuple_type() const -> CanonicalTupleType* {
         return equivalent_tuple;
     }
 
@@ -1060,9 +1066,9 @@ private:
     );
 };
 
-/// Base class for 'TupleType' and 'StructType'.
+/// Base class for 'CanonicalTupleType' and 'StructType'.
 class srcc::RecordType : public TypeBase {
-    friend TupleType;
+    friend CanonicalTupleType;
 
 protected:
     RecordLayout* record_layout = nullptr;
@@ -1091,9 +1097,8 @@ public:
 
     /// Get the layout of this type.
     auto layout() const -> const RecordLayout& {
-        auto record = cast<RecordType>(canonical);
-        Assert(record->record_layout);
-        return *record->record_layout;
+        Assert(record_layout);
+        return *record_layout;
     }
 
     /// Get the scope containing the fields, member functions, and
@@ -1119,7 +1124,7 @@ public:
 
     static bool classof(const TypeBase* t) {
         return t->exact_kind() == Kind::StructType or
-               t->exact_kind() == Kind::TupleType;
+               t->exact_kind() == Kind::CanonicalTupleType;
     }
 
 private:
@@ -1127,48 +1132,63 @@ private:
     void set_special_member(Tk tok, ProcDecl* decl);
 };
 
-class srcc::TupleType final : public RecordType
-    , public FoldingSetNode {
-    friend ASTReader;
-
-    /// Profile of the canonical element types.
-    // FIXME: Technically this only needs to be stored in the canonical type.
+/// A canonical tuple type.
+///
+/// This stores the layout, fields, and special members of this type; if
+/// the type as written has type sugar, this will be wrapped in a SugaredTupleType,
+/// which only contains this as well as the sugar for each element type.
+class srcc::CanonicalTupleType final : public RecordType, public FoldingSetNode {
     FoldingSetNodeIDRef types_profile{};
 
-    TupleType(RecordLayout* layout, RecordScope* scope);
-
-    static auto CreateDeserialised(
-        TranslationUnit& tu,
-        RecordScope* scope,
-        RecordLayout* layout
-    ) -> TupleType*;
+    CanonicalTupleType(RecordLayout* layout, RecordScope* scope);
 
 public:
-    /// Check if this tuple has the same element types as another tuple.
-    bool has_same_elements(TupleType* other) {
-        return types_profile == other->types_profile;
-    }
-
-    /// Get a trivial tuple type, i.e. one that does not have a deleter/copy procedure.
-    static auto GetTrivial(TranslationUnit& tu, ArrayRef<Type> elem_types) -> TupleType*;
-
-    /// Get a tuple type from a layout.
+    /// Get or create a canonical tuple.
     static auto Get(
         TranslationUnit& tu,
         Scope* parent_scope,
         RecordLayout* layout,
         ArrayRef<Type> fields,
         ArrayRef<String> names,
-        // FIXME: This is jank: I think we should move all code that uniques
-        // types and all code that translates/builds types into Sema (make a
-        // new SemaType.cpp for this).
-        llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
-    ) -> TupleType*;
+        llvm::function_ref<void(CanonicalTupleType*)> DefineSpecialProcedures
+    ) -> CanonicalTupleType*;
 
-    // No need to profile the record layout as it is computed from the field types anyway.
+    /// Get a canonical tuple that has no special members.
+    static auto GetTrivial(TranslationUnit& tu, ArrayRef<Type> elem_types) -> CanonicalTupleType*;
+
+    /// Compare flattened element types. This will return 'true' for
+    /// e.g. '((1, 2), 3)' and '(1, (2, 3))'.
+    bool has_same_elements(CanonicalTupleType* other) const {
+        return types_profile == other->types_profile;
+    }
+
     void Profile(FoldingSetNodeID& ID) const;
-    static void Profile(FoldingSetNodeID& tu, const FoldingSetNodeID& types, auto names);
-    static bool classof(const TypeBase* t) { return t->exact_kind() == Kind::TupleType; }
+    static void Profile(FoldingSetNodeID& ID, auto&& fields, auto&& names);
+    static bool classof(const TypeBase* t) { return t->exact_kind() == Kind::CanonicalTupleType; }
+};
+
+/// Tuple spelling that preserves element type sugar.
+class srcc::SugaredTupleType final : public TypeBase
+    , public FoldingSetNode
+    , TrailingObjects<SugaredTupleType, Type> {
+    friend TrailingObjects;
+
+    SugaredTupleType(CanonicalTupleType* type, ArrayRef<Type> elements);
+
+public:
+    auto element_types() const -> ArrayRef<Type> {
+        return getTrailingObjects(cast<CanonicalTupleType>(canonical)->layout().field_offsets().size());
+    }
+
+    static auto Get(
+        TranslationUnit& tu,
+        CanonicalTupleType* type,
+        ArrayRef<Type> elements
+    ) -> SugaredTupleType*;
+
+    void Profile(FoldingSetNodeID& ID) const;
+    static void Profile(FoldingSetNodeID& ID, CanonicalTupleType* type, ArrayRef<Type> elements);
+    static bool classof(const TypeBase* t) { return t->exact_kind() == Kind::SugaredTupleType; }
 };
 
 class srcc::StructType final : public RecordType {
@@ -1218,7 +1238,7 @@ auto srcc::TypeBase::visit(Visitor&& v) const -> decltype(auto) {
 #       define AST_TYPE_LEAF(node)                                \
            case Kind::node: return std::invoke(                   \
                 std::forward<Visitor>(v),                         \
-                const_cast<node*>(static_cast<const node*>(this)) \
+                const_cast<node*>(static_cast<const node*>(canonical)) \
             );
 #       include "srcc/AST.inc"
 
@@ -1330,8 +1350,27 @@ struct libassert::stringifier<srcc::Type> {
     }
 };
 
+template <typename... Ts>
+[[nodiscard]] auto srcc::isa(Type from) -> bool {
+    if constexpr ((IsTypeSugarClass<Ts>() or ...)) {
+        while (from->is_sugar()) {
+            if (llvm::isa<Ts...>(from.ptr())) return true;
+            from = from->desugar_once();
+        }
+
+        // If we’re only looking for type sugar, then we’re done.
+        if constexpr ((IsTypeSugarClass<Ts>() and ...)) return false;
+    }
+
+    // Otherwise, check the canonical type.
+    return llvm::isa<Ts...>(from->canonical);
+}
+
 template <typename To>
 [[nodiscard]] auto srcc::dyn_cast(Type from) -> To* {
+    // If we’re looking for type sugar, don’t bother casting the
+    // canonical type and only look at whatever layers of type
+    // sugar we have.
     if constexpr (IsTypeSugarClass<To>()) {
         while (from->is_sugar()) {
             auto res = llvm::dyn_cast<To>(from.ptr());
@@ -1341,11 +1380,12 @@ template <typename To>
 
         // Not type sugar.
         return nullptr;
+    } else {
+        // We’re not looking for type sugar; desugar this. Note that for
+        // a non-sugar type, the canonical type should always have the same
+        // type kind as the fully desugared type.
+        return llvm::dyn_cast<To>(from->desugar().ptr());
     }
-
-    // Cast the canonical type directly if we’re not trying to
-    // find a type sugar class.
-    return llvm::dyn_cast<To>(from->canonical);
 }
 
 template <typename To>
@@ -1365,22 +1405,6 @@ template <typename To>
 [[nodiscard]] auto srcc::cast_if_present(Opt<Type> ty) -> To* {
     if (ty.has_value()) return srcc::cast<To>(*ty);
     return nullptr;
-}
-
-template <typename... Ts>
-[[nodiscard]] auto srcc::isa(Type from) -> bool {
-    if constexpr ((IsTypeSugarClass<Ts>() or ...)) {
-        while (from->is_sugar()) {
-            if (llvm::isa<Ts...>(from.ptr())) return true;
-            from = from->desugar_once();
-        }
-
-        // If we’re only looking for type sugar, then we’re done.
-        if constexpr ((IsTypeSugarClass<Ts>() and ...)) return false;
-    }
-
-    // Otherwise, check the canonical type.
-    return llvm::isa<Ts...>(from->canonical);
 }
 
 template <typename... Ts>

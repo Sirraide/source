@@ -240,7 +240,7 @@ auto Sema::BuildBinaryExpr(
                 return BuildTypeExpr(arr, loc);
             }
 
-            if (not isa<TupleType, SliceType, ArrayType>(lhs->type)) return Error(
+            if (not isa<CanonicalTupleType, SliceType, ArrayType>(lhs->type)) return Error(
                 lhs->location(),
                 "Cannot subscript type '{}'",
                 lhs->type
@@ -257,7 +257,7 @@ auto Sema::BuildBinaryExpr(
             // is immutable; a slice subscript is immutable if the slice *type*
             // is immutable.
             bool immutable = false;
-            if (isa<TupleType, ArrayType>(lhs->type)) {
+            if (isa<CanonicalTupleType, ArrayType>(lhs->type)) {
                 immutable = lhs->is_immutable_lvalue();
                 lhs = MaterialiseTemporary(lhs);
             } else {
@@ -267,7 +267,7 @@ auto Sema::BuildBinaryExpr(
 
             // For tuples, the integer must be a compile-time constant, and
             // the result of a subscript operation is a member access.
-            if (auto ty = dyn_cast<TupleType>(lhs->type)) {
+            if (auto ty = dyn_cast<CanonicalTupleType>(lhs->type)) {
                 auto res = RequestEvaluation(rhs);
                 if (not res) return {};
                 auto idx = i64(res->cast<APInt>().getSExtValue());
@@ -1652,26 +1652,35 @@ auto Sema::BuildTupleType(
 
     // FIXME: This should create an incomplete tuple first that is completed
     // on-demand by 'RequestStructLayout()' (or at the end of the TU).
+    SmallVector<Type> elements;
+    SmallVector<Type> canonical_elements;
     RecordLayout::Builder lb{*tu};
     bool ok = true;
     for (auto [ty, loc] : types) {
         if (not CheckFieldType(ty, loc)) ok = false;
-        else lb.add_field(ty);
+        else {
+            elements.push_back(ty);
+            canonical_elements.push_back(ty->canonical);
+            lb.add_field(ty->canonical);
+        }
     }
 
     // Build the layout.
     if (not ok) return {};
     auto [layout, props] = lb.build();
-    auto DefineSpecial = [&](TupleType* r) {
+    auto DefineSpecial = [&](CanonicalTupleType* r) {
         DefineSpecialProcedures(r, props, nullptr, nullptr, tuple_loc);
     };
 
-    return TupleType::Get(
+    auto canonical = CanonicalTupleType::Get(
         *tu,
         curr_scope(),
         layout,
-        llvm::to_vector(vws::transform(types, &TypeLoc::ty)),
+        canonical_elements,
         names,
         DefineSpecial
     );
+
+    if (rgs::all_of(elements, [](Type type) { return type->is_canonical(); })) return canonical;
+    return SugaredTupleType::Get(*tu, canonical, elements);
 }

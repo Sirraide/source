@@ -1073,7 +1073,7 @@ public:
     auto num_values() const -> u32 { return num_exprs; }
 
     /// Get the type of this expression.
-    auto record_type() const -> RecordType* { return cast<RecordType>(type.ptr()); }
+    auto record_type() const -> RecordType* { return cast<RecordType>(type); }
 
     /// Get the expressions that make up this tuple.
     auto values() const -> ArrayRef<Expr*> {
@@ -1879,7 +1879,7 @@ inline auto srcc::EnumType::enumerators() const {
 }
 
 inline auto srcc::RecordType::initialisers() const {
-    return cast<RecordType>(canonical)->record_scope->decls_with_name(Tk::Init);
+    return record_scope->decls_with_name(Tk::Init);
 }
 
 /// Visit a statement.

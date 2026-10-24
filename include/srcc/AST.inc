@@ -128,9 +128,10 @@ AST_TYPE_LEAF(BuiltinType)
 AST_TYPE_LEAF(IntType)
 AST_TYPE_LEAF_WITH_IDENTITY(OpaqueType)
 AST_TYPE_LEAF(ProcType)
+AST_TYPE_SUGAR(SugaredTupleType)
 
 AST_TYPE(RecordType)
-AST_TYPE_LEAF(TupleType)
+AST_TYPE_LEAF(CanonicalTupleType)
 AST_TYPE_LEAF_WITH_IDENTITY(StructType)
 
 #undef AST_STMT_LEAF

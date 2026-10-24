@@ -1,0 +1,9 @@
+// V mkdir -p %t
+// V %srcc test/inputs/tuple-types.src -I test/inputs --mo %t --target x86_64-unknown-linux
+// V %srcc --sema --verify %s -I test/inputs -M %t
+program test;
+import tuple_types as m;
+import <typedef.h> as c;
+
+m::SugaredHolder holder;
+typeof(holder.value) bad = (1, 2, 3); // expected-error: Cannot initialise '(int_using, int)' from '(int, int, int)'

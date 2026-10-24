@@ -73,8 +73,8 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
 
     // Only CodeGen cares about these, so the pointer types used for these don’t
     // actually matter; it just needs to be *a* pointer.
-    SliceEquivalentTupleTy = TupleType::GetTrivial(*this, {I8PtrTy, Type::IntTy});
-    ClosureEquivalentTupleTy = TupleType::GetTrivial(*this, {I8PtrTy, I8PtrTy});
+    SliceEquivalentTupleTy = CanonicalTupleType::GetTrivial(*this, {I8PtrTy, Type::IntTy});
+    ClosureEquivalentTupleTy = CanonicalTupleType::GetTrivial(*this, {I8PtrTy, I8PtrTy});
 
     // struct AbortInfo {
     //     i8 val[] filename;
@@ -84,7 +84,7 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     //     i8 val[] msg2;
     //     proc stringifier (inout __src_assert_msg_buf);
     // }
-    AbortInfoEquivalentTy = TupleType::GetTrivial(
+    AbortInfoEquivalentTy = CanonicalTupleType::GetTrivial(
         *this,
         {StrLitTy, Type::IntTy, Type::IntTy, StrLitTy, StrLitTy, ClosureEquivalentTupleTy}
     );

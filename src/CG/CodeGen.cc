@@ -1089,7 +1089,7 @@ void CodeGen::Mangler::Append(Type ty) {
             Format(M.name, "T{}{}", ty->name().size(), ty->name());
         }
 
-        void operator()(TupleType* ty) {
+        void operator()(CanonicalTupleType* ty) {
             M.name += "Q";
             for (auto f : ty->scope()->fields()) f->type->visit(*this);
             M.name += "E";

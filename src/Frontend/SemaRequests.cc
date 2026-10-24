@@ -282,7 +282,7 @@ bool Sema::Request(RequestSubject subject, SLoc loc) {
 bool Sema::RequestCompleteType(Type ty, SLoc loc) {
     // Structs can be made complete on demand.
     // FIXME: Tuples as well.
-    if (auto s = dyn_cast<StructType>(ty.ptr()))
+    if (auto s = dyn_cast<StructType>(ty))
         return RequestStructLayout(s);
     if (not ty->is_complete())
         return Error(loc, "Invalid use of incomplete type '{}'", ty);

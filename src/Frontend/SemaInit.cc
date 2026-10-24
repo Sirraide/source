@@ -109,7 +109,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> P
         case K::TupleNopCast: return Cast(CastExpr::Nop, e->value_category);
         case K::TupleToFirstElement: {
             if (auto te = dyn_cast<TupleExpr>(e)) return te->values().front();
-            auto ty = cast<TupleType>(e->type);
+            auto ty = cast<CanonicalTupleType>(e->type);
             auto temp = MaterialiseTemporary(e);
             return new (*tu) MemberAccessExpr(temp, ty->scope()->field(0), loc);
         }
@@ -270,10 +270,11 @@ auto Sema::ApplyConversionSequence(
 // separately, so this is also the path used by raw tuples.
 auto Sema::BuildAggregateInitialiser(
     ConversionSequence& seq,
-    RecordType* r,
+    Type type,
     ArrayRef<Expr*> args,
     SLoc loc
 ) -> MaybeDiags {
+    auto r = cast<RecordType>(type);
     auto& rl = r->layout();
 
     // Currently, we don't support initialising unions (apart from zero-initialisation).
@@ -282,11 +283,14 @@ auto Sema::BuildAggregateInitialiser(
 
     // Tuples with the same element types (after flattening and canonicalisation) are
     // convertible to one another.
-    if (args.size() == 1 and isa<TupleType>(r) and isa<TupleType>(args.front()->type)) {
-        auto t1 = cast<TupleType>(r);
-        auto t2 = cast<TupleType>(args.front()->type);
+    if (
+        args.size() == 1 and isa<CanonicalTupleType>(r) and
+        isa<CanonicalTupleType>(args.front()->type)
+    ) {
+        auto t1 = cast<CanonicalTupleType>(r);
+        auto t2 = cast<CanonicalTupleType>(args.front()->type);
         if (t1->has_same_elements(t2)) {
-            seq.add(Conversion::TupleNopCast(r));
+            seq.add(Conversion::TupleNopCast(type));
             seq.add(Conversion::LValueToRValue());
             return {};
         }
@@ -346,7 +350,7 @@ auto Sema::BuildAggregateInitialiser(
     if (rl.field_offsets().size() != args.size()) return CreateError(
         loc,
         "Cannot initialise '{}' from\f'%1(({})%)'",
-        r,
+        type,
         utils::join(args | vws::transform(&Expr::type))
     );
 
@@ -545,7 +549,8 @@ auto Sema::BuildConversionSequence(
             auto t = dyn_cast_if_present<TupleExpr>(single_arg);
             t and not t->is_struct() and (
                 not t->is_named() or (
-                    isa<TupleType>(var_type) and cast<TupleType>(var_type)->initialisers().empty()
+                    isa<CanonicalTupleType>(var_type) and
+                    cast<CanonicalTupleType>(var_type)->initialisers().empty()
                 )
             )
         ) {
@@ -631,8 +636,8 @@ auto Sema::BuildConversionSequence(
             return seq;
         }
 
-        if (auto r = dyn_cast<RecordType>(var_type.ptr())) {
-            Try(BuildAggregateInitialiser(seq, r, args, init_loc));
+        if (isa<RecordType>(var_type)) {
+            Try(BuildAggregateInitialiser(seq, var_type, args, init_loc));
             return seq;
         }
 
@@ -682,7 +687,7 @@ auto Sema::BuildConversionSequence(
     // This process is also applied to non-literal tuples, e.g. call to a function
     // returning '(int,)' can be assigned to an 'int'.
     auto a = args.front();
-    if (isa<TupleType>(a->type)) {
+    if (isa<CanonicalTupleType>(a->type)) {
         TentativeConversionContext tc{seq};
         Type unwrapped_type = a->type;
         for (;;) {
@@ -694,7 +699,7 @@ auto Sema::BuildConversionSequence(
             }
 
             // Unwrap 1-tuples.
-            auto t = dyn_cast<TupleType>(unwrapped_type);
+            auto t = dyn_cast<CanonicalTupleType>(unwrapped_type);
             if (not t or t->layout().field_offsets().size() != 1) break;
             unwrapped_type = t->scope()->field(0)->type;
             seq.add(Conversion::TupleToFirstElement());
@@ -821,8 +826,8 @@ auto Sema::BuildConversionSequence(
             return seq;
 
         case TypeBase::Kind::StructType:
-        case TypeBase::Kind::TupleType:
-            Try(BuildAggregateInitialiser(seq, cast<RecordType>(var_type), args, init_loc));
+        case TypeBase::Kind::CanonicalTupleType:
+            Try(BuildAggregateInitialiser(seq, var_type, args, init_loc));
             return seq;
 
         case TypeBase::Kind::ProcType:
@@ -832,7 +837,7 @@ auto Sema::BuildConversionSequence(
             // the types must match exactly here, and we also need to check the
             // return type.
             if (ty == Type::UnresolvedOverloadSetTy) {
-                auto p_proc_type = dyn_cast<ProcType>(var_type.ptr());
+                auto p_proc_type = dyn_cast<ProcType>(var_type);
                 if (not p_proc_type) return TypeMismatch();
 
                 // Instantiate templates and simply match function types otherwise; we
@@ -993,7 +998,7 @@ auto Sema::BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr> {
 
     // If we have arguments, build an aggregate initialiser.
     ConversionSequence seq;
-    auto error = BuildAggregateInitialiser(seq, record, args, loc);
+    auto error = BuildAggregateInitialiser(seq, type, args, loc);
     if (not error) {
         for (auto& diag : error.error()) ReportDiag(std::move(diag));
         return {};

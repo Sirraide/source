@@ -140,9 +140,9 @@ public:
     IntType* I128Ty{};
     PtrType* I8PtrTy{};
     SliceType* StrLitTy{};
-    TupleType* SliceEquivalentTupleTy{};
-    TupleType* ClosureEquivalentTupleTy{};
-    TupleType* AbortInfoEquivalentTy{};
+    CanonicalTupleType* SliceEquivalentTupleTy{};
+    CanonicalTupleType* ClosureEquivalentTupleTy{};
+    CanonicalTupleType* AbortInfoEquivalentTy{};
 
     /// Caches.
     FoldingSet<ArrayType> array_types;
@@ -152,7 +152,8 @@ public:
     FoldingSet<ProcType> proc_types;
     FoldingSet<RangeType> range_types;
     FoldingSet<SliceType> slice_types;
-    FoldingSet<TupleType> tuple_types;
+    FoldingSet<CanonicalTupleType> canonical_tuple_types;
+    FoldingSet<SugaredTupleType> sugared_tuple_types;
     FoldingSet<RecordLayout> record_layouts;
 
     /// Whether we’ve already emitted LLVM IR for this TU; we can do

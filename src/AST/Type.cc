@@ -205,8 +205,8 @@ bool TypeBase::can_copy() const {
 }
 
 bool TypeBase::can_init_from_no_args() const {
-    if (auto array = dyn_cast<ArrayType>(this)) return array->elem()->can_init_from_no_args();
-    if (auto tuple = dyn_cast<TupleType>(this)) return rgs::all_of(
+    if (auto array = dyn_cast<ArrayType>(canonical)) return array->elem()->can_init_from_no_args();
+    if (auto tuple = dyn_cast<CanonicalTupleType>(canonical)) return rgs::all_of(
         tuple->scope()->fields(),
         [](auto field) { return field->type->can_init_from_no_args(); }
     );
@@ -218,7 +218,15 @@ bool TypeBase::can_zero_init() const {
 }
 
 auto TypeBase::desugar_once() const -> Type {
-    return this;
+    if (auto alias = dyn_cast<AliasType>(this)) return alias->elem();
+    Assert(isa<SugaredTupleType>(this));
+    return canonical;
+}
+
+auto TypeBase::desugar() const -> Type {
+    Type ty = this;
+    while (ty->is_sugar()) ty = ty->desugar_once();
+    return ty;
 }
 
 void TypeBase::dump(bool use_colour) const {
@@ -226,7 +234,7 @@ void TypeBase::dump(bool use_colour) const {
 }
 
 auto TypeBase::elem() const -> Type {
-    return cast<SingleElementTypeBase>(this)->elem();
+    return cast<SingleElementTypeBase>(canonical)->elem();
 }
 
 auto TypeBase::eval_mode() const -> EvalMode {
@@ -249,7 +257,7 @@ auto TypeBase::eval_mode() const -> EvalMode {
             Unreachable("Querying property of opaque type");
 
         case K::OptionalType: {
-            auto opt = cast<OptionalType>(this);
+            auto opt = cast<OptionalType>(canonical);
             if (opt->has_transparent_layout()) return opt->elem()->eval_mode();
             return EvalMode::Memory; // This is an aggregate.
         }
@@ -262,7 +270,7 @@ auto TypeBase::eval_mode() const -> EvalMode {
 
         case K::ArrayType:
         case K::StructType:
-        case K::TupleType:
+        case K::CanonicalTupleType:
             return EvalMode::Memory;
     }
 
@@ -348,7 +356,7 @@ bool TypeBase::is_or_contains_pointer() const {
 }
 
 bool TypeBase::is_sugar() const {
-    return isa<AliasType>(this);
+    return isa<AliasType, SugaredTupleType>(this);
 }
 
 bool TypeBase::is_void() const {
@@ -363,7 +371,7 @@ bool TypeBase::move_is_copy() const {
 
 auto TypeBase::print() const -> SmallUnrenderedString {
     SmallUnrenderedString out = print_impl();
-    if (is_sugar()) {
+    if (isa<AliasType>(this)) {
         // FIXME: This ends up printing e.g. "foo (aka int)", which means
         // that if we put the type in single quotes, we get "'foo (aka int)'",
         // when really we want "'foo' (aka 'int')".
@@ -438,7 +446,7 @@ auto TypeBase::print_impl() const -> SmallUnrenderedString {
             );
         },
         [&](StructType* s) { Format(out, "%6({}%)", s->name()); },
-        [&](TupleType* s) {
+        [&](CanonicalTupleType* s) {
             out += "%1((";
             bool first = true;
             for (auto decl : s->scope()->fields()) {
@@ -446,6 +454,18 @@ auto TypeBase::print_impl() const -> SmallUnrenderedString {
                 else out += ", ";
                 if (not decl->name.empty()) Format(out, "%5({}%): ", decl->name);
                 out += decl->type->print_impl();
+            }
+            out += ")%)";
+        },
+        [&](SugaredTupleType* tuple) {
+            out += "%1((";
+            auto fields = cast<CanonicalTupleType>(tuple->canonical)->scope()->fields();
+            bool first = true;
+            for (auto [field, type] : zip_equal(fields, tuple->element_types())) {
+                if (not first) out += ", ";
+                first = false;
+                if (not field->name.empty()) Format(out, "%5({}%): ", field->name);
+                out += type->print_impl();
             }
             out += ")%)";
         },
@@ -791,10 +811,10 @@ auto ProcType::print(
 
 auto RangeType::Get(TranslationUnit& mod, Type elem) -> RangeType* {
     auto CreateNew = [&] {
-        auto tuple = TupleType::GetTrivial(mod, {elem, elem});
+        auto tuple = CanonicalTupleType::GetTrivial(mod, {elem, elem});
         auto ty = new (mod) RangeType{elem, tuple};
         if (elem->is_canonical()) return ty;
-        ty->canonical = new (mod) RangeType{elem->canonical, cast<TupleType>(tuple->canonical)};
+        ty->canonical = new (mod) RangeType{elem->canonical, cast<CanonicalTupleType>(tuple->canonical)};
         return ty;
     };
 
@@ -924,7 +944,7 @@ void RecordLayout::Profile(
 }
 
 auto RecordType::get_special_member(Tk tok) const -> Ptr<ProcDecl> {
-    auto d = cast<RecordType>(canonical)->record_scope->decls_with_name(tok);
+    auto d = record_scope->decls_with_name(tok);
     if (d.empty()) return nullptr;
     Assert(utils::IsSingle(d));
     return cast<ProcDecl>(d.front());
@@ -978,108 +998,103 @@ auto StructType::name() const -> String {
     return type_decl->name.str();
 }
 
-TupleType::TupleType(
+CanonicalTupleType::CanonicalTupleType(
     RecordLayout* layout,
     RecordScope* scope
-) : RecordType(Kind::TupleType, scope)  {
+) : RecordType(Kind::CanonicalTupleType, scope)  {
     record_layout = layout;
 }
 
-auto TupleType::CreateDeserialised(
-    TranslationUnit& tu,
-    RecordScope* scope,
-    RecordLayout* layout
-) -> TupleType* {
-    // Fields will be filled in by the deserialiser.
-    return new (tu) TupleType(layout, scope);
-}
-
-auto TupleType::GetTrivial(TranslationUnit& tu, ArrayRef<Type> elems) -> TupleType* {
+auto CanonicalTupleType::GetTrivial(TranslationUnit& tu, ArrayRef<Type> elems) -> CanonicalTupleType* {
+    SmallVector<Type> fields;
     RecordLayout::Builder lb{tu};
-    for (auto ty : elems) lb.add_field(ty);
+    for (auto ty : elems) {
+        fields.push_back(ty->canonical);
+        lb.add_field(ty->canonical);
+    }
+
     auto [layout, props] = lb.build();
-    Assert(props.trivial(), "Non-trivial tuples must be build by Sema");
+    Assert(props.trivial(), "Non-trivial tuples must be built by Sema");
     return Get(
         tu,
         tu.global_scope(),
         layout,
-        elems,
+        fields,
         llvm::to_vector(vws::repeat(String(), elems.size())),
-        [](auto) { /* Nothing to do here. */ }
+        [](auto) {}
     );
 }
 
-auto TupleType::Get(
+auto CanonicalTupleType::Get(
     TranslationUnit& tu,
     Scope* parent_scope,
     RecordLayout* layout,
     ArrayRef<Type> fields,
     ArrayRef<String> names,
-    llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
-) -> TupleType* {
+    llvm::function_ref<void(CanonicalTupleType*)> DefineSpecialProcedures
+) -> CanonicalTupleType* {
     Assert(layout);
-    auto GetCanonicalType = [](Type ty) -> Type { return ty->canonical; };
-    auto canonical_types = llvm::to_vector(vws::transform(fields, GetCanonicalType));
+    Assert(rgs::all_of(fields, [](Type type) { return type->is_canonical(); }));
+    auto Create = [&] {
+        auto scope = tu.create_scope<RecordScope>(parent_scope);
+        auto tuple = new (tu) CanonicalTupleType{layout, scope};
 
-    // Profile the element types recursively.
-    FoldingSetNodeID types_profile;
-    for (auto t : canonical_types) {
-        if (auto tuple = dyn_cast<TupleType>(t)) types_profile.AddNodeID(tuple->types_profile);
-        else types_profile.AddPointer(t.ptr());
-    }
+        FoldingSetNodeID flattened;
+        for (auto [index, pair] : enumerate(zip_equal(fields, names))) {
+            auto [type, name] = pair;
+            scope->add(new (tu) FieldDecl(tuple, type, name, u32(index), SLoc()));
+            if (auto nested = dyn_cast<CanonicalTupleType>(type)) flattened.AddNodeID(nested->types_profile);
+            else flattened.AddPointer(type.ptr());
+        }
 
-    // Allocate the tuple.
-    auto CreateTuple = [&](ArrayRef<Type> types) {
-        auto s = tu.create_scope<RecordScope>(parent_scope);
-        auto tuple = new (tu) TupleType{layout, s};
-        u32 index = 0;
-        for (auto [ty, name] : llvm::zip_equal(types, names))
-            s->add(new (tu) FieldDecl(tuple, ty, name, index++, SLoc()));
+        tuple->types_profile = flattened.Intern(tu.allocator());
+        if (DefineSpecialProcedures) DefineSpecialProcedures(tuple);
         return tuple;
     };
 
-    // Create the canonical tuple.
-    //
-    // This additionally defines the special functions. We only do this once
-    // since we would otherwise generate the same code twice.
-    auto CreateCanonical = [&] {
-        auto tuple = CreateTuple(canonical_types);
-        tuple->types_profile = types_profile.Intern(tu.allocator());
-        if (DefineSpecialProcedures) std::invoke(DefineSpecialProcedures, tuple);
-        return tuple;
-    };
-
-    auto canonical = GetOrCreateType(
-        tu.tuple_types,
-        CreateCanonical,
-        types_profile,
-        names
-    );
-
-    // Create the sugared tuple. Special members etc. are stored on
-    // the canonical tuple.
-    auto CreateSugared = [&] {
-        auto tuple = CreateTuple(fields);
-        tuple->canonical = canonical;
-        tuple->types_profile = canonical->types_profile;
-        return tuple;
-    };
-
-    // Create the non-canonical tuple.
-    return GetOrCreateType(
-        tu.tuple_types,
-        CreateSugared,
-        types_profile,
-        names
-    );
+    return GetOrCreateType(tu.canonical_tuple_types, Create, fields, names);
 }
 
-void TupleType::Profile(FoldingSetNodeID& id, const FoldingSetNodeID& types, auto names) {
-    id.AddNodeID(types);
-    for (auto n : names) id.AddString(n);
+void CanonicalTupleType::Profile(FoldingSetNodeID& id, auto&& fields, auto&& names) {
+    for (Type type : fields) id.AddPointer(type.ptr());
+    for (String name : names) id.AddString(name);
 }
 
-void TupleType::Profile(FoldingSetNodeID& id) const {
-    auto Names = [](FieldDecl* f) { return f->name.str(); };
-    Profile(id, types_profile, vws::transform(record_scope->fields(), Names));
+void CanonicalTupleType::Profile(FoldingSetNodeID& id) const {
+    auto types = scope()->fields() | vws::transform([](FieldDecl* field) { return field->type; });
+    auto names = scope()->fields() | vws::transform([](FieldDecl* field) { return field->name.str(); });
+    Profile(id, types, names);
+}
+
+SugaredTupleType::SugaredTupleType(CanonicalTupleType* type, ArrayRef<Type> elements)
+    : TypeBase{Kind::SugaredTupleType} {
+    canonical = type;
+    llvm::uninitialized_copy(elements, getTrailingObjects());
+}
+
+auto SugaredTupleType::Get(
+    TranslationUnit& tu,
+    CanonicalTupleType* type,
+    ArrayRef<Type> elements
+) -> SugaredTupleType* {
+    Assert(elements.size() == type->layout().field_offsets().size());
+    auto Create = [&] {
+        auto size = totalSizeToAlloc<Type>(elements.size());
+        auto mem = tu.allocate(size, alignof(SugaredTupleType));
+        return ::new (mem) SugaredTupleType(type, elements);
+    };
+    return GetOrCreateType(tu.sugared_tuple_types, Create, type, elements);
+}
+
+void SugaredTupleType::Profile(
+    FoldingSetNodeID& id,
+    CanonicalTupleType* type,
+    ArrayRef<Type> elements
+) {
+    id.AddPointer(type);
+    for (Type element : elements) id.AddPointer(element.ptr());
+}
+
+void SugaredTupleType::Profile(FoldingSetNodeID& id) const {
+    Profile(id, cast<CanonicalTupleType>(canonical), element_types());
 }

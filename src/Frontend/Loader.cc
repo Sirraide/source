@@ -15,12 +15,13 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 3;
+constexpr u32 CurrentVersion = 4;
 
 struct Header {
-    LIBBASE_SERIALISE(Header, version, decls_size, types_size);
+    LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
     u32 version{};
     u64 decls_size{};
+    u64 specials_size{};
     u64 types_size{};
 };
 
@@ -31,24 +32,6 @@ struct EncodedSLoc {
 };
 
 using EncodedEnumeratorDecl = std::tuple<DeclName, APInt, SLoc>;
-
-struct SpecialProcedures {
-    Ptr<ProcDecl> deleter;
-    Ptr<ProcDecl> copy;
-
-    SpecialProcedures(Ptr<ProcDecl> deleter, Ptr<ProcDecl> copy)
-        : deleter{deleter}, copy{copy} {}
-
-    SpecialProcedures(const RecordType* ty) {
-        deleter = ty->get_delete();
-        copy = ty->get_copy();
-    }
-
-    void apply_to(RecordType* ty) {
-        if (deleter) ty->set_delete(deleter.get());
-        if (copy) ty->set_copy(copy.get());
-    }
-};
 }
 
 class srcc::ASTWriter : public base::ser::Writer<std::endian::native> {
@@ -69,7 +52,6 @@ public:
     void emit_record_rest(const RecordType* ty) {
         for (auto f : ty->scope()->fields())
             *this << f->type << f->name.str() << f->location();
-        *this << SpecialProcedures(ty);
     }
 
     void emit_type_def(Type ty) {
@@ -117,9 +99,12 @@ public:
             [&](const SliceType* ty) {
                 *this << ty->elem() << ty->is_immutable();
             },
-            [&](const TupleType* ty) {
+            [&](const CanonicalTupleType* ty) {
                 *this << ty->layout();
                 emit_record_rest(ty);
+            },
+            [&](const SugaredTupleType* ty) {
+                *this << ty->element_types();
             },
             [&](const StructType* ty) {
                 *this << ty->decl()->name.str() << ty->decl()->location()
@@ -195,16 +180,6 @@ public:
         *this << e;
     }
 
-    void write(const SpecialProcedures& specials) {
-        auto Write = [&](Ptr<ProcDecl> d) {
-            *this << d.present();
-            if (d.present()) *this << d.get();
-        };
-
-        Write(specials.deleter);
-        Write(specials.copy);
-    }
-
     void write(String s) {
         // This needs a custom deserialiser for interning, so we also have to
         // define a custom serialiser.
@@ -232,7 +207,7 @@ private:
         if (not ty->is_canonical()) RegisterType(ty->canonical);
 
         // Register element types.
-        ty->visit(utils::Overloaded{
+        ty->visit_exact(utils::Overloaded{
             [&](const BuiltinType* ty) {},
             [&](const IntType*) {},
             [&](const OpaqueType*) {},
@@ -244,6 +219,9 @@ private:
             [&](const ProcType* ty) {
                 for (auto p : ty->param_types()) RegisterType(p);
                 RegisterType(ty->ret());
+            },
+            [&](const SugaredTupleType* ty) {
+                for (Type element : ty->element_types()) RegisterType(element);
             },
         });
 
@@ -344,20 +322,18 @@ public:
             scope->add(fd);
         }
 
-        auto special = Read(SpecialProcedures);
-        special.apply_to(ty);
         return ty;
     }
 
     auto read_type() -> Result<Type> {
         Opt<Type> canonical;
         if (not Read(bool)) canonical = Read(Type);
-        auto ty = Try(read_type_impl());
+        auto ty = Try(read_type_impl(canonical));
         if (canonical) ty->canonical = (*canonical).ptr();
         return ty;
     }
 
-    auto read_type_impl() -> Result<Type> {
+    auto read_type_impl(Opt<Type> canonical) -> Result<Type> {
         using K = TypeBase::Kind;
         switch (Read(K)) {
             case K::AliasType: {
@@ -463,11 +439,38 @@ public:
                 return read_record_rest(ty);
             }
 
-            case K::TupleType: {
-                auto scope = S.tu->create_scope<RecordScope>(S.tu->global_scope());
+            case K::CanonicalTupleType: {
                 auto layout = Read(RecordLayout*);
-                auto ty = TupleType::CreateDeserialised(*S.tu, scope, layout);
-                return read_record_rest(ty);
+                SmallVector<Type> elements;
+                SmallVector<String> names;
+                for (usz index = 0; index < layout->field_offsets().size(); ++index) {
+                    elements.push_back(Read(Type));
+                    names.push_back(Read(String));
+                    static_cast<void>(Read(SLoc));
+                }
+
+                return CanonicalTupleType::Get(
+                    *S.tu,
+                    S.tu->global_scope(),
+                    layout,
+                    elements,
+                    names,
+                    [](auto) {}
+                );
+            }
+
+            case K::SugaredTupleType: {
+                auto tuple = cast_if_present<CanonicalTupleType>(canonical);
+                if (not tuple) return Error("Sugared tuple has no canonical tuple");
+
+                // Read element types.
+                auto count = Read(usz);
+                SmallVector<Type> elements;
+                for (usz index = 0; index < count; ++index) elements.push_back(Read(Type));
+                if (count != tuple->layout().field_offsets().size())
+                    return Error("Sugared tuple element count does not match its canonical type");
+
+                return SugaredTupleType::Get(*S.tu, tuple, elements);
             }
         }
 
@@ -534,19 +537,6 @@ public:
     }
 
     template <>
-    auto read<SpecialProcedures>() -> Result<SpecialProcedures> {
-        auto ReadProc = [&] -> Result<Ptr<ProcDecl>> {
-            auto present = Read(bool);
-            if (present) return cast<ProcDecl>(Try(read_decl()));
-            return nullptr;
-        };
-
-        auto deleter = Try(ReadProc());
-        auto copy = Try(ReadProc());
-        return SpecialProcedures{deleter, copy};
-    }
-
-    template <>
     auto read<String>() -> Result<String> {
         return S.tu->save(Read(std::string));
     }
@@ -585,6 +575,7 @@ auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Resu
 
     // Grab the declarations to be read later.
     auto decls = Try(r.read_bytes(hdr.decls_size));
+    auto specials = Try(r.read_bytes(hdr.specials_size));
 
     // As well as the types.
     auto types = Try(r.read_bytes(hdr.types_size));
@@ -596,18 +587,34 @@ auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Resu
     r.set_data(types);
     while (r.size() != 0) r.types.push_back(Try(r.read_type()));
 
+    // Special procedures refer back to their owner types, so load them after
+    // interning the entire type table.
+    r.set_data(specials);
+    while (r.size() != 0) {
+        auto owner = cast<RecordType>(Try(r.read<Type>()));
+        auto kind = Try(r.read<SpecialProcedure>());
+        auto proc = cast<ProcDecl>(Try(r.read_decl()));
+        switch (kind) {
+            case SpecialProcedure::Copy:
+                if (owner->get_copy()) return base::Error("Duplicate copy procedure for type '{}'", owner);
+                owner->set_copy(proc);
+                break;
+            case SpecialProcedure::Delete:
+                if (owner->get_delete()) return base::Error("Duplicate deleter for type '{}'", owner);;
+                owner->set_delete(proc);
+                break;
+            case SpecialProcedure::Init:
+                AddDeclToScope(owner->scope(), proc);
+                break;
+
+            default: return base::Error("Invalid record special procedure");
+        }
+    }
+
     // Finally, we have all the data required to read the declarations.
     r.set_data(decls);
     while (r.size() != 0) {
-        auto decl = Try(r.read_decl());
-        auto proc = dyn_cast<ProcDecl>(decl);
-
-        // Initialisers must be added to the scope of their associated type.
-        if (proc and proc->name.is_init()) {
-            AddDeclToScope(cast<RecordType>(*proc->props.associated_type)->scope(), proc);
-        } else {
-            AddDeclToScope(curr_scope(), decl);
-        }
+        AddDeclToScope(curr_scope(), Try(r.read_decl()));
     }
 
     return {};
@@ -769,21 +776,23 @@ auto TranslationUnit::serialise() -> ByteBuffer {
         Todo("Export this decl");
     }
 
-    // Initialisers follow their owning types so import can restore record scopes.
+    u64 decls_end = buf.size();
+
+    // Write special procedures.
     CanonicalTypeSet written_records;
     for (usz i = 0; i < w.types.size(); ++i) {
-        if (
-            auto record = dyn_cast<RecordType>(w.types[i]);
-            record and written_records.insert(record).second
-        ) {
-            for (auto init : record->initialisers()) {
-                if (auto proc = dyn_cast<ProcDecl>(init)) w << proc;
-                else Todo("Export initialiser templates");
-            }
+        auto record = dyn_cast<RecordType>(w.types[i]);
+        if (not record or not written_records.insert(record).second) continue;
+        auto Write = [&](ProcDecl* proc) { w << record << proc->special_proc << proc; };
+        if (auto copy = record->get_copy()) Write(copy.get());
+        if (auto deleter = record->get_delete()) Write(deleter.get());
+        for (auto init : record->initialisers()) {
+            if (auto proc = dyn_cast<ProcDecl>(init)) Write(proc);
+            else Todo("Export initialiser templates");
         }
     }
 
-    u64 decls_end = buf.size();
+    u64 specials_end = buf.size();
     w.done_emitting_decls = true;
 
     // Write the types.
@@ -800,7 +809,8 @@ auto TranslationUnit::serialise() -> ByteBuffer {
         Header hdr{};
         hdr.version = CurrentVersion;
         hdr.decls_size = decls_end - decls_begin;
-        hdr.types_size = types_end - decls_end;
+        hdr.specials_size = specials_end - decls_end;
+        hdr.types_size = types_end - specials_end;
         tmp << hdr;
         std::memcpy(buf.data(), tmp_buf.data(), tmp_buf.size());
     }

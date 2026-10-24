@@ -1,0 +1,15 @@
+// I
+module tuple_types;
+import <typedef.h> as c;
+
+export proc nested () = (1, (2, 3));
+export proc sugared ((c::int_typedef, int) value) -> (c::int_using, int) = value;
+
+export struct Element {
+    int value;
+    init = ::(42);
+    delete {}
+}
+
+export struct Holder { (Element, int) value; }
+export struct SugaredHolder { (c::int_using, int) value; }

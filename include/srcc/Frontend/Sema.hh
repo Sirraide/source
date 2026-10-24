@@ -1026,7 +1026,7 @@ private:
     /// This should not be called directly; call BuildInitialiser() instead.
     auto BuildAggregateInitialiser(
         ConversionSequence& seq,
-        RecordType* s,
+        Type type,
         ArrayRef<Expr*> args,
         SLoc loc
     ) -> MaybeDiags;

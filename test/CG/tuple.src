@@ -377,6 +377,8 @@ proc f10 {
 // +     #7 = 8, align 8
 // +     #8 = 8, align 8
 // +     #9 = 8, align 8
+// +     #10 = 8, align 8
+// +     #11 = 8, align 8
 // +
 // + entry:
 // +     %0 = call ccc i64 f()
@@ -392,13 +394,17 @@ proc f10 {
 // +     %5 = load i64, #8, align 8
 // +     store #2, i64 %5, align 8
 // +     %6 = call ccc i64 f()
-// +     store #3, i64 %6, align 8
-// +     %7 = call ccc i64 f()
-// +     store #4, i64 %7, align 8
+// +     store #9, i64 %6, align 8
+// +     %7 = load i64, #9, align 8
+// +     store #3, i64 %7, align 8
 // +     %8 = call ccc i64 f()
-// +     store #9, i64 %8, align 8
-// +     %9 = load i64, #9, align 8
-// +     store #5, i64 %9, align 8
+// +     store #10, i64 %8, align 8
+// +     %9 = load i64, #10, align 8
+// +     store #4, i64 %9, align 8
+// +     %10 = call ccc i64 f()
+// +     store #11, i64 %10, align 8
+// +     %11 = load i64, #11, align 8
+// +     store #5, i64 %11, align 8
 // +     call ccc void sink(ptr #0 align 8 dereferenceable 8)
 // +     call ccc void sink(ptr #1 align 8 dereferenceable 8)
 // +     call ccc void sink(ptr #2 align 8 dereferenceable 8)
@@ -709,26 +715,32 @@ proc f10 {
 //L +   %8 = alloca i8, i64 8, align 8
 //L +   %9 = alloca i8, i64 8, align 8
 //L +   %10 = alloca i8, i64 8, align 8
-//L +   %11 = call i64 @f()
-//L +   store i64 %11, ptr %7, align 8
-//L +   %12 = load i64, ptr %7, align 8
-//L +   store i64 %12, ptr %1, align 8
+//L +   %11 = alloca i8, i64 8, align 8
+//L +   %12 = alloca i8, i64 8, align 8
 //L +   %13 = call i64 @f()
-//L +   store i64 %13, ptr %8, align 8
-//L +   %14 = load i64, ptr %8, align 8
-//L +   store i64 %14, ptr %2, align 8
+//L +   store i64 %13, ptr %7, align 8
+//L +   %14 = load i64, ptr %7, align 8
+//L +   store i64 %14, ptr %1, align 8
 //L +   %15 = call i64 @f()
-//L +   store i64 %15, ptr %9, align 8
-//L +   %16 = load i64, ptr %9, align 8
-//L +   store i64 %16, ptr %3, align 8
+//L +   store i64 %15, ptr %8, align 8
+//L +   %16 = load i64, ptr %8, align 8
+//L +   store i64 %16, ptr %2, align 8
 //L +   %17 = call i64 @f()
-//L +   store i64 %17, ptr %4, align 8
-//L +   %18 = call i64 @f()
-//L +   store i64 %18, ptr %5, align 8
+//L +   store i64 %17, ptr %9, align 8
+//L +   %18 = load i64, ptr %9, align 8
+//L +   store i64 %18, ptr %3, align 8
 //L +   %19 = call i64 @f()
 //L +   store i64 %19, ptr %10, align 8
 //L +   %20 = load i64, ptr %10, align 8
-//L +   store i64 %20, ptr %6, align 8
+//L +   store i64 %20, ptr %4, align 8
+//L +   %21 = call i64 @f()
+//L +   store i64 %21, ptr %11, align 8
+//L +   %22 = load i64, ptr %11, align 8
+//L +   store i64 %22, ptr %5, align 8
+//L +   %23 = call i64 @f()
+//L +   store i64 %23, ptr %12, align 8
+//L +   %24 = load i64, ptr %12, align 8
+//L +   store i64 %24, ptr %6, align 8
 //L +   call void @sink(ptr align 8 dereferenceable(8) %1)
 //L +   call void @sink(ptr align 8 dereferenceable(8) %2)
 //L +   call void @sink(ptr align 8 dereferenceable(8) %3)

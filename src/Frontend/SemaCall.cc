@@ -80,7 +80,7 @@ auto Sema::Callee::decl() const -> Ptr<Decl> {
         [](auto* decl) { return Ptr<Decl>(decl); },
         [](ProcType* ty) { return Ptr<Decl>(); },
         [](RecordType* ty) -> Ptr<Decl> {
-            auto s = llvm::dyn_cast<StructType>(ty);
+            auto s = srcc::dyn_cast<StructType>(ty);
             return s ? s->decl() : nullptr;
         },
     });

@@ -130,7 +130,7 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
             out += ">";
         },
         [&](this auto& self, const Record& r, Type) {
-            if (not srcc::isa<TupleType>(type())) out += type()->print();
+            if (not srcc::isa<CanonicalTupleType>(type())) out += type()->print();
             out += "%1((%)";
             bool first = true;
             for (auto* f : r.fields) {

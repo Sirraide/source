@@ -1,0 +1,17 @@
+// V %srcc --eval %s
+program test;
+
+// Equal flattened element lists must not merge different tuple shapes.
+var left = ((1, 2), 3);
+var right = (1, (2, 3));
+#assert typeof(left) != typeof(right);
+assert left[0][1] == 2;
+assert right[1][0] == 2;
+assert right[1][1] == 3;
+
+// Flattened conversion compatibility remains independent of type identity.
+proc nested () = (1, (2, 3));
+(int, int, int) flat = nested();
+assert flat[0] == 1;
+assert flat[1] == 2;
+assert flat[2] == 3;
