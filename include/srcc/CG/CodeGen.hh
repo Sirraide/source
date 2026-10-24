@@ -222,7 +222,6 @@ class srcc::cg::CodeGen : public DiagsProducer
     DenseMap<mlir::LLVM::GlobalOp, GlobalDecl*> global_vars_reverse_lookup;
     DenseMap<ImportedClangModuleDecl*, std::unique_ptr<clang::CodeGenerator>> clang_codegen_map;
     mlir::ModuleOp mlir_module;
-    ir::ProcOp vm_entry_point;
     LangOpts lang_opts;
     mlir::Type ptr_ty;
     mlir::Type int_ty;
@@ -231,6 +230,7 @@ class srcc::cg::CodeGen : public DiagsProducer
     mlir::Type type_ty;
     mlir::Type tree_ty;
     usz strings = 0;
+    usz vm_evaluations = 0;
 
 public:
     CodeGen(TranslationUnit& tu, LangOpts lang_opts);
@@ -259,8 +259,9 @@ public:
 
     /// Emit a statement into a separate procedure.
     ///
-    /// This is used exclusively to prepare a statement for
-    /// constant evaluation.
+    /// This is used exclusively to prepare a statement for constant evaluation.
+    /// The caller owns this temporary entry point and must erase it when the
+    /// evaluation finishes; ordinary emitted procedures remain cached.
     [[nodiscard]] auto emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp;
 
     /// Emit LLVM IR.

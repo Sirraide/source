@@ -7,6 +7,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/PointerIntPair.h>
 #include <llvm/ADT/PointerUnion.h>
 #include <base/Assert.hh>
@@ -25,6 +26,10 @@ class TranslationUnit;
 class Target;
 class QuoteExpr;
 } // namespace srcc
+
+namespace srcc::cg {
+class CodeGen;
+}
 
 namespace mlir {
 class Operation;
@@ -280,6 +285,12 @@ class VM {
 
     /// The tu that this vm belongs to.
     TranslationUnit& owner_tu;
+
+    /// Shared IR and code generation cache.
+    std::unique_ptr<cg::CodeGen> cg;
+
+    /// Procedures that IR failed finalisation and cannot be executed.
+    llvm::DenseSet<mlir::Operation*> failed_procedures;
 
     /// Symbol table for native procedures.
     DenseMap<mlir::Operation*, void*> native_symbols;

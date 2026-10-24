@@ -115,11 +115,11 @@ public:
     /// Template instantiations by template.
     DenseMap<ProcTemplateDecl*, SmallVector<ProcDecl*>> template_instantiations;
 
+    /// LLVM context for this module. Must outlive the VM's code generator.
+    llvm::LLVMContext llvm_context;
+
     /// Compile-time virtual machine for constant evaluation.
     eval::VM vm{*this};
-
-    /// LLVM context for this module.
-    llvm::LLVMContext llvm_context;
 
     /// LLVM modules to link into this TU.
     SmallVector<std::unique_ptr<llvm::Module>> link_llvm_modules;

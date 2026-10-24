@@ -61,3 +61,12 @@ proc use_token() -> int {
     return value[0].value;
 }
 #assert use_token() == 42;
+
+// Repeated evaluations share emitted procedures, including indirect calls.
+#assert dispatch(callback, 9) == 10;
+#assert run() == 130;
+#assert dispatch(callback, 41) == 42;
+
+// Standalone evaluation wrappers must clean up aggregate temporaries too.
+#assert make_token()[0].value == 42;
+#assert make_token()[0].value == 42;

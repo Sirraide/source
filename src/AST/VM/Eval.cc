@@ -522,7 +522,7 @@ public:
 
     VM& vm;
     Sema* sema;
-    cg::CodeGen cg;
+    ir::ProcOp entry_proc;
     SmallVector<StackFrame, 4> call_stack;
     const SRValue true_val{true};
     const SRValue false_val{false};
@@ -532,6 +532,7 @@ public:
     bool allow_globals;
 
     Eval(VM& vm, Sema* sema, bool complain, bool allow_globals);
+    ~Eval();
 
     [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
 
@@ -559,7 +560,6 @@ private:
         if (complain) diags().add_remark(std::format(fmt, std::forward<Args>(args)...));
     }
 
-    [[nodiscard]] auto AdjustLangOpts(LangOpts l) -> LangOpts;
     [[nodiscard]] auto AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> std::optional<Pointer>;
     [[nodiscard]] bool EvalLoop();
     [[nodiscard]] auto FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue>;
@@ -571,6 +571,7 @@ private:
     [[nodiscard]] auto LoadType(const void* mem) -> Type;
     [[nodiscard]] auto LoadTree(const void* mem) -> TreeValue*;
     [[nodiscard]] auto Persist(const void* mem, SLoc loc, Type ty) -> RValue;
+    [[nodiscard]] bool RequestIRProcedure(ir::ProcOp proc, SLoc loc);
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
 
@@ -589,15 +590,12 @@ private:
 Eval::Eval(VM& vm, Sema* sema, bool complain, bool allow_globals)
     : vm{vm},
       sema{sema},
-      cg{vm.owner(), AdjustLangOpts(vm.owner().lang_opts())},
       stack_top{vm.active_evaluation ? vm.active_evaluation->stack_top : vm.memory->get_stack_bottom()},
       complain{complain},
       allow_globals{allow_globals} {}
 
-auto Eval::AdjustLangOpts(LangOpts l) -> LangOpts {
-    l.constant_eval = true;
-    l.overflow_checking = true;
-    return l;
+Eval::~Eval() {
+    if (entry_proc) entry_proc.erase();
 }
 
 auto Eval::AllocateStackMemory(mlir::Location loc, Size sz, Align alignment) -> std::optional<Pointer> {
@@ -750,16 +748,7 @@ bool Eval::EvalLoop() {
             // Compile the procedure now if we haven’t done that yet.
             auto callee = vm.memory->get_procedure(info->closure.ptr);
             Assert(callee, "Address is not callable");
-            if (callee.empty()) {
-                auto decl = cg.lookup(callee);
-                Assert(decl);
-                llvm::TimeTraceScope _{"[SRCC] IR Generation for Evaluation"};
-                cg.emit(decl.get());
-
-                // TODO: This can fail if one of our lifetime analyses reports an error.
-                if (not cg.finalise_for_constant_evaluation(callee))
-                    Todo("Handle finalisation failure in evaluator");
-            }
+            if (not RequestIRProcedure(callee, SLoc::Decode(a.getLoc()))) return false;
 
             SmallVector<SRValue> args;
             args.emplace_back(vm.memory->make_host_pointer(iptr(&assert_buffer.emplace())));
@@ -794,7 +783,7 @@ bool Eval::EvalLoop() {
             // If this is a global variable, retrieve its address.
             if (not g.getConstant()) {
                 if (not allow_globals) {
-                    auto decl = cg.lookup(g);
+                    auto decl = vm.cg->lookup(g);
                     if (auto d = decl.get_or_null()) {
                         Error(
                             SLoc::Decode(i->getLoc()),
@@ -837,7 +826,7 @@ bool Eval::EvalLoop() {
 
             // Compile the procedure now if we haven’t done that yet.
             if (callee.empty()) {
-                auto decl = cg.lookup(callee).get_or_null();
+                auto decl = vm.cg->lookup(callee).get_or_null();
 
                 // If we have a decl for this procedure, check that we can call it safely.
                 if (decl) {
@@ -847,7 +836,7 @@ bool Eval::EvalLoop() {
                     if (not decl->is_valid or decl->contains_error) return false;
 
                     // Sema may perform nested constant evaluation while completing
-                    // this body. The suspended evaluator retains its own CG and stack.
+                    // this body. The suspended evaluator retains its own stack frames.
                     if (decl->will_have_body and not decl->body()) {
                         auto loc = SLoc::Decode(i->getLoc());
                         if (not sema) return Error(loc, "Procedure body is not available for evaluation");
@@ -865,11 +854,10 @@ bool Eval::EvalLoop() {
                     }
                     continue;
                 }
-
-                // This is a procedure that hasn’t been compiled yet.
-                cg.emit(decl);
-                if (not cg.finalise_for_constant_evaluation(callee)) return false;
             }
+
+            if (not RequestIRProcedure(callee, SLoc::Decode(i->getLoc())))
+                return false;
 
             // Get the return value slots *before* pushing a new frame.
             StackFrame::RetVals ret_vals;
@@ -892,12 +880,8 @@ bool Eval::EvalLoop() {
                 d.getDeleter()
             );
 
-            if (del.empty()) {
-                auto decl = cg.lookup(del);
-                if (sema and not sema->RequestProcedureBody(decl.get(), SLoc::Decode(d->getLoc()))) return false;
-                cg.emit(decl.get());
-                if (not cg.finalise_for_constant_evaluation(del)) return false;
-            }
+            if (not RequestIRProcedure(del, SLoc::Decode(d->getLoc())))
+                return false;
 
             if (auto f = d.getDeleteFlag()) {
                 auto mem = GetHostMemoryPointer(f);
@@ -1238,7 +1222,7 @@ auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
 
     // Obtain the procedure address.
     auto [it, not_found] = vm.native_symbols.try_emplace(proc, nullptr);
-    if (not_found) {
+    if (not_found or not it->second) {
         std::string sym_name{proc.getSymName()};
         auto sym = [&] -> void* {
             auto s = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(sym_name);
@@ -1407,7 +1391,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
             auto p = LoadPointer(mem).cast<Pointer>();
             if (not vm.memory->is_virtual_proc_ptr(p)) return EvaluatedPointer::GetUnknown();
             auto op = vm.memory->get_procedure(p);
-            auto proc = cg.lookup(op);
+            auto proc = vm.cg->lookup(op);
             if (not proc) return EvaluatedPointer::GetUnknown();
             return proc.get();
         }();
@@ -1511,6 +1495,37 @@ void Eval::PushFrame(
     BranchTo(&proc.front(), args);
 }
 
+bool Eval::RequestIRProcedure(ir::ProcOp proc, SLoc loc) {
+    if (vm.failed_procedures.contains(proc)) return false;
+    if (not proc.empty()) return true;
+
+    // Do a reverse lookup to get back to the decl from the proc op.
+    auto decl = vm.cg->lookup(proc);
+    Assert(decl, "Missing declaration for an interpreted procedure");
+
+    // Refuse to interpret an invalid decl.
+    if (not decl->valid() or decl->contains_error) return false;
+
+    // Request its body.
+    if (decl->will_have_body and not decl->body()) {
+        if (not sema) return Error(loc, "Procedure body is not available for evaluation");
+        if (not sema->RequestProcedureBody(decl.get(), loc)) return false;
+    }
+
+    if (not decl->body()) return Error(
+        loc,
+        "Procedure '{}' has no body available for evaluation",
+        decl->name
+    );
+
+    // Emit it.
+    llvm::TimeTraceScope _{"[SRCC] IR Generation for Evaluation"};
+    vm.cg->emit(decl.get());
+    if (vm.cg->finalise_for_constant_evaluation(proc)) return true;
+    vm.failed_procedures.insert(proc);
+    return false;
+}
+
 void Eval::StoreSRValue(void* ptr, const SRValue& val) {
     val.visit(utils::Overloaded{
         [](std::monostate) { Unreachable("Store of empty value?"); },
@@ -1560,7 +1575,8 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // Compile the procedure.
     entry = s->location();
-    auto proc = cg.emit_stmt_as_proc_for_vm(s);
+    entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
+    auto proc = entry_proc;
     if (not proc) return std::nullopt;
     Assert(proc.getNumCallArgs() <= 1);
     Assert(proc.getNumResults() == 0, "Eval procedure should return indirectly");
@@ -1652,15 +1668,23 @@ auto VM::eval(
         }
     }
 
-    // Each evaluation owns its CodeGen and stack frames. A body request made
-    // during execution may recursively evaluate another compile-time expression.
+    // Allocate codegen on the first evaluation.
+    if (not cg) {
+        auto opts = owner().lang_opts();
+        opts.constant_eval = true;
+        opts.overflow_checking = true;
+        cg = std::make_unique<cg::CodeGen>(owner(), opts);
+    }
+
+    // A body request made during execution may recursively evaluate another
+    // compile-time expression using the same generator.
     llvm::TimeTraceScope _{"[SRCC] Compile-Time Evaluation"};
     Eval e{*this, sema, complain, allow_globals};
     tempset active_evaluation = &e;
     auto res = e.eval(stmt);
     if (dump_ir) std::println("{}", text::RenderColours(
         owner_tu.context().use_colours,
-        e.cg.dump().str())
+        cg->dump().str())
     );
     return res;
 } // clang-format on

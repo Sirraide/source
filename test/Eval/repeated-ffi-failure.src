@@ -1,0 +1,8 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc source_missing_ffi_symbol_198734() extern -> int;
+
+// A cached declaration with no native symbol must fail safely on every call.
+#assert source_missing_ffi_symbol_198734() == 42; // expected-error: Failed to find symbol for FFI call to 'source_missing_ffi_symbol_198734'
+#assert source_missing_ffi_symbol_198734() == 42; // expected-error: Failed to find symbol for FFI call to 'source_missing_ffi_symbol_198734'

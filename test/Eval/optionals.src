@@ -14,12 +14,11 @@ proc p1 -> int {
 proc p2 -> int {
     int i;
     int^? pi;
-    ^pi = 42; // expected-error 2: Optional might be nil when accessed here
+    ^pi = 42; // expected-error: Optional might be nil when accessed here
     return i;
 }
 
-// I candidly have no idea why this *doesn’t* crash given that we
-// have a Todo() in the evaluator if finalisation fails...
+// Failed IR finalisation is cached and diagnosed only once.
 #assert p2() == 42;
 #assert p2() == 42;
 

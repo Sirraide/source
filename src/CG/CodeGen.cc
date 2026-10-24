@@ -3290,9 +3290,6 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     Assert(bool(lang_opts.constant_eval));
     llvm::TimeTraceScope _{"[SRCC] IR Generation for Evaluation"};
 
-    // Delete any remnants of the last constant evaluation.
-    if (vm_entry_point) vm_entry_point.erase();
-
     // Irrespective of what the argument type is, we return it indirectly through
     // a pointer to the first argument. This avoids having to make the constant
     // evaluator aware of ABI type rules.
@@ -3305,10 +3302,10 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
     setInsertionPointToEnd(&mlir_module.getBodyRegion().front());
     auto info = abi().lower_proc_type(*this, ProcType::Get(tu, {Type::VoidTy, Expr::RValue}, args), false);
     auto loc = C(stmt->location());
-    vm_entry_point = ir::ProcOp::create(
+    auto entry_point = ir::ProcOp::create(
         *this,
         loc,
-        constants::VMEntryPointName,
+        tu.save(Format("{}.{}", constants::VMEntryPointName, vm_evaluations++)),
         C(Linkage::Internal),
         C(CallingConvention::Native),
         info.func,
@@ -3319,16 +3316,22 @@ auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {
         mlir::ArrayAttr::get(&mlir, info.result_attrs)
     );
 
-    EnterProcedure _(*this, vm_entry_point, nullptr);
-    if (yields_value) EmitRValue(vm_entry_point.getCallArg(0), cast<Expr>(stmt));
-    else if (not isa<Decl>(stmt)) Emit(stmt);
+    EnterProcedure procedure{*this, entry_point, nullptr};
+    {
+        EnterCleanupScope cleanup{*this};
+        if (yields_value) EmitRValue(entry_point.getCallArg(0), cast<Expr>(stmt));
+        else if (not isa<Decl>(stmt)) Emit(stmt);
+    }
 
     // Make sure to return from the procedure.
     if (not HasTerminator()) ir::RetOp::create(*this, loc, Vals());
 
     // Run canonicalisation etc.
-    if (not finalise_for_constant_evaluation(vm_entry_point)) return nullptr;
-    return vm_entry_point;
+    if (not finalise_for_constant_evaluation(entry_point)) {
+        entry_point.erase();
+        return nullptr;
+    }
+    return entry_point;
 }
 
 auto CodeGen::lookup(mlir::LLVM::GlobalOp op) -> Ptr<GlobalDecl> {
