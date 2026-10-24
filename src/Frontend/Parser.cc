@@ -1417,6 +1417,8 @@ auto Parser::ParseInitialiser() -> Ptr<ParsedProcDecl> {
     SmallVector<ParsedVarDecl*, 10> param_decls;
     Signature sig;
     if (not ParseSignature(sig, &param_decls, true)) return nullptr;
+    sig.name = {Tk::Init, sig.introducer_loc};
+    if (not sig.ret) sig.ret = new (*this) ParsedBuiltinType(Type::DeducedTy.ptr(), sig.introducer_loc);
     return ParseProcRest(std::move(sig), param_decls);
 }
 

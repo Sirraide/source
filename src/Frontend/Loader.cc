@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 2;
+constexpr u32 CurrentVersion = 3;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, types_size);
@@ -77,7 +77,7 @@ public:
 
         // Record whether this is canonical, as well as our canonical type.
         *this << ty->is_canonical();
-        if (not ty->is_canonical()) *this << Type(ty->canonical);
+        if (not ty->is_canonical()) *this << ty->canonical;
 
         // Serialise the type iself.
         *this << ty->exact_kind();
@@ -338,7 +338,10 @@ public:
             auto field_name = Read(String);
             auto field_loc = Read(SLoc);
             auto fd = new (*S.tu) FieldDecl(ty, field_type, field_name, idx, field_loc);
-            S.AddDeclToScope(scope, fd);
+
+            // We assume serialised fields are already well-formed; just add them
+            // to the scope without checking.
+            scope->add(fd);
         }
 
         auto special = Read(SpecialProcedures);
@@ -595,7 +598,18 @@ auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Resu
 
     // Finally, we have all the data required to read the declarations.
     r.set_data(decls);
-    while (r.size() != 0) AddDeclToScope(curr_scope(), Try(r.read_decl()));
+    while (r.size() != 0) {
+        auto decl = Try(r.read_decl());
+        auto proc = dyn_cast<ProcDecl>(decl);
+
+        // Initialisers must be added to the scope of their associated type.
+        if (proc and proc->name.is_init()) {
+            AddDeclToScope(cast<RecordType>(*proc->props.associated_type)->scope(), proc);
+        } else {
+            AddDeclToScope(curr_scope(), decl);
+        }
+    }
+
     return {};
 }
 
@@ -753,6 +767,20 @@ auto TranslationUnit::serialise() -> ByteBuffer {
 
         d->dump_color();
         Todo("Export this decl");
+    }
+
+    // Initialisers follow their owning types so import can restore record scopes.
+    CanonicalTypeSet written_records;
+    for (usz i = 0; i < w.types.size(); ++i) {
+        if (
+            auto record = dyn_cast<RecordType>(w.types[i]);
+            record and written_records.insert(record).second
+        ) {
+            for (auto init : record->initialisers()) {
+                if (auto proc = dyn_cast<ProcDecl>(init)) w << proc;
+                else Todo("Export initialiser templates");
+            }
+        }
     }
 
     u64 decls_end = buf.size();

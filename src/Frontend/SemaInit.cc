@@ -1,6 +1,13 @@
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
+using namespace srcc::sema;
+
+#define TRY(...) ({                      \
+    auto _res = (__VA_ARGS__);           \
+    if (not _res) return utils::Falsy(); \
+    *_res;                               \
+})
 
 // ============================================================================
 //  Initialisation.
@@ -39,7 +46,7 @@ void Sema::AddInitialiserToDecl(AnyVarDecl decl, Ptr<Expr> init) {
     decl.set_init(init);
 }
 
-auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Expr* {
+auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> Ptr<Expr> {
     auto Cast = [&](CastExpr::CastKind kind, ValueCategory vc = Expr::RValue) {
         return new (*tu) CastExpr(
             conv.type(),
@@ -72,12 +79,12 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
         case K::NilToOptional: return Cast(CastExpr::NilToOptional);
         case K::OptionalWrap: return Cast(CastExpr::OptionalWrap);
         case K::OptionalUnwrap: return UnwrapOptional(e, loc);
-        case K::PointerDeref: return BuildUnaryExpr(Tk::Caret, e, false, loc).get();
+        case K::PointerDeref: return BuildUnaryExpr(Tk::Caret, e, false, loc);
         case K::RangeCast: return Cast(CastExpr::Range);
 
         case K::SelectOverload: {
             auto proc = cast<OverloadSetExpr>(e)->overloads()[conv.data.get<u32>()];
-            return RequestReference(proc, loc).get();
+            return RequestReference(proc, loc);
         }
 
         case K::SliceFromArray: return new (*tu) CastExpr(
@@ -97,7 +104,7 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
             BuiltinMemberAccessExpr::AccessKind::SliceData,
             e,
             loc
-        ).get(); // Should never fail.
+        );
 
         case K::TupleNopCast: return Cast(CastExpr::Nop, e->value_category);
         case K::TupleToFirstElement: {
@@ -109,36 +116,70 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> E
     }
 }
 
-void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc) {
+bool Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc) {
     switch (conv.kind) {
         using K = Conversion::Kind;
         case K::ArrayBroadcast: {
             Assert(exprs.size() == 1);
             auto& data = conv.data.get<Conversion::ArrayBroadcastData>();
-            exprs.front() = ApplyConversionSequence(exprs, *data.seq, loc);
+            auto value = ApplyConversionSequence(exprs, *data.seq, loc);
+            if (not value) return false;
+            exprs.front() = value.get();
             exprs.front() = new (*tu) ArrayBroadcastExpr(data.type, exprs.front(), loc);
-            return;
+            return true;
         }
 
         case K::ArrayInit: {
             auto& data = conv.data.get<Conversion::ArrayInitData>();
 
             // Apply the conversions to the initialisers.
-            for (auto [e, c] : zip(exprs, data.elem_convs)) e = ApplyConversionSequence(e, c, e->location());
+            bool ok = true;
+            for (auto [e, c] : zip(exprs, data.elem_convs)) {
+                auto value = ApplyConversionSequence(e, c, e->location());
+                if (value) e = value.get();
+                else ok = false;
+            }
 
             // And add the default conversion for the remaining elements if there is one.
-            if (auto c = data.broadcast_initialiser()) exprs.push_back(ApplyConversionSequence({}, *c, loc));
+            if (auto c = data.broadcast_initialiser()) {
+                auto value = ApplyConversionSequence({}, *c, loc);
+                if (value) exprs.push_back(value.get());
+                else ok = false;
+            }
 
+            if (not ok) return false;
             auto init = ArrayInitExpr::Create(*tu, data.ty, exprs, loc);
             exprs.clear();
             exprs.push_back(init);
-            return;
+            return true;
+        }
+
+        case K::InitialiserCall: {
+            auto& data = conv.data.get<Conversion::InitialiserCallData>();
+            SmallVector<Expr*> args;
+            bool ok = true;
+
+            // Apply argument conversions.
+            auto ConvertArg = [&](u32 index, ArrayRef<Expr*> values, SLoc arg_loc) {
+                auto value = ApplyConversionSequence(values, data.conversions[index], arg_loc);
+                if (value) args.push_back(value.get());
+                else ok = false;
+            };
+
+            ConvertArgumentsForCall(data.args, data.proc.get(), ConvertArg, loc);
+            if (not ok) return false;
+
+            // Call the initialiser.
+            auto ref = TRY(RequestReference(data.proc.get(), loc));
+            auto call = TRY(BuildConvertedCall(ref, args, data.args, loc));
+            exprs.assign(1, call);
+            return true;
         }
 
         case K::DefaultInit: {
             Assert(exprs.empty());
             exprs.push_back(new (*tu) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
-            return;
+            return true;
         }
 
         case K::ExpandTuple: {
@@ -146,7 +187,7 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             auto e = cast<TupleExpr>(exprs.front());
             exprs.clear();
             append_range(exprs, e->values());
-            return;
+            return true;
         }
 
         case K::ArrayDecay:
@@ -167,17 +208,24 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         case K::TupleNopCast:
         case K::TupleToFirstElement: {
             Assert(exprs.size() == 1);
-            exprs.front() = ApplySimpleConversion(exprs.front(), conv, loc);
-            return;
+            auto value = TRY(ApplySimpleConversion(exprs.front(), conv, loc));
+            exprs.front() = value;
+            return true;
         }
 
         case K::RecordInit: {
             auto& data = conv.data.get<Conversion::RecordInitData>();
-            for (auto [e, seq] : zip(exprs, data.field_convs)) e = ApplyConversionSequence(e, seq, loc);
+            bool ok = true;
+            for (auto [e, seq] : zip(exprs, data.field_convs)) {
+                auto value = ApplyConversionSequence(e, seq, loc);
+                if (value) e = value.get();
+                else ok = false;
+            }
+            if (not ok) return false;
             auto e = TupleExpr::Create(*tu, data.ty, exprs, {}, loc);
             exprs.clear();
             exprs.push_back(e);
-            return;
+            return true;
         }
 
         case K::ReorderTuple: {
@@ -186,17 +234,18 @@ void Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
             auto& indices = conv.data.get<SmallVector<u32>>();
             exprs.clear();
             for (auto i : indices) exprs.push_back(e->values()[i]);
-            return;
+            return true;
         }
 
         case K::SliceFromPtrAndSize: {
             auto& data = conv.data.get<Conversion::SliceFromPtrAndSizeData>();
-            exprs[0] = ApplyConversionSequence(exprs[0], *data.ptr, loc);
-            exprs[1] = ApplyConversionSequence(exprs[1], *data.size, loc);
-            auto e = new (*tu) SliceConstructExpr(data.slice, exprs[0], exprs[1], loc);
+            auto pointer = ApplyConversionSequence(exprs[0], *data.ptr, loc);
+            auto size = ApplyConversionSequence(exprs[1], *data.size, loc);
+            if (not pointer or not size) return false;
+            auto e = new (*tu) SliceConstructExpr(data.slice, pointer.get(), size.get(), loc);
             exprs.clear();
             exprs.push_back(e);
-            return;
+            return true;
         }
     }
 
@@ -207,44 +256,18 @@ auto Sema::ApplyConversionSequence(
     ArrayRef<Expr*> exprs,
     const ConversionSequence& seq,
     SLoc loc
-) -> Expr* {
+) -> Ptr<Expr> {
     SmallVector<Expr*, 4> exprs_copy{exprs};
-    for (auto& c : seq.conversions) ApplyConversion(exprs_copy, c, loc);
+    for (auto& c : seq.conversions)
+        if (not ApplyConversion(exprs_copy, c, loc))
+            return nullptr;
+
     Assert(exprs_copy.size() == 1, "Conversion sequence should only produce one expression");
     return exprs_copy.front();
 }
 
-// There are three ways of initialising a struct type:
-//
-//   1. By calling a user-defined initialisation procedure;
-//      overload resolution is performed against all declared
-//      initialisers.
-//
-//   2. By iterating over every field, building an initialiser
-//      from an empty argument list for it, and evaluating the
-//      resulting rvalue into the field (this usually ends up
-//      performing this step recursively).
-//
-//   3. By initialising each field directly from a preexisting
-//      rvalue of the same type.
-//
-// Option 1 is called ‘call initialisation’.
-// Option 2 is called ‘default/empty initialisation’.
-// Option 3 is called ‘direct/literal initialisation’.
-//
-// A type is default-initialisable/constructible if option 2 is
-// valid; this also means option 2 is always taken if the argument
-// list is empty.
-//
-// To determine which option should be applied, first, check if
-// there are any user-defined initialisers. If there are, always
-// use option 1, unless the argument list is empty and the 'default'
-// attribute was specified, in which case use option 2 (specifying
-// both 'default' *and* defining an initialiser that takes an empty
-// argument list is an error).
-//
-// If there are no initialisers, use option 2 if the argument list
-// is empty, and option 3 otherwise.
+// Build field-by-field initialisation. Callable struct initialisers are dispatched
+// separately, so this is also the path used by raw tuples.
 auto Sema::BuildAggregateInitialiser(
     ConversionSequence& seq,
     RecordType* r,
@@ -252,15 +275,6 @@ auto Sema::BuildAggregateInitialiser(
     SLoc loc
 ) -> MaybeDiags {
     auto& rl = r->layout();
-
-    // First case: option 1 or 2.
-    if (auto s = dyn_cast<StructType>(r); s and not s->initialisers().empty())
-        return CreateICE(loc, "TODO: Call struct initialiser");
-
-    // Second case: option 3. Option 2 is handled before we get here,
-    // i.e. at this point, we know we’re building a literal initialiser.
-    Assert(not args.empty(), "Should have handled this in BuildConversionSequence()");
-    Assert(rl.has_literal_init(), "Type '{}' has no literal initialiser", r);
 
     // Currently, we don't support initialising unions (apart from zero-initialisation).
     if (rl.bits().is_union)
@@ -332,7 +346,7 @@ auto Sema::BuildAggregateInitialiser(
     if (rl.field_offsets().size() != args.size()) return CreateError(
         loc,
         "Cannot initialise '{}' from\f'%1(({})%)'",
-        Type{r},
+        r,
         utils::join(args | vws::transform(&Expr::type))
     );
 
@@ -350,7 +364,7 @@ auto Sema::BuildArrayInitialiser(
     if (args.size() > u64(a->dimension())) return CreateError(
         loc,
         "Too many elements in array initialiser for '{}'\f(elements: {})",
-        Type(a),
+        a,
         args.size()
     );
 
@@ -449,14 +463,40 @@ auto Sema::BuildConversionSequence(
     ArrayRef<Expr*> args,
     SLoc init_loc,
     bool want_lvalue,
-    bool allow_auto_deref
+    bool allow_auto_deref,
+    bool type_call
 ) -> ConversionSequenceOrDiags {
     ConversionSequence seq;
 
-    // Check if we have exactly the right type already.
+    // Check if the argument already matches exactly.
     auto CheckExactMatch = [&] {
-        if (args.size() == 1 and args.front()->type == var_type) {
-            // Ensure this is an rvalue if we want one.
+        if (args.size() != 1) return false;
+
+        // Is this a 1-tuple that contains a 'noreturn' expression? If so,
+        // expand it.
+        if (
+            auto tuple = dyn_cast<TupleExpr>(args.front());
+            tuple and
+            not tuple->is_struct()
+            and tuple->num_values() == 1
+            and tuple->values().front()->type == Type::NoReturnTy
+        ) {
+            seq.add(Conversion::ExpandTuple());
+            args = tuple->values();
+        }
+
+        // Control flow cannot reach a use of a 'noreturn' value, so this converts
+        // to every type and value category.
+        if (args.front()->type == Type::NoReturnTy) {
+            if (var_type != Type::NoReturnTy) seq.add(Conversion::Poison(
+                var_type,
+                want_lvalue ? Expr::MLValue : Expr::RValue
+            ));
+            return true;
+        }
+
+        // The type matches exactly. Ensure this is an rvalue if we want one.
+        if (args.front()->type == var_type) {
             if (args.front()->is_lvalue() and not want_lvalue) seq.add(Conversion::LValueToRValue());
             return true;
         }
@@ -474,15 +514,26 @@ auto Sema::BuildConversionSequence(
         var_type
     );
 
-    // Check for exact matches first before we do any tuple unwrapping.
+    // This is already a match; there is nothing to be done here; copying or moving an
+    // existing value does not invoke an initialiser.
     if (CheckExactMatch()) return seq;
+
+    // If this is a record, make sure its initialisers are available.
+    if (
+        auto record = dyn_cast<RecordType>(var_type);
+        record and record->initialisers().empty()
+    ) {
+        if (not RequestRecordInitialisers(record, init_loc))
+            return CreateError(init_loc, "Cannot complete initialisers of '{}'", var_type);
+    }
 
     // Simplify tuples and parenthesised expressions.
     //
     // Note that this only handles literal tuples, e.g. a function returning a tuple
     // won’t get unwrapped here, which is probably what we want.
     //
-    // Do not simplify tuples with named elements unless the target type is also a tuple.
+    // Preserve names for callable initialisers. Structural tuple initialisation
+    // can unwrap named elements because it does not use procedure parameters.
     {
         auto single_arg = args.size() == 1 ? args.front() : nullptr;
 
@@ -492,7 +543,11 @@ auto Sema::BuildConversionSequence(
         // to default initialisation in all contexts.
         if (
             auto t = dyn_cast_if_present<TupleExpr>(single_arg);
-            t and not t->is_struct() and (not t->is_named() or isa<TupleType>(var_type))
+            t and not t->is_struct() and (
+                not t->is_named() or (
+                    isa<TupleType>(var_type) and cast<TupleType>(var_type)->initialisers().empty()
+                )
+            )
         ) {
             seq.add(Conversion::ExpandTuple());
             args = t->values();
@@ -510,34 +565,59 @@ auto Sema::BuildConversionSequence(
         }
     }
 
-    // Handle a single argument of type 'noreturn'.
-    //
-    // As a special case, 'noreturn' can be converted to *any* type (and value
-    // category). This is because 'noreturn' means we never actually reach the
-    // point in the program where the value would be needed, so it’s fine to just
-    // pretend that we have one.
-    //
-    // Materialise a poison value so we don’t crash in codegen; this is admittedly
-    // a bit of a hack, but it avoids having to check if we have an insert point
-    // everywhere in codegen.
-    if (args.size() == 1 and args.front()->type == Type::NoReturnTy) {
-        if (var_type != Type::NoReturnTy) seq.add(Conversion::Poison(var_type, Expr::RValue));
+    // Unwrapping may produce an exact match.
+    if (CheckExactMatch()) return seq;
+
+    // Check if auto-dereferencing yields an exact match; if it does, we
+    // don't invoke an initialiser below and instead consider this to be
+    // a move/copy.
+    bool auto_deref_exact_match =
+        args.size() == 1 and
+        allow_auto_deref and
+        args.front()->type->strip_pointers_and_optionals() == var_type->strip_pointers_and_optionals();
+
+    // Records with initialisers require overload resolution.
+    if (
+        auto s = dyn_cast<RecordType>(var_type);
+        s and
+        not s->initialisers().empty() and
+        not auto_deref_exact_match
+    ) {
+        // Create a call argument list for the initialiser arguments.
+        auto call_args = args.size() == 1 ? dyn_cast<TupleExpr>(args.front()) : nullptr;
+        if (
+            not call_args or (
+                call_args->type != Type::CallArgListTy and
+                (type_call or not call_args->is_named())
+            )
+        ) call_args = TupleExpr::Create(*tu, Type::CallArgListTy, args, {}, init_loc);
+
+        // Perform overload resolution.
+        auto call = Try(ResolveInitialiser(s, call_args, init_loc));
+        if (not type_call and call.proc->return_type() != var_type) return CreateError(
+            init_loc,
+            "Initialiser for '{}' returns '{}', which cannot initialise '{}'",
+            var_type,
+            call.proc->return_type(),
+            var_type
+        );
+
+        seq.add(Conversion::InitialiserCall(std::move(call)));
         return seq;
     }
 
     // If there are no arguments, this is default initialisation.
     if (args.empty()) {
-        if (var_type->can_default_init()) {
+        // Zero-initialisation can initialise the entire type at once.
+        if (var_type->can_zero_init()) {
             seq.add(Conversion::DefaultInit(var_type));
             return seq;
         }
 
-        if (var_type->can_init_from_no_args()) {
-            return CreateICE(
-                init_loc,
-                "TODO: non-default empty initialisation of '{}'",
-                var_type
-            );
+        // Otherwise, we need to invoke a default initialiser.
+        if (auto a = dyn_cast<ArrayType>(var_type)) {
+            Try(BuildArrayInitialiser(seq, a, {}, init_loc));
+            return seq;
         }
 
         return CreateError(init_loc, "Type '{}' requires a non-empty initialiser", var_type);
@@ -863,9 +943,17 @@ auto Sema::BuildInitialiser(
     ArrayRef<Expr*> args,
     SLoc loc,
     bool want_lvalue,
-    bool allow_auto_deref
+    bool allow_auto_deref,
+    bool type_call
 ) -> Ptr<Expr> {
-    auto seq_or_err = BuildConversionSequence(var_type, args, loc, want_lvalue, allow_auto_deref);
+    auto seq_or_err = BuildConversionSequence(
+        var_type,
+        args,
+        loc,
+        want_lvalue,
+        allow_auto_deref,
+        type_call
+    );
 
     // The conversion succeeded.
     if (seq_or_err.has_value())
@@ -874,6 +962,143 @@ auto Sema::BuildInitialiser(
     // There was an error.
     for (auto& d : seq_or_err.error()) ReportDiag(std::move(d));
     return nullptr;
+}
+
+auto Sema::BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr> {
+    auto record = dyn_cast<RecordType>(type);
+    if (not record) return BuildInitialiser(type, tuple, loc);
+
+    // Unwrap tuples.
+    ArrayRef<Expr*> args = tuple;
+    if (auto t = dyn_cast<TupleExpr>(tuple); t and not t->is_struct()) {
+        if (not t->is_named()) args = t->values();
+    } else if (auto p = dyn_cast<ParenExpr>(tuple)) {
+        args = p->expr;
+    }
+
+    // The single argument is already a value of the target type; just use it.
+    if (args.size() == 1 and args.front()->type == type)
+        return BuildInitialiser(type, args, loc);
+
+    // No arguments means we need to build a default initialiser for each field.
+    if (args.empty()) {
+        SmallVector<Expr*> fields;
+        for (auto field : record->scope()->fields()) {
+            auto init = BuildInitialiser(field->type, {}, loc);
+            if (not init) return {};
+            fields.push_back(init.get());
+        }
+        return TupleExpr::Create(*tu, type, fields, {}, loc);
+    }
+
+    // If we have arguments, build an aggregate initialiser.
+    ConversionSequence seq;
+    auto error = BuildAggregateInitialiser(seq, record, args, loc);
+    if (not error) {
+        for (auto& diag : error.error()) ReportDiag(std::move(diag));
+        return {};
+    }
+    return ApplyConversionSequence(args, seq, loc);
+}
+
+auto Sema::ResolveInitialiser(
+    RecordType* type,
+    TupleExpr* args,
+    SLoc loc,
+    bool* hard_error
+) -> ValueOrDiagsVector<Conversion::InitialiserCallData> {
+    if (hard_error) *hard_error = false;
+
+    // Initialisers cannot call other initialisers of the same type.
+    for (Ptr<ProcDecl> proc = curr_proc().proc; proc; proc = proc->parent) {
+        if (
+            proc->special_proc == SpecialProcedure::Init and
+            proc->props.associated_type == type
+        ) {
+            DiagsVector diags;
+            diags.push_back(CreateError(
+                loc,
+                "Cannot invoke an initialiser of '{}' inside its initialiser",
+                type
+            ));
+            diags.push_back(CreateNote(
+                proc->location(),
+                "Enclosing initialiser declared here"
+            ));
+            return diags;
+        }
+    }
+
+    // Prevent recursion while performing overload resolution of initialisers.
+    auto types = llvm::to_vector(args->values() | vws::transform(&Expr::type));
+    for (auto& [target, arguments] : request_data.resolving_initialisers) {
+        if (Type(target) == type and arguments == types) {
+            return CreateError(
+                loc,
+                "Recursive initialiser argument conversion for '{}'",
+                type
+            );
+        }
+    }
+
+    if (request_data.resolving_initialisers.size() >= sema::MaxRequestDepth) {
+        return CreateError(
+            loc,
+            "Exceeded maximum initialiser resolution nesting depth ({})",
+            sema::MaxRequestDepth
+        );
+    }
+
+    // Trap diagnostics in case we're calling this when we tentatively build
+    // a conversion sequence.
+    auto curr = curr_proc().proc;
+    auto contained_error = curr->contains_error;
+    defer { curr->contains_error = contained_error; };
+    Conversion::InitialiserCallData data;
+    DiagsVector diagnostics;
+    {
+        DiagnosticsTrap trap{*this};
+
+        // Attempt to resolve the initialiser.
+        auto overloads = llvm::to_vector(type->initialisers());
+        auto set = OverloadSetExpr::Create(*tu, overloads, loc);
+        {
+            request_data.resolving_initialisers.emplace_back(type, std::move(types));
+            defer { request_data.resolving_initialisers.pop_back(); };
+            PerformOverloadResolution(set, args, false, loc, &data, hard_error);
+        }
+
+        // Overload resolution failed; return its diagnostics.
+        if (not data.proc) return trap.get_trapped_diagnostics();
+
+        // Infer the selected return type through the body request. Its own cycle
+        // detection handles mutually recursive return inference.
+        if (
+            data.proc->contains_error or (
+                data.proc->return_type() == Type::DeducedTy and
+                not RequestProcedureBody(data.proc.get(), loc)
+            )
+        ) {
+            if (hard_error) *hard_error = true;
+            return trap.get_trapped_diagnostics();
+        }
+
+        diagnostics = trap.get_trapped_diagnostics();
+    }
+
+    // Successful resolution may have translated a body with warnings, e.g.:
+    //
+    //     struct S {
+    //         bool value;
+    //         init (bool value) { if value = true {} return ::(value,); }
+    //     }
+    //
+    // Report these warnings once, even if this tentative conversion is later
+    // discarded. They belong to the body, not to an unsuccessful call. Hard
+    // errors, such as 'init = unknown_name;', take a failure path above and
+    // return their diagnostics instead.
+    for (auto& diagnostic : diagnostics) ReportDiag(std::move(diagnostic));
+    return data;
 }
 
 auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {

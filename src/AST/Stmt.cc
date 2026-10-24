@@ -361,7 +361,7 @@ auto DeclName::str() const -> String {
 
 bool srcc::operator==(DeclName a, DeclName b) {
     if (a.is_str() != b.is_str()) return false;
-    if (a.is_operator_name()) return a.operator_name() == b.operator_name();
+    if (a.is_keyword_or_operator()) return a.operator_name() == b.operator_name();
     return a.str() == b.str();
 }
 
@@ -439,6 +439,9 @@ ProcDecl::ProcDecl(
     SLoc location
 ) : ObjectDecl{Kind::ProcDecl, owner, imported_from_module, type, name, linkage, mangling, location},
     parent{parent}, props{props} {
+    if (name == Tk::Init) special_proc = SpecialProcedure::Init;
+    else if (name == Tk::Copy) special_proc = SpecialProcedure::Copy;
+    else if (name == Tk::Delete) special_proc = SpecialProcedure::Delete;
     owner->procs.push_back(this);
 }
 

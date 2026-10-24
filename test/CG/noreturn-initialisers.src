@@ -1,0 +1,36 @@
+// V %srcc --cg %s
+// V %srcc --cg-llvm --target x86_64-unknown-linux %s
+program test;
+
+// Initialisation from 'noreturn' skips initialiser overload resolution.
+
+proc stop extern -> noreturn;
+
+// ‘Construction’ from 'noreturn' doesn't use initialisers.
+struct Large {
+    int[4] values;
+    init ($T argument) = unknown_name;
+    delete {}
+}
+
+proc large () -> Large = Large(stop());
+proc large_storage () { Large value = stop(); }
+proc take (inout Large value) extern;
+proc large_reference () { take(stop()); }
+
+// No initialiser matches one argument, but overload resolution is unnecessary.
+struct Arity {
+    int value;
+    init (int x, int y) = ::(x + y,);
+}
+
+proc arity () -> Arity = Arity(stop());
+
+// A factory normally returns int; a noreturn argument converts directly to S.
+struct S { int value; init (int x) = x; }
+proc factory () -> S = S(stop());
+
+// There is no recursive initialiser invocation on this path.
+struct Self { int value; init = Self(stop()); }
+proc self () -> Self = Self();
+

@@ -1,0 +1,32 @@
+// V mkdir -p %t
+// V %srcc test/inputs/initialisers.src --mo %t --target x86_64-unknown-linux
+// V %srcc %s -M %t -o=%t/program
+// V %t/program
+program test;
+
+import initialisers as m;
+
+var item = m::Item(y: 3, x: 4);
+assert item.x == 5;
+assert item.y == 5;
+
+m::Item defaulted;
+assert defaulted.x == 10;
+
+m::Wrapper wrapper;
+assert wrapper.item.y == 20;
+
+var aggregate = m::Wrapper(z: 30, item: m::Item::(40, 50));
+assert aggregate.item.x == 40;
+assert aggregate.z == 30;
+
+assert m::Factory(100) == 101;
+
+m::TupleHolder tuple_holder;
+assert tuple_holder.value[0].x == 10;
+
+(m::Item, int) imported_tuple;
+assert imported_tuple[0].y == 20;
+
+typeof(tuple_holder.value) same_tuple;
+assert same_tuple[0].x == 10;

@@ -88,10 +88,10 @@ public:
 
     };
 
-private:
     /// Canonical type.
     TypeBase* canonical;
 
+private:
     /// Kind of this type.
     const Kind type_kind;
 
@@ -124,9 +124,6 @@ public:
     /// Check if this type can be copied.
     [[nodiscard]] bool can_copy() const;
 
-    /// Get whether this type has a default initialiser.
-    [[nodiscard]] bool can_default_init() const;
-
     /// Check if default initialisation for this type is zero-initialisation.
     [[nodiscard]] bool can_zero_init() const;
 
@@ -148,6 +145,11 @@ public:
 
     /// Check if this is an array/struct/range/slice/closure.
     [[nodiscard]] bool is_aggregate() const;
+
+    /// Check if this is a canonical type; you almost never need to call this
+    /// directly as most parts of the compiler implicitly ignore type sugar
+    /// where appropriate.
+    [[nodiscard]] bool is_canonical() const;
 
     /// Check if this is a complete type.
     [[nodiscard]] bool is_complete() const;
@@ -228,7 +230,6 @@ public:
 
 private:
     [[nodiscard]] auto desugar_once() const -> Type;
-    [[nodiscard]] bool is_canonical() const;
     [[nodiscard]] bool is_sugar() const;
     [[nodiscard]] auto stream_fields_impl(TranslationUnit& tu, Size offs) -> std::generator<std::pair<Type, Size>>;
     [[nodiscard]] auto size_impl(const Target& t) const -> Size;
@@ -328,7 +329,7 @@ public:
     [[nodiscard]] explicit operator bool() const { return has_value(); }
     [[nodiscard]] auto value() const -> Type {
         Assert(has_value());
-        return Type{type_and_is_engaged.getPointer()};
+        return type_and_is_engaged.getPointer();
     }
 
     [[nodiscard]] auto value_or(Type ty) const -> Type {
@@ -451,6 +452,9 @@ class srcc::RecordScope : public Scope {
     RecordScope(Scope* parent) : Scope{parent, ScopeKind::Struct} {}
 
 public:
+    /// Record whose members this scope contains.
+    RecordType* record = nullptr;
+
     /// Get the n-th field.
     auto field(u32 n) -> FieldDecl*;
 
@@ -927,12 +931,11 @@ public:
     public:
         bool can_copy            : 1 = true;
         bool contains_pointer    : 1 = false;
-        bool default_initialiser : 1 = true;
         bool init_from_no_args   : 1 = true;
         bool is_union            : 1 = false;
         bool literal_initialiser : 1 = true;
         bool zero_init           : 1 = true;
-        Encoded padding : 1{};
+        Encoded padding : 2{};
 
         // Get record bits for a type that is compatible with C.
         static auto CLikeType(bool contains_pointer, bool is_union) -> Bits {
@@ -990,7 +993,10 @@ public:
         void add_field(Type ty);
 
         /// Build the layout.
-        [[nodiscard]] auto build() -> std::pair<RecordLayout*, Props>;
+        [[nodiscard]] auto build(
+            bool has_initialisers = false,
+            bool has_empty_initialiser = false
+        ) -> std::pair<RecordLayout*, Props>;
     };
 
     /// Get a record layout.
@@ -1021,11 +1027,6 @@ public:
     auto field_offsets() const -> ArrayRef<Size> {
         return getTrailingObjects(num_fields);
     }
-
-    /// Whether this record has a default initialiser (i.e.
-    /// an initialiser that takes no arguments and is *not*
-    /// declared by the user).
-    bool has_default_init() const { return bits().default_initialiser; }
 
     /// Whether this record can be initialised with an empty
     /// argument list; this need not entail using a default
@@ -1066,7 +1067,9 @@ class srcc::RecordType : public TypeBase {
 protected:
     RecordLayout* record_layout = nullptr;
     RecordScope* record_scope;
-    RecordType(Kind k, RecordScope* scope) : TypeBase{k}, record_scope{scope} {}
+    RecordType(Kind k, RecordScope* scope) : TypeBase{k}, record_scope{scope} {
+        scope->record = this;
+    }
 
 public:
     /// Get the copy procedure of this struct, if any.
@@ -1079,14 +1082,18 @@ public:
         return get_special_member(Tk::Delete);
     }
 
+    /// Get the user-declared and generated initialisers for this record.
+    auto initialisers() const;
+
     /// Get whether this type is complete, i.e. whether we can
     /// declare variables and create objects of this type.
     bool is_complete() const { return record_layout != nullptr; }
 
     /// Get the layout of this type.
     auto layout() const -> const RecordLayout& {
-        Assert(record_layout);
-        return *record_layout;
+        auto record = cast<RecordType>(canonical);
+        Assert(record->record_layout);
+        return *record->record_layout;
     }
 
     /// Get the scope containing the fields, member functions, and
@@ -1102,6 +1109,13 @@ public:
     void set_delete(ProcDecl* deleter) {
         set_special_member(Tk::Delete, deleter);
     }
+
+    /// Update what initialisers this type has.
+    void update_initialisation(
+        TranslationUnit& tu,
+        bool has_initialisers,
+        bool has_empty_initialiser
+    );
 
     static bool classof(const TypeBase* t) {
         return t->exact_kind() == Kind::StructType or
@@ -1184,9 +1198,6 @@ public:
 
     /// Finalise the struct.
     void finalise(RecordLayout* layout);
-
-    /// Get the user-declared initialisers for this struct.
-    auto initialisers() const;
 
     /// Get the name of this type.
     auto name() const -> String;
@@ -1289,6 +1300,12 @@ struct srcc::types::detail::NonCanonicalTypeDenseMapInfo {
 };
 
 namespace srcc {
+/// Set of canonical types.
+using CanonicalTypeSet = llvm::DenseSet<
+    Type,
+    types::detail::CanonicalTypeDenseMapInfo
+>;
+
 /// Map that maps 'Type's to 'Value's, ignoring type sugar.
 template <typename Value>
 using CanonicalTypeMap = llvm::DenseMap<

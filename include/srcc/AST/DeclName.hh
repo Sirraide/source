@@ -30,15 +30,21 @@ public:
     /// Check if this is the empty DeclName.
     [[nodiscard]] bool empty() const { return *this == DeclName(); }
 
-    /// Check if this is an operator.
-    [[nodiscard]] bool is_operator_name() const { return not is_string; }
+    /// Check if this names an initialiser.
+    [[nodiscard]] bool is_init() const { return is_keyword_or_operator() and Tk(opaque_value) == Tk::Init; }
+
+    /// Check if this stores a keyword or operator token.
+    [[nodiscard]] bool is_keyword_or_operator() const { return not is_string; }
+
+    /// Check if this is an overloadable operator name.
+    [[nodiscard]] bool is_operator_name() const { return is_keyword_or_operator() and not is_init(); }
 
     /// Check if this is a string.
     [[nodiscard]] bool is_str() const { return is_string; }
 
     /// Get this name as an operator.
     [[nodiscard]] auto operator_name() const -> Tk {
-        Assert(is_operator_name());
+        Assert(is_keyword_or_operator());
         return Tk(opaque_value);
     }
 
@@ -84,7 +90,7 @@ struct llvm::DenseMapInfo<srcc::DeclName> {
 
     static unsigned getHashValue(srcc::DeclName v) {
         using Tk = std::underlying_type_t<srcc::Tk>;
-        if (v.is_operator_name()) return DenseMapInfo<Tk>::getHashValue(Tk(v.operator_name()));
+        if (v.is_keyword_or_operator()) return DenseMapInfo<Tk>::getHashValue(Tk(v.operator_name()));
         return DenseMapInfo<StringRef>::getHashValue(v.str());
     }
 

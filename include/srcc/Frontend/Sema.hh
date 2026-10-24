@@ -125,6 +125,13 @@ class srcc::Sema : public DiagsProducer {
         LIBBASE_MOVE_ONLY(Conversion);
 
     public:
+        struct InitialiserCallData {
+            Ptr<ProcDecl> proc;
+            SmallVector<Expr*> args;
+            std::vector<ConversionSequence> conversions;
+            u32 badness = 0;
+        };
+
         struct RecordInitData {
             RecordType* ty;
             std::vector<ConversionSequence> field_convs;
@@ -163,6 +170,7 @@ class srcc::Sema : public DiagsProducer {
             ArrayInit,
             DefaultInit,
             ExpandTuple,
+            InitialiserCall,
             IntegralCast,
             LValueToRValue,
             MaterialisePoison,
@@ -187,6 +195,7 @@ class srcc::Sema : public DiagsProducer {
         Kind kind;
         Variant< // clang-format off
             TypeAndValueCategory,
+            InitialiserCallData,
             RecordInitData,
             ArrayInitData,
             ArrayBroadcastData,
@@ -199,6 +208,7 @@ class srcc::Sema : public DiagsProducer {
         Conversion(Kind kind) : kind{kind} {}
         Conversion(Kind kind, Type ty, ValueCategory val = Expr::RValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
+        Conversion(InitialiserCallData data) : kind{Kind::InitialiserCall}, data{std::move(data)} {}
         Conversion(RecordInitData conversions) : kind{Kind::RecordInit}, data{std::move(conversions)} {}
         Conversion(ArrayInitData data) : kind{Kind::ArrayInit}, data{std::move(data)} {}
         Conversion(ArrayBroadcastData data) : kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
@@ -212,6 +222,7 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto ExpandTuple() -> Conversion { return Conversion{Kind::ExpandTuple}; }
+        static auto InitialiserCall(InitialiserCallData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
@@ -927,8 +938,7 @@ class srcc::Sema : public DiagsProducer {
 
     using DeclarationRequest = sema::DeclarationRequest;
     using ProcedureSource = sema::ProcedureSource;
-    using RequestState = sema::RequestState;
-    using RequestSubject = sema::RequestSubject;
+    using RequestSubject = sema::Request::Subject;
     sema::Requests request_data;
 
     class EnterRequestContext {
@@ -1001,15 +1011,15 @@ private:
     auto AddParsedModule(ParsedModule::Ptr p, bool translate = false) -> ParsedModule*;
 
     /// Apply a conversion to an expression or list of expressions.
-    void ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);
-    [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, SLoc loc) -> Expr*;
+    bool ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc);
+    [[nodiscard]] auto ApplySimpleConversion(Expr* arg, const Conversion& conv, SLoc loc) -> Ptr<Expr>;
 
     /// Apply a conversion sequence to an expression.
     [[nodiscard]] auto ApplyConversionSequence(
         ArrayRef<Expr*> exprs,
         const ConversionSequence& seq,
         SLoc loc
-    ) -> Expr*;
+    ) -> Ptr<Expr>;
 
     /// Build an initialiser for an aggregate type.
     ///
@@ -1054,9 +1064,8 @@ private:
     /// if there is one; in all other cases, leave it as 'Move'
     /// because that is the default for assignment.
     ///
-    /// The expression returned from this is suitable for initialising
-    /// a variable of the given type, i.e. codegen knows what to do with
-    /// it as the argument to PerformVariableInitialisation().
+    /// Applying the sequence generally produces an expression
+    /// suitable for initialising storage of the given type.
     ///
     /// \param var_type The type of the variable to be initialised.
     /// \param args The initialisation arguments; can be empty for default
@@ -1065,6 +1074,8 @@ private:
     /// \param init_loc Location to report diagnostics at.
     /// \param want_lvalue Try to produce an lvalue.
     /// \param allow_auto_deref Auto-dereference pointers and optionals.
+    /// \param type_call Preserve a factory initialiser's actual result type instead
+    ///    of requiring a value suitable for storage of var_type.
     ///
     /// \return Whether initialisation was successful.
     auto BuildConversionSequence(
@@ -1072,16 +1083,19 @@ private:
         ArrayRef<Expr*> args,
         SLoc init_loc,
         bool want_lvalue = false,
-        bool allow_auto_deref = false
+        bool allow_auto_deref = false,
+        bool type_call = false
     ) -> ConversionSequenceOrDiags;
 
-    /// Overload of BuildInitialiser() that builds the initialiser immediately.
+    /// Build and apply initialisation immediately. Type calls preserve a factory
+    /// initialiser's actual result type; storage initialisation requires var_type.
     auto BuildInitialiser(
         Type var_type,
         ArrayRef<Expr*> args,
         SLoc loc,
         bool want_lvalue = false,
-        bool allow_auto_deref = false
+        bool allow_auto_deref = false,
+        bool type_call = false
     ) -> Ptr<Expr>;
 
     /// Parameter definition passed to BuildImplicitProcedure().
@@ -1154,13 +1168,14 @@ private:
     /// Perform template deduction.
     auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type>;
 
-    /// Define special procedures (delete/copy) of a type.
+    /// Define special procedures (initialisers/delete/copy) of a type.
     void DefineSpecialProcedures(
         RecordType* r,
         RecordLayout::Props props,
         Ptr<ParsedStmt> parsed_deleter,
         Ptr<ParsedStmt> parsed_copy,
-        SLoc loc
+        SLoc loc,
+        bool generate_initialisers = false
     );
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.
@@ -1309,8 +1324,10 @@ private:
         OverloadSetExpr* overload_set,
         TupleExpr* args,
         bool is_associated_call,
-        SLoc call_loc
-    ) -> std::pair<ProcDecl*, SmallVector<Expr*>>;
+        SLoc call_loc,
+        Conversion::InitialiserCallData* deferred = nullptr,
+        bool* hard_error = nullptr
+    ) -> std::pair<Ptr<ProcDecl>, SmallVector<Expr*>>;
 
     /// Issue an error if 'ty' is deduced somehow.
     bool ProhibitDeducedTypes(Type ty, SLoc loc);
@@ -1353,6 +1370,9 @@ private:
         TupleExpr* args,
         SLoc call_loc
     );
+
+    /// Register and check a captured variable or closure.
+    bool RegisterCapture(ProcDecl* owner, Decl* captured, SLoc loc);
 
     /// Evaluate and cache one semantic request, diagnosing dependency cycles.
     bool Request(RequestSubject subject, SLoc loc);
@@ -1428,6 +1448,10 @@ private:
         LookupHint hint = LookupHint::Any
     ) -> LookupResult;
 
+    /// Complete construction properties and register generated initialisers.
+    bool RequestRecordInitialisers(RecordType* record, SLoc loc);
+    bool RequestRecordInitialisersImpl(RecordType* record);
+
     /// Attempt to complete a struct type.
     bool RequestStructLayout(StructType* ty);
     bool RequestStructLayoutImpl(StructType* record);
@@ -1437,7 +1461,7 @@ private:
         ProcTemplateDecl* pattern,
         TemplateSubstitution& info,
         SLoc inst_loc
-    ) -> ProcDecl*;
+    ) -> Ptr<ProcDecl>;
 
     /// Substitute types in a procedure template.
     auto RequestTemplateSubstitution(
@@ -1454,6 +1478,16 @@ private:
 
     /// Whether a procedure requires a mangling number.
     bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
+
+    /// Perform overload resolution to select the correct initialiser of
+    /// a type given a list of arguments. hard_error distinguishes signature/body
+    /// errors from an ordinary overload mismatch when probing defaultability.
+    auto ResolveInitialiser(
+        RecordType* type,
+        TupleExpr* args,
+        SLoc loc,
+        bool* hard_error = nullptr
+    ) -> ValueOrDiagsVector<Conversion::InitialiserCallData>;
 
     /// Resolve named arguments, i.e. figure out what positional parameters
     /// they map to.
@@ -1486,6 +1520,7 @@ private:
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, std::same_as<TupleExpr> auto* args, SLoc loc, bool is_associated_call) -> Ptr<Expr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
+    auto BuildConvertedCall(Expr* callee, SmallVectorImpl<Expr*>& converted_args, ArrayRef<Expr*> original, SLoc loc) -> Ptr<Expr>;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
@@ -1516,6 +1551,7 @@ private:
         ProcTemplateDecl* pattern = nullptr
     ) -> Ptr<ProcDecl>;
 
+    auto BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr>;
     auto BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr*;
     auto BuildSliceType(Type base, bool immutable, SLoc loc) -> Opt<Type>;
     auto BuildStaticIfExpr(Expr* cond, ParsedStmt* then, Ptr<ParsedStmt> else_, SLoc loc) -> Ptr<Stmt>;

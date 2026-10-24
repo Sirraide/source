@@ -204,11 +204,12 @@ bool TypeBase::can_copy() const {
     return t->has_copy_proc();
 }
 
-bool TypeBase::can_default_init() const {
-    return InitCheckHelper<&RecordLayout::has_default_init>(this);
-}
-
 bool TypeBase::can_init_from_no_args() const {
+    if (auto array = dyn_cast<ArrayType>(this)) return array->elem()->can_init_from_no_args();
+    if (auto tuple = dyn_cast<TupleType>(this)) return rgs::all_of(
+        tuple->scope()->fields(),
+        [](auto field) { return field->type->can_init_from_no_args(); }
+    );
     return InitCheckHelper<&RecordLayout::has_init_from_no_args>(this);
 }
 
@@ -840,8 +841,8 @@ void RecordLayout::Builder::add_field(Type ty) {
     }
 
     // Update bits.
-    bits.default_initialiser = bits.init_from_no_args &= ty->can_init_from_no_args();
-    bits.zero_init &= bits.default_initialiser and ty->can_zero_init();
+    bits.init_from_no_args &= ty->can_init_from_no_args();
+    bits.zero_init &= ty->can_zero_init();
     bits.contains_pointer |= ty->is_or_contains_pointer();
     bits.can_copy &= ty->can_copy();
 
@@ -850,24 +851,16 @@ void RecordLayout::Builder::add_field(Type ty) {
     props.must_define_copy = bits.can_copy and (props.must_define_copy or ty->has_copy_proc());
 }
 
-// TODO: Initialisers are declared out-of-line, but they should
-// have been picked up during initial translation when we find
-// all the procedures in the current scope. Add any that we found
-// here, and if we didn’t find any (or the 'default' attribute was
-// specified on the struct declaration), declare the default initialiser.
+auto RecordLayout::Builder::build(
+    bool has_initialisers,
+    bool has_empty_initialiser
+) -> std::pair<RecordLayout*, RecordLayout::Props> {
+    if (has_initialisers) {
+        bits.init_from_no_args = has_empty_initialiser;
+        bits.literal_initialiser = false;
+        bits.zero_init = false;
+    }
 
-// TODO: If we decide to allow this:
-//
-// struct S { ... }
-// proc f {
-//    init S(...) { ... }
-// }
-//
-// Then the initialiser should still respect normal lookup rules (i.e.
-// it should only be visible within 'f'). Perhaps we want to store
-// local member functions outside the struct itself and in the local
-// scope instead?
-auto RecordLayout::Builder::build() -> std::pair<RecordLayout*, RecordLayout::Props> {
     return {RecordLayout::Get(tu, offsets, sz, sz.align(a), a, bits), props};
 }
 
@@ -931,16 +924,36 @@ void RecordLayout::Profile(
 }
 
 auto RecordType::get_special_member(Tk tok) const -> Ptr<ProcDecl> {
-    auto d = record_scope->decls_with_name(tok);
+    auto d = cast<RecordType>(canonical)->record_scope->decls_with_name(tok);
     if (d.empty()) return nullptr;
     Assert(utils::IsSingle(d));
     return cast<ProcDecl>(d.front());
 }
 
 void RecordType::set_special_member(Tk tok, ProcDecl* decl) {
+    Assert(is_canonical(), "Special procedures belong to the canonical record");
     Assert(decl);
     Assert(record_scope->decls_with_name(tok).empty());
     record_scope->add(decl);
+}
+
+void RecordType::update_initialisation(
+    TranslationUnit& tu,
+    bool has_initialisers,
+    bool has_empty_initialiser
+) {
+    Assert(is_canonical(), "Construction properties belong to the canonical record");
+    RecordLayout::Builder builder{tu};
+    for (auto field : scope()->fields()) builder.add_field(field->type);
+    auto [layout, props] = builder.build(has_initialisers, has_empty_initialiser);
+    record_layout = RecordLayout::Get(
+        tu,
+        record_layout->field_offsets(),
+        record_layout->size(),
+        record_layout->array_size(),
+        record_layout->align(),
+        layout->bits()
+    );
 }
 
 auto StructType::Create(
@@ -1005,7 +1018,7 @@ auto TupleType::Get(
     llvm::function_ref<void(TupleType* new_type)> DefineSpecialProcedures
 ) -> TupleType* {
     Assert(layout);
-    auto GetCanonicalType = [](auto ty) { return Type(ty->canonical); };
+    auto GetCanonicalType = [](Type ty) -> Type { return ty->canonical; };
     auto canonical_types = llvm::to_vector(vws::transform(fields, GetCanonicalType));
 
     // Profile the element types recursively.
@@ -1043,17 +1056,12 @@ auto TupleType::Get(
         names
     );
 
-    // Create the sugared tuple.
-    //
-    // Reuse the special members for the canonical tuple here.
+    // Create the sugared tuple. Special members etc. are stored on
+    // the canonical tuple.
     auto CreateSugared = [&] {
         auto tuple = CreateTuple(fields);
         tuple->canonical = canonical;
         tuple->types_profile = canonical->types_profile;
-        for (auto t : {Tk::Copy, Tk::Delete}) {
-            auto proc = canonical->get_special_member(t);
-            if (proc.present()) tuple->set_special_member(t, proc.get());
-        }
         return tuple;
     };
 

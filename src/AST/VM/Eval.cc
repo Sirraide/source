@@ -1343,7 +1343,7 @@ auto Eval::LoadTree(const void* mem) -> TreeValue* {
 auto Eval::LoadType(const void* mem) -> Type {
     TypeBase* ptr{};
     std::memcpy(&ptr, mem, sizeof(TypeBase*));
-    return Type(ptr);
+    return ptr;
 }
 
 auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {

@@ -1611,7 +1611,7 @@ public:
     /// there was an error in its body.
     bool contains_error = false;
 
-    /// This is a special procedure of a record, e.g. 'delete' or 'copy'.
+    /// Whether this is a record initialiser, copy procedure, or deleter.
     SpecialProcedure special_proc : utils::BitsForEnum<SpecialProcedure>() = SpecialProcedure::None;
 
 private:
@@ -1878,8 +1878,8 @@ inline auto srcc::EnumType::enumerators() const {
     return scope()->decls_of_type<EnumeratorDecl>();
 }
 
-inline auto srcc::StructType::initialisers() const {
-    return record_scope->decls_with_name(Tk::Init);
+inline auto srcc::RecordType::initialisers() const {
+    return cast<RecordType>(canonical)->record_scope->decls_with_name(Tk::Init);
 }
 
 /// Visit a statement.

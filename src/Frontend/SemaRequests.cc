@@ -8,20 +8,31 @@
 // For example, this resolves the signature and then requests the body of 'f':
 //
 //     #assert f() == 42;
-//     proc f() -> int = 42;
+//     proc f () -> int = 42;
 //
 // A return-type inference cycle instead re-enters an active body request:
 //
-//     proc f() = g();
-//     proc g() = f();
+//     proc f () = g();
+//     proc g () = f();
+//
+// Record layout and initialiser readiness are separate requests. For example:
+//
+//     struct A { B value; }
+//     struct B { int value; init = A::(B::(42,),).value; }
+//
+// Completing A's physical layout must not infer B's initialiser yet: that body
+// needs A's layout. Initialiser readiness can subsequently infer return types
+// and register generated signatures. Generated bodies use ProcedureSource body
+// builders and the same cached procedure-body requests as parsed procedures.
+// Raw construction requires only the target's layout; fields initialise normally.
 //
 // Providers are separate Sema members, dispatched by Request(). AST emission
 // retains source order even when a later variable's type is needed earlier, e.g.:
 //
-//     proc outer() {
+//     proc outer () {
 //         var result = later();
 //         int value = side_effect();
-//         proc later() -> int = typeof(value)(42);
+//         proc later () -> int = typeof(value)(42);
 //     }
 //
 // 'value' is visible inside 'later', but its initialiser still runs after the
@@ -32,6 +43,7 @@
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
+using namespace srcc::sema;
 
 #define TRY(...) ({                      \
     auto _res = (__VA_ARGS__);           \
@@ -41,7 +53,7 @@ using namespace srcc;
 
 Sema::EnterRequestContext::EnterRequestContext(
     Sema& S,
-    sema::RequestContext context
+    RequestContext context
 ) : S{S},
     scopes{std::move(S.scope_stack)},
     procedures{std::move(S.proc_stack)},
@@ -75,14 +87,17 @@ auto Sema::GetDeclarationRequest(ParsedDecl* decl) -> Ptr<DeclarationRequest> {
     return request->second.get();
 }
 
-auto Sema::GetRequestContext() -> sema::RequestContext {
+auto Sema::GetRequestContext() -> RequestContext {
     return {curr_scope(), &curr_proc(), inside_eval, request_data.expansion};
 }
 
 auto Sema::GetRequestResult(RequestSubject subject) -> std::optional<bool> {
     auto it = request_data.results.find(subject);
-    if (it == request_data.results.end() or it->second == RequestState::Evaluating) return std::nullopt;
-    return it->second == RequestState::Complete;
+    if (
+        it == request_data.results.end() or
+        it->second == Request::State::Evaluating
+    ) return std::nullopt;
+    return it->second == Request::State::Complete;
 }
 
 bool Sema::IsVariableVisible(const DeclarationRequest& source, SLoc use) {
@@ -118,6 +133,92 @@ bool Sema::IsVariableVisible(const DeclarationRequest& source, SLoc use) {
     return first->second < second->second;
 }
 
+bool Sema::RegisterCapture(ProcDecl* owner, Decl* captured, SLoc loc) {
+    struct Capture {
+        ProcDecl* caller;
+        ProcDecl* owner;
+        Decl* captured;
+        SLoc loc;
+    };
+
+    // Captures that still need to be validated.
+    SmallVector<Capture> pending{{curr_proc().proc, owner, captured, loc}};
+    bool all_ok = true;
+
+    // Keep going until we've validated all captures.
+    while (not pending.empty()) {
+        auto capture = pending.pop_back_val();
+
+        // Validate the whole lexical chain before changing capture state.
+        bool curr_ok = true;
+        for (
+            ProcDecl* proc = capture.caller;
+            proc != capture.owner;
+            proc = proc->parent.get() // Unwrap here as we must eventually reach the owner.
+        ) {
+            // Ignore non-special procedures.
+            if (proc->special_proc == SpecialProcedure::None) continue;
+
+            // This is a special procedure that has a capture, this is ill-formed.
+            capture.caller->contains_error = proc->contains_error = true;
+
+            // A recursive reference can expose a forbidden capture after the
+            // caller's body request completed. Invalidate that cached result too.
+            if (GetRequestResult(Request::ProcedureBody{capture.caller}) == true)
+                request_data.results[Request::ProcedureBody{capture.caller}] = Request::State::Failed;
+
+            if (GetRequestResult(Request::ProcedureBody{proc}) == true)
+                request_data.results[Request::ProcedureBody{proc}] = Request::State::Failed;
+
+            // Diagnose the capture.
+            if (isa<LocalDecl>(capture.captured)) {
+                Error(
+                    capture.loc,
+                    "Variable '{}' cannot be captured inside '%1({}%)'",
+                    capture.captured->name,
+                    proc->name
+                );
+                Note(capture.captured->location(), "Variable declared here");
+            } else {
+                Error(
+                    capture.loc,
+                    "Procedure '{}' cannot be referenced inside '%1({}%)' because it captures enclosing variables",
+                    capture.captured->name,
+                    proc->name
+                );
+                Note(capture.captured->location(), "Procedure declared here");
+            }
+
+            curr_ok = all_ok = false;
+            break;
+        }
+
+        // Move on to the next capture if we issued a diagnostic.
+        if (not curr_ok) continue;
+
+        // Go up the call chain and capture the variable recursively.
+        for (
+            ProcDecl* proc = capture.caller;
+            proc != capture.owner;
+            proc = proc->parent.get()
+        ) {
+            if (proc->has_captures) continue;
+            proc->has_captures = true;
+
+            // Mark that we’ve computed that this procedure requires captures.
+            auto users = request_data.capture_users.find(proc);
+            if (users == request_data.capture_users.end()) continue;
+
+            // Each procedure that creates a closure for this procedure must itself
+            // be checked to determine whether the capture is valid.
+            for (auto use : users->second)
+                pending.push_back({use.caller, proc->parent.get(), proc, use.loc});
+        }
+    }
+
+    return all_ok;
+}
+
 bool Sema::Request(RequestSubject subject, SLoc loc) {
     // Check if the request has already been fulfilled.
     if (auto result = GetRequestResult(subject)) return *result;
@@ -132,41 +233,49 @@ bool Sema::Request(RequestSubject subject, SLoc loc) {
         for (auto frame : request_data.stack) {
             in_cycle |= frame.subject == subject;
             if (not in_cycle) continue;
-            if (auto decl = llvm::dyn_cast<DeclarationRequest*>(frame.subject))
-                Note(frame.loc, "While resolving declaration '{}'", decl->parsed->name);
-            else if (auto proc = llvm::dyn_cast<ProcDecl*>(frame.subject))
-                Note(frame.loc, "While translating body of '{}'", proc->name);
-            else if (auto record = llvm::dyn_cast<StructType*>(frame.subject))
-                Note(frame.loc, "While computing layout of '{}'", record->decl()->name);
-            else
-                Note(
-                    frame.loc, "While computing value of enumerator '{}'",
-                    llvm::cast<EnumeratorDecl*>(frame.subject)->name
-                );
+            frame.subject.visit(utils::Overloaded{
+                [&](Request::Declaration r) {
+                    Note(frame.loc, "While resolving declaration '{}'", r.subject->parsed->name);
+                },
+                [&](Request::EnumeratorValue r) {
+                    Note(frame.loc, "While computing value of enumerator '{}'", r.subject->name);
+                },
+                [&](Request::ProcedureBody r) {
+                    Note(frame.loc, "While translating body of '{}'", r.subject->name);
+                },
+                [&](Request::RecordInitialisers r) {
+                    Note(frame.loc, "While completing initialisers of '{}'", r.subject);
+                },
+                [&](Request::StructLayout r) {
+                    Note(frame.loc, "While computing layout of '{}'", r.subject->decl()->name);
+                },
+            });
         }
         return false;
     }
 
     // Take care not to overflow the stack.
     if (request_data.stack.size() >= sema::MaxRequestDepth) {
-        request_data.results[subject] = RequestState::Failed;
+        request_data.results[subject] = Request::State::Failed;
         return Error(loc, "Exceeded maximum semantic request nesting depth ({})", sema::MaxRequestDepth);
     }
 
     // Mark that we’ve started processing this request.
-    request_data.results[subject] = RequestState::Evaluating;
+    request_data.results[subject] = Request::State::Evaluating;
     request_data.stack.push_back({subject, loc});
     defer { request_data.stack.pop_back(); };
 
     // Actually process the request.
-    bool success;
-    if (auto decl = llvm::dyn_cast<DeclarationRequest*>(subject)) success = RequestDeclarationImpl(*decl);
-    else if (auto proc = llvm::dyn_cast<ProcDecl*>(subject)) success = RequestProcedureBodyImpl(proc);
-    else if (auto record = llvm::dyn_cast<StructType*>(subject)) success = RequestStructLayoutImpl(record);
-    else success = RequestEnumeratorImpl(llvm::cast<EnumeratorDecl*>(subject));
+    bool success = subject.visit(utils::Overloaded{
+        [&](Request::Declaration r) { return RequestDeclarationImpl(*r.subject); },
+        [&](Request::EnumeratorValue r) { return RequestEnumeratorImpl(r.subject); },
+        [&](Request::ProcedureBody r) { return RequestProcedureBodyImpl(r.subject); },
+        [&](Request::RecordInitialisers r) { return RequestRecordInitialisersImpl(r.subject); },
+        [&](Request::StructLayout r) { return RequestStructLayoutImpl(r.subject); },
+    });
 
     // Set its result.
-    request_data.results[subject] = success ? RequestState::Complete : RequestState::Failed;
+    request_data.results[subject] = success ? Request::State::Complete : Request::State::Failed;
     return success;
 }
 
@@ -181,7 +290,7 @@ bool Sema::RequestCompleteType(Type ty, SLoc loc) {
 }
 
 auto Sema::RequestDeclaration(DeclarationRequest& request) -> Ptr<Decl> {
-    Request(&request, request.parsed->loc);
+    Request(Request::Declaration{&request}, request.parsed->loc);
     return request.result;
 }
 
@@ -211,11 +320,11 @@ bool Sema::RequestDeclarationImpl(DeclarationRequest& request) {
 
 bool Sema::RequestEnumerator(EnumeratorDecl* enumerator) {
     // Check if we already know its value.
-    if (auto result = GetRequestResult(enumerator)) return *result;
+    if (auto result = GetRequestResult(Request::EnumeratorValue{enumerator})) return *result;
     if (enumerator->value) return true;
 
     // If not, request it and save it in the AST.
-    bool ok = Request(enumerator, enumerator->location());
+    bool ok = Request(Request::EnumeratorValue{enumerator}, enumerator->location());
     if (not ok and not enumerator->value) {
         enumerator->value = tu->store_int(
             APInt{unsigned(enumerator->parent->bit_width(*tu).bits()), 0}
@@ -433,10 +542,10 @@ bool Sema::RequestPendingProcedureBodies(ProcDecl* owner) {
 }
 
 bool Sema::RequestProcedureBody(ProcDecl* proc, SLoc loc) {
-    if (auto result = GetRequestResult(proc)) return *result;
+    if (auto result = GetRequestResult(Request::ProcedureBody{proc})) return *result;
     if (proc->body()) return proc->valid() and not proc->contains_error;
     if (not proc->will_have_body) return proc->valid();
-    return Request(proc, loc);
+    return Request(Request::ProcedureBody{proc}, loc);
 }
 
 bool Sema::RequestProcedureBodyImpl(ProcDecl* proc) {
@@ -467,7 +576,9 @@ bool Sema::RequestProcedureBodyImpl(ProcDecl* proc) {
 
         ActivateWithParameters(GetParamSpecs(parsed->params()));
         auto ret = proc->return_type();
-        body = TranslateExpr(parsed->body.get(), ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt);
+        auto desired = ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt;
+        if (not desired and proc->special_proc == SpecialProcedure::Init) desired = proc->props.associated_type;
+        body = TranslateExpr(parsed->body.get(), desired);
     }
 
     // Finish building the body,
@@ -484,10 +595,30 @@ auto Sema::RequestReference(Decl* d, SLoc loc) -> Ptr<Expr> { // clang-format of
         [&](FieldDecl*) -> Ptr<Expr> { Unreachable(); },
         [&](ModuleDecl*) -> Ptr<Expr> { Unreachable(); },
         [&](ProcDecl* proc) -> Ptr<Expr> {
+            // If this is a nested procedure, mark it as used by the current
+            // procedure so we can check that creating a closure for it here
+            // is valid once we know what its captures are.
+            if (
+                proc->parent and
+                not proc->name.is_init() and
+                proc->special_proc == SpecialProcedure::None and
+                not proc->has_captures and
+                curr_proc().proc != proc->parent.get()
+            ) request_data.capture_users[proc].push_back({curr_proc().proc, loc});
+
+            // Request its body if the return type is deduced.
             if (
                 proc->return_type() == Type::DeducedTy and
                 not RequestProcedureBody(proc, loc)
             ) return nullptr;
+
+            // If it has captures, check that we can create a closure for it.
+            if (
+                proc->has_captures and
+                not RegisterCapture(proc->parent.get(), proc, loc)
+            ) return nullptr;
+
+            // Ok, create the closure.
             return new (*tu) ProcRefExpr(proc, loc);
         },
         [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
@@ -516,46 +647,9 @@ auto Sema::RequestReference(Decl* d, SLoc loc) -> Ptr<Expr> { // clang-format of
                 curr_proc().proc != local->parent and
                 local->type->memory_size(*tu) != Size()
             ) {
-                // Mark it as captured.
+                if (not RegisterCapture(local->parent, local, loc)) return nullptr;
                 local->captured = true;
                 local->parent->introduces_captures = true;
-
-                // Find the active procedure scope that corresponds to the local’s parent.
-                auto st = vws::reverse(proc_stack);
-                auto parent_scope = rgs::find_if(st, [&](ProcScopeInfo* i) { return i->proc == local->parent; });
-                Assert(parent_scope != st.end());
-
-                // Walk the procedure stack between it and the current procedure.
-                //
-                // Captures need to be passed down transitively, i.e. if procedure 'a' contains
-                // 'b' which contains 'c', and 'c' captures a variable declared in 'a', then
-                // 'b' needs to capture it as well even if it doesn’t use it so it can pass it
-                // down to 'c'.
-                //
-                // Because we always propagate captures up whenever we first encounter them, if
-                // a local has already been marked for capture in a scope, this loop will have
-                // also marked it for capture in any parent scopes, so we can stop if we encounter
-                // this situation.
-                for (auto p = curr_proc().proc; p != (*parent_scope)->proc; p = p->parent.get_or_null()) {
-                    if (p->has_captures) break;
-                    p->has_captures = true;
-
-                    // A procedure defined inside a struct may not capture any variables. Diagnose this,
-                    // but allow the capture for better error recovery; this is fine so long as we don’t
-                    // try to emit it.
-                    //
-                    // FIXME: Make sure we don’t try to 'eval' a procedure that contains errors,
-                    // otherwise, this wil break things quite horribly.
-                    if (p->special_proc != SpecialProcedure::None) {
-                        Error(
-                            loc,
-                            "Variable '{}' cannot be captured inside '%1({}%)'",
-                            local->name,
-                            SpecialProcedure(p->special_proc)
-                        );
-                        Note(d->location(), "Variable declared here");
-                    }
-                }
             }
 
             return new (*tu) LocalRefExpr(
@@ -662,7 +756,7 @@ auto Sema::RequestScopeLookup(
         if (
             isa<ParsedVarDecl>(request->parsed) and
             request->result and
-            request_data.results.lookup(request) == RequestState::Evaluating
+            request_data.results.lookup(Request::Declaration{request}) == Request::State::Evaluating
         ) continue;
 
         // Request this for translation.
@@ -686,10 +780,110 @@ auto Sema::RequestScopeLookup(
     return LookupResult(decls, name);
 }
 
+bool Sema::RequestRecordInitialisers(RecordType* record, SLoc loc) {
+    record = cast<RecordType>(record->canonical);
+    if (auto result = GetRequestResult(Request::RecordInitialisers{record})) return *result;
+
+    // Request the layout; note that it may already have been computed
+    // if this is an imported type.
+    if (auto structure = dyn_cast<StructType>(record)) {
+        if (not RequestStructLayout(structure)) return false;
+        if (not GetDeclarationRequest(structure->decl())) return true;
+    }
+
+    return Request(Request::RecordInitialisers{record}, loc);
+}
+
+bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
+    Assert(record->is_canonical());
+
+    // If this is a struct, make sure it is declared.
+    auto structure = dyn_cast<StructType>(record);
+    auto source = structure ? GetDeclarationRequest(structure->decl()) : nullptr;
+
+    // Enter the record scope.
+    EnterRequestContext context{*this, source ? source->context : GetRequestContext()};
+    EnterScope scope{*this, record->scope()};
+    auto loc = structure ? structure->decl()->location() : request_data.stack.back().loc;
+
+    // Whether all fields have a default initialiser.
+    bool all_default = true;
+
+    // Whether a field has a default initialiser that must be called.
+    bool calls_fields = false;
+
+    // Whether there are any initialisers, user-declared or not.
+    bool has_initialisers = not record->initialisers().empty();
+
+    // Whether we have an empty initialiser.
+    bool has_empty = false;
+
+    // Determine if we need to generate an initialiser procedure, and whether
+    // we can even do so in the first place.
+    for (auto field : record->scope()->fields()) {
+        auto base = field->type->strip_arrays();
+
+        // If the field is itself a record, we need to know if it has initialisers.
+        if (
+            auto nested = dyn_cast<RecordType>(base);
+            nested and not RequestRecordInitialisers(nested, loc)
+        ) return false;
+
+        // Update properties.
+        all_default &= field->type->can_init_from_no_args();
+        calls_fields |= not field->type->can_zero_init();
+    }
+
+    // If we have user-declared initialisers, check if any of them can be used as
+    // a default initialiser. Include variadic templates that accept an empty argument
+    // list, but exclude initialisers that return a different type.
+    if (has_initialisers) {
+        // Is there a user-declared initialiser that accepts 0 arguments?
+        bool accepts_empty = rgs::any_of(record->initialisers(), [](Decl* decl) {
+            if (not decl->valid()) return false;
+            if (auto proc = dyn_cast<ProcDecl>(decl)) return Callee(proc).argument_count_matches_parameters(0);
+            return Callee(cast<ProcTemplateDecl>(decl)).argument_count_matches_parameters(0);
+        });
+
+        if (accepts_empty) {
+            // There is; attempt to resolve it.
+            auto args = TupleExpr::Create(*tu, Type::CallArgListTy, {}, {}, loc);
+            bool hard_error = false;
+            auto call = ResolveInitialiser(record, args, loc, &hard_error);
+
+            // If the return type of that initialiser is the record type, we can
+            // use it as a default initialiser.
+            if (call) has_empty = call->proc->return_type() == record;
+            else if (hard_error) {
+                for (auto& diagnostic : call.error()) ReportDiag(std::move(diagnostic));
+                return false;
+            }
+        }
+    }
+
+    // There is no user-declared initialiser; generate initialisers if needed/possible.
+    else if (all_default and calls_fields) {
+        DefineSpecialProcedures(
+            record,
+            /*props=*/{},
+            /*parsed_deleter=*/nullptr,
+            /*parsed_copy=*/nullptr,
+            loc,
+            /*generate_initialisers=*/true
+        );
+
+        has_initialisers = has_empty = true;
+    }
+
+    // Finally, update the record bits.
+    record->update_initialisation(*tu, has_initialisers, has_empty);
+    return true;
+}
+
 bool Sema::RequestStructLayout(StructType* s) {
-    if (auto result = GetRequestResult(s)) return *result;
+    if (auto result = GetRequestResult(Request::StructLayout{s})) return *result;
     if (s->is_complete()) return true;
-    return Request(s, s->decl()->location());
+    return Request(Request::StructLayout{s}, s->decl()->location());
 }
 
 bool Sema::RequestStructLayoutImpl(StructType* s) {
@@ -718,15 +912,30 @@ bool Sema::RequestStructLayoutImpl(StructType* s) {
         AddDeclToScope(s->scope(), field);
     }
 
-    // Once we have iniitalisers, we need to adjust the bits in 'build()' below accordingly.
-    if (not parsed->initialisers().empty()) ICE(
-        s->decl()->location(),
-        "TODO: Handle structs with initialisers"
-    );
-
-    auto [layout, props] = lb.build();
+    // Build the layout.
+    auto [layout, props] = lb.build(not parsed->initialisers().empty());
     s->finalise(layout);
+
+    // Declare the initialisers.
+    auto Cast = [](ParsedProcDecl* p) -> ParsedStmt* { return p; };
+    auto initialisers = llvm::to_vector(parsed->initialisers() | vws::transform(Cast));
+    RequestRegisterDeclarations(initialisers);
+
+    for (auto init : parsed->initialisers()) {
+        auto decl = RequestDeclaration(*GetDeclarationRequest(init).get());
+        if (not decl) {
+            ok = false;
+            continue;
+        }
+
+        if (auto proc = dyn_cast<ProcDecl>(decl.get())) {
+            request_data.pending_procedure_bodies[source->context.procedure->proc].push_back(proc);
+        }
+    }
+
     if (not ok) s->decl()->set_invalid();
+
+    // Define the special procedures, excluding the initialisers.
     DefineSpecialProcedures(
         s,
         props,
@@ -742,7 +951,7 @@ auto Sema::RequestTemplateInstantiation(
     ProcTemplateDecl* pattern,
     TemplateSubstitution& info,
     SLoc inst_loc
-) -> ProcDecl* {
+) -> Ptr<ProcDecl> {
     if (not info.instantiation) {
         Error(inst_loc, "Missing substituted procedure declaration");
         return {};
@@ -753,10 +962,10 @@ auto Sema::RequestTemplateInstantiation(
         instantiations.push_back(info.instantiation);
 
     // Check if we already know the signature of this.
-    auto body = request_data.results.find(info.instantiation);
+    auto body = request_data.results.find(Request::ProcedureBody{info.instantiation});
     if (
         body != request_data.results.end() and
-        body->second == RequestState::Evaluating and
+        body->second == Request::State::Evaluating and
         info.instantiation->return_type() != Type::DeducedTy
     ) return info.instantiation;
 
@@ -774,7 +983,7 @@ auto Sema::RequestTemplateSubstitution(
 
     // Perform deduction.
     //
-    // We need to do this *before* caching, else e.g. 'proc f($T a, T b)' will
+    // We need to do this *before* caching, else e.g. 'proc f ($T a, T b)' will
     // be instantiated twice if called with 'f(i32, i16)' and 'f(i32, i8)', which
     // is outright wrong.
     using Deduced = std::pair<u32, TypeLoc>;

@@ -1,0 +1,16 @@
+// I
+module initialisers;
+
+export struct Item {
+    int x;
+    int y;
+    init (int x, int y) = ::(x + 1, y + 2);
+    init = ::(10, 20);
+}
+
+export struct Wrapper { Item item; int z; }
+export struct Factory { init (int x) = x + 1; }
+
+// First request this tuple's generated procedures from a local context.
+proc private_tuple_user { (Item, int) value; }
+export struct TupleHolder { (Item, int) value; }

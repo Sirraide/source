@@ -4,7 +4,7 @@
 #include <srcc/AST/Stmt.hh>
 #include <srcc/Frontend/ParseTree.hh>
 
-#include <llvm/ADT/PointerUnion.h>
+#include <llvm/ADT/Hashing.h>
 
 #include <deque>
 #include <functional>
@@ -69,32 +69,99 @@ struct ProcedureSource {
     RequestContext context;
 };
 
-/// Identity of a cached semantic result. The pointer's type selects the request:
-/// declaration translation, enumerator value, procedure body, or struct layout.
-using RequestSubject = llvm::PointerUnion<
-    DeclarationRequest*,
-    EnumeratorDecl*,
-    ProcDecl*,
-    StructType*
->;
-
-/// Cached request status.
-enum struct RequestState : u8 { Evaluating, Complete, Failed };
-
-/// One active dependency, including the requesting location used in cycle notes.
-struct RequestFrame {
-    RequestSubject subject;
+/// A procedure reference that may need its callee's enclosing environment.
+/// Recursive references can be formed before capture information is available;
+/// retaining the caller and location lets that information propagate later.
+struct ProcedureReference {
+    ProcDecl* caller;
     SLoc loc;
 };
 
+/// One active semantic dependency and its requesting location.
+struct Request {
+    /// Translate a registered declaration.
+    struct Declaration {
+        DeclarationRequest* subject;
+        bool operator==(const Declaration&) const = default;
+    };
+
+    /// Compute an enumerator's value.
+    struct EnumeratorValue {
+        EnumeratorDecl* subject;
+        bool operator==(const EnumeratorValue&) const = default;
+    };
+
+    /// Translate or generate a procedure body and deduce its return type.
+    struct ProcedureBody {
+        ProcDecl* subject;
+        bool operator==(const ProcedureBody&) const = default;
+    };
+
+    /// Complete record construction properties and declare generated initialisers.
+    struct RecordInitialisers {
+        RecordType* subject;
+        bool operator==(const RecordInitialisers& other) const {
+            return static_cast<const void*>(subject) == static_cast<const void*>(other.subject);
+        }
+    };
+
+    /// Complete a struct's fields, physical layout, and member declarations.
+    struct StructLayout {
+        StructType* subject;
+        bool operator==(const StructLayout& other) const {
+            return static_cast<const void*>(subject) == static_cast<const void*>(other.subject);
+        }
+    };
+
+    /// Request completion state.
+    enum struct State : u8 { Evaluating, Complete, Failed };
+
+    /// Request data.
+    using Subject = Variant<
+        Declaration,
+        EnumeratorValue,
+        ProcedureBody,
+        RecordInitialisers,
+        StructLayout
+    >;
+
+    Subject subject;
+    SLoc loc;
+};
+} // namespace srcc::sema
+
+/// Hashing and equality for semantic request cache keys.
+template <>
+struct llvm::DenseMapInfo<srcc::sema::Request::Subject> {
+    using Request = srcc::sema::Request;
+
+    static unsigned getHashValue(const Request::Subject& subject) {
+        return subject.visit([&](auto request) {
+            return unsigned(llvm::hash_combine(
+                subject.index(),
+                static_cast<const void*>(request.subject)
+            ));
+        });
+    }
+
+    static bool isEqual(const Request::Subject& lhs, const Request::Subject& rhs) {
+        return lhs == rhs;
+    }
+};
+
+namespace srcc::sema {
 /// Request evaluator state. This tracks scheduling, source information, and
 /// the lexical contexts needed to complete requests on demand.
 struct Requests {
     /// Status of each requested subject.
-    DenseMap<RequestSubject, RequestState> results;
+    DenseMap<Request::Subject, Request::State> results;
 
     /// Active requests.
-    SmallVector<RequestFrame> stack;
+    SmallVector<Request> stack;
+
+    /// Active initialiser overload resolutions and their argument types. This
+    /// detects conversion cycles that do not re-enter a cached semantic request.
+    SmallVector<std::pair<RecordType*, SmallVector<Type>>> resolving_initialisers;
 
     /// Translation contexts for each procedure.
     SmallVector<std::unique_ptr<ProcedureContext>> procedure_contexts;
@@ -117,9 +184,13 @@ struct Requests {
     /// generate the body.
     DenseMap<ProcDecl*, ProcedureSource> procedure_sources;
 
-    /// Generated bodies awaiting completion, grouped by their lexical procedure.
-    /// Signature and body translation can have different contexts for the same
-    /// procedure; they share this worklist and retain their own source contexts.
+    /// References to nested procedures whose captures may still be discovered.
+    DenseMap<ProcDecl*, SmallVector<ProcedureReference>> capture_users;
+
+    /// Generated bodies and user initialisers awaiting completion, grouped by
+    /// their lexical procedure. Signature and body translation can have different
+    /// contexts for the same procedure; they share this worklist and retain their
+    /// own source contexts.
     DenseMap<ProcDecl*, SmallVector<ProcDecl*>> pending_procedure_bodies;
 
     /// Enumerators whose implicit increments overflowed, including subsequent

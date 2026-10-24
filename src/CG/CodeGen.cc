@@ -1010,7 +1010,7 @@ void CodeGen::Mangler::Append(String s) {
 }
 
 void CodeGen::Mangler::Append(DeclName s) {
-    if (s.is_operator_name()) name += ".";
+    if (s.is_keyword_or_operator()) name += ".";
     Append(s.str());
 }
 
@@ -1038,7 +1038,7 @@ void CodeGen::Mangler::Append(Type ty) {
                 case BuiltinKind::Deduced:
                 case BuiltinKind::CallArgList:
                 case BuiltinKind::UnresolvedOverloadSet:
-                    Unreachable("Can’t mangle this: {}", Type{b});
+                    Unreachable("Can’t mangle this: {}", b);
                 case BuiltinKind::Tree: M.name += "tr"; return;
                 case BuiltinKind::Type: M.name += "ty"; return;
                 case BuiltinKind::Void: M.name += "v"; return;
@@ -1291,6 +1291,11 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
         // handled here.
         [&](CastExpr *e) {
             auto loc = C(e->location());
+            if (e->kind == CastExpr::MaterialisePoisonValue) {
+                Emit(e->arg);
+                return;
+            }
+
             if (e->kind == CastExpr::Nop) {
                 EmitRValue(addr, e->arg);
                 return;

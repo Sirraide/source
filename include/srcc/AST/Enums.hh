@@ -203,6 +203,7 @@ enum class srcc::SpecialProcedure : base::u8 {
     None,   ///< Not a special procedure.
     Delete, ///< 'delete'
     Copy,   ///< 'copy'
+    Init,   ///< 'init'
 };
 
 template <>
@@ -234,6 +235,7 @@ struct std::formatter<srcc::SpecialProcedure> : std::formatter<std::string_view>
                 case None: return "<none>";
                 case Delete: return "delete";
                 case Copy: return "copy";
+                case Init: return "init";
             }
             return "<invalid intent>";
         }();

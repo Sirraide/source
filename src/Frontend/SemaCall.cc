@@ -1,6 +1,7 @@
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
+using namespace srcc::sema;
 
 #define TRY(...) ({                      \
     auto _res = (__VA_ARGS__);           \
@@ -186,6 +187,10 @@ u32 Sema::ConversionSequence::badness() {
             case K::TupleNopCast:
             case K::TupleToFirstElement:
                 badness++;
+                break;
+
+            case K::InitialiserCall:
+                badness += 1 + conv.data.get<Conversion::InitialiserCallData>().badness;
                 break;
 
             // These contain other conversions.
@@ -519,8 +524,14 @@ auto Sema::PerformOverloadResolution(
     OverloadSetExpr* overload_set,
     TupleExpr* call_args,
     bool is_associated_call,
-    SLoc call_loc
-) -> std::pair<ProcDecl*, SmallVector<Expr*>> {
+    SLoc call_loc,
+    Conversion::InitialiserCallData* deferred,
+    bool* hard_error
+) -> std::pair<Ptr<ProcDecl>, SmallVector<Expr*>> {
+    bool hard_error_local;
+    if (hard_error == nullptr) hard_error = &hard_error_local;
+    *hard_error = false;
+
     // Since this may also entail template substitution etc. we always
     // treat calls as requiring overload resolution even if there is
     // only a single ‘overload’.
@@ -543,8 +554,10 @@ auto Sema::PerformOverloadResolution(
 
     // Add a candidate to the overload set.
     auto AddCandidate = [&](Decl* proc) -> bool {
-        if (not proc->valid())
+        if (not proc->valid()) {
+            *hard_error = true;
             return false;
+        }
 
         // If we’re resolving a builtin operator, only consider templates that
         // have been annotated with the appropriate attribute (and vice versa).
@@ -588,7 +601,10 @@ auto Sema::PerformOverloadResolution(
         c.subst = RequestTemplateSubstitution(templ, types);
 
         // If there was a hard error, abort overload resolution entirely.
-        if (c.subst.data.is<SubstitutionResult::Error>()) return false;
+        if (c.subst.data.is<SubstitutionResult::Error>()) {
+            *hard_error = true;
+            return false;
+        }
 
         // Otherwise, we can still try and continue with overload resolution.
         if (not c.subst.success()) c.status = Candidate::DeductionError{};
@@ -618,6 +634,7 @@ auto Sema::PerformOverloadResolution(
             // Calling conventions and conversions require the parameter layout.
             auto& p = params[param_index];
             if (not CheckVariableType(p.type, loc)) {
+                *hard_error = true;
                 c.status = Candidate::ParamInitFailed{{}, param_index};
                 return false;
             }
@@ -643,7 +660,7 @@ auto Sema::PerformOverloadResolution(
         };
 
         ConvertArgumentsForCall(arg_lists[c.arg_list()], c.callee, ConvertArg, call_loc);
-        return true;
+        return not *hard_error;
     };
 
     // Check if we have no candidates at all; this can happen if the only
@@ -708,27 +725,41 @@ auto Sema::PerformOverloadResolution(
                 call_loc
             );
 
-            if (not inst or not inst->is_valid) return {};
-            final_callee = inst;
+            if (not inst or not inst->is_valid) {
+                *hard_error = true;
+                return {};
+            }
+            final_callee = inst.get();
         } else {
             final_callee = c->callee.cast<ProcDecl>();
         }
 
-        // Now is the time to apply the argument conversions.
         auto& args = arg_lists[c->arg_list()];
+
+        // If we’re building a conversion sequence, collect the results of
+        // overload resolution and store them for later.
+        if (deferred) {
+            deferred->proc = final_callee;
+            deferred->args = llvm::to_vector(args);
+            auto& conversions = c->status.get<Candidate::Viable>().conversions;
+            for (auto& conversion : conversions) deferred->conversions.push_back(std::move(conversion));
+            deferred->badness = badness;
+            return {final_callee, {}};
+        }
+
+        // Now is the time to apply the argument conversions.
         SmallVector<Expr*> actual_args;
         actual_args.reserve(args.size());
         ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
+        bool ok = true;
         auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
-            actual_args.emplace_back(ApplyConversionSequence(
-                args,
-                conversions[param_index],
-                loc
-            ));
+            auto value = ApplyConversionSequence(args, conversions[param_index], loc);
+            if (value) actual_args.push_back(value.get());
+            else ok = false;
         };
 
         ConvertArgumentsForCall(args, final_callee, ConvertArg, call_loc);
-        if (not CheckIntents(final_callee->proc_type(), actual_args)) return {};
+        if (not ok) return {};
         return {final_callee, std::move(actual_args)};
     }
 

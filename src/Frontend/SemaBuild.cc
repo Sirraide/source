@@ -1,6 +1,7 @@
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
+using namespace srcc::sema;
 
 #define TRY(...) ({                      \
     auto _res = (__VA_ARGS__);           \
@@ -616,7 +617,7 @@ auto Sema::BuildBuiltinMemberAccessExpr(
                 return Type::BoolTy;
 
             case TypeName:
-                return Type(tu->StrLitTy);
+                return tu->StrLitTy;
 
             // The values of these are type-dependent, e.g. 'i8.max' yields a value of
             // type 'i8'; this means we can’t really construct such an expression if the
@@ -701,13 +702,13 @@ auto Sema::BuildCallExpr(
     }
 
     // If this is an overload set, perform overload resolution.
-    Expr* resolved_callee = nullptr;
+    Expr* resolved_callee;
     SmallVector<Expr*> converted_args;
     if (auto os = dyn_cast<OverloadSetExpr>(callee_expr)) {
-        ProcDecl* d{};
+        Ptr<ProcDecl> d;
         std::tie(d, converted_args) = PerformOverloadResolution(os, args, is_associated_call, loc);
         if (not d) return nullptr;
-        resolved_callee = TRY(RequestReference(d, loc));
+        resolved_callee = TRY(RequestReference(d.get(), loc));
     }
 
     // If the ‘callee’ is a type, then this is an initialiser call.
@@ -728,8 +729,14 @@ auto Sema::BuildCallExpr(
             );
         }
 
-        // Strip the non-existent names and build an initialiser.
-        return BuildInitialiser(ty, args, loc);
+        return BuildInitialiser(
+            ty,
+            args,
+            loc,
+            /*want_lvalue=*/false,
+            /*allow_auto_deref=*/false,
+            /*type_call=*/true
+        );
     }
 
     // If the type of this is a procedure, then we can skip overload
@@ -792,12 +799,7 @@ auto Sema::BuildCallExpr(
         };
 
         ConvertArgumentsForCall(ordered_args, logical_callee, ConvertArg, loc);
-
-        // We can do this before adding the varargs arguments since we only allow
-        // passing trivially copyable types as varargs arguments, and those always
-        // have the 'copy' intent and require no intent checking.
-        if (not ok or not CheckIntents(ty, converted_args))
-            return nullptr;
+        if (not ok) return nullptr;
     }
 
     // Otherwise, we have no idea how to call this thing.
@@ -809,10 +811,22 @@ auto Sema::BuildCallExpr(
         );
     }
 
+    return BuildConvertedCall(resolved_callee, converted_args, args->values(), loc);
+}
+
+auto Sema::BuildConvertedCall(
+    Expr* callee,
+    SmallVectorImpl<Expr*>& converted_args,
+    ArrayRef<Expr*> original,
+    SLoc loc
+) -> Ptr<Expr> {
+    // Check intents.
+    if (not CheckIntents(cast<ProcType>(callee->type), converted_args)) return {};
+
     // And check C varargs arguments.
-    auto ty = cast<ProcType>(resolved_callee->type);
+    auto ty = cast<ProcType>(callee->type);
     if (ty->has_c_varargs()) {
-        for (auto a : args->values().drop_front(ty->params().size())) {
+        for (auto a : original.drop_front(ty->params().size())) {
             // Codegen is not set up to handle variadic arguments that are larger
             // than a word, so reject these here. If you need one of those, then
             // seriously, wtf are you doing.
@@ -837,7 +851,7 @@ auto Sema::BuildCallExpr(
     // Check that we can even call this at this point.
     if (ty->ret() == Type::DeducedTy) {
         Error(loc, "Cannot call procedure before its return type has been deduced");
-        if (auto p = dyn_cast<ProcRefExpr>(resolved_callee)) {
+        if (auto p = dyn_cast<ProcRefExpr>(callee)) {
             Note(p->decl->location(), "Declared here");
             Remark("\rTry specifying the return type explicitly: '%1(->%) <type>'");
         }
@@ -845,12 +859,12 @@ auto Sema::BuildCallExpr(
     }
 
     // Finally, create the call.
-    auto proc = cast<ProcType>(resolved_callee->type);
+    auto proc = cast<ProcType>(callee->type);
     return CallExpr::Create(
         *tu,
         proc->ret(),
         proc->return_value_category(),
-        resolved_callee,
+        callee,
         converted_args,
         loc
     );
@@ -1269,6 +1283,25 @@ auto Sema::BuildProcDeclInitial(
     // Don’t e.g. diagnose calls to this if the type is invalid.
     if (not ty) proc->set_invalid();
 
+    // Set initialiser properties.
+    if (proc->special_proc == SpecialProcedure::Init) {
+        proc->linkage = Linkage::Exported;
+
+        // Note that this need not be for a struct type if this is a generated initialiser.
+        if (auto record = dyn_cast<StructType>(*props.associated_type)) proc->parent = record->parent;
+
+        // Users attempting to write a copy-initialiser C++-style would instead end up
+        // writing an initialiser that has to call itself to initialise its parameter;
+        // this is nonsense, so forbid it; we have 'copy' for this anyway.
+        if (
+            ty->params().size() == 1 and
+            ty->params().front().type == props.associated_type
+        ) {
+            Error(loc, "An initialiser cannot take a single argument of its own type; use 'copy' instead");
+            proc->set_invalid();
+        }
+    }
+
     // Add the procedure to the module and the parent scope.
     proc->scope = proc_scope;
     BuildParamDecls(proc, specs);
@@ -1289,6 +1322,7 @@ auto Sema::BuildProcBody(ProcDecl* proc, Ptr<Expr> body_or_null) -> Ptr<Expr> {
     // If the body is not a block, build an implicit return.
     auto body = body_or_null.get();
     if (not isa<BlockExpr>(body)) body = BuildReturnExpr(body, body->location(), true);
+    if (not body) return {};
 
     // Make sure all paths return a value. First, if the body is
     // 'noreturn', then that means we never actually get here.
@@ -1352,8 +1386,9 @@ auto Sema::BuildProcSignature(
 }
 
 auto Sema::BuildReturnExpr(Ptr<Expr> value, SLoc loc, bool implicit) -> ReturnExpr* {
-    // Perform return type deduction.
     auto proc = curr_proc().proc;
+
+    // Perform return type deduction.
     if (proc->return_type() == Type::DeducedTy) {
         auto proc_type = proc->proc_type();
         Type deduced = Type::VoidTy;

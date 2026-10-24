@@ -29,6 +29,7 @@
 #include <ranges>
 
 using namespace srcc;
+using namespace srcc::sema;
 
 #define TRY(...) ({                      \
     auto _res = (__VA_ARGS__);           \
@@ -459,8 +460,75 @@ void Sema::DefineSpecialProcedures(
     RecordLayout::Props props,
     Ptr<ParsedStmt> parsed_deleter,
     Ptr<ParsedStmt> parsed_copy,
-    SLoc loc
+    SLoc loc,
+    bool generate_initialisers
 ) {
+    Assert(r->is_canonical());
+    if (generate_initialisers) {
+        auto Register = [&](ProcDecl* proc) {
+            proc->props.associated_type = r;
+            proc->props.mangling_number = next_proc_mangling_number++;
+            if (auto structure = dyn_cast<StructType>(r)) proc->parent = structure->parent;
+            else proc->parent = nullptr; // Tuples have no lexical parent.
+            AddDeclToScope(r->scope(), proc);
+        };
+
+        // Build the body of the default initialiser.
+        auto BuildDefault = [this, r, loc](ProcDecl*) -> Ptr<Expr> {
+            SmallVector<Expr*> fields;
+            for (auto field : r->scope()->fields()) {
+                auto init = BuildInitialiser(field->type, {}, loc);
+                if (not init) return {};
+                fields.push_back(init.get());
+            }
+            return TupleExpr::Create(*tu, r, fields, {}, loc);
+        };
+
+        // Build the body of the aggregate initialiser.
+        auto BuildAggregate = [this, r, loc](ProcDecl* proc) -> Ptr<Expr> {
+            SmallVector<Expr*> fields;
+            for (auto param : proc->params()) {
+                auto ref = RequestReference(param, loc);
+                if (not ref) return {};
+                auto init = BuildInitialiser(param->type, ref.get(), loc);
+                if (not init) return {};
+                fields.push_back(init.get());
+            }
+            return TupleExpr::Create(*tu, r, fields, {}, loc);
+        };
+
+        // Build the default initialiser.
+        Register(BuildImplicitProcedure(
+            ProcType::Get(*tu, {r, Expr::RValue}),
+            Tk::Init,
+            {},
+            Linkage::Exported,
+            Mangling::Source,
+            loc,
+            std::move(BuildDefault),
+            /*defer_body=*/true
+        ));
+
+        // Build the aggregate initialiser.
+        SmallVector<ParamTypeData> params;
+        SmallVector<ParamSpec> specs;
+        for (auto field : r->scope()->fields()) {
+            params.emplace_back(Intent::Move, field->type);
+            specs.push_back({.name = {field->name, field->location()}});
+        }
+
+        Register(BuildImplicitProcedure(
+            ProcType::Get(*tu, {r, Expr::RValue}, params),
+            Tk::Init,
+            specs,
+            Linkage::Exported,
+            Mangling::Source,
+            loc,
+            std::move(BuildAggregate),
+            /*defer_body=*/true
+        ));
+    }
+
     // If we don’t need a deleter/copy, we’re done.
     if (
         parsed_deleter.invalid() and
@@ -522,7 +590,6 @@ void Sema::DefineSpecialProcedures(
             /*defer_body=*/true
         );
 
-        proc->special_proc = SpecialProcedure::Delete;
         r->set_delete(proc);
     }
 
@@ -538,7 +605,6 @@ void Sema::DefineSpecialProcedures(
             /*defer_body=*/true
         );
 
-        proc->special_proc = SpecialProcedure::Copy;
         r->set_copy(proc);
     }
 }

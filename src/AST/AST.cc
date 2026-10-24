@@ -154,7 +154,11 @@ auto TranslationUnit::store_int(APInt value) -> StoredInteger {
 }
 
 auto Scope::associated_type() -> Opt<Type> {
-    return enclosing_proc()->associated_type;
+    for (Scope* scope = this; scope; scope = scope->parent()) {
+        if (auto record = dyn_cast<RecordScope>(scope)) return record->record;
+        if (auto proc = dyn_cast<ProcScope>(scope)) return proc->associated_type;
+    }
+    Unreachable("We should always be in a procedure");
 }
 
 auto Scope::enclosing_proc() -> ProcScope* {

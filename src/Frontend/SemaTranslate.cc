@@ -3,6 +3,7 @@
 #include <srcc/Frontend/Sema.hh>
 
 using namespace srcc;
+using namespace srcc::sema;
 
 #define TRY(...) ({                      \
     auto _res = (__VA_ARGS__);           \
@@ -465,7 +466,8 @@ auto Sema::TranslateEntireDecl(Decl* d, ParsedDecl* parsed) -> Ptr<Decl> {
     // Complete struct declarations.
     if (isa<ParsedStructDecl>(parsed)) {
         if (not d) return nullptr;
-        RequestStructLayout(cast<StructType>(cast<TypeDecl>(d)->type));
+        auto record = cast<StructType>(cast<TypeDecl>(d)->type);
+        RequestRecordInitialisers(record, d->location());
         return d;
     }
 
@@ -874,8 +876,8 @@ auto Sema::TranslateRawTupleExpr(ParsedRawTupleExpr* parsed, Opt<Type> desired_t
     }
 
     if (not CheckVariableType(*type, parsed->loc)) return {};
-    auto tuple = TRY(TranslateExpr(parsed->tuple, type));
-    return BuildInitialiser(*type, tuple, parsed->loc);
+    auto tuple = TRY(TranslateTupleExpr(std::nullopt, parsed->tuple, Type::CallArgListTy));
+    return BuildRawInitialiser(*type, tuple, parsed->loc);
 }
 
 auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
@@ -896,6 +898,11 @@ auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
+    if (desired_type and isa<RecordType>(*desired_type)) {
+        auto args = TRY(TranslateTupleExpr(std::nullopt, parsed, Type::CallArgListTy));
+        return BuildInitialiser(*desired_type, args, parsed->loc);
+    }
+
     return TranslateTupleExpr(std::nullopt, parsed, desired_type);
 }
 
@@ -1132,6 +1139,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     // Determine inherited properties.
     InheritedProcedureProperties props;
     props.always_inline = attrs.inline_;
+    if (parsed->name.is_init()) props.associated_type = curr_scope()->associated_type();
 
     // Determine its mangling number.
     //
@@ -1198,6 +1206,10 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
             props,
             has_variadic_param
         );
+
+        if (parsed->name.is_init()) {
+            temp->parent = cast<StructType>(*props.associated_type)->parent;
+        }
 
         decl = temp;
         if (auto request = GetDeclarationRequest(parsed))
@@ -1274,12 +1286,20 @@ auto Sema::TranslateStrLitExpr(ParsedStrLitExpr* parsed, Opt<Type>) -> Ptr<Stmt>
 /// Translate a return expression.
 auto Sema::TranslateReturnExpr(ParsedReturnExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
     Ptr<Expr> ret_val;
+
+    // Translate the value.
     if (parsed->value.present()) {
-        ret_val = TranslateExpr(
-            parsed->value.get(),
-            curr_proc().proc->return_type()
-        );
+        auto proc = curr_proc().proc;
+        auto ret = proc->return_type();
+        auto desired = ret != Type::DeducedTy ? Opt<Type>(ret) : std::nullopt;
+
+        // Inside of an initialiser, the desired return type, if unset, is the
+        // associated type of the procedure (i.e. the enclosing struct).
+        if (not desired and proc->special_proc == SpecialProcedure::Init) desired = proc->props.associated_type;
+        ret_val = TranslateExpr(parsed->value.get(), desired);
+        if (not ret_val) return {};
     }
+
     return BuildReturnExpr(ret_val.get_or_null(), parsed->loc, false);
 }
 

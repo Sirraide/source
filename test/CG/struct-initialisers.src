@@ -1,0 +1,206 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s
+program test;
+
+struct Item {
+    int x;
+    int y;
+    init (int x, int y) = ::(x + 1, y + 2);
+    init = ::(10, 20);
+}
+
+struct Wrapper { Item item; int z; }
+struct Factory { init (int x) = x + 1; }
+
+proc construct {
+    var a = Item(1, 2);
+    Item b = (3, 4);
+    Item raw = ::(5, 6);
+    Wrapper defaulted;
+    var aggregate = Wrapper(Item::(7, 8), 9);
+    var scalar = Factory(10);
+}
+
+proc tuple_default { (Item, int) value; }
+
+// * @0 = "+\00"
+// + @1 = "integer overflow\00"
+// + @2 = "struct-initialisers.src\00"
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S9constructFvE.1 private ccc {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +     #2 = 16, align 8
+// +     #3 = 24, align 8
+// +     #4 = 24, align 8
+// +     #5 = 8, align 8
+// +     #6 = 16, align 8
+// +
+// + entry:
+// +     %0 = call ccc (i64, i64) _S.4initFT4ItemiiE$T4Item.3(i64 1 noundef, i64 2 noundef)
+// +     store #0, i64 %0:0, align 8
+// +     %1 = ptradd #0, 8
+// +     store %1, i64 %0:1, align 8
+// +     %2 = call ccc (i64, i64) _S.4initFT4ItemiiE$T4Item.3(i64 3 noundef, i64 4 noundef)
+// +     store #1, i64 %2:0, align 8
+// +     %3 = ptradd #1, 8
+// +     store %3, i64 %2:1, align 8
+// +     store #2, i64 5, align 8
+// +     %4 = ptradd #2, 8
+// +     store %4, i64 6, align 8
+// +     call ccc void _S.4initFT7WrapperE$T7Wrapper.5(ptr #3 sret i8[24])
+// +     store #6, i64 7, align 8
+// +     %5 = ptradd #6, 8
+// +     store %5, i64 8, align 8
+// +     %6 = load i64, #6, align 8
+// +     %7 = ptradd #6, 8
+// +     %8 = load i64, %7, align 8
+// +     call ccc void _S.4initFT7WrapperT4ItemiE$T7Wrapper.6(
+// +         ptr #4 sret i8[24],
+// +         i64 %6 noundef,
+// +         i64 %8 noundef,
+// +         i64 9 noundef)
+// +     %9 = call ccc i64 _S.4initFiiE$T7Factory.7(i64 10 noundef)
+// +     store #5, i64 %9, align 8
+// +     ret
+// + }
+// +
+// + proc _S.4initFT4ItemiiE$T4Item.3 (i64 %0 noundef, i64 %1 noundef) external ccc -> (i64, i64) {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 16, align 8
+// +     #3 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = sadd ov i64 %2, 1
+// +     br %3:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("struct-initialisers.src":7:32) arithmetic(ptr #3)
+// +
+// + bb2:
+// +     store #2, i64 %3:0, align 8
+// +     %13 = ptradd #2, 8
+// +     %14 = load i64, #1, align 8
+// +     %15 = sadd ov i64 %14, 2
+// +     br %15:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at loc("struct-initialisers.src":7:39) arithmetic(ptr #3)
+// +
+// + bb4:
+// +     store %13, i64 %15:0, align 8
+// +     %25 = load i64, #2, align 8
+// +     %26 = ptradd #2, 8
+// +     %27 = load i64, %26, align 8
+// +     ret i64 %25, i64 %27
+// + }
+// +
+// + proc _S.4initFT7WrapperE$T7Wrapper.5 (ptr %0 sret i8[24]) external ccc {
+// + entry:
+// +     %1 = call ccc (i64, i64) _S.4initFT4ItemE$T4Item.4()
+// +     store %0, i64 %1:0, align 8
+// +     %2 = ptradd %0, 8
+// +     store %2, i64 %1:1, align 8
+// +     %3 = ptradd %0, 16
+// +     store %3, i64 0, align 8
+// +     ret
+// + }
+// +
+// + proc _S.4initFT7WrapperT4ItemiE$T7Wrapper.6 (
+// +     ptr %0 sret i8[24],
+// +     i64 %1 noundef,
+// +     i64 %2 noundef,
+// +     i64 %3 noundef,
+// + ) external ccc {
+// +     #0 = 16, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %1, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %2, align 8
+// +     store #1, i64 %3, align 8
+// +     copy %0 <- #0, 16
+// +     %5 = ptradd %0, 16
+// +     %6 = load i64, #1, align 8
+// +     store %5, i64 %6, align 8
+// +     ret
+// + }
+// +
+// + proc _S.4initFiiE$T7Factory.7 (i64 %0 noundef) external ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = sadd ov i64 %1, 1
+// +     br %2:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("struct-initialisers.src":12:35) arithmetic(ptr #1)
+// +
+// + bb2:
+// +     ret i64 %2:0
+// + }
+// +
+// + proc _S13tuple_defaultFvE.2 private ccc {
+// +     #0 = 24, align 8
+// +
+// + entry:
+// +     call ccc void _S.4initFQT4ItemiEE$QT4ItemiE.8(ptr #0 sret i8[24])
+// +     ret
+// + }
+// +
+// + proc _S.4initFQT4ItemiEE$QT4ItemiE.8 (ptr %0 sret i8[24]) external ccc {
+// + entry:
+// +     %1 = call ccc (i64, i64) _S.4initFT4ItemE$T4Item.4()
+// +     store %0, i64 %1:0, align 8
+// +     %2 = ptradd %0, 8
+// +     store %2, i64 %1:1, align 8
+// +     %3 = ptradd %0, 16
+// +     store %3, i64 0, align 8
+// +     ret
+// + }
+// +
+// + proc _S.4initFT4ItemE$T4Item.4 external ccc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +
+// + entry:
+// +     store #0, i64 10, align 8
+// +     %0 = ptradd #0, 8
+// +     store %0, i64 20, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
+// + }
+// +
+// + proc _S.4initFQT4ItemiET4ItemiE$QT4ItemiE.9 (
+// +     ptr %0 sret i8[24],
+// +     i64 %1 noundef,
+// +     i64 %2 noundef,
+// +     i64 %3 noundef,
+// + ) external ccc {
+// +     #0 = 16, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %1, align 8
+// +     %4 = ptradd #0, 8
+// +     store %4, i64 %2, align 8
+// +     store #1, i64 %3, align 8
+// +     copy %0 <- #0, 16
+// +     %5 = ptradd %0, 16
+// +     %6 = load i64, #1, align 8
+// +     store %5, i64 %6, align 8
+// +     ret
+// + }

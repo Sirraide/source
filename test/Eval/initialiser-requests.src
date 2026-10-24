@@ -1,0 +1,216 @@
+// V %srcc --eval %s
+// V %srcc %s -o=%t
+// V %t
+program test;
+
+// Calls before the type definition request declarations and inferred bodies.
+#assert Box(41).value == 42;
+#assert Box(8 as i8).value == 9;
+#assert Box(value: 41).value == 42;
+struct Box {
+    int value;
+    init ($T value) = ::(value as int + 1,);
+}
+#assert Box(41).value == 42;
+
+struct Identity { init (var value) = value; }
+#assert Identity(42) == 42;
+#assert Identity(true);
+
+// A signature can name another record whose definition appears later.
+#assert FromLater(Later::(42,)).value == 42;
+struct FromLater {
+    int value;
+    init (Later value) = ::(value.value,);
+}
+struct Later { int value; }
+
+// A variadic template can provide default construction.
+struct VariadicDefault {
+    int value;
+    init (int... values) = ::(42,);
+}
+
+struct Wrapper { VariadicDefault value; int tag; }
+Wrapper wrapper;
+
+assert wrapper.value.value == 42;
+(VariadicDefault, int) tuple;
+assert tuple[0].value == 42;
+#assert Wrapper().value.value == 42;
+#assert Wrapper().value.value == 42;
+#assert Wrapper(VariadicDefault(1, 2), 3).tag == 3;
+
+// Computing construction properties must not delay physical layout completion.
+// B's default body can use A even while A's properties are being requested.
+struct A { B value; }
+struct B {
+    int value;
+    init = A::(B::(42,),).value;
+}
+
+A value;
+assert value.value.value == 42;
+
+// Explicit return types permit runtime recursion across different initialisers.
+struct Even {
+    init (int n) -> bool = match n { 0: true; _: Odd(n - 1); };
+}
+
+struct Odd {
+    init (int n) -> bool = match n { 0: false; _: Even(n - 1); };
+}
+
+#assert Even(10);
+#assert Odd(9);
+
+proc local () -> int {
+    struct Local {
+        int value;
+        init ($T value, int offset) = ::(offset + value as int,);
+    }
+    return Local(2, 40).value;
+}
+
+#assert local() == 42;
+assert local() == 42;
+
+proc local_tuple () -> int {
+    struct LocalDefault {
+        int value;
+        init = ::(42,);
+    }
+    (LocalDefault, int) value;
+    return value[0].value;
+}
+
+#assert local_tuple() == 42;
+assert local_tuple() == 42;
+
+assert Box(41).value == 42;
+assert Identity(true);
+
+int first = 20;
+int second = 21;
+struct Inout {
+    int value;
+    init (inout int first, inout int second) {
+        first += 1;
+        return ::(first + second,);
+    }
+}
+
+Inout inout_value = (first, second);
+assert first == 21;
+assert inout_value.value == 42;
+
+proc nested_tuple_types () -> int {
+    struct A { int value; init = ::(20,); }
+    proc inner () -> int {
+        struct B { int value; init = ::(22,); }
+        (A, B) forward;
+        (B, A) reversed;
+        return forward[0].value + forward[1].value + reversed[0].value + reversed[1].value;
+    }
+    return inner();
+}
+
+#assert nested_tuple_types() == 84;
+assert nested_tuple_types() == 84;
+
+// Nested procedures may still capture the initialiser's own parameters/locals.
+struct OwnLocals {
+    int value;
+    init (int value) {
+        int adjustment = 2;
+        proc compute () -> int = value + adjustment;
+        return ::(compute(),);
+    }
+}
+
+#assert OwnLocals(40).value == 42;
+assert OwnLocals(40).value == 42;
+
+// Capture-free enclosing procedures can still be called, in either order.
+proc capture_free_helpers () -> int {
+    struct Local {
+        int value;
+        init = ::(helper(),);
+    }
+    proc helper () -> int = 42;
+    return Local().value;
+}
+
+#assert capture_free_helpers() == 42;
+assert capture_free_helpers() == 42;
+
+// A closure supplied explicitly is an argument, not a lexical capture.
+struct CallbackArgument {
+    int value;
+    init (proc (int) -> int callback) = ::(callback(0),);
+}
+
+proc explicit_closure_argument () -> int {
+    int outer = 42;
+    proc closure (int adjustment) -> int = outer + adjustment;
+    return CallbackArgument(closure).value;
+}
+
+#assert explicit_closure_argument() == 42;
+assert explicit_closure_argument() == 42;
+
+// Ordinary recursive closures still propagate enclosing environments correctly.
+proc recursive_closures (int outer) -> int {
+    proc first (int n) -> int {
+        if n != 0 { return second(n - 1); }
+        return outer;
+    }
+    proc second (int n) -> int = first(n);
+    return second(2);
+}
+
+#assert recursive_closures(42) == 42;
+assert recursive_closures(42) == 42;
+
+// A factory call uses the same conversion-sequence machinery as storage
+// initialisation, while retaining the selected procedure's actual result type.
+struct TupleArgument {
+    init (int first, int second) = first + second;
+    init ((int, int) pair) = pair[0] - pair[1];
+}
+
+#assert TupleArgument(20, 22) == 42;
+#assert TupleArgument((20, 22)) == -2;
+assert TupleArgument((20, 22)) == -2;
+
+// A named tuple passed as one argument must remain one argument.
+struct NamedTupleArgument {
+    init ($T pair) = pair.first + pair.second;
+}
+
+#assert NamedTupleArgument((first: 20, second: 22)) == 42;
+assert NamedTupleArgument((first: 20, second: 22)) == 42;
+
+// Named construction of a tuple with generated initialisers preserves names
+// until overload resolution, including when the field order is reversed.
+var tuple_seed = (value: VariadicDefault(), tag: 0);
+
+typeof(tuple_seed) named_tuple = (tag: 7, value: VariadicDefault());
+assert named_tuple.value.value == 42;
+assert named_tuple.tag == 7;
+
+var tuple_call = typeof(tuple_seed)(tag: 9, value: VariadicDefault());
+assert tuple_call.value.value == 42;
+assert tuple_call.tag == 9;
+
+// A constraint failure while trying to determine whether a type is
+// default-constructible is not a hard error.
+struct ConstrainedEmpty {
+    int value;
+    init (var... values) -> This where false { return ::(0,); }
+}
+
+struct ConstrainedField { ConstrainedEmpty value; int tag; }
+ConstrainedField constrained = (ConstrainedEmpty::(42,), 7);
+assert constrained.value.value == 42;
+assert constrained.tag == 7;
