@@ -1,0 +1,113 @@
+// V %srcc --sema --verify %s
+program test;
+
+// Unequal totals no longer select a winner: each candidate loses somewhere.
+proc crossed (int, i128, i128) {}
+proc crossed (i128, int, int) {}
+crossed(1, 2, 3); // expected-error: Overload resolution failed in call to 'crossed'
+proc reversed (i128, int, int) {}
+proc reversed (int, i128, i128) {}
+reversed(1, 2, 3); // expected-error: Overload resolution failed in call to 'reversed'
+
+// No preference based on integer widths, or on the number of wrapping steps.
+proc widths (i128) {}
+proc widths (i256) {}
+widths(1); // expected-error: Overload resolution failed in call to 'widths'
+proc wrapping (int?) {}
+proc wrapping (int??) {}
+wrapping(1); // expected-error: Overload resolution failed in call to 'wrapping'
+proc nils (int?) {}
+proc nils (bool?) {}
+nils(nil); // expected-error: Overload resolution failed in call to 'nils'
+
+// Neither template status nor variadic status resolves incomparable conversions.
+proc templated (int, i128, i128) {}
+proc templated (i128, $T, T) {}
+templated(1, 2, 3); // expected-error: Overload resolution failed in call to 'templated'
+proc variadic (int, i128, i128) {}
+proc variadic (i128, int...) {}
+variadic(1, 2, 3); // expected-error: Overload resolution failed in call to 'variadic'
+
+// Parameter names may appear at different positions in different candidates.
+proc named_cross ($T y, i128 x) {}
+proc named_cross (int x, i128 y) {}
+named_cross(x: 1, y: 2); // expected-error: Overload resolution failed in call to 'named_cross'
+named_cross(y: 2, x: 1); // expected-error: Overload resolution failed in call to 'named_cross'
+
+// A dominated candidate cannot resolve ambiguity between two maxima.
+proc frontier (int, i128) {}
+proc frontier (i128, int) {}
+proc frontier (i128, i128) {}
+frontier(1, 2); // expected-error: Overload resolution failed in call to 'frontier'
+
+// Equal ranks stay ambiguous even for unrelated kinds of value conversion.
+proc values (i128) {}
+proc values (int?) {}
+values(1); // expected-error: Overload resolution failed in call to 'values'
+
+// Different user initialisers remain opaque to the enclosing overload set.
+struct A { int value; init (int x) = ::(x); }
+struct B { i128 value; init (i128 x) = ::(x); }
+proc initialisers (A) {}
+proc initialisers (B) {}
+initialisers(1); // expected-error: Overload resolution failed in call to 'initialisers'
+
+// Aggregate sequences of equal worst rank are ambiguous.
+struct Left { int x; i128 y; i128 z; }
+struct Right { i128 x; int y; int z; }
+proc aggregates (Left) {}
+proc aggregates (Right) {}
+aggregates((1, 2, 3)); // expected-error: Overload resolution failed in call to 'aggregates'
+aggregates((z: 3, x: 1, y: 2)); // expected-error: Overload resolution failed in call to 'aggregates'
+
+// Unreachable arguments cannot distinguish overloads.
+proc stop extern -> noreturn;
+proc unreachable_call (int) {}
+proc unreachable_call (bool) {}
+proc check_unreachable { unreachable_call(stop()); } // expected-error: Overload resolution failed in call to 'unreachable_call'
+
+// Templates with identical conversions receive no invented specificity ordering.
+proc templates ($T, int) {}
+proc templates (int, $T) {}
+templates(1, 2); // expected-error: Overload resolution failed in call to 'templates'
+
+// Both variadic candidates have the same conversions, including empty packs.
+proc packs (int, int...) {}
+proc packs (int, i128...) {}
+packs(1); // expected-error: Overload resolution failed in call to 'packs'
+
+// C varargs cannot compensate for a worse conversion to a required parameter.
+proc ellipsis (int, i128) varargs {}
+proc ellipsis (i128, int, int) {}
+ellipsis(1, 2, 3); // expected-error: Overload resolution failed in call to 'ellipsis'
+
+proc range_widths (range<i128>) {}
+proc range_widths (range<i256>) {}
+range_widths(1..=3); // expected-error: Overload resolution failed in call to 'range_widths'
+
+// The same partial order also applies to an initialiser overload set.
+struct AmbiguousInitialiser {
+    init (int, i128, i128) = 1;
+    init (i128, int, int) = 2;
+}
+AmbiguousInitialiser(1, 2, 3); // expected-error: Overload resolution failed in call to 'init'
+
+// Non-viable candidates neither participate in ranking nor resolve ambiguity.
+proc not_viable (int, i128) {}
+proc not_viable (i128, int) {}
+proc not_viable (bool) {}
+not_viable(1, 2); // expected-error: Overload resolution failed in call to 'not_viable'
+
+struct NestedLeft { (int, i128) x; (i128, i128) y; }
+struct NestedRight { (i128, int) x; (int, int) y; }
+proc nested_cross (NestedLeft) {}
+proc nested_cross (NestedRight) {}
+nested_cross(((1, 2), (3, 4))); // expected-error: Overload resolution failed in call to 'nested_cross'
+nested_cross((y: (3, 4), x: (1, 2))); // expected-error: Overload resolution failed in call to 'nested_cross'
+
+// A later candidate beats the provisional winner but is still unordered with
+// an earlier candidate. Replacing the provisional winner must not hide ambiguity.
+proc scan_frontier (i128, int, i128) {}
+proc scan_frontier (int, i128, int) {}
+proc scan_frontier (int, int, i128) {}
+scan_frontier(1, 2, 3); // expected-error: Overload resolution failed in call to 'scan_frontier'

@@ -9,6 +9,8 @@
 #include <srcc/Frontend/SemaRequests.hh>
 #include <srcc/Macros.hh>
 
+#include <compare>
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/FoldingSet.h>
 #include <llvm/ADT/TinyPtrVector.h>
@@ -31,6 +33,13 @@ class TemplateInstantiator;
 namespace clang {
 class ASTImporterSharedState;
 class MacroInfo;
+}
+
+namespace srcc::sema::OverloadRanking {
+inline constexpr std::partial_ordering Better = std::partial_ordering::less;
+inline constexpr std::partial_ordering Equivalent = std::partial_ordering::equivalent;
+inline constexpr std::partial_ordering Unordered = std::partial_ordering::unordered;
+inline constexpr std::partial_ordering Worse = std::partial_ordering::greater;
 }
 
 namespace srcc::sema::preamble {
@@ -117,6 +126,28 @@ class srcc::Sema : public DiagsProducer {
         [[nodiscard]] auto token() -> LoopToken;
     };
 
+    /// Conversion ranking for a set of arguments.
+    class ConversionRanking {
+    public:
+        /// Primitive conversions are ordered by how much they change the value.
+        /// Repeated steps of the same rank are allowed and don’t affect the rank.
+        enum struct Rank : u8 {
+            Exact,
+            Qualification,
+            View,
+            Value,
+            Initialiser,
+            Varargs,
+        };
+
+    private:
+        SmallVector<Rank> ranks;
+
+    public:
+        void add(Rank rank);
+        auto compare(const ConversionRanking& other) const -> std::partial_ordering;
+    };
+
     /// A (possibly empty) sequence of conversions applied to a type.
     class ConversionSequence;
 
@@ -129,7 +160,6 @@ class srcc::Sema : public DiagsProducer {
             Ptr<ProcDecl> proc;
             SmallVector<Expr*> args;
             std::vector<ConversionSequence> conversions;
-            u32 badness = 0;
         };
 
         struct RecordInitData {
@@ -255,8 +285,12 @@ class srcc::Sema : public DiagsProducer {
     public:
         SmallVector<Conversion, 1> conversions;
         ConversionSequence() = default;
+
+        /// Add a conversion.
         void add(Conversion conv) { conversions.push_back(std::move(conv)); }
-        u32 badness();
+
+        /// Return the worst conversion rank; variadic packing is bookkeeping.
+        auto rank(bool variadic = false) const -> ConversionRanking::Rank;
     };
 
     class TentativeConversionContext {
@@ -645,9 +679,8 @@ class srcc::Sema : public DiagsProducer {
             // own list; otherwise, we store a pointer to a common list.
             CandidateArgumentLists::Id arg_list{CandidateArgumentLists::Id::Unnamed};
 
-            // How 'bad' is this overload, i.e. how many conversions are
-            // required to make it work.
-            u32 badness = 0;
+            /// Ranking of this candidate.
+            ConversionRanking ranking;
         };
 
         // Candidate for which the argument count didn’t match the parameter
@@ -710,9 +743,8 @@ class srcc::Sema : public DiagsProducer {
             return status.get<Viable>().arg_list;
         }
 
-        /// Get how bad this candidate is.
-        /// FIXME: Instead of this, rank the candidates by comparing them.
-        [[nodiscard]] auto badness() const -> u32 { return status.get<Viable>().badness; }
+        /// Compare viable candidates.
+        [[nodiscard]] auto compare(const Candidate& other) const -> std::partial_ordering;
 
         /// Get the type of this callee; only valid if this is not a template
         /// or if substitution was already performed and has succeeded.
@@ -1345,8 +1377,7 @@ private:
     void ReportOverloadResolutionFailure(
         MutableArrayRef<Candidate> candidates,
         TupleExpr* args,
-        SLoc call_loc,
-        u32 final_badness
+        SLoc call_loc
     );
 
     /// Report overload resolution failure in cases where the 'overload set' contains

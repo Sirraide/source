@@ -1,0 +1,176 @@
+// V %srcc --eval %s
+program test;
+
+proc dominate (int, i128) = 1;
+proc dominate (i128, i128) = 2;
+assert dominate(1, 2) == 1;
+
+// A third candidate can dominate two mutually incomparable candidates.
+proc best_last (int, i128) = 1;
+proc best_last (i128, int) = 2;
+proc best_last (int, int) = 3;
+assert best_last(1, 2) == 3;
+proc best_first (int, int) = 3;
+proc best_first (i128, int) = 2;
+proc best_first (int, i128) = 1;
+assert best_first(1, 2) == 3;
+
+// Ordinary declarations beat templates only on equal conversions.
+proc concrete (int) = 1;
+proc concrete ($T) = 2;
+assert concrete(1) == 1;
+proc deduced (i128) = 1;
+proc deduced ($T) = 2;
+assert deduced(1) == 2;
+
+// Fixed-arity beats variadic only on equal element conversions.
+proc fixed (int, int) = 1;
+proc fixed (int...) = 2;
+assert fixed(1, 2) == 1;
+assert fixed() == 2;
+assert fixed(1, 2, 3) == 2;
+proc packed (i128, i128) = 1;
+proc packed (int...) = 2;
+assert packed(1, 2) == 2;
+proc prefix (int, i128...) = 1;
+proc prefix (i128, i128...) = 2;
+assert prefix(1, 2, 3) == 1;
+
+// Named arguments are ranked after binding to each candidate's parameters.
+proc named (int x, i128 y) = 1;
+proc named (i128 y, i128 x) = 2;
+assert named(x: 1, y: 2) == 1;
+assert named(y: 2, x: 1) == 1;
+
+// Qualification beats views, and views beat value conversions.
+proc pointer (int^) = 1;
+proc pointer (int val^) = 2;
+int value = 42;
+assert pointer(&value) == 1;
+proc slice (int[], int) = 1;
+proc slice (int val[], int) = 2;
+int[2] array = (1, 2);
+int[] view = array;
+assert slice(view, 0) == 1;
+proc view_or_value (int[]) = 1;
+proc view_or_value (int[2]?) = 2;
+assert view_or_value(array) == 1;
+
+// Prefer an exact match over structural construction and initialiser calls.
+struct Constructed { int value; init (int x) = ::(x); }
+proc construction (int) = 1;
+proc construction (Constructed) = 2;
+assert construction(1) == 1;
+
+// Empty packs and identical required parameter lists still allow overloads.
+proc zero () = 1;
+proc zero (int...) = 2;
+assert zero() == 1;
+proc required (int) = 1;
+proc required (int, int...) = 2;
+assert required(1) == 1;
+assert required(1, 2) == 2;
+
+// Typed arguments beat the C ellipsis. A better conversion still beats fixed arity.
+proc cargs (int) varargs = 1;
+proc cargs (int, int) = 2;
+assert cargs(1, 2) == 2;
+proc cprefix (i128) = 1;
+proc cprefix (int) varargs = 2;
+assert cprefix(1) == 2;
+proc cfixed (int) varargs = 1;
+proc cfixed (int) = 2;
+assert cfixed(1) == 2;
+
+// Template preference precedes the fixed-arity tie-break, but never conversions.
+proc template_pack (int...) = 1;
+proc template_pack ($T, T) = 2;
+assert template_pack(1, 2) == 1;
+proc fixed_template ($T, T) = 1;
+proc fixed_template ($T...) = 2;
+assert fixed_template(1, 2) == 1;
+
+// l2r conversion, parentheses, and function-overload selection are exact matches.
+assert dominate(value, 2) == 1;
+assert dominate(((1)), 2) == 1;
+proc callback () = 1;
+proc callback (int) = 2;
+proc callbacks (proc -> int) = 1;
+proc callbacks (int) = 2;
+assert callbacks(callback) == 1;
+
+// Qualification is better than array-pointer decay.
+proc pointer_view (int[2] val^) = 1;
+proc pointer_view (int^) = 2;
+assert pointer_view(&array) == 1;
+proc strings (i8 val[]) = 1;
+proc strings (i8 val^) = 2;
+assert strings("hello") == 1;
+
+// Optional and one-tuple unwrapping are views, rather than value conversions.
+proc unwrapping (int) = 1;
+proc unwrapping (int??) = 2;
+int? optional = 42;
+assert unwrapping(optional) == 1;
+proc singleton () = (42,);
+assert unwrapping(singleton()) == 1;
+
+proc shape (((int, int), int)) = 1;
+proc shape ((int, (int, int))) = 2;
+proc shaped () = ((1, 2), 3);
+assert shape(shaped()) == 1;
+proc ranges (range<int>) = 1;
+proc ranges (range<i128>) = 2;
+assert ranges(1..=3) == 1;
+
+// Initialisers use exactly the same candidate ordering as ordinary calls.
+struct Initialised {
+    int marker;
+    init (int, i128) = ::(1);
+    init (i128, int) = ::(2);
+    init (int, int) = ::(3);
+}
+assert Initialised(1, 2).marker == 3;
+struct TemplateInitialised {
+    int marker;
+    init (int) = ::(1);
+    init ($T) = ::(2);
+}
+assert TemplateInitialised(1).marker == 1;
+
+proc typed_vararg (int) varargs = 1;
+proc typed_vararg (int, i128) = 2;
+assert typed_vararg(1, 2) == 2;
+
+// Non-viable candidates have no influence on the winning candidate.
+proc viable (int) = 1;
+proc viable (i128) = 2;
+proc viable (bool, int) = 3;
+assert viable(42) == 1;
+
+// An eventually non-viable candidate does not affect argument ranking.
+proc partial (int, i128) = 1;
+proc partial (i128, bool) = 2;
+proc partial (i128, i128) = 3;
+assert partial(1, 2) == 1;
+
+// A variadic pack is one sequence: its worst element rank applies to the pack.
+// Both candidates therefore have Value-ranked sequences, so fixed arity wins.
+proc worst_pack (i128, i128?) = 1;
+proc worst_pack (i128...) = 2;
+assert worst_pack(1, 2 as i128) == 1;
+
+// The unique winner also survives when it occurs between incomparable choices.
+proc best_middle (int, i128) = 1;
+proc best_middle (int, int) = 3;
+proc best_middle (i128, int) = 2;
+assert best_middle(1, 2) == 3;
+
+// Ordinary value conversions beat both aggregate construction and broadcasting.
+struct Aggregate { int value; }
+proc value_or_aggregate (i128) = 1;
+proc value_or_aggregate (Aggregate) = 2;
+assert value_or_aggregate(1) == 1;
+proc value_or_broadcast (i128) = 1;
+proc value_or_broadcast (int[2]) = 2;
+assert value_or_broadcast(1) == 1;

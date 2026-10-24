@@ -119,6 +119,88 @@ auto Sema::Callee::param_name(u32 index) const -> DeclName {
     });
 }
 
+/// Overload Ranking Model
+///
+/// After checking viability, we compare argument conversions one by one. A
+/// candidate is better if no argument conversion is worse and at least one is
+/// better.
+///
+/// Primitive conversions, from best to worst:
+///
+///   Exact: identity, lvalue loads, temporary materialisation, parentheses,
+///       tuple expansion/reordering, default initialisation, function overload
+///       selection, and 'noreturn' conversion.
+///
+///   Qualification: mutable pointer/slice to immutable pointer/slice.
+///
+///   View: pointer dereference, optional unwrap, array pointer decay, array to
+///       slice, string literal to C string, tuple reshaping/singleton unwrapping.
+///
+///   Value: integer/range conversion, optional wrapping, 'nil' to optional.
+///
+///   Initialiser: calling a struct's initialiser, array/record construction,
+///       array broadcasting, slice from pointer+size.
+///
+///   Varargs: passing an argument through untyped C varargs.
+///
+/// Steps in the same group are indistinguishable; repeating them adds no penalty.
+/// In particular, we don’t favour closer integer widths, fewer optional wrappers,
+/// or fewer dereferences of the same rank. Initialiser calls are opaque: do not
+/// favour a destination type because its selected initialiser happens to take
+/// more convenient parameter types.
+///
+/// A sequence has the rank of its worst conversion, including conversions nested
+/// in aggregate construction. For example, constructing either int[3] or i128[3]
+/// from 1 has Initialiser rank, even though the latter also converts its element.
+/// Those sequences compare equal rather than favouring one destination type.
+///
+/// Each candidate stores a vector of sequence ranks indexed by source argument.
+/// Named arguments are bound to parameters before ranking, then their ranks are
+/// stored at the original argument indices so call-site ordering is irrelevant.
+/// No expression map or construction depth is needed.
+///
+/// Variadic array/slice packing is bookkeeping. A pack's worst element conversion
+/// determines its sequence rank for all its arguments, which are compared against
+/// the corresponding arguments of fixed-arity candidates. Passing an existing
+/// array as a slice still requires a view conversion. C varargs arguments receive
+/// the varargs rank despite having no declared conversion sequence.
+///
+/// Only when all conversions compare equal, apply these tie-breaks in order:
+///
+///   1. Prefer a non-template over a template specialisation.
+///   2. Prefer a procedure with neither variadic parameters nor C varargs.
+///
+auto Sema::Candidate::compare(const Candidate& other) const -> std::partial_ordering {
+    Assert(viable() and other.viable());
+
+    // They are not equivalent; returnn the ordering.
+    auto order = status.get<Viable>().ranking.compare(other.status.get<Viable>().ranking);
+    if (order != OverloadRanking::Equivalent) return order;
+
+    // Apply tie-breaking rules.
+    auto IsTemplate = [](const Candidate& candidate) {
+        if (candidate.callee.is_template()) return true;
+        return candidate.callee.cast<ProcDecl>()->is_instantiation();
+    };
+
+    // Templates are worse than non-templates.
+    bool templ = IsTemplate(*this);
+    bool other_template = IsTemplate(other);
+    if (templ != other_template) return templ
+        ? OverloadRanking::Worse
+        : OverloadRanking::Better;
+
+    // Variadic functions are worse than non-variadic functions.
+    bool variadic = callee.is_variadic() or callee.has_c_varargs();
+    bool other_variadic = other.callee.is_variadic() or other.callee.has_c_varargs();
+    if (variadic != other_variadic) return variadic
+        ? OverloadRanking::Worse
+        : OverloadRanking::Better;
+
+    // They’re equal.
+    return OverloadRanking::Equivalent;
+}
+
 bool Sema::Candidate::has_valid_proc_type() const {
     return status.is<Viable, ParamInitFailed>();
 }
@@ -143,79 +225,114 @@ Sema::CandidateArgumentLists::CandidateArgumentLists(
     if (not args->is_named()) argument_lists.emplace_back(args->values());
 }
 
-/// Add a list; only valid if we have named arguments.
 auto Sema::CandidateArgumentLists::add(List args) -> Id {
     Assert(unordered->is_named());
     argument_lists.push_back(std::move(args));
     return Id(argument_lists.size() - 1);
 }
 
-/// Get a list by id.
 auto Sema::CandidateArgumentLists::operator[](Id id) const -> const List& {
     if (not unordered->is_named()) return argument_lists.front();
     return argument_lists[+id];
 }
 
-u32 Sema::ConversionSequence::badness() {
-    u32 badness = 0;
+void Sema::ConversionRanking::add(Rank rank) {
+    ranks.push_back(rank);
+}
+
+auto Sema::ConversionRanking::compare(const ConversionRanking& other) const -> std::partial_ordering {
+    Assert(ranks.size() == other.ranks.size());
+    auto result = OverloadRanking::Equivalent;
+    for (auto [lhs, rhs] : zip_equal(ranks, other.ranks)) {
+        auto order = lhs <=> rhs;
+        if (order == 0) continue;
+        if (result != OverloadRanking::Equivalent and result != order)
+            return OverloadRanking::Unordered;
+        result = order;
+    }
+    return result;
+}
+
+auto Sema::ConversionSequence::rank(bool variadic) const -> ConversionRanking::Rank {
+    using Rank = ConversionRanking::Rank;
+    Rank worst = Rank::Exact;
+    auto Merge = [&](Rank rank) { worst = std::max(worst, rank); };
+
+    // Building an array and viewing it as a slice implements variadic packing.
+    // Only the conversions of its elements contribute to the sequence's rank.
+    bool packing = variadic and rgs::any_of(conversions, [](const Conversion& conv) {
+        return conv.kind == Conversion::Kind::ArrayInit;
+    });
+
     for (auto& conv : conversions) {
         switch (conv.kind) {
             using K = Conversion::Kind;
-
-            // These don’t perform type conversion.
             case K::DefaultInit:
             case K::ExpandTuple:
             case K::LValueToRValue:
+            case K::MaterialisePoison:
             case K::MaterialiseTemporary:
             case K::ReorderTuple:
             case K::SelectOverload:
             case K::StripParens:
                 break;
 
-            // These are actual type conversions.
-            case K::ArrayDecay:
-            case K::IntegralCast:
-            case K::MaterialisePoison:
             case K::MutableToImmutable:
-            case K::NilToOptional:
+                Merge(Rank::Qualification);
+                break;
+
+            case K::ArrayDecay:
             case K::OptionalUnwrap:
-            case K::OptionalWrap:
             case K::PointerDeref:
-            case K::RangeCast:
-            case K::SliceFromArray:
             case K::StrLitToCStr:
             case K::TupleNopCast:
             case K::TupleToFirstElement:
-                badness++;
+                Merge(Rank::View);
                 break;
 
+            case K::SliceFromArray:
+                if (not packing) Merge(Rank::View);
+                break;
+
+            case K::IntegralCast:
+            case K::NilToOptional:
+            case K::OptionalWrap:
+            case K::RangeCast:
+                Merge(Rank::Value);
+                break;
+
+            // An initialiser is an opaque call; its argument conversions do not
+            // make one destination type preferable to another.
             case K::InitialiserCall:
-                badness += 1 + conv.data.get<Conversion::InitialiserCallData>().badness;
+                Merge(Rank::Initialiser);
                 break;
 
-            // These contain other conversions.
             case K::ArrayBroadcast:
-                badness += conv.data.get<Conversion::ArrayBroadcastData>().seq->badness();
+                Merge(Rank::Initialiser);
+                Merge(conv.data.get<Conversion::ArrayBroadcastData>().seq->rank());
                 break;
 
-            case K::ArrayInit: {
-                auto& data = conv.data.get<Conversion::ArrayInitData>();
-                for (auto& seq : data.elem_convs) badness += seq.badness();
-            } break;
+            case K::ArrayInit:
+                if (not packing) Merge(Rank::Initialiser);
+                for (auto& seq : conv.data.get<Conversion::ArrayInitData>().elem_convs)
+                    Merge(seq.rank());
+                break;
 
-            case K::RecordInit: {
-                auto& data = conv.data.get<Conversion::RecordInitData>();
-                for (auto& seq : data.field_convs) badness += seq.badness();
-            } break;
+            case K::RecordInit:
+                Merge(Rank::Initialiser);
+                for (auto& seq : conv.data.get<Conversion::RecordInitData>().field_convs)
+                    Merge(seq.rank());
+                break;
 
             case K::SliceFromPtrAndSize: {
+                Merge(Rank::Initialiser);
                 auto& data = conv.data.get<Conversion::SliceFromPtrAndSizeData>();
-                badness += data.ptr->badness();
-                badness += data.size->badness();
+                Merge(data.ptr->rank());
+                Merge(data.size->rank());
             } break;
         }
     }
-    return badness;
+    return worst;
 }
 
 void Sema::NoteParameter(Decl* proc, u32 i) {
@@ -655,11 +772,39 @@ auto Sema::PerformOverloadResolution(
 
             // Otherwise, store the sequence for later and keep going.
             st->conversions.push_back(std::move(seq_or_err.value()));
-            st->badness += st->conversions.back().badness();
             return true;
         };
 
-        ConvertArgumentsForCall(arg_lists[c.arg_list()], c.callee, ConvertArg, call_loc);
+        // Build the conversion sequence for each argument.
+        auto& arguments = arg_lists[c.arg_list()];
+        ConvertArgumentsForCall(arguments, c.callee, ConvertArg, call_loc);
+
+        // If this is no longer viable, stop.
+        auto st = c.status.get_if<Candidate::Viable>();
+        if (not st) return not *hard_error;
+
+        // Compute the conversion rank for each parameter.
+        SmallVector<ConversionRanking::Rank> parameter_ranks;
+        for (auto [seq, param] : zip_equal(st->conversions, params))
+            parameter_ranks.push_back(seq.rank(param.variadic));
+
+        // Append ranks in *source order*, i.e. before named argument reordering;
+        // this is because we care about how bad the conversion rank of any one
+        // *argument* is, not whatever the rank for the nth parameter of a particular
+        // candidate happens to be.
+        for (auto [i, arg] : enumerate(call_args->values())) {
+            auto index = call_args->is_named()
+                ? utils::index_of<usz>(arguments, arg).value()
+                : i;
+
+            if (c.callee.is_variadic()) index = std::min(index, params.size() - 1);
+            st->ranking.add(
+                index < parameter_ranks.size()
+                    ? parameter_ranks[index]
+                    : ConversionRanking::Rank::Varargs
+            );
+        }
+
         return not *hard_error;
     };
 
@@ -687,31 +832,21 @@ auto Sema::PerformOverloadResolution(
         if (not CheckCandidate(c)) return {};
     }
 
-    // Find the best viable unique overload, if there is one.
+    // Do a linear scan to find a candidate that is not worse than any
+    // other candidate.
     Ptr<Candidate> best;
-    bool ambiguous = false;
     auto viable = candidates | vws::filter(&Candidate::viable);
-    for (auto& c : viable) {
-        // First viable candidate.
-        if (not best) best = &c;
-
-        // We already have a candidate. If the badness of this
-        // one is better, then it becomes the new best candidate.
-        else if (c.badness() < best.get()->badness()) {
+    for (auto& c : viable)
+        if (not best or c.compare(*best.get()) == OverloadRanking::Better)
             best = &c;
-            ambiguous = false;
-        }
 
-        // Otherwise, if its badness is the same, we have an
-        // ambiguous candidate; else, ignore it entirely.
-        else if (c.badness() == best.get()->badness())
-            ambiguous = true;
-    }
-
-    // If overload resolution was ambiguous, then we don’t have
-    // a best candidate.
-    u32 badness = best.get_or_null() ? best.get()->badness() : 0;
-    if (ambiguous) best = {};
+    // If this candidate is unordered or equivalent to any other candidate,
+    // then we don’t actually have a best match.
+    if (
+        best and rgs::any_of(viable, [&](const Candidate& c) {
+            return &c != best.get() and best->compare(c) != OverloadRanking::Better;
+        })
+    ) best = {};
 
     // We found a single best candidate!
     if (auto c = best.get_or_null()) {
@@ -743,7 +878,6 @@ auto Sema::PerformOverloadResolution(
             deferred->args = llvm::to_vector(args);
             auto& conversions = c->status.get<Candidate::Viable>().conversions;
             for (auto& conversion : conversions) deferred->conversions.push_back(std::move(conversion));
-            deferred->badness = badness;
             return {final_callee, {}};
         }
 
@@ -763,8 +897,7 @@ auto Sema::PerformOverloadResolution(
         return {final_callee, std::move(actual_args)};
     }
 
-    // Overload resolution failed. :(
-    ReportOverloadResolutionFailure(candidates, call_args, call_loc, badness);
+    ReportOverloadResolutionFailure(candidates, call_args, call_loc);
     return {};
 }
 
@@ -911,8 +1044,7 @@ void Sema::ReportSingleOverloadResolutionFailure(
 void Sema::ReportOverloadResolutionFailure(
     MutableArrayRef<Candidate> candidates,
     TupleExpr* args,
-    SLoc call_loc,
-    u32 final_badness
+    SLoc call_loc
 ) {
     // If there is only one overload, print the failure reason for
     // it and leave it at that.
@@ -944,28 +1076,32 @@ void Sema::ReportOverloadResolutionFailure(
 
     Format(message, "\n\r%b(Failure Reason:%)");
 
-    // Collect ambiguous candidates.
+    // Compute what candidates, if any, were ambiguous.
     SmallVector<u32> ambiguous_indices;
-    for (auto [i, c] : enumerate(candidates))
-        if (auto v = c.status.get_if<Candidate::Viable>())
-            if (v->badness == final_badness)
-                ambiguous_indices.push_back(u32(i + 1));
+    auto viable = candidates | vws::filter(&Candidate::viable);
+    for (auto [i, c] : enumerate(candidates)) {
+        if (
+            c.viable() and rgs::none_of(viable, [&](const Candidate& other) {
+                return other.compare(c) == OverloadRanking::Better;
+            })
+        ) ambiguous_indices.push_back(u32(i + 1));
+    }
 
     // For each overload, print why there was an issue.
     for (auto [i, c] : enumerate(candidates)) {
         Format(message, "\n  %b({:>{}}.%) ", i + 1, width);
         auto V = utils::Overloaded{
             // clang-format off
-            [&] (const Candidate::Viable& v) {
+            [&] (const Candidate::Viable&) {
                 // Don’t print that a candidate conflicts with itself...
                 auto ambiguous = ambiguous_indices;
                 erase(ambiguous, u32(i + 1));
 
-                // If the badness is equal to the final badness, then
-                // this candidate was ambiguous. Otherwise, another
-                // candidate was simply better.
-                if (v.badness == final_badness) Format(message, "Ambiguous (with {})", utils::join(ambiguous, ", ", "#{}"));
-                else Format(message, "Another candidate was a better match", v.badness);
+                if (rgs::contains(ambiguous_indices, u32(i + 1))) {
+                    Format(message, "Ambiguous (with {})", utils::join(ambiguous, ", ", "#{}"));
+                } else {
+                    Format(message, "Another candidate was a better match");
+                }
             },
 
             [&](Candidate::ArgumentCountMismatch) {

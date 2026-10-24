@@ -191,6 +191,12 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
                     auto num_new_params = new_ty->non_variadic_params();
                     if (num_old_params != num_new_params) return true;
 
+                    // Fixed-arity and variadic procedures are distinct overloads,
+                    // even when their required parameter lists are identical.
+                    bool old_variadic = old_ty->is_variadic() or old_ty->has_c_varargs();
+                    bool new_variadic = new_ty->is_variadic() or new_ty->has_c_varargs();
+                    if (old_variadic != new_variadic) return true;
+
                     // If a parameter type doesn’t match, this is fine.
                     auto old_params = old_ty->params().take_front(num_old_params);
                     auto new_params = new_ty->params().take_front(num_new_params);
