@@ -1,5 +1,5 @@
 // I
 module parameters;
 
-export proc subtract(int left, int right) -> int = left - right;
-export proc imported_only(int first, bool second) extern;
+export proc subtract(left: int, right: int) -> int = left - right;
+export proc imported_only(first: int, second: bool) extern;

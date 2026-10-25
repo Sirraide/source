@@ -2,21 +2,21 @@
 program test;
 
 struct S {
-    int x;
-    int y;
+    x: int;
+    y: int;
     delete { }
 }
 
 struct int4 {
-    int x;
-    int y;
-    int z;
-    int w;
+    x: int;
+    y: int;
+    z: int;
+    w: int;
 }
 
 proc f {
     proc get = S(1, 2);
-    int4 i = (*get(), *get());
+    var i: int4 = (*get(), *get());
 }
 
 // * proc __src_main norecurse external ccc {

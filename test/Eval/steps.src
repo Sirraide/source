@@ -2,7 +2,7 @@
 program test;
 
 eval {
-    int i;
+    var i: int;
 
     // Keep this value low; one iteration of the loop
     // requires a lot more than one step!
@@ -11,6 +11,6 @@ eval {
 
 eval { while true {} } // expected-error: Exceeded maximum compile-time evaluation steps
 eval { // expected-error: Exceeded maximum compile-time evaluation steps
-    int i;
+    var i: int;
     while i < 1001 do i = i + 1;
 }

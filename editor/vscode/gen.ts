@@ -20,6 +20,20 @@ function rep<T>(arr: T[], n: number): T[] {
 
 let grammar = {
     "scopeName": "source.src_lang",
+    "repository": {
+        "parameter-name": {
+            "name": "variable.parameter",
+            "match": `\\b${ident}(?=\\s*:(?!:))`
+        },
+        "field-name": {
+            "name": "variable.other.field",
+            "match": `\\b${ident}(?=\\s*:(?!:))`
+        },
+        "variable-name": {
+            "name": "variable.other",
+            "match": `\\b${ident}(?=\\s*:(?!:))`
+        }
+    },
     "patterns": [
         {
             "begin": "// ([IRVX])[\\s\\[]",
@@ -136,6 +150,38 @@ let grammar = {
             "name": "keyword.other",
             "match": "#(inject|assert|if|else|elif|for|match)\\b"
         },
+        // Context-specific names must precede the general keyword/name rules.
+        {
+            "begin": `\\b(struct)\\s+(${ident})\\b`,
+            "end": "(?<=\\})",
+            "beginCaptures": captures(["keyword.other", "entity.name.type"]),
+            "patterns": [
+                {
+                    "begin": "\\{",
+                    "end": "\\}",
+                    "beginCaptures": captures(["keyword.other"], 0),
+                    "endCaptures": captures(["keyword.other"], 0),
+                    "patterns": [{ "include": "#field-name" }, { "include": "$self" }]
+                },
+                { "include": "$self" }
+            ]
+        },
+        {
+            "begin": `\\b(proc)\\b\\s*(?:(${ident})\\s*(::)\\s*)*(${ident}|\\[\\]|\\(\\)|[+*/%&|^~!=<>-]+)?\\s*(\\()`,
+            "end": "\\)",
+            "beginCaptures": captures([
+                "keyword.other", "entity.name.type", "keyword.other", "entity.name.function", "keyword.other"
+            ]),
+            "endCaptures": captures(["keyword.other"], 0),
+            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
+        },
+        {
+            "begin": "\\b(init)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": captures(["keyword.other", "keyword.other"]),
+            "endCaptures": captures(["keyword.other"], 0),
+            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
+        },
         {
             "name": "keyword.other",
             "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|inline|is|loop|match|nil|not|or|return|static|struct|then|this|This|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
@@ -201,7 +247,7 @@ let grammar = {
                 "keyword.other",
             ]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "$self" }]
+            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
         },
         {
             "match": `(\\.)\\s*(${ident})`,
@@ -214,12 +260,13 @@ let grammar = {
             "end": "\\)",
             "beginCaptures": captures(["entity.name.function", "keyword.other"]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "$self" }]
+            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
         },
         {
             "match": `\\b(${ident})\\b(::)`,
             "captures": captures(["entity.name.module", "keyword.other"])
         },
+        { "include": "#variable-name" },
         {
             "name": "keyword.other",
             "match": "[;,\\.=:|?!\\\\/*\\-+&\\^(){}\\[\\]<>%~#\\$]"

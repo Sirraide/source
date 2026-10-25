@@ -6,15 +6,15 @@ proc g() extern -> bool;
 // Check that we always create a scope for 'if' and friends
 // even if the body is not a block expression.
 proc f1 {
-    if g() int x1;
-    if g() then int x2;
-    while g() int x3;
-    while g() do int x4;
-    for i in 1..=10 do int x5;
-    eval int x6;
-    loop int x7;
-    match { _: int x8; }
-    match 1 { _: int x9; }
+    if g() var x1: int;
+    if g() then var x2: int;
+    while g() var x3: int;
+    while g() do var x4: int;
+    for i in 1..=10 do var x5: int;
+    eval var x6: int;
+    loop var x7: int;
+    match { _: var x8: int; }
+    match 1 { _: var x9: int; }
 
     x1 = 1; // expected-error: Unknown symbol 'x1'
     x2 = 1; // expected-error: Unknown symbol 'x2'
@@ -30,11 +30,11 @@ proc f1 {
 proc f2 {
     // *static* if however does *not* create a new scope.
     #if true {
-        int x1;
+        var x1: int;
     }
 
     #if false {} #else {
-        int x2;
+        var x2: int;
     }
 
     x1 = 1;

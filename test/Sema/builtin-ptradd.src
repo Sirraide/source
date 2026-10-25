@@ -1,9 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-i8 a;
-i8^ b = &a;
-i8 val^ vb = &a;
+var a: i8;
+var b: i8^ = &a;
+var vb: i8 val^ = &a;
 __srcc_ptradd(&a, 10);
 __srcc_ptradd(b, 10);
 __srcc_ptradd(vb, 10);
@@ -15,6 +15,6 @@ __srcc_ptradd(1, 2); // expected-error: Argument #1 of '__srcc_ptradd' must be a
 __srcc_ptradd(1, &a); // expected-error: Argument #1 of '__srcc_ptradd' must be a pointer to 'i8', but was 'int'
 __srcc_ptradd(&a, &a); // expected-error: Cannot convert expression of type 'i8^' to 'int'
 
-int i;
-int^ pi = &i;
+var i: int;
+var pi: int^ = &i;
 __srcc_ptradd(pi, i); // expected-error: Argument #1 of '__srcc_ptradd' must be a pointer to 'i8', but was 'int^'

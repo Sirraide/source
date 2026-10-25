@@ -4,14 +4,14 @@ program test;
 proc sink (in int) {}
 proc sink (in i8) {}
 
-proc exp (in int a, in int b, in i8 c, in i8 d) {
+proc exp (in a: int, in b: int, in c: i8, in d: i8) {
     sink(a ** b);
     sink(a ** b);
     sink(c ** d);
     sink(c ** d);
 }
 
-proc exp_ass (__srcc_by_value__ int a, in int b, __srcc_by_value__ i8 c, in i8 d) {
+proc exp_ass (__srcc_by_value__ a: int, in b: int, __srcc_by_value__ c: i8, in d: i8) {
     a **= b;
     c **= d;
 }

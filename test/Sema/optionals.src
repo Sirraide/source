@@ -1,8 +1,8 @@
 // V %srcc --sema --verify %s
 program test;
 
-int i;
-int? pi;
+var i: int;
+var pi: int?;
 pi = ();
 pi = (1);
 pi = (1,);

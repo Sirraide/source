@@ -3,7 +3,7 @@
 program test;
 
 struct Small {
-    int x;
+    x: int;
     delete { }
 };
 
@@ -14,7 +14,7 @@ proc f1 {
     delete s;
 }
 
-proc f2 (bool x) {
+proc f2 (x: bool) {
     var s = Small(42);
     if x {
         delete s;
@@ -23,18 +23,18 @@ proc f2 (bool x) {
     }
 }
 
-proc f3 (bool x) {
+proc f3 (x: bool) {
     var s = Small(42);
     if x delete s;
 }
 
-proc f4 (bool x) {
+proc f4 (x: bool) {
     var s = Small(42);
     if x {} else delete s;
 }
 
 proc f5() {
-    Small x;
+    var x: Small;
     loop {
         delete x;
         x = Small(42);
@@ -46,7 +46,7 @@ proc f6 {
     s = Small(33);
 }
 
-proc f7(Small s1, __srcc_by_value__ Small s2, in Small s3, out Small s4, inout Small s5) {
+proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, inout s5: Small) {
     s4 = Small(1);
 }
 

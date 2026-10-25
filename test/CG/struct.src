@@ -3,23 +3,23 @@
 program test;
 
 struct A {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
 struct B {
-    A a;
-    A b;
+    a: A;
+    b: A;
 }
 
 proc f {
-    A a = A(1, 2);
-    B b = B(A(3, 4), A(5, 6));
+    var a: A = A(1, 2);
+    var b: B = B(A(3, 4), A(5, 6));
 }
 
 proc g {
-    A a;
-    B b;
+    var a: A;
+    var b: B;
 }
 
 // * proc __src_main norecurse external ccc {

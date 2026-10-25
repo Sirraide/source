@@ -1,11 +1,11 @@
 // V %srcc --sema --verify %s
 program test;
 
-int a;
-int b;
+var a: int;
+var b: int;
 __srcc_memcpy(&a, &b, 8);
 
-i8[20] c;
+var c: i8[20];
 __srcc_memcpy(&c, &c, 20);
 
 __srcc_memcpy(); // expected-error: '__srcc_memcpy' takes 3 arguments, got 0

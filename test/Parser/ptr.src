@@ -2,8 +2,8 @@
 // expected-no-diagnostics
 program test;
 
-int^ a;
-int^^^^^ b;
+var a: int^;
+var b: int^^^^^;
 &a;
 ^b;
 &^&^&^&^a;

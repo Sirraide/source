@@ -1,0 +1,98 @@
+// V %srcc --eval %s
+program test;
+
+var global: int = 10;
+val constant: int = 20;
+enum Number: int { First = 1, Second }
+
+struct Pair {
+    x: int;
+    y: int;
+    init (x: int, y: int) = ::(x, y);
+}
+proc sum (in x: int, y: int) = x + y;
+proc identity (value: $T) -> T = value;
+proc inferred (value: var) = value;
+proc immutable (val value: var) = value;
+proc increment (x: int) = x + 1;
+proc apply (value: int, callback: proc (int) -> int) = callback(value);
+proc contextual (out: int, inout: int) = out + inout;
+proc fields (with pair: Pair) = x + y;
+proc add (values: int...) -> int {
+    var total: int;
+    for value in values do total += value;
+    return total;
+}
+proc first (values: var...) = values[0];
+proc integer_type -> type = int;
+
+var a = 0;
+var b = int();
+var c = int(0);
+var d: int = 0;
+assert a == b and b == c and c == d;
+var defaulted: int;
+assert defaulted == 0;
+assert global + constant == 30;
+assert Number::Second as int == 2;
+assert sum(y: 2, x: 1) == 3;
+assert identity(true);
+assert inferred(4) == 4;
+assert immutable(5) == 5;
+assert apply(6, increment) == 7;
+assert contextual(inout: 8, out: 9) == 17;
+assert fields(Pair(10, 11)) == 21;
+assert add() == 0;
+assert add(1, 2, 3) == 6;
+assert first(42, true) == 42;
+
+// A type expression no longer has to resemble a type syntactically.
+var from_call: integer_type() = 12;
+var from_block: { int; } = 13;
+var from_conditional: (if true then int else i128) = 14;
+assert from_call + from_block + from_conditional == 39;
+var pointer: int val^ = &global;
+assert ^pointer == 10;
+
+// Interpretation of tuple literals depends on the desired type.
+val Named: type = (x: int, y: int);
+var pair: (x: int, y: int) = (x: 15, y: 16);
+assert pair.x == 15;
+assert pair.y == 16;
+var inferred_types = (x: int, y: int);
+var explicit_types: (x: type, y: type) = (x: int, y: int);
+#assert typeof(inferred_types) == typeof(explicit_types);
+assert inferred_types.x == int;
+assert explicit_types.y == int;
+assert Named != typeof(explicit_types);
+val Singleton: type = (x: int);
+var singleton: (x: int) = (17,);
+assert singleton.x == 17;
+val Nested: type = (pair: (x: int, y: int), extra: int);
+var nested: (pair: (x: int, y: int), extra: int) = ((18, 19), 20);
+assert nested.pair.y == 19;
+assert nested.extra == 20;
+
+assert Named == typeof(pair);
+assert Singleton == typeof(singleton);
+assert Nested == typeof(nested);
+proc named_type -> type = (x: int, y: int);
+var from_named_type: named_type() = (21, 22);
+assert from_named_type.y == 22;
+
+proc immutable_int (in val value: int) = value;
+proc immutable_pack (val values: int...) -> int {
+    var total = 0;
+    for value in values do total += value;
+    return total;
+}
+proc immutable_heterogeneous (val values: var...) = values[0];
+assert immutable_int(23) == 23;
+assert immutable_pack(1, 2, 3) == 6;
+assert immutable_heterogeneous(24, true) == 24;
+
+// Binding immutability does not make a pointer's pointee immutable.
+proc write_through (val address: int^) { ^address = 25; }
+var target = 0;
+write_through(&target);
+assert target == 25;

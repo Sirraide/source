@@ -37,27 +37,27 @@ proc prefix (i128, i128...) = 2;
 assert prefix(1, 2, 3) == 1;
 
 // Named arguments are ranked after binding to each candidate's parameters.
-proc named (int x, i128 y) = 1;
-proc named (i128 y, i128 x) = 2;
+proc named (x: int, y: i128) = 1;
+proc named (y: i128, x: i128) = 2;
 assert named(x: 1, y: 2) == 1;
 assert named(y: 2, x: 1) == 1;
 
 // Qualification beats views, and views beat value conversions.
 proc pointer (int^) = 1;
 proc pointer (int val^) = 2;
-int value = 42;
+var value: int = 42;
 assert pointer(&value) == 1;
 proc slice (int[], int) = 1;
 proc slice (int val[], int) = 2;
-int[2] array = (1, 2);
-int[] view = array;
+var array: int[2] = (1, 2);
+var view: int[] = array;
 assert slice(view, 0) == 1;
 proc view_or_value (int[]) = 1;
 proc view_or_value (int[2]?) = 2;
 assert view_or_value(array) == 1;
 
 // Prefer an exact match over structural construction and initialiser calls.
-struct Constructed { int value; init (int x) = ::(x); }
+struct Constructed { value: int; init (x: int) = ::(x); }
 proc construction (int) = 1;
 proc construction (Constructed) = 2;
 assert construction(1) == 1;
@@ -110,7 +110,7 @@ assert strings("hello") == 1;
 // Optional and one-tuple unwrapping are views, rather than value conversions.
 proc unwrapping (int) = 1;
 proc unwrapping (int??) = 2;
-int? optional = 42;
+var optional: int? = 42;
 assert unwrapping(optional) == 1;
 proc singleton () = (42,);
 assert unwrapping(singleton()) == 1;
@@ -125,14 +125,14 @@ assert ranges(1..=3) == 1;
 
 // Initialisers use exactly the same candidate ordering as ordinary calls.
 struct Initialised {
-    int marker;
+    marker: int;
     init (int, i128) = ::(1);
     init (i128, int) = ::(2);
     init (int, int) = ::(3);
 }
 assert Initialised(1, 2).marker == 3;
 struct TemplateInitialised {
-    int marker;
+    marker: int;
     init (int) = ::(1);
     init ($T) = ::(2);
 }
@@ -167,7 +167,7 @@ proc best_middle (i128, int) = 2;
 assert best_middle(1, 2) == 3;
 
 // Ordinary value conversions beat both aggregate construction and broadcasting.
-struct Aggregate { int value; }
+struct Aggregate { value: int; }
 proc value_or_aggregate (i128) = 1;
 proc value_or_aggregate (Aggregate) = 2;
 assert value_or_aggregate(1) == 1;

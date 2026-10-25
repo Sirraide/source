@@ -26,27 +26,27 @@ program test;
 #assert i64[].name == "i65"; // expected-error: Assertion failed: 'i64[].name == "i65"'
 
 struct Padding1 {
-    i8 a;
-    i64 b;
+    a: i8;
+    b: i64;
 }
 
 struct Padding2 {
-    i8 a;
-    i32 b;
-    i64 c;
+    a: i8;
+    b: i32;
+    c: i64;
 }
 
 #assert Padding1.bytes == 16;
 #assert Padding2.bytes == 16;
 
 struct TrailingPadding1 {
-    i64 a;
-    i8 b;
+    a: i64;
+    b: i8;
 }
 
 struct TrailingPadding2 {
-    TrailingPadding1 a;
-    i16 b;
+    a: TrailingPadding1;
+    b: i16;
 }
 
 #assert TrailingPadding1.bytes == 9;

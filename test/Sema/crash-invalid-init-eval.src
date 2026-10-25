@@ -3,8 +3,8 @@ program test;
 
 // Do not attempt to evaluate code that contains a local variable
 // declaration with an invalid initialiser.
-int[] s2 = eval {
-    int i;
-    int j = &i; // expected-error: Cannot convert expression of type 'int^' to 'int'
+var s2: int[] = eval {
+    var i: int;
+    var j: int = &i; // expected-error: Cannot convert expression of type 'int^' to 'int'
     int[](j, 1);
 };

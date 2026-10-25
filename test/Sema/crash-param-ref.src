@@ -7,6 +7,6 @@ program test;
 
 callee(""); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
 
-proc callee (int a) {} // expected-note 2: In argument to parameter 'a'
+proc callee (a: int) {} // expected-note 2: In argument to parameter 'a'
 
 callee(""); // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'

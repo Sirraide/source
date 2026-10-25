@@ -1,22 +1,22 @@
 // V %srcc --sema --verify %s
 program test;
 
-int? x = nil;
-void? x = nil;
-i8[]? x = nil;
+var x: int? = nil;
+var x: void? = nil;
+var x: i8[]? = nil;
 
-int^ x = nil; // expected-error: Cannot convert expression of type 'nil' to 'int^'
-void^ x = nil; // expected-error: Cannot convert expression of type 'nil' to 'void^'
-i8[]^^^^ x = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8[]^^^^'
+var x: int^ = nil; // expected-error: Cannot convert expression of type 'nil' to 'int^'
+var x: void^ = nil; // expected-error: Cannot convert expression of type 'nil' to 'void^'
+var x: i8[]^^^^ = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8[]^^^^'
 
-nil? x; // expected-error: Element type of optional cannot be 'nil'
-nil? x = nil; // expected-error: Element type of optional cannot be 'nil'
+var x: nil?; // expected-error: Element type of optional cannot be 'nil'
+var x: nil? = nil; // expected-error: Element type of optional cannot be 'nil'
 
-int x = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
-i8[] x = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
-void x = nil; // expected-error: Cannot convert expression of type 'nil' to 'void'
-bool x = nil; // expected-error: Cannot convert expression of type 'nil' to 'bool'
-i8 x = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
-int[4] x = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
-type x = nil; // expected-error: Cannot convert expression of type 'nil' to 'type'
-tree x = nil; // expected-error: Cannot convert expression of type 'nil' to 'tree'
+var x: int = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
+var x: i8[] = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
+var x: void = nil; // expected-error: Cannot convert expression of type 'nil' to 'void'
+var x: bool = nil; // expected-error: Cannot convert expression of type 'nil' to 'bool'
+var x: i8 = nil; // expected-error: Cannot convert expression of type 'nil' to 'i8'
+var x: int[4] = nil; // expected-error: Cannot convert expression of type 'nil' to 'int'
+var x: type = nil; // expected-error: Cannot convert expression of type 'nil' to 'type'
+var x: tree = nil; // expected-error: Cannot convert expression of type 'nil' to 'tree'

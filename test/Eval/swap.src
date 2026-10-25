@@ -2,12 +2,12 @@
 program test;
 
 struct s {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
-int a = 1;
-int b = 2;
+var a: int = 1;
+var b: int = 2;
 a >< b;
 assert a == 2;
 assert b == 1;

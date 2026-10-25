@@ -77,12 +77,12 @@ TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef n
     ClosureEquivalentTupleTy = CanonicalTupleType::GetTrivial(*this, {I8PtrTy, I8PtrTy});
 
     // struct AbortInfo {
-    //     i8 val[] filename;
-    //     int line;
-    //     int col;
-    //     i8 val[] msg1;
-    //     i8 val[] msg2;
-    //     proc stringifier (inout __src_assert_msg_buf);
+    //     filename: i8 val[];
+    //     line: int;
+    //     col: int;
+    //     msg1: i8 val[];
+    //     msg2: i8 val[];
+    //     stringifier: proc (inout __src_assert_msg_buf);
     // }
     AbortInfoEquivalentTy = CanonicalTupleType::GetTrivial(
         *this,

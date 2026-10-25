@@ -1,11 +1,11 @@
 // R %srcc --ir --target x86_64-unknown-linux -foverflow-checks=false %s
 program test;
 
-struct s { int x; }
+struct s { x: int; }
 
-proc sink(int x) extern;
+proc sink(x: int) extern;
 
-s a = (1);
+var a: s = (1);
 var p1 = &a;
 var p2 = &p1;
 var p3 = &p2;

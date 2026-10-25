@@ -2,8 +2,8 @@
 program test;
 
 struct a {
-    int x;
-    init (int x) = (42);
+    x: int;
+    init (x: int) = (42);
     init = 42;
     init () = 42;
     init -> int = 42;
@@ -11,7 +11,7 @@ struct a {
     init -> a {}
     init {}
     init () {}
-    init (i32 b) {}
+    init (b: i32) {}
 }
 
 init {}; // expected-error: Initialisers must be inside a struct

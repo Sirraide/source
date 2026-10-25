@@ -2,7 +2,7 @@
 program test;
 
 struct Small {
-    int x;
+    x: int;
     delete { }
     copy = (x);
 };
@@ -19,21 +19,21 @@ proc f() {
 }
 
 proc f2() {
-    int x;
+    var x: int;
     sink_int(x);
     sink_int(copy x); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
     sink_int(copy 42); // expected-warning: Redundant explicit 'copy' of trivially-copyable type 'int'
 }
 
 struct S {
-    int x;
-    int y;
+    x: int;
+    y: int;
     delete { }
     copy = (x * 2, y * 2);
 }
 
 eval {
-    S a = (4, 5);
+    var a: S = (4, 5);
     assert a.x == 4;
     assert a.y == 5;
 
@@ -50,7 +50,7 @@ eval {
     assert d.y == 20;
 
     // Copy elision applies to rvalues.
-    S e = copy copy copy S(1, 2); // expected-warning 3: Redundant 'copy' of temporary value
+    var e: S = copy copy copy S(1, 2); // expected-warning 3: Redundant 'copy' of temporary value
     assert e.x == 1;
     assert e.y == 2;
 }

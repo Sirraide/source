@@ -4,8 +4,8 @@ program test
 proc x(int^) {} // expected-note: In argument to parameter declared here
 proc y(i8^) {} // expected-note 2: In argument to parameter declared here
 
-int[4] a;
-int^ b = &a;
+var a: int[4];
+var b: int^ = &a;
 x(&a);
 
 b = a; // expected-error: Cannot assign value of type 'int[4]' to 'int^'

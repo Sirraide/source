@@ -1,20 +1,20 @@
 // V %srcc --sema --verify %s
 program test;
 
-int[0] x1;
-int[1] x2;
-int[100] x3;
-int[3 + 4] x4;
-int[5 + 7] x5;
-int[-1] x6; // expected-error: Array size cannot be negative (value: -1)
-int[-2] x7; // expected-error: Array size cannot be negative (value: -2)
-int[3-400] x8; // expected-error: Array size cannot be negative (value: -397)
-int[4-3] x9;
-int[1000000000000000] x10;
-int[1000000000000000000000000000000000000000000000000] x11; // expected-error: Array size must fit into a signed 64-bit integer
+var x1: int[0];
+var x2: int[1];
+var x3: int[100];
+var x4: int[3 + 4];
+var x5: int[5 + 7];
+var x6: int[-1]; // expected-error: Array size cannot be negative (value: -1)
+var x7: int[-2]; // expected-error: Array size cannot be negative (value: -2)
+var x8: int[3-400]; // expected-error: Array size cannot be negative (value: -397)
+var x9: int[4-3];
+var x10: int[1000000000000000];
+var x11: int[1000000000000000000000000000000000000000000000000]; // expected-error: Array size must fit into a signed 64-bit integer
 
 noreturn[4](3); // expected-error: 'noreturn' is not allowed here
-var[4](4); // expected-error: Type deduction is not allowed here
+(var[4])(4); // expected-error: Type deduction is not allowed here
 
 int[0](1); // expected-error: Too many elements in array initialiser for 'int[0]' (elements: 1)
 int[1](1, 2); // expected-error: Too many elements in array initialiser for 'int[1]' (elements: 2)
@@ -32,13 +32,13 @@ int[100](1, 2, 3, 4);
 // Test that we differentiate between '(1, 2)' and '((1, 2))' properly;
 // (see Sema::BuildConversionSequence()).
 eval {
-    int[2][2] a1 = (1, 2);
+    var a1: int[2][2] = (1, 2);
     assert a1[0][0] == 1;
     assert a1[0][1] == 1;
     assert a1[1][0] == 2;
     assert a1[1][1] == 2;
 
-    int[2][2] a2 = ((1, 2));
+    var a2: int[2][2] = ((1, 2));
     assert a2[0][0] == 1;
     assert a2[0][1] == 2;
     assert a2[1][0] == 1;
@@ -47,7 +47,7 @@ eval {
     // '((1, 2),)' should be equivalent to '((1, 2))', even though the
     // AST is different: the former is a 1-tuple containing a 2-tuple,
     // the latter a parenthesised 2-tuple.
-    int[2][2] a3 = ((1, 2),);
+    var a3: int[2][2] = ((1, 2),);
     assert a3[0][0] == 1;
     assert a3[0][1] == 2;
     assert a3[1][0] == 1;

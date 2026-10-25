@@ -53,7 +53,7 @@ proc p {
 }
 
 while true {
-    int x = break;
-    int y = continue;
-    int z = if true break else 42;
+    var x: int = break;
+    var y: int = continue;
+    var z: int = if true break else 42;
 }

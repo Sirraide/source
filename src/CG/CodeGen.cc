@@ -658,7 +658,7 @@ auto CodeGen::GetAddressOfLocal(LocalDecl* decl, mlir::Location loc) -> Value {
     }
 
     // This can fail, but only if we’re performing constant evaluation,
-    // e.g. if the user writes `int x; eval x;`.
+    // e.g. if the user writes `var x: int; eval x;`.
     Assert(bool(lang_opts.constant_eval), "Invalid local ref outside of constant evaluation?");
     CreateAbort(
         loc,

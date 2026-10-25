@@ -26,7 +26,7 @@ enum Overflow : i8 {
 #assert Overflow::last as int == 41;
 
 // A completed recovery layout must likewise retain the request's failure.
-struct Invalid { unknown member; } // expected-error: Unknown symbol 'unknown'
-Invalid first;
-Invalid second;
+struct Invalid { member: unknown; } // expected-error: Unknown symbol 'unknown'
+var first: Invalid;
+var second: Invalid;
 #assert Invalid.bytes == 123;

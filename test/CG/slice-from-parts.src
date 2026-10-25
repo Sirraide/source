@@ -2,24 +2,24 @@
 program test;
 
 proc p1 -> int[] {
-    int i;
-    int^ pi = &i;
+    var i: int;
+    var pi: int^ = &i;
     return (pi, i);
 }
 
 proc p2 -> int[] {
-    int i;
+    var i: int;
     return (&i, i);
 }
 
 proc p3 -> i8[] {
-    i8 j;
-    i8^ pj = &j;
+    var j: i8;
+    var pj: i8^ = &j;
     return (pj, 1);
 }
 
 proc p4 -> i8[] {
-    i8 j;
+    var j: i8;
     return (&j, 1);
 }
 

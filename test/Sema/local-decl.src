@@ -1,14 +1,14 @@
 // V %srcc --sema --verify %s
 
 program test;
-proc foo(q x) { // expected-error: Unknown symbol 'q'
+proc foo(x: q) { // expected-error: Unknown symbol 'q'
     int;
-    int b; // expected-note: Candidate here
-    int b = 6; // expected-note: Candidate here
-    int f = b; // expected-error: Ambiguous symbol 'b'
+    var b: int; // expected-note: Candidate here
+    var b: int = 6; // expected-note: Candidate here
+    var f: int = b; // expected-error: Ambiguous symbol 'b'
     var g; // expected-error: Type inference requires an initialiser
     var h = 1;
-    int i = 2;
+    var i: int = 2;
     var j = i;
     var k = j;
     var q = x;

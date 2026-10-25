@@ -5,5 +5,5 @@ program test;
 proc fragment() = quote { later; }; // expected-error: Unknown symbol 'later'
 proc expansion_order() {
     #fragment();
-    int later = 42;
+    var later: int = 42;
 }

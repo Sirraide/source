@@ -196,9 +196,8 @@ constexpr int BinaryOrPostfixPrecedence(Tk t) {
 /// of '>' + 1 so that we stop parsing when we find the '>'.
 constexpr int TemplateParamPrecedence = BinaryOrPostfixPrecedence(Tk::SGt) + 1;
 
-/// The precedence used to parse the return type of a function; this is set to the
-/// precedence of '=' + 1 so that we stop parsing if we encounter an '='.
-constexpr int ReturnTypePrecedence = BinaryOrPostfixPrecedence(Tk::Assign) + 1;
+/// Stop type annotations before a declaration initialiser or procedure body.
+constexpr int TypeAnnotationPrecedence = BinaryOrPostfixPrecedence(Tk::Assign) + 1;
 
 /// Check if this is a right-associative operator.
 constexpr bool IsRightAssociative(Tk t) {
@@ -373,6 +372,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::True:
         case Tk::Type:
         case Tk::Typeof:
+        case Tk::Val:
         case Tk::Var:
         case Tk::Void:
         case Tk::With:
@@ -1422,15 +1422,19 @@ auto Parser::ParseInitialiser() -> Ptr<ParsedProcDecl> {
     return ParseProcRest(std::move(sig), param_decls);
 }
 
-// <intent> ::= IN | OUT | INOUT | COPY
+// <intent> ::= IN | OUT | INOUT
 auto Parser::ParseIntent() -> std::pair<SLoc, Intent> {
     SLoc loc;
 
+    // Contextual intent keywords are instead parameter names before a colon.
+    if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) return {{}, Intent::Move};
+
     // 'in' is a keyword, unlike the other intents.
     if (Consume(loc, Tk::In)) {
-        // Correct 'in out' to 'inout'.
+        // Correct 'in out' to 'inout', but not 'in out:', which declares a
+        // parameter named 'out'.
         SLoc out_loc;
-        if (ConsumeContextual(out_loc, "out")) {
+        if (not LookAhead().is(Tk::Colon) and ConsumeContextual(out_loc, "out")) {
             Error(loc, "Cannot specify more than one parameter intent");
             Remark("Did you mean to write 'inout' instead of 'in out'?");
             return {loc, Intent::Inout};
@@ -1472,21 +1476,37 @@ auto Parser::ParseMatchExpr() -> Ptr<ParsedMatchExpr> {
     return ParsedMatchExpr::Create(*this, control_expr, type, cases, match_loc);
 }
 
-// <decl-var> ::= [ STATIC ] <type> IDENTIFIER [ "=" <expr> ] ";"
-auto Parser::ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl> {
-    auto decl = new (*this) ParsedVarDecl(
-        tok->text,
-        type,
-        type->loc
-    );
+// <decl-var> ::= (VAR | VAL) IDENTIFIER [ ":" <type> ] [ "=" <expr> ]
+auto Parser::ParseVarDecl() -> Ptr<ParsedVarDecl> {
+    Assert(At(Tk::Var, Tk::Val));
+    bool immutable = At(Tk::Val);
+    auto loc = Next();
+    auto name = tok->text;
+    if (not Consume(Tk::Identifier)) {
+        Error("Expected identifier after '%1({}%)'", immutable ? "val" : "var");
+        SkipTo(Tk::Semicolon, Tk::RBrace);
+        return {};
+    }
 
-    if (not Consume(Tk::Identifier))
-        Error("Expected identifier in variable declaration");
+    ParsedStmt* type;
+    if (Consume(Tk::Colon)) {
+        auto parsed = ParseType(TypeAnnotationPrecedence);
+        if (not parsed) return {};
+        type = parsed.get();
+        if (auto value = dyn_cast<ParsedValueType>(type)) {
+            if (immutable) Error(type->loc, "Unexpected '%1(val%)'");
+            else Error(type->loc, "Replace '%1(var%)' with '%1(val%)' to make a variable immutable");
+            type = value->elem;
+        }
+    } else {
+        type = new (*this) ParsedBuiltinType(Type::DeducedTy, loc);
+    }
 
-    // Parse the optional initialiser.
+    auto decl = new (*this) ParsedVarDecl(name, type, loc);
+    decl->immutable = immutable;
     if (Consume(Tk::Assign)) decl->init = ParseExpr();
 
-    // We don’t allow declaration groups such as 'int a, b;'.
+    // We don’t allow declaration groups such as 'var a: int, b: int;'.
     if (At(Tk::Comma)) {
         Error("A declaration must declare a single variable");
         SkipTo(Tk::Semicolon);
@@ -1585,103 +1605,66 @@ auto Parser::ParseOverloadableOperatorName() -> std::optional<DeclNameLoc> {
     return std::nullopt;
 }
 
-// <param-decl>  ::= [ WITH ] [ <intent> ] <param-rest>
-// <param-rest>  ::= <type> [ "..." ] [ IDENT ] | "this" | <signature>
+// <param-decl> ::= [ WITH ] [ <intent> ] ([ IDENT ":" ] <type> [ "..." ] | "this")
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
-    Ptr<ParsedStmt> type;
     DeclNameLoc name;
     SLoc with_loc;
-    bool variadic = false;
-    bool is_this = false;
-    Consume(with_loc, Tk::With);
 
-    // Parse intent.
+    // Parse intent and contextual keywords.
+    Consume(with_loc, Tk::With);
     auto [start_loc, intent] = ParseIntent();
     if (intent == Intent::Move) start_loc = tok->location;
-
-    // And do it again; two intents are an error.
     else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
         Error(loc, "Cannot specify more than one parameter intent");
         return false;
     }
 
-    // If we have an intent and the user specified 'with' here, diagnose it.
     if (intent != Intent::Move and At(Tk::With)) {
         Error("'%1(with%)' must precede the parameter intent");
         with_loc = Next();
     }
 
-    // Special handling for signatures, which may have
-    // a name in this position.
-    if (At(Tk::Proc)) {
-        Signature inner;
-        if (not ParseSignature(inner, nullptr, false)) return false;
-        if (inner.name.name.is_operator_name()) {
-            Error(inner.tok_after_introducer, "Invalid parameter name: '{}'", inner.name.name);
-        } else {
-            name = inner.name;
-        }
+    bool immutable = Consume(Tk::Val);
 
-        type = CreateType(inner);
+    // Only a colon distinguishes a name from an identifier starting a type.
+    if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) {
+        name = {tok->text, tok->location};
+        Next();
+        Next();
     }
 
-    // As well as lowercase 'this'. This is equivalent to 'with This this'.
-    else if (At(Tk::ThisLower)) {
+    Ptr<ParsedStmt> type;
+    bool is_this = name.name.empty() and At(Tk::ThisLower);
+    if (is_this) {
         type = new (*this) ParsedThisExpr(true, tok->location);
         name = {String("this"), tok->location};
-        is_this = true;
-
         if (with_loc.is_valid()) Warn(
             with_loc,
             "'%1(with%)' is redundant here as it is implied by '%1(this%)'"
         );
-
         Next();
-    }
-
-    // Otherwise, parse a regular type and a name if we’re
-    // creating declarations.
-    else {
-        type = ParseType();
+    } else {
+        type = ParseType(TypeAnnotationPrecedence);
         if (not type) return false;
-        variadic = Consume(Tk::Ellipsis);
+        if (auto value = dyn_cast<ParsedValueType>(type.get())) {
+            Error(type->loc, "Unexpected '%1(val%)'; write it before the parameter name");
+            type = value->elem;
+        }
     }
 
+    bool variadic = Consume(Tk::Ellipsis);
     if (is_this and variadic) {
         Error(name.loc, "'%1(this%)' parameter cannot be variadic");
         variadic = false;
     }
 
-    sig.param_types.emplace_back(intent, type.get(), variadic);
+    sig.param_types.emplace_back(intent, type.get(), variadic, immutable);
+    if (not At(Tk::Comma, Tk::RParen)) {
+        Error("Unexpected token in procedure argument list");
+        SkipTo(Tk::Comma, Tk::RParen);
+    }
 
-    // If decls is not null, then we allow named parameters here; parse
-    // the name if there is one and create the declaration.
     if (decls) {
-        if (At(Tk::Identifier)) {
-            if (not name.name.empty()) {
-                if (is_this) Error("'%1(this%)' parameter cannot have an additional name");
-                else {
-                    Error("Parameter cannot have two names");
-                    Note(name.loc, "Name was already specified here");
-                }
-            }
-
-            name = {tok->text, tok->location};
-            Next();
-        } else if (not At(Tk::Comma, Tk::RParen)) {
-            if (IsKeyword(tok->type)) {
-                Error(
-                    "'%1({}%)' is not a valid parameter name because it is "
-                    "a reserved word.",
-                    tok->text
-                );
-            } else {
-                Error("Unexpected token in procedure argument list");
-            }
-
-            SkipTo(Tk::Comma, Tk::RParen);
-        }
-
         decls->push_back(new (*this) ParsedVarDecl{
             name.name.str(),
             type.get(),
@@ -1689,20 +1672,15 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             intent,
             false,
             is_this,
-            with_loc
+            with_loc,
+            immutable
         });
     } else {
-        if (At(Tk::Identifier)) {
-            Error("Named parameters are not allowed here");
-            Next();
-        }
-
-        if (with_loc.is_valid()) {
-            Error(
-                with_loc,
-                "'%1(with%)' in a parameter list is only allowed in procedure declarations"
-            );
-        }
+        if (not name.name.empty()) Error(name.loc, "Named parameters are not allowed here");
+        if (with_loc.is_valid()) Error(
+            with_loc,
+            "'%1(with%)' in a parameter list is only allowed in procedure declarations"
+        );
     }
 
     return true;
@@ -2076,7 +2054,7 @@ bool Parser::ParseSignatureRest(SmallVectorImpl<ParsedVarDecl*>* decls, bool all
     );
 
     // Parse return type.
-    if (Consume(Tk::RArrow)) sig.ret = ParseType(ReturnTypePrecedence);
+    if (Consume(Tk::RArrow)) sig.ret = ParseType(TypeAnnotationPrecedence);
 
     // Parse constraint.
     if (SLoc where_loc; Consume(where_loc, Tk::Where)) {
@@ -2186,12 +2164,21 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
                 Next();
             }
 
-            auto ty = TryParseExpr();
-            auto var = ParseVarDecl(ty);
+            if (not At(Tk::Var, Tk::Val)) {
+                Error("Expected '%1(var%)' or '%1(val%)' after '%1(static%)'");
+                SkipTo(Tk::Semicolon, Tk::RBrace);
+                return {};
+            }
+
+            auto var = ParseVarDecl();
             if (not var) return {};
             var.get()->is_static = true;
             return var;
         }
+
+        case Tk::Var:
+        case Tk::Val:
+            return ParseVarDecl();
 
         // <decl-struct>
         case Tk::Struct: return ParseStructDecl();
@@ -2211,47 +2198,8 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
         // ";"
         case Tk::Semicolon: return new (*this) ParsedEmptyStmt{Next()};
 
-        // <expr-braces> | <expr-no-braces> | <decl-var>
-        default: {
-            auto e = TryParseExpr();
-
-            // Whether it makes sense to interpret an expression as a type.
-            //
-            // Note that we require some of the ‘weirder’ expressions to be wrapped
-            // in parentheses for them to be treated as types here.
-            auto CouldReasonablyBeAType = [](ParsedStmt* s) {
-                if (isa<
-                    ParsedType,
-                    ParsedCallExpr,
-                    ParsedDeclRefExpr,
-                    ParsedInjectExpr,
-                    ParsedTupleExpr,
-                    ParsedUnquoteExpr
-                >(s)) return true;
-
-                // 'This' is a type, but 'this' isn't.
-                if (auto t = dyn_cast<ParsedThisExpr>(s))
-                    return t->is_type;
-
-                // Subscripts could be array types instead.
-                if (auto bin = dyn_cast<ParsedBinaryExpr>(s))
-                    return bin->op == Tk::LBrack;
-
-                // Any other expression requires parentheses to become a type.
-                return false;
-            };
-
-            // <decl-var>
-            //
-            // Types are expressions so variable declarations start with an expression.
-            // TODO: Do we really need the 'type name' syntax instead of just always using
-            //       'var'/'val' to declare a variable; that would simplify this part.
-            //
-            // If the next token is an identifier, and the expression could reaonably be a
-            // type, parse a variable declaration.
-            if (At(Tk::Identifier) and CouldReasonablyBeAType(e)) return ParseVarDecl(e);
-            return e;
-        }
+        // Expressions never introduce declarations implicitly.
+        default: return ParseExpr();
     }
 }
 
@@ -2304,20 +2252,27 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     BracketTracker braces{*this, Tk::LBrace};
     while (not At(Tk::RBrace, Tk::Eof)) {
         auto ParseField = [&] {
-            auto ty = ParseType();
-            if (not ty) {
-                SkipTo(Tk::Semicolon, Tk::RBrace);
-                return;
-            }
-
-            String field_name = tok->text;
+            auto field_loc = tok->location;
+            auto name = tok->text;
             if (not Consume(Tk::Identifier)) {
-                Error("Expected identifier");
+                Error("Expected field name");
                 SkipTo(Tk::Semicolon, Tk::RBrace);
                 return;
             }
 
-            fields.push_back(new (*this) ParsedFieldDecl{field_name, ty.get(), ty.get()->loc});
+            if (not Consume(Tk::Colon)) {
+                Error("Expected ':' after field name");
+                SkipTo(Tk::Semicolon, Tk::RBrace);
+                return;
+            }
+
+            auto type = ParseType(TypeAnnotationPrecedence);
+            if (not type) {
+                SkipTo(Tk::Semicolon, Tk::RBrace);
+                return;
+            }
+
+            fields.push_back(new (*this) ParsedFieldDecl(name, type.get(), field_loc));
         };
 
         // Stray semicolons are ignored.

@@ -1,9 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-i10000 i;
-i1000 j;
-int k;
+var i: i10000;
+var j: i1000;
+var k: int;
 
 i * 2;
 i * j;

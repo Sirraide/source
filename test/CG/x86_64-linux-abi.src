@@ -24,25 +24,25 @@ proc ints {
 
 proc int_lvalues {
     proc f9(i64, i32, i17, i42, i128, i112, i65, i256, i1, bool) extern native;
-    i64 j1 = 1;
-    i32 j2 = 1;
-    i17 j3 = 1;
-    i42 j4 = 1;
-    i128 j5 = 1;
-    i112 j6 = 1;
-    i65 j7 = 1;
-    i256 j8 = 1;
-    i1 j9 = 0;
-    bool j10 = true;
+    var j1: i64 = 1;
+    var j2: i32 = 1;
+    var j3: i17 = 1;
+    var j4: i42 = 1;
+    var j5: i128 = 1;
+    var j6: i112 = 1;
+    var j7: i65 = 1;
+    var j8: i256 = 1;
+    var j9: i1 = 0;
+    var j10: bool = true;
     f9(j1, j2, j3, j4, j5, j6, j7, j8, j9, j10);
 }
 
-struct a { i32 x; }
-struct b { i32 x; i32 y; }
-struct c { i64 x; i64 y; }
-struct d { i64 x; i32 y; }
-struct e { i32 x; i64 y; }
-struct f { i128 x; }
+struct a { x: i32; }
+struct b { x: i32; y: i32; }
+struct c { x: i64; y: i64; }
+struct d { x: i64; y: i32; }
+struct e { x: i32; y: i64; }
+struct f { x: i128; }
 
 proc g1 (a, a, a, a, a, a, a, a) extern native;
 proc g2 (b, b, b, b, b, b, b, b) extern native;
@@ -65,12 +65,12 @@ proc struct_rvalues {
 }
 
 proc struct_lvalues {
-    a a1 = 1;
-    b b1 = b(1, 2);
-    c c1 = c(1, 2);
-    d d1 = d(1, 2);
-    e e1 = e(1, 2);
-    f f1 = f(1);
+    var a1: a = 1;
+    var b1: b = b(1, 2);
+    var c1: c = c(1, 2);
+    var d1: d = d(1, 2);
+    var e1: e = e(1, 2);
+    var f1: f = f(1);
     g1(a1, a1, a1, a1, a1, a1, a1, a1);
     g2(b1, b1, b1, b1, b1, b1, b1, b1);
     g3(c1, c1, c1, c1);
@@ -85,7 +85,7 @@ proc h1(inout a, inout a, inout a, inout a, inout a, a, a, inout a) extern;
 proc h2(out a, out a, out a, out a, out a, a, a, out a) extern;
 
 proc in_out {
-    a a1 = 1;
+    var a1: a = 1;
     h1(a1, a1, a1, a1, a1, a1, a1, a1);
     h2(a1, a1, a1, a1, a1, a1, a1, a1);
 }
@@ -93,19 +93,19 @@ proc in_out {
 proc h3(in a, in a, in a, in a, in a, in a, a, in a) extern;
 proc h4(a, a, a, a, a, a, a, a) extern;
 proc in_move_small {
-    a a1 = 1;
+    var a1: a = 1;
     h3(a1, a1, a1, a1, a1, a1, a1, a1);
     h4(a1, a1, a1, a1, a1, a1, a1, a1);
 }
 
-struct big { i64[50] x; }
+struct big { x: i64[50]; }
 proc big1(in big, in big, in big, in big, in big, in big, big, in big, a) extern;
 proc big2(big, big, big, big, big, big, big, big, a) extern;
 proc big3(__srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, __srcc_by_value__ big, big, a) extern;
 proc big4(inout big, inout big, inout big, inout big, inout big, inout big, big, inout big, a) extern;
 proc big5(out big, out big, out big, out big, out big, out big, big, out big, a) extern;
 proc big_struct {
-    big b;
+    var b: big;
     big1(b, b, b, b, b, b, b, b, 42);
     big2(b, b, b, b, b, b, b, b, 42);
     big3(b, b, b, b, b, b, b, b, 42);
@@ -113,9 +113,9 @@ proc big_struct {
     big5(b, b, b, b, b, b, b, b, 42);
 }
 
-struct small { i16 a; i16 b; }
-struct tiny { i8 a; i8 b; }
-struct bits { i1 a; bool b; }
+struct small { a: i16; b: i16; }
+struct tiny { a: i8; b: i8; }
+struct bits { a: i1; b: bool; }
 
 proc r1 extern native -> bool;
 proc r2 extern native -> i1;

@@ -5,7 +5,7 @@ program test;
 // The order of enumerators is their order in the expanded definition, even
 // when quoted fragments have source locations in a different order.
 proc tail() = quote { middle, last, };
-proc assemble(tree head, tree tail) = quote {
+proc assemble(head: tree, tail: tree) = quote {
     enum Expanded { $(head) $(tail) }
 };
 #inject(assemble(quote { first = 40, }, tail()));

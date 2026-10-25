@@ -4,12 +4,12 @@ program test;
 import <cstdio> as *;
 
 struct Small {
-    int x;
+    x: int;
     delete { printf("Small: %zi\n", x); }
 };
 
 struct Big {
-    int[3] x;
+    x: int[3];
     delete { printf("Big: %zi %zi %zi\n", x[0], x[1], x[2]); }
 };
 
@@ -41,8 +41,8 @@ proc array {
 array();
 
 proc optional {
-    Small? x;
-    Big? x;
+    var x: Small?;
+    var x: Big?;
 
     // + Big: 18 19 20
     // + Small: 17

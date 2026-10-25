@@ -3,7 +3,7 @@ program test;
 
 import <cstdio> as *;
 
-proc foo(T, $T t) = t;
+proc foo(T, t: $T) = t;
 
 // * 42
 printf("%zi\n", foo(1, 42));

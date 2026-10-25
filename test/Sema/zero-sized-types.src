@@ -3,9 +3,9 @@ program test;
 
 struct zero {}
 struct s {
-    zero a;
-    zero b;
-    zero c;
+    a: zero;
+    b: zero;
+    c: zero;
 }
 
 #assert void.bytes == 0;

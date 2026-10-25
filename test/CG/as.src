@@ -2,10 +2,10 @@
 program test;
 
 proc p {
-    int i;
-    i8 j;
-    int^ pa = &i;
-    i8^ pb = &j;
+    var i: int;
+    var j: i8;
+    var pa: int^ = &i;
+    var pb: i8^ = &j;
 
     // No-op.
     proc p1 = i as int;

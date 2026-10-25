@@ -5,9 +5,9 @@ program test;
 // Both inferred and explicit results can be requested before their declarations.
 #assert first(41) == 42;
 #assert explicit_result(7) == 21;
-proc first(int x) = second(x);
-proc second(int x) -> typeof(x) = x + 1;
-proc explicit_result(int x) -> int = x * 3;
+proc first(x: int) = second(x);
+proc second(x: int) -> typeof(x) = x + 1;
+proc explicit_result(x: int) -> int = x * 3;
 
 // Standalone and declared procedure types retain the same parameters and result.
 #assert typeof(second) == (proc (int) -> int);
@@ -15,13 +15,13 @@ proc explicit_result(int x) -> int = x * 3;
 // Parameters exist while translating ordinary and specialised return types.
 #assert identity(12) == 12;
 #assert identity(true);
-proc identity($T x) -> typeof(x) = x;
+proc identity(x: $T) -> typeof(x) = x;
 
 // Layout can request a procedure body, and signatures can name later structs.
-proc get_item(Item item) -> typeof(item) = item;
-proc take_array(int[extent()] values) = values[0];
-struct Container { Item item; }
-struct Item { int value; }
+proc get_item(item: Item) -> typeof(item) = item;
+proc take_array(values: int[extent()]) = values[0];
+struct Container { item: Item; }
+struct Item { value: int; }
 proc extent() -> int = 3;
 #assert get_item(Item(42)).value == 42;
 #assert take_array((1, 2, 3)) == 1;
@@ -33,9 +33,9 @@ enum B { first = A::second as int }
 
 // Local declaration dependencies must not change runtime initialisation order.
 proc init_order() -> int {
-    int trace = 0;
+    var trace: int = 0;
     var result = later();
-    int value = { trace = trace * 10 + 2; 42; };
+    var value: int = { trace = trace * 10 + 2; 42; };
     proc later() -> int { trace = trace * 10 + 1; return typeof(value)(trace); }
     assert trace == 12;
     assert value == 42;
@@ -44,7 +44,7 @@ proc init_order() -> int {
 #assert init_order() == 12;
 
 // Distinct specialisations have distinct local declaration requests.
-proc power($T x) -> T {
+proc power(x: $T) -> T {
     var value = x;
     value *= x;
     return value;
@@ -54,7 +54,7 @@ proc power($T x) -> T {
 
 // Explicit result types permit ordinary and template recursion.
 #assert factorial(5) == 120;
-proc factorial($T n) -> T {
+proc factorial(n: $T) -> T {
     if n == 0 return T(1);
     return n * factorial(n - 1);
 }
@@ -70,7 +70,7 @@ proc forward_value() = 42;
 // Each scope keeps its own forward declarations, including shadowing names.
 proc scope_lookup() -> int {
     proc answer() -> int = 40;
-    int total = answer();
+    var total: int = answer();
     {
         total += answer();
         proc answer() -> int = 2;

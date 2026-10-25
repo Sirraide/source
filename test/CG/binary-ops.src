@@ -4,7 +4,7 @@ program test;
 proc sink (in int) {}
 proc sink (in bool) {}
 
-proc arith_checked (in int a, in int b) {
+proc arith_checked (in a: int, in b: int) {
     sink(a + b);
     sink(a - b);
     sink(a * b);
@@ -18,7 +18,7 @@ proc arith_checked (in int a, in int b) {
     sink(a <<< b);
 }
 
-proc arith (in int a, in int b) {
+proc arith (in a: int, in b: int) {
     sink(a +~ b);
     sink(a -~ b);
     sink(a *~ b);

@@ -643,7 +643,7 @@ auto Sema::GetParamSpecs(ArrayRef<ParsedVarDecl*> params) -> SmallVector<ParamSp
         return ParamSpec{
             .name = {param->name, param->loc},
             .with_loc = param->with_loc,
-            .immutable = isa<ParsedValueType>(param->type),
+            .immutable = param->immutable,
             .is_this = param->is_this_param,
         };
     }));

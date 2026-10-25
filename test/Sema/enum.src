@@ -7,11 +7,11 @@ enum x {
     c,
 }
 
-x y = a;
+var y: x = a;
 var y = a; // expected-error: Unknown symbol 'a'
 
-x y = x::d; // expected-error: Unknown symbol 'd'
-x y = d; // expected-error: Unknown symbol 'd'
+var y: x = x::d; // expected-error: Unknown symbol 'd'
+var y: x = d; // expected-error: Unknown symbol 'd'
 
 #assert x::a as int == 0;
 #assert x::b as int == 1;
@@ -24,10 +24,10 @@ enum x2 {
     c,
 }
 
-x y = x::a;
-x2 y = x2::a;
-x2 y = x::a; // expected-error: Cannot convert expression of type 'x' to 'x2'
-x y = x2::a; // expected-error: Cannot convert expression of type 'x2' to 'x'
+var y: x = x::a;
+var y: x2 = x2::a;
+var y: x2 = x::a; // expected-error: Cannot convert expression of type 'x' to 'x2'
+var y: x = x2::a; // expected-error: Cannot convert expression of type 'x2' to 'x'
 
 enum E {
     a = 42,
@@ -62,14 +62,14 @@ enum E3 {
 #assert E3::b as int == 43;
 #assert E3::c as int == 44;
 
-int[E4::a as int] xx;
+var xx: int[E4::a as int];
 
 enum E4 {
     a = b, // expected-error (Cyclic semantic dependency) expected-note (While computing value of enumerator 'a')
     b, // expected-note: While computing value of enumerator 'b'
 }
 
-int[E4::a as int] yy;
+var yy: int[E4::a as int];
 
 enum E5 { a = E6::a as int } // expected-error (Cyclic semantic dependency) expected-note (While computing value of enumerator 'a')
 enum E6 { a = E5::a as int } // expected-note: While computing value of enumerator 'a'

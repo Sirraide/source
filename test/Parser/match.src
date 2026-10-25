@@ -10,8 +10,8 @@ match ({}) { {}: {} }
 match 1 + foo() { bar() / baz(): for x in xs do q(x); }
 
 // Do not require a semicolon after the '}'.
-proc f1 (int x) = match { _: 1; }
-proc f1 (int x) = match x { _: 1; }
+proc f1 (x: int) = match { _: 1; }
+proc f1 (x: int) = match x { _: 1; }
 
 match {
     1 == 1: match {}

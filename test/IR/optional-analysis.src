@@ -1,12 +1,12 @@
 // V %srcc --ir --verify %s
 program test;
 
-struct s { int x; int y; }
+struct s { x: int; y: int; }
 
 proc g(int) extern;
 
-proc p1 (bool b) {
-    int^? pi;
+proc p1 (b: bool) {
+    var pi: int^?;
     ^pi = 42; // expected-error: Optional might be nil when accessed here
     ^pi = 42; // expected-error: Optional might be nil when accessed here
     if b {
@@ -17,63 +17,63 @@ proc p1 (bool b) {
 }
 
 proc p2 {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     pi = &i;
     ^pi = 42;
 }
 
-proc p3 (bool b) {
-    int i;
-    int^? pi;
+proc p3 (b: bool) {
+    var i: int;
+    var pi: int^?;
     if b then pi = &i;
     ^pi = 42; // expected-error: Optional might be nil when accessed here
 }
 
-proc p4 (bool b) {
-    int i;
-    int j;
-    int^? pi;
+proc p4 (b: bool) {
+    var i: int;
+    var j: int;
+    var pi: int^?;
     if b then pi = &i;
     else pi = &j;
     ^pi = 42;
 }
 
-proc p5 (bool b) {
-    int i;
-    int^? pi;
+proc p5 (b: bool) {
+    var i: int;
+    var pi: int^?;
     if b then pi = &i;
     else return;
     ^pi = 42;
 }
 
-proc p6 (bool b) {
-    int i;
-    int^? pi;
+proc p6 (b: bool) {
+    var i: int;
+    var pi: int^?;
     pi = &i;
     for x in 1..<10 if b and x == 5 then pi = ();
     ^pi = 42; // expected-error: Optional might be nil when accessed here
 }
 
 proc p7 {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     pi = &i;
     if 1 == 2 then pi = (); // Folded at compile-time and thus recognised as unreachable.
     ^pi = 42;
 }
 
 proc p8 {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     pi = &i;
     {{ g({ pi = (); i; }); }};
     ^pi = 42; // expected-error: Optional might be nil when accessed here
 }
 
-proc p9 (bool b) {
-    int i;
-    int^? pi;
+proc p9 (b: bool) {
+    var i: int;
+    var pi: int^?;
     if b then pi = &i;
     if not b then pi = &i;
 
@@ -82,32 +82,32 @@ proc p9 (bool b) {
     ^pi = 42; // expected-error: Optional might be nil when accessed here
 }
 
-proc p10 (int^? opt) {
+proc p10 (opt: int^?) {
     ^opt = 42; // expected-error: Optional might be nil when accessed here
 }
 
 proc p11 {
-    int i;
-    int^? pi = &i;
+    var i: int;
+    var pi: int^? = &i;
     ^pi = 42;
 }
 
 proc p12 {
-    int i;
-    int^? p1 = &i;
-    int^? p2 = p1;
+    var i: int;
+    var p1: int^? = &i;
+    var p2: int^? = p1;
     ^p2 = 42;
 }
 
 proc p13 {
-    int i;
-    int^? p1;
-    int^? p2 = p1;
+    var i: int;
+    var p1: int^?;
+    var p2: int^? = p1;
     ^p2 = 42; // expected-error: Optional might be nil when accessed here
 }
 
 proc p14 {
-    s? x;
+    var x: s?;
     x.x = 1; // expected-error: Optional might be nil when accessed here
     x.y = 2; // expected-error: Optional might be nil when accessed here
 
@@ -158,7 +158,7 @@ proc p14 {
 // the condition and destination and not simply in the destination
 // block.
 proc p15 {
-    s? x;
+    var x: s?;
     if x == nil {
         x.x = 1; // expected-error: Optional might be nil when accessed here
         x.y = 2; // expected-error: Optional might be nil when accessed here
@@ -190,8 +190,8 @@ proc p15 {
     x.y = 2;
 }
 
-proc p16 (int? x) {
-    int y = match x {
+proc p16 (x: int?) {
+    var y: int = match x {
         5: // expected-error: Optional might be nil when accessed here
             x; // expected-error: Optional might be nil when accessed here
         6: // expected-error: Optional might be nil when accessed here
@@ -204,18 +204,18 @@ proc p16 (int? x) {
     };
 }
 
-proc p17 (int? x) {
-    int y = match x {
+proc p17 (x: int?) {
+    var y: int = match x {
         nil: 42;
         _ : x;
     };
 
-    int q = x; // expected-error: Optional might be nil when accessed here
+    var q: int = x; // expected-error: Optional might be nil when accessed here
     assert x != nil;
-    int q2 = x;
+    var q2: int = x;
 }
 
-proc p18(in int^? a, in int^? b) {
+proc p18(in a: int^?, in b: int^?) {
     if a != nil and b != nil {
         ^a = 3;
         ^b = 3;
@@ -225,7 +225,7 @@ proc p18(in int^? a, in int^? b) {
     }
 }
 
-proc p19(in int^? a, in int^? b) {
+proc p19(in a: int^?, in b: int^?) {
     if a == nil or b == nil {
         ^a = 3; // expected-error: Optional might be nil when accessed here
         ^b = 3; // expected-error: Optional might be nil when accessed here

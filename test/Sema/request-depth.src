@@ -3,5 +3,5 @@ program test;
 
 // Changing the parameter type on every instantiation grows an acyclic request
 // chain. Diagnose the depth limit instead of overflowing the compiler stack.
-proc infinite($T value) -> int = infinite(typeof(value)[1](value)); // expected-error: Exceeded maximum semantic request nesting depth (128)
+proc infinite(value: $T) -> int = infinite(typeof(value)[1](value)); // expected-error: Exceeded maximum semantic request nesting depth (128)
 infinite(1);

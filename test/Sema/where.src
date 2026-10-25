@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc p ($T i) -> T where T == int { // expected-note: 'where' clause evaluated to 'false'
+proc p (i: $T) -> T where T == int { // expected-note: 'where' clause evaluated to 'false'
     return i;
 }
 

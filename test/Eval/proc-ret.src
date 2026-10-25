@@ -4,7 +4,7 @@ program test;
 
 import <cstdio> as *;
 
-proc a(int b) -> int = b;
+proc a(b: int) -> int = b;
 proc b -> int = 42;
 
 // The 'eval' forces constant evaluation even if we codegen this.

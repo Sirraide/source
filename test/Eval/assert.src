@@ -9,7 +9,7 @@ program test;
 #assert (111) == (((110) + 1));
 #assert (111) == (((100) + 10)); // expected-error: Assertion failed: '(111) == (((100) + 10))'
 
-proc foo($T a, T b) {
+proc foo(a: $T, b: T) {
     assert a == b; // expected-error: Assertion failed: 'a == b'
 }
 

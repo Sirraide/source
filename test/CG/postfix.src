@@ -1,14 +1,14 @@
 // R %srcc --ir -foverflow-checks=false --target x86_64-unknown-linux %s
 program test;
 
-int x;
+var x: int;
 x++;
 x--;
 
-int y = x++;
-int z = x--;
+var y: int = x++;
+var z: int = x--;
 
-i16 i;
+var i: i16;
 i++;
 i--;
 

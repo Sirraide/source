@@ -2,12 +2,12 @@
 program test;
 
 eval {
-    int a;
+    var a: int;
     eval a; // expected-error: Cannot access variable declared outside the current evaluation context: 'a'
     #if a == 0 {} // expected-error: Cannot access variable declared outside the current evaluation context: 'a'
 }
 
-int a; // expected-note 2: Declared here
+var a: int; // expected-note 2: Declared here
 eval a; // expected-error: Cannot access global variable 'a' in compile-time evaluation
 #if a == 0 {} // expected-error: Cannot access global variable 'a' in compile-time evaluation
 

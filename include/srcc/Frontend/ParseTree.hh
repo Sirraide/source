@@ -224,8 +224,9 @@ struct srcc::ParsedParameter {
     Intent intent;
     ParsedStmt* type;
     bool variadic;
-    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic)
-        : intent{intent}, type{type}, variadic{variadic} {}
+    bool immutable;
+    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic, bool immutable)
+        : intent{intent}, type{type}, variadic{variadic}, immutable{immutable} {}
 };
 
 struct ParsedProcAttrs {
@@ -1052,6 +1053,7 @@ public:
     Intent intent; // Only used for parameters.
     bool is_static;
     bool is_this_param;
+    bool immutable;
     SLoc with_loc; // Only used for parameters.
 
     ParsedVarDecl(
@@ -1061,12 +1063,14 @@ public:
         Intent intent = Intent::Move,
         bool is_static = false,
         bool is_this_param = false,
-        SLoc with = {}
+        SLoc with = {},
+        bool immutable = false
     ) : ParsedDecl{Kind::VarDecl, name, location},
         type{param_type},
         intent{intent},
         is_static{is_static},
         is_this_param{is_this_param},
+        immutable{immutable},
         with_loc{with} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::VarDecl; }

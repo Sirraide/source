@@ -2,7 +2,7 @@
 // R[//L] %srcc -fshort-filenames --llvm              --target x86_64-unknown-linux %s
 program test;
 
-proc foo(in int a, in int b) {
+proc foo(in a: int, in b: int) {
     assert a == b;
     assert a > 42, "a should be greater than 42";
 }

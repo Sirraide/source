@@ -1,17 +1,17 @@
 // V %srcc --sema --verify %s
 program test;
 
-int i;
-i8 j;
-int^ pi = &i;
-i8^ pj = &j;
+var i: int;
+var j: i8;
+var pi: int^ = &i;
+var pj: i8^ = &j;
 
-int[] s1 = (pi, i);
-int[] s2 = (&i, i);
-i8[] s3 = (pj, 1);
-i8[] s4 = (&j, 1);
+var s1: int[] = (pi, i);
+var s2: int[] = (&i, i);
+var s3: i8[] = (pj, 1);
+var s4: i8[] = (&j, 1);
 
-int[] s5 = (pi, pi); // expected-error: Cannot convert expression of type 'int^' to 'int'
-int[] s6 = (&i, &j); // expected-error: Cannot convert expression of type 'int^' to 'int'
-i8[] s7 = (pj, &i); // expected-error: Cannot convert expression of type 'i8^' to 'i8'
-i8[] s8 = (&j, pi); // expected-error: Cannot convert expression of type 'i8^' to 'i8'
+var s5: int[] = (pi, pi); // expected-error: Cannot convert expression of type 'int^' to 'int'
+var s6: int[] = (&i, &j); // expected-error: Cannot convert expression of type 'int^' to 'int'
+var s7: i8[] = (pj, &i); // expected-error: Cannot convert expression of type 'i8^' to 'i8'
+var s8: i8[] = (&j, pi); // expected-error: Cannot convert expression of type 'i8^' to 'i8'

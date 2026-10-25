@@ -7,7 +7,7 @@ proc - (int, int) __srcc_builtin_op__ = 3;
 // Normal functions can’t have this attribute.
 proc q (int, int) __srcc_builtin_op__ = 3; // expected-error: invalid use of '__srcc_builtin_op__'
 
-struct s { int x; }
+struct s { x: int; }
 
 var x = s(1);
 
@@ -19,8 +19,8 @@ x == 1; // expected-error:  Invalid operation: '==' between 's' and 'int'
 
 // '**' doesn’t make sense for anything below 'i2' (and even for 'i2' it’s
 // questionable, but we allow it regardless.)
-i1 a;
-i2 b;
+var a: i1;
+var b: i2;
 a ** a; // expected-error: '**' is not supported for type 'i1' (bit width must be at least 2)
 a **= a; // expected-error: '**=' is not supported for type 'i1' (bit width must be at least 2)
 b ** b;

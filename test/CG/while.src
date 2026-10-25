@@ -3,21 +3,21 @@
 program test;
 
 proc while_simple {
-    int i;
+    var i: int;
     while i < 10 do i = i +~ 1;
 }
 
 proc while_nested {
-    int i;
+    var i: int;
     while i < 10 do {
-        int j;
+        var j: int;
         while j < 10 do j = j +~ 1;
         i = i +~ 1;
     }
 }
 
 proc while_infinite {
-    int i;
+    var i: int;
     while true {
         i = i +~ 1;
     }

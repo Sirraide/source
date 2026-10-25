@@ -2,9 +2,9 @@
 program test;
 
 proc h() extern native -> bool;
-proc g(int i) extern native;
+proc g(i: int) extern native;
 proc exit() extern native -> noreturn;
-proc q(int i) extern native;
+proc q(i: int) extern native;
 
 proc f1 {
     defer g(4);
@@ -25,7 +25,7 @@ proc f2 {
     }
 }
 
-proc f3 (bool ret) {
+proc f3 (ret: bool) {
     defer g(2);
     if ret return;
     defer g(1);

@@ -2,49 +2,49 @@
 program test;
 
 struct S {
-    i8 b;
-    i16 c;
-    i32 d;
-    i64 e;
-    int a;
-    i8 z;
+    b: i8;
+    c: i16;
+    d: i32;
+    e: i64;
+    a: int;
+    z: i8;
 }
 
-S a;
-S b;
-S2 c;
+var a: S;
+var b: S;
+var c: S2;
 
 struct S2 {
-    S a;
-    S b;
+    a: S;
+    b: S;
 }
 
-S2 d;
+var d: S2;
 
 struct Invalid1 {
-    int x;
-    int y;
-    void q;
+    x: int;
+    y: int;
+    q: void;
 
     // FIXME: Should say that it requires an initialiser.
-    var z; // expected-error: Type deduction is not allowed here
-    Undefined b; // expected-error: Unknown symbol 'Undefined'
+    z: var; // expected-error: Type deduction is not allowed here
+    b: Undefined; // expected-error: Unknown symbol 'Undefined'
 }
 
 struct Empty {}
 struct ZeroSized {
-    void a;
-    void b;
+    a: void;
+    b: void;
 }
 
 struct Recursive { // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 'Recursive')
-    Recursive r;
+    r: Recursive;
 }
 
 struct MutuallyRecursive1 { // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 'MutuallyRecursive1')
-    MutuallyRecursive2 r;
+    r: MutuallyRecursive2;
 }
 
 struct MutuallyRecursive2 { // expected-note: While computing layout of 'MutuallyRecursive2'
-    MutuallyRecursive1 r;
+    r: MutuallyRecursive1;
 }

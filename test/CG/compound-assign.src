@@ -4,7 +4,7 @@
 // R[//UL] %srcc --llvm -foverflow-checks=false --target x86_64-unknown-linux %s
 program test;
 
-proc x (int a, in int b) {
+proc x (a: int, in b: int) {
     a += b;
     a +~= b;
     a -= b;

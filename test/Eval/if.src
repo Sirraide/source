@@ -3,7 +3,7 @@ program test;
 
 import <cstdio> as *;
 
-proc x(int a, int b, bool d) {
+proc x(a: int, b: int, d: bool) {
     if d then printf("d = true\n");
     else printf("d = false\n");
     printf("%s", (if d "d = true\n" else "d = false\n").data);

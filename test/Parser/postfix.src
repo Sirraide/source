@@ -2,7 +2,7 @@
 // expected-no-diagnostics
 
 program test;
-int x;
+var x: int;
 x++++;
 x----;
 x++--;

@@ -4,12 +4,12 @@ program test;
 import <cstdlib>, <cstdio> as libc;
 
 struct assert_msg_buf {
-    i8^ data;
-    int size;
-    int capacity;
+    data: i8^;
+    size: int;
+    capacity: int;
 }
 
-proc append_int (inout assert_msg_buf into, __srcc_by_value__ int value) nomangle {
+proc append_int (inout into: assert_msg_buf, __srcc_by_value__ value: int) nomangle {
     // 0 is a special case.
     if value == 0 then {
         append_str(into, '0');
@@ -17,11 +17,11 @@ proc append_int (inout assert_msg_buf into, __srcc_by_value__ int value) nomangl
     }
 
     // For everything else, we need a tempoary buffer.
-    i8[int.bits] tmp;
-    int bits_used = 0;
+    var tmp: i8[int.bits];
+    var bits_used: int = 0;
 
     // Remember whether this was negative.
-    bool negative = value < 0;
+    var negative: bool = value < 0;
     if negative then value = -value;
 
     // Append the digits.
@@ -36,7 +36,7 @@ proc append_int (inout assert_msg_buf into, __srcc_by_value__ int value) nomangl
 
     // Reverse the digits.
     for i in 0..<bits_used/2 {
-        int j = bits_used - i - 1;
+        var j: int = bits_used - i - 1;
         tmp[i] >< tmp[j];
     }
 
@@ -44,7 +44,7 @@ proc append_int (inout assert_msg_buf into, __srcc_by_value__ int value) nomangl
     append_str(into, (&tmp, bits_used));
 }
 
-proc append_str (inout assert_msg_buf into, i8 val[] str) nomangle {
+proc append_str (inout into: assert_msg_buf, str: i8 val[]) nomangle {
     if into.size + str.size >= into.capacity return;
     __srcc_memcpy(__srcc_ptradd(into.data, into.size), str.data, str.size);
     into.size += str.size;
@@ -54,7 +54,7 @@ proc append_str (inout assert_msg_buf into, i8 val[] str) nomangle {
 // to passing '--eval', we get a crash.
 var mem = libc::malloc(10000);
 assert mem != nil, "malloc() failed";
-assert_msg_buf s = (mem as! i8^, 0, 10000);
+var s: assert_msg_buf = (mem as! i8^, 0, 10000);
 var x = 24;
 var y = 20;
 append_str(s, "x = ");

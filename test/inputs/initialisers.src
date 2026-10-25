@@ -2,15 +2,15 @@
 module initialisers;
 
 export struct Item {
-    int x;
-    int y;
-    init (int x, int y) = ::(x + 1, y + 2);
+    x: int;
+    y: int;
+    init (x: int, y: int) = ::(x + 1, y + 2);
     init = ::(10, 20);
 }
 
-export struct Wrapper { Item item; int z; }
-export struct Factory { init (int x) = x + 1; }
+export struct Wrapper { item: Item; z: int; }
+export struct Factory { init (x: int) = x + 1; }
 
 // First request this tuple's generated procedures from a local context.
-proc private_tuple_user { (Item, int) value; }
-export struct TupleHolder { (Item, int) value; }
+proc private_tuple_user { var value: (Item, int); }
+export struct TupleHolder { value: (Item, int); }

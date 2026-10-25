@@ -2,18 +2,18 @@
 program test;
 
 struct int2 {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
 struct int4 {
-    int x;
-    int y;
-    int z;
-    int w;
+    x: int;
+    y: int;
+    z: int;
+    w: int;
 }
 
-proc == (in int4 a, in int4 b) =
+proc == (in a: int4, in b: int4) =
     a.x == b.x and
     a.y == b.y and
     a.z == b.z and
@@ -25,7 +25,7 @@ eval {
     assert int4(**i, *i) == (1, 2, 1, 2);
     assert int4(3, *i, 5) == (3, 1, 2, 5);
 
-    int[2] a = (5, 6);
+    var a: int[2] = (5, 6);
     assert int4(*a, *a) == (5, 6, 5, 6);
     assert int4(**a, *a) == (5, 6, 5, 6);
     assert int4(7, *a, 8) == (7, 5, 6, 8);
@@ -46,25 +46,25 @@ eval {
 (**int); // expected-error: Cannot splat expression of type 'type'
 
 struct xy {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
 struct yx {
-    int y;
-    int x;
+    y: int;
+    x: int;
 }
 
-proc == (in yx a, in yx b) =
+proc == (in a: yx, in b: yx) =
     a.x == b.x and
     a.y == b.y;
 
 eval {
-    xy x = (1, 2);
+    var x: xy = (1, 2);
     assert yx(*x) == (1, 2);
     assert yx(**x) == (2, 1);
 }
 
-int[100000] big;
+var big: int[100000];
 (*big); // expected-error (Array dimension 100000 exceeds maximum splat size) expected-note (Pass '-farray-splat-limit=<value>' to increase the limit)
 (**big); // expected-error (Array dimension 100000 exceeds maximum splat size) expected-note (Pass '-farray-splat-limit=<value>' to increase the limit)

@@ -2,9 +2,9 @@
 // expected-no-diagnostics
 program test;
 
-struct s { int x; }
+struct s { x: int; }
 
-s a;
+var a: s;
 var p1 = &a;
 var p2 = &p1;
 var p3 = &p2;

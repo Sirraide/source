@@ -3,7 +3,7 @@ program test;
 
 import <cstdio> as *;
 
-proc caller (proc x -> int) = x();
+proc caller (x: proc -> int) = x();
 proc foo = 42;
 
 // * 42

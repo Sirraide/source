@@ -11,7 +11,7 @@ var y = match false {
     false: 4;
 };
 
-bool b;
+var b: bool;
 
 match true {} // expected-error ('match' is not exhaustive) expected-note (Possible values 'true' and 'false' are not handled)
 
@@ -90,42 +90,42 @@ match true { // expected-error ('match' is not exhaustive) expected-note (Possib
     2 == 2: 3; // expected-warning: Pattern will never be matched
 }
 
-int z1 = match true { // expected-error: Cannot convert expression of type 'void' to 'int'
+var z1: int = match true { // expected-error: Cannot convert expression of type 'void' to 'int'
     true: 1;
     false: "";
 };
 
-int^ z2 = &match true {
+var z2: int^ = &match true {
     true: x;
     false: y;
 };
 
-int^ z3 = &match true { // expected-error: Cannot take address of non-lvalue
+var z3: int^ = &match true { // expected-error: Cannot take address of non-lvalue
     true: x;
     false: 1;
 };
 
-int^ z4 = &match true {
+var z4: int^ = &match true {
     b: x;
     b: y;
     true: x;
     false: y;
 };
 
-int^ z5 = &match true { // expected-error: Cannot take address of non-lvalue
+var z5: int^ = &match true { // expected-error: Cannot take address of non-lvalue
     b: x;
     b: 1;
     true: x;
     false: y;
 };
 
-int^ z6 = &match true {
+var z6: int^ = &match true {
     true: x; // expected-note: Because it is subsumed by this preceding pattern
     true: 1; // expected-warning: Pattern will never be matched
     false: y;
 };
 
-int^ z6 = &match true {
+var z6: int^ = &match true {
     true: x;
     false: y; // expected-note: Because this pattern already makes the 'match' fully exhaustive
     true: 1; // expected-warning: This and any following patterns will never be matched
@@ -142,12 +142,12 @@ match true {
     _: 2; // expected-warning: This and any following patterns will never be matched
 }
 
-int x = match 1 {
+var x: int = match 1 {
     1: 2;
     _: 3;
 };
 
-int x = match 1 {
+var x: int = match 1 {
     1: 2;
     _: 3; // expected-note: Because this pattern already makes the 'match' fully exhaustive
     1: 2; // expected-warning: This and any following patterns will never be matched
@@ -157,12 +157,12 @@ match 1 -> 2 { // expected-error: Expected type
     _: 3;
 }
 
-i8 y = match 1 {
+var y: i8 = match 1 {
     1: 2;
     _: 4;
 };
 
-i8 y = match 1 -> i8 { // expected-error ('match' is not exhaustive) expected-note (Possible value ranges not handled)
+var y: i8 = match 1 -> i8 { // expected-error ('match' is not exhaustive) expected-note (Possible value ranges not handled)
     1: 2;
 };
 
@@ -174,12 +174,12 @@ match -> i8 { // expected-error: A 'match' with a fixed result type must have a 
 match -> void { }
 match -> var { }
 
-i8 y = match 1 -> i8 {
+var y: i8 = match 1 -> i8 {
     1: 2;
     _: 4;
 };
 
-i8 y = match 1 -> i8 {
+var y: i8 = match 1 -> i8 {
     1: ""; // expected-error: Cannot convert expression of type 'i8 val[]' to 'i8'
     _: "".data; // expected-error (Cannot convert expression of type 'i8 val^' to 'i8') expected-note (Because this pattern already makes the 'match' fully exhaustive)
 
@@ -187,7 +187,7 @@ i8 y = match 1 -> i8 {
     1: 2; // expected-warning: This and any following patterns will never be matched
 };
 
-int lvalue;
+var lvalue: int;
 
 // The first two are non-exhaustive, so they yield 'void'!
 (match { true: lvalue; false: lvalue; }) = 3; // expected-error: Invalid target for assignment
@@ -195,15 +195,15 @@ int lvalue;
 (match { true: lvalue; _: lvalue; }) = 3;
 (match -> int { true: lvalue; _: lvalue; }) = 3;
 
-int? opt;
+var opt: int?;
 
-int y = match opt {
+var y: int = match opt {
     nil: 5;
     42: 7;
     _: opt;
 };
 
-int y = match opt {
+var y: int = match opt {
     nil: 5; // expected-note: Because it is subsumed by this preceding pattern
     nil: 6; // expected-warning: Pattern will never be matched
     _: opt;

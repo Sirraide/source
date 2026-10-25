@@ -4,30 +4,30 @@ program test;
 
 // Completing a procedure on demand must also work through an indirect call.
 #assert dispatch(callback, 41) == 42;
-proc dispatch(proc (int) -> int callee, int value) -> int = callee(value);
-proc callback(int value) -> int = value + 1;
+proc dispatch(callee: proc (int) -> int, value: int) -> int = callee(value);
+proc callback(value: int) -> int = value + 1;
 
 // Body completion during execution can itself evaluate more code.
 #assert run() == 130;
 proc run() -> int {
-    int sentinel = 123;
-    int value = deferred();
+    var sentinel: int = 123;
+    var value: int = deferred();
     return sentinel + value;
 }
 proc deferred() -> int = eval nested();
 proc nested() -> int {
-    int scratch = eval leaf();
+    var scratch: int = eval leaf();
     return scratch;
 }
 proc leaf() -> int {
-    int scratch = 7;
+    var scratch: int = 7;
     return scratch;
 }
 
 // Cleanup invokes a generated procedure without an AST reference to the callee.
 #assert cleanup() == 42;
 proc cleanup() -> int {
-    { Resource value; }
+    { var value: Resource; }
     return 42;
 }
 
@@ -37,16 +37,16 @@ struct Resource {
         struct NestedResource {
             delete { eval leaf(); }
         }
-        NestedResource value;
+        var value: NestedResource;
     }
 }
 
 // Quoted tokens keep definition locations. Both outer variables and declarations
 // introduced by nested expansions use the actual injection sites for visibility.
-proc fragment(tree value) = quote { int introduced = $(value); };
-proc nested_fragment(tree value) = quote { #fragment($(value)); };
+proc fragment(value: tree) = quote { var introduced: int = $(value); };
+proc nested_fragment(value: tree) = quote { #fragment($(value)); };
 proc expansion_visibility() -> int {
-    int input = 42;
+    var input: int = 42;
     #nested_fragment(input);
     return introduced;
 }
@@ -54,7 +54,7 @@ proc expansion_visibility() -> int {
 
 // A return type can register generated procedures before the body is translated.
 // Signature and body entries of the same procedure share their pending work.
-struct Token { int value; delete {} }
+struct Token { value: int; delete {} }
 proc make_token() -> (Token,) = ::(Token(42),);
 proc use_token() -> int {
     var value = make_token();

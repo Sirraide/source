@@ -2,15 +2,15 @@
 // expected-no-diagnostics
 program test;
 
-s a;
+var a: s;
 
-struct t { s a; }
+struct t { a: s; }
 
 // Signatures resolve types declared later in this scope.
-proc p1 (s a) {}
+proc p1 (a: s) {}
 proc p2 -> s = s();
 
-proc q1 { s x; }
+proc q1 { var x: s; }
 proc q2 = s();
 
 p1(s());
@@ -21,6 +21,6 @@ s();
 struct s {}
 
 // These are all fine now.
-s q;
+var q: s;
 p1(s());
 var n = p2();

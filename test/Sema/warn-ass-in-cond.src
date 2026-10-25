@@ -1,9 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-bool a = true;
-bool b = true;
-int c;
+var a: bool = true;
+var b: bool = true;
+var c: int;
 
 if a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?
 while a = b {} // expected-warning: Assignment in condition. Did you mean to write '=='?

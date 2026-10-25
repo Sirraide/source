@@ -8,29 +8,29 @@ proc stop extern -> noreturn;
 
 // ‘Construction’ from 'noreturn' doesn't use initialisers.
 struct Large {
-    int[4] values;
-    init ($T argument) = unknown_name;
+    values: int[4];
+    init (argument: $T) = unknown_name;
     delete {}
 }
 
 proc large () -> Large = Large(stop());
-proc large_storage () { Large value = stop(); }
-proc take (inout Large value) extern;
+proc large_storage () { var value: Large = stop(); }
+proc take (inout value: Large) extern;
 proc large_reference () { take(stop()); }
 
 // No initialiser matches one argument, but overload resolution is unnecessary.
 struct Arity {
-    int value;
-    init (int x, int y) = ::(x + y,);
+    value: int;
+    init (x: int, y: int) = ::(x + y,);
 }
 
 proc arity () -> Arity = Arity(stop());
 
 // A factory normally returns int; a noreturn argument converts directly to S.
-struct S { int value; init (int x) = x; }
+struct S { value: int; init (x: int) = x; }
 proc factory () -> S = S(stop());
 
 // There is no recursive initialiser invocation on this path.
-struct Self { int value; init = Self(stop()); }
+struct Self { value: int; init = Self(stop()); }
 proc self () -> Self = Self();
 

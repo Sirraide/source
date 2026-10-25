@@ -1,71 +1,71 @@
 // V %srcc --sema --verify %s
 program test;
 
-struct s { int x; }
-struct t { bool x; }
+struct s { x: int; }
+struct t { x: bool; }
 
-proc ** (in s a, in s b) = s(a.x ** b.x);
-proc * (in s a, in s b) = s(a.x * b.x);
-proc / (in s a, in s b) = s(a.x / b.x);
-proc % (in s a, in s b) = s(a.x % b.x);
-proc *~ (in s a, in s b) = s(a.x *~ b.x);
-proc :/ (in s a, in s b) = s(a.x :/ b.x);
-proc :% (in s a, in s b) = s(a.x :% b.x);
-proc + (in s a, in s b) = s(a.x + b.x);
-proc +~ (in s a, in s b) = s(a.x +~ b.x);
-proc - (in s a, in s b) = s(a.x - b.x);
-proc -~ (in s a, in s b) = s(a.x -~ b.x);
-proc << (in s a, in s b) = s(a.x << b.x);
-proc <<< (in s a, in s b) = s(a.x <<< b.x);
-proc >> (in s a, in s b) = s(a.x >> b.x);
-proc >>> (in s a, in s b) = s(a.x >>> b.x);
-proc & (in s a, in s b) = s(a.x & b.x);
-proc | (in s a, in s b) = s(a.x | b.x);
-proc < (in s a, in s b) = t(a.x < b.x);
-proc <= (in s a, in s b) = t(a.x <= b.x);
-proc > (in s a, in s b) = t(a.x > b.x);
-proc >= (in s a, in s b) = t(a.x >= b.x);
-proc <: (in s a, in s b) = t(a.x <: b.x);
-proc <=: (in s a, in s b) = t(a.x <=: b.x);
-proc :> (in s a, in s b) = t(a.x :> b.x);
-proc :>= (in s a, in s b) = t(a.x :>= b.x);
-proc == (in s a, in s b) = t(a.x == b.x);
-proc != (in s a, in s b) = t(a.x != b.x);
-proc and (in t a, in t b) = t(a.x and b.x);
-proc or (in t a, in t b) = t(a.x or b.x);
-proc xor (in t a, in t b) = t(a.x xor b.x);
-proc += (inout s a, in s b) = s(a.x += b.x);
-proc -= (inout s a, in s b) = s(a.x -= b.x);
-proc *= (inout s a, in s b) = s(a.x *= b.x);
-proc +~= (inout s a, in s b) = s(a.x +~= b.x);
-proc -~= (inout s a, in s b) = s(a.x -~= b.x);
-proc *~= (inout s a, in s b) = s(a.x *~= b.x);
-proc **= (inout s a, in s b) = s(a.x **= b.x);
-proc /= (inout s a, in s b) = s(a.x /= b.x);
-proc %= (inout s a, in s b) = s(a.x %= b.x);
-proc <<= (inout s a, in s b) = s(a.x <<= b.x);
-proc <<<= (inout s a, in s b) = s(a.x <<<= b.x);
-proc >>= (inout s a, in s b) = s(a.x >>= b.x);
-proc >>>= (inout s a, in s b) = s(a.x >>>= b.x);
+proc ** (in a: s, in b: s) = s(a.x ** b.x);
+proc * (in a: s, in b: s) = s(a.x * b.x);
+proc / (in a: s, in b: s) = s(a.x / b.x);
+proc % (in a: s, in b: s) = s(a.x % b.x);
+proc *~ (in a: s, in b: s) = s(a.x *~ b.x);
+proc :/ (in a: s, in b: s) = s(a.x :/ b.x);
+proc :% (in a: s, in b: s) = s(a.x :% b.x);
+proc + (in a: s, in b: s) = s(a.x + b.x);
+proc +~ (in a: s, in b: s) = s(a.x +~ b.x);
+proc - (in a: s, in b: s) = s(a.x - b.x);
+proc -~ (in a: s, in b: s) = s(a.x -~ b.x);
+proc << (in a: s, in b: s) = s(a.x << b.x);
+proc <<< (in a: s, in b: s) = s(a.x <<< b.x);
+proc >> (in a: s, in b: s) = s(a.x >> b.x);
+proc >>> (in a: s, in b: s) = s(a.x >>> b.x);
+proc & (in a: s, in b: s) = s(a.x & b.x);
+proc | (in a: s, in b: s) = s(a.x | b.x);
+proc < (in a: s, in b: s) = t(a.x < b.x);
+proc <= (in a: s, in b: s) = t(a.x <= b.x);
+proc > (in a: s, in b: s) = t(a.x > b.x);
+proc >= (in a: s, in b: s) = t(a.x >= b.x);
+proc <: (in a: s, in b: s) = t(a.x <: b.x);
+proc <=: (in a: s, in b: s) = t(a.x <=: b.x);
+proc :> (in a: s, in b: s) = t(a.x :> b.x);
+proc :>= (in a: s, in b: s) = t(a.x :>= b.x);
+proc == (in a: s, in b: s) = t(a.x == b.x);
+proc != (in a: s, in b: s) = t(a.x != b.x);
+proc and (in a: t, in b: t) = t(a.x and b.x);
+proc or (in a: t, in b: t) = t(a.x or b.x);
+proc xor (in a: t, in b: t) = t(a.x xor b.x);
+proc += (inout a: s, in b: s) = s(a.x += b.x);
+proc -= (inout a: s, in b: s) = s(a.x -= b.x);
+proc *= (inout a: s, in b: s) = s(a.x *= b.x);
+proc +~= (inout a: s, in b: s) = s(a.x +~= b.x);
+proc -~= (inout a: s, in b: s) = s(a.x -~= b.x);
+proc *~= (inout a: s, in b: s) = s(a.x *~= b.x);
+proc **= (inout a: s, in b: s) = s(a.x **= b.x);
+proc /= (inout a: s, in b: s) = s(a.x /= b.x);
+proc %= (inout a: s, in b: s) = s(a.x %= b.x);
+proc <<= (inout a: s, in b: s) = s(a.x <<= b.x);
+proc <<<= (inout a: s, in b: s) = s(a.x <<<= b.x);
+proc >>= (inout a: s, in b: s) = s(a.x >>= b.x);
+proc >>>= (inout a: s, in b: s) = s(a.x >>>= b.x);
 
 // ============================================
-proc ~ (s a) = s(~a.x);
-proc + (s a) = s(+a.x);
-proc - (s a) = s(-a.x);
+proc ~ (a: s) = s(~a.x);
+proc + (a: s) = s(+a.x);
+proc - (a: s) = s(-a.x);
 
-proc ..< (in s a, in s b) = a.x ..< b.x;
-proc ..= (in s a, in s b) = a.x ..= b.x;
+proc ..< (in a: s, in b: s) = a.x ..< b.x;
+proc ..= (in a: s, in b: s) = a.x ..= b.x;
 
-proc not (t a) = t(not a.x);
+proc not (a: t) = t(not a.x);
 
-proc [] (s a) = a.x;
-proc () (inout s a) = a.x;
-proc ++ (inout s a) = ++a.x;
-proc -- (inout s a) = --a.x;
-proc ^ (inout s a) = a.x;
-proc in (s a, int x) = t(a.x == x);
-proc as (inout s a) -> int = a.x;
-proc as (inout s a) -> i32 = a.x as i32;
+proc [] (a: s) = a.x;
+proc () (inout a: s) = a.x;
+proc ++ (inout a: s) = ++a.x;
+proc -- (inout a: s) = --a.x;
+proc ^ (inout a: s) = a.x;
+proc in (a: s, x: int) = t(a.x == x);
+proc as (inout a: s) -> int = a.x;
+proc as (inout a: s) -> i32 = a.x as i32;
 
 var s1 = s(42);
 var s2 = s(2);

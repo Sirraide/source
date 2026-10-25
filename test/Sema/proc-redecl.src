@@ -5,9 +5,9 @@ proc same extern; // expected-note 2 (Conflicting declaration of procedure 'same
 proc same extern; // expected-error: Procedure 'same' redefined
 proc same extern; // expected-error: Procedure 'same' redefined
 
-proc intent (in int x)  extern; // expected-note: Conflicting declaration of procedure 'intent' is here
-proc intent (out int x) extern; // expected-error: Cannot overload procedure 'intent' on parameter intent
-proc intent (out i32 x) extern; // Ok.
+proc intent (in x: int)  extern; // expected-note: Conflicting declaration of procedure 'intent' is here
+proc intent (out x: int) extern; // expected-error: Cannot overload procedure 'intent' on parameter intent
+proc intent (out x: i32) extern; // Ok.
 
 proc ret extern -> i32; // expected-note: Conflicting declaration of procedure 'ret' is here
 proc ret extern -> int; // expected-error: Cannot overload procedure 'ret' on return type
@@ -24,15 +24,15 @@ proc va2 (int...) extern; // expected-note: Conflicting declaration of procedure
 proc va2 varargs extern; // expected-error: Variadic procedure 'va2' redefined as 'varargs'
 
 // TODO: Reduction operator '[+]'.
-proc sum($T args) -> T.elem {
-    (T.elem) res;
+proc sum(args: $T) -> T.elem {
+    var res: (T.elem);
     for arg in args do res += arg;
     return res;
 }
 
 // Ok: 'int' arguments will call the first overload, 'i32' parameters the second.
-proc va3 (int... a) = sum(a);
-proc va3 (i32... a) = sum(a) * 2;
+proc va3 (a: int...) = sum(a);
+proc va3 (a: i32...) = sum(a) * 2;
 #assert va3(1, 2, 3) == 6;
 #assert va3(i32(1), i32(2), i32(3)) == 12;
 

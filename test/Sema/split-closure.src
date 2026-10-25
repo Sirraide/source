@@ -1,15 +1,15 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc f(int i) = i + i;
+proc f(i: int) = i + i;
 eval {
     var x = __srcc_split_closure(f);
     var c = __srcc_make_closure(proc (int) -> int, x[0], x[1]);
     assert c(20) == 40;
 }
 
-i8 i;
-i8^ p = &i;
+var i: i8;
+var p: i8^ = &i;
 
 __srcc_split_closure(); // expected-error: '__srcc_split_closure' takes 1 arguments, got 0
 __srcc_split_closure(1, 1); // expected-error: '__srcc_split_closure' takes 1 arguments, got 2

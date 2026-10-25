@@ -4,8 +4,8 @@ program test;
 proc a () {} // expected-note: Callee declared here
 proc b (int) {} // expected-note: Callee declared here
 proc c (int, int, int) {} // expected-note 2: Callee declared here
-proc d (int a, int b, int c) {} // expected-note: Callee declared here
-proc e (int a, int a) {} // expected-error (Redeclaration of 'a') expected-note (Conflicting declaration of parameter 'a' is here) expected-note 2 (Callee declared here)
+proc d (a: int, b: int, c: int) {} // expected-note: Callee declared here
+proc e (a: int, a: int) {} // expected-error (Redeclaration of 'a') expected-note (Conflicting declaration of parameter 'a' is here) expected-note 2 (Callee declared here)
 proc f ( // expected-note 3: Callee declared here
     int, int, int, int, int,
     int, int, int, int, int

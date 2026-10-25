@@ -20,8 +20,8 @@ program test;
 #assert not void.is_optional;
 #assert not i8[3].is_optional;
 
-proc is_slice (type ty) = ty.is_slice;
-proc is_optional (type ty) = ty.is_optional;
+proc is_slice (ty: type) = ty.is_slice;
+proc is_optional (ty: type) = ty.is_optional;
 
 #assert is_slice(i8[]);
 #assert is_slice(i8[][]);

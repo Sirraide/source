@@ -1,9 +1,9 @@
 // V %srcc --sema --verify %s
 program test;
 
-int i;
-int^ a = &i;
-int^^ b = &a;
+var i: int;
+var a: int^ = &i;
+var b: int^^ = &a;
 
 a = i; // expected-error: Cannot assign value of type 'int' to 'int^'
 b = i; // expected-error: Cannot assign value of type 'int' to 'int^^'

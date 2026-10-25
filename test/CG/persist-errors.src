@@ -2,18 +2,18 @@
 program test;
 
 proc f -> int {
-    int^y = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
+    var y: int^ = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        var q: int = 42;
         &q;
     };
 
     ^(eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
+        var q: int = 42;
         &q;
     }) = 42;
 
     return ^eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int q = 42;
+        var q: int = 42;
         &q;
     };
 }
@@ -21,31 +21,31 @@ proc f -> int {
 proc g {
     // This is ok since the value is discarded and thus not emitted.
     eval {
-        int q = 42;
+        var q: int = 42;
         &q;
     }
 }
 
 proc h -> int[] {
-    int[] s1 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
+    var s1: int[] = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        var i: int;
         int[](&i, 1);
     };
 
-    int[] s2 = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
-        int^ j = &i;
+    var s2: int[] = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+        var i: int;
+        var j: int^ = &i;
         int[](j, 1);
     };
 
     // Ok since the value is unused.
     eval {
-        int i;
+        var i: int;
         int[](&i, 1);
     };
 
     return eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
+        var i: int;
         int[](&i, 1);
     };
 }
@@ -90,19 +90,19 @@ proc p5 {
 // constant evaluation, we don’t treat it as compile-time only if
 // it is *declared* outside an eval.
 proc p6 {
-    proc t1 ($T t) = t;
+    proc t1 (t: $T) = t;
     var q1 = eval t1(42);
     var q2 = t1(42);
 }
 
 struct s {
-    int x;
-    int^? y;
+    x: int;
+    y: int^?;
 }
 
 proc p7 {
     var x = eval { // expected-error: Cannot emit pointer to compile-time stack memory
-        int i;
+        var i: int;
         s(i, &i);
     };
 }

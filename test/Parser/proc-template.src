@@ -1,9 +1,9 @@
 // V %srcc --parse --verify %s
 program test;
 
-proc f($T a, $T b) {}
-proc f(T a, $T b) {}
-proc f($T a, T b) {}
+proc f(a: $T, b: $T) {}
+proc f(a: T, b: $T) {}
+proc f(a: $T, b: T) {}
 proc f {
     $T a; // expected-error: '$T' is not allowed here
     $U;   // expected-error: '$U' is not allowed here

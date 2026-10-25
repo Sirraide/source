@@ -8,17 +8,17 @@
 // For example, this resolves the signature and then requests the body of 'f':
 //
 //     #assert f() == 42;
-//     proc f () -> int = 42;
+//     proc f -> int = 42;
 //
 // A return-type inference cycle instead re-enters an active body request:
 //
-//     proc f () = g();
-//     proc g () = f();
+//     proc f = g();
+//     proc g = f();
 //
 // Record layout and initialiser readiness are separate requests. For example:
 //
-//     struct A { B value; }
-//     struct B { int value; init = A::(B::(42,),).value; }
+//     struct A { value: B; }
+//     struct B { value: int; init = A::(B::(42,),).value; }
 //
 // Completing A's physical layout must not infer B's initialiser yet: that body
 // needs A's layout. Initialiser readiness can subsequently infer return types
@@ -31,8 +31,8 @@
 //
 //     proc outer () {
 //         var result = later();
-//         int value = side_effect();
-//         proc later () -> int = typeof(value)(42);
+//         var value: int = side_effect();
+//         proc later -> int = typeof(value)(42);
 //     }
 //
 // 'value' is visible inside 'later', but its initialiser still runs after the

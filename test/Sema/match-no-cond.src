@@ -30,44 +30,44 @@ match {
     "": 4; // expected-error: Condition of 'match' must be of type 'bool', but was 'i8 val[]'
 }
 
-int x = match {
+var x: int = match {
     true: 2;
     _: 3;
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+var y: int = match { // expected-error: Cannot convert expression of type 'void' to 'int'
     true: 2;
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+var y: int = match { // expected-error: Cannot convert expression of type 'void' to 'int'
     true: 2;
     false: 2;
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+var y: int = match { // expected-error: Cannot convert expression of type 'void' to 'int'
     true: 2;
     false: "";
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'void' to 'int'
+var y: int = match { // expected-error: Cannot convert expression of type 'void' to 'int'
     true: "12";
     false: "34";
 };
 
-int y = match { // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
+var y: int = match { // expected-error: Cannot convert expression of type 'i8 val[]' to 'int'
     true: "12";
     false: "34";
     _: "56";
 };
 
-int y = match {
+var y: int = match {
     true: 2;
     false: 3;
     _: exit();
 };
 
 proc foo {
-    int y = match {
+    var y: int = match {
         true: 2;
         false: 3;
         _: return;

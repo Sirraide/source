@@ -1,23 +1,23 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc direct_capture (int outer) { // expected-note 2: Variable declared here
+proc direct_capture (outer: int) { // expected-note 2: Variable declared here
     struct Direct {
-        int value;
+        value: int;
         init = ::(outer,); // expected-error: Variable 'outer' cannot be captured inside 'init'
     }
     struct Templated {
-        int value;
-        init ($T value) = ::(outer + value as int,); // expected-error: Variable 'outer' cannot be captured inside 'init'
+        value: int;
+        init (value: $T) = ::(outer + value as int,); // expected-error: Variable 'outer' cannot be captured inside 'init'
     }
-    Templated value = (1,);
+    var value: Templated = (1,);
 }
 
-proc nested_capture (int outer) { // expected-note: Variable declared here
+proc nested_capture (outer: int) { // expected-note: Variable declared here
     struct Nested {
-        int value;
+        value: int;
         init {
-            int own = 1;
+            var own: int = 1;
             proc helper () -> int = own + outer; // expected-error: Variable 'outer' cannot be captured inside 'init'
             return ::(helper(),);
         }
@@ -25,33 +25,33 @@ proc nested_capture (int outer) { // expected-note: Variable declared here
 }
 
 // Referencing an enclosing closure also captures its environment.
-proc closure_capture (int outer) {
+proc closure_capture (outer: int) {
     struct ViaClosure {
-        int value;
+        value: int;
         init = ::(closure(),); // expected-error: Procedure 'closure' cannot be referenced inside 'init' because it captures enclosing variables
     }
     proc closure () -> int = outer; // expected-note: Procedure declared here
 }
 
-proc indirect_closure_capture (int outer) {
+proc indirect_closure_capture (outer: int) {
     proc wrapper () -> int = closure(); // expected-note: Procedure declared here
     struct ViaWrapper {
-        int value;
+        value: int;
         init = ::(wrapper(),); // expected-error: Procedure 'wrapper' cannot be referenced inside 'init' because it captures enclosing variables
     }
     proc closure () -> int = outer;
 }
 
-proc copy_capture (int outer) { // expected-note: Variable declared here
+proc copy_capture (outer: int) { // expected-note: Variable declared here
     struct Copy {
-        int value;
+        value: int;
         copy = ::(outer,); // expected-error: Variable 'outer' cannot be captured inside 'copy'
     }
 }
 
-proc nested_copy_capture (int outer) { // expected-note: Variable declared here
+proc nested_copy_capture (outer: int) { // expected-note: Variable declared here
     struct Copy {
-        int value;
+        value: int;
         copy {
             proc helper () -> int = outer; // expected-error: Variable 'outer' cannot be captured inside 'copy'
             return ::(helper(),);
@@ -59,13 +59,13 @@ proc nested_copy_capture (int outer) { // expected-note: Variable declared here
     }
 }
 
-proc delete_capture (int outer) { // expected-note: Variable declared here
+proc delete_capture (outer: int) { // expected-note: Variable declared here
     struct Delete {
-        delete { int value = outer; } // expected-error: Variable 'outer' cannot be captured inside 'delete'
+        delete { var value: int = outer; } // expected-error: Variable 'outer' cannot be captured inside 'delete'
     }
 }
 
-proc nested_delete_capture (int outer) { // expected-note: Variable declared here
+proc nested_delete_capture (outer: int) { // expected-note: Variable declared here
     struct Delete {
         delete {
             proc helper () -> int = outer; // expected-error: Variable 'outer' cannot be captured inside 'delete'
@@ -74,30 +74,30 @@ proc nested_delete_capture (int outer) { // expected-note: Variable declared her
     }
 }
 
-proc closure_delete_capture (int outer) {
+proc closure_delete_capture (outer: int) {
     struct Delete { delete { closure(); } } // expected-error: Procedure 'closure' cannot be referenced inside 'delete' because it captures enclosing variables
     proc closure () -> int = outer; // expected-note: Procedure declared here
 }
 
-proc closure_copy_capture (int outer) {
-    struct Copy { int value; copy = ::(closure(),); } // expected-error: Procedure 'closure' cannot be referenced inside 'copy' because it captures enclosing variables
+proc closure_copy_capture (outer: int) {
+    struct Copy { value: int; copy = ::(closure(),); } // expected-error: Procedure 'closure' cannot be referenced inside 'copy' because it captures enclosing variables
     proc closure () -> int = outer; // expected-note: Procedure declared here
 }
 
-proc template_closure_capture (int outer) {
+proc template_closure_capture (outer: int) {
     struct ViaTemplate {
-        int value;
+        value: int;
         init = ::(closure(1),); // expected-error: Procedure 'closure' cannot be referenced inside 'init' because it captures enclosing variables
     }
-    proc closure ($T value) -> int = outer + value as int; // expected-note: Procedure declared here
+    proc closure (value: $T) -> int = outer + value as int; // expected-note: Procedure declared here
 }
 
 // A recursive sibling reference can precede discovery of the capture.
-proc recursive_closure_capture (int outer) {
-    proc first (int n) -> int {
+proc recursive_closure_capture (outer: int) {
+    proc first (n: int) -> int {
         if n != 0 { return second(n - 1); }
         return outer;
     }
-    proc second (int n) -> int = first(n); // expected-note: Procedure declared here
-    struct ViaCycle { int value; init = ::(second(0),); } // expected-error: Procedure 'second' cannot be referenced inside 'init' because it captures enclosing variables
+    proc second (n: int) -> int = first(n); // expected-note: Procedure declared here
+    struct ViaCycle { value: int; init = ::(second(0),); } // expected-error: Procedure 'second' cannot be referenced inside 'init' because it captures enclosing variables
 }

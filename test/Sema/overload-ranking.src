@@ -29,8 +29,8 @@ proc variadic (i128, int...) {}
 variadic(1, 2, 3); // expected-error: Overload resolution failed in call to 'variadic'
 
 // Parameter names may appear at different positions in different candidates.
-proc named_cross ($T y, i128 x) {}
-proc named_cross (int x, i128 y) {}
+proc named_cross (y: $T, x: i128) {}
+proc named_cross (x: int, y: i128) {}
 named_cross(x: 1, y: 2); // expected-error: Overload resolution failed in call to 'named_cross'
 named_cross(y: 2, x: 1); // expected-error: Overload resolution failed in call to 'named_cross'
 
@@ -46,15 +46,15 @@ proc values (int?) {}
 values(1); // expected-error: Overload resolution failed in call to 'values'
 
 // Different user initialisers remain opaque to the enclosing overload set.
-struct A { int value; init (int x) = ::(x); }
-struct B { i128 value; init (i128 x) = ::(x); }
+struct A { value: int; init (x: int) = ::(x); }
+struct B { value: i128; init (x: i128) = ::(x); }
 proc initialisers (A) {}
 proc initialisers (B) {}
 initialisers(1); // expected-error: Overload resolution failed in call to 'initialisers'
 
 // Aggregate sequences of equal worst rank are ambiguous.
-struct Left { int x; i128 y; i128 z; }
-struct Right { i128 x; int y; int z; }
+struct Left { x: int; y: i128; z: i128; }
+struct Right { x: i128; y: int; z: int; }
 proc aggregates (Left) {}
 proc aggregates (Right) {}
 aggregates((1, 2, 3)); // expected-error: Overload resolution failed in call to 'aggregates'
@@ -98,8 +98,8 @@ proc not_viable (i128, int) {}
 proc not_viable (bool) {}
 not_viable(1, 2); // expected-error: Overload resolution failed in call to 'not_viable'
 
-struct NestedLeft { (int, i128) x; (i128, i128) y; }
-struct NestedRight { (i128, int) x; (int, int) y; }
+struct NestedLeft { x: (int, i128); y: (i128, i128); }
+struct NestedRight { x: (i128, int); y: (int, int); }
 proc nested_cross (NestedLeft) {}
 proc nested_cross (NestedRight) {}
 nested_cross(((1, 2), (3, 4))); // expected-error: Overload resolution failed in call to 'nested_cross'

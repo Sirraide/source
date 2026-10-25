@@ -2,23 +2,23 @@
 program test;
 
 struct S {
-    int x;
-    int y; // expected-note: Conflicting declaration of field 'y' is here
-    int y; // expected-error: Redeclaration of 'y'
+    x: int;
+    y: int; // expected-note: Conflicting declaration of field 'y' is here
+    y: int; // expected-error: Redeclaration of 'y'
 }
 
-S a;
+var a: S;
 a.x = 1;
 a.y = 2;
 a.x = ""; // expected-error: Cannot assign value of type 'i8 val[]' to 'int'
 a.z = 3; // expected-error: Struct 'S' has no member named 'z'
 
 struct Nested {
-    S a;
-    int b;
+    a: S;
+    b: int;
 }
 
-Nested b;
+var b: Nested;
 b.a.x = 1;
 b.a.y = 2;
 b.a.y = b.a.x;

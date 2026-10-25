@@ -2,8 +2,8 @@
 program test;
 
 proc p1 -> int {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     pi = &i;
     ^pi = 42;
     return i;
@@ -12,8 +12,8 @@ proc p1 -> int {
 #assert p1() == 42;
 
 proc p2 -> int {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     ^pi = 42; // expected-error: Optional might be nil when accessed here
     return i;
 }
@@ -23,16 +23,16 @@ proc p2 -> int {
 #assert p2() == 42;
 
 proc p3 -> int {
-    int i;
-    int^? p1 = &i;
-    int^? p2 = p1;
+    var i: int;
+    var p1: int^? = &i;
+    var p2: int^? = p1;
     ^p2 = 42;
     return i;
 }
 
 #assert p3() == 42;
 
-proc p4 (int? x) = match x {
+proc p4 (x: int?) = match x {
     nil: 5;
     42: 7;
     _: x;

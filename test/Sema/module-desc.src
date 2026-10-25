@@ -23,7 +23,7 @@ export proc f6 (i64) varargs native -> i32 = 42;
 // + i53 b offs 8
 // + i64 c offs 16
 export struct s1 {
-    i32 a;
-    i53 b;
-    i64 c;
+    a: i32;
+    b: i53;
+    c: i64;
 }

@@ -3,12 +3,12 @@
 program test;
 
 eval {
-    type t1 = typeof(0);
+    var t1: type = typeof(0);
     assert t1 == int;
 }
 
 eval {
-    type t1 = typeof("0");
+    var t1: type = typeof("0");
     assert t1 == i8 val[];
 }
 

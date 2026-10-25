@@ -2,8 +2,8 @@
 program test;
 
 proc good -> int {
-    #inject(quote { int }) x = #inject(quote { 22 });
-    #inject(quote { i64 }) y = #inject(quote { 20 as i64 });
+    var x: #inject(quote { int }) = #inject(quote { 22 });
+    var y: #inject(quote { i64 }) = #inject(quote { 20 as i64 });
     return #inject(quote { x }) + #inject(quote { y }) as int;
 }
 
@@ -15,24 +15,24 @@ proc bad {
     #inject(""); // expected-error: Cannot inject value of type 'i8 val[]'
 }
 
-proc add (tree a) = quote {
+proc add (a: tree) = quote {
     x + $(a) * 2 + y;
 };
 
 proc do_add -> int {
-    int arg = 15;
-    int x = 5;
-    int y = 5;
+    var arg: int = 15;
+    var x: int = 5;
+    var y: int = 5;
     return 1 + #add(arg) + 1;
 }
 
 #assert do_add() == 42;
 
-proc return_if (tree cond, tree value) = quote {
+proc return_if (cond: tree, value: tree) = quote {
     if $(cond) then return $(value);
 }
 
-proc call (bool b) -> int {
+proc call (b: bool) -> int {
     #return_if(b, 42);
     return 7;
 }
@@ -40,8 +40,8 @@ proc call (bool b) -> int {
 #assert call(true) == 42;
 #assert call(false) == 7;
 
-proc when (tree cond, tree then_, tree else_) = quote(if $(cond) then $(then_) else $(else_));
-proc eq(int a, int b) = #when(a == b, 3, 4);
+proc when (cond: tree, then_: tree, else_: tree) = quote(if $(cond) then $(then_) else $(else_));
+proc eq(a: int, b: int) = #when(a == b, 3, 4);
 proc not_reached() -> int = __srcc_unreachable();
 
 #assert eq(1, 1) == 3;
@@ -50,8 +50,8 @@ proc not_reached() -> int = __srcc_unreachable();
 #assert #when(1 == 2, not_reached(), 6) == 6;
 
 var i = #inject(quote { // expected-error: An '#inject' in this context must result in exactly 1 statement; got 2
-    int x;
-    int y;
+    var x: int;
+    var y: int;
 });
 
 var i = #inject(quote {}); // expected-error: An '#inject' in this context must result in exactly 1 statement; got 0

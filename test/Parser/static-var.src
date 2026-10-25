@@ -2,9 +2,9 @@
 module test;
 
 static var x = 3;
-static int y;
-export static int z;
-static int q = 8;
-static int; // expected-error: Expected identifier in variable declaration
-static 9; // expected-error: Expected identifier in variable declaration
-static static int q; // expected-error: 'static static' is invalid
+static var y: int;
+export static var z: int;
+static var q: int = 8;
+static int; // expected-error: Expected 'var' or 'val' after 'static'
+static 9; // expected-error: Expected 'var' or 'val' after 'static'
+static static var q: int; // expected-error: 'static static' is invalid

@@ -4,16 +4,16 @@ program test;
 import <cstdio> as *;
 
 proc a () { printf("a: \n"); }
-proc b (int a) { printf("b: %zi\n", a); }
-proc c (int a, int b, int c) {
+proc b (a: int) { printf("b: %zi\n", a); }
+proc c (a: int, b: int, c: int) {
     printf("c: %zi %zi %zi\n", a, b, c);
 }
-proc d (int x1, int x2, int x3) {
+proc d (x1: int, x2: int, x3: int) {
     c(x1, x2, x3);
 }
 proc e (
-    int a, int b, int c, int d, int e,
-    int f, int g, int h, int i, int j
+    a: int, b: int, c: int, d: int, e: int,
+    f: int, g: int, h: int, i: int, j: int
 ) {
     printf(
         "e: %zi %zi %zi %zi %zi %zi %zi %zi %zi %zi\n",

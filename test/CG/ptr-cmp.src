@@ -3,16 +3,16 @@
 program test;
 
 proc a -> bool {
-    int q;
-    int^ x = &q;
-    int^ y = &q;
+    var q: int;
+    var x: int^ = &q;
+    var y: int^ = &q;
     return x == y;
 }
 
 proc b -> bool {
-    int q;
-    int^ x = &q;
-    int^ y = &q;
+    var q: int;
+    var x: int^ = &q;
+    var y: int^ = &q;
     return x != y;
 }
 

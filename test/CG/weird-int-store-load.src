@@ -1,22 +1,22 @@
 // R %srcc --ir -foverflow-checks=false --target x86_64-unknown-linux %s
 program test;
 
-i7 a = 1;
+var a: i7 = 1;
 a = a + a;
 
-i13 b = 1;
+var b: i13 = 1;
 b = b + b;
 
-i24 c = 1;
+var c: i24 = 1;
 c = c + c;
 
-i36 d = 1;
+var d: i36 = 1;
 d = d + d;
 
-i72 e = 1;
+var e: i72 = 1;
 e = e + e;
 
-i164 f = 1;
+var f: i164 = 1;
 f = f + f;
 
 // * @_S1a.1 = private 1, align 1

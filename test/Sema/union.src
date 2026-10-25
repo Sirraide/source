@@ -12,7 +12,7 @@ import <typedef.h> as *;
 __srcc_dump(Union);
 
 eval {
-    Union u;
+    var u: Union;
     assert u.x == 0;
     assert u.y == 0;
     assert u.z == 0;

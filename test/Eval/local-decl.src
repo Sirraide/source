@@ -3,9 +3,9 @@ program test;
 
 import <cstdio> as *;
 
-proc foo(int a, int b) {
-    int x = a;
-    int y = b;
+proc foo(a: int, b: int) {
+    var x: int = a;
+    var y: int = b;
     var z = y;
     var c = 7;
     printf("%zi %zi %zi %zi\n", x, y, x, c);

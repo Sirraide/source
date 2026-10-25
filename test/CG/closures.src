@@ -3,17 +3,17 @@
 program test;
 
 proc f1 -> int {
-    int a = 20;
-    int b = 2;
+    var a: int = 20;
+    var b: int = 2;
     proc g = a;
     proc h = 20;
     return g() + h() + 2;
 }
 
 proc f2 -> int {
-    int a = 20;
+    var a: int = 20;
     proc g -> int {
-        int b = 30;
+        var b: int = 30;
         proc h = a + b;
         return h();
     }
@@ -21,14 +21,14 @@ proc f2 -> int {
 }
 
 proc f3 -> int {
-    int a = 22;
-    int b = 20;
+    var a: int = 22;
+    var b: int = 20;
 
-    proc h(bool recurse) -> int {
+    proc h(recurse: bool) -> int {
         return if recurse then g(false) else a;
     }
 
-    proc g(bool recurse) -> int {
+    proc g(recurse: bool) -> int {
         return if recurse then h(false) else b;
     }
 
@@ -36,10 +36,10 @@ proc f3 -> int {
 }
 
 proc f4 -> int {
-    int a = 1;
+    var a: int = 1;
     proc g1 = a;
     proc g2 -> int {
-        int b = 2;
+        var b: int = 2;
         proc g3 = a + b;
         proc g4 = g1() + g3() + a + b;
         return g1() + g3() + g4() + a;

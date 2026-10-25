@@ -2,4 +2,4 @@
 program test;
 
 // This ought too be to big for most platforms...
-i1000000000000 x; // expected-error: The maximum integer type is
+var x: i1000000000000; // expected-error: The maximum integer type is

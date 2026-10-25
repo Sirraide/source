@@ -1,7 +1,7 @@
 // R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
-proc f1 (int... x) {}
+proc f1 (x: int...) {}
 proc q1 {
     f1();
     f1(1);
@@ -9,7 +9,7 @@ proc q1 {
     f1(1, 2, 3);
 }
 
-proc f2 (i32 y, i32... x) {}
+proc f2 (y: i32, x: i32...) {}
 proc q2 {
     f2(42);
     f2(42, 1);
@@ -17,7 +17,7 @@ proc q2 {
     f2(42, 1, 2, 3);
 }
 
-proc f3 ($T... x) {}
+proc f3 (x: $T...) {}
 proc q3 {
     f3();
     f3(1);
@@ -25,7 +25,7 @@ proc q3 {
     f3(1, 2, 3);
 }
 
-proc f4 ($T, $T... x) {}
+proc f4 ($T, x: $T...) {}
 proc q4 {
     f4(42);
     f4(42, 1);
@@ -33,7 +33,7 @@ proc q4 {
     f4(42, 1, 2, 3);
 }
 
-proc f5 (var ...x) {}
+proc f5 (x: var ...) {}
 proc q5 {
     f5();
     f5(1);
@@ -43,7 +43,7 @@ proc q5 {
     f5(1, "");
 }
 
-proc f6 (var y, var ...x) {}
+proc f6 (y: var, x: var ...) {}
 proc q6 {
     f6(1);
     f6("", 1);

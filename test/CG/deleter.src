@@ -4,12 +4,12 @@ program test;
 proc g extern;
 
 struct Small {
-    int x;
+    x: int;
     delete { g(); }
 };
 
 struct Big {
-    int[3] x;
+    x: int[3];
     delete { g(); }
 };
 
@@ -29,8 +29,8 @@ proc array {
 }
 
 proc optional {
-    Small? x;
-    Big? x;
+    var x: Small?;
+    var x: Big?;
     var x = Small?(17);
     var x = Big?(int[3](18, 19, 20));
 }

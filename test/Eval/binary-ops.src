@@ -3,11 +3,11 @@ program test;
 
 import <cstdio> as *;
 
-proc printb(bool b) {
+proc printb(b: bool) {
     printf("%s\n", (if b then "true" else "false").data);
 }
 
-proc arith(int a, int b) {
+proc arith(a: int, b: int) {
     printf("%zi, %zi\n", a, b);
     printf("%zi\n", a + b);
     printf("%zi\n", a +~ b);
@@ -47,7 +47,7 @@ proc arith(int a, int b) {
     printf("%zi\n", a ** b);
 }
 
-proc arith_template($T a, T b) {
+proc arith_template(a: $T, b: T) {
     printf("%zi, %zi\n", a, b);
     printf("%zi\n", a + b);
     printf("%zi\n", a +~ b);

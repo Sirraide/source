@@ -8,7 +8,7 @@ program test;
 #assert int == int^; // expected-error: Assertion failed: 'int == int^'
 
 eval {
-    type a = int;
-    type b = int;
+    var a: type = int;
+    var b: type = int;
     assert a == b;
 }

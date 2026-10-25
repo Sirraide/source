@@ -3,35 +3,35 @@
 program test;
 
 proc a {
-    int i;
-    int^? pi;
+    var i: int;
+    var pi: int^?;
     pi = ();
     pi = &i;
 }
 
-proc b (bool b) {
-    int i;
-    int j;
-    int^? pi;
+proc b (b: bool) {
+    var i: int;
+    var j: int;
+    var pi: int^?;
     if b then pi = &i;
     else pi = &j;
     ^pi = 42;
 }
 
-proc c (int^? x) = x;
+proc c (x: int^?) = x;
 
 proc d {
-    int i;
-    int j;
-    int^? p1 = ((&(i)));
-    int^? p2 = if true then p1 else p1;
-    int^? p3 = if true then &i else &j;
+    var i: int;
+    var j: int;
+    var p1: int^? = ((&(i)));
+    var p2: int^? = if true then p1 else p1;
+    var p3: int^? = if true then &i else &j;
 }
 
 proc e {
-    int i;
-    int^? p1 = &i;
-    int^? p2 = p1;
+    var i: int;
+    var p1: int^? = &i;
+    var p2: int^? = p1;
     ^p2 = 42;
 }
 

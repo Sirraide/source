@@ -2,9 +2,9 @@
 // expected-no-diagnostics
 program test;
 
-__srcc_ffi_char x;
-__srcc_ffi_wchar x;
-__srcc_ffi_short x;
-__srcc_ffi_int x;
-__srcc_ffi_long x;
-__srcc_ffi_longlong x;
+var x: __srcc_ffi_char;
+var x: __srcc_ffi_wchar;
+var x: __srcc_ffi_short;
+var x: __srcc_ffi_int;
+var x: __srcc_ffi_long;
+var x: __srcc_ffi_longlong;

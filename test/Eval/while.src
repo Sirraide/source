@@ -1,7 +1,7 @@
 // V %srcc --eval %s
 program test;
 
-proc f(int i, int j) -> int {
+proc f(i: int, j: int) -> int {
     while i < j do i = i + 1;
     return i;
 }

@@ -2,12 +2,12 @@
 program test;
 proc foo {
     int;
-    int b;
-    int c, d; // expected-error: A declaration must declare a single variable
-    int e;
-    int f;
+    var b: int;
+    var c: int, d; // expected-error: A declaration must declare a single variable
+    var e: int;
+    var f: int;
     var g;
     var h = 1;
-    int i = 2;
+    var i: int = 2;
     var j = h;
 }

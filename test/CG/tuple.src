@@ -6,8 +6,8 @@ proc f() nomangle = (1,);
 proc sink(inout $T) extern;
 
 struct s {
-    int x;
-    i8 y;
+    x: int;
+    y: i8;
 }
 
 proc f1 nomangle {
@@ -21,42 +21,42 @@ proc f1 nomangle {
 }
 
 proc f2 nomangle {
-    int j1 = ();
-    int j2 = (1);
-    int j3 = (2,);
+    var j1: int = ();
+    var j2: int = (1);
+    var j3: int = (2,);
     sink(j1);
     sink(j2);
     sink(j3);
 }
 
 proc f3 nomangle {
-    i8 x1 = ();
-    i8 x2 = (128);
-    i8 x3 = (129 as i8,);
+    var x1: i8 = ();
+    var x2: i8 = (128);
+    var x3: i8 = (129 as i8,);
     sink(x1);
     sink(x2);
     sink(x3);
 }
 
 proc f4 nomangle {
-    s s1 = ();
-    s s4 = (1, 2);
+    var s1: s = ();
+    var s4: s = (1, 2);
     sink(s1);
     sink(s4);
 }
 
 proc broadcast nomangle {
-    int[4] x1 = (1);
-    int[4] x2 = (1,);
+    var x1: int[4] = (1);
+    var x2: int[4] = (1,);
     sink(x1);
     sink(x2);
 }
 
 proc f5 nomangle {
-    int[5] x4 = (1, 2);
-    int[5] x5 = (1, 2, 3);
-    int[5] x6 = (1, 2, 3, 4);
-    int[5] x7 = (1, 2, 3, 4, 5);
+    var x4: int[5] = (1, 2);
+    var x5: int[5] = (1, 2, 3);
+    var x6: int[5] = (1, 2, 3, 4);
+    var x7: int[5] = (1, 2, 3, 4, 5);
     sink(x4);
     sink(x5);
     sink(x6);
@@ -64,11 +64,11 @@ proc f5 nomangle {
 }
 
 proc f6 nomangle {
-    s[3] x1 = ();
-    s[3] x2 = (s(1, 2));
-    s[3] x3 = ((3, 4));
-    s[3] x4 = (s(5, 6), s(7, 8));
-    s[3] x5 = ((9, 10), (11, 12));
+    var x1: s[3] = ();
+    var x2: s[3] = (s(1, 2));
+    var x3: s[3] = ((3, 4));
+    var x4: s[3] = (s(5, 6), s(7, 8));
+    var x5: s[3] = ((9, 10), (11, 12));
     sink(x1);
     sink(x2);
     sink(x3);
@@ -77,11 +77,11 @@ proc f6 nomangle {
 }
 
 proc f7 nomangle {
-    int x1 = (1);
-    int x2 = (2,);
-    int x3 = ((3,));
-    int x4 = ((4,),);
-    int x5 = ((5),);
+    var x1: int = (1);
+    var x2: int = (2,);
+    var x3: int = ((3,));
+    var x4: int = ((4,),);
+    var x5: int = ((5),);
     sink(x1);
     sink(x2);
     sink(x3);
@@ -90,12 +90,12 @@ proc f7 nomangle {
 }
 
 proc f8 nomangle {
-    int x1 = f();
-    int x2 = (f());
-    int x3 = (f(),);
-    int x4 = ((f(),));
-    int x5 = ((f(),),);
-    int x6 = ((((f(),),)));
+    var x1: int = f();
+    var x2: int = (f());
+    var x3: int = (f(),);
+    var x4: int = ((f(),));
+    var x5: int = ((f(),),);
+    var x6: int = ((((f(),),)));
     sink(x1);
     sink(x2);
     sink(x3);
@@ -105,18 +105,18 @@ proc f8 nomangle {
 }
 
 proc f9 nomangle {
-    int x7 = ((((f(),),)),);
+    var x7: int = ((((f(),),)),);
     sink(x7);
 }
 
 proc f10 {
     var x = (a: 1, b: 2, c: 3);
-    (int, int, int) y = x;
+    var y: (int, int, int) = x;
 
     var x1 = (a: 1, b: (c: 2, d: 3), e: 4);
-    (int, (int, int), int) y1 = x1;
-    (int, int, int, int) y2 = x1;
-    (f: int, g: int, h: int, i: int) y3 = x1;
+    var y1: (int, (int, int), int) = x1;
+    var y2: (int, int, int, int) = x1;
+    var y3: (f: int, g: int, h: int, i: int) = x1;
 }
 
 // * proc __src_main norecurse external ccc {

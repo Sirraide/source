@@ -2,18 +2,18 @@
 program test;
 import <typedef.h> as *;
 
-(int_typedef, int) first = (1 as __srcc_ffi_int, 2);
-(int_using, int) second = (1 as __srcc_ffi_int, 2);
-(__srcc_ffi_int, int) canonical = (1 as __srcc_ffi_int, 2);
+var first: (int_typedef, int) = (1 as __srcc_ffi_int, 2);
+var second: (int_using, int) = (1 as __srcc_ffi_int, 2);
+var canonical: (__srcc_ffi_int, int) = (1 as __srcc_ffi_int, 2);
 #assert typeof(first) == typeof(second);
 #assert typeof(first) == typeof(canonical);
 
 // Exercise trailing element storage and repeated interning with nested sugar.
-(int_typedef, int_using, (int_typedef, int), int) wide;
-(int_typedef, int_using, (int_typedef, int), int) same_wide;
+var wide: (int_typedef, int_using, (int_typedef, int), int);
+var same_wide: (int_typedef, int_using, (int_typedef, int), int);
 #assert typeof(wide) == typeof(same_wide);
 #assert typeof(wide[2][0]) == int_typedef;
 
-(int_typedef, int) bad_first = (1, 2, 3); // expected-error: Cannot initialise '(int_typedef, int)' from '(int, int, int)'
-(int_using, int) bad_second = (1, 2, 3); // expected-error: Cannot initialise '(int_using, int)' from '(int, int, int)'
-((int_typedef,), int) bad_nested = (1, 2, 3); // expected-error: Cannot initialise '((int_typedef), int)' from '(int, int, int)'
+var bad_first: (int_typedef, int) = (1, 2, 3); // expected-error: Cannot initialise '(int_typedef, int)' from '(int, int, int)'
+var bad_second: (int_using, int) = (1, 2, 3); // expected-error: Cannot initialise '(int_using, int)' from '(int, int, int)'
+var bad_nested: ((int_typedef,), int) = (1, 2, 3); // expected-error: Cannot initialise '((int_typedef), int)' from '(int, int, int)'

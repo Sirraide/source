@@ -2,15 +2,15 @@
 program test;
 
 struct S {
-    int x;
+    x: int;
 }
 
 struct T {
-    int x;
+    x: int;
 }
 
-proc S::double (inout S s) { s.x *= 2; }
-proc S::triple (with inout This s) { x *= 3; }
+proc S::double (inout s: S) { s.x *= 2; }
+proc S::triple (with inout s: This) { x *= 3; }
 proc S::quadruple (inout this) { x *= 4; }
 
 proc T::double (inout this) { x *= 2; }
@@ -33,16 +33,16 @@ eval {
 
 proc int::double (this) = this * 2;
 eval {
-    int x = 4.double();
+    var x: int = 4.double();
     assert x == 8;
 }
 
-proc int::load(This^ x) = ^x;
-proc int::store(This^ x, int y) { ^x = y };
+proc int::load(x: This^) = ^x;
+proc int::store(x: This^, y: int) { ^x = y };
 eval {
-    int x;
-    int^ px = &x;
-    int^^ ppx = &px;
+    var x: int;
+    var px: int^ = &x;
+    var ppx: int^^ = &px;
 
     px.store(42);
     assert px.load() == 42;
@@ -52,7 +52,7 @@ eval {
 }
 
 proc (int^)::foo(this) {}; // expected-error: Pointer type 'int^' cannot be used as an associated type
-proc (int^)::bar(this, int x) {}; // expected-error: Pointer type 'int^' cannot be used as an associated type
-proc (int?)::baz(this, int x) {}; // expected-error: Optional type 'int?' cannot be used as an associated type
-proc (int?^?^??)::quux(this, int x) {}; // expected-error: Optional type 'int?^?^??' cannot be used as an associated type
-proc (int?^?^?^)::asdf(this, int x) {}; // expected-error: Pointer type 'int?^?^?^' cannot be used as an associated type
+proc (int^)::bar(this, x: int) {}; // expected-error: Pointer type 'int^' cannot be used as an associated type
+proc (int?)::baz(this, x: int) {}; // expected-error: Optional type 'int?' cannot be used as an associated type
+proc (int?^?^??)::quux(this, x: int) {}; // expected-error: Optional type 'int?^?^??' cannot be used as an associated type
+proc (int?^?^?^)::asdf(this, x: int) {}; // expected-error: Pointer type 'int?^?^?^' cannot be used as an associated type

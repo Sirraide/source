@@ -2,10 +2,10 @@
 // R[//L] %srcc -fshort-filenames --llvm --target x86_64-unknown-linux %s
 program test;
 
-struct s { int x; int y; }
+struct s { x: int; y: int; }
 
 proc p1 {
-    s? x;
+    var x: s?;
 
     if x != nil {
         x.x = 1;
@@ -22,14 +22,14 @@ proc p1 {
     x.y = 2;
 }
 
-proc p2(in int^? a, in int^? b) {
+proc p2(in a: int^?, in b: int^?) {
     if a != nil and b != nil {
         ^a = 3;
         ^b = 3;
     } else {}
 }
 
-proc p3(in int^? a, in int^? b) {
+proc p3(in a: int^?, in b: int^?) {
     if a == nil or b == nil {} else {
         ^a = 3;
         ^b = 3;

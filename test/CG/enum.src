@@ -3,9 +3,9 @@ program test;
 
 enum x { a, b }
 
-x y;
-x y2 = b;
-proc p (x v) = v;
+var y: x;
+var y2: x = b;
+proc p (v: x) = v;
 
 // * @_S1y.1 = private 8, align 8
 // + @_S2y2.2 = private 8, align 8

@@ -1,29 +1,29 @@
 // V %srcc --sema --verify --target x86_64-unknown-linux %s
 program test;
 
-s1 x;
-s1? y;
+var x: s1;
+var y: s1?;
 #assert s1.bytes == 16;
 #assert s1[4].bytes == 64;
 struct s1 {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
-struct s2 { s2 x; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's2')
-struct s3 { s4 x; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's3')
-struct s4 { s3 x; } // expected-note: While computing layout of 's4'
-struct s5 { s5? x; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's5')
-struct s6 { s6[5] x; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's6')
-struct s7 { int[s7.bytes] x; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's7') expected-error (Querying property of incomplete type 's7')
+struct s2 { x: s2; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's2')
+struct s3 { x: s4; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's3')
+struct s4 { x: s3; } // expected-note: While computing layout of 's4'
+struct s5 { x: s5?; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's5')
+struct s6 { x: s6[5]; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's6')
+struct s7 { x: int[s7.bytes]; } // expected-error (Cyclic semantic dependency) expected-note (While computing layout of 's7') expected-error (Querying property of incomplete type 's7')
 
 struct s {
-   int x;
+   x: int;
 }
 
 proc f (with s?) {}
 
 // Parameter declarations do not force layout before declarations are registered.
-struct foo { bar e;  }
-proc a(foo x) {}
-struct bar { int x; }
+struct foo { e: bar;  }
+proc a(x: foo) {}
+struct bar { x: int; }

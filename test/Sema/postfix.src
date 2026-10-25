@@ -8,13 +8,13 @@ x++; // expected-error: Unknown symbol 'x'
 5--; // expected-error: Operand of '--' must be an lvalue
 x--; // expected-error: Unknown symbol 'x'
 
-int y;
+var y: int;
 y++;
 y++++; // expected-error: Operand of '++' must be an lvalue
 y--;
 y----; // expected-error: Operand of '--' must be an lvalue
 
-i16 i;
+var i: i16;
 i++;
 i--;
 

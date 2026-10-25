@@ -1094,8 +1094,8 @@ auto Sema::ResolveInitialiser(
     // Successful resolution may have translated a body with warnings, e.g.:
     //
     //     struct S {
-    //         bool value;
-    //         init (bool value) { if value = true {} return ::(value,); }
+    //         value: bool;
+    //         init (value: bool) { if value = true {} return ::(value,); }
     //     }
     //
     // Report these warnings once, even if this tentative conversion is later

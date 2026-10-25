@@ -1,36 +1,36 @@
 // V %srcc --eval %s
 program test;
 
-proc f_move(int i) = i * 2;
-proc f_move(i10000 i) = i * 2;
+proc f_move(i: int) = i * 2;
+proc f_move(i: i10000) = i * 2;
 
-int mi = 5;
-i10000 mj = 10;
+var mi: int = 5;
+var mj: i10000 = 10;
 
 assert f_move(mi) == 10;
 assert f_move(mj) == 20;
 assert f_move(20) == 40;
 
-int i = 5;
-i10000 j = 10;
+var i: int = 5;
+var j: i10000 = 10;
 
-proc f_in(in int i) = i * 3;
-proc f_in(in i10000 i) = i * 3;
+proc f_in(in i: int) = i * 3;
+proc f_in(in i: i10000) = i * 3;
 
 assert f_in(i) == 15;
 assert f_in(j) == 30;
 assert f_in(20) == 60;
 
-proc f_out(out int i) { i = 100; }
-proc f_out(out i10000 i) { i = 1000; }
+proc f_out(out i: int) { i = 100; }
+proc f_out(out i: i10000) { i = 1000; }
 
 f_out(i);
 f_out(j);
 assert i == 100;
 assert j == 1000;
 
-proc f_inout(inout int i) = i = i * 5;
-proc f_inout(inout i10000 i) = i = i * 5;
+proc f_inout(inout i: int) = i = i * 5;
+proc f_inout(inout i: i10000) = i = i * 5;
 
 i = 5;
 j = 10;
@@ -40,8 +40,8 @@ assert f_inout(j) == 50;
 assert i == 25;
 assert j == 50;
 
-proc f_copy(__srcc_by_value__ int i) = i = i * 6;
-proc f_copy(__srcc_by_value__ i10000 i) = i = i * 6;
+proc f_copy(__srcc_by_value__ i: int) = i = i * 6;
+proc f_copy(__srcc_by_value__ i: i10000) = i = i * 6;
 
 i = 5;
 j = 10;

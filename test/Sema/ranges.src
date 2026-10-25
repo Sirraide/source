@@ -2,25 +2,25 @@
 program test;
 
 proc f1 {
-    range<int> a;
-    range<int> b = 1..=2;
+    var a: range<int>;
+    var b: range<int> = 1..=2;
     var c = 1..=2;
 
-    proc pf (range<int> x) = 3..=4;
+    proc pf (x: range<int>) = 3..=4;
 
-    range<int[]> d; // expected-error: Range element type must be an integer, but was 'int[]'
-    range<int^> e; // expected-error: Range element type must be an integer, but was 'int^'
+    var d: range<int[]>; // expected-error: Range element type must be an integer, but was 'int[]'
+    var e: range<int^>; // expected-error: Range element type must be an integer, but was 'int^'
 }
 
 proc f2 {
-    range<int> a;
-    range<int> b = 1..<2;
+    var a: range<int>;
+    var b: range<int> = 1..<2;
     var c = 1..<2;
 
-    proc pf (range<int> x) = 3..<4;
+    proc pf (x: range<int>) = 3..<4;
 
-    range<int[]> d; // expected-error: Range element type must be an integer, but was 'int[]'
-    range<int^> e; // expected-error: Range element type must be an integer, but was 'int^'
+    var d: range<int[]>; // expected-error: Range element type must be an integer, but was 'int[]'
+    var e: range<int^>; // expected-error: Range element type must be an integer, but was 'int^'
 }
 
-range<i13> x;
+var x: range<i13>;

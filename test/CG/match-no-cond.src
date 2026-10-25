@@ -4,33 +4,33 @@ program test;
 
 proc exit extern -> noreturn;
 
-proc f1 (int x) nomangle = match {}
-proc f2 (int x) nomangle = match {
+proc f1 (x: int) nomangle = match {}
+proc f2 (x: int) nomangle = match {
     _: 1;
 }
 
-proc f3 (int x) nomangle = match {
+proc f3 (x: int) nomangle = match {
     x == 1: 2;
     _: 1;
 }
 
-proc f4 (int x) nomangle = match {
+proc f4 (x: int) nomangle = match {
     x == 1: 2;
     x == 2: 3;
     _: 4;
 }
 
-proc f5 (int x) nomangle = match {
+proc f5 (x: int) nomangle = match {
     x == 1: 2;
     _: exit();
 }
 
-proc f6 (int x) nomangle = match {
+proc f6 (x: int) nomangle = match {
     x == 1: 2;
     _: return 3;
 }
 
-proc f7 (int x, int y) nomangle = match {
+proc f7 (x: int, y: int) nomangle = match {
     x == 1: match {
         y == 2: 3;
         _: 4;

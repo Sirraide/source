@@ -2,7 +2,7 @@
 program test;
 
 struct Small {
-    int x;
+    x: int;
     delete { }
     copy = x;
 };
@@ -24,21 +24,21 @@ proc f2() {
 }
 
 proc f3() {
-    int x;
+    var x: int;
     sink_int(x);
     sink_int(copy x);
     sink_int(copy 42);
 }
 
 struct S {
-    int x;
-    int y;
+    x: int;
+    y: int;
     delete { }
     copy = (x * 2, y * 2);
 }
 
 proc f4() {
-    S a = (4, 5);
+    var a: S = (4, 5);
     var b = copy a;
 }
 

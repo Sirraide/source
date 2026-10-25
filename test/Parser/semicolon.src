@@ -3,7 +3,7 @@ program test;
 
 
 {
-    int y // expected-error: Expected ';'
+    var y: int // expected-error: Expected ';'
     int z
 }
 
@@ -11,7 +11,7 @@ program test;
     // These comments are purposefully on the previous line to test that we
     // handle source locations right on the '\n' character properly.
     // expected-error@+1: Expected ';'
-    int x
+    var x: int
 
     int
     y

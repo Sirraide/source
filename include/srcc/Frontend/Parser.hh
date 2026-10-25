@@ -173,7 +173,7 @@ private:
     auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
     auto ParseTuple(llvm::function_ref<Ptr<ParsedStmt>()> ParseElement) -> ParsedTupleExpr*;
     auto ParseType(int precedence = -1) -> Ptr<ParsedStmt>;
-    auto ParseVarDecl(ParsedStmt* type) -> Ptr<ParsedVarDecl>;
+    auto ParseVarDecl() -> Ptr<ParsedVarDecl>;
 
     auto CreateDRE(parser::ScopeSpec&& ss, DeclNameLoc name) -> ParsedDeclRefExpr*;
     auto CreateType(parser::Signature& sig) -> ParsedProcType*;

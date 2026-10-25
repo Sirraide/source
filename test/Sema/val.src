@@ -1,33 +1,33 @@
 // V %srcc --sema --verify %s
 program test;
 
-int mx = 3;
-int val x = 3;
-proc f (int val c) {
-    int val x = 3;
+var mx: int = 3;
+val x: int = 3;
+proc f (val c: int) {
+    val x: int = 3;
     c = 42; // expected-error: Cannot assign to immutable value
 }
 
-proc bad(proc f(int val)) {} // expected-error: 'val' is only allowed in variable declarations or pointer types
-proc ok1(proc f(int val^)) {}
-proc ok2(proc f(int val[])) {}
+proc bad(f: proc (val int)) {} // expected-error: 'val' is only allowed in procedure declarations
+proc ok1(f: proc (int val^)) {}
+proc ok2(f: proc (int val[])) {}
 
 proc ptr_init {
-    int mx = 3;
-    int val x = 3;
-    int^ mp1 = &mx;
-    int^ mp2 = &x; // expected-error: Cannot convert expression of type 'int val^' to 'int^'
-    int val^ p1 = &x;
-    int val^ p2 = &x;
+    var mx: int = 3;
+    val x: int = 3;
+    var mp1: int^ = &mx;
+    var mp2: int^ = &x; // expected-error: Cannot convert expression of type 'int val^' to 'int^'
+    var p1: int val^ = &x;
+    var p2: int val^ = &x;
     ^p1 = 42; // expected-error: Cannot assign to immutable value
     ^p2 = 42; // expected-error: Cannot assign to immutable value
 }
 
 proc slice_init {
-    int[] s1;
-    int val[] s2;
-    int[] val s3;
-    int val[] val s4;
+    var s1: int[];
+    var s2: int val[];
+    val s3: int[];
+    val s4: int val[];
 
     s1 = s2; // expected-error: Cannot assign value of type 'int val[]' to 'int[]'
     s1 = s3;
@@ -46,7 +46,7 @@ proc slice_init {
     s4 = s3; // expected-error: Cannot assign to immutable value
 }
 
-proc ptr_casts(int val^ imm, int^ mut) {
+proc ptr_casts(imm: int val^, mut: int^) {
     imm = mut;
     imm = mut as int val^;
     imm = mut as! int val^; // expected-warning: Cast from 'int^' to 'int val^' should use 'as'
@@ -56,10 +56,10 @@ proc ptr_casts(int val^ imm, int^ mut) {
 }
 
 proc slice_casts {
-    int[] s1;
-    int val[] s2;
-    int[] val s3;
-    int val[] val s4;
+    var s1: int[];
+    var s2: int val[];
+    val s3: int[];
+    val s4: int val[];
 
     s1 as int[];
     s1 as int val[];
@@ -82,16 +82,16 @@ proc slice_casts {
     s4 as! int val[];
 }
 
-proc preserve_lvalueness_ptr(int val^ imm, int^ mut) {
-    proc p(inout int val^ byref) {}
+proc preserve_lvalueness_ptr(imm: int val^, mut: int^) {
+    proc p(inout byref: int val^) {}
     p(imm);
     p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
     p(mut as int val^); // As do casts.
     p(mut as! int val^); // expected-warning: Cast from 'int^' to 'int val^' should use 'as'
 }
 
-proc preserve_lvalueness_slice(int val[] imm, int[] mut) {
-    proc p(inout int val[] byref) {}
+proc preserve_lvalueness_slice(imm: int val[], mut: int[]) {
+    proc p(inout byref: int val[]) {}
     p(imm);
     p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
     p(mut as int val[]); // As do casts.
@@ -99,63 +99,63 @@ proc preserve_lvalueness_slice(int val[] imm, int[] mut) {
 }
 
 proc structs {
-    struct s { int y; nested n; };
-    struct nested { int z; }
-    s val s1 = (1, (2));
+    struct s { y: int; n: nested; };
+    struct nested { z: int; }
+    val s1: s = (1, (2));
     s1.y = 42; // expected-error: Cannot assign to immutable value
     s1.n.z = 42; // expected-error: Cannot assign to immutable value
 }
 
-proc common_type_ptr(int val^ imm, int^ mut, bool b) {
-    int x = ^(if b then mut else mut);
-    int x = ^(if b then imm else mut);
-    int x = ^(if b then mut else imm);
-    int x = ^(if b then imm else imm);
+proc common_type_ptr(imm: int val^, mut: int^, b: bool) {
+    var x: int = ^(if b then mut else mut);
+    var x: int = ^(if b then imm else mut);
+    var x: int = ^(if b then mut else imm);
+    var x: int = ^(if b then imm else imm);
     ^(if b then mut else mut) = 42;
     ^(if b then imm else mut) = 42; // expected-error: Cannot assign to immutable value
     ^(if b then mut else imm) = 42; // expected-error: Cannot assign to immutable value
     ^(if b then imm else imm) = 42; // expected-error: Cannot assign to immutable value
 
-    int x = ^(match b { true: mut; false: mut; });
-    int x = ^(match b { true: imm; false: mut; });
-    int x = ^(match b { true: mut; false: imm; });
-    int x = ^(match b { true: imm; false: imm; });
+    var x: int = ^(match b { true: mut; false: mut; });
+    var x: int = ^(match b { true: imm; false: mut; });
+    var x: int = ^(match b { true: mut; false: imm; });
+    var x: int = ^(match b { true: imm; false: imm; });
     ^(match b { true: mut; false: mut; }) = 42;
     ^(match b { true: imm; false: mut; }) = 42; // expected-error: Cannot assign to immutable value
     ^(match b { true: mut; false: imm; }) = 42; // expected-error: Cannot assign to immutable value
     ^(match b { true: imm; false: imm; }) = 42; // expected-error: Cannot assign to immutable value
 }
 
-proc common_type_slice(int val[] imm, int[] mut, bool b) {
-    int x = (if b then mut else mut)[0];
-    int x = (if b then imm else mut)[0];
-    int x = (if b then mut else imm)[0];
-    int x = (if b then imm else imm)[0];
+proc common_type_slice(imm: int val[], mut: int[], b: bool) {
+    var x: int = (if b then mut else mut)[0];
+    var x: int = (if b then imm else mut)[0];
+    var x: int = (if b then mut else imm)[0];
+    var x: int = (if b then imm else imm)[0];
     (if b then mut else mut)[0] = 42;
     (if b then imm else mut)[0] = 42; // expected-error: Cannot assign to immutable value
     (if b then mut else imm)[0] = 42; // expected-error: Cannot assign to immutable value
     (if b then imm else imm)[0] = 42; // expected-error: Cannot assign to immutable value
 
-    int x = (match b { true: mut; false: mut; })[0];
-    int x = (match b { true: imm; false: mut; })[0];
-    int x = (match b { true: mut; false: imm; })[0];
-    int x = (match b { true: imm; false: imm; })[0];
+    var x: int = (match b { true: mut; false: mut; })[0];
+    var x: int = (match b { true: imm; false: mut; })[0];
+    var x: int = (match b { true: mut; false: imm; })[0];
+    var x: int = (match b { true: imm; false: imm; })[0];
     (match b { true: mut; false: mut; })[0] = 42;
     (match b { true: imm; false: mut; })[0] = 42; // expected-error: Cannot assign to immutable value
     (match b { true: mut; false: imm; })[0] = 42; // expected-error: Cannot assign to immutable value
     (match b { true: imm; false: imm; })[0] = 42; // expected-error: Cannot assign to immutable value
 }
 
-proc loops(int[5] val imm, int[5] mut) {
+proc loops(val imm: int[5], mut: int[5]) {
     for v in mut do v = 4;
     for v in imm do v = 4; // expected-error: Cannot assign to immutable value
 }
 
 proc loops_slice() {
-    int[] s1;
-    int val[] s2;
-    int[] val s3;
-    int val[] val s4;
+    var s1: int[];
+    var s2: int val[];
+    val s3: int[];
+    val s4: int val[];
     for v in s1 do v = 4;
     for v in s2 do v = 4; // expected-error: Cannot assign to immutable value
     for v in s3 do v = 4;
@@ -163,28 +163,28 @@ proc loops_slice() {
 }
 
 proc subscripting {
-    int[] s1;
-    int val[] s2;
-    int[] val s3;
-    int val[] val s4;
+    var s1: int[];
+    var s2: int val[];
+    val s3: int[];
+    val s4: int val[];
     s1[0] = 42;
     s2[0] = 42; // expected-error: Cannot assign to immutable value
     s3[0] = 42;
     s4[0] = 42; // expected-error: Cannot assign to immutable value
 
-    int[2] a1;
-    int val[2] a2; // expected-error: 'val' is only allowed in variable declarations or pointer types
-    int[2] val a3;
-    int val[2] val a4; // expected-error: 'val' is only allowed in variable declarations or pointer types
+    var a1: int[2];
+    var a2: int val[2]; // expected-error: 'val' is only allowed in variable declarations or pointer types
+    val a3: int[2];
+    val a4: int val[2]; // expected-error: 'val' is only allowed in variable declarations or pointer types
     a1[0] = 42;
     a2[0] = 42;
     a3[0] = 42; // expected-error: Cannot assign to immutable value
     a4[0] = 42; // expected-error: Cannot assign to immutable value
 
-    (int, int) t1;
-    (int val, int) t2; // expected-error: 'val' is only allowed in variable declarations or pointer types
-    (int, int) val t3;
-    (int val, int) val t4; // expected-error: 'val' is only allowed in variable declarations or pointer types
+    var t1: (int, int);
+    var t2: (int val, int); // expected-error: 'val' is only allowed in variable declarations or pointer types
+    val t3: (int, int);
+    val t4: (int val, int); // expected-error: 'val' is only allowed in variable declarations or pointer types
     t1[0] = 42;
     t2[0] = 42;
     t3[0] = 42; // expected-error: Cannot assign to immutable value

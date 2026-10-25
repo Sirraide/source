@@ -1,21 +1,21 @@
 // R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
-proc g(int val^ imm, int^ mut) {
+proc g(imm: int val^, mut: int^) {
     imm = mut;
     imm = mut as int val^;
     mut = imm as! int^;
 }
 
-proc preserve_lvalueness(int val^ imm, int^ mut) {
-    proc p(inout int val^ byref) {}
+proc preserve_lvalueness(imm: int val^, mut: int^) {
+    proc p(inout byref: int val^) {}
     p(imm);
     p(mut); // Implicit conversion preserves the lvalue-ness of 'mut'.
     p(mut as int val^); // As do casts.
 }
 
-proc conv_ptr (int^ a) -> int val^ = a;
-proc conv_slice (int[] a) -> int val[] = a;
+proc conv_ptr (a: int^) -> int val^ = a;
+proc conv_slice (a: int[]) -> int val[] = a;
 
 // * proc __src_main norecurse external ccc {
 // + entry:

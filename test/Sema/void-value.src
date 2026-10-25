@@ -1,16 +1,16 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc f1 (void x) {}
-proc f2 (void x) native {} // expected-error: Passing 'void' to a 'native' procedure is not supported
+proc f1 (x: void) {}
+proc f2 (x: void) native {} // expected-error: Passing 'void' to a 'native' procedure is not supported
 
 proc f3 -> void {}
 proc f4 native -> void {}
 
 struct zero {}
 
-proc f5 (zero x) {}
-proc f6 (zero x) native {} // expected-error: Passing zero-sized type 'zero' to a 'native' procedure is not supported
+proc f5 (x: zero) {}
+proc f6 (x: zero) native {} // expected-error: Passing zero-sized type 'zero' to a 'native' procedure is not supported
 
 proc f7 -> zero { return zero(); }
 proc f8 native -> zero { return zero(); } // expected-error: Returning zero-sized type 'zero' from a 'native' procedure is not supported

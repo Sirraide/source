@@ -2,34 +2,34 @@
 // R[//L] %srcc --llvm --target x86_64-unknown-linux %s
 program test;
 
-proc a (range<int> x) = 3..=4;
-proc b (range<int> x) = 3..<4;
+proc a (x: range<int>) = 3..=4;
+proc b (x: range<int>) = 3..<4;
 proc c = 2..=4;
 
 proc f1 {
-    range<int> a;
-    range<int> b = 1..=2;
+    var a: range<int>;
+    var b: range<int> = 1..=2;
     var c = 1..=2;
     var d = c.start..=c.end;
     var e = (1..=2).start..=(1..=2).end;
 }
 
 proc f2 {
-    range<int> a;
-    range<int> b = 1..<2;
+    var a: range<int>;
+    var b: range<int> = 1..<2;
     var c = 1..<2;
     var d = c.start..<c.end;
     var e = (1..<2).start..=(1..<2).end;
 }
 
 proc f3 {
-    range<i27> a;
-    range<i27> b = 1..<2;
-    range<i27> d = b.start..<b.end;
-    range<i27> e = ((1..<2) as range<i27>).start..<((1..<2) as range<i27>).end;
+    var a: range<i27>;
+    var b: range<i27> = 1..<2;
+    var d: range<i27> = b.start..<b.end;
+    var e: range<i27> = ((1..<2) as range<i27>).start..<((1..<2) as range<i27>).end;
 }
 
-range<i13> x;
+var x: range<i13>;
 var y = c();
 
 // * @_S1x.1 = private 4, align 2

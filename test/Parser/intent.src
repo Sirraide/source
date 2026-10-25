@@ -3,21 +3,21 @@ program test;
 
 proc foo(
     int,
-    int x,
+    x: int,
     in int,
-    in int x,
+    in x: int,
     out int,
-    out int x,
+    out x: int,
     inout int,
-    inout int x,
+    inout x: int,
     __srcc_by_value__ int,
-    __srcc_by_value__ int x,
+    __srcc_by_value__ x: int,
 
     // Some of the keywords are contextual, but you can still
     // not have multiple intents and thus also not a type named
     // after an intent (at last you can’t use it in a parameter
     // declaration w/o a type alias).
-    in in int x, // expected-error: Cannot specify more than one parameter intent
+    in in x: int, // expected-error: Cannot specify more than one parameter intent
     in in, // expected-error: Cannot specify more than one parameter intent
     out in, // expected-error: Cannot specify more than one parameter intent
     in inout, // expected-error: Cannot specify more than one parameter intent
@@ -28,11 +28,11 @@ proc foo(
     in out int, // expected-error: Cannot specify more than one parameter intent
 
     // But any intents that are not keywords are allowed as parameter names.
-    int in, // expected-error: Expected expression
-    int out,
-    int inout,
-    int __srcc_by_value__,
-    in int out,
-    in int inout,
-    in int __srcc_by_value__
+    in: int, // expected-error: Expected type
+    out: int,
+    inout: int,
+    __srcc_by_value__: int,
+    in out: int,
+    in inout: int,
+    in __srcc_by_value__: int
 ) {}

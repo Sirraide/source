@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc f (int x, int y) = 2 * x - y; // expected-note 6: Callee declared here
+proc f (x: int, y: int) = 2 * x - y; // expected-note 6: Callee declared here
 
 #assert f(10, 2) == 18;
 #assert f(x: 10, y: 2) == 18;
@@ -22,10 +22,10 @@ f(x: 1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 f(1, y: 2, 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 f(1, y: 2, x: 3); // expected-error: Procedure 'f' expects 2 arguments, got 3
 
-proc g (int x, int x) {} // expected-error (Redeclaration of 'x') expected-note (Conflicting declaration of parameter 'x' is here)
+proc g (x: int, x: int) {} // expected-error (Redeclaration of 'x') expected-note (Conflicting declaration of parameter 'x' is here)
 
-proc variadic (int x, int ...y) -> int { // expected-note 3: Callee declared here
-    int sum;
+proc variadic (x: int, y: int ...) -> int { // expected-note 3: Callee declared here
+    var sum: int;
     for arg in y do sum += arg;
     return x * 2 + sum;
 }
@@ -36,7 +36,7 @@ variadic(1, x: 2); // expected-error (An argument was already passed for paramet
 variadic(y: 1); // expected-error: Named argument names the variadic parameter
 variadic(1, 2, 3, y: 4); // expected-error: Named argument names the variadic parameter
 
-proc indirect(proc foo (int)) {
+proc indirect(foo: proc (int)) {
     foo(x: 3); // expected-error: Named arguments are not allowed in indirect calls
     var p = indirect;
     p(x: 4); // expected-error: Named arguments are not allowed in indirect calls
@@ -45,14 +45,14 @@ proc indirect(proc foo (int)) {
 // FIXME: This should be allowed, but it requires building the parameter
 // declarations in BuildProcDeclInitial(), which is where we should be
 // doing that anyway.
-proc op (int double) = double * 2; // expected-note (Conflicting declaration of procedure 'op' is here) expected-note (Callee declared here)
-proc op (int triple) = triple * 3; // expected-error: Procedure 'op' redefined
+proc op (double: int) = double * 2; // expected-note (Conflicting declaration of procedure 'op' is here) expected-note (Callee declared here)
+proc op (triple: int) = triple * 3; // expected-error: Procedure 'op' redefined
 
 #assert op(double: 2) == 4;
 #assert op(triple: 2) == 6; // expected-error: Procedure 'op' has no parameter named 'triple'
 op(2);
 
-proc ambiguous (int x) {} // expected-note: Conflicting declaration of procedure 'ambiguous' is here
-proc ambiguous (int x) {} // expected-error: Procedure 'ambiguous' redefined
+proc ambiguous (x: int) {} // expected-note: Conflicting declaration of procedure 'ambiguous' is here
+proc ambiguous (x: int) {} // expected-error: Procedure 'ambiguous' redefined
 ambiguous(x: 2);
 ambiguous(2);

@@ -10,10 +10,10 @@ var item = m::Item(y: 3, x: 4);
 assert item.x == 5;
 assert item.y == 5;
 
-m::Item defaulted;
+var defaulted: m::Item;
 assert defaulted.x == 10;
 
-m::Wrapper wrapper;
+var wrapper: m::Wrapper;
 assert wrapper.item.y == 20;
 
 var aggregate = m::Wrapper(z: 30, item: m::Item::(40, 50));
@@ -22,11 +22,11 @@ assert aggregate.z == 30;
 
 assert m::Factory(100) == 101;
 
-m::TupleHolder tuple_holder;
+var tuple_holder: m::TupleHolder;
 assert tuple_holder.value[0].x == 10;
 
-(m::Item, int) imported_tuple;
+var imported_tuple: (m::Item, int);
 assert imported_tuple[0].y == 20;
 
-typeof(tuple_holder.value) same_tuple;
+var same_tuple: typeof(tuple_holder.value);
 assert same_tuple[0].x == 10;

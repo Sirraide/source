@@ -1,7 +1,7 @@
 // V %srcc --eval %s
 program test;
 
-struct y { i64 a; i64 b; i64 c; }
+struct y { a: i64; b: i64; c: i64; }
 
 var c = y(1, 2, 3);
 var d = c;

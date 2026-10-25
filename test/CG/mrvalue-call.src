@@ -2,7 +2,7 @@
 program test;
 
 proc p_in (in $T) {}
-proc p_out (out $T x) { __srcc_unreachable(); }
+proc p_out (out x: $T) { __srcc_unreachable(); }
 proc p_inout (inout $T) {}
 proc p_copy (__srcc_by_value__ $T) {}
 proc p_move ($T) {}
@@ -36,7 +36,7 @@ proc srvalue {
 
 // Small MRValue.
 proc mrvalue_small {
-    struct small { int i; }
+    struct small { i: int; }
     var s = small(1);
 
     p_in(small(1));
@@ -53,7 +53,7 @@ proc mrvalue_small {
 
 // Large MRValue.
 proc mrvalue_large {
-    struct large { int[100] i; }
+    struct large { i: int[100]; }
     var l = large();
 
     p_in(large());

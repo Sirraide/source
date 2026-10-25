@@ -1,0 +1,29 @@
+// V %srcc --sema --verify %s
+program test;
+
+val global: int = 1;
+global = 2; // expected-error: Cannot assign to immutable value
+proc immutable_parameter (val value: var) {
+    value = 3; // expected-error: Cannot assign to immutable value
+}
+
+immutable_parameter(1);
+
+proc local {
+    val inferred = 4;
+    inferred = 5; // expected-error: Cannot assign to immutable value
+    val typed: int = 6;
+    typed = 7; // expected-error: Cannot assign to immutable value
+    var unknown: Missing; // expected-error: Unknown symbol 'Missing'
+}
+
+// Stored tuple-of-type values are not implicitly converted into tuple types.
+val types = (x: int, y: int); // expected-note: Declared here
+var value: types; // expected-error: 'types' does not name a type
+
+proc immutable_explicit (in val value: int) {
+    value = 8; // expected-error: Cannot assign to 'in' parameter
+}
+proc immutable_pointer (val address: int^) {
+    address = nil; // expected-error: Cannot assign to immutable value
+}

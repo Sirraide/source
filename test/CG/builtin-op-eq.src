@@ -6,21 +6,21 @@ proc a = "abcd" == "dcef";
 proc b = "a" == "bc";
 proc c = "a" == "a";
 proc d = "" == "";
-proc e (i64[] a, i64[] b) = a == b;
+proc e (a: i64[], b: i64[]) = a == b;
 
 proc p1 -> bool {
-    int a;
-    int b;
-    int^? x = &a;
-    int^? y = &b;
+    var a: int;
+    var b: int;
+    var x: int^? = &a;
+    var y: int^? = &b;
     return x == y;
 }
 
-proc p2 (i8^? x, i8^? y) -> bool {
+proc p2 (x: i8^?, y: i8^?) -> bool {
     return x == y;
 }
 
-proc p3 (in int[4] x, in int[4] y) -> bool {
+proc p3 (in x: int[4], in y: int[4]) -> bool {
     return x == y;
 }
 

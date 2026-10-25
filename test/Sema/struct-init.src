@@ -2,13 +2,13 @@
 program test;
 
 struct DefaultInit {
-    int a; // expected-note 2: In initialiser for field 'a'
-    int b; // expected-note: In initialiser for field 'b'
+    a: int; // expected-note 2: In initialiser for field 'a'
+    b: int; // expected-note: In initialiser for field 'b'
 }
 
 {
-DefaultInit x;
-DefaultInit y = DefaultInit(1, 2);
+var x: DefaultInit;
+var y: DefaultInit = DefaultInit(1, 2);
 var z = DefaultInit(1, 2);
 var w = DefaultInit();
 }
@@ -27,8 +27,8 @@ var y = DefaultInit("foo", "foo"); // expected-error: Cannot convert expression 
 
 {
 struct Nested {
-    DefaultInit x;
-    DefaultInit y;
+    x: DefaultInit;
+    y: DefaultInit;
 }
 
 var x = Nested();
@@ -36,17 +36,17 @@ var y = Nested(DefaultInit(1, 2), DefaultInit(3, 4));
 }
 
 {
-struct NestedLiteralInit1 { int x; }
-struct NestedLiteralInit2 { NestedLiteralInit1 x; }
+struct NestedLiteralInit1 { x: int; }
+struct NestedLiteralInit2 { x: NestedLiteralInit1; }
 var x = NestedLiteralInit2(NestedLiteralInit1(1));
 var y = NestedLiteralInit2(1);
 }
 
 {
-struct NestedLiteralInit1 { int x; }
+struct NestedLiteralInit1 { x: int; }
 struct NestedLiteralInit2 {
-    NestedLiteralInit1 x;
-    NestedLiteralInit1 y;
+    x: NestedLiteralInit1;
+    y: NestedLiteralInit1;
 }
 
 var x = NestedLiteralInit2(NestedLiteralInit1(1), 1);
@@ -55,13 +55,13 @@ var z = NestedLiteralInit2(1, 1);
 }
 
 {
-struct x { i64 a; }
+struct x { a: i64; }
 struct y {
-    i64 a; // expected-note: In initialiser for field 'a'
-    i64 b;
-    i64 c;
+    a: i64; // expected-note: In initialiser for field 'a'
+    b: i64;
+    c: i64;
 }
 
 var a = x(1);
-y d = a; // expected-error: Cannot convert expression of type 'x' to 'i64'
+var d: y = a; // expected-error: Cannot convert expression of type 'x' to 'i64'
 }

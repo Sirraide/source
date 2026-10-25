@@ -2,109 +2,109 @@
 program test;
 
 struct Pair {
-    int x;
-    int y;
-    init (int x, int y) = ::(x, y); // expected-note 3: Callee declared here
+    x: int;
+    y: int;
+    init (x: int, y: int) = ::(x, y); // expected-note 3: Callee declared here
 }
 
-Pair valid = (1, 2);
-Pair raw = ::(3, 4);
-Pair missing; // expected-error: Procedure 'init' expects 2 arguments, got 0
+var valid: Pair = (1, 2);
+var raw: Pair = ::(3, 4);
+var missing: Pair; // expected-error: Procedure 'init' expects 2 arguments, got 0
 var arity = Pair(1); // expected-error: Procedure 'init' expects 2 arguments, got 1
 var names = Pair(z: 1, y: 2); // expected-error: Procedure 'init' has no parameter named 'z'
 
 struct BadTuple {
-    int x;
-    int y;
-    init (int x, int y) = (x, y); // expected-error (Cannot invoke an initialiser of 'BadTuple' inside its initialiser) expected-note (Enclosing initialiser declared here)
+    x: int;
+    y: int;
+    init (x: int, y: int) = (x, y); // expected-error (Cannot invoke an initialiser of 'BadTuple' inside its initialiser) expected-note (Enclosing initialiser declared here)
 }
 
 struct BadReturn {
-    int x;
-    init (int x) { return (x,); } // expected-error (Cannot invoke an initialiser of 'BadReturn' inside its initialiser) expected-note (Enclosing initialiser declared here)
+    x: int;
+    init (x: int) { return (x,); } // expected-error (Cannot invoke an initialiser of 'BadReturn' inside its initialiser) expected-note (Enclosing initialiser declared here)
 }
 
 struct Recursive {
-    int x;
+    x: int;
     init = Recursive(1); // expected-error (Cannot invoke an initialiser of 'Recursive' inside its initialiser) expected-note (Enclosing initialiser declared here)
-    init (int x) = ::(x,);
+    init (x: int) = ::(x,);
 }
 
 struct NestedRecursion {
-    int x;
-    init (int x) { // expected-note: Enclosing initialiser declared here
+    x: int;
+    init (x: int) { // expected-note: Enclosing initialiser declared here
         proc nested = NestedRecursion(1); // expected-error: Cannot invoke an initialiser of 'NestedRecursion' inside its initialiser
         return ::(x,);
     }
 }
 
 struct CopyInit {
-    int x;
-    init (This other) = ::(other.x,); // expected-error: An initialiser cannot take a single argument of its own type; use 'copy' instead
+    x: int;
+    init (other: This) = ::(other.x,); // expected-error: An initialiser cannot take a single argument of its own type; use 'copy' instead
 }
 
 struct TemplateInit {
-    int x;
-    init ($T x) = ::(x,);
+    x: int;
+    init (x: $T) = ::(x,);
 }
 
 struct Factory {
-    int x;
-    init (int x) = x + 1;
+    x: int;
+    init (x: int) = x + 1;
 }
 
-Factory incompatible = (1,); // expected-error: Initialiser for 'Factory' returns 'int', which cannot initialise 'Factory'
-Factory also_incompatible = Factory(2); // expected-error: Initialiser for 'Factory' returns 'int', which cannot initialise 'Factory'
+var incompatible: Factory = (1,); // expected-error: Initialiser for 'Factory' returns 'int', which cannot initialise 'Factory'
+var also_incompatible: Factory = Factory(2); // expected-error: Initialiser for 'Factory' returns 'int', which cannot initialise 'Factory'
 var factory = Factory(3);
 
 struct ImplicitRecursion {
-    int x;
-    init (int x) { // expected-note: Enclosing initialiser declared here
-        ImplicitRecursion value = (x,); // expected-error: Cannot invoke an initialiser of 'ImplicitRecursion' inside its initialiser
+    x: int;
+    init (x: int) { // expected-note: Enclosing initialiser declared here
+        var value: ImplicitRecursion = (x,); // expected-error: Cannot invoke an initialiser of 'ImplicitRecursion' inside its initialiser
         return ::(x,);
     }
 }
 
 struct DefaultRecursion {
-    int x;
+    x: int;
     init { // expected-note: Enclosing initialiser declared here
-        DefaultRecursion value; // expected-error: Cannot invoke an initialiser of 'DefaultRecursion' inside its initialiser
+        var value: DefaultRecursion; // expected-error: Cannot invoke an initialiser of 'DefaultRecursion' inside its initialiser
         return ::(0,);
     }
 }
 
 struct InferredOrder {
-    int x;
+    x: int;
     init = ::(0,);
-    init (int x) = ::(x,);
+    init (x: int) = ::(x,);
 }
 
 struct ForwardBody {
-    int x;
-    init (int x) = ::(x,);
+    x: int;
+    init (x: int) = ::(x,);
     init = ForwardResult(1);
 }
 
 struct ForwardResult {
-    int x;
-    init (int x) = ::(x,);
+    x: int;
+    init (x: int) = ::(x,);
 }
 
 struct SingleVar {
-    init (var x) = x;
+    init (x: var) = x;
 }
 
 struct Ambiguous {
-    int x;
-    init (i8 x) = ::(x as int,);
-    init (i16 x) = ::(x as int,);
+    x: int;
+    init (x: i8) = ::(x as int,);
+    init (x: i16) = ::(x as int,);
 }
 
 var ambiguous = Ambiguous(1); // expected-error: Overload resolution failed in call to 'init'
 
 struct ConversionCycle {
-    int x;
-    init (This x, int y) = ::(y,); // expected-note 2 (Callee declared here) expected-note (In argument to parameter 'x')
+    x: int;
+    init (x: This, y: int) = ::(y,); // expected-note 2 (Callee declared here) expected-note (In argument to parameter 'x')
 }
 
 var cycle = ConversionCycle(1, 2); // expected-error: Procedure 'init' expects 2 arguments, got 1
@@ -113,39 +113,39 @@ struct MutuallyRecursiveA { init = MutuallyRecursiveB(); } // expected-note 2: W
 struct MutuallyRecursiveB { init = MutuallyRecursiveA(); } // expected-error: Cyclic semantic dependency
 
 struct DefaultFactory { init = 42; }
-DefaultFactory invalid_default; // expected-error: Initialiser for 'DefaultFactory' returns 'int', which cannot initialise 'DefaultFactory'
+var invalid_default: DefaultFactory; // expected-error: Initialiser for 'DefaultFactory' returns 'int', which cannot initialise 'DefaultFactory'
 
-struct FactoryField { DefaultFactory field; int tag; }
-FactoryField invalid_field; // expected-error: Type 'FactoryField' requires a non-empty initialiser
+struct FactoryField { field: DefaultFactory; tag: int; }
+var invalid_field: FactoryField; // expected-error: Type 'FactoryField' requires a non-empty initialiser
 
 struct TemplateRecursion {
-    int value;
-    init ($T value) = TemplateRecursion(value); // expected-error (Cannot invoke an initialiser of 'TemplateRecursion' inside its initialiser) expected-note (Enclosing initialiser declared here)
+    value: int;
+    init (value: $T) = TemplateRecursion(value); // expected-error (Cannot invoke an initialiser of 'TemplateRecursion' inside its initialiser) expected-note (Enclosing initialiser declared here)
 }
 
 var template_recursion = TemplateRecursion(1);
 
 // An uninstantiated initialiser template does not translate its body.
 struct DeferredTemplate {
-    init ($T value) = unknown_name;
+    init (value: $T) = unknown_name;
 }
 
 struct InoutInitialiser {
-    int value;
-    init (inout int a, inout int b) = ::(a + b,);
+    value: int;
+    init (inout a: int, inout b: int) = ::(a + b,);
 }
 
-InoutInitialiser invalid_intents = (1, 2); // expected-error 2: Cannot bind this expression to an inout parameter.
+var invalid_intents: InoutInitialiser = (1, 2); // expected-error 2: Cannot bind this expression to an inout parameter.
 
-struct NestedIntentFailure { InoutInitialiser value; int tag; }
-NestedIntentFailure nested_intents = ::( (1, 2), 3 ); // expected-error 2: Cannot bind this expression to an inout parameter.
-InoutInitialiser[2] array_intents = ((1, 2), (3, 4)); // expected-error 4: Cannot bind this expression to an inout parameter.
+struct NestedIntentFailure { value: InoutInitialiser; tag: int; }
+var nested_intents: NestedIntentFailure = ::( (1, 2), 3 ); // expected-error 2: Cannot bind this expression to an inout parameter.
+var array_intents: InoutInitialiser[2] = ((1, 2), (3, 4)); // expected-error 4: Cannot bind this expression to an inout parameter.
 
 // Warnings from a body translated during overload resolution must be retained.
 var warning = WarningInitialiser(true);
 struct WarningInitialiser {
-    bool value;
-    init (bool value) {
+    value: bool;
+    init (value: bool) {
         if value = true {} // expected-warning: Assignment in condition. Did you mean to write '=='?
         return ::(value,);
     }
@@ -153,13 +153,13 @@ struct WarningInitialiser {
 
 // Argument conversion can cycle without re-entering a declaration/body request.
 struct ArgumentCycleA {
-    int value;
-    init (ArgumentCycleB value) = ::(value.value,); // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
+    value: int;
+    init (value: ArgumentCycleB) = ::(value.value,); // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
 }
 
 struct ArgumentCycleB {
-    int value;
-    init (ArgumentCycleA value) = ::(value.value,); // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
+    value: int;
+    init (value: ArgumentCycleA) = ::(value.value,); // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
 }
 
 var argument_cycle = ArgumentCycleA(1); // expected-error: Recursive initialiser argument conversion for 'ArgumentCycleA'
@@ -167,16 +167,16 @@ var argument_cycle = ArgumentCycleA(1); // expected-error: Recursive initialiser
 // Noreturn arguments convert to the target type without selecting a factory,
 // irrespective of the factory's declared result type.
 proc never_returns extern -> noreturn;
-struct NoreturnFactory { init (int value) = value; }
+struct NoreturnFactory { init (value: int) = value; }
 proc factory_noreturn () -> NoreturnFactory = NoreturnFactory(never_returns());
 proc builtin_noreturn () -> int = int(never_returns());
 
 // A body error must be reported even when it is encountered only while
 // querying default-initialisability; a failed request must retain that failure.
 struct InvalidDefault {
-    int value;
+    value: int;
     init = unknown_default_value; // expected-error: Unknown symbol 'unknown_default_value'
 }
 
-struct InvalidDefaultField { InvalidDefault value; }
+struct InvalidDefaultField { value: InvalidDefault; }
 var warning_again = WarningInitialiser(true);

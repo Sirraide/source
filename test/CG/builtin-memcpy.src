@@ -3,14 +3,14 @@
 program test;
 
 proc pa {
-    int a;
-    int b;
+    var a: int;
+    var b: int;
     __srcc_memcpy(&a, &b, int.bytes);
 }
 
 proc pb {
-    i8[20] c1;
-    i8[20] c2;
+    var c1: i8[20];
+    var c2: i8[20];
     __srcc_memcpy(&c1, &c2, 20);
 }
 

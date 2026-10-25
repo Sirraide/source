@@ -3,18 +3,18 @@
 program test;
 
 proc p1 -> i8^ {
-    i8 a;
-    i8^ b = &a;
+    var a: i8;
+    var b: i8^ = &a;
     return __srcc_ptradd(b, 10);
 }
 
 proc p2 -> i8^ {
-    i8 a;
+    var a: i8;
     return __srcc_ptradd(&a, 10);
 }
 
-proc p3 (int offs) -> i8^ {
-    i8 a;
+proc p3 (offs: int) -> i8^ {
+    var a: i8;
     return __srcc_ptradd(&a, offs);
 }
 

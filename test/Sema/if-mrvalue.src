@@ -2,10 +2,10 @@
 // expected-no-diagnostics
 program test;
 
-struct s { i64 x; }
+struct s { x: i64; }
 
 if true then s(1);
 if true {} else s(1);
-s x = if true then s(2) else s(2);
-s y = if true then x else s(2);
-s z = if true then s(2) else x;
+var x: s = if true then s(2) else s(2);
+var y: s = if true then x else s(2);
+var z: s = if true then s(2) else x;

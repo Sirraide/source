@@ -3,7 +3,7 @@ program test;
 
 
 proc a = 42;
-int x = inline a();
+var x: int = inline a();
 inline 3; // expected-error: Argument of 'inline' must be a procedure call
 inline int(); // expected-error: Argument of 'inline' must be a procedure call
 inline ""; // expected-error: Argument of 'inline' must be a procedure call

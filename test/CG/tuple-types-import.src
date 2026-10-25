@@ -9,16 +9,16 @@ var nested = m::nested();
 var local = (1, (2, 3));
 #assert typeof(nested) == typeof(local);
 assert nested[1][0] == 2;
-(int, int, int) flat = m::nested();
+var flat: (int, int, int) = m::nested();
 assert flat[2] == 3;
 
-(c::int_typedef, int) arg = (7 as c::int_typedef, 8);
+var arg: (c::int_typedef, int) = (7 as c::int_typedef, 8);
 var result = m::sugared(arg);
 #assert typeof(result) == typeof(arg);
 assert result[0] == 7;
 
-m::Holder holder;
-(m::Element, int) tuple;
+var holder: m::Holder;
+var tuple: (m::Element, int);
 #assert typeof(holder.value) == typeof(tuple);
 assert tuple[0].value == 42;
 

@@ -2,25 +2,25 @@
 program test;
 
 struct Item {
-    int x;
-    int y;
-    init (int x, int y) = ::(x + 1, y + 2);
+    x: int;
+    y: int;
+    init (x: int, y: int) = ::(x + 1, y + 2);
     init = ::(10, 20);
 }
 
-struct Wrapper { Item item; int z; }
-struct Factory { init (int x) = x + 1; }
+struct Wrapper { item: Item; z: int; }
+struct Factory { init (x: int) = x + 1; }
 
 proc construct {
     var a = Item(1, 2);
-    Item b = (3, 4);
-    Item raw = ::(5, 6);
-    Wrapper defaulted;
+    var b: Item = (3, 4);
+    var raw: Item = ::(5, 6);
+    var defaulted: Wrapper;
     var aggregate = Wrapper(Item::(7, 8), 9);
     var scalar = Factory(10);
 }
 
-proc tuple_default { (Item, int) value; }
+proc tuple_default { var value: (Item, int); }
 
 // * @0 = "+\00"
 // + @1 = "integer overflow\00"
@@ -83,7 +83,7 @@ proc tuple_default { (Item, int) value; }
 // +     br %3:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("struct-initialisers.src":7:32) arithmetic(ptr #3)
+// +     abort at loc("struct-initialisers.src":7:34) arithmetic(ptr #3)
 // +
 // + bb2:
 // +     store #2, i64 %3:0, align 8
@@ -93,7 +93,7 @@ proc tuple_default { (Item, int) value; }
 // +     br %15:1 to bb3 else bb4
 // +
 // + bb3:
-// +     abort at loc("struct-initialisers.src":7:39) arithmetic(ptr #3)
+// +     abort at loc("struct-initialisers.src":7:41) arithmetic(ptr #3)
 // +
 // + bb4:
 // +     store %13, i64 %15:0, align 8
@@ -146,7 +146,7 @@ proc tuple_default { (Item, int) value; }
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("struct-initialisers.src":12:35) arithmetic(ptr #1)
+// +     abort at loc("struct-initialisers.src":12:36) arithmetic(ptr #1)
 // +
 // + bb2:
 // +     ret i64 %2:0

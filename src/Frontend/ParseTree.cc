@@ -494,6 +494,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
             PrintHeader(s, "VarDecl", false);
             print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
             if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
+            if (p.immutable) print("val ");
             if (p.is_static) print("static ");
             if (p.is_this_param) print("this_param ");
             if (p.with_loc.is_valid()) print("with ");
@@ -755,6 +756,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                         if (not first) out += ", ";
                         first = false;
                         if (param.intent != Intent::Move) Format(out, "{} ", param.intent);
+                        if (param.immutable) out += "%1(val%) ";
                         Append(param.type);
                         if (param.variadic) out += "...";
                     }

@@ -2,7 +2,7 @@
 program test;
 
 struct Small {
-    int x;
+    x: int;
     delete { }
 };
 
@@ -19,7 +19,7 @@ proc f1 {
     delete s;
 }
 
-proc f2 (bool x) {
+proc f2 (x: bool) {
     var s = Small(42);
     if x {
         delete s;
@@ -28,12 +28,12 @@ proc f2 (bool x) {
     }
 }
 
-proc f3 (bool x) {
+proc f3 (x: bool) {
     var s = Small(42);
     if x delete s;
 }
 
-proc f4 (bool x) {
+proc f4 (x: bool) {
     var s = Small(42);
     if x {} else delete s;
 }
@@ -66,7 +66,7 @@ proc e2 -> int {
     return s.x + s.x; // expected-error 2: Use of deleted value
 }
 
-proc e3 (bool x) -> int {
+proc e3 (x: bool) -> int {
     var s = Small(42);
     if x {
         delete s;
@@ -76,26 +76,26 @@ proc e3 (bool x) -> int {
     return s.x; // expected-error: Use of deleted value
 }
 
-proc e4 (bool x) -> int {
+proc e4 (x: bool) -> int {
     var s = Small(42);
     if x delete s; // expected-note: Deleted here
     return s.x; // expected-error: Use of deleted value
 }
 
-proc e5 (bool x) -> int {
+proc e5 (x: bool) -> int {
     var s = Small(42);
     if x {} else delete s; // expected-note: Deleted here
     return s.x; // expected-error: Use of deleted value
 }
 
 proc e6() {
-    Small x;
+    var x: Small;
     loop {
         delete x; // expected-error ('delete' of deleted value) expected-note (Deleted here)
     }
 }
 
-proc e7 (out Small s1) { // expected-error: 'out' parameter is not written to on all control paths
+proc e7 (out s1: Small) { // expected-error: 'out' parameter is not written to on all control paths
     var s = s1; // expected-error: 'out' parameter must be written to before it can be used
 }
 
@@ -105,7 +105,7 @@ proc e8 {
     var s3 = s1; // expected-error: Use of moved value
 }
 
-proc e9 (bool b) {
+proc e9 (b: bool) {
     var s1 = Small(42);
     if b { var s2 = s1; } // expected-note: Moved here
     var s3 = s1; // expected-error: Use of moved value

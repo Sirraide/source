@@ -5,5 +5,5 @@ program test;
 import tuple_types as m;
 import <typedef.h> as c;
 
-m::SugaredHolder holder;
-typeof(holder.value) bad = (1, 2, 3); // expected-error: Cannot initialise '(int_using, int)' from '(int, int, int)'
+var holder: m::SugaredHolder;
+var bad: typeof(holder.value) = (1, 2, 3); // expected-error: Cannot initialise '(int_using, int)' from '(int, int, int)'

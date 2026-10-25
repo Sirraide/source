@@ -1,8 +1,8 @@
 // V %srcc --eval %s
 program test;
 
-proc p1 (int... ints) -> int {
-    int x;
+proc p1 (ints: int...) -> int {
+    var x: int;
     for i in ints do x += i;
     return x;
 }

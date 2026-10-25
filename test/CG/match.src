@@ -2,7 +2,7 @@
 // R[//L] %srcc --llvm --target x86_64-unknown-linux -fshort-filenames %s
 program test;
 
-bool g;
+var g: bool;
 
 proc f1 {
     var x = match g {
@@ -26,7 +26,7 @@ proc f3 {
     };
 }
 
-proc f4(bool a, bool b) -> int {
+proc f4(a: bool, b: bool) -> int {
     return match a {
         b: 0;
         true: 1;
@@ -35,9 +35,9 @@ proc f4(bool a, bool b) -> int {
 }
 
 proc f5() {
-    int x;
-    int y;
-    int^ z = &match true {
+    var x: int;
+    var y: int;
+    var z: int^ = &match true {
         true: x;
         false: y;
     };
@@ -45,33 +45,33 @@ proc f5() {
 }
 
 proc f6() {
-    int x = match true {
+    var x: int = match true {
         _: 5;
     };
 }
 
 proc f7() {
-    int x = match true {
+    var x: int = match true {
         _: 5;
         true: "unreachable";
     };
 }
 
-proc f8(bool b) {
-    int x = match b {
+proc f8(b: bool) {
+    var x: int = match b {
         true: 7;
         _: 5;
     };
 }
 
-proc f9(int i) -> int {
+proc f9(i: int) -> int {
     return match i {
         1..=10: 1;
         _: 2;
     };
 }
 
-proc f10(int i) -> int {
+proc f10(i: int) -> int {
     return match i {
         1..=10: 1;
         11..=20: 2;
@@ -80,27 +80,27 @@ proc f10(int i) -> int {
     };
 }
 
-proc f11(int i) -> int {
+proc f11(i: int) -> int {
     return match i {
         int.min..<int.max: 1;
         _: 2;
     };
 }
 
-proc f12(int i) -> int {
+proc f12(i: int) -> int {
     return match i {
         int.min..<int.max: 1;
         _: 1;
     };
 }
 
-proc f13 (int? x) = match x {
+proc f13 (x: int?) = match x {
     nil: 5;
     42: 7;
     _: x;
 };
 
-proc f14 (int y) = match y + 1 {
+proc f14 (y: int) = match y + 1 {
     5: 7;
     6: 8;
     _: 9;
@@ -371,7 +371,7 @@ proc r15 = match 4 {
 // +     br %2:1 to bb1 else bb2
 // +
 // + bb1:
-// +     abort at loc("match.src":103:28) arithmetic(ptr #1)
+// +     abort at loc("match.src":103:29) arithmetic(ptr #1)
 // +
 // + bb2:
 // +     %12 = icmp eq i64 %2:0, 5
@@ -654,7 +654,7 @@ proc r15 = match 4 {
 //L +   %10 = getelementptr inbounds nuw i8, ptr %3, i32 16
 //L +   store i64 103, ptr %10, align 8
 //L +   %11 = getelementptr inbounds nuw i8, ptr %3, i32 24
-//L +   store i64 28, ptr %11, align 8
+//L +   store i64 29, ptr %11, align 8
 //L +   %12 = getelementptr inbounds nuw i8, ptr %3, i32 32
 //L +   store ptr @__srcc_str.0, ptr %12, align 8
 //L +   %13 = getelementptr inbounds nuw i8, ptr %12, i32 8

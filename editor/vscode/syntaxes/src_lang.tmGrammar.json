@@ -1,5 +1,19 @@
 {
     "scopeName": "source.src_lang",
+    "repository": {
+        "parameter-name": {
+            "name": "variable.parameter",
+            "match": "\\b[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
+        },
+        "field-name": {
+            "name": "variable.other.field",
+            "match": "\\b[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
+        },
+        "variable-name": {
+            "name": "variable.other",
+            "match": "\\b[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
+        }
+    },
     "patterns": [
         {
             "begin": "// ([IRVX])[\\s\\[]",
@@ -107,46 +121,6 @@
             "patterns": [
                 {
                     "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\()([^\n]*?)(\\))",
-                    "captures": {
-                        "1": {
-                            "name": "srcc.verify.directive"
-                        },
-                        "2": {
-                            "name": "srcc.verify.count"
-                        },
-                        "3": {
-                            "name": "srcc.verify.operator"
-                        },
-                        "4": {
-                            "name": "srcc.verify.diag_text"
-                        },
-                        "5": {
-                            "name": "srcc.verify.operator"
-                        }
-                    }
-                },
-                {
-                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\[)([^\n]*?)(\\])",
-                    "captures": {
-                        "1": {
-                            "name": "srcc.verify.directive"
-                        },
-                        "2": {
-                            "name": "srcc.verify.count"
-                        },
-                        "3": {
-                            "name": "srcc.verify.operator"
-                        },
-                        "4": {
-                            "name": "srcc.verify.diag_text"
-                        },
-                        "5": {
-                            "name": "srcc.verify.operator"
-                        }
-                    }
-                },
-                {
-                    "match": "(expected-(?:error|note|warning))\\s*(\\s\\d+)?\\s*(\\{)([^\n]*?)(\\})",
                     "captures": {
                         "1": {
                             "name": "srcc.verify.directive"
@@ -331,6 +305,104 @@
             "match": "#(inject|assert|if|else|elif|for|match)\\b"
         },
         {
+            "begin": "\\b(struct)\\s+([a-zA-Z_][a-zA-Z_0-9]*)\\b",
+            "end": "(?<=\\})",
+            "beginCaptures": {
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.type"
+                }
+            },
+            "patterns": [
+                {
+                    "begin": "\\{",
+                    "end": "\\}",
+                    "beginCaptures": {
+                        "0": {
+                            "name": "keyword.other"
+                        }
+                    },
+                    "endCaptures": {
+                        "0": {
+                            "name": "keyword.other"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "include": "#field-name"
+                        },
+                        {
+                            "include": "$self"
+                        }
+                    ]
+                },
+                {
+                    "include": "$self"
+                }
+            ]
+        },
+        {
+            "begin": "\\b(proc)\\b\\s*(?:([a-zA-Z_][a-zA-Z_0-9]*)\\s*(::)\\s*)*([a-zA-Z_][a-zA-Z_0-9]*|\\[\\]|\\(\\)|[+*/%&|^~!=<>-]+)?\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "entity.name.type"
+                },
+                "3": {
+                    "name": "keyword.other"
+                },
+                "4": {
+                    "name": "entity.name.function"
+                },
+                "5": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#parameter-name"
+                },
+                {
+                    "include": "$self"
+                }
+            ]
+        },
+        {
+            "begin": "\\b(init)\\s*(\\()",
+            "end": "\\)",
+            "beginCaptures": {
+                "1": {
+                    "name": "keyword.other"
+                },
+                "2": {
+                    "name": "keyword.other"
+                }
+            },
+            "endCaptures": {
+                "0": {
+                    "name": "keyword.other"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#parameter-name"
+                },
+                {
+                    "include": "$self"
+                }
+            ]
+        },
+        {
             "name": "keyword.other",
             "match": "\\b(extern|native|nomangle|varargs|inout|out|copy|alias|and|as!|as|asm|assert|break|continue|delete|defer|do|dynamic|elif|else|enum|eval|export|f32|f64|fallthrough|false|for|goto|if|in|init|inline|is|loop|match|nil|not|or|return|static|struct|then|this|This|true|try|typeof|unreachable|val|var|variant|where|while|with|xor)\\b"
         },
@@ -502,6 +574,9 @@
             },
             "patterns": [
                 {
+                    "include": "#parameter-name"
+                },
+                {
                     "include": "$self"
                 }
             ]
@@ -536,6 +611,9 @@
             },
             "patterns": [
                 {
+                    "include": "#parameter-name"
+                },
+                {
                     "include": "$self"
                 }
             ]
@@ -550,6 +628,9 @@
                     "name": "keyword.other"
                 }
             }
+        },
+        {
+            "include": "#variable-name"
         },
         {
             "name": "keyword.other",

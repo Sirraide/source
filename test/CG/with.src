@@ -2,13 +2,13 @@
 program test;
 
 struct s {
-    int x;
+    x: int;
 }
 
 proc q() = s(42);
 proc sink(int) extern;
 
-s a = (1);
+var a: s = (1);
 with a { x = 4; }
 sink(a.x);
 

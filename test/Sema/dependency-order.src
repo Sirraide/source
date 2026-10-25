@@ -3,16 +3,16 @@ program test;
 
 // Procedure bodies retain lexical visibility even if translated much later.
 proc lexical() = hidden; // expected-error: Unknown symbol 'hidden'
-int hidden = 42;
+var hidden: int = 42;
 lexical();
 
 // Ordinary variable references remain ordered.
 var early = later; // expected-error: Unknown symbol 'later'
-int later = 42;
+var later: int = 42;
 
 // A template uses its declaration context rather than the instantiation context.
-proc template_lexical($T x) = template_hidden; // expected-error: Unknown symbol 'template_hidden'
-int template_hidden = 42;
+proc template_lexical(x: $T) = template_hidden; // expected-error: Unknown symbol 'template_hidden'
+var template_hidden: int = 42;
 template_lexical(0);
 
 // Body inference cycles are diagnosed and cached, including repeated uses.

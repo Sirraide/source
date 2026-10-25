@@ -2,18 +2,18 @@
 program test;
 
 proc f(int...) {}
-proc f(int...a) {}
+proc f(a: int...) {}
 proc f(...int) {} // expected-error: Expected type
-proc f(int a...) {} // expected-error: Unexpected token in procedure argument list
+proc f(a...: int) {} // expected-error: Unexpected token in procedure argument list
 
 proc f(var...) {}
-proc f(var...a) {}
+proc f(a: var...) {}
 proc f(...var) {} // expected-error: Expected type
-proc f(var a...) {} // expected-error: Unexpected token in procedure argument list
+proc f(a...: var) {} // expected-error: Unexpected token in procedure argument list
 
 proc f($T...) {}
-proc f($T...a) {}
+proc f(a: $T...) {}
 proc f(...$T) {} // expected-error: Expected type
-proc f($T a...) {} // expected-error: Unexpected token in procedure argument list
+proc f(a...: $T) {} // expected-error: Unexpected token in procedure argument list
 
 proc f(...) {} // expected-error: Expected type

@@ -2,7 +2,7 @@
 // expected-no-diagnostics
 program test;
 
-proc foo ($T a) {
+proc foo (a: $T) {
     ((a));
 }
 

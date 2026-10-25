@@ -3,9 +3,9 @@ program test;
 
 struct zero {}
 struct s {
-    zero a;
-    zero b;
-    zero c;
+    a: zero;
+    b: zero;
+    c: zero;
 }
 
 proc a() extern -> zero;
@@ -13,7 +13,7 @@ proc b() extern -> zero;
 proc c() extern -> zero;
 proc d() extern -> s;
 
-s e;
+var e: s;
 s(zero(), zero(), zero());
 
 proc call {

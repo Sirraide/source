@@ -6,7 +6,7 @@ program test;
 
 proc x (int) extern;
 
-proc f (bool b) {
+proc f (b: bool) {
     if b {
         x(1);
         1;

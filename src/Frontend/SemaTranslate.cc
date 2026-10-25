@@ -898,6 +898,12 @@ auto Sema::TranslateThisExpr(ParsedThisExpr* parsed, Opt<Type>) -> Ptr<Stmt> {
 }
 
 auto Sema::TranslateTupleExpr(ParsedTupleExpr* parsed, Opt<Type> desired_type) -> Ptr<Stmt> {
+    // In a type context, a tuple expression is treated as a tuple type.
+    if (desired_type == Type::TypeTy) {
+        auto type = TRY(TranslateType(parsed));
+        return BuildTypeExpr(type, parsed->loc);
+    }
+
     if (desired_type and isa<RecordType>(*desired_type)) {
         auto args = TRY(TranslateTupleExpr(std::nullopt, parsed, Type::CallArgListTy));
         return BuildInitialiser(*desired_type, args, parsed->loc);
@@ -1015,10 +1021,8 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
     if (parsed->is_static) Todo();
     Assert(not parsed->with_loc.is_valid(), "'with' should currently only be parsed on param decls");
 
-    // Translate the type; note that we allow 'val' here.
-    auto immutable = dyn_cast<ParsedValueType>(parsed->type);
-    auto ty = TranslateType(immutable ? immutable->elem : parsed->type);
-    auto vc = Expr::LValue(immutable != nullptr);
+    auto ty = TranslateType(parsed->type);
+    auto vc = Expr::LValue(parsed->immutable);
 
     // If we're at the global scope, make this a global variable.
     AnyVarDecl decl;
@@ -1027,7 +1031,7 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
             tu.get(),
             nullptr,
             ty.value_or(Type::VoidTy),
-            immutable != nullptr,
+            parsed->immutable,
             parsed->name,
             Linkage::Internal,
             Mangling::Source,
@@ -1401,25 +1405,10 @@ auto Sema::TranslateProcType(
     SmallVector<ParamTypeData, 10> params;
     u32 var_params = 0;
     for (auto a : parsed->param_types()) {
-        // Drop 'val' here if we're parsing a *procedure* declaration. Specifically, we
-        // want to allow
-        //
-        //     proc f (int val x) { ... }
-        //
-        // but *not*
-        //
-        //     proc f (proc g(int val)) { ... }
-        //
-        // here, only 'f' is a procedure declaration; 'g' is a variable declaration.
-        auto parsed_ty = a.type;
-        bool immutable = false;
-        if (auto val = dyn_cast<ParsedValueType>(parsed_ty); val and allow_immutable_params) {
-            immutable = true;
-            parsed_ty = val->elem;
-        }
-
-        bool has_error = false;
-        auto ty_res = TranslateType(parsed_ty);
+        // Binding mutability belongs to a declaration, not a procedure type.
+        bool has_error = a.immutable and not allow_immutable_params;
+        if (has_error) Error(a.type->loc, "'%1(val%)' is only allowed in procedure declarations");
+        auto ty_res = TranslateType(a.type);
         if (not ty_res) {
             has_error = true;
             ty_res = Type::VoidTy;
@@ -1448,7 +1437,7 @@ auto Sema::TranslateProcType(
         // those as a tuple; this will have already been handled during
         // substitution.
         if (a.variadic and not is_var_param) {
-            auto ty_res = BuildSliceType(ty, immutable, a.type->loc);
+            auto ty_res = BuildSliceType(ty, a.immutable, a.type->loc);
             if (ty_res) {
                 ty = *ty_res;
             } else {

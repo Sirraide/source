@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-int i;
+var i: int;
 
 // expected-error@+2: 'match' is not exhaustive
 // expected-note@+1: Possible value ranges not handled: int.min..=int.max

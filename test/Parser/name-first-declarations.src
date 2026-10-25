@@ -1,0 +1,32 @@
+// V %srcc --parse --verify %s
+program test;
+
+var inferred = 1;
+val immutable = 2;
+var annotated: int = 3;
+val typed: int = 4;
+var pointer: int val^;
+proc parameters (in x: int, int, xs: int...) {}
+proc placeholders (x: var, val y: var, xs: var...) {}
+proc callback (f: proc (int) -> int) {}
+struct Record { field: int; function: proc (int) -> int; }
+proc Record::member (this) {}
+proc target {}
+{} target;
+
+int old; // expected-error: Expected ';'
+proc old_parameter (int x) {} // expected-error: Unexpected token in procedure argument list
+struct OldField { int x; } // expected-error: Expected field name
+proc old_callable (proc f (int)) {} // expected-error: A name is not allowed in a procedure type
+var = 1; // expected-error: Expected identifier after 'var'
+val = 1; // expected-error: Expected identifier after 'val'
+var missing: ; // expected-error: Expected type
+var group: int, other; // expected-error: A declaration must declare a single variable
+var qualified: int val; // expected-error: Replace 'var' with 'val' to make a variable immutable
+val redundant: int val; // expected-error: Unexpected 'val'
+proc bad_pack (xs...: int) {} // expected-error: Unexpected token in procedure argument list
+proc bad_type (f: proc (x: int)) {} // expected-error: Named parameters are not allowed here
+
+proc old_immutable (x: int val) {} // expected-error: Unexpected 'val'; write it before the parameter name
+proc old_inferred_immutable (x: val) {} // expected-error: Unexpected 'val'; write it before the parameter name
+proc immutable_parameters (in val x: int, val y: var, val xs: int...) {}

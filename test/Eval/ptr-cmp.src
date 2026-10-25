@@ -2,8 +2,8 @@
 program test;
 
 eval {
-    int a;
-    int b;
+    var a: int;
+    var b: int;
     assert &a == &a;
     assert &b == &b;
     assert &a != &b;
@@ -11,13 +11,13 @@ eval {
 }
 
 eval {
-    int a;
-    int b;
+    var a: int;
+    var b: int;
     assert &a == &b; // expected-error: Assertion failed: '&a == &b'
 }
 
 eval {
-    int a;
-    int b;
+    var a: int;
+    var b: int;
     assert &a != &a; // expected-error: Assertion failed: '&a != &a'
 }

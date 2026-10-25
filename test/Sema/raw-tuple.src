@@ -1,17 +1,17 @@
 // V %srcc --sema --verify %s
 program test;
 
-struct Pair { int x; int y; }
+struct Pair { x: int; y: int; }
 
-Pair explicit = Pair::(1, 2);
-Pair inferred = ::(3, 4);
-int scalar = int::(42);
-int defaulted = ::();
-int[2] array = int[2]::(1, 2);
-(int, int) tuple = (int, int)::(1, 2);
+var explicit: Pair = Pair::(1, 2);
+var inferred: Pair = ::(3, 4);
+var scalar: int = int::(42);
+var defaulted: int = ::();
+var array: int[2] = int[2]::(1, 2);
+var tuple: (int, int) = (int, int)::(1, 2);
 
 proc pair() -> Pair = ::(5, 6);
-proc take(Pair p) {}
+proc take(p: Pair) {}
 take(Pair::(1, 2));
 
 var unknown = ::(1, 2); // expected-error: Type of raw tuple cannot be inferred
@@ -19,11 +19,11 @@ var args = (*Pair::(1, 2),);
 var named = (**Pair::(1, 2),);
 var parens = (*(Pair::(1, 2)),);
 
-proc two(int a, int b) {} // expected-note: Callee declared here
+proc two(a: int, b: int) {} // expected-note: Callee declared here
 two((int, int)::(1, 2)); // expected-error: Procedure 'two' expects 2 arguments, got 1
-type ty = ::(int, int); // expected-error: Cannot initialise 'type' from '(type, type)'
+var ty: type = ::(int, int); // expected-error: Cannot initialise 'type' from '(type, type)'
 
 var deduced = var::(); // expected-error: Type deduction is not allowed here
 take(::(1, 2)); // expected-error: Type of raw tuple cannot be inferred
-int invalid = int::(1, 2); // expected-error: Cannot initialise 'int' from '(int, int)'
+var invalid: int = int::(1, 2); // expected-error: Cannot initialise 'int' from '(int, int)'
 var types = (int, int)::(1, 2);

@@ -1,7 +1,7 @@
 // V %srcc --sema --verify %s
 program test;
 
-proc f(int a, int b, bool c) {
+proc f(a: int, b: int, c: bool) {
     // Ok.
     if a == 0 then a = b; else a = 42;
     b = if a == 3 then 9 elif a == 42 then 4 else a;

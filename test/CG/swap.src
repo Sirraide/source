@@ -4,14 +4,14 @@ program test;
 
 proc x extern -> bool;
 
-int a;
-int b;
+var a: int;
+var b: int;
 a >< a;
 a >< b;
 (if x() then a else b) >< (if x() then b else a);
 
-int[] sa;
-int[] sb;
+var sa: int[];
+var sb: int[];
 sa >< sb;
 
 // * @_S1a.1 = private 8, align 8

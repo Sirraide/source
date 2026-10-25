@@ -2,8 +2,8 @@
 program test;
 
 // Aggregate construction masks less costly element conversions.
-struct Exact { int x; int y; }
-struct Wide { int x; i128 y; }
+struct Exact { x: int; y: int; }
+struct Wide { x: int; y: i128; }
 proc aggregate (Exact) = 1;
 proc aggregate (Wide) = 2;
 aggregate((1, 2)); // expected-error: Overload resolution failed in call to 'aggregate'
@@ -14,22 +14,22 @@ proc arrays (int[2]) = 1;
 proc arrays (i128[2]) = 2;
 arrays((1, 2)); // expected-error: Overload resolution failed in call to 'arrays'
 
-struct OtherOrder { i128 y; i128 x; }
+struct OtherOrder { y: i128; x: i128; }
 proc named_fields (Exact) = 1;
 proc named_fields (OtherOrder) = 2;
 named_fields((y: 2, x: 1)); // expected-error: Overload resolution failed in call to 'named_fields'
 named_fields((x: 1, y: 2)); // expected-error: Overload resolution failed in call to 'named_fields'
-struct CrossLeft { int x; i128 y; }
-struct CrossRight { i128 x; int y; }
+struct CrossLeft { x: int; y: i128; }
+struct CrossRight { x: i128; y: int; }
 proc compound_best (CrossLeft) = 1;
 proc compound_best (CrossRight) = 2;
 proc compound_best (Exact) = 3;
 compound_best((1, 2)); // expected-error: Overload resolution failed in call to 'compound_best'
 compound_best((y: 2, x: 1)); // expected-error: Overload resolution failed in call to 'compound_best'
 
-struct NestedLeft { (int, i128) x; (i128, i128) y; }
-struct NestedRight { (i128, int) x; (int, int) y; }
-struct NestedExact { (int, int) x; (int, int) y; }
+struct NestedLeft { x: (int, i128); y: (i128, i128); }
+struct NestedRight { x: (i128, int); y: (int, int); }
+struct NestedExact { x: (int, int); y: (int, int); }
 proc nested_best (NestedLeft) = 1;
 proc nested_best (NestedRight) = 2;
 proc nested_best (NestedExact) = 3;
@@ -42,8 +42,8 @@ nested_broadcast(1); // expected-error: Overload resolution failed in call to 'n
 
 
 // Aggregate construction, broadcasting, and initialiser calls have equal rank.
-struct Constructed { int value; init (int x) = ::(x); }
-struct Raw { int x; }
+struct Constructed { value: int; init (x: int) = ::(x); }
+struct Raw { x: int; }
 proc raw_or_call (Raw) = 1;
 proc raw_or_call (Constructed) = 2;
 raw_or_call(1); // expected-error: Overload resolution failed in call to 'raw_or_call'
@@ -51,23 +51,23 @@ proc broadcast_or_call (int[2]) = 1;
 proc broadcast_or_call (Constructed) = 2;
 broadcast_or_call(1); // expected-error: Overload resolution failed in call to 'broadcast_or_call'
 
-struct PairConstructed { int x; int y; init (int x, int y) = ::(x, y); }
+struct PairConstructed { x: int; y: int; init (x: int, y: int) = ::(x, y); }
 proc array_or_call (int[2]) = 1;
 proc array_or_call (PairConstructed) = 2;
 array_or_call((1, 2)); // expected-error: Overload resolution failed in call to 'array_or_call'
 
 // Element conversions cannot worsen an already Initialiser-ranked sequence.
 struct ElementInitialised {
-    int value;
-    init (int x) = ::(x);
+    value: int;
+    init (x: int) = ::(x);
 }
 proc worst_element (int[2]) = 1;
 proc worst_element (ElementInitialised[2]) = 2;
 worst_element(1); // expected-error: Overload resolution failed in call to 'worst_element'
 
 // Constructing a slice from its fields is aggregate initialisation as well.
-struct SliceConstructed { int^ data; int size; init (int^ data, int size) = ::(data, size); }
+struct SliceConstructed { data: int^; size: int; init (data: int^, size: int) = ::(data, size); }
 proc slice_or_call (int[]) = 1;
 proc slice_or_call (SliceConstructed) = 2;
-int element;
+var element: int;
 slice_or_call((&element, 2)); // expected-error: Overload resolution failed in call to 'slice_or_call'

@@ -19,14 +19,14 @@ proc variadic_varargs1(int...) varargs {} // expected-error: Variadic function c
 proc variadic_varargs2($T...) varargs {} // expected-error: Variadic function cannot be 'varargs'
 proc variadic_varargs3(var...) varargs {} // expected-error: Variadic function cannot be 'varargs'
 
-proc g (int ...x) {}
+proc g (x: int ...) {}
 
 g();
 g(1);
 g(1, 2);
 g(1, 2, 3);
 
-proc h ($T ...x) {} // expected-note 2: Callee declared here
+proc h (x: $T ...) {} // expected-note 2: Callee declared here
 
 h();
 h(1);
@@ -35,7 +35,7 @@ h(1, 2 as i32, 3); // expected-error: Template argument substitution failed
 h(1 as i32, 2 as i32, 3); // expected-error: Template argument substitution failed
 h(1 as i32, 2 as i32, 3 as i32);
 
-proc j ($T y, $T ...x) {} // expected-note 3: Callee declared here
+proc j (y: $T, x: $T ...) {} // expected-note 3: Callee declared here
 
 j(42);
 j(42, 1);
@@ -43,7 +43,7 @@ j(42, 1 as i32); // expected-error: Template argument substitution failed
 j(42 as i32, 1); // expected-error: Template argument substitution failed
 j(42, 1, 2 as i32, 3); // expected-error: Template argument substitution failed
 
-proc k ($T y, T... x) {}
+proc k (y: $T, x: T...) {}
 
 k(42 as i64);
 k(42 as i64, 1);
@@ -51,7 +51,7 @@ k(42 as i64, 1 as i32);
 k(42 as i32, 1);
 k(42 as i64, 1, 2 as i32, 3);
 
-proc l (var ...x) {}
+proc l (x: var ...) {}
 
 l();
 l(1);

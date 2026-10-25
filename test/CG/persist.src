@@ -3,7 +3,7 @@ program test;
 
 proc g {
     eval {
-        int q = 42;
+        var q: int = 42;
         &q;
     }
 }
@@ -11,7 +11,7 @@ proc g {
 proc h {
     // Ok since the value is unused.
     eval {
-        int i;
+        var i: int;
         int[](&i, 1);
     };
 }
@@ -34,34 +34,34 @@ proc p3 {
 }
 
 proc p6 {
-    proc t1 ($T t) = t;
+    proc t1 (t: $T) = t;
     var q1 = eval t1(42);
     var q2 = t1(42);
 }
 
 struct s {
-    int x;
-    int^? y;
+    x: int;
+    y: int^?;
 }
 
 struct s2 {
-    s a;
-    s? b;
+    a: s;
+    b: s?;
 }
 
 struct s3 {
-    int x;
-    int y;
+    x: int;
+    y: int;
 }
 
 struct s4 {
-    s3 a;
-    s3? b;
+    a: s3;
+    b: s3?;
 }
 
 struct s5 {
-    s3 a;
-    s b;
+    a: s3;
+    b: s;
 }
 
 proc r1 {
@@ -94,20 +94,20 @@ proc r5 {
 
 proc r6 {
     var y = eval {
-        int i;
+        var i: int;
         s(i, ());
     };
 }
 
 struct string {
-    i8 val[] str;
+    str: i8 val[];
 }
 
 proc str {
     var x = "foo";
     var y = eval "bar";
-    string s1 = ("baz");
-    string s2 = eval string("quux");
+    var s1: string = ("baz");
+    var s2: string = eval string("quux");
 }
 
 

@@ -1,12 +1,12 @@
 // R %srcc --ir --target x86_64-unknown-linux %s
 program test;
 
-proc a (void a, void b) {}
+proc a (a: void, b: void) {}
 proc b { a(void(), void()); }
 proc c { return void(); }
 
-void e;
-void f;
+var e: void;
+var f: void;
 e = f;
 f = e;
 e;
@@ -17,13 +17,13 @@ proc i = h();
 proc j { return h(); }
 
 proc calls {
-    void g = b();
+    var g: void = b();
     g = c();
     a(i(), j());
 }
 
-proc interleaved1 (in int a, void b, in int c, void d) = a | c;
-proc interleaved2 (int a, void b, int c, void d) = a | c;
+proc interleaved1 (in a: int, b: void, in c: int, d: void) = a | c;
+proc interleaved2 (a: int, b: void, c: int, d: void) = a | c;
 interleaved1(2, void(), 3, void());
 interleaved2(2, void(), 3, void());
 
