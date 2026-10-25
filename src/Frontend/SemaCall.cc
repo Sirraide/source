@@ -258,10 +258,11 @@ auto Sema::ConversionSequence::rank(bool variadic) const -> ConversionRanking::R
     Rank worst = Rank::Exact;
     auto Merge = [&](Rank rank) { worst = std::max(worst, rank); };
 
-    // Building an array and viewing it as a slice implements variadic packing.
-    // Only the conversions of its elements contribute to the sequence's rank.
+    // Typed packs use an array/slice, and heterogeneous packs use a tuple.
+    // Their construction is bookkeeping; only element conversions contribute.
     bool packing = variadic and rgs::any_of(conversions, [](const Conversion& conv) {
-        return conv.kind == Conversion::Kind::ArrayInit;
+        return conv.kind == Conversion::Kind::ArrayInit or
+               conv.kind == Conversion::Kind::RecordInit;
     });
 
     for (auto& conv : conversions) {
@@ -304,7 +305,14 @@ auto Sema::ConversionSequence::rank(bool variadic) const -> ConversionRanking::R
             // An initialiser is an opaque call; its argument conversions do not
             // make one destination type preferable to another.
             case K::InitialiserCall:
-                Merge(Rank::Initialiser);
+                if (variadic) {
+                    // A heterogeneous pack's canonical tuple can have a generated
+                    // initialiser. This is still packing, not an element conversion.
+                    for (auto& seq : conv.data.get<Conversion::InitialiserCallData>().conversions)
+                        Merge(seq.rank());
+                } else {
+                    Merge(Rank::Initialiser);
+                }
                 break;
 
             case K::ArrayBroadcast:
@@ -319,7 +327,7 @@ auto Sema::ConversionSequence::rank(bool variadic) const -> ConversionRanking::R
                 break;
 
             case K::RecordInit:
-                Merge(Rank::Initialiser);
+                if (not packing) Merge(Rank::Initialiser);
                 for (auto& seq : conv.data.get<Conversion::RecordInitData>().field_convs)
                     Merge(seq.rank());
                 break;
@@ -756,11 +764,10 @@ auto Sema::PerformOverloadResolution(
                 return false;
             }
 
-            auto seq_or_err = BuildConversionSequence(
-                p.type,
+            auto seq_or_err = BuildParameterConversionSequence(
+                p,
                 args,
                 loc,
-                p.type->pass_by_reference(tu->target(), p.intent),
                 is_associated_call and param_index == 0
             );
 

@@ -778,13 +778,16 @@ auto Sema::BuildCallExpr(
         auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
             auto p = ty->params()[param_index];
             if (not CheckVariableType(p.type, loc)) { ok = false; return; }
-            auto arg = BuildInitialiser(
-                p.type,
+            auto sequence = BuildParameterConversionSequence(
+                p,
                 args,
                 loc,
-                p.type->pass_by_reference(tu->target(), p.intent),
                 is_associated_call and param_index == 0
             );
+
+            Ptr<Expr> arg;
+            if (sequence) arg = ApplyConversionSequence(args, *sequence, loc);
+            else for (auto& diag : sequence.error()) ReportDiag(std::move(diag));
 
             // Point to the procedure if this is a direct call.
             if (not arg) {

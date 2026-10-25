@@ -132,7 +132,7 @@
 <proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
 <proc-where>  ::= WHERE <expr>
 <proc-body>   ::= [ <expr-block> | "=" <expr> ]
-<param-decl>  ::= [ WITH ] [ <intent> ] [ VAL ] <param-rest>
+<param-decl>  ::= [ WITH ] [ "exact" ] [ <intent> ] [ VAL ] <param-rest>
 <param-rest>  ::= [ IDENT ":" ] <type> [ "..." ] | "this"
 <intent>      ::= IN | OUT | INOUT
 <enumerator>  ::= IDENT [ "=" <expr> ]

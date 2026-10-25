@@ -1,0 +1,15 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc named (exact: int) {}
+proc strict (with exact in val value: int) {}
+proc alternate (with in exact val value: int) {} // expected-error: 'exact' must precede the parameter intent
+proc unnamed (exact int) {}
+proc type_parameter (callback: proc (exact int)) {}
+proc duplicate (exact in exact value: int) {} // expected-error: Duplicate 'exact' parameter specifier
+proc variadic (with values: int...) {} // expected-error: Variadic parameters cannot be 'with' parameters
+proc inferred_variadic (with values: var...) {} // expected-error: Variadic parameters cannot be 'with' parameters
+proc strict_variadic (with exact val values: int...) {} // expected-error: Variadic parameters cannot be 'with' parameters
+
+proc wrong_order (in exact value: int) {} // expected-error: 'exact' must precede the parameter intent
+proc contextual_name (in exact: int) {}

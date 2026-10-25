@@ -1,0 +1,6 @@
+// I
+module exact_parameters;
+export proc strict (exact value: i128) -> int = 1;
+export proc fallback (exact value: i128) -> int = 1;
+export proc fallback (value: int?) -> int = 2;
+export proc packed (exact values: i128...) -> int = 3;

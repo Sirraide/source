@@ -21,6 +21,10 @@ function rep<T>(arr: T[], n: number): T[] {
 let grammar = {
     "scopeName": "source.src_lang",
     "repository": {
+        "parameter-specifier": {
+            "name": "keyword.other",
+            "match": "\\bexact\\b(?=\\s+[a-zA-Z_$({])"
+        },
         "parameter-name": {
             "name": "variable.parameter",
             "match": `\\b${ident}(?=\\s*:(?!:))`
@@ -173,14 +177,14 @@ let grammar = {
                 "keyword.other", "entity.name.type", "keyword.other", "entity.name.function", "keyword.other"
             ]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
+            "patterns": [{ "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
         },
         {
             "begin": "\\b(init)\\s*(\\()",
             "end": "\\)",
             "beginCaptures": captures(["keyword.other", "keyword.other"]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "#parameter-name" }, { "include": "$self" }]
+            "patterns": [{ "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
         },
         {
             "name": "keyword.other",

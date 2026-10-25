@@ -1,0 +1,66 @@
+// V %srcc --eval %s
+program test;
+
+proc strict (exact val value: int) = value;
+var number = 1;
+assert strict(number) == 1;
+assert strict(((2))) == 2;
+proc strict_in (exact in val value: int) = value;
+assert strict_in(number) == 1;
+proc strict_before_intent (exact in value: int) = value;
+assert strict_before_intent(number) == 1;
+
+// A convertible argument does not make the exact overload viable.
+proc choose (exact value: i128) = 1;
+proc choose (value: int?) = 2;
+assert choose(3) == 2;
+assert choose(4 as i128) == 1;
+
+proc identity (exact value: $T) = value;
+proc inferred (exact val value: var) = value;
+assert identity(true);
+assert inferred(5) == 5;
+proc pack (exact values: int...) -> int {
+    var total = 0;
+    for value in values do total += value;
+    return total;
+}
+assert pack() == 0;
+assert pack(1, 2, 3) == 6;
+proc heterogeneous (exact values: var...) = values[0];
+assert heterogeneous(6, true) == 6;
+
+// 'exact' remains an ordinary name outside its specifier position.
+struct exact { value: int; }
+proc unnamed (exact) = 7;
+assert unnamed(exact(8)) == 7;
+proc named (exact: int) = exact;
+assert named(exact: 9) == 9;
+proc local_name {
+    var exact = 10;
+    assert named(exact) == 10;
+}
+local_name();
+
+struct Pair { x: int; y: int; }
+proc fields (with exact val pair: Pair) = x + y;
+assert fields(Pair(11, 12)) == 23;
+proc indirect_user (callback: proc (exact int) -> int) = callback(13);
+assert indirect_user(strict) == 13;
+
+struct Initialised {
+    value: int;
+    init (exact value: int) = ::(value);
+}
+assert Initialised(14).value == 14;
+
+// Generated tuple initialisation is also bookkeeping for a heterogeneous pack.
+struct Resource { value: int; init = ::(0); }
+proc resources (exact values: var...) = values[0].value;
+assert resources(Resource::(15), true) == 15;
+
+proc ordinary (value: int) = value;
+proc callable_choice (callback: proc (exact int) -> int) = 1;
+proc callable_choice (callback: proc (int) -> int) = 2;
+assert callable_choice(strict) == 1;
+assert callable_choice(ordinary) == 2;

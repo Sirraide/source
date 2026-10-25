@@ -225,8 +225,9 @@ struct srcc::ParsedParameter {
     ParsedStmt* type;
     bool variadic;
     bool immutable;
-    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic, bool immutable)
-        : intent{intent}, type{type}, variadic{variadic}, immutable{immutable} {}
+    bool exact;
+    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic, bool immutable, bool exact)
+        : intent{intent}, type{type}, variadic{variadic}, immutable{immutable}, exact{exact} {}
 };
 
 struct ParsedProcAttrs {

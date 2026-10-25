@@ -1560,6 +1560,15 @@ private:
     auto BuildMatchExpr(Ptr<Expr> control_expr, Type ty, MutableArrayRef<MatchCase> cases, SLoc loc) -> Ptr<Expr>;
     auto BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr>;
     void BuildParamDecls(ProcDecl* proc, ArrayRef<ParamSpec> spec);
+
+    /// Build a parameter conversion and enforce its 'exact' constraint.
+    auto BuildParameterConversionSequence(
+        const ParamTypeData& param,
+        ArrayRef<Expr*> args,
+        SLoc loc,
+        bool allow_auto_deref = false
+    ) -> ConversionSequenceOrDiags;
+
     auto BuildProcDeclInitial(
         Scope* proc_scope,
         ProcType* ty,

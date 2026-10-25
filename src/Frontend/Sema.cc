@@ -245,7 +245,11 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
                         );
                     }
 
-                    // The procedure are the exact same.
+                    for (auto [old_param, new_param] : zip_equal(old_ty->params(), new_ty->params()))
+                        if (old_param.exact != new_param.exact)
+                            return Error(d->location(), "Cannot overload procedure '%2({}%)' on parameter exactness", d->name);
+
+                    // The procedures are the same.
                     Assert(Type(old_ty) == new_ty);
                     return Error(d->location(), "Procedure '%2({}%)' redefined", d->name);
                 };

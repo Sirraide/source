@@ -1,0 +1,46 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc strict (exact value: i128) {} // expected-note: In argument to parameter 'value'
+strict(1); // expected-error: Argument does not match parameter type 'i128'
+proc qualification (exact value: int val^) {} // expected-note: In argument to parameter 'value'
+var number = 0;
+qualification(&number); // expected-error: Argument does not match parameter type 'int val^'
+proc optional (exact value: int?) {} // expected-note: In argument to parameter 'value'
+optional(1); // expected-error: Argument does not match parameter type 'int?'
+proc aggregate (exact value: int[2]) {} // expected-note 2: In argument to parameter 'value'
+aggregate(1); // expected-error: Argument does not match parameter type 'int[2]'
+aggregate((1, 2)); // expected-error: Argument does not match parameter type 'int[2]'
+proc pack (exact values: i128...) {} // expected-note: In argument to parameter 'values'
+pack(1 as i128, 2); // expected-error: Argument does not match parameter type 'i128[]'
+
+// Every candidate failing the exact constraint is non-viable, not ambiguous.
+proc choose (exact value: i128) {}
+proc choose (exact value: int?) {}
+choose(1); // expected-error: Overload resolution failed in call to 'choose'
+
+proc typed (exact value: $T, exact other: T) {} // expected-note (In argument to parameter 'other') expected-note (Callee declared here)
+typed(1 as i128, 2); // expected-error: Argument does not match parameter type 'i128'
+
+proc indirect (callback: proc (exact i128)) {
+    callback(1); // expected-error: Argument does not match parameter type 'i128'
+}
+
+// Exactness is retained in procedure types; it cannot be silently erased.
+var erased: proc (i128) = strict; // expected-error: Cannot convert expression of type 'proc (exact i128)' to 'proc (i128)'
+
+struct Initialised { value: i128; init (exact value: i128) = ::(value); } // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
+Initialised(1); // expected-error: Argument does not match parameter type 'i128'
+
+proc duplicate (exact int) {} // expected-note: Conflicting declaration of procedure 'duplicate' is here
+proc duplicate (int) {} // expected-error: Cannot overload procedure 'duplicate' on parameter exactness
+
+// Exact refers to conversion rank: an unreachable argument still matches.
+proc stop extern -> noreturn;
+proc unreachable_argument { strict(stop()); }
+
+proc exact_slice (exact values: int...) {} // expected-note: In argument to parameter 'values'
+var array: int[2];
+exact_slice(array); // expected-error: Argument does not match parameter type 'int[]'
+var slice: int[] = array;
+exact_slice(slice);

@@ -775,12 +775,15 @@ struct srcc::ParamTypeData {
     // and has no effect in CodeGen!
     bool variadic;
 
+    // Arguments must have an Exact-ranked conversion sequence.
+    bool exact;
+
     // The parameter contains an error. This is used as a hack to tell Sema
     // to mark the parameter declaration as invalid when we create it.
     bool contains_error = false;
 
-    ParamTypeData(Intent intent, Type type, bool variadic = false) :
-        intent{intent}, type{type}, variadic{variadic} {}
+    ParamTypeData(Intent intent, Type type, bool variadic = false, bool exact = false) :
+        intent{intent}, type{type}, variadic{variadic}, exact{exact} {}
 };
 
 class srcc::ProcType final : public TypeBase

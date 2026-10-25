@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 4;
+constexpr u32 CurrentVersion = 5;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
@@ -152,7 +152,7 @@ public:
     }
 
     void write(const ParamTypeData& p) {
-        *this << p.intent << p.type << p.variadic;
+        *this << p.intent << p.type << p.variadic << p.exact;
     }
 
     void write(ProcDecl* proc) {
@@ -523,7 +523,8 @@ public:
         auto intent = Read(Intent);
         auto type = Read(Type);
         auto variadic = Read(bool);
-        return ParamTypeData{intent, type, variadic};
+        auto exact = Read(bool);
+        return ParamTypeData{intent, type, variadic, exact};
     }
 
     template <>

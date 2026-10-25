@@ -1,0 +1,13 @@
+// V mkdir -p %t
+// V %srcc test/inputs/exact-parameters.src --mo %t --target x86_64-unknown-linux
+// V %srcc --sema --verify %s -M %t
+program test;
+import exact_parameters as m;
+
+m::strict(1); // expected-error: Argument does not match parameter type 'i128'
+m::strict(value: 1 as i128);
+m::fallback(1);
+m::packed(1 as i128, 2); // expected-error: Argument does not match parameter type 'i128[]'
+var indirect = m::strict;
+indirect(1); // expected-error: Argument does not match parameter type 'i128'
+// expected-note@* 2: In argument to parameter

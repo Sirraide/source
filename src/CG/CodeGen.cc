@@ -1054,6 +1054,7 @@ void CodeGen::Mangler::Append(Type ty) {
             M.name += "F";
             proc->ret()->visit(*this);
             for (const auto& p : proc->params()) {
+                if (p.exact) M.name += "e";
                 M.name += [&] {
                     switch (p.intent) {
                         case Intent::Move: return "";

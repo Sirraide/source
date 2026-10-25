@@ -756,6 +756,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                         if (not first) out += ", ";
                         first = false;
                         if (param.intent != Intent::Move) Format(out, "{} ", param.intent);
+                        if (param.exact) out += "%1(exact%) ";
                         if (param.immutable) out += "%1(val%) ";
                         Append(param.type);
                         if (param.variadic) out += "...";

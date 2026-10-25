@@ -1605,13 +1605,34 @@ auto Parser::ParseOverloadableOperatorName() -> std::optional<DeclNameLoc> {
     return std::nullopt;
 }
 
-// <param-decl> ::= [ WITH ] [ <intent> ] ([ IDENT ":" ] <type> [ "..." ] | "this")
+// <param-decl> ::= [ WITH ] [ "exact" ] [ <intent> ] ([ IDENT ":" ] <type> [ "..." ] | "this")
 bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* decls) {
     DeclNameLoc name;
     SLoc with_loc;
+    SLoc exact_loc;
 
-    // Parse intent and contextual keywords.
+    // Parse 'with'
     Consume(with_loc, Tk::With);
+
+    // Parse 'exact'.
+    auto ConsumeExact = [&] {
+        // Keep 'exact:' etc. as a name.
+        if (LookAhead().is(
+            Tk::Colon,
+            Tk::Comma,
+            Tk::RParen,
+            Tk::Ellipsis,
+            Tk::Caret,
+            Tk::Question,
+            Tk::LBrack,
+            Tk::ColonColon
+        )) return false;
+        return ConsumeContextual(exact_loc, "exact");
+    };
+
+    bool exact = ConsumeExact();
+
+    // Parse intent.
     auto [start_loc, intent] = ParseIntent();
     if (intent == Intent::Move) start_loc = tok->location;
     else if (auto [loc, i] = ParseIntent(); i != Intent::Move) {
@@ -1619,11 +1640,19 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         return false;
     }
 
+    // Diagnose out-of-order (contextual) parameter keywords.
     if (intent != Intent::Move and At(Tk::With)) {
         Error("'%1(with%)' must precede the parameter intent");
         with_loc = Next();
     }
 
+    if (ConsumeExact()) {
+        if (exact) Error(exact_loc, "Duplicate '%1(exact%)' parameter specifier");
+        else Error(exact_loc, "'%1(exact%)' must precede the parameter intent");
+        exact = true;
+    }
+
+    // Parse 'val'.
     bool immutable = Consume(Tk::Val);
 
     // Only a colon distinguishes a name from an identifier starting a type.
@@ -1653,12 +1682,14 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     }
 
     bool variadic = Consume(Tk::Ellipsis);
+    if (with_loc.is_valid() and variadic)
+        Error(with_loc, "Variadic parameters cannot be '%1(with%)' parameters");
     if (is_this and variadic) {
         Error(name.loc, "'%1(this%)' parameter cannot be variadic");
         variadic = false;
     }
 
-    sig.param_types.emplace_back(intent, type.get(), variadic, immutable);
+    sig.param_types.emplace_back(intent, type.get(), variadic, immutable, exact);
     if (not At(Tk::Comma, Tk::RParen)) {
         Error("Unexpected token in procedure argument list");
         SkipTo(Tk::Comma, Tk::RParen);

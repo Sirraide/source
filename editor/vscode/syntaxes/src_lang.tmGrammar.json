@@ -1,6 +1,10 @@
 {
     "scopeName": "source.src_lang",
     "repository": {
+        "parameter-specifier": {
+            "name": "keyword.other",
+            "match": "\\bexact\\b(?=\\s+[a-zA-Z_$({])"
+        },
         "parameter-name": {
             "name": "variable.parameter",
             "match": "\\b[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
@@ -373,6 +377,9 @@
                     "include": "#parameter-name"
                 },
                 {
+                    "include": "#parameter-specifier"
+                },
+                {
                     "include": "$self"
                 }
             ]
@@ -396,6 +403,9 @@
             "patterns": [
                 {
                     "include": "#parameter-name"
+                },
+                {
+                    "include": "#parameter-specifier"
                 },
                 {
                     "include": "$self"

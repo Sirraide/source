@@ -969,6 +969,32 @@ auto Sema::BuildInitialiser(
     return nullptr;
 }
 
+auto Sema::BuildParameterConversionSequence(
+    const ParamTypeData& param,
+    ArrayRef<Expr*> args,
+    SLoc loc,
+    bool allow_auto_deref
+) -> ConversionSequenceOrDiags {
+    auto seq = Try(BuildConversionSequence(
+        param.type,
+        args,
+        loc,
+        param.type->pass_by_reference(tu->target(), param.intent),
+        allow_auto_deref
+    ));
+
+    if (
+        param.exact and
+        seq.rank(param.variadic) != ConversionRanking::Rank::Exact
+    ) return CreateError(
+        loc,
+        "Argument does not match parameter type '{}'",
+        param.type
+    );
+
+    return seq;
+}
+
 auto Sema::BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr> {
     auto record = dyn_cast<RecordType>(type);
     if (not record) return BuildInitialiser(type, tuple, loc);

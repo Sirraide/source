@@ -713,7 +713,7 @@ auto ProcType::Get(
         TypeAndValueCategory canonical_ret{return_type.type()->canonical, return_type.value_category()};
         auto canonical_params = to_vector(vws::transform(
             param_types,
-            [](auto& p) { return ParamTypeData{p.intent, p.type->canonical, p.variadic}; }
+            [](auto& p) { return ParamTypeData{p.intent, p.type->canonical, p.variadic, p.exact}; }
         ));
 
         ty->canonical = Make(canonical_ret, canonical_params);
@@ -763,6 +763,7 @@ void ProcType::Profile(
         ID.AddInteger(+t.intent);
         ID.AddPointer(t.type.ptr());
         ID.AddBoolean(t.variadic);
+        ID.AddBoolean(t.exact);
     }
 }
 
@@ -788,6 +789,7 @@ auto ProcType::print(
             if (first) first = false;
             else out += ", ";
             if (p.intent != Intent::Move) Format(out, "{} ", p.intent);
+            if (p.exact) out += "exact ";
             out += p.type->print_impl();
         }
         out += ")";

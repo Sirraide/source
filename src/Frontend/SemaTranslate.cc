@@ -1451,7 +1451,7 @@ auto Sema::TranslateProcType(
             ty = Type::VoidTy;
         }
 
-        params.emplace_back(a.intent, ty, a.variadic);
+        params.emplace_back(a.intent, ty, a.variadic, a.exact);
         params.back().contains_error = has_error;
     }
 
