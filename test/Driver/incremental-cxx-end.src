@@ -1,0 +1,4 @@
+// X %srcc --sema -I test/inputs -Xclang=-Werror=undefined-internal %s
+program test;
+import <incremental-cxx-end.h> as cpp;
+// End-of-TU semantic diagnostics must run even when stopping after Sema.

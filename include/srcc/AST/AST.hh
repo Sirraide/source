@@ -9,7 +9,7 @@
 #include <srcc/Core/Utils.hh>
 #include <srcc/Macros.hh>
 
-#include <clang/Frontend/ASTUnit.h>
+#include <srcc/AST/CXX.hh>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Allocator.h>
@@ -72,12 +72,6 @@ private:
     /// All scopes in this TU.
     std::vector<std::unique_ptr<Scope>> all_scopes;
 
-    /// C++ TUs that we own.
-    SmallVector<std::unique_ptr<clang::ASTUnit>> clang_ast_units;
-
-    /// All mangle contexts associated w/ clang modules.
-    std::vector<std::unique_ptr<clang::MangleContext>> clang_mangle_contexts;
-
     /// If this was imported, the path to the module file.
     String import_path;
 
@@ -118,9 +112,14 @@ public:
     /// Template instantiations by template.
     DenseMap<ProcTemplateDecl*, SmallVector<ProcDecl*>> template_instantiations;
 
-    /// LLVM context for this module. Must outlive the VM's code generator.
+    /// LLVM context for this module. Must outlive both code generators.
     llvm::LLVMContext llvm_context;
 
+private:
+    /// Destroy Clang CodeGen after the VM, but before its LLVM context.
+    std::unique_ptr<CXXCompilation> cxx_compilation_;
+
+public:
     /// Compile-time virtual machine for constant evaluation.
     eval::VM vm{*this};
 
@@ -191,12 +190,6 @@ public:
     /// Add an allocator to the module.
     void add_allocator(std::unique_ptr<llvm::BumpPtrAllocator> alloc) { allocs.push_back(std::move(alloc)); }
 
-    /// Add a Clang AST unit.
-    auto add_clang_ast_unit(std::unique_ptr<clang::ASTUnit> ast) -> clang::ASTUnit* {
-        clang_ast_units.push_back(std::move(ast));
-        return clang_ast_units.back().get();
-    }
-
     /// Add a file to the module.
     void add_file(const File& file) { files.push_back(&file); }
 
@@ -217,11 +210,21 @@ public:
         return static_cast<ScopeTy*>(all_scopes.back().get());
     }
 
-    /// Create a C++ name mangling context for a module.
-    auto create_cxx_mangler(clang::ASTContext& ctx) -> clang::MangleContext*;
+    /// The shared C++ compilation, if this module imports C++ headers.
+    auto cxx_compilation() const -> srcc::Ptr<CXXCompilation> { return cxx_compilation_.get(); }
 
     /// Dump the contents of the module.
     void dump() const;
+
+    /// Complete the C++ TU after the last semantic or IR-generation request.
+    bool finish_cxx_compilation();
+
+    /// Take ownership of this module's sole C++ compilation.
+    auto set_cxx_compilation(std::unique_ptr<CXXCompilation> compilation) -> CXXCompilation& {
+        Assert(not cxx_compilation_ and compilation);
+        cxx_compilation_ = std::move(compilation);
+        return *cxx_compilation_;
+    }
 
     /// Get the global scope.
     auto global_scope() const -> Scope* {

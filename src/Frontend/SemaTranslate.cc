@@ -15,12 +15,7 @@ using namespace srcc::sema;
 //  Translation Driver
 // ============================================================================
 Sema::~Sema() = default;
-Sema::Sema(Context& ctx) : ctx(ctx) {
-    using namespace llvm::vfs;
-    ImportVFS = llvm::makeIntrusiveRefCnt<OverlayFileSystem>(getRealFileSystem());
-    PCHVFS = llvm::makeIntrusiveRefCnt<InMemoryFileSystem>();
-    ImportVFS->pushOverlay(PCHVFS);
-}
+Sema::Sema(Context& ctx) : ctx(ctx) {}
 
 auto Sema::AddParsedModule(ParsedModule::Ptr p, bool translate) -> ParsedModule* {
     if (p == nullptr) return nullptr;
@@ -127,26 +122,25 @@ void Sema::Translate(bool load_runtime) {
     if (load_runtime) LoadModule(
         constants::RuntimeModuleName,
         constants::RuntimeModuleName,
-        modules_to_translate.front()->program_or_module_loc,
-        false,
-        false
+        modules_to_translate.front()->program_or_module_loc
     );
 
-    // All C++ import aliases share one header environment. Gather headers before
-    // loading any alias so even the first alias sees the complete environment.
+    // All C++ imports are imported together.
+    SmallVector<const ParsedModule::Import*> cxx_imports;
     for (auto& m : modules_to_translate)
         for (auto& i : m->imports)
-            if (i.is_header_import) append_range(cxx_headers, i.linkage_names);
+            if (i.is_header_import) cxx_imports.push_back(&i);
+
+    if (not ImportCXXHeaders(cxx_imports)) return;
 
     // And process other imports.
     for (auto& m : modules_to_translate) {
         for (auto& i : m->imports) {
+            if (i.is_header_import) continue;
             LoadModule(
                 i.import_name,
                 i.linkage_names,
-                i.loc,
-                i.is_open_import,
-                i.is_header_import
+                i.loc
             );
         }
     }

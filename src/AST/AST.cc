@@ -26,6 +26,7 @@ thread_local const Context* printer_context_hack;
 //  TU
 // ============================================================================
 TranslationUnit::~TranslationUnit() = default;
+
 TranslationUnit::TranslationUnit(Context& ctx, const LangOpts& opts, StringRef name, bool is_module)
     : ctx{ctx},
       language_opts{opts},
@@ -123,13 +124,6 @@ auto TranslationUnit::Create(Context& ctx, const LangOpts& opts, StringRef name,
     return std::unique_ptr<TranslationUnit>(m);
 }
 
-auto TranslationUnit::create_cxx_mangler(clang::ASTContext& ctx) -> clang::MangleContext* {
-    auto mctx = ctx.createMangleContext();
-    Assert(mctx);
-    clang_mangle_contexts.emplace_back(mctx);
-    return mctx;
-}
-
 void TranslationUnit::dump() const {
     tempset printer_context_hack = &context();
     bool c = context().use_colours;
@@ -142,6 +136,10 @@ void TranslationUnit::dump() const {
 
     // Print content.
     for (auto s : file_scope_block->stmts()) s->dump(c);
+}
+
+bool TranslationUnit::finish_cxx_compilation() {
+    return not cxx_compilation_ or cxx_compilation_->finish();
 }
 
 auto TranslationUnit::save(eval::RValue val) -> eval::RValue* {

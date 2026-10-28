@@ -7,24 +7,25 @@
 #include <srcc/Frontend/Sema.hh>
 #include <srcc/Macros.hh>
 
-#include <clang/AST/ASTImporter.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/DeclGroup.h>
+#include <clang/AST/ExternalASTSource.h>
 #include <clang/AST/DeclarationName.h>
 #include <clang/AST/RecordLayout.h>
 #include <clang/Basic/CodeGenOptions.h>
 #include <clang/Basic/FileManager.h>
 #include <clang/Basic/TokenKinds.h>
 #include <clang/CodeGen/ModuleBuilder.h>
+#include <srcc/AST/CXX.hh>
 #include <clang/Frontend/ASTUnit.h>
+#include <clang/Frontend/FrontendActions.h>
+#include <clang/Frontend/MultiplexConsumer.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Lex/HeaderSearchOptions.h>
-#include <clang/Lex/MacroArgs.h>
-#include <clang/Lex/PPCallbacks.h>
 #include <clang/Parse/Parser.h>
 #include <clang/Sema/Lookup.h>
 #include <clang/Sema/Sema.h>
-#include <clang/Tooling/Tooling.h>
+#include <clang/Driver/CreateInvocationFromArgs.h>
 
 #include <base/Assert.hh>
 #include <llvm/ADT/IntrusiveRefCntPtr.h>
@@ -32,7 +33,6 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/MemoryBufferRef.h>
 #include <llvm/Support/VirtualFileSystem.h>
-#include <llvm/TargetParser/Host.h>
 
 using namespace srcc;
 using clang::QualType;
@@ -59,8 +59,7 @@ class srcc::CXXImporter {
 
 public:
     explicit CXXImporter(Sema& S, ImportedClangModuleDecl* clang_module) : S(S), clang_module(clang_module) {}
-    auto AST() -> clang::ASTContext& { return clang_module->clang_ast.getASTContext(); }
-
+    auto AST() -> clang::ASTContext& { return S.tu->cxx_compilation()->getASTContext(); }
 
     auto ImportDecl(clang::Decl* d) -> Res<Decl*>;
     auto ImportName(clang::TagDecl* td) -> StringRef;
@@ -78,20 +77,21 @@ public:
 
     // Convert 'QualType' and other clang types that can't be formatted w/o an ASTContext
     // to a string so it can be used in a diagnostic.
+    // FIXME: This should really be a member function.
     template <typename T>
     static auto PreprocessDiagArg(CXXImporter& i, T val) {
         using NonRef = std::remove_cvref_t<T>;
         if constexpr (utils::is<NonRef, QualType, clang::CanQualType>) {
             SmallString<32> str;
             llvm::raw_svector_ostream os{str};
-            val.print(os, clang::PrintingPolicy(i.clang_module->clang_ast.getLangOpts()));
+            val.print(os, clang::PrintingPolicy(i.S.tu->cxx_compilation()->getLangOpts()));
             return str;
         } else if constexpr (utils::is<NonRef, clang::Type*, const clang::Type*>) {
             return PreprocessDiagArg(i, QualType(val, 0));
         } else if constexpr (utils::is<NonRef, clang::APValue>) {
             SmallString<128> str;
             llvm::raw_svector_ostream os{str};
-            val.dump(os, i.clang_module->clang_ast.getASTContext());
+            val.dump(os, i.S.tu->cxx_compilation()->getASTContext());
             return str;
         } else if constexpr (std::convertible_to<NonRef, clang::Decl*>) {
             if (auto n = dyn_cast<clang::NamedDecl>(val)) {
@@ -716,22 +716,155 @@ auto srcc::CXXImporter::ImportValue(
     );
 }
 
-auto Sema::ParseCXX(
-    StringRef code,
-    std::optional<std::string> PCH
-) -> std::unique_ptr<clang::ASTUnit> {
+CXXCompilation::~CXXCompilation() = default;
+
+bool CXXCompilation::finish() {
+    if (finished) return not getDiagnostics().hasErrorOccurred();
+    getSema().ActOnEndOfTranslationUnit();
+    getASTConsumer().HandleTranslationUnit(getASTContext());
+    finished = true;
+    return not getDiagnostics().hasErrorOccurred();
+}
+
+bool CXXCompilation::initialise(llvm::LLVMContext& context) {
+    struct Action : clang::SyntaxOnlyAction {
+        llvm::LLVMContext& context;
+        clang::CodeGenerator*& generator;
+
+        Action(llvm::LLVMContext& context, clang::CodeGenerator*& generator)
+            : context{context}, generator{generator} {}
+
+        auto CreateASTConsumer(
+            clang::CompilerInstance& instance,
+            llvm::StringRef name
+        ) -> std::unique_ptr<clang::ASTConsumer> override {
+            auto codegen = clang::CreateLLVMCodeGen(instance, name, context);
+            generator = codegen.get();
+
+            // Consumer that filters out things we don’t want to emit.
+            struct Consumer : clang::MultiplexConsumer {
+                explicit Consumer(std::unique_ptr<clang::ASTConsumer> codegen)
+                    : MultiplexConsumer(std::move(codegen)) {}
+
+                bool HandleTopLevelDecl(clang::DeclGroupRef group) override {
+                    for (auto decl : group) {
+                        // Ignore expanded macro declarations. They exist only so we can
+                        // attempt to constant-fold their initialisers.
+                        if (auto var = llvm::dyn_cast<clang::VarDecl>(decl);
+                            var and var->getName().starts_with("__srcc_expanded_macro_"))
+                            continue;
+
+                        if (not MultiplexConsumer::HandleTopLevelDecl(clang::DeclGroupRef(decl)))
+                            return false;
+                    }
+                    return true;
+                }
+            };
+
+            return std::make_unique<Consumer>(std::move(codegen));
+        }
+    };
+
+    Action action{context, code_generator};
+
+    // Set up the parser.
+    if (not createTarget()) return false;
+
+    // Add a dummy main file.
+    auto& input = getFrontendOpts().Inputs.front();
+    input = clang::FrontendInputFile(
+        llvm::MemoryBufferRef(";", "__srcc.imports.cc"),
+        input.getKind()
+    );
+
+    // Set up the parser.
+    if (not action.BeginSourceFile(*this, input)) return false;
+    createSema(action.getTranslationUnitKind(), nullptr);
+    auto& pp = getPreprocessor();
+    pp.enableIncrementalProcessing();
+    parser = std::make_unique<clang::Parser>(pp, getSema(), false);
+    pp.EnterMainSourceFile();
+    parser->Initialize();
+
+    // Start the TU.
+    if (auto external = getASTContext().getExternalSource())
+        external->StartTranslationUnit(&getASTConsumer());
+    getSema().ActOnStartOfTranslationUnit();
+    mangle_context.reset(getASTContext().createMangleContext());
+
+    // Parse until EOF.
+    return ParseDeclarations();
+}
+
+bool CXXCompilation::parse(llvm::StringRef code) {
+    Assert(not finished);
+    if (getDiagnostics().hasUncompilableErrorOccurred()) return false;
+
+    // Throw the code into a buffer and create a file for it.
+    auto buffer = llvm::MemoryBuffer::getMemBufferCopy(
+        code,
+        std::format("__srcc.glue.{}.cc", buffers++)
+    );
+
+    auto id = getSourceManager().createFileID(std::move(buffer));
+
+    // Enter the source file.
+    if (getPreprocessor().EnterSourceFile(id, nullptr, {})) return false;
+
+    // Yeet the EOF token left over from the previous parsing run.
+    Assert(parser->getCurToken().is(clang::tok::eof));
+    parser->ConsumeAnyToken();
+
+    // Parse until EOF.
+    if (not ParseDeclarations()) return false;
+
+    // Mark that we’re done with a part of the TU.
+    getSema().ActOnEndOfTranslationUnitFragment(clang::TUFragmentKind::Normal);
+    return not getDiagnostics().hasErrorOccurred();
+}
+
+bool CXXCompilation::ParseDeclarations() {
+    auto state = clang::Sema::ModuleImportState::NotACXX20Module;
+
+    // Parse until EOF, but leave EOF unparsed. Passing it to the parser
+    // would run ActOnEndOfTranslationUnit() and prematurely finish this TU.
+    while (parser->getCurToken().isNot(clang::tok::eof)) {
+        clang::Parser::DeclGroupPtrTy declarations;
+        parser->ParseTopLevelDecl(declarations, state);
+        if (
+            declarations and
+            not getASTConsumer().HandleTopLevelDecl(declarations.get())
+        ) return false;
+    }
+
+    return not getDiagnostics().hasErrorOccurred();
+}
+
+bool Sema::ImportCXXHeaders(ArrayRef<const ParsedModule::Import*> imports) {
+    if (imports.empty()) return true;
     llvm::TimeTraceScope _{"[Clang] C++ Parsing"};
 
-    // For PCHs, we need to remember this file and its contents.
-    auto Name = std::format("__srcc.imports.{}.cc", cxx_import_file_counter++);
-    PCHVFS->addFile(Name, 0, llvm::MemoryBuffer::getMemBufferCopy(code, Name));
+    SmallString<128> code;
+    for (auto import : imports) {
+        auto lc = import->loc.seek_line_column(context());
+        auto file = import->loc.file_name(context());
+        for (auto header : import->linkage_names) {
+            Assert(header.starts_with("<") and header.ends_with(">"));
+            if (lc and file) Format(code, "#line {} \"{}\"\n", lc->line, *file);
+            Format(code, "#include \"{}\"\n", header.drop().drop_back());
+        }
+    }
 
-    // The arguments need to include the tool name as well as the file name.
     std::vector<std::string> args{
         SOURCE_CLANG_EXE,
+
+        // We’ll handle codegen ourselves.
+        "-fsyntax-only",
+
+        // Use stdin as a dummy input file; we’ll supply a proper one later.
         "-x",
         "c++",
-        Name,
+        "-",
 
         // Pass through whatever target we’re compiling for.
         "-target",
@@ -764,109 +897,68 @@ auto Sema::ParseCXX(
 
     args.push_back(std::format("-O{}", clang_opt_level));
 
-    // Add the PCH if we have one.
-    if (PCH.has_value()) {
-        args.push_back("-include-pch");
-        args.push_back(std::move(PCH.value()));
-    }
-
     // Add include paths.
     for (const auto& p : clang_include_paths) {
         args.push_back("-I");
         args.push_back(p);
     }
 
-    // Add user-specified options last.
+    // Add user-specified options.
     append_range(args, clang_options);
 
-    // We don't use clang::tooling::buildASTFromCodeWithArgs() because we handle
-    // setting up the file system ourselves.
-    struct Action : clang::tooling::ToolAction {
-        Sema& S;
-        Action(Sema& S) : S{S} {}
+    // Our persistent parser stops before EOF, where Clang normally installs
+    // its late-template parser callback (in ParseTopLevelDecl()). Keep delayed
+    // parsing disabled for now.
+    args.push_back("-fno-delayed-template-parsing");
 
-        std::unique_ptr<clang::ASTUnit> ast;
-        bool runInvocation(
-            std::shared_ptr<clang::CompilerInvocation> invocation,
-            clang::FileManager* file_mgr,
-            std::shared_ptr<clang::PCHContainerOperations> pch_ops,
-            clang::DiagnosticConsumer* consumer
-        ) override {
-            Assert(not ast, "Expected at most one ASTUnit here!");
-            auto clang_diags = clang::CompilerInstance::createDiagnostics(
-                file_mgr->getVirtualFileSystem(),
-                invocation->getDiagnosticOpts(),
-                consumer,
-                /*ShouldOwnClient=*/false
-            );
+    // Parse Clang command-line arguments.
+    SmallVector<const char*> argv;
+    for (const auto& arg : args) argv.push_back(arg.c_str());
+    auto invocation = clang::createInvocation(argv);
+    if (not invocation) return Error(imports.front()->loc, "Header import failed");
 
-            if (S.tu->lang_opts().dump_include_paths) {
-                std::println(stderr, "Clang header search paths:");
-                for (const auto& e : invocation.get()->getHeaderSearchOpts().UserEntries) {
-                    std::println(stderr, "  - {}", e.Path);
-                }
+    // Dump header search paths if requested.
+    if (tu->lang_opts().dump_include_paths) {
+        std::println(stderr, "Clang header search paths:");
+        for (const auto& entry : invocation->getHeaderSearchOpts().UserEntries)
+            std::println(stderr, "  - {}", entry.Path);
+    }
+
+    // Initialise the compiler instance.
+    auto compilation = std::make_unique<CXXCompilation>(std::move(invocation));
+    compilation->setVirtualFileSystem(llvm::vfs::getRealFileSystem());
+    compilation->createFileManager();
+    compilation->createDiagnostics();
+    compilation->createSourceManager();
+    if (
+        not compilation->initialise(tu->llvm_context) or
+        not compilation->parse(code)
+    ) return Error(imports.front()->loc, "Header import failed");
+    tu->set_cxx_compilation(std::move(compilation));
+
+    // Create a module declaration for each 'import' clause.
+    for (auto import : imports) {
+        auto decl = ImportedClangModuleDecl::Create(
+            *tu,
+            import->import_name,
+            import->linkage_names,
+            import->loc
+        );
+
+        if (import->is_open_import) {
+            tu->open_modules.push_back(decl);
+        } else {
+            auto& previous = tu->logical_imports[import->import_name];
+            if (previous) {
+                Error(import->loc, "Cannot redefine header import '{}'", import->import_name);
+                Note(previous->location(), "Previous definition was here");
+                continue;
             }
-
-            ast = clang::ASTUnit::LoadFromCompilerInvocation(
-                std::move(invocation),
-                std::move(pch_ops),
-                nullptr,
-                clang_diags,
-                file_mgr,
-                false,
-                clang::CaptureDiagsKind::None
-            );
-
-            return ast != nullptr && not ast->getSema().hasUncompilableErrorOccurred();
+            previous = decl;
         }
-    };
-
-    Action the_action{*this};
-    auto file_mgr = llvm::makeIntrusiveRefCnt<clang::FileManager>(clang::FileSystemOptions(), ImportVFS);
-    clang::tooling::ToolInvocation invocation{
-        args,
-        &the_action,
-        file_mgr.get(),
-        std::make_shared<clang::PCHContainerOperations>()
-    };
-
-    if (not invocation.run()) return nullptr;
-    Assert(the_action.ast);
-    return std::move(the_action.ast);
-}
-
-auto Sema::ImportCXXHeaders(
-    String logical_name,
-    ArrayRef<String> header_names,
-    SLoc import_loc
-) -> Ptr<ImportedClangModuleDecl> {
-    auto lc = import_loc.seek_line_column(context());
-    auto file = import_loc.file_name(context());
-
-    // Use quoted includes so source-file-relative includes work.
-    SmallString<128> code;
-    for (auto h : cxx_headers) {
-        Assert(h.starts_with("<") and h.ends_with(">"));
-        if (lc and file) Format(code, "#line {} \"{}\"\n", lc->line, *file);
-        Format(code, "#include \"{}\"\n", h.drop().drop_back());
     }
 
-    if (not shared_cxx_ast) {
-        auto AST = ParseCXX(code);
-        if (not AST) {
-            Error(import_loc, "Header import failed");
-            return {};
-        }
-        shared_cxx_ast = tu->add_clang_ast_unit(std::move(AST));
-    }
-
-    return ImportedClangModuleDecl::Create(
-        *tu,
-        *shared_cxx_ast,
-        logical_name,
-        header_names,
-        import_loc
-    );
+    return not ctx.diags().has_error();
 }
 
 namespace {
@@ -900,7 +992,7 @@ auto Sema::LookUpCXXNameImpl(
     ArrayRef<DeclNameLoc> names,
     LookupHint hint
 ) -> LookupResult {
-    auto ast = &clang_module->clang_ast;
+    auto ast = tu->cxx_compilation();
     auto& clang_sema = ast->getSema();
     auto& ast_ctx = ast->getASTContext();
     auto& pp = clang_sema.getPreprocessor();
@@ -994,43 +1086,10 @@ auto Sema::LookUpCXXNameImpl(
     Unreachable();
 }
 
-/// Expand a C++ macro and import the result.
-///
-/// The general strategy for this is as follows: first, we ask Clang's
-/// preprocessor to expand the macro; if this results in a single identifier
-/// token, we perform name lookup on that identifier.
-///
-/// Otherwise, we create a source string that contains a function declaration
-/// with a 'return' statement that returns the macro; it is constexpr so we
-/// can attempt to constant-fold it. We also build a variable declaration whose
-/// initialiser is a call to that function, just so we get a CallExpr that we
-/// can evaluate.
-///
-/// This source string is compiled into a new ASTUnit; the orginal ASTUnit is
-/// emitted as a precompiled header and included into the new one via '-include-pch';
-/// this allows us to reference types and declarations in the imported C++ headers
-/// without having to parse them again or modify the original ASTUnit.
-///
-/// Assuming there are no errors in this process, we then attempt to constant-evaluate
-/// the initialiser of the variable we created. If this succeeds, we get a compile-time
-/// constant in the form of a ConstExpr; this is the 'value' of the macro expansion.
-///
-/// If constant evaluation fails, we may have a macro that expands to either a late
-/// compile-time constant (e.g. an integer constant cast to a pointer type), or some
-/// runtime code; in this case, we need to generate a runtime call to the function we
-/// created. This also means we need to tell Clang to codegen the function so we can
-/// actually link against it. We emit it to LLVM IR and then our CodeGen will then link
-/// that LLVM module into our own one after IR->LLVM lowering. The result of the call is
-/// the 'value' of the macro expansion.
-///
-/// Either way, the 'value' is some expression; we wrap it in a CXXMacroExpansionDecl
-/// since name lookup needs to resolve to a declaration. When referenced, this 'declaration'
-/// emits the expression that is the 'value', which in the case of it being a runtime call
-/// results in the function being called, and thus the macro expansion being executed anew,
-/// every time the macro is 'expanded' in source.
-///
-/// This entire process is cached, i.e. we create a single CXXMacroExpansionDecl for every
-/// MacroInfo; subsequent uses reference the same declaration.
+/// Import an object-like macro: resolve a single identifier directly, otherwise
+/// parse a constexpr wrapper and an unevaluated-at-runtime probe variable into
+/// the shared Clang TU. Constant results become ConstExprs; other results call
+/// the wrapper at runtime. Cache both successes and failures by MacroInfo.
 auto Sema::LookUpCXXMacro(
     ImportedClangModuleDecl* clang_module,
     clang::MacroInfo* mi,
@@ -1038,8 +1097,8 @@ auto Sema::LookUpCXXMacro(
     LookupHint hint
 ) -> LookupResult {
     // Import the source location of the macro.
-    CXXImporter main_importer{*this, clang_module};
-    SLoc macro_loc = main_importer.ImportSourceLocation(mi->getDefinitionLoc());
+    CXXImporter importer{*this, clang_module};
+    SLoc macro_loc = importer.ImportSourceLocation(mi->getDefinitionLoc());
 
     // Return an error.
     auto Err = [&]<typename ...Args>(std::format_string<Args...> fmt, Args&& ...args) {
@@ -1066,9 +1125,10 @@ auto Sema::LookUpCXXMacro(
     imported_macros[mi] = nullptr;
 
     // Enter the macro definition as a new file.
-    auto& clang_sema = clang_module->clang_ast.getSema();
-    auto& pp = clang_sema.getPreprocessor();
-    auto& sm = clang_sema.getSourceManager();
+    auto& compilation = *tu->cxx_compilation().get();
+    auto& ast = compilation.getASTContext();
+    auto& pp = compilation.getPreprocessor();
+    auto& sm = compilation.getSourceManager();
     auto clang_sloc = sm.getLocForStartOfFile(sm.getMainFileID());
     auto fid = sm.createFileID(
         llvm::MemoryBuffer::getMemBufferCopy(
@@ -1080,43 +1140,30 @@ auto Sema::LookUpCXXMacro(
     if (pp.EnterSourceFile(fid, nullptr, clang_sloc))
         return Err("Failed to enter source file");
 
-    // Ask the preprocessor to expand the macro.
-    std::vector<clang::Token> toks;
+    // Lex the start of the macro.
+    clang::Token first, token;
+    pp.Lex(first);
+    if (first.is(clang::tok::eof)) return Err("Macro has empty expansion");
 
-    // Manual implementation of LexTokensUntilEOF that also keeps the
-    // EOF token, because 'StringifyArgument' expects an EOF-terminated
-    // token list, because of course it does.
+    // Throw out all other tokens in the macro so the parser doesn’t
+    // try to parse them later on
+    bool single_identifier = first.is(clang::tok::identifier);
+    bool unknown = first.is(clang::tok::unknown);
     for (;;) {
-        auto& tok = toks.emplace_back();
-        pp.Lex(tok);
-        if (tok.is(clang::tok::eof)) break;
-        if (tok.is(clang::tok::unknown)) return Err("Unknown token in macro expansion");
+        pp.Lex(token);
+        if (token.is(clang::tok::eof)) break;
+        single_identifier = false;
+        unknown |= token.is(clang::tok::unknown);
     }
 
-    // Macro expanded to nothing.
-    if (toks.size() == 1) return Err("Macro has empty expansion");
+    if (unknown) return Err("Unknown token in macro expansion");
 
-    // If it is a single identifier, just look up that name.
-    if (
-        toks.size() == 2 and
-        toks.front().is(clang::tok::identifier)
-    ) return LookUpCXXNameImpl(
+    // This is a single identifier, just perform name lookup for it.
+    if (single_identifier) return LookUpCXXNameImpl(
         clang_module,
-        DeclNameLoc{tu->save(toks.front().getIdentifierInfo()->getName()), macro_name.loc},
+        DeclNameLoc{tu->save(first.getIdentifierInfo()->getName()), macro_name.loc},
         hint
     );
-
-    // Otherwise, we need to parse this thing.
-    //
-    // First, emit the Clang module to a PCH if we haven't already done that.
-    auto pch_name = std::format("__srcc_pch_{}", static_cast<void*>(clang_module));
-    if (not PCHVFS->exists(pch_name)) {
-        SmallString<0> pch;
-        llvm::raw_svector_ostream os{pch};
-        if (clang_module->clang_ast.serialize(os))
-            return Err("AST serialisation failed");
-        PCHVFS->addFile(pch_name, 0, llvm::MemoryBuffer::getMemBufferCopy(pch));
-    }
 
     // Wrap the macro in a function that returns it and also create a variable initialised
     // with a call to it; the latter is used to try and constant-evaluate the function.
@@ -1127,7 +1174,7 @@ auto Sema::LookUpCXXMacro(
     //
     // The 'always_inline' is required, else inlining just doesn't happen at all (possibly
     // because the function has 'linkonce_odr' linkage).
-    auto name_base = Format("__srcc_expanded_macro_{}", generated_cxx_macro_decls);
+    auto name_base = Format("__srcc_expanded_macro_{}", generated_cxx_macro_decls++);
     auto proc_name = Format("{}_init", name_base);
     auto var_name = Format("{}_var", name_base);
     auto code = Format(
@@ -1140,18 +1187,16 @@ auto Sema::LookUpCXXMacro(
         var_name
     );
 
-    auto macro_tu = ParseCXX(code, std::move(pch_name));
-    if (not macro_tu or macro_tu->getSema().hasUncompilableErrorOccurred())
+    if (not compilation.parse(code))
         // No diagnostic here; Clang already told the user what was wrong.
         // TODO: Introduce a custom Clang diags consumer (or at least set a
         // custom ostream).
         return LookupResult::FailedToImport(macro_name);
 
-    // Get the procedure or variable decl. Take care to retrieve the II
-    // in the preprocessor of the new TU.
+    // Retrieve a declaration.
     auto GetDecl = [&](StringRef name) -> clang::Decl* {
-        clang::DeclarationName ident{macro_tu->getPreprocessor().getIdentifierInfo(name)};
-        auto res = macro_tu->getASTContext().getTranslationUnitDecl()->lookup(ident);
+        clang::DeclarationName ident{pp.getIdentifierInfo(name)};
+        auto res = ast.getTranslationUnitDecl()->lookup(ident);
         Assert(res.isSingleResult() and not res.front()->isInvalidDecl());
         return res.front();
     };
@@ -1159,92 +1204,55 @@ auto Sema::LookUpCXXMacro(
     // Retrieve the variable.
     auto var = cast<clang::VarDecl>(GetDecl(var_name));
 
-    // The importer requires a module, so fabricate one for this.
-    auto fake_module = ImportedClangModuleDecl::Create(
-        *tu,
-        *macro_tu,
-        "__srcc_macro_expansion__",
-        {},
-        SLoc()
-    );
-
-    CXXImporter fake_importer{*this, fake_module};
-
-    // Import a type from the Clang ASTUnit used for expansion to Source.
-    auto ImportTypeFromExpansionAST = [&](QualType clang_ty) -> Res<Type> {
-        // Import the type of the value from the new ASTUnit to the main one;
-        // this is to make sure that two references to the same type actually
-        // resolve to the same Source type.
-        clang::ASTImporter clang_importer{
-            clang_module->clang_ast.getASTContext(),
-            clang_module->clang_ast.getFileManager(),
-            fake_module->clang_ast.getASTContext(),
-            fake_module->clang_ast.getFileManager(),
-            /*MinimalImport=*/false,
-            clang_importer_state
-        };
-
-        auto imported_type = clang_importer.Import(clang_ty);
-        if (auto err = imported_type.takeError()) {
-            return fake_importer.MakeErr(
-                macro_loc,
-                "Clang ASTImporter failed to import '{}': {}",
-                clang_ty,
-                toString(std::move(err))
-            );
-        }
-
-        // Then import the type from the main module to Source.
-        return main_importer.ImportType(macro_loc, *imported_type);
-    };
-
-    // If we can’t evaluate this as a constant, instead emit the function
-    // into an LLVM module and create a *local* value whose initialiser is
-    // a call to it.
+    // Fold the macro expansion if possible.
     clang::Expr::EvalResult er;
     SmallVector<clang::PartialDiagnosticAt> diags;
     er.Diag = &diags;
     Expr* value = nullptr;
+
+    // Folding succeeded.
     if (
-        not var->getInit()->EvaluateAsInitializer(
-            macro_tu->getASTContext(),
+        var->getInit()->EvaluateAsInitializer(
+            ast,
             var,
             er,
             false
-        ) or not diags.empty()
+        ) and diags.empty()
     )  {
-        generated_cxx_macro_decls++;
+        // Import the type.
+        auto ty = importer.ImportType(macro_loc, var->getType());
+        if (not ty.has_value()) return LookupResult::FailedToImport(
+            macro_name,
+            std::move(ty.error())
+        );
 
+        // Import the value.
+        auto v = importer.ImportValue(macro_loc, *var->getEvaluatedValue(), *ty);
+        if (not v.has_value()) return LookupResult::FailedToImport(
+            macro_name,
+            std::move(v.error())
+        );
+
+        value = MakeConstExpr(nullptr, std::move(*v), macro_loc);
+    }
+
+    // Folding failed; emit the wrapper and create a 'declaration' that runs
+    // the macro when it is referenced.
+    else {
         // Retrieve the procedure.
         auto clang_proc = cast<clang::FunctionDecl>(GetDecl(proc_name));
 
         // Import its return type.
         auto clang_ret_ty = clang_proc->getType()->castAs<clang::FunctionProtoType>()->getReturnType();
-        auto ret_ty = fake_importer.ImportReturnType(macro_loc, clang_ret_ty);
+        auto ret_ty = importer.ImportReturnType(macro_loc, clang_ret_ty);
         if (not ret_ty.has_value()) return LookupResult::FailedToImport(
             macro_name,
             std::move(ret_ty.error())
         );
 
-        // Emit it.
-        auto cg = fake_module->create_clang_codegen(tu->llvm_context);
-
-        // Make sure we actually emit this.
-        // FIXME: I don't think this is needed.
+        // Mark the procedure as used so it is actually emitted.
         clang_proc->setIsUsed();
-
-        // Emit the decl; no custom diagnostic here; if this fails, Clang should
-        // emit a diagnostic.
-        cg->Initialize(macro_tu->getASTContext());
-        cg->HandleTopLevelDecl(clang::DeclGroupRef(clang_proc));
-        cg->HandleTranslationUnit(macro_tu->getASTContext());
-        if (not cg->GetModule()) return LookupResult::FailedToImport(macro_name);
-        tu->link_llvm_modules.emplace_back(cg->ReleaseModule());
-
-        // Declare the procedure on our end. We don't associate it with a Clang
-        // declaration here since we haven't imported it into the actual clang
-        // module (it's only in the one we just parsed), and moreover, we don't
-        // need it since this isn't mangled.
+        compilation.codegen().HandleTopLevelDecl(clang::DeclGroupRef(clang_proc));
         auto proc = ProcDecl::Create(
             *tu,
             clang_module,
@@ -1263,25 +1271,6 @@ auto Sema::LookUpCXXMacro(
             {},
             macro_loc
         ).get();
-    }
-
-    // Ok, we managed to constant-evaluate the initialiser; convert
-    // it to an RValue.
-    else {
-        auto ty = ImportTypeFromExpansionAST(var->getType());
-        if (not ty.has_value()) return LookupResult::FailedToImport(
-            macro_name,
-            std::move(ty.error())
-        );
-
-        // Finally, import the value.
-        auto v = fake_importer.ImportValue(macro_loc, *var->getEvaluatedValue(), *ty);
-        if (not v.has_value()) return LookupResult::FailedToImport(
-            macro_name,
-            std::move(v.error())
-        );
-
-        value = MakeConstExpr(nullptr, std::move(*v), macro_loc);
     }
 
     auto md = new (*tu) CXXMacroExpansionDecl("", value, value->location());
@@ -1304,7 +1293,7 @@ auto Sema::LookUpCXXName(
         return DoNameLookup();
 
     // Check if this is a macro.
-    auto ast = &clang_module->clang_ast;
+    auto ast = tu->cxx_compilation();
     auto& pp = ast->getSema().getPreprocessor();
     auto id = pp.getIdentifierInfo(names.front().name.str());
     auto *mi = pp.getMacroInfo(id);

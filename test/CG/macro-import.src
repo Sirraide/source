@@ -31,11 +31,11 @@ export proc d = macros::NOT_CONSTEXPR;
 // +
 // + proc test::d external ccc -> ptr {
 // + entry:
-// +     %0 = call ccc ptr __srcc_expanded_macro_0_init()
+// +     %0 = call ccc ptr __srcc_expanded_macro_3_init()
 // +     ret ptr %0
 // + }
 // +
-// + proc __srcc_expanded_macro_0_init external ccc -> ptr;
+// + proc __srcc_expanded_macro_3_init external ccc -> ptr;
 
 //L * ; ModuleID = 'test'
 //L + source_filename = "test"

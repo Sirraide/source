@@ -465,43 +465,23 @@ GlobalDecl::GlobalDecl(
 }
 
 ImportedClangModuleDecl::ImportedClangModuleDecl(
-    clang::ASTUnit& clang_ast,
-    clang::MangleContext* mctx,
     String logical_name,
     ArrayRef<String> header_names,
     SLoc loc
 ) : ModuleDecl{Kind::ImportedClangModuleDecl, logical_name, loc},
-    num_headers{u32(header_names.size())},
-    clang_ast{clang_ast},
-    mangle_context(mctx) {
+    num_headers{u32(header_names.size())} {
     uninitialized_copy(header_names, getTrailingObjects());
 }
 
 auto ImportedClangModuleDecl::Create(
     TranslationUnit& tu,
-    clang::ASTUnit& clang_ast,
     String logical_name,
     ArrayRef<String> header_names,
     SLoc loc
 ) -> ImportedClangModuleDecl* {
     auto sz = totalSizeToAlloc<String>(header_names.size());
     auto mem = tu.allocate(sz, alignof(ImportedClangModuleDecl));
-    auto mctx = tu.create_cxx_mangler(clang_ast.getASTContext());
-    return ::new (mem) ImportedClangModuleDecl{clang_ast, mctx, logical_name, header_names, loc};
-}
-
-auto ImportedClangModuleDecl::create_clang_codegen(
-    llvm::LLVMContext& ctx
-) -> std::unique_ptr<clang::CodeGenerator> {
-    return clang::CreateLLVMCodeGen(
-        clang_ast.getDiagnostics(),
-        name.str(),
-        clang_ast.getVirtualFileSystemPtr(),
-        clang_ast.getPreprocessor().getHeaderSearchInfo().getHeaderSearchOpts(),
-        clang_ast.getPreprocessor().getPreprocessorOpts(),
-        clang_ast.getCodeGenOpts(),
-        ctx
-    );
+    return ::new (mem) ImportedClangModuleDecl{logical_name, header_names, loc};
 }
 
 ProcDecl::ProcDecl(
@@ -581,8 +561,8 @@ bool ProcDecl::returns_lvalue() {
 
 void ProcDecl::set_clang_decl(clang::FunctionDecl* d) {
     Assert(associated_decl.isNull());
-    auto module = cast<ImportedClangModuleDecl>(imported_from_module);
-    Assert(&module->clang_ast.getASTContext() == &d->getASTContext());
+    Assert(isa<ImportedClangModuleDecl>(imported_from_module));
+    Assert(&owner->cxx_compilation()->getASTContext() == &d->getASTContext());
     associated_decl = d;
 }
 

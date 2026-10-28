@@ -134,6 +134,7 @@ int Driver::dump_module(StringRef import_string) {
     );
 
     if (not tu or ctx.diags().has_error()) return 1;
+    if (not tu->finish_cxx_compilation()) return 1;
     tu->logical_imports.at(ImportName)->dump(ctx.use_colours);
     return 0;
 }
@@ -248,6 +249,7 @@ int Driver::run_job() {
     );
 
     if (a == Action::Sema) {
+        if (not tu->finish_cxx_compilation()) return 1;
         ctx.diags().flush();
         if (opts.verify) return Verify();
         if (opts.print_ast) tu->dump();
@@ -259,7 +261,7 @@ int Driver::run_job() {
         // TODO: Static initialisation.
         if (not CanContinue("sema")) return 1;
         auto res = tu->vm.eval(nullptr, tu->file_scope_block, true, a == Action::EvalDumpIR, true);
-        return res.has_value() ? 0 : 1;
+        return res.has_value() and tu->finish_cxx_compilation() ? 0 : 1;
     }
 
     // A module’s file name is kind of important, so don’t allow changing it.
@@ -276,6 +278,7 @@ int Driver::run_job() {
     // Run codegen.
     cg::CodeGen cg{*tu, tu->lang_opts()};
     cg.emit_as_needed(tu->procs);
+    if (not tu->finish_cxx_compilation()) return 1;
     if (opts.action == Action::CodeGen) {
         if (opts.verify) return Verify();
         return ctx.diags().has_error();

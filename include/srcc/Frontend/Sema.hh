@@ -31,7 +31,6 @@ class TemplateInstantiator;
 }
 
 namespace clang {
-class ASTImporterSharedState;
 class MacroInfo;
 }
 
@@ -919,7 +918,6 @@ class srcc::Sema : public DiagsProducer {
     ArrayRef<std::string> clang_options;
     usz assert_stringifiers = 0;
     usz generated_cxx_macro_decls = 0;
-    usz cxx_import_file_counter = 0;
 
     /// Engine used by 'DiagnosticsTrap'
     llvm::IntrusiveRefCntPtr<TrappingDiagnosticsEngine> trapping_engine
@@ -941,9 +939,6 @@ class srcc::Sema : public DiagsProducer {
     /// Template deduction information for each template.
     DenseMap<ProcTemplateDecl*, TemplateParamDeductionInfo> template_deduction_infos;
 
-    /// Shared state for Clang's ASTImporter.
-    std::shared_ptr<clang::ASTImporterSharedState> clang_importer_state;
-
     /// C++ decls that have already been imported (or that
     /// already failed to import before).
     DenseMap<clang::Decl*, Ptr<Decl>> imported_decls;
@@ -951,14 +946,6 @@ class srcc::Sema : public DiagsProducer {
     /// C++ macros that have already been imported (or that
     /// already failed to import before).
     DenseMap<clang::MacroInfo*, Ptr<Decl>> imported_macros;
-
-    /// VFS that contains precompiled headers; used for importing declarations.
-    llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> ImportVFS;
-    llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> PCHVFS;
-
-    /// Combined header imports for this Source translation unit.
-    SmallVector<String> cxx_headers;
-    clang::ASTUnit* shared_cxx_ast = nullptr;
 
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
@@ -1266,12 +1253,8 @@ private:
     /// Extract the scope that is the body of a declaration, if it has one.
     auto GetScopeFromDecl(Decl* d) -> Ptr<Scope>;
 
-    /// Import a C++ header.
-    auto ImportCXXHeaders(
-        String logical_name,
-        ArrayRef<String> header_names,
-        SLoc import_loc
-    ) -> Ptr<ImportedClangModuleDecl>;
+    /// Parse all C++ header imports into the module’s single Clang TU.
+    bool ImportCXXHeaders(ArrayRef<const ParsedModule::Import*> imports);
 
     /// Inject a parse tree into the program.
     bool InjectTree(Expr* injected, Opt<Type> desired_type, InjectionContext ctx);
@@ -1290,13 +1273,11 @@ private:
     /// Check if a type is zero-sized or incomplete.
     bool IsZeroSizedOrIncomplete(Type ty);
 
-    /// Load a native header or Source module from the system include path.
+    /// Load a Source module.
     void LoadModule(
         String logical_name,
         ArrayRef<String> linkage_names,
-        SLoc import_loc,
-        bool is_open,
-        bool is_cxx_header
+        SLoc import_loc
     );
 
     /// Load a Source module.
@@ -1375,9 +1356,6 @@ private:
     /// Emit a note pointing to a declaration; this also prints what
     /// kind of declaration it is.
     void NotePrevDecl(Decl* decl);
-
-    /// Parse C++ code into a new TU.
-    auto ParseCXX(StringRef code, std::optional<std::string> PCH = {}) -> std::unique_ptr<clang::ASTUnit>;
 
     /// Resolve an overload set.
     auto PerformOverloadResolution(

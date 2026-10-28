@@ -1,0 +1,11 @@
+// V %srcc --sema --verify -I test/inputs %s
+// V %srcc --sema --verify -I test/inputs -Xclang=-fdelayed-template-parsing %s
+// expected-no-diagnostics
+program test;
+import <incremental-cxx.h> as cpp;
+
+#assert cpp::LATE_TEMPLATE == 42;
+#assert cpp::SECOND_TEMPLATE == 44;
+#assert cpp::LATE_TEMPLATE == 42;
+var box = cpp::BOX_VALUE;
+#assert cpp::BOX_VALUE.value == 23;

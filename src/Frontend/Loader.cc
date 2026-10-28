@@ -743,27 +743,13 @@ auto Sema::LoadModuleFromArchive(
 void Sema::LoadModule(
     String logical_name,
     ArrayRef<String> linkage_names,
-    SLoc import_loc,
-    bool is_open,
-    bool is_cxx_header
+    SLoc import_loc
 ) {
-    if (is_open) {
-        Assert(is_cxx_header);
-        if (auto m = ImportCXXHeaders(logical_name, linkage_names, import_loc).get_or_null())
-            tu->open_modules.push_back(m);
-        return;
-    }
-
-    // Clang imports cannot be cached or redefined.
+    // Do not overwrite a C++ import alias with a Source module.
     auto& logical = tu->logical_imports[logical_name];
     if (isa_and_present<ImportedClangModuleDecl>(logical)) {
         Error(import_loc, "Cannot redefine header import '{}'", logical_name);
         Note(logical->location(), "Previous definition was here");
-        return;
-    }
-
-    if (is_cxx_header) {
-        logical = ImportCXXHeaders(logical_name, linkage_names, import_loc).get_or_null();
         return;
     }
 

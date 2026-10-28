@@ -527,14 +527,7 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
 
         // If this is a C++ inline function, ask Clang to emit it.
         if (proc->props.is_cxx_inline_function) {
-            auto mod = cast<ImportedClangModuleDecl>(proc->imported_from_module);
-            auto& cg = clang_codegen_map[&mod->clang_ast];
-            if (not cg) {
-                cg = mod->create_clang_codegen(tu.llvm_context);
-                cg->Initialize(mod->clang_ast.getASTContext());
-            }
-
-            cg->HandleTopLevelDecl(clang::DeclGroupRef(proc->clang_decl()));
+            tu.cxx_compilation()->codegen().HandleTopLevelDecl(clang::DeclGroupRef(proc->clang_decl()));
         }
     }
     return ir_proc;
@@ -996,8 +989,7 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
                 if (auto proc = dyn_cast<ProcDecl>(obj)) {
                     llvm::SmallString<256> str;
                     llvm::raw_svector_ostream os{str};
-                    auto mod = cast<ImportedClangModuleDecl>(proc->imported_from_module);
-                    mod->mangle_context->mangleName(proc->clang_decl(), os);
+                    tu.cxx_compilation()->mangler()->mangleName(proc->clang_decl(), os);
                     return tu.save(str);
                 }
 

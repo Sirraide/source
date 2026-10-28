@@ -1,0 +1,7 @@
+// X %srcc --sema -I test/inputs %s
+program test;
+import <incremental-cxx.h> as cpp;
+#assert cpp::LATE_TEMPLATE == 42;
+
+// A later generated buffer can fail without corrupting parser ownership.
+var invalid = cpp::INVALID_LATE;

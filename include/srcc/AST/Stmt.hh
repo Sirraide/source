@@ -27,6 +27,7 @@ class MangleContext;
 }
 
 namespace srcc {
+class CXXCompilation;
 #define AST_STMT(node) class node;
 #include "srcc/AST.inc"
 
@@ -1339,14 +1340,8 @@ class srcc::ImportedClangModuleDecl final : public ModuleDecl
     friend TrailingObjects;
     const u32 num_headers;
 
-public:
-    clang::ASTUnit& clang_ast;
-    clang::MangleContext* mangle_context;
-
 private:
     ImportedClangModuleDecl(
-        clang::ASTUnit& clang_ast,
-        clang::MangleContext* mangle_context,
         String logical_name,
         ArrayRef<String> header_names,
         SLoc loc
@@ -1355,14 +1350,10 @@ private:
 public:
     static auto Create(
         TranslationUnit& tu,
-        clang::ASTUnit& clang_ast,
         String logical_name,
         ArrayRef<String> header_names,
         SLoc loc
     ) -> ImportedClangModuleDecl*;
-
-    /// Create a CodeGenerator for this module.
-    auto create_clang_codegen(llvm::LLVMContext& ctx) -> std::unique_ptr<clang::CodeGenerator>;
 
     /// Get the headers that make up this module.
     auto headers() const -> ArrayRef<String> {

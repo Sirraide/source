@@ -3,8 +3,12 @@
 program test;
 import <cstdint> as integers;
 import <cstddef> as sizes;
+import <stdint.h> as *;
 
 // Every alias sees the combined environment, with shared type identity.
 var size: integers::std::size_t = 0;
 var integer: sizes::uint32_t = 1;
 proc identity (value: integers::uint32_t) -> sizes::uint32_t = value;
+
+// Open imports and named aliases share the same macro environment.
+#assert integers::UINT32_MAX == UINT32_MAX;

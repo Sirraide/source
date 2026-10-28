@@ -1,0 +1,102 @@
+// R %srcc --llvm --target x86_64-unknown-linux -I test/inputs %s
+module test;
+import <incremental-cxx.h> as cpp;
+export proc increment = cpp::SIDE_EFFECT;
+export proc counter = cpp::COUNTER_VALUE;
+export proc twice = cpp::LATE_RUNTIME;
+
+// * ; ModuleID = 'test'
+// + source_filename = "test"
+// + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+// + target triple = "x86_64-unknown-linux"
+// +
+// + %struct.IncrementalBox = type { i32 }
+// +
+// + $_ZN17IncrementalInline6methodEv = comdat any
+// +
+// + $_ZNK14IncrementalBoxIiE3getEv = comdat any
+// +
+// + $_ZN14IncrementalBoxIiE5twiceEi = comdat any
+// +
+// + $incremental_counter = comdat any
+// +
+// + @llvm.compiler.used = appending global [1 x ptr] [ptr @_ZN17IncrementalInline6methodEv], section "llvm.metadata"
+// + @incremental_counter = linkonce_odr dso_local global i32 0, comdat, align 4
+// + @_ZTV18IncrementalVirtual = dso_local constant { [3 x ptr] } { [3 x ptr] [ptr null, ptr @_ZTI18IncrementalVirtual, ptr @_ZN18IncrementalVirtual6methodEv] }, align 8
+// + @_ZTI18IncrementalVirtual = dso_local constant { ptr, ptr } { ptr getelementptr inbounds (i8, ptr @_ZTVN10__cxxabiv117__class_type_infoE, i64 16), ptr @_ZTS18IncrementalVirtual }, align 8
+// + @_ZTVN10__cxxabiv117__class_type_infoE = external global [0 x ptr]
+// + @_ZTS18IncrementalVirtual = dso_local constant [21 x i8] c"18IncrementalVirtual\00", align 1
+// +
+// + ; Function Attrs: noinline norecurse nounwind optnone uwtable
+// + define void @__src_static_init.test() #0 {
+// +   ret void
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define i32 @"_Stest::increment() -> i32"() #1 {
+// +   %1 = load i32, ptr @incremental_counter, align 4
+// +   %inc.i = add nsw i32 %1, 1
+// +   store i32 %inc.i, ptr @incremental_counter, align 4
+// +   %2 = load i32, ptr @incremental_counter, align 4
+// +   ret i32 %2
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define i32 @"_Stest::counter() -> i32"() #1 {
+// +   %1 = load i32, ptr @incremental_counter, align 4
+// +   ret i32 %1
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define i32 @"_Stest::twice() -> i32"() #1 {
+// +   %ref.tmp.i = alloca %struct.IncrementalBox, align 4
+// +   %1 = load i32, ptr @incremental_counter, align 4
+// +   store i32 %1, ptr %ref.tmp.i, align 4
+// +   %call.i = call noundef i32 @_ZNK14IncrementalBoxIiE3getEv(ptr noundef nonnull align 4 dereferenceable(4) %ref.tmp.i)
+// +   ret i32 %call.i
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define dso_local noundef i32 @_ZN18IncrementalVirtual6methodEv(ptr noundef nonnull align 8 dereferenceable(8) %this) unnamed_addr #1 align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   ret i32 46
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local noundef i32 @_ZN17IncrementalInline6methodEv(ptr noundef nonnull align 1 dereferenceable(1) %this) #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   ret i32 45
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local noundef i32 @_ZNK14IncrementalBoxIiE3getEv(ptr noundef nonnull align 4 dereferenceable(4) %this) #1 comdat align 2 {
+// + entry:
+// +   %this.addr = alloca ptr, align 8
+// +   store ptr %this, ptr %this.addr, align 8
+// +   %this1 = load ptr, ptr %this.addr, align 8
+// +   %value = getelementptr inbounds nuw %struct.IncrementalBox, ptr %this1, i32 0, i32 0
+// +   %0 = load i32, ptr %value, align 4
+// +   %call = call noundef i32 @_ZN14IncrementalBoxIiE5twiceEi(i32 noundef %0)
+// +   ret i32 %call
+// + }
+// +
+// + ; Function Attrs: noinline nounwind optnone uwtable
+// + define linkonce_odr dso_local noundef i32 @_ZN14IncrementalBoxIiE5twiceEi(i32 noundef %value) #1 comdat align 2 {
+// + entry:
+// +   %value.addr = alloca i32, align 4
+// +   store i32 %value, ptr %value.addr, align 4
+// +   %0 = load i32, ptr %value.addr, align 4
+// +   %mul = mul nsw i32 %0, 2
+// +   ret i32 %mul
+// + }
+// +
+// + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+// + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
+// +
+// +

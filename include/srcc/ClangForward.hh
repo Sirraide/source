@@ -8,6 +8,7 @@ class RecordDecl;
 }
 
 namespace srcc {
+class CXXCompilation;
 using CXXDecl = clang::Decl;
 }
 
