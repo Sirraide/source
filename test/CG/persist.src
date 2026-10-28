@@ -119,15 +119,14 @@ proc str1 {
 }
 
 // * @0 = "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00", align 8
-// + @1 = "\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00\00", align 8
-// + @2 = "\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00\07\00\00\00\00\00\00\00\08\00\00\00\00\00\00\00\FF", align 8
-// + @3 = "\00\00"
-// + @4 = "\09\FF"
-// + @5 = "foo\00"
-// + @6 = "bar\00"
-// + @7 = "baz\00"
-// + @8 = "quux\00"
-// + @9 = "1234\00"
+// + @1 = "\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00", align 8
+// + @2 = "\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00", align 8
+// + @3 = "\07\00\00\00\00\00\00\00\08\00\00\00\00\00\00\00", align 8
+// + @4 = "foo\00"
+// + @5 = "bar\00"
+// + @6 = "baz\00"
+// + @7 = "quux\00"
+// + @8 = "1234\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
@@ -203,24 +202,27 @@ proc str1 {
 // +
 // + proc _S2r1FvE.9 private ccc {
 // +     #0 = 16, align 8
+// +     #1 = 16, align 8
 // +
 // + entry:
-// +     store #0, i64 42, align 8
-// +     %0 = ptradd #0, 8
+// +     store #1, i64 42, align 8
+// +     %0 = ptradd #1, 8
 // +     store %0, ptr nil, align 8
 // +     disengage %0
+// +     copy #0 <- #1, 16
 // +     ret
 // + }
 // +
 // + proc _S2r2FvE.10 private ccc {
 // +     #0 = 33, align 8
+// +     #1 = 33, align 8
 // +
 // + entry:
-// +     store #0, i64 1, align 8
-// +     %0 = ptradd #0, 8
+// +     store #1, i64 1, align 8
+// +     %0 = ptradd #1, 8
 // +     store %0, ptr nil, align 8
 // +     disengage %0
-// +     %1 = ptradd #0, 16
+// +     %1 = ptradd #1, 16
 // +     store %1, i64 2, align 8
 // +     %2 = ptradd %1, 8
 // +     store %2, ptr nil, align 8
@@ -228,6 +230,7 @@ proc str1 {
 // +     %3 = ptradd %1, 16
 // +     store %3, i8 -1, align 1
 // +     engage %1
+// +     copy #0 <- #1, 33
 // +     ret
 // + }
 // +
@@ -242,37 +245,65 @@ proc str1 {
 // +     #2 = 33, align 8
 // +     #3 = 2, align 1
 // +     #4 = 2, align 1
+// +     #5 = 33, align 8
+// +     #6 = 33, align 8
+// +     #7 = 2, align 1
+// +     #8 = 2, align 1
 // +
 // + entry:
 // +     copy #0 <- @0, 16
-// +     copy #1 <- @1, 33
-// +     copy #2 <- @2, 33
-// +     copy #3 <- @3, 2
-// +     copy #4 <- @4, 2
+// +     copy #5 <- @1, 16
+// +     %0 = ptradd #5, 16
+// +     %1 = ptradd %0, 16
+// +     store %1, i8 0, align 1
+// +     disengage %0
+// +     copy #1 <- #5, 33
+// +     copy #6 <- @2, 16
+// +     %2 = ptradd #6, 16
+// +     copy %2 <- @3, 16
+// +     %3 = ptradd %2, 16
+// +     store %3, i8 -1, align 1
+// +     engage %2
+// +     copy #2 <- #6, 33
+// +     %4 = ptradd #7, 1
+// +     store %4, i8 0, align 1
+// +     disengage #7
+// +     copy #3 <- #7, 2
+// +     engage #3 <- #7
+// +     store #8, i8 9, align 1
+// +     %5 = ptradd #8, 1
+// +     store %5, i8 -1, align 1
+// +     engage #8
+// +     copy #4 <- #8, 2
+// +     engage #4 <- #8
 // +     ret
 // + }
 // +
 // + proc _S2r5FvE.13 private ccc {
 // +     #0 = 32, align 8
+// +     #1 = 32, align 8
 // +
 // + entry:
-// +     copy #0 <- @0, 16
-// +     %0 = ptradd #0, 16
+// +     copy #1 <- @0, 16
+// +     %0 = ptradd #1, 16
 // +     store %0, i64 3, align 8
 // +     %1 = ptradd %0, 8
 // +     store %1, ptr nil, align 8
 // +     disengage %1
+// +     copy #0 <- #1, 32
 // +     ret
 // + }
 // +
 // + proc _S2r6FvE.14 private ccc {
 // +     #0 = 16, align 8
+// +     #1 = 16, align 8
 // +
 // + entry:
-// +     store #0, i64 0, align 8
-// +     %0 = ptradd #0, 8
+// +     store #1, i64 0, align 8
+// +     %0 = ptradd #1, 8
 // +     store %0, ptr nil, align 8
 // +     disengage %0
+// +     copy #0 <- #1, 16
 // +     ret
 // + }
 // +
@@ -281,21 +312,23 @@ proc str1 {
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
 // +     #3 = 16, align 8
+// +     #4 = 16, align 8
 // +
 // + entry:
-// +     store #0, ptr @5, align 8
+// +     store #0, ptr @4, align 8
 // +     %0 = ptradd #0, 8
 // +     store %0, i64 3, align 8
-// +     store #1, ptr @6, align 8
+// +     store #1, ptr @5, align 8
 // +     %1 = ptradd #1, 8
 // +     store %1, i64 3, align 8
-// +     store #2, ptr @7, align 8
+// +     store #2, ptr @6, align 8
 // +     %2 = ptradd #2, 8
 // +     store %2, i64 3, align 8
-// +     %3 = ptradd base @8, 0
-// +     store #3, ptr %3, align 8
-// +     %4 = ptradd #3, 8
+// +     %3 = ptradd base @7, 0
+// +     store #4, ptr %3, align 8
+// +     %4 = ptradd #4, 8
 // +     store %4, i64 4, align 8
+// +     copy #3 <- #4, 16
 // +     ret
 // + }
 // +
@@ -306,13 +339,13 @@ proc str1 {
 // +     #3 = 8, align 8
 // +
 // + entry:
-// +     %0 = ptradd base @9, 0
+// +     %0 = ptradd base @8, 0
 // +     store #0, ptr %0, align 8
-// +     %1 = ptradd base @9, 1
+// +     %1 = ptradd base @8, 1
 // +     store #1, ptr %1, align 8
-// +     %2 = ptradd base @9, 3
+// +     %2 = ptradd base @8, 3
 // +     store #2, ptr %2, align 8
-// +     %3 = ptradd base @9, 4
+// +     %3 = ptradd base @8, 4
 // +     store #3, ptr %3, align 8
 // +     ret
 // + }

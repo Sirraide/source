@@ -38,7 +38,7 @@ bool Token::operator==(const Token& b) {
         case Tk::Identifier:
         case Tk::StringLiteral:
         case Tk::CXXHeaderName:
-        case Tk::TemplateType:
+        case Tk::TemplateParameter:
             return text == b.text;
 
         case Tk::Integer:

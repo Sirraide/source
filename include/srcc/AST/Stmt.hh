@@ -1302,6 +1302,18 @@ public:
     static bool classof(const Stmt* e) { return e->kind() == Kind::TemplateTypeParamDecl; }
 };
 
+/// A named, immutable value bound during template substitution. Unlike a
+/// ParamDecl, this declaration owns no runtime storage and cannot be captured.
+class srcc::CompileTimeParamDecl final : public Decl {
+public:
+    ConstExpr* value;
+
+    CompileTimeParamDecl(DeclNameLoc name, ConstExpr* value)
+        : Decl{Kind::CompileTimeParamDecl, name.name, name.loc}, value{value} {}
+
+    static bool classof(const Stmt* e) { return e->kind() == Kind::CompileTimeParamDecl; }
+};
+
 /// Base class for declarations that represent modules.
 class srcc::ModuleDecl : public Decl {
 protected:
@@ -1754,6 +1766,11 @@ public:
     /// varargs, for that, see the 'c_varargs' attribute).
     bool has_variadic_param;
 
+    /// Whether the signature requires type deduction ('$T' or 'var'). This
+    /// does not include compile-time parameters since we don’t want those to
+    /// affect ranking.
+    bool requires_type_deduction;
+
     /// Properties that are passed down to instantiations.
     InheritedProcedureProperties props;
 
@@ -1764,6 +1781,7 @@ private:
         Ptr<ProcDecl> parent,
         InheritedProcedureProperties props,
         bool has_variadic_param,
+        bool requires_type_deduction,
         SLoc location
     );
 
@@ -1773,7 +1791,8 @@ public:
         ParsedProcDecl* pattern,
         Ptr<ProcDecl> parent,
         InheritedProcedureProperties props,
-        bool has_variadic_param
+        bool has_variadic_param,
+        bool requires_type_deduction
     ) -> ProcTemplateDecl*;
 
     /// Get all instantiations of this template.

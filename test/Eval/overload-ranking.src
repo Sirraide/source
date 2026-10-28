@@ -15,7 +15,7 @@ proc best_first (i128, int) = 2;
 proc best_first (int, i128) = 1;
 assert best_first(1, 2) == 3;
 
-// Ordinary declarations beat templates only on equal conversions.
+// Concrete signatures beat type-deduced signatures only on equal conversions.
 proc concrete (int) = 1;
 proc concrete ($T) = 2;
 assert concrete(1) == 1;

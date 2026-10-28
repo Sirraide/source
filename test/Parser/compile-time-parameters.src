@@ -1,0 +1,10 @@
+// V %srcc --parse --verify %s
+program test;
+
+proc named ($x: int) {}
+proc deduced ($x: $T) {}
+proc unnamed ($T) {}
+proc modifiers (with exact in val $x: int) {}
+proc bad_pack ($xs: int...) {} // expected-error: Compile-time parameters cannot be variadic
+proc bad_inferred_pack ($xs: var...) {} // expected-error: Compile-time parameters cannot be variadic
+proc bad_type (callback: proc ($x: int)) {} // expected-error: Named parameters are not allowed here

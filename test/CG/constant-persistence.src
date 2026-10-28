@@ -1,0 +1,102 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s
+program test;
+
+struct Padded { first: i8; second: int; }
+struct TailPadded { first: int; second: i8; }
+struct Narrow { value: i9; }
+
+proc padded = eval Padded(1, 2);
+proc tail = eval TailPadded(3, 4);
+proc narrow = eval Narrow(-1);
+proc optional = eval int?(5);
+proc absent = eval int?();
+proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
+
+// * @0 = "\03\00\00\00\00\00\00\00\04", align 8
+// + @1 = "\01\00\00\00\00\00\00\00\02", align 8
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S6paddedFT6PaddedE.1 private ccc -> (i64, i64) {
+// +     #0 = 16, align 8
+// +     #1 = 16, align 8
+// +
+// + entry:
+// +     store #1, i8 1, align 1
+// +     %0 = ptradd #1, 8
+// +     store %0, i64 2, align 8
+// +     copy #0 <- #1, 16
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i64, %2, align 8
+// +     ret i64 %1, i64 %3
+// + }
+// +
+// + proc _S4tailFT10TailPaddedE.2 private ccc -> (i64, i8) {
+// +     #0 = 9, align 8
+// +
+// + entry:
+// +     copy #0 <- @0, 9
+// +     %0 = load i64, #0, align 8
+// +     %1 = ptradd #0, 8
+// +     %2 = load i8, %1, align 1
+// +     ret i64 %0, i8 %2
+// + }
+// +
+// + proc _S6narrowFT6NarrowE.3 private ccc -> i16 {
+// +     #0 = 2, align 2
+// +     #1 = 2, align 2
+// +
+// + entry:
+// +     store #1, i16 -1, align 2
+// +     copy #0 <- #1, 2
+// +     %0 = load i16, #0, align 2
+// +     ret i16 %0
+// + }
+// +
+// + proc _S8optionalFOiE.4 private ccc -> (i64, i8) {
+// +     #0 = 9, align 8
+// +     #1 = 9, align 8
+// +
+// + entry:
+// +     store #1, i64 5, align 8
+// +     %0 = ptradd #1, 8
+// +     store %0, i8 -1, align 1
+// +     engage #1
+// +     copy #0 <- #1, 9
+// +     engage #0 <- #1
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i8, %2, align 1
+// +     ret i64 %1, i8 %3
+// + }
+// +
+// + proc _S6absentFOiE.5 private ccc -> (i64, i8) {
+// +     #0 = 9, align 8
+// +     #1 = 9, align 8
+// +
+// + entry:
+// +     %0 = ptradd #1, 8
+// +     store %0, i8 0, align 1
+// +     disengage #1
+// +     copy #0 <- #1, 9
+// +     engage #0 <- #1
+// +     %1 = load i64, #0, align 8
+// +     %2 = ptradd #0, 8
+// +     %3 = load i8, %2, align 1
+// +     ret i64 %1, i8 %3
+// + }
+// +
+// + proc _S5arrayFA2T10TailPaddedE.6 (ptr %0 sret i8[32]) private ccc {
+// +     #0 = 32, align 8
+// +
+// + entry:
+// +     copy #0 <- @1, 9
+// +     %1 = ptradd #0, 16
+// +     copy %1 <- @0, 9
+// +     copy %0 <- #0, 32
+// +     ret
+// + }

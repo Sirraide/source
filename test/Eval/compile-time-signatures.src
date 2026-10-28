@@ -1,0 +1,86 @@
+// V %srcc --eval %s
+program test;
+
+// These calls share converted argument values, but their conversion ranks differ.
+proc cached_first ($x: i128) = 1;
+proc cached_first (x: int) = 2;
+assert cached_first(1 as i128) == 1;
+assert cached_first(1) == 2;
+assert cached_first(1 as i128) == 1;
+proc converted_first ($x: i128) = 1;
+proc converted_first (x: int) = 2;
+assert converted_first(1) == 2;
+assert converted_first(1 as i128) == 1;
+assert converted_first(1) == 2;
+
+proc dominate ($constant: int, value: i128) = 1;
+proc dominate (value: int, $constant: i128) = 2;
+proc dominate (constant: int, value: int) = 3;
+assert dominate(value: 2, constant: 1) == 3;
+assert dominate(constant: 1, value: 2) == 3;
+
+proc interleaved ($t: type, first: t, $offset: int, second: t, $scale: int) -> t {
+    return (first + second + offset) * scale;
+}
+assert interleaved(int, 1, 3, 2, 4) == 24;
+assert interleaved(scale: 4, second: 2, t: int, offset: 3, first: 1) == 24;
+proc array ($t: type, $n: int, value: t[n]) = value;
+assert array(int, 2, (10, 20))[1] == 20;
+assert array(n: 2, value: (30, 40), t: int)[0] == 30;
+
+struct Factory {
+    init ($x: i128) = 1;
+    init (x: int) = 2;
+}
+assert Factory(1 as i128) == 1;
+assert Factory(1) == 2;
+struct Storage {
+    value: int;
+    init ($x: i128) = ::(1);
+    init (x: int) = ::(2);
+}
+var first: Storage = (1 as i128);
+var second: Storage = (1);
+assert first.value == 1;
+assert second.value == 2;
+
+// Initialiser conversions retain call-specific expressions until evaluation.
+struct Box { value: int; init (x: int) = ::(x); }
+proc record ($x: Box) = 1;
+proc record (x: Box?) = 2;
+assert record(Box::(1)) == 1;
+assert record(Box::(1)) == 1;
+
+proc packed ($offset: int, values: int...) -> int {
+    var result = offset;
+    for value in values do result += value;
+    return result;
+}
+assert packed(5) == 5;
+assert packed(5, 1, 2) == 8;
+proc inferred_pack ($offset: int, values: var...) = offset + values[1];
+assert inferred_pack(5, true, 6) == 11;
+
+struct Receiver { value: int; }
+proc Receiver::add ($self: Receiver, value: int) = self.value + value;
+assert Receiver(40).add(2) == 42;
+
+proc identity ($value: $T) = value;
+assert identity(42) == 42;
+assert identity(42) == 42;
+proc + ($left: Receiver, right: int) = left.value + right;
+assert Receiver(40) + 2 == 42;
+assert Receiver(40) + 3 == 43;
+
+proc Receiver::sum ($self: Receiver, values: int...) -> int {
+    var result = self.value;
+    for value in values do result += value;
+    return result;
+}
+
+assert Receiver(40).sum() == 40;
+assert Receiver(40).sum(1, 2) == 43;
+proc Receiver::normal (this, $offset: int) = value + offset;
+var receiver = Receiver(40);
+var pointer = &receiver;
+assert pointer.normal(2) == 42;

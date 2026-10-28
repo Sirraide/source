@@ -1,0 +1,102 @@
+// V %srcc --eval %s -I test/inputs
+program test;
+import <typedef.h> as c;
+
+// Sugar must never become part of a template substitution's type key.
+proc named (value: $T) -> type { struct Unique {} return Unique; }
+proc inferred (value: var) -> type { struct Unique {} return Unique; }
+#assert named(1 as c::int_typedef) == named(1 as i32);
+#assert named(1 as c::int_using) == named(1 as c::int_typedef);
+#assert inferred(1 as c::int_typedef) == inferred(1 as i32);
+#assert inferred(1 as c::int_using) == inferred(1 as c::int_typedef);
+proc packed (values: var...) -> type { struct Unique {} return Unique; }
+#assert packed(1 as c::int_typedef, 2) == packed(1 as i32, 2);
+#assert named((1 as c::int_typedef, 2)) == named((1 as i32, 2));
+
+proc unique ($value: $T) -> type { struct Unique {} return Unique; }
+struct Padded { first: i8; second: int; }
+struct TailPadded { first: int; second: i8; }
+struct Nested { inner: Padded; tail: TailPadded; }
+struct Narrow { value: i9; }
+struct OptionalField { value: int?; }
+#assert unique(Padded(1, 2)) == unique(Padded(1, 2));
+#assert unique(TailPadded(1, 2)) == unique(TailPadded(1, 2));
+#assert unique(Nested(Padded(1, 2), TailPadded(3, 4))) == unique(Nested(Padded(1, 2), TailPadded(3, 4)));
+#assert unique(Narrow(-1)) == unique(Narrow(-1));
+#assert unique(Narrow(-1)) != unique(Narrow(1));
+#assert unique(OptionalField(1)) == unique(OptionalField(1));
+#assert unique(OptionalField(nil)) == unique(OptionalField(nil));
+#assert unique(OptionalField(1)) != unique(OptionalField(nil));
+
+proc padded_array ($values: Padded[2]) -> type { struct Unique {} return Unique; }
+#assert padded_array((Padded(1, 2), Padded(3, 4))) == padded_array((Padded(1, 2), Padded(3, 4)));
+proc tail_array ($values: TailPadded[2]) -> type { struct Unique {} return Unique; }
+#assert tail_array((TailPadded(1, 2), TailPadded(3, 4))) == tail_array((TailPadded(1, 2), TailPadded(3, 4)));
+
+// Disengaged optionals ignore storage formerly occupied by a different payload.
+proc cleared (value: int) -> int? {
+    var optional: int? = value;
+    optional = nil;
+    return optional;
+}
+#assert unique(cleared(1)) == unique(cleared(2));
+#assert unique(cleared(1)) == unique(nil as int?);
+proc read_optional ($value: int?) -> int {
+    #if value == nil { return 0; }
+    #else { return value; }
+}
+assert read_optional(42) == 42;
+assert read_optional(nil) == 0;
+
+// All memory constants have the same immutable-lvalue behaviour, including eval.
+var padded = eval Padded(3, 4);
+assert padded.first == 3;
+assert padded.second == 4;
+padded.second = 7;
+assert padded.second == 7;
+var optional = eval int?(42);
+assert optional != nil;
+assert optional == 42;
+proc memory_constant ($value: Padded) -> Padded = value;
+assert memory_constant(Padded(5, 6)).second == 6;
+
+struct Empty {}
+struct WithEmpty { empty: Empty; flag: bool; }
+#assert unique(Empty()) == unique(Empty());
+#assert unique(WithEmpty(Empty(), true)) == unique(WithEmpty(Empty(), true));
+proc zero_array ($value: int[0]) -> type { struct Unique {} return Unique; }
+#assert zero_array(int[0]()) == zero_array(int[0]());
+
+// Deliberately give equal values different padding contents before persisting.
+proc padding_bytes (byte: i8) -> Padded {
+    var value = Padded(1, 2);
+    var bytes = &value as! i8^;
+    for i in 1..<8 { ^__srcc_ptradd(bytes, i) = byte; }
+    return value;
+}
+#assert unique(padding_bytes(11)) == unique(padding_bytes(22));
+#assert unique(padding_bytes(11)) == unique(Padded(1, 2));
+
+proc tail_bytes (byte: i8) -> TailPadded[2] {
+    var value = TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
+    var bytes = &value as! i8^;
+    for i in 9..<16 { ^__srcc_ptradd(bytes, i) = byte; }
+    for i in 25..<32 { ^__srcc_ptradd(bytes, i) = byte; }
+    return value;
+}
+#assert tail_array(tail_bytes(11)) == tail_array(tail_bytes(22));
+
+// Storage bits outside an integer's declared width are padding too.
+proc narrow_bits (byte: i8) -> Narrow {
+    var value = Narrow(1);
+    var bytes = &value as! i8^;
+    ^__srcc_ptradd(bytes, 1) = byte;
+    return value;
+}
+#assert unique(narrow_bits(126)) == unique(narrow_bits(-2));
+#assert unique(narrow_bits(126)) == unique(Narrow(1));
+
+// Ranges load into byte-rounded APInts before discarding storage padding bits.
+var narrow_range = eval ((-2 as i9)..<(3 as i9));
+assert narrow_range.start == (-2 as i9);
+assert narrow_range.end == (3 as i9);

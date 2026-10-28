@@ -258,8 +258,8 @@ auto Sema::BuildBinaryExpr(
             // is immutable.
             bool immutable = false;
             if (isa<CanonicalTupleType, ArrayType>(lhs->type)) {
-                immutable = lhs->is_immutable_lvalue();
                 lhs = MaterialiseTemporary(lhs);
+                immutable = lhs->is_immutable_lvalue();
             } else {
                 immutable = cast<SliceType>(lhs->type)->is_immutable();
                 lhs = LValueToRValue(lhs);
@@ -705,10 +705,9 @@ auto Sema::BuildCallExpr(
     Expr* resolved_callee;
     SmallVector<Expr*> converted_args;
     if (auto os = dyn_cast<OverloadSetExpr>(callee_expr)) {
-        Ptr<ProcDecl> d;
-        std::tie(d, converted_args) = PerformOverloadResolution(os, args, is_associated_call, loc);
-        if (not d) return nullptr;
-        resolved_callee = TRY(RequestReference(d.get(), loc));
+        auto call = PerformOverloadResolution(os, args, is_associated_call, loc);
+        if (not call) return nullptr;
+        return BuildConvertedCall(*call, loc);
     }
 
     // If the ‘callee’ is a type, then this is an initialiser call.
@@ -814,13 +813,16 @@ auto Sema::BuildCallExpr(
         );
     }
 
-    return BuildConvertedCall(resolved_callee, converted_args, args->values(), loc);
+    ArrayRef<Expr*> varargs;
+    auto type = cast<ProcType>(resolved_callee->type);
+    if (type->has_c_varargs()) varargs = args->values().drop_front(type->param_count());
+    return BuildConvertedCall(resolved_callee, converted_args, varargs, loc);
 }
 
 auto Sema::BuildConvertedCall(
     Expr* callee,
     SmallVectorImpl<Expr*>& converted_args,
-    ArrayRef<Expr*> original,
+    ArrayRef<Expr*> varargs,
     SLoc loc
 ) -> Ptr<Expr> {
     // Check intents.
@@ -829,7 +831,7 @@ auto Sema::BuildConvertedCall(
     // And check C varargs arguments.
     auto ty = cast<ProcType>(callee->type);
     if (ty->has_c_varargs()) {
-        for (auto a : original.drop_front(ty->params().size())) {
+        for (auto a : varargs) {
             // Codegen is not set up to handle variadic arguments that are larger
             // than a word, so reject these here. If you need one of those, then
             // seriously, wtf are you doing.
@@ -871,6 +873,29 @@ auto Sema::BuildConvertedCall(
         converted_args,
         loc
     );
+}
+
+auto Sema::BuildConvertedCall(const Conversion::CallData& call, SLoc loc) -> Ptr<Expr> {
+    SmallVector<Expr*> arguments;
+    bool ok = true;
+    auto ConvertArg = [&](u32 index, ArrayRef<Expr*> values, SLoc argument_loc) {
+        auto argument = ApplyConversionSequence(values, call.conversions[index], argument_loc);
+        if (argument) arguments.push_back(argument.get());
+        else ok = false;
+    };
+
+    // Convert arguments.
+    ConvertArgumentsForCall(call.args, call.proc.get(), ConvertArg, loc);
+    if (not ok) return {};
+
+    // Get the procedure.
+    auto callee = TRY(RequestReference(call.proc.get(), loc));
+
+    // Create the call.
+    auto varargs = call.proc->proc_type()->has_c_varargs()
+        ? ArrayRef(call.args).drop_front(call.proc->param_count())
+        : ArrayRef<Expr*>();
+    return BuildConvertedCall(callee, arguments, varargs, loc);
 }
 
 auto Sema::BuildDeclRefExpr(
@@ -1356,35 +1381,57 @@ auto Sema::BuildProcSignature(
     ParsedProcDecl* parsed,
     InheritedProcedureProperties props,
     ArrayRef<Type> deduced_var_parameters,
-    ProcTemplateDecl* pattern
+    ProcTemplateDecl* pattern,
+    llvm::function_ref<bool(u32, ParamTypeData&)> bind_parameter
 ) -> Ptr<ProcDecl> {
     Assert(curr_scope()->is_proc_scope());
+    SmallVector<CompileTimeParameter> compile_time;
     ProcDecl* proc = nullptr;
     auto specs = GetParamSpecs(parsed->params());
+
+    // Create the procedure declaration.
+    auto DeclareProcedure = [&](ProcType* provisional) {
+        proc = BuildProcDeclInitial(
+            curr_scope(),
+            provisional,
+            parsed->name,
+            parsed->loc,
+            parsed->type->attrs,
+            props,
+            parsed->body.present(),
+            specs,
+            pattern
+        );
+        return proc;
+    };
+
+    // Collect a compile time parameter.
+    auto BindCompileTimeParam = [&](u32 index, ParamTypeData& param) {
+        if (parsed->params()[index]->compile_time) compile_time.push_back({index, param});
+        return not bind_parameter or bind_parameter(index, param);
+    };
+
+    // Translate the type.
     auto type = TranslateProcType(
         parsed->type,
         true,
         deduced_var_parameters,
-        [&](ProcType* provisional) {
-            proc = BuildProcDeclInitial(
-                curr_scope(),
-                provisional,
-                parsed->name,
-                parsed->loc,
-                parsed->type->attrs,
-                props,
-                parsed->body.present(),
-                specs,
-                pattern
-            );
-            return proc;
-        }
+        DeclareProcedure,
+        BindCompileTimeParam
     );
 
     if (not type) return nullptr;
     Assert(proc);
     proc->type = *type;
-    request_data.procedure_sources[proc] = {parsed, GetRequestContext()};
+
+    // Create the template signature if this is a template.
+    Ptr<ProcTemplateSignature> signature;
+    if (pattern) {
+        signature = ProcTemplateSignature::Create(*tu, proc->proc_type(), compile_time);
+        Assert(signature->param_count() == parsed->params().size());
+    }
+
+    request_data.procedure_sources[proc] = {parsed, GetRequestContext(), signature};
     return proc;
 }
 

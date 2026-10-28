@@ -5,6 +5,10 @@
             "name": "keyword.other",
             "match": "\\bexact\\b(?=\\s+[a-zA-Z_$({])"
         },
+        "compile-time-parameter-name": {
+            "name": "variable.parameter.constant",
+            "match": "\\$[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
+        },
         "parameter-name": {
             "name": "variable.parameter",
             "match": "\\b[a-zA-Z_][a-zA-Z_0-9]*(?=\\s*:(?!:))"
@@ -374,6 +378,9 @@
             },
             "patterns": [
                 {
+                    "include": "#compile-time-parameter-name"
+                },
+                {
                     "include": "#parameter-name"
                 },
                 {
@@ -401,6 +408,9 @@
                 }
             },
             "patterns": [
+                {
+                    "include": "#compile-time-parameter-name"
+                },
                 {
                     "include": "#parameter-name"
                 },

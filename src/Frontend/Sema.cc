@@ -155,7 +155,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
     // parameters.
     auto ds = scope->decls_with_name(d->name);
     if (not ds.empty()) {
-        if (isa<FieldDecl, ParamDecl, TemplateTypeParamDecl>(d)) {
+        if (isa<FieldDecl, ParamDecl, TemplateTypeParamDecl, CompileTimeParamDecl>(d)) {
             Error(d->location(), "Redeclaration of '{}'", d->name);
             NotePrevDecl(ds.front());
             return;
@@ -164,6 +164,7 @@ void Sema::AddDeclToScope(Scope* scope, Decl* d) {
         if (auto new_proc = dyn_cast<ProcDecl>(d); new_proc and new_proc->valid()) {
             // The existing decl is also a procedure; validate that the new one isn’t a
             // redeclaration of any existing procedure.
+            // FIXME: Do this for templates too.
             for (auto old : ds) {
                 // Skip invalid declarations here.
                 if (!old->valid()) continue;
@@ -643,14 +644,18 @@ void Sema::DiagnoseZeroSizedTypeInNativeProc(Type ty, SLoc use, bool is_return) 
 }
 
 auto Sema::GetParamSpecs(ArrayRef<ParsedVarDecl*> params) -> SmallVector<ParamSpec> {
-    return llvm::to_vector(params | vws::transform([](auto param) {
-        return ParamSpec{
-            .name = {param->name, param->loc},
-            .with_loc = param->with_loc,
-            .immutable = param->immutable,
-            .is_this = param->is_this_param,
-        };
-    }));
+    return llvm::to_vector(
+        params
+        | vws::filter([](auto param) { return not param->compile_time; })
+        | vws::transform([](auto param) {
+            return ParamSpec{
+                .name = {param->name, param->loc},
+                .with_loc = param->with_loc,
+                .immutable = param->immutable,
+                .is_this = param->is_this_param,
+            };
+        })
+    );
 }
 
 auto Sema::GetScopeFromDecl(Decl* d) -> Ptr<Scope> {
@@ -841,6 +846,7 @@ void Sema::NotePrevDecl(Decl *decl) {
         [&](EnumeratorDecl*) -> Ret { return {"enumerator", 4}; },
         [&](LocalDecl*) -> Ret { return {"local variable", 8}; },
         [&](ParamDecl*) -> Ret { return {"parameter", 4}; },
+        [&](CompileTimeParamDecl*) -> Ret { return {"compile-time parameter", 4}; },
         [&](WithFieldRefDecl*) -> Ret { return {"'%1(with%)' binding", 3}; },
         [&](WithBuiltinFieldRefDecl*) -> Ret { return {"'%1(with%)' binding", 3}; },
     });
@@ -909,13 +915,14 @@ auto Sema::Save(Expr* e) -> SaveExpr* {
 }
 
 auto Sema::UnwrapOptional(Expr* expr, SLoc loc) -> Expr* {
+    auto temporary = MaterialiseTemporary(expr);
     return new (*tu) CastExpr(
         cast<OptionalType>(expr->type)->elem(),
         CastExpr::OptionalUnwrap,
-        MaterialiseTemporary(expr),
+        temporary,
         loc,
         true,
-        Expr::MLValue
+        temporary->value_category
     );
 }
 

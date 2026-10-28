@@ -167,7 +167,8 @@ auto Sema::Callee::param_name(u32 index) const -> DeclName {
 ///
 /// Only when all conversions compare equal, apply these tie-breaks in order:
 ///
-///   1. Prefer a non-template over a template specialisation.
+///   1. Prefer a signature that requires no type deduction ('$T' or 'var').
+///      Compile-time parameters do not affect ranking.
 ///   2. Prefer a procedure with neither variadic parameters nor C varargs.
 ///
 auto Sema::Candidate::compare(const Candidate& other) const -> std::partial_ordering {
@@ -178,15 +179,17 @@ auto Sema::Candidate::compare(const Candidate& other) const -> std::partial_orde
     if (order != OverloadRanking::Equivalent) return order;
 
     // Apply tie-breaking rules.
-    auto IsTemplate = [](const Candidate& candidate) {
-        if (candidate.callee.is_template()) return true;
-        return candidate.callee.cast<ProcDecl>()->is_instantiation();
+    auto RequiresTypeDeduction = [](const Candidate& candidate) {
+        if (auto pattern = candidate.callee.dyn_cast<ProcTemplateDecl>())
+            return pattern->requires_type_deduction;
+        auto proc = candidate.callee.cast<ProcDecl>();
+        return proc->is_instantiation() and proc->pattern()->requires_type_deduction;
     };
 
-    // Templates are worse than non-templates.
-    bool templ = IsTemplate(*this);
-    bool other_template = IsTemplate(other);
-    if (templ != other_template) return templ
+    // Type deduction is worse than no deduction.
+    bool deduced = RequiresTypeDeduction(*this);
+    bool other_deduced = RequiresTypeDeduction(other);
+    if (deduced != other_deduced) return deduced
         ? OverloadRanking::Worse
         : OverloadRanking::Better;
 
@@ -202,42 +205,60 @@ auto Sema::Candidate::compare(const Candidate& other) const -> std::partial_orde
 }
 
 bool Sema::Candidate::has_valid_proc_type() const {
-    return status.is<Viable, ParamInitFailed>();
+    return status.is<Viable, ParamInitFailed>() and
+           (not callee.is_template() or subst.success());
 }
 
 auto Sema::Candidate::proc_type() const -> ProcType* {
     Assert(has_valid_proc_type(), "proc_type() cannot be used if template substitution failed");
     auto d = callee.dyn_cast<ProcDecl>();
     if (d) return d->proc_type();
-    return subst.success()->type;
+    return subst.success()->signature->runtime_type;
+}
+
+auto Sema::Candidate::source_param_index(u32 index) const -> u32 {
+    if (callee.is_template()) return subst.success()->signature->source_index(index);
+    return index;
 }
 
 auto Sema::Candidate::type_for_diagnostic() const -> SmallUnrenderedString {
     auto d = callee.dyn_cast<ProcDecl>();
     if (d) return d->proc_type()->print();
-    if (subst.success()) return subst.success()->type->print();
+    if (subst.success()) return subst.success()->signature->print(callee.cast<ProcTemplateDecl>());
     return SmallUnrenderedString("(template)");
 }
 
-Sema::CandidateArgumentLists::CandidateArgumentLists(
-    TupleExpr* args
-) : unordered{args} {
-    if (not args->is_named()) argument_lists.emplace_back(args->values());
+Sema::CandidateArgumentLists::CandidateArgumentLists(TupleExpr* args) : unordered{args} {
+    if (args->is_named()) return;
+    List list;
+    list.values = llvm::to_vector(args->values());
+    for (u32 index = 0; index < args->num_values(); ++index) list.source_indices.push_back(index);
+    add(std::move(list));
+}
+
+auto Sema::CandidateArgumentLists::add(SmallVector<Expr*> args) -> Id {
+    List list;
+    list.values = std::move(args);
+    for (auto value : list.values)
+        list.source_indices.push_back(utils::index_of<u32>(unordered->values(), value).value());
+    return add(std::move(list));
 }
 
 auto Sema::CandidateArgumentLists::add(List args) -> Id {
-    Assert(unordered->is_named());
     argument_lists.push_back(std::move(args));
     return Id(argument_lists.size() - 1);
 }
 
 auto Sema::CandidateArgumentLists::operator[](Id id) const -> const List& {
-    if (not unordered->is_named()) return argument_lists.front();
     return argument_lists[+id];
 }
 
-void Sema::ConversionRanking::add(Rank rank) {
-    ranks.push_back(rank);
+void Sema::ConversionRanking::reset(u32 num_arguments) {
+    ranks.assign(num_arguments, Rank::Exact);
+}
+
+void Sema::ConversionRanking::set(u32 argument, Rank rank) {
+    ranks[argument] = rank;
 }
 
 auto Sema::ConversionRanking::compare(const ConversionRanking& other) const -> std::partial_ordering {
@@ -308,7 +329,7 @@ auto Sema::ConversionSequence::rank(bool variadic) const -> ConversionRanking::R
                 if (variadic) {
                     // A heterogeneous pack's canonical tuple can have a generated
                     // initialiser. This is still packing, not an element conversion.
-                    for (auto& seq : conv.data.get<Conversion::InitialiserCallData>().conversions)
+                    for (auto& seq : conv.data.get<Conversion::CallData>().conversions)
                         Merge(seq.rank());
                 } else {
                     Merge(Rank::Initialiser);
@@ -515,7 +536,23 @@ bool Sema::CheckIntents(ProcType* ty, MutableArrayRef<Expr*> args) {
     return ok;
 }
 
-bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
+bool Sema::CheckOverloadedOperator(
+    ProcDecl* d,
+    bool builtin_operator,
+    Ptr<ProcTemplateSignature> signature
+) {
+    // Collect parameters, which might include compile-time ones.
+    auto type = d->proc_type();
+    auto count = signature ? signature->param_count() : type->param_count();
+    SmallVector<Type> argument_types;
+    for (u32 index = 0; index < count; ++index) {
+        argument_types.push_back(
+            signature
+                ? signature->parameter(index).type
+                : type->params()[index].type
+        );
+    }
+
     static constexpr usz AnyNumber = ~0zu;
     auto t = d->name.operator_name();
 
@@ -589,7 +626,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
         }
     }();
 
-    if (min == max and min != AnyNumber and d->param_count() != min) return Error(
+    if (min == max and min != AnyNumber and count != min) return Error(
         d->location(),
         "Operator '{}' requires exactly {} parameter{}",
         t,
@@ -597,7 +634,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
         min == 1 ? "" : "s"
     );
 
-    if (min != AnyNumber and d->param_count() < min) return Error(
+    if (min != AnyNumber and count < min) return Error(
         d->location(),
         "Operator '{}' requires at least {} parameter{}",
         t,
@@ -606,7 +643,7 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
     );
 
     if (max != AnyNumber) {
-        if (d->param_count() > max) return Error(
+        if (count > max) return Error(
             d->location(),
             "Operator '{}' takes at most {} parameter{}",
             t,
@@ -614,9 +651,9 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
             max == 1 ? "" : "s"
         );
 
-        if (d->proc_type()->has_c_varargs())
+        if (type->has_c_varargs())
             return Error(d->location(), "Operator '{}' cannot use C varargs", t);
-        if (d->proc_type()->is_variadic())
+        if (type->is_variadic())
             return Error(d->location(), "Operator '{}' cannot be variadic", t);
     }
 
@@ -625,10 +662,10 @@ bool Sema::CheckOverloadedOperator(ProcDecl* d, bool builtin_operator) {
     // only builtin types.
     if (
         not builtin_operator and
-        not IsUserDefinedOverloadedOperator(t, d->param_types_no_intent() | rgs::to<SmallVector<Type, 10>>())
+        not IsUserDefinedOverloadedOperator(t, argument_types)
     ) {
         Error(d->location(), "At least one argument of overloaded operator must be a struct type");
-        Remark("Current arguments: {}", utils::join(d->param_types_no_intent()));
+        Remark("Current arguments: {}", utils::join(argument_types));
         return false;
     }
 
@@ -650,9 +687,8 @@ auto Sema::PerformOverloadResolution(
     TupleExpr* call_args,
     bool is_associated_call,
     SLoc call_loc,
-    Conversion::InitialiserCallData* deferred,
     bool* hard_error
-) -> std::pair<Ptr<ProcDecl>, SmallVector<Expr*>> {
+) -> std::optional<Conversion::CallData> {
     bool hard_error_local;
     if (hard_error == nullptr) hard_error = &hard_error_local;
     *hard_error = false;
@@ -717,22 +753,68 @@ auto Sema::PerformOverloadResolution(
             c.status.get<Candidate::Viable>().arg_list = arg_lists.add(std::move(*resolved));
         }
 
+        // Initialise the conversion rank to Exact for each argument.
+        auto& viable = c.status.get<Candidate::Viable>();
+        viable.ranking.reset(call_args->num_values());
+
         // Candidate is a regular procedure.
         if (not templ) return true;
 
-        // Candidate is a template.
-        SmallVector<TypeLoc, 6> types;
-        for (const auto& arg : arg_lists[c.arg_list()]) types.emplace_back(arg->type, arg->location());
-        c.subst = RequestTemplateSubstitution(templ, types);
+        // Handle a compile-time parameter.
+        //
+        // The rest of the overload resolution code below only deals with runtime
+        // parameters; this includes computing the rank of an overload. Compile-time
+        // parameters are ranked here ahead of time as part of substitution.
+        auto& source_args = arg_lists[c.arg_list()];
+
+        // Perform template substitution and prepare constant arguments.
+        c.subst = RequestTemplateSubstitution(
+            c,
+            source_args,
+            is_associated_call,
+            *hard_error
+        );
 
         // If there was a hard error, abort overload resolution entirely.
-        if (c.subst.data.is<SubstitutionResult::Error>()) {
+        if (*hard_error or c.subst.data.is<SubstitutionResult::Error>()) {
             *hard_error = true;
             return false;
         }
 
-        // Otherwise, we can still try and continue with overload resolution.
-        if (not c.subst.success()) c.status = Candidate::DeductionError{};
+        // This candidate is not viable; mark it as invalid.
+        if (auto failure = c.subst.data.get_if<SubstitutionResult::ArgumentNotConstant>()) {
+            c.status = Candidate::ParamInitFailed{std::move(failure->diags), failure->param_index};
+        } else if (not c.subst.success()) {
+            c.status = Candidate::DeductionError{};
+        }
+
+        // This candidate is still viable; remove the compile-time parameters
+        // from the signature if there are any.
+        else if (
+            auto constants = c.subst.success()->signature->compile_time_params();
+            not constants.empty()
+        ) {
+            CandidateArgumentLists::List runtime_args;
+            usz constant = 0;
+
+            for (auto [index, arg] : enumerate(source_args.values)) {
+                // This is a constant; skip it.
+                if (constant < constants.size() and constants[constant].index == index) {
+                    ++constant;
+                    continue;
+                }
+
+                // This is a runtime parameter; compile-time parameters may be interspersed
+                // arbitrarly with runtime ones, so we need to maintain a mapping between
+                // the indices of the arguments as written in source and their corresponding
+                // runtime parameters.
+                runtime_args.values.push_back(arg);
+                runtime_args.source_indices.push_back(source_args.source_indices[index]);
+            }
+
+            viable.arg_list = arg_lists.add(std::move(runtime_args));
+        }
+
         return true;
     };
 
@@ -749,6 +831,7 @@ auto Sema::PerformOverloadResolution(
     auto CheckCandidate = [&](Candidate& c) -> bool {
         auto ty = c.proc_type();
         auto params = ty->params();
+        auto& arguments = arg_lists[c.arg_list()];
 
         // Convert an argument to the corresponding parameter type.
         auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
@@ -760,7 +843,7 @@ auto Sema::PerformOverloadResolution(
             auto& p = params[param_index];
             if (not CheckVariableType(p.type, loc)) {
                 *hard_error = true;
-                c.status = Candidate::ParamInitFailed{{}, param_index};
+                c.status = Candidate::ParamInitFailed{{}, c.source_param_index(param_index)};
                 return false;
             }
 
@@ -768,12 +851,16 @@ auto Sema::PerformOverloadResolution(
                 p,
                 args,
                 loc,
-                is_associated_call and param_index == 0
+                is_associated_call and param_index == 0 and
+                not arguments.source_indices.empty() and arguments.source_indices.front() == 0
             );
 
             // If this failed, stop checking this candidate.
             if (not seq_or_err.has_value()) {
-                c.status = Candidate::ParamInitFailed{std::move(seq_or_err.error()), param_index};
+                c.status = Candidate::ParamInitFailed{
+                    std::move(seq_or_err.error()),
+                    c.source_param_index(param_index),
+                };
                 return false;
             }
 
@@ -783,8 +870,7 @@ auto Sema::PerformOverloadResolution(
         };
 
         // Build the conversion sequence for each argument.
-        auto& arguments = arg_lists[c.arg_list()];
-        ConvertArgumentsForCall(arguments, c.callee, ConvertArg, call_loc);
+        ConvertArgumentsForCall(arguments.values, ty, ConvertArg, call_loc);
 
         // If this is no longer viable, stop.
         auto st = c.status.get_if<Candidate::Viable>();
@@ -795,17 +881,17 @@ auto Sema::PerformOverloadResolution(
         for (auto [seq, param] : zip_equal(st->conversions, params))
             parameter_ranks.push_back(seq.rank(param.variadic));
 
-        // Append ranks in *source order*, i.e. before named argument reordering;
+        // Set ranks in *source order*, i.e. before named argument reordering;
         // this is because we care about how bad the conversion rank of any one
         // *argument* is, not whatever the rank for the nth parameter of a particular
         // candidate happens to be.
-        for (auto [i, arg] : enumerate(call_args->values())) {
-            auto index = call_args->is_named()
-                ? utils::index_of<usz>(arguments, arg).value()
-                : i;
-
-            if (c.callee.is_variadic()) index = std::min(index, params.size() - 1);
-            st->ranking.add(
+        //
+        // This pass is for *runtime* arguments only; compile-time arguments have
+        // already had their rank set during substitution.
+        for (auto [i, source_index] : enumerate(arguments.source_indices)) {
+            auto index = ty->is_variadic() ? std::min(i, params.size() - 1) : i;
+            st->ranking.set(
+                source_index,
                 index < parameter_ranks.size()
                     ? parameter_ranks[index]
                     : ConversionRanking::Rank::Varargs
@@ -876,32 +962,12 @@ auto Sema::PerformOverloadResolution(
             final_callee = c->callee.cast<ProcDecl>();
         }
 
-        auto& args = arg_lists[c->arg_list()];
-
-        // If we’re building a conversion sequence, collect the results of
-        // overload resolution and store them for later.
-        if (deferred) {
-            deferred->proc = final_callee;
-            deferred->args = llvm::to_vector(args);
-            auto& conversions = c->status.get<Candidate::Viable>().conversions;
-            for (auto& conversion : conversions) deferred->conversions.push_back(std::move(conversion));
-            return {final_callee, {}};
-        }
-
-        // Now is the time to apply the argument conversions.
-        SmallVector<Expr*> actual_args;
-        actual_args.reserve(args.size());
-        ArrayRef conversions(c->status.get<Candidate::Viable>().conversions);
-        bool ok = true;
-        auto ConvertArg = [&](u32 param_index, ArrayRef<Expr*> args, SLoc loc) {
-            auto value = ApplyConversionSequence(args, conversions[param_index], loc);
-            if (value) actual_args.push_back(value.get());
-            else ok = false;
-        };
-
-        ConvertArgumentsForCall(args, final_callee, ConvertArg, call_loc);
-        if (not ok) return {};
-        return {final_callee, std::move(actual_args)};
+        Conversion::CallData call;
+        call.proc = final_callee;
+        call.args = arg_lists[c->arg_list()].values;
+        auto& conversions = c->status.get<Candidate::Viable>().conversions;
+        for (auto& conversion : conversions) call.conversions.push_back(std::move(conversion));
+        return call;
     }
 
     ReportOverloadResolutionFailure(candidates, call_args, call_loc);
@@ -916,6 +982,7 @@ void Sema::FormatTempSubstFailure(
     info.data.visit(utils::Overloaded{// clang-format off
         [](TemplateSubstitution*) { Unreachable("Invalid template even though substitution succeeded?"); },
         [](SubstitutionResult::Error) { Unreachable("Should have bailed out earlier on hard error"); },
+        [](const SubstitutionResult::ArgumentNotConstant&) { Unreachable("Reported as parameter initialisation failure"); },
         [&](SubstitutionResult::ConstraintNotSatisfied) {
             out += "'%1(where%)' clause evaluated to '%1(false%)'";
         },

@@ -1,0 +1,33 @@
+// V %srcc --sema --verify %s
+program test;
+
+struct Box { value: int; init (x: int) = ::(x); }
+
+// Constant binding must not break a tie between equal argument conversions.
+proc constant_record ($x: Box) = 1;
+proc constant_record (x: Box?) = 2;
+#assert constant_record((1,)) == 2; // expected-error: Overload resolution failed in call to 'constant_record'
+proc runtime_record (x: Box) = 1;
+proc runtime_record (x: Box?) = 2;
+#assert runtime_record((1,)) == 2; // expected-error: Overload resolution failed in call to 'runtime_record'
+
+proc constant_second (x: Box?) = 2;
+proc constant_second ($x: Box) = 1;
+constant_second((1,)); // expected-error: Overload resolution failed in call to 'constant_second'
+proc optional_constant (x: Box) = 1;
+proc optional_constant ($x: Box?) = 2;
+optional_constant((1,)); // expected-error: Overload resolution failed in call to 'optional_constant'
+
+proc same ($x: int) = 1;
+proc same (x: int) = 2;
+same(42); // expected-error: Overload resolution failed in call to 'same'
+proc cached ($x: i128) = 1;
+proc cached (x: i128?) = 2;
+cached(1 as i128);
+cached(1); // expected-error: Overload resolution failed in call to 'cached'
+
+// Apply the same rule in initialiser overload sets and deferred conversions.
+struct Factory { init ($x: Box) = 1; init (x: Box?) = 2; }
+Factory((1,)); // expected-error: Overload resolution failed in call to 'init'
+struct Storage { value: int; init ($x: Box) = ::(1); init (x: Box?) = ::(2); }
+var stored: Storage = ((1,)); // expected-error: Overload resolution failed in call to 'init'

@@ -22,7 +22,7 @@ TOKEN(Identifier, "<identifier>")
 TOKEN(Integer, "<integer>")
 TOKEN(IntegerType, "<integer type>")
 TOKEN(StringLiteral, "<string literal>")
-TOKEN(TemplateType, "<template type>")
+TOKEN(TemplateParameter, "<template parameter>")
 TOKEN(Unquote, "<unquote>") // Marker for an unquote that needs to be inserted here.
 
 KEYWORD(Alias, "alias")

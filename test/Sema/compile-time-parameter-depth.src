@@ -1,0 +1,6 @@
+// V %srcc --sema --verify %s
+program test;
+
+// The constraint recurses before a substituted signature can be cached.
+proc recursive ($n: int) -> int where recursive(n) > 0 { return n; } // expected-error: Exceeded maximum template substitution nesting depth (128)
+recursive(0);

@@ -213,6 +213,34 @@ bool TypeBase::can_init_from_no_args() const {
     return InitCheckHelper<&RecordLayout::has_init_from_no_args>(this);
 }
 
+bool TypeBase::can_persist_as_bytes(TranslationUnit& tu) const {
+    return visit(utils::Overloaded{
+        [&](const RecordType* record) {
+            return record->layout().bits().can_persist_as_bytes;
+        },
+        [&](const ArrayType* array) {
+            // Records don't include tail padding in 'can_persist_as_bytes',
+            // so check for that separately here.
+            return array->dimension() == 0 or (
+                array->elem()->can_persist_as_bytes(tu) and
+                array->elem()->memory_size(tu) == array->elem()->array_size(tu)
+            );
+        },
+        [&](const OptionalType*) { return false; }, // A disengaged value has an inactive payload.
+        [&](const RangeType* range) {
+            return range->elem()->can_persist_as_bytes(tu) and
+                   range->memory_size(tu) == range->elem()->memory_size(tu) * 2;
+        },
+        [&](const EnumType* enumeration) { return enumeration->elem()->can_persist_as_bytes(tu); },
+        [&](const IntType* integer) { return integer->bit_width() == integer->memory_size(tu); },
+        [&](const BuiltinType* builtin) {
+            if (builtin->is_integer_or_bool()) return builtin->bit_width(tu) == builtin->memory_size(tu);
+            return builtin->memory_size(tu) == Size();
+        },
+        [&](const TypeBase*) { return false; },
+    });
+}
+
 bool TypeBase::can_zero_init() const {
     return InitCheckHelper<&RecordLayout::has_zero_init>(this);
 }
@@ -856,6 +884,7 @@ void RecordLayout::Builder::add_field(Type ty) {
     // TODO: Maybe optimise layout if this isn’t meant for FFI.
     if (not bits.is_union) {
         auto offset = sz.align(fa);
+        bits.can_persist_as_bytes &= offset == sz;
         sz = offset + ty->memory_size(tu);
         offsets.push_back(offset);
     } else {
@@ -866,6 +895,7 @@ void RecordLayout::Builder::add_field(Type ty) {
     bits.init_from_no_args &= ty->can_init_from_no_args();
     bits.zero_init &= ty->can_zero_init();
     bits.contains_pointer |= ty->is_or_contains_pointer();
+    bits.can_persist_as_bytes &= ty->can_persist_as_bytes(tu);
     bits.can_copy &= ty->can_copy();
 
     // Update props.
@@ -883,6 +913,7 @@ auto RecordLayout::Builder::build(
         bits.zero_init = false;
     }
 
+    bits.can_persist_as_bytes &= not bits.is_union;
     return {RecordLayout::Get(tu, offsets, sz, sz.align(a), a, bits), props};
 }
 

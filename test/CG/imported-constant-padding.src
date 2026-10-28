@@ -1,0 +1,59 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s -I test/inputs
+program test;
+import <constant-padding.h> as c;
+
+proc bytes = eval c::ConstantBytes();
+proc padding = eval c::ConstantPadding();
+proc bitfield = eval c::ConstantBits();
+proc union_ = eval c::ConstantUnion();
+
+// * @0 = "\00\00\00\00\00\00\00\00", align 4
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S5bytesFT13ConstantBytesE.1 private ccc -> i64 {
+// +     #0 = 8, align 4
+// +
+// + entry:
+// +     copy #0 <- @0, 8
+// +     %0 = load i64, #0, align 8
+// +     ret i64 %0
+// + }
+// +
+// + proc _S7paddingFT15ConstantPaddingE.2 private ccc -> i64 {
+// +     #0 = 8, align 4
+// +     #1 = 8, align 4
+// +
+// + entry:
+// +     store #1, i8 0, align 1
+// +     %0 = ptradd #1, 4
+// +     store %0, i32 0, align 4
+// +     copy #0 <- #1, 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc _S8bitfieldFT12ConstantBitsE.3 private ccc -> i32 {
+// +     #0 = 4, align 4
+// +     #1 = 4, align 4
+// +
+// + entry:
+// +     store #1, i32 0, align 4
+// +     copy #0 <- #1, 4
+// +     %0 = load i32, #0, align 4
+// +     ret i32 %0
+// + }
+// +
+// + proc _S6union_FT13ConstantUnionE.4 private ccc -> i32 {
+// +     #0 = 4, align 4
+// +     #1 = 4, align 4
+// +
+// + entry:
+// +     store #1, i32 0, align 4
+// +     copy #0 <- #1, 4
+// +     %0 = load i32, #0, align 4
+// +     ret i32 %0
+// + }

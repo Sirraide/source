@@ -1,0 +1,32 @@
+// V %srcc --eval %s
+program test;
+
+// Constant viability changes which candidates exist, never their ranking.
+proc fallback ($x: int) = 1;
+proc fallback (x: int) = 2;
+proc runtime_call (x: int) = fallback(x);
+assert runtime_call(42) == 2;
+
+// Real type templates retain the existing deduction tie-break.
+proc concrete ($x: int) = 1;
+proc concrete (x: $T) = 2;
+assert concrete(42) == 1;
+proc both_constant ($x: int) = 1;
+proc both_constant ($x: $T) = 2;
+assert both_constant(42) == 1;
+proc inferred ($x: var) = 1;
+proc inferred (x: int) = 2;
+assert inferred(42) == 2;
+
+// Conversion quality still takes precedence over template tie-breaks.
+proc conversion ($x: i128) = 1;
+proc conversion (x: $T) = 2;
+assert conversion(42) == 2;
+proc better ($x: int) = 1;
+proc better (x: int?) = 2;
+assert better(42) == 1;
+
+// Variadic preference remains independent of constant binding.
+proc fixed ($x: int, y: int) = 1;
+proc fixed (values: int...) = 2;
+assert fixed(1, 2) == 1;

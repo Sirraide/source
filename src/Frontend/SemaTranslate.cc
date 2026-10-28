@@ -154,6 +154,20 @@ void Sema::Translate(bool load_runtime) {
         if (s->layout().size() == Size()) DiagnoseZeroSizedTypeInNativeProc(s, loc, is_return);
     }
 
+    // FIXME: Implement serialising templates.
+    for (auto decl : tu->exports.sorted_decls()) {
+        auto type = dyn_cast<TypeDecl>(decl);
+        if (not type) continue;
+        auto record = dyn_cast<RecordType>(type->type);
+        if (not record) continue;
+        for (auto init : record->initialisers()) {
+            if (isa<ProcTemplateDecl>(init)) Error(
+                init->location(),
+                "Exporting initialiser templates is not supported yet"
+            );
+        }
+    }
+
     // Sanity check.
     Assert(proc_stack.size() == 1);
     Assert(scope_stack.size() == 1);
@@ -763,8 +777,9 @@ auto Sema::TranslateMemberAccess(
 
         // Filter out all declarations whose associated type doesn't match.
         llvm::erase_if(res.decls, [&](Decl* d) {
-            auto proc = dyn_cast<ProcDecl>(d);
-            return not proc or proc->props.associated_type != ty;
+            if (auto proc = dyn_cast<ProcDecl>(d)) return proc->props.associated_type != ty;
+            if (auto proc = dyn_cast<ProcTemplateDecl>(d)) return proc->props.associated_type != ty;
+            return true;
         });
 
         // If this leaves us with nothing, fail.
@@ -1122,23 +1137,41 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
         Error(parsed->loc, "Variadic function cannot be '%1(varargs%)'");
     }
 
-    // Check if this is a template.
-    TemplateParamDeductionInfo deduction_info;
-    auto IsTemplate = [&] {
-        for (auto [i, p] : enumerate(parsed->params())) {
-            p->traverse([&](ParsedTemplateType* t) {
-                deduction_info[t->name].insert(u32(i));
-            });
+    // Diagnose invalid specifiers on compile-time parameters.
+    for (auto decl : parsed->params()) {
+        if (not decl->compile_time) continue;
+        if (decl->intent == Intent::In) {
+            Warn(decl->loc, "'%1(in%)' is redundant on a compile-time parameter");
+        } else if (decl->intent != Intent::Move) {
+            Error(
+                decl->loc,
+                "Compile-time parameters cannot have '%1({}%)' intent",
+                decl->intent
+            );
         }
 
+        if (decl->immutable) Warn(
+            decl->loc,
+            "'%1(val%)' is redundant on a compile-time parameter"
+        );
 
-        if (not deduction_info.empty()) return true;
+        decl->intent = Intent::Move;
+        decl->immutable = false;
+    }
 
-        // A function with a 'var' parameter is also a template.
-        return rgs::any_of(parsed->type->param_types(), [&](auto& p) {
-            return IsBuiltinVarType(p.type);
+    // Type deduction and constant binding both require specialisation, but only
+    // the former participates in the template tie-break during overload ranking.
+    TemplateParamDeductionInfo deduction_info;
+    for (auto [i, p] : enumerate(parsed->params())) {
+        p->traverse([&](ParsedTemplateType* t) {
+            deduction_info[t->name].insert(u32(i));
         });
-    };
+    }
+
+    bool requires_type_deduction = not deduction_info.empty() or
+        rgs::any_of(parsed->type->param_types(), [&](auto& p) { return IsBuiltinVarType(p.type); });
+    bool is_template = requires_type_deduction or
+        rgs::any_of(parsed->type->param_types(), &ParsedParameter::compile_time);
 
     // Determine inherited properties.
     InheritedProcedureProperties props;
@@ -1202,13 +1235,14 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 
     // If this is a template, we can’t do much right now.
     Decl* decl{};
-    if (IsTemplate()) {
+    if (is_template) {
         auto temp = ProcTemplateDecl::Create(
             *tu,
             parsed,
             curr_scope() == global_scope() ? nullptr : curr_proc().proc,
             props,
-            has_variadic_param
+            has_variadic_param,
+            requires_type_deduction
         );
 
         if (parsed->name.is_init()) {
@@ -1367,6 +1401,12 @@ auto Sema::TranslateNamedType(ParsedDeclRefExpr* parsed) -> Opt<Type> {
     if (auto ttd = dyn_cast<TemplateTypeParamDecl>(res.decls.front()))
         return ttd->arg_type();
 
+    // Compile-time parameter of type 'type'.
+    if (
+        auto constant = dyn_cast<CompileTimeParamDecl>(res.decls.front());
+        constant and constant->value->type == Type::TypeTy
+    ) return constant->value->value->cast<Type>();
+
     // Type decl (struct or type alias).
     if (auto s = dyn_cast<TypeDecl>(res.decls.front()))
         return s->type;
@@ -1387,7 +1427,8 @@ auto Sema::TranslateProcType(
     ParsedProcType* parsed,
     bool allow_immutable_params,
     ArrayRef<Type> deduced_var_parameters,
-    llvm::function_ref<ProcDecl*(ProcType*)> declare
+    llvm::function_ref<ProcDecl*(ProcType*)> declare,
+    llvm::function_ref<bool(u32, ParamTypeData&)> bind_parameter
 ) -> Opt<Type> {
     // Sanity check.
     //
@@ -1404,7 +1445,13 @@ auto Sema::TranslateProcType(
 
     SmallVector<ParamTypeData, 10> params;
     u32 var_params = 0;
-    for (auto a : parsed->param_types()) {
+    for (auto [index, parsed_param] : enumerate(parsed->param_types())) {
+        auto a = parsed_param;
+        if (a.compile_time) {
+            a.intent = Intent::Move;
+            a.immutable = false;
+        }
+
         // Binding mutability belongs to a declaration, not a procedure type.
         bool has_error = a.immutable and not allow_immutable_params;
         if (has_error) Error(a.type->loc, "'%1(val%)' is only allowed in procedure declarations");
@@ -1427,9 +1474,12 @@ auto Sema::TranslateProcType(
         // harmful if we emit LLVM IR for it, and we won’t be getting there
         // anyway because of this error.
         //
-        // see DeferredNativeProcArgOrReturn.
-        if (parsed->attrs.native and IsZeroSizedOrIncomplete(ty))
-            DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
+        // See also DeferredNativeProcArgOrReturn.
+        if (
+            not a.compile_time and
+            parsed->attrs.native and
+            IsZeroSizedOrIncomplete(ty)
+        ) DiagnoseZeroSizedTypeInNativeProc(ty, a.type->loc, false);
 
         // If this is a variadic parameter, convert it to a slice.
         //
@@ -1451,8 +1501,12 @@ auto Sema::TranslateProcType(
             ty = Type::VoidTy;
         }
 
-        params.emplace_back(a.intent, ty, a.variadic, a.exact);
-        params.back().contains_error = has_error;
+        ParamTypeData param(a.intent, ty, a.variadic, a.exact);
+        param.contains_error = has_error;
+        if (bind_parameter and not bind_parameter(u32(index), param)) return {};
+
+        // Compile-time parameters don't make it into the runtime signature.
+        if (not a.compile_time) params.push_back(param);
     }
 
     auto type = ProcType::Get(

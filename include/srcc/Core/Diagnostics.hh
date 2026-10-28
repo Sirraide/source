@@ -15,6 +15,7 @@
 namespace srcc {
 class Diagnostic;
 class DiagnosticsEngine;
+class CollectDiagnosticsEngine;
 class StreamingDiagnosticsEngine;
 class VerifyDiagnosticsEngine;
 class DiagsProducer;
@@ -233,6 +234,24 @@ protected:
 
     /// Override this to implement the actual reporting.
     virtual void report_impl(Diagnostic&& diag) = 0;
+};
+
+/// Collect diagnostics without emitting them or setting an error flag.
+class srcc::CollectDiagnosticsEngine final : public DiagnosticsEngine {
+public:
+    SmallVector<Diagnostic> diagnostics;
+
+    explicit CollectDiagnosticsEngine(const Context& ctx) : DiagnosticsEngine(ctx) {}
+
+    auto get_current_pending_diagnostic() -> Diagnostic* override {
+        return diagnostics.empty() ? nullptr : &diagnostics.back();
+    }
+
+private:
+    void report_impl(Diagnostic&& diagnostic) override {
+        record_statistics(diagnostic);
+        diagnostics.push_back(std::move(diagnostic));
+    }
 };
 
 /// Diagnostics engine that outputs to a stream.

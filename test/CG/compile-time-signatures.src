@@ -1,0 +1,158 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s
+program test;
+
+proc mixed ($t: type, first: t, $offset: int, second: t) = first + second + offset;
+proc inferred ($value: $T) = value;
+proc variadic ($tag: int) varargs = tag;
+struct Item { value: int; init ($t: type, $offset: int, value: t) = ::(offset + value); }
+
+proc caller (value: int) -> int {
+    var first = mixed(int, value, 3, 4);
+    var second = mixed(second: value, offset: 3, t: int, first: 4);
+    var item: Item = (int, 5, value);
+    return first + second + item.value + inferred(6) + variadic(7, value, 8);
+}
+
+// Compile-time-only inputs have no native ABI representation to check or emit.
+proc native_empty ($ignored: void, value: int) native -> int = value;
+proc native_caller (value: int) = native_empty({}, value);
+
+// * @0 = "+\00"
+// + @1 = "integer overflow\00"
+// + @2 = "compile-time-signatures.src\00"
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc _S6callerFiiE.4 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 8, align 8
+// +     #3 = 8, align 8
+// +     #4 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 _S5mixedFiiiE.7(i64 %1 noundef, i64 4 noundef)
+// +     store #1, i64 %2, align 8
+// +     %3 = load i64, #0, align 8
+// +     %4 = call ccc i64 _S5mixedFiiiE.7(i64 4 noundef, i64 %3 noundef)
+// +     store #2, i64 %4, align 8
+// +     %5 = load i64, #0, align 8
+// +     %6 = call ccc i64 _S.4initFT4ItemiE$T4Item.8(i64 %5 noundef)
+// +     store #3, i64 %6, align 8
+// +     %7 = load i64, #1, align 8
+// +     %8 = load i64, #2, align 8
+// +     %9 = sadd ov i64 %7, %8
+// +     br %9:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-signatures.src":13:18) arithmetic(ptr #4)
+// +
+// + bb2:
+// +     %19 = load i64, #3, align 8
+// +     %20 = sadd ov i64 %9:0, %19
+// +     br %20:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at loc("compile-time-signatures.src":13:27) arithmetic(ptr #4)
+// +
+// + bb4:
+// +     %30 = call ccc i64 _S8inferredFiE.9()
+// +     %31 = sadd ov i64 %20:0, %30
+// +     br %31:1 to bb5 else bb6
+// +
+// + bb5:
+// +     abort at loc("compile-time-signatures.src":13:40) arithmetic(ptr #4)
+// +
+// + bb6:
+// +     %41 = load i64, #0, align 8
+// +     %42 = call variadic ccc i64 _S8variadicFiE.10(i64 %41, i64 8)
+// +     %43 = sadd ov i64 %31:0, %42
+// +     br %43:1 to bb7 else bb8
+// +
+// + bb7:
+// +     abort at loc("compile-time-signatures.src":13:54) arithmetic(ptr #4)
+// +
+// + bb8:
+// +     ret i64 %43:0
+// + }
+// +
+// + proc _S5mixedFiiiE.7 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = load i64, #1, align 8
+// +     %4 = sadd ov i64 %2, %3
+// +     br %4:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-signatures.src":4:66) arithmetic(ptr #2)
+// +
+// + bb2:
+// +     %14 = sadd ov i64 %4:0, 3
+// +     br %14:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at loc("compile-time-signatures.src":4:75) arithmetic(ptr #2)
+// +
+// + bb4:
+// +     ret i64 %14:0
+// + }
+// +
+// + proc _S.4initFT4ItemiE$T4Item.8 (i64 %0 noundef) external ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = sadd ov i64 5, %1
+// +     br %2:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-signatures.src":7:79) arithmetic(ptr #2)
+// +
+// + bb2:
+// +     store #1, i64 %2:0, align 8
+// +     %12 = load i64, #1, align 8
+// +     ret i64 %12
+// + }
+// +
+// + proc _S8inferredFiE.9 private ccc -> i64 {
+// + entry:
+// +     ret i64 6
+// + }
+// +
+// + proc _S8variadicFiE.10 variadic private ccc -> i64 {
+// + entry:
+// +     ret i64 7
+// + }
+// +
+// + proc _S13native_callerFiiE.5 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 native_empty(i64 %1 noundef)
+// +     ret i64 %2
+// + }
+// +
+// + proc native_empty (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }

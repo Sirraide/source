@@ -133,7 +133,7 @@
 <proc-where>  ::= WHERE <expr>
 <proc-body>   ::= [ <expr-block> | "=" <expr> ]
 <param-decl>  ::= [ WITH ] [ "exact" ] [ <intent> ] [ VAL ] <param-rest>
-<param-rest>  ::= [ IDENT ":" ] <type> [ "..." ] | "this"
+<param-rest>  ::= [ IDENT ":" ] <type> [ "..." ] | TEMPLATE-PARAMETER ":" <type> | "this"
 <intent>      ::= IN | OUT | INOUT
 <enumerator>  ::= IDENT [ "=" <expr> ]
 <deleter>     ::= DELETE "{ <stmts> "}"

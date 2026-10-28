@@ -1,0 +1,240 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s
+program test;
+
+proc only ($x: int) = x;
+proc mixed (left: int, $offset: int, right: int) = left + offset + right;
+proc computed -> int = 7;
+proc caller (value: int) = mixed(value, computed(), 3);
+proc named (value: int) = mixed(right: value, offset: 9, left: 2);
+proc typed ($t: type, value: t) -> t = value;
+proc typed_caller (value: int) = typed(int, value);
+
+var one = only(1);
+var two = only(2);
+var again = only(1 + 0);
+struct Constructed { value: int; init ($n: int, value: int) = ::(n + value); }
+proc initialise (value: int) -> Constructed = Constructed(4, value);
+
+proc c_varargs ($tag: int, value: int) varargs -> int = value;
+proc variadic_caller (value: int) = c_varargs(3, value, 8, 9);
+struct VariadicFactory { value: int; init ($tag: int, value: int) varargs = ::(value); }
+proc factory (value: int) = VariadicFactory(4, value, 8, 9);
+var implicit: VariadicFactory = (5, 6, 7, 8);
+
+// * @_S3one.1 = private 8, align 8
+// + @_S3two.2 = private 8, align 8
+// + @_S5again.3 = private 8, align 8
+// + @_S8implicit.4 = private 8, align 8
+// + @0 = "+\00"
+// + @1 = "integer overflow\00"
+// + @2 = "compile-time-parameters.src\00"
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     %0 = call ccc i64 _S4onlyFiE.15()
+// +     store @_S3one.1, i64 %0, align 8
+// +     %1 = call ccc i64 _S4onlyFiE.16()
+// +     store @_S3two.2, i64 %1, align 8
+// +     %2 = call ccc i64 _S4onlyFiE.15()
+// +     store @_S5again.3, i64 %2, align 8
+// +     %3 = call variadic ccc i64 _S.4initFT15VariadicFactoryiE$T15VariadicFactory.22(i64 6 noundef, i64 7, i64 8)
+// +     store @_S8implicit.4, i64 %3, align 8
+// +     ret
+// + }
+// +
+// + proc _S4onlyFiE.15 private ccc -> i64 {
+// + entry:
+// +     ret i64 1
+// + }
+// +
+// + proc _S4onlyFiE.16 private ccc -> i64 {
+// + entry:
+// +     ret i64 2
+// + }
+// +
+// + proc _S.4initFT15VariadicFactoryiE$T15VariadicFactory.22 (i64 %0 noundef) variadic external ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #1, align 8
+// +     ret i64 %2
+// + }
+// +
+// + proc _S8computedFiE.3 private ccc -> i64 {
+// + entry:
+// +     ret i64 7
+// + }
+// +
+// + proc _S6callerFiiE.4 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 _S5mixedFiiiE.12(i64 %1 noundef, i64 3 noundef)
+// +     ret i64 %2
+// + }
+// +
+// + proc _S5mixedFiiiE.12 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = sadd ov i64 %2, 7
+// +     br %3:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-parameters.src":5:57) arithmetic(ptr #2)
+// +
+// + bb2:
+// +     %13 = load i64, #1, align 8
+// +     %14 = sadd ov i64 %3:0, %13
+// +     br %14:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at loc("compile-time-parameters.src":5:66) arithmetic(ptr #2)
+// +
+// + bb4:
+// +     ret i64 %14:0
+// + }
+// +
+// + proc _S5namedFiiE.5 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 _S5mixedFiiiE.13(i64 2 noundef, i64 %1 noundef)
+// +     ret i64 %2
+// + }
+// +
+// + proc _S5mixedFiiiE.13 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #0, align 8
+// +     %3 = sadd ov i64 %2, 9
+// +     br %3:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-parameters.src":5:57) arithmetic(ptr #2)
+// +
+// + bb2:
+// +     %13 = load i64, #1, align 8
+// +     %14 = sadd ov i64 %3:0, %13
+// +     br %14:1 to bb3 else bb4
+// +
+// + bb3:
+// +     abort at loc("compile-time-parameters.src":5:66) arithmetic(ptr #2)
+// +
+// + bb4:
+// +     ret i64 %14:0
+// + }
+// +
+// + proc _S12typed_callerFiiE.7 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 _S5typedFiiE.14(i64 %1 noundef)
+// +     ret i64 %2
+// + }
+// +
+// + proc _S5typedFiiE.14 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc _S10initialiseFT11ConstructediE.8 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call ccc i64 _S.4initFT11ConstructediE$T11Constructed.18(i64 %1 noundef)
+// +     store #1, i64 %2, align 8
+// +     %3 = load i64, #1, align 8
+// +     ret i64 %3
+// + }
+// +
+// + proc _S.4initFT11ConstructediE$T11Constructed.18 (i64 %0 noundef) external ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +     #2 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = sadd ov i64 4, %1
+// +     br %2:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("compile-time-parameters.src":15:68) arithmetic(ptr #2)
+// +
+// + bb2:
+// +     store #1, i64 %2:0, align 8
+// +     %12 = load i64, #1, align 8
+// +     ret i64 %12
+// + }
+// +
+// + proc _S15variadic_callerFiiE.10 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call variadic ccc i64 _S9c_varargsFiiE.19(i64 %1 noundef, i64 8, i64 9)
+// +     ret i64 %2
+// + }
+// +
+// + proc _S9c_varargsFiiE.19 (i64 %0 noundef) variadic private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc _S7factoryFT15VariadicFactoryiE.11 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     %2 = call variadic ccc i64 _S.4initFT15VariadicFactoryiE$T15VariadicFactory.21(i64 %1 noundef, i64 8, i64 9)
+// +     store #1, i64 %2, align 8
+// +     %3 = load i64, #1, align 8
+// +     ret i64 %3
+// + }
+// +
+// + proc _S.4initFT15VariadicFactoryiE$T15VariadicFactory.21 (i64 %0 noundef) variadic external ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     store #1, i64 %1, align 8
+// +     %2 = load i64, #1, align 8
+// +     ret i64 %2
+// + }

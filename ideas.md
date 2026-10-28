@@ -601,6 +601,9 @@ f(*(1, 2, 3));
 var s2 = S(*s);
 ```
 
+## Compile-time variables
+`#var` -> mutable; `#val` -> immutable.
+
 # Failed Ideas
 ## Renaming copy to var [DEFUNCT: 'copy' (now 'byval') is can no longer be spelt in source]
 (This doesn’t work because `proc (var x)` would now be parsed with `x` as the type, even though this

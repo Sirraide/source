@@ -51,7 +51,7 @@ class RValue;
 /// in the TranslationUnit allocator.
 ///
 /// This is only used for aggregate types (structs, arrays, tuples)
-/// that do not contain pointers and whose memory representation can
+/// with no pointers, padding, or inactive payloads, whose memory representation can
 /// just be emitted as an array of bytes (rather than requiring us to
 /// emit references to other objects).
 class RawByteBuffer {
@@ -177,7 +177,7 @@ struct Closure {
     EvaluatedPointer env;
 };
 
-/// A struct/tuple value.
+/// An struct, tuple, or array.
 struct Record {
     ArrayRef<RValue*> fields;
 };
@@ -227,6 +227,7 @@ class RValue {
 
 public:
     explicit RValue() = default;
+    explicit RValue(std::monostate value, Type ty) : value(value), ty(ty) {}
     explicit RValue(APInt val, Type ty) : value(std::move(val)), ty(ty) {}
     explicit RValue(std::same_as<bool> auto val) : value(APInt(1, val ? 1 : 0)), ty(Type::BoolTy) {}
     explicit RValue(Type ty) : value(ty), ty(Type::TypeTy) {}
@@ -262,6 +263,11 @@ public:
 
     /// Print the value to a string.
     auto print(const Context* ctx = nullptr) const -> SmallUnrenderedString;
+
+    /// Profile a preserved constant by value, ignoring aggregate padding;
+    /// returns an error if this contains something that cannot be used as
+    /// a constant (e.g. a pointer to dangling stack memory in the evaluator).
+    [[nodiscard]] auto profile(llvm::FoldingSetNodeID& id) const -> Result<>;
 
     /// Get the type of this value.
     [[nodiscard]] auto type() const -> Type { return ty; }

@@ -1,0 +1,4 @@
+// V %srcc --sema --verify %s
+module test;
+export proc unsupported ($x: int) = x; // expected-error: Exporting procedure templates is not supported yet
+export struct Unsupported { init ($n: int) = ::(); } // expected-error: Exporting initialiser templates is not supported yet

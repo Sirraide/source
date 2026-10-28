@@ -25,6 +25,10 @@ let grammar = {
             "name": "keyword.other",
             "match": "\\bexact\\b(?=\\s+[a-zA-Z_$({])"
         },
+        "compile-time-parameter-name": {
+            "name": "variable.parameter.constant",
+            "match": `\\$${ident}(?=\\s*:(?!:))`
+        },
         "parameter-name": {
             "name": "variable.parameter",
             "match": `\\b${ident}(?=\\s*:(?!:))`
@@ -177,14 +181,14 @@ let grammar = {
                 "keyword.other", "entity.name.type", "keyword.other", "entity.name.function", "keyword.other"
             ]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
+            "patterns": [{ "include": "#compile-time-parameter-name" }, { "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
         },
         {
             "begin": "\\b(init)\\s*(\\()",
             "end": "\\)",
             "beginCaptures": captures(["keyword.other", "keyword.other"]),
             "endCaptures": captures(["keyword.other"], 0),
-            "patterns": [{ "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
+            "patterns": [{ "include": "#compile-time-parameter-name" }, { "include": "#parameter-name" }, { "include": "#parameter-specifier" }, { "include": "$self" }]
         },
         {
             "name": "keyword.other",

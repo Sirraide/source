@@ -124,6 +124,12 @@ public:
     /// Check if this type can be copied.
     [[nodiscard]] bool can_copy() const;
 
+    /// Whether every value of this type has a stable representation that can
+    /// be persisted as a byte buffer w/o padding etc. Tail padding is *not*
+    /// included here (except when a type with tail padding is used as the
+    /// element type of an array).
+    [[nodiscard]] bool can_persist_as_bytes(TranslationUnit& tu) const;
+
     /// Check if default initialisation for this type is zero-initialisation.
     [[nodiscard]] bool can_zero_init() const;
 
@@ -938,19 +944,25 @@ public:
         using Encoded = u8;
 
     public:
-        bool can_copy            : 1 = true;
-        bool contains_pointer    : 1 = false;
-        bool init_from_no_args   : 1 = true;
-        bool is_union            : 1 = false;
-        bool literal_initialiser : 1 = true;
-        bool zero_init           : 1 = true;
-        Encoded padding : 2{};
+        bool can_copy             : 1 = true;
+        bool can_persist_as_bytes : 1 = true;
+        bool contains_pointer     : 1 = false;
+        bool init_from_no_args    : 1 = true;
+        bool is_union             : 1 = false;
+        bool literal_initialiser  : 1 = true;
+        bool zero_init            : 1 = true;
+        Encoded padding : 1{};
 
         // Get record bits for a type that is compatible with C.
-        static auto CLikeType(bool contains_pointer, bool is_union) -> Bits {
+        static auto CLikeType(
+            bool contains_pointer,
+            bool is_union,
+            bool can_persist_as_bytes
+        ) -> Bits {
             Bits b{};
             b.contains_pointer = contains_pointer;
             b.is_union = is_union;
+            b.can_persist_as_bytes = can_persist_as_bytes;
             return b;
         }
 

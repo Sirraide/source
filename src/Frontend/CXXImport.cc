@@ -485,7 +485,18 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     });
 
     // Build the layout.
-    auto bits = RecordLayout::Bits::CLikeType(contains_pointer, rd->isUnion());
+    bool can_persist_as_bytes =
+        not contains_pointer and
+        not rd->isUnion() and
+        AST().getPaddingIntervals(AST().getCanonicalTagType(rd)).empty() and
+        not any_of(fields, [&](auto* field) { return not field->type->can_persist_as_bytes(*S.tu); });
+
+    auto bits = RecordLayout::Bits::CLikeType(
+        contains_pointer,
+        rd->isUnion(),
+        can_persist_as_bytes
+    );
+
     auto rl = RecordLayout::Get(
         *S.tu,
         offsets,

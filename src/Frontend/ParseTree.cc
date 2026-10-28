@@ -492,7 +492,7 @@ void ParsedStmt::Printer::Print(ParsedStmt* s) {
         case Kind::VarDecl: {
             auto& p = *cast<ParsedVarDecl>(s);
             PrintHeader(s, "VarDecl", false);
-            print("%4({}%){}", p.name, p.name.empty() ? "" : " ");
+            print("%4({}{}%){}", p.compile_time ? "$" : "", p.name, p.name.empty() ? "" : " ");
             if (p.intent != Intent::Move) print("%1({}%) ", p.intent);
             if (p.immutable) print("val ");
             if (p.is_static) print("static ");
@@ -758,6 +758,7 @@ auto ParsedStmt::dump_as_type() -> SmallUnrenderedString {
                         if (param.intent != Intent::Move) Format(out, "{} ", param.intent);
                         if (param.exact) out += "%1(exact%) ";
                         if (param.immutable) out += "%1(val%) ";
+                        if (param.compile_time) out += "<compile-time> ";
                         Append(param.type);
                         if (param.variadic) out += "...";
                     }

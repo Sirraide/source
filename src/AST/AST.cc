@@ -646,6 +646,12 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintChildren<Expr*>(s->values());
         },
 
+        [&](CompileTimeParamDecl* p) {
+            PrintBasicHeader(p, "CompileTimeParamDecl");
+            print(" {}\n", p->name);
+            PrintChildren<Expr*>({p->value});
+        },
+
         [&](TemplateTypeParamDecl* t) {
             PrintBasicHeader(t, "TemplateTypeParamDecl");
             print(" %3(${}%) %1(type%) {}\n", t->name, t->arg_type());

@@ -1,0 +1,20 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc ambiguous ($constant: int, value: i128) = 1;
+proc ambiguous (value: int, $constant: i128) = 2;
+ambiguous(constant: 1, value: 2); // expected-error: Overload resolution failed in call to 'ambiguous'
+ambiguous(value: 2, constant: 1); // expected-error: Overload resolution failed in call to 'ambiguous'
+
+// Diagnostics must refer to source parameters, not erased runtime indices.
+proc interleaved ($t: type, first: t, $offset: int, second: t) = second; // expected-note 2 (In argument to parameter 'second') expected-note 2 (Callee declared here)
+interleaved(int, 1, 3, true); // expected-error: Cannot convert expression of type 'bool' to 'int'
+interleaved(second: true, t: int, offset: 3, first: 1); // expected-error: Cannot convert expression of type 'bool' to 'int'
+
+struct Receiver { value: int; }
+proc Receiver::take ($self: Receiver, value: int) = value; // expected-note (In argument to parameter 'value') expected-note (Callee declared here)
+var integer = 1;
+Receiver(2).take(&integer); // expected-error: Cannot convert expression of type 'int^' to 'int'
+
+proc empty ($value: void) {}
+empty({});

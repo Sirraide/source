@@ -144,7 +144,8 @@ class srcc::Sema : public DiagsProducer {
         SmallVector<Rank> ranks;
 
     public:
-        void add(Rank rank);
+        void reset(u32 num_arguments);
+        void set(u32 argument, Rank rank);
         auto compare(const ConversionRanking& other) const -> std::partial_ordering;
     };
 
@@ -156,9 +157,13 @@ class srcc::Sema : public DiagsProducer {
         LIBBASE_MOVE_ONLY(Conversion);
 
     public:
-        struct InitialiserCallData {
+        struct CallData {
             Ptr<ProcDecl> proc;
             SmallVector<Expr*> args;
+
+            // FIXME: We never need to append to this; this should just be
+            // a fixed-sized owning ptr+size buffer instead. Add a data structure
+            // for this to libbase or use an LLVM one if there is one.
             std::vector<ConversionSequence> conversions;
         };
 
@@ -225,7 +230,7 @@ class srcc::Sema : public DiagsProducer {
         Kind kind;
         Variant< // clang-format off
             TypeAndValueCategory,
-            InitialiserCallData,
+            CallData,
             RecordInitData,
             ArrayInitData,
             ArrayBroadcastData,
@@ -238,7 +243,7 @@ class srcc::Sema : public DiagsProducer {
         Conversion(Kind kind) : kind{kind} {}
         Conversion(Kind kind, Type ty, ValueCategory val = Expr::RValue) : kind{kind}, data{TypeAndValueCategory(ty, val)} {}
         Conversion(Kind kind, u32 index) : kind{kind}, data{index} {}
-        Conversion(InitialiserCallData data) : kind{Kind::InitialiserCall}, data{std::move(data)} {}
+        Conversion(CallData data) : kind{Kind::InitialiserCall}, data{std::move(data)} {}
         Conversion(RecordInitData conversions) : kind{Kind::RecordInit}, data{std::move(conversions)} {}
         Conversion(ArrayInitData data) : kind{Kind::ArrayInit}, data{std::move(data)} {}
         Conversion(ArrayBroadcastData data) : kind{Kind::ArrayBroadcast}, data{std::move(data)} {}
@@ -252,7 +257,7 @@ class srcc::Sema : public DiagsProducer {
         static auto ArrayInit(ArrayInitData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto DefaultInit(Type ty) -> Conversion { return Conversion{Kind::DefaultInit, ty}; }
         static auto ExpandTuple() -> Conversion { return Conversion{Kind::ExpandTuple}; }
-        static auto InitialiserCall(InitialiserCallData data) -> Conversion { return Conversion{std::move(data)}; }
+        static auto InitialiserCall(CallData data) -> Conversion { return Conversion{std::move(data)}; }
         static auto IntegralCast(Type ty) -> Conversion { return Conversion{Kind::IntegralCast, ty}; }
         static auto LValueToRValue() -> Conversion { return Conversion{Kind::LValueToRValue}; }
         static auto MaterialiseTemporary() -> Conversion { return Conversion{Kind::MaterialiseTemporary}; }
@@ -461,23 +466,20 @@ class srcc::Sema : public DiagsProducer {
 
         FoldingSetNodeIDRef hash;
 
-        /// The substituted procedure type.
-        ProcType* type;
+        /// Runtime signature and compile-time source parameter metadata.
+        sema::ProcTemplateSignature* signature;
 
-        /// Procedure scope to use for instantiation.
-        Scope* scope;
-
-        /// The instantiated procedure, if we have already instantiated it.
-        ProcDecl* instantiation = nullptr;
+        /// The procedure specialisation.
+        ProcDecl* specialisation;
 
         /// Whether the constraint for this substitution is satisfied.
         bool constraint_satisfied = true;
 
         TemplateSubstitution(
             FoldingSetNodeIDRef hash,
-            ProcType* type,
-            Scope* scope
-        ) : hash{hash}, type{type}, scope{scope} {}
+            sema::ProcTemplateSignature* signature,
+            ProcDecl* specialisation
+        ) : hash{hash}, signature{signature}, specialisation{specialisation} {}
 
         void Profile(FoldingSetNodeID& id) { id = hash; }
     };
@@ -510,6 +512,12 @@ class srcc::Sema : public DiagsProducer {
             Type first_type, second_type;
         };
 
+        /// An argument to a compile-time parameter was not a compile-time constant.
+        struct ArgumentNotConstant {
+            DiagsVector diags;
+            u32 param_index;
+        };
+
         /// The constraint on the template was not satisfied.
         struct ConstraintNotSatisfied {};
 
@@ -522,6 +530,7 @@ class srcc::Sema : public DiagsProducer {
             DeductionFailed,
             DeductionAmbiguous,
             ConstraintNotSatisfied,
+            ArgumentNotConstant,
             Error
         >;
 
@@ -541,6 +550,7 @@ class srcc::Sema : public DiagsProducer {
         SubstitutionResult(DeductionFailed failed) : data{failed} {}
         SubstitutionResult(DeductionAmbiguous ambiguous) : data{ambiguous} {}
         SubstitutionResult(ConstraintNotSatisfied not_satisfied) : data{not_satisfied} {}
+        SubstitutionResult(ArgumentNotConstant failed) : data{std::move(failed)} {}
 
         /// Check if this was successful and return the substitution if so.
         auto success() const -> TemplateSubstitution* {
@@ -550,13 +560,16 @@ class srcc::Sema : public DiagsProducer {
     };
 
     /// Argument lists used during overload resolution.
-    ///
-    /// If we have named arguments, each candidate gets its own list since
-    /// we may need to apply reordering; otherwise, all candidates use the
-    /// same list.
     class CandidateArgumentLists {
     public:
-        using List = SmallVector<Expr*>;
+        struct List {
+            /// Parameter-ordered arguments, not including compile-time parameters.
+            SmallVector<Expr*> values;
+
+            /// Original call-site index of each runtime argument.
+            SmallVector<u32> source_indices;
+        };
+
         enum Id : u32 { Unnamed = 0 };
 
         /// The unordered arguments.
@@ -568,7 +581,8 @@ class srcc::Sema : public DiagsProducer {
     public:
         CandidateArgumentLists(TupleExpr* args);
 
-        /// Add a list; only valid if we have named arguments.
+        /// Add a reordered or filtered list and retain its call-site indices.
+        auto add(SmallVector<Expr*> args) -> Id;
         auto add(List args) -> Id;
 
         /// Get a list by id.
@@ -749,6 +763,9 @@ class srcc::Sema : public DiagsProducer {
         /// Get the type of this callee; only valid if this is not a template
         /// or if substitution was already performed and has succeeded.
         [[nodiscard]] auto proc_type() const -> ProcType*;
+
+        /// Map a runtime parameter back to its source declaration for diagnostics.
+        [[nodiscard]] auto source_param_index(u32 index) const -> u32;
 
         /// Get a representation of the type of this callee for use in a
         /// diagnostic; it is always valid to call this.
@@ -1177,7 +1194,11 @@ private:
     );
 
     /// Check if the declaration of an overloaded operator is well-formed.
-    bool CheckOverloadedOperator(ProcDecl* d, bool builtin_operator);
+    bool CheckOverloadedOperator(
+        ProcDecl* d,
+        bool builtin_operator,
+        Ptr<sema::ProcTemplateSignature> signature = {}
+    );
 
     /// Check that a type is valid for a variable declaration.
     [[nodiscard]] bool CheckVariableType(Type ty, SLoc loc);
@@ -1357,9 +1378,8 @@ private:
         TupleExpr* args,
         bool is_associated_call,
         SLoc call_loc,
-        Conversion::InitialiserCallData* deferred = nullptr,
         bool* hard_error = nullptr
-    ) -> std::pair<Ptr<ProcDecl>, SmallVector<Expr*>>;
+    ) -> std::optional<Conversion::CallData>;
 
     /// Issue an error if 'ty' is deduced somehow.
     bool ProhibitDeducedTypes(Type ty, SLoc loc);
@@ -1496,8 +1516,10 @@ private:
 
     /// Substitute types in a procedure template.
     auto RequestTemplateSubstitution(
-        ProcTemplateDecl* proc_template,
-        ArrayRef<TypeLoc> input_types
+        Candidate& candidate,
+        const CandidateArgumentLists::List& source_args,
+        bool is_associated_call,
+        bool& hard_error
     ) -> SubstitutionResult;
 
     /// Perform unqualified name lookup; this will iterate upwards
@@ -1518,7 +1540,7 @@ private:
         TupleExpr* args,
         SLoc loc,
         bool* hard_error = nullptr
-    ) -> ValueOrDiagsVector<Conversion::InitialiserCallData>;
+    ) -> ValueOrDiagsVector<Conversion::CallData>;
 
     /// Resolve named arguments, i.e. figure out what positional parameters
     /// they map to.
@@ -1551,7 +1573,8 @@ private:
     auto BuildBuiltinMemberAccessExpr(BuiltinMemberAccessExpr::AccessKind ak, Expr* operand, SLoc loc) -> Ptr<BuiltinMemberAccessExpr>;
     auto BuildCallExpr(Expr* callee_expr, std::same_as<TupleExpr> auto* args, SLoc loc, bool is_associated_call) -> Ptr<Expr>;
     auto BuildCallExpr(Expr* callee_expr, ArrayRef<Expr*> args, SLoc loc) -> Ptr<Expr>;
-    auto BuildConvertedCall(Expr* callee, SmallVectorImpl<Expr*>& converted_args, ArrayRef<Expr*> original, SLoc loc) -> Ptr<Expr>;
+    auto BuildConvertedCall(Expr* callee, SmallVectorImpl<Expr*>& converted_args, ArrayRef<Expr*> varargs, SLoc loc) -> Ptr<Expr>;
+    auto BuildConvertedCall(const Conversion::CallData& call, SLoc loc) -> Ptr<Expr>;
     auto BuildDeclRefExpr(ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildDeclRefExpr(InitialDREScope scope, Scope* root, ArrayRef<DeclNameLoc> names, SLoc loc, Opt<Type> desired_type = {}) -> Ptr<Expr>;
     auto BuildEvalExpr(Stmt* arg, SLoc loc) -> Ptr<Expr>;
@@ -1588,7 +1611,8 @@ private:
         ParsedProcDecl* parsed,
         InheritedProcedureProperties props,
         ArrayRef<Type> deduced_var_parameters = {},
-        ProcTemplateDecl* pattern = nullptr
+        ProcTemplateDecl* pattern = nullptr,
+        llvm::function_ref<bool(u32, ParamTypeData&)> bind_parameter = nullptr
     ) -> Ptr<ProcDecl>;
 
     auto BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr>;
@@ -1675,7 +1699,8 @@ private:
         ParsedProcType* parsed,
         bool allow_immutable_params = false,
         ArrayRef<Type> deduced_var_parameters = {},
-        llvm::function_ref<ProcDecl*(ProcType*)> declare = nullptr
+        llvm::function_ref<ProcDecl*(ProcType*)> declare = nullptr,
+        llvm::function_ref<bool(u32, ParamTypeData&)> bind_parameter = nullptr
     ) -> Opt<Type>;
     auto TranslateValueType(ParsedValueType* parsed) -> Opt<Type>;
 

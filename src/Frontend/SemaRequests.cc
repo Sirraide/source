@@ -37,6 +37,15 @@
 //
 // 'value' is visible inside 'later', but its initialiser still runs after the
 // call. Each template specialisation has its own scope and declaration requests.
+//
+// Compile-time parameters extend the substitution key with converted argument
+// values. Their bindings are published while translating the source signature:
+//
+//     proc f ($t: type, $n: int, value: t[n]) -> t[n] = value;
+//
+// Here t and n are constant declarations available to later parameter types,
+// constraints, and body requests. Only their argument values make it into the
+// runtime signature.
 // =================================================================================
 #include <srcc/AST/Eval.hh>
 #include <srcc/Frontend/Parser.hh>
@@ -50,6 +59,61 @@ using namespace srcc::sema;
     if (not _res) return utils::Falsy(); \
     *_res;                               \
 })
+
+ProcTemplateSignature::ProcTemplateSignature(
+    ProcType* runtime,
+    ArrayRef<CompileTimeParameter> compile_time
+) : num_compile_time_params{u32(compile_time.size())}, runtime_type{runtime} {
+    std::uninitialized_copy(compile_time.begin(), compile_time.end(), getTrailingObjects());
+}
+
+auto ProcTemplateSignature::Create(
+    TranslationUnit& tu,
+    ProcType* runtime,
+    ArrayRef<CompileTimeParameter> compile_time
+) -> ProcTemplateSignature* {
+    auto size = totalSizeToAlloc<CompileTimeParameter>(compile_time.size());
+    auto memory = tu.allocate(size, alignof(ProcTemplateSignature));
+    return ::new (memory) ProcTemplateSignature(runtime, compile_time);
+}
+
+auto ProcTemplateSignature::parameter(u32 index) const -> const ParamTypeData& {
+    Assert(index < param_count());
+    u32 runtime_index = index;
+    for (auto& param : compile_time_params()) {
+        if (param.index == index) return param.type;
+        if (param.index > index) break;
+        --runtime_index;
+    }
+    return runtime_type->params()[runtime_index];
+}
+
+auto ProcTemplateSignature::print(ProcTemplateDecl* pattern) const -> SmallUnrenderedString {
+    SmallUnrenderedString out;
+    out += "%1(proc%) (";
+    for (u32 i = 0; i < param_count(); ++i) {
+        if (i) out += ", ";
+        auto& param = parameter(i);
+        auto parsed = pattern->pattern->params()[i];
+        if (param.exact) out += "%1(exact%) ";
+        if (param.intent != Intent::Move) Format(out, "%1({}%) ", param.intent);
+        if (parsed->compile_time) Format(out, "%3(${}%): ", parsed->name);
+        out += param.type->print();
+        if (param.variadic) out += "...";
+    }
+    if (runtime_type->has_c_varargs()) out += param_count() ? ", ..." : "...";
+    Format(out, ") -> {}", runtime_type->ret());
+    return out;
+}
+
+auto ProcTemplateSignature::source_index(u32 index) const -> u32 {
+    Assert(index < runtime_type->param_count());
+    for (auto& param : compile_time_params()) {
+        if (param.index > index) break;
+        ++index;
+    }
+    return index;
+}
 
 Sema::EnterRequestContext::EnterRequestContext(
     Sema& S,
@@ -311,6 +375,11 @@ bool Sema::RequestDeclarationImpl(DeclarationRequest& request) {
     if (not request.result) return false;
     request_data.declaration_sources[request.result] = &request;
     if (request.exported) {
+        if (isa<ProcTemplateDecl>(request.result)) {
+            request.result->set_invalid();
+            return Error(request.parsed->loc, "Exporting procedure templates is not supported yet");
+        }
+
         AddDeclToScope(&tu->exports, request.result);
         if (auto object = dyn_cast<ObjectDecl>(request.result)) object->linkage = Linkage::Exported;
     }
@@ -568,7 +637,7 @@ bool Sema::RequestProcedureBodyImpl(ProcDecl* proc) {
         if (
             proc->is_instantiation() and
             proc->is_overloaded_operator() and
-            not CheckOverloadedOperator(proc, parsed->type->attrs.builtin_operator)
+            not CheckOverloadedOperator(proc, parsed->type->attrs.builtin_operator, source.template_signature)
         ) {
             proc->set_invalid();
             return false;
@@ -586,6 +655,10 @@ bool Sema::RequestProcedureBodyImpl(ProcDecl* proc) {
     if (not RequestPendingProcedureBodies()) proc->set_invalid();
     if (body) proc->finalise(body, curr_proc().locals);
     else proc->set_invalid();
+
+    // Return type deduction may have changed the procedure type; update our
+    // template signature if we are a specialisation.
+    if (source.template_signature) source.template_signature->runtime_type = proc->proc_type();
     return proc->valid() and not proc->contains_error and bool(proc->body());
 }
 
@@ -622,6 +695,10 @@ auto Sema::RequestReference(Decl* d, SLoc loc) -> Ptr<Expr> { // clang-format of
             return new (*tu) ProcRefExpr(proc, loc);
         },
         [&](ProcTemplateDecl*) -> Ptr<Expr> { return OverloadSetExpr::Create(*tu, d, loc); },
+        [&](CompileTimeParamDecl* param) -> Ptr<Expr> {
+            auto constant = new (*tu) ConstExpr(*tu, *param->value->value, loc);
+            return constant;
+        },
         [&](TypeDecl* td) -> Ptr<Expr> { return new (*tu) TypeExpr(td->type, loc); },
         [&](GlobalDecl* g) -> Ptr<Expr> { return new (*tu) GlobalRefExpr(g, loc); },
         [&](CXXMacroExpansionDecl* md) -> Ptr<Expr> { return md->value; },
@@ -952,32 +1029,46 @@ auto Sema::RequestTemplateInstantiation(
     TemplateSubstitution& info,
     SLoc inst_loc
 ) -> Ptr<ProcDecl> {
-    if (not info.instantiation) {
-        Error(inst_loc, "Missing substituted procedure declaration");
-        return {};
-    }
-
     auto& instantiations = tu->template_instantiations[pattern];
-    if (not is_contained(instantiations, info.instantiation))
-        instantiations.push_back(info.instantiation);
+    if (not is_contained(instantiations, info.specialisation))
+        instantiations.push_back(info.specialisation);
 
     // Check if we already know the signature of this.
-    auto body = request_data.results.find(Request::ProcedureBody{info.instantiation});
+    auto body = request_data.results.find(Request::ProcedureBody{info.specialisation});
     if (
         body != request_data.results.end() and
         body->second == Request::State::Evaluating and
-        info.instantiation->return_type() != Type::DeducedTy
-    ) return info.instantiation;
+        info.specialisation->return_type() != Type::DeducedTy
+    ) return info.specialisation;
 
     // If not, the return type is deduced; request the body.
-    if (not RequestProcedureBody(info.instantiation, inst_loc)) return {};
-    return info.instantiation;
+    if (not RequestProcedureBody(info.specialisation, inst_loc)) return {};
+    Assert(Type(info.signature->runtime_type) == info.specialisation->proc_type());
+    return info.specialisation;
 }
 
 auto Sema::RequestTemplateSubstitution(
-    ProcTemplateDecl* proc_template,
-    ArrayRef<TypeLoc> input_types
+    Candidate& candidate,
+    const CandidateArgumentLists::List& source_args,
+    bool is_associated_call,
+    bool& hard_error
 ) -> SubstitutionResult {
+    ArrayRef<Expr*> arguments = source_args.values;
+    auto proc_template = candidate.callee.cast<ProcTemplateDecl>();
+    if (request_data.template_substitution_depth >= MaxRequestDepth) {
+        Error(
+            proc_template->location(),
+            "Exceeded maximum template substitution nesting depth ({})",
+            MaxRequestDepth
+        );
+        return {};
+    }
+
+    ++request_data.template_substitution_depth;
+    defer { --request_data.template_substitution_depth; };
+
+    SmallVector<TypeLoc> input_types;
+    for (auto arg : arguments) input_types.emplace_back(arg->type, arg->location());
     auto source = GetDeclarationRequest(proc_template);
     EnterRequestContext context{*this, source ? source->context : GetRequestContext()};
 
@@ -1072,38 +1163,144 @@ auto Sema::RequestTemplateSubstitution(
 
             // Build a tuple consisting of the remaining arguments.
             // TODO: Maybe a failure to build the type here should not be a hard error.
-            auto types = input_types.drop_front(i);
+            auto types = ArrayRef(input_types).drop_front(i);
             auto names = llvm::to_vector(vws::repeat (String(), types.size()));
             auto ty = TRY(BuildTupleType(types, names, proc_template->location()));
             deduced_var_parameters.push_back(ty);
         }
     }
 
-    // Now that deduction is done, check if we’ve substituted this before.
+    // Profile deduced argument types.
     llvm::FoldingSetNodeID id;
-    for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty.ptr());
-    for (auto ty : deduced_var_parameters) id.AddPointer(ty.ptr());
+    for (const auto& [_, d] : deduced) id.AddPointer(d.second.ty->canonical);
+    for (auto ty : deduced_var_parameters) id.AddPointer(ty->canonical);
 
-    // Don’t hold on to a reference to the folding set (or the insert position)
-    // here as we might end up invalidating it if template instantiation occurs
-    // during the translation of the procedure type below.
-    llvm::FoldingSetInsertToken _unused;
-    auto info = template_substitutions[proc_template].lookup(id, _unused);
-    if (info) return info;
+    // If we don’t have any compile-time parameters, check to see if we’ve
+    // substituted this it before.
+    Ptr<TemplateSubstitution> cached;
+    auto FindCached = [&] {
+        llvm::FoldingSetInsertToken unused;
+        cached = template_substitutions[proc_template].lookup(id, unused);
+    };
 
-    // Create a scope for the procedure and save the template arguments there.
+    // There are no constants; return this if we’ve cached it before.
+    bool has_constants = rgs::any_of(param_types, &ParsedParameter::compile_time);
+    if (not has_constants) {
+        FindCached();
+        if (cached) return cached.get();
+    }
+
+    // Otherwise, enter the procedure scope and rebuild the type.
     EnterScope scope{*this, EnterScope::Procedure, proc_template->props.associated_type};
+
+    // Declare all template parameters.
     for (auto [name, d] : deduced) AddDeclToScope(
         scope.get(),
         new (*tu) TemplateTypeParamDecl(name, d.second)
     );
 
-    auto provisional = BuildProcSignature(
+    SubstitutionResult result;
+    bool failed_compile_time_arg = false;
+
+    // Compile-time parameters are available to later parameters, e.g.
+    //
+    //     proc f ($t: type, $n: int, data: t[n])
+    //
+    // is valid. This function checks that the argument is actually convertible
+    // to the parameter type and a constant, along with adding it to the procedure
+    // scope.
+    auto BindParameter = [&](u32 index, ParamTypeData& param) {
+        // Non-compile-time parameters can be ignored here.
+        if (param_types[index].compile_time) {
+            // Fail substitution.
+            auto Fail = [&](DiagsVector diags) {
+                result.data = SubstitutionResult::ArgumentNotConstant{std::move(diags), index};
+                failed_compile_time_arg = true;
+                return false;
+            };
+
+            // Build an initialiser for the parameter.
+            auto arg = arguments[index];
+            if (not CheckVariableType(param.type, arg->location())) {
+                hard_error = true;
+                return false;
+            }
+
+            auto conversion = BuildParameterConversionSequence(
+                param,
+                arg,
+                arg->location(),
+                is_associated_call and source_args.source_indices[index] == 0
+            );
+
+            if (not conversion) return Fail(std::move(conversion.error()));
+
+            // Save the ranking for later.
+            candidate.status.get<Candidate::Viable>().ranking.set(
+                source_args.source_indices[index],
+                conversion->rank()
+            );
+
+            // Apply the conversion.
+            auto converted = ApplyConversionSequence(arg, *conversion, arg->location());
+            if (not converted) return false;
+
+            // Evaluate the argument.
+            auto value = RequestEvaluation(converted.get(), false);
+            auto name = proc_template->pattern->params()[index]->name;
+            if (not value) return Fail(DiagsVector{CreateError(
+                arg->location(),
+                "Argument to constant parameter '{}' is not a compile-time constant",
+                name
+            )});
+
+            if (auto profile = value->profile(id); not profile) return Fail(DiagsVector{CreateError(
+                arg->location(),
+                "Argument to constant parameter '{}' {}",
+                name,
+                profile.error()
+            )});
+
+            auto constant = new (*tu) ConstExpr(*tu, std::move(*value), arg->location());
+
+            // Declare it so later parts of the signature can use it.
+            auto parsed = proc_template->pattern->params()[index];
+            AddDeclToScope(
+                scope.get(),
+                new (*tu) CompileTimeParamDecl({parsed->name, parsed->loc}, constant)
+            );
+
+            // Handle 'with' as well here.
+            if (parsed->with_loc.is_valid()) AddEntryToWithStack(
+                scope.get(),
+                Save(constant),
+                parsed->with_loc
+            );
+        }
+
+        // If this is now cached, avoid rebuilding the signature; returning
+        // 'false' here will cause BuildProcSignature() to bail out early.
+        if (has_constants and index + 1 == param_types.size()) FindCached();
+        return not cached;
+    };
+
+    // Build the declaration of the template specialisation.
+    auto proc = BuildProcSignature(
         proc_template->pattern,
         proc_template->props,
         deduced_var_parameters,
-        proc_template
+        proc_template,
+        BindParameter
     );
+
+    // We might get a cache hit after resolving compile-time parameters.
+    if (cached) {
+        result.data = cached.get();
+        return result;
+    }
+
+    // A compile-time argument was ill-formed.
+    if (failed_compile_time_arg) return result;
 
     // Mark that we’re done substituting.
     for (auto d : scope.get()->decls())
@@ -1111,11 +1308,19 @@ auto Sema::RequestTemplateSubstitution(
             param->in_substitution = false;
 
     // There was some error building the declaration; give up.
-    if (not provisional) return {};
+    if (not proc) return {};
+
+    // Distinct values for compile-time arguments can yield identical runtime
+    // signatures; assign a mangling number for now just to be safe.
+    //
+    // FIXME: Sort out mangling; it’s a mess currently. We don’t have a stable
+    // ABI (and aren’t planning to have one), so something like literally just
+    // '_S' + <name> (+ <mangling number>) would be enough.
+    if (has_constants) proc->props.mangling_number = next_proc_mangling_number++;
 
     // Check the constraint.
     if (auto where = proc_template->pattern->where.get_or_null()) {
-        EnterProcedure parameters{*this, provisional.get()};
+        EnterProcedure parameters{*this, proc.get()};
         auto constraint = TRY(TranslateExpr(where));
         if (not MakeCondition(constraint, "where")) return {};
         auto value = RequestEvaluation(constraint);
@@ -1124,16 +1329,17 @@ auto Sema::RequestTemplateSubstitution(
             return SubstitutionResult::ConstraintNotSatisfied();
     }
 
-    // Store the type for later if substitution succeeded.
-    info = new (*tu) TemplateSubstitution(
+    // Substitution and constraint checking succeeded; store the signature and
+    // specialisation for later.
+    auto info = new (*tu) TemplateSubstitution(
         id.Intern(tu->allocator()),
-        provisional->proc_type(),
-        scope.get()
+        request_data.procedure_sources.find(proc.get())->second.template_signature.get(),
+        proc.get()
     );
 
-    info->instantiation = provisional.get();
     template_substitutions[proc_template].insert(info);
-    return info;
+    result.data = info;
+    return result;
 }
 
 auto Sema::RequestUnqualifiedLookup(

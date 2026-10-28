@@ -1,0 +1,21 @@
+// V %srcc --sema --verify %s
+program test;
+import <cstdlib> as c;
+
+struct Record { value: int; }
+(eval Record(1)).value = 2; // expected-error: Cannot assign to immutable value
+(eval (1, 2))[0] = 3; // expected-error: Cannot assign to immutable value
+Record(1).value = 2;
+
+proc constant ($named: int) = named; // expected-note (In argument to parameter 'named') expected-note (Callee declared here)
+proc runtime (value: int) { constant(named: value); } // expected-error: Argument to constant parameter 'named' is not a compile-time constant
+
+proc unknown_pointer -> int^ {
+    var pointer = c::malloc(8);
+    assert pointer != nil;
+    var result = pointer as! int^;
+    c::free(pointer);
+    return result;
+}
+proc pointer_constant ($pointer: int^) {} // expected-note (In argument to parameter 'pointer') expected-note (Callee declared here)
+pointer_constant(unknown_pointer()); // expected-error: Argument to constant parameter 'pointer' contains a pointer whose target is unknown

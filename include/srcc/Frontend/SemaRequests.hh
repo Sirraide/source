@@ -60,6 +60,56 @@ struct DeclarationRequest {
     bool exported = false;
 };
 
+/// One compile-time parameter in a substituted source signature.
+struct CompileTimeParameter {
+    /// Position among all source parameters, including runtime parameters.
+    u32 index;
+
+    /// Substituted parameter type and conversion constraints.
+    ParamTypeData type;
+};
+
+/// A substituted template signature that stores compile-time parameters
+/// along with the runtime procedure type.
+class ProcTemplateSignature final :
+    TrailingObjects<ProcTemplateSignature, CompileTimeParameter> {
+    friend TrailingObjects;
+
+    u32 num_compile_time_params;
+
+    ProcTemplateSignature(ProcType* runtime, ArrayRef<CompileTimeParameter> compile_time);
+
+public:
+    /// Runtime signature; updated when the procedure body deduces its result.
+    ProcType* runtime_type;
+
+    /// Create a new template signature.
+    static auto Create(
+        TranslationUnit& tu,
+        ProcType* runtime,
+        ArrayRef<CompileTimeParameter> compile_time
+    ) -> ProcTemplateSignature*;
+
+    /// Compile-time parameters in source order.
+    auto compile_time_params() const -> ArrayRef<CompileTimeParameter> {
+        return getTrailingObjects(num_compile_time_params);
+    }
+
+    /// Number of source parameters, including compile-time parameters.
+    auto param_count() const -> u32 {
+        return runtime_type->param_count() + num_compile_time_params;
+    }
+
+    /// Get the type of a parameter by its source index.
+    auto parameter(u32 source_index) const -> const ParamTypeData&;
+
+    /// Print the source signature without manufacturing a mixed ProcType.
+    auto print(ProcTemplateDecl* pattern) const -> SmallUnrenderedString;
+
+    /// Map a runtime parameter index back to its source parameter index.
+    auto source_index(u32 runtime_index) const -> u32;
+};
+
 /// Source and lexical environment needed to translate a procedure body.
 /// Ordinary procedures retain their parsed declaration; generated procedures
 /// own a body builder instead. Both kinds use the saved context.
@@ -67,6 +117,7 @@ struct ProcedureSource {
     using BodyBuilder = std::move_only_function<Ptr<Expr>(ProcDecl*)>;
     Variant<ParsedProcDecl*, BodyBuilder> body;
     RequestContext context;
+    Ptr<ProcTemplateSignature> template_signature{};
 };
 
 /// A procedure reference that may need its callee's enclosing environment.
@@ -158,6 +209,9 @@ struct Requests {
 
     /// Active requests.
     SmallVector<Request> stack;
+
+    /// Substitutions may recurse while evaluating signature expressions.
+    usz template_substitution_depth = 0;
 
     /// Active initialiser overload resolutions and their argument types. This
     /// detects conversion cycles that do not re-enter a cached semantic request.

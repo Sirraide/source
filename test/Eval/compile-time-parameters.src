@@ -1,0 +1,150 @@
+// V %srcc --eval %s
+program test;
+
+proc constant ($x: int) = x;
+assert constant(1 + 2) == 3;
+proc widened ($x: i128) = x;
+assert widened(4) == 4;
+assert constant(7) == 7;
+assert constant(3) == 3;
+
+proc identity ($x: $T) -> T = x;
+assert identity(true);
+assert identity(8) == 8;
+proc inferred ($x: var) = x;
+assert inferred(9) == 9;
+
+proc f ($t: type, value: t) -> t = value;
+assert f(int, 42) == 42;
+assert f(bool, true);
+assert f(value: 13, t: int) == 13;
+
+proc sized ($n: int, value: int[n]) -> int[n] = value;
+assert sized(3, (10, 11, 12))[2] == 12;
+proc local_array ($n: int) -> int {
+    var array: int[n];
+    #assert typeof(array) == int[n];
+    return n;
+}
+assert local_array(4) == 4;
+proc constrained ($n: int) -> int where n > 0 { return n; }
+assert constrained(5) == 5;
+
+proc mixed (left: int, $offset: int, right: int) = left + offset + right;
+assert mixed(1, 20, 3) == 24;
+assert mixed(right: 3, offset: 30, left: 1) == 34;
+assert mixed(offset: 30, right: 3, left: 1) == 34;
+assert mixed(right: 3, left: 1, offset: 30) == 34;
+proc forward ($n: int) = constant(n + 1);
+assert forward(40) == 41;
+
+proc fallback ($n: int) = 100;
+proc fallback (n: int) = n;
+proc runtime_fallback (n: int) = fallback(n);
+assert runtime_fallback(43) == 43;
+
+proc nested ($n: int) -> int {
+    proc inner = n;
+    return inner();
+}
+assert nested(44) == 44;
+
+struct Pair { x: int; y: int; }
+proc pair ($p: Pair) = p.x + p.y;
+assert pair(Pair(20, 25)) == 45;
+proc fields (with $p: Pair) = x + y;
+assert fields(Pair(21, 25)) == 46;
+proc aggregate ($p: $T) = p;
+assert aggregate((47, true))[0] == 47;
+assert aggregate("constant").size == 8;
+proc empty ($p: int?) = p == nil;
+assert not empty(48);
+assert empty(nil);
+
+proc increment (x: int) = x + 1;
+proc callback ($fn: proc (int) -> int, x: int) = fn(x);
+assert callback(increment, 48) == 49;
+
+struct Constructed {
+    value: int;
+    init ($n: int) = ::(n);
+}
+assert Constructed(50).value == 50;
+var constructed: Constructed = (51);
+assert constructed.value == 51;
+
+// The local type identity exposes whether a specialisation was reused.
+proc unique ($n: int) -> type { struct Local {} return Local; }
+#assert unique(1 + 1) == unique(2);
+#assert unique(2) != unique(3);
+proc converted_unique ($n: int?) -> type { struct Local {} return Local; }
+#assert converted_unique(2) == converted_unique(2 as int?);
+#assert converted_unique(nil) == converted_unique(nil);
+proc generic_unique ($value: $T) -> type { struct Local {} return Local; }
+#assert generic_unique((1, true)) == generic_unique((1, true));
+#assert generic_unique((1, true)) != generic_unique((2, true));
+#assert generic_unique("same") == generic_unique("same");
+#assert generic_unique("same") != generic_unique("else");
+#assert generic_unique(increment) == generic_unique(increment);
+
+proc inject ($expression: tree) -> int = #inject(expression);
+assert inject(quote { 52 }) == 52;
+proc sum ($n: int) -> int {
+    #if n == 0 { return 0; }
+    #else { return n + sum(n - 1); }
+}
+assert sum(10) == 55;
+proc prefer_constant ($n: int) = 1;
+proc prefer_constant (n: int?) = 2;
+assert prefer_constant(1) == 1;
+proc choose_runtime (n: int) = prefer_constant(n);
+assert choose_runtime(1) == 2;
+
+proc pack_after_constant ($n: int, values: int...) -> int {
+    var result = n;
+    for value in values do result += value;
+    return result;
+}
+assert pack_after_constant(10, 1, 2, 3) == 16;
+proc heterogeneous_after_constant ($n: int, values: var...) = n + values[0];
+assert heterogeneous_after_constant(10, 7, true) == 17;
+
+proc zero ($value: $T) -> type = typeof(value);
+#assert zero(()) == typeof(());
+struct Empty {}
+#assert zero(Empty()) == Empty;
+#assert generic_unique(Empty()) == generic_unique(Empty());
+#assert generic_unique("") == generic_unique("");
+#assert generic_unique((int, bool)) == generic_unique((int, bool));
+#assert generic_unique((int, bool)) != generic_unique((bool, int));
+struct Padded { first: i8; second: int; }
+#assert generic_unique(Padded(1, 2)) == generic_unique(Padded(1, 2));
+#assert generic_unique(Padded(1, 2)) != generic_unique(Padded(1, 3));
+proc array_identity ($array: int[2]) = array[1];
+assert array_identity((1, 56)) == 56;
+proc procedure_array ($callbacks: (proc (int) -> int)[2]) -> int = callbacks[0](56);
+assert procedure_array((increment, increment)) == 57;
+struct Number { value: int; }
+proc + ($left: Number, right: int) = left.value + right;
+assert Number(50) + 8 == 58;
+
+proc Number::add ($self: Number, amount: int) = self.value + amount;
+assert Number(50).add(9) == 59;
+proc typed_pair ($t: type, $n: int, value: t[n]) -> t[n] = value;
+assert typed_pair(int, 2, (59, 60))[1] == 60;
+
+struct Big { first: int; second: int; third: int; }
+proc use_big (value: Big) = value.first + value.second + value.third;
+proc constant_big ($value: Big) = use_big(value);
+assert constant_big(Big(10, 20, 31)) == 61;
+
+enum Tag { first, second }
+#assert generic_unique(Tag::first) == generic_unique(Tag::first);
+#assert generic_unique(Tag::first) != generic_unique(Tag::second);
+#assert generic_unique(1..<3) == generic_unique(1..<3);
+#assert generic_unique(1..<3) != generic_unique(1..<4);
+#assert generic_unique(-1) == generic_unique(-1);
+#assert generic_unique(-1) != generic_unique(1);
+struct Small { value: i9; }
+#assert generic_unique(Small(-1)) == generic_unique(Small(-1));
+#assert generic_unique(Small(-1)) != generic_unique(Small(1));

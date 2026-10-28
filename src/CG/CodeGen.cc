@@ -1187,7 +1187,13 @@ void CodeGen::EmitEvaluatedRValue(mlir::Location loc, Value addr, const eval::RV
             return;
         }
 
-        Todo("Array init");
+        auto array = cast<ArrayType>(rv.type());
+        auto stride = array->elem()->array_size(tu);
+        for (auto [index, element] : enumerate(record->fields)) {
+            auto pointer = CreatePtrAdd(loc, addr, stride * index);
+            EmitEvaluatedRValue(loc, pointer, *element);
+        }
+        return;
     }
 
     if (auto optional = rv.dyn_cast<eval::Optional>()) {
@@ -1339,19 +1345,6 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
             EngageNonTransparentOptional(addr, opt, C(init->location()));
         },
 
-        // If the initialiser is a constant expression, create a global constant for it.
-        //
-        // Yes, this means that this is basically an lvalue that we’re copying from;
-        // the only reason the language treats it as an mrvalue is because it would
-        // logically be rather weird to be able to take the address of an evaluated
-        // struct literal (but not of other rvalues).
-        //
-        // CreateUnsafe() is fine here since mrvalues are allocated in the TU.
-        [&](ConstExpr* e) {
-            auto loc = C(init->location());
-            EmitEvaluatedRValue(loc, addr, *e->value);
-        },
-
         // Default initialiser here is a memset to 0.
         [&](DefaultInitExpr* e) {
             FillWithZeroes(C(init->location()), addr, e->type->memory_size(tu));
@@ -1384,7 +1377,6 @@ void CodeGen::EmitRValue(Value addr, Expr* init) { // clang-format off
 void CodeGen::VariableInitialised(Value addr, Expr* init, Value init_from_addr) {
     // Mark an optional as engaged or disengaged after initialisation.
     if (auto opt = dyn_cast<OptionalType>(init->type); opt) {
-        Assert(opt->has_transparent_layout(), "TODO: Set engaged/disengaged flag");
         Assert(not isa<ParenExpr>(init), "Should have ignored parens");
 
         // If we assigned a value of the underlying type, engage the optional.
@@ -2313,7 +2305,27 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitConstExpr(ConstExpr* constant) -> IRValue {
-    return EmitValue(C(constant->location()), *constant->value);
+    auto loc = C(constant->location());
+
+    // If this is an rvalue, just emit it on its own.
+    if (constant->is_rvalue()) {
+        Assert(constant->type->eval_mode() == EvalMode::Scalar);
+        return EmitValue(loc, *constant->value);
+    }
+
+    // Emit raw byte buffers as global constants.
+    Assert(constant->type->eval_mode() == EvalMode::Memory);
+    if (auto bytes = constant->value->dyn_cast<eval::RawByteBuffer>()) return CreateGlobalStringPtr(
+        constant->type->align(tu),
+        String::CreateUnsafe(static_cast<const char*>(bytes->data()), bytes->size().bytes()),
+        false
+    );
+
+    // This is a non-trivial constant; emit it into a local variable.
+    // FIXME: Use a global variable instead.
+    auto address = CreateAlloca(loc, constant->type);
+    EmitEvaluatedRValue(loc, address, *constant->value);
+    return address;
 }
 
 void CodeGen::EmitCopy(mlir::Location loc, Value dest, Value src, Type ty) {

@@ -297,7 +297,7 @@ void Lexer::HandlePragma() {
 }
 
 void Lexer::LexIdentifier(bool dollar) {
-    tok().type = dollar ? Tk::TemplateType : Tk::Identifier;
+    tok().type = dollar ? Tk::TemplateParameter : Tk::Identifier;
     drop_while(IsContinue);
     FinishText();
 

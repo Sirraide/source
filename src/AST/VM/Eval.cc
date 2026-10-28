@@ -44,12 +44,15 @@ static auto LoadRangeFromMemory(
 ) -> Range {
     auto ptr_u = static_cast<const u8*>(ptr);
     auto elem_a = r->elem()->align(tu);
-    auto bytes = unsigned(r->elem()->memory_size(tu).bytes());
-    auto bits = unsigned(r->elem()->bit_width(tu).bits());
-    APInt start{bits, 0}, end{bits, 0};
-    llvm::LoadIntFromMemory(start, ptr_u, bytes);
-    llvm::LoadIntFromMemory(end, elem_a.align(ptr_u + bytes), bytes);
-    return {start.trunc(bits), end.trunc(bits)};
+    auto mem_size = r->elem()->memory_size(tu);
+    auto mem_bits = unsigned(mem_size.bits());
+    auto mem_bytes = unsigned(mem_size.bytes());
+    auto bit_width = r->elem()->bit_width(tu);
+    APInt start{mem_bits, 0};
+    APInt end{mem_bits, 0};
+    llvm::LoadIntFromMemory(start, ptr_u, mem_bytes);
+    llvm::LoadIntFromMemory(end, elem_a.align(ptr_u + mem_bytes), mem_bytes);
+    return {start.trunc(unsigned(bit_width.bits())), end.trunc(unsigned(bit_width.bits()))};
 }
 
 TreeValue::TreeValue(QuoteExpr* pattern, ArrayRef<TreeValue*> unquotes) : q{pattern} {
@@ -143,6 +146,81 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     }; // clang-format on
     visit(V);
     return out;
+}
+
+auto RValue::profile(llvm::FoldingSetNodeID& id) const -> Result<> {
+    auto Pointer = [&](const EvaluatedPointer& pointer) -> Result<> {
+        // Reject invalid pointers.
+        if (pointer.base().is<InvalidStackPointer>())
+            return base::Error("references out-of-scope stack memory");
+        if (pointer.base().is<UnknownPointer>())
+            return base::Error("contains a pointer whose target is unknown");
+
+        // Add the pointer.
+        id.AddInteger(pointer.base().index());
+        pointer.base().visit(utils::Overloaded{
+            [&](std::nullptr_t) {},
+            [&](ProcDecl* proc) { id.AddPointer(proc); },
+            [&](String string) { id.AddString(string); },
+            [&](auto) { Unreachable("Invalid cases are handled above"); },
+        });
+
+        // Add its offset.
+        id.AddInteger(pointer.offset().bits());
+        return {};
+    };
+
+    auto Tree = [&](this auto& self, TreeValue* tree) -> void {
+        id.AddPointer(tree->pattern());
+        id.AddInteger(tree->unquotes().size());
+        for (auto unquote : tree->unquotes()) self(unquote);
+    };
+
+    id.AddPointer(type()->canonical);
+    id.AddInteger(value.index());
+    return visit(utils::Overloaded{
+        [&](const APInt& integer, Type) -> Result<> {
+            integer.Profile(id);
+            return {};
+        },
+        [&](const Range& range, Type) -> Result<> {
+            range.start.Profile(id);
+            range.end.Profile(id);
+            return {};
+        },
+        [&](const Slice& slice, Type) -> Result<> {
+            slice.size.Profile(id);
+            return Pointer(slice.pointer);
+        },
+        [&](const Closure& closure, Type) -> Result<> {
+            Try(Pointer(closure.proc));
+            return Pointer(closure.env);
+        },
+        [&](const Optional& optional, Type) -> Result<> {
+            id.AddBoolean(bool(optional.value));
+            if (optional.value) return optional.value->profile(id);
+            return {};
+        },
+        [&](const Record& record, Type) -> Result<> {
+            for (auto field : record.fields) Try(field->profile(id));
+            return {};
+        },
+        [&](const EvaluatedPointer& pointer, Type) { return Pointer(pointer); },
+        [&](Type type, Type) -> Result<> {
+            id.AddPointer(type->canonical);
+            return {};
+        },
+        [&](TreeValue* tree, Type) -> Result<> {
+            Tree(tree);
+            return {};
+        },
+        [&](Nil, Type) -> Result<> { return {}; },
+        [&](std::monostate, Type) -> Result<> { return {}; },
+        [&](const RawByteBuffer& bytes, Type) -> Result<> {
+            id.AddString(StringRef(static_cast<const char*>(bytes.data()), bytes.size().bytes()));
+            return {};
+        },
+    });
 }
 
 #define TRY(x)                 \
@@ -1304,7 +1382,7 @@ auto Eval::LoadInt(const void* mem, Size width) -> SRValue {
         return SRValue(b != 0);
     }
 
-    APInt v{unsigned(width.bits()), 0};
+    APInt v{unsigned(width.as_bytes().bits()), 0};
     auto available_size = vm.owner().target().int_size(width);
     auto size_to_load = Size::Bits(v.getBitWidth()).as_bytes();
     Assert(size_to_load <= available_size);
@@ -1313,7 +1391,7 @@ auto Eval::LoadInt(const void* mem, Size width) -> SRValue {
         static_cast<const u8*>(mem),
         unsigned(size_to_load.bytes())
     );
-    return SRValue(std::move(v));
+    return SRValue(v.trunc(unsigned(width.bits())));
 }
 
 auto Eval::LoadPointer(const void* mem) -> SRValue {
@@ -1366,12 +1444,18 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         return EvaluatedPointer::GetUnknown();
     };
 
+    // Handle nil and zero-sized types.
+    if (ty == Type::NilTy) return RValue(Nil{});
+    if (ty->memory_size(vm.owner()) == Size()) return RValue(std::monostate{}, ty);
+
+    // Handle pointers and integers.
     if (isa<PtrType>(ty)) return RValue(PersistPointer(mem), ty);
-    if (ty->is_integer_or_bool()) return RValue(
+    if (ty->is_integer_or_bool() or isa<EnumType>(ty)) return RValue(
         LoadInt(mem, ty->bit_width(vm.owner())).cast<APInt>(),
         ty
     );
 
+    // Handle builtin 2-field aggregates.
     if (auto r = dyn_cast<RangeType>(ty)) return RValue(
         LoadRangeFromMemory(mem, vm.owner(), r),
         ty
@@ -1401,19 +1485,30 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         return RValue(Closure{proc_ptr, env_ptr}, ty);
     }
 
+    // Handle compile-time types.
     if (ty == Type::TreeTy) return RValue(LoadTree(mem));
     if (ty == Type::TypeTy) return RValue(LoadType(mem));
 
-    // If this type does not contain pointers, just persist the entire
-    // thing as a byte buffer.
-    if (not ty->is_or_contains_pointer()) {
+    // Only persist type as byte buffers if they contain no padding etc.
+    if (ty->can_persist_as_bytes(vm.owner())) {
         Assert((isa<RecordType, ArrayType, OptionalType>(ty)));
         auto mrv = vm.allocate_memory_value(ty);
         std::memcpy(mrv.data(), mem, mrv.size().bytes());
         return RValue(mrv, ty);
     }
 
-    // Otherwise, persist each field individually.
+    // Otherwise, persist each field or element individually.
+    if (auto array = dyn_cast<ArrayType>(ty)) {
+        SmallVector<RValue*> elements;
+        auto stride = array->elem()->array_size(vm.owner());
+        for (i64 i = 0; i < array->dimension(); ++i) {
+            auto ptr = mem + stride * usz(i);
+            elements.push_back(vm.owner().save(Persist(ptr, loc, array->elem())));
+        }
+
+        return RValue(Record{ArrayRef(elements).copy(vm.owner().allocator())}, ty);
+    }
+
     if (auto r = dyn_cast<RecordType>(ty)) {
         Assert(r->is_complete());
         SmallVector<RValue*> values;
@@ -1440,7 +1535,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         }
 
         // Load the bool to check if this is engaged.
-        auto engaged = LoadInt(mem, Type::BoolTy->memory_size(vm.owner()));
+        auto engaged = LoadInt(mem + o->get_engaged_offset(), Type::BoolTy->bit_width(vm.owner()));
         if (not engaged.cast<APInt>().getBoolValue()) return RValue(Optional(), o);
         auto value = Persist(mem, loc, o->elem());
         return RValue(Optional(vm.owner().save(value)), o);
@@ -1575,7 +1670,36 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // Compile the procedure.
     entry = s->location();
-    entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
+    if (not complain) {
+        // Preparing an expression can itself fail, e.g. when probing conversion of
+        // a known-nil optional to an int. Silent evaluation must not publish those
+        // diagnostics and poison an otherwise viable runtime overload. Keep this
+        // trap around the entry point only: bodies requested during execution must
+        // still diagnose malformed declarations.
+        // Temporarily override the diagnostics engine while we compile this.
+        auto& context = vm.owner().context();
+        auto diagnostics = llvm::makeIntrusiveRefCnt<CollectDiagnosticsEngine>(context);
+        {
+            DiagnosticsEngine::Ptr previous{&context.diags()};
+            context.set_diags(diagnostics);
+            defer { context.set_diags(previous); };
+            entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
+        }
+
+        // Never suppress an internal compiler error.
+        for (auto& diagnostic : diagnostics->diagnostics)
+            if (diagnostic.level == Diagnostic::Level::ICE)
+                ReportDiag(std::move(diagnostic));
+
+        // Give up if there was an error.
+        if (diagnostics->has_error() and entry_proc) {
+            entry_proc.erase();
+            entry_proc = {};
+        }
+    } else {
+        entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
+    }
+
     auto proc = entry_proc;
     if (not proc) return std::nullopt;
     Assert(proc.getNumCallArgs() <= 1);
@@ -1604,7 +1728,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     TRY(EvalLoop());
     if (not yields_value) {
         if (s->type_or_void() == Type::NilTy) return RValue(Nil{});
-        return RValue();
+        return RValue(std::monostate{}, s->type_or_void());
     }
 
     Assert(ret);

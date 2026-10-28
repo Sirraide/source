@@ -155,23 +155,8 @@ bool Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
         }
 
         case K::InitialiserCall: {
-            auto& data = conv.data.get<Conversion::InitialiserCallData>();
-            SmallVector<Expr*> args;
-            bool ok = true;
-
-            // Apply argument conversions.
-            auto ConvertArg = [&](u32 index, ArrayRef<Expr*> values, SLoc arg_loc) {
-                auto value = ApplyConversionSequence(values, data.conversions[index], arg_loc);
-                if (value) args.push_back(value.get());
-                else ok = false;
-            };
-
-            ConvertArgumentsForCall(data.args, data.proc.get(), ConvertArg, loc);
-            if (not ok) return false;
-
-            // Call the initialiser.
-            auto ref = TRY(RequestReference(data.proc.get(), loc));
-            auto call = TRY(BuildConvertedCall(ref, args, data.args, loc));
+            auto& data = conv.data.get<Conversion::CallData>();
+            auto call = TRY(BuildConvertedCall(data, loc));
             exprs.assign(1, call);
             return true;
         }
@@ -1037,7 +1022,7 @@ auto Sema::ResolveInitialiser(
     TupleExpr* args,
     SLoc loc,
     bool* hard_error
-) -> ValueOrDiagsVector<Conversion::InitialiserCallData> {
+) -> ValueOrDiagsVector<Conversion::CallData> {
     if (hard_error) *hard_error = false;
 
     // Initialisers cannot call other initialisers of the same type.
@@ -1085,7 +1070,7 @@ auto Sema::ResolveInitialiser(
     auto curr = curr_proc().proc;
     auto contained_error = curr->contains_error;
     defer { curr->contains_error = contained_error; };
-    Conversion::InitialiserCallData data;
+    std::optional<Conversion::CallData> data;
     DiagsVector diagnostics;
     {
         DiagnosticsTrap trap{*this};
@@ -1096,18 +1081,18 @@ auto Sema::ResolveInitialiser(
         {
             request_data.resolving_initialisers.emplace_back(type, std::move(types));
             defer { request_data.resolving_initialisers.pop_back(); };
-            PerformOverloadResolution(set, args, false, loc, &data, hard_error);
+            data = PerformOverloadResolution(set, args, false, loc, hard_error);
         }
 
         // Overload resolution failed; return its diagnostics.
-        if (not data.proc) return trap.get_trapped_diagnostics();
+        if (not data) return trap.get_trapped_diagnostics();
 
         // Infer the selected return type through the body request. Its own cycle
         // detection handles mutually recursive return inference.
         if (
-            data.proc->contains_error or (
-                data.proc->return_type() == Type::DeducedTy and
-                not RequestProcedureBody(data.proc.get(), loc)
+            data->proc->contains_error or (
+                data->proc->return_type() == Type::DeducedTy and
+                not RequestProcedureBody(data->proc.get(), loc)
             )
         ) {
             if (hard_error) *hard_error = true;
@@ -1129,7 +1114,7 @@ auto Sema::ResolveInitialiser(
     // errors, such as 'init = unknown_name;', take a failure path above and
     // return their diagnostics instead.
     for (auto& diagnostic : diagnostics) ReportDiag(std::move(diagnostic));
-    return data;
+    return std::move(*data);
 }
 
 auto Sema::TryBuildInitialiser(Type var_type, Expr* arg) -> Ptr<Expr> {

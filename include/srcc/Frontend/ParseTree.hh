@@ -226,8 +226,21 @@ struct srcc::ParsedParameter {
     bool variadic;
     bool immutable;
     bool exact;
-    ParsedParameter(Intent intent, ParsedStmt* type, bool variadic, bool immutable, bool exact)
-        : intent{intent}, type{type}, variadic{variadic}, immutable{immutable}, exact{exact} {}
+    bool compile_time;
+
+    ParsedParameter(
+        Intent intent,
+        ParsedStmt* type,
+        bool variadic,
+        bool immutable,
+        bool exact,
+        bool compile_time = false
+    ) : intent{intent},
+        type{type},
+        variadic{variadic},
+        immutable{immutable},
+        exact{exact},
+        compile_time{compile_time} {}
 };
 
 struct ParsedProcAttrs {
@@ -1051,10 +1064,12 @@ class srcc::ParsedVarDecl final : public ParsedDecl {
 public:
     ParsedStmt* type;
     Ptr<ParsedStmt> init;
+    // FIXME: A lot of this is duplicated from ParsedParameter.
     Intent intent; // Only used for parameters.
     bool is_static;
     bool is_this_param;
     bool immutable;
+    bool compile_time;
     SLoc with_loc; // Only used for parameters.
 
     ParsedVarDecl(
@@ -1065,13 +1080,15 @@ public:
         bool is_static = false,
         bool is_this_param = false,
         SLoc with = {},
-        bool immutable = false
+        bool immutable = false,
+        bool compile_time = false
     ) : ParsedDecl{Kind::VarDecl, name, location},
         type{param_type},
         intent{intent},
         is_static{is_static},
         is_this_param{is_this_param},
         immutable{immutable},
+        compile_time{compile_time},
         with_loc{with} {}
 
     static bool classof(const ParsedStmt* e) { return e->kind() == Kind::VarDecl; }

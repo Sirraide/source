@@ -111,7 +111,12 @@ ConstExpr::ConstExpr(
     eval::RValue value,
     SLoc location,
     Ptr<Stmt> stmt
-) : Expr{Kind::ConstExpr, value.type(), RValue, location},
+) : Expr{
+        Kind::ConstExpr,
+        value.type(),
+        value.type()->eval_mode() == EvalMode::Memory ? ILValue : RValue,
+        location
+    },
     value{tu.save(std::move(value))},
     stmt{stmt} {}
 
@@ -511,17 +516,23 @@ ProcTemplateDecl::ProcTemplateDecl(
     Ptr<ProcDecl> parent,
     InheritedProcedureProperties props,
     bool has_variadic_param,
+    bool requires_type_deduction,
     SLoc location
 ) : Decl{Kind::ProcTemplateDecl, pattern->name, location},
-    owner(&tu), parent{parent}, pattern{pattern},
-    has_variadic_param{has_variadic_param}, props{props} {}
+    owner(&tu),
+    parent{parent},
+    pattern{pattern},
+    has_variadic_param{has_variadic_param},
+    requires_type_deduction{requires_type_deduction},
+    props{props} {}
 
 auto ProcTemplateDecl::Create(
     TranslationUnit& tu,
     ParsedProcDecl* pattern,
     Ptr<ProcDecl> parent,
     InheritedProcedureProperties props,
-    bool has_variadic_param
+    bool has_variadic_param,
+    bool requires_type_deduction
 ) -> ProcTemplateDecl* {
     return new (tu) ProcTemplateDecl{
         tu,
@@ -529,6 +540,7 @@ auto ProcTemplateDecl::Create(
         parent,
         props,
         has_variadic_param,
+        requires_type_deduction,
         pattern->loc,
     };
 }

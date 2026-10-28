@@ -364,7 +364,7 @@ bool Parser::AtStartOfExpression() {
         case Tk::RBrace:
         case Tk::Return:
         case Tk::StringLiteral:
-        case Tk::TemplateType:
+        case Tk::TemplateParameter:
         case Tk::ThisLower:
         case Tk::ThisUpper:
         case Tk::Tilde:
@@ -969,7 +969,7 @@ auto Parser::ParseExpr(int precedence, ParseExprFlags flags) -> Ptr<ParsedStmt> 
         } break;
 
         // TEMPLATE-TYPE
-        case Tk::TemplateType: {
+        case Tk::TemplateParameter: {
             if (not current_signature) return Error("'{}' is not allowed here; try removing the '$'", tok->text);
 
             // Drop the '$' from the type.
@@ -1655,9 +1655,10 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
     // Parse 'val'.
     bool immutable = Consume(Tk::Val);
 
-    // Only a colon distinguishes a name from an identifier starting a type.
-    if (At(Tk::Identifier) and LookAhead().is(Tk::Colon)) {
-        name = {tok->text, tok->location};
+    // A dollar-prefixed name followed by a colon declares a compile-time parameter.
+    bool compile_time = At(Tk::TemplateParameter) and LookAhead().is(Tk::Colon);
+    if (At(Tk::Identifier, Tk::TemplateParameter) and LookAhead().is(Tk::Colon)) {
+        name = {compile_time ? tok->text.drop() : tok->text, tok->location};
         Next();
         Next();
     }
@@ -1689,7 +1690,10 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
         variadic = false;
     }
 
-    sig.param_types.emplace_back(intent, type.get(), variadic, immutable, exact);
+    if (compile_time and variadic)
+        Error(name.loc, "Compile-time parameters cannot be variadic");
+
+    sig.param_types.emplace_back(intent, type.get(), variadic, immutable, exact, compile_time);
     if (not At(Tk::Comma, Tk::RParen)) {
         Error("Unexpected token in procedure argument list");
         SkipTo(Tk::Comma, Tk::RParen);
@@ -1704,7 +1708,8 @@ bool Parser::ParseParameter(Signature& sig, SmallVectorImpl<ParsedVarDecl*>* dec
             false,
             is_this,
             with_loc,
-            immutable
+            immutable,
+            compile_time
         });
     } else {
         if (not name.name.empty()) Error(name.loc, "Named parameters are not allowed here");
