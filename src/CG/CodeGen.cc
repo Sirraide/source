@@ -1807,6 +1807,11 @@ auto CodeGen::EmitBlockExpr(BlockExpr* expr, Value mrvalue_slot) -> IRValue {
             }
 
             auto g = EmitGlobal(var);
+
+            // Check if the initialiser has already been emitted; note that this
+            // can fail if it contains pointers, so check the actual value on the
+            // IR declaration, not the AST node.
+            if (g.getValue()) continue;
             EmitRValue(LLVM::AddressOfOp::create(*this, C(var->location()), g), var->init.get());
             continue;
         }
@@ -2437,6 +2442,12 @@ auto CodeGen::EmitGlobal(GlobalDecl* decl) -> mlir::LLVM::GlobalOp {
     if (not g) {
         InsertionGuard _{*this};
         SetInsertPointAfterLastOpOfTypeIn<LLVM::GlobalOp>(&mlir_module.getBodyRegion().front());
+
+        // Emit the constant initialiser if we have one.
+        mlir::Attribute initialiser;
+        if (not lang_opts.constant_eval and decl->constant_init)
+            initialiser = EmitValueAsAttribute(*decl->constant_init.get());
+
         g = LLVM::GlobalOp::create(
             *this,
             C(decl->location()),
@@ -2444,18 +2455,9 @@ auto CodeGen::EmitGlobal(GlobalDecl* decl) -> mlir::LLVM::GlobalOp {
             false,
             C(decl->linkage),
             MangledName(decl),
-            mlir::Attribute(),
+            initialiser,
             decl->type->align(tu).value().bytes()
         );
-
-        // Emit a dummy zero-initialiser, else LLVM won’t allocate any storage
-        // for this; the actual initialiser is emitted in the module initialiser.
-        if (decl->linkage == Linkage::Exported) {
-            auto& block = g.getInitializerRegion().emplaceBlock();
-            setInsertionPointToStart(&block);
-            auto zero = LLVM::ZeroOp::create(*this, C(decl->location()), g.getGlobalType());
-            LLVM::ReturnOp::create(*this, C(decl->location()), zero.getResult());
-        }
 
         global_vars_reverse_lookup[g] = decl;
     }
@@ -3173,6 +3175,14 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
         }
     }; // clang-format on
     return val.visit(V);
+}
+
+// Emits a value that contains no relocations etc. as an attribute.
+auto CodeGen::EmitValueAsAttribute(const eval::RValue& value) -> mlir::Attribute {
+    SmallVector<char> bytes;
+    bytes.resize_for_overwrite(value.type()->memory_size(tu).bytes());
+    if (not value.store(bytes.data(), tu)) return {};
+    return getStringAttr(StringRef(bytes.data(), bytes.size()));
 }
 
 auto CodeGen::emit_stmt_as_proc_for_vm(Stmt* stmt) -> ir::ProcOp {

@@ -540,6 +540,7 @@ public:
     auto EmitArithmeticOrComparisonOperator(Tk op, Type ty, Value lhs, Value rhs, mlir::Location loc) -> Value;
     void EmitProcedure(ProcDecl* proc);
     auto EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue;
+    auto EmitValueAsAttribute(const eval::RValue& value) -> mlir::Attribute;
 
     /// Emit all cleanups starting at the current scope up to and including 'target_scope'.
     void EmitCleanups(const ProcData::CleanupScope& target_scope);

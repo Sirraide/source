@@ -11,14 +11,13 @@ var p2 = &p1;
 var p3 = &p2;
 sink(a.x + p1.x + p2.x + p3.x);
 
-// * @a = private 8, align 8
+// * @a = private 8, align 8, init "\01\00\00\00\00\00\00\00"
 // + @p1 = private 8, align 8
 // + @p2 = private 8, align 8
 // + @p3 = private 8, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @a, i64 1, align 8
 // +     store @p1, ptr @a, align 8
 // +     store @p2, ptr @p1, align 8
 // +     store @p3, ptr @p2, align 8

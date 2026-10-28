@@ -12,13 +12,12 @@ b = &^b;
 b = ^&b;
 a = &(if true then i else i);
 
-// * @i = private 8, align 8
+// * @i = private 8, align 8, init "\00\00\00\00\00\00\00\00"
 // + @a = private 8, align 8
 // + @b = private 8, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @i, i64 0, align 8
 // +     store @a, ptr @i, align 8
 // +     store @b, ptr @a, align 8
 // +     %0 = load ptr, @b, align 8

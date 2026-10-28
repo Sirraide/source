@@ -11,3 +11,6 @@ export var values: int[2] = (10, 20);
 export var empty: () = ();
 export proc read -> int = counter;
 export proc bump { counter += 1; }
+
+export struct Padded { a: i8; b: int; }
+export var padded = Padded(1, 2);

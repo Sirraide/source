@@ -7,14 +7,11 @@ var a = 4 - 3;
 var b = 4 + 3;
 var c: i64 = 7;
 
-// * @a = private 8, align 8
-// + @b = private 8, align 8
-// + @c = private 8, align 8
+// * @a = private 8, align 8, init "\01\00\00\00\00\00\00\00"
+// + @b = private 8, align 8, init "\07\00\00\00\00\00\00\00"
+// + @c = private 8, align 8, init "\07\00\00\00\00\00\00\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @a, i64 1, align 8
-// +     store @b, i64 7, align 8
-// +     store @c, i64 7, align 8
 // +     ret
 // + }

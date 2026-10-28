@@ -272,6 +272,11 @@ public:
     /// a constant (e.g. a pointer to dangling stack memory in the evaluator).
     [[nodiscard]] auto profile(llvm::FoldingSetNodeID& id) const -> Result<>;
 
+    /// Write target-layout bytes to a buffer of at least type()->memory_size(tu).
+    /// Padding is zeroed. Returns false if the value needs relocations or has no
+    /// byte representation; in that case the buffer may be partially written.
+    [[nodiscard]] auto store(void* memory, TranslationUnit& tu) const -> bool;
+
     /// Get the type of this value.
     [[nodiscard]] auto type() const -> Type { return ty; }
 
@@ -338,13 +343,15 @@ public:
     /// \param complain Whether to emit diagnostics if the statement cannot be evaluated.
     /// \param dump_ir Print the IR used for evaluation, if any.
     /// \param allow_globals Allow evaluating global variables; 'true' when evaluating entire TUs.
+    /// \param allow_side_effects Allow FFI calls and writes outside this evaluation.
     /// \return The value of the statement, if it can be evaluated.
     [[nodiscard]] auto eval(
         Sema* sema,
         Stmt* stmt,
         bool complain = true,
         bool dump_ir = false,
-        bool allow_globals = false
+        bool allow_globals = false,
+        bool allow_side_effects = true
     ) -> std::optional<RValue>;
 
     /// Initialise the VM.

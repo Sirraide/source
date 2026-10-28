@@ -21,9 +21,9 @@ struct VariadicFactory { value: int; init ($tag: int, value: int) varargs = ::(v
 proc factory (value: int) = VariadicFactory(4, value, 8, 9);
 var implicit: VariadicFactory = (5, 6, 7, 8);
 
-// * @one = private 8, align 8
-// + @two = private 8, align 8
-// + @again = private 8, align 8
+// * @one = private 8, align 8, init "\01\00\00\00\00\00\00\00"
+// + @two = private 8, align 8, init "\02\00\00\00\00\00\00\00"
+// + @again = private 8, align 8, init "\01\00\00\00\00\00\00\00"
 // + @implicit = private 8, align 8
 // + @0 = "+\00"
 // + @1 = "integer overflow\00"
@@ -31,25 +31,9 @@ var implicit: VariadicFactory = (5, 6, 7, 8);
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     %0 = call ccc i64 only<1>()
-// +     store @one, i64 %0, align 8
-// +     %1 = call ccc i64 only<2>()
-// +     store @two, i64 %1, align 8
-// +     %2 = call ccc i64 only<1>()
-// +     store @again, i64 %2, align 8
-// +     %3 = call variadic ccc i64 VariadicFactory::init<5>(i64 6 noundef, i64 7, i64 8)
-// +     store @implicit, i64 %3, align 8
+// +     %0 = call variadic ccc i64 VariadicFactory::init<5>(i64 6 noundef, i64 7, i64 8)
+// +     store @implicit, i64 %0, align 8
 // +     ret
-// + }
-// +
-// + proc only<1> private ccc -> i64 {
-// + entry:
-// +     ret i64 1
-// + }
-// +
-// + proc only<2> private ccc -> i64 {
-// + entry:
-// +     ret i64 2
 // + }
 // +
 // + proc VariadicFactory::init<5> (i64 %0 noundef) variadic external ccc -> i64 {
@@ -237,4 +221,14 @@ var implicit: VariadicFactory = (5, 6, 7, 8);
 // +     store #1, i64 %1, align 8
 // +     %2 = load i64, #1, align 8
 // +     ret i64 %2
+// + }
+// +
+// + proc only<1> private ccc -> i64 {
+// + entry:
+// +     ret i64 1
+// + }
+// +
+// + proc only<2> private ccc -> i64 {
+// + entry:
+// +     ret i64 2
 // + }

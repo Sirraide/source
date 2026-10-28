@@ -1535,6 +1535,9 @@ public:
     /// Initialiser.
     Ptr<Expr> init;
 
+    /// Side-effect-free folded initialiser, if any.
+    Ptr<eval::RValue> constant_init;
+
     /// Whether this is an immutable global.
     bool immutable;
 

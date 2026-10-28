@@ -113,14 +113,13 @@ proc r15 = match 4 {
     _: 9;
 };
 
-// * @g = private 1, align 1
+// * @g = private 1, align 1, init "\00"
 // + @0 = "+\00"
 // + @1 = "integer overflow\00"
 // + @2 = "match.src\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @g, i8 0, align 1
 // +     ret
 // + }
 // +
@@ -395,14 +394,13 @@ proc r15 = match 4 {
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + @_Sg = private global [1 x i8] undef, align 1
+//L + @_Sg = private global [1 x i8] zeroinitializer, align 1
 //L + @__srcc_str.0 = private constant [2 x i8] c"+\00", align 1
 //L + @__srcc_str.1 = private constant [17 x i8] c"integer overflow\00", align 1
 //L + @__srcc_str.2 = private constant [10 x i8] c"match.src\00", align 1
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
-//L +   store i8 0, ptr @_Sg, align 1
 //L +   ret void
 //L + }
 //L +

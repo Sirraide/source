@@ -465,6 +465,32 @@ struct AbortInfoInliningPass final : mlir::PassWrapper<AbortInfoInliningPass, ml
         });
     }
 };
+
+struct GlobalInitialiserPass final :
+    mlir::PassWrapper<GlobalInitialiserPass, mlir::OperationPass<mlir::ModuleOp>> {
+    CodeGen& cg;
+    GlobalInitialiserPass(CodeGen& cg) : cg{cg} {}
+
+    void getDependentDialects(mlir::DialectRegistry& registry) const override {
+        registry.insert<LLVM::LLVMDialect>();
+    }
+
+    void runOnOperation() override {
+        // If this is a definition without an initialiser, emit a dummy
+        // zero-initialiser, else LLVM won’t allocate any storage for this;
+        // the actual initialiser is in the module initialiser.
+        mlir::OpBuilder builder{&getContext()};
+        for (auto global : getOperation().getOps<LLVM::GlobalOp>()) {
+            auto decl = cg.lookup(global);
+            if (not decl or decl->linkage != Linkage::Exported) continue;
+            if (global.getValueOrNull() or not global.getInitializerRegion().empty()) continue;
+            auto& block = global.getInitializerRegion().emplaceBlock();
+            builder.setInsertionPointToStart(&block);
+            auto zero = LLVM::ZeroOp::create(builder, global.getLoc(), global.getGlobalType());
+            LLVM::ReturnOp::create(builder, global.getLoc(), zero.getResult());
+        }
+    }
+};
 } // namespace srcc::cg::lowering
 
 using namespace srcc::cg::lowering;
@@ -519,6 +545,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     mlir::PassManager pm{&mlir};
     pm.enableVerifier(true);
     pm.addPass(std::make_unique<AbortInfoInliningPass>(*this));
+    pm.addPass(std::make_unique<GlobalInitialiserPass>(*this));
     pm.addPass(std::make_unique<LoweringPass>(*this));
 
     if (pm.run(mlir_module).failed()) {

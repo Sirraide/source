@@ -23,12 +23,12 @@ var tuple: (m::Element, int);
 assert tuple[0].value == 42;
 
 // * @nested = private 24, align 8
-// + @local = private 24, align 8
+// + @local = private 24, align 8, init "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00"
 // + @0 = "nested[1][0] == 2\00"
 // + @1 = "tuple-types-import.src\00"
 // + @flat = private 24, align 8
 // + @2 = "flat[2] == 3\00"
-// + @arg = private 16, align 8
+// + @arg = private 16, align 8, init "\07\00\00\00\00\00\00\00\08\00\00\00\00\00\00\00"
 // + @result = private 16, align 8
 // + @3 = "result[0] == 7\00"
 // + @holder = private 16, align 8
@@ -42,44 +42,36 @@ assert tuple[0].value == 42;
 // + entry:
 // +     call ccc void __src_static_init.tuple_types()
 // +     call ccc void tuple_types::nested(ptr @nested sret i8[24])
-// +     store @local, i64 1, align 8
-// +     %0 = ptradd @local, 8
-// +     store %0, i64 2, align 8
-// +     %1 = ptradd %0, 8
-// +     store %1, i64 3, align 8
-// +     %2 = ptradd @nested, 8
-// +     %3 = load i64, %2, align 8
-// +     %4 = icmp eq i64 %3, 2
-// +     br %4 to bb2 else bb1
+// +     %0 = ptradd @nested, 8
+// +     %1 = load i64, %0, align 8
+// +     %2 = icmp eq i64 %1, 2
+// +     br %2 to bb2 else bb1
 // +
 // + bb1:
 // +     abort at loc("tuple-types-import.src":11:1) assert(ptr #0)
 // +
 // + bb2:
 // +     call ccc void tuple_types::nested(ptr @flat sret i8[24])
-// +     %14 = ptradd @flat, 16
-// +     %15 = load i64, %14, align 8
-// +     %16 = icmp eq i64 %15, 3
-// +     br %16 to bb4 else bb3
+// +     %12 = ptradd @flat, 16
+// +     %13 = load i64, %12, align 8
+// +     %14 = icmp eq i64 %13, 3
+// +     br %14 to bb4 else bb3
 // +
 // + bb3:
 // +     abort at loc("tuple-types-import.src":13:1) assert(ptr #0)
 // +
 // + bb4:
-// +     store @arg, i32 7, align 4
-// +     %26 = ptradd @arg, 8
-// +     store %26, i64 8, align 8
 // +     copy #1 <- @arg, 16
-// +     %27 = load i64, #1, align 8
-// +     %28 = ptradd #1, 8
-// +     %29 = load i64, %28, align 8
-// +     %30 = call ccc (i64, i64) tuple_types::sugared(i64 %27 noundef, i64 %29 noundef)
-// +     store @result, i64 %30:0, align 8
-// +     %31 = ptradd @result, 8
-// +     store %31, i64 %30:1, align 8
-// +     %32 = load i32, @result, align 4
-// +     %33 = icmp eq i32 %32, 7
-// +     br %33 to bb6 else bb5
+// +     %24 = load i64, #1, align 8
+// +     %25 = ptradd #1, 8
+// +     %26 = load i64, %25, align 8
+// +     %27 = call ccc (i64, i64) tuple_types::sugared(i64 %24 noundef, i64 %26 noundef)
+// +     store @result, i64 %27:0, align 8
+// +     %28 = ptradd @result, 8
+// +     store %28, i64 %27:1, align 8
+// +     %29 = load i32, @result, align 4
+// +     %30 = icmp eq i32 %29, 7
+// +     br %30 to bb6 else bb5
 // +
 // + bb5:
 // +     abort at loc("tuple-types-import.src":18:1) assert(ptr #0)
@@ -87,9 +79,9 @@ assert tuple[0].value == 42;
 // + bb6:
 // +     call ccc void tuple_types::Holder::init(ptr @holder sret i8[16])
 // +     call ccc void "tuple_types::(Element, int)::init"(ptr @tuple sret i8[16])
-// +     %43 = load i64, @tuple, align 8
-// +     %44 = icmp eq i64 %43, 42
-// +     br %44 to bb8 else bb7
+// +     %40 = load i64, @tuple, align 8
+// +     %41 = icmp eq i64 %40, 42
+// +     br %41 to bb8 else bb7
 // +
 // + bb7:
 // +     abort at loc("tuple-types-import.src":23:1) assert(ptr #0)

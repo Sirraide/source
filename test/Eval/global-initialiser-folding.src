@@ -1,0 +1,17 @@
+// V %srcc --eval %s
+program test;
+var count = 0;
+proc impure -> int {
+    count += 1;
+    return 17;
+}
+proc pure -> int {
+    var value = 1;
+    value += 4;
+    return value;
+}
+var computed = pure();
+var runtime_value = impure();
+assert computed == 5;
+assert runtime_value == 17;
+assert count == 1;

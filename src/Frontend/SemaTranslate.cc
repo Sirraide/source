@@ -182,11 +182,30 @@ void Sema::Translate(bool load_runtime) {
         }
     }
 
-    if (not ctx.diags().has_error()) AssignLinkageDiscriminators();
-
     // Sanity check.
     Assert(proc_stack.size() == 1);
     Assert(scope_stack.size() == 1);
+    if (ctx.diags().has_error()) return;
+
+    // Attempt to constant-fold global initialisers.
+    for (usz i = 0; i < tu->global_vars.size(); ++i) {
+        auto global = tu->global_vars[i];
+        if (global->is_imported() or not global->init) continue;
+        auto value = tu->vm.eval(
+            this,
+            global->init.get(),
+            /*complain=*/false,
+            /*dump_ir=*/false,
+            /*allow_globals=*/false,
+            /*allow_side_effects=*/false
+        );
+
+        if (value and value->can_persist())
+            global->constant_init = tu->save(std::move(*value));
+    }
+
+    // Folding may request more declarations, so do this last.
+    AssignLinkageDiscriminators();
 }
 
 /// Like TranslateStmt(), but checks that the argument is an expression.

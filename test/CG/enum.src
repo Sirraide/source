@@ -7,13 +7,11 @@ var y: x;
 var y2: x = b;
 proc p (v: x) = v;
 
-// * @y = private 8, align 8
-// + @y2 = private 8, align 8
+// * @y = private 8, align 8, init "\00\00\00\00\00\00\00\00"
+// + @y2 = private 8, align 8, init "\01\00\00\00\00\00\00\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @y, i64 0, align 8
-// +     store @y2, i64 1, align 8
 // +     ret
 // + }
 // +

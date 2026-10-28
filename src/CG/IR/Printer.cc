@@ -46,6 +46,7 @@ struct CodeGen::Printer {
     }
 
     void print(mlir::ModuleOp module);
+    void print_constant(mlir::Attribute value);
     void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only);
     void print_result_attrs(ProcAndCallOpInterface proc_or_call, unsigned idx);
     void print_attr(mlir::NamedAttribute attr);
@@ -666,6 +667,13 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     out += "%1(}%)\n";
 }
 
+void CodeGen::Printer::print_constant(mlir::Attribute value) {
+    SmallString<128> buffer;
+    llvm::raw_svector_ostream stream{buffer};
+    value.print(stream, true);
+    Format(out, "%3({}%)", str{buffer.str()}.replace('%', "%%"));
+}
+
 void CodeGen::Printer::print_top_level_op(Operation* op) {
     if (auto g = dyn_cast<LLVM::GlobalOp>(op)) {
         // This is a string constant.
@@ -678,12 +686,7 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
 
             if (auto init = g.getValueOrNull()) {
                 out += " %1(=%) ";
-
-                // A bit of a hack but it works.
-                SmallString<128> tmp;
-                llvm::raw_svector_ostream os{tmp};
-                init.print(os, true);
-                Format(out, "%3({}%)", str{tmp.str()}.replace('%', "%%"));
+                print_constant(init);
             }
 
             if (g.getAlignment().value_or(1) != 1)
@@ -704,13 +707,25 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
 
         Format(
             out,
-            "%3(@{}%) %1(= {} %5({}%), align %({}%)%)\n",
+            "%3(@{}%) %1(= {} %5({}%), align %({}%)%)",
             formatted_name,
             stringifyLinkage(g.getLinkage()),
             cast<LLVM::LLVMArrayType>(g.getType()).getNumElements(),
             g.getAlignment().value_or(1)
         );
 
+        if (auto init = g.getValueOrNull()) {
+            out += "%1(, init%) ";
+            print_constant(init);
+        } else if (not g.getInitializerRegion().empty()) {
+            auto ret = cast<LLVM::ReturnOp>(g.getInitializerRegion().front().getTerminator());
+            if (ret.getNumOperands() == 1 and ret.getOperand(0).getDefiningOp<LLVM::ZeroOp>()) {
+                out += "%1(, init zero%)";
+            } else {
+                Unreachable("Unsupported initialiser in printer");
+            }
+        }
+        out += '\n';
         return;
     }
 

@@ -22,14 +22,13 @@ with q() {
     sink(x);
 }
 
-// * @a = private 8, align 8
+// * @a = private 8, align 8, init "\01\00\00\00\00\00\00\00"
 // +
 // + proc __src_main norecurse external ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
 // + entry:
-// +     store @a, i64 1, align 8
 // +     store @a, i64 4, align 8
 // +     %0 = load i64, @a, align 8
 // +     call ccc void sink(i64 %0 noundef)

@@ -1,0 +1,218 @@
+// R %srcc -fshort-filenames --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc -fshort-filenames --llvm --target x86_64-unknown-linux %s
+module folded_globals;
+import <cstdio> as libc;
+
+proc pure -> int {
+    var value = 2;
+    value = value + 3;
+    return value;
+}
+
+export var folded = pure();
+export var state = 0;
+proc impure -> int {
+    state += 1;
+    return 9;
+}
+
+export var runtime_value = impure();
+export var ffi = libc::puts("runtime only");
+export var narrow: i9 = -2 as i9;
+export var optional: int? = 42;
+export var range_value = 1..<4;
+export var array: int[2] = (5, 6);
+struct Padded { a: i8; b: int; }
+export var padded = Padded(1, 2);
+export var null_pointer: int^? = nil;
+
+// Pointer relocations retain runtime initialisation.
+export var pointer = "text".data;
+
+// * @folded_globals::folded = external 8, align 8, init "\05\00\00\00\00\00\00\00"
+// + @folded_globals::state = external 8, align 8, init "\00\00\00\00\00\00\00\00"
+// + @folded_globals::runtime_value = external 8, align 8
+// + @folded_globals::ffi = external 4, align 4
+// + @0 = "runtime only\00"
+// + @folded_globals::narrow = external 2, align 2, init "\FE\01"
+// + @folded_globals::optional = external 9, align 8, init "*\00\00\00\00\00\00\00\01"
+// + @folded_globals::range_value = external 16, align 8, init "\01\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00"
+// + @folded_globals::array = external 16, align 8, init "\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00"
+// + @folded_globals::padded = external 16, align 8, init "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00"
+// + @folded_globals::null_pointer = external 8, align 8, init "\00\00\00\00\00\00\00\00"
+// + @folded_globals::pointer = external 8, align 8
+// + @1 = "text\00"
+// + @2 = "+\00"
+// + @3 = "integer overflow\00"
+// + @4 = "global-initialiser-folding.src\00"
+// +
+// + proc __src_static_init.folded_globals norecurse external ccc {
+// + entry:
+// +     %0 = call ccc i64 folded_globals::impure()
+// +     store @folded_globals::runtime_value, i64 %0, align 8
+// +     %1 = call ccc i32 puts(ptr @0 align 1 dereferenceable 1 noundef readonly)
+// +     store @folded_globals::ffi, i32 %1, align 4
+// +     store @folded_globals::pointer, ptr @1, align 8
+// +     ret
+// + }
+// +
+// + proc folded_globals::impure private ccc -> i64 {
+// +     #0 = 80, align 8
+// +
+// + entry:
+// +     %0 = load i64, @folded_globals::state, align 8
+// +     %1 = sadd ov i64 %0, 1
+// +     br %1:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("global-initialiser-folding.src":15:11) arithmetic(ptr #0)
+// +
+// + bb2:
+// +     store @folded_globals::state, i64 %1:0, align 8
+// +     ret i64 9
+// + }
+// +
+// + proc puts (ptr align 1 dereferenceable 1 noundef readonly) external ccc -> i32;
+// +
+// + proc folded_globals::pure private ccc -> i64 {
+// +     #0 = 8, align 8
+// +     #1 = 80, align 8
+// +
+// + entry:
+// +     store #0, i64 2, align 8
+// +     %0 = load i64, #0, align 8
+// +     %1 = sadd ov i64 %0, 3
+// +     br %1:1 to bb1 else bb2
+// +
+// + bb1:
+// +     abort at loc("global-initialiser-folding.src":8:19) arithmetic(ptr #1)
+// +
+// + bb2:
+// +     store #0, i64 %1:0, align 8
+// +     %11 = load i64, #0, align 8
+// +     ret i64 %11
+// + }
+
+//L * ; ModuleID = 'folded_globals'
+//L + source_filename = "folded_globals"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + @"_Sfolded_globals::folded" = global [8 x i8] c"\05\00\00\00\00\00\00\00", align 8
+//L + @"_Sfolded_globals::state" = global [8 x i8] zeroinitializer, align 8
+//L + @"_Sfolded_globals::runtime_value" = global [8 x i8] zeroinitializer, align 8
+//L + @"_Sfolded_globals::ffi" = global [4 x i8] zeroinitializer, align 4
+//L + @__srcc_str.0 = private constant [13 x i8] c"runtime only\00", align 1
+//L + @"_Sfolded_globals::narrow" = global [2 x i8] c"\FE\01", align 2
+//L + @"_Sfolded_globals::optional" = global [9 x i8] c"*\00\00\00\00\00\00\00\01", align 8
+//L + @"_Sfolded_globals::range_value" = global [16 x i8] c"\01\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00", align 8
+//L + @"_Sfolded_globals::array" = global [16 x i8] c"\05\00\00\00\00\00\00\00\06\00\00\00\00\00\00\00", align 8
+//L + @"_Sfolded_globals::padded" = global [16 x i8] c"\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00", align 8
+//L + @"_Sfolded_globals::null_pointer" = global [8 x i8] zeroinitializer, align 8
+//L + @"_Sfolded_globals::pointer" = global [8 x i8] zeroinitializer, align 8
+//L + @__srcc_str.1 = private constant [5 x i8] c"text\00", align 1
+//L + @__srcc_str.2 = private constant [2 x i8] c"+\00", align 1
+//L + @__srcc_str.3 = private constant [17 x i8] c"integer overflow\00", align 1
+//L + @__srcc_str.4 = private constant [31 x i8] c"global-initialiser-folding.src\00", align 1
+//L +
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
+//L + define void @__src_static_init.folded_globals() #0 {
+//L +   %1 = call i64 @"_Sfolded_globals::impure() -> int"()
+//L +   store i64 %1, ptr @"_Sfolded_globals::runtime_value", align 8
+//L +   %2 = call i32 @puts(ptr noundef readonly align 1 dereferenceable(1) @__srcc_str.0)
+//L +   store i32 %2, ptr @"_Sfolded_globals::ffi", align 4
+//L +   store ptr @__srcc_str.1, ptr @"_Sfolded_globals::pointer", align 8
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sfolded_globals::impure() -> int"() #1 {
+//L +   %1 = alloca i8, i64 80, align 8
+//L +   %2 = load i64, ptr @"_Sfolded_globals::state", align 8
+//L +   %3 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %2, i64 1)
+//L +   %4 = extractvalue { i64, i1 } %3, 0
+//L +   %5 = extractvalue { i64, i1 } %3, 1
+//L +   br i1 %5, label %6, label %16
+//L +
+//L + 6:                                                ; preds = %0
+//L +   store ptr @__srcc_str.4, ptr %1, align 8
+//L +   %7 = getelementptr inbounds nuw i8, ptr %1, i32 8
+//L +   store i64 30, ptr %7, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %1, i32 16
+//L +   store i64 15, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %1, i32 24
+//L +   store i64 11, ptr %9, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %1, i32 32
+//L +   store ptr @__srcc_str.2, ptr %10, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %10, i32 8
+//L +   store i64 1, ptr %11, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %1, i32 48
+//L +   store ptr @__srcc_str.3, ptr %12, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %12, i32 8
+//L +   store i64 16, ptr %13, align 8
+//L +   %14 = getelementptr inbounds nuw i8, ptr %1, i32 64
+//L +   store ptr null, ptr %14, align 8
+//L +   %15 = getelementptr inbounds nuw i8, ptr %14, i32 8
+//L +   store ptr null, ptr %15, align 8
+//L +   call void @__src_int_arith_error(ptr %1)
+//L +   unreachable
+//L +
+//L + 16:                                               ; preds = %0
+//L +   store i64 %4, ptr @"_Sfolded_globals::state", align 8
+//L +   ret i64 9
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare i32 @puts(ptr noundef readonly align 1 dereferenceable(1)) #2
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sfolded_globals::pure() -> int"() #1 {
+//L +   %1 = alloca i8, i64 8, align 8
+//L +   %2 = alloca i8, i64 80, align 8
+//L +   store i64 2, ptr %1, align 8
+//L +   %3 = load i64, ptr %1, align 8
+//L +   %4 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %3, i64 3)
+//L +   %5 = extractvalue { i64, i1 } %4, 0
+//L +   %6 = extractvalue { i64, i1 } %4, 1
+//L +   br i1 %6, label %7, label %17
+//L +
+//L + 7:                                                ; preds = %0
+//L +   store ptr @__srcc_str.4, ptr %2, align 8
+//L +   %8 = getelementptr inbounds nuw i8, ptr %2, i32 8
+//L +   store i64 30, ptr %8, align 8
+//L +   %9 = getelementptr inbounds nuw i8, ptr %2, i32 16
+//L +   store i64 8, ptr %9, align 8
+//L +   %10 = getelementptr inbounds nuw i8, ptr %2, i32 24
+//L +   store i64 19, ptr %10, align 8
+//L +   %11 = getelementptr inbounds nuw i8, ptr %2, i32 32
+//L +   store ptr @__srcc_str.2, ptr %11, align 8
+//L +   %12 = getelementptr inbounds nuw i8, ptr %11, i32 8
+//L +   store i64 1, ptr %12, align 8
+//L +   %13 = getelementptr inbounds nuw i8, ptr %2, i32 48
+//L +   store ptr @__srcc_str.3, ptr %13, align 8
+//L +   %14 = getelementptr inbounds nuw i8, ptr %13, i32 8
+//L +   store i64 16, ptr %14, align 8
+//L +   %15 = getelementptr inbounds nuw i8, ptr %2, i32 64
+//L +   store ptr null, ptr %15, align 8
+//L +   %16 = getelementptr inbounds nuw i8, ptr %15, i32 8
+//L +   store ptr null, ptr %16, align 8
+//L +   call void @__src_int_arith_error(ptr %2)
+//L +   unreachable
+//L +
+//L + 17:                                               ; preds = %0
+//L +   store i64 %5, ptr %1, align 8
+//L +   %18 = load i64, ptr %1, align 8
+//L +   ret i64 %18
+//L + }
+//L +
+//L + declare void @__src_int_arith_error(ptr)
+//L +
+//L + ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
+//L + declare { i64, i1 } @llvm.sadd.with.overflow.i64(i64, i64) #3
+//L +
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #2 = { nounwind }
+//L + attributes #3 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
+//L +
+//L +

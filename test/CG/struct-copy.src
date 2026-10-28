@@ -12,20 +12,14 @@ struct y { a: i64; b: i64; c: i64; }
 var c = y(1, 2, 3);
 var d = c;
 
-// * @a = private 8, align 8
+// * @a = private 8, align 8, init "\01\00\00\00\00\00\00\00"
 // + @b = private 8, align 8
-// + @c = private 24, align 8
+// + @c = private 24, align 8, init "\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00"
 // + @d = private 24, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @a, i64 1, align 8
 // +     copy @b <- @a, 8
-// +     store @c, i64 1, align 8
-// +     %0 = ptradd @c, 8
-// +     store %0, i64 2, align 8
-// +     %1 = ptradd @c, 16
-// +     store %1, i64 3, align 8
 // +     copy @d <- @c, 24
 // +     ret
 // + }
@@ -35,18 +29,14 @@ var d = c;
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + @_Sa = private global [8 x i8] undef, align 8
+//L + @_Sa = private global [8 x i8] c"\01\00\00\00\00\00\00\00", align 8
 //L + @_Sb = private global [8 x i8] undef, align 8
-//L + @_Sc = private global [24 x i8] undef, align 8
+//L + @_Sc = private global [24 x i8] c"\01\00\00\00\00\00\00\00\02\00\00\00\00\00\00\00\03\00\00\00\00\00\00\00", align 8
 //L + @_Sd = private global [24 x i8] undef, align 8
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
-//L +   store i64 1, ptr @_Sa, align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr @_Sb, ptr @_Sa, i64 8, i1 false)
-//L +   store i64 1, ptr @_Sc, align 8
-//L +   store i64 2, ptr getelementptr inbounds nuw (i8, ptr @_Sc, i64 8), align 8
-//L +   store i64 3, ptr getelementptr inbounds nuw (i8, ptr @_Sc, i64 16), align 8
 //L +   call void @llvm.memcpy.p0.p0.i64(ptr @_Sd, ptr @_Sc, i64 24, i1 false)
 //L +   ret void
 //L + }

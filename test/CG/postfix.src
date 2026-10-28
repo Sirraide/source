@@ -12,14 +12,13 @@ var i: i16;
 i++;
 i--;
 
-// * @x = private 8, align 8
+// * @x = private 8, align 8, init "\00\00\00\00\00\00\00\00"
 // + @y = private 8, align 8
 // + @z = private 8, align 8
-// + @i = private 2, align 2
+// + @i = private 2, align 2, init "\00\00"
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @x, i64 0, align 8
 // +     %0 = load i64, @x, align 8
 // +     %1 = add i64 %0, 1
 // +     store @x, i64 %1, align 8
@@ -34,7 +33,6 @@ i--;
 // +     %7 = sub i64 %6, 1
 // +     store @x, i64 %7, align 8
 // +     store @z, i64 %6, align 8
-// +     store @i, i16 0, align 2
 // +     %8 = load i16, @i, align 2
 // +     %9 = add i16 %8, 1
 // +     store @i, i16 %9, align 2

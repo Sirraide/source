@@ -13,26 +13,15 @@ export var values: int[2] = (10, 20);
 export var empty: () = ();
 var hidden = 9;
 
-// * @exported_globals::defaulted = external 8, align 8
-// + @exported_globals::fixed = external 8, align 8
-// + @exported_globals::runtime = external 8, align 8
-// + @exported_globals::pair = external 16, align 8
-// + @exported_globals::values = external 16, align 8
-// + @exported_globals::hidden = private 8, align 8
+// * @exported_globals::defaulted = external 8, align 8, init "\00\00\00\00\00\00\00\00"
+// + @exported_globals::fixed = external 8, align 8, init "\05\00\00\00\00\00\00\00"
+// + @exported_globals::runtime = external 8, align 8, init "%\00\00\00\00\00\00\00"
+// + @exported_globals::pair = external 16, align 8, init "\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00"
+// + @exported_globals::values = external 16, align 8, init "\0A\00\00\00\00\00\00\00\14\00\00\00\00\00\00\00"
+// + @exported_globals::hidden = private 8, align 8, init "\09\00\00\00\00\00\00\00"
 // +
 // + proc __src_static_init.exported_globals norecurse external ccc {
 // + entry:
-// +     store @exported_globals::defaulted, i64 0, align 8
-// +     store @exported_globals::fixed, i64 5, align 8
-// +     %0 = call ccc i64 exported_globals::initial_value()
-// +     store @exported_globals::runtime, i64 %0, align 8
-// +     store @exported_globals::pair, i64 3, align 8
-// +     %1 = ptradd @exported_globals::pair, 8
-// +     store %1, i64 4, align 8
-// +     store @exported_globals::values, i64 10, align 8
-// +     %2 = ptradd @exported_globals::values, 8
-// +     store %2, i64 20, align 8
-// +     store @exported_globals::hidden, i64 9, align 8
 // +     ret
 // + }
 // +
@@ -47,23 +36,14 @@ var hidden = 9;
 //L + target triple = "x86_64-unknown-linux"
 //L +
 //L + @"_Sexported_globals::defaulted" = global [8 x i8] zeroinitializer, align 8
-//L + @"_Sexported_globals::fixed" = global [8 x i8] zeroinitializer, align 8
-//L + @"_Sexported_globals::runtime" = global [8 x i8] zeroinitializer, align 8
-//L + @"_Sexported_globals::pair" = global [16 x i8] zeroinitializer, align 8
-//L + @"_Sexported_globals::values" = global [16 x i8] zeroinitializer, align 8
-//L + @"_Sexported_globals::hidden" = private global [8 x i8] undef, align 8
+//L + @"_Sexported_globals::fixed" = global [8 x i8] c"\05\00\00\00\00\00\00\00", align 8
+//L + @"_Sexported_globals::runtime" = global [8 x i8] c"%\00\00\00\00\00\00\00", align 8
+//L + @"_Sexported_globals::pair" = global [16 x i8] c"\03\00\00\00\00\00\00\00\04\00\00\00\00\00\00\00", align 8
+//L + @"_Sexported_globals::values" = global [16 x i8] c"\0A\00\00\00\00\00\00\00\14\00\00\00\00\00\00\00", align 8
+//L + @"_Sexported_globals::hidden" = private global [8 x i8] c"\09\00\00\00\00\00\00\00", align 8
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_static_init.exported_globals() #0 {
-//L +   store i64 0, ptr @"_Sexported_globals::defaulted", align 8
-//L +   store i64 5, ptr @"_Sexported_globals::fixed", align 8
-//L +   %1 = call i64 @"_Sexported_globals::initial_value() -> int"()
-//L +   store i64 %1, ptr @"_Sexported_globals::runtime", align 8
-//L +   store i64 3, ptr @"_Sexported_globals::pair", align 8
-//L +   store i64 4, ptr getelementptr inbounds nuw (i8, ptr @"_Sexported_globals::pair", i64 8), align 8
-//L +   store i64 10, ptr @"_Sexported_globals::values", align 8
-//L +   store i64 20, ptr getelementptr inbounds nuw (i8, ptr @"_Sexported_globals::values", i64 8), align 8
-//L +   store i64 9, ptr @"_Sexported_globals::hidden", align 8
 //L +   ret void
 //L + }
 //L +

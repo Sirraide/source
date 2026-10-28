@@ -15,6 +15,7 @@
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/SwapByteOrder.h>
 #include <llvm/TargetParser/Host.h>
 
 #include <base/Colours.hh>
@@ -36,6 +37,24 @@ namespace ir = cg::ir;
 namespace LLVM = mlir::LLVM;
 using mlir::Block;
 using mlir::Value;
+
+// VM memory uses host byte order; serialised values use target byte order.
+static void StoreInteger(
+    void* memory,
+    const APInt& value,
+    bool little_endian = llvm::sys::IsLittleEndianHost
+) {
+    auto size = unsigned(Size::Bits(value.getBitWidth()).as_bytes().bytes());
+    auto bytes = static_cast<u8*>(memory);
+    llvm::StoreIntToMemory(value, bytes, size);
+
+    // FIXME: Evaluation probably also needs to use target byte order, but
+    // I still haven’t figure out what to do w/ FFI calls wrt host->target
+    // conversions. Perhaps we need something like 'eval' vs 'eval::host'
+    // to differentiate the two?
+    if (little_endian != llvm::sys::IsLittleEndianHost)
+        Todo("Support big-endian targets during constant evaluation");
+}
 
 static auto LoadRangeFromMemory(
     const void* ptr,
@@ -242,6 +261,61 @@ auto RValue::profile(llvm::FoldingSetNodeID& id) const -> Result<> {
     };
     Profile(*this);
     return {};
+}
+
+auto RValue::store(void* memory, TranslationUnit& tu) const -> bool {
+    auto bytes = static_cast<u8*>(memory);
+    auto size = type()->memory_size(tu).bytes();
+    if (size == 0) return true;
+    std::memset(bytes, 0, size);
+    auto Write = [&](this auto& self, const RValue& value, usz offset) -> bool {
+        return value.visit(utils::Overloaded{
+            [&](const APInt& integer, Type) {
+                StoreInteger(bytes + offset, integer, tu.target().triple().isLittleEndian());
+                return true;
+            },
+            [&](const RawByteBuffer& buffer, Type) {
+                std::memcpy(bytes + offset, buffer.data(), buffer.size().bytes());
+                return true;
+            },
+            [&](const Record& record, Type type) {
+                if (auto array = srcc::dyn_cast<ArrayType>(type)) {
+                    auto stride = array->elem()->array_size(tu).bytes();
+                    for (auto [i, field] : enumerate(record.fields))
+                        if (not self(*field, offset + i * stride))
+                            return false;
+                } else {
+                    auto fields = srcc::cast<RecordType>(type)->scope()->fields();
+                    for (auto [field, value] : zip(fields, record.fields))
+                        if (not self(*value, offset + field->offset().bytes()))
+                            return false;
+                }
+                return true;
+            },
+            [&](const Optional& optional, Type type) {
+                if (not optional.value) return true;
+                auto opt = srcc::cast<OptionalType>(type);
+                if (not self(*optional.value.get(), offset)) return false;
+                if (not opt->has_transparent_layout()) bytes[offset + opt->get_engaged_offset().bytes()] = 1;
+                return true;
+            },
+            [&](const Range& range, Type type) {
+                auto record = srcc::cast<RangeType>(type)->equivalent_tuple_type();
+                StoreInteger(bytes + offset, range.start, tu.target().triple().isLittleEndian());
+                StoreInteger(
+                    bytes + offset + record->scope()->field(1)->offset().bytes(),
+                    range.end,
+                    tu.target().triple().isLittleEndian()
+                );
+                return true;
+            },
+            [&](const EvaluatedPointer& pointer, Type) { return pointer.is_null(); },
+            [&](Nil, Type) { return true; },
+            [&](std::monostate, Type) { return true; },
+            [](const auto&, Type) { return false; },
+        });
+    };
+    return Write(*this, 0);
 }
 
 #define TRY(x)                 \
@@ -629,8 +703,10 @@ public:
     SLoc entry;
     bool complain;
     bool allow_globals;
+    bool allow_side_effects;
+    Pointer stack_begin;
 
-    Eval(VM& vm, Sema* sema, bool complain, bool allow_globals);
+    Eval(VM& vm, Sema* sema, bool complain, bool allow_globals, bool allow_side_effects);
     ~Eval();
 
     [[nodiscard]] auto eval(Stmt* s) -> std::optional<RValue>;
@@ -663,7 +739,7 @@ private:
     [[nodiscard]] bool EvalLoop();
     [[nodiscard]] auto FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue>;
     [[nodiscard]] auto FFIType(mlir::Type ty) -> ffi_type*;
-    [[nodiscard]] auto GetHostMemoryPointer(Value v) -> void*;
+    [[nodiscard]] auto GetHostMemoryPointer(Value v, bool write = false) -> void*;
     [[nodiscard]] auto LoadSRValue(const void* mem, mlir::Type ty) -> SRValue;
     [[nodiscard]] auto LoadInt(const void* mem, Size width) -> SRValue;
     [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
@@ -686,12 +762,14 @@ private:
     void StoreSRValue(void* mem, const SRValue& val);
 };
 
-Eval::Eval(VM& vm, Sema* sema, bool complain, bool allow_globals)
+Eval::Eval(VM& vm, Sema* sema, bool complain, bool allow_globals, bool allow_side_effects)
     : vm{vm},
       sema{sema},
       stack_top{vm.active_evaluation ? vm.active_evaluation->stack_top : vm.memory->get_stack_bottom()},
       complain{complain},
-      allow_globals{allow_globals} {}
+      allow_globals{allow_globals},
+      allow_side_effects{allow_side_effects},
+      stack_begin{stack_top} {}
 
 Eval::~Eval() {
     if (entry_proc) entry_proc.erase();
@@ -972,6 +1050,10 @@ bool Eval::EvalLoop() {
             if (not RequestIRProcedure(callee, SLoc::Decode(i->getLoc())))
                 return false;
 
+            // Varargs are currently not supported.
+            if (callee.getVariadic() and c.getArgs().size() > callee.getNumCallArgs())
+                return Error(SLoc::Decode(c.getLoc()), "Interpreting C varargs is not supported");
+
             // Get the return value slots *before* pushing a new frame.
             StackFrame::RetVals ret_vals;
             for (auto res : c.getResults()) ret_vals.push_back(&Temp(res));
@@ -1025,7 +1107,7 @@ bool Eval::EvalLoop() {
         }
 
         if (auto m = dyn_cast<ir::CopyOp>(i)) {
-            auto dest = GetHostMemoryPointer(m.getDest());
+            auto dest = GetHostMemoryPointer(m.getDest(), true);
             auto src = GetHostMemoryPointer(m.getSrc());
             if (not dest or not src) return false;
             auto bytes = Val(m.getBytes()).cast<APInt>().getZExtValue();
@@ -1034,7 +1116,7 @@ bool Eval::EvalLoop() {
         }
 
         if (auto m = dyn_cast<LLVM::MemsetOp>(i)) {
-            auto dest = GetHostMemoryPointer(m.getDst());
+            auto dest = GetHostMemoryPointer(m.getDst(), true);
             if (not dest) return false;
             auto val = Val(m.getVal()).cast<APInt>().getZExtValue();
             auto bytes = Val(m.getLen()).cast<APInt>().getZExtValue();
@@ -1163,7 +1245,7 @@ bool Eval::EvalLoop() {
         }
 
         if (auto s = dyn_cast<ir::StoreOp>(i)) {
-            auto ptr = GetHostMemoryPointer(s.getAddr());
+            auto ptr = GetHostMemoryPointer(s.getAddr(), true);
             if (not ptr) return false;
             auto& val = Val(s.getValue());
             StoreSRValue(ptr, val);
@@ -1260,6 +1342,11 @@ bool Eval::EvalLoop() {
 }
 
 auto Eval::FFICall(ir::ProcOp proc, ir::CallOp call) -> std::optional<SRValue> {
+    if (not allow_side_effects) {
+        Error(SLoc::Decode(call.getLoc()), "FFI calls are not allowed in this evaluation");
+        return std::nullopt;
+    }
+
     if (not vm.supports_ffi_calls) {
         Error(SLoc::Decode(call.getLoc()), "Compile-time FFI calls are not supported when cross-compiling");
         Remark(
@@ -1392,7 +1479,7 @@ auto Eval::FFIType(mlir::Type ty) -> ffi_type* {
     return nullptr;
 }
 
-auto Eval::GetHostMemoryPointer(Value v) -> void* {
+auto Eval::GetHostMemoryPointer(Value v, bool write) -> void* {
     auto p = Val(v).cast<Pointer>();
 
     // This is the null pointer in some address space.
@@ -1404,6 +1491,17 @@ auto Eval::GetHostMemoryPointer(Value v) -> void* {
     // This is a procedure pointer.
     if (vm.memory->is_virtual_proc_ptr(p)) {
         Error(SLoc::Decode(v.getLoc()), "Invalid memory access");
+        return nullptr;
+    }
+
+    if (
+        write and
+        not allow_side_effects and (
+            not vm.memory->is_stack_pointer(p) or
+                p.raw_value() < stack_begin.raw_value()
+        )
+    ) {
+        Error(SLoc::Decode(v.getLoc()), "Side effects are not allowed in this evaluation");
         return nullptr;
     }
 
@@ -1663,11 +1761,7 @@ void Eval::StoreSRValue(void* ptr, const SRValue& val) {
             auto available_size = vm.owner().target().int_size(Size::Bits(i.getBitWidth()));
             auto size_to_store = Size::Bits(i.getBitWidth()).as_bytes();
             Assert(size_to_store <= available_size);
-            llvm::StoreIntToMemory(
-                i,
-                static_cast<u8*>(ptr),
-                unsigned(size_to_store.bytes())
-            );
+            StoreInteger(ptr, i);
         },
         [&](Pointer p) {
             iptr v = p.raw_value();
@@ -1846,7 +1940,8 @@ auto VM::eval(
     Stmt* stmt,
     bool complain,
     bool dump_ir,
-    bool allow_globals
+    bool allow_globals,
+    bool allow_side_effects
 ) -> std::optional<RValue> { // clang-format off
     using OptVal = std::optional<RValue>;
     Assert(initialised);
@@ -1880,7 +1975,7 @@ auto VM::eval(
     // A body request made during execution may recursively evaluate another
     // compile-time expression using the same generator.
     llvm::TimeTraceScope _{"[SRCC] Compile-Time Evaluation"};
-    Eval e{*this, sema, complain, allow_globals};
+    Eval e{*this, sema, complain, allow_globals, allow_side_effects};
     tempset active_evaluation = &e;
     auto res = e.eval(stmt);
     if (dump_ir) std::println("{}", text::RenderColours(
