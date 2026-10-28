@@ -417,6 +417,27 @@ auto CodeGen::CreateNullPointer(mlir::Location loc) -> Value {
     return ir::NilOp::create(*this, loc, ptr_ty);
 }
 
+auto CodeGen::CreatePoison(
+    mlir::Location loc,
+    Type ty,
+    ValueCategory category
+) -> IRValue {
+    if (category != Expr::RValue or ty->eval_mode() == EvalMode::Memory)
+        return CreatePoison(loc, ptr_ty);
+
+    if (not ty->is_aggregate()) return CreatePoison(loc, C(ty));
+    auto record = GetEquivalentRecordTypeForAggregate(ty);
+    Assert(record);
+    return {
+        CreatePoison(loc, C(record->scope()->field(0)->type)),
+        CreatePoison(loc, C(record->scope()->field(1)->type))
+    };
+}
+
+auto CodeGen::CreatePoison(mlir::Location loc, mlir::Type ty) -> Value {
+    return LLVM::PoisonOp::create(*this, loc, ty)->getResult(0);
+}
+
 auto CodeGen::CreatePtrAdd(
     mlir::Location loc,
     Value addr,
@@ -2096,7 +2117,7 @@ auto CodeGen::EmitBuiltinMemberAccessExpr(BuiltinMemberAccessExpr* expr) -> IRVa
 
         if (res.has_value()) return EmitValue(l, res.value());
         ReportDiag(std::move(res.error()));
-        return LLVM::PoisonOp::create(*this, l, int_ty)->getResult(0);
+        return CreatePoison(l, int_ty);
     }
 
     auto GetField = [&] (unsigned i) -> IRValue {
@@ -2254,15 +2275,8 @@ auto CodeGen::EmitCastExpr(CastExpr* expr) -> IRValue {
             // such types should always be emitted in EmitRValue() instead of here.
             Unreachable("Should only be emitted in EmitRValue()");
 
-        case CastExpr::MaterialisePoisonValue: {
-            auto op = LLVM::PoisonOp::create(
-                *this,
-                C(expr->location()),
-                C(expr->type, expr->value_category)
-            );
-
-            return op.getRes();
-        }
+        case CastExpr::MaterialisePoisonValue:
+            return CreatePoison(C(expr->location()), expr->type, expr->value_category);
 
         case CastExpr::NilToOptional:
             return EmitDefaultInit(expr->type, C(expr->location()));
@@ -2635,6 +2649,17 @@ auto CodeGen::EmitIntLitExpr(IntLitExpr* expr) -> IRValue {
 }
 
 auto CodeGen::EmitClosure(ProcDecl* decl, mlir::Location loc) -> IRValue {
+    // Completing a body can start another evaluation, temporarily replacing the
+    // callback. Make a local copy of this before invoking it.
+    if (
+        auto prepare = prepare_closure;
+        prepare and not prepare(
+            decl,
+            SLoc::Decode(loc),
+            curr->decl != nullptr
+        )
+    ) return CreateNullClosure(loc);
+
     auto op = DeclareProcedure(decl);
     auto ref = ir::ProcRefOp::create(*this, loc, op);
     if (not decl->has_captures) return {ref, CreateNullPointer(loc)};
@@ -3197,6 +3222,13 @@ auto CodeGen::EmitWithExpr(WithExpr* expr) -> IRValue {
 
 auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue { // clang-format off
     auto GetSLoc = [&] { return SLoc::Decode(loc); };
+
+    // Check if we can emit this.
+    if (auto valid = val.can_persist(); not valid) {
+        Error(GetSLoc(), "Constant value {}", valid.error());
+        return CreatePoison(loc, val.type());
+    }
+
     utils::Overloaded V {
         [&](std::monostate, Type) -> IRValue { return {}; },
         [&](eval::Nil, Type) -> IRValue { return {}; },
@@ -3252,22 +3284,9 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                 return CreateNullClosure(loc);
             }
 
-            if (not c.env.is_null()) {
-                ICE(GetSLoc(), "TODO: Emitting an evaluated closure with a non-null environment");
-                return CreateNullClosure(loc);
-            }
-
             return EmitClosure(proc, loc);
         },
         [&](eval::EvaluatedPointer p, Type) -> IRValue {
-            auto Poison = [&] -> Value {
-                return LLVM::PoisonOp::create(
-                    *this,
-                    loc,
-                    ptr_ty
-                )->getResult(0);
-            };
-
             auto base = p.base().visit(utils::Overloaded{
                 [&](String s) -> Value { return CreateGlobalStringPtr(Align(1), s, false); },
                 [&](std::nullptr_t) -> Value { return CreateNullPointer(loc); },
@@ -3278,16 +3297,10 @@ auto CodeGen::EmitValue(mlir::Location loc, const eval::RValue& val) -> IRValue 
                     };
 
                     ICE(GetSLoc(), "Cannot emit procedure pointer outside of closure");
-                    return Poison();
+                    return CreatePoison(loc, ptr_ty);
                 },
-                [&](eval::InvalidStackPointer) {
-                    Error(GetSLoc(), "Cannot emit pointer to compile-time stack memory");
-                    return Poison();
-                },
-                [&](eval::UnknownPointer) {
-                    Error(GetSLoc(), "Cannot emit unknown pointer");
-                    return Poison();
-                }
+                [&](eval::InvalidStackPointer) -> Value { Unreachable("Checked above"); },
+                [&](eval::UnknownPointer) -> Value { Unreachable("Checked above"); }
             });
 
             // This is a constant, so what aliases what is irrelevant.

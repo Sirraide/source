@@ -60,12 +60,12 @@ immutable_tuple((1, 2));
 proc immutable_with (with $p: ImmutablePair) { value = 3; } // expected-error: Cannot assign to immutable value
 immutable_with(ImmutablePair(1));
 
-// Errors preparing an unsuccessful constant probe must not escape the candidate.
+// Errors preparing an unsuccessful trial evaluation must not escape the candidate.
 proc optional_fallback ($value: int) = 1;
 proc optional_fallback (value: int?) = 2;
 optional_fallback(nil as int?);
 proc dynamic_optional (value: int?) = optional_fallback(value);
 
-// An invalid procedure body remains a hard error during a probe.
+// An invalid procedure body remains a hard error during trial evaluation
 proc invalid_body -> int { return missing_symbol; } // expected-error: Unknown symbol 'missing_symbol'
 constant(invalid_body());

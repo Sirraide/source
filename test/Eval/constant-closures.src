@@ -1,0 +1,38 @@
+// V %srcc --eval %s
+program test;
+
+proc callback ($fn: proc (int) -> int, x: int) = fn(x);
+proc increment (x: int) = x + 1;
+assert callback(increment, 48) == 49;
+
+proc nested -> int {
+    proc increment (x: int) -> int = x + 1;
+    return callback(increment, 48);
+}
+assert nested() == 49;
+
+// Captured closures remain usable entirely within one evaluation.
+proc local_capture -> int {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    return increment(48);
+}
+#assert local_capture() == 49;
+assert local_capture() == 49;
+
+// Trial evaluation silently rejects a captured closure.
+proc fallback ($fn: proc (int) -> int) = 1;
+proc fallback (fn: proc (int) -> int) = 2;
+proc runtime_fallback -> int {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    return fallback(increment);
+}
+assert runtime_fallback() == 2;
+
+// A returned closure without captures is safe to persist.
+proc make_callback -> proc (int) -> int {
+    proc increment (x: int) -> int = x + 1;
+    return increment;
+}
+assert callback(make_callback(), 48) == 49;

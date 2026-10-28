@@ -233,6 +233,12 @@ class srcc::cg::CodeGen : public DiagsProducer
     usz vm_evaluations = 0;
 
 public:
+    /// Callback to prepare a closure for emission; this is a hack that
+    /// is used during constant evaluation where we can end up requesting
+    /// a procedure body before we’ve figured out what all of its captures
+    /// are.
+    llvm::function_ref<bool(ProcDecl*, SLoc, bool)> prepare_closure;
+
     CodeGen(TranslationUnit& tu, LangOpts lang_opts);
     ~CodeGen();
 
@@ -466,6 +472,16 @@ public:
 
     /// Create a 'null' pointer value.
     auto CreateNullPointer(mlir::Location loc) -> Value;
+
+    /// Create a poison value.
+    auto CreatePoison(
+        mlir::Location loc,
+        Type ty,
+        ValueCategory category = Expr::RValue
+    ) -> IRValue;
+
+    /// Create a poison value of an IR type.
+    auto CreatePoison(mlir::Location loc, mlir::Type ty) -> Value;
 
     /// Create a return.
     void CreateReturn(mlir::Location loc, mlir::ValueRange values);

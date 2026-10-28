@@ -251,6 +251,9 @@ public:
     /// Dump this value to stderr.
     void dump() const;
 
+    /// Check whether this value can escape its evaluation.
+    [[nodiscard]] auto can_persist() const -> Result<>;
+
     /// dyn_cast<>() the contained value.
     template <typename Ty>
     auto dyn_cast() const -> const Ty* {

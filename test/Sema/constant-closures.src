@@ -1,0 +1,48 @@
+// V %srcc --sema --verify %s
+program test;
+
+proc callback ($fn: proc (int) -> int, x: int) = fn(x); // expected-note 3 (In argument to parameter 'fn') expected-note 3 (Callee declared here)
+
+// A runtime environment is unavailable when probing a constant argument.
+proc runtime_capture {
+    var y = 1;
+    proc increment (x: int) = x + y;
+    assert callback(increment, 48) == 49; // expected-error: Argument to constant parameter 'fn' is not a compile-time constant
+}
+
+// Explicit return types must also have their captures discovered on demand.
+proc typed_runtime_capture {
+    var y = 1;
+    callback(increment, 48); // expected-error: Argument to constant parameter 'fn' is not a compile-time constant
+    proc increment (x: int) -> int = x + y;
+    eval increment; // expected-error: Cannot evaluate a closure whose environment is only available at runtime
+}
+
+// A failed trial evaluation must not prevent selection of a runtime overload.
+proc fallback ($fn: proc (int) -> int) = 1;
+proc fallback (fn: proc (int) -> int) = 2;
+proc runtime_fallback {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    fallback(increment);
+}
+
+// Environments constructed during evaluation cannot become constant arguments.
+proc make_closure -> proc (int) -> int {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    return increment;
+}
+callback(make_closure(), 48); // expected-error: Argument to constant parameter 'fn' contains a closure with an environment
+
+// The same checks apply recursively and to other evaluation-local pointers.
+proc take_constant ($value: $T) {} // expected-note 6 (In argument to parameter 'value') expected-note 6 (Callee declared here)
+take_constant((make_closure(), 1)); // expected-error: Argument to constant parameter 'value' contains a closure with an environment
+take_constant((make_closure(), make_closure()) as typeof(make_closure())[2]); // expected-error: Argument to constant parameter 'value' contains a closure with an environment
+struct Wrapper { fn: proc (int) -> int; }
+take_constant(Wrapper(make_closure())); // expected-error: Argument to constant parameter 'value' contains a closure with an environment
+take_constant(__srcc_ptradd("1234".data, 10)); // expected-error: Argument to constant parameter 'value' contains a pointer whose target is unknown
+proc dangling_pointer -> int^ { var x = 1; return &x; }
+take_constant(dangling_pointer() as int^?); // expected-error: Argument to constant parameter 'value' references out-of-scope stack memory
+proc dangling_slice -> int[] { var x = 1; return int[](&x, 1); }
+take_constant(dangling_slice()); // expected-error: Argument to constant parameter 'value' references out-of-scope stack memory

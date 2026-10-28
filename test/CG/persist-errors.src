@@ -2,17 +2,17 @@
 program test;
 
 proc f -> int {
-    var y: int^ = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    var y: int^ = eval { // expected-error: Constant value references out-of-scope stack memory
         var q: int = 42;
         &q;
     };
 
-    ^(eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    ^(eval { // expected-error: Constant value references out-of-scope stack memory
         var q: int = 42;
         &q;
     }) = 42;
 
-    return ^eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    return ^eval { // expected-error: Constant value references out-of-scope stack memory
         var q: int = 42;
         &q;
     };
@@ -27,12 +27,12 @@ proc g {
 }
 
 proc h -> int[] {
-    var s1: int[] = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    var s1: int[] = eval { // expected-error: Constant value references out-of-scope stack memory
         var i: int;
         int[](&i, 1);
     };
 
-    var s2: int[] = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    var s2: int[] = eval { // expected-error: Constant value references out-of-scope stack memory
         var i: int;
         var j: int^ = &i;
         int[](j, 1);
@@ -44,7 +44,7 @@ proc h -> int[] {
         int[](&i, 1);
     };
 
-    return eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    return eval { // expected-error: Constant value references out-of-scope stack memory
         var i: int;
         int[](&i, 1);
     };
@@ -101,14 +101,31 @@ struct s {
 }
 
 proc p7 {
-    var x = eval { // expected-error: Cannot emit pointer to compile-time stack memory
+    var x = eval { // expected-error: Constant value references out-of-scope stack memory
         var i: int;
         s(i, &i);
     };
 }
 
 proc str {
-    var x5 = eval __srcc_ptradd("1234".data, 5); // expected-error: Cannot emit unknown pointer
-    var x6 = eval __srcc_ptradd("1234".data, 10); // expected-error: Cannot emit unknown pointer
+    var x5 = eval __srcc_ptradd("1234".data, 5); // expected-error: Constant value contains a pointer whose target is unknown
+    var x6 = eval __srcc_ptradd("1234".data, 10); // expected-error: Constant value contains a pointer whose target is unknown
 }
 
+// Captured closures follow the same rules as other evaluation-local pointers.
+proc make_closure -> proc (int) -> int {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    return increment;
+}
+proc captured_closures {
+    var escaped = eval make_closure(); // expected-error: Constant value contains a closure with an environment
+    var tuple = eval (make_closure(), 1); // expected-error: Constant value contains a closure with an environment
+    var array = eval (make_closure(), make_closure()) as typeof(make_closure())[2]; // expected-error 2: Constant value contains a closure with an environment
+    var record = eval Wrapper(make_closure()); // expected-error: Constant value contains a closure with an environment
+
+    // Discarded values are not emitted.
+    eval make_closure();
+    eval (make_closure(), 1);
+}
+struct Wrapper { fn: proc (int) -> int; }

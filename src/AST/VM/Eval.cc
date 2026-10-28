@@ -148,26 +148,50 @@ auto RValue::print(const Context* ctx) const -> SmallUnrenderedString {
     return out;
 }
 
-auto RValue::profile(llvm::FoldingSetNodeID& id) const -> Result<> {
-    auto Pointer = [&](const EvaluatedPointer& pointer) -> Result<> {
-        // Reject invalid pointers.
+auto RValue::can_persist() const -> Result<> {
+    auto Pointer = [](const EvaluatedPointer& pointer) -> Result<> {
         if (pointer.base().is<InvalidStackPointer>())
             return base::Error("references out-of-scope stack memory");
         if (pointer.base().is<UnknownPointer>())
             return base::Error("contains a pointer whose target is unknown");
+        return {};
+    };
 
+    return visit(utils::Overloaded{
+        [&](const EvaluatedPointer& pointer, Type) { return Pointer(pointer); },
+        [&](const Slice& slice, Type) { return Pointer(slice.pointer); },
+        [&](const Closure& closure, Type) -> Result<> {
+            if (not closure.env.is_null())
+                return base::Error("contains a closure with an environment");
+            return Pointer(closure.proc);
+        },
+        [&](const Optional& optional, Type) -> Result<> {
+            if (optional.value) return optional.value->can_persist();
+            return {};
+        },
+        [&](const Record& record, Type) -> Result<> {
+            for (auto field : record.fields) Try(field->can_persist());
+            return {};
+        },
+        [](const auto&, Type) -> Result<> { return {}; },
+    });
+}
+
+auto RValue::profile(llvm::FoldingSetNodeID& id) const -> Result<> {
+    Try(can_persist());
+
+    auto Pointer = [&](const EvaluatedPointer& pointer) -> void {
         // Add the pointer.
         id.AddInteger(pointer.base().index());
         pointer.base().visit(utils::Overloaded{
             [&](std::nullptr_t) {},
             [&](ProcDecl* proc) { id.AddPointer(proc); },
             [&](String string) { id.AddString(string); },
-            [&](auto) { Unreachable("Invalid cases are handled above"); },
+            [&](auto) { Unreachable("Checked above"); },
         });
 
         // Add its offset.
         id.AddInteger(pointer.offset().bits());
-        return {};
     };
 
     auto Tree = [&](this auto& self, TreeValue* tree) -> void {
@@ -176,51 +200,48 @@ auto RValue::profile(llvm::FoldingSetNodeID& id) const -> Result<> {
         for (auto unquote : tree->unquotes()) self(unquote);
     };
 
-    id.AddPointer(type()->canonical);
-    id.AddInteger(value.index());
-    return visit(utils::Overloaded{
-        [&](const APInt& integer, Type) -> Result<> {
-            integer.Profile(id);
-            return {};
-        },
-        [&](const Range& range, Type) -> Result<> {
-            range.start.Profile(id);
-            range.end.Profile(id);
-            return {};
-        },
-        [&](const Slice& slice, Type) -> Result<> {
-            slice.size.Profile(id);
-            return Pointer(slice.pointer);
-        },
-        [&](const Closure& closure, Type) -> Result<> {
-            Try(Pointer(closure.proc));
-            return Pointer(closure.env);
-        },
-        [&](const Optional& optional, Type) -> Result<> {
-            id.AddBoolean(bool(optional.value));
-            if (optional.value) return optional.value->profile(id);
-            return {};
-        },
-        [&](const Record& record, Type) -> Result<> {
-            for (auto field : record.fields) Try(field->profile(id));
-            return {};
-        },
-        [&](const EvaluatedPointer& pointer, Type) { return Pointer(pointer); },
-        [&](Type type, Type) -> Result<> {
-            id.AddPointer(type->canonical);
-            return {};
-        },
-        [&](TreeValue* tree, Type) -> Result<> {
-            Tree(tree);
-            return {};
-        },
-        [&](Nil, Type) -> Result<> { return {}; },
-        [&](std::monostate, Type) -> Result<> { return {}; },
-        [&](const RawByteBuffer& bytes, Type) -> Result<> {
-            id.AddString(StringRef(static_cast<const char*>(bytes.data()), bytes.size().bytes()));
-            return {};
-        },
-    });
+    auto Profile = [&](this auto& self, const RValue& value) -> void {
+        id.AddPointer(value.type()->canonical);
+        id.AddInteger(value.value.index());
+        return value.visit(utils::Overloaded{
+            [&](const APInt& integer, Type) -> void {
+                integer.Profile(id);
+            },
+            [&](const Range& range, Type) -> void {
+                range.start.Profile(id);
+                range.end.Profile(id);
+            },
+            [&](const Slice& slice, Type) -> void {
+                slice.size.Profile(id);
+                return Pointer(slice.pointer);
+            },
+            [&](const Closure& closure, Type) -> void {
+                Pointer(closure.proc);
+                return Pointer(closure.env);
+            },
+            [&](const Optional& optional, Type) -> void {
+                id.AddBoolean(bool(optional.value));
+                if (optional.value) return self(*optional.value.get());
+            },
+            [&](const Record& record, Type) -> void {
+                for (auto field : record.fields) self(*field);
+            },
+            [&](const EvaluatedPointer& pointer, Type) { return Pointer(pointer); },
+            [&](Type type, Type) -> void {
+                id.AddPointer(type->canonical);
+            },
+            [&](TreeValue* tree, Type) -> void {
+                Tree(tree);
+            },
+            [&](Nil, Type) -> void {},
+            [&](std::monostate, Type) -> void {},
+            [&](const RawByteBuffer& bytes, Type) -> void {
+                id.AddString(StringRef(static_cast<const char*>(bytes.data()), bytes.size().bytes()));
+            },
+        });
+    };
+    Profile(*this);
+    return {};
 }
 
 #define TRY(x)                 \
@@ -648,7 +669,7 @@ private:
     [[nodiscard]] auto LoadPointer(const void* mem) -> SRValue;
     [[nodiscard]] auto LoadType(const void* mem) -> Type;
     [[nodiscard]] auto LoadTree(const void* mem) -> TreeValue*;
-    [[nodiscard]] auto Persist(const void* mem, SLoc loc, Type ty) -> RValue;
+    [[nodiscard]] auto Persist(const void* mem, Type ty) -> RValue;
     [[nodiscard]] bool RequestIRProcedure(ir::ProcOp proc, SLoc loc);
     [[nodiscard]] auto Temp(Value v) -> SRValue&;
     [[nodiscard]] auto Val(Value v) -> const SRValue&;
@@ -1424,7 +1445,7 @@ auto Eval::LoadType(const void* mem) -> Type {
     return ptr;
 }
 
-auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
+auto Eval::Persist(const void* mem, Type ty) -> RValue {
     auto PersistPointer = [&](const void* mem) -> EvaluatedPointer {
         auto ptr = LoadPointer(mem).cast<Pointer>();
         if (ptr.is_null()) return EvaluatedPointer();
@@ -1503,7 +1524,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         auto stride = array->elem()->array_size(vm.owner());
         for (i64 i = 0; i < array->dimension(); ++i) {
             auto ptr = mem + stride * usz(i);
-            elements.push_back(vm.owner().save(Persist(ptr, loc, array->elem())));
+            elements.push_back(vm.owner().save(Persist(ptr, array->elem())));
         }
 
         return RValue(Record{ArrayRef(elements).copy(vm.owner().allocator())}, ty);
@@ -1515,7 +1536,7 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         values.reserve(r->layout().field_offsets().size());
         for (auto f : r->scope()->fields()) {
             auto ptr = mem + f->offset();
-            values.push_back(vm.owner().save(Persist(ptr, loc, f->type)));
+            values.push_back(vm.owner().save(Persist(ptr, f->type)));
         }
 
         return RValue(Record{ArrayRef(values).copy(vm.owner().allocator())}, r);
@@ -1537,8 +1558,8 @@ auto Eval::Persist(const void* mem, SLoc loc, Type ty) -> RValue {
         // Load the bool to check if this is engaged.
         auto engaged = LoadInt(mem + o->get_engaged_offset(), Type::BoolTy->bit_width(vm.owner()));
         if (not engaged.cast<APInt>().getBoolValue()) return RValue(Optional(), o);
-        auto value = Persist(mem, loc, o->elem());
-        return RValue(Optional(vm.owner().save(value)), o);
+        auto value = Persist(mem, o->elem());
+        return RValue(Optional(vm.owner().save(std::move(value))), o);
     }
 
     Todo();
@@ -1668,15 +1689,51 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     // Always reset the stack pointer when we’re done.
     tempset stack_top = stack_top;
 
+    // Capture information must be available when CodeGen attempts to emit a
+    // nested procedure; however, since we might try to evaluate a procedure
+    // we haven’t finished translating yet, we might have to compute that
+    // information on-demand. Install a callback for that.
+    auto& context = vm.owner().context();
+    bool closure_preparation_failed = false;
+    DiagnosticsEngine::Ptr original_diags{&context.diags()};
+    auto PrepareClosure = [&](ProcDecl* decl, SLoc loc, bool environment_available) {
+        if (decl->parent and decl->will_have_body and not decl->body()) {
+            // Errors in the body are hard errors.
+            DiagnosticsEngine::Ptr previous{&context.diags()};
+            context.set_diags(original_diags);
+            defer { context.set_diags(previous); };
+            if (not sema or not sema->RequestProcedureBody(decl, loc)) {
+                closure_preparation_failed = true;
+                return false;
+            }
+        }
+
+        if (decl->has_captures and not environment_available) {
+            Error(loc, "Cannot evaluate a closure whose environment is only available at runtime");
+            closure_preparation_failed = true;
+            return false;
+        }
+        return true;
+    };
+
+    tempset vm.cg->prepare_closure = PrepareClosure;
+
     // Compile the procedure.
     entry = s->location();
     if (not complain) {
-        // Preparing an expression can itself fail, e.g. when probing conversion of
-        // a known-nil optional to an int. Silent evaluation must not publish those
-        // diagnostics and poison an otherwise viable runtime overload. Keep this
-        // trap around the entry point only: bodies requested during execution must
-        // still diagnose malformed declarations.
-        // Temporarily override the diagnostics engine while we compile this.
+        // Emitting the statement can fail due to finalisation-time analysis
+        // passes; e.g. consider
+        //
+        //    proc opt ($value: int) = 1; // A
+        //    proc opt (value: int?) = 2; // B
+        //    opt(nil as int?);           // Calls B
+        //
+        // Here, the constant conversion to 'int' fails because the optional
+        // 'nil as int?' is not engaged, but this is discovered during
+        // finalisation time rather than evaluation time.
+        //
+        // Temporarily override the diagnostics engine while we compile this
+        // to make sure any finalisation-time diagnostics are caught here.
         auto& context = vm.owner().context();
         auto diagnostics = llvm::makeIntrusiveRefCnt<CollectDiagnosticsEngine>(context);
         {
@@ -1698,6 +1755,11 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         }
     } else {
         entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
+    }
+
+    if (closure_preparation_failed and entry_proc) {
+        entry_proc.erase();
+        entry_proc = {};
     }
 
     auto proc = entry_proc;
@@ -1726,6 +1788,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     // Otherwise, just run the procedure and convert the results to an rvalue.
     TRY(EvalLoop());
+    if (closure_preparation_failed) return std::nullopt;
     if (not yields_value) {
         if (s->type_or_void() == Type::NilTy) return RValue(Nil{});
         return RValue(std::monostate{}, s->type_or_void());
@@ -1733,7 +1796,7 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
 
     Assert(ret);
     auto mem = reinterpret_cast<const void*>(ret.raw_value());
-    return Persist(mem, s->location(), ty);
+    return Persist(mem, ty);
 }
 
 // ============================================================================
