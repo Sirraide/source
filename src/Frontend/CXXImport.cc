@@ -845,21 +845,24 @@ auto Sema::ImportCXXHeaders(
 
     // Use quoted includes so source-file-relative includes work.
     SmallString<128> code;
-    for (auto h : header_names) {
+    for (auto h : cxx_headers) {
         Assert(h.starts_with("<") and h.ends_with(">"));
         if (lc and file) Format(code, "#line {} \"{}\"\n", lc->line, *file);
         Format(code, "#include \"{}\"\n", h.drop().drop_back());
     }
 
-    auto AST = ParseCXX(code);
-    if (not AST) {
-        Error(import_loc, "Header import failed");
-        return {};
+    if (not shared_cxx_ast) {
+        auto AST = ParseCXX(code);
+        if (not AST) {
+            Error(import_loc, "Header import failed");
+            return {};
+        }
+        shared_cxx_ast = tu->add_clang_ast_unit(std::move(AST));
     }
 
     return ImportedClangModuleDecl::Create(
         *tu,
-        *tu->add_clang_ast_unit(std::move(AST)),
+        *shared_cxx_ast,
         logical_name,
         header_names,
         import_loc

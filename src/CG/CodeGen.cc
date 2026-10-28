@@ -528,7 +528,7 @@ auto CodeGen::DeclareProcedure(ProcDecl* proc) -> ir::ProcOp {
         // If this is a C++ inline function, ask Clang to emit it.
         if (proc->props.is_cxx_inline_function) {
             auto mod = cast<ImportedClangModuleDecl>(proc->imported_from_module);
-            auto& cg = clang_codegen_map[mod];
+            auto& cg = clang_codegen_map[&mod->clang_ast];
             if (not cg) {
                 cg = mod->create_clang_codegen(tu.llvm_context);
                 cg->Initialize(mod->clang_ast.getASTContext());

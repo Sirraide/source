@@ -132,6 +132,12 @@ void Sema::Translate(bool load_runtime) {
         false
     );
 
+    // All C++ import aliases share one header environment. Gather headers before
+    // loading any alias so even the first alias sees the complete environment.
+    for (auto& m : modules_to_translate)
+        for (auto& i : m->imports)
+            if (i.is_header_import) append_range(cxx_headers, i.linkage_names);
+
     // And process other imports.
     for (auto& m : modules_to_translate) {
         for (auto& i : m->imports) {

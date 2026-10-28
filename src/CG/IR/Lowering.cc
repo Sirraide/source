@@ -575,7 +575,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     }
 
     for (const auto& [mod, cg] : clang_codegen_map) {
-        cg->HandleTranslationUnit(mod->clang_ast.getASTContext());
+        cg->HandleTranslationUnit(mod->getASTContext());
         auto llvm_module = cg->ReleaseModule();
         if (link.linkInModule(std::move(llvm_module))) {
             if (not diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");

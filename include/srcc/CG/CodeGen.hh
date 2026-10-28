@@ -219,7 +219,7 @@ class srcc::cg::CodeGen : public DiagsProducer
     StringMap<mlir::LLVM::GlobalOp> interned_strings;
     DenseMap<GlobalDecl*, mlir::LLVM::GlobalOp> global_vars;
     DenseMap<mlir::LLVM::GlobalOp, GlobalDecl*> global_vars_reverse_lookup;
-    DenseMap<ImportedClangModuleDecl*, std::unique_ptr<clang::CodeGenerator>> clang_codegen_map;
+    DenseMap<clang::ASTUnit*, std::unique_ptr<clang::CodeGenerator>> clang_codegen_map;
     mlir::ModuleOp mlir_module;
     LangOpts lang_opts;
     mlir::Type ptr_ty;

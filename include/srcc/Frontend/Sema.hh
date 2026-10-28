@@ -956,6 +956,10 @@ class srcc::Sema : public DiagsProducer {
     llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> ImportVFS;
     llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> PCHVFS;
 
+    /// Combined header imports for this Source translation unit.
+    SmallVector<String> cxx_headers;
+    clang::ASTUnit* shared_cxx_ast = nullptr;
+
     /// Cached template substitutions.
     DenseMap<ProcTemplateDecl*, FoldingSet<TemplateSubstitution>> template_substitutions;
 
