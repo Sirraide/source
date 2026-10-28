@@ -204,7 +204,7 @@ proc closure_return = slice_return;
 // +     ret
 // + }
 // +
-// + proc _S4intsFvE.1 private ccc {
+// + proc ints private ccc {
 // +     #0 = 16, align 16
 // +     #1 = 16, align 16
 // +     #2 = 16, align 16
@@ -402,7 +402,7 @@ proc closure_return = slice_return;
 // +
 // + proc f8 (ptr byval i8[32] noundef) external ccc;
 // +
-// + proc _S11int_lvaluesFvE.2 private ccc {
+// + proc int_lvalues private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 4, align 4
 // +     #2 = 4, align 4
@@ -479,7 +479,7 @@ proc closure_return = slice_return;
 // +     i1 noundef zeroext,
 // + ) external ccc;
 // +
-// + proc _S14struct_rvaluesFvE.3 private ccc {
+// + proc struct_rvalues private ccc {
 // +     #0 = 4, align 4
 // +     #1 = 4, align 4
 // +     #2 = 4, align 4
@@ -855,7 +855,7 @@ proc closure_return = slice_return;
 // +     ptr byval i8[16] noundef,
 // + ) external ccc;
 // +
-// + proc _S14struct_lvaluesFvE.4 private ccc {
+// + proc struct_lvalues private ccc {
 // +     #0 = 4, align 4
 // +     #1 = 8, align 4
 // +     #2 = 16, align 8
@@ -1112,7 +1112,7 @@ proc closure_return = slice_return;
 // +     ret
 // + }
 // +
-// + proc _S6in_outFvE.5 private ccc {
+// + proc in_out private ccc {
 // +     #0 = 4, align 4
 // +     #1 = 4, align 4
 // +     #2 = 4, align 4
@@ -1172,7 +1172,7 @@ proc closure_return = slice_return;
 // +     ptr align 4 dereferenceable 4 out,
 // + ) external ccc;
 // +
-// + proc _S13in_move_smallFvE.6 private ccc {
+// + proc in_move_small private ccc {
 // +     #0 = 4, align 4
 // +     #1 = 4, align 4
 // +     #2 = 4, align 4
@@ -1268,7 +1268,7 @@ proc closure_return = slice_return;
 // +     i32 noundef,
 // + ) external ccc;
 // +
-// + proc _S10big_structFvE.7 private ccc {
+// + proc big_struct private ccc {
 // +     #0 = 400, align 8
 // +     #1 = 400, align 8
 // +     #2 = 4, align 4
@@ -1439,7 +1439,7 @@ proc closure_return = slice_return;
 // +     i32 noundef,
 // + ) external ccc;
 // +
-// + proc _S7returnsFvE.8 private ccc {
+// + proc returns private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 1, align 1
 // +     #2 = 1, align 1
@@ -1575,7 +1575,7 @@ proc closure_return = slice_return;
 // +
 // + proc r21 external ccc -> i16;
 // +
-// + proc _S6slicesFvE.9 private ccc {
+// + proc slices private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -1700,7 +1700,7 @@ proc closure_return = slice_return;
 // +
 // + proc s4 external ccc -> (ptr, i64);
 // +
-// + proc _S8closuresFvE.10 private ccc {
+// + proc closures private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -1827,14 +1827,14 @@ proc closure_return = slice_return;
 // +
 // + proc c4 external ccc -> (ptr, ptr);
 // +
-// + proc _S12slice_returnFSI8E.11 private ccc -> (ptr, i64) {
+// + proc slice_return private ccc -> (ptr, i64) {
 // + entry:
 // +     ret ptr @5, i64 3
 // + }
 // +
-// + proc _S14closure_returnFFSI8EE.12 private ccc -> (ptr, ptr) {
+// + proc closure_return private ccc -> (ptr, ptr) {
 // + entry:
-// +     ret _S12slice_returnFSI8E.11, ptr nil
+// +     ret slice_return, ptr nil
 // + }
 
 //L * ; ModuleID = 'test'
@@ -1855,7 +1855,7 @@ proc closure_return = slice_return;
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S4intsFvE.1() #1 {
+//L + define private void @"_Sints()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 16
 //L +   %2 = alloca i8, i64 16, align 16
 //L +   %3 = alloca i8, i64 16, align 16
@@ -1947,7 +1947,7 @@ proc closure_return = slice_return;
 //L + declare void @f8(ptr noundef byval([32 x i8])) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S11int_lvaluesFvE.2() #1 {
+//L + define private void @"_Sint_lvalues()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2003,7 +2003,7 @@ proc closure_return = slice_return;
 //L + declare void @f9(i64 noundef, i32 noundef, i17 noundef signext, i42 noundef signext, i128 noundef, ptr noundef byval(i128), ptr noundef byval(i128), ptr noundef byval([32 x i8]), i1 noundef signext, i1 noundef zeroext) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S14struct_rvaluesFvE.3() #1 {
+//L + define private void @"_Sstruct_rvalues()"() #1 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2256,7 +2256,7 @@ proc closure_return = slice_return;
 //L + declare void @g8(i64 noundef, i64 noundef, i64 noundef, i64 noundef, i64 noundef, i64 noundef, ptr noundef byval([16 x i8])) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S14struct_lvaluesFvE.4() #1 {
+//L + define private void @"_Sstruct_lvalues()"() #1 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 8, align 4
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2451,7 +2451,7 @@ proc closure_return = slice_return;
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S6in_outFvE.5() #1 {
+//L + define private void @"_Sin_out()"() #1 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2478,7 +2478,7 @@ proc closure_return = slice_return;
 //L + declare void @h2(ptr align 4 dereferenceable(4), ptr align 4 dereferenceable(4), ptr align 4 dereferenceable(4), ptr align 4 dereferenceable(4), ptr align 4 dereferenceable(4), i32 noundef, i32 noundef, ptr align 4 dereferenceable(4)) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S13in_move_smallFvE.6() #1 {
+//L + define private void @"_Sin_move_small()"() #1 {
 //L +   %1 = alloca i8, i64 4, align 4
 //L +   %2 = alloca i8, i64 4, align 4
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2541,7 +2541,7 @@ proc closure_return = slice_return;
 //L + declare void @h4(i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef, i32 noundef) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S10big_structFvE.7() #1 {
+//L + define private void @"_Sbig_struct()"() #1 {
 //L +   %1 = alloca i8, i64 400, align 8
 //L +   %2 = alloca i8, i64 400, align 8
 //L +   %3 = alloca i8, i64 4, align 4
@@ -2621,7 +2621,7 @@ proc closure_return = slice_return;
 //L + declare void @big5(ptr align 8 dereferenceable(400), ptr align 8 dereferenceable(400), ptr align 8 dereferenceable(400), ptr align 8 dereferenceable(400), ptr align 8 dereferenceable(400), ptr align 8 dereferenceable(400), ptr noundef byval([400 x i8]), ptr align 8 dereferenceable(400), i32 noundef) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S7returnsFvE.8() #1 {
+//L + define private void @"_Sreturns()"() #1 {
 //L +   %1 = alloca i8, i64 1, align 1
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 1, align 1
@@ -2783,7 +2783,7 @@ proc closure_return = slice_return;
 //L + declare i16 @r21() #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S6slicesFvE.9() #1 {
+//L + define private void @"_Sslices()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2861,7 +2861,7 @@ proc closure_return = slice_return;
 //L + declare { ptr, i64 } @s4() #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S8closuresFvE.10() #1 {
+//L + define private void @"_Sclosures()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -2942,13 +2942,13 @@ proc closure_return = slice_return;
 //L + declare { ptr, ptr } @c4() #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private { ptr, i64 } @_S12slice_returnFSI8E.11() #1 {
+//L + define private { ptr, i64 } @"_Sslice_return() -> i8 val[]"() #1 {
 //L +   ret { ptr, i64 } { ptr @__srcc_str.5, i64 3 }
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private { ptr, ptr } @_S14closure_returnFFSI8EE.12() #1 {
-//L +   ret { ptr, ptr } { ptr @_S12slice_returnFSI8E.11, ptr null }
+//L + define private { ptr, ptr } @"_Sclosure_return() -> proc -> i8 val[]"() #1 {
+//L +   ret { ptr, ptr } { ptr @"_Sslice_return() -> i8 val[]", ptr null }
 //L + }
 //L +
 //L + ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)

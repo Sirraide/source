@@ -69,7 +69,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1aFvE.1 private ccc {
+// + proc a private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -85,7 +85,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1bFvE.2 private ccc {
+// + proc b private ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -109,7 +109,7 @@ proc l {
 // +
 // + proc foo (i16 noundef) external ccc;
 // +
-// + proc _S1cFvE.3 private ccc {
+// + proc c private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -134,7 +134,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1dFvE.4 private ccc {
+// + proc d private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -150,7 +150,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1eFvE.5 private ccc {
+// + proc e private ccc {
 // +     #0 = 2, align 2
 // +
 // + entry:
@@ -173,7 +173,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1fFvE.6 private ccc {
+// + proc f private ccc {
 // + entry:
 // +     br bb1(0, 1)
 // +
@@ -204,7 +204,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1gFvE.7 private ccc {
+// + proc g private ccc {
 // + entry:
 // +     br bb1(1, 11)
 // +
@@ -226,7 +226,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1hFvE.8 private ccc {
+// + proc h private ccc {
 // + entry:
 // +     br bb1(0, 1, 11)
 // +
@@ -249,7 +249,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1iFvE.9 private ccc {
+// + proc i private ccc {
 // + entry:
 // +     br bb1(0, 2)
 // +
@@ -267,7 +267,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1jFvE.10 private ccc {
+// + proc j private ccc {
 // + entry:
 // +     br bb1(0, 2, 3, 4, 5)
 // +
@@ -300,7 +300,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1kFvE.11 private ccc {
+// + proc k private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -317,7 +317,7 @@ proc l {
 // +     ret
 // + }
 // +
-// + proc _S1lFvE.12 private ccc {
+// + proc l private ccc {
 // +     #0 = 40, align 8
 // +
 // + entry:
@@ -358,7 +358,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1aFvE.1() #1 {
+//L + define private void @"_Sa()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -375,7 +375,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1bFvE.2() #1 {
+//L + define private void @"_Sb()"() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -400,7 +400,7 @@ proc l {
 //L + declare void @foo(i16 noundef) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1cFvE.3() #1 {
+//L + define private void @"_Sc()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %9, %0
@@ -427,7 +427,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1dFvE.4() #1 {
+//L + define private void @"_Sd()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -444,7 +444,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1eFvE.5() #1 {
+//L + define private void @"_Se()"() #1 {
 //L +   %1 = alloca i8, i64 2, align 2
 //L +   store i16 0, ptr %1, align 2
 //L +   %2 = load i16, ptr %1, align 2
@@ -468,7 +468,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1fFvE.6() #1 {
+//L + define private void @"_Sf()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %12, %0
@@ -499,7 +499,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1gFvE.7() #1 {
+//L + define private void @"_Sg()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %7, %0
@@ -523,7 +523,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1hFvE.8() #1 {
+//L + define private void @"_Sh()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %8, %0
@@ -549,7 +549,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1iFvE.9() #1 {
+//L + define private void @"_Si()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %5, %0
@@ -569,7 +569,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1jFvE.10() #1 {
+//L + define private void @"_Sj()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %14, %0
@@ -607,7 +607,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1kFvE.11() #1 {
+//L + define private void @"_Sk()"() #1 {
 //L +   br label %1
 //L +
 //L + 1:                                                ; preds = %4, %0
@@ -625,7 +625,7 @@ proc l {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1lFvE.12() #1 {
+//L + define private void @"_Sl()"() #1 {
 //L +   %1 = alloca i8, i64 40, align 8
 //L +   store i64 5, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8

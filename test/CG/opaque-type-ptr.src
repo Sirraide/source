@@ -15,7 +15,7 @@ proc f(OpaqueType^) {}
 // +     ret
 // + }
 // +
-// + proc _S1fFvRT10OpaqueTypeE.1 (ptr %0 noundef) private ccc {
+// + proc f (ptr %0 noundef) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -34,7 +34,7 @@ proc f(OpaqueType^) {}
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1fFvRT10OpaqueTypeE.1(ptr noundef %0) #1 {
+//L + define private void @"_Sf(OpaqueType^)"(ptr noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %2, align 8
 //L +   ret void

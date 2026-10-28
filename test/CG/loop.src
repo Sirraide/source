@@ -14,15 +14,15 @@ proc h = a() + loop;
 
 var x = if 1 == 1 then 3 else loop;
 
-// * @_S1x.1 = private 8, align 8
+// * @x = private 8, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @_S1x.1, i64 3, align 8
+// +     store @x, i64 3, align 8
 // +     ret
 // + }
 // +
-// + proc _S1dFvE.1 private ccc {
+// + proc d private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -33,7 +33,7 @@ var x = if 1 == 1 then 3 else loop;
 // +
 // + proc a external ccc -> i64;
 // +
-// + proc _S1eFvE.2 private ccc {
+// + proc e private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -42,7 +42,7 @@ var x = if 1 == 1 then 3 else loop;
 // +     br bb1
 // + }
 // +
-// + proc _S1fFvE.3 private ccc {
+// + proc f private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -50,7 +50,7 @@ var x = if 1 == 1 then 3 else loop;
 // +     br bb1
 // + }
 // +
-// + proc _S1gFvE.4 private ccc {
+// + proc g private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -58,7 +58,7 @@ var x = if 1 == 1 then 3 else loop;
 // +     br bb1
 // + }
 // +
-// + proc _S1hFiE.5 private ccc -> i64 {
+// + proc h private ccc -> i64 {
 // + entry:
 // +     %0 = call ccc i64 a()
 // +     br bb1

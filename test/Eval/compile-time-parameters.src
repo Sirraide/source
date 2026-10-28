@@ -89,6 +89,7 @@ proc generic_unique ($value: $T) -> type { struct Local {} return Local; }
 
 proc inject ($expression: tree) -> int = #inject(expression);
 assert inject(quote { 52 }) == 52;
+assert inject(quote { 53 }) == 53;
 proc sum ($n: int) -> int {
     #if n == 0 { return 0; }
     #else { return n + sum(n - 1); }

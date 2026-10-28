@@ -20,7 +20,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret
 // + }
 // +
-// + proc _S6paddedFT6PaddedE.1 private ccc -> (i64, i64) {
+// + proc padded private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -35,7 +35,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S4tailFT10TailPaddedE.2 private ccc -> (i64, i8) {
+// + proc tail private ccc -> (i64, i8) {
 // +     #0 = 9, align 8
 // +
 // + entry:
@@ -46,7 +46,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret i64 %0, i8 %2
 // + }
 // +
-// + proc _S6narrowFT6NarrowE.3 private ccc -> i16 {
+// + proc narrow private ccc -> i16 {
 // +     #0 = 2, align 2
 // +     #1 = 2, align 2
 // +
@@ -57,7 +57,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret i16 %0
 // + }
 // +
-// + proc _S8optionalFOiE.4 private ccc -> (i64, i8) {
+// + proc optional private ccc -> (i64, i8) {
 // +     #0 = 9, align 8
 // +     #1 = 9, align 8
 // +
@@ -74,7 +74,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret i64 %1, i8 %3
 // + }
 // +
-// + proc _S6absentFOiE.5 private ccc -> (i64, i8) {
+// + proc absent private ccc -> (i64, i8) {
 // +     #0 = 9, align 8
 // +     #1 = 9, align 8
 // +
@@ -90,7 +90,7 @@ proc array = eval TailPadded[2](TailPadded(1, 2), TailPadded(3, 4));
 // +     ret i64 %1, i8 %3
 // + }
 // +
-// + proc _S5arrayFA2T10TailPaddedE.6 (ptr %0 sret i8[32]) private ccc {
+// + proc array (ptr %0 sret i8[32]) private ccc {
 // +     #0 = 32, align 8
 // +
 // + entry:

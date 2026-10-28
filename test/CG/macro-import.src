@@ -14,22 +14,22 @@ export proc d = macros::NOT_CONSTEXPR;
 // +     ret
 // + }
 // +
-// + proc _SM4test$1aFI32E.1 external ccc -> i32 {
+// + proc test::a external ccc -> i32 {
 // + entry:
 // +     ret i32 42
 // + }
 // +
-// + proc _SM4test$1bFI32E.2 external ccc -> i32 {
+// + proc test::b external ccc -> i32 {
 // + entry:
 // +     ret i32 84
 // + }
 // +
-// + proc _SM4test$1cFI32E.3 external ccc -> i32 {
+// + proc test::c external ccc -> i32 {
 // + entry:
 // +     ret i32 6
 // + }
 // +
-// + proc _SM4test$1dFORvE.4 external ccc -> ptr {
+// + proc test::d external ccc -> ptr {
 // + entry:
 // +     %0 = call ccc ptr __srcc_expanded_macro_0_init()
 // +     ret ptr %0
@@ -48,22 +48,22 @@ export proc d = macros::NOT_CONSTEXPR;
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define i32 @"_SM4test$1aFI32E.1"() #1 {
+//L + define i32 @"_Stest::a() -> i32"() #1 {
 //L +   ret i32 42
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define i32 @"_SM4test$1bFI32E.2"() #1 {
+//L + define i32 @"_Stest::b() -> i32"() #1 {
 //L +   ret i32 84
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define i32 @"_SM4test$1cFI32E.3"() #1 {
+//L + define i32 @"_Stest::c() -> i32"() #1 {
 //L +   ret i32 6
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define ptr @"_SM4test$1dFORvE.4"() #1 {
+//L + define ptr @"_Stest::d() -> void^?"() #1 {
 //L +   ret ptr inttoptr (i64 -1 to ptr)
 //L + }
 //L +

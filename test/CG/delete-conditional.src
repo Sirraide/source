@@ -55,23 +55,23 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // +     ret
 // + }
 // +
-// + proc _S2f1FvE.1 private ccc {
+// + proc f1 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #0 using Small::delete
 // +     store #0, i64 45, align 8
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #0 using Small::delete
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
+// + proc Small::delete (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S2f2FvbE.2 (i1 %0 noundef zeroext) private ccc {
+// + proc f2 (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +
@@ -84,18 +84,18 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     delete #1 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #1 using Small::delete
 // +     br bb3
 // +
 // + bb2:
-// +     delete #1 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #1 using Small::delete
 // +     br bb3
 // +
 // + bb3:
 // +     ret
 // + }
 // +
-// + proc _S2f3FvbE.3 (i1 %0 noundef zeroext) private ccc {
+// + proc f3 (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 1, align 1
 // +     #2 = 8, align 8
@@ -111,17 +111,17 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // +     br %3 to bb1 else bb2
 // +
 // + bb1:
-// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #2 using Small::delete
 // +     store #0, i8 0, align 1
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE if #0 implicit
+// +     delete #2 using Small::delete if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
 // +
-// + proc _S2f4FvbE.4 (i1 %0 noundef zeroext) private ccc {
+// + proc f4 (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 1, align 1
 // +     #2 = 8, align 8
@@ -137,17 +137,17 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // +     br %3 to bb2 else bb1
 // +
 // + bb1:
-// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #2 using Small::delete
 // +     store #0, i8 0, align 1
 // +     br bb2
 // +
 // + bb2:
-// +     delete #2 using _S$10__src_main$.6deleteFvx2T5SmallE if #0 implicit
+// +     delete #2 using Small::delete if #0 implicit
 // +     store #0, i8 0, align 1
 // +     ret
 // + }
 // +
-// + proc _S2f5FvE.5 private ccc {
+// + proc f5 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -155,23 +155,23 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // +     br bb1
 // +
 // + bb1:
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE
+// +     delete #0 using Small::delete
 // +     store #0, i64 42, align 8
 // +     br bb1
 // + }
 // +
-// + proc _S2f6FvE.6 private ccc {
+// + proc f6 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete #0 using Small::delete implicit
 // +     store #0, i64 33, align 8
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete #0 using Small::delete implicit
 // +     ret
 // + }
 // +
-// + proc _S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7 (
+// + proc f7 (
 // +     ptr %0 align 8 dereferenceable 8 move,
 // +     i64 %1 noundef,
 // +     ptr %2 align 8 dereferenceable 8,
@@ -183,8 +183,8 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 // + entry:
 // +     store #0, i64 %1, align 8
 // +     store %3, i64 1, align 8
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
-// +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete #0 using Small::delete implicit
+// +     delete %0 using Small::delete implicit
 // +     ret
 // + }
 
@@ -199,22 +199,22 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f1FvE.1() #1 {
+//L + define private void @"_Sf1()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %1)
 //L +   store i64 45, ptr %1, align 8
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %1)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr align 8 dereferenceable(8) %0) #1 {
+//L + define void @"_SSmall::delete(inout Small)"(ptr align 8 dereferenceable(8) %0) #1 {
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f2FvbE.2(i1 noundef zeroext %0) #1 {
+//L + define private void @"_Sf2(bool)"(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = sext i1 %0 to i8
@@ -225,11 +225,11 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L +   br i1 %6, label %7, label %8
 //L +
 //L + 7:                                                ; preds = %1
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %3)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %3)
 //L +   br label %9
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %3)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %3)
 //L +   br label %9
 //L +
 //L + 9:                                                ; preds = %7, %8
@@ -237,7 +237,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f3FvbE.3(i1 noundef zeroext %0) #1 {
+//L + define private void @"_Sf3(bool)"(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 1, ptr %2, align 1
 //L +   %3 = alloca i8, i64 1, align 1
@@ -251,7 +251,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L +   br i1 %7, label %8, label %9
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %4)
 //L +   store i8 0, ptr %2, align 1
 //L +   br label %9
 //L +
@@ -261,7 +261,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L +   br i1 %11, label %12, label %13
 //L +
 //L + 12:                                               ; preds = %9
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %4)
 //L +   br label %13
 //L +
 //L + 13:                                               ; preds = %12, %9
@@ -270,7 +270,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f4FvbE.4(i1 noundef zeroext %0) #1 {
+//L + define private void @"_Sf4(bool)"(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   store i8 1, ptr %2, align 1
 //L +   %3 = alloca i8, i64 1, align 1
@@ -284,7 +284,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L +   br i1 %7, label %9, label %8
 //L +
 //L + 8:                                                ; preds = %1
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %4)
 //L +   store i8 0, ptr %2, align 1
 //L +   br label %9
 //L +
@@ -294,7 +294,7 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L +   br i1 %11, label %12, label %13
 //L +
 //L + 12:                                               ; preds = %9
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %4)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %4)
 //L +   br label %13
 //L +
 //L + 13:                                               ; preds = %12, %9
@@ -303,34 +303,34 @@ proc f7(s1: Small, __srcc_by_value__ s2: Small, in s3: Small, out s4: Small, ino
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f5FvE.5() #1 {
+//L + define private void @"_Sf5()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 8, i1 false)
 //L +   br label %2
 //L +
 //L + 2:                                                ; preds = %2, %0
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %1)
 //L +   store i64 42, ptr %1, align 8
 //L +   br label %2
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f6FvE.6() #1 {
+//L + define private void @"_Sf6()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   store i64 42, ptr %1, align 8
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %1)
 //L +   store i64 33, ptr %1, align 8
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %1)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %1)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f7FvT5Smallx3T5SmallxT5Smallx1T5Smallx2T5SmallE.7(ptr align 8 dereferenceable(8) %0, i64 noundef %1, ptr align 8 dereferenceable(8) %2, ptr align 8 dereferenceable(8) %3, ptr align 8 dereferenceable(8) %4) #1 {
+//L + define private void @"_Sf7(Small, byval Small, in Small, out Small, inout Small)"(ptr align 8 dereferenceable(8) %0, i64 noundef %1, ptr align 8 dereferenceable(8) %2, ptr align 8 dereferenceable(8) %3, ptr align 8 dereferenceable(8) %4) #1 {
 //L +   %6 = alloca i8, i64 8, align 8
 //L +   store i64 %1, ptr %6, align 8
 //L +   store i64 1, ptr %3, align 8
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %6)
-//L +   call void @"_S$10__src_main$.6deleteFvx2T5SmallE"(ptr %0)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %6)
+//L +   call void @"_SSmall::delete(inout Small)"(ptr %0)
 //L +   ret void
 //L + }
 //L +

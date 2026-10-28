@@ -28,12 +28,12 @@ proc x(a: int, b: int, d: bool) {
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     call ccc void _S1xFviibE.1(i64 1 noundef, i64 2 noundef, i1 true noundef zeroext)
-// +     call ccc void _S1xFviibE.1(i64 2 noundef, i64 1 noundef, i1 false noundef zeroext)
+// +     call ccc void x(i64 1 noundef, i64 2 noundef, i1 true noundef zeroext)
+// +     call ccc void x(i64 2 noundef, i64 1 noundef, i1 false noundef zeroext)
 // +     ret
 // + }
 // +
-// + proc _S1xFviibE.1 (i64 %0 noundef, i64 %1 noundef, i1 %2 noundef zeroext) private ccc {
+// + proc x (i64 %0 noundef, i64 %1 noundef, i1 %2 noundef zeroext) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 1, align 1
@@ -100,13 +100,13 @@ proc x(a: int, b: int, d: bool) {
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
-//L +   call void @_S1xFviibE.1(i64 noundef 1, i64 noundef 2, i1 noundef zeroext true)
-//L +   call void @_S1xFviibE.1(i64 noundef 2, i64 noundef 1, i1 noundef zeroext false)
+//L +   call void @"_Sx(int, int, bool)"(i64 noundef 1, i64 noundef 2, i1 noundef zeroext true)
+//L +   call void @"_Sx(int, int, bool)"(i64 noundef 2, i64 noundef 1, i1 noundef zeroext false)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1xFviibE.1(i64 noundef %0, i64 noundef %1, i1 noundef zeroext %2) #1 {
+//L + define private void @"_Sx(int, int, bool)"(i64 noundef %0, i64 noundef %1, i1 noundef zeroext %2) #1 {
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 8, align 8
 //L +   %6 = alloca i8, i64 1, align 1

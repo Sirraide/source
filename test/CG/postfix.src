@@ -12,34 +12,34 @@ var i: i16;
 i++;
 i--;
 
-// * @_S1x.1 = private 8, align 8
-// + @_S1y.2 = private 8, align 8
-// + @_S1z.3 = private 8, align 8
-// + @_S1i.4 = private 2, align 2
+// * @x = private 8, align 8
+// + @y = private 8, align 8
+// + @z = private 8, align 8
+// + @i = private 2, align 2
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @_S1x.1, i64 0, align 8
-// +     %0 = load i64, @_S1x.1, align 8
+// +     store @x, i64 0, align 8
+// +     %0 = load i64, @x, align 8
 // +     %1 = add i64 %0, 1
-// +     store @_S1x.1, i64 %1, align 8
-// +     %2 = load i64, @_S1x.1, align 8
+// +     store @x, i64 %1, align 8
+// +     %2 = load i64, @x, align 8
 // +     %3 = sub i64 %2, 1
-// +     store @_S1x.1, i64 %3, align 8
-// +     %4 = load i64, @_S1x.1, align 8
+// +     store @x, i64 %3, align 8
+// +     %4 = load i64, @x, align 8
 // +     %5 = add i64 %4, 1
-// +     store @_S1x.1, i64 %5, align 8
-// +     store @_S1y.2, i64 %4, align 8
-// +     %6 = load i64, @_S1x.1, align 8
+// +     store @x, i64 %5, align 8
+// +     store @y, i64 %4, align 8
+// +     %6 = load i64, @x, align 8
 // +     %7 = sub i64 %6, 1
-// +     store @_S1x.1, i64 %7, align 8
-// +     store @_S1z.3, i64 %6, align 8
-// +     store @_S1i.4, i16 0, align 2
-// +     %8 = load i16, @_S1i.4, align 2
+// +     store @x, i64 %7, align 8
+// +     store @z, i64 %6, align 8
+// +     store @i, i16 0, align 2
+// +     %8 = load i16, @i, align 2
 // +     %9 = add i16 %8, 1
-// +     store @_S1i.4, i16 %9, align 2
-// +     %10 = load i16, @_S1i.4, align 2
+// +     store @i, i16 %9, align 2
+// +     %10 = load i16, @i, align 2
 // +     %11 = sub i16 %10, 1
-// +     store @_S1i.4, i16 %11, align 2
+// +     store @i, i16 %11, align 2
 // +     ret
 // + }

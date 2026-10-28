@@ -36,7 +36,7 @@ proc x (a: int, in b: int) {
 // +     ret
 // + }
 // +
-// + proc _S1xFvixiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc {
+// + proc x (i64 %0 noundef, i64 %1 noundef) private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 80, align 8
@@ -173,7 +173,7 @@ proc x (a: int, in b: int) {
 //U +     ret
 //U + }
 //U +
-//U + proc _S1xFvixiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc {
+//U + proc x (i64 %0 noundef, i64 %1 noundef) private ccc {
 //U +     #0 = 8, align 8
 //U +     #1 = 8, align 8
 //U +
@@ -254,7 +254,7 @@ proc x (a: int, in b: int) {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1xFvixiE.1(i64 noundef %0, i64 noundef %1) #1 {
+//L + define private void @"_Sx(int, in int)"(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8
@@ -618,7 +618,7 @@ proc x (a: int, in b: int) {
 //UL + }
 //UL +
 //UL + ; Function Attrs: noinline nounwind optnone uwtable
-//UL + define private void @_S1xFvixiE.1(i64 noundef %0, i64 noundef %1) #1 {
+//UL + define private void @"_Sx(int, in int)"(i64 noundef %0, i64 noundef %1) #1 {
 //UL +   %3 = alloca i8, i64 8, align 8
 //UL +   %4 = alloca i8, i64 8, align 8
 //UL +   store i64 %0, ptr %3, align 8

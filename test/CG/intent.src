@@ -46,10 +46,10 @@ j = 10;
 f_copy(i);
 f_copy(j);
 
-// * @_S2mi.1 = private 8, align 8
-// + @_S2mj.2 = private 1256, align 8
-// + @_S1i.3 = private 8, align 8
-// + @_S1j.4 = private 1256, align 8
+// * @mi = private 8, align 8
+// + @mj = private 1256, align 8
+// + @i = private 8, align 8
+// + @j = private 1256, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // +     #0 = 1256, align 8
@@ -60,49 +60,49 @@ f_copy(j);
 // +     #5 = 1256, align 8
 // +
 // + entry:
-// +     store @_S2mi.1, i64 5, align 8
-// +     store @_S2mj.2, i10048 10, align 8
-// +     %0 = load i64, @_S2mi.1, align 8
-// +     %1 = call ccc i64 _S6f_moveFiiE.1(i64 %0 noundef)
-// +     %2 = load i10048, @_S2mj.2, align 8
+// +     store @mi, i64 5, align 8
+// +     store @mj, i10048 10, align 8
+// +     %0 = load i64, @mi, align 8
+// +     %1 = call ccc i64 f_move(i64 %0 noundef)
+// +     %2 = load i10048, @mj, align 8
 // +     %3 = trunc i10048 %2 to i10000
 // +     %4 = sext i10000 %3 to i10048
 // +     store #1, i10048 %4, align 8
-// +     call ccc void _S6f_moveFI10000I10000E.2(
+// +     call ccc void f_move(
 // +         ptr #0 sret i8[1256],
 // +         ptr #1 byval i8[1256] noundef)
-// +     %5 = call ccc i64 _S6f_moveFiiE.1(i64 20 noundef)
-// +     store @_S1i.3, i64 5, align 8
-// +     store @_S1j.4, i10048 10, align 8
-// +     %6 = load i64, @_S1i.3, align 8
-// +     %7 = call ccc i64 _S4f_inFixiE.3(i64 %6 noundef)
-// +     call ccc void _S4f_inFI10000xI10000E.4(
+// +     %5 = call ccc i64 f_move(i64 20 noundef)
+// +     store @i, i64 5, align 8
+// +     store @j, i10048 10, align 8
+// +     %6 = load i64, @i, align 8
+// +     %7 = call ccc i64 f_in(i64 %6 noundef)
+// +     call ccc void f_in(
 // +         ptr #2 sret i8[1256],
-// +         ptr @_S1j.4 align 8 dereferenceable 1256)
-// +     %8 = call ccc i64 _S4f_inFixiE.3(i64 20 noundef)
-// +     call ccc void _S5f_outFvx1iE.5(ptr @_S1i.3 align 8 dereferenceable 8 out)
-// +     call ccc void _S5f_outFvx1I10000E.6(ptr @_S1j.4 align 8 dereferenceable 1256 out)
-// +     store @_S1i.3, i64 5, align 8
-// +     store @_S1j.4, i10048 10, align 8
-// +     %9 = call ccc i64 _S7f_inoutFix2iE.7(ptr @_S1i.3 align 8 dereferenceable 8)
-// +     call ccc void _S7f_inoutFI10000x2I10000E.8(
+// +         ptr @j align 8 dereferenceable 1256)
+// +     %8 = call ccc i64 f_in(i64 20 noundef)
+// +     call ccc void f_out(ptr @i align 8 dereferenceable 8 out)
+// +     call ccc void f_out(ptr @j align 8 dereferenceable 1256 out)
+// +     store @i, i64 5, align 8
+// +     store @j, i10048 10, align 8
+// +     %9 = call ccc i64 f_inout(ptr @i align 8 dereferenceable 8)
+// +     call ccc void f_inout(
 // +         ptr #3 sret i8[1256],
-// +         ptr @_S1j.4 align 8 dereferenceable 1256)
-// +     store @_S1i.3, i64 5, align 8
-// +     store @_S1j.4, i10048 10, align 8
-// +     %10 = load i64, @_S1i.3, align 8
-// +     %11 = call ccc i64 _S6f_copyFix3iE.9(i64 %10 noundef)
-// +     %12 = load i10048, @_S1j.4, align 8
+// +         ptr @j align 8 dereferenceable 1256)
+// +     store @i, i64 5, align 8
+// +     store @j, i10048 10, align 8
+// +     %10 = load i64, @i, align 8
+// +     %11 = call ccc i64 f_copy(i64 %10 noundef)
+// +     %12 = load i10048, @j, align 8
 // +     %13 = trunc i10048 %12 to i10000
 // +     %14 = sext i10000 %13 to i10048
 // +     store #5, i10048 %14, align 8
-// +     call ccc void _S6f_copyFI10000x3I10000E.10(
+// +     call ccc void f_copy(
 // +         ptr #4 sret i8[1256],
 // +         ptr #5 byval i8[1256] noundef)
 // +     ret
 // + }
 // +
-// + proc _S6f_moveFiiE.1 (i64 %0 noundef) private ccc -> i64 {
+// + proc f_move (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -112,7 +112,7 @@ f_copy(j);
 // +     ret i64 %2
 // + }
 // +
-// + proc _S6f_moveFI10000I10000E.2 (
+// + proc f_move (
 // +     ptr %0 sret i8[1256],
 // +     ptr %1 byval i8[1256] noundef,
 // + ) private ccc {
@@ -125,7 +125,7 @@ f_copy(j);
 // +     ret
 // + }
 // +
-// + proc _S4f_inFixiE.3 (i64 %0 noundef) private ccc -> i64 {
+// + proc f_in (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -135,7 +135,7 @@ f_copy(j);
 // +     ret i64 %2
 // + }
 // +
-// + proc _S4f_inFI10000xI10000E.4 (
+// + proc f_in (
 // +     ptr %0 sret i8[1256],
 // +     ptr %1 align 8 dereferenceable 1256,
 // + ) private ccc {
@@ -148,19 +148,19 @@ f_copy(j);
 // +     ret
 // + }
 // +
-// + proc _S5f_outFvx1iE.5 (ptr %0 align 8 dereferenceable 8 out) private ccc {
+// + proc f_out (ptr %0 align 8 dereferenceable 8 out) private ccc {
 // + entry:
 // +     store %0, i64 100, align 8
 // +     ret
 // + }
 // +
-// + proc _S5f_outFvx1I10000E.6 (ptr %0 align 8 dereferenceable 1256 out) private ccc {
+// + proc f_out (ptr %0 align 8 dereferenceable 1256 out) private ccc {
 // + entry:
 // +     store %0, i10048 1000, align 8
 // +     ret
 // + }
 // +
-// + proc _S7f_inoutFix2iE.7 (ptr %0 align 8 dereferenceable 8) private ccc -> i64 {
+// + proc f_inout (ptr %0 align 8 dereferenceable 8) private ccc -> i64 {
 // + entry:
 // +     %1 = load i64, %0, align 8
 // +     %2 = mul i64 %1, 5
@@ -169,7 +169,7 @@ f_copy(j);
 // +     ret i64 %3
 // + }
 // +
-// + proc _S7f_inoutFI10000x2I10000E.8 (
+// + proc f_inout (
 // +     ptr %0 sret i8[1256],
 // +     ptr %1 align 8 dereferenceable 1256,
 // + ) private ccc {
@@ -186,7 +186,7 @@ f_copy(j);
 // +     ret
 // + }
 // +
-// + proc _S6f_copyFix3iE.9 (i64 %0 noundef) private ccc -> i64 {
+// + proc f_copy (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -198,7 +198,7 @@ f_copy(j);
 // +     ret i64 %3
 // + }
 // +
-// + proc _S6f_copyFI10000x3I10000E.10 (
+// + proc f_copy (
 // +     ptr %0 sret i8[1256],
 // +     ptr %1 byval i8[1256] noundef,
 // + ) private ccc {
@@ -220,10 +220,10 @@ f_copy(j);
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + @_S2mi.1 = private global [8 x i8] undef, align 8
-//L + @_S2mj.2 = private global [1256 x i8] undef, align 8
-//L + @_S1i.3 = private global [8 x i8] undef, align 8
-//L + @_S1j.4 = private global [1256 x i8] undef, align 8
+//L + @_Smi = private global [8 x i8] undef, align 8
+//L + @_Smj = private global [1256 x i8] undef, align 8
+//L + @_Si = private global [8 x i8] undef, align 8
+//L + @_Sj = private global [1256 x i8] undef, align 8
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
@@ -233,42 +233,42 @@ f_copy(j);
 //L +   %4 = alloca i8, i64 1256, align 8
 //L +   %5 = alloca i8, i64 1256, align 8
 //L +   %6 = alloca i8, i64 1256, align 8
-//L +   store i64 5, ptr @_S2mi.1, align 8
-//L +   store i10048 10, ptr @_S2mj.2, align 8
-//L +   %7 = load i64, ptr @_S2mi.1, align 8
-//L +   %8 = call i64 @_S6f_moveFiiE.1(i64 noundef %7)
-//L +   %9 = load i10048, ptr @_S2mj.2, align 8
+//L +   store i64 5, ptr @_Smi, align 8
+//L +   store i10048 10, ptr @_Smj, align 8
+//L +   %7 = load i64, ptr @_Smi, align 8
+//L +   %8 = call i64 @"_Sf_move(int) -> int"(i64 noundef %7)
+//L +   %9 = load i10048, ptr @_Smj, align 8
 //L +   %10 = trunc i10048 %9 to i10000
 //L +   %11 = sext i10000 %10 to i10048
 //L +   store i10048 %11, ptr %2, align 8
-//L +   call void @_S6f_moveFI10000I10000E.2(ptr sret([1256 x i8]) %1, ptr noundef byval([1256 x i8]) %2)
-//L +   %12 = call i64 @_S6f_moveFiiE.1(i64 noundef 20)
-//L +   store i64 5, ptr @_S1i.3, align 8
-//L +   store i10048 10, ptr @_S1j.4, align 8
-//L +   %13 = load i64, ptr @_S1i.3, align 8
-//L +   %14 = call i64 @_S4f_inFixiE.3(i64 noundef %13)
-//L +   call void @_S4f_inFI10000xI10000E.4(ptr sret([1256 x i8]) %3, ptr align 8 dereferenceable(1256) @_S1j.4)
-//L +   %15 = call i64 @_S4f_inFixiE.3(i64 noundef 20)
-//L +   call void @_S5f_outFvx1iE.5(ptr align 8 dereferenceable(8) @_S1i.3)
-//L +   call void @_S5f_outFvx1I10000E.6(ptr align 8 dereferenceable(1256) @_S1j.4)
-//L +   store i64 5, ptr @_S1i.3, align 8
-//L +   store i10048 10, ptr @_S1j.4, align 8
-//L +   %16 = call i64 @_S7f_inoutFix2iE.7(ptr align 8 dereferenceable(8) @_S1i.3)
-//L +   call void @_S7f_inoutFI10000x2I10000E.8(ptr sret([1256 x i8]) %4, ptr align 8 dereferenceable(1256) @_S1j.4)
-//L +   store i64 5, ptr @_S1i.3, align 8
-//L +   store i10048 10, ptr @_S1j.4, align 8
-//L +   %17 = load i64, ptr @_S1i.3, align 8
-//L +   %18 = call i64 @_S6f_copyFix3iE.9(i64 noundef %17)
-//L +   %19 = load i10048, ptr @_S1j.4, align 8
+//L +   call void @"_Sf_move(i10000) -> i10000"(ptr sret([1256 x i8]) %1, ptr noundef byval([1256 x i8]) %2)
+//L +   %12 = call i64 @"_Sf_move(int) -> int"(i64 noundef 20)
+//L +   store i64 5, ptr @_Si, align 8
+//L +   store i10048 10, ptr @_Sj, align 8
+//L +   %13 = load i64, ptr @_Si, align 8
+//L +   %14 = call i64 @"_Sf_in(in int) -> int"(i64 noundef %13)
+//L +   call void @"_Sf_in(in i10000) -> i10000"(ptr sret([1256 x i8]) %3, ptr align 8 dereferenceable(1256) @_Sj)
+//L +   %15 = call i64 @"_Sf_in(in int) -> int"(i64 noundef 20)
+//L +   call void @"_Sf_out(out int)"(ptr align 8 dereferenceable(8) @_Si)
+//L +   call void @"_Sf_out(out i10000)"(ptr align 8 dereferenceable(1256) @_Sj)
+//L +   store i64 5, ptr @_Si, align 8
+//L +   store i10048 10, ptr @_Sj, align 8
+//L +   %16 = call i64 @"_Sf_inout(inout int) -> int"(ptr align 8 dereferenceable(8) @_Si)
+//L +   call void @"_Sf_inout(inout i10000) -> i10000"(ptr sret([1256 x i8]) %4, ptr align 8 dereferenceable(1256) @_Sj)
+//L +   store i64 5, ptr @_Si, align 8
+//L +   store i10048 10, ptr @_Sj, align 8
+//L +   %17 = load i64, ptr @_Si, align 8
+//L +   %18 = call i64 @"_Sf_copy(byval int) -> int"(i64 noundef %17)
+//L +   %19 = load i10048, ptr @_Sj, align 8
 //L +   %20 = trunc i10048 %19 to i10000
 //L +   %21 = sext i10000 %20 to i10048
 //L +   store i10048 %21, ptr %6, align 8
-//L +   call void @_S6f_copyFI10000x3I10000E.10(ptr sret([1256 x i8]) %5, ptr noundef byval([1256 x i8]) %6)
+//L +   call void @"_Sf_copy(byval i10000) -> i10000"(ptr sret([1256 x i8]) %5, ptr noundef byval([1256 x i8]) %6)
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S6f_moveFiiE.1(i64 noundef %0) #1 {
+//L + define private i64 @"_Sf_move(int) -> int"(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -277,7 +277,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S6f_moveFI10000I10000E.2(ptr sret([1256 x i8]) %0, ptr noundef byval([1256 x i8]) %1) #1 {
+//L + define private void @"_Sf_move(i10000) -> i10000"(ptr sret([1256 x i8]) %0, ptr noundef byval([1256 x i8]) %1) #1 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 2
@@ -287,7 +287,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S4f_inFixiE.3(i64 noundef %0) #1 {
+//L + define private i64 @"_Sf_in(in int) -> int"(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -296,7 +296,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S4f_inFI10000xI10000E.4(ptr sret([1256 x i8]) %0, ptr align 8 dereferenceable(1256) %1) #1 {
+//L + define private void @"_Sf_in(in i10000) -> i10000"(ptr sret([1256 x i8]) %0, ptr align 8 dereferenceable(1256) %1) #1 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 3
@@ -306,19 +306,19 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S5f_outFvx1iE.5(ptr align 8 dereferenceable(8) %0) #1 {
+//L + define private void @"_Sf_out(out int)"(ptr align 8 dereferenceable(8) %0) #1 {
 //L +   store i64 100, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S5f_outFvx1I10000E.6(ptr align 8 dereferenceable(1256) %0) #1 {
+//L + define private void @"_Sf_out(out i10000)"(ptr align 8 dereferenceable(1256) %0) #1 {
 //L +   store i10048 1000, ptr %0, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S7f_inoutFix2iE.7(ptr align 8 dereferenceable(8) %0) #1 {
+//L + define private i64 @"_Sf_inout(inout int) -> int"(ptr align 8 dereferenceable(8) %0) #1 {
 //L +   %2 = load i64, ptr %0, align 8
 //L +   %3 = mul i64 %2, 5
 //L +   store i64 %3, ptr %0, align 8
@@ -327,7 +327,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S7f_inoutFI10000x2I10000E.8(ptr sret([1256 x i8]) %0, ptr align 8 dereferenceable(1256) %1) #1 {
+//L + define private void @"_Sf_inout(inout i10000) -> i10000"(ptr sret([1256 x i8]) %0, ptr align 8 dereferenceable(1256) %1) #1 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 5
@@ -341,7 +341,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S6f_copyFix3iE.9(i64 noundef %0) #1 {
+//L + define private i64 @"_Sf_copy(byval int) -> int"(i64 noundef %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 %0, ptr %2, align 8
 //L +   %3 = load i64, ptr %2, align 8
@@ -352,7 +352,7 @@ f_copy(j);
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S6f_copyFI10000x3I10000E.10(ptr sret([1256 x i8]) %0, ptr noundef byval([1256 x i8]) %1) #1 {
+//L + define private void @"_Sf_copy(byval i10000) -> i10000"(ptr sret([1256 x i8]) %0, ptr noundef byval([1256 x i8]) %1) #1 {
 //L +   %3 = load i10048, ptr %1, align 8
 //L +   %4 = trunc i10048 %3 to i10000
 //L +   %5 = mul i10000 %4, 6

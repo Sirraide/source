@@ -1,0 +1,286 @@
+// R %srcc --ir --target x86_64-unknown-linux %s
+// R[//L] %srcc --llvm --target x86_64-unknown-linux %s
+program readable;
+
+proc keep (x: int) -> int = x;
+proc unrelated (x: bool) -> bool = x;
+proc keep (x: bool) -> bool = x;
+proc constant ($n: int, x: int) -> int = x;
+proc identity (x: $T) = x;
+proc bound ($pair: (int, int), x: int) -> int = x;
+proc quoted ($expression: tree) -> int = #inject(expression);
+proc nested {
+    { proc f (x: int) -> int = x; }
+    proc middle {} // Does not consume an f suffix.
+    { proc f (x: int) -> int = x; f(2); }
+    { proc f (x: int) -> int = x; f(3); }
+}
+keep(1);
+keep(true);
+constant(42, 1);
+constant(43, 1);
+identity(1);
+bound((1, 2), 1);
+nested();
+quoted(quote { 1 });
+quoted(quote { 2 });
+
+// * proc __src_main norecurse external ccc {
+// + entry:
+// +     %0 = call ccc i64 keep(i64 1 noundef)
+// +     %1 = call ccc zeroext i1 keep(i1 true noundef zeroext)
+// +     %2 = call ccc i64 constant<42>(i64 1 noundef)
+// +     %3 = call ccc i64 constant<43>(i64 1 noundef)
+// +     %4 = call ccc i64 identity<int>(i64 1 noundef)
+// +     %5 = call ccc i64 "bound<<aggregate value>>"(i64 1 noundef)
+// +     call ccc void nested()
+// +     %6 = call ccc i64 quoted<quote{...}>()
+// +     %7 = call ccc i64 quoted.1<quote{...}>()
+// +     ret
+// + }
+// +
+// + proc keep (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc keep (i1 %0 noundef zeroext) private ccc -> i1 zeroext {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     %1 = sext i1 %0 to i8
+// +     store #0, i8 %1, align 1
+// +     %2 = load i8, #0, align 1
+// +     %3 = trunc i8 %2 to i1
+// +     ret i1 %3
+// + }
+// +
+// + proc constant<42> (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc constant<43> (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc identity<int> (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc "bound<<aggregate value>>" (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc nested private ccc {
+// + entry:
+// +     %0 = call ccc i64 nested::f.1(i64 2 noundef)
+// +     %1 = call ccc i64 nested::f.2(i64 3 noundef)
+// +     ret
+// + }
+// +
+// + proc quoted<quote{...}> private ccc -> i64 {
+// + entry:
+// +     ret i64 1
+// + }
+// +
+// + proc quoted.1<quote{...}> private ccc -> i64 {
+// + entry:
+// +     ret i64 2
+// + }
+// +
+// + proc unrelated (i1 %0 noundef zeroext) private ccc -> i1 zeroext {
+// +     #0 = 1, align 1
+// +
+// + entry:
+// +     %1 = sext i1 %0 to i8
+// +     store #0, i8 %1, align 1
+// +     %2 = load i8, #0, align 1
+// +     %3 = trunc i8 %2 to i1
+// +     ret i1 %3
+// + }
+// +
+// + proc nested::f.1 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc nested::f.2 (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+// +
+// + proc nested::middle private ccc {
+// + entry:
+// +     ret
+// + }
+// +
+// + proc nested::f (i64 %0 noundef) private ccc -> i64 {
+// +     #0 = 8, align 8
+// +
+// + entry:
+// +     store #0, i64 %0, align 8
+// +     %1 = load i64, #0, align 8
+// +     ret i64 %1
+// + }
+
+//L * ; ModuleID = 'readable'
+//L + source_filename = "readable"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
+//L + define void @__src_main() #0 {
+//L +   %1 = call i64 @"_Skeep(int) -> int"(i64 noundef 1)
+//L +   %2 = call zeroext i1 @"_Skeep(bool) -> bool"(i1 noundef zeroext true)
+//L +   %3 = call i64 @"_Sconstant<42>(int) -> int"(i64 noundef 1)
+//L +   %4 = call i64 @"_Sconstant<43>(int) -> int"(i64 noundef 1)
+//L +   %5 = call i64 @"_Sidentity<int>(int) -> int"(i64 noundef 1)
+//L +   %6 = call i64 @"_Sbound<<aggregate value>>(int) -> int"(i64 noundef 1)
+//L +   call void @"_Snested()"()
+//L +   %7 = call i64 @"_Squoted<quote{...}>() -> int"()
+//L +   %8 = call i64 @"_Squoted.1<quote{...}>() -> int"()
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Skeep(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private zeroext i1 @"_Skeep(bool) -> bool"(i1 noundef zeroext %0) #1 {
+//L +   %2 = alloca i8, i64 1, align 1
+//L +   %3 = sext i1 %0 to i8
+//L +   store i8 %3, ptr %2, align 1
+//L +   %4 = load i8, ptr %2, align 1
+//L +   %5 = trunc i8 %4 to i1
+//L +   ret i1 %5
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sconstant<42>(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sconstant<43>(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sidentity<int>(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Sbound<<aggregate value>>(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private void @"_Snested()"() #1 {
+//L +   %1 = call i64 @"_Snested()::f.1(int) -> int"(i64 noundef 2)
+//L +   %2 = call i64 @"_Snested()::f.2(int) -> int"(i64 noundef 3)
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Squoted<quote{...}>() -> int"() #1 {
+//L +   ret i64 1
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Squoted.1<quote{...}>() -> int"() #1 {
+//L +   ret i64 2
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private zeroext i1 @"_Sunrelated(bool) -> bool"(i1 noundef zeroext %0) #1 {
+//L +   %2 = alloca i8, i64 1, align 1
+//L +   %3 = sext i1 %0 to i8
+//L +   store i8 %3, ptr %2, align 1
+//L +   %4 = load i8, ptr %2, align 1
+//L +   %5 = trunc i8 %4 to i1
+//L +   ret i1 %5
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Snested()::f.1(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Snested()::f.2(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private void @"_Snested()::middle()"() #1 {
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: noinline nounwind optnone uwtable
+//L + define private i64 @"_Snested()::f(int) -> int"(i64 noundef %0) #1 {
+//L +   %2 = alloca i8, i64 8, align 8
+//L +   store i64 %0, ptr %2, align 8
+//L +   %3 = load i64, ptr %2, align 8
+//L +   ret i64 %3
+//L + }
+//L +
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { noinline nounwind optnone uwtable "frame-pointer"="all" }
+//L +
+//L +

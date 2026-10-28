@@ -249,7 +249,6 @@ struct ParsedProcAttrs {
     bool native = false;
     bool c_varargs = false;
     bool builtin_operator = false;
-    bool no_mangling_number = false;
     bool inline_ = false;
 };
 

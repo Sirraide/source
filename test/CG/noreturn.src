@@ -19,7 +19,7 @@ proc a5 { sink_lv(exit()); }
 // +     ret
 // + }
 // +
-// + proc _S2a1FvE.1 private ccc {
+// + proc a1 private ccc {
 // + entry:
 // +     call ccc void exit()
 // +     unreachable
@@ -27,17 +27,17 @@ proc a5 { sink_lv(exit()); }
 // +
 // + proc exit noreturn external ccc;
 // +
-// + proc _S2a2FvE.2 private ccc {
+// + proc a2 private ccc {
 // + entry:
 // +     unreachable
 // + }
 // +
-// + proc _S2a3FvE.3 private ccc {
+// + proc a3 private ccc {
 // + entry:
 // +     unreachable
 // + }
 // +
-// + proc _S2a4FvE.4 private ccc {
+// + proc a4 private ccc {
 // + entry:
 // +     call ccc void exit()
 // +     unreachable
@@ -45,7 +45,7 @@ proc a5 { sink_lv(exit()); }
 // +
 // + proc sink (i64 noundef) external ccc;
 // +
-// + proc _S2a5FvE.5 private ccc {
+// + proc a5 private ccc {
 // + entry:
 // +     call ccc void exit()
 // +     unreachable
@@ -64,7 +64,7 @@ proc a5 { sink_lv(exit()); }
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2a1FvE.1() #1 {
+//L + define private void @"_Sa1()"() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }
@@ -73,17 +73,17 @@ proc a5 { sink_lv(exit()); }
 //L + declare void @exit() #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2a2FvE.2() #1 {
+//L + define private void @"_Sa2()"() #1 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2a3FvE.3() #1 {
+//L + define private void @"_Sa3()"() #1 {
 //L +   unreachable
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2a4FvE.4() #1 {
+//L + define private void @"_Sa4()"() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }
@@ -92,7 +92,7 @@ proc a5 { sink_lv(exit()); }
 //L + declare void @sink(i64 noundef) #2
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2a5FvE.5() #1 {
+//L + define private void @"_Sa5()"() #1 {
 //L +   call void @exit()
 //L +   unreachable
 //L + }

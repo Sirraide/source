@@ -130,7 +130,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p1FvE.1 private ccc {
+// + proc p1 private ccc {
 // + entry:
 // +     call ccc void h()
 // +     ret
@@ -140,7 +140,7 @@ proc p13 {
 // +
 // + proc g external ccc;
 // +
-// + proc _S2p2FvE.2 private ccc {
+// + proc p2 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -148,7 +148,7 @@ proc p13 {
 // +     br bb1
 // + }
 // +
-// + proc _S2p3FvE.3 private ccc {
+// + proc p3 private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -164,19 +164,19 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p4FvE.4 private ccc {
+// + proc p4 private ccc {
 // + entry:
 // +     call ccc void h()
 // +     ret
 // + }
 // +
-// + proc _S2p5FvE.5 private ccc {
+// + proc p5 private ccc {
 // + entry:
 // +     call ccc void h()
 // +     ret
 // + }
 // +
-// + proc _S2p6FvE.6 private ccc {
+// + proc p6 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -184,7 +184,7 @@ proc p13 {
 // +     br bb1
 // + }
 // +
-// + proc _S2p7FvE.7 private ccc {
+// + proc p7 private ccc {
 // + entry:
 // +     br bb1(1)
 // +
@@ -228,7 +228,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S2p8FvE.8 private ccc {
+// + proc p8 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -252,7 +252,7 @@ proc p13 {
 // +
 // + proc b external ccc -> i1 zeroext;
 // +
-// + proc _S2p9FvE.9 private ccc {
+// + proc p9 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -272,7 +272,7 @@ proc p13 {
 // +     br bb1
 // + }
 // +
-// + proc _S3p10FvE.10 private ccc {
+// + proc p10 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -299,7 +299,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S3p11FvE.11 private ccc {
+// + proc p11 private ccc {
 // + entry:
 // +     br bb1
 // +
@@ -326,7 +326,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S3p12FvE.12 private ccc {
+// + proc p12 private ccc {
 // + entry:
 // +     %0 = ptradd @0, 3
 // +     br bb1(@0)
@@ -355,7 +355,7 @@ proc p13 {
 // +     ret
 // + }
 // +
-// + proc _S3p13FvE.13 private ccc {
+// + proc p13 private ccc {
 // + entry:
 // +     %0 = ptradd @0, 3
 // +     br bb1(@0)

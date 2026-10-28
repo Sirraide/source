@@ -370,6 +370,78 @@ bool srcc::operator==(DeclName a, DeclName b) {
     return a.str() == b.str();
 }
 
+ObjectDecl::ObjectDecl(
+    Kind kind,
+    TranslationUnit& owner,
+    ModuleDecl* imported_from_module,
+    Type type,
+    DeclName name,
+    Linkage linkage,
+    Mangling mangling,
+    SLoc location
+) : Decl{kind, name, location},
+    owner{&owner},
+    imported_from_module{imported_from_module},
+    linkage{linkage},
+    mangling{mangling},
+    type{type},
+    mangling_number{owner.next_mangling_number++} {}
+
+auto ObjectDecl::compute_symbol_name(bool full, bool disambiguate) const -> std::string {
+    if (mangling != Mangling::Source) return std::string(name.str().sv());
+    if (full and not imported_linkage_name.empty())
+        return std::string(imported_linkage_name.sv());
+
+    SmallString<256> out;
+    auto proc = dyn_cast<ProcDecl>(this);
+    if (proc and proc->is_nested()) {
+        if (full and proc->parent->mangling != Mangling::Source) out += "_S";
+        out += proc->parent->compute_symbol_name(full);
+        out += "::";
+    } else {
+        if (full) out += "_S";
+        if (auto module = dyn_cast_if_present<ImportedSourceModuleDecl>(imported_from_module))
+            Format(out, "{}::", module->linkage_name);
+        else if (owner->is_module) Format(out, "{}::", owner->name);
+    }
+
+    if (proc and proc->props.associated_type) Format(
+        out,
+        "{}::",
+        text::RenderColours(false, proc->props.associated_type->canonical->print().str())
+    );
+
+    Format(out, "{}", name);
+    if (disambiguate and linkage_discriminator) Format(out, ".{}", linkage_discriminator);
+    if (proc) {
+        out += proc->template_arguments;
+        if (full) {
+            out += "(";
+            auto type = proc->proc_type();
+            for (auto [i, param] : enumerate(type->params())) {
+                if (i) out += ", ";
+                if (param.exact) out += "exact ";
+                if (param.intent != Intent::Move) Format(out, "{} ", param.intent);
+                out += text::RenderColours(false, param.type->canonical->print().str());
+                if (param.variadic) out += "...";
+            }
+
+            if (type->has_c_varargs()) out += type->param_count() ? ", ..." : "...";
+            out += ")";
+
+            if (not type->ret()->is_void()) Format(
+                out,
+                " -> {}",
+                text::RenderColours(false, type->ret()->canonical->print().str())
+            );
+
+            if (type->return_value_category() == Expr::ILValue) out += " val ref";
+            else if (type->return_value_category() == Expr::MLValue) out += " ref";
+        }
+    }
+    return out.str().str();
+}
+
 GlobalDecl::GlobalDecl(
     TranslationUnit* owner,
     ModuleDecl* imported_from_module,
@@ -381,7 +453,7 @@ GlobalDecl::GlobalDecl(
     SLoc location
 ): ObjectDecl(
     Kind::GlobalDecl,
-    owner,
+    *owner,
     imported_from_module,
     type,
     name,
@@ -442,7 +514,7 @@ ProcDecl::ProcDecl(
     Ptr<ProcDecl> parent,
     InheritedProcedureProperties props,
     SLoc location
-) : ObjectDecl{Kind::ProcDecl, owner, imported_from_module, type, name, linkage, mangling, location},
+) : ObjectDecl{Kind::ProcDecl, *owner, imported_from_module, type, name, linkage, mangling, location},
     parent{parent}, props{props} {
     if (name == Tk::Init) special_proc = SpecialProcedure::Init;
     else if (name == Tk::Copy) special_proc = SpecialProcedure::Copy;
@@ -485,6 +557,10 @@ void ProcDecl::finalise(Ptr<Stmt> body, ArrayRef<LocalDecl*> vars) {
 
 auto ProcDecl::index_of_named_param(String name) -> std::optional<u32> {
     return utils::index_of<u32>(params(), name, &ParamDecl::name);
+}
+
+bool ProcDecl::is_nested() const {
+    return parent and parent.get() != owner->initialiser_proc;
 }
 
 auto ProcDecl::proc_type() const -> ProcType* {

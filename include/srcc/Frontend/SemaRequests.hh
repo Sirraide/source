@@ -50,13 +50,11 @@ struct RequestContext {
 
 /// Deferred translation of a parsed declaration in one particular scope.
 /// Specialisations sharing a parse tree have separate records. The result may
-/// be published before translation finishes, and mangling numbers are reserved
-/// at registration so they do not depend on request evaluation order.
+/// be published before translation finishes.
 struct DeclarationRequest {
     ParsedDecl* parsed;
     Decl* result = nullptr;
     RequestContext context;
-    ManglingNumber mangling = ManglingNumber::None;
     bool exported = false;
 };
 

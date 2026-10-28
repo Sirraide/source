@@ -22,7 +22,7 @@ proc conv_slice (a: int[]) -> int val[] = a;
 // +     ret
 // + }
 // +
-// + proc _S1gFvRiRiE.1 (
+// + proc g (
 // +     ptr %0 align 8 dereferenceable 8 noundef readonly,
 // +     ptr %1 align 8 dereferenceable 8 noundef,
 // + ) private ccc {
@@ -41,7 +41,7 @@ proc conv_slice (a: int[]) -> int val[] = a;
 // +     ret
 // + }
 // +
-// + proc _S19preserve_lvaluenessFvRiRiE.2 (
+// + proc preserve_lvalueness (
 // +     ptr %0 align 8 dereferenceable 8 noundef readonly,
 // +     ptr %1 align 8 dereferenceable 8 noundef,
 // + ) private ccc {
@@ -51,18 +51,18 @@ proc conv_slice (a: int[]) -> int val[] = a;
 // + entry:
 // +     store #0, ptr %0, align 8
 // +     store #1, ptr %1, align 8
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #0 align 8 dereferenceable 8)
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #1 align 8 dereferenceable 8)
-// +     call ccc void _S19preserve_lvalueness$1pFvx2RiE.5(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void preserve_lvalueness::p(ptr #0 align 8 dereferenceable 8)
+// +     call ccc void preserve_lvalueness::p(ptr #1 align 8 dereferenceable 8)
+// +     call ccc void preserve_lvalueness::p(ptr #1 align 8 dereferenceable 8)
 // +     ret
 // + }
 // +
-// + proc _S19preserve_lvalueness$1pFvx2RiE.5 (ptr %0 align 8 dereferenceable 8) private ccc {
+// + proc preserve_lvalueness::p (ptr %0 align 8 dereferenceable 8) private ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S8conv_ptrFRiRiE.3 (ptr %0 align 8 dereferenceable 8 noundef) private ccc -> ptr {
+// + proc conv_ptr (ptr %0 align 8 dereferenceable 8 noundef) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -71,7 +71,7 @@ proc conv_slice (a: int[]) -> int val[] = a;
 // +     ret ptr %1
 // + }
 // +
-// + proc _S10conv_sliceFSiSiE.4 (ptr %0 noundef, i64 %1 noundef) private ccc -> (ptr, i64) {
+// + proc conv_slice (ptr %0 noundef, i64 %1 noundef) private ccc -> (ptr, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:

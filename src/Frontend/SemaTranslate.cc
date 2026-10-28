@@ -37,6 +37,20 @@ auto Sema::AddParsedModule(ParsedModule::Ptr p, bool translate) -> ParsedModule*
     return extra_modules.emplace_back(std::move(p)).get();
 }
 
+// Only actual name collisions get suffixes. Assign these after Sema has
+// finished creating declarations; evaluation uses independent numbered symbols.
+void Sema::AssignLinkageDiscriminators() {
+    SmallVector<ObjectDecl*> objects;
+    for (auto proc : tu->procs) objects.push_back(proc);
+    for (auto global : tu->global_vars) objects.push_back(global);
+    rgs::sort(objects, {}, &ObjectDecl::mangling_number);
+    StringMap<u32> collisions;
+    for (auto object : objects) {
+        if (object->mangling != Mangling::Source or object->is_imported()) continue;
+        object->linkage_discriminator = collisions[object->compute_symbol_name(true, false)]++;
+    }
+}
+
 auto Sema::Translate(
     const LangOpts& opts,
     SmallVector<ParsedModule::Ptr> modules,
@@ -167,6 +181,8 @@ void Sema::Translate(bool load_runtime) {
             );
         }
     }
+
+    if (not ctx.diags().has_error()) AssignLinkageDiscriminators();
 
     // Sanity check.
     Assert(proc_stack.size() == 1);
@@ -1053,7 +1069,6 @@ auto Sema::TranslateVarDecl(ParsedVarDecl* parsed, Opt<Type>) -> Decl* {
             parsed->loc
         );
 
-        g->mangling_number = next_global_mangling_number++;
         AddDeclToScope(curr_scope(), g);
         decl = g;
     } else {
@@ -1177,30 +1192,6 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
     InheritedProcedureProperties props;
     props.always_inline = attrs.inline_;
     if (parsed->name.is_init()) props.associated_type = curr_scope()->associated_type();
-
-    // Determine its mangling number.
-    //
-    // This number is appended to the mangled name of a procedure and is
-    // used to avoid mangled name collisions. Consider:
-    //
-    //     {
-    //         proc a {}
-    //     }
-    //     {
-    //         proc a {}
-    //     }
-    //
-    // This is not ill-formed since the procedures are in different scopes,
-    // and thus, no possible overload set is ever going to contain both of
-    // them. Here, we need to make sure that they end up with different names
-    // in the IR.
-    if (auto request = GetDeclarationRequest(parsed)) {
-        props.mangling_number = request->mangling;
-    } else {
-        props.mangling_number = RequiresManglingNumber(attrs)
-            ? next_proc_mangling_number++
-            : ManglingNumber::None;
-    }
 
     // TODO: Check if the signature contains a compile-time only type (e.g. 'tree')/
     // TODO: When translating composite types, compute whether they’re compile-time only.

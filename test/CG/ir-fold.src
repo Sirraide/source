@@ -7,14 +7,14 @@ var a = 4 - 3;
 var b = 4 + 3;
 var c: i64 = 7;
 
-// * @_S1a.1 = private 8, align 8
-// + @_S1b.2 = private 8, align 8
-// + @_S1c.3 = private 8, align 8
+// * @a = private 8, align 8
+// + @b = private 8, align 8
+// + @c = private 8, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @_S1a.1, i64 1, align 8
-// +     store @_S1b.2, i64 7, align 8
-// +     store @_S1c.3, i64 7, align 8
+// +     store @a, i64 1, align 8
+// +     store @b, i64 7, align 8
+// +     store @c, i64 7, align 8
 // +     ret
 // + }

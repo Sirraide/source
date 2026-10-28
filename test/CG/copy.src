@@ -47,18 +47,18 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc _S4sinkFvT5SmallE.1 (ptr %0 align 8 dereferenceable 8 move) private ccc {
+// + proc sink (ptr %0 align 8 dereferenceable 8 move) private ccc {
 // + entry:
-// +     delete %0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     delete %0 using Small::delete implicit
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T5SmallE (ptr %0 align 8 dereferenceable 8) external ccc {
+// + proc Small::delete (ptr %0 align 8 dereferenceable 8) external ccc {
 // + entry:
 // +     ret
 // + }
 // +
-// + proc _S8sink_intFviE.2 (i64 %0 noundef) private ccc {
+// + proc sink_int (i64 %0 noundef) private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -66,7 +66,7 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc _S2f1FvE.3 private ccc {
+// + proc f1 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -74,17 +74,17 @@ proc f4() {
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #1, ptr #0)
-// +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
-// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #2, ptr #0)
-// +     call ccc void _S4sinkFvT5SmallE.1(ptr #2 align 8 dereferenceable 8 move)
+// +     call ccc void Small::copy(ptr #1, ptr #0)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 8 move)
+// +     call ccc void Small::copy(ptr #2, ptr #0)
+// +     call ccc void sink(ptr #2 align 8 dereferenceable 8 move)
 // +     store #3, i64 42, align 8
-// +     call ccc void _S4sinkFvT5SmallE.1(ptr #3 align 8 dereferenceable 8 move)
-// +     call ccc void _S4sinkFvT5SmallE.1(ptr #0 align 8 dereferenceable 8 move)
+// +     call ccc void sink(ptr #3 align 8 dereferenceable 8 move)
+// +     call ccc void sink(ptr #0 align 8 dereferenceable 8 move)
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.4copyFT5SmallxT5SmallE (
+// + proc Small::copy (
 // +     ptr %0 sret i8[8],
 // +     ptr %1 align 8 dereferenceable 8,
 // + ) external ccc {
@@ -94,32 +94,32 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc _S2f2FvE.4 private ccc {
+// + proc f2 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 42, align 8
-// +     call ccc void _S$10__src_main$.4copyFT5SmallxT5SmallE(ptr #1, ptr #0)
-// +     call ccc void _S4sinkFvT5SmallE.1(ptr #1 align 8 dereferenceable 8 move)
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T5SmallE implicit
+// +     call ccc void Small::copy(ptr #1, ptr #0)
+// +     call ccc void sink(ptr #1 align 8 dereferenceable 8 move)
+// +     delete #0 using Small::delete implicit
 // +     ret
 // + }
 // +
-// + proc _S2f3FvE.5 private ccc {
+// + proc f3 private ccc {
 // +     #0 = 8, align 8
 // +
 // + entry:
 // +     store #0, i64 0, align 8
 // +     %0 = load i64, #0, align 8
-// +     call ccc void _S8sink_intFviE.2(i64 %0 noundef)
+// +     call ccc void sink_int(i64 %0 noundef)
 // +     %1 = load i64, #0, align 8
-// +     call ccc void _S8sink_intFviE.2(i64 %1 noundef)
-// +     call ccc void _S8sink_intFviE.2(i64 42 noundef)
+// +     call ccc void sink_int(i64 %1 noundef)
+// +     call ccc void sink_int(i64 42 noundef)
 // +     ret
 // + }
 // +
-// + proc _S2f4FvE.6 private ccc {
+// + proc f4 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -127,13 +127,13 @@ proc f4() {
 // +     store #0, i64 4, align 8
 // +     %0 = ptradd #0, 8
 // +     store %0, i64 5, align 8
-// +     call ccc void _S$10__src_main$.4copyFT1SxT1SE(ptr #1, ptr #0)
-// +     delete #1 using _S$10__src_main$.6deleteFvx2T1SE implicit
-// +     delete #0 using _S$10__src_main$.6deleteFvx2T1SE implicit
+// +     call ccc void S::copy(ptr #1, ptr #0)
+// +     delete #1 using S::delete implicit
+// +     delete #0 using S::delete implicit
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.4copyFT1SxT1SE (
+// + proc S::copy (
 // +     ptr %0 sret i8[16],
 // +     ptr %1 align 8 dereferenceable 16,
 // + ) external ccc {
@@ -149,7 +149,7 @@ proc f4() {
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T1SE (ptr %0 align 8 dereferenceable 16) external ccc {
+// + proc S::delete (ptr %0 align 8 dereferenceable 16) external ccc {
 // + entry:
 // +     ret
 // + }

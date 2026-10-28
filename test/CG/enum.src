@@ -7,17 +7,17 @@ var y: x;
 var y2: x = b;
 proc p (v: x) = v;
 
-// * @_S1y.1 = private 8, align 8
-// + @_S2y2.2 = private 8, align 8
+// * @y = private 8, align 8
+// + @y2 = private 8, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // + entry:
-// +     store @_S1y.1, i64 0, align 8
-// +     store @_S2y2.2, i64 1, align 8
+// +     store @y, i64 0, align 8
+// +     store @y2, i64 1, align 8
 // +     ret
 // + }
 // +
-// + proc _S1pFT1xT1xE.1 (i64 %0 noundef) private ccc -> i64 {
+// + proc p (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:

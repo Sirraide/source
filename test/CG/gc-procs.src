@@ -18,7 +18,7 @@ export proc x = eval called_at_compile_time();
 //L + }
 //L +
 //L + ; Function Attrs: mustprogress nofree norecurse nosync nounwind willreturn memory(none) uwtable
-//L + define noundef i64 @"_SM4test$1xFiE.3"() local_unnamed_addr #0 {
+//L + define noundef i64 @"_Stest::x() -> int"() local_unnamed_addr #0 {
 //L +   ret i64 42
 //L + }
 //L +

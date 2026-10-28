@@ -56,14 +56,6 @@ constexpr void operator--(LoopToken& t) {
 constexpr void operator++(LoopToken& t) {
     t = LoopToken(+t + 1);
 }
-
-// Mangling number of a procedure.
-enum class ManglingNumber : u32 { None = 0 };
-constexpr ManglingNumber operator++(ManglingNumber& t, int) {
-    auto val = t;
-    t = ManglingNumber(+t + 1);
-    return val;
-}
 } // namespace srcc
 
 // ============================================================================
@@ -1502,27 +1494,37 @@ public:
     Mangling mangling;
     Type type;
 
+    /// Deterministic TU-local identity, also used by the evaluator.
+    u32 mangling_number = 0;
+
+    /// Collision-local suffix; zero means the name needs no suffix.
+    u32 linkage_discriminator = 0;
+
+    /// Linkage name supplied by the defining module for an imported declaration.
+    String imported_linkage_name;
+
 protected:
     ObjectDecl(
         Kind kind,
-        TranslationUnit* owner,
+        TranslationUnit& owner,
         ModuleDecl* imported_from_module,
         Type type,
         DeclName name,
         Linkage linkage,
         Mangling mangling,
         SLoc location
-    ) : Decl{kind, name, location},
-        owner{owner},
-        imported_from_module{imported_from_module},
-        linkage{linkage},
-        mangling{mangling},
-        type{type} {}
+    );
 
 public:
     [[nodiscard]] bool is_imported() const {
         return linkage == Linkage::Imported or linkage == Linkage::Reexported;
     }
+
+    /// Format the name of this symbol. Prefer calling CodeGen::MangledName() instead.
+    [[nodiscard]] auto compute_symbol_name(
+        bool full = true,
+        bool disambiguate = true
+    ) const -> std::string;
 
     static bool classof(const Stmt* e) { return e->kind() >= Kind::GlobalDecl; }
 };
@@ -1532,9 +1534,6 @@ class srcc::GlobalDecl final : public ObjectDecl {
 public:
     /// Initialiser.
     Ptr<Expr> init;
-
-    /// Mangling number.
-    ManglingNumber mangling_number = ManglingNumber::None;
 
     /// Whether this is an immutable global.
     bool immutable;
@@ -1565,9 +1564,6 @@ struct srcc::InheritedProcedureProperties {
     /// its associated type is the type named by the scope specifier, in this case 'a::b'.
     /// This type determines the type of 'this' and 'This'.
     Opt<Type> associated_type{};
-
-    /// Mangling number of this procedure.
-    ManglingNumber mangling_number = ManglingNumber::None;
 
     /// Whether this procedure should always be inlined if possible.
     bool always_inline = false;
@@ -1601,6 +1597,9 @@ public:
     /// instantiation, or the clang FunctionDecl that this was imported
     /// from.
     llvm::PointerUnion<ProcTemplateDecl*, clang::FunctionDecl*> associated_decl;
+
+    /// Printed bound template arguments; retained after Sema is destroyed.
+    String template_arguments;
 
     /// Properties of this procedure.
     InheritedProcedureProperties props;
@@ -1678,6 +1677,9 @@ public:
 
     /// Get the index of a named parameter.
     auto index_of_named_param(String name) -> std::optional<u32>;
+
+    /// Whether this is nested in a user procedure.
+    bool is_nested() const;
 
     /// Check if this declaration declares an overloaded operator.
     bool is_overloaded_operator() const { return name.is_operator_name(); }

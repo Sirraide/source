@@ -27,7 +27,7 @@ proc g {
 // +     ret
 // + }
 // +
-// + proc _S1fFvE.1 private ccc {
+// + proc f private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 32, align 8
 // +
@@ -45,7 +45,7 @@ proc g {
 // +     ret
 // + }
 // +
-// + proc _S1gFvE.2 private ccc {
+// + proc g private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 32, align 8
 // +
@@ -66,7 +66,7 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1fFvE.1() #1 {
+//L + define private void @"_Sf()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   store i64 1, ptr %1, align 8
@@ -83,7 +83,7 @@ proc g {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1gFvE.2() #1 {
+//L + define private void @"_Sg()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 32, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 16, i1 false)

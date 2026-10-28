@@ -31,7 +31,7 @@ proc tuple_default { var value: (Item, int); }
 // +     ret
 // + }
 // +
-// + proc _S9constructFvE.1 private ccc {
+// + proc construct private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -41,35 +41,35 @@ proc tuple_default { var value: (Item, int); }
 // +     #6 = 16, align 8
 // +
 // + entry:
-// +     %0 = call ccc (i64, i64) _S.4initFT4ItemiiE$T4Item.3(i64 1 noundef, i64 2 noundef)
+// +     %0 = call ccc (i64, i64) Item::init(i64 1 noundef, i64 2 noundef)
 // +     store #0, i64 %0:0, align 8
 // +     %1 = ptradd #0, 8
 // +     store %1, i64 %0:1, align 8
-// +     %2 = call ccc (i64, i64) _S.4initFT4ItemiiE$T4Item.3(i64 3 noundef, i64 4 noundef)
+// +     %2 = call ccc (i64, i64) Item::init(i64 3 noundef, i64 4 noundef)
 // +     store #1, i64 %2:0, align 8
 // +     %3 = ptradd #1, 8
 // +     store %3, i64 %2:1, align 8
 // +     store #2, i64 5, align 8
 // +     %4 = ptradd #2, 8
 // +     store %4, i64 6, align 8
-// +     call ccc void _S.4initFT7WrapperE$T7Wrapper.5(ptr #3 sret i8[24])
+// +     call ccc void Wrapper::init(ptr #3 sret i8[24])
 // +     store #6, i64 7, align 8
 // +     %5 = ptradd #6, 8
 // +     store %5, i64 8, align 8
 // +     %6 = load i64, #6, align 8
 // +     %7 = ptradd #6, 8
 // +     %8 = load i64, %7, align 8
-// +     call ccc void _S.4initFT7WrapperT4ItemiE$T7Wrapper.6(
+// +     call ccc void Wrapper::init(
 // +         ptr #4 sret i8[24],
 // +         i64 %6 noundef,
 // +         i64 %8 noundef,
 // +         i64 9 noundef)
-// +     %9 = call ccc i64 _S.4initFiiE$T7Factory.7(i64 10 noundef)
+// +     %9 = call ccc i64 Factory::init(i64 10 noundef)
 // +     store #5, i64 %9, align 8
 // +     ret
 // + }
 // +
-// + proc _S.4initFT4ItemiiE$T4Item.3 (i64 %0 noundef, i64 %1 noundef) external ccc -> (i64, i64) {
+// + proc Item::init (i64 %0 noundef, i64 %1 noundef) external ccc -> (i64, i64) {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 16, align 8
@@ -103,9 +103,9 @@ proc tuple_default { var value: (Item, int); }
 // +     ret i64 %25, i64 %27
 // + }
 // +
-// + proc _S.4initFT7WrapperE$T7Wrapper.5 (ptr %0 sret i8[24]) external ccc {
+// + proc Wrapper::init (ptr %0 sret i8[24]) external ccc {
 // + entry:
-// +     %1 = call ccc (i64, i64) _S.4initFT4ItemE$T4Item.4()
+// +     %1 = call ccc (i64, i64) Item::init()
 // +     store %0, i64 %1:0, align 8
 // +     %2 = ptradd %0, 8
 // +     store %2, i64 %1:1, align 8
@@ -114,7 +114,7 @@ proc tuple_default { var value: (Item, int); }
 // +     ret
 // + }
 // +
-// + proc _S.4initFT7WrapperT4ItemiE$T7Wrapper.6 (
+// + proc Wrapper::init (
 // +     ptr %0 sret i8[24],
 // +     i64 %1 noundef,
 // +     i64 %2 noundef,
@@ -135,7 +135,7 @@ proc tuple_default { var value: (Item, int); }
 // +     ret
 // + }
 // +
-// + proc _S.4initFiiE$T7Factory.7 (i64 %0 noundef) external ccc -> i64 {
+// + proc Factory::init (i64 %0 noundef) external ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 80, align 8
 // +
@@ -152,17 +152,17 @@ proc tuple_default { var value: (Item, int); }
 // +     ret i64 %2:0
 // + }
 // +
-// + proc _S13tuple_defaultFvE.2 private ccc {
+// + proc tuple_default private ccc {
 // +     #0 = 24, align 8
 // +
 // + entry:
-// +     call ccc void _S.4initFQT4ItemiEE$QT4ItemiE.8(ptr #0 sret i8[24])
+// +     call ccc void "(Item, int)::init"(ptr #0 sret i8[24])
 // +     ret
 // + }
 // +
-// + proc _S.4initFQT4ItemiEE$QT4ItemiE.8 (ptr %0 sret i8[24]) external ccc {
+// + proc "(Item, int)::init" (ptr %0 sret i8[24]) external ccc {
 // + entry:
-// +     %1 = call ccc (i64, i64) _S.4initFT4ItemE$T4Item.4()
+// +     %1 = call ccc (i64, i64) Item::init()
 // +     store %0, i64 %1:0, align 8
 // +     %2 = ptradd %0, 8
 // +     store %2, i64 %1:1, align 8
@@ -171,7 +171,7 @@ proc tuple_default { var value: (Item, int); }
 // +     ret
 // + }
 // +
-// + proc _S.4initFT4ItemE$T4Item.4 external ccc -> (i64, i64) {
+// + proc Item::init external ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -184,7 +184,7 @@ proc tuple_default { var value: (Item, int); }
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S.4initFQT4ItemiET4ItemiE$QT4ItemiE.9 (
+// + proc "(Item, int)::init" (
 // +     ptr %0 sret i8[24],
 // +     i64 %1 noundef,
 // +     i64 %2 noundef,

@@ -969,158 +969,6 @@ void CodeGen::Unless(Value cond, llvm::function_ref<void()> emit_else) {
 // ============================================================================
 //  Mangling
 // ============================================================================
-// Mangling codes:
-//
-// TODO: Yeet all of this; we don’t need name mangling because of how our modules
-// work (keep a pretty name in the IR and generate some random nonsense for LLVM IR).
-struct CodeGen::Mangler {
-    TranslationUnit& tu;
-    SmallString<256> name;
-
-    explicit Mangler(TranslationUnit& tu) : tu(tu) {}
-    void Append(ObjectDecl* obj);
-    void Append(String s);
-    void Append(DeclName s);
-    void Append(Type ty);
-};
-
-void CodeGen::Mangler::Append(ObjectDecl* obj) {
-    name = "_S";
-
-    if (auto m = dyn_cast_if_present<ImportedSourceModuleDecl>(obj->imported_from_module)) {
-        name += "M";
-        Append(m->linkage_name);
-        name += "$";
-    } else if (tu.is_module and obj->linkage == Linkage::Exported) {
-        name += "M";
-        Append(tu.name);
-        name += "$";
-    }
-
-    if (auto proc = dyn_cast<ProcDecl>(obj)) {
-        for (auto p : proc->parents_top_down()) {
-            Append(p->name);
-            name += "$";
-        }
-
-        Append(proc->name);
-        Append(proc->type);
-
-        // Also add the associated type if there is one.
-        if (proc->props.associated_type) {
-            name += "$";
-            Append(*proc->props.associated_type);
-        }
-
-        if (proc->props.mangling_number != ManglingNumber::None)
-            Format(name, ".{}", +proc->props.mangling_number);
-
-        return;
-    }
-
-    auto global = cast<GlobalDecl>(obj);
-    Append(global->name);
-    if (global->mangling_number != ManglingNumber::None)
-        Format(name, ".{}", +global->mangling_number);
-}
-
-void CodeGen::Mangler::Append(String s) {
-    Assert(not s.empty());
-    if (not llvm::isAlpha(s.sv().front())) name += "$";
-    Format(name, "{}{}", s.size(), s);
-}
-
-void CodeGen::Mangler::Append(DeclName s) {
-    if (s.is_keyword_or_operator()) name += ".";
-    Append(s.str());
-}
-
-// INVARIANT: No mangling code starts with a number (this means
-// mangling codes can *end* with a number without requirding a
-// separator).
-void CodeGen::Mangler::Append(Type ty) {
-    // FIXME: Throw out name mangling entirely and instead maintain a mapping
-    // to automatically generated names in the module.
-    struct Visitor {
-        Mangler& M;
-
-        void ElemTy(StringRef s, SingleElementTypeBase* t) {
-            M.name += s;
-            t->elem()->visit(*this);
-        }
-
-        void operator()(SliceType* sl) { ElemTy("S", sl); }
-        void operator()(ArrayType* arr) { ElemTy(Format("A{}", arr->dimension()), arr); }
-        void operator()(OptionalType* opt) { ElemTy("O", opt); }
-        void operator()(PtrType* ref) { ElemTy("R", ref); }
-        void operator()(IntType* i) { Format(M.name, "I{}", i->bit_width().bits()); }
-        void operator()(BuiltinType* b) {
-            switch (b->builtin_kind()) {
-                case BuiltinKind::Deduced:
-                case BuiltinKind::CallArgList:
-                case BuiltinKind::UnresolvedOverloadSet:
-                    Unreachable("Can’t mangle this: {}", b);
-                case BuiltinKind::Tree: M.name += "tr"; return;
-                case BuiltinKind::Type: M.name += "ty"; return;
-                case BuiltinKind::Void: M.name += "v"; return;
-                case BuiltinKind::NoReturn: M.name += "z"; return;
-                case BuiltinKind::Bool: M.name += "b"; return;
-                case BuiltinKind::Int: M.name += "i"; return;
-                case BuiltinKind::Nil: M.name += "n"; return;
-            }
-            Unreachable();
-        }
-
-        void operator()(ProcType* proc) {
-            M.name += "F";
-            proc->ret()->visit(*this);
-            for (const auto& p : proc->params()) {
-                if (p.exact) M.name += "e";
-                M.name += [&] {
-                    switch (p.intent) {
-                        case Intent::Move: return "";
-                        case Intent::In: return "x";
-                        case Intent::Out: return "x1";
-                        case Intent::Inout: return "x2";
-                        case Intent::ByValue: return "x3";
-                    }
-                    Unreachable();
-                }();
-                p.type->visit(*this);
-            }
-            M.name += "E";
-        }
-
-        void operator()(RangeType* r) {
-            M.name += "q";
-            r->elem()->visit(*this);
-        }
-
-        void operator()(EnumType* ty) {
-            if (ty->name().empty()) Todo();
-            Format(M.name, "T{}{}", ty->name().str().size(), ty->name());
-        }
-
-        void operator()(OpaqueType* ty) {
-            if (ty->name().empty()) Todo();
-            Format(M.name, "T{}{}", ty->name().size(), ty->name());
-        }
-
-        void operator()(StructType* ty) {
-            if (ty->name().empty()) Todo();
-            Format(M.name, "T{}{}", ty->name().size(), ty->name());
-        }
-
-        void operator()(CanonicalTupleType* ty) {
-            M.name += "Q";
-            for (auto f : ty->scope()->fields()) f->type->visit(*this);
-            M.name += "E";
-        }
-    };
-
-    ty->visit(Visitor{*this});
-}
-
 auto CodeGen::MangledName(ObjectDecl* obj) -> String {
     if (obj->mangling == Mangling::None) return obj->name.str();
 
@@ -1133,10 +981,16 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
         switch (obj->mangling) {
             case Mangling::None: Unreachable();
             case Mangling::Source: {
-                Mangler m{tu};
-                m.Append(obj);
-                return tu.save(std::move(m.name));
+                if (not lang_opts.constant_eval or obj->is_imported())
+                    return tu.save(obj->compute_symbol_name());
+
+                // Fabricate a random name during constant evaluation; we can’t assign
+                // the same names that procedures would end up with when emitted normally
+                // as that relies on us knowing what all the symbols in the program are,
+                // which we generally don’t during constant evaluation.
+                return tu.save(Format("_S__srcc_eval.{}.{}", obj->name, obj->mangling_number));
             }
+
             case Mangling::CXX: {
                 if (auto proc = dyn_cast<ProcDecl>(obj)) {
                     llvm::SmallString<256> str;
@@ -1154,12 +1008,6 @@ auto CodeGen::MangledName(ObjectDecl* obj) -> String {
     }();
 
     return mangled_names[obj] = name;
-}
-
-auto CodeGen::MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256> {
-    Mangler m{tu};
-    m.Append(t);
-    return std::move(m.name);
 }
 
 // ============================================================================

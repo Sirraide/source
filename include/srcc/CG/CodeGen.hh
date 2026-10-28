@@ -208,7 +208,6 @@ class srcc::cg::CodeGen : public DiagsProducer
     , public mlir::OpBuilder {
     LIBBASE_IMMOVABLE(CodeGen);
     struct Printer;
-    struct Mangler;
     friend DiagsProducer;
     friend LLVMCodeGen;
 
@@ -702,9 +701,6 @@ public:
 
     /// Get the mangled name of an object.
     auto MangledName(ObjectDecl* proc) -> String;
-
-    /// Mangle a type name.
-    static auto MangleTypeName(TranslationUnit& tu, Type t) -> SmallString<256>;
 
     /// Set the insert point to the start of a block, but skip over all
     /// operations of a certain type.

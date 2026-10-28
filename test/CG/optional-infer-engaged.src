@@ -44,7 +44,7 @@ proc p3(in a: int^?, in b: int^?) {
 // +     ret
 // + }
 // +
-// + proc _S2p1FvE.1 private ccc {
+// + proc p1 private ccc {
 // +     #0 = 17, align 8
 // +     #1 = 80, align 8
 // +
@@ -99,7 +99,7 @@ proc p3(in a: int^?, in b: int^?) {
 // +     abort at loc("optional-infer-engaged.src":20:5) assert(ptr #1)
 // + }
 // +
-// + proc _S2p2FvxORixORiE.2 (
+// + proc p2 (
 // +     ptr %0 align 8 dereferenceable 8 noundef,
 // +     ptr %1 align 8 dereferenceable 8 noundef,
 // + ) private ccc {
@@ -133,7 +133,7 @@ proc p3(in a: int^?, in b: int^?) {
 // +     ret
 // + }
 // +
-// + proc _S2p3FvxORixORiE.3 (
+// + proc p3 (
 // +     ptr %0 align 8 dereferenceable 8 noundef,
 // +     ptr %1 align 8 dereferenceable 8 noundef,
 // + ) private ccc {
@@ -181,7 +181,7 @@ proc p3(in a: int^?, in b: int^?) {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2p1FvE.1() #1 {
+//L + define private void @"_Sp1()"() #1 {
 //L +   %1 = alloca i8, i64 17, align 8
 //L +   %2 = alloca i8, i64 80, align 8
 //L +   call void @llvm.memset.p0.i64(ptr %1, i8 0, i64 17, i1 false)
@@ -246,7 +246,7 @@ proc p3(in a: int^?, in b: int^?) {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2p2FvxORixORiE.2(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
+//L + define private void @"_Sp2(in int^?, in int^?)"(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8
@@ -272,7 +272,7 @@ proc p3(in a: int^?, in b: int^?) {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2p3FvxORixORiE.3(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
+//L + define private void @"_Sp3(in int^?, in int^?)"(ptr noundef align 8 dereferenceable(8) %0, ptr noundef align 8 dereferenceable(8) %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %3, align 8

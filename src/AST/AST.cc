@@ -247,7 +247,6 @@ void Stmt::Printer::Print(Stmt* e) {
     auto PrintProps = [&](const InheritedProcedureProperties props) {
         if (props.is_compile_time_only) print(" compile_time");
         if (props.always_inline) print(" inline");
-        if (+props.mangling_number) print(" %3(#{}%)", +props.mangling_number);
     };
 
     e->visit(utils::Overloaded{
@@ -416,7 +415,6 @@ void Stmt::Printer::Print(Stmt* e) {
             PrintBasicHeader(e, "GlobalDecl");
             print(" %2({}%) {}", utils::Escape(g->name.str(), false, true), g->type->print());
             if (g->immutable) print(" immutable");
-            if (g->mangling_number != ManglingNumber::None) print(" %3(#{}%)", +g->mangling_number);
             print("\n");
             if (auto i = g->init.get_or_null()) PrintChildren(i);
         },

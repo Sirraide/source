@@ -24,13 +24,13 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S1fFvE.1 private ccc {
+// + proc f private ccc {
 // +     #0 = 32, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
 // +
 // + entry:
-// +     call ccc void _S1f$3getFT1SE.2(ptr #1 sret i8[16])
+// +     call ccc void f::get(ptr #1 sret i8[16])
 // +     %0 = load i64, #1, align 8
 // +     store #0, i64 %0, align 8
 // +     %1 = ptradd #0, 8
@@ -38,19 +38,19 @@ proc f {
 // +     %3 = load i64, %2, align 8
 // +     store %1, i64 %3, align 8
 // +     %4 = ptradd #0, 16
-// +     call ccc void _S1f$3getFT1SE.2(ptr #2 sret i8[16])
+// +     call ccc void f::get(ptr #2 sret i8[16])
 // +     %5 = load i64, #2, align 8
 // +     store %4, i64 %5, align 8
 // +     %6 = ptradd #0, 24
 // +     %7 = ptradd #2, 8
 // +     %8 = load i64, %7, align 8
 // +     store %6, i64 %8, align 8
-// +     delete #2 using _S$10__src_main$.6deleteFvx2T1SE implicit
-// +     delete #1 using _S$10__src_main$.6deleteFvx2T1SE implicit
+// +     delete #2 using S::delete implicit
+// +     delete #1 using S::delete implicit
 // +     ret
 // + }
 // +
-// + proc _S1f$3getFT1SE.2 (ptr %0 sret i8[16]) private ccc {
+// + proc f::get (ptr %0 sret i8[16]) private ccc {
 // + entry:
 // +     store %0, i64 1, align 8
 // +     %1 = ptradd %0, 8
@@ -58,7 +58,7 @@ proc f {
 // +     ret
 // + }
 // +
-// + proc _S$10__src_main$.6deleteFvx2T1SE (ptr %0 align 8 dereferenceable 16) external ccc {
+// + proc S::delete (ptr %0 align 8 dereferenceable 16) external ccc {
 // + entry:
 // +     ret
 // + }

@@ -26,7 +26,7 @@ proc call {
 // +     ret
 // + }
 // +
-// + proc _S4callFvE.1 private ccc {
+// + proc call private ccc {
 // + entry:
 // +     call ccc void a()
 // +     call ccc void b()

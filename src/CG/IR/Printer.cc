@@ -29,6 +29,22 @@ struct CodeGen::Printer {
     bool always_include_types = verbose;
 
     Printer(CodeGen& cg, bool verbose = false) : cg{cg}, verbose{verbose} {}
+
+    auto format_name(StringRef name) -> std::string {
+        bool quote = name.contains(' ');
+        auto escaped = utils::Escape(name, quote, true);
+        if (quote) return "\"" + escaped + "\"";
+        return escaped;
+    }
+
+    auto name(ProcOp proc) -> std::string {
+        if (not verbose) {
+            if (auto decl = cg.lookup(proc); decl and decl->mangling == Mangling::Source)
+                return format_name(decl->compute_symbol_name(false));
+        }
+        return format_name(proc.getName());
+    }
+
     void print(mlir::ModuleOp module);
     void print_arg_list(ProcAndCallOpInterface proc_or_call, bool types_only);
     void print_result_attrs(ProcAndCallOpInterface proc_or_call, unsigned idx);
@@ -383,7 +399,7 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto p = dyn_cast<ProcRefOp>(op)) {
-        Format(out, "procref %2({}%)", p.proc().getName());
+        Format(out, "procref %2({}%)", name(p.proc()));
         return;
     }
 
@@ -493,11 +509,13 @@ void CodeGen::Printer::print_op(Operation* op) {
     }
 
     if (auto d = dyn_cast<ir::DeleteOp>(op)) {
+        auto deleter = cg.mlir_module.lookupSymbol<ProcOp>(d.getDeleterAttr());
+        Assert(deleter, "Missing deleter procedure");
         Format(
             out,
             "delete {} using %2({}%)",
             val(d.getAddr(), false),
-            utils::Escape(d.getDeleter(), false, true)
+            name(deleter)
         );
 
         if (d.getDeleteFlag())
@@ -561,7 +579,7 @@ void CodeGen::Printer::print_procedure(ProcOp proc) {
     }
 
     // Print name.
-    Format(out, "%1(proc%) %2({}%)", utils::Escape(proc.getName(), false, true));
+    Format(out, "%1(proc%) %2({}%)", name(proc));
 
     // Print args.
     print_arg_list(proc, proc.isDeclaration());
@@ -675,12 +693,19 @@ void CodeGen::Printer::print_top_level_op(Operation* op) {
             return;
         }
 
-        global_names[g] = g.getSymName();
+        auto display_name = g.getSymName().str();
+        if (not verbose) {
+            if (auto decl = cg.lookup(g); decl and decl->mangling == Mangling::Source)
+                display_name = decl->compute_symbol_name(false);
+        }
+
+        auto formatted_name = format_name(display_name);
+        global_names[g] = formatted_name;
 
         Format(
             out,
             "%3(@{}%) %1(= {} %5({}%), align %({}%)%)\n",
-            g.getSymName(),
+            formatted_name,
             stringifyLinkage(g.getLinkage()),
             cast<LLVM::LLVMArrayType>(g.getType()).getNumElements(),
             g.getAlignment().value_or(1)
@@ -738,7 +763,7 @@ auto CodeGen::Printer::val(Value v, bool include_type) -> SmallUnrenderedString 
 
         if (auto p = dyn_cast<ProcRefOp>(op)) {
             tmp.clear(); // Never print the type of a proc ref.
-            Format(tmp, "%2({}%)", utils::Escape(p.proc().getName(), false, true));
+            Format(tmp, "%2({}%)", name(p.proc()));
             return tmp;
         }
 

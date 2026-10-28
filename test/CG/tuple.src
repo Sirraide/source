@@ -427,7 +427,7 @@ proc f10 {
 // +     ret
 // + }
 // +
-// + proc _S3f10FvE.1 private ccc {
+// + proc f10 private ccc {
 // +     #0 = 24, align 8
 // +     #1 = 24, align 8
 // +     #2 = 32, align 8
@@ -763,7 +763,7 @@ proc f10 {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S3f10FvE.1() #1 {
+//L + define private void @"_Sf10()"() #1 {
 //L +   %1 = alloca i8, i64 24, align 8
 //L +   %2 = alloca i8, i64 24, align 8
 //L +   %3 = alloca i8, i64 32, align 8

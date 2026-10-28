@@ -962,10 +962,6 @@ class srcc::Sema : public DiagsProducer {
     /// Map from instantiations to their substitutions.
     DenseMap<ProcDecl*, usz> template_substitution_indices;
 
-    /// Next mangling number to use for procedures/globals.
-    ManglingNumber next_proc_mangling_number = ManglingNumber(1);
-    ManglingNumber next_global_mangling_number = ManglingNumber(1);
-
     /// Whether were are inside of an eval.
     bool inside_eval = false;
 
@@ -1529,9 +1525,6 @@ private:
         LookupHint hint = LookupHint::Any
     ) -> LookupResult;
 
-    /// Whether a procedure requires a mangling number.
-    bool RequiresManglingNumber(const ParsedProcAttrs& attrs);
-
     /// Perform overload resolution to select the correct initialiser of
     /// a type given a list of arguments. hard_error distinguishes signature/body
     /// errors from an ordinary overload mismatch when probing defaultability.
@@ -1630,6 +1623,7 @@ private:
 
     auto BuildTypeExpr(Type ty, SLoc loc) -> TypeExpr*;
     auto BuildUnaryExpr(Tk op, Expr* operand, bool postfix, SLoc loc) -> Ptr<Expr>;
+    void AssignLinkageDiscriminators();
 
     /// Entry point.
     void Translate(bool load_runtime);

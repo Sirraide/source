@@ -40,7 +40,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1aFvE.1 private ccc {
+// + proc a private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +
@@ -55,7 +55,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1bFvbE.2 (i1 %0 noundef zeroext) private ccc {
+// + proc b (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -89,7 +89,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1cFORiORiE.3 (ptr %0 align 8 dereferenceable 8 noundef) private ccc -> ptr {
+// + proc c (ptr %0 align 8 dereferenceable 8 noundef) private ccc -> ptr {
 // +     #0 = 8, align 8
 // +
 // + entry:
@@ -98,7 +98,7 @@ proc e {
 // +     ret ptr %1
 // + }
 // +
-// + proc _S1dFvE.4 private ccc {
+// + proc d private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -118,7 +118,7 @@ proc e {
 // +     ret
 // + }
 // +
-// + proc _S1eFvE.5 private ccc {
+// + proc e private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -147,7 +147,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1aFvE.1() #1 {
+//L + define private void @"_Sa()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store i64 0, ptr %1, align 8
@@ -158,7 +158,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1bFvbE.2(i1 noundef zeroext %0) #1 {
+//L + define private void @"_Sb(bool)"(i1 noundef zeroext %0) #1 {
 //L +   %2 = alloca i8, i64 1, align 1
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
@@ -187,7 +187,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private ptr @_S1cFORiORiE.3(ptr noundef align 8 dereferenceable(8) %0) #1 {
+//L + define private ptr @"_Sc(int^?) -> int^?"(ptr noundef align 8 dereferenceable(8) %0) #1 {
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   store ptr %0, ptr %2, align 8
 //L +   %3 = load ptr, ptr %2, align 8
@@ -195,7 +195,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1dFvE.4() #1 {
+//L + define private void @"_Sd()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -211,7 +211,7 @@ proc e {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S1eFvE.5() #1 {
+//L + define private void @"_Se()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8

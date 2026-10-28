@@ -14,7 +14,7 @@ proc union_ = eval c::ConstantUnion();
 // +     ret
 // + }
 // +
-// + proc _S5bytesFT13ConstantBytesE.1 private ccc -> i64 {
+// + proc bytes private ccc -> i64 {
 // +     #0 = 8, align 4
 // +
 // + entry:
@@ -23,7 +23,7 @@ proc union_ = eval c::ConstantUnion();
 // +     ret i64 %0
 // + }
 // +
-// + proc _S7paddingFT15ConstantPaddingE.2 private ccc -> i64 {
+// + proc padding private ccc -> i64 {
 // +     #0 = 8, align 4
 // +     #1 = 8, align 4
 // +
@@ -36,7 +36,7 @@ proc union_ = eval c::ConstantUnion();
 // +     ret i64 %1
 // + }
 // +
-// + proc _S8bitfieldFT12ConstantBitsE.3 private ccc -> i32 {
+// + proc bitfield private ccc -> i32 {
 // +     #0 = 4, align 4
 // +     #1 = 4, align 4
 // +
@@ -47,7 +47,7 @@ proc union_ = eval c::ConstantUnion();
 // +     ret i32 %0
 // + }
 // +
-// + proc _S6union_FT13ConstantUnionE.4 private ccc -> i32 {
+// + proc union_ private ccc -> i32 {
 // +     #0 = 4, align 4
 // +     #1 = 4, align 4
 // +

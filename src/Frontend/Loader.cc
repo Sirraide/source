@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 7;
+constexpr u32 CurrentVersion = 12;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
@@ -140,7 +140,7 @@ public:
     }
 
     void write(const InheritedProcedureProperties& props) {
-        *this << props.associated_type << props.mangling_number
+        *this << props.associated_type
               << props.always_inline << props.is_compile_time_only
               << props.is_cxx_inline_function;
     }
@@ -158,7 +158,7 @@ public:
     void write(ProcDecl* proc) {
         *this << proc->kind() << proc->mangling
               << proc->type << proc->name << proc->props
-              << proc->location();
+              << proc->location() << proc->compute_symbol_name();
 
         Assert(proc->params().size() == proc->param_count());
         for (auto param : proc->params())
@@ -285,6 +285,9 @@ public:
                     loc
                 );
 
+                proc->imported_linkage_name = Read(String);
+
+                // Read the parameters.
                 SmallVector<Sema::ParamSpec> params;
                 for (usz i = 0; i < proc->param_count(); ++i) {
                     auto name = Read(DeclNameLoc);
@@ -552,13 +555,11 @@ public:
     template <>
     auto read<InheritedProcedureProperties>() -> Result<InheritedProcedureProperties> {
         auto associated_type = Read(Opt<Type>);
-        auto mangling_number = Read(ManglingNumber);
         auto always_inline = Read(bool);
         auto is_compile_time_only = Read(bool);
         auto is_cxx_inline_function = Read(bool);
         return InheritedProcedureProperties{
             .associated_type = associated_type,
-            .mangling_number = mangling_number,
             .always_inline = always_inline,
             .is_compile_time_only = is_compile_time_only,
             .is_cxx_inline_function = is_cxx_inline_function,

@@ -26,7 +26,7 @@ proc native_caller (value: int) = native_empty({}, value);
 // +     ret
 // + }
 // +
-// + proc _S6callerFiiE.4 (i64 %0 noundef) private ccc -> i64 {
+// + proc caller (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
@@ -36,13 +36,13 @@ proc native_caller (value: int) = native_empty({}, value);
 // + entry:
 // +     store #0, i64 %0, align 8
 // +     %1 = load i64, #0, align 8
-// +     %2 = call ccc i64 _S5mixedFiiiE.7(i64 %1 noundef, i64 4 noundef)
+// +     %2 = call ccc i64 "mixed<int, 3>"(i64 %1 noundef, i64 4 noundef)
 // +     store #1, i64 %2, align 8
 // +     %3 = load i64, #0, align 8
-// +     %4 = call ccc i64 _S5mixedFiiiE.7(i64 4 noundef, i64 %3 noundef)
+// +     %4 = call ccc i64 "mixed<int, 3>"(i64 4 noundef, i64 %3 noundef)
 // +     store #2, i64 %4, align 8
 // +     %5 = load i64, #0, align 8
-// +     %6 = call ccc i64 _S.4initFT4ItemiE$T4Item.8(i64 %5 noundef)
+// +     %6 = call ccc i64 "Item::init<int, 5>"(i64 %5 noundef)
 // +     store #3, i64 %6, align 8
 // +     %7 = load i64, #1, align 8
 // +     %8 = load i64, #2, align 8
@@ -61,7 +61,7 @@ proc native_caller (value: int) = native_empty({}, value);
 // +     abort at loc("compile-time-signatures.src":13:27) arithmetic(ptr #4)
 // +
 // + bb4:
-// +     %30 = call ccc i64 _S8inferredFiE.9()
+// +     %30 = call ccc i64 "inferred<int, 6>"()
 // +     %31 = sadd ov i64 %20:0, %30
 // +     br %31:1 to bb5 else bb6
 // +
@@ -70,7 +70,7 @@ proc native_caller (value: int) = native_empty({}, value);
 // +
 // + bb6:
 // +     %41 = load i64, #0, align 8
-// +     %42 = call variadic ccc i64 _S8variadicFiE.10(i64 %41, i64 8)
+// +     %42 = call variadic ccc i64 variadic<7>(i64 %41, i64 8)
 // +     %43 = sadd ov i64 %31:0, %42
 // +     br %43:1 to bb7 else bb8
 // +
@@ -81,7 +81,7 @@ proc native_caller (value: int) = native_empty({}, value);
 // +     ret i64 %43:0
 // + }
 // +
-// + proc _S5mixedFiiiE.7 (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
+// + proc "mixed<int, 3>" (i64 %0 noundef, i64 %1 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 80, align 8
@@ -108,7 +108,7 @@ proc native_caller (value: int) = native_empty({}, value);
 // +     ret i64 %14:0
 // + }
 // +
-// + proc _S.4initFT4ItemiE$T4Item.8 (i64 %0 noundef) external ccc -> i64 {
+// + proc "Item::init<int, 5>" (i64 %0 noundef) external ccc -> i64 {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 80, align 8
@@ -128,17 +128,17 @@ proc native_caller (value: int) = native_empty({}, value);
 // +     ret i64 %12
 // + }
 // +
-// + proc _S8inferredFiE.9 private ccc -> i64 {
+// + proc "inferred<int, 6>" private ccc -> i64 {
 // + entry:
 // +     ret i64 6
 // + }
 // +
-// + proc _S8variadicFiE.10 variadic private ccc -> i64 {
+// + proc variadic<7> variadic private ccc -> i64 {
 // + entry:
 // +     ret i64 7
 // + }
 // +
-// + proc _S13native_callerFiiE.5 (i64 %0 noundef) private ccc -> i64 {
+// + proc native_caller (i64 %0 noundef) private ccc -> i64 {
 // +     #0 = 8, align 8
 // +
 // + entry:

@@ -27,7 +27,7 @@ proc f (b: bool) {
 // +     ret
 // + }
 // +
-// + proc _S1fFvbE.1 (i1 %0 noundef zeroext) private ccc {
+// + proc f (i1 %0 noundef zeroext) private ccc {
 // +     #0 = 1, align 1
 // +
 // + entry:

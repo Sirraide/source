@@ -17,7 +17,7 @@ proc foo(in a: int, in b: int) {
 // +     ret
 // + }
 // +
-// + proc _S3fooFvxixiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc {
+// + proc "_Sfoo(in int, in int)" (i64 %0 noundef, i64 %1 noundef) private ccc {
 // + entry:
 // +     %2 = i64 7
 // +     %3 = addressof @3
@@ -120,7 +120,7 @@ proc foo(in a: int, in b: int) {
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S3fooFvxixiE.1(i64 noundef %0, i64 noundef %1) #1 {
+//L + define private void @"_Sfoo(in int, in int)"(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 8, align 8
 //L +   %4 = alloca i8, i64 8, align 8
 //L +   %5 = alloca i8, i64 80, align 8

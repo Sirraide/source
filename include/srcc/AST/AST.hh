@@ -103,6 +103,9 @@ public:
     ProcDecl* initialiser_proc{};
     BlockExpr* file_scope_block{};
 
+    /// Next deterministic identity for a declaration with linkage.
+    u32 next_mangling_number = 1;
+
     /// All procedures in the module.
     SmallVector<ProcDecl*> procs;
 

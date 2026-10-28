@@ -175,7 +175,10 @@ int cg::CodeGen::write_to_file(
     llvm::FileRemover remover(object_file_path);
 
     // Link the damn thing. Clang is better than us at figuring this out.
+    //
     // TODO: Add a --linker=foo option.
+    // NOTE: Our mangled names contain spaces and punctuation. Any linker
+    // used here (including a future Windows linker) must support those names.
     std::string linker = [] -> std::string {
 #ifndef _WIN32
         // 'ld' is terrible, so try 'mold' or 'lld' first.

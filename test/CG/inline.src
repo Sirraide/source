@@ -33,30 +33,30 @@ proc p3 = inline c() + inline c();
 // +     ret
 // + }
 // +
-// + proc _S1aFiE.1 inline private ccc -> i64 {
+// + proc a inline private ccc -> i64 {
 // + entry:
 // +     ret i64 42
 // + }
 // +
-// + proc _S1bFiE.2 inline private ccc -> i64 {
+// + proc b inline private ccc -> i64 {
 // + entry:
-// +     %0 = call ccc i64 _S1aFiE.1()
+// +     %0 = call ccc i64 a()
 // +     ret i64 %0
 // + }
 // +
-// + proc _S2p1FvE.3 private ccc {
+// + proc p1 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
 // +     #3 = 80, align 8
 // +
 // + entry:
-// +     %0 = call ccc i64 _S1aFiE.1()
+// +     %0 = call ccc i64 a()
 // +     store #0, i64 %0, align 8
-// +     %1 = call ccc i64 _S1bFiE.2()
+// +     %1 = call ccc i64 b()
 // +     store #1, i64 %1, align 8
-// +     %2 = call ccc i64 _S1aFiE.1()
-// +     %3 = call ccc i64 _S1aFiE.1()
+// +     %2 = call ccc i64 a()
+// +     %3 = call ccc i64 a()
 // +     %4 = sadd ov i64 %2, %3
 // +     br %4:1 to bb1 else bb2
 // +
@@ -68,50 +68,50 @@ proc p3 = inline c() + inline c();
 // +     ret
 // + }
 // +
-// + proc _S4rec1FiE.4 inline private ccc -> i64 {
+// + proc rec1 inline private ccc -> i64 {
 // + entry:
-// +     %0 = call ccc i64 _S4rec1FiE.4()
+// +     %0 = call ccc i64 rec1()
 // +     ret i64 %0
 // + }
 // +
-// + proc _S4rec2FiE.5 inline private ccc -> i64 {
+// + proc rec2 inline private ccc -> i64 {
 // + entry:
-// +     %0 = call ccc i64 _S4rec3FiE.6()
+// +     %0 = call ccc i64 rec3()
 // +     ret i64 %0
 // + }
 // +
-// + proc _S4rec3FiE.6 inline private ccc -> i64 {
+// + proc rec3 inline private ccc -> i64 {
 // + entry:
-// +     %0 = call ccc i64 _S4rec2FiE.5()
+// +     %0 = call ccc i64 rec2()
 // +     ret i64 %0
 // + }
 // +
-// + proc _S2p2FvE.7 private ccc {
+// + proc p2 private ccc {
 // +     #0 = 8, align 8
 // +     #1 = 8, align 8
 // +     #2 = 8, align 8
 // +
 // + entry:
-// +     %0 = call ccc i64 _S4rec1FiE.4()
+// +     %0 = call ccc i64 rec1()
 // +     store #0, i64 %0, align 8
-// +     %1 = call ccc i64 _S4rec2FiE.5()
+// +     %1 = call ccc i64 rec2()
 // +     store #1, i64 %1, align 8
-// +     %2 = call ccc i64 _S4rec3FiE.6()
+// +     %2 = call ccc i64 rec3()
 // +     store #2, i64 %2, align 8
 // +     ret
 // + }
 // +
-// + proc _S1cFiE.8 private ccc -> i64 {
+// + proc c private ccc -> i64 {
 // + entry:
 // +     ret i64 42
 // + }
 // +
-// + proc _S2p3FiE.9 private ccc -> i64 {
+// + proc p3 private ccc -> i64 {
 // +     #0 = 80, align 8
 // +
 // + entry:
-// +     %0 = call ccc i64 _S1cFiE.8()
-// +     %1 = call ccc i64 _S1cFiE.8()
+// +     %0 = call ccc i64 c()
+// +     %1 = call ccc i64 c()
 // +     %2 = sadd ov i64 %0, %1
 // +     br %2:1 to bb1 else bb2
 // +
@@ -137,7 +137,7 @@ proc p3 = inline c() + inline c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2p1FvE.3() #1 {
+//L + define private void @"_Sp1()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
@@ -178,38 +178,38 @@ proc p3 = inline c() + inline c();
 //L + }
 //L +
 //L + ; Function Attrs: alwaysinline nounwind optnone uwtable
-//L + define private i64 @_S4rec1FiE.4() #2 {
-//L +   %1 = call i64 @_S4rec1FiE.4()
+//L + define private i64 @"_Srec1() -> int"() #2 {
+//L +   %1 = call i64 @"_Srec1() -> int"()
 //L +   ret i64 %1
 //L + }
 //L +
 //L + ; Function Attrs: alwaysinline nounwind optnone uwtable
-//L + define private i64 @_S4rec3FiE.6() #2 {
-//L +   %1 = call i64 @_S4rec3FiE.6()
+//L + define private i64 @"_Srec3() -> int"() #2 {
+//L +   %1 = call i64 @"_Srec3() -> int"()
 //L +   ret i64 %1
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2p2FvE.7() #1 {
+//L + define private void @"_Sp2()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 8
 //L +   %2 = alloca i8, i64 8, align 8
 //L +   %3 = alloca i8, i64 8, align 8
-//L +   %4 = call i64 @_S4rec1FiE.4()
+//L +   %4 = call i64 @"_Srec1() -> int"()
 //L +   store i64 %4, ptr %1, align 8
-//L +   %5 = call i64 @_S4rec3FiE.6()
+//L +   %5 = call i64 @"_Srec3() -> int"()
 //L +   store i64 %5, ptr %2, align 8
-//L +   %6 = call i64 @_S4rec3FiE.6()
+//L +   %6 = call i64 @"_Srec3() -> int"()
 //L +   store i64 %6, ptr %3, align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S1cFiE.8() #1 {
+//L + define private i64 @"_Sc() -> int"() #1 {
 //L +   ret i64 42
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private i64 @_S2p3FiE.9() #1 {
+//L + define private i64 @"_Sp3() -> int"() #1 {
 //L +   %1 = alloca i8, i64 80, align 8
 //L +   %2 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 42, i64 42)
 //L +   %3 = extractvalue { i64, i1 } %2, 0

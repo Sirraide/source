@@ -782,12 +782,6 @@ void Sema::RequestRegisterDeclarations(ArrayRef<ParsedStmt*> statements) {
         request->parsed = parsed;
         request->exported = exported;
         request->context = GetRequestContext();
-        if (auto proc = dyn_cast<ParsedProcDecl>(parsed)) {
-            auto attrs = proc->type->attrs;
-            if (attrs.native or attrs.extern_) attrs.nomangle = true;
-            if (RequiresManglingNumber(attrs)) request->mangling = next_proc_mangling_number++;
-        }
-
         request_data.scope_declarations[curr_scope()].push_back(request.get());
         request_data.declarations[{curr_scope(), parsed}] = std::move(request);
     }
@@ -1201,6 +1195,7 @@ auto Sema::RequestTemplateSubstitution(
 
     SubstitutionResult result;
     bool failed_compile_time_arg = false;
+    SmallVector<String> constant_arguments;
 
     // Compile-time parameters are available to later parameters, e.g.
     //
@@ -1261,6 +1256,11 @@ auto Sema::RequestTemplateSubstitution(
                 profile.error()
             )});
 
+            constant_arguments.push_back(tu->save(
+                value->isa<eval::TreeValue*>()
+                    ? "quote{...}"
+                    : text::RenderColours(false, value->print(&ctx).str())
+            ));
             auto constant = new (*tu) ConstExpr(*tu, std::move(*value), arg->location());
 
             // Declare it so later parts of the signature can use it.
@@ -1310,13 +1310,30 @@ auto Sema::RequestTemplateSubstitution(
     // There was some error building the declaration; give up.
     if (not proc) return {};
 
-    // Distinct values for compile-time arguments can yield identical runtime
-    // signatures; assign a mangling number for now just to be safe.
-    //
-    // FIXME: Sort out mangling; it’s a mess currently. We don’t have a stable
-    // ABI (and aren’t planning to have one), so something like literally just
-    // '_S' + <name> (+ <mangling number>) would be enough.
-    if (has_constants) proc->props.mangling_number = next_proc_mangling_number++;
+    // Stringify the argument values since they’re used in the symbol name.
+    SmallString<256> display_arguments;
+    auto AddArgument = [&](auto value) {
+        display_arguments += display_arguments.empty() ? "<" : ", ";
+        Format(display_arguments, "{}", value);
+    };
+
+    // Print type template parameters in deduction order.
+    SmallVector<std::pair<u32, Type>> type_display_arguments;
+    for (auto [_, deduction] : deduced)
+        type_display_arguments.emplace_back(deduction.first, deduction.second.ty);
+
+    rgs::stable_sort(type_display_arguments, {}, &std::pair<u32, Type>::first);
+    for (auto [_, type] : type_display_arguments)
+        AddArgument(text::RenderColours(false, type->canonical->print().str()));
+
+    // Print deduced 'var' parameters next.
+    for (auto type : deduced_var_parameters)
+        AddArgument(text::RenderColours(false, type->canonical->print().str()));
+
+    // Lastly, add compile-time parameters.
+    for (auto value : constant_arguments) AddArgument(value);
+    if (not display_arguments.empty()) display_arguments += ">";
+    proc->template_arguments = tu->save(display_arguments.str());
 
     // Check the constraint.
     if (auto where = proc_template->pattern->where.get_or_null()) {

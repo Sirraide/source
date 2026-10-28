@@ -32,30 +32,30 @@ proc f3 {
 var x: range<i13>;
 var y = c();
 
-// * @_S1x.1 = private 4, align 2
-// + @_S1y.2 = private 16, align 8
+// * @x = private 4, align 2
+// + @y = private 16, align 8
 // +
 // + proc __src_main norecurse external ccc {
 // +     #0 = 16, align 8
 // +
 // + entry:
-// +     store @_S1x.1, i16 0, align 2
-// +     %0 = ptradd @_S1x.1, 2
+// +     store @x, i16 0, align 2
+// +     %0 = ptradd @x, 2
 // +     store %0, i16 0, align 2
-// +     %1 = call ccc (i64, i64) _S1cFqiE.3()
+// +     %1 = call ccc (i64, i64) c()
 // +     store #0, i64 %1:0, align 8
 // +     %2 = ptradd #0, 8
 // +     store %2, i64 %1:1, align 8
 // +     %3 = load i64, #0, align 8
 // +     %4 = ptradd #0, 8
 // +     %5 = load i64, %4, align 8
-// +     store @_S1y.2, i64 %3, align 8
-// +     %6 = ptradd @_S1y.2, 8
+// +     store @y, i64 %3, align 8
+// +     %6 = ptradd @y, 8
 // +     store %6, i64 %5, align 8
 // +     ret
 // + }
 // +
-// + proc _S1cFqiE.3 private ccc -> (i64, i64) {
+// + proc c private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +
 // + entry:
@@ -68,7 +68,7 @@ var y = c();
 // +     ret i64 %1, i64 %3
 // + }
 // +
-// + proc _S1aFqiqiE.1 (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
+// + proc a (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -85,7 +85,7 @@ var y = c();
 // +     ret i64 %4, i64 %6
 // + }
 // +
-// + proc _S1bFqiqiE.2 (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
+// + proc b (i64 %0 noundef, i64 %1 noundef) private ccc -> (i64, i64) {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +
@@ -102,7 +102,7 @@ var y = c();
 // +     ret i64 %4, i64 %6
 // + }
 // +
-// + proc _S2f1FvE.4 private ccc {
+// + proc f1 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -132,7 +132,7 @@ var y = c();
 // +     ret
 // + }
 // +
-// + proc _S2f2FvE.5 private ccc {
+// + proc f2 private ccc {
 // +     #0 = 16, align 8
 // +     #1 = 16, align 8
 // +     #2 = 16, align 8
@@ -161,7 +161,7 @@ var y = c();
 // +     ret
 // + }
 // +
-// + proc _S2f3FvE.6 private ccc {
+// + proc f3 private ccc {
 // +     #0 = 8, align 4
 // +     #1 = 8, align 4
 // +     #2 = 8, align 4
@@ -195,15 +195,15 @@ var y = c();
 //L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 //L + target triple = "x86_64-unknown-linux"
 //L +
-//L + @_S1x.1 = private global [4 x i8] undef, align 2
-//L + @_S1y.2 = private global [16 x i8] undef, align 8
+//L + @_Sx = private global [4 x i8] undef, align 2
+//L + @_Sy = private global [16 x i8] undef, align 8
 //L +
 //L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
 //L + define void @__src_main() #0 {
 //L +   %1 = alloca i8, i64 16, align 8
-//L +   store i16 0, ptr @_S1x.1, align 2
-//L +   store i16 0, ptr getelementptr inbounds nuw (i8, ptr @_S1x.1, i64 2), align 2
-//L +   %2 = call { i64, i64 } @_S1cFqiE.3()
+//L +   store i16 0, ptr @_Sx, align 2
+//L +   store i16 0, ptr getelementptr inbounds nuw (i8, ptr @_Sx, i64 2), align 2
+//L +   %2 = call { i64, i64 } @"_Sc() -> range<int>"()
 //L +   %3 = extractvalue { i64, i64 } %2, 0
 //L +   %4 = extractvalue { i64, i64 } %2, 1
 //L +   store i64 %3, ptr %1, align 8
@@ -212,13 +212,13 @@ var y = c();
 //L +   %6 = load i64, ptr %1, align 8
 //L +   %7 = getelementptr inbounds nuw i8, ptr %1, i32 8
 //L +   %8 = load i64, ptr %7, align 8
-//L +   store i64 %6, ptr @_S1y.2, align 8
-//L +   store i64 %8, ptr getelementptr inbounds nuw (i8, ptr @_S1y.2, i64 8), align 8
+//L +   store i64 %6, ptr @_Sy, align 8
+//L +   store i64 %8, ptr getelementptr inbounds nuw (i8, ptr @_Sy, i64 8), align 8
 //L +   ret void
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private { i64, i64 } @_S1cFqiE.3() #1 {
+//L + define private { i64, i64 } @"_Sc() -> range<int>"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   store i64 2, ptr %1, align 8
 //L +   %2 = getelementptr inbounds nuw i8, ptr %1, i32 8
@@ -232,7 +232,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private { i64, i64 } @_S1aFqiqiE.1(i64 noundef %0, i64 noundef %1) #1 {
+//L + define private { i64, i64 } @"_Sa(range<int>) -> range<int>"(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -250,7 +250,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private { i64, i64 } @_S1bFqiqiE.2(i64 noundef %0, i64 noundef %1) #1 {
+//L + define private { i64, i64 } @"_Sb(range<int>) -> range<int>"(i64 noundef %0, i64 noundef %1) #1 {
 //L +   %3 = alloca i8, i64 16, align 8
 //L +   %4 = alloca i8, i64 16, align 8
 //L +   store i64 %0, ptr %3, align 8
@@ -268,7 +268,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f1FvE.4() #1 {
+//L + define private void @"_Sf1()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -297,7 +297,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f2FvE.5() #1 {
+//L + define private void @"_Sf2()"() #1 {
 //L +   %1 = alloca i8, i64 16, align 8
 //L +   %2 = alloca i8, i64 16, align 8
 //L +   %3 = alloca i8, i64 16, align 8
@@ -325,7 +325,7 @@ var y = c();
 //L + }
 //L +
 //L + ; Function Attrs: noinline nounwind optnone uwtable
-//L + define private void @_S2f3FvE.6() #1 {
+//L + define private void @"_Sf3()"() #1 {
 //L +   %1 = alloca i8, i64 8, align 4
 //L +   %2 = alloca i8, i64 8, align 4
 //L +   %3 = alloca i8, i64 8, align 4

@@ -478,7 +478,6 @@ void Sema::DefineSpecialProcedures(
     if (generate_initialisers) {
         auto Register = [&](ProcDecl* proc) {
             proc->props.associated_type = r;
-            proc->props.mangling_number = next_proc_mangling_number++;
             if (auto structure = dyn_cast<StructType>(r)) proc->parent = structure->parent;
             else proc->parent = nullptr; // Tuples have no lexical parent.
             AddDeclToScope(r->scope(), proc);
@@ -601,6 +600,7 @@ void Sema::DefineSpecialProcedures(
             /*defer_body=*/true
         );
 
+        proc->props.associated_type = r;
         r->set_delete(proc);
     }
 
@@ -616,6 +616,7 @@ void Sema::DefineSpecialProcedures(
             /*defer_body=*/true
         );
 
+        proc->props.associated_type = r;
         r->set_copy(proc);
     }
 }
@@ -884,21 +885,6 @@ void Sema::ReportLookupFailure(LookupResult&& res) {
         ReportDiag(std::move(*res.note));
         res.note.reset();
     }
-}
-
-bool Sema::RequiresManglingNumber(const ParsedProcAttrs& attrs) {
-    // Obviously don’t allocate a mangling number if the thing isn’t even
-    // mangled to begin with.
-    if (attrs.nomangle) return false;
-
-    // Do not allocate a mangling number to builtin operators as there should
-    // never be any conflicting declarations of those since they’re under our
-    // control, and this avoids invalidating the IR of every CG test after updating
-    // the preamble.
-    if (attrs.builtin_operator) return false;
-
-    // There is also an attribute to disable the mangling number.
-    return not attrs.no_mangling_number;
 }
 
 auto Sema::Save(Expr* e) -> SaveExpr* {
