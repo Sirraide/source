@@ -1801,15 +1801,9 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
     // nested procedure; however, since we might try to evaluate a procedure
     // we haven’t finished translating yet, we might have to compute that
     // information on-demand. Install a callback for that.
-    auto& context = vm.owner().context();
     bool closure_preparation_failed = false;
-    DiagnosticsEngine::Ptr original_diags{&context.diags()};
     auto PrepareClosure = [&](ProcDecl* decl, SLoc loc, bool environment_available) {
         if (decl->parent and decl->will_have_body and not decl->body()) {
-            // Errors in the body are hard errors.
-            DiagnosticsEngine::Ptr previous{&context.diags()};
-            context.set_diags(original_diags);
-            defer { context.set_diags(previous); };
             if (not sema or not sema->RequestProcedureBody(decl, loc)) {
                 closure_preparation_failed = true;
                 return false;
@@ -1824,6 +1818,8 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         return true;
     };
 
+    // Set this not just when we compile the entry point, but for this
+    // entire evaluation.
     tempset vm.cg->prepare_closure = PrepareClosure;
 
     // Compile the procedure.
@@ -1840,14 +1836,12 @@ auto Eval::eval(Stmt* s) -> std::optional<RValue> {
         // 'nil as int?' is not engaged, but this is discovered during
         // finalisation time rather than evaluation time.
         //
-        // Temporarily override the diagnostics engine while we compile this
-        // to make sure any finalisation-time diagnostics are caught here.
+        // To prevent this from becoming a hard error, collect CodeGen diagnostics
+        // while compiling this statement.
         auto& context = vm.owner().context();
         auto diagnostics = llvm::makeIntrusiveRefCnt<CollectDiagnosticsEngine>(context);
         {
-            DiagnosticsEngine::Ptr previous{&context.diags()};
-            context.set_diags(diagnostics);
-            defer { context.set_diags(previous); };
+            tempset vm.cg->diags_engine = diagnostics;
             entry_proc = vm.cg->emit_stmt_as_proc_for_vm(s);
         }
 

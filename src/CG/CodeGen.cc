@@ -36,7 +36,8 @@ CodeGen::CodeGen(TranslationUnit& tu, LangOpts lang_opts)
     : CodeGenBase(),
       OpBuilder(&mlir),
       tu{tu},
-      lang_opts{lang_opts} {
+      lang_opts{lang_opts},
+      diags_engine{&tu.context().diags()} {
     if (libassert::is_debugger_present()) mlir.disableMultithreading();
     mlir.getDiagEngine().registerHandler([&](mlir::Diagnostic& diag) {
         HandleMLIRDiagnostic(diag);

@@ -232,6 +232,9 @@ class srcc::cg::CodeGen : public DiagsProducer
     usz vm_evaluations = 0;
 
 public:
+    /// Diagnostics engine used for CodeGen and IR finalisation diagnostics.
+    DiagnosticsEngine::Ptr diags_engine;
+
     /// Callback to prepare a closure for emission; this is a hack that
     /// is used during constant evaluation where we can end up requesting
     /// a procedure body before we’ve figured out what all of its captures
@@ -248,7 +251,7 @@ public:
     [[nodiscard]] auto context() const -> Context& { return tu.context(); }
 
     /// Get the diagnostics engine.
-    [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return tu.context().diags(); }
+    [[nodiscard]] auto diags() const -> DiagnosticsEngine& { return *diags_engine; }
 
     /// Dump the IR module.
     [[nodiscard]] auto dump(bool verbose = false, bool generic = false) -> SmallUnrenderedString;
@@ -513,8 +516,8 @@ public:
         ir::Aliasing aliasing = ir::Aliasing::Derived
     );
 
-    void AddDiagRemark(std::string&& s) { tu.context().diags().add_remark(std::move(s)); }
-    void ReportDiag(Diagnostic&& d) { tu.context().diags().report_diag(std::move(d)); }
+    void AddDiagRemark(std::string&& s) { diags().add_remark(std::move(s)); }
+    void ReportDiag(Diagnostic&& d) { diags().report_diag(std::move(d)); }
 
     auto DeclareProcedure(ProcDecl* proc) -> ir::ProcOp;
 

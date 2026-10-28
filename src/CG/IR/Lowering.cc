@@ -549,13 +549,13 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
     pm.addPass(std::make_unique<LoweringPass>(*this));
 
     if (pm.run(mlir_module).failed()) {
-        if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
+        if (not diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
         return nullptr;
     }
 
     auto m = mlir::translateModuleToLLVMIR(mlir_module, tu.llvm_context, tu.name);
     if (not m) {
-        if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
+        if (not diags().has_error()) ICE(SLoc(), "Failed to lower module to LLVM IR");
         return nullptr;
     }
 
@@ -568,7 +568,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
         tu.emitted_llvm = true;
         for (auto& l : tu.link_llvm_modules) {
             if (link.linkInModule(std::move(l))) {
-                if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
+                if (not diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
                 return nullptr;
             }
         }
@@ -578,7 +578,7 @@ auto CodeGen::emit_llvm(llvm::TargetMachine& machine) -> std::unique_ptr<llvm::M
         cg->HandleTranslationUnit(mod->clang_ast.getASTContext());
         auto llvm_module = cg->ReleaseModule();
         if (link.linkInModule(std::move(llvm_module))) {
-            if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
+            if (not diags().has_error()) ICE(SLoc(), "Failed to link LLVM module");
             return nullptr;
         }
     }
@@ -598,7 +598,7 @@ bool CodeGen::finalise_for_constant_evaluation(ir::ProcOp proc) {
     // This is possibly LLVM bug 153906.
     //pm.addPass(mlir::createRemoveDeadValuesPass());
     if (pm.run(proc).succeeded()) return true;
-    if (not tu.context().diags().has_error()) {
+    if (not diags().has_error()) {
         ICE(SLoc(), "Failed to finalise IR");
         proc->dumpPretty();
     }
@@ -615,6 +615,6 @@ bool CodeGen::finalise(bool verify) {
     // pm.addPass(mlir::createMem2Reg());
     AddRequiredTransformPasses(pm);
     if (pm.run(mlir_module).succeeded()) return true;
-    if (not tu.context().diags().has_error()) ICE(SLoc(), "Failed to finalise IR");
+    if (not diags().has_error()) ICE(SLoc(), "Failed to finalise IR");
     return false;
 }

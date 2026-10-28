@@ -46,3 +46,18 @@ proc dangling_pointer -> int^ { var x = 1; return &x; }
 take_constant(dangling_pointer() as int^?); // expected-error: Argument to constant parameter 'value' references out-of-scope stack memory
 proc dangling_slice -> int[] { var x = 1; return int[](&x, 1); }
 take_constant(dangling_slice()); // expected-error: Argument to constant parameter 'value' references out-of-scope stack memory
+
+// Sema errors while preparing a closure remain hard errors even when a runtime
+// overload makes the failed constant-argument probe otherwise recoverable.
+proc invalid_closure_fallback {
+    fallback(invalid);
+    proc invalid (x: int) -> int = x + missing_capture; // expected-error: Unknown symbol 'missing_capture'
+}
+
+// Failed closure preparation substitutes a null closure in CodeGen. Attempting
+// to call it must stop evaluation before interpreting that recovery value.
+proc call_unavailable_closure {
+    var y = 1;
+    proc increment (x: int) -> int = x + y;
+    eval increment(48); // expected-error: Cannot evaluate a closure whose environment is only available at runtime
+}
