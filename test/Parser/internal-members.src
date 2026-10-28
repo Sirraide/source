@@ -1,0 +1,14 @@
+// V %srcc --parse --verify %s
+module test;
+struct Defaults internal {
+    value: int;
+    internal redundant: int; // expected-warning: 'internal' is redundant as 'Defaults' is already declared 'internal'
+    internal init () = ::(0, 0); // expected-warning: 'internal' is redundant as 'Defaults' is already declared 'internal'
+    export init (x: int) = ::(x, 0);
+}
+struct Accessible {
+    export value: int; // expected-warning: 'export' is redundant; members of 'Accessible' are accessible by default
+    export init (x: int) = ::(x); // expected-warning: 'export' is redundant; members of 'Accessible' are accessible by default
+    internal: int;
+    internal internal: int;
+}

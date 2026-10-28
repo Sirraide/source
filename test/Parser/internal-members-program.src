@@ -1,0 +1,6 @@
+// V %srcc --parse --verify %s
+program test;
+struct X internal { // expected-error: 'internal' is only allowed in modules
+    internal x: int; // expected-error: 'internal' is only allowed in modules
+    internal init () = ::(0); // expected-error: 'internal' is only allowed in modules
+}

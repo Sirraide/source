@@ -1,0 +1,49 @@
+// I
+module internal_members;
+export struct Counter internal {
+    value: int;
+    export label: int;
+    reserved: int; // Indirect aggregate return avoids the evaluator's multi-result FFI limitation.
+    init (value: int, label: int) = ::(value, label, 0);
+    export init (value: int) = ::(value, 0, 0);
+}
+
+export proc value (in counter: Counter) -> int = counter.value;
+export proc construct -> Counter = Counter(10, 20);
+export struct Aggregate { internal hidden: int; visible: int; reserved: int; }
+export struct DefaultInternal internal { value: int; }
+export struct Explicit { field: int; internal init (x: int) = ::(x); }
+var local = Counter(1, 2);
+var local_aggregate = Aggregate(3, 4, 0);
+
+export struct Empty internal {}
+var empty = Empty();
+export struct PublicFields internal { export value: int; }
+export struct Required { internal value: int; init (x: int) = ::(x); }
+
+export struct Overloaded {
+    value: int?;
+    internal init (x: int) = ::(x);
+    init (x: int?) = ::(x);
+}
+
+export struct NonDefaultInternal internal { value: Required; }
+var local_nondefault = NonDefaultInternal(Required(1));
+
+export struct PublicPreferred {
+    value: int;
+    init (x: int) = ::(x);
+    internal init (x: int?) = ::(0);
+}
+export struct Ambiguous {
+    value: int;
+    internal init (x: int, y: bool?) = ::(x);
+    init (x: int?, y: bool) = ::(0);
+}
+
+export proc make_internal -> DefaultInternal = DefaultInternal(42);
+
+// Nontrivial field initialisation still requires generated procedures.
+struct Nontrivial { value: int; init = ::(42); }
+export struct NontrivialInternal internal { value: Nontrivial; }
+var local_nontrivial: NontrivialInternal;

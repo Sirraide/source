@@ -121,24 +121,26 @@
 // ============================================================================
 //  Declarations
 // ============================================================================
-<decl>        ::= <decl-proc> | <decl-var> | <decl-struct> | <decl-enum> | EXPORT <decl>
-<decl-var>    ::= [ STATIC ] ( VAR | VAL ) IDENT [ ":" <type> ] [ "=" <expr> ]
-<decl-proc>   ::= <signature> <proc-body>
-<decl-struct> ::= STRUCT IDENT "{" { IDENT ":" <type> ";" | <deleter> | <copy> | <init> } "}"
-<decl-enum>   ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
-<signature>   ::= PROC [ <expr-decl-ref> ] <sig-rest>
-<sig-rest>    ::= [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
-<proc-args>   ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
-<proc-attrs>  ::= { "native" | "extern" | "nomangle" | "variadic" }
-<proc-where>  ::= WHERE <expr>
-<proc-body>   ::= [ <expr-block> | "=" <expr> ]
-<param-decl>  ::= [ WITH ] [ "exact" ] [ <intent> ] [ VAL ] <param-rest>
-<param-rest>  ::= [ IDENT ":" ] <type> [ "..." ] | TEMPLATE-PARAMETER ":" <type> | "this"
-<intent>      ::= IN | OUT | INOUT
-<enumerator>  ::= IDENT [ "=" <expr> ]
-<deleter>     ::= DELETE "{ <stmts> "}"
-<copy>        ::= COPY <proc-body>
-<init>        ::= INIT <sig-rest> <proc-body>
+<decl>          ::= <decl-proc> | <decl-var> | <decl-struct> | <decl-enum> | EXPORT <decl>
+<decl-var>      ::= [ STATIC ] ( VAR | VAL ) IDENT [ ":" <type> ] [ "=" <expr> ]
+<decl-proc>     ::= <signature> <proc-body>
+<decl-struct>   ::= STRUCT IDENT [ "internal" ] "{" { <struct-member> } "}"
+<struct-member> ::= [ <member-access> ] ( IDENT ":" <type> ";" | <init> ) | <deleter> | <copy>
+<member-access> ::= "internal" | EXPORT
+<decl-enum>     ::= ENUM IDENT [ ":" <type> ] "{" [ <enumerator> { "," <enumerator> } [ "," ] ] "}"
+<signature>     ::= PROC [ <expr-decl-ref> ] <sig-rest>
+<sig-rest>      ::= [ <proc-args> ] <proc-attrs> [ "->" <type> ] [ <proc-where> ]
+<proc-args>     ::= "(" [ <param-decl> { "," <param-decl> } [ "," ] ] ")"
+<proc-attrs>    ::= { "native" | "extern" | "nomangle" | "variadic" }
+<proc-where>    ::= WHERE <expr>
+<proc-body>     ::= [ <expr-block> | "=" <expr> ]
+<param-decl>    ::= [ WITH ] [ "exact" ] [ <intent> ] [ VAL ] <param-rest>
+<param-rest>    ::= [ IDENT ":" ] <type> [ "..." ] | TEMPLATE-PARAMETER ":" <type> | "this"
+<intent>        ::= IN | OUT | INOUT
+<enumerator>    ::= IDENT [ "=" <expr> ]
+<deleter>       ::= DELETE "{ <stmts> "}"
+<copy>          ::= COPY <proc-body>
+<init>          ::= INIT <sig-rest> <proc-body>
 
 // ============================================================================
 //  Types

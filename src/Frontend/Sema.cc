@@ -466,59 +466,61 @@ auto Sema::ComputeCommonTypeAndValueCategory(MutableArrayRef<Expr*> exprs) -> Ty
     return {t, vc};
 }
 
-void Sema::DefineSpecialProcedures(
+void Sema::DefineImplicitInitialisers(
     RecordType* r,
-    RecordLayout::Props props,
-    Ptr<ParsedStmt> parsed_deleter,
-    Ptr<ParsedStmt> parsed_copy,
-    SLoc loc,
-    bool generate_initialisers
+    bool define_default,
+    bool define_aggregate,
+    SLoc loc
 ) {
     Assert(r->is_canonical());
-    if (generate_initialisers) {
-        auto Register = [&](ProcDecl* proc) {
-            proc->props.associated_type = r;
-            if (auto structure = dyn_cast<StructType>(r)) proc->parent = structure->parent;
-            else proc->parent = nullptr; // Tuples have no lexical parent.
-            AddDeclToScope(r->scope(), proc);
-        };
+    auto Register = [&](ProcDecl* proc) {
+        proc->props.associated_type = r;
 
-        // Build the body of the default initialiser.
-        auto BuildDefault = [this, r, loc](ProcDecl*) -> Ptr<Expr> {
-            SmallVector<Expr*> fields;
-            for (auto field : r->scope()->fields()) {
-                auto init = BuildInitialiser(field->type, {}, loc);
-                if (not init) return {};
-                fields.push_back(init.get());
-            }
-            return TupleExpr::Create(*tu, r, fields, {}, loc);
-        };
+        // If the struct is internal, so are its generated initialisers.
+        if (auto structure = dyn_cast<StructType>(r)) proc->props.internal = structure->internal;
 
-        // Build the body of the aggregate initialiser.
-        auto BuildAggregate = [this, r, loc](ProcDecl* proc) -> Ptr<Expr> {
-            SmallVector<Expr*> fields;
-            for (auto param : proc->params()) {
-                auto ref = RequestReference(param, loc);
-                if (not ref) return {};
-                auto init = BuildInitialiser(param->type, ref.get(), loc);
-                if (not init) return {};
-                fields.push_back(init.get());
-            }
-            return TupleExpr::Create(*tu, r, fields, {}, loc);
-        };
+        // Record the lexical parent.
+        if (auto structure = dyn_cast<StructType>(r)) proc->parent = structure->parent;
+        else proc->parent = nullptr; // Tuples have no lexical parent.
+        AddDeclToScope(r->scope(), proc);
+    };
 
-        // Build the default initialiser.
-        Register(BuildImplicitProcedure(
-            ProcType::Get(*tu, {r, Expr::RValue}),
-            Tk::Init,
-            {},
-            Linkage::Exported,
-            Mangling::Source,
-            loc,
-            std::move(BuildDefault),
-            /*defer_body=*/true
-        ));
+    // Build the body of the default initialiser.
+    auto BuildDefault = [this, r, loc](ProcDecl*) -> Ptr<Expr> {
+        SmallVector<Expr*> fields;
+        for (auto field : r->scope()->fields()) {
+            auto init = BuildInitialiser(field->type, {}, loc);
+            if (not init) return {};
+            fields.push_back(init.get());
+        }
+        return TupleExpr::Create(*tu, r, fields, {}, loc);
+    };
 
+    // Build the body of the aggregate initialiser.
+    auto BuildAggregate = [this, r, loc](ProcDecl* proc) -> Ptr<Expr> {
+        SmallVector<Expr*> fields;
+        for (auto param : proc->params()) {
+            auto ref = RequestReference(param, loc);
+            if (not ref) return {};
+            auto init = BuildInitialiser(param->type, ref.get(), loc);
+            if (not init) return {};
+            fields.push_back(init.get());
+        }
+        return TupleExpr::Create(*tu, r, fields, {}, loc);
+    };
+
+    if (define_default) Register(BuildImplicitProcedure(
+        ProcType::Get(*tu, {r, Expr::RValue}),
+        Tk::Init,
+        {},
+        Linkage::Exported,
+        Mangling::Source,
+        loc,
+        std::move(BuildDefault),
+        /*defer_body=*/true
+    ));
+
+    if (define_aggregate) {
         // Build the aggregate initialiser.
         SmallVector<ParamTypeData> params;
         SmallVector<ParamSpec> specs;
@@ -538,6 +540,16 @@ void Sema::DefineSpecialProcedures(
             /*defer_body=*/true
         ));
     }
+}
+
+void Sema::DefineSpecialProcedures(
+    RecordType* r,
+    RecordLayout::Props props,
+    Ptr<ParsedStmt> parsed_deleter,
+    Ptr<ParsedStmt> parsed_copy,
+    SLoc loc
+) {
+    Assert(r->is_canonical());
 
     // If we don’t need a deleter/copy, we’re done.
     if (

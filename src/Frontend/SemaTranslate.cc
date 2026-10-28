@@ -1209,6 +1209,7 @@ auto Sema::TranslateProcDeclInitial(ParsedProcDecl* parsed) -> Ptr<Decl> {
 
     // Determine inherited properties.
     InheritedProcedureProperties props;
+    props.internal = attrs.internal;
     props.always_inline = attrs.inline_;
     if (parsed->name.is_init()) props.associated_type = curr_scope()->associated_type();
 

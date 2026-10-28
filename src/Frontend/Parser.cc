@@ -2268,9 +2268,11 @@ void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at) {
     }
 }
 
-// <decl-struct> ::= STRUCT IDENTIFIER "{" { <type> IDENTIFIER ";" | <deleter> | <copy-proc> } "}"
-// <deleter>     ::= DELETE "{ <stmts> "}"
-// <copy-proc>   ::= COPY <proc-body>
+// <decl-struct>   ::= STRUCT IDENT [ "internal" ] "{" { <struct-member> } "}"
+// <struct-member> ::= [ <member-access> ] ( IDENT ":" <type> ";" | <init> ) | <deleter> | <copy>
+// <member-access> ::= "internal" | EXPORT
+// <deleter>       ::= DELETE "{ <stmts> "}"
+// <copy>          ::= COPY <proc-body>
 auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     auto struct_loc = Next();
 
@@ -2279,6 +2281,11 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     if (not Consume(Tk::Identifier))
         Error("Expected identifier after '%1(struct%)'");
 
+    SLoc internal_loc;
+    bool default_internal = ConsumeContextual(internal_loc, "internal");
+    if (default_internal and not mod->is_module)
+        Error(internal_loc, "'%1(internal%)' is only allowed in modules");
+
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
     SmallVector<ParsedProcDecl*> initialisers;
@@ -2286,6 +2293,43 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     Ptr<ParsedStmt> copy_proc;
     BracketTracker braces{*this, Tk::LBrace};
     while (not At(Tk::RBrace, Tk::Eof)) {
+        // Stray semicolons are ignored.
+        if (Consume(Tk::Semicolon)) continue;
+
+        // Determine the access specifier.
+        SLoc access_loc = tok->location;
+        bool member_internal = default_internal;
+        bool has_access = false;
+
+        // This member is internal.
+        if (At(Tk::Identifier) and tok->text == "internal" and not LookAhead().is(Tk::Colon)) {
+            Next();
+            has_access = true;
+            member_internal = true;
+
+            // Diagnose if this is redundant/disallowed.
+            if (not mod->is_module) Error(access_loc, "'%1(internal%)' is only allowed in modules");
+            else if (default_internal) Warn(
+                access_loc,
+                "'%1(internal%)' is redundant as '%6({}%)' is already declared '%1(internal%)'",
+                name
+            );
+        }
+
+        // This member is exported.
+        else if (Consume(Tk::Export)) {
+            has_access = true;
+            member_internal = false;
+            if (not default_internal) Warn(
+                access_loc,
+                "'%1(export%)' is redundant; members of '%6({}%)' are accessible by default",
+                name
+            );
+        }
+
+        if (has_access and At(Tk::Copy, Tk::Delete))
+            Error(access_loc, "Access modifiers are only allowed on fields and initialisers");
+
         auto ParseField = [&] {
             auto field_loc = tok->location;
             auto name = tok->text;
@@ -2307,11 +2351,10 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
                 return;
             }
 
-            fields.push_back(new (*this) ParsedFieldDecl(name, type.get(), field_loc));
+            auto field = new (*this) ParsedFieldDecl(name, type.get(), field_loc);
+            field->internal = member_internal;
+            fields.push_back(field);
         };
-
-        // Stray semicolons are ignored.
-        if (Consume(Tk::Semicolon)) continue;
 
         // Parse deleter.
         if (SLoc loc; Consume(loc, Tk::Delete)) {
@@ -2321,6 +2364,11 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
                 Error(loc, "Struct already defines a deleter");
                 Note(prev->loc, "Previous deleter defined here");
             }
+
+            if (has_access) Error(
+                access_loc,
+                "Access modifiers are only allowed on fields and initialisers"
+            );
 
             if (del.present()) del.get()->loc = loc;
             deleter = del;
@@ -2341,6 +2389,11 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
                 Note(prev->loc, "Previous copy procedure defined here");
             }
 
+            if (has_access) Error(
+                access_loc,
+                "Access modifiers are only allowed on fields and initialisers"
+            );
+
             body.get()->loc = loc;
             copy_proc = body;
             continue;
@@ -2349,7 +2402,10 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
         // Parse initialiser.
         if (At(Tk::Init)) {
             auto decl = ParseInitialiser();
-            if (decl.present()) initialisers.push_back(decl.get());
+            if (decl.present()) {
+                decl->type->attrs.internal = member_internal;
+                initialisers.push_back(decl.get());
+            }
             continue;
         }
 
@@ -2361,7 +2417,7 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     }
 
     braces.close();
-    return ParsedStructDecl::Create(
+    auto result = ParsedStructDecl::Create(
         *this,
         name,
         fields,
@@ -2370,6 +2426,8 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
         copy_proc,
         struct_loc
     );
+    result->internal = default_internal;
+    return result;
 }
 
 auto Parser::ParseType(int precedence) -> Ptr<ParsedStmt> {

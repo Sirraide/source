@@ -22,6 +22,7 @@ class Target;
 class Scope;
 class BlockScope;
 class ModuleScope;
+class ModuleDecl;
 class ProcScope;
 class RecordScope;
 class TemplateTypeParamDecl;
@@ -1216,6 +1217,12 @@ private:
           owning_tu{owner} {}
 
 public:
+    /// Module this struct was imported from.
+    Ptr<ModuleDecl> imported_from_module;
+
+    /// Whether initialisers and fields are module-internal by default.
+    bool internal = false;
+
     /// Lexical parent procedure, if this is a local type.
     Ptr<ProcDecl> parent;
 
@@ -1233,6 +1240,9 @@ public:
 
     /// Finalise the struct.
     void finalise(RecordLayout* layout);
+
+    /// Whether this struct was imported from another module.
+    bool is_imported() const { return imported_from_module.present(); }
 
     /// Get the name of this type.
     auto name() const -> String;

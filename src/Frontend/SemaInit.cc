@@ -117,6 +117,23 @@ auto Sema::ApplySimpleConversion(Expr* e, const Conversion& conv, SLoc loc) -> P
 }
 
 bool Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv, SLoc loc) {
+    // Check access only when applying a selected conversion, so accessibility
+    // never affects overload resolution. Arrays also construct their elements,
+    // whereas an empty optional does not construct its contained value.
+    auto CheckAccess = [&](Type type) -> bool {
+        if (
+            auto structure = dyn_cast<StructType>(type->strip_arrays());
+            structure and
+            structure->internal and
+            structure->is_imported()
+        ) return Error(
+            loc,
+            "Cannot initialise internal struct '{}' defined in another module",
+            structure->decl()->name
+        );
+        return true;
+    };
+
     switch (conv.kind) {
         using K = Conversion::Kind;
         case K::ArrayBroadcast: {
@@ -163,7 +180,9 @@ bool Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
 
         case K::DefaultInit: {
             Assert(exprs.empty());
-            exprs.push_back(new (*tu) DefaultInitExpr(conv.data.get<TypeAndValueCategory>().type(), loc));
+            auto type = conv.data.get<TypeAndValueCategory>().type();
+            if (not CheckAccess(type)) return false;
+            exprs.push_back(new (*tu) DefaultInitExpr(type, loc));
             return true;
         }
 
@@ -200,6 +219,7 @@ bool Sema::ApplyConversion(SmallVectorImpl<Expr*>& exprs, const Conversion& conv
 
         case K::RecordInit: {
             auto& data = conv.data.get<Conversion::RecordInitData>();
+            if (not CheckAccess(data.ty)) return false;
             bool ok = true;
             for (auto [e, seq] : zip(exprs, data.field_convs)) {
                 auto value = ApplyConversionSequence(e, seq, loc);
@@ -983,6 +1003,15 @@ auto Sema::BuildParameterConversionSequence(
 auto Sema::BuildRawInitialiser(Type type, Expr* tuple, SLoc loc) -> Ptr<Expr> {
     auto record = dyn_cast<RecordType>(type);
     if (not record) return BuildInitialiser(type, tuple, loc);
+
+    // Forbid raw initialisers outside the module that defines a struct
+    // as those circumvent init procedures and might break invariants. The
+    // idea is that the module that actually provides the type knows about
+    // its invariants well enough to not do that.
+    if (
+        auto structure = dyn_cast<StructType>(record);
+        structure and structure->is_imported()
+    ) return Error(loc, "Cannot use raw initialisation for a struct defined in another module");
 
     // Unwrap tuples.
     ArrayRef<Expr*> args = tuple;

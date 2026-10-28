@@ -1223,6 +1223,9 @@ auto Sema::BuildMatchExpr(
 }
 
 auto Sema::BuildMemberAccessExpr(Expr* base, FieldDecl* field, SLoc loc) -> Ptr<Expr> {
+    if (field->internal and cast<StructType>(field->parent)->is_imported())
+        return Error(loc, "Field '{}' is internal to its defining module", field->name);
+
     base = TRY(UnwrapPointersAndOptionals(base));
     base = MaterialiseTemporary(base);
     return new (*tu) MemberAccessExpr(base, field, loc);

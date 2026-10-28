@@ -165,11 +165,22 @@ let grammar = {
             "beginCaptures": captures(["keyword.other", "entity.name.type"]),
             "patterns": [
                 {
+                    "name": "storage.modifier",
+                    "match": "\\binternal\\b(?=\\s*\\{)"
+                },
+                {
                     "begin": "\\{",
                     "end": "\\}",
                     "beginCaptures": captures(["keyword.other"], 0),
                     "endCaptures": captures(["keyword.other"], 0),
-                    "patterns": [{ "include": "#field-name" }, { "include": "$self" }]
+                    "patterns": [
+                        {
+                            "name": "storage.modifier",
+                            "match": `\\binternal\\b(?!\\s*:)(?=\\s+(?:init\\b|${ident}\\s*:))`
+                        },
+                        { "include": "#field-name" },
+                        { "include": "$self" }
+                    ]
                 },
                 { "include": "$self" }
             ]

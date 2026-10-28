@@ -244,6 +244,7 @@ struct srcc::ParsedParameter {
 };
 
 struct ParsedProcAttrs {
+    bool internal = false;
     bool extern_ = false;
     bool nomangle = false;
     bool native = false;
@@ -1048,6 +1049,7 @@ public:
 
 class srcc::ParsedFieldDecl final : public ParsedDecl {
 public:
+    bool internal = false;
     ParsedStmt* type;
 
     ParsedFieldDecl(
@@ -1159,6 +1161,10 @@ class srcc::ParsedStructDecl final : public ParsedDecl
     u32 has_deleter : 1;
     u32 has_copy_proc : 1;
 
+public:
+    bool internal = false;
+
+private:
     auto numTrailingObjects(OverloadToken<ParsedFieldDecl*>) const -> usz { return num_fields; }
     auto numTrailingObjects(OverloadToken<ParsedProcDecl*>) const -> usz { return num_inits; }
     auto numTrailingObjects(OverloadToken<ParsedStmt*>) const -> usz { return has_deleter + has_copy_proc; }

@@ -457,6 +457,7 @@ auto srcc::CXXImporter::ImportRecordImpl(clang::RecordDecl* rd) -> Res<TypeDecl*
     auto scope = S.tu->create_scope<RecordScope>(S.global_scope());
     auto name = S.tu->save(ImportName(rd));
     auto type = StructType::Create(*S.tu, scope, name, ImportSourceLocation(rd->getLocation()));
+    type->imported_from_module = clang_module;
     S.imported_decls[rd] = type->decl();
 
     // Import the fields.

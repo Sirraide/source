@@ -1,0 +1,20 @@
+// V mkdir -p %t
+// V %srcc test/inputs/internal-members.src --mo %t --target x86_64-unknown-linux-gnu
+// V %srcc --eval %s -M %t --target x86_64-unknown-linux-gnu
+program test;
+import internal_members as m;
+var counter = m::Counter(3);
+assert m::value(counter) == 3;
+counter.label = 7;
+assert counter.label == 7;
+var copied = counter;
+assert m::value(copied) == 3;
+var constructed = m::construct();
+assert constructed.label == 20;
+assert m::value(constructed) == 10;
+var defaulted = m::Aggregate();
+assert defaulted.visible == 0;
+
+// Hidden fields do not restrict generated aggregate initialisers.
+var aggregate = m::Aggregate(3, 4, 0);
+assert aggregate.visible == 4;

@@ -668,6 +668,9 @@ auto Sema::RequestReference(Decl* d, SLoc loc) -> Ptr<Expr> { // clang-format of
         [&](FieldDecl*) -> Ptr<Expr> { Unreachable(); },
         [&](ModuleDecl*) -> Ptr<Expr> { Unreachable(); },
         [&](ProcDecl* proc) -> Ptr<Expr> {
+            if (proc->props.internal and proc->is_imported())
+                return Error(loc, "Procedure '{}' is internal to its defining module", d->name);
+
             // If this is a nested procedure, mark it as used by the current
             // procedure so we can check that creating a closure for it here
             // is valid once we know what its captures are.
@@ -880,8 +883,8 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
     // Whether all fields have a default initialiser.
     bool all_default = true;
 
-    // Whether a field has a default initialiser that must be called.
-    bool calls_fields = false;
+    // Whether we must define an initialiser procedure.
+    bool must_declare_init = false;
 
     // Whether there are any initialisers, user-declared or not.
     bool has_initialisers = not record->initialisers().empty();
@@ -902,7 +905,7 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
 
         // Update properties.
         all_default &= field->type->can_init_from_no_args();
-        calls_fields |= not field->type->can_zero_init();
+        must_declare_init |= not field->type->can_zero_init();
     }
 
     // If we have user-declared initialisers, check if any of them can be used as
@@ -933,17 +936,20 @@ bool Sema::RequestRecordInitialisersImpl(RecordType* record) {
     }
 
     // There is no user-declared initialiser; generate initialisers if needed/possible.
-    else if (all_default and calls_fields) {
-        DefineSpecialProcedures(
+    else if (must_declare_init and all_default) {
+        // For an empty record, default and aggregate initialisation have the
+        // same zero-argument signature; generate only the default entry point.
+        bool define_default = all_default;
+        bool define_aggregate = not rgs::empty(record->scope()->fields());
+        DefineImplicitInitialisers(
             record,
-            /*props=*/{},
-            /*parsed_deleter=*/nullptr,
-            /*parsed_copy=*/nullptr,
-            loc,
-            /*generate_initialisers=*/true
+            define_default,
+            define_aggregate,
+            loc
         );
 
-        has_initialisers = has_empty = true;
+        has_initialisers = define_default or define_aggregate;
+        has_empty = define_default;
     }
 
     // Finally, update the record bits.
@@ -962,6 +968,7 @@ bool Sema::RequestStructLayoutImpl(StructType* s) {
     Assert(source, "Completing a struct that we did not parse");
     EnterRequestContext context{*this, source->context};
     auto parsed = cast<ParsedStructDecl>(source->parsed);
+    s->internal = parsed->internal;
 
     // Translate the fields and build the layout.
     EnterScope _{*this, s->scope()};
@@ -979,6 +986,7 @@ bool Sema::RequestStructLayoutImpl(StructType* s) {
             f->loc
         );
 
+        field->internal = f->internal;
         lb.add_field(ty.value_or(Type::VoidTy));
         AddDeclToScope(s->scope(), field);
     }

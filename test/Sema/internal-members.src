@@ -1,0 +1,56 @@
+// V mkdir -p %t
+// V %srcc test/inputs/internal-members.src --mo %t --target x86_64-unknown-linux
+// V %srcc --sema --verify %s -M %t --target x86_64-unknown-linux
+program test;
+import internal_members as m;
+var counter = m::Counter(3);
+counter.label = 4;
+counter.value; // expected-error: Field 'value' is internal to its defining module
+m::Counter(3, 4); // expected-error: Procedure 'init' is internal to its defining module
+m::Counter::(3, 4); // expected-error: Cannot use raw initialisation for a struct defined in another module
+var inferred: m::Counter = (3, 4); // expected-error: Procedure 'init' is internal to its defining module
+var aggregate = m::Aggregate(1, 2, 3);
+var defaulted: m::DefaultInternal; // expected-error: Cannot initialise internal struct 'DefaultInternal' defined in another module
+var explicit = m::Explicit(1); // expected-error: Procedure 'init' is internal to its defining module
+var item = m::construct();
+m::value(item);
+
+// Copying values does not expose their fields.
+var copied = counter;
+var public_default = m::Aggregate();
+m::Counter::(); // expected-error: Cannot use raw initialisation for a struct defined in another module
+var tuple: (int, int) = counter; // expected-error: Cannot convert expression of type 'Counter' to 'int'
+
+var unpacked = (*counter,); // expected-error (Field 'value' is internal to its defining module) expected-error (Field 'reserved' is internal to its defining module)
+m::Empty(); // expected-error: Cannot initialise internal struct 'Empty' defined in another module
+var public_fields: m::PublicFields; // expected-error: Cannot initialise internal struct 'PublicFields' defined in another module
+var raw_public = m::PublicFields::(3); // expected-error: Cannot use raw initialisation for a struct defined in another module
+var raw_required = m::Required::(1); // expected-error: Cannot use raw initialisation for a struct defined in another module
+
+// Accessibility does not change overload ranking: the exact match wins.
+var overloaded = m::Overloaded(1); // expected-error: Procedure 'init' is internal to its defining module
+
+// Even raw copying an existing foreign value is disallowed.
+var raw_copy = m::Counter::(counter); // expected-error: Cannot use raw initialisation for a struct defined in another module
+
+// Internal aggregates remain inaccessible without generated entry points.
+m::NonDefaultInternal(m::Required(1)); // expected-error: Cannot initialise internal struct 'NonDefaultInternal' defined in another module
+
+// Access is checked only for the selected procedure.
+var preferred = m::PublicPreferred(1);
+
+// An inaccessible candidate still participates in ambiguity.
+m::Ambiguous(1, true); // expected-error: Overload resolution failed in call to 'init'
+
+// Empty and aggregate construction, including array elements, obey the same access rule.
+m::DefaultInternal(1); // expected-error: Cannot initialise internal struct 'DefaultInternal' defined in another module
+var implicit: m::DefaultInternal = (1,); // expected-error: Cannot initialise internal struct 'DefaultInternal' defined in another module
+var array: m::DefaultInternal[2]; // expected-error: Cannot initialise internal struct 'DefaultInternal' defined in another module
+var optional: m::DefaultInternal?;
+
+// A public factory can still return an internal aggregate, which can be copied.
+var internal_value = m::make_internal();
+var internal_copy = internal_value;
+
+// Necessary generated initialisers retain the struct's access.
+var nontrivial: m::NontrivialInternal; // expected-error: Procedure 'init' is internal to its defining module

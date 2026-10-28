@@ -16,7 +16,7 @@ assert defaulted.x == 10;
 var wrapper: m::Wrapper;
 assert wrapper.item.y == 20;
 
-var aggregate = m::Wrapper(z: 30, item: m::Item::(40, 50));
+var aggregate = m::Wrapper(z: 30, item: m::Item(39, 48));
 assert aggregate.item.x == 40;
 assert aggregate.z == 30;
 

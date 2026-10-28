@@ -1220,6 +1220,8 @@ public:
 
 class srcc::FieldDecl final : public Decl {
 public:
+    /// Whether this field is accessible only in its defining module.
+    bool internal = false;
     RecordType* parent;
     Type type;
     u32 index;
@@ -1561,6 +1563,9 @@ public:
 /// Properties of a procedure that are inherited from the template
 /// if the procedure is an instantiation.
 struct srcc::InheritedProcedureProperties {
+    /// Whether this initialiser is accessible only in its defining module.
+    bool internal = false;
+
     /// Associated type, of this procedure, if any.
     ///
     /// If this procedure was declared with a scope specifier, e.g. 'proc a::b::c', then

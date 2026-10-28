@@ -1217,14 +1217,21 @@ private:
     /// Perform template deduction.
     auto DeduceType(ParsedStmt* parsed_type, Type input_type) -> Opt<Type>;
 
-    /// Define special procedures (initialisers/delete/copy) of a type.
+    /// Define the requested implicit initialisers of a type.
+    void DefineImplicitInitialisers(
+        RecordType* r,
+        bool define_default,
+        bool define_aggregate,
+        SLoc loc
+    );
+
+    /// Define the copy and delete procedures of a type.
     void DefineSpecialProcedures(
         RecordType* r,
         RecordLayout::Props props,
         Ptr<ParsedStmt> parsed_deleter,
         Ptr<ParsedStmt> parsed_copy,
-        SLoc loc,
-        bool generate_initialisers = false
+        SLoc loc
     );
 
     /// Diagnose that we’re using a zero-sized type in a native procedure signature.

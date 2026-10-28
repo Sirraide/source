@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 13;
+constexpr u32 CurrentVersion = 15;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
@@ -49,9 +49,9 @@ public:
 
     ASTWriter(const Context& ctx, ByteBuffer& buf) : Base{buf}, ctx{ctx} {}
 
-    void emit_record_rest(const RecordType* ty) {
+    void emit_record_fields(const RecordType* ty) {
         for (auto f : ty->scope()->fields())
-            *this << f->type << f->name.str() << f->location();
+            *this << f->type << f->name.str() << f->location() << f->internal;
     }
 
     void emit_type_def(Type ty) {
@@ -101,15 +101,15 @@ public:
             },
             [&](const CanonicalTupleType* ty) {
                 *this << ty->layout();
-                emit_record_rest(ty);
+                emit_record_fields(ty);
             },
             [&](const SugaredTupleType* ty) {
                 *this << ty->element_types();
             },
             [&](const StructType* ty) {
                 *this << ty->decl()->name.str() << ty->decl()->location()
-                      << ty->layout();
-                emit_record_rest(ty);
+                      << ty->layout() << ty->internal;
+                emit_record_fields(ty);
             },
         });
     }
@@ -142,7 +142,7 @@ public:
     void write(const InheritedProcedureProperties& props) {
         *this << props.associated_type
               << props.always_inline << props.is_compile_time_only
-              << props.is_cxx_inline_function;
+              << props.is_cxx_inline_function << props.internal;
     }
 
     template <typename T>
@@ -337,13 +337,14 @@ public:
         }
     }
 
-    auto read_record_rest(RecordType* ty) -> Result<Type> {
+    auto read_record_fields(RecordType* ty) -> Result<Type> {
         auto scope = ty->scope();
         for (auto idx : vws::iota(0u, ty->layout().field_offsets().size())) {
             auto field_type = Read(Type);
             auto field_name = Read(String);
             auto field_loc = Read(SLoc);
             auto fd = new (*S.tu) FieldDecl(ty, field_type, field_name, idx, field_loc);
+            fd->internal = Read(bool);
 
             // We assume serialised fields are already well-formed; just add them
             // to the scope without checking.
@@ -464,7 +465,9 @@ public:
                     layout
                 );
 
-                return read_record_rest(ty);
+                ty->imported_from_module = module_decl;
+                ty->internal = Read(bool);
+                return read_record_fields(ty);
             }
 
             case K::CanonicalTupleType: {
@@ -475,6 +478,7 @@ public:
                     elements.push_back(Read(Type));
                     names.push_back(Read(String));
                     static_cast<void>(Read(SLoc));
+                    static_cast<void>(Read(bool));
                 }
 
                 return CanonicalTupleType::Get(
@@ -583,7 +587,9 @@ public:
         auto always_inline = Read(bool);
         auto is_compile_time_only = Read(bool);
         auto is_cxx_inline_function = Read(bool);
+        auto internal = Read(bool);
         return InheritedProcedureProperties{
+            .internal = internal,
             .associated_type = associated_type,
             .always_inline = always_inline,
             .is_compile_time_only = is_compile_time_only,
