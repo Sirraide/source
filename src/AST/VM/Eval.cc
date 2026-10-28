@@ -900,6 +900,20 @@ bool Eval::EvalLoop() {
                     );
                 }
 
+                // Imported globals live in the loaded module, alongside its
+                // procedures. Use that storage so calls and direct accesses agree.
+                if (auto decl = vm.cg->lookup(g); decl and decl->is_imported()) {
+                    auto pointer = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(g.getSymName().str());
+                    if (not pointer) return Error(
+                        SLoc::Decode(i->getLoc()),
+                        "Global variable '{}' is not available for evaluation",
+                        decl->name
+                    );
+
+                    Temp(a) = SRValue(vm.memory->make_host_pointer(iptr(pointer)));
+                    continue;
+                }
+
                 auto mem = vm.memory->make_global_ptr(g);
                 Temp(a) = SRValue(mem);
                 continue;

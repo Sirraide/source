@@ -2447,6 +2447,16 @@ auto CodeGen::EmitGlobal(GlobalDecl* decl) -> mlir::LLVM::GlobalOp {
             mlir::Attribute(),
             decl->type->align(tu).value().bytes()
         );
+
+        // Emit a dummy zero-initialiser, else LLVM won’t allocate any storage
+        // for this; the actual initialiser is emitted in the module initialiser.
+        if (decl->linkage == Linkage::Exported) {
+            auto& block = g.getInitializerRegion().emplaceBlock();
+            setInsertionPointToStart(&block);
+            auto zero = LLVM::ZeroOp::create(*this, C(decl->location()), g.getGlobalType());
+            LLVM::ReturnOp::create(*this, C(decl->location()), zero.getResult());
+        }
+
         global_vars_reverse_lookup[g] = decl;
     }
     return g;

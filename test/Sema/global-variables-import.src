@@ -1,0 +1,9 @@
+// V mkdir -p %t
+// V %srcc test/inputs/global-variables.src --mo %t --target x86_64-unknown-linux
+// V %srcc --sema --verify %s -M %t --target x86_64-unknown-linux
+program test;
+import global_variables as m;
+// expected-note@*: Declared here
+m::fixed = 7; // expected-error: Cannot assign to immutable value
+m::immutable_pair.x = 7; // expected-error: Cannot assign to immutable value
+#assert m::fixed == 5; // expected-error: Cannot access global variable 'fixed' in compile-time evaluation

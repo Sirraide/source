@@ -1,0 +1,13 @@
+// I
+module global_variables;
+
+proc initial_value -> int = 37;
+export var counter = initial_value();
+export val fixed: int = 5;
+export struct Pair { x: int; y: int; }
+export var pair = Pair(3, 4);
+export val immutable_pair = Pair(5, 6);
+export var values: int[2] = (10, 20);
+export var empty: () = ();
+export proc read -> int = counter;
+export proc bump { counter += 1; }

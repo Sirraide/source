@@ -1,0 +1,22 @@
+// V mkdir -p %t
+// V %srcc test/inputs/global-variables.src --mo %t --target x86_64-unknown-linux-gnu
+// V %srcc --eval %s -M %t --target x86_64-unknown-linux-gnu
+program test;
+import global_variables as m;
+
+// Startup initialisation happens in the defining module.
+assert m::counter == 37;
+assert m::fixed == 5;
+assert m::read() == 37;
+m::counter = 40;
+assert m::read() == 40;
+m::bump();
+assert m::counter == 41;
+assert m::pair.x == 3;
+m::pair.y = 12;
+assert m::pair.y == 12;
+assert m::immutable_pair.x == 5;
+assert m::values[1] == 20;
+m::values[0] = 30;
+assert m::values[0] == 30;
+var empty: () = m::empty;

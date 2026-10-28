@@ -1,0 +1,70 @@
+// V mkdir -p %t
+// V %srcc test/inputs/global-variables.src --mo %t --target x86_64-unknown-linux
+// R %srcc -fshort-filenames --ir %s -M %t --target x86_64-unknown-linux
+// R[//L] %srcc -fshort-filenames --llvm %s -M %t --target x86_64-unknown-linux
+program test;
+import global_variables as m;
+
+m::counter = m::fixed;
+m::pair.x = m::values[1];
+m::bump();
+var empty: () = m::empty;
+
+// * @global_variables::counter = external 8, align 8
+// + @global_variables::fixed = external 8, align 8
+// + @global_variables::pair = external 16, align 8
+// + @global_variables::values = external 16, align 8
+// + @0 = "[\00"
+// + @1 = "out of bounds access\00"
+// + @2 = "global-variables-import.src\00"
+// +
+// + proc __src_main norecurse external ccc {
+// + entry:
+// +     call ccc void __src_static_init.global_variables()
+// +     %0 = load i64, @global_variables::fixed, align 8
+// +     store @global_variables::counter, i64 %0, align 8
+// +     %1 = ptradd @global_variables::values, 8
+// +     %2 = load i64, %1, align 8
+// +     store @global_variables::pair, i64 %2, align 8
+// +     call ccc void global_variables::bump()
+// +     ret
+// + }
+// +
+// + proc __src_static_init.global_variables external ccc;
+// +
+// + proc global_variables::bump external ccc;
+
+//L * ; ModuleID = 'test'
+//L + source_filename = "test"
+//L + target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+//L + target triple = "x86_64-unknown-linux"
+//L +
+//L + @"_Sglobal_variables::counter" = external global [8 x i8], align 8
+//L + @"_Sglobal_variables::fixed" = external global [8 x i8], align 8
+//L + @"_Sglobal_variables::pair" = external global [16 x i8], align 8
+//L + @"_Sglobal_variables::values" = external global [16 x i8], align 8
+//L + @__srcc_str.0 = private constant [2 x i8] c"[\00", align 1
+//L + @__srcc_str.1 = private constant [21 x i8] c"out of bounds access\00", align 1
+//L + @__srcc_str.2 = private constant [28 x i8] c"global-variables-import.src\00", align 1
+//L +
+//L + ; Function Attrs: noinline norecurse nounwind optnone uwtable
+//L + define void @__src_main() #0 {
+//L +   call void @__src_static_init.global_variables()
+//L +   %1 = load i64, ptr @"_Sglobal_variables::fixed", align 8
+//L +   store i64 %1, ptr @"_Sglobal_variables::counter", align 8
+//L +   %2 = load i64, ptr getelementptr inbounds nuw (i8, ptr @"_Sglobal_variables::values", i64 8), align 8
+//L +   store i64 %2, ptr @"_Sglobal_variables::pair", align 8
+//L +   call void @"_Sglobal_variables::bump()"()
+//L +   ret void
+//L + }
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare void @__src_static_init.global_variables() #1
+//L +
+//L + ; Function Attrs: nounwind
+//L + declare void @"_Sglobal_variables::bump()"() #1
+//L +
+//L + attributes #0 = { noinline norecurse nounwind optnone uwtable "frame-pointer"="all" }
+//L + attributes #1 = { nounwind }
+//L +
+//L +

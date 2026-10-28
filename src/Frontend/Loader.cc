@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 12;
+constexpr u32 CurrentVersion = 13;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
@@ -155,10 +155,14 @@ public:
         *this << p.intent << p.type << p.variadic << p.exact;
     }
 
+    void write(GlobalDecl* global) {
+        WriteObjectDeclCommon(global);
+        *this << global->immutable;
+    }
+
     void write(ProcDecl* proc) {
-        *this << proc->kind() << proc->mangling
-              << proc->type << proc->name << proc->props
-              << proc->location() << proc->compute_symbol_name();
+        WriteObjectDeclCommon(proc);
+        *this << proc->props;
 
         Assert(proc->params().size() == proc->param_count());
         for (auto param : proc->params())
@@ -231,6 +235,12 @@ private:
         types.push_back(ty);
         return idx;
     }
+
+    void WriteObjectDeclCommon(ObjectDecl* decl) {
+        *this << decl->kind() << decl->mangling << decl->type
+              << decl->name << decl->location()
+              << decl->compute_symbol_name();
+    }
 };
 
 class srcc::ASTReader : public base::ser::Reader<std::endian::native> {
@@ -267,12 +277,27 @@ public:
         using K = Stmt::Kind;
         switch (auto k = Read(K)) {
             default: Unreachable("Invalid exported decl: {}", +k);
+            case K::GlobalDecl: {
+                auto [mangling, type, name, loc, sym_name] = Try(ReadObjectDeclCommon());
+                auto immutable = Read(bool);
+                auto global = new (*S.tu) GlobalDecl(
+                    S.tu.get(),
+                    module_decl,
+                    type,
+                    immutable,
+                    name,
+                    Linkage::Imported,
+                    mangling,
+                    loc
+                );
+
+                global->imported_linkage_name = sym_name;
+                return global;
+            }
+
             case K::ProcDecl: {
-                auto mangling = Read(Mangling);
-                auto type = Read(Type);
-                auto name = Read(DeclName);
+                auto [mangling, type, name, loc, sym_name] = Try(ReadObjectDeclCommon());
                 auto props = Read(InheritedProcedureProperties);
-                auto loc = Read(SLoc);
                 auto proc = ProcDecl::Create(
                     *S.tu,
                     module_decl,
@@ -285,7 +310,7 @@ public:
                     loc
                 );
 
-                proc->imported_linkage_name = Read(String);
+                proc->imported_linkage_name = sym_name;
 
                 // Read the parameters.
                 SmallVector<Sema::ParamSpec> params;
@@ -565,6 +590,16 @@ public:
             .is_cxx_inline_function = is_cxx_inline_function,
         };
     }
+
+private:
+    auto ReadObjectDeclCommon() -> Result<std::tuple<Mangling, Type, DeclName, SLoc, String>> {
+        auto mangling = Read(Mangling);
+        auto type = Read(Type);
+        auto name = Read(DeclName);
+        auto loc = Read(SLoc);
+        auto sym_name = Read(String);
+        return std::tuple{mangling, type, name, loc, sym_name};
+    }
 };
 
 auto Sema::ReadAST(ImportedSourceModuleDecl* module_decl, const File& f) -> Result<> {
@@ -756,6 +791,11 @@ auto TranslationUnit::serialise() -> ByteBuffer {
         if (auto proc = dyn_cast<ProcDecl>(d)) {
             Assert(not proc->parent, "Exporting local procedure?");
             w << proc;
+            continue;
+        }
+
+        if (auto global = dyn_cast<GlobalDecl>(d)) {
+            w << global;
             continue;
         }
 
