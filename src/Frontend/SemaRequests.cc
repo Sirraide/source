@@ -382,6 +382,7 @@ bool Sema::RequestDeclarationImpl(DeclarationRequest& request) {
 
         AddDeclToScope(&tu->exports, request.result);
         if (auto object = dyn_cast<ObjectDecl>(request.result)) object->linkage = Linkage::Exported;
+        if (auto type = dyn_cast<TypeDecl>(request.result)) type->linkage = Linkage::Exported;
     }
 
     return request.result->valid();

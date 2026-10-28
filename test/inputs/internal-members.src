@@ -47,3 +47,8 @@ export proc make_internal -> DefaultInternal = DefaultInternal(42);
 struct Nontrivial { value: int; init = ::(42); }
 export struct NontrivialInternal internal { value: Nontrivial; }
 var local_nontrivial: NontrivialInternal;
+
+struct Hidden { value: int; }
+export proc hidden -> Hidden = Hidden(7);
+struct HiddenFactory { value: int; export init (x: int) = ::(x); }
+export proc hidden_factory -> HiddenFactory = HiddenFactory(9);

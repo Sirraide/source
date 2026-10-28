@@ -170,7 +170,7 @@ private:
     bool ParseSignatureRest(SmallVectorImpl<ParsedVarDecl*>* decls, bool allow_constraint);
     void ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at = Tk::Eof);
     auto ParseStmt() -> Ptr<ParsedStmt>;
-    auto ParseStructDecl() -> Ptr<ParsedStructDecl>;
+    auto ParseStructDecl(bool exported = false) -> Ptr<ParsedStructDecl>;
     auto ParseTuple(llvm::function_ref<Ptr<ParsedStmt>()> ParseElement) -> ParsedTupleExpr*;
     auto ParseType(int precedence = -1) -> Ptr<ParsedStmt>;
     auto ParseVarDecl() -> Ptr<ParsedVarDecl>;

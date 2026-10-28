@@ -471,6 +471,10 @@ auto Sema::TranslateDeclInitial(ParsedDecl* d) -> std::optional<Ptr<Decl>> {
                     = object->linkage == Linkage::Imported
                         ? Linkage::Reexported
                         : Linkage::Exported;
+            if (auto type = dyn_cast<TypeDecl>(decl->get()))
+                type->linkage = type->linkage == Linkage::Imported
+                    ? Linkage::Reexported
+                    : Linkage::Exported;
         }
         return decl;
     }
@@ -1315,9 +1319,12 @@ auto Sema::TranslateStructDecl(ParsedStructDecl*, Opt<Type>) -> Decl* {
 
 auto Sema::TranslateStructDeclInitial(ParsedStructDecl* parsed) -> Ptr<TypeDecl> {
     auto sc = tu->create_scope<RecordScope>(curr_scope());
+    auto request = GetDeclarationRequest(parsed);
+    auto linkage = request and request->exported ? Linkage::Exported : Linkage::Internal;
     auto ty = StructType::Create(
         *tu,
         sc,
+        linkage,
         parsed->name.str(),
         parsed->loc
     );

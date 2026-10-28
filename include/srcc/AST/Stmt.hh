@@ -1254,22 +1254,25 @@ class srcc::TypeDecl : public Decl {
     friend StructType;
 
 public:
+    Linkage linkage;
     Type type;
 
 protected:
     TypeDecl(
         Kind k,
         Type type,
+        Linkage linkage,
         DeclName name,
         SLoc location
-    ) : Decl{k, name, location}, type{type} {}
+    ) : Decl{k, name, location}, linkage{linkage}, type{type} {}
 
 public:
     TypeDecl(
         Type type,
+        Linkage linkage,
         DeclName name,
         SLoc location
-    ) : TypeDecl{Kind::TypeDecl, type, name, location} {}
+    ) : TypeDecl{Kind::TypeDecl, type, linkage, name, location} {}
 
     static bool classof(const Stmt* e) {
         return e->kind() == Kind::TypeDecl || e->kind() == Kind::TemplateTypeParamDecl;
@@ -1288,7 +1291,13 @@ public:
     TemplateTypeParamDecl(
         String name,
         TypeLoc tl
-    ) : TypeDecl{Kind::TemplateTypeParamDecl, tl.ty, name, tl.loc} {}
+    ) : TypeDecl{
+        Kind::TemplateTypeParamDecl,
+        tl.ty,
+        Linkage::Internal,
+        name,
+        tl.loc
+    } {}
 
     /// Get the template argument type bound to this parameter.
     auto arg_type() -> Type { return type; }

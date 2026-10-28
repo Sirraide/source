@@ -15,7 +15,7 @@ using namespace srcc;
 
 namespace {
 enum struct TypeIndex : u64 { Invalid = ~u64(0) };
-constexpr u32 CurrentVersion = 15;
+constexpr u32 CurrentVersion = 16;
 
 struct Header {
     LIBBASE_SERIALISE(Header, version, decls_size, specials_size, types_size);
@@ -108,7 +108,7 @@ public:
             },
             [&](const StructType* ty) {
                 *this << ty->decl()->name.str() << ty->decl()->location()
-                      << ty->layout() << ty->internal;
+                      << ty->layout() << ty->internal << ty->decl()->linkage;
                 emit_record_fields(ty);
             },
         });
@@ -457,16 +457,19 @@ public:
                 auto decl_name = Read(String);
                 auto decl_loc = Read(SLoc);
                 auto layout = Read(RecordLayout*);
+                auto internal = Read(bool);
+                auto linkage = Read(Linkage);
                 auto ty = StructType::Create(
                     *S.tu,
                     scope,
+                    linkage == Linkage::Exported ? Linkage::Imported : linkage,
                     decl_name,
                     decl_loc,
                     layout
                 );
 
                 ty->imported_from_module = module_decl;
-                ty->internal = Read(bool);
+                ty->internal = internal;
                 return read_record_fields(ty);
             }
 

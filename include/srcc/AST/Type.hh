@@ -1230,6 +1230,7 @@ public:
     static auto Create(
         TranslationUnit& owner,
         RecordScope* scope,
+        Linkage linkage,
         String name,
         SLoc decl_loc,
         RecordLayout* layout = nullptr

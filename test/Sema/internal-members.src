@@ -54,3 +54,12 @@ var internal_copy = internal_value;
 
 // Necessary generated initialisers retain the struct's access.
 var nontrivial: m::NontrivialInternal; // expected-error: Procedure 'init' is internal to its defining module
+
+// Unexported structs are implicitly internal, including when exposed by a factory.
+var hidden = m::hidden();
+hidden.value; // expected-error: Field 'value' is internal to its defining module
+var hidden_default: typeof(hidden); // expected-error: Cannot initialise internal struct 'Hidden' defined in another module
+var hidden_aggregate: typeof(hidden) = (1,); // expected-error: Cannot initialise internal struct 'Hidden' defined in another module
+var hidden_copy = hidden;
+var hidden_public_init = typeof(m::hidden_factory())(2);
+hidden_public_init.value; // expected-error: Field 'value' is internal to its defining module

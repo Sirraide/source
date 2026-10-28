@@ -595,7 +595,7 @@ auto AliasType::Create(
     DeclName name,
     SLoc decl_loc
 ) -> AliasType* {
-    auto td = new (tu) TypeDecl(type, name, decl_loc);
+    auto td = new (tu) TypeDecl(type, Linkage::Internal, name, decl_loc);
     auto alias = new (tu) AliasType(td, type);
     td->type = alias;
     return alias;
@@ -629,7 +629,7 @@ EnumType::EnumType(
     Type underlying_type,
     SLoc loc
 ) : SingleElementTypeBase{Kind::EnumType, underlying_type}, enum_scope{scope} {
-    type_decl = new (tu) TypeDecl(this, name, loc);
+    type_decl = new (tu) TypeDecl(this, Linkage::Internal, name, loc);
 }
 
 auto EnumType::name() const -> DeclName { return decl()->name; }
@@ -645,7 +645,7 @@ void IntType::Profile(FoldingSetNodeID& ID, Size bits) {
 
 auto OpaqueType::Create(TranslationUnit& tu, String name, SLoc decl_loc) -> OpaqueType* {
     auto type = new (tu) OpaqueType();
-    type->type_decl = new (tu) TypeDecl{type, name, decl_loc};
+    type->type_decl = new (tu) TypeDecl{type, Linkage::Internal, name, decl_loc};
     return type;
 }
 
@@ -1012,12 +1012,13 @@ void RecordType::update_initialisation(
 auto StructType::Create(
     TranslationUnit& owner,
     RecordScope* scope,
+    Linkage linkage,
     String name,
     SLoc decl_loc,
     RecordLayout* layout
 ) -> StructType* {
     auto type = new (owner) StructType(owner, scope);
-    type->type_decl = new (owner) TypeDecl{type, name, decl_loc};
+    type->type_decl = new (owner) TypeDecl{type, linkage, name, decl_loc};
     type->record_layout = layout;
     return type;
 }

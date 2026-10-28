@@ -2178,7 +2178,7 @@ auto Parser::ParseStmt() -> Ptr<ParsedStmt> {
 
             // It’s easier to parse any statement and then disallow
             // if we parsed something that doesn’t belong here.
-            auto arg = TryParseStmt();
+            auto arg = At(Tk::Struct) ? ParseStructDecl(true).get_or_null() : TryParseStmt();
             auto decl = dyn_cast<ParsedDecl>(arg);
             if (not decl) return Error(arg->loc, "Only declarations can be exported");
 
@@ -2273,7 +2273,7 @@ void Parser::ParseStmts(SmallVectorImpl<ParsedStmt*>& into, Tk stop_at) {
 // <member-access> ::= "internal" | EXPORT
 // <deleter>       ::= DELETE "{ <stmts> "}"
 // <copy>          ::= COPY <proc-body>
-auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
+auto Parser::ParseStructDecl(bool exported) -> Ptr<ParsedStructDecl> {
     auto struct_loc = Next();
 
     // Name.
@@ -2285,6 +2285,9 @@ auto Parser::ParseStructDecl() -> Ptr<ParsedStructDecl> {
     bool default_internal = ConsumeContextual(internal_loc, "internal");
     if (default_internal and not mod->is_module)
         Error(internal_loc, "'%1(internal%)' is only allowed in modules");
+
+    // Unexported structs in modules have internal members by default.
+    default_internal |= mod->is_module and not exported;
 
     // Body.
     SmallVector<ParsedFieldDecl*> fields;
