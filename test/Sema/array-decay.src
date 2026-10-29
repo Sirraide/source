@@ -8,7 +8,7 @@ var a: int[4];
 var b: int^ = &a;
 x(&a);
 
-b = a; // expected-error: Cannot assign value of type 'int[4]' to 'int^'
+b = a; // expected-error: Cannot convert expression of type 'int[4]' to 'int^'
 x(a); // expected-error: Cannot convert expression of type 'int[4]' to 'int^'
 y(a); // expected-error: Cannot convert expression of type 'int[4]' to 'i8^'
 y(&a); // expected-error: Cannot convert expression of type 'int[4]^' to 'i8^'

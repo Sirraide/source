@@ -29,9 +29,9 @@ proc slice_init {
     val s3: int[];
     val s4: int val[];
 
-    s1 = s2; // expected-error: Cannot assign value of type 'int val[]' to 'int[]'
+    s1 = s2; // expected-error: Cannot convert expression of type 'int val[]' to 'int'
     s1 = s3;
-    s1 = s4; // expected-error: Cannot assign value of type 'int val[]' to 'int[]'
+    s1 = s4; // expected-error: Cannot convert expression of type 'int val[]' to 'int'
 
     s2 = s1;
     s2 = s3;
@@ -50,7 +50,7 @@ proc ptr_casts(imm: int val^, mut: int^) {
     imm = mut;
     imm = mut as int val^;
     imm = mut as! int val^; // expected-warning: Cast from 'int^' to 'int val^' should use 'as'
-    mut = imm; // expected-error: Cannot assign value of type 'int val^' to 'int^'
+    mut = imm; // expected-error: Cannot convert expression of type 'int val^' to 'int^'
     mut = imm as int^; // expected-error: Cast from 'int val^' to 'int^' requires 'as!'
     mut = imm as! int^;
 }

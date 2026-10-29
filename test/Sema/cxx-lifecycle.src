@@ -29,11 +29,13 @@ proc run {
     var moved = object; // expected-error: Type 'CxxObject' is not movable
     var copied = copy object; // expected-error: Type 'CxxObject' is not copyable
     object = cpp::CxxObject(1);
-    object = defaulted; // expected-error: Cannot assign value of type 'CxxObject' to 'CxxObject'
+    object = defaulted; // expected-error: Type 'CxxObject' is not movable
     var raw_foreign: cpp::CxxObject = ::(1,); // expected-error: Cannot use raw initialisation for a struct defined in another module
     var outer: Outer;
     var nested: Nested;
     var raw: Outer = ::(cpp::CxxObject(1),);
+    outer = Outer();
+    outer = raw; // expected-error: Type 'Outer' is not movable
     var aggregate: Outer = (cpp::CxxObject(2),);
     var tuple = (cpp::CxxObject(3),);
     var array: cpp::CxxObject[2];

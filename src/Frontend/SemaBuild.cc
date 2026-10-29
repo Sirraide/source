@@ -423,22 +423,9 @@ auto Sema::BuildBinaryExpr(
         case Tk::ShiftLeftLogicalEq:
         case Tk::ShiftRightEq:
         case Tk::ShiftRightLogicalEq: {
-            auto DiagnoseRHS = [&] {
-                Error(rhs->location(), "Cannot assign value of type '{}' to '{}'", rhs->type, lhs->type);
-            };
-
             if (not CheckLValue(lhs)) return nullptr;
-
-            // Regular assignment.
-            if (op == Tk::Assign) {
-                if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
-                return Build(lhs->type, MLValue);
-            }
-
-            // Compound assignment.
-            if (not CheckIntegral()) return nullptr;
-            if (not MakeRValue(lhs->type, rhs, DiagnoseRHS)) return nullptr;
-            if (not rhs) return nullptr;
+            if (op != Tk::Assign and not CheckIntegral()) return nullptr;
+            rhs = TRY(BuildInitialiser(lhs->type, rhs, rhs->location()));
             if (op != Tk::StarStarEq) return Build(lhs->type, MLValue);
 
             // '**=' requires a separate function since it needs to return the lhs.
