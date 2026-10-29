@@ -660,8 +660,7 @@ void srcc::CXXImporter::ImportCtorsAndDtor(StructType* type, clang::CXXRecordDec
     auto deleter = S.BuildImplicitProcedure(
         ProcType::Get(*S.tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, type}}),
         Tk::Delete,
-        // FIXME: Add 'Sema::ParamSpec::This(SLoc)'
-        {Sema::ParamSpec{.name = {String("this"), loc}, .is_this = true}},
+        {Sema::ParamSpec::This(loc)},
         Linkage::Merge,
         Mangling::Source,
         loc,

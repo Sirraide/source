@@ -604,7 +604,7 @@ void Sema::DefineSpecialProcedures(
         auto proc = BuildImplicitProcedure(
             ProcType::Get(*tu, {Type::VoidTy, Expr::RValue}, {{Intent::Inout, r}}),
             Tk::Delete,
-            {ParamSpec{.name = {String("this"), delete_loc}, .is_this = true}},
+            {ParamSpec::This(delete_loc)},
             linkage,
             Mangling::Source,
             delete_loc,
@@ -620,7 +620,7 @@ void Sema::DefineSpecialProcedures(
         auto proc = BuildImplicitProcedure(
             ProcType::Get(*tu, {r, Expr::RValue}, {{Intent::In, r}}),
             Tk::Copy,
-            {ParamSpec{.name = {String("this"), copy_loc}, .is_this = true}},
+            {ParamSpec::This(copy_loc)},
             linkage,
             Mangling::Source,
             copy_loc,

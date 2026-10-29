@@ -1140,6 +1140,11 @@ private:
         SLoc with_loc{};
         bool immutable : 1 = false;
         bool is_this : 1 = false;
+
+        /// Create the implicit 'this' parameter specification.
+        static auto This(SLoc loc) -> ParamSpec {
+            return {.name = {String("this"), loc}, .is_this = true};
+        }
     };
 
     /// Activate the 'with' and 'this' bindings of the current procedure's parameters.
